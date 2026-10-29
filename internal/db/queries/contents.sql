@@ -88,6 +88,7 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ ap.disclosure_mode AS author_persona_disclosure,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -111,6 +112,7 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN ai_personas ap ON ap.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN intel_sources src ON src.id = c.intel_source_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
@@ -140,6 +142,7 @@ LEFT JOIN LATERAL (
 ) next_c ON true
 WHERE c.slug = @slug AND c.deleted_at IS NULL
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, u.public_username, s.name, s.slug,
+ ap.disclosure_mode,
  sm.storage_bucket, sm.storage_path, o.name, o.slug, om.storage_bucket, om.storage_path,
  m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
  bs.id, bs.title, bs.slug, bsp.position,
@@ -170,6 +173,7 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(u.public_username, u.username, '') AS author_username,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
+ ap.disclosure_mode AS author_persona_disclosure,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  sm.storage_bucket AS space_avatar_storage_bucket,
@@ -197,10 +201,11 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN ai_personas ap ON ap.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN intel_sources src ON src.id = c.intel_source_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
-LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
+LEFT JOIN media hm ON hm.id = c.header_image_id AND m.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN organizations o ON o.id = c.organization_id
 LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
@@ -227,6 +232,7 @@ LEFT JOIN LATERAL (
 ) next_c ON true
 WHERE c.slug = @slug AND c.content_type = @content_type AND c.deleted_at IS NULL
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, u.public_username, s.name, s.slug,
+ ap.disclosure_mode,
  sm.storage_bucket, sm.storage_path,
  m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
  o.name, o.slug, om.storage_bucket, om.storage_path,
@@ -888,11 +894,28 @@ INSERT INTO content_scores (content_id) VALUES (@content_id)
 ON CONFLICT (content_id) DO NOTHING;
 
 -- name: IncrementScoreVote :exec
--- Atomically increments vote_score by delta. Used by the engagement worker
--- to avoid the read-modify-write race that loses deltas when concurrent
--- events (vote, comment, bookmark, view) overwrite each other's columns.
+-- Recomputes vote_score from the live vote tables (comment_votes via the
+-- comment's content_id; forum_votes via the thread's backing content_id —
+-- both thread and reply votes). Drift-proof like IncrementScoreReaction:
+-- enqueue order and retries can't corrupt the counter. @delta is kept for
+-- payload compatibility but ignored.
 UPDATE content_scores
-SET vote_score = vote_score + @delta, last_scored_at = now()
+SET vote_score = (
+    SELECT COALESCE(SUM(x.v), 0)::int FROM (
+        SELECT cv.value AS v FROM comment_votes cv
+            JOIN comments c ON c.id = cv.comment_id
+            WHERE c.content_id = @content_id
+        UNION ALL
+        SELECT fv.value FROM forum_votes fv
+            JOIN forum_threads ft ON ft.id = fv.entity_id
+            WHERE fv.entity_type = 'thread' AND ft.content_id = @content_id
+        UNION ALL
+        SELECT fv.value FROM forum_votes fv
+            JOIN forum_replies fr ON fr.id = fv.entity_id
+            JOIN forum_threads ft ON ft.id = fr.thread_id
+            WHERE fv.entity_type = 'reply' AND ft.content_id = @content_id
+    ) x
+), last_scored_at = now()
 WHERE content_id = @content_id;
 
 -- name: IncrementScoreComment :exec
@@ -914,9 +937,13 @@ SET bookmark_count = bookmark_count + @delta, last_scored_at = now()
 WHERE content_id = @content_id;
 
 -- name: IncrementScoreReaction :exec
--- Atomically adjusts reaction_count by delta (clamped at 0).
+-- Recomputes reaction_count from the live reactions table rather than
+-- incrementing — the denormalized counter can never drift, whatever the
+-- enqueue order or retry count. @delta is kept for payload compatibility
+-- but ignored.
 UPDATE content_scores
-SET reaction_count = GREATEST(0, reaction_count + @delta), last_scored_at = now()
+SET reaction_count = (SELECT COUNT(*)::int FROM reactions WHERE entity_type = 'content' AND entity_id = @content_id),
+    last_scored_at = now()
 WHERE content_id = @content_id;
 
 -- name: GetContentScore :one

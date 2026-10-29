@@ -885,9 +885,16 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.VoteComment(r.Context(), commentID, user.UserID, input.Value); err != nil {
+	contentID, delta, err := h.Service.VoteComment(r.Context(), commentID, user.UserID, input.Value)
+	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// E-006: feed the net score change into content_scores.vote_score so
+	// engagement velocity reflects comment votes (§32). Fire-and-forget.
+	if delta != 0 {
+		h.EnqueueEngagementUpdate("content", contentID, "vote", int(delta))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"voted": true}})
@@ -906,9 +913,14 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RemoveCommentVote(r.Context(), commentID, user.UserID); err != nil {
+	contentID, delta, err := h.Service.RemoveCommentVote(r.Context(), commentID, user.UserID)
+	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	if delta != 0 {
+		h.EnqueueEngagementUpdate("content", contentID, "vote", int(delta))
 	}
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)

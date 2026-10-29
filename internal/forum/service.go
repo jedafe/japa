@@ -780,46 +780,71 @@ type VoteInput struct {
 	Value      int16
 }
 
-// Vote upserts a vote on a thread or reply and recalculates the entity's score.
-func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput) (gen.ForumVote, error) {
+// Vote upserts a vote on a thread or reply and recalculates the entity's
+// score. Returns the vote, the thread's backing content ID, and the net
+// score delta so callers can feed content_scores.vote_score (E-006).
+func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput) (gen.ForumVote, pgtype.UUID, int16, error) {
 	if input.Value != VoteDown && input.Value != VoteUp {
-		return gen.ForumVote{}, fmt.Errorf("%w: vote value must be -1 or 1", errpkg.ErrInvalid)
+		return gen.ForumVote{}, pgtype.UUID{}, 0, fmt.Errorf("%w: vote value must be -1 or 1", errpkg.ErrInvalid)
 	}
 
 	if input.EntityType != EntityTypeThread && input.EntityType != EntityTypeReply {
-		return gen.ForumVote{}, fmt.Errorf("%w: entity type must be 'thread' or 'reply'", errpkg.ErrInvalid)
+		return gen.ForumVote{}, pgtype.UUID{}, 0, fmt.Errorf("%w: entity type must be 'thread' or 'reply'", errpkg.ErrInvalid)
 	}
 
 	// F-005 / C-007 parity: votes only count on live entities — a deleted
 	// thread (or reply / reply on a deleted thread) rejects the vote.
 	// F-009: votes also only count where the voter can read the content.
-	var voteThreadID pgtype.UUID
+	var thread gen.ForumThread
 
 	switch input.EntityType {
 	case EntityTypeThread:
-		if _, err := s.store.getThreadByID(ctx, input.EntityID); err != nil {
-			return gen.ForumVote{}, fmt.Errorf("%w: thread", errpkg.ErrNotFound)
+		t, err := s.store.getThreadByID(ctx, input.EntityID)
+		if err != nil {
+			return gen.ForumVote{}, pgtype.UUID{}, 0, fmt.Errorf("%w: thread", errpkg.ErrNotFound)
 		}
-		voteThreadID = input.EntityID
+		if t.AuthorUserID == userID {
+			return gen.ForumVote{}, pgtype.UUID{}, 0, fmt.Errorf("%w: cannot vote on your own thread", errpkg.ErrInvalid)
+		}
+		thread = t
 	case EntityTypeReply:
 		reply, err := s.store.getReplyByID(ctx, input.EntityID)
 		if err != nil {
-			return gen.ForumVote{}, fmt.Errorf("%w: reply", errpkg.ErrNotFound)
+			return gen.ForumVote{}, pgtype.UUID{}, 0, fmt.Errorf("%w: reply", errpkg.ErrNotFound)
+		}
+		if reply.AuthorUserID == userID {
+			return gen.ForumVote{}, pgtype.UUID{}, 0, fmt.Errorf("%w: cannot vote on your own reply", errpkg.ErrInvalid)
 		}
 
-		if _, err := s.store.getThreadByID(ctx, reply.ThreadID); err != nil {
-			return gen.ForumVote{}, fmt.Errorf("%w: thread", errpkg.ErrNotFound)
+		t, err := s.store.getThreadByID(ctx, reply.ThreadID)
+		if err != nil {
+			return gen.ForumVote{}, pgtype.UUID{}, 0, fmt.Errorf("%w: thread", errpkg.ErrNotFound)
 		}
-		voteThreadID = reply.ThreadID
+		thread = t
 	}
 
-	if err := s.requireFullThreadAccess(ctx, voteThreadID, userID); err != nil {
-		return gen.ForumVote{}, err
+	if err := s.requireFullThreadAccess(ctx, thread.ID, userID); err != nil {
+		return gen.ForumVote{}, pgtype.UUID{}, 0, err
 	}
 
 	// F-003: the vote upsert and the score recalculation commit atomically.
+	// The previous vote is read inside the tx so the returned delta is the
+	// true score change (new=+value, switch=±2, repeat=0).
 	var vote gen.ForumVote
+	var delta int16
 	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		prev, err := q.GetForumVote(ctx, gen.GetForumVoteParams{
+			UserID:     userID,
+			EntityType: input.EntityType,
+			EntityID:   input.EntityID,
+		})
+		prevValue := int16(0)
+		if err == nil {
+			prevValue = prev.Value
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("getting previous forum vote: %w", err)
+		}
+
 		v, err := q.UpsertForumVote(ctx, gen.UpsertForumVoteParams{
 			UserID:     userID,
 			EntityType: input.EntityType,
@@ -832,12 +857,17 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 		vote = v
 
 		if input.EntityType == EntityTypeThread {
-			return q.UpdateThreadVoteScore(ctx, input.EntityID)
+			if err := q.UpdateThreadVoteScore(ctx, input.EntityID); err != nil {
+				return err
+			}
+		} else if err := q.UpdateReplyVoteScore(ctx, input.EntityID); err != nil {
+			return err
 		}
 
-		return q.UpdateReplyVoteScore(ctx, input.EntityID)
+		delta = input.Value - prevValue
+		return nil
 	}); err != nil {
-		return gen.ForumVote{}, err
+		return gen.ForumVote{}, pgtype.UUID{}, 0, err
 	}
 
 	s.emitWebhook(ctx, "forum.vote.cast", map[string]any{
@@ -845,18 +875,46 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 		"user_id": userID, "value": input.Value,
 	})
 
-	return vote, nil
+	return vote, thread.ContentID, delta, nil
 }
 
 // RemoveVote retracts the user's vote on a thread or reply and recalculates
-// the entity's score. Ref: api-routes-catalog L591 (DELETE /forum/{id}/vote).
-func (s *Service) RemoveVote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+// the entity's score. Returns the thread's backing content ID and the net
+// score delta for the engagement counter (E-006).
+// Ref: api-routes-catalog L591 (DELETE /forum/{id}/vote).
+func (s *Service) RemoveVote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (pgtype.UUID, int16, error) {
 	if entityType != EntityTypeThread && entityType != EntityTypeReply {
-		return fmt.Errorf("%w: entity type must be 'thread' or 'reply'", errpkg.ErrInvalid)
+		return pgtype.UUID{}, 0, fmt.Errorf("%w: entity type must be 'thread' or 'reply'", errpkg.ErrInvalid)
+	}
+
+	// Resolve the thread's backing content id + the previous vote before the
+	// tx so the engagement delta is exact.
+	var contentID pgtype.UUID
+	if entityType == EntityTypeThread {
+		if t, err := s.store.getThreadByID(ctx, entityID); err == nil {
+			contentID = t.ContentID
+		}
+	} else if r, err := s.store.getReplyByID(ctx, entityID); err == nil {
+		if t, err := s.store.getThreadByID(ctx, r.ThreadID); err == nil {
+			contentID = t.ContentID
+		}
 	}
 
 	// F-003: the delete and the score recalculation commit atomically.
-	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+	var delta int16
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		prev, err := q.GetForumVote(ctx, gen.GetForumVoteParams{
+			UserID:     userID,
+			EntityType: entityType,
+			EntityID:   entityID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil // nothing to remove
+			}
+			return fmt.Errorf("getting previous forum vote: %w", err)
+		}
+
 		if err := q.DeleteForumVote(ctx, gen.DeleteForumVoteParams{
 			UserID:     userID,
 			EntityType: entityType,
@@ -866,11 +924,20 @@ func (s *Service) RemoveVote(ctx context.Context, userID pgtype.UUID, entityType
 		}
 
 		if entityType == EntityTypeThread {
-			return q.UpdateThreadVoteScore(ctx, entityID)
+			if err := q.UpdateThreadVoteScore(ctx, entityID); err != nil {
+				return err
+			}
+		} else if err := q.UpdateReplyVoteScore(ctx, entityID); err != nil {
+			return err
 		}
 
-		return q.UpdateReplyVoteScore(ctx, entityID)
-	})
+		delta = -prev.Value
+		return nil
+	}); err != nil {
+		return pgtype.UUID{}, 0, err
+	}
+
+	return contentID, delta, nil
 }
 
 // GetVoteScore returns the aggregate vote score for an entity.

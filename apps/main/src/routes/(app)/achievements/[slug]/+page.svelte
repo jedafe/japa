@@ -27,6 +27,7 @@
 		Eye
 	} from 'lucide-svelte';
 	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
+	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import type { AchievementMilestoneType } from '$lib/types';
 	import type { IconComponent } from '$lib/components/ui/icons';
 	import type { PageData } from './$types';
@@ -270,4 +271,18 @@
 	<div class="mt-4">
 		<RecommendedContentCard items={data.recommendedContent ?? []} contentType="achievement" />
 	</div>
+
+	<!-- Unified comment engine (§49) — SSR-seeded, load-more driven by meta. -->
+	<CommentThread
+		comments={data.comments ?? []}
+		totalCount={achievement.comment_count}
+		commentsTotal={data.commentsTotal ?? null}
+		contentId={achievement.id}
+		contentType="achievement"
+		authed={data.authed}
+		currentUserId={data.currentUserId ?? ''}
+		canModerate={data.canEdit}
+		loadError={data.commentsLoadError ?? false}
+		deletedUserIds={new Set(data.deletedUserIds ?? [])}
+	/>
 </div>

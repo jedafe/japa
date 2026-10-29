@@ -108,21 +108,23 @@ func operation(operationID, summary, description string, tags []any, scope strin
 // these actual paths.
 func buildPublicPaths() map[string]any {
 	return map[string]any{
-		"/public/spaces":                spacesPath(),
-		"/public/spaces/{slug}":         spaceBySlugPath(),
-		"/public/content":               contentListPath(),
-		"/public/content/{id}":          contentByIDPath(),
-		"/public/content/{id}/comments": contentCommentsPath(),
-		"/public/users":                 usersListPath(),
-		"/public/users/{id}":            userByIDPath(),
-		"/public/tags":                  tagsPath(),
-		"/public/tags/{slug}":           tagBySlugPath(),
-		"/public/search":                searchPath(),
-		"/public/me":                    mePath(),
-		"/public/trending/content":      trendingEndpoint("listTrendingContent", "Trending content", "Retrieve trending content snapshots scored by recent engagement.", "api.read.content"),
-		"/public/trending/tags":         trendingEndpoint("listTrendingTags", "Trending tags", "Retrieve trending tag snapshots scored by recent follower growth.", "api.read.tags"),
-		"/public/trending/spaces":       trendingEndpoint("listTrendingSpaces", "Trending spaces", "Retrieve trending space snapshots scored by recent member activity.", "api.read.spaces"),
-		"/public/trending/users":        trendingEndpoint("listTrendingUsers", "Trending users", "Retrieve trending user snapshots scored by recent engagement.", "api.read.users.public"),
+		"/public/spaces":                       spacesPath(),
+		"/public/spaces/{slug}":                spaceBySlugPath(),
+		"/public/content":                      contentListPath(),
+		"/public/content/{id}":                 contentByIDPath(),
+		"/public/content/{id}/comments":        contentCommentsPath(),
+		"/public/content/{id}/reactions":       contentReactionsPath(),
+		"/public/content/{id}/reactions/{key}": contentReactionByKeyPath(),
+		"/public/users":                        usersListPath(),
+		"/public/users/{id}":                   userByIDPath(),
+		"/public/tags":                         tagsPath(),
+		"/public/tags/{slug}":                  tagBySlugPath(),
+		"/public/search":                       searchPath(),
+		"/public/me":                           mePath(),
+		"/public/trending/content":             trendingEndpoint("listTrendingContent", "Trending content", "Retrieve trending content snapshots scored by recent engagement.", "api.read.content"),
+		"/public/trending/tags":                trendingEndpoint("listTrendingTags", "Trending tags", "Retrieve trending tag snapshots scored by recent follower growth.", "api.read.tags"),
+		"/public/trending/spaces":              trendingEndpoint("listTrendingSpaces", "Trending spaces", "Retrieve trending space snapshots scored by recent member activity.", "api.read.spaces"),
+		"/public/trending/users":               trendingEndpoint("listTrendingUsers", "Trending users", "Retrieve trending user snapshots scored by recent engagement.", "api.read.users.public"),
 
 		// Agent Data API — visa & immigration (spec 2026-09-23-agent-data-api).
 		// Chi registers /public/visa-routes/compare before {id}; order in this
@@ -1794,4 +1796,50 @@ func extractDomain(url string) string {
 	}
 
 	return domain
+}
+
+// contentReactionsPath documents GET/POST /public/content/{id}/reactions —
+// parity with the session reaction endpoints (§14).
+func contentReactionsPath() map[string]any {
+	return map[string]any{
+		"get": operation("listContentReactions", "List content reactions", "Per-reaction-key aggregate counts for a content item. Invisible or absent content returns 404.", []any{"Content"}, "api.read.content", []any{uuidPathParam("id", "Content ID")}, map[string]any{
+			"200": map[string]any{"description": "Reaction counts", "content": map[string]any{"application/json": map[string]any{"schema": map[string]any{"type": "object", "properties": map[string]any{"data": map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{"reaction_key": map[string]any{"type": "string"}, "count": map[string]any{"type": "integer"}}}}}}}}},
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
+		"post": map[string]any{
+			"operationId":      "createContentReaction",
+			"summary":          "Add a reaction",
+			"description":      "Adds the key owner's reaction to a content item. reaction_key must be an enabled reaction type (or a curated achievement emoji on achievement posts). Idempotent — re-adding the same key returns 200. Invisible or absent content returns 404. Requires the admin-granted api.write.reactions scope.",
+			"tags":             []any{"Content"},
+			"x-required-scope": "api.write.reactions",
+			"parameters":       []any{uuidPathParam("id", "Content ID")},
+			"requestBody": map[string]any{
+				"required": true,
+				"content": map[string]any{"application/json": map[string]any{
+					"schema": map[string]any{"type": "object", "required": []any{"reaction_key"}, "properties": map[string]any{"reaction_key": map[string]any{"type": "string"}}},
+				}},
+			},
+			"responses": map[string]any{
+				"201": map[string]any{"description": "Reaction created"},
+				"400": refResponse("BadRequest"),
+				"401": refResponse("Unauthorized"),
+				"404": refResponse("NotFound"),
+				"429": refResponse("RateLimited"),
+			},
+		},
+	}
+}
+
+// contentReactionByKeyPath documents DELETE /public/content/{id}/reactions/{key}.
+func contentReactionByKeyPath() map[string]any {
+	return map[string]any{
+		"delete": operation("deleteContentReaction", "Remove a reaction", "Removes the key owner's reaction with the given key. Idempotent — removing a reaction the user never held returns 204.", []any{"Content"}, "api.write.reactions", []any{uuidPathParam("id", "Content ID"), map[string]any{"name": "key", "in": "path", "required": true, "schema": map[string]any{"type": "string"}, "description": "Reaction key"}}, map[string]any{
+			"204": map[string]any{"description": "Reaction removed"},
+			"401": refResponse("Unauthorized"),
+			"404": refResponse("NotFound"),
+			"429": refResponse("RateLimited"),
+		}),
+	}
 }

@@ -166,7 +166,7 @@ var settingsCatalog = map[string]settingMeta{
 	"agent.presearch_full_threshold":   {Type: "float", DefaultValue: "0.85", Min: 0, Max: 1, Description: "Relevance score threshold for FULL pre-search classification.", Panel: "control"},
 	"agent.cost_limit_per_request_usd": {Type: "float", DefaultValue: "0.50", Min: 0, Max: 1000, Description: "Per-request cost limit in USD — agent stops if exceeded.", Panel: "control"},
 	"agent.cost_per_1k_tokens":         {Type: "float", DefaultValue: "0.002", Min: 0, Description: "Deprecated agent-specific price; use ai.cost_per_1k_tokens_usd instead. Retained as fallback.", Panel: "control"},
-	"agent.guest_enabled":              {Type: "bool", DefaultValue: "false", Description: "Allow guest (unauthenticated) agent prompts (read-only, no draft creation).", Panel: "control"},
+	"agent.guest_enabled":              {Type: "bool", DefaultValue: "false", Description: "DEPRECATED — guest agent prompts are not implemented; /ai/chat requires authentication unconditionally.", Panel: "control"},
 	"agent.rate_limit_per_day":         {Type: "int", DefaultValue: "50", Min: 0, Max: 100000, Description: "Max agent requests per user per day (UTC).", Panel: "control"},
 	"agent.daily_budget_usd":           {Type: "float", DefaultValue: "5.00", Min: 0, Description: "Per-user daily AI spend hard cap in USD (UTC). Use 0 to disable budget enforcement.", Panel: "control"},
 	"agent.bulk_create_max_items":      {Type: "int", DefaultValue: "50", Min: 1, Max: 1000, Description: "Maximum number of content items a single content.bulk_create tool call may process.", Panel: "control"},
@@ -483,6 +483,7 @@ var settingsCatalog = map[string]settingMeta{
 	"assessment.enabled":            {Type: "bool", DefaultValue: "true", Description: "Global assessment toggle.", Panel: "control"},
 	"assessment.ai_roadmap_enabled": {Type: "bool", DefaultValue: "true", Description: "AI-assisted roadmap generation.", Panel: "control"},
 	"assessment.completion_points":  {Type: "int", DefaultValue: "50", Description: "Points on completion.", Panel: "control"},
+	"assessment.geo_content_resolution_enabled": {Type: "bool", DefaultValue: "true", Description: "Resolve roadmap steps to destination/stage/visa-specific published content.", Panel: "control"},
 	"assessment.subdomain":          {Type: "string", DefaultValue: "readiness", Description: "Standalone subdomain (ADR-086).", Panel: "control"},
 	"assessment.custom_domain":      {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 

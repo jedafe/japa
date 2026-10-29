@@ -2083,17 +2083,23 @@ func (s *Service) UpdateReactionType(ctx context.Context, key, emoji, label stri
 	return rt, nil
 }
 
-// DeleteReactionType removes a reaction type by platform and key. Existing reactions
-// referencing the key are cascade-deleted by the FK constraint.
+// DeleteReactionType removes a reaction type by key, then deletes the
+// reaction rows that referenced it. The reactions_reaction_key_fkey
+// constraint was dropped (migration 000954) so achievement reactions can
+// use emoji keys — orphan cleanup is now explicit, committed atomically
+// with the type delete.
 func (s *Service) DeleteReactionType(ctx context.Context, key string) error {
-	if err := s.write.DeleteReactionType(ctx,
+	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		if err := q.DeleteReactionType(ctx, key); err != nil {
+			return fmt.Errorf("deleting reaction type: %w", err)
+		}
 
-		key,
-	); err != nil {
-		return fmt.Errorf("deleting reaction type: %w", err)
-	}
+		if err := q.DeleteReactionsByKey(ctx, key); err != nil {
+			return fmt.Errorf("deleting reactions for key: %w", err)
+		}
 
-	return nil
+		return nil
+	})
 }
 
 // AddReaction adds a reaction from a user to an entity. Idempotent — if the
@@ -2112,31 +2118,74 @@ func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, 
 	return reaction, nil
 }
 
-// RemoveReaction removes a user's reaction from an entity.
-func (s *Service) RemoveReaction(ctx context.Context, entityType string, entityID, userID pgtype.UUID, reactionKey string) error {
-	if err := s.write.RemoveReaction(ctx, gen.RemoveReactionParams{
+// RemoveReaction removes a user's reaction from an entity. Returns whether
+// a row was actually deleted so callers only decrement the engagement
+// counter on a real removal (E-003).
+func (s *Service) RemoveReaction(ctx context.Context, entityType string, entityID, userID pgtype.UUID, reactionKey string) (bool, error) {
+	rows, err := s.write.RemoveReaction(ctx, gen.RemoveReactionParams{
 		EntityType:  entityType,
 		EntityID:    entityID,
 		UserID:      userID,
 		ReactionKey: reactionKey,
-	}); err != nil {
-		return fmt.Errorf("removing reaction: %w", err)
-	}
-
-	return nil
-}
-
-// ListReactionsByEntity returns all reactions for a given entity.
-func (s *Service) ListReactionsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.Reaction, error) {
-	reactions, err := s.read.ListReactionsByEntity(ctx, gen.ListReactionsByEntityParams{
-		EntityType: entityType,
-		EntityID:   entityID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing reactions by entity: %w", err)
+		return false, fmt.Errorf("removing reaction: %w", err)
 	}
 
-	return reactions, nil
+	return rows > 0, nil
+}
+
+// CanReactToContent reports whether the (authenticated) viewer may see —
+// and therefore react to — the content. Mirrors the comments visibility
+// cascade (C-001): published, not deleted/auto-hidden, live public or
+// member space, and the contents.visibility axis (private = author only).
+// Reactions on invisible or nonexistent content must not exist (E-002).
+func (s *Service) CanReactToContent(ctx context.Context, contentID, userID pgtype.UUID) (bool, error) {
+	visible, err := s.read.IsContentVisibleToUser(ctx, gen.IsContentVisibleToUserParams{
+		ContentID: contentID,
+		UserID:    userID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking content visibility for reaction: %w", err)
+	}
+
+	return visible, nil
+}
+
+// CanViewContentReactions is the guest-aware variant used by the public
+// reaction-counts read — 'members' content stays hidden from anonymous
+// viewers (same predicate as CanViewComments, §49).
+func (s *Service) CanViewContentReactions(ctx context.Context, contentID, viewerID pgtype.UUID, authed bool) (bool, error) {
+	visible, err := s.read.CanViewComments(ctx, gen.CanViewCommentsParams{
+		ContentID: contentID,
+		UserID:    viewerID,
+		Authed:    authed,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking content visibility for reactions: %w", err)
+	}
+
+	return visible, nil
+}
+
+// ListReactorsByEntity returns the "who reacted" rows (user display info
+// per reaction) for the ReactionRail popover.
+func (s *Service) ListReactorsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID, reactionKey *string, limit, offset int32) ([]gen.ListReactorsByEntityRow, error) {
+	key := ""
+	if reactionKey != nil {
+		key = *reactionKey
+	}
+	rows, err := s.read.ListReactorsByEntity(ctx, gen.ListReactorsByEntityParams{
+		EntityType:  entityType,
+		EntityID:    entityID,
+		ReactionKey: key,
+		PageLimit:   limit,
+		PageOffset:  offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing reactors: %w", err)
+	}
+	return rows, nil
 }
 
 // CountReactionsByEntity returns reaction counts grouped by reaction key.

@@ -10,6 +10,7 @@
 	import SearchLauncher from './SearchLauncher.svelte';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import type { Menu, MenuItem } from '$lib/types';
+	import { routeFeatureGateVisible } from './routeFeatureFlags';
 
 	let mobileMenuOpen = $state(false);
 	// Same scroll-hide behavior as AppShell's mobile topbar — slides away
@@ -22,15 +23,19 @@
 		logoDarkUrl?: string;
 		/** Navigation menu from GET /menus/main_sidebar — filtered to guest-visible items. */
 		menu: Menu | null;
+		/** Feature flags from /feature-flags — items whose route maps to a
+		 *  disabled flag are hidden so gated features never leak to guests. */
+		features?: Record<string, boolean>;
 	}
 
-	let { logoUrl = '', logoDarkUrl = '', menu }: Props = $props();
+	let { logoUrl = '', logoDarkUrl = '', menu, features = {} }: Props = $props();
 
-	// Filter to guest-visible items only (visibility === 'guest' or 'all').
+	// Filter to guest-visible items only (visibility === 'guest' or 'all'),
+	// then drop items whose route maps to a disabled feature flag.
 	const guestItems = $derived(
 		(menu?.items ?? []).filter((item: MenuItem) => {
 			if (item.visibility === 'authenticated') return false;
-			return true;
+			return routeFeatureGateVisible(item.url, features);
 		})
 	);
 </script>

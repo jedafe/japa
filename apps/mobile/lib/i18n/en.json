@@ -141,5 +141,16 @@
   "report.reason.other": "Other",
   "profile.blocked_users": "Blocked users",
   "profile.blocked_users_empty": "No blocked users",
-  "profile.unblock": "Unblock"
+  "profile.unblock": "Unblock",
+  "assessment.back": "Back",
+  "assessment.next": "Next",
+  "assessment.submit": "Submit & get score",
+  "assessment.retake": "Retake assessment",
+  "assessment.score": "Your score",
+  "assessment.dimensions": "Dimensions",
+  "assessment.roadmap": "Your roadmap",
+  "assessment.history": "History",
+  "assessment.required_error": "Please answer all required questions.",
+  "assessment.signin_hint": "Sign in to save this result and view your history.",
+  "assessment.sign_in": "Sign in"
 }

@@ -52,7 +52,7 @@ var Registry = []Feature{
 	// Social features
 	{Key: "feature.follow", Label: "Follow System", Description: "Follow users, organizations, and tags for personalized feeds", Default: true, Category: "Social"},
 	{Key: "feature.dm", Label: "Direct Messages", Description: "Private direct messaging between members", Default: true, Category: "Social"},
-	{Key: "feature.reactions", Label: "Reactions", Description: "Emoji reactions on content and comments", Default: true, Category: "Engagement"},
+	{Key: "feature.reactions", Label: "Reactions", Description: "Emoji reactions on content (comments use up/down votes per §49)", Default: true, Category: "Engagement"},
 	{Key: "feature.bookmarks", Label: "Bookmarks", Description: "Save and organize content for later reading", Default: true, Category: "Engagement"},
 	{Key: "feature.ratings_reviews", Label: "Ratings & Reviews", Description: "Star ratings and written reviews on rateable entities", Default: true, Category: "Engagement"},
 	{Key: "mentorship.enabled", Label: "Mentorship Matching", Description: "Mentor/mentee matching between experienced members and newcomers", Default: false, Category: "Social"},

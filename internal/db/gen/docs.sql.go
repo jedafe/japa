@@ -67,6 +67,31 @@ func (q *Queries) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const deleteDocPageVote = `-- name: DeleteDocPageVote :exec
+WITH del AS (
+    DELETE FROM doc_page_votes
+    WHERE doc_page_votes.page_id = $1 AND doc_page_votes.user_id = $2
+    RETURNING vote
+)
+UPDATE doc_pages SET
+    helpful_yes = helpful_yes - (SELECT COUNT(*)::int FROM del WHERE del.vote = 'up'),
+    helpful_no  = helpful_no  - (SELECT COUNT(*)::int FROM del WHERE del.vote = 'down')
+WHERE doc_pages.id = $1
+`
+
+type DeleteDocPageVoteParams struct {
+	PageID pgtype.UUID `json:"page_id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Atomic vote retraction + counter decrement — deleting the vote row and
+// moving the aggregate counters in one statement (§44 amendment 2: the
+// widget retracts on re-click, matching wiki page feedback).
+func (q *Queries) DeleteDocPageVote(ctx context.Context, arg DeleteDocPageVoteParams) error {
+	_, err := q.db.Exec(ctx, deleteDocPageVote, arg.PageID, arg.UserID)
+	return err
+}
+
 const getDocPageByID = `-- name: GetDocPageByID :one
 SELECT id, title, slug, audience, content, ai_generated, review_status,
  last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,

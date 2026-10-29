@@ -2,9 +2,13 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -12,12 +16,19 @@ import (
 type Store struct {
 	write *gen.Queries
 	read  *gen.Queries
+	// writePool enables multi-statement transactions (transactional batch
+	// dispatch, bulk preference upserts) — gen.Queries alone cannot BEGIN.
+	writePool *pgxpool.Pool
 }
 
 // NewStore creates a Store backed by the given gen.Queries instances.
 func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }
+
+// setWritePool attaches the writer pool used for transactions. Called from
+// NewServiceWithConfig where the pool is available.
+func (s *Store) setWritePool(p *pgxpool.Pool) { s.writePool = p }
 
 // insertNotification creates a new notification row and returns its ID.
 // BUG-005: now returns the notification ID so callers can include it in
@@ -91,12 +102,19 @@ func (s *Store) getUnreadCount(ctx context.Context, recipientID pgtype.UUID) (in
 }
 
 // markNotificationRead marks a single notification as read.
+// BUG-016: returns ErrNotificationNotFound when the id is unknown or owned
+// by another user instead of silently succeeding on 0 affected rows.
 func (s *Store) markNotificationRead(ctx context.Context, notificationID, recipientID pgtype.UUID) error {
-	if err := s.write.MarkNotificationRead(ctx, gen.MarkNotificationReadParams{
+	n, err := s.write.MarkNotificationRead(ctx, gen.MarkNotificationReadParams{
 		ID:          notificationID,
 		RecipientID: recipientID,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("marking notification read: %w", err)
+	}
+
+	if n == 0 {
+		return ErrNotificationNotFound
 	}
 
 	return nil
@@ -115,15 +133,39 @@ func (s *Store) markAllNotificationsRead(ctx context.Context, recipientID pgtype
 }
 
 // deleteNotification deletes a single notification.
+// BUG-016: returns ErrNotificationNotFound when the id is unknown or owned
+// by another user instead of silently succeeding on 0 affected rows.
 func (s *Store) deleteNotification(ctx context.Context, notificationID, recipientID pgtype.UUID) error {
-	if err := s.write.DeleteNotification(ctx, gen.DeleteNotificationParams{
+	n, err := s.write.DeleteNotification(ctx, gen.DeleteNotificationParams{
 		ID:          notificationID,
 		RecipientID: recipientID,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("deleting notification: %w", err)
 	}
 
+	if n == 0 {
+		return ErrNotificationNotFound
+	}
+
 	return nil
+}
+
+// hasUnreadNotificationForSubject reports whether an unread notification
+// already exists for (recipient, type, subject) — used by repeat-event
+// flows (DMs) to avoid stacking a second in-app row on the same subject.
+func (s *Store) hasUnreadNotificationForSubject(ctx context.Context, recipientID pgtype.UUID, nType, subjectType string, subjectID pgtype.UUID) (bool, error) {
+	has, err := s.read.HasUnreadNotificationForSubject(ctx, gen.HasUnreadNotificationForSubjectParams{
+		RecipientID:      recipientID,
+		NotificationType: nType,
+		SubjectType:      &subjectType,
+		SubjectID:        subjectID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("checking unread notification: %w", err)
+	}
+
+	return has, nil
 }
 
 // getNotificationPreferences returns user's notification preferences.
@@ -145,6 +187,29 @@ func (s *Store) upsertNotificationPreference(ctx context.Context, params gen.Ups
 	return nil
 }
 
+// upsertNotificationPreferencesTx applies a bulk preference update inside one
+// transaction — a mid-list failure must not leave a partial save (BUG-014).
+func (s *Store) upsertNotificationPreferencesTx(ctx context.Context, params []gen.UpsertNotificationPreferenceParams) error {
+	if s.writePool == nil {
+		return fmt.Errorf("upserting notification preferences: write pool not configured")
+	}
+
+	tx, err := s.writePool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("beginning preferences tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.write.WithTx(tx)
+	for _, p := range params {
+		if err := qtx.UpsertNotificationPreference(ctx, p); err != nil {
+			return fmt.Errorf("upserting notification preference %q: %w", p.NotificationType, err)
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
 // isBlocked reports whether either user has blocked the other (§41).
 // Used to suppress notifications from blocked actors.
 func (s *Store) isBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
@@ -152,22 +217,71 @@ func (s *Store) isBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, 
 }
 
 // getOpenBatchWindow returns an open, non-dispatched batch window.
-func (s *Store) getOpenBatchWindow(ctx context.Context, params gen.GetOpenBatchWindowParams) (gen.NotificationBatchWindow, error) {
+func (s *Store) getOpenBatchWindow(ctx context.Context, params gen.GetOpenBatchWindowParams) (gen.GetOpenBatchWindowRow, error) {
 	window, err := s.read.GetOpenBatchWindow(ctx, params)
 	if err != nil {
-		return gen.NotificationBatchWindow{}, fmt.Errorf("getting open batch window: %w", err)
+		return gen.GetOpenBatchWindowRow{}, fmt.Errorf("getting open batch window: %w", err)
 	}
 
 	return window, nil
 }
 
-// createBatchWindow creates a new batch dedup window.
-func (s *Store) createBatchWindow(ctx context.Context, params gen.CreateBatchWindowParams) error {
-	if err := s.write.CreateBatchWindow(ctx, params); err != nil {
-		return fmt.Errorf("creating batch window: %w", err)
+// upsertBatchWindow creates a batch window or resets/extends an existing one.
+// BUG-002: the UNIQUE constraint previously made post-dispatch re-batching
+// impossible. The upsert resets dispatched/expired windows and extends open
+// ones; returns the window id + close_at for the dispatch enqueue.
+func (s *Store) upsertBatchWindow(ctx context.Context, params gen.UpsertBatchWindowParams) (gen.UpsertBatchWindowRow, error) {
+	row, err := s.write.UpsertBatchWindow(ctx, params)
+	if err != nil {
+		return gen.UpsertBatchWindowRow{}, fmt.Errorf("upserting batch window: %w", err)
 	}
 
-	return nil
+	return row, nil
+}
+
+// dispatchWindowTx performs the batch dispatch inside a single transaction:
+// row-lock the window, skip when already dispatched, insert the aggregated
+// notification, mark dispatched, commit. BUG-018: previously insert and
+// mark-dispatched were separate statements, so a failure between them left a
+// window that would either retry-duplicate the notification or wedge.
+// Returns the new notification id, the window row, and whether this call
+// claimed the window (false when another worker already dispatched it).
+func (s *Store) dispatchWindowTx(ctx context.Context, windowID pgtype.UUID, insert gen.InsertNotificationParams) (pgtype.UUID, gen.NotificationBatchWindow, bool, error) {
+	if s.writePool == nil {
+		return pgtype.UUID{}, gen.NotificationBatchWindow{}, false, fmt.Errorf("dispatching batch window: write pool not configured")
+	}
+
+	tx, err := s.writePool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return pgtype.UUID{}, gen.NotificationBatchWindow{}, false, fmt.Errorf("beginning dispatch tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.write.WithTx(tx)
+
+	window, err := qtx.GetBatchWindowForUpdate(ctx, windowID)
+	if err != nil {
+		return pgtype.UUID{}, gen.NotificationBatchWindow{}, false, fmt.Errorf("locking batch window: %w", err)
+	}
+
+	if window.Dispatched {
+		return pgtype.UUID{}, window, false, nil
+	}
+
+	notifID, err := qtx.InsertNotification(ctx, insert)
+	if err != nil {
+		return pgtype.UUID{}, window, false, fmt.Errorf("inserting batch notification: %w", err)
+	}
+
+	if err := qtx.MarkBatchWindowDispatched(ctx, windowID); err != nil {
+		return pgtype.UUID{}, window, false, fmt.Errorf("marking batch window dispatched: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return pgtype.UUID{}, window, false, fmt.Errorf("committing dispatch tx: %w", err)
+	}
+
+	return notifID, window, true, nil
 }
 
 // extendBatchWindow adds an actor to an existing batch window.
@@ -254,28 +368,64 @@ func (s *Store) adminCountNotificationTypes(ctx context.Context, p gen.AdminCoun
 	return count, nil
 }
 
-// upsertNotificationType inserts a notification type, updating label/description on conflict.
-func (s *Store) upsertNotificationType(ctx context.Context, p gen.UpsertNotificationTypeParams) error {
-	if err := s.write.UpsertNotificationType(ctx, p); err != nil {
-		return fmt.Errorf("upserting notification type: %w", err)
+// createNotificationType inserts a notification type. A duplicate key
+// surfaces as ErrNotificationTypeExists (SQLSTATE 23505 → 409 at the
+// handler) instead of silently overwriting the row.
+func (s *Store) createNotificationType(ctx context.Context, p gen.CreateNotificationTypeParams) error {
+	if err := s.write.CreateNotificationType(ctx, p); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrNotificationTypeExists
+		}
+
+		return fmt.Errorf("creating notification type: %w", err)
 	}
 
 	return nil
+}
+
+// getEnabledNotificationTypes returns enabled types only — the member-facing
+// /me/notification-types contract (BUG-015).
+func (s *Store) getEnabledNotificationTypes(ctx context.Context) ([]gen.NotificationType, error) {
+	rows, err := s.read.GetEnabledNotificationTypes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting enabled notification types: %w", err)
+	}
+
+	types := make([]gen.NotificationType, len(rows))
+	for i, r := range rows {
+		types[i] = toNotificationType(gen.GetNotificationTypesRow(r))
+	}
+
+	return types, nil
 }
 
 // updateNotificationType updates an existing notification type definition.
+// BUG-019: returns ErrNotificationTypeNotFound when the key does not exist
+// instead of silently succeeding on 0 affected rows.
 func (s *Store) updateNotificationType(ctx context.Context, p gen.UpdateNotificationTypeParams) error {
-	if err := s.write.UpdateNotificationType(ctx, p); err != nil {
+	n, err := s.write.UpdateNotificationType(ctx, p)
+	if err != nil {
 		return fmt.Errorf("updating notification type: %w", err)
+	}
+
+	if n == 0 {
+		return ErrNotificationTypeNotFound
 	}
 
 	return nil
 }
 
-// deleteNotificationType removes a notification type definition.
+// deleteNotificationType disables a notification type (§35: DELETE = disable).
+// BUG-007/019: ErrNotificationTypeNotFound when the key does not exist.
 func (s *Store) deleteNotificationType(ctx context.Context, key string) error {
-	if err := s.write.DeleteNotificationType(ctx, key); err != nil {
-		return fmt.Errorf("deleting notification type: %w", err)
+	n, err := s.write.DeleteNotificationType(ctx, key)
+	if err != nil {
+		return fmt.Errorf("disabling notification type: %w", err)
+	}
+
+	if n == 0 {
+		return ErrNotificationTypeNotFound
 	}
 
 	return nil

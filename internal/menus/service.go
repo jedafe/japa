@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 
+	"net/http"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 )
 
 // PermissionResolver resolves a user's full permission set in one call.
@@ -22,9 +25,11 @@ type PermissionResolver interface {
 }
 
 // FeatureChecker resolves platform-level feature flags so the menu resolver can
-// prune items tied to disabled features.
+// prune items tied to disabled features. EvalFlag is used for items carrying a
+// feature_flag so surface/geo/audience rules apply, not just the global toggle.
 type FeatureChecker interface {
 	IsEnabled(ctx context.Context, key string) bool
+	EvalFlag(ctx context.Context, key string, sc features.CallerScope) features.EvalResult
 }
 
 // stringSettingsReader is the minimal system_settings reader contract for
@@ -66,6 +71,19 @@ func NewServiceWithPerms(database *db.DB, perms PermissionResolver) *Service {
 // SetFeatureChecker wires a feature flag resolver for menu item filtering.
 func (s *Service) SetFeatureChecker(f FeatureChecker) {
 	s.features = f
+}
+
+// CallerScope builds the request-scoped flag scope (validated X-JC-Surface,
+// geo context, RBAC audience) for menu item filtering. Returns a zero scope —
+// global flag behavior — when the checker can't build scopes.
+func (s *Service) CallerScope(r *http.Request) features.CallerScope {
+	type scopeBuilder interface {
+		BuildScope(*http.Request, string) features.CallerScope
+	}
+	if sb, ok := s.features.(scopeBuilder); ok {
+		return sb.BuildScope(r, features.SurfaceFrom(r))
+	}
+	return features.CallerScope{}
 }
 
 // SetSettings wires a system_settings reader for the
@@ -130,8 +148,9 @@ func (s *Service) GetMenu(ctx context.Context, id pgtype.UUID) (*MenuResponse, e
 	}, nil
 }
 
-// GetMenuBySlug is an exported method.
-func (s *Service) GetMenuBySlug(ctx context.Context, slug string, userGroupIDs map[string]bool, isAuthenticated bool, userID pgtype.UUID) (*MenuResponse, error) {
+// GetMenuBySlug is an exported method. The scope carries the caller's surface,
+// geo, and audience for feature_flag pruning (see CallerScope).
+func (s *Service) GetMenuBySlug(ctx context.Context, slug string, userGroupIDs map[string]bool, isAuthenticated bool, userID pgtype.UUID, scope features.CallerScope) (*MenuResponse, error) {
 	menu, err := s.store.getMenuBySlug(ctx, slug)
 	if err != nil {
 		return nil, fmt.Errorf("getting menu by slug: %w", err)
@@ -166,7 +185,7 @@ func (s *Service) GetMenuBySlug(ctx context.Context, slug string, userGroupIDs m
 		// not in the user's resolved permissions are pruned.)
 	}
 
-	filteredItems := filterMenuItems(ctx, jsonItems, userGroupIDs, isAuthenticated, userPerms, s.features)
+	filteredItems := filterMenuItems(ctx, jsonItems, userGroupIDs, isAuthenticated, userPerms, s.features, scope)
 	// ADR-128: shape the tree for the requester's journey class — hide_paths
 	// drop items, pin_paths promote them ahead of unpinned siblings.
 	treeItems := s.applyIntentExperience(ctx, buildMenuTree(filteredItems))
@@ -470,7 +489,7 @@ func genMenuItemsToJSON(rows []gen.ListMenuItemsRow) []MenuItem {
 // check). Items with a non-empty feature_flag are shown only when the flag is
 // enabled for the platform. Items with no permission_node are visible to everyone
 // per visibility rules.
-func filterMenuItems(ctx context.Context, items []MenuItem, userGroupIDs map[string]bool, isAuthenticated bool, userPerms map[string]bool, features FeatureChecker) []MenuItem {
+func filterMenuItems(ctx context.Context, items []MenuItem, userGroupIDs map[string]bool, isAuthenticated bool, userPerms map[string]bool, features FeatureChecker, scope features.CallerScope) []MenuItem {
 	var filtered []MenuItem
 
 	for _, item := range items {
@@ -517,11 +536,17 @@ func filterMenuItems(ctx context.Context, items []MenuItem, userGroupIDs map[str
 			}
 		}
 		// Feature-flag gating: an item with a non-empty feature_flag is shown
-		// only when the flag is enabled for the platform. The check is performed
-		// regardless of auth state because disabled features are hidden from
-		// everyone. Fail closed if the feature checker is unavailable.
+		// only when the flag resolves enabled AND visible for this caller —
+		// surface/geo/audience rules prune it too, not just the global toggle.
+		// The check is performed regardless of auth state because disabled
+		// features are hidden from everyone. Fail closed if the feature
+		// checker is unavailable.
 		if item.FeatureFlag != nil && *item.FeatureFlag != "" {
-			if features == nil || !features.IsEnabled(ctx, *item.FeatureFlag) {
+			if features == nil {
+				continue
+			}
+			res := features.EvalFlag(ctx, *item.FeatureFlag, scope)
+			if !res.Enabled || !res.Visible {
 				continue
 			}
 		}

@@ -16,7 +16,7 @@
 	import { t } from '$lib/i18n';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import type { Menu, MenuItem, SessionUser, UserSpaceRef } from '$lib/types';
-	import { routeFeatureFlagForPath } from '$lib/components/shell/routeFeatureFlags';
+	import { routeFeatureGateVisible } from '$lib/components/shell/routeFeatureFlags';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import AdSlot from '$lib/components/ui/AdSlot.svelte';
@@ -65,14 +65,12 @@
 	// flag that is disabled, the item is hidden entirely.
 	const items = $derived(
 		(menu?.items ?? []).filter((item: MenuItem) => {
-			if (item.visibility === 'authenticated') return !!user;
-			if (item.visibility === 'guest') return !user;
-			const flag = routeFeatureFlagForPath(item.url);
-			// An array maps a route to a composite surface (e.g.
-			// /messages/bookings) — visible when ANY listed flag is on.
-			const flags = Array.isArray(flag) ? flag : flag ? [flag] : [];
-			if (flags.length > 0 && !flags.some((f) => features[f] === true)) return false;
-			return true;
+			if (item.visibility === 'authenticated' && !user) return false;
+			if (item.visibility === 'guest' && user) return false;
+			// Feature gating applies to every item — a gated route stays
+			// hidden when its flag is off regardless of the item's
+			// auth visibility.
+			return routeFeatureGateVisible(item.url, features);
 		})
 	);
 

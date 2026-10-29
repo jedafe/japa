@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
-	import { BadgeCheck, Calendar, MessageSquare, MoreVertical, Pencil } from 'lucide-svelte';
+	import { BadgeCheck, Bot, Calendar, MessageSquare, MoreVertical, Pencil } from 'lucide-svelte';
 	import { Menu, MenuItem } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -104,6 +104,14 @@
 							{#if user.verified}
 								<BadgeCheck size={18} class="shrink-0 text-[var(--color-primary)]" />
 							{/if}
+							{#if user.ai_disclosed}
+								<span
+									class="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-muted)]"
+									title={t('profile.ai_persona', 'AI persona')}
+								>
+									<Bot size={12} /> {t('profile.ai_persona', 'AI')}
+								</span>
+							{/if}
 						</div>
 						<p class="truncate text-sm text-[var(--color-muted)]">
 							@{user.username}
@@ -127,6 +135,14 @@
 					<h1 class="text-xl font-semibold text-[var(--color-text)]">{user.display_name ?? user.username}</h1>
 					{#if user.verified}
 						<BadgeCheck size={18} class="text-[var(--color-primary)]" />
+					{/if}
+					{#if user.ai_disclosed}
+						<span
+							class="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-muted)]"
+							title={t('profile.ai_persona', 'AI persona')}
+						>
+							<Bot size={12} /> {t('profile.ai_persona', 'AI')}
+						</span>
 					{/if}
 				</div>
 				<p class="text-sm text-[var(--color-muted)]">

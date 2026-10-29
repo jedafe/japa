@@ -51,6 +51,36 @@
 
 	const features = $derived((page.data.features as Record<string, boolean> | undefined) ?? {});
 	const reactionsEnabled = $derived(features['feature.reactions'] ?? true);
+
+	// "Who reacted" — clicking a reaction row's count expands the reactor
+	// list (GET /content/{id}/reactors?key=). dev.to parity.
+	type Reactor = { user_id: string; username: string; display_name: string; reaction_key: string };
+	const REACTORS_PAGE_SIZE = 10;
+	let expandedKey = $state<string | null>(null);
+	let reactors = $state<Reactor[]>([]);
+	let reactorsLoading = $state(false);
+
+	async function toggleReactorList(key: string, e: Event) {
+		e.stopPropagation();
+		e.preventDefault();
+		if (expandedKey === key) {
+			expandedKey = null;
+			return;
+		}
+		expandedKey = key;
+		reactorsLoading = true;
+		try {
+			const res = await fetch(
+				`/api/v1/content/${contentId}/reactors?key=${encodeURIComponent(key)}&page_size=${REACTORS_PAGE_SIZE}`
+			);
+			const json = await res.json();
+			reactors = res.ok ? (json.data ?? []) : [];
+		} catch {
+			reactors = [];
+		} finally {
+			reactorsLoading = false;
+		}
+	}
 	const bookmarksEnabled = $derived(features['feature.bookmarks'] ?? true);
 
 	const isHorizontal = $derived(horizontal || bottom);
@@ -305,9 +335,34 @@
 		showReactions = !showReactions;
 	}
 
+	// E-010: coarse pointers (touch tablets, large touch screens) have no
+	// hover — on the non-bottom layouts the first tap must OPEN the picker,
+	// not toggle the primary reaction (same approach as ReactionButton).
+	function isCoarsePointer(e: MouseEvent): boolean {
+		return (
+			(e as PointerEvent).pointerType === 'touch' ||
+			(typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches)
+		);
+	}
+
+	function onHeartClick(e: MouseEvent) {
+		if (bottom) {
+			toggleReactionMenu();
+			return;
+		}
+		if (isCoarsePointer(e)) {
+			openedViaTouch = true;
+			openReactions();
+			return;
+		}
+		toggleReaction(primaryKey);
+	}
+
+	let openedViaTouch = $state(false);
+
 	function pickReaction(reactionKey: string) {
 		toggleReaction(reactionKey);
-		if (bottom) showReactions = false;
+		if (bottom || openedViaTouch) showReactions = false;
 	}
 
 	function openReactions() {
@@ -329,6 +384,10 @@
 	const primaryReaction = $derived(
 		reactionTypes.find((r) => r.key === 'like') ?? reactionTypes[0] ?? { key: 'like', emoji: '👍', label: t('blog.like', 'Like'), enabled: true, position: 0 }
 	);
+	// Render the configured emoji as the trigger glyph when the primary
+	// reaction isn't heart-like — a 'celebrate' primary shouldn't read as ❤.
+	const heartLikeKeys = ['like', 'love', 'heart'];
+	const useHeartGlyph = $derived(heartLikeKeys.includes(primaryReaction.key));
 	const primaryKey = $derived(primaryReaction.key);
 	const primaryActive = $derived(activeReactions.has(primaryKey));
 	const totalReactions = $derived(
@@ -363,7 +422,7 @@
 		>
 			<button
 				type="button"
-				onclick={() => (bottom ? toggleReactionMenu() : toggleReaction(primaryKey))}
+				onclick={onHeartClick}
 				class="flex {isHorizontal ? 'w-full flex-row items-center justify-center gap-1.5' : 'flex-col items-center gap-1'} transition-colors"
 				aria-label={primaryReaction.label}
 				aria-pressed={primaryActive}
@@ -374,7 +433,11 @@
 				<span
 					class="grid h-9 w-9 place-items-center rounded-full text-lg transition-colors {primaryActive ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
 				>
-					<Heart size={20} fill={primaryActive ? 'currentColor' : 'none'} />
+					{#if useHeartGlyph}
+						<Heart size={20} fill={primaryActive ? 'currentColor' : 'none'} />
+					{:else}
+						<span class="text-lg leading-none">{primaryReaction.emoji}</span>
+					{/if}
 				</span>
 				<span class="{isHorizontal ? 'text-sm' : 'text-[11px]'} font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">
 					{totalReactions > 0 ? totalReactions : ''}
@@ -408,10 +471,34 @@
 							>
 								<span class="text-lg">{r.emoji}</span>
 								<span class="flex-1 truncate text-start">{r.label}</span>
-								<span class="text-xs text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">
-									{count > 0 ? count : ''}
-								</span>
+								{#if count > 0}
+									<span
+										role="button"
+										tabindex="0"
+										class="text-xs text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums] hover:text-[var(--color-primary)] hover:underline"
+										onclick={(e) => toggleReactorList(r.key, e)}
+										onkeydown={(e) => e.key === 'Enter' && toggleReactorList(r.key, e)}
+										title={t('blog.who_reacted', 'Who reacted')}
+									>
+										{count}
+									</span>
+								{/if}
 							</button>
+							{#if expandedKey === r.key}
+								<div class="max-h-32 overflow-y-auto rounded-md bg-[var(--color-surface-subtle)] px-2 py-1.5">
+									{#if reactorsLoading}
+										<p class="text-xs text-[var(--color-text-subtle)]">…</p>
+									{:else if reactors.length === 0}
+										<p class="text-xs text-[var(--color-text-subtle)]">—</p>
+									{:else}
+										{#each reactors as u (u.user_id)}
+											<div class="truncate py-0.5 text-xs text-[var(--color-text)]">
+												{u.display_name || u.username}
+											</div>
+										{/each}
+									{/if}
+								</div>
+							{/if}
 						{/each}
 					</div>
 				</div>

@@ -412,6 +412,13 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, username strin
 		Role:            p.PublicRole,
 	}
 
+	// §68 disclosure toggle: surface ai_disclosed only when the persona
+	// backing this profile opted into public disclosure. The internal
+	// is_bot flag is unaffected by the toggle.
+	if p.PersonaDisclosureMode != nil && *p.PersonaDisclosureMode == "disclosed" {
+		resp.AIDisclosed = true
+	}
+
 	resp.Verified = p.Verified
 	resp.VerificationType = p.VerificationType
 

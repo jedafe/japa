@@ -1,9 +1,12 @@
 -- Push notification subscriptions and tokens (Section 29).
 
 -- name: ListPushSubscriptionsByUser :many
+-- ORDER BY created_at ASC — the oldest row is trimmed first when the
+-- per-user subscription cap is exceeded.
 SELECT id, endpoint, p256dh, auth_key
 FROM push_subscriptions
-WHERE user_id = @user_id;
+WHERE user_id = @user_id
+ORDER BY created_at ASC;
 
 -- name: GetPushSubscriptionByID :one
 SELECT id, user_id, endpoint, p256dh, auth_key

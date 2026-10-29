@@ -131,6 +131,20 @@ UPDATE doc_pages SET
         ELSE 0 END
 WHERE doc_pages.id = @page_id;
 
+-- name: DeleteDocPageVote :exec
+-- Atomic vote retraction + counter decrement — deleting the vote row and
+-- moving the aggregate counters in one statement (§44 amendment 2: the
+-- widget retracts on re-click, matching wiki page feedback).
+WITH del AS (
+    DELETE FROM doc_page_votes
+    WHERE doc_page_votes.page_id = @page_id AND doc_page_votes.user_id = @user_id
+    RETURNING vote
+)
+UPDATE doc_pages SET
+    helpful_yes = helpful_yes - (SELECT COUNT(*)::int FROM del WHERE del.vote = 'up'),
+    helpful_no  = helpful_no  - (SELECT COUNT(*)::int FROM del WHERE del.vote = 'down')
+WHERE doc_pages.id = @page_id;
+
 -- name: ListPublishedDocPages :many
 SELECT id, title, slug, audience, parent_id, position, category, subcategory, created_at
 FROM doc_pages

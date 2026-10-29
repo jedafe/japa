@@ -100,29 +100,6 @@ WHERE ar.user_id = @user_id
 -- Admin: list all users' results (paginated, filterable by score range).
 -- =====================================================================
 
--- name: AdminListAssessmentResults :many
-SELECT
- ar.*,
- u.username AS username,
- fs.field_values AS submission_values
-FROM assessment_results ar
-LEFT JOIN users u ON u.id = ar.user_id
-JOIN form_submissions fs ON fs.id = ar.submission_id
-WHERE (@min_score::int = 0 OR ar.total_score >= @min_score)
- AND (@max_score::int = 0 OR ar.total_score <= @max_score)
-ORDER BY ar.created_at DESC
-LIMIT @page_limit OFFSET @page_offset;
-
--- name: AdminCountAssessmentResults :one
-SELECT COUNT(*) AS count
-FROM assessment_results
-WHERE (@min_score::int = 0 OR total_score >= @min_score)
- AND (@max_score::int = 0 OR total_score <= @max_score);
-
--- =====================================================================
--- Admin: score distribution — count of results per threshold label.
--- =====================================================================
-
 -- name: AdminAssessmentScoreDistribution :many
 SELECT
  threshold_label,

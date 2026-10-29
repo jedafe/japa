@@ -106,6 +106,9 @@
 			reactionTypes[0] ?? { key: 'love', emoji: '❤️', label: t('sources.love', 'Love'), enabled: true, position: 0 }
 	);
 	const primaryKey = $derived(primaryReaction.key);
+	// Render the configured emoji as the trigger glyph when the primary
+	// reaction isn't heart-like.
+	const useHeartGlyph = $derived(['like', 'love', 'heart'].includes(primaryKey));
 	const primaryActive = $derived(activeReactions.has(primaryKey));
 	const totalReactions = $derived(
 		countsLoaded
@@ -222,7 +225,11 @@
 			aria-pressed={triggerActive}
 			disabled={!!reactionPending}
 		>
-			<Heart {size} fill={triggerIconFill} aria-hidden="true" />
+			{#if useHeartGlyph}
+				<Heart {size} fill={triggerIconFill} aria-hidden="true" />
+			{:else}
+				<span class="text-base leading-none">{primaryReaction.emoji}</span>
+			{/if}
 			<span class="min-w-[1.25ch] tabular-nums">{formatCount(totalReactions)}</span>
 		</Popover.Trigger>
 

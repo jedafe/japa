@@ -2,10 +2,12 @@ package comments
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -202,23 +204,33 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.
 		return
 	}
 
+	// Fetch the parent content once — needed for the author notify, the
+	// private-space mention filter, AND the notification deep link
+	// (subject_title/action_url so aggregated rows are clickable, BUG-009).
+	var subjectTitle, subjectURL string
+	var content gen.GetContentByIDRow
+
+	content, contentErr := s.read.GetContentByID(ctx,
+		comment.ContentID,
+	)
+	if contentErr != nil {
+		slog.Warn("comments: failed to fetch content for notification context", "content_id", comment.ContentID.String(), "error", contentErr)
+	} else {
+		subjectTitle = content.Title
+		subjectURL = commentContentURL(content.ContentType, content.Slug)
+	}
+
 	// 1. Notify content author (for top-level comments only).
-	if !comment.ParentID.Valid {
-		content, err := s.read.GetContentByID(ctx,
-			comment.ContentID,
-		)
-		if err != nil {
-			slog.Warn("comments: failed to fetch content for author notification", "content_id", comment.ContentID.String(), "error", err)
-		} else if content.AuthorID.Valid && content.AuthorID != comment.AuthorUserID {
-			if err := dispatcher.DispatchNotification(
-				ctx, content.AuthorID,
-				notifications.TypeContentComment, "",
-				comment.AuthorUserID,
-				"comment", comment.ID,
-				"", "", "",
-			); err != nil {
-				slog.Warn("comments: failed to dispatch content.comment notification", "error", err)
-			}
+	if !comment.ParentID.Valid && contentErr == nil &&
+		content.AuthorID.Valid && content.AuthorID != comment.AuthorUserID {
+		if err := dispatcher.DispatchNotification(
+			ctx, content.AuthorID,
+			notifications.TypeContentComment, subjectTitle,
+			comment.AuthorUserID,
+			"comment", comment.ID,
+			subjectURL, "", "",
+		); err != nil {
+			slog.Warn("comments: failed to dispatch content.comment notification", "error", err)
 		}
 	}
 
@@ -232,10 +244,10 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.
 		} else if parent.AuthorUserID.Valid && parent.AuthorUserID != comment.AuthorUserID {
 			if err := dispatcher.DispatchNotification(
 				ctx, parent.AuthorUserID,
-				notifications.TypeCommentReply, "",
+				notifications.TypeCommentReply, subjectTitle,
 				comment.AuthorUserID,
 				"comment", comment.ID,
-				"", "", "",
+				subjectURL, "", "",
 			); err != nil {
 				slog.Warn("comments: failed to dispatch comment.reply notification", "error", err)
 			}
@@ -253,13 +265,10 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.
 	}
 
 	if s.mentionCheckers != nil {
-		// Fetch the content to get its spaceID for private-space filtering.
-		content, err := s.read.GetContentByID(ctx,
-			comment.ContentID,
-		)
-		if err != nil {
+		// Reuse the already-fetched content row for private-space filtering.
+		if contentErr != nil {
 			slog.Warn("comments: failed to fetch content for mention filtering",
-				"content_id", comment.ContentID.String(), "error", err)
+				"content_id", comment.ContentID.String(), "error", contentErr)
 		} else {
 			isPrivateSpace := false
 
@@ -293,13 +302,31 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.
 
 		if err := dispatcher.DispatchNotification(
 			ctx, m.ID,
-			"mention.comment", "",
+			"mention.comment", subjectTitle,
 			comment.AuthorUserID,
 			"comment", comment.ID,
-			"", "", "",
+			subjectURL, "", "",
 		); err != nil {
 			slog.Warn("comments: failed to dispatch mention.comment notification", "user_id", m.ID.String(), "error", err)
 		}
+	}
+}
+
+// commentContentURL builds the frontend deep link for a comment's parent
+// content — blog posts use /blog/{slug}, forum threads /forum/{slug},
+// everything else /content/{slug} (mirrors OverviewView.contentUrl).
+func commentContentURL(contentType, slug string) string {
+	if slug == "" {
+		return ""
+	}
+
+	switch contentType {
+	case "blog_post":
+		return "/blog/" + slug
+	case "forum_thread":
+		return "/forum/" + slug
+	default:
+		return "/content/" + slug
 	}
 }
 
@@ -319,18 +346,30 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, comment gen.
 		return
 	}
 
+	// Content fetch doubles as the notification deep-link context (BUG-009).
+	var subjectTitle, subjectURL string
+	var content gen.GetContentByIDRow
+
+	content, contentErr := s.read.GetContentByID(ctx,
+		comment.ContentID,
+	)
+	if contentErr != nil {
+		slog.Warn("comments: failed to fetch content for mention notification context", "content_id", comment.ContentID.String(), "error", contentErr)
+	} else {
+		subjectTitle = content.Title
+		subjectURL = commentContentURL(content.ContentType, content.Slug)
+	}
+
 	mentionedUsers, err := mentions.ExtractMentions(comment.Body)
 	if err != nil {
 		return
 	}
 
 	if s.mentionCheckers != nil {
-		content, err := s.read.GetContentByID(ctx,
-			comment.ContentID,
-		)
-		if err != nil {
+		// Reuse the already-fetched content row for private-space filtering.
+		if contentErr != nil {
 			slog.Warn("comments: failed to fetch content for mention filtering",
-				"content_id", comment.ContentID.String(), "error", err)
+				"content_id", comment.ContentID.String(), "error", contentErr)
 		} else {
 			isPrivateSpace := false
 
@@ -361,10 +400,10 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, comment gen.
 
 		if err := dispatcher.DispatchNotification(
 			ctx, m.ID,
-			"mention.comment", "",
+			"mention.comment", subjectTitle,
 			comment.AuthorUserID,
 			"comment", comment.ID,
-			"", "", "",
+			subjectURL, "", "",
 		); err != nil {
 			slog.Warn("comments: failed to dispatch mention.comment notification on edit", "user_id", m.ID.String(), "error", err)
 		}
@@ -853,36 +892,58 @@ func (s *Service) checkCommentVisible(ctx context.Context, commentID, userID pgt
 
 // VoteComment upserts a vote on a comment and recalculates the vote score.
 // The target must be a live published comment — votes on deleted, removed, or
-// nonexistent comments are rejected (C-007).
-func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID, value int16) error {
+// nonexistent comments are rejected (C-007). Returns the parent content ID
+// and the net vote-score delta so the caller can feed the engagement
+// counter (E-006).
+func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID, value int16) (pgtype.UUID, int16, error) {
 	if value != 1 && value != -1 {
-		return fmt.Errorf("vote value must be 1 or -1: %w", errpkg.ErrInvalid)
+		return pgtype.UUID{}, 0, fmt.Errorf("vote value must be 1 or -1: %w", errpkg.ErrInvalid)
 	}
 
 	target, err := s.read.GetComment(ctx,
 		commentID,
 	)
 	if err != nil {
-		return fmt.Errorf("getting comment for vote: %w", err)
+		return pgtype.UUID{}, 0, fmt.Errorf("getting comment for vote: %w", err)
 	}
 
 	if target.DeletedAt.Valid || target.Status != "published" {
-		return fmt.Errorf("%w: comment", errpkg.ErrNotFound)
+		return pgtype.UUID{}, 0, fmt.Errorf("%w: comment", errpkg.ErrNotFound)
+	}
+
+	// Self-votes are rejected — upvoting your own comment inflates the score
+	// signal (same policy as forum votes).
+	if target.AuthorUserID == userID {
+		return pgtype.UUID{}, 0, fmt.Errorf("%w: cannot vote on your own comment", errpkg.ErrInvalid)
 	}
 
 	// C-014: votes only count on comments the voter can actually see — the
 	// comment is only as visible as its parent content.
 	visible, err := s.CanViewComments(ctx, target.ContentID, userID, true)
 	if err != nil {
-		return err
+		return pgtype.UUID{}, 0, err
 	}
 
 	if !visible {
-		return fmt.Errorf("%w: comment", errpkg.ErrNotFound)
+		return pgtype.UUID{}, 0, fmt.Errorf("%w: comment", errpkg.ErrNotFound)
 	}
 
 	// The vote upsert and the score recalculation commit atomically (C-010).
-	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+	// The previous vote is read inside the tx so the returned delta is the
+	// true score change (new=+value, switch=±2, repeat=0).
+	var delta int16
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		prev, err := q.GetCommentVote(ctx, gen.GetCommentVoteParams{
+			CommentID: commentID,
+			UserID:    userID,
+		})
+		prevValue := int16(0)
+		if err == nil {
+			prevValue = prev.Value
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("getting previous comment vote: %w", err)
+		}
+
 		if _, err := q.UpsertCommentVote(ctx, gen.UpsertCommentVoteParams{
 			CommentID: commentID,
 			UserID:    userID,
@@ -897,14 +958,42 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 			return fmt.Errorf("recalculating comment vote score: %w", err)
 		}
 
+		delta = value - prevValue
 		return nil
-	})
+	}); err != nil {
+		return pgtype.UUID{}, 0, err
+	}
+
+	return target.ContentID, delta, nil
 }
 
 // RemoveCommentVote removes a user's vote and recalculates the score.
-// Platform-scoped per Guide §4.2/§9 (SEC-001).
-func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtype.UUID) error {
-	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+// Platform-scoped per Guide §4.2/§9 (SEC-001). Returns the parent content
+// ID and the net score delta (the negated previous vote, 0 when no vote
+// existed) for the engagement counter (E-006). Idempotent: a missing
+// comment is a no-op success, matching prior behavior.
+func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtype.UUID) (pgtype.UUID, int16, error) {
+	target, err := s.read.GetComment(ctx, commentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, 0, nil
+		}
+		return pgtype.UUID{}, 0, fmt.Errorf("getting comment for vote removal: %w", err)
+	}
+
+	var delta int16
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		prev, err := q.GetCommentVote(ctx, gen.GetCommentVoteParams{
+			CommentID: commentID,
+			UserID:    userID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil // nothing to remove
+			}
+			return fmt.Errorf("getting previous comment vote: %w", err)
+		}
+
 		if err := q.DeleteCommentVote(ctx, gen.DeleteCommentVoteParams{
 			CommentID: commentID,
 			UserID:    userID,
@@ -918,8 +1007,13 @@ func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtyp
 			return fmt.Errorf("recalculating comment vote score: %w", err)
 		}
 
+		delta = -prev.Value
 		return nil
-	})
+	}); err != nil {
+		return pgtype.UUID{}, 0, err
+	}
+
+	return target.ContentID, delta, nil
 }
 
 // ---------------------------------------------------------------------------

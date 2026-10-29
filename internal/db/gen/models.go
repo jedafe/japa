@@ -353,6 +353,7 @@ type AdminBroadcast struct {
 	ScheduledAt    pgtype.Timestamptz `json:"scheduled_at"`
 	Target         string             `json:"target"`
 	TargetID       pgtype.UUID        `json:"target_id"`
+	ClaimedAt      pgtype.Timestamptz `json:"claimed_at"`
 }
 
 type AdsCampaign struct {
@@ -2774,6 +2775,8 @@ type NotificationBatchWindow struct {
 	WindowOpenAt     pgtype.Timestamptz `json:"window_open_at"`
 	WindowCloseAt    pgtype.Timestamptz `json:"window_close_at"`
 	Dispatched       bool               `json:"dispatched"`
+	SubjectTitle     *string            `json:"subject_title"`
+	ActionUrl        *string            `json:"action_url"`
 }
 
 type NotificationPreference struct {

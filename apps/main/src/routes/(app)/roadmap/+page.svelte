@@ -4,6 +4,7 @@
 	// by GET /roadmap/board (Rule 16: categories, columns, and items all come
 	// from the API). The flagship item (is_flagship) is pinned in a banner
 	// above the grid. Voting is logged-in only; guests get a login CTA.
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t, siteName} from '$lib/i18n';
@@ -22,7 +23,10 @@
 	// The backend enforces roadmap.moderate on PATCH /admin/roadmap/items/{id}/status.
 	const canModerate = $derived(!!data.user?.permissions?.includes('roadmap.moderate'));
 
-	let sort = $state<'votes' | 'recent'>(data.sort === 'recent' ? 'recent' : 'votes');
+	// Sort is local mutable state seeded once from the server value — the
+	// untracked read makes the one-time snapshot explicit (the select then
+	// owns it and keeps the URL param in sync).
+	let sort = $state<'votes' | 'recent'>(untrack(() => (data.sort === 'recent' ? 'recent' : 'votes')));
 
 	// The first flagship item across columns renders as the pinned banner and
 	// is excluded from the column lists so it isn't duplicated.

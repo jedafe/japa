@@ -3,7 +3,7 @@
 	// family) and /guide/[slug]. Ref: §14, §49, ADR-058 Exception #1.
 	import { page } from '$app/state';
 	import { t, i18n } from '$lib/i18n';
-	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil, GraduationCap, Maximize2 } from 'lucide-svelte';
+	import { ArrowLeft, Bot, Clock, Eye, ExternalLink, Pencil, GraduationCap, Maximize2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
@@ -328,6 +328,14 @@
 						<span class="font-medium text-[var(--color-text)]">{authorName}</span>
 					{/snippet}
 				</UserHoverCard>
+				{#if article.author_ai_disclosed}
+					<span
+						class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-muted)]"
+						title={t('content.ai_persona_byline', 'AI-authored by a disclosed persona')}
+					>
+						<Bot size={12} /> {t('content.ai_persona', 'AI')}
+					</span>
+				{/if}
 			{/if}
 			<span>·</span>
 			<span>{publishedDate}</span>

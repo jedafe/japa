@@ -190,16 +190,13 @@ func (s *Store) UpdateAssessmentFormScoring(ctx context.Context, id pgtype.UUID,
 
 // AdminListAssessmentResultsRow is a single row from the admin results list.
 type AdminListAssessmentResultsRow struct {
-	ID               pgtype.UUID
-	UserID           pgtype.UUID
-	SubmissionID     pgtype.UUID
-	TotalScore       int32
-	DimensionScores  []byte
-	ThresholdLabel   string
-	RoadmapContent   []byte
-	CreatedAt        pgtype.Timestamptz
-	Username         *string
-	SubmissionValues []byte
+	ID             pgtype.UUID
+	UserID         pgtype.UUID
+	SubmissionID   pgtype.UUID
+	TotalScore     int32
+	ThresholdLabel string
+	CreatedAt      pgtype.Timestamptz
+	Username       *string
 }
 
 // adminAssessmentSortColumns maps sort keys to their qualified column names.
@@ -279,12 +276,10 @@ func (s *Store) AdminListAssessmentResults(ctx context.Context, f AdminListAsses
 	listQ := fmt.Sprintf(`
 SELECT
     ar.id, ar.user_id, ar.submission_id, ar.total_score,
-    ar.dimension_scores, ar.threshold_label, ar.roadmap_content, ar.created_at,
-    u.username AS username,
-    fs.field_values AS submission_values
+    ar.threshold_label, ar.created_at,
+    u.username AS username
 FROM assessment_results ar
 LEFT JOIN users u ON u.id = ar.user_id
-JOIN form_submissions fs ON fs.id = ar.submission_id
 WHERE %s
 ORDER BY %s %s, ar.id DESC
 LIMIT $%d OFFSET $%d`,
@@ -304,8 +299,8 @@ LIMIT $%d OFFSET $%d`,
 		var r AdminListAssessmentResultsRow
 		if err := rows.Scan(
 			&r.ID, &r.UserID, &r.SubmissionID, &r.TotalScore,
-			&r.DimensionScores, &r.ThresholdLabel, &r.RoadmapContent, &r.CreatedAt,
-			&r.Username, &r.SubmissionValues,
+			&r.ThresholdLabel, &r.CreatedAt,
+			&r.Username,
 		); err != nil {
 			return nil, 0, fmt.Errorf("assessment: admin list results: scan: %w", err)
 		}
@@ -346,20 +341,6 @@ LIMIT $%d OFFSET $%d`,
 	}
 
 	return results, total, nil
-}
-
-// AdminCountAssessmentResults returns the total count of assessment results
-// for the platform, optionally filtered by score range. Admin-only.
-func (s *Store) AdminCountAssessmentResults(ctx context.Context, minScore, maxScore int32) (int64, error) {
-	count, err := s.queries.AdminCountAssessmentResults(ctx, gen.AdminCountAssessmentResultsParams{
-		MinScore: minScore,
-		MaxScore: maxScore,
-	})
-	if err != nil {
-		return 0, fmt.Errorf("assessment: admin count results: %w", err)
-	}
-
-	return count, nil
 }
 
 // AdminScoreDistributionRow is a single row from the score distribution query.
@@ -471,7 +452,10 @@ func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInp
 
 	status := in.Status
 	if status == "" {
-		status = "active"
+		// New assessment forms are created inactive — only an explicit
+		// status='active' publishes a questionnaire, and activation demotes
+		// any other active assessment form (single-active invariant).
+		status = "draft"
 	}
 
 	submitLabel := in.SubmitLabel
@@ -514,7 +498,27 @@ func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInp
 		return gen.Form{}, fmt.Errorf("assessment: set assessment form metadata: %w", err)
 	}
 
+	if status == "active" {
+		if err := s.demoteOtherActiveAssessmentForms(ctx, created.ID); err != nil {
+			return gen.Form{}, fmt.Errorf("assessment: demote other active forms: %w", err)
+		}
+	}
+
 	return s.GetAssessmentFormByID(ctx, created.ID)
+}
+
+// demoteOtherActiveAssessmentForms demotes every other active assessment
+// form to 'draft' so exactly one questionnaire is live at a time.
+func (s *Store) demoteOtherActiveAssessmentForms(ctx context.Context, keepID pgtype.UUID) error {
+	if _, err := s.pool.Writer.Exec(ctx, `
+		UPDATE forms
+		SET status = 'draft'
+		WHERE form_type = 'assessment' AND status = 'active' AND id <> $1
+	`, keepID); err != nil {
+		return fmt.Errorf("assessment: demote other active forms: %w", err)
+	}
+
+	return nil
 }
 
 // UpdateAssessmentForm updates a forms row and its scoring_config. The form_type
@@ -596,6 +600,22 @@ func (s *Store) UpdateAssessmentForm(ctx context.Context, id pgtype.UUID, in Upd
 			WHERE id = $2
 		`, b, id); err != nil {
 			return gen.Form{}, fmt.Errorf("assessment: update scoring_config: %w", err)
+		}
+	}
+
+	if in.SpaceID.Valid {
+		if _, err := s.pool.Writer.Exec(ctx, `
+			UPDATE forms
+			SET space_id = $1
+			WHERE id = $2
+		`, in.SpaceID, id); err != nil {
+			return gen.Form{}, fmt.Errorf("assessment: update space_id: %w", err)
+		}
+	}
+
+	if status == "active" {
+		if err := s.demoteOtherActiveAssessmentForms(ctx, id); err != nil {
+			return gen.Form{}, fmt.Errorf("assessment: demote other active forms: %w", err)
 		}
 	}
 
@@ -703,4 +723,163 @@ func strPtrOrNil(s string) *string {
 	}
 
 	return &s
+}
+
+// MarkSubmissionScored transitions a scored assessment submission out of the
+// 'new' state so it no longer reads as perpetually pending (BUG-BL-010).
+func (s *Store) MarkSubmissionScored(ctx context.Context, submissionID pgtype.UUID) error {
+	if _, err := s.pool.Writer.Exec(ctx, `
+		UPDATE form_submissions SET status = 'scored' WHERE id = $1 AND status = 'new'
+	`, submissionID); err != nil {
+		return fmt.Errorf("assessment: mark submission scored: %w", err)
+	}
+
+	return nil
+}
+
+// ListStaleUnscoredSubmissions returns assessment-form submission IDs that
+// have no result row and are older than staleMinutes — submissions whose
+// scoring task was never enqueued or never completed (BUG-BL-009).
+func (s *Store) ListStaleUnscoredSubmissions(ctx context.Context, staleMinutes, limit int32) ([]pgtype.UUID, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	rows, err := s.pool.Reader.Query(ctx, `
+		SELECT fs.id
+		FROM form_submissions fs
+		JOIN forms f ON f.id = fs.form_id
+		WHERE f.form_type = 'assessment'
+		  AND fs.status = 'new'
+		  AND fs.created_at < now() - ($1::int || ' minutes')::interval
+		  AND NOT EXISTS (SELECT 1 FROM assessment_results ar WHERE ar.submission_id = fs.id)
+		ORDER BY fs.created_at ASC
+		LIMIT $2
+	`, staleMinutes, limit)
+	if err != nil {
+		return nil, fmt.Errorf("assessment: list stale unscored: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("assessment: list stale unscored: scan: %w", err)
+		}
+		ids = append(ids, id)
+	}
+
+	return ids, rows.Err()
+}
+
+// SystemAuthorID resolves a system user to author stub content with:
+// the seeded super-admin (prod), the seeded admin (dev), or any bot user.
+func (s *Store) SystemAuthorID(ctx context.Context) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if err := s.pool.Reader.QueryRow(ctx, `
+		SELECT id FROM users
+		WHERE email IN ('jedafeglobal@gmail.com', 'admin@japa.to') OR is_bot
+		ORDER BY CASE
+			WHEN email = 'jedafeglobal@gmail.com' THEN 0
+			WHEN email = 'admin@japa.to' THEN 1
+			ELSE 2
+		END, created_at
+		LIMIT 1
+	`).Scan(&id); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("assessment: system author: %w", err)
+	}
+
+	return id, nil
+}
+
+// CreateStubContent inserts a contents row — used to mint published stub
+// guides for roadmap steps that reference a slug with no backing content.
+func (s *Store) CreateStubContent(ctx context.Context, arg gen.CreateContentParams) error {
+	if _, err := s.writeQueries.CreateContent(ctx, arg); err != nil {
+		return fmt.Errorf("assessment: create stub content: %w", err)
+	}
+
+	return nil
+}
+
+// IsAssessmentSubmission reports whether the submission exists and belongs
+// to a form with form_type='assessment' — used to keep the result-polling
+// endpoint honest about non-assessment submission IDs.
+func (s *Store) IsAssessmentSubmission(ctx context.Context, submissionID pgtype.UUID) (bool, error) {
+	var ok bool
+	if err := s.pool.Reader.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM form_submissions fs
+			JOIN forms f ON f.id = fs.form_id
+			WHERE fs.id = $1 AND f.form_type = 'assessment'
+		)
+	`, submissionID).Scan(&ok); err != nil {
+		return false, fmt.Errorf("assessment: is assessment submission: %w", err)
+	}
+
+	return ok, nil
+}
+
+// StubSlugs returns the subset of the given slugs that resolve to published
+// auto-generated stub content (field_values.is_stub = true) — used to prefer
+// corridor variants over generic stubs while never displacing real guides.
+func (s *Store) StubSlugs(ctx context.Context, slugs []string) ([]string, error) {
+	if len(slugs) == 0 {
+		return nil, nil
+	}
+
+	rows, err := s.pool.Reader.Query(ctx, `
+		SELECT slug FROM contents
+		WHERE slug = ANY($1::text[]) AND status = 'published' AND deleted_at IS NULL
+		  AND field_values->>'is_stub' = 'true'
+		  -- A stub edited after creation is treated as real content: admins
+		  -- don't need to clear the flag manually (field_values updates
+		  -- merge, so the key can persist through upgrades).
+		  AND updated_at <= created_at + interval '1 minute'
+	`, slugs)
+	if err != nil {
+		return nil, fmt.Errorf("assessment: stub slugs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, fmt.Errorf("assessment: stub slugs: scan: %w", err)
+		}
+		out = append(out, slug)
+	}
+
+	return out, rows.Err()
+}
+
+// PublishedSlugs returns the subset of the given slugs that exist as
+// published, non-deleted content — used to verify AI-suggested roadmap links
+// against the real corpus (BUG-BL-004).
+func (s *Store) PublishedSlugs(ctx context.Context, slugs []string) ([]string, error) {
+	if len(slugs) == 0 {
+		return nil, nil
+	}
+
+	rows, err := s.pool.Reader.Query(ctx, `
+		SELECT slug FROM contents
+		WHERE slug = ANY($1::text[]) AND status = 'published' AND deleted_at IS NULL
+	`, slugs)
+	if err != nil {
+		return nil, fmt.Errorf("assessment: published slugs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, fmt.Errorf("assessment: published slugs: scan: %w", err)
+		}
+		out = append(out, slug)
+	}
+
+	return out, rows.Err()
 }

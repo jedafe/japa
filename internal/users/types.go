@@ -223,6 +223,10 @@ type PublicProfileResponse struct {
 	// user_profiles.banner_media_id via the media resolver, best-effort).
 	IsSynthetic     bool    `json:"is_synthetic"`
 	SyntheticSource *string `json:"synthetic_source"`
+	// §68: true when this profile is backed by an ai_personas row whose
+	// disclosure_mode = 'disclosed' — the admin display toggle that marks
+	// the byline as AI-authored publicly. Undisclosed personas emit false.
+	AIDisclosed bool    `json:"ai_disclosed"`
 	Location        *string `json:"location"`
 	BannerURL       *string `json:"banner_url"`
 	// Role is the display name of the user's chosen public group

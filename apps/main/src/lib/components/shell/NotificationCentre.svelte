@@ -13,7 +13,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { Menu } from '$lib/components/ui';
-	import { Bell, CheckCheck, BellOff, Loader2 } from 'lucide-svelte';
+	import { Bell, CheckCheck, BellOff, Loader2, X } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
@@ -165,6 +165,22 @@
 		open = false;
 	}
 
+	/** BUG-025: per-item delete inside the dropdown (parity with /notifications). */
+	async function deleteNotification(n: Notification) {
+		const index = notifications.findIndex((x) => x.id === n.id);
+		if (index === -1) return;
+		const removed = notifications[index];
+		const next = [...notifications];
+		next.splice(index, 1);
+		notifications = next;
+		const res = await api.delete(`/me/notifications/${n.id}`);
+		if (res.error) {
+			notifications = [...notifications.slice(0, index), removed, ...notifications.slice(index)];
+			return;
+		}
+		if (!removed.read_at) realtime.decrementUnread();
+	}
+
 	/** Mark all visible notifications as read. */
 	async function markAllRead() {
 		if (markingAll) return;
@@ -284,6 +300,7 @@
 				{:else}
 					{#each filteredNotifications as n (n.id)}
 						{@const Icon = notificationIconFor(n.notification_type)}
+						<div class="flex items-start">
 						<button
 							type="button"
 							onclick={() => openNotification(n)}
@@ -303,7 +320,16 @@
 									<span class="mt-0.5 line-clamp-2 block text-xs text-[var(--color-text-subtle)]">{n.body}</span>
 								{/if}
 							</span>
-						</button>
+							</button>
+							<button
+								type="button"
+								onclick={() => deleteNotification(n)}
+								class="me-2 mt-2.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-destructive)]"
+								aria-label={t('common.remove', 'Remove')}
+							>
+								<X size={12} />
+							</button>
+						</div>
 					{/each}
 					<!-- BUG-015: infinite scroll sentinel (§35 L96). -->
 					{#if hasMore && !loadingMore}

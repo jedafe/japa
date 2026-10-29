@@ -181,6 +181,34 @@ func (h *Handlers) sitemapCfg(ctx context.Context) bots.SitemapQualityConfig {
 // (test-only).
 func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.asynqClient = c }
 
+// enqueueEngagementUpdate enqueues a content engagement count update task
+// (worker.TypeEngagementCountUpdate) so thread/reply votes feed
+// content_scores.vote_score on the backing contents row (E-006, §32).
+// Fire-and-forget per Rule 8.
+func (h *Handlers) enqueueEngagementUpdate(entityID pgtype.UUID, engagementType string, delta int) {
+	if h.asynqClient == nil || delta == 0 {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"entity_type":     "content",
+		"entity_id":       entityID.String(),
+		"engagement_type": engagementType,
+		"delta":           delta,
+	})
+	if err != nil {
+		slog.Warn("forum: failed to marshal engagement update payload", "error", err)
+		return
+	}
+
+	if _, err := h.asynqClient.Enqueue(
+		asynq.NewTask(worker.TypeEngagementCountUpdate, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeEngagementCountUpdate)),
+	); err != nil {
+		slog.Warn("forum: failed to enqueue engagement update task", "entity_id", entityID.String(), "error", err)
+	}
+}
+
 // SetLiteralResolver injects the template-literal catalog so thread/reply
 // titles and bodies render {{...}} placeholders (§14). nil disables.
 func (h *Handlers) SetLiteralResolver(l literalResolver) { h.literals = l }
@@ -1813,7 +1841,7 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vote, err := h.Service.Vote(r.Context(), user.UserID, VoteInput{
+	vote, contentID, delta, err := h.Service.Vote(r.Context(), user.UserID, VoteInput{
 		EntityType: input.EntityType,
 		EntityID:   entityID,
 		Value:      input.Value,
@@ -1821,6 +1849,11 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// E-006: votes feed content_scores.vote_score on the backing content row.
+	if contentID.Valid {
+		h.enqueueEngagementUpdate(contentID, "vote", int(delta))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": vote})
@@ -1851,9 +1884,14 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RemoveVote(r.Context(), user.UserID, entityType, entityID); err != nil {
+	contentID, delta, err := h.Service.RemoveVote(r.Context(), user.UserID, entityType, entityID)
+	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	if contentID.Valid {
+		h.enqueueEngagementUpdate(contentID, "vote", int(delta))
 	}
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)

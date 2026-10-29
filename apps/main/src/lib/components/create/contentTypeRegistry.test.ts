@@ -38,9 +38,11 @@ describe('availableTypes', () => {
 		{ value: 'guide', label: 'Guide' }
 	];
 	it('includes all content types the backend advertises (Rule 16)', () => {
-		const vals = availableTypes(all, { 'feature.blog': true, 'feature.comparison': true }).map(
-			(t) => t.value
-		);
+		const vals = availableTypes(all, {
+			'feature.blog': true,
+			'feature.comparison': true,
+			'feature.forum': true
+		}).map((t) => t.value);
 		expect(vals).toEqual(['discussion', 'blog_post', 'page', 'comparison', 'question', 'article', 'guide']);
 	});
 	it('hides comparison when feature.comparison is off', () => {
@@ -55,8 +57,14 @@ describe('availableTypes', () => {
 		);
 		expect(vals).not.toContain('blog_post');
 	});
-	it('treats a missing feature flag as enabled', () => {
+	it('treats a missing flag key as disabled for gated types (fail closed)', () => {
+		// /feature-flags always returns registry keys — an absent key means
+		// the flag is internal or unknown, which must not fail open.
 		const vals = availableTypes(all, {}).map((t) => t.value);
+		expect(vals).not.toContain('discussion');
+		expect(vals).not.toContain('blog_post');
+		expect(vals).not.toContain('comparison');
+		// Ungated types (featureFlag: null) are unaffected.
 		expect(vals).toContain('article');
 		expect(vals).toContain('guide');
 		expect(vals).toContain('page');
@@ -80,7 +88,13 @@ describe('createAvailableTypes', () => {
 	it('exposes only the allowed /create types', () => {
 		const vals = createAvailableTypes(
 			all,
-			{ 'feature.blog': true, 'feature.comparison': true, 'video.enabled': true },
+			{
+				'feature.blog': true,
+				'feature.comparison': true,
+				'video.enabled': true,
+				'story.enabled': true,
+				'list.enabled': true
+			},
 			undefined,
 			listCaller
 		).map((t) => t.value);
@@ -97,7 +111,13 @@ describe('createAvailableTypes', () => {
 	it('follows the CREATE_ALLOWED_TYPES order', () => {
 		const vals = createAvailableTypes(
 			all,
-			{ 'feature.blog': true, 'feature.comparison': true, 'video.enabled': true },
+			{
+				'feature.blog': true,
+				'feature.comparison': true,
+				'video.enabled': true,
+				'story.enabled': true,
+				'list.enabled': true
+			},
 			undefined,
 			listCaller
 		).map((t) => t.value);
@@ -107,7 +127,13 @@ describe('createAvailableTypes', () => {
 	it('hides comparison when feature.comparison is off', () => {
 		const vals = createAvailableTypes(
 			all,
-			{ 'feature.blog': true, 'feature.comparison': false, 'video.enabled': true },
+			{
+				'feature.blog': true,
+				'feature.comparison': false,
+				'video.enabled': true,
+				'story.enabled': true,
+				'list.enabled': true
+			},
 			undefined,
 			listCaller
 		).map((t) => t.value);
@@ -130,10 +156,10 @@ describe('createAvailableTypes', () => {
 		expect(vals).not.toContain('video');
 	});
 
-	it('shows video when the video.enabled public setting is true', () => {
+	it('shows video when the video.enabled flag is on and the public setting is true', () => {
 		const vals = createAvailableTypes(
 			all,
-			{ 'feature.blog': true, 'feature.comparison': true },
+			{ 'feature.blog': true, 'feature.comparison': true, 'video.enabled': true },
 			{ 'video.enabled': true }
 		).map((t) => t.value);
 		expect(vals).toContain('video');
@@ -152,7 +178,9 @@ describe('createAvailableTypes', () => {
 	});
 
 	it('includes list when the caller holds the list.create node', () => {
-		const vals = createAvailableTypes(all, {}, undefined, listCaller).map((t) => t.value);
+		const vals = createAvailableTypes(all, { 'list.enabled': true }, undefined, listCaller).map(
+			(t) => t.value
+		);
 		expect(vals).toContain('list');
 	});
 
@@ -166,14 +194,19 @@ describe('createAvailableTypes', () => {
 	});
 
 	it('shows list to a super admin without the explicit node', () => {
-		const vals = createAvailableTypes(all, {}, undefined, { isSuperAdmin: true }).map((t) => t.value);
+		const vals = createAvailableTypes(all, { 'list.enabled': true }, undefined, {
+			isSuperAdmin: true
+		}).map((t) => t.value);
 		expect(vals).toContain('list');
 	});
 
 	it('hides list when the list.enabled public setting is false, even with permission', () => {
-		const vals = createAvailableTypes(all, {}, { 'list.enabled': false }, listCaller).map(
-			(t) => t.value
-		);
+		const vals = createAvailableTypes(
+			all,
+			{ 'list.enabled': true },
+			{ 'list.enabled': false },
+			listCaller
+		).map((t) => t.value);
 		expect(vals).not.toContain('list');
 	});
 });

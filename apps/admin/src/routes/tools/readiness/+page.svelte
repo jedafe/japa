@@ -8,6 +8,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Settings, BarChart3 } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { readinessAdminApi } from '$lib/api';
 	import { JsonValueEditor } from '@japaconnect/ui';
 
@@ -86,10 +87,37 @@
 		return color;
 	}
 
+	// ── Result detail slide-over (dimension breakdown, roadmap, answers) ────
+	type ResultDetail = {
+		id: string;
+		total_score: number;
+		threshold_label: string;
+		dimension_scores: Record<string, number>;
+		roadmap: { title: string; description: string; content_slug: string; dimension: string; ai_generated?: boolean }[];
+		submission_values: Record<string, unknown>;
+		created_at: string;
+	};
+	let detail = $state<ResultDetail | null>(null);
+	let detailLoading = $state(false);
+	let detailOpen = $state(false);
+
+	async function loadDetail(id: string) {
+		detail = null;
+		detailLoading = true;
+		detailOpen = true;
+		const result = await readinessAdminApi.getResult(id);
+		detailLoading = false;
+		if (result.ok) {
+			detail = result.data as ResultDetail;
+		} else {
+			pageError = result.error ?? t('common.error', 'An error occurred');
+		}
+	}
+
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
-			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: ReadinessItem, ctx) => ctx?.openView(_row) }
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (row: ReadinessItem) => loadDetail(row.id) }
 		];
 		return acts;
 	});
@@ -167,7 +195,6 @@
 			}
 			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},
-		viewSnippet: ReadinessView
 	});
 
 	// ── Stats + form config ─────────────────────────────────────────────────
@@ -210,6 +237,15 @@
 		} catch (e) {
 			configSaving = false;
 			configError = t('app.tools.roadmap_json_invalid', 'Curated roadmap is not valid JSON');
+			return;
+		}
+		// Validate threshold colors — free-text values render as broken CSS
+		// on the result gauge (BUG-UX-012). Allowed: #hex or chart-N token.
+		const colorRe = /^(#[0-9a-fA-F]{3,8}|chart-\d+)?$/;
+		const badColor = scoringConfig.thresholds.findIndex((th) => !colorRe.test(th.color));
+		if (badColor >= 0) {
+			configSaving = false;
+			configError = t('app.tools.threshold_color_invalid', 'Threshold colors must be #hex or a chart-N token') + ` (#${badColor + 1})`;
 			return;
 		}
 		const payload: ScoringConfig = { ...scoringConfig, curated_roadmap: curatedRoadmap };
@@ -338,27 +374,76 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
-{#snippet ReadinessView({ row }: { row: ReadinessItem })}
-	<div class="space-y-4">
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_username', 'Username')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.username || '—'}</p>
-		</div>
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_score', 'Score')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.total_score != null ? String(row.total_score) : '—'}</p>
-		</div>
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_readiness_level', 'Readiness Level')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.threshold_label || '—'}</p>
-		</div>
-		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.col_completed_at', 'Completed')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</p>
-		</div>
-	</div>
-{/snippet}
+<!-- Question text/options/per-question weights live in the §06 Form
+     Builder — link admins there since this page only edits scoring_config
+     (BUG-UX-005). -->
+{#if canEditForm}
+	<p class="mt-4 text-xs" style="color: var(--color-muted)">
+		{t('app.tools.readiness_edit_questions_hint', 'To edit questions, options, or per-question scores, use')}
+		<a href="/forms" class="font-medium underline">{t('app.tools.readiness_forms_link', 'Forms')}</a>.
+	</p>
+{/if}
+
+<!-- ── Result detail slide-over ─────────────────────────────────────────── -->
+<SlideOver bind:open={detailOpen} title={t('app.tools.readiness_result_detail', 'Result detail')} size="lg">
+			{#if detailLoading}
+				<p class="text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading…')}</p>
+			{:else if detail}
+				<div class="space-y-5">
+					<div class="flex items-baseline gap-3">
+						<span class="text-3xl font-semibold" style="color: var(--color-foreground)">{detail.total_score}</span>
+						<span class="text-sm font-medium" style="color: var(--color-primary)">{detail.threshold_label}</span>
+						<span class="ms-auto text-xs" style="color: var(--color-muted)">{new Date(detail.created_at).toLocaleString()}</span>
+					</div>
+					{#if Object.keys(detail.dimension_scores ?? {}).length > 0}
+						<div>
+							<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.dimensions', 'Dimensions')}</p>
+							<div class="space-y-2">
+								{#each Object.entries(detail.dimension_scores) as [dim, score] (dim)}
+									<div class="flex items-center gap-2 text-sm">
+										<span class="w-36 shrink-0 capitalize" style="color: var(--color-foreground)">{dim.replace(/_/g, ' ')}</span>
+										<div class="h-2 flex-1 overflow-hidden rounded-full" style="background: var(--color-surface-subtle)">
+											<div class="h-full" style="width: {Math.min(100, Math.max(0, score))}%; background: var(--color-primary)"></div>
+										</div>
+										<span class="w-8 text-end text-xs" style="color: var(--color-muted)">{score}</span>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+					{#if detail.roadmap?.length > 0}
+						<div>
+							<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.roadmap', 'Roadmap')}</p>
+							<ol class="space-y-2">
+								{#each detail.roadmap as step, i (i)}
+									<li class="text-sm" style="color: var(--color-foreground)">
+										<span class="font-medium">{i + 1}. {step.title}</span>
+										{#if step.ai_generated}<span class="ms-1 rounded px-1 text-xs" style="background: var(--color-surface-subtle); color: var(--color-muted)">AI</span>{/if}
+										{#if step.description}<p class="text-xs" style="color: var(--color-muted)">{step.description}</p>{/if}
+										{#if step.content_slug}<p class="text-xs font-mono" style="color: var(--color-muted)">/{step.content_slug}</p>{/if}
+									</li>
+								{/each}
+							</ol>
+						</div>
+					{/if}
+					{#if Object.keys(detail.submission_values ?? {}).length > 0}
+						<div>
+							<p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.tools.answers', 'Answers')}</p>
+							<dl class="space-y-1 text-xs">
+								{#each Object.entries(detail.submission_values) as [k, v] (k)}
+									<div class="flex gap-2">
+										<dt class="w-40 shrink-0 font-mono" style="color: var(--color-muted)">{k}</dt>
+										<dd class="min-w-0 break-words" style="color: var(--color-foreground)">{Array.isArray(v) ? v.join(', ') : String(v)}</dd>
+									</div>
+								{/each}
+							</dl>
+						</div>
+					{/if}
+				</div>
+			{/if}
+</SlideOver>
+
+
 
 <!-- ── Form config slide-over ────────────────────────────────────────────── -->
 {#if showConfig && scoringConfig}

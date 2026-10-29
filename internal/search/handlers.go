@@ -93,12 +93,20 @@ type literalResolver interface {
 }
 
 // Handlers holds dependencies for search HTTP handlers.
+// searchFeatureChecker is the minimal feature_flags reader contract;
+// *features.Checker satisfies it. Local interface keeps search decoupled
+// from internal/features (same pattern as searchSettingsReader).
+type searchFeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 type Handlers struct {
 	engine   Engine
 	queries  *gen.Queries
 	settings searchSettingsReader
 	cache    valkeycompat.Cmdable // nil disables caching (tests)
 	lit      literalResolver      // nil disables literal resolution (§14)
+	flags    searchFeatureChecker // nil disables flag filtering (§42)
 }
 
 // NewHandlers creates Handlers backed by the given search engine.
@@ -106,6 +114,12 @@ type Handlers struct {
 // instead of querying the engine, which keeps tests and dev boot simple.
 func NewHandlers(engine Engine) *Handlers {
 	return &Handlers{engine: engine}
+}
+
+// SetFeatureChecker wires the feature flag resolver so results and
+// suggestions belonging to disabled features are dropped (§42). Nil-safe.
+func (h *Handlers) SetFeatureChecker(c searchFeatureChecker) {
+	h.flags = c
 }
 
 // SetQueries injects the database queries for analytics logging.
@@ -301,6 +315,11 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	if authenticated {
 		results = h.filterBlockedAuthors(r.Context(), user.UserID, results)
 	}
+
+	// §42: drop results belonging to disabled features — indexed content
+	// from a feature that was switched off must not keep surfacing in
+	// search (the routes it links to return 404).
+	results = h.filterDisabledFeatureResults(r.Context(), results)
 
 	tookMs := time.Since(searchStart).Milliseconds()
 
@@ -785,11 +804,85 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 		suggestions = h.filterBlockedUsers(r.Context(), user.UserID, suggestions)
 	}
 
+	// §42: drop suggestions belonging to disabled features.
+	suggestions = h.filterDisabledFeatureSuggestions(r.Context(), suggestions)
+
 	h.resolveLiterals(r, &suggestions)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": AutocompleteResponse{Suggestions: suggestions},
 	})
+}
+
+// contentTypeFeatureFlag maps posts-index content_type values to the
+// feature_flags key that gates them (§42). Ungated core types (guide, page,
+// news…) are intentionally absent — they are never pruned.
+var contentTypeFeatureFlag = map[string]string{
+	"story":           "story.enabled",
+	"video":           "video.enabled",
+	"list":            "list.enabled",
+	"comparison":      "feature.comparison",
+	"blog_post":       "feature.blog",
+	"discussion":      "feature.forum",
+	"job_listing":     "jobs.enabled",
+	"service_listing": "service_directory.enabled",
+	"wiki_page":       "wiki.enabled",
+}
+
+// searchTypeFeatureFlag maps whole search result types (index-level) to
+// their feature flag — gated indexes drop out entirely when the flag is off.
+var searchTypeFeatureFlag = map[string]string{
+	"forum_thread": "feature.forum",
+	"article":      "feature.academy",
+	"course":       "feature.academy",
+}
+
+// featureResultDisabled reports whether a search hit should be suppressed
+// because its feature flag is off. Result-type gating wins over the
+// content-type gating (a forum thread is gated by feature.forum regardless
+// of content_type).
+func (h *Handlers) featureResultDisabled(ctx context.Context, resultType, contentType string) bool {
+	if h.flags == nil {
+		return false
+	}
+	if flag, ok := searchTypeFeatureFlag[resultType]; ok && !h.flags.IsEnabled(ctx, flag) {
+		return true
+	}
+	if flag, ok := contentTypeFeatureFlag[contentType]; ok && !h.flags.IsEnabled(ctx, flag) {
+		return true
+	}
+	return false
+}
+
+// filterDisabledFeatureResults drops SearchResult entries whose feature flag
+// is off. Applied post-cache so flag changes take effect immediately.
+func (h *Handlers) filterDisabledFeatureResults(ctx context.Context, results []SearchResult) []SearchResult {
+	if h.flags == nil || len(results) == 0 {
+		return results
+	}
+	filtered := results[:0]
+	for _, r := range results {
+		if h.featureResultDisabled(ctx, r.Type, r.Item.ContentType) {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+	return filtered
+}
+
+// filterDisabledFeatureSuggestions is the Autocomplete variant.
+func (h *Handlers) filterDisabledFeatureSuggestions(ctx context.Context, suggestions []AutocompleteSuggestion) []AutocompleteSuggestion {
+	if h.flags == nil || len(suggestions) == 0 {
+		return suggestions
+	}
+	filtered := suggestions[:0]
+	for _, s := range suggestions {
+		if h.featureResultDisabled(ctx, s.Type, s.ContentType) {
+			continue
+		}
+		filtered = append(filtered, s)
+	}
+	return filtered
 }
 
 // filterBlockedUsers removes user-type suggestions where a block relationship
@@ -1115,9 +1208,15 @@ func (h *Handlers) filterContentHits(r *http.Request, hits []Hit) []Hit {
 	filtered := hits[:0]
 
 	for _, hit := range hits {
-		if _, ok := allowed[stringField(hit, "id")]; ok {
-			filtered = append(filtered, hit)
+		if _, ok := allowed[stringField(hit, "id")]; !ok {
+			continue
 		}
+		// §42: posts-index hits for disabled content types are dropped —
+		// space/tag-scoped searches must not surface gated content either.
+		if h.featureResultDisabled(r.Context(), "content", stringField(hit, "content_type")) {
+			continue
+		}
+		filtered = append(filtered, hit)
 	}
 
 	return filtered

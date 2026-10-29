@@ -439,7 +439,7 @@ func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	menu, err := h.Service.GetMenuBySlug(r.Context(), slug, userGroupIDs, isAuthenticated, userID)
+	menu, err := h.Service.GetMenuBySlug(r.Context(), slug, userGroupIDs, isAuthenticated, userID, h.Service.CallerScope(r))
 	if err != nil {
 		handleServiceError(w, err)
 		return

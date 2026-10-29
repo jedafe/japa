@@ -180,6 +180,11 @@ type Server struct {
 	// agent is the ADR-130 unified engine behind the synthetic japa.chat
 	// tool. Nil → the tool is omitted from tools/list and denied on call.
 	agent *ai.AgentHandler
+	// japaChatGate reports whether the unified chat surface is reachable
+	// (feature.japabot). Nil → treated as enabled (agent set ≠ nil is the
+	// wiring gate). tools/list consults it so the catalog never advertises
+	// a tool whose calls are guaranteed to fail (BUG-MCP-002).
+	japaChatGate func(ctx context.Context) bool
 }
 
 // NewServer creates an MCP server handler backed by the agent executor.
@@ -203,6 +208,22 @@ func (s *Server) SetSiteBaseURL(u string) { s.siteBaseURL = u }
 // SetAgentHandler wires the unified AI engine for the §119 japa.chat
 // synthetic tool (ADR-130 Phase 3). Nil → the tool is not offered.
 func (s *Server) SetAgentHandler(h *ai.AgentHandler) { s.agent = h }
+
+// SetJapaChatGate wires the feature.japabot reachability check so japa.chat
+// is only advertised/dispatched while the unified chat surface is enabled
+// (BUG-MCP-002).
+func (s *Server) SetJapaChatGate(fn func(ctx context.Context) bool) { s.japaChatGate = fn }
+
+// japaChatEnabled reports whether japa.chat may be advertised/called.
+func (s *Server) japaChatEnabled(ctx context.Context) bool {
+	if s.agent == nil {
+		return false
+	}
+	if s.japaChatGate != nil {
+		return s.japaChatGate(ctx)
+	}
+	return true
+}
 
 // callerTier resolves the user's unified tier; nil resolver or error →
 // "regular" (fail-closed, same convention as RequireTier).
@@ -667,7 +688,7 @@ func (s *Server) handleToolsList(ctx context.Context, user *auth.AuthenticatedUs
 
 	// §119/ADR-130 Phase 3: japa.chat is a JWT-only synthetic tool — API-key
 	// and OAuth callers (apiKeyCallerKey set) never see it in the catalog.
-	if s.agent != nil && !isAPIKeyCaller(ctx) {
+	if s.japaChatEnabled(ctx) && !isAPIKeyCaller(ctx) {
 		tools = append(tools, s.japaChatDescriptor())
 	}
 
@@ -728,6 +749,9 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 	if callReq.Name == japaChatToolName {
 		if isAPIKeyCaller(ctx) {
 			return s.errorResp(req.ID, -32602, "Invalid params", fmt.Sprintf("tool %q is not available to API-key callers", callReq.Name)), false
+		}
+		if !s.japaChatEnabled(ctx) {
+			return s.errorResp(req.ID, -32602, "Invalid params", fmt.Sprintf("tool %q is not available (chat surface disabled)", callReq.Name)), false
 		}
 
 		return s.handleJapaChat(ctx, user, req, callReq)
@@ -906,6 +930,23 @@ func (s *Server) finalizeSession(ctx context.Context, sessionID pgtype.UUID, too
 	}
 
 	summary := fmt.Sprintf("mcp %s: %s", toolName, status)
+	// BUG-MCP-003: a tool-level terminal failure (error, unauthorized,
+	// privacy_blocked) must fail the audit session — 'completed' previously
+	// made failed calls indistinguishable from successful ones at session
+	// granularity. hitl_queued stays completed (the call ran; review pending).
+	if status != ai.ToolCallStatusSuccess && status != ai.ToolCallStatusHITLQueued {
+		if _, err := s.sessions.FailAgentSession(ctx, gen.FailAgentSessionParams{
+			ErrorMessage:  &summary,
+			ToolCallCount: 1,
+			TotalTokens:   0,
+			EstimatedCost: zeroNumeric(),
+			ID:            sessionID,
+		}); err != nil {
+			slog.ErrorContext(ctx, "mcp: fail agent session", "error", err)
+		}
+		return
+	}
+
 	if _, err := s.sessions.CompleteAgentSession(ctx, gen.CompleteAgentSessionParams{
 		ResultSummary: &summary,
 		ToolCallCount: 1,

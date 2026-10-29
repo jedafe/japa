@@ -47,10 +47,12 @@ const COMPOSER_OVERRIDES: Record<string, Partial<Omit<TypeEntry, 'label'>>> = {
 		supportsSeries: false,
 		featureFlag: 'feature.forum'
 	},
+	// Pages are core content (§42: basic content creation is unflagged) —
+	// 'feature.page' is not a registered flag key, so it stays null.
 	page: {
 		formKind: 'standard',
 		supportsSeries: false,
-		featureFlag: 'feature.page'
+		featureFlag: null
 	},
 	// §79 Community Story Wall — stories use the standard composer; the
 	// backend syncs story_meta from field_values + journey fields and sends
@@ -125,11 +127,12 @@ export function availableTypes(
 		.map((t) => resolveType(t.value, t.label ?? t.value, t.categories))
 		.filter((entry) => {
 			if (entry.featureFlag === null) return true;
-			// Feature flags are canonical for most toggles, but some §106 video
-			// settings are public system settings (e.g. video.enabled) rather than
-			// feature_flags rows. A key that is explicitly false in either map
-			// disables the type; missing means enabled (Rule 16 fallbacks).
-			if (flags[entry.featureFlag] === false) return false;
+			// /feature-flags is authoritative for gated types: a key absent
+			// from the map (disabled, surface-hidden, or internal) reads as
+			// off — never fail open on a missing flag.
+			if (flags[entry.featureFlag] !== true) return false;
+			// Some §106 video settings are public system settings as well;
+			// a key explicitly false there also disables the type.
 			return settings?.[entry.featureFlag] !== false;
 		});
 }

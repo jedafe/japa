@@ -69,6 +69,7 @@ class RealtimeStore {
 	private readonly onDMMessageBound = (p: unknown) => this.handleDMMessage(p);
 	private readonly onPollUpdatedBound = (p: unknown) => this.handlePollUpdated(p);
 	private readonly onModerationAlertBound = (p: unknown) => this.handleModerationAlert(p);
+	private readonly onUnreadCountBound = (p: unknown) => this.handleUnreadCount(p);
 
 	/** Connect the WebSocket and register event handlers. Idempotent. */
 	connect(): void {
@@ -76,6 +77,7 @@ class RealtimeStore {
 			this.wired = true;
 
 			wsClient.on('notification', this.onNotificationBound);
+			wsClient.on('notification_unread_count', this.onUnreadCountBound);
 			wsClient.on('presence', this.onPresenceBound);
 			wsClient.on('feed_update', this.onFeedUpdateBound);
 			wsClient.on('dm_message', this.onDMMessageBound);
@@ -96,6 +98,7 @@ class RealtimeStore {
 		if (!this.wired) return;
 		this.wired = false;
 		wsClient.off('notification', this.onNotificationBound);
+		wsClient.off('notification_unread_count', this.onUnreadCountBound);
 		wsClient.off('presence', this.onPresenceBound);
 		wsClient.off('feed_update', this.onFeedUpdateBound);
 		wsClient.off('dm_message', this.onDMMessageBound);
@@ -180,6 +183,14 @@ class RealtimeStore {
 			} catch {
 				/* swallow */
 			}
+		}
+	}
+
+	/** BUG-017: server-pushed unread count — syncs the badge across sessions. */
+	private handleUnreadCount(payload: unknown): void {
+		const ev = (payload ?? {}) as { count?: number };
+		if (typeof ev.count === 'number' && ev.count >= 0) {
+			this.unreadNotifications = ev.count;
 		}
 	}
 

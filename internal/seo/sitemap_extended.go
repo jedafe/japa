@@ -670,6 +670,34 @@ func (h *SitemapHandler) latestComparisonsLastMod(ctx context.Context) string {
 // editorial SSR pages (not DB rows), so the sitemap emits the known paths
 // directly. Per-tool dynamic sub-routes (e.g. /tools/visa-routes/[id]) are
 // intentionally excluded — they are app-state URLs, not indexable content.
+// toolSitemapFlag maps each /tools/{tool} sitemap path to its feature_flags
+// key (mirrors apps/main/src/lib/tools/registry.ts enabledSetting). A tool
+// drops out of the sitemap when its flag is off — the page 404s, so the
+// sitemap must not advertise it.
+var toolSitemapFlag = map[string]string{
+	"arrival-checklist":  "arrival_checklist.enabled",
+	"attestation-guide":  "attestation_guide.enabled",
+	"community-locator":  "community_locator.enabled",
+	"cost-of-living":     "col_calculator.enabled",
+	"credential-checker": "credential_checker.enabled",
+	"crs-calculator":     "crs_calculator.enabled",
+	"currency-converter": "fx.enabled",
+	"cv-formatter":       "cv_formatter.enabled",
+	"eca-guide":          "eca_guide.enabled",
+	"embassy-alerter":    "appointment_alert.enabled",
+	"housing-guide":      "housing_guide.enabled",
+	"language-test":      "language_test_hub.enabled",
+	"pof-calculator":     "pof_calculator.enabled",
+	"processing-tracker": "visa_timeline.enabled",
+	"readiness":          "assessment.enabled",
+	"remittance":         "remittance.enabled",
+	"sop-generator":      "sop_generator.enabled",
+	"tax-calculator":     "tax_calculator.enabled",
+	"travel":             "travel.enabled",
+	"visa-checklist":     "checklist.enabled",
+	"visa-routes":        "visa_routes.enabled",
+}
+
 var mainAppToolPaths = []string{
 	"arrival-checklist",
 	"attestation-guide",
@@ -710,6 +738,10 @@ func (h *SitemapHandler) ServeToolsSitemap(w http.ResponseWriter, r *http.Reques
 	})
 
 	for _, tool := range mainAppToolPaths {
+		// §42: skip tools whose feature flag is off — the page 404s.
+		if flag, ok := toolSitemapFlag[tool]; ok && !h.flagOn(r.Context(), flag) {
+			continue
+		}
 		entries = append(entries, urlEntry{
 			Loc:        base + "/tools/" + tool,
 			ChangeFreq: "monthly",

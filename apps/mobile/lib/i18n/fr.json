@@ -141,5 +141,16 @@
   "report.reason.other": "Autre",
   "profile.blocked_users": "Utilisateurs bloqués",
   "profile.blocked_users_empty": "Aucun utilisateur bloqué",
-  "profile.unblock": "Débloquer"
+  "profile.unblock": "Débloquer",
+  "assessment.back": "Retour",
+  "assessment.next": "Suivant",
+  "assessment.submit": "Envoyer et obtenir le score",
+  "assessment.retake": "Refaire l’évaluation",
+  "assessment.score": "Votre score",
+  "assessment.dimensions": "Dimensions",
+  "assessment.roadmap": "Votre feuille de route",
+  "assessment.history": "Historique",
+  "assessment.required_error": "Veuillez répondre à toutes les questions obligatoires.",
+  "assessment.signin_hint": "Connectez-vous pour enregistrer ce résultat et voir votre historique.",
+  "assessment.sign_in": "Se connecter"
 }

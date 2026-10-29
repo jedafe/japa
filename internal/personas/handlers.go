@@ -416,7 +416,8 @@ func (h *Handlers) HandleGetVoice(w http.ResponseWriter, r *http.Request) {
 // HandleUpdateVoice handles PATCH /admin/persona-voices/{id}.
 // Gated by persona.manage permission.
 func (h *Handlers) HandleUpdateVoice(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -436,7 +437,7 @@ func (h *Handlers) HandleUpdateVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	voice, err := h.service.UpdatePersonaVoice(r.Context(), id, in)
+	voice, err := h.service.UpdatePersonaVoice(r.Context(), id, in, user.UserID)
 	if err != nil {
 		slog.Error("personas: update voice failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
@@ -450,7 +451,8 @@ func (h *Handlers) HandleUpdateVoice(w http.ResponseWriter, r *http.Request) {
 // HandleDeleteVoice handles DELETE /admin/persona-voices/{id}.
 // Gated by persona.manage permission.
 func (h *Handlers) HandleDeleteVoice(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -464,7 +466,7 @@ func (h *Handlers) HandleDeleteVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeletePersonaVoice(r.Context(), id); err != nil {
+	if err := h.service.DeletePersonaVoice(r.Context(), id, user.UserID); err != nil {
 		slog.Error("personas: delete voice failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
 

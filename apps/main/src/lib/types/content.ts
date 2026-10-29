@@ -35,6 +35,8 @@ export interface ContentArticle {
 	author_name?: string;
 	author_username?: string;
 	author_avatar_url?: string | null;
+	/** §68 — true when the author is an AI persona with disclosure_mode = 'disclosed'. */
+	author_ai_disclosed?: boolean;
 	space_id?: string | null;
 	space_name?: string | null;
 	space_slug?: string | null;

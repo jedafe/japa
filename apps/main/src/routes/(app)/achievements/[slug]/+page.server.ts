@@ -5,8 +5,8 @@
 // author (backend enforces ownership).
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { Achievement } from '$lib/types';
+import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
+import type { Achievement, Comment } from '$lib/types';
 import type { ContentArticle } from '$lib/types/content';
 
 export const load: PageServerLoad = async (event) => {
@@ -46,5 +46,37 @@ export const load: PageServerLoad = async (event) => {
 		recommendedContent = [];
 	}
 
-	return { achievement, authed, canEdit, recommendedContent, loadError: false };
+	// SSR-seed the comment thread (§49) — achievement posts accept comments
+	// like any other content row; the stat was previously shown with no way
+	// to read or write them (E-011). Best-effort: the page still renders if
+	// the comments fetch fails; CommentThread shows its own error state.
+	let comments: Comment[] = [];
+	let commentsTotal: number | null = null;
+	let commentsLoadError = false;
+	let deletedUserIds: string[] = [];
+	try {
+		const envelope = await apiGetEnvelope<Comment[]>(
+			ctx,
+			`/content/${achievement.id}/comments?page_size=50`
+		);
+		comments = envelope.data ?? [];
+		commentsTotal = (envelope.meta as { total?: number } | undefined)?.total ?? null;
+		deletedUserIds =
+			(envelope as { deleted_user_ids?: string[] }).deleted_user_ids ?? [];
+	} catch {
+		commentsLoadError = true;
+	}
+
+	return {
+		achievement,
+		authed,
+		canEdit,
+		recommendedContent,
+		comments,
+		commentsTotal,
+		commentsLoadError,
+		deletedUserIds,
+		currentUserId: event.locals.user?.id ?? null,
+		loadError: false
+	};
 };

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/content/providers/content_provider.dart';
+import 'package:japaconnect_mobile/features/content/widgets/reactions_bar.dart';
 import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
 class BlogDetailScreen extends ConsumerWidget {
@@ -23,6 +24,8 @@ class BlogDetailScreen extends ConsumerWidget {
               Text(item.title, style: JcTypography.heading),
               const SizedBox(height: 8),
               Text(item.body ?? ''),
+              const SizedBox(height: 12),
+              ReactionsBar(contentId: item.id),
             ],
           ),
         ),

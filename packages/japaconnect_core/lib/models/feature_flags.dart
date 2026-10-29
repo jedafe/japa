@@ -23,12 +23,13 @@ class FeatureFlags {
       if (value is bool) allFlags[key] = value;
     });
     return FeatureFlags(
-      visaChecklist: allFlags['visa_checklist'] ?? false,
-      readiness: allFlags['readiness'] ?? false,
-      costOfLiving: allFlags['cost_of_living'] ?? false,
-      scholarships: allFlags['scholarships'] ?? false,
-      remittance: allFlags['remittance'] ?? false,
-      japabot: allFlags['japabot'] ?? false,
+      // Keys match the backend feature_flags table (internal/features/registry.go)
+      visaChecklist: allFlags['checklist.enabled'] ?? false,
+      readiness: allFlags['assessment.enabled'] ?? false,
+      costOfLiving: allFlags['col_calculator.enabled'] ?? false,
+      scholarships: allFlags['scholarship_finder.enabled'] ?? false,
+      remittance: allFlags['remittance.enabled'] ?? false,
+      japabot: allFlags['feature.japabot'] ?? false,
       flags: allFlags,
     );
   }

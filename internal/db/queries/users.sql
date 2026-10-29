@@ -547,6 +547,10 @@ SELECT
  pg.name AS public_role,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
+ -- §68 disclosure toggle: the persona's disclosure_mode (NULL for non-bot
+ -- users). The service layer maps it to ai_disclosed — undisclosed personas
+ -- keep the flag hidden publicly (internal is_bot flag unaffected).
+ ap.disclosure_mode AS persona_disclosure_mode,
  (SELECT COUNT(*)::int
  FROM follows f
  WHERE f.follower_id = u.id AND (
@@ -560,6 +564,7 @@ FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 LEFT JOIN user_groups pg ON pg.id = u.public_group_id
+LEFT JOIN ai_personas ap ON ap.user_id = u.id
 WHERE (u.username = @username OR lower(u.public_username) = lower(@username))
  AND u.status = 'active'
 ORDER BY (u.username = @username) DESC, u.id

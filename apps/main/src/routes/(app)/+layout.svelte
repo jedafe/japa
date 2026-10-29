@@ -8,7 +8,7 @@
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import wordmarkLight from '$lib/assets/branding/wordmark-light.webp';
 	import wordmarkDark from '$lib/assets/branding/wordmark-dark.webp';
-	import { isExceptionRoute, isNoTabBarRoute } from '$lib/components/create/gate';
+	import { isExceptionRoute, isNoTabBarRoute, isNoRightSidebarRoute } from '$lib/components/create/gate';
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	// ProductTour (driver.js), MediaLightbox (bits-ui Dialog) and the AI
@@ -40,6 +40,10 @@
 	// Routes that render their own fixed mobile action bar instead of the
 	// shell's tab bar (see gate.isNoTabBarRoute).
 	const noTabBar = $derived(isNoTabBarRoute(page.route.id));
+
+	// Wide workbench routes that keep nav + chrome but drop the right
+	// sidebar (gate.isNoRightSidebarRoute).
+	const noRightSidebar = $derived(isNoRightSidebarRoute(page.route.id));
 
 	// Section 09 Product Tour: ?tour=1 triggers the contextual walkthrough
 	// after onboarding completion. The tour starts once the app shell renders.
@@ -281,10 +285,11 @@
 			? wordmarkDark
 			: (data.siteSettings?.['appearance.logo_url_dark'] as string | undefined)}
 		menu={data.menu}
+		features={data.features}
 	/>
 	<main>{@render children()}</main>
 	{#if !page.data.guestHome && !page.data.hasGuestHomeBlock}
-		<GuestFooter menu={data.footerMenu} />
+		<GuestFooter menu={data.footerMenu} features={data.features} />
 	{/if}
 {:else}
 	<!-- AppShell handles both authenticated and guest users. The LeftNav
@@ -310,7 +315,7 @@
 					logoDarkHeight={Number(data.siteSettings?.['appearance.logo_dark_height']) || 0}
 		logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
-		hideRightSidebar={exception || aiRailOpen || !data.rightSidebarEnabled}
+		hideRightSidebar={exception || aiRailOpen || !data.rightSidebarEnabled || noRightSidebar}
 		rightSidebarWidgets={data.rightSidebarWidgets}
 		leftSidebarWidgets={isCreateRoute || isSettings || isDashboard || isRoadmap || isAi ? [] : data.leftSidebarWidgets}
 

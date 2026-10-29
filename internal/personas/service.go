@@ -68,11 +68,11 @@ type PersonaInput struct {
 	TypeID         string         `json:"type_id"` // optional; defaults to "contributor"/"columnist" lookup
 }
 
-// personaEmail builds a deterministic, platform-scoped internal email for a
-// persona backing account. These accounts never log in (is_bot = true), so
-// the email is an internal identifier, not a deliverable address. The
-// is embedded to avoid UNIQUE( email) collisions when
-// two platforms create personas with the same slug (BUG-008).
+// personaEmail builds a deterministic internal email for a persona backing
+// account. These accounts never log in (is_bot = true), so the email is an
+// internal identifier, not a deliverable address. Slug uniqueness against
+// existing accounts is pre-validated in ProvisionPersonas (BUG-001) so a
+// collision surfaces as a validation error, not a mid-tx UNIQUE failure.
 func personaEmail(slug string) string {
 	return fmt.Sprintf("persona+%s+@bot.internal", slug)
 }
@@ -185,6 +185,11 @@ func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID
 		return nil, errors.New("personas: no personas to provision")
 	}
 
+	// BUG-PER-006: audit the mass-provisioning action — a privileged bulk
+	// identity creation must leave an audit_logs trail (mirrors the OAuth
+	// grant lifecycle audit posture).
+	defer s.writeAudit(ctx, adminUserID, "persona.provision", "", map[string]any{"batch_size": len(inputs)})
+
 	// BUG-006: cap the batch size via system_settings (Rule 3: configurable).
 	maxBatch := 100
 	if s.settings != nil {
@@ -235,6 +240,36 @@ func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID
 		}
 
 		seenSlugs[in.Slug] = i
+	}
+
+	// BUG-001: pre-validate slugs against existing rows. Without this, a slug
+	// that already exists in users hits UNIQUE(email)/UNIQUE(username)
+	// mid-transaction and the admin gets a generic "provisioning_failed"
+	// with no indication of which slug collided.
+	slugs := make([]string, 0, len(inputs))
+	for _, in := range inputs {
+		slugs = append(slugs, in.Slug)
+	}
+
+	rows, err := s.store.DB().Reader.Query(ctx,
+		`SELECT username FROM users WHERE username = ANY($1)`, slugs)
+	if err != nil {
+		return nil, fmt.Errorf("personas: checking existing slugs: %w", err)
+	}
+
+	var taken []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("personas: scanning existing slugs: %w", err)
+		}
+		taken = append(taken, u)
+	}
+	rows.Close()
+
+	if len(taken) > 0 {
+		return nil, fmt.Errorf("personas: slug(s) already in use: %s: %w", strings.Join(taken, ", "), errpkg.ErrInvalid)
 	}
 
 	pool := s.store.DB().Writer
@@ -756,6 +791,8 @@ func (s *Service) CreatePersonaVoice(ctx context.Context, createdBy pgtype.UUID,
 		return PersonaVoice{}, err
 	}
 
+	s.writeAudit(ctx, createdBy, "persona.voice.create", row.ID.String(), map[string]any{"slug": in.Slug})
+
 	return personaVoiceFromRow(row), nil
 }
 
@@ -764,7 +801,7 @@ func personaDetailFromRow(r gen.GetAIPersonaByIDRow) PersonaDetail {
 		ID: r.ID.String(),
 
 		UserID:              r.UserID.String(),
-		ProfileID:           r.ProfileID.String(),
+		ProfileID:           uuidOrEmpty(r.ProfileID), // BUG-004: emit "" not a zero UUID
 		DisclosureMode:      r.DisclosureMode,
 		AutonomyMode:        r.AutonomyMode,
 		VoiceID:             uuidOrEmpty(r.VoiceID),
@@ -791,7 +828,7 @@ func personaListItemFromRow(r gen.ListAIPersonasRow) PersonaListItem {
 		ID: r.ID.String(),
 
 		UserID:              r.UserID.String(),
-		ProfileID:           r.ProfileID.String(),
+		ProfileID:           uuidOrEmpty(r.ProfileID), // BUG-004: emit "" not a zero UUID
 		DisclosureMode:      r.DisclosureMode,
 		AutonomyMode:        r.AutonomyMode,
 		VoiceID:             uuidOrEmpty(r.VoiceID),
@@ -977,7 +1014,7 @@ func (s *Service) ListPersonaVoices(ctx context.Context, limit, offset int32) ([
 }
 
 // UpdatePersonaVoice updates a shared voice and returns the updated record.
-func (s *Service) UpdatePersonaVoice(ctx context.Context, id pgtype.UUID, in UpdatePersonaVoiceInput) (PersonaVoice, error) {
+func (s *Service) UpdatePersonaVoice(ctx context.Context, id pgtype.UUID, in UpdatePersonaVoiceInput, actors ...pgtype.UUID) (PersonaVoice, error) {
 	if in.VoicePrompt != nil {
 		if err := validateVoicePrompt(in.VoicePrompt); err != nil {
 			return PersonaVoice{}, fmt.Errorf("personas: %w: %w", errpkg.ErrInvalid, err)
@@ -1008,13 +1045,62 @@ func (s *Service) UpdatePersonaVoice(ctx context.Context, id pgtype.UUID, in Upd
 		return PersonaVoice{}, err
 	}
 
+	s.writeAudit(ctx, firstActor(actors), "persona.voice.update", id.String(), nil)
+
 	return personaVoiceFromRow(row), nil
 }
 
 // emptyString is a pre-allocated empty string pointer for sqlc COALESCE.
 var emptyString = ""
 
-// DeletePersonaVoice deletes a shared voice by ID.
-func (s *Service) DeletePersonaVoice(ctx context.Context, id pgtype.UUID) error {
-	return s.store.DeletePersonaVoice(ctx, id)
+// firstActor returns the first variadic actor ID or an invalid UUID.
+func firstActor(actors []pgtype.UUID) pgtype.UUID {
+	if len(actors) > 0 {
+		return actors[0]
+	}
+	return pgtype.UUID{}
+}
+
+// writeAudit inserts an audit_logs row for a privileged persona mutation
+// (BUG-PER-006). Best-effort — audit failures are logged, never propagated.
+func (s *Service) writeAudit(ctx context.Context, actor pgtype.UUID, action, targetID string, meta map[string]any) {
+	if s.store == nil || s.store.DB() == nil {
+		return
+	}
+	payload, _ := json.Marshal(meta)
+	var actorArg, targetArg any
+	if actor.Valid {
+		actorArg = actor
+	}
+	if targetID != "" {
+		targetArg = targetID
+	}
+	if _, err := s.store.DB().Writer.Exec(ctx, `
+		INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata)
+		VALUES ($1, $2, 'persona', $3::uuid, $4::jsonb)
+	`, actorArg, action, targetArg, string(payload)); err != nil {
+		slog.Warn("personas: audit write failed", "action", action, "error", err)
+	}
+}
+
+// DeletePersonaVoice deletes a shared voice by ID. System voices (the seeded
+// role × tone catalog, is_system = true) cannot be deleted — they are
+// platform-managed defaults; personas referencing a deleted voice would lose
+// their tone anchor (BUG-005).
+func (s *Service) DeletePersonaVoice(ctx context.Context, id pgtype.UUID, actors ...pgtype.UUID) error {
+	voice, err := s.store.GetPersonaVoiceByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if voice.IsSystem {
+		return fmt.Errorf("personas: %w: cannot delete a system voice", errpkg.ErrForbidden)
+	}
+
+	if err := s.store.DeletePersonaVoice(ctx, id); err != nil {
+		return err
+	}
+
+	s.writeAudit(ctx, firstActor(actors), "persona.voice.delete", id.String(), nil)
+	return nil
 }

@@ -975,6 +975,17 @@ func (q *Queries) GdprDeleteCalendarSubscriptionsByUser(ctx context.Context, use
 	return err
 }
 
+const gdprDeleteCommentVotesByUser = `-- name: GdprDeleteCommentVotesByUser :exec
+DELETE FROM comment_votes WHERE user_id = $1
+`
+
+// E-009: deletes comment_votes rows authored by the user — same
+// self-documenting erasure rationale as reactions/forum_votes (BUG-011).
+func (q *Queries) GdprDeleteCommentVotesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteCommentVotesByUser, userID)
+	return err
+}
+
 const gdprDeleteContentSharesByUser = `-- name: GdprDeleteContentSharesByUser :exec
 DELETE FROM content_shares WHERE user_id = $1
 `
@@ -984,6 +995,16 @@ DELETE FROM content_shares WHERE user_id = $1
 // self-documenting and survives future schema changes. Ref: BUG-011.
 func (q *Queries) GdprDeleteContentSharesByUser(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, gdprDeleteContentSharesByUser, userID)
+	return err
+}
+
+const gdprDeleteDocPageVotesByUser = `-- name: GdprDeleteDocPageVotesByUser :exec
+DELETE FROM doc_page_votes WHERE user_id = $1
+`
+
+// E-009: deletes doc_page_votes rows (§44 helpful votes).
+func (q *Queries) GdprDeleteDocPageVotesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteDocPageVotesByUser, userID)
 	return err
 }
 
@@ -1032,6 +1053,16 @@ DELETE FROM user_content_views WHERE user_id = $1
 // only, which is safe because user_ids are globally unique.
 func (q *Queries) GdprDeleteUserContentViews(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, gdprDeleteUserContentViews, userID)
+	return err
+}
+
+const gdprDeleteWikiPageFeedbackByUser = `-- name: GdprDeleteWikiPageFeedbackByUser :exec
+DELETE FROM wiki_page_feedback WHERE user_id = $1
+`
+
+// E-009: deletes wiki_page_feedback rows (§80 helpful votes).
+func (q *Queries) GdprDeleteWikiPageFeedbackByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteWikiPageFeedbackByUser, userID)
 	return err
 }
 
@@ -1542,6 +1573,20 @@ func (q *Queries) GdprExportUserCalendarSubscriptions(ctx context.Context, userI
 	return data, err
 }
 
+const gdprExportUserCommentVotes = `-- name: GdprExportUserCommentVotes :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT comment_id, user_id, value, created_at FROM comment_votes WHERE user_id = $1) t
+`
+
+// E-009: comment_votes belong in the right-to-access export alongside
+// reactions/forum_votes.
+func (q *Queries) GdprExportUserCommentVotes(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserCommentVotes, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserComments = `-- name: GdprExportUserComments :many
 SELECT id, content_id, body, parent_id, created_at
 FROM comments
@@ -1868,6 +1913,18 @@ FROM (
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 func (q *Queries) GdprExportUserDMSettings(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserDMSettings, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserDocPageVotes = `-- name: GdprExportUserDocPageVotes :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, page_id, user_id, vote, created_at, updated_at FROM doc_page_votes WHERE user_id = $1) t
+`
+
+func (q *Queries) GdprExportUserDocPageVotes(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserDocPageVotes, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2447,6 +2504,18 @@ FROM (SELECT id, user_id, ledger_type, operation, amount, resulting_balance, sou
 
 func (q *Queries) GdprExportUserWalletLedger(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserWalletLedger, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserWikiPageFeedback = `-- name: GdprExportUserWikiPageFeedback :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, wiki_page_id, user_id, vote, created_at, updated_at FROM wiki_page_feedback WHERE user_id = $1) t
+`
+
+func (q *Queries) GdprExportUserWikiPageFeedback(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserWikiPageFeedback, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err

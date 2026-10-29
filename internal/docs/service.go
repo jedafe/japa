@@ -363,13 +363,22 @@ func (s *Service) SubmitDocPageFeedback(ctx context.Context, audience, slug, vot
 		return nil, err
 	}
 
-	rows, err := s.store.setVote(ctx, page.ID, userID, vote)
-	if err != nil {
-		return nil, err
-	}
+	// Re-posting the current vote retracts it (same toggle as wiki page
+	// feedback, §80); a different vote switches in place.
+	current, _ := s.getDocPageFeedback(ctx, audience, slug, userID, true)
+	if current != nil && current.MyVote != nil && *current.MyVote == vote {
+		if err := s.store.deleteVote(ctx, page.ID, userID); err != nil {
+			return nil, err
+		}
+	} else {
+		rows, err := s.store.setVote(ctx, page.ID, userID, vote)
+		if err != nil {
+			return nil, err
+		}
 
-	if rows == 0 {
-		return nil, errpkg.ErrNotFound
+		if rows == 0 {
+			return nil, errpkg.ErrNotFound
+		}
 	}
 
 	// Read back on the writer pool — replica lag must not serve pre-vote

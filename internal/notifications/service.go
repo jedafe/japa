@@ -3,12 +3,14 @@ package notifications
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/worker"
@@ -47,9 +49,12 @@ type DispatchResult struct {
 // DispatchNotification handles the batch dedup logic for a notification event.
 // 1. Check for open batch window for (recipient, type, subject)
 // 2. If window exists and not dispatched: extend it (add actor)
-// 3. If no window: create new window
+// 3. If no window: upsert a window — the UNIQUE constraint resets dispatched
+//    or expired windows into a fresh batch (BUG-002) instead of erroring.
+// subjectTitle/subjectURL ride on the window so DispatchBatch can build a
+// deep-linkable notification row (BUG-009).
 // Returns whether a new notification was created or batch was extended.
-func (s *Service) DispatchNotification(ctx context.Context, recipientID pgtype.UUID, nType, _ string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, _, _, _ string) (DispatchResult, error) {
+func (s *Service) DispatchNotification(ctx context.Context, recipientID pgtype.UUID, nType, subjectTitle string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, subjectURL, _, _ string) (DispatchResult, error) {
 	// §41 (BLK-008): a user block in either direction suppresses the
 	// notification entirely — the blocked party's actions must not reach
 	// the other side. Central check so every dispatch path (comments,
@@ -70,7 +75,9 @@ func (s *Service) DispatchNotification(ctx context.Context, recipientID pgtype.U
 		// Only skip when every channel is off — a user with in-app disabled
 		// but push/email enabled must still get the batch so DispatchBatch
 		// can deliver on those channels (ALG-006).
-		if ep, ok := prefs[nType]; ok && !ep.InApp && !ep.Push && !ep.Email {
+		// A disabled type suppresses delivery entirely (spec §35 "disable
+		// type"); otherwise skip only when every channel is off.
+		if ep, ok := prefs[nType]; ok && (ep.Disabled || (!ep.InApp && !ep.Push && !ep.Email)) {
 			return DispatchResult{Action: "skipped"}, nil
 		}
 	}
@@ -94,51 +101,43 @@ func (s *Service) DispatchNotification(ctx context.Context, recipientID pgtype.U
 		return DispatchResult{Action: "extended", WindowID: window.ID}, nil
 	}
 
-	// Create new window.
+	// Create or reset the window. The upsert handles the UNIQUE constraint:
+	// a dispatched/expired row resets into a fresh batch; a still-open row
+	// (concurrent-create race) extends instead (BUG-002/008).
 	// AUDIT-FRESH-SETTING-007: batch window is configurable via system_settings.
 	batchWindowMinutes := 5
 	if s.settings != nil {
 		batchWindowMinutes = s.settings.GetIntOr(ctx, "notifications.batch_window_minutes", batchWindowMinutes)
 	}
-	// BUG-001: pass so the batch window carries platform context
-	// through to DispatchBatch, which needs it for the notifications insert.
-	if err := s.store.createBatchWindow(ctx, gen.CreateBatchWindowParams{
+	row, err := s.store.upsertBatchWindow(ctx, gen.UpsertBatchWindowParams{
 		RecipientID:      recipientID,
 		NotificationType: nType,
 		SubjectType:      subjectType,
 		SubjectID:        subjectID,
 		ActorID:          actorID,
 		WindowMinutes:    int32(batchWindowMinutes), // #nosec
-	}); err != nil {
+		SubjectTitle:     stringPtr(subjectTitle),
+		ActionUrl:        stringPtr(subjectURL),
+	})
+	if err != nil {
 		return DispatchResult{}, fmt.Errorf("creating batch window: %w", err)
 	}
 
-	// Retrieve the newly created window to get its ID and close_at.
-	window, err = s.store.getOpenBatchWindow(ctx, gen.GetOpenBatchWindowParams{
-		RecipientID:      recipientID,
-		NotificationType: nType,
-		SubjectType:      subjectType,
-		SubjectID:        subjectID,
-	})
-	if err != nil {
-		return DispatchResult{}, fmt.Errorf("retrieving new batch window: %w", err)
-	}
-
 	// Enqueue the dispatch batch task to fire at window_close_at.
-	s.enqueueBatchDispatch(window)
+	s.enqueueBatchDispatch(row.ID, row.WindowCloseAt)
 
-	return DispatchResult{Action: "created", WindowID: window.ID}, nil
+	return DispatchResult{Action: "created", WindowID: row.ID}, nil
 }
 
 // enqueueBatchDispatch schedules a notification:dispatch_batch Asynq task
 // to fire when the batch window closes.
-func (s *Service) enqueueBatchDispatch(window gen.NotificationBatchWindow) {
+func (s *Service) enqueueBatchDispatch(windowID pgtype.UUID, closeAt pgtype.Timestamptz) {
 	if s.client == nil {
 		return
 	}
 
 	payload, err := json.Marshal(NotificationDispatchPayload{
-		WindowID: window.ID.String(),
+		WindowID: windowID.String(),
 	})
 	if err != nil {
 		slog.Error("notifications: failed to marshal dispatch_batch payload", "error", err)
@@ -148,26 +147,37 @@ func (s *Service) enqueueBatchDispatch(window gen.NotificationBatchWindow) {
 	task := asynq.NewTask(worker.TypeNotificationDispatchBatch, payload)
 	opts := []asynq.Option{
 		asynq.Queue(worker.QueueForTask(worker.TypeNotificationDispatchBatch)),
-		asynq.ProcessAt(window.WindowCloseAt.Time),
+		asynq.ProcessAt(closeAt.Time),
 	}
 
 	if _, err := s.client.Enqueue(task, opts...); err != nil {
 		slog.Error("notifications: failed to enqueue dispatch_batch",
-			"window_id", window.ID.String(), "error", err)
+			"window_id", windowID.String(), "error", err)
 	}
 }
 
 // DispatchBatch processes a completed batch window.
-// Reads the window, resolves actor display names, builds the aggregated notification
-// (e.g. "Alice and 9 others reacted"), inserts the row, marks the window dispatched,
+// Claims the window inside one transaction (row lock → insert → mark
+// dispatched → commit — BUG-018), builds the aggregated notification
+// (e.g. "Alice and 9 others reacted" — now carrying the subject title and
+// deep link stored on the window, BUG-009), broadcasts the live WS event,
 // and enqueues push/email delivery if the recipient's preferences allow.
 func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error {
+	// Fast pre-check: already-dispatched windows exit before opening a tx.
 	window, err := s.store.getBatchWindowByID(ctx, windowID)
 	if err != nil {
 		return fmt.Errorf("reading batch window: %w", err)
 	}
 
 	if window.Dispatched {
+		return nil
+	}
+
+	// The window was reset into a fresh batch (BUG-002 upsert) while an older
+	// queued task was still pending — a stale task must not dispatch the new
+	// batch early. Re-enqueue for the real close time and exit.
+	if window.WindowCloseAt.Valid && window.WindowCloseAt.Time.After(time.Now()) {
+		s.enqueueBatchDispatch(windowID, window.WindowCloseAt)
 		return nil
 	}
 
@@ -180,39 +190,51 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 
 	title := BuildBatchTitle(actorName, window.ActorCount, action)
 
+	// BUG-009: the aggregated row carries the subject title as its body and
+	// the stored deep link as action_url so the notification is clickable.
+	body := ""
+	if window.SubjectTitle != nil {
+		body = *window.SubjectTitle
+	}
+
+	actionURL := ""
+	if window.ActionUrl != nil {
+		actionURL = *window.ActionUrl
+	}
+
 	// BUG-004: re-check the effective in-app preference before inserting.
-	// The user may have disabled in-app during the 5-minute batch window.
-	// If in-app is off, skip the insert but still mark the window dispatched
-	// so the Asynq task does not retry. Push/email preferences are still
-	// honoured below if the user has them enabled.
+	// The user may have disabled in-app during the batch window.
 	prefs, prefErr := s.resolveEffectivePreferences(ctx, window.RecipientID)
 	if prefErr == nil {
+		if ep, ok := prefs[window.NotificationType]; ok && ep.Disabled {
+			// Type disabled — suppress the whole batch, still mark the window.
+			if err := s.store.markBatchWindowDispatched(ctx, windowID); err != nil {
+				return fmt.Errorf("marking batch window dispatched: %w", err)
+			}
+
+			return nil
+		}
+
 		if ep, ok := prefs[window.NotificationType]; ok && !ep.InApp {
 			if err := s.store.markBatchWindowDispatched(ctx, windowID); err != nil {
 				return fmt.Errorf("marking batch window dispatched: %w", err)
 			}
 			// Still honour push/email if the user enabled them.
 			if ep.Push {
-				s.enqueuePushDeliveryWithCtx(ctx, window.RecipientID, title, "", "")
+				s.enqueuePushDeliveryWithCtx(ctx, window.RecipientID, title, body, actionURL, windowID.String())
 			}
 
 			if ep.Email {
-				s.enqueueEmailDelivery(ctx, window.RecipientID, window.NotificationType, title, "", "")
+				s.enqueueEmailDelivery(ctx, window.RecipientID, window.NotificationType, title, body, actionURL)
 			}
 
 			return nil
 		}
 	}
 
-	// Insert the aggregated notification.
-	// BUG-001: use the batch window's (previously zero UUID, which
-	// violated the NOT NULL FK constraint on notifications.).
-	// BUG-005: capture the returned ID for the WebSocket broadcast.
-	var bodyPtr *string
-
-	var actionURLPtr *string
-
-	notifID, err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
+	// BUG-018: insert + mark-dispatched run inside one transaction — a
+	// failure rolls both back so an Asynq retry can never double-insert.
+	notifID, window, claimed, err := s.store.dispatchWindowTx(ctx, windowID, gen.InsertNotificationParams{
 		RecipientID:      window.RecipientID,
 		NotificationType: window.NotificationType,
 		ActorType:        stringPtr(ActorTypeUser),
@@ -220,16 +242,15 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 		SubjectType:      stringPtr(window.SubjectType),
 		SubjectID:        window.SubjectID,
 		Title:            title,
-		Body:             bodyPtr,
-		ActionUrl:        actionURLPtr,
+		Body:             stringPtr(body),
+		ActionUrl:        stringPtr(actionURL),
 	})
 	if err != nil {
-		return fmt.Errorf("inserting batch notification: %w", err)
+		return fmt.Errorf("dispatching batch window: %w", err)
 	}
 
-	// Mark window as dispatched.
-	if err := s.store.markBatchWindowDispatched(ctx, windowID); err != nil {
-		return fmt.Errorf("marking batch window dispatched: %w", err)
+	if !claimed {
+		return nil
 	}
 
 	// BUG-002: broadcast the new notification via WebSocket so the client
@@ -244,8 +265,8 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 		"subject_type":      window.SubjectType,
 		"subject_id":        window.SubjectID,
 		"title":             title,
-		"body":              "",
-		"action_url":        "",
+		"body":              body,
+		"action_url":        actionURL,
 		"created_at":        time.Now().UTC().Format(time.RFC3339),
 	}
 	if label := s.notificationTypeLabel(ctx, window.NotificationType); label != "" {
@@ -262,11 +283,11 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	if prefErr == nil {
 		if ep, ok := prefs[window.NotificationType]; ok {
 			if ep.Push {
-				s.enqueuePushDeliveryWithCtx(ctx, window.RecipientID, title, "", "")
+				s.enqueuePushDeliveryWithCtx(ctx, window.RecipientID, title, body, actionURL, notifID.String())
 			}
 
 			if ep.Email {
-				s.enqueueEmailDelivery(ctx, window.RecipientID, window.NotificationType, title, "", "")
+				s.enqueueEmailDelivery(ctx, window.RecipientID, window.NotificationType, title, body, actionURL)
 			}
 
 			return nil
@@ -274,8 +295,8 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	}
 
 	// Fallback if preference resolution failed — use the old per-call checks.
-	s.checkAndEnqueuePush(ctx, window.RecipientID, window.NotificationType, title, "", "")
-	s.checkAndEnqueueEmail(ctx, window.RecipientID, window.NotificationType, title, "", "")
+	s.checkAndEnqueuePush(ctx, window.RecipientID, window.NotificationType, title, body, actionURL, notifID.String())
+	s.checkAndEnqueueEmail(ctx, window.RecipientID, window.NotificationType, title, body, actionURL)
 
 	return nil
 }
@@ -324,7 +345,10 @@ func stringPtr(s string) *string {
 }
 
 // CreateNotification directly creates a single notification (non-batch path).
-// If the recipient has push enabled for this type, a push delivery task is enqueued.
+// The in-app row honours the recipient's in_app preference — a user who
+// disabled in-app for this type gets push/email only, consistent with the
+// batch path (BUG-005 class). Push delivery tasks carry the notification id
+// so asynq.Unique only collapses true redeliveries (BUG-012).
 func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error {
 	// §41 (BLK-008): same suppression as DispatchNotification on the
 	// non-batch path — user-attributed notifications from a blocked actor
@@ -333,6 +357,28 @@ func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUI
 		if blocked, err := s.store.isBlocked(ctx, recipientID, actorID); err == nil && blocked {
 			return nil
 		}
+	}
+
+	// Resolve effective preferences once for the in-app gate + push/email.
+	prefs, prefErr := s.resolveEffectivePreferences(ctx, recipientID)
+	ep, havePref := prefs[nType]
+
+	if prefErr == nil && havePref && ep.Disabled {
+		// Type disabled — suppress all delivery.
+		return nil
+	}
+
+	if prefErr == nil && havePref && !ep.InApp {
+		// in-app off — no row, but push/email still honoured.
+		if ep.Push {
+			s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL, "")
+		}
+
+		if ep.Email {
+			s.enqueueEmailDelivery(ctx, recipientID, nType, title, body, actionURL)
+		}
+
+		return nil
 	}
 
 	var actorTypePtr *string
@@ -396,13 +442,12 @@ func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUI
 	// BUG-013: invalidate the unread count cache so the badge updates.
 	s.invalidateUnreadCount(ctx, recipientID)
 
-	// BUG-007: resolve effective preferences once and use them for both
+	// BUG-007: reuse the already-fetched effective preferences for both
 	// push and email checks, instead of two separate DB queries.
-	prefs, prefErr := s.resolveEffectivePreferences(ctx, recipientID)
 	if prefErr == nil {
-		if ep, ok := prefs[nType]; ok {
+		if havePref {
 			if ep.Push {
-				s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL)
+				s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL, notifID.String())
 			}
 
 			if ep.Email {
@@ -414,10 +459,18 @@ func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUI
 	}
 
 	// Fallback if preference resolution failed — use the old per-call checks.
-	s.checkAndEnqueuePush(ctx, recipientID, nType, title, body, actionURL)
+	s.checkAndEnqueuePush(ctx, recipientID, nType, title, body, actionURL, notifID.String())
 	s.checkAndEnqueueEmail(ctx, recipientID, nType, title, body, actionURL)
 
 	return nil
+}
+
+// HasUnreadNotification reports whether an unread notification already
+// exists for (recipient, type, subject). Repeat-event flows (dm.message,
+// dm.request) use it to deliver push for every event while stacking at most
+// one in-app row per subject until read.
+func (s *Service) HasUnreadNotification(ctx context.Context, recipientID pgtype.UUID, nType, subjectType string, subjectID pgtype.UUID) (bool, error) {
+	return s.store.hasUnreadNotificationForSubject(ctx, recipientID, nType, subjectType, subjectID)
 }
 
 // GetNotifications returns paginated notifications for a user.
@@ -481,12 +534,15 @@ func (s *Service) GetUnreadCount(ctx context.Context, recipientID pgtype.UUID) (
 }
 
 // MarkAsRead marks a single notification as read.
+// BUG-016: returns ErrNotificationNotFound for unknown/foreign ids.
+// BUG-017: pushes the fresh unread count over WS so other sessions sync.
 func (s *Service) MarkAsRead(ctx context.Context, notificationID, recipientID pgtype.UUID) error {
 	if err := s.store.markNotificationRead(ctx, notificationID, recipientID); err != nil {
 		return err
 	}
 
 	s.invalidateUnreadCount(ctx, recipientID)
+	s.broadcastUnreadCount(ctx, recipientID)
 
 	return nil
 }
@@ -498,17 +554,20 @@ func (s *Service) MarkAllAsRead(ctx context.Context, recipientID pgtype.UUID) er
 	}
 
 	s.invalidateUnreadCount(ctx, recipientID)
+	s.broadcastUnreadCount(ctx, recipientID)
 
 	return nil
 }
 
 // DeleteNotification deletes a single notification.
+// BUG-016: returns ErrNotificationNotFound for unknown/foreign ids.
 func (s *Service) DeleteNotification(ctx context.Context, notificationID, recipientID pgtype.UUID) error {
 	if err := s.store.deleteNotification(ctx, notificationID, recipientID); err != nil {
 		return err
 	}
 
 	s.invalidateUnreadCount(ctx, recipientID)
+	s.broadcastUnreadCount(ctx, recipientID)
 
 	return nil
 }
@@ -565,10 +624,14 @@ func (s *Service) GetPreferences(ctx context.Context, userID pgtype.UUID) ([]Pre
 
 // effectivePref is the resolved preference for a single notification type,
 // merging the user's override (if any) with the notification_type defaults.
+// Disabled marks admin-disabled types (DELETE /admin/notification-types —
+// spec §35 "disable type"): a disabled type must suppress ALL delivery, not
+// merely lose its defaults — without this flag the disable was a no-op.
 type effectivePref struct {
-	InApp bool
-	Email bool
-	Push  bool
+	InApp    bool
+	Email    bool
+	Push     bool
+	Disabled bool
 }
 
 // resolveEffectivePreferences returns a map of notification_type → effective
@@ -595,14 +658,14 @@ func (s *Service) resolveEffectivePreferences(ctx context.Context, recipientID p
 	result := make(map[string]effectivePref, len(types))
 
 	for _, nt := range types {
-		if !nt.Enabled {
-			continue
-		}
-
+		// Disabled types stay in the map (flagged) so delivery paths can
+		// suppress them outright; keeping their merged defaults preserves a
+		// correct base for preference PATCHes while the type is off.
 		ep := effectivePref{
-			InApp: nt.DefaultInApp,
-			Email: nt.DefaultEmail,
-			Push:  nt.DefaultPush,
+			InApp:    nt.DefaultInApp,
+			Email:    nt.DefaultEmail,
+			Push:     nt.DefaultPush,
+			Disabled: !nt.Enabled,
 		}
 		if o, ok := overrides[nt.Key]; ok {
 			ep.InApp = o.InApp
@@ -636,8 +699,22 @@ func (s *Service) UpdatePreference(ctx context.Context, userID pgtype.UUID, nTyp
 // Base value resolution: the user's existing override row for the type wins;
 // otherwise the notification_types effective defaults; otherwise the §35
 // global defaults (in_app on, email/push off).
+//
+// BUG-011: an unknown notification_type now returns ErrNotificationTypeNotFound
+// (404 at the handler) instead of surfacing the FK violation as a 500.
 func (s *Service) UpdatePreferencePartial(ctx context.Context, userID pgtype.UUID, nType string, inApp, email, push *bool) error {
 	base := effectivePref{InApp: true}
+
+	// Existence check — an unknown key must not reach the FK-constrained
+	// upsert and surface as a generic 500. Only a genuine miss maps to 404;
+	// DB failures propagate as errors → 500 at the handler.
+	if _, err := s.store.getNotificationTypeLabel(ctx, nType); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotificationTypeNotFound
+		}
+
+		return err
+	}
 
 	// Effective prefs already merge the user's override with the type
 	// defaults for enabled types.
@@ -678,9 +755,75 @@ func (s *Service) UpdatePreferencePartial(ctx context.Context, userID pgtype.UUI
 	return s.UpdatePreference(ctx, userID, nType, base.InApp, base.Email, base.Push)
 }
 
+// PreferencePatch is one item of a bulk preference update — nil channels
+// keep their current value (same partial-PATCH semantics as
+// UpdatePreferencePartial).
+type PreferencePatch struct {
+	Type  string
+	InApp *bool
+	Email *bool
+	Push  *bool
+}
+
+// UpdatePreferencesBulk applies a bulk preference update inside one
+// transaction (BUG-014) after validating every type key up front
+// (BUG-011 — the first unknown key returns ErrNotificationTypeNotFound and
+// nothing is written).
+func (s *Service) UpdatePreferencesBulk(ctx context.Context, userID pgtype.UUID, items []PreferencePatch) error {
+	resolved := make([]gen.UpsertNotificationPreferenceParams, 0, len(items))
+
+	// Hoist the effective-preference snapshot — one read for the whole batch
+	// instead of N.
+	prefs, _ := s.resolveEffectivePreferences(ctx, userID)
+
+	for _, p := range items {
+		if _, err := s.store.getNotificationTypeLabel(ctx, p.Type); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrNotificationTypeNotFound
+			}
+
+			return err
+		}
+
+		base := effectivePref{InApp: true}
+
+		if ep, ok := prefs[p.Type]; ok {
+			base = ep
+		}
+
+		if p.InApp != nil {
+			base.InApp = *p.InApp
+		}
+
+		if p.Email != nil {
+			base.Email = *p.Email
+		}
+
+		if p.Push != nil {
+			base.Push = *p.Push
+		}
+
+		resolved = append(resolved, gen.UpsertNotificationPreferenceParams{
+			UserID:           userID,
+			NotificationType: p.Type,
+			InApp:            base.InApp,
+			Email:            base.Email,
+			Push:             base.Push,
+		})
+	}
+
+	return s.store.upsertNotificationPreferencesTx(ctx, resolved)
+}
+
 // GetNotificationTypes returns all configured notification types.
 func (s *Service) GetNotificationTypes(ctx context.Context) ([]gen.NotificationType, error) {
 	return s.store.getNotificationTypes(ctx)
+}
+
+// GetEnabledNotificationTypes returns enabled types only — the contract for
+// the member-facing GET /me/notification-types (BUG-015).
+func (s *Service) GetEnabledNotificationTypes(ctx context.Context) ([]gen.NotificationType, error) {
+	return s.store.getEnabledNotificationTypes(ctx)
 }
 
 // AdminListNotificationTypes returns a filtered, sorted, paginated slice of
@@ -730,7 +873,7 @@ func SplitNames(names string) string {
 // Hand-written SQL consolidated into sqlc (notifications.sql).
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (s *Service) CreateNotificationType(ctx context.Context, key, label, category string, description *string, enabled, defaultInApp, defaultEmail, defaultPush bool) error {
-	return s.store.upsertNotificationType(ctx, gen.UpsertNotificationTypeParams{
+	return s.store.createNotificationType(ctx, gen.CreateNotificationTypeParams{
 		Key: key, Label: label, Category: category, Description: description, Enabled: enabled,
 		DefaultInApp: defaultInApp, DefaultEmail: defaultEmail, DefaultPush: defaultPush,
 	})

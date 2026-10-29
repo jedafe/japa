@@ -1238,6 +1238,17 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		if err := q.GdprDeleteReactionsByUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting user reactions: %w", err)
 		}
+		// E-009: same self-documenting erasure for the remaining user-keyed
+		// vote/feedback tables (comment votes, docs + wiki helpful votes).
+		if err := q.GdprDeleteCommentVotesByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user comment votes: %w", err)
+		}
+		if err := q.GdprDeleteDocPageVotesByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user doc page votes: %w", err)
+		}
+		if err := q.GdprDeleteWikiPageFeedbackByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user wiki page feedback: %w", err)
+		}
 		if err := q.GdprDeleteContentSharesByUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting user content shares: %w", err)
 		}
@@ -1973,6 +1984,53 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			return fmt.Errorf("deleting ai_agent_sessions for user: %w", err)
 		}
 
+		// BUG-MCP-001/BUG-AI-001/BUG-AI-002: erase the remaining AI/OAuth
+		// relational rows introduced by ADR-130 (unified transcripts +
+		// projects), the BYOK key store, and the §120 OAuth server.
+		// ai_messages cascades from ai_conversations via ON DELETE CASCADE
+		// on conversation_id. user_ai_keys and oauth_* rows also cascade on
+		// hard user delete, but the anonymize phase leaves the users row in
+		// place — a live refresh-token chain would otherwise keep minting
+		// access tokens for an erased account, and transcript/key rows would
+		// retain recoverable PII through the retention window.
+		// Ref: japaconnect-engineering/sections/120-mcp-agent-distribution.md
+		// japaconnect-engineering/sections/103-ai-agent-executor.md (ADR-130)
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM ai_conversations
+			WHERE user_id = $1
+		`, userID); err != nil {
+			return fmt.Errorf("deleting ai_conversations for user: %w", err)
+		}
+
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM ai_projects
+			WHERE user_id = $1
+		`, userID); err != nil {
+			return fmt.Errorf("deleting ai_projects for user: %w", err)
+		}
+
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM user_ai_keys
+			WHERE user_id = $1
+		`, userID); err != nil {
+			return fmt.Errorf("deleting user_ai_keys for user: %w", err)
+		}
+
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM oauth_authorization_codes
+			WHERE user_id = $1
+		`, userID); err != nil {
+			return fmt.Errorf("deleting oauth_authorization_codes for user: %w", err)
+		}
+
+		if _, err := s.db.Writer.Exec(ctx, `
+			DELETE FROM oauth_tokens
+			WHERE user_id = $1
+		`, userID); err != nil {
+			return fmt.Errorf("deleting oauth_tokens for user: %w", err)
+		}
+
 		// BUG-008: ai_hitl_reviews.reviewer_id references users(id) WITHOUT
 		// an ON DELETE clause, so the final HardDeleteUser would fail with a
 		// foreign key violation if the user reviewed any HITL items. Nullify
@@ -2308,6 +2366,9 @@ type UserDataExport struct {
 	ForumThreads                []map[string]interface{} `json:"forum_threads"`
 	ForumReplies                []map[string]interface{} `json:"forum_replies"`
 	ForumVotes                  []map[string]interface{} `json:"forum_votes"`
+	CommentVotes                []map[string]interface{} `json:"comment_votes"`
+	DocPageVotes                []map[string]interface{} `json:"doc_page_votes"`
+	WikiPageFeedback            []map[string]interface{} `json:"wiki_page_feedback"`
 	RoadmapVotes                []map[string]interface{} `json:"roadmap_votes"`
 	RoadmapSubmissions          []map[string]interface{} `json:"roadmap_submissions"`
 	ForumBookmarks              []map[string]interface{} `json:"forum_bookmarks"`
@@ -2378,6 +2439,10 @@ type UserDataExport struct {
 	AIAgentSessions             []map[string]interface{} `json:"ai_agent_sessions"`              // BUG-012
 	AIAgentToolCalls            []map[string]interface{} `json:"ai_agent_tool_calls"`            // BUG-012
 	AIHITLReviews               []map[string]interface{} `json:"ai_hitl_reviews"`                // BUG-012
+	AIConversations             []map[string]interface{} `json:"ai_conversations"`               // BUG-AI-001
+	AIMessages                  []map[string]interface{} `json:"ai_messages"`                    // BUG-AI-001
+	AIProjects                  []map[string]interface{} `json:"ai_projects"`                    // BUG-AI-001
+	OAuthGrants                 []map[string]interface{} `json:"oauth_grants"`                   // BUG-MCP-001
 	HonchoContext               []map[string]interface{} `json:"honcho_context"`                 // BUG-012
 	ExportMetadata              map[string]interface{}   `json:"export_metadata"`
 }
@@ -2636,6 +2701,25 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		export.ForumVotes = rows
 	} else {
 		slog.Warn("failed to collect forum_votes for export", "user_id", userID.String(), "error", err)
+	}
+
+	// E-009: remaining user-keyed vote/feedback tables in the export.
+	if rows, err := s.store.gdprExportUserCommentVotes(ctx, userID); err == nil {
+		export.CommentVotes = rows
+	} else {
+		slog.Warn("failed to collect comment_votes for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserDocPageVotes(ctx, userID); err == nil {
+		export.DocPageVotes = rows
+	} else {
+		slog.Warn("failed to collect doc_page_votes for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserWikiPageFeedback(ctx, userID); err == nil {
+		export.WikiPageFeedback = rows
+	} else {
+		slog.Warn("failed to collect wiki_page_feedback for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Forum bookmarks the user saved.
@@ -3444,6 +3528,44 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		slog.Warn("failed to collect ai_hitl_reviews for export", "user_id", userID.String(), "error", err)
 	}
 
+	// BUG-AI-001: export the ADR-130 unified transcript + AI projects rows —
+	// they hold the same class of user PII as the legacy agent sessions
+	// (free-text prompts, replies, instructions) and must travel with the
+	// portability export. Best-effort like the other AI collections.
+	if rows, err := s.collectTableForExport(ctx,
+		`SELECT * FROM ai_conversations WHERE user_id = $1`, userID); err == nil {
+		export.AIConversations = rows
+	} else {
+		slog.Warn("failed to collect ai_conversations for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.collectTableForExport(ctx,
+		`SELECT m.* FROM ai_messages m
+		 JOIN ai_conversations c ON c.id = m.conversation_id
+		 WHERE c.user_id = $1`, userID); err == nil {
+		export.AIMessages = rows
+	} else {
+		slog.Warn("failed to collect ai_messages for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.collectTableForExport(ctx,
+		`SELECT * FROM ai_projects WHERE user_id = $1`, userID); err == nil {
+		export.AIProjects = rows
+	} else {
+		slog.Warn("failed to collect ai_projects for export", "user_id", userID.String(), "error", err)
+	}
+
+	// BUG-MCP-001: export the user's OAuth grant metadata (client, scope,
+	// token type, lifecycle timestamps). Token hashes are deliberately
+	// excluded — they are credential material, not portable data.
+	if rows, err := s.collectTableForExport(ctx,
+		`SELECT client_id, scope, token_type, expires_at, revoked_at, created_at
+		 FROM oauth_tokens WHERE user_id = $1`, userID); err == nil {
+		export.OAuthGrants = rows
+	} else {
+		slog.Warn("failed to collect oauth_tokens for export", "user_id", userID.String(), "error", err)
+	}
+
 	if s.honchoFetcher != nil {
 		if rows, err := s.honchoFetcher.GetContext(ctx, userID.String()); err == nil {
 			export.HonchoContext = rows
@@ -3453,6 +3575,34 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 	}
 
 	return export, nil
+}
+
+// collectTableForExport runs a user-scoped SELECT and maps each row to a
+// column-name → value map for the portability export. Used for tables that
+// have no sqlc gdprExport query (the newer ADR-130/§120 rows).
+func (s *Service) collectTableForExport(ctx context.Context, query string, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	rows, err := s.db.Reader.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []map[string]interface{}
+	for rows.Next() {
+		vals, err := rows.Values()
+		if err != nil {
+			return nil, err
+		}
+
+		descs := rows.FieldDescriptions()
+		m := make(map[string]interface{}, len(descs))
+		for i, d := range descs {
+			m[string(d.Name)] = vals[i]
+		}
+		out = append(out, m)
+	}
+
+	return out, rows.Err()
 }
 
 // scrubFollowsForErasure removes a user's entire follow graph and repairs the

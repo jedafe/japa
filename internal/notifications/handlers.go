@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/literals"
 )
 
@@ -41,9 +43,27 @@ func validatePushEndpoint(endpoint string) error {
 		return errors.New("endpoint must not embed credentials")
 	}
 
-	if ip := net.ParseIP(u.Hostname()); ip != nil {
+	host := u.Hostname()
+	if ip := net.ParseIP(host); ip != nil {
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
 			return errors.New("endpoint must not target a private address")
+		}
+
+		return nil
+	}
+
+	// DNS-level SSRF: a *hostname* — not just an IP literal — must not resolve
+	// to a private address. The webpush worker fetches this URL with the
+	// VAPID JWT, so a host that resolves to 169.254.169.254/127.0.0.1 would
+	// otherwise sail through the literal check (same guard as linkpreview).
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("endpoint host does not resolve: %s", host)
+	}
+
+	for _, ip := range ips {
+		if linkpreview.IsPrivateIP(ip) {
+			return fmt.Errorf("endpoint resolves to a private address: %s -> %s", host, ip)
 		}
 	}
 
@@ -210,6 +230,11 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.MarkAsRead(r.Context(), id, user.UserID); err != nil {
+		if errors.Is(err, ErrNotificationNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "notification_not_found", "Notification not found")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark notification as read")
 		return
 	}
@@ -249,6 +274,11 @@ func (h *Handlers) DeleteNotification(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.DeleteNotification(r.Context(), id, user.UserID); err != nil {
+		if errors.Is(err, ErrNotificationNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "notification_not_found", "Notification not found")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete notification")
 		return
 	}
@@ -300,6 +330,11 @@ func (h *Handlers) UpdatePreference(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.UpdatePreferencePartial(r.Context(), user.UserID, nType, input.InApp, input.Email, input.Push); err != nil {
+		if errors.Is(err, ErrNotificationTypeNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "notification_type_not_found", "Notification type not found")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update preference")
 		return
 	}
@@ -333,16 +368,26 @@ func (h *Handlers) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	patches := make([]PreferencePatch, 0, len(input.Preferences))
 	for _, p := range input.Preferences {
 		if p.Type == "" {
 			errpkg.WriteError(w, http.StatusBadRequest, "missing_type", "each preference requires a type")
 			return
 		}
 
-		if err := h.service.UpdatePreferencePartial(r.Context(), user.UserID, p.Type, p.InApp, p.Email, p.Push); err != nil {
-			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update preference")
+		patches = append(patches, PreferencePatch{Type: p.Type, InApp: p.InApp, Email: p.Email, Push: p.Push})
+	}
+
+	// BUG-014: one transaction — a mid-list failure must not leave a
+	// partially-applied bulk save.
+	if err := h.service.UpdatePreferencesBulk(r.Context(), user.UserID, patches); err != nil {
+		if errors.Is(err, ErrNotificationTypeNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "notification_type_not_found", "Notification type not found")
 			return
 		}
+
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update preferences")
+		return
 	}
 
 	prefs, err := h.service.GetPreferences(r.Context(), user.UserID)
@@ -361,7 +406,9 @@ func (h *Handlers) ListNotificationTypes(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	types, err := h.service.GetNotificationTypes(r.Context())
+	// BUG-015: member-facing list returns enabled types only — admin type
+	// management (which needs the disabled rows) lives on /admin/*.
+	types, err := h.service.GetEnabledNotificationTypes(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get notification types")
 		return
@@ -634,6 +681,11 @@ func (h *Handlers) CreateNotificationType(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.service.CreateNotificationType(r.Context(), input.Key, input.Label, input.Category, input.Description, enabled, defaultInApp, defaultEmail, defaultPush); err != nil {
+		if errors.Is(err, ErrNotificationTypeExists) {
+			errpkg.WriteError(w, http.StatusConflict, "notification_type_exists", "Notification type already exists")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create notification type")
 		return
 	}
@@ -690,6 +742,11 @@ func (h *Handlers) UpdateNotificationType(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.service.UpdateNotificationType(r.Context(), key, input.Label, input.Category, input.Description, enabled, defaultInApp, defaultEmail, defaultPush); err != nil {
+		if errors.Is(err, ErrNotificationTypeNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "notification_type_not_found", "Notification type not found")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update notification type")
 		return
 	}
@@ -698,9 +755,16 @@ func (h *Handlers) UpdateNotificationType(w http.ResponseWriter, r *http.Request
 }
 
 // DeleteNotificationType handles DELETE /admin/notification-types/:key (P5.6).
+// §35 defines this as "disable type" — the store flips enabled=false rather
+// than deleting, which would FK-violate on any referenced type (BUG-007).
 func (h *Handlers) DeleteNotificationType(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if err := h.service.DeleteNotificationType(r.Context(), key); err != nil {
+		if errors.Is(err, ErrNotificationTypeNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "notification_type_not_found", "Notification type not found")
+			return
+		}
+
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete notification type")
 		return
 	}

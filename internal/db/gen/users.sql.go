@@ -414,6 +414,10 @@ SELECT
  pg.name AS public_role,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
+ -- §68 disclosure toggle: the persona's disclosure_mode (NULL for non-bot
+ -- users). The service layer maps it to ai_disclosed — undisclosed personas
+ -- keep the flag hidden publicly (internal is_bot flag unaffected).
+ ap.disclosure_mode AS persona_disclosure_mode,
  (SELECT COUNT(*)::int
  FROM follows f
  WHERE f.follower_id = u.id AND (
@@ -427,6 +431,7 @@ FROM users u
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 LEFT JOIN user_groups pg ON pg.id = u.public_group_id
+LEFT JOIN ai_personas ap ON ap.user_id = u.id
 WHERE (u.username = $1 OR lower(u.public_username) = lower($1))
  AND u.status = 'active'
 ORDER BY (u.username = $1) DESC, u.id
@@ -434,25 +439,26 @@ LIMIT 1
 `
 
 type GetPublicProfileByUsernameRow struct {
-	UserID             pgtype.UUID        `json:"user_id"`
-	Username           string             `json:"username"`
-	ProfileType        string             `json:"profile_type"`
-	Verified           bool               `json:"verified"`
-	VerificationType   *string            `json:"verification_type"`
-	FollowerCount      int32              `json:"follower_count"`
-	IsSynthetic        bool               `json:"is_synthetic"`
-	SyntheticSource    *string            `json:"synthetic_source"`
-	DisplayName        *string            `json:"display_name"`
-	AvatarUrl          *string            `json:"avatar_url"`
-	Bio                *string            `json:"bio"`
-	CoverUrl           *string            `json:"cover_url"`
-	WebsiteUrl         *string            `json:"website_url"`
-	Location           *string            `json:"location"`
-	BannerMediaID      pgtype.UUID        `json:"banner_media_id"`
-	PublicRole         *string            `json:"public_role"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	ShowPointsPublicly bool               `json:"show_points_publicly"`
-	FollowingCount     int32              `json:"following_count"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	Username              string             `json:"username"`
+	ProfileType           string             `json:"profile_type"`
+	Verified              bool               `json:"verified"`
+	VerificationType      *string            `json:"verification_type"`
+	FollowerCount         int32              `json:"follower_count"`
+	IsSynthetic           bool               `json:"is_synthetic"`
+	SyntheticSource       *string            `json:"synthetic_source"`
+	DisplayName           *string            `json:"display_name"`
+	AvatarUrl             *string            `json:"avatar_url"`
+	Bio                   *string            `json:"bio"`
+	CoverUrl              *string            `json:"cover_url"`
+	WebsiteUrl            *string            `json:"website_url"`
+	Location              *string            `json:"location"`
+	BannerMediaID         pgtype.UUID        `json:"banner_media_id"`
+	PublicRole            *string            `json:"public_role"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	ShowPointsPublicly    bool               `json:"show_points_publicly"`
+	PersonaDisclosureMode *string            `json:"persona_disclosure_mode"`
+	FollowingCount        int32              `json:"following_count"`
 }
 
 // Public profile header for /u/[username]. NO PII (no email/status/last_login/groups).
@@ -484,6 +490,7 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, username strin
 		&i.PublicRole,
 		&i.CreatedAt,
 		&i.ShowPointsPublicly,
+		&i.PersonaDisclosureMode,
 		&i.FollowingCount,
 	)
 	return i, err

@@ -8,6 +8,7 @@
 	import { resolveIcon } from '$lib/components/ui';
 	import type { IconComponent } from '$lib/components/ui/icons';
 	import type { SessionUser, Menu } from '$lib/types';
+	import { routeFeatureGateVisible } from './routeFeatureFlags';
 
 	interface Props {
 		user: SessionUser | null;
@@ -45,7 +46,8 @@
 		const items = (menu?.items ?? []).filter(
 			(i) =>
 				i.status === 'active' &&
-				(i.visibility === 'all' || (i.visibility === 'authenticated' ? !!user : !user))
+				(i.visibility === 'all' || (i.visibility === 'authenticated' ? !!user : !user)) &&
+				routeFeatureGateVisible(i.url, features)
 		);
 		if (items.length > 0) {
 			return items.map<NavEntry>((i) =>

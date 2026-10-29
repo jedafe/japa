@@ -222,6 +222,32 @@ func (s *Store) gdprExportUserForumVotes(ctx context.Context, userID pgtype.UUID
 	return exportJSONSlice(ctx, s.read.GdprExportUserForumVotes, userID)
 }
 
+// E-009: export wrappers for the remaining user-keyed vote/feedback tables
+// (comment votes, docs + wiki helpful votes).
+func (s *Store) gdprExportUserCommentVotes(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	data, err := s.read.GdprExportUserCommentVotes(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSONSlice(data)
+}
+
+func (s *Store) gdprExportUserDocPageVotes(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	data, err := s.read.GdprExportUserDocPageVotes(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSONSlice(data)
+}
+
+func (s *Store) gdprExportUserWikiPageFeedback(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	data, err := s.read.GdprExportUserWikiPageFeedback(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSONSlice(data)
+}
+
 func (s *Store) gdprExportUserForumBookmarks(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserForumBookmarks, userID)
 }

@@ -2272,6 +2272,7 @@ export const readinessAdminApi = {
 	getForm: () => api<unknown>(`/admin/assessment/form`),
 	updateForm: (body: Record<string, unknown>) => api<unknown>(`/admin/assessment/form`, { method: 'PATCH', body }),
 	listResults: (params?: string) => apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(`/admin/assessment/results${params ? `?${params}` : ''}`),
+	getResult: (id: string) => api<unknown>(`/admin/assessment/results/${id}`),
 	stats: () => api<unknown>(`/admin/assessment/stats`),
 };
 

@@ -258,12 +258,50 @@ func (s *Service) GetFeed(ctx context.Context, timeline string, userID, spaceID,
 		return nil, err
 	}
 
+	// §42: drop feed items whose content type is gated off — a disabled
+	// feature must not keep surfacing content whose routes return 404.
+	items = s.filterDisabledFeatureItems(ctx, items)
+
 	items, err = s.attachSources(ctx, items)
 	if err != nil {
 		return nil, err
 	}
 
 	return s.attachForumCovers(ctx, items)
+}
+
+// feedContentTypeFeatureFlag maps feed item content_type values to the
+// feature_flags key that gates them (§42). Ungated core types (guide,
+// page, news…) are intentionally absent — they are never pruned.
+var feedContentTypeFeatureFlag = map[string]string{
+	"story":           "story.enabled",
+	"video":           "video.enabled",
+	"list":            "list.enabled",
+	"comparison":      "feature.comparison",
+	"blog_post":       "feature.blog",
+	"discussion":      "feature.forum",
+	"job_listing":     "jobs.enabled",
+	"service_listing": "service_directory.enabled",
+	"wiki_page":       "wiki.enabled",
+}
+
+// filterDisabledFeatureItems drops feed items whose content type's feature
+// flag is off. Nil-checker keeps the feed unfiltered (tests/dev).
+func (s *Service) filterDisabledFeatureItems(ctx context.Context, items []FeedItem) []FeedItem {
+	if s.checker == nil || len(items) == 0 {
+		return items
+	}
+
+	filtered := items[:0]
+
+	for _, it := range items {
+		if flag, ok := feedContentTypeFeatureFlag[it.ContentType]; ok && !s.checker.IsEnabled(ctx, flag) {
+			continue
+		}
+		filtered = append(filtered, it)
+	}
+
+	return filtered
 }
 
 // attachSources enriches feed items with source attribution for any content
@@ -1372,7 +1410,9 @@ func (s *Service) GetForYouFeed(
 		return nil, err
 	}
 
-	return s.attachForumCovers(ctx, pageSlice(ranked, offset, limit))
+	// §42: filter gated content types post-cache (the cached ranking is
+	// flag-agnostic) and before paging so pages stay full.
+	return s.attachForumCovers(ctx, pageSlice(s.filterDisabledFeatureItems(ctx, ranked), offset, limit))
 }
 
 // readForYouCache returns the cached ranked feed and whether the lookup hit.

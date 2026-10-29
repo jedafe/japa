@@ -12,13 +12,16 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
@@ -49,6 +52,50 @@ var Tiers = map[string]RateLimitTier{
 	"oauth_token":     {Requests: 120, Window: time.Minute},
 	"form_submission": {Requests: 10, Window: time.Hour},  // §06: 10 submissions per user per hour
 	"mass_provision":  {Requests: 5, Window: time.Minute}, // §68: 5 mass-provisioning batches per admin per minute (defense-in-depth on top of persona.manage RBAC)
+}
+
+// exemptFn, when set, reports whether an authenticated caller should skip
+// rate limiting entirely (e.g. super admins). Stored atomically because it
+// is registered once at server construction and read on every request.
+var exemptFn atomic.Pointer[func(context.Context, pgtype.UUID) bool]
+
+// SetRateLimitExemptFunc registers a checker invoked for authenticated
+// requests — returning true bypasses every rate-limit tier. Call once
+// during server wiring (e.g. with rbacResolver.IsSuperAdmin). Membership
+// results are cached in Valkey for a short TTL so the hot path does not
+// hit Postgres per request.
+func SetRateLimitExemptFunc(f func(context.Context, pgtype.UUID) bool) {
+	exemptFn.Store(&f)
+}
+
+// exemptCacheTTL bounds staleness of the cached exempt verdict. Group
+// membership changes are rare; 5 minutes of lag is acceptable for a
+// rate-limit bypass.
+const exemptCacheTTL = 5 * time.Minute
+
+// isExempt reports whether the authenticated caller bypasses rate limits.
+// The verdict is cached in Valkey under jc:ratelimit:exempt:<uid>; on any
+// store error the check falls through to the resolver (fail-closed: the
+// request is still limited, never accidentally exempted).
+func isExempt(ctx context.Context, rdb valkeycompat.Cmdable, user *auth.AuthenticatedUser) bool {
+	f := exemptFn.Load()
+	if f == nil || *f == nil {
+		return false
+	}
+
+	cacheKey := valkey.MustKey("ratelimit:exempt:%s", user.UserID.String())
+	if val, err := rdb.Get(ctx, cacheKey).Result(); err == nil {
+		return val == "1"
+	}
+
+	exempt := (*f)(ctx, user.UserID)
+	v := "0"
+	if exempt {
+		v = "1"
+	}
+	_ = rdb.Set(ctx, cacheKey, v, exemptCacheTTL).Err()
+
+	return exempt
 }
 
 // RateLimit returns middleware that enforces a fixed-window rate limit
@@ -90,6 +137,14 @@ func RateLimit(rdb valkeycompat.Cmdable, tier string) func(http.Handler) http.Ha
 			}
 
 			identifier := callerIdentifier(r)
+
+			// Exempt callers (super admins) bypass every tier — they operate
+			// the platform and must not be throttled by shared-egress traffic
+			// (office NAT, crawler egress IPs) landing in their bucket.
+			if user := auth.FromContext(r.Context()); user != nil && isExempt(r.Context(), rdb, user) {
+				next.ServeHTTP(w, r)
+				return
+			}
 
 			// Exempt loopback callers from the rate limit. This lets the
 			// SSR frontend (which calls the API from 127.0.0.1/::1 with no

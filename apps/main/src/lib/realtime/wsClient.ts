@@ -19,6 +19,7 @@ import { api } from '$lib/api/client';
 
 export type WSEventType =
 	| 'notification'
+	| 'notification_unread_count'
 	| 'presence'
 	| 'typing'
 	| 'space_activity'

@@ -285,6 +285,16 @@ func (s *Store) setVote(ctx context.Context, pageID, userID pgtype.UUID, vote st
 	return rows, nil
 }
 
+// deleteVote atomically removes the user's vote and moves the aggregate
+// counters down (§44 amendment 2 — re-clicking the same vote retracts it,
+// same toggle as wiki page feedback).
+func (s *Store) deleteVote(ctx context.Context, pageID, userID pgtype.UUID) error {
+	return s.write.DeleteDocPageVote(ctx, gen.DeleteDocPageVoteParams{
+		PageID: pageID,
+		UserID: userID,
+	})
+}
+
 // searchInAudiences runs the single-query multi-audience fallback search
 // (§44 amendment 2).
 func (s *Store) searchInAudiences(ctx context.Context, query string, audiences []string, limit int32) ([]gen.SearchDocPagesInAudiencesRow, error) {

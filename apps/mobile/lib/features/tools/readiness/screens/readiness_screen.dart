@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/tools/readiness/providers/readiness_provider.dart';
 import 'package:japaconnect_mobile/i18n/app_localizations.dart';
@@ -107,6 +108,8 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
   }
 
   Future<void> _submit(List<dynamic> fields) async {
+    final t = ref.read(tProvider);
+    
     final required = fields.where(_isFieldRequired).toList();
     for (final f in required) {
       final field = f as Map<String, dynamic>?;
@@ -115,7 +118,7 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
       if (key == null) continue;
       final value = _answers[key];
       if (value == null || (value is String && value.isEmpty) || (value is List && value.isEmpty)) {
-        setState(() => _error = 'Please answer all required questions.');
+        setState(() => _error = t('assessment.required_error'));
         return;
       }
     }
@@ -341,6 +344,7 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
   }
 
   Widget _buildStepCard(Map<String, dynamic> form) {
+    final t = ref.watch(tProvider);
     final fields = (form['fields'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
     final order = _stepOrder(fields);
     if (order.isEmpty) {
@@ -348,7 +352,8 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
     }
     final step = order[_currentStep];
     final stepFields = _fieldsForStep(fields, step);
-    final stepLabel = step[0].toUpperCase() + step.substring(1);
+    final stepLabel = step.replaceAll('_', ' ');
+    final stepTitle = stepLabel[0].toUpperCase() + stepLabel.substring(1);
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -356,7 +361,7 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            stepLabel,
+            stepTitle,
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           Text('Step ${_currentStep + 1} of ${order.length}'),
@@ -384,7 +389,7 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
               if (_currentStep > 0)
                 Expanded(
                   child: JcButton(
-                    label: 'Back',
+                    label: t('assessment.back'),
                     onPressed: () => setState(() => _currentStep--),
                   ),
                 ),
@@ -392,7 +397,7 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
               if (_currentStep < order.length - 1)
                 Expanded(
                   child: JcButton(
-                    label: 'Next',
+                    label: t('assessment.next'),
                     onPressed: _isStepComplete(stepFields)
                         ? () => setState(() => _currentStep++)
                         : null,
@@ -401,7 +406,7 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
               if (_currentStep == order.length - 1)
                 Expanded(
                   child: JcButton(
-                    label: 'Submit & get score',
+                    label: t('assessment.submit'),
                     onPressed: _isStepComplete(stepFields)
                         ? () => _submit(fields)
                         : null,
@@ -415,6 +420,7 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
   }
 
   Widget _buildResultView() {
+    final t = ref.watch(tProvider);
     final result = _result;
     if (result == null) return const SizedBox.shrink();
 
@@ -453,7 +459,7 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
-          const Text('Dimensions', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(t('assessment.dimensions'), style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           ...dimensions.entries.map((e) {
             return ListTile(
@@ -477,30 +483,43 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
             ),
           ],
           const SizedBox(height: 16),
-          const Text('Your roadmap', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(t('assessment.roadmap'), style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           if (_roadmapLoading) const LinearProgressIndicator(),
           ...roadmap.map((step) {
+            final slug = (step['slug'] ?? step['content_slug']) as String? ?? '';
+            final ctype = step['content_type'] as String? ?? 'guide';
+            final route = ctype == 'blog_post' || ctype == 'article' || ctype == 'post'
+                ? '/blog/$slug'
+                : '/guides/$slug';
             return Card(
               margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
                 title: Text(step['title'] as String? ?? ''),
-                subtitle: Text(step['description'] as String? ?? ''),
+                subtitle: Text((step['description'] ?? step['excerpt']) as String? ?? ''),
+                trailing: slug.isEmpty ? null : const Icon(Icons.chevron_right),
+                onTap: slug.isEmpty
+                    ? null
+                    : () => context.push(route),
               ),
             );
           }),
-          if (!auth)
-            const Padding(
-              padding: EdgeInsets.only(top: 16),
-              child: Text(
-                'Sign in to save this result and view your history.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontStyle: FontStyle.italic),
-              ),
+          if (!auth) ...[
+            const SizedBox(height: 16),
+            Text(
+              t('assessment.signin_hint'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontStyle: FontStyle.italic),
             ),
+            const SizedBox(height: 8),
+            JcButton(
+              label: t('assessment.sign_in'),
+              onPressed: () => context.push('/login'),
+            ),
+          ],
           const SizedBox(height: 24),
           JcButton(
-            label: 'Retake assessment',
+            label: t('assessment.retake'),
             onPressed: _reset,
           ),
         ],
@@ -509,15 +528,16 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
   }
 
   Widget _buildHistory(AsyncValue<List<dynamic>> history) {
+    final t = ref.watch(tProvider);
     return history.when(
       data: (items) {
         if (items.isEmpty) return const SizedBox.shrink();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('History', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(t('assessment.history'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             ),
             ...items.map((h) {
               final entry = h as Map<String, dynamic>;

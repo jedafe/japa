@@ -40,6 +40,7 @@
 	import { AdSlot } from '$lib/components/ui';
 	import ProgressRing from '$lib/components/shell/ProgressRing.svelte';
 	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
+	import { routeFeatureGateVisible } from './routeFeatureFlags';
 	import { contentHref } from '$lib/utils/contentLink';
 	import { academyUrl } from '$lib/appOrigins';
 	import type { SessionUser, TrendingTag, SpaceSuggestion, AcademyEnrollment, CatalogTrack } from '$lib/types';
@@ -1304,9 +1305,12 @@
 	{/if}
 {:else if widget.widget_type === 'cta_button'}
 	{@const ctaVariant = String(widgetProps.variant ?? 'primary').toLowerCase()}
+	{@const ctaUrl = safeHref(typeof widgetProps.url === 'string' ? widgetProps.url : '/signup') || '/signup'}
+	<!-- §42: a CTA pointing at a feature-gated route hides with the flag. -->
+	{#if routeFeatureGateVisible(ctaUrl, (page.data?.features as Record<string, boolean> | undefined) ?? {})}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<a
-			href={safeHref(typeof widgetProps.url === 'string' ? widgetProps.url : '/signup') || '/signup'}
+			href={ctaUrl}
 			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] px-4 py-2.5 text-sm font-semibold transition-colors {ctaVariant === 'secondary'
 				? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)] hover:bg-[var(--color-border)]'
 				: ctaVariant === 'outline'
@@ -1317,6 +1321,7 @@
 			{typeof widgetProps.label === 'string' ? widgetProps.label : t('sidebar.get_started')}
 		</a>
 	</section>
+	{/if}
 {:else if widget.widget_type === 'tag_cloud'}
 	{#if popularTags.length > 0}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

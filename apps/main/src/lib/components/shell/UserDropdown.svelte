@@ -10,6 +10,7 @@
 	} from 'lucide-svelte';
 	import { Menu, MenuItem, MenuSeparator } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
 	import type { SessionUser } from '$lib/types';
 
 	interface Props {
@@ -65,8 +66,13 @@
 	{#if user}
 		<MenuItem href="/u/{user.username}" icon={User}>{t('nav.profile', 'Profile')}</MenuItem>
 		<MenuItem href="/dashboard" icon={LayoutDashboard}>{t('nav.dashboard', 'Dashboard')}</MenuItem>
-		<MenuItem href="/dashboard/bookmarks" icon={Bookmark}>{t('nav.bookmarks', 'Bookmarks')}</MenuItem>
-		<MenuItem href="/settings/wallet" icon={Wallet}>{t('nav.wallet', 'Wallet')}</MenuItem>
+		<!-- Feature-gated entries hide when their flag is off (§42). -->
+		{#if (page.data.features as Record<string, boolean> | undefined)?.['feature.bookmarks']}
+			<MenuItem href="/dashboard/bookmarks" icon={Bookmark}>{t('nav.bookmarks', 'Bookmarks')}</MenuItem>
+		{/if}
+		{#if (page.data.features as Record<string, boolean> | undefined)?.['feature.wallet']}
+			<MenuItem href="/settings/wallet" icon={Wallet}>{t('nav.wallet', 'Wallet')}</MenuItem>
+		{/if}
 		<MenuItem href="/settings/profile" icon={Settings}>{t('nav.settings', 'Settings')}</MenuItem>
 		<MenuSeparator />
 		<MenuItem href="/logout" icon={LogOut} iconClass="rtl:-scale-x-100">{t('nav.logout', 'Logout')}</MenuItem>

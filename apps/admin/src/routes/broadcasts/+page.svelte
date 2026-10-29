@@ -24,13 +24,13 @@
 		id: string;
 		title: string;
 		body: string;
-		status: string;
-		target_audience: string;
+		status: string; // draft | scheduled | sent (server-computed)
+		target: string; // all | user_group | geo_space
+		target_id?: string;
 		sent_at?: string;
 		scheduled_at?: string;
 		recipient_count?: number;
-		delivered_count?: number;
-		created_at: string;
+		sent_by?: string;
 	};
 
 	let activeTab = $state('all');
@@ -44,7 +44,7 @@
 
 	// Create Modal (page-local — form)
 	let showCreateModal = $state(false);
-	let newBroadcast = $state({ title: '', body: '', target_audience: 'all' });
+	let newBroadcast = $state({ subject: '', body: '', target: 'all', target_id: '', schedule: '' });
 	let creating = $state(false);
 
 	// Send confirmation Modal
@@ -62,11 +62,17 @@
 		{ value: 'sent', label: t('broadcasts.tab_sent', 'Sent'), icon: CheckCircle }
 	];
 
+	// BUG-021: backend scope values are all | user_group | geo_space.
 	const audienceOptions = [
 		{ value: 'all', label: t('broadcasts.all_users', 'All Users') },
-		{ value: 'active', label: t('broadcasts.active_users', 'Active Users') },
-		{ value: 'premium', label: t('broadcasts.premium_users', 'Premium Users') }
+		{ value: 'user_group', label: t('broadcasts.user_group', 'User Group') },
+		{ value: 'geo_space', label: t('broadcasts.geo_space', 'Geo Space') }
 	];
+
+	const audienceLabel = (v: string) =>
+		v === 'user_group' ? t('broadcasts.user_group', 'User Group')
+		: v === 'geo_space' ? t('broadcasts.geo_space', 'Geo Space')
+		: t('broadcasts.all_users', 'All Users');
 
 	const columns = [
 		{
@@ -80,12 +86,9 @@
 			`
 		},
 		{
-			key: 'target_audience',
+			key: 'target',
 			label: t('broadcasts.column_audience', 'Audience'),
-			render: (v: string) => {
-				const labels: Record<string, string> = { all: t('broadcasts.all_users', 'All Users'), active: t('broadcasts.active_users', 'Active Users'), premium: t('broadcasts.premium_users', 'Premium Users') };
-				return `<span class="text-sm text-foreground-alt">${labels[v] || v}</span>`;
-			}
+			render: (v: string) => `<span class="text-sm text-foreground-alt">${audienceLabel(v)}</span>`
 		},
 		{
 			key: 'status',
@@ -124,7 +127,7 @@
 	let filteredBroadcasts = $derived.by(() => {
 		let result = [...broadcasts];
 		if (activeTab !== 'all') result = result.filter((b) => b.status === activeTab);
-		if (filterValue.audience) result = result.filter((b) => b.target_audience === filterValue.audience);
+		if (filterValue.audience) result = result.filter((b) => b.target === filterValue.audience);
 		if (searchQuery) {
 			const q = searchQuery.toLowerCase();
 			result = result.filter((b) => b.title.toLowerCase().includes(q) || (b.body ?? '').toLowerCase().includes(q));
@@ -153,20 +156,23 @@
 	}
 
 	async function createBroadcast() {
-		if (!newBroadcast.title.trim() || !newBroadcast.body.trim()) return;
+		if (!newBroadcast.subject.trim() || !newBroadcast.body.trim()) return;
+		// BUG-021: backend contract is {subject, body, target, target_id, schedule}.
 		creating = true;
 		try {
 			const result = await api('/admin/broadcasts', {
 				method: 'POST',
 				body: {
-					title: newBroadcast.title.trim(),
+					subject: newBroadcast.subject.trim(),
 					body: newBroadcast.body.trim(),
-					target_audience: newBroadcast.target_audience
+					target: newBroadcast.target,
+					...(newBroadcast.target_id ? { target_id: newBroadcast.target_id } : {}),
+					...(newBroadcast.schedule ? { schedule: new Date(newBroadcast.schedule).toISOString() } : {})
 				}
 			});
 			if (result.ok) {
 				showCreateModal = false;
-				newBroadcast = { title: '', body: '', target_audience: 'all' };
+				newBroadcast = { subject: '', body: '', target: 'all', target_id: '', schedule: '' };
 				loadBroadcasts();
 			}
 		} catch { /* API not available */ } finally {
@@ -246,7 +252,7 @@
 	<div class="space-y-4">
 		<div>
 			<label for="bc-title" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.title_label', 'Title')}</label>
-			<input id="bc-title" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('broadcasts.placeholder_title', 'e.g. Platform Maintenance Notice')} bind:value={newBroadcast.title} />
+			<input id="bc-title" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('broadcasts.placeholder_title', 'e.g. Platform Maintenance Notice')} bind:value={newBroadcast.subject} />
 		</div>
 		<div>
 			<label for="bc-body" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.message_label', 'Message')}</label>
@@ -254,11 +260,21 @@
 		</div>
 		<div>
 			<label for="bc-audience" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.target_audience_label', 'Target Audience')}</label>
-			<Select options={audienceOptions} bind:value={newBroadcast.target_audience} />
+			<Select options={audienceOptions} bind:value={newBroadcast.target} />
+		</div>
+		{#if newBroadcast.target !== 'all'}
+			<div>
+				<label for="bc-target-id" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.target_id_label', 'Target ID (group/space UUID)')}</label>
+				<input id="bc-target-id" type="text" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="00000000-0000-0000-0000-000000000000" bind:value={newBroadcast.target_id} />
+			</div>
+		{/if}
+		<div>
+			<label for="bc-schedule" class="mb-1 block text-sm font-medium text-foreground">{t('broadcasts.schedule_label', 'Schedule (optional — sends immediately when empty)')}</label>
+			<input id="bc-schedule" type="datetime-local" class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newBroadcast.schedule} />
 		</div>
 		<div class="flex justify-end gap-3 pt-2">
 			<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('broadcasts.cancel', 'Cancel')}</Button>
-			<Button onclick={createBroadcast} disabled={creating || !newBroadcast.title.trim() || !newBroadcast.body.trim()}>
+			<Button onclick={createBroadcast} disabled={creating || !newBroadcast.subject.trim() || !newBroadcast.body.trim() || (newBroadcast.target !== 'all' && !newBroadcast.target_id.trim())}>
 				{creating ? t('broadcasts.creating', 'Creating...') : t('broadcasts.create_broadcast', 'Create Broadcast')}
 			</Button>
 		</div>
@@ -270,7 +286,7 @@
 	{#if sendTarget}
 		<div class="rounded-lg bg-surface p-4">
 			<p class="text-sm font-medium text-foreground">{sendTarget.title}</p>
-			<p class="mt-1 text-sm text-muted">{t('broadcasts.audience_prefix', 'Audience')}: {sendTarget.target_audience === 'all' ? t('broadcasts.all_users', 'All Users') : sendTarget.target_audience === 'active' ? t('broadcasts.active_users', 'Active Users') : t('broadcasts.premium_users', 'Premium Users')}</p>
+			<p class="mt-1 text-sm text-muted">{t('broadcasts.audience_prefix', 'Audience')}: {audienceLabel(sendTarget.target)}</p>
 		</div>
 	{/if}
 	<div class="flex justify-end gap-3 pt-4">
@@ -297,7 +313,7 @@
 			<div class="grid grid-cols-2 gap-4">
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('broadcasts.target_audience', 'Audience')}</p>
-					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.target_audience}</p>
+					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{audienceLabel(viewTarget.target)}</p>
 				</div>
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.status', 'Status')}</p>

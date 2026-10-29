@@ -134,16 +134,26 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 }
 
 // parsePageParams extracts page and limit from query string, applying
-// sensible defaults and bounds.
+// sensible defaults and bounds. The canonical `page_size`/`page_offset`
+// params take precedence; `page`/`limit` are accepted for backwards
+// compatibility (BUG-BC-002).
 func parsePageParams(r *http.Request) (int32, int32) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page <= 0 {
-		page = 1
-	}
+	q := r.URL.Query()
 
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	limit, _ := strconv.Atoi(q.Get("page_size"))
+	if limit <= 0 {
+		limit, _ = strconv.Atoi(q.Get("limit"))
+	}
 	if limit <= 0 {
 		limit = 20
+	}
+
+	page, _ := strconv.Atoi(q.Get("page"))
+	if offset, _ := strconv.Atoi(q.Get("page_offset")); offset > 0 {
+		page = offset/limit + 1
+	}
+	if page <= 0 {
+		page = 1
 	}
 
 	if limit > 100 {
@@ -194,7 +204,6 @@ func publicFieldDTOs(fields []AssessmentField) []map[string]any {
 			"placeholder": f.Placeholder,
 			"options":     opts,
 			"config": map[string]any{
-				"weight":    f.Config.Weight,
 				"dimension": f.Config.Dimension,
 			},
 		})
@@ -305,12 +314,6 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var formID pgtype.UUID
-	if err := formID.Scan(form.ID); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "invalid_form_id", "Failed to parse form ID")
-		return
-	}
-
 	// Authentication is optional — anonymous users can submit.
 	var userID *uuid.UUID
 
@@ -319,12 +322,19 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		userID = &uid
 	}
 
-	submissionID, err := h.service.SubmitAssessment(r.Context(), userID, formID, body.FieldValues)
+	submissionID, err := h.service.SubmitAssessment(r.Context(), userID, form, body.FieldValues)
 	if err != nil {
 		var missingErr *MissingRequiredFieldsError
 		if errors.As(err, &missingErr) {
 			errpkg.WriteError(w, http.StatusUnprocessableEntity, "missing_required_fields",
 				"Some required answers are missing: "+strings.Join(missingErr.Keys, ", "))
+			return
+		}
+
+		var invalidErr *InvalidAnswersError
+		if errors.As(err, &invalidErr) {
+			errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_answers",
+				"Some answers are not valid options: "+strings.Join(invalidErr.Keys, ", "))
 			return
 		}
 
@@ -410,6 +420,15 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 	result, err := h.service.GetResultBySubmission(r.Context(), submissionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// Distinguish "assessment submission exists, still scoring" (202)
+			// from a submission that doesn't exist or belongs to a different
+			// form type (404) so clients don't poll a dead id forever.
+			isAssessment, subErr := h.service.IsAssessmentSubmission(r.Context(), submissionID)
+			if subErr == nil && !isAssessment {
+				errpkg.WriteError(w, http.StatusNotFound, "submission_not_found", "Submission not found")
+				return
+			}
+
 			// Not scored yet — tell the client to keep polling.
 			errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
 				"data": map[string]any{"status": "pending"},
@@ -490,10 +509,16 @@ func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request
 
 	fieldValues, err := h.service.GetSubmissionFieldValues(r.Context(), result.SubmissionID)
 	if err != nil {
-		slog.Error("assessment: get result roadmap: load submission failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "submission_lookup_failed", "Failed to load submission")
+		// A deleted submission shouldn't 500 the roadmap — degrade to an
+		// empty journey context. Genuine DB errors still fail hard.
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("assessment: get result roadmap: load submission failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "submission_lookup_failed", "Failed to load submission")
 
-		return
+			return
+		}
+
+		fieldValues = nil
 	}
 
 	var answers map[string]any
@@ -529,6 +554,22 @@ func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request
 	for _, step := range roadmap {
 		if step.ContentSlug != "" {
 			slugs = append(slugs, step.ContentSlug)
+		}
+	}
+
+	// Heal missing roadmap links on read: create published stub guides for
+	// slugs with no backing content (also covers results scored before the
+	// scoring-time stub pass existed) and rewrite steps to corridor variants
+	// when the journey context calls for them. Best-effort, no cost when all
+	// slugs already resolve.
+	if len(slugs) > 0 {
+		roadmap = h.service.EnsureRoadmapStubs(r.Context(), roadmap, journeyCtx)
+
+		slugs = slugs[:0]
+		for _, step := range roadmap {
+			if step.ContentSlug != "" {
+				slugs = append(slugs, step.ContentSlug)
+			}
 		}
 	}
 
@@ -716,6 +757,11 @@ func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request)
 
 	updated, err := h.service.UpdateFormScoring(r.Context(), formID, body.ScoringConfig)
 	if err != nil {
+		if errors.Is(err, ErrInvalidScoringConfig) {
+			errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_scoring_config", err.Error())
+			return
+		}
+
 		slog.Error("assessment: admin update form failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update scoring config")
 
@@ -797,6 +843,46 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 			"max_score": maxScore,
 		},
 	})
+}
+
+// HandleAdminGetResult handles GET /api/v1/admin/assessment/results/{id} —
+// returns a single result with its dimension breakdown, roadmap, and the
+// original submission answers so admins can inspect a user's report
+// (BUG-BC-001). Admin-only (gated by assessment.view_results).
+func (h *Handlers) HandleAdminGetResult(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "assessment_unavailable", "Assessment service not configured")
+		return
+	}
+
+	resultID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	result, err := h.service.GetResult(r.Context(), resultID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "result_not_found", "Assessment result not found")
+		return
+	}
+
+	shaped := shapeResult(result)
+
+	if fieldValues, err := h.service.GetSubmissionFieldValues(r.Context(), result.SubmissionID); err == nil && len(fieldValues) > 0 {
+		var answers map[string]any
+		_ = json.Unmarshal(fieldValues, &answers)
+		shaped["submission_values"] = answers
+	} else {
+		shaped["submission_values"] = map[string]any{}
+	}
+
+	h.resolveLiterals(r, &shaped)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": shaped})
 }
 
 // HandleAdminStats handles GET /api/v1/admin/assessment/stats — returns

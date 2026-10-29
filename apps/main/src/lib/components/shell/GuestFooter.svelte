@@ -8,19 +8,27 @@
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import type { Menu, MenuItem } from '$lib/types';
+	import { routeFeatureGateVisible } from './routeFeatureFlags';
 
 	interface Props {
 		/** Navigation menu from GET /menus/main_footer — filtered to guest-visible items. */
 		menu: Menu | null;
+		/** Feature flags from /feature-flags — items whose route maps to a
+		 *  disabled flag are hidden so gated features never leak to guests. */
+		features?: Record<string, boolean>;
 	}
 
-	let { menu }: Props = $props();
+	let { menu, features = {} }: Props = $props();
 
-	// Filter to guest-visible items only (visibility === 'guest' or 'all').
+	// Filter to guest-visible items only (visibility === 'guest' or 'all'),
+	// then drop items whose route maps to a disabled feature flag.
 	// The backend already filters by auth state, but this is a safety net for
 	// cached/hydrated data and keeps the component self-documenting.
 	const footerItems = $derived(
-		(menu?.items ?? []).filter((item: MenuItem) => item.visibility !== 'authenticated')
+		(menu?.items ?? []).filter(
+			(item: MenuItem) =>
+				item.visibility !== 'authenticated' && routeFeatureGateVisible(item.url, features)
+		)
 	);
 </script>
 

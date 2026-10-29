@@ -235,6 +235,39 @@ func (q *Queries) CheckUserBanExists(ctx context.Context, userID pgtype.UUID) (b
 	return exists, err
 }
 
+const claimBroadcast = `-- name: ClaimBroadcast :execrows
+UPDATE admin_broadcasts
+SET claimed_at = now()
+WHERE id = $1 AND sent_at IS NULL
+ AND (claimed_at IS NULL OR claimed_at < now() - interval '10 minutes')
+`
+
+// Send-vs-sweep race: a claimant stamps claimed_at atomically — only one
+// claimant can win (0 rows → already claimed/in-flight or sent).
+func (q *Queries) ClaimBroadcast(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, claimBroadcast, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const countAdminBroadcasts = `-- name: CountAdminBroadcasts :one
+SELECT COUNT(*)::int AS count
+FROM admin_broadcasts
+WHERE ($1::text = '' OR
+       ($1::text = 'sent' AND sent_at IS NOT NULL) OR
+       ($1::text = 'scheduled' AND sent_at IS NULL AND scheduled_at IS NOT NULL) OR
+       ($1::text = 'draft' AND sent_at IS NULL AND scheduled_at IS NULL))
+`
+
+func (q *Queries) CountAdminBroadcasts(ctx context.Context, status string) (int32, error) {
+	row := q.db.QueryRow(ctx, countAdminBroadcasts, status)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countModerationAppeals = `-- name: CountModerationAppeals :one
 SELECT COUNT(*)
 FROM moderation_appeals ma
@@ -285,22 +318,26 @@ func (q *Queries) CreateAdminBroadcastRecord(ctx context.Context, arg CreateAdmi
 }
 
 const createBroadcastNotifications = `-- name: CreateBroadcastNotifications :exec
-INSERT INTO notifications (recipient_id, notification_type, actor_type, actor_id, title, body, created_at, updated_at)
-SELECT $1, unnest($2::uuid[]), 'system_announcement', 'system', $3, $4, $5, now(), now()
+INSERT INTO notifications (recipient_id, notification_type, actor_type, title, body, created_at)
+SELECT unnest($1::uuid[]), 'broadcast', 'system', $2, $3, $4
 `
 
 type CreateBroadcastNotificationsParams struct {
-	RecipientID pgtype.UUID        `json:"recipient_id"`
-	Column2     []pgtype.UUID      `json:"column_2"`
-	Title       string             `json:"title"`
-	Body        *string            `json:"body"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Column1   []pgtype.UUID      `json:"column_1"`
+	Title     string             `json:"title"`
+	Body      *string            `json:"body"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// BUG-001: the previous version mapped the SENDER into recipient_id,
+// unnested recipient UUIDs into notification_type, put 'system' into the
+// uuid actor_id, and inserted into a nonexistent updated_at column — every
+// broadcast INSERT failed at runtime. Correct shape: one row per recipient,
+// 'broadcast' type (seeded §35 catalog), system actor (NULL actor_id —
+// actor_id is uuid and 'system' is not a valid uuid).
 func (q *Queries) CreateBroadcastNotifications(ctx context.Context, arg CreateBroadcastNotificationsParams) error {
 	_, err := q.db.Exec(ctx, createBroadcastNotifications,
-		arg.RecipientID,
-		arg.Column2,
+		arg.Column1,
 		arg.Title,
 		arg.Body,
 		arg.CreatedAt,
@@ -311,7 +348,7 @@ func (q *Queries) CreateBroadcastNotifications(ctx context.Context, arg CreateBr
 const createScheduledBroadcast = `-- name: CreateScheduledBroadcast :one
 INSERT INTO admin_broadcasts (title, body, sent_by, scheduled_at, target, target_id)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, title, body, sent_by, sent_at, recipient_count, scheduled_at, target, target_id
+RETURNING id, title, body, sent_by, sent_at, recipient_count, scheduled_at, target, target_id, claimed_at
 `
 
 type CreateScheduledBroadcastParams struct {
@@ -344,6 +381,7 @@ func (q *Queries) CreateScheduledBroadcast(ctx context.Context, arg CreateSchedu
 		&i.ScheduledAt,
 		&i.Target,
 		&i.TargetID,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
@@ -392,13 +430,56 @@ func (q *Queries) CreateUserWarning(ctx context.Context, arg CreateUserWarningPa
 	return err
 }
 
-const deleteAdminBroadcast = `-- name: DeleteAdminBroadcast :exec
-DELETE FROM admin_broadcasts WHERE id = $1
+const deleteAdminBroadcast = `-- name: DeleteAdminBroadcast :execrows
+DELETE FROM admin_broadcasts WHERE id = $1 AND sent_at IS NULL AND claimed_at IS NULL
 `
 
-func (q *Queries) DeleteAdminBroadcast(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteAdminBroadcast, id)
-	return err
+// BUG-020: spec §35 is "delete draft broadcast" — a sent record is history,
+// not a draft; refuse to delete it (0 rows → 404). Also refuses to delete a
+// broadcast claimed mid-dispatch.
+func (q *Queries) DeleteAdminBroadcast(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAdminBroadcast, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getAdminBroadcastByID = `-- name: GetAdminBroadcastByID :one
+SELECT id, title, body, sent_by, sent_at, recipient_count, scheduled_at, target, target_id
+FROM admin_broadcasts
+WHERE id = $1
+`
+
+type GetAdminBroadcastByIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Title          string             `json:"title"`
+	Body           string             `json:"body"`
+	SentBy         pgtype.UUID        `json:"sent_by"`
+	SentAt         pgtype.Timestamptz `json:"sent_at"`
+	RecipientCount int32              `json:"recipient_count"`
+	ScheduledAt    pgtype.Timestamptz `json:"scheduled_at"`
+	Target         string             `json:"target"`
+	TargetID       pgtype.UUID        `json:"target_id"`
+}
+
+// BUG-010: POST /admin/broadcasts/{id}/send must load the stored draft —
+// subject/body/target come from the row, not the request body.
+func (q *Queries) GetAdminBroadcastByID(ctx context.Context, id pgtype.UUID) (GetAdminBroadcastByIDRow, error) {
+	row := q.db.QueryRow(ctx, getAdminBroadcastByID, id)
+	var i GetAdminBroadcastByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Body,
+		&i.SentBy,
+		&i.SentAt,
+		&i.RecipientCount,
+		&i.ScheduledAt,
+		&i.Target,
+		&i.TargetID,
+	)
+	return i, err
 }
 
 const getModerationAppeal = `-- name: GetModerationAppeal :one
@@ -596,11 +677,24 @@ func (q *Queries) ListActiveUserIDsByGroup(ctx context.Context, groupID pgtype.U
 
 const listAdminBroadcasts = `-- name: ListAdminBroadcasts :many
 
-SELECT id, title, body, sent_by, sent_at, recipient_count
+SELECT id, title, body, sent_by, sent_at, recipient_count, scheduled_at, target, target_id,
+ CASE WHEN sent_at IS NOT NULL THEN 'sent'
+      WHEN scheduled_at IS NOT NULL THEN 'scheduled'
+      ELSE 'draft' END AS status
 FROM admin_broadcasts
-ORDER BY sent_at DESC
-LIMIT 50
+WHERE ($1::text = '' OR
+       ($1::text = 'sent' AND sent_at IS NOT NULL) OR
+       ($1::text = 'scheduled' AND sent_at IS NULL AND scheduled_at IS NOT NULL) OR
+       ($1::text = 'draft' AND sent_at IS NULL AND scheduled_at IS NULL))
+ORDER BY COALESCE(sent_at, scheduled_at) DESC NULLS LAST, id DESC
+LIMIT $3 OFFSET $2
 `
+
+type ListAdminBroadcastsParams struct {
+	Status     string `json:"status"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
+}
 
 type ListAdminBroadcastsRow struct {
 	ID             pgtype.UUID        `json:"id"`
@@ -609,13 +703,21 @@ type ListAdminBroadcastsRow struct {
 	SentBy         pgtype.UUID        `json:"sent_by"`
 	SentAt         pgtype.Timestamptz `json:"sent_at"`
 	RecipientCount int32              `json:"recipient_count"`
+	ScheduledAt    pgtype.Timestamptz `json:"scheduled_at"`
+	Target         string             `json:"target"`
+	TargetID       pgtype.UUID        `json:"target_id"`
+	Status         string             `json:"status"`
 }
 
 // =====================
 // Broadcasts
 // =====================
-func (q *Queries) ListAdminBroadcasts(ctx context.Context) ([]ListAdminBroadcastsRow, error) {
-	rows, err := q.db.Query(ctx, listAdminBroadcasts)
+// BUG-013: ?status=draft|scheduled|sent filter + offset pagination (§35 L132).
+// Includes target/scheduled_at/status so the admin table can render and
+// gate the Send action. Rows are ordered newest-first by whichever
+// timestamp exists.
+func (q *Queries) ListAdminBroadcasts(ctx context.Context, arg ListAdminBroadcastsParams) ([]ListAdminBroadcastsRow, error) {
+	rows, err := q.db.Query(ctx, listAdminBroadcasts, arg.Status, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -630,6 +732,10 @@ func (q *Queries) ListAdminBroadcasts(ctx context.Context) ([]ListAdminBroadcast
 			&i.SentBy,
 			&i.SentAt,
 			&i.RecipientCount,
+			&i.ScheduledAt,
+			&i.Target,
+			&i.TargetID,
+			&i.Status,
 		); err != nil {
 			return nil, err
 		}
@@ -698,8 +804,9 @@ func (q *Queries) ListDeletedContents(ctx context.Context, limit int32) ([]ListD
 }
 
 const listDueScheduledBroadcasts = `-- name: ListDueScheduledBroadcasts :many
-SELECT id, title, body, sent_by, sent_at, recipient_count, scheduled_at, target, target_id FROM admin_broadcasts
+SELECT id, title, body, sent_by, sent_at, recipient_count, scheduled_at, target, target_id, claimed_at FROM admin_broadcasts
 WHERE scheduled_at IS NOT NULL AND sent_at IS NULL AND scheduled_at <= now()
+ AND (claimed_at IS NULL OR claimed_at < now() - interval '10 minutes')
 ORDER BY scheduled_at
 LIMIT 50
 `
@@ -723,6 +830,7 @@ func (q *Queries) ListDueScheduledBroadcasts(ctx context.Context) ([]AdminBroadc
 			&i.ScheduledAt,
 			&i.Target,
 			&i.TargetID,
+			&i.ClaimedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -943,7 +1051,7 @@ func (q *Queries) ListUserWarnings(ctx context.Context, userID pgtype.UUID) ([]L
 
 const markBroadcastSent = `-- name: MarkBroadcastSent :exec
 UPDATE admin_broadcasts
-SET sent_at = now(), recipient_count = $2
+SET sent_at = now(), recipient_count = $2, claimed_at = NULL
 WHERE id = $1
 `
 
@@ -1033,6 +1141,18 @@ WHERE id = $1 AND action = 'warning' AND deleted_at IS NULL
 
 func (q *Queries) SoftDeleteUserWarning(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, softDeleteUserWarning, id)
+	return err
+}
+
+const unclaimBroadcast = `-- name: UnclaimBroadcast :exec
+UPDATE admin_broadcasts
+SET claimed_at = NULL
+WHERE id = $1 AND sent_at IS NULL
+`
+
+// Roll back a claim when dispatch fails so the row can be retried.
+func (q *Queries) UnclaimBroadcast(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, unclaimBroadcast, id)
 	return err
 }
 

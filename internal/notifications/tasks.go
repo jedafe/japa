@@ -11,4 +11,7 @@ type PushDeliveryPayload struct {
 	Title     string `json:"title"`
 	Body      string `json:"body"`
 	ActionURL string `json:"action_url,omitempty"`
+	// NotificationID distinguishes logically distinct pushes that share
+	// identical text — asynq.Unique dedupes on payload bytes (BUG-012).
+	NotificationID string `json:"notification_id,omitempty"`
 }

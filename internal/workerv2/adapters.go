@@ -208,7 +208,7 @@ func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID pg
 		return fmt.Errorf("looking up form_submission: %w", err)
 	}
 
-	resultID, err := a.svc.ScoreSubmission(ctx, assessment.ScoreSubmissionInput{
+	resultID, created, err := a.svc.ScoreSubmission(ctx, assessment.ScoreSubmissionInput{
 		SubmissionID: submissionID,
 		UserID:       userID,
 		FieldValues:  fieldValues,
@@ -219,8 +219,10 @@ func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID pg
 
 	// ADR-071 §2 step 7: notify the user that their assessment result is
 	// ready. Anonymous users (userID invalid) are skipped — they see the
-	// result in-session via polling.
-	if userID.Valid && a.notif != nil {
+	// result in-session via polling. Retried tasks that find the result
+	// already written (created=false) skip the notification so a retry
+	// never double-notifies.
+	if created && userID.Valid && a.notif != nil {
 		actionURL := "/tools/readiness?result=" + resultID.String()
 		if err := a.notif.CreateNotification(
 			ctx,
@@ -247,6 +249,12 @@ func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID pg
 // task (ADR-071 §5).
 func (a *AssessmentAdapter) CleanupAnonymousResults(ctx context.Context, retentionHours int32) (int64, error) {
 	return a.svc.CleanupAnonymousResults(ctx, retentionHours)
+}
+
+// RescoreStaleSubmissions re-enqueues scoring for submissions that never got
+// a result (e.g. the original enqueue failed after the row was written).
+func (a *AssessmentAdapter) RescoreStaleSubmissions(ctx context.Context, staleMinutes int32) (int, error) {
+	return a.svc.RescoreStaleSubmissions(ctx, staleMinutes)
 }
 
 // ---------------------------------------------------------------------------

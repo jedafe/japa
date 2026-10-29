@@ -129,6 +129,17 @@ func (q *Queries) DeleteReactionType(ctx context.Context, key string) error {
 	return err
 }
 
+const deleteReactionsByKey = `-- name: DeleteReactionsByKey :exec
+DELETE FROM reactions WHERE reaction_key = $1
+`
+
+// Manual cascade for DeleteReactionType (migration 000954 dropped the
+// reactions_reaction_key_fkey — see that file for why).
+func (q *Queries) DeleteReactionsByKey(ctx context.Context, key string) error {
+	_, err := q.db.Exec(ctx, deleteReactionsByKey, key)
+	return err
+}
+
 const getReactionType = `-- name: GetReactionType :one
 SELECT key, emoji, label, enabled, position, created_at, updated_at
 FROM reaction_types
@@ -343,33 +354,61 @@ func (q *Queries) ListReactionTypes(ctx context.Context) ([]ReactionType, error)
 	return items, nil
 }
 
-const listReactionsByEntity = `-- name: ListReactionsByEntity :many
-SELECT entity_type, entity_id, user_id, reaction_key, created_at
-FROM reactions
-WHERE entity_type = $1 AND entity_id = $2
-ORDER BY created_at DESC
+const listReactorsByEntity = `-- name: ListReactorsByEntity :many
+SELECT r.reaction_key, r.created_at, u.id AS user_id,
+       u.username, COALESCE(up.display_name, '') AS display_name,
+       up.avatar_media_id
+FROM reactions r
+JOIN users u ON u.id = r.user_id AND u.deleted_at IS NULL
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE r.entity_type = $1 AND r.entity_id = $2
+  AND ($3::text = '' OR r.reaction_key = $3)
+ORDER BY r.created_at DESC
+LIMIT $5 OFFSET $4
 `
 
-type ListReactionsByEntityParams struct {
-	EntityType string      `json:"entity_type"`
-	EntityID   pgtype.UUID `json:"entity_id"`
+type ListReactorsByEntityParams struct {
+	EntityType  string      `json:"entity_type"`
+	EntityID    pgtype.UUID `json:"entity_id"`
+	ReactionKey string      `json:"reaction_key"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListReactionsByEntity(ctx context.Context, arg ListReactionsByEntityParams) ([]Reaction, error) {
-	rows, err := q.db.Query(ctx, listReactionsByEntity, arg.EntityType, arg.EntityID)
+type ListReactorsByEntityRow struct {
+	ReactionKey   string             `json:"reaction_key"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	Username      string             `json:"username"`
+	DisplayName   string             `json:"display_name"`
+	AvatarMediaID pgtype.UUID        `json:"avatar_media_id"`
+}
+
+// "Who reacted" rows — user display info joined to each reaction so the
+// ReactionRail popover can list reactor names per key. An empty
+// reaction_key returns all keys. Deleted users are excluded.
+func (q *Queries) ListReactorsByEntity(ctx context.Context, arg ListReactorsByEntityParams) ([]ListReactorsByEntityRow, error) {
+	rows, err := q.db.Query(ctx, listReactorsByEntity,
+		arg.EntityType,
+		arg.EntityID,
+		arg.ReactionKey,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Reaction
+	var items []ListReactorsByEntityRow
 	for rows.Next() {
-		var i Reaction
+		var i ListReactorsByEntityRow
 		if err := rows.Scan(
-			&i.EntityType,
-			&i.EntityID,
-			&i.UserID,
 			&i.ReactionKey,
 			&i.CreatedAt,
+			&i.UserID,
+			&i.Username,
+			&i.DisplayName,
+			&i.AvatarMediaID,
 		); err != nil {
 			return nil, err
 		}
@@ -381,7 +420,7 @@ func (q *Queries) ListReactionsByEntity(ctx context.Context, arg ListReactionsBy
 	return items, nil
 }
 
-const removeReaction = `-- name: RemoveReaction :exec
+const removeReaction = `-- name: RemoveReaction :execrows
 DELETE FROM reactions
 WHERE entity_type = $1 AND entity_id = $2 AND user_id = $3 AND reaction_key = $4
 `
@@ -393,14 +432,19 @@ type RemoveReactionParams struct {
 	ReactionKey string      `json:"reaction_key"`
 }
 
-func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) error {
-	_, err := q.db.Exec(ctx, removeReaction,
+// Rows-affected drives the engagement decrement — only a real delete moves
+// content_scores.reaction_count (E-003: repeated removes must not drain it).
+func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, removeReaction,
 		arg.EntityType,
 		arg.EntityID,
 		arg.UserID,
 		arg.ReactionKey,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateReactionType = `-- name: UpdateReactionType :one

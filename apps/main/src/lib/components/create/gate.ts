@@ -49,6 +49,16 @@ export function isExceptionRoute(routeId: string | null): boolean {
 	return routeId === '/(app)/create' || routeId === '/(app)/blog/[slug]' || routeId === '/(app)/content/[slug]' || routeId === '/(app)/guide/[slug]' || routeId === '/(app)/story/[slug]' || routeId === '/(app)/comparisons/[slug]' || routeId === '/(app)/video/[slug]' || routeId === '/(app)/list/[slug]' || routeId?.startsWith('/(app)/studio') === true;
 }
 
+// Routes that render without the right sidebar but keep the left nav and
+// normal chrome — wide, self-contained workbenches like the readiness
+// assessment wizard. Kept separate from isExceptionRoute so the nav
+// collapse, compose suppression and ad-rail rules don't apply.
+const NO_RIGHT_SIDEBAR_ROUTES = new Set(['/(app)/tools/readiness']);
+
+export function isNoRightSidebarRoute(routeId: string | null): boolean {
+	return routeId !== null && NO_RIGHT_SIDEBAR_ROUTES.has(routeId);
+}
+
 // Routes that replace the shell's mobile tab bar with a page-owned
 // fixed action bar (e.g. the forum thread's vote/bookmark/share strip,
 // the service detail's StickyBookBar).

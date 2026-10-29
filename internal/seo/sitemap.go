@@ -35,12 +35,20 @@ type sitemapSettingsReader interface {
 	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
+// sitemapFeatureChecker is the minimal feature_flags reader contract;
+// *features.Checker satisfies it. Local interface keeps seo decoupled from
+// internal/features (same pattern as sitemapSettingsReader).
+type sitemapFeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // SitemapHandler handles sitemap generation requests.
 type SitemapHandler struct {
 	queries         *gen.Queries
 	reader          *pgxpool.Pool
 	settings        sitemapSettingsReader
 	vkClient        *valkey.Client
+	flags           sitemapFeatureChecker
 	siteURL         string // JC_SITE_URL — configured base URL (Rule 3)
 	imgproxyBaseURL string // JC_IMGPROXY_BASE_URL — imgproxy origin for absolute image URLs (Rule 3)
 }
@@ -55,6 +63,20 @@ type SitemapHandler struct {
 // endpoint (Rule 3 — no os.Getenv inside the package).
 func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool, settings sitemapSettingsReader, vkClient *valkey.Client, siteURL, imgproxyBaseURL string) *SitemapHandler {
 	return &SitemapHandler{queries: queries, reader: reader, settings: settings, vkClient: vkClient, siteURL: siteURL, imgproxyBaseURL: imgproxyBaseURL}
+}
+
+// SetFeatureChecker wires the feature flag resolver so gated surfaces are
+// dropped from the sitemap when their flag is off — sitemap URLs must never
+// advertise routes that 404. Nil-safe: a missing checker means ungated.
+func (h *SitemapHandler) SetFeatureChecker(c sitemapFeatureChecker) {
+	h.flags = c
+}
+
+// flagOn reports whether a feature flag is enabled. Fails open when no
+// checker is wired so the sitemap keeps working in tests/tools that never
+// set one.
+func (h *SitemapHandler) flagOn(ctx context.Context, key string) bool {
+	return h.flags == nil || h.flags.IsEnabled(ctx, key)
 }
 
 // sitemapCacheKey builds the platform-scoped Valkey cache key for a sitemap
@@ -197,25 +219,49 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 	usersLastMod := h.latestUsersLastMod(r.Context())
 	imagesLastMod := h.latestImagesLastMod(r.Context())
 
+	// §42: gated surfaces drop out of the index when their flag is off —
+	// the sitemap must not advertise routes that return 404.
 	entries := []sitemapEntry{
 		{Loc: base + "/sitemap-content.xml", LastMod: contentLastMod},
 		{Loc: base + "/sitemap-spaces.xml", LastMod: spacesLastMod},
 		{Loc: base + "/sitemap-tags.xml"},
 		{Loc: base + "/sitemap-users.xml", LastMod: usersLastMod},
 		{Loc: base + "/sitemap-images.xml", LastMod: imagesLastMod},
-		{Loc: base + "/sitemap-deals.xml", LastMod: h.latestDealsLastMod(r.Context())},
-		{Loc: base + "/sitemap-roadmap.xml", LastMod: h.latestRoadmapLastMod(r.Context())},
-		{Loc: base + "/sitemap-universities.xml", LastMod: h.latestUniversitiesLastMod()},
-		{Loc: base + "/sitemap-courses.xml", LastMod: h.latestCoursesLastMod()},
-		{Loc: base + "/sitemap-jobs.xml", LastMod: h.latestJobsLastMod(r.Context())},
-		{Loc: base + "/sitemap-scholarships.xml", LastMod: h.latestScholarshipsLastMod()},
-		{Loc: base + "/sitemap-services.xml", LastMod: h.latestServicesLastMod(r.Context())},
-		{Loc: base + "/sitemap-wiki.xml", LastMod: h.latestWikiLastMod()},
-		{Loc: base + "/sitemap-calendar.xml", LastMod: h.latestCalendarLastMod()},
-		{Loc: base + "/sitemap-scam-alerts.xml", LastMod: h.latestScamAlertsLastMod()},
-		{Loc: base + "/sitemap-comparisons.xml", LastMod: h.latestComparisonsLastMod(r.Context())},
-		{Loc: base + "/sitemap-tools.xml"},
 	}
+	if h.flagOn(r.Context(), "service_coupons.enabled") {
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-deals.xml", LastMod: h.latestDealsLastMod(r.Context())})
+	}
+	if h.flagOn(r.Context(), "roadmap.enabled") {
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-roadmap.xml", LastMod: h.latestRoadmapLastMod(r.Context())})
+	}
+	entries = append(entries, sitemapEntry{Loc: base + "/sitemap-universities.xml", LastMod: h.latestUniversitiesLastMod()})
+	if h.flagOn(r.Context(), "feature.academy") {
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-courses.xml", LastMod: h.latestCoursesLastMod()})
+	}
+	if h.flagOn(r.Context(), "jobs.enabled") {
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-jobs.xml", LastMod: h.latestJobsLastMod(r.Context())})
+	}
+	if h.flagOn(r.Context(), "scholarship_finder.enabled") {
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-scholarships.xml", LastMod: h.latestScholarshipsLastMod()})
+	}
+	if h.flagOn(r.Context(), "service_directory.enabled") {
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-services.xml", LastMod: h.latestServicesLastMod(r.Context())})
+	}
+	if h.flagOn(r.Context(), "wiki.enabled") {
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-wiki.xml", LastMod: h.latestWikiLastMod()})
+	}
+	if h.flagOn(r.Context(), "calendar.enabled") {
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-calendar.xml", LastMod: h.latestCalendarLastMod()})
+	}
+	if h.flagOn(r.Context(), "scam_alert.enabled") {
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-scam-alerts.xml", LastMod: h.latestScamAlertsLastMod()})
+	}
+	// /compare is gated by feature.comparison AND feature.jce on the backend
+	// (stacked Gates) — drop the comparisons sitemap when either is off.
+	if h.flagOn(r.Context(), "feature.comparison") && h.flagOn(r.Context(), "feature.jce") {
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-comparisons.xml", LastMod: h.latestComparisonsLastMod(r.Context())})
+	}
+	entries = append(entries, sitemapEntry{Loc: base + "/sitemap-tools.xml"})
 
 	var buf strings.Builder
 

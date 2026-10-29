@@ -695,6 +695,19 @@ DELETE FROM ad_events WHERE user_id = @user_id;
 -- self-documenting and survives future schema changes. Ref: BUG-011.
 DELETE FROM reactions WHERE user_id = @user_id;
 
+-- name: GdprDeleteCommentVotesByUser :exec
+-- E-009: deletes comment_votes rows authored by the user — same
+-- self-documenting erasure rationale as reactions/forum_votes (BUG-011).
+DELETE FROM comment_votes WHERE user_id = @user_id;
+
+-- name: GdprDeleteDocPageVotesByUser :exec
+-- E-009: deletes doc_page_votes rows (§44 helpful votes).
+DELETE FROM doc_page_votes WHERE user_id = @user_id;
+
+-- name: GdprDeleteWikiPageFeedbackByUser :exec
+-- E-009: deletes wiki_page_feedback rows (§80 helpful votes).
+DELETE FROM wiki_page_feedback WHERE user_id = @user_id;
+
 -- name: GdprDeleteContentSharesByUser :exec
 -- Deletes content_shares rows authored by the user. content_shares.user_id
 -- has ON DELETE CASCADE, but we delete explicitly so the erasure path is
@@ -759,6 +772,20 @@ FROM (SELECT * FROM forum_replies WHERE author_user_id = @user_id) t;
 -- name: GdprExportUserForumVotes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM forum_votes WHERE user_id = @user_id) t;
+
+-- name: GdprExportUserCommentVotes :one
+-- E-009: comment_votes belong in the right-to-access export alongside
+-- reactions/forum_votes.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM comment_votes WHERE user_id = @user_id) t;
+
+-- name: GdprExportUserDocPageVotes :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM doc_page_votes WHERE user_id = @user_id) t;
+
+-- name: GdprExportUserWikiPageFeedback :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM wiki_page_feedback WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserForumBookmarks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data

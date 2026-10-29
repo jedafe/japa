@@ -15,7 +15,7 @@
 	import { Select } from '$lib/components/ui/select';
 	import IconPicker from '$lib/components/ui/icon-picker.svelte';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { menusAdminApi, userManagementApi, permissionsApi, type UserGroup } from '$lib/api';
+	import { menusAdminApi, userManagementApi, permissionsApi, featureFlagsAdminApi, type UserGroup } from '$lib/api';
 	import { suggestRoutes } from '$lib/data/routes';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -30,6 +30,7 @@
 		icon?: string | null;
 		sort_order: number;
 		permission_node?: string | null;
+		feature_flag?: string | null;
 		required_group_ids?: string[];
 		visibility: string;
 		target: string;
@@ -249,6 +250,17 @@
 	let itemTarget = $state<string>('_self');
 	let itemIcon = $state('');
 	let itemPermissionNode = $state('');
+	let itemFeatureFlag = $state('');
+	let flagOptions = $state<{ key: string; name?: string }[]>([]);
+	// flagSelectOptions always carries the item's current value so the select
+	// never renders blank when the catalog fetch fails or a custom key is set.
+	const flagSelectOptions = $derived([
+		{ value: '', label: t('menus.no_feature_flag', 'None — always visible') },
+		...(itemFeatureFlag && !flagOptions.some((f) => f.key === itemFeatureFlag)
+			? [{ value: itemFeatureFlag, label: `${itemFeatureFlag} (custom)` }]
+			: []),
+		...flagOptions.map((f) => ({ value: f.key, label: f.name ? `${f.name} (${f.key})` : f.key }))
+	]);
 	let itemRequiredGroupIds = $state<Set<string>>(new Set());
 
 	// User groups for the required_group_ids multi-select
@@ -294,6 +306,30 @@
 		} catch {
 			permissionNodes = [];
 		}
+	}
+
+	// Feature flags for the item's feature_flag select — same source the
+	// roadmap flag picker uses; falls back to the public details projection.
+	let flagOptionsLoaded = false;
+	async function loadFlagOptions() {
+		if (flagOptionsLoaded) return;
+		try {
+			const result = await featureFlagsAdminApi.list();
+			if (result.ok) {
+				flagOptions = result.data ?? [];
+				flagOptionsLoaded = true;
+				return;
+			}
+		} catch {
+			// fall through to the public projection
+		}
+		try {
+			const result = await featureFlagsAdminApi.listDetails();
+			if (result.ok) flagOptions = result.data ?? [];
+		} catch {
+			flagOptions = [];
+		}
+		flagOptionsLoaded = true;
 	}
 
 	// Fetcher for the Permission Node Autocomplete. Filters the cached node
@@ -435,6 +471,7 @@
 		itemTarget = '_self';
 		itemIcon = '';
 		itemPermissionNode = '';
+		itemFeatureFlag = '';
 		itemRequiredGroupIds = new Set();
 		showItemModal = true;
 	}
@@ -451,6 +488,7 @@
 		itemTarget = item.target || '_self';
 		itemIcon = item.icon ?? '';
 		itemPermissionNode = item.permission_node ?? '';
+		itemFeatureFlag = item.feature_flag ?? '';
 		itemRequiredGroupIds = new Set(item.required_group_ids ?? []);
 		showItemModal = true;
 	}
@@ -468,6 +506,9 @@
 				target: itemTarget,
 				icon: itemIcon.trim() || null,
 				permission_node: itemPermissionNode.trim() || null,
+				// Feature-flag gating: empty string clears the flag; the
+				// backend stores NULL so the item is never pruned.
+				feature_flag: itemFeatureFlag || null,
 				required_group_ids: [...itemRequiredGroupIds],
 				// Preserve fields with no UI control on edit so the backend
 				// doesn't overwrite them with zero values (status="" violates
@@ -550,6 +591,7 @@
 
 	loadUserGroups();
 loadPermissionNodes();
+	loadFlagOptions();
 </script>
 
 <svelte:head>
@@ -724,6 +766,15 @@ loadPermissionNodes();
 				/>
 			</div>
 			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('menus.permission_node_hint', 'Optional. Restrict this item to users with the given permission node.')}</p>
+		</div>
+		<div class="col-span-2">
+			<label for="item-feature-flag" class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.feature_flag', 'Feature Flag')}</label>
+			<Select
+				options={flagSelectOptions}
+				value={itemFeatureFlag}
+				onchange={(val) => (itemFeatureFlag = val)}
+			/>
+			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('menus.feature_flag_hint', 'Optional. Item is hidden from menus when this feature flag is disabled or hidden for the caller.')}</p>
 		</div>
 		{#if menuItems.length > 0}
 			<div class="col-span-2">

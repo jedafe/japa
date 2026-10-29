@@ -551,7 +551,7 @@ type ListAllUserBlocksRow struct {
 	BlockedDisplayName *string            `json:"blocked_display_name"`
 }
 
-// Platform-scoped per JEOS §9 (BUG-001). Admin list must not cross platforms.
+// Single-tenant deployment: user_blocks has no platform_id column. Admin list intentionally spans the whole instance.
 func (q *Queries) ListAllUserBlocks(ctx context.Context, limit int32) ([]ListAllUserBlocksRow, error) {
 	rows, err := q.db.Query(ctx, listAllUserBlocks, limit)
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/feed"
 	"github.com/jedafe/japa/internal/visitor"
@@ -123,6 +125,10 @@ type RoadmapStep struct {
 	ContentSlug string `json:"content_slug"`
 	Dimension   string `json:"dimension"`
 	Priority    int    `json:"priority"`
+
+	// AIGenerated marks steps produced by the AI gateway rather than the
+	// curated library — surfaced so clients can label AI advice (ADR-071 §3).
+	AIGenerated bool `json:"ai_generated,omitempty"`
 
 	TargetCountry string `json:"target_country,omitempty"`
 	SourceCountry string `json:"source_country,omitempty"`
@@ -317,22 +323,44 @@ func (e *MissingRequiredFieldsError) Error() string {
 // ErrMissingRequiredFields matches MissingRequiredFieldsError via errors.As.
 var ErrMissingRequiredFields = &MissingRequiredFieldsError{}
 
+// InvalidAnswersError is returned when a submission supplies a select-type
+// answer that is not one of the field's configured option values (or scored
+// option keys). The endpoint is public, so the server must enforce option
+// membership itself — an unmapped value would otherwise be dropped from both
+// the numerator and denominator of the dimension score, inflating the result.
+type InvalidAnswersError struct {
+	Keys []string
+}
+
+func (e *InvalidAnswersError) Error() string {
+	return "invalid answers: " + strings.Join(e.Keys, ", ")
+}
+
 // SubmitAssessment creates a form_submission for the assessment and enqueues
 // the assessment:score_submission task fire-and-forget (Rule 8). For anonymous
 // users (userID is nil), the submission is created without a user_id.
+// The caller passes the already-loaded form DTO so submission validation
+// reuses the same field snapshot the form was rendered from.
 // Returns the submission ID.
-func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, formID pgtype.UUID, fieldValues json.RawMessage) (pgtype.UUID, error) {
+func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, form *AssessmentFormDTO, fieldValues json.RawMessage) (pgtype.UUID, error) {
 	// Server-side required-field validation: the multi-step UI enforces
 	// is_required client-side, but the endpoint is public — a crafted payload
 	// could skip weak answers to inflate the score. Reject incomplete
 	// submissions before they ever reach the scoring queue.
-	fields, err := s.store.GetAssessmentFormFields(ctx, formID)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("assessment: submit: get fields: %w", err)
+	if missing := missingRequiredFields(form.Fields, fieldValues); len(missing) > 0 {
+		return pgtype.UUID{}, &MissingRequiredFieldsError{Keys: missing}
 	}
 
-	if missing := missingRequiredFields(fields, fieldValues); len(missing) > 0 {
-		return pgtype.UUID{}, &MissingRequiredFieldsError{Keys: missing}
+	// Option-membership validation: select-type answers must use a configured
+	// option value (or a scored option key). An unmapped value would
+	// silently drop the question from the score denominator (BUG-BL-002).
+	if invalid := invalidOptionAnswers(form.Fields, fieldValues); len(invalid) > 0 {
+		return pgtype.UUID{}, &InvalidAnswersError{Keys: invalid}
+	}
+
+	var formID pgtype.UUID
+	if err := formID.Scan(form.ID); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("assessment: submit: invalid form id: %w", err)
 	}
 
 	var userIDVal pgtype.UUID
@@ -366,7 +394,7 @@ func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, formI
 // answer in the submitted field_values. An answer counts as present when it
 // is a non-empty string, a non-empty array, a number, or a boolean —
 // mirroring the client-side isFieldAnswered check.
-func missingRequiredFields(fields []gen.CustomField, fieldValues json.RawMessage) []string {
+func missingRequiredFields(fields []AssessmentField, fieldValues json.RawMessage) []string {
 	var answers map[string]any
 	if err := json.Unmarshal(fieldValues, &answers); err != nil || answers == nil {
 		answers = map[string]any{}
@@ -375,7 +403,7 @@ func missingRequiredFields(fields []gen.CustomField, fieldValues json.RawMessage
 	var missing []string
 
 	for _, f := range fields {
-		if !f.IsRequired {
+		if !f.Required {
 			continue
 		}
 
@@ -402,6 +430,87 @@ func missingRequiredFields(fields []gen.CustomField, fieldValues json.RawMessage
 	return missing
 }
 
+// invalidOptionAnswers returns the keys of select-type fields whose submitted
+// answer is not one of the configured option values or scored option keys.
+// Fields with no configured options and no option_scores (e.g. the country
+// selectors populated from the Spaces directory) are skipped — the server
+// has no allowed-set to check them against. Multiselect answers are invalid
+// when any selected element is unmapped. 'suggest' is exempt: suggest inputs
+// are free-text with autocomplete hints, so unlisted values are legitimate.
+func invalidOptionAnswers(fields []AssessmentField, fieldValues json.RawMessage) []string {
+	var answers map[string]any
+	if err := json.Unmarshal(fieldValues, &answers); err != nil || answers == nil {
+		return nil
+	}
+
+	var invalid []string
+
+	for _, f := range fields {
+		switch f.FieldType {
+		case "select", "radio", "multiselect":
+		default:
+			continue
+		}
+
+		allowed := fieldAllowedValues(f)
+		if len(allowed) == 0 {
+			continue
+		}
+
+		v, ok := answers[f.Key]
+		if !ok || v == nil {
+			continue
+		}
+
+		if f.FieldType == "multiselect" {
+			list, ok := v.([]any)
+			if !ok {
+				invalid = append(invalid, f.Key)
+				continue
+			}
+
+			for _, el := range list {
+				if _, ok := allowed[fmt.Sprintf("%v", el)]; !ok {
+					invalid = append(invalid, f.Key)
+					break
+				}
+			}
+
+			continue
+		}
+
+		if _, ok := allowed[fmt.Sprintf("%v", v)]; !ok {
+			invalid = append(invalid, f.Key)
+		}
+	}
+
+	return invalid
+}
+
+// fieldAllowedValues returns the set of permitted answer values for a
+// select-type field: the union of configured option values and scored option
+// keys (admins may configure scores for values not present in options).
+func fieldAllowedValues(f AssessmentField) map[string]struct{} {
+	set := make(map[string]struct{})
+
+	var opts []struct {
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(f.Options, &opts); err == nil {
+		for _, o := range opts {
+			if o.Value != "" {
+				set[o.Value] = struct{}{}
+			}
+		}
+	}
+
+	for k := range f.Config.OptionScores {
+		set[k] = struct{}{}
+	}
+
+	return set
+}
+
 // ScoreSubmissionInput is the input to the scoring engine when the caller
 // has already fetched the submission's field_values. The worker handler
 // uses this to avoid a second query for the submission row.
@@ -419,14 +528,24 @@ type ScoreSubmissionInput struct {
 // // The caller provides the submission's field_values and user_id via
 // ScoreSubmissionInput. The worker handler fetches the submission row from
 // the shared form_submissions store and passes its field_values here.
-func (s *Service) ScoreSubmission(ctx context.Context, input ScoreSubmissionInput) (pgtype.UUID, error) {
+// ScoreSubmission returns the result ID and whether a NEW result row was
+// written. created=false means the submission was already scored — callers
+// must not re-notify or re-award on retries (BUG-BL-005).
+func (s *Service) ScoreSubmission(ctx context.Context, input ScoreSubmissionInput) (pgtype.UUID, bool, error) {
+	// Idempotency: if a result already exists for this submission, return it.
+	// An Asynq retry landing after the insert would otherwise create a
+	// duplicate result row (BUG-BL-005).
+	if existing, err := s.store.GetAssessmentResultBySubmission(ctx, input.SubmissionID); err == nil {
+		return existing.ID, false, nil
+	}
+
 	// Load the submitted form ID so the submission is scored against the form
 	// it was actually answered on — not whichever assessment happens to be
 	// active when the async worker runs — and so the completion-point award
 	// stays scoped to one per user per form (Section 28).
 	submission, err := s.store.GetSubmissionByID(ctx, input.SubmissionID)
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("assessment: score: get submission: %w", err)
+		return pgtype.UUID{}, false, fmt.Errorf("assessment: score: get submission: %w", err)
 	}
 
 	form, err := s.store.GetAssessmentFormByID(ctx, submission.FormID)
@@ -436,18 +555,18 @@ func (s *Service) ScoreSubmission(ctx context.Context, input ScoreSubmissionInpu
 		// dropped submission.
 		form, err = s.store.GetActiveAssessmentForm(ctx)
 		if err != nil {
-			return pgtype.UUID{}, fmt.Errorf("assessment: score: get form: %w", err)
+			return pgtype.UUID{}, false, fmt.Errorf("assessment: score: get form: %w", err)
 		}
 	}
 
 	fields, err := s.store.GetAssessmentFormFields(ctx, form.ID)
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("assessment: score: get fields: %w", err)
+		return pgtype.UUID{}, false, fmt.Errorf("assessment: score: get fields: %w", err)
 	}
 
 	scoringConfig, err := parseScoringConfig(form.ScoringConfig)
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("assessment: score: parse scoring config: %w", err)
+		return pgtype.UUID{}, false, fmt.Errorf("assessment: score: parse scoring config: %w", err)
 	}
 
 	result := computeScore(input.FieldValues, fields, scoringConfig)
@@ -475,6 +594,28 @@ func (s *Service) ScoreSubmission(ctx context.Context, input ScoreSubmissionInpu
 		if aiEnabled {
 			aiSteps := s.generateAIRoadmapSteps(ctx, input.UserID, result.JourneyContext, result.DimensionScores, result.ThresholdLabel)
 			if len(aiSteps) > 0 {
+				// Verify AI-returned content slugs against the published corpus —
+				// a hallucinated slug must not produce a dead link (BUG-BL-004).
+				// Unverifiable slugs are cleared, keeping the step's prose.
+				published := make(map[string]bool)
+				var candidates []string
+
+				for _, step := range aiSteps {
+					if step.ContentSlug != "" {
+						candidates = append(candidates, step.ContentSlug)
+					}
+				}
+
+				if len(candidates) > 0 {
+					if slugs, err := s.store.PublishedSlugs(ctx, candidates); err == nil {
+						for _, slug := range slugs {
+							published[slug] = true
+						}
+					} else {
+						slog.Warn("assessment: score: verify AI slugs failed", "error", err)
+					}
+				}
+
 				// Append AI steps after curated steps, continuing the priority
 				// sequence. Skip any step that links to content already in the
 				// roadmap so a guide is never listed as two different steps.
@@ -489,14 +630,17 @@ func (s *Service) ScoreSubmission(ctx context.Context, input ScoreSubmissionInpu
 				basePriority := len(result.Roadmap)
 
 				for _, step := range aiSteps {
-					if step.ContentSlug != "" && usedSlugs[step.ContentSlug] {
-						continue
-					}
-
 					if step.ContentSlug != "" {
-						usedSlugs[step.ContentSlug] = true
+						if len(candidates) > 0 && !published[step.ContentSlug] {
+							step.ContentSlug = ""
+						} else if usedSlugs[step.ContentSlug] {
+							continue
+						} else {
+							usedSlugs[step.ContentSlug] = true
+						}
 					}
 
+					step.AIGenerated = true
 					basePriority++
 					step.Priority = basePriority
 					result.Roadmap = append(result.Roadmap, step)
@@ -509,14 +653,20 @@ func (s *Service) ScoreSubmission(ctx context.Context, input ScoreSubmissionInpu
 	// visitor's journey context. Gated by assessment.geo_content_resolution_enabled.
 	result.Roadmap = s.resolveRoadmapContent(ctx, result.Roadmap, result.JourneyContext)
 
+	// Mint published stub guides for any roadmap slug that has no backing
+	// content so every "next step" link resolves to a real /guide/{slug}
+	// page — corridor-scoped variants when journey context is present.
+	// Best-effort.
+	result.Roadmap = s.EnsureRoadmapStubs(ctx, result.Roadmap, result.JourneyContext)
+
 	dimensionScoresJSON, err := json.Marshal(result.DimensionScores)
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("assessment: score: marshal dimension scores: %w", err)
+		return pgtype.UUID{}, false, fmt.Errorf("assessment: score: marshal dimension scores: %w", err)
 	}
 
 	roadmapJSON, err := json.Marshal(result.Roadmap)
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("assessment: score: marshal roadmap: %w", err)
+		return pgtype.UUID{}, false, fmt.Errorf("assessment: score: marshal roadmap: %w", err)
 	}
 
 	// Completion points are awarded only once per user per form (Section 28).
@@ -533,7 +683,19 @@ func (s *Service) ScoreSubmission(ctx context.Context, input ScoreSubmissionInpu
 
 	ar, err := s.store.CreateAssessmentResult(ctx, input.UserID, input.SubmissionID, int32(result.TotalScore), dimensionScoresJSON, result.ThresholdLabel, roadmapJSON) // #nosec
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("assessment: score: create result: %w", err)
+		// A unique-violation means a concurrent worker already wrote the
+		// result for this submission — return it rather than failing (BUG-BL-005).
+		if existing, gErr := s.store.GetAssessmentResultBySubmission(ctx, input.SubmissionID); gErr == nil {
+			return existing.ID, false, nil
+		}
+
+		return pgtype.UUID{}, false, fmt.Errorf("assessment: score: create result: %w", err)
+	}
+
+	// Transition the submission out of 'new' so admin form UIs don't show it
+	// as perpetually pending (BUG-BL-010). Best-effort.
+	if err := s.store.MarkSubmissionScored(ctx, input.SubmissionID); err != nil {
+		slog.Warn("assessment: score: mark submission scored failed", "error", err)
 	}
 
 	// §64: record the assessment.completed activity so badge/challenge
@@ -570,7 +732,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, input ScoreSubmissionInpu
 
 	slog.Info("assessment: score: complete", "submission_id", input.SubmissionID.String(), "result_id", ar.ID.String(), "total_score", result.TotalScore, "threshold", result.ThresholdLabel)
 
-	return ar.ID, nil
+	return ar.ID, true, nil
 }
 
 // GetResult returns a single assessment result with its roadmap.
@@ -595,6 +757,12 @@ func (s *Service) GetSubmissionFieldValues(ctx context.Context, submissionID pgt
 // enqueued. Returns pgx.ErrNoRows when the result is not yet written.
 func (s *Service) GetResultBySubmission(ctx context.Context, submissionID pgtype.UUID) (gen.AssessmentResult, error) {
 	return s.store.GetAssessmentResultBySubmission(ctx, submissionID)
+}
+
+// IsAssessmentSubmission reports whether the submission exists and belongs to
+// a form with form_type='assessment'.
+func (s *Service) IsAssessmentSubmission(ctx context.Context, submissionID pgtype.UUID) (bool, error) {
+	return s.store.IsAssessmentSubmission(ctx, submissionID)
 }
 
 // ListHistory returns a user's past assessment results, paginated.
@@ -666,17 +834,358 @@ func (s *Service) AdminCompletionStats(ctx context.Context) (AdminCompletionStat
 
 // UpdateFormScoring updates the scoring_config JSONB on the assessment form.
 // Admin-only.
+// ErrInvalidScoringConfig marks malformed/semantically-invalid scoring_config
+// payloads so handlers can return 422 instead of a generic 500.
+var ErrInvalidScoringConfig = errors.New("invalid scoring config")
+
 func (s *Service) UpdateFormScoring(ctx context.Context, formID pgtype.UUID, scoringConfig json.RawMessage) (gen.Form, error) {
 	// Validate the JSONB is a well-formed ScoringConfig before persisting.
 	var cfg ScoringConfig
 	if err := json.Unmarshal(scoringConfig, &cfg); err != nil {
-		return gen.Form{}, fmt.Errorf("assessment: update scoring: invalid config: %w", err)
+		return gen.Form{}, fmt.Errorf("%w: %v", ErrInvalidScoringConfig, err)
+	}
+
+	if err := validateScoringConfig(cfg); err != nil {
+		return gen.Form{}, fmt.Errorf("%w: %v", ErrInvalidScoringConfig, err)
 	}
 
 	return s.store.UpdateAssessmentFormScoring(ctx, formID, []byte(scoringConfig))
 }
 
+// thresholdColorPattern restricts threshold colors to hex values or chart
+// theme tokens — free-text colors would render as broken CSS (BUG-UX-012).
+var thresholdColorPattern = regexp.MustCompile(`^(#[0-9a-fA-F]{3,8}|chart-\d+)?$`)
+
+// validateScoringConfig enforces the semantic invariants of scoring_config:
+// a positive max_score, sane threshold bands, and non-negative weights
+// (BUG-BL-006). Gaps in threshold coverage are allowed — out-of-band scores
+// classify as "Unclassified" — but overlapping min>max bands are rejected.
+func validateScoringConfig(cfg ScoringConfig) error {
+	if cfg.MaxScore <= 0 {
+		return errors.New("max_score must be positive")
+	}
+
+	if len(cfg.Thresholds) == 0 {
+		return errors.New("thresholds must not be empty")
+	}
+
+	for i, t := range cfg.Thresholds {
+		if t.Min > t.Max {
+			return fmt.Errorf("threshold %d: min %d exceeds max %d", i, t.Min, t.Max)
+		}
+
+		if strings.TrimSpace(t.Label) == "" {
+			return fmt.Errorf("threshold %d: label is required", i)
+		}
+
+		if !thresholdColorPattern.MatchString(t.Color) {
+			return fmt.Errorf("threshold %d: invalid color %q (expected #hex or chart-N)", i, t.Color)
+		}
+	}
+
+	for dim, w := range cfg.DimensionWeights {
+		if w < 0 {
+			return fmt.Errorf("dimension_weights[%q] must be non-negative", dim)
+		}
+	}
+
+	return nil
+}
+
+// CleanupAnonymousResults delegates to the store — see CleanupAnonymousResults
+// below for the retention-window implementation.
+
+// stubGuideCategories maps roadmap dimensions to the seeded guide categories
+// so stub guides land in a sensible content bucket.
+var stubGuideCategories = map[string]string{
+	"financial":             "banking",
+	"academic":              "admission",
+	"logistical":            "visa",
+	"cultural":              "culture_lifestyle",
+	"community":             "culture_lifestyle",
+	"destination_knowledge": "travel_routes",
+}
+
+// EnsureRoadmapStubs creates published stub guides for roadmap steps whose
+// content_slug resolves to nothing. Built-in and curated roadmap slugs are
+// server/admin-authored, so minting a stub on first view heals missing
+// content without admin action — the /content/{slug} link then 301s to the
+// canonical /guide/{slug} page. Called lazily from the roadmap endpoint
+// (which also heals results scored before stubs existed) and at scoring
+// time. Best-effort: failures are logged, never fatal.
+// EnsureRoadmapStubs ensures every roadmap step's content_slug resolves to
+// published content and returns the steps possibly rewritten to corridor
+// variants. Resolution order per step:
+//
+//  1. Base slug published → keep it (real content exists).
+//  2. Journey context present (origin/destination) → corridor slug
+//     `{base}-{origin}-to-{dest}` (ISO codes); mint a geo-scoped stub when
+//     missing and rewrite the step to it. Corridor stubs carry the journey
+//     fields, so geo re-ranking prefers them for matching visitors.
+//  3. No context → global slug; mint a global stub when missing.
+//
+// Called at scoring time (the rewritten slugs persist in roadmap_content)
+// and lazily in the roadmap endpoint (heals older results). Best-effort:
+// failures are logged, never fatal.
+func (s *Service) EnsureRoadmapStubs(ctx context.Context, steps []RoadmapStep, journey JourneyContext) []RoadmapStep {
+	var candidates []string
+
+	// Pass 1 — collect every slug that might need verification/minting.
+	origin := strings.ToLower(journey.OriginCountry)
+	dest := strings.ToLower(journey.DestinationCountry)
+
+	for _, step := range steps {
+		if step.ContentSlug == "" {
+			continue
+		}
+
+		candidates = append(candidates, step.ContentSlug, corridorSlug(step.ContentSlug, origin, dest))
+	}
+
+	if len(candidates) == 0 {
+		return steps
+	}
+
+	published, err := s.store.PublishedSlugs(ctx, candidates)
+	if err != nil {
+		slog.Warn("assessment: roadmap stubs: published lookup failed", "error", err)
+		return steps
+	}
+
+	have := make(map[string]bool, len(published))
+	for _, slug := range published {
+		have[slug] = true
+	}
+
+	// Which published slugs are auto-generated stubs (vs real guides) — a
+	// stub never blocks a more specific corridor variant.
+	stubSet := make(map[string]bool)
+	if stubSlugs, err := s.store.StubSlugs(ctx, candidates); err == nil {
+		for _, slug := range stubSlugs {
+			stubSet[slug] = true
+		}
+	} else {
+		slog.Warn("assessment: roadmap stubs: stub lookup failed", "error", err)
+	}
+
+	// Pass 2 — rewrite steps to the best available slug: real base content
+	// wins, then a corridor variant (existing or to-mint), then a global stub.
+	var mint []mintJob
+
+	for i, step := range steps {
+		if step.ContentSlug == "" {
+			continue
+		}
+
+		base := step.ContentSlug
+		if have[base] && !stubSet[base] {
+			continue // real published guide — nothing to do
+		}
+
+		corr := corridorSlug(base, origin, dest)
+		if corr != base {
+			steps[i].ContentSlug = corr
+			if !have[corr] {
+				mint = append(mint, mintJob{slug: corr, step: step, scoped: true})
+				have[corr] = true // only mint once per call
+			}
+		} else if !have[base] {
+			mint = append(mint, mintJob{slug: base, step: step, scoped: false})
+			have[base] = true
+		}
+	}
+
+	if len(mint) == 0 {
+		return steps
+	}
+
+	authorID, err := s.store.SystemAuthorID(ctx)
+	if err != nil {
+		slog.Warn("assessment: roadmap stubs: system author unavailable", "error", err)
+		return steps
+	}
+
+	now := time.Now().UTC()
+	originName := s.geoName(ctx, journey.OriginCountry)
+	destName := s.geoName(ctx, journey.DestinationCountry)
+
+	for _, job := range mint {
+		step := job.step
+
+		title := step.Title
+		if title == "" {
+			title = strings.ReplaceAll(job.slug, "-", " ")
+		}
+
+		body := stubGuideBody(title, step.Description, originName, destName)
+		hash := content.ComputeContentHash(body)
+		bodyHTML := content.RenderBodyHTML(body)
+
+		params := gen.CreateContentParams{
+			AuthorID:        authorID,
+			ContentType:     "guide",
+			Title:           title,
+			Slug:            job.slug,
+			Body:            body,
+			BodyHtml:        bodyHTML,
+			FieldValues:     []byte(`{"is_stub": true}`),
+			ContentHash:     &hash,
+			Status:          "published",
+			Visibility:      "public",
+			SeoIndexable:    true,
+			ReadTimeMinutes: content.ComputeReadTime(body),
+			PublishAt:       pgtype.Timestamptz{Time: now, Valid: true},
+			PublishedAt:     pgtype.Timestamptz{Time: now, Valid: true},
+		}
+
+		// Stubs are indexable — give them sane meta so they don't degrade SEO.
+		params.MetaTitle = &title
+		if step.Description != "" {
+			params.MetaDescription = &step.Description
+		}
+
+		if cat, ok := stubGuideCategories[step.Dimension]; ok {
+			params.GuideCategory = &cat
+		}
+
+		// Corridor stubs carry the journey fields — each corridor slug is
+		// unique per route so geo re-ranking can prefer it for matching
+		// visitors. Global stubs stay unscoped (shared across users).
+		if job.scoped {
+			params.TargetCountry = &journey.DestinationCountry
+			params.SourceCountry = &journey.OriginCountry
+			if journey.JourneyStage != "" {
+				params.JourneyStage = &journey.JourneyStage
+			}
+			if journey.VisaRoute != "" {
+				params.VisaRoute = &journey.VisaRoute
+			}
+		}
+
+		if err := s.store.CreateStubContent(ctx, params); err != nil {
+			// Duplicate slug (concurrent scorer or a non-published row with
+			// the same slug) — the step already points at it; just log.
+			slog.Warn("assessment: roadmap stubs: create failed", "slug", job.slug, "error", err)
+		}
+	}
+
+	return steps
+}
+
+// mintJob is a single stub guide to create.
+type mintJob struct {
+	slug   string
+	step   RoadmapStep
+	scoped bool // corridor stub — carry journey fields
+}
+
+// corridorSlug derives the journey-scoped slug variant for a roadmap step:
+// {base}-{origin}-to-{dest}, {base}-for-{dest}, {base}-from-{origin}, or the
+// base slug unchanged when no journey context is present.
+func corridorSlug(base, origin, dest string) string {
+	switch {
+	case origin != "" && dest != "":
+		return fmt.Sprintf("%s-%s-to-%s", base, origin, dest)
+	case dest != "":
+		return fmt.Sprintf("%s-for-%s", base, dest)
+	case origin != "":
+		return fmt.Sprintf("%s-from-%s", base, origin)
+	}
+
+	return base
+}
+
+// geoName resolves a geo code to its display name via the spaces table;
+// falls back to the raw code.
+func (s *Service) geoName(ctx context.Context, geoCode string) string {
+	if geoCode == "" {
+		return ""
+	}
+
+	if space, err := s.store.GetSpaceByGeoCode(ctx, geoCode); err == nil && space.Name != "" {
+		return space.Name
+	}
+
+	return geoCode
+}
+
+// stubGuideBody renders a minimal guide body for an auto-created stub page:
+// the step's title and description plus a pointer back to the assessment and
+// the guides directory. Corridor stubs get a route-specific section.
+func stubGuideBody(title, description, originName, destName string) string {
+	var b strings.Builder
+
+	if description != "" {
+		b.WriteString(description)
+		b.WriteString("\n\n")
+	}
+
+	b.WriteString("## What this covers\n\n")
+	b.WriteString(title)
+	b.WriteString(" is part of the recommended next steps in the Japa Readiness roadmap. ")
+
+	if destName != "" && originName != "" {
+		b.WriteString("This stub is scoped to your move from ")
+		b.WriteString(originName)
+		b.WriteString(" to ")
+		b.WriteString(destName)
+		b.WriteString(" — a full step-by-step guide for this route is being prepared.\n\n")
+		b.WriteString("## Your route: ")
+		b.WriteString(originName)
+		b.WriteString(" → ")
+		b.WriteString(destName)
+		b.WriteString("\n\n")
+		b.WriteString("Every destination has its own visa rules, costs, and paperwork. Verify the requirements for ")
+		b.WriteString(destName)
+		b.WriteString(" before relying on general advice.\n\n")
+	} else {
+		b.WriteString("This stub page was created so roadmap links always resolve — a full step-by-step guide is being prepared.\n\n")
+	}
+
+	b.WriteString("## In the meantime\n\n")
+	b.WriteString("- [Take the Japa Readiness Assessment](/tools/readiness) for a personalized score and updated recommendations.\n")
+	b.WriteString("- Browse all [guides](/guides) for your destination.\n")
+
+	return b.String()
+}
+
+// RescoreStaleSubmissions re-enqueues scoring for assessment submissions that
+// have no result row and are older than staleMinutes — e.g. when the original
+// enqueue failed after the submission row was written (BUG-BL-009). Returns
+// the number of tasks enqueued. Called by the hourly cleanup task.
+func (s *Service) RescoreStaleSubmissions(ctx context.Context, staleMinutes int32) (int, error) {
+	if s.enqueuer == nil {
+		return 0, nil
+	}
+
+	ids, err := s.store.ListStaleUnscoredSubmissions(ctx, staleMinutes, 100)
+	if err != nil {
+		return 0, fmt.Errorf("assessment: rescore stale: %w", err)
+	}
+
+	enqueued := 0
+
+	for _, id := range ids {
+		payload, err := json.Marshal(map[string]string{"submission_id": id.String()})
+		if err != nil {
+			continue
+		}
+
+		if err := s.enqueuer.Enqueue(TaskScoreSubmission, payload); err != nil {
+			slog.Warn("assessment: rescore stale: enqueue failed", "submission_id", id.String(), "error", err)
+			continue
+		}
+
+		enqueued++
+	}
+
+	return enqueued, nil
+}
+
 // CreateAssessment creates a new readiness assessment form (form_type='assessment').
+// New forms default to 'draft' — only an explicit status='active' activates,
+// and activation demotes any other active assessment form so exactly one
+// questionnaire is live at a time (BUG-BL-011 / BUG-RBAC-001).
 func (s *Service) CreateAssessment(ctx context.Context, input CreateAssessmentInput) (*AssessmentFormDTO, error) {
 	if input.Name == "" {
 		return nil, errors.New("name is required")
@@ -784,6 +1293,12 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 		}
 
 		normalised := (raw / maxRaw) * 100.0
+		if normalised < 0 {
+			normalised = 0
+		}
+		if normalised > 100 {
+			normalised = 100
+		}
 		dimensionScores[dim] = int(normalised)
 	}
 
@@ -863,13 +1378,22 @@ func scoreFieldAnswer(field gen.CustomField, fsc FieldScoringConfig, answer any)
 }
 
 // scoreSingle returns the score and max score for a single string answer.
+// An answer not present in option_scores still counts toward the denominator
+// (scored as 0) — dropping it would remove the question from the score and
+// inflate the result (BUG-BL-002). Fields with no scored options at all are
+// unscored and return (0,0) so the caller skips them.
 func scoreSingle(fsc FieldScoringConfig, answer string) (float64, float64) {
-	raw, ok := fsc.OptionScores[answer]
-	if !ok {
+	max := float64(maxOptionScore(fsc.OptionScores))
+	if max <= 0 {
 		return 0, 0
 	}
 
-	return float64(raw), float64(maxOptionScore(fsc.OptionScores))
+	raw, ok := fsc.OptionScores[answer]
+	if !ok {
+		return 0, max
+	}
+
+	return float64(raw), max
 }
 
 // scoreMultiSelect returns the summed score for selected values and the sum of
@@ -936,6 +1460,15 @@ func scoreNumber(fsc FieldScoringConfig, answer any) (float64, float64) {
 		return float64(s), float64(maxOptionScore(fsc.OptionScores))
 	}
 
+	// Unmapped numeric answers are treated as a 0–100 score — clamp so an
+	// out-of-range value can't inflate the dimension past its max (BUG-BL-007).
+	if n < 0 {
+		n = 0
+	}
+	if n > 100 {
+		n = 100
+	}
+
 	return n, 100.0
 }
 
@@ -952,11 +1485,16 @@ func scoreBoolean(fsc FieldScoringConfig, answer any) (float64, float64) {
 		return 0, 0
 	}
 
-	if raw, ok := fsc.OptionScores[s]; ok {
-		return float64(raw), float64(maxOptionScore(fsc.OptionScores))
+	max := float64(maxOptionScore(fsc.OptionScores))
+	if max <= 0 {
+		return 0, 0
 	}
 
-	return 0, 0
+	if raw, ok := fsc.OptionScores[s]; ok {
+		return float64(raw), max
+	}
+
+	return 0, max
 }
 
 // maxOptionScore returns the highest configured option score.
@@ -1046,7 +1584,10 @@ func extractStringValue(raw map[string]any, keys ...string) string {
 			}
 
 			if len(parts) > 0 {
-				return strings.Join(parts, ",")
+				// Journey context fields are single-valued; a multi-select
+				// encoding would otherwise produce "NG,GH" and fail
+				// normalization. Take the first value (BUG-BL-012).
+				return parts[0]
 			}
 		case float64:
 			return strconv.FormatFloat(val, 'f', -1, 64)

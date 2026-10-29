@@ -2880,11 +2880,13 @@ func (a *agentForumAdapter) DeleteReply(ctx context.Context, id, userID pgtype.U
 }
 
 func (a *agentForumAdapter) Vote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID, value int16) (gen.ForumVote, error) {
-	return a.svc.Vote(ctx, userID, forum.VoteInput{EntityType: entityType, EntityID: entityID, Value: value})
+	vote, _, _, err := a.svc.Vote(ctx, userID, forum.VoteInput{EntityType: entityType, EntityID: entityID, Value: value})
+	return vote, err
 }
 
 func (a *agentForumAdapter) RemoveVote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
-	return a.svc.RemoveVote(ctx, userID, entityType, entityID)
+	_, _, err := a.svc.RemoveVote(ctx, userID, entityType, entityID)
+	return err
 }
 
 // ---------------------------------------------------------------------------
@@ -2995,11 +2997,13 @@ func (a *agentCommentsAdapter) SoftDeleteCommentByAuthor(ctx context.Context, co
 }
 
 func (a *agentCommentsAdapter) VoteComment(ctx context.Context, commentID, userID pgtype.UUID, value int16) error {
-	return a.svc.VoteComment(ctx, commentID, userID, value)
+	_, _, err := a.svc.VoteComment(ctx, commentID, userID, value)
+	return err
 }
 
 func (a *agentCommentsAdapter) RemoveCommentVote(ctx context.Context, commentID, userID pgtype.UUID) error {
-	return a.svc.RemoveCommentVote(ctx, commentID, userID)
+	_, _, err := a.svc.RemoveCommentVote(ctx, commentID, userID)
+	return err
 }
 
 // ---------------------------------------------------------------------------

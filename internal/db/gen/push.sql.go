@@ -66,6 +66,7 @@ const listPushSubscriptionsByUser = `-- name: ListPushSubscriptionsByUser :many
 SELECT id, endpoint, p256dh, auth_key
 FROM push_subscriptions
 WHERE user_id = $1
+ORDER BY created_at ASC
 `
 
 type ListPushSubscriptionsByUserRow struct {
@@ -76,6 +77,8 @@ type ListPushSubscriptionsByUserRow struct {
 }
 
 // Push notification subscriptions and tokens (Section 29).
+// ORDER BY created_at ASC — the oldest row is trimmed first when the
+// per-user subscription cap is exceeded.
 func (q *Queries) ListPushSubscriptionsByUser(ctx context.Context, userID pgtype.UUID) ([]ListPushSubscriptionsByUserRow, error) {
 	rows, err := q.db.Query(ctx, listPushSubscriptionsByUser, userID)
 	if err != nil {

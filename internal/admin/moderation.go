@@ -761,6 +761,19 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	// Reject unknown scopes up front — broadcastToScopedUsers errors on an
+	// unrecognized target, but a client that sent "unverified"/"pro_members"
+	// (or a typo) must get a 400, not a 500 — and never silently "all".
+	target := req.Target
+	if target == "" {
+		target = "all"
+	}
+
+	if target != "all" && target != "user_group" && target != "geo_space" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_target", "target must be one of: all, user_group, geo_space")
+		return
+	}
+
 	// Scheduled broadcast (§35): persist a pending row; the
 	// broadcast:dispatch_scheduled Asynq sweep (every minute) delivers it
 	// when scheduled_at is due and stamps sent_at + recipient_count.
@@ -774,11 +787,6 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 		if scheduledAt.Before(time.Now()) {
 			errpkg.WriteError(w, http.StatusBadRequest, "past_schedule", "schedule time must be in the future")
 			return
-		}
-
-		target := req.Target
-		if target == "" {
-			target = "all"
 		}
 
 		var targetID pgtype.UUID
@@ -878,8 +886,14 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, senderID pgtype.U
 
 			groupID,
 		)
-	default: // "all", "unverified", "pro_members", or empty
+	case "all", "":
 		rows, err = h.Queries.ListActiveUserIDs(ctx)
+	default:
+		// An unrecognized target must NOT fall through to "all" — a typo'd
+		// scope would otherwise mass-notify every active user. ("unverified"
+		// and "pro_members" were once planned scopes; they are not valid
+		// targets today.)
+		return 0, fmt.Errorf("invalid broadcast target: %q", target)
 	}
 
 	if err != nil {
@@ -891,12 +905,14 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, senderID pgtype.U
 	}
 
 	// Batch insert notifications using unnest for a single round-trip.
+	// BUG-001: param order fixed — Column1 is the recipients array; the
+	// previous mapping wrote the sender into recipient_id and UUIDs into
+	// notification_type so every broadcast INSERT failed.
 	err = h.Queries.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
-		RecipientID: senderID,
-		Column2:     rows,
-		Title:       title,
-		Body:        &body,
-		CreatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		Column1:   rows,
+		Title:     title,
+		Body:      &body,
+		CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	if err != nil {
 		return 0, err
@@ -2335,33 +2351,149 @@ func (h *Handlers) ListDeletedContents(w http.ResponseWriter, r *http.Request) {
 // ─── Broadcasts ───────────────────────────────────────────────────────────
 
 // ListBroadcasts handles GET /admin/broadcasts.
+// BUG-013: ?status=draft|scheduled|sent filter (§35 L132) + offset
+// pagination + status/target/scheduled_at fields + null-safe sent_at.
 func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.Queries.ListAdminBroadcasts(r.Context())
+	status := r.URL.Query().Get("status")
+	switch status {
+	case "", "draft", "scheduled", "sent":
+	default:
+		status = ""
+	}
+
+	limit := int32(50)
+	if v, err := strconv.Atoi(r.URL.Query().Get("page_size")); err == nil && v > 0 {
+		if v > 100 {
+			v = 100
+		}
+		limit = int32(v) // #nosec G115 -- bounded by 100 clamp
+	}
+
+	offset := int32(0)
+	if v, err := strconv.Atoi(r.URL.Query().Get("page_offset")); err == nil && v >= 0 {
+		offset = int32(v) // #nosec G115 -- bounded by caller
+	}
+
+	rows, err := h.Queries.ListAdminBroadcasts(r.Context(), gen.ListAdminBroadcastsParams{
+		Status:     status,
+		PageOffset: offset,
+		PageLimit:  limit,
+	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list broadcasts")
 		return
 	}
 
-	var total int32
-	if err := h.DB.Reader.QueryRow(r.Context(), `SELECT COUNT(*)::int FROM admin_broadcasts`).Scan(&total); err != nil {
-		slog.Warn("moderation: counting broadcasts", "error", err)
+	total, err := h.Queries.CountAdminBroadcasts(r.Context(), status)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count broadcasts")
+		return
 	}
 
 	broadcasts := make([]map[string]any, 0, len(rows))
 	for _, b := range rows {
-		broadcasts = append(broadcasts, map[string]any{
-			"id": b.ID.String(), "title": b.Title, "body": b.Body, "sent_by": b.SentBy.String(),
-			"sent_at": b.SentAt.Time.Format(time.RFC3339), "recipient_count": b.RecipientCount,
-		})
+		row := map[string]any{
+			"id": b.ID.String(), "title": b.Title, "body": b.Body,
+			"sent_by": b.SentBy.String(), "recipient_count": b.RecipientCount,
+			"status": b.Status, "target": b.Target,
+		}
+		if b.SentAt.Valid {
+			row["sent_at"] = b.SentAt.Time.Format(time.RFC3339)
+		}
+		if b.ScheduledAt.Valid {
+			row["scheduled_at"] = b.ScheduledAt.Time.Format(time.RFC3339)
+		}
+		if b.TargetID.Valid {
+			row["target_id"] = b.TargetID.String()
+		}
+		broadcasts = append(broadcasts, row)
+	}
+
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = (total + limit - 1) / limit
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": broadcasts,
-		"meta": map[string]any{"total": total},
+		"data": broadcasts, "total": total, "total_pages": totalPages,
+	})
+}
+
+// SendBroadcast handles POST /admin/broadcasts/{id}/send.
+// BUG-010: the route previously shared the create handler — {id} was ignored
+// and a fresh broadcast was built from the request body, so sending a stored
+// draft was impossible. Now loads the row and dispatches its stored
+// scope/title/body, then stamps sent_at + recipient_count.
+func (h *Handlers) SendBroadcast(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var bid pgtype.UUID
+	if err := bid.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid broadcast ID")
+		return
+	}
+
+	b, err := h.Queries.GetAdminBroadcastByID(r.Context(), bid)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Broadcast not found")
+		return
+	}
+
+	if b.SentAt.Valid {
+		errpkg.WriteError(w, http.StatusConflict, "already_sent", "Broadcast has already been sent")
+		return
+	}
+
+	// Claim before dispatch — atomic with the sweep's claimant check so a
+	// manual send and a due sweep can't double-deliver (0 rows = in-flight).
+	claimed, err := h.Queries.ClaimBroadcast(r.Context(), bid)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to claim broadcast")
+		return
+	}
+
+	if claimed == 0 {
+		errpkg.WriteError(w, http.StatusConflict, "already_sent", "Broadcast already sent or dispatch in progress")
+		return
+	}
+
+	target := b.Target
+	if target == "" {
+		target = "all"
+	}
+
+	targetID := ""
+	if b.TargetID.Valid {
+		targetID = b.TargetID.String()
+	}
+
+	sent, err := h.broadcastToScopedUsers(r.Context(), b.SentBy, b.Title, b.Body, target, targetID)
+	if err != nil {
+		slog.Error("broadcast: send-by-id failed", "id", bid.String(), "error", err)
+		_ = h.Queries.UnclaimBroadcast(r.Context(), bid)
+		errpkg.WriteError(w, http.StatusInternalServerError, "broadcast_error", "Failed to send broadcast")
+		return
+	}
+
+	if err := h.Queries.MarkBroadcastSent(r.Context(), gen.MarkBroadcastSentParams{
+		ID: bid, RecipientCount: int32(sent), // #nosec G115 -- bounded by user table
+	}); err != nil {
+		slog.Warn("broadcast: failed to mark sent", "id", bid.String(), "error", err)
+	}
+
+	slog.Info("broadcast sent by id", "user_id", user.UserID.String(), "id", bid.String(), "recipients", sent)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{"sent": sent, "id": bid.String()},
 	})
 }
 
 // DeleteBroadcast handles DELETE /admin/broadcasts/:id.
+// BUG-020: spec scope is drafts only — a sent record is history, not a
+// draft; 0 rows affected → 404.
 func (h *Handlers) DeleteBroadcast(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -2372,9 +2504,14 @@ func (h *Handlers) DeleteBroadcast(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.Queries.DeleteAdminBroadcast(r.Context(), bid)
+	n, err := h.Queries.DeleteAdminBroadcast(r.Context(), bid)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete broadcast")
+		return
+	}
+
+	if n == 0 {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Broadcast not found or already sent")
 		return
 	}
 

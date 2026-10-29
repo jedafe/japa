@@ -58,6 +58,7 @@ type ImportProcessor interface {
 type AssessmentProcessor interface {
 	ScoreSubmission(ctx context.Context, submissionID pgtype.UUID) error
 	CleanupAnonymousResults(ctx context.Context, retentionHours int32) (int64, error)
+	RescoreStaleSubmissions(ctx context.Context, staleMinutes int32) (int, error)
 }
 
 // ScholarshipProcessor handles scholarship background tasks (§73, ADR-073).
@@ -670,6 +671,14 @@ func HandleAssessmentCleanupAnonymous(ctx context.Context, t *asynq.Task) error 
 	}
 
 	slog.Info("task:assessment:cleanup_anonymous: rows deleted", "count", n, "retention_hours", retentionHours)
+
+	// Sweep stale unscored submissions — recovers submissions whose scoring
+	// task was never enqueued or never completed (BUG-BL-009).
+	if m, err := assessmentProcessor.RescoreStaleSubmissions(ctx, 15); err != nil {
+		slog.Warn("task:assessment:cleanup_anonymous: rescore sweep failed", "error", err)
+	} else if m > 0 {
+		slog.Info("task:assessment:cleanup_anonymous: stale submissions re-enqueued", "count", m)
+	}
 
 	return nil
 }

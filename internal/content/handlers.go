@@ -1383,11 +1383,14 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		"author_name":       content.AuthorName,
 		"author_username":   content.AuthorUsername,
 		"author_avatar_url": content.AuthorAvatarUrl,
-		"space_name":        content.SpaceName,
-		"space_slug":        content.SpaceSlug,
-		"space_avatar_url":  mediaURL(content.SpaceAvatarStorageBucket, content.SpaceAvatarStoragePath),
-		"organization":      orgRefFrom(content.OrganizationID, content.OrganizationName, content.OrganizationSlug, content.OrganizationLogoStorageBucket, content.OrganizationLogoStoragePath),
-		"excerpt":           ExcerptFromBody(content.Body, content.BodyHtml, 160),
+		// §68 disclosure toggle — true when the author is a persona with
+		// disclosure_mode = 'disclosed'; frontend renders an AI badge.
+		"author_ai_disclosed": content.AuthorPersonaDisclosure != nil && *content.AuthorPersonaDisclosure == "disclosed",
+		"space_name":          content.SpaceName,
+		"space_slug":          content.SpaceSlug,
+		"space_avatar_url":    mediaURL(content.SpaceAvatarStorageBucket, content.SpaceAvatarStoragePath),
+		"organization":        orgRefFrom(content.OrganizationID, content.OrganizationName, content.OrganizationSlug, content.OrganizationLogoStorageBucket, content.OrganizationLogoStoragePath),
+		"excerpt":             ExcerptFromBody(content.Body, content.BodyHtml, 160),
 		// §43 page-level gate — the frontend emits noindex when false so
 		// thin/unpublished content can't be indexed via discovered URLs;
 		// sitemap exclusion alone is only a discovery hint.
@@ -2590,18 +2593,39 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// E-002: reactions only exist where the viewer can see the content —
+	// draft/deleted/members-space/private/nonexistent content is 404.
+	visible, err := h.Service.CanReactToContent(r.Context(), contentID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !visible {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
 	// §89 Reaction Set: achievement posts use a curated reaction set
 	// configured via system_settings.achievement_reactions (JSONB array of
-	// {emoji, label} pairs). When the content is an achievement, validate
-	// the reaction_key (emoji) against the curated set. If the setting is
-	// empty or unparseable, fall back to the spec defaults: 🎉 🔥 💪.
-	if h.settings != nil {
-		existing, err := h.Service.GetContent(r.Context(), contentID)
-		if err == nil && existing.ContentType == TypeAchievement {
-			if !isAllowedAchievementReaction(r.Context(), h.settings, input.ReactionKey) {
-				errpkg.WriteError(w, http.StatusBadRequest, "invalid_reaction_key", "This reaction is not available for achievement posts")
-				return
-			}
+	// {emoji, label} pairs) keyed BY EMOJI — the reaction_key stores the
+	// emoji itself (migration 000954 dropped the reaction_key FK for this).
+	// All other content requires an enabled reaction_types row (E-004).
+	existing, err := h.Service.GetContent(r.Context(), contentID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
+	if existing.ContentType == TypeAchievement {
+		if !isAllowedAchievementReaction(r.Context(), h.settings, input.ReactionKey) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_reaction_key", "This reaction is not available for achievement posts")
+			return
+		}
+	} else {
+		rt, rtErr := h.Service.GetReactionType(r.Context(), input.ReactionKey)
+		if rtErr != nil || !rt.Enabled {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_reaction_key", "Unknown or disabled reaction type")
+			return
 		}
 	}
 
@@ -2631,7 +2655,30 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
 	h.EnqueueEngagementUpdate("content", contentID, "reaction", 1)
 
+	// §35: notify the author (content.reaction — default-enabled type).
+	// Fire-and-forget; self-reactions never notify.
+	h.dispatchReactionNotification(r.Context(), existing, user.UserID)
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reaction})
+}
+
+// dispatchReactionNotification sends a content.reaction notification to the
+// content author when someone else reacts. Fire-and-forget per Rule 8 —
+// failures are logged and never surface to the caller.
+func (h *Handlers) dispatchReactionNotification(ctx context.Context, content gen.GetContentByIDRow, actorID pgtype.UUID) {
+	if h.notifier == nil || !content.AuthorID.Valid || content.AuthorID == actorID {
+		return
+	}
+
+	if err := h.notifier.DispatchNotification(
+		ctx, content.AuthorID,
+		"content.reaction", content.Title,
+		actorID,
+		"content", content.ID,
+		"", "", "",
+	); err != nil {
+		slog.Warn("content: failed to dispatch content.reaction notification", "content_id", content.ID.String(), "error", err)
+	}
 }
 
 // defaultAchievementReactions is the spec-defined curated reaction set for
@@ -2645,30 +2692,32 @@ var defaultAchievementReactions = []string{"🎉", "🔥", "💪"}
 // pairs); if the setting is empty or unparseable, the spec defaults
 // (🎉 🔥 💪) are used. Ref: §89 Reaction Set.
 func isAllowedAchievementReaction(ctx context.Context, settings *config.Settings, key string) bool {
-	raw := settings.GetStringOr(ctx, "achievement_reactions", "")
-	if raw != "" && raw != "[]" {
-		var pairs []struct {
-			Emoji string `json:"emoji"`
-			Label string `json:"label"`
-		}
-
-		if err := json.Unmarshal([]byte(raw), &pairs); err == nil && len(pairs) > 0 {
-			for _, p := range pairs {
-				if p.Emoji == key {
-					return true
-				}
+	// Nil settings (test wiring / bootstrap) falls back to the spec
+	// default set — same as the empty-setting path below.
+	if settings != nil {
+		raw := settings.GetStringOr(ctx, "achievement_reactions", "")
+		if raw != "" && raw != "[]" {
+			var pairs []struct {
+				Emoji string `json:"emoji"`
+				Label string `json:"label"`
 			}
 
-			return false
+			if err := json.Unmarshal([]byte(raw), &pairs); err == nil && len(pairs) > 0 {
+				for _, p := range pairs {
+					if p.Emoji == key {
+						return true
+					}
+				}
+				return false
+			}
 		}
 	}
-	// Fall back to spec defaults when the setting is empty/unparseable.
-	for _, k := range defaultAchievementReactions {
-		if k == key {
+
+	for _, e := range defaultAchievementReactions {
+		if e == key {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -2697,14 +2746,29 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RemoveReaction(r.Context(), EntityContent, contentID, user.UserID, reactionKey); err != nil {
+	// E-002: same visibility guard as AddReaction — no mutating reactions
+	// on content the caller cannot see.
+	visible, err := h.Service.CanReactToContent(r.Context(), contentID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !visible {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
+	removed, err := h.Service.RemoveReaction(r.Context(), EntityContent, contentID, user.UserID, reactionKey)
+	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	// Decrement the reaction_count to keep feed card counts accurate.
-	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
-	h.EnqueueEngagementUpdate("content", contentID, "reaction", -1)
+	// E-003: only a real delete decrements — repeated removes of a reaction
+	// the user never held must not drain content_scores.reaction_count.
+	if removed {
+		h.EnqueueEngagementUpdate("content", contentID, "reaction", -1)
+	}
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
@@ -2714,6 +2778,24 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	// E-002: counts are only as visible as the content — 404 for
+	// invisible/absent content, members-only hidden from guests.
+	var viewerID pgtype.UUID
+	authed := false
+	if user := auth.FromContext(r.Context()); user != nil {
+		viewerID = user.UserID
+		authed = true
+	}
+	visible, err := h.Service.CanViewContentReactions(r.Context(), contentID, viewerID, authed)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !visible {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 		return
 	}
 
@@ -2782,6 +2864,54 @@ func (h *Handlers) ViewerContentStates(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": states})
 }
 
+// ListReactors handles GET /api/v1/content/{id}/reactors?key= — the
+// "who reacted" listing for the ReactionRail popover (dev.to parity).
+// Same guest-aware visibility gate as ListReactions.
+func (h *Handlers) ListReactors(w http.ResponseWriter, r *http.Request) {
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var viewerID pgtype.UUID
+	authed := false
+	if user := auth.FromContext(r.Context()); user != nil {
+		viewerID = user.UserID
+		authed = true
+	}
+	visible, err := h.Service.CanViewContentReactions(r.Context(), contentID, viewerID, authed)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !visible {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
+	var key *string
+	if k := r.URL.Query().Get("key"); k != "" {
+		key = &k
+	}
+	limit := parsePageSize(r)
+	var offset int32
+	if p, pErr := strconv.Atoi(r.URL.Query().Get("page")); pErr == nil && p > 1 {
+		offset = int32(p-1) * limit
+	}
+
+	rows, err := h.Service.ListReactorsByEntity(r.Context(), EntityContent, contentID, key, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if rows == nil {
+		rows = []gen.ListReactorsByEntityRow{}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
 // ListUserReactions handles GET /api/v1/content/{id}/reactions/me.
 // Returns the current user's reactions for a content item (used by the
 // frontend to initialise the like button state on page load).
@@ -2794,6 +2924,18 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	// E-002: same visibility guard — no probing reaction state on
+	// invisible content.
+	visible, err := h.Service.CanReactToContent(r.Context(), contentID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if !visible {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 		return
 	}
 

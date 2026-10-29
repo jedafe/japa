@@ -58,7 +58,7 @@ type AdminAssessmentScoreDistributionRow struct {
 }
 
 // =====================================================================
-// Admin: score distribution — count of results per threshold label.
+// Admin: list all users' results (paginated, filterable by score range).
 // =====================================================================
 func (q *Queries) AdminAssessmentScoreDistribution(ctx context.Context) ([]AdminAssessmentScoreDistributionRow, error) {
 	rows, err := q.db.Query(ctx, adminAssessmentScoreDistribution)
@@ -70,99 +70,6 @@ func (q *Queries) AdminAssessmentScoreDistribution(ctx context.Context) ([]Admin
 	for rows.Next() {
 		var i AdminAssessmentScoreDistributionRow
 		if err := rows.Scan(&i.ThresholdLabel, &i.Count, &i.AvgScore); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const adminCountAssessmentResults = `-- name: AdminCountAssessmentResults :one
-SELECT COUNT(*) AS count
-FROM assessment_results
-WHERE ($1::int = 0 OR total_score >= $1)
- AND ($2::int = 0 OR total_score <= $2)
-`
-
-type AdminCountAssessmentResultsParams struct {
-	MinScore int32 `json:"min_score"`
-	MaxScore int32 `json:"max_score"`
-}
-
-func (q *Queries) AdminCountAssessmentResults(ctx context.Context, arg AdminCountAssessmentResultsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountAssessmentResults, arg.MinScore, arg.MaxScore)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const adminListAssessmentResults = `-- name: AdminListAssessmentResults :many
-
-SELECT
- ar.id, ar.user_id, ar.submission_id, ar.total_score, ar.dimension_scores, ar.threshold_label, ar.roadmap_content, ar.created_at,
- u.username AS username,
- fs.field_values AS submission_values
-FROM assessment_results ar
-LEFT JOIN users u ON u.id = ar.user_id
-JOIN form_submissions fs ON fs.id = ar.submission_id
-WHERE ($1::int = 0 OR ar.total_score >= $1)
- AND ($2::int = 0 OR ar.total_score <= $2)
-ORDER BY ar.created_at DESC
-LIMIT $4 OFFSET $3
-`
-
-type AdminListAssessmentResultsParams struct {
-	MinScore   int32 `json:"min_score"`
-	MaxScore   int32 `json:"max_score"`
-	PageOffset int32 `json:"page_offset"`
-	PageLimit  int32 `json:"page_limit"`
-}
-
-type AdminListAssessmentResultsRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	UserID           pgtype.UUID        `json:"user_id"`
-	SubmissionID     pgtype.UUID        `json:"submission_id"`
-	TotalScore       int32              `json:"total_score"`
-	DimensionScores  []byte             `json:"dimension_scores"`
-	ThresholdLabel   string             `json:"threshold_label"`
-	RoadmapContent   []byte             `json:"roadmap_content"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	Username         *string            `json:"username"`
-	SubmissionValues []byte             `json:"submission_values"`
-}
-
-// =====================================================================
-// Admin: list all users' results (paginated, filterable by score range).
-// =====================================================================
-func (q *Queries) AdminListAssessmentResults(ctx context.Context, arg AdminListAssessmentResultsParams) ([]AdminListAssessmentResultsRow, error) {
-	rows, err := q.db.Query(ctx, adminListAssessmentResults,
-		arg.MinScore,
-		arg.MaxScore,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []AdminListAssessmentResultsRow
-	for rows.Next() {
-		var i AdminListAssessmentResultsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.SubmissionID,
-			&i.TotalScore,
-			&i.DimensionScores,
-			&i.ThresholdLabel,
-			&i.RoadmapContent,
-			&i.CreatedAt,
-			&i.Username,
-			&i.SubmissionValues,
-		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

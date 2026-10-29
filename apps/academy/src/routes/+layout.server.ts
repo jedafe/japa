@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type { CurrencyInfo } from '$lib/utils/currency';
@@ -60,6 +61,14 @@ export const load: LayoutServerLoad = async (event) => {
 		features = res ?? {};
 	} catch {
 		features = {};
+	}
+
+	// §42: the whole Academy surface is gated by feature.academy. When the
+	// flag is off (or hidden on the academy surface) the app 404s rather
+	// than rendering a shell whose API calls all fail. `=== false` (not
+	// `!== true`) so a transient flags-fetch failure can't take the site down.
+	if (features['feature.academy'] === false) {
+		throw error(404, { message: 'This feature is not available' });
 	}
 
 	// Navigation menu — ADR-054 cross-app menu system. The Academy nav slug is

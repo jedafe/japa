@@ -60,12 +60,11 @@
 		voteError = '';
 	});
 
-	// §44 amendment 2: the backend dedupes votes per (page, user) — repeating
-	// the same vote is a no-op, switching moves the counter. The widget stays
-	// interactive after a vote so users can correct it; the response carries
-	// the authoritative counters.
+	// §44 amendment 2: the backend dedupes votes per (page, user) — switching
+	// moves the counter and re-clicking the same vote retracts it (wiki
+	// feedback parity). The response carries the authoritative counters.
 	async function submitVote(v: 'up' | 'down') {
-		if (submitting || v === vote) return;
+		if (submitting) return;
 		voteError = '';
 
 		submitting = true;
@@ -87,7 +86,8 @@
 			}
 			const json = (await res.json()) as { data?: DocFeedback };
 			if (json.data) {
-				vote = json.data.my_vote ?? v;
+				// A retracted vote comes back as my_vote: null.
+				vote = json.data.my_vote ?? null;
 				helpfulYes = json.data.helpful_yes;
 				helpfulNo = json.data.helpful_no;
 			} else {

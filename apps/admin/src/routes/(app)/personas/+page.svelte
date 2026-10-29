@@ -1,14 +1,11 @@
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { EntityPage, type EntityPageConfig, type FieldDef, type EntityPageController } from '$lib/components/entity';
 	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { Bot, Plus, Trash2, Activity, Pencil, Pause, Play, Eye } from 'lucide-svelte';
+	import { Plus, Trash2, Activity, Pencil, Pause, Play, Eye } from 'lucide-svelte';
 	import { api, apiRaw } from '$lib/api';
 	import { JsonValueEditor } from '@japaconnect/ui';
 	import type { BulkAction } from '$lib/components/ui/data-table';
@@ -93,14 +90,11 @@
 	};
 
 	const canManage = $derived(hasPermission('persona.manage'));
-	const canView = $derived(hasPermission('persona.view'));
-	// The activity log endpoint is gated by participation.view (ADR-077),
-	// so only show the action to users who hold that node.
-	const canViewActivity = $derived(hasPermission('participation.view'));
+	// The activity endpoint is OR-gated persona.view | participation.view
+	// (BUG-PER-002), so surface the action when the user holds either node.
+	const canViewActivity = $derived(hasPermission('persona.view') || hasPermission('participation.view'));
 
-	let personas = $state<Persona[]>([]);
-	let loading = $state(true);
-	let error = $state('');
+	let entityController = $state<EntityPageController | undefined>(undefined);
 	let createSlideOverOpen = $state(false);
 	let activitySlideOverOpen = $state(false);
 	let activityLog = $state<ActivityEntry[]>([]);
@@ -118,20 +112,6 @@
 	let voiceOptions = $state<PersonaVoice[]>([]);
 	let voicesLoading = $state(false);
 	let voicesError = $state('');
-
-	// Server-side pagination state (BUG-003: list was not paginated — only 20
-	// personas loaded with no way to see more). BUG-007: added search and sort
-	// support per DataTable spec.
-	let listPage = $state(0);
-	let listPageSize = $state(10);
-	let listTotal = $state(0);
-	let listTotalPages = $state(1);
-	let statusFilter = $state('');
-	let searchQuery = $state('');
-	let sortKey = $state('created_at');
-	let sortDir = $state<'asc' | 'desc'>('desc');
-	// Selection state for DataTable bulk actions.
-	let selectedPersonaIds = $state<Set<string>>(new Set());
 
 	// defaultPolicy returns the canonical default activity_policy defined in
 	// §68 (ADR-068). These are spec-defined schema defaults, not runtime data —
@@ -186,61 +166,6 @@
 			voicesError = e instanceof Error ? e.message : 'Failed to load voices';
 		} finally {
 			voicesLoading = false;
-		}
-	}
-
-	// Seed list state from the URL so reload/back/forward keep the same
-	// sort, search, page and filter (DataTable only mirrors the UI; the
-	// parent is responsible for the actual fetch state). Ref: admin DataTable
-	// URL-sync contract and §68 "Search, sort, filter, pagination ...".
-	function seedFromUrl() {
-		// Read the live URL instead of $app/state, which can lag behind replaceState.
-		const p = new URLSearchParams(window.location.search);
-		sortKey = p.get('sort') ?? 'created_at';
-		sortDir = (p.get('dir') as 'asc' | 'desc') ?? 'desc';
-		searchQuery = p.get('q') ?? '';
-		statusFilter = p.get('status') ?? '';
-		const pageNum = Number(p.get('page') ?? '1');
-		listPage = Math.max(0, pageNum - 1);
-		const ps = Number(p.get('pageSize') ?? '10');
-		if ([10, 25, 50, 100].includes(ps)) listPageSize = ps;
-	}
-
-	function syncStatusToUrl() {
-		const params = new URLSearchParams(window.location.search);
-		if (statusFilter) params.set('status', statusFilter);
-		else params.delete('status');
-		const qs = params.toString();
-		replaceState(`${window.location.pathname}${qs ? `?${qs}` : ''}`, {});
-	}
-
-	async function load() {
-		loading = true;
-		error = '';
-		try {
-			// BUG-002: use page_size/page_offset (canonical convention).
-			// BUG-007: pass q/sort/dir for DataTable search+sort support.
-			const params = new URLSearchParams();
-			params.set('page_size', String(listPageSize));
-			params.set('page_offset', String(listPage * listPageSize));
-			if (statusFilter) params.set('status', statusFilter);
-			if (searchQuery) params.set('q', searchQuery);
-			if (sortKey) params.set('sort', sortKey);
-			if (sortDir) params.set('dir', sortDir);
-			const result = await apiRaw<{ data: Persona[]; meta: { total: number; limit: number; offset: number } }>(
-				`/admin/personas?${params.toString()}`
-			);
-			if (result.ok) {
-				personas = result.data?.data ?? [];
-				listTotal = result.data?.meta?.total ?? personas.length;
-				listTotalPages = Math.max(1, Math.ceil(listTotal / listPageSize));
-			} else {
-				error = result.error;
-			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : t('personas.load_error', 'Failed to load personas');
-		} finally {
-			loading = false;
 		}
 	}
 
@@ -299,7 +224,7 @@
 				message = t('personas.create_success', '{count} persona(s) provisioned.').replace('{count}', String(inputs.length));
 				createSlideOverOpen = false;
 				newPersonas = [newPersonaInput()];
-				load();
+				entityController?.reload();
 			} else {
 				messageType = 'error';
 				message = result.error;
@@ -363,7 +288,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('personas.status_success', 'Persona status updated to {status}.').replace('{status}', status);
-				load();
+				entityController?.reload();
 			} else {
 				messageType = 'error';
 				message = result.error;
@@ -400,9 +325,8 @@
 				message = t('personas.bulk_status_success', '{count} persona(s) updated to {status}.')
 					.replace('{count}', String(idArr.length))
 					.replace('{status}', status);
-				selectedPersonaIds = new Set();
 			}
-			load();
+			// EntityPage auto-reloads and clears selection after bulk handlers.
 		} catch (e) {
 			messageType = 'error';
 			message = e instanceof Error ? e.message : t('personas.bulk_error', 'Bulk update failed');
@@ -447,7 +371,7 @@
 				message = t('personas.update_success', 'Persona updated.');
 				editSlideOverOpen = false;
 				editingPersona = null;
-				load();
+				entityController?.reload();
 			} else {
 				messageType = 'error';
 				message = result.error;
@@ -540,18 +464,59 @@
 		}
 	];
 
-	seedFromUrl();
-	load();
+	// EntityPage config — the scaffold owns the list (server-side table,
+	// URL-synced sort/search/page/filters, bulk bar, action menu). The batch
+	// create flow and the edit/activity sub-flows stay page-local slide-overs
+	// because EntityForm can't express a multi-row batch input or the
+	// activity log viewer (per the AGENTS.md rich-page escape hatches).
+	const fields: FieldDef[] = [];
+
+	const config = $derived<EntityPageConfig>({
+		title: t('personas.title', 'AI Personas'),
+		description: t('personas.description', 'Manage AI persona accounts for content generation and participation.'),
+		columns,
+		filters: [
+			{
+				key: 'status',
+				label: t('personas.status', 'Status'),
+				type: 'select',
+				options: [
+					{ value: '', label: t('personas.all_statuses', 'All statuses') },
+					{ value: 'active', label: t('personas.status_active', 'Active') },
+					{ value: 'paused', label: t('personas.status_paused', 'Paused') },
+					{ value: 'retired', label: t('personas.status_retired', 'Retired') }
+				]
+			}
+		],
+		actions: rowActions,
+		bulkActions: canManage ? bulkActionsList : [],
+		hideCreate: true, // batch create lives in the custom slide-over below
+		bulkDelete: false, // personas retire, never soft-delete (§68)
+		editPermission: 'persona.manage',
+		fields,
+		pageSize: 10,
+		load: async ({ page, pageSize, q, sort, filter }) => {
+			const params = new URLSearchParams();
+			params.set('page_size', String(pageSize));
+			params.set('page_offset', String(page * pageSize));
+			const status = (filter?.status as string) || '';
+			if (status) params.set('status', status);
+			if (q) params.set('q', q);
+			// EntityPage emits sort as "key:dir"; backend expects them separate.
+			const [sortKey, sortDir] = sort ? sort.split(':') : [];
+			if (sortKey) params.set('sort', sortKey);
+			if (sortDir) params.set('dir', sortDir);
+			const result = await apiRaw<{ data: Persona[]; meta: { total: number } }>(
+				`/admin/personas?${params.toString()}`
+			);
+			const data = result.ok ? (result.data?.data ?? []) : [];
+			const total = result.ok ? (result.data?.meta?.total ?? data.length) : 0;
+			return { data, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
+		}
+	});
+
 	loadPersonaVoices();
 </script>
-
-<PageHeader
-	title={t('personas.title', 'AI Personas')}
-	description={t('personas.description', 'Manage AI persona accounts for content generation and participation.')}
-	actions={canManage ? [
-		{ label: t('personas.create', 'Create Personas'), icon: Plus, onclick: () => (createSlideOverOpen = true) }
-	] : []}
-/>
 
 {#if message}
 	<div
@@ -564,46 +529,15 @@
 	</div>
 {/if}
 
-{#if loading}
-	<div class="flex items-center gap-2 p-8" style="color: var(--color-muted)">
-		<Bot class="h-4 w-4 animate-pulse" />
-		<span>{t('personas.loading', 'Loading personas...')}</span>
+{#if canManage}
+	<div class="mb-3 flex justify-end">
+		<Button onclick={() => (createSlideOverOpen = true)}>
+			<Plus class="h-4 w-4" /> {t('personas.create', 'Create Personas')}
+		</Button>
 	</div>
-{:else if error}
-	<div class="rounded-lg border p-4" style="border-color: var(--color-danger); color: var(--color-danger)">
-		{error}
-	</div>
-{:else}
-	<div class="mb-4 flex items-center gap-3">
-		<label for="status-filter" class="text-xs font-medium" style="color: var(--color-muted)">{t('personas.status', 'Status')}</label>
-		<AutocompleteSelect
-			id="status-filter"
-			value={statusFilter}
-			onValueChange={(v) => { statusFilter = v; listPage = 0; syncStatusToUrl(); load(); }}
-			options={[{ value: '', label: t('personas.all_statuses', 'All statuses') }, { value: 'active', label: t('personas.status_active', 'Active') }, { value: 'paused', label: t('personas.status_paused', 'Paused') }, { value: 'retired', label: t('personas.status_retired', 'Retired') }]}
-		/>
-	</div>
-	<DataTable
-		data={personas}
-		{columns}
-		actions={rowActions}
-		serverSide
-		searchable
-		selectable={canManage}
-		searchPlaceholder={t('personas.search_placeholder', 'Search by name or username...')}
-		onsearch={(q) => { searchQuery = q; listPage = 0; load(); }}
-		onsortchange={(s) => { sortKey = s.key ?? 'created_at'; sortDir = s.dir; listPage = 0; load(); }}
-		bulkActionsList={canManage ? bulkActionsList : undefined}
-		bind:selectedIds={selectedPersonaIds}
-		bind:page={listPage}
-		totalPages={listTotalPages}
-		totalRows={listTotal}
-		bind:pageSize={listPageSize}
-		onpagechange={(p) => { listPage = p; load(); }}
-		onpagesizechange={(s) => { listPageSize = s; listPage = 0; load(); }}
-		emptyMessage={t('personas.empty', 'No personas found. Create some to get started.')}
-	/>
 {/if}
+
+<EntityPage {config} bind:controller={entityController} />
 
 {#if createSlideOverOpen}
 	<SlideOver
@@ -757,32 +691,32 @@
 							</div>
 							<div class="sm:col-span-2">
 								<label for={`persona-action-budget-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.action_budget', 'Action Budget (JSON)')}</label>
-							<JsonValueEditor
-								id={`persona-action-budget-${idx}`}
-								value={JSON.stringify(persona.activity_policy!.action_budget ?? {})}
-								onchange={(json) => {
-									try {
-										persona.activity_policy!.action_budget = json.trim() ? JSON.parse(json) : {};
-									} catch { /* leave unchanged on parse error */ }
-								}}
-								placeholder={'{"comment": 4, "react": 20}'}
-							/>
-							<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{t('personas.action_budget_hint', 'Map of action type to max count per day.')}</p>
-						</div>
-						<div class="sm:col-span-2">
-							<label for={`persona-avoid-recent-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.avoid_recent_authors', 'Avoid Recent Authors (comma-separated user IDs)')}</label>
-							<input
-								id={`persona-avoid-recent-${idx}`}
-								type="text"
-								class="w-full rounded-md border px-3 py-1.5 text-sm font-mono"
-								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-								value={persona.activity_policy!.avoid_recent_authors.join(', ')}
-								oninput={(e) => { persona.activity_policy!.avoid_recent_authors = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean); }}
-								placeholder="uuid, uuid"
-							/>
-						</div>
-						<div class="sm:col-span-2">
-							<label for={`persona-active-hours-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.active_hours_utc', 'Active Hours UTC (start-end)')}</label>
+								<JsonValueEditor
+									id={`persona-action-budget-${idx}`}
+									value={JSON.stringify(persona.activity_policy!.action_budget ?? {})}
+									onchange={(json) => {
+										try {
+											persona.activity_policy!.action_budget = json.trim() ? JSON.parse(json) : {};
+										} catch { /* leave unchanged on parse error */ }
+									}}
+									placeholder={'{"comment": 4, "react": 20}'}
+								/>
+								<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{t('personas.action_budget_hint', 'Map of action type to max count per day.')}</p>
+							</div>
+							<div class="sm:col-span-2">
+								<label for={`persona-avoid-recent-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.avoid_recent_authors', 'Avoid Recent Authors (comma-separated user IDs)')}</label>
+								<input
+									id={`persona-avoid-recent-${idx}`}
+									type="text"
+									class="w-full rounded-md border px-3 py-1.5 text-sm font-mono"
+									style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+									value={persona.activity_policy!.avoid_recent_authors.join(', ')}
+									oninput={(e) => { persona.activity_policy!.avoid_recent_authors = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean); }}
+									placeholder="uuid, uuid"
+								/>
+							</div>
+							<div class="sm:col-span-2">
+								<label for={`persona-active-hours-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.active_hours_utc', 'Active Hours UTC (start-end)')}</label>
 								<div class="flex items-center gap-2">
 									<input
 										id={`persona-active-hours-start-${idx}`}

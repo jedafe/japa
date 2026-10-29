@@ -33,15 +33,31 @@ INSERT INTO reactions (entity_type, entity_id, user_id, reaction_key) VALUES (@e
 ON CONFLICT (entity_type, entity_id, user_id, reaction_key) DO NOTHING
 RETURNING entity_type, entity_id, user_id, reaction_key, created_at;
 
--- name: RemoveReaction :exec
+-- name: RemoveReaction :execrows
+-- Rows-affected drives the engagement decrement — only a real delete moves
+-- content_scores.reaction_count (E-003: repeated removes must not drain it).
 DELETE FROM reactions
 WHERE entity_type = @entity_type AND entity_id = @entity_id AND user_id = @user_id AND reaction_key = @reaction_key;
 
--- name: ListReactionsByEntity :many
-SELECT entity_type, entity_id, user_id, reaction_key, created_at
-FROM reactions
-WHERE entity_type = @entity_type AND entity_id = @entity_id
-ORDER BY created_at DESC;
+-- name: DeleteReactionsByKey :exec
+-- Manual cascade for DeleteReactionType (migration 000954 dropped the
+-- reactions_reaction_key_fkey — see that file for why).
+DELETE FROM reactions WHERE reaction_key = @key;
+
+-- name: ListReactorsByEntity :many
+-- "Who reacted" rows — user display info joined to each reaction so the
+-- ReactionRail popover can list reactor names per key. An empty
+-- reaction_key returns all keys. Deleted users are excluded.
+SELECT r.reaction_key, r.created_at, u.id AS user_id,
+       u.username, COALESCE(up.display_name, '') AS display_name,
+       up.avatar_media_id
+FROM reactions r
+JOIN users u ON u.id = r.user_id AND u.deleted_at IS NULL
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE r.entity_type = @entity_type AND r.entity_id = @entity_id
+  AND (@reaction_key::text = '' OR r.reaction_key = @reaction_key)
+ORDER BY r.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountReactionsByEntity :many
 SELECT reaction_key, COUNT(*) AS count

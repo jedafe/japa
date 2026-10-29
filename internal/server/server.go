@@ -1246,6 +1246,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// so the Asynq push_delivery handler can send web push notifications.
 	worker.RegisterPushDelivery(notificationService.PushDelivery())
 	worker.RegisterNotificationBatchDispatcher(notificationService)
+	// BUG-005: dm:notify_* tasks create in-app notification rows through the
+	// service (prefs honoured, WS broadcast, unread invalidation) instead of
+	// push-only delivery.
+	worker.RegisterDMNotificationCreator(notificationService)
 
 	// Form submission triggers (Section 06, BUG-002): register the
 	// TriggerDispatcher so the form:fire_submission_triggers worker handler
@@ -1554,6 +1558,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		if err := roadmapService.SyncFlagPhase(ctx, key, cfg); err != nil {
 			slog.Error("roadmap sync flag phase failed", "key", key, "error", err)
 		}
+		// Flag toggles change which sub-sitemaps/URLs are listed — drop the
+		// cached sitemap XML so the next crawl sees the gated state.
+		seo.InvalidateSitemapCache(ctx, vkClient.Redis())
 	})
 	// B4/B5: wire the reputation (points) checker and RBAC resolver so the
 	// wiki.edit submission gate can enforce wiki.min_reputation_to_edit and
@@ -2547,6 +2554,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// ADR-130 Phase 3: the JWT-only japa.chat synthetic tool needs the
 	// unified engine, not the tool executor.
 	mcpServer.SetAgentHandler(agentHandler)
+	// BUG-MCP-002: advertise/dispatch japa.chat only while the unified chat
+	// surface (feature.japabot) is enabled — catalog must mirror reachability.
+	mcpServer.SetJapaChatGate(func(ctx context.Context) bool {
+		return featureChecker.IsEnabled(ctx, "feature.japabot")
+	})
 
 	// Inject the AI dispatcher + RAG retriever into the assessment service
 	// for AI-assisted roadmap generation (ADR-071 §3). Gated by
@@ -3033,6 +3045,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		queries:  gen.New(database.Reader),
 		onCreate: commentsHandlers.EnqueueEngagementUpdate,
 	})
+	// Reaction parity for key-scoped consumers — reuses the session-side
+	// visibility/validation semantics through the adapter (§14).
+	publicAPIHandlers.SetReactionService(&publicReactionAdapter{
+		svc:      contentService,
+		settings: settingsService,
+		onChange: contentHandlers.EnqueueEngagementUpdate,
+	})
 
 	usersHandlers := users.NewHandlers(usersService, contentService)
 	// Wire the RBAC resolver so GetMyContent can fall back to a
@@ -3242,6 +3261,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	searchHandlers.SetSettings(settingsService)
 	searchHandlers.SetCache(vkClient.Redis())          // BUG-010: jc:cache:search:* read-through cache
 	searchHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in result titles/excerpts post-cache
+	searchHandlers.SetFeatureChecker(featureChecker)   // §42: drop results for disabled features
 
 	// Onboarding subsystem (Section 09).
 	onboardingService := onboarding.NewService(database, settingsService)
@@ -3259,6 +3279,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// SEO & Performance subsystem (Section 26).
 	seoQueries := gen.New(database.Writer)
 	sitemapHandler := seo.NewSitemapHandler(seoQueries, database.Reader, settingsService, vkClient, cfg.SiteURL, cfg.ImgproxyBaseURL)
+	sitemapHandler.SetFeatureChecker(featureChecker) // gated sub-sitemaps drop out when their flag is off (§42)
 	ogImageHandler := seo.NewOGImageHandler(database.Reader, vkClient, cfg.SiteName)
 
 	// Config handlers for public settings endpoint.
@@ -3343,17 +3364,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/sitemap-tags.xml", sitemapHandler.ServeTagsSitemap)
 		r.Get("/sitemap-users.xml", sitemapHandler.ServeUsersSitemap)
 		r.Get("/sitemap-images.xml", sitemapHandler.ServeImagesSitemap)
-		r.Get("/sitemap-deals.xml", sitemapHandler.ServeDealsSitemap)
-		r.Get("/sitemap-roadmap.xml", sitemapHandler.ServeRoadmapSitemap)
+		// §42: sub-sitemaps for gated surfaces carry the same Gate as the
+		// routes they describe — a disabled feature must not keep public SEO
+		// entry points that all 404.
+		r.With(features.Gate(featureChecker, "service_coupons.enabled")).Get("/sitemap-deals.xml", sitemapHandler.ServeDealsSitemap)
+		r.With(features.Gate(featureChecker, "roadmap.enabled")).Get("/sitemap-roadmap.xml", sitemapHandler.ServeRoadmapSitemap)
 		r.Get("/sitemap-universities.xml", sitemapHandler.ServeUniversitiesSitemap)
-		r.Get("/sitemap-courses.xml", sitemapHandler.ServeCoursesSitemap)
-		r.Get("/sitemap-jobs.xml", sitemapHandler.ServeJobsSitemap)
-		r.Get("/sitemap-scholarships.xml", sitemapHandler.ServeScholarshipsSitemap)
-		r.Get("/sitemap-services.xml", sitemapHandler.ServeServicesSitemap)
-		r.Get("/sitemap-wiki.xml", sitemapHandler.ServeWikiSitemap)
-		r.Get("/sitemap-calendar.xml", sitemapHandler.ServeCalendarSitemap)
-		r.Get("/sitemap-scam-alerts.xml", sitemapHandler.ServeScamAlertsSitemap)
-		r.Get("/sitemap-comparisons.xml", sitemapHandler.ServeComparisonsSitemap)
+		r.With(features.Gate(featureChecker, "feature.academy")).Get("/sitemap-courses.xml", sitemapHandler.ServeCoursesSitemap)
+		r.With(features.Gate(featureChecker, "jobs.enabled")).Get("/sitemap-jobs.xml", sitemapHandler.ServeJobsSitemap)
+		r.With(features.Gate(featureChecker, "scholarship_finder.enabled")).Get("/sitemap-scholarships.xml", sitemapHandler.ServeScholarshipsSitemap)
+		r.With(features.Gate(featureChecker, "service_directory.enabled")).Get("/sitemap-services.xml", sitemapHandler.ServeServicesSitemap)
+		r.With(features.Gate(featureChecker, "wiki.enabled")).Get("/sitemap-wiki.xml", sitemapHandler.ServeWikiSitemap)
+		r.With(features.Gate(featureChecker, "calendar.enabled")).Get("/sitemap-calendar.xml", sitemapHandler.ServeCalendarSitemap)
+		r.With(features.Gate(featureChecker, "scam_alert.enabled")).Get("/sitemap-scam-alerts.xml", sitemapHandler.ServeScamAlertsSitemap)
+		r.With(features.Gate(featureChecker, "feature.comparison"), features.Gate(featureChecker, "feature.jce")).Get("/sitemap-comparisons.xml", sitemapHandler.ServeComparisonsSitemap)
 		r.Get("/sitemap-tools.xml", sitemapHandler.ServeToolsSitemap)
 		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
 		// Universal RSS feeds (public — no auth required)
@@ -3364,11 +3388,30 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/spaces/{slug}/feed.xml", rssHandlers.HandleSpaceFeed)
 		r.Get("/tags/{slug}/feed.xml", rssHandlers.HandleTagFeed)
 		r.Get("/users/{username}/feed.xml", rssHandlers.HandleUserFeed)
-		r.Get("/forum/feed.xml", rssHandlers.HandleForumFeed)
+		r.With(features.Gate(featureChecker, "feature.forum")).Get("/forum/feed.xml", rssHandlers.HandleForumFeed)
 		// Per-content-type feeds — one per ADR-058 route family
 		// (/story/feed.xml, /guide/feed.xml, …). Registry: model.TypeFeeds().
+		// §42: gated content types carry the same Gate as their routes — a
+		// disabled feature must not keep a public feed of 404'd content.
+		rssFeedFlags := map[string][]string{
+			"story":       {"story.enabled"},
+			"comparisons": {"feature.comparison", "feature.jce"},
+			"jobs":        {"jobs.enabled"},
+			"services":    {"service_directory.enabled"},
+			"video":       {"video.enabled"},
+			"list":        {"list.enabled"},
+		}
 		for _, tf := range rssmodel.TypeFeeds() {
-			r.Get("/"+tf.Prefix+"/feed.xml", rssHandlers.HandleTypeFeed(tf.Prefix))
+			feedHandler := rssHandlers.HandleTypeFeed(tf.Prefix)
+			if keys, gated := rssFeedFlags[tf.Prefix]; gated {
+				gates := make([]func(http.Handler) http.Handler, 0, len(keys))
+				for _, key := range keys {
+					gates = append(gates, features.Gate(featureChecker, key))
+				}
+				r.With(gates...).Get("/"+tf.Prefix+"/feed.xml", feedHandler)
+				continue
+			}
+			r.Get("/"+tf.Prefix+"/feed.xml", feedHandler)
 		}
 
 		// Public settings endpoint (no auth required, platform-scoped)
@@ -3430,6 +3473,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	r.Group(func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler { return next })
 		r.Route("/api/v1", func(r chi.Router) {
+			// Super admins bypass every rate-limit tier — they operate the
+			// platform and must not be throttled by shared-egress traffic
+			// (office NAT, crawler egress IPs) landing in their bucket.
+			mw.SetRateLimitExemptFunc(rbacResolver.IsSuperAdmin)
+
+			// Soft auth (ADR-064) — populates the authenticated-user context for
+			// every /api/v1 request when a valid Bearer token is present, without
+			// rejecting guests. Must run BEFORE the rate limiter so authenticated
+			// callers are keyed on user ID rather than client IP (otherwise a
+			// shared egress IP — e.g. the SSR frontend's — would collapse all
+			// logged-in traffic into one bucket). The VisitorContext resolver
+			// also reads the user's content_country_preference on
+			// public+authenticated routes without each route needing its own
+			// OptionalAuth wrapper. Per-route RequireAuth guards still enforce
+			// 401 on protected endpoints.
+			r.Use(auth.OptionalAuth(kr, vkClient.Redis()))
+
 			// Baseline rate limit for all API routes (ADR-022).
 			// Tighter tiers are applied to specific subgroups below.
 			r.Use(mw.RateLimit(vkClient.Redis(), "loose"))
@@ -3465,14 +3525,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// injection. Same-origin SPA requests and exempt API clients
 			// (no Origin header) are unaffected.
 			r.Use(csrf.Middleware([]string{"/"}, csrfExempt, csrf.WithOriginCheck(mw.IsOriginAllowed)))
-
-			// Soft auth (ADR-064) — populates the authenticated-user context for
-			// every /api/v1 request when a valid Bearer token is present, without
-			// rejecting guests. This lets the VisitorContext resolver (below) read
-			// the user's content_country_preference on public+authenticated routes
-			// without each route needing its own OptionalAuth wrapper. Per-route
-			// RequireAuth guards still enforce 401 on protected endpoints.
-			r.Use(auth.OptionalAuth(kr, vkClient.Redis()))
 
 			// Impersonation middleware (SEC-002) — injects impersonated identity
 			// into request context when an active impersonation session exists.
@@ -4001,22 +4053,29 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/content/{id}/pin", contentHandlers.UnpinContent)
 			// Reactions (require auth + permission)
 			r.With(features.Gate(featureChecker, "feature.reactions")).Group(func(r chi.Router) {
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add")).Post("/content/{id}/reactions", contentHandlers.AddReaction)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).Delete("/content/{id}/reactions/{key}", contentHandlers.RemoveReaction)
+				// E-007: reaction writes are DB writes — throttle per-user like
+				// forum votes to stop reaction spam / count manipulation.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/content/{id}/reactions", contentHandlers.AddReaction)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/content/{id}/reactions/{key}", contentHandlers.RemoveReaction)
 				// Public read of per-type counts so ReactionRail can show counts
 				// to guest visitors; user reactions (active states) remain behind
 				// auth at /reactions/me.
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions", contentHandlers.ListReactions)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/reactions/me", contentHandlers.ListUserReactions)
+				// "Who reacted" listing for the popover — public read,
+				// same visibility gate as the counts endpoint.
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content/{id}/reactors", contentHandlers.ListReactors)
+				// Public read of the enabled reaction-type catalog so guest
+				// rails can render the picker; gated by feature.reactions.
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/reaction-types", contentHandlers.ListReactionTypes)
 			})
 			// Content → series lookup (auth-required). Returns the series_id
 			// for a content item so the editor can restore the series selector.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/series", blogHandlers.GetContentSeries)
 
-			// Reaction type routes (admin-configurable emoji set)
-			// BUG-FIX: public read so guests on /blog/[slug] can render the
-			// ReactionRail without a 401. Admin CRUD remains auth-gated.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/reaction-types", contentHandlers.ListReactionTypes)
+			// Reaction type routes (admin-configurable emoji set). The public
+			// GET lives inside the feature.reactions gate above (E-007
+			// follow-up); admin CRUD stays auth-gated here.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reaction_types.manage")).
 				Post("/reaction-types", contentHandlers.CreateReactionType)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reaction_types.manage")).
@@ -4107,9 +4166,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// above; these singular aliases are required by the route catalog
 			// for non-admin callers. POST reads reaction_key from the body;
 			// DELETE reads key from the query string (no {key} path param).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add"), mw.RateLimit(vkClient.Redis(), "tight")).
 				Post("/content/{id}/react", contentHandlers.AddReaction)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove"), mw.RateLimit(vkClient.Redis(), "tight")).
 				Delete("/content/{id}/react", contentHandlers.RemoveReaction)
 
 			// Content space assignment (catalog line 261). Multi-space read + update
@@ -4128,8 +4187,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// moderator with comments.delete_any is not blocked by a delete_own
 			// middleware gate, and a plain member cannot delete another's comment.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService)).Delete("/comments/{id}", commentsHandlers.DeleteComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote")).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
+			// E-007: comment votes are DB writes — same per-user throttle as
+			// forum votes to prevent vote-score manipulation spam.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
 			// BL-003: pin/unpin route is RequireAuth only; the handler resolves
 			// moderator (comments.pin) vs content-author at request time so a
@@ -4245,8 +4306,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Geo routes (Phase 30 — Geo IP; catalog: Sections 05, 37)
 			// Public: returns geo data for the current request IP (resolved by middleware)
-			// /geo/me is rate-limited to 10/min per IP per Section 37.
-			r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/geo/me", geoHandlers.HandleGeoMe)
+			// /geo/me fires once per SSR navigation on published/wiki/home pages,
+			// so the tight 10/min tier 429s normal browsing — moderate (60/min)
+			// still bounds abuse without breaking fast navigation.
+			r.With(mw.RateLimit(vkClient.Redis(), "moderate")).Get("/geo/me", geoHandlers.HandleGeoMe)
 			r.Get("/geo/detect", geoHandlers.HandleGeoDetect)
 			// Admin: resolve an arbitrary IP address
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "geo.lookup")).
@@ -5597,6 +5660,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/public/content/{id}", publicAPIHandlers.GetContentByID)
 				r.With(publicapi.RequireScope("api.read.content")).
 					Get("/public/content/{id}/comments", publicAPIHandlers.ListContentComments)
+				// Reaction reads/writes for key-scoped consumers — parity
+				// with the session /content/{id}/reactions routes (§14).
+				r.With(features.Gate(featureChecker, "feature.reactions"), publicapi.RequireScope("api.read.content")).
+					Get("/public/content/{id}/reactions", publicAPIHandlers.ListPublicReactions)
+				r.With(features.Gate(featureChecker, "feature.reactions"), publicapi.RequireScope("api.write.reactions")).
+					Post("/public/content/{id}/reactions", publicAPIHandlers.CreatePublicReaction)
+				r.With(features.Gate(featureChecker, "feature.reactions"), publicapi.RequireScope("api.write.reactions")).
+					Delete("/public/content/{id}/reactions/{key}", publicAPIHandlers.DeletePublicReaction)
 				r.With(publicapi.RequireScope("api.read.spaces")).
 					Get("/public/spaces", publicAPIHandlers.ListSpaces)
 				r.With(publicapi.RequireScope("api.read.spaces")).
@@ -6024,23 +6095,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				aiHandlers.HandleListModels(w, r)
 			})
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ai/voices", func(w http.ResponseWriter, r *http.Request) {
-				user := auth.FromContext(r.Context())
-				if user == nil {
-					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication required")
-					return
-				}
-
-				hasChat := rbacResolver.HasPermission(r.Context(), user.UserID, "ai.context.use")
-				hasGen := rbacResolver.HasPermission(r.Context(), user.UserID, "ai.generate")
-
-				if !hasChat && !hasGen {
-					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "ai.context.use or ai.generate required")
-					return
-				}
-
-				personasHandlers.HandleListVoices(w, r)
-			})
+			// Named handler (BUG-AI-004): the voice picker delegates to the
+			// personas voice list after an OR-gate — chat/generate holders
+			// pick voices without holding the admin persona.view node.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ai/voices", aiVoicesGate(rbacResolver, personasHandlers))
 
 			// AI BYOK — user-owned provider keys (spec:
 			// docs/superpowers/specs/2026-10-19-ai-byok-design.md).
@@ -6903,8 +6961,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/broadcasts", adminHandlers.ListBroadcasts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
 				Delete("/admin/broadcasts/{id}", adminHandlers.DeleteBroadcast)
+			// BUG-010: send-by-id loads the stored draft — separate handler,
+			// not the create path (which builds a new broadcast from the body).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.broadcast")).
-				Post("/admin/broadcasts/{id}/send", adminHandlers.Broadcast)
+				Post("/admin/broadcasts/{id}/send", adminHandlers.SendBroadcast)
 
 			// Task 5: Tickets admin — PATCH ticket-types
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
@@ -7409,7 +7469,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/personas/{id}", personasHandlers.HandleGet)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "persona.manage")).
 				Patch("/admin/personas/{id}", personasHandlers.HandleUpdate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "participation.view")).
+			// BUG-PER-002: §68 assigns persona activity reads to persona.view;
+			// participation.view-only holders keep working via the OR gate.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "persona.view", "participation.view")).
 				Get("/admin/personas/{id}/activity", personasHandlers.HandleActivity)
 
 			// Section 68 — Shared persona voices (ADR-114)
@@ -8048,6 +8110,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/assessment/form", assessmentHandlers.HandleAdminUpdateForm)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.view_results")).
 					Get("/admin/assessment/results", assessmentHandlers.HandleAdminListResults)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.view_results")).
+					Get("/admin/assessment/results/{id}", assessmentHandlers.HandleAdminGetResult)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "assessment.view_results")).
 					Get("/admin/assessment/stats", assessmentHandlers.HandleAdminStats)
 			})
@@ -9485,6 +9549,7 @@ func csrfExempt(r *http.Request) bool {
 	return csrf.IsNonCookieAuthenticated(r) ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/auth/") ||
 		(strings.HasPrefix(r.URL.Path, "/api/v1/forms/") && strings.HasSuffix(r.URL.Path, "/submissions")) ||
+		r.URL.Path == "/api/v1/assessment/submit" ||
 		strings.HasPrefix(r.URL.Path, "/api/v1/payments/webhook/") ||
 		(strings.HasPrefix(r.URL.Path, "/api/v1/content/") && strings.HasSuffix(r.URL.Path, "/view"))
 }
@@ -9955,4 +10020,28 @@ func (p *superAdminPromoter) PromoteToSuperAdmin(ctx context.Context, userID pgt
 	p.r.InvalidateUserCache(ctx, userID)
 
 	return nil
+}
+
+// aiVoicesGate gates GET /ai/voices — the user-facing persona-voice picker.
+// Chat/generate permission holders may browse voices without the admin-only
+// persona.view node (BUG-AI-004); the route delegates to the personas voice
+// list after the OR-gate.
+func aiVoicesGate(rbacResolver *rbac.RBAC, personasHandlers *personas.Handlers) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := auth.FromContext(r.Context())
+		if user == nil {
+			errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication required")
+			return
+		}
+
+		hasChat := rbacResolver.HasPermission(r.Context(), user.UserID, "ai.context.use")
+		hasGen := rbacResolver.HasPermission(r.Context(), user.UserID, "ai.generate")
+
+		if !hasChat && !hasGen {
+			errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "ai.context.use or ai.generate required")
+			return
+		}
+
+		personasHandlers.HandleListVoices(w, r)
+	}
 }

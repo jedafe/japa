@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -27,6 +28,18 @@ import (
 // ErrPushSubscriptionNotOwned is returned when a user attempts to delete a
 // push subscription that does not belong to them. Ref: BUG-005, §35.
 var ErrPushSubscriptionNotOwned = errors.New("push subscription not owned by user")
+
+// ErrNotificationNotFound is returned when a notification id is unknown or
+// owned by a different user (BUG-016 — replaces silent no-op success).
+var ErrNotificationNotFound = errors.New("notification not found")
+
+// ErrNotificationTypeNotFound is returned when a notification_type key does
+// not exist (BUG-011/019 — replaces FK-violation 500s and silent no-ops).
+var ErrNotificationTypeNotFound = errors.New("notification type not found")
+
+// ErrNotificationTypeExists is returned when POST /admin/notification-types
+// receives an already-registered key (was silently overwritten before).
+var ErrNotificationTypeExists = errors.New("notification type already exists")
 
 // Notification type constants — must match the seeded rows in notification_types
 // (migration 000099, Section 35 seed catalog).
@@ -171,11 +184,14 @@ func NewService(database *db.DB) *Service {
 // and a PushConfig loaded by internal/config (Rule 3 — no ad-hoc os.Getenv).
 // Pass notifications.PushConfig fields from a *config.Config.
 func NewServiceWithConfig(database *db.DB, pushCfg PushConfig) *Service {
+	store := &Store{
+		read:  gen.New(database.Reader),
+		write: gen.New(database.Writer),
+	}
+	store.setWritePool(database.Writer)
+
 	return &Service{
-		store: &Store{
-			read:  gen.New(database.Reader),
-			write: gen.New(database.Writer),
-		},
+		store:     store,
 		push:      NewPushDeliveryFromConfig(pushCfg),
 		pushStore: NewPushStore(database.Reader, database.Writer),
 	}
@@ -219,6 +235,27 @@ func (s *Service) broadcastNotification(ctx context.Context, recipientID pgtype.
 	})
 }
 
+// broadcastUnreadCount pushes the fresh unread count to the user's open
+// sessions (§35 L121 — "also pushed via WebSocket"). BUG-017: previously
+// the badge only moved on new `notification` events, so marking read on one
+// device never synced the badge on another. Best-effort — DB errors degrade
+// to no push; the 60s Valkey TTL self-heals the next poll.
+func (s *Service) broadcastUnreadCount(ctx context.Context, recipientID pgtype.UUID) {
+	if s.wsHub == nil {
+		return
+	}
+
+	count, err := s.store.getUnreadCount(ctx, recipientID)
+	if err != nil {
+		return
+	}
+
+	s.wsHub.BroadcastToUser(recipientID.String(), WSEventPayload{
+		Type:    "notification_unread_count",
+		Payload: map[string]any{"count": int(count)},
+	})
+}
+
 // PushDelivery returns the push delivery instance for subscription management.
 func (s *Service) PushDelivery() *PushDelivery {
 	return s.push
@@ -226,8 +263,8 @@ func (s *Service) PushDelivery() *PushDelivery {
 
 // enqueuePushDelivery enqueues a background push delivery task for a recipient.
 // BUG-004: respects notifications.max_delivery_attempts from system_settings.
-func (s *Service) enqueuePushDelivery(recipientID pgtype.UUID, title, body, actionURL string) {
-	s.enqueuePushDeliveryWithCtx(context.Background(), recipientID, title, body, actionURL)
+func (s *Service) enqueuePushDelivery(recipientID pgtype.UUID, title, body, actionURL, dedupID string) {
+	s.enqueuePushDeliveryWithCtx(context.Background(), recipientID, title, body, actionURL, dedupID)
 }
 
 // enqueuePushDeliveryWithCtx is the context-aware variant of enqueuePushDelivery.
@@ -235,16 +272,22 @@ func (s *Service) enqueuePushDelivery(recipientID pgtype.UUID, title, body, acti
 // UUID platform for the settings lookup, losing platform context. This variant
 // accepts the request context so the settings provider can scope the lookup
 // and the operation respects cancellation/deadline.
-func (s *Service) enqueuePushDeliveryWithCtx(ctx context.Context, recipientID pgtype.UUID, title, body, actionURL string) {
+//
+// dedupID rides inside the task payload so asynq.Unique collapses only true
+// redeliveries of the same logical notification — BUG-012: identical text
+// alone (two "Alice reacted" batches in an hour) previously deduped away a
+// legitimate second push.
+func (s *Service) enqueuePushDeliveryWithCtx(ctx context.Context, recipientID pgtype.UUID, title, body, actionURL, dedupID string) {
 	if s.client == nil || s.push == nil || !s.push.IsEnabled() {
 		return
 	}
 
 	payload, err := json.Marshal(PushDeliveryPayload{
-		UserID:    recipientID.String(),
-		Title:     title,
-		Body:      body,
-		ActionURL: actionURL,
+		UserID:         recipientID.String(),
+		Title:          title,
+		Body:           body,
+		ActionURL:      actionURL,
+		NotificationID: dedupID,
 	})
 	if err != nil {
 		slog.Error("notifications: failed to marshal push payload", "error", err)
@@ -282,14 +325,14 @@ func (s *Service) enqueuePushDeliveryWithCtx(ctx context.Context, recipientID pg
 // mention.content, dm.message) would never send push if the user had no
 // saved preference. Now resolves the effective preference (user override
 // OR type default) before deciding.
-func (s *Service) checkAndEnqueuePush(ctx context.Context, recipientID pgtype.UUID, nType, title, body, actionURL string) {
+func (s *Service) checkAndEnqueuePush(ctx context.Context, recipientID pgtype.UUID, nType, title, body, actionURL, dedupID string) {
 	prefs, err := s.resolveEffectivePreferences(ctx, recipientID)
 	if err != nil {
 		return
 	}
 
-	if ep, ok := prefs[nType]; ok && ep.Push {
-		s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL)
+	if ep, ok := prefs[nType]; ok && ep.Push && !ep.Disabled {
+		s.enqueuePushDeliveryWithCtx(ctx, recipientID, title, body, actionURL, dedupID)
 	}
 }
 
@@ -308,11 +351,18 @@ func (s *Service) enqueueEmailDelivery(ctx context.Context, recipientID pgtype.U
 		return
 	}
 
+	// BUG-023: subject-only notification emails had no CTA — append the deep
+	// link so the message is actionable.
+	if actionURL != "" {
+		body = strings.TrimSpace(body + "\n\nView: " + actionURL)
+	}
+
 	payload, err := json.Marshal(EmailSendPayload{
-		To:      *email,
-		Subject: title,
-		Body:    body,
-		Type:    nType,
+		To:        *email,
+		Subject:   title,
+		Body:      body,
+		Type:      nType,
+		ActionURL: actionURL,
 	})
 	if err != nil {
 		slog.Error("notifications: failed to marshal email payload", "error", err)
@@ -354,17 +404,18 @@ func (s *Service) checkAndEnqueueEmail(ctx context.Context, recipientID pgtype.U
 		return
 	}
 
-	if ep, ok := prefs[nType]; ok && ep.Email {
+	if ep, ok := prefs[nType]; ok && ep.Email && !ep.Disabled {
 		s.enqueueEmailDelivery(ctx, recipientID, nType, title, body, actionURL)
 	}
 }
 
 // EmailSendPayload is the Asynq task payload for email:send.
 type EmailSendPayload struct {
-	To      string `json:"to"`
-	Subject string `json:"subject"`
-	Body    string `json:"body"`
-	Type    string `json:"type"`
+	To        string `json:"to"`
+	Subject   string `json:"subject"`
+	Body      string `json:"body"`
+	Type      string `json:"type"`
+	ActionURL string `json:"action_url,omitempty"`
 }
 
 // PushSubscription is the public view of a browser push subscription.
@@ -393,8 +444,31 @@ func (s *Service) ListMyPushSubscriptions(ctx context.Context, userID pgtype.UUI
 }
 
 // SavePushSubscription stores a browser push subscription for a user.
+// maxPushSubscriptionsPerUser caps stored web push subscriptions — without
+// a cap a client could grow the table unboundedly. Oldest rows are evicted
+// so the newest subscription always wins (API-safety invariant, not a
+// configurable — mirrors the MaxPageSize clamp precedent).
+const maxPushSubscriptionsPerUser = 20
+
 func (s *Service) SavePushSubscription(ctx context.Context, userID pgtype.UUID, endpoint, p256dh, authKey string) error {
-	return s.pushStore.SavePushSubscription(ctx, userID, endpoint, p256dh, authKey)
+	if err := s.pushStore.SavePushSubscription(ctx, userID, endpoint, p256dh, authKey); err != nil {
+		return err
+	}
+
+	// Evict-oldest trim over the cap. Rows are ordered created_at ASC so the
+	// head of the list is the stale end.
+	subs, err := s.pushStore.ListPushSubscriptionsByUser(ctx, userID)
+	if err != nil || len(subs) <= maxPushSubscriptionsPerUser {
+		return err
+	}
+
+	for _, old := range subs[:len(subs)-maxPushSubscriptionsPerUser] {
+		if err := s.pushStore.DeletePushSubscriptionByID(ctx, old.ID); err != nil {
+			slog.Warn("notifications: push subscription trim failed", "id", old.ID.String(), "error", err)
+		}
+	}
+
+	return nil
 }
 
 // DeletePushSubscription removes a browser push subscription by endpoint.

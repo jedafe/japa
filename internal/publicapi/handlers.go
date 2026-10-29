@@ -26,6 +26,7 @@ type Handlers struct {
 	drafts    ContentDraftService
 	webhooks  WebhookSubscriptionService
 	comments  CommentService
+	reactions ReactionService
 }
 
 // NewHandlers creates Handlers with the given Service.

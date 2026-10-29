@@ -935,6 +935,8 @@ export interface PublicUser {
 	points?: number;
 	/** §106 video — true when this profile is an imported video channel. */
 	is_synthetic?: boolean;
+	/** §68 — true when this profile is an AI persona with disclosure_mode = 'disclosed'. */
+	ai_disclosed?: boolean;
 	/** §106 video — origin platform for synthetic channels (e.g. 'youtube'). */
 	synthetic_source?: string | null;
 	/** §106 video — channel/profile location metadata. */

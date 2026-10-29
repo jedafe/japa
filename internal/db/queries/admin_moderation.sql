@@ -251,13 +251,42 @@ WHERE (
 -- =====================
 
 -- name: ListAdminBroadcasts :many
-SELECT id, title, body, sent_by, sent_at, recipient_count
+-- BUG-013: ?status=draft|scheduled|sent filter + offset pagination (§35 L132).
+-- Includes target/scheduled_at/status so the admin table can render and
+-- gate the Send action. Rows are ordered newest-first by whichever
+-- timestamp exists.
+SELECT id, title, body, sent_by, sent_at, recipient_count, scheduled_at, target, target_id,
+ CASE WHEN sent_at IS NOT NULL THEN 'sent'
+      WHEN scheduled_at IS NOT NULL THEN 'scheduled'
+      ELSE 'draft' END AS status
 FROM admin_broadcasts
-ORDER BY sent_at DESC
-LIMIT 50;
+WHERE (@status::text = '' OR
+       (@status::text = 'sent' AND sent_at IS NOT NULL) OR
+       (@status::text = 'scheduled' AND sent_at IS NULL AND scheduled_at IS NOT NULL) OR
+       (@status::text = 'draft' AND sent_at IS NULL AND scheduled_at IS NULL))
+ORDER BY COALESCE(sent_at, scheduled_at) DESC NULLS LAST, id DESC
+LIMIT @page_limit OFFSET @page_offset;
 
--- name: DeleteAdminBroadcast :exec
-DELETE FROM admin_broadcasts WHERE id = $1;
+-- name: CountAdminBroadcasts :one
+SELECT COUNT(*)::int AS count
+FROM admin_broadcasts
+WHERE (@status::text = '' OR
+       (@status::text = 'sent' AND sent_at IS NOT NULL) OR
+       (@status::text = 'scheduled' AND sent_at IS NULL AND scheduled_at IS NOT NULL) OR
+       (@status::text = 'draft' AND sent_at IS NULL AND scheduled_at IS NULL));
+
+-- name: GetAdminBroadcastByID :one
+-- BUG-010: POST /admin/broadcasts/{id}/send must load the stored draft —
+-- subject/body/target come from the row, not the request body.
+SELECT id, title, body, sent_by, sent_at, recipient_count, scheduled_at, target, target_id
+FROM admin_broadcasts
+WHERE id = $1;
+
+-- name: DeleteAdminBroadcast :execrows
+-- BUG-020: spec §35 is "delete draft broadcast" — a sent record is history,
+-- not a draft; refuse to delete it (0 rows → 404). Also refuses to delete a
+-- broadcast claimed mid-dispatch.
+DELETE FROM admin_broadcasts WHERE id = $1 AND sent_at IS NULL AND claimed_at IS NULL;
 
 -- =====================
 -- Broadcast Helpers
@@ -286,8 +315,14 @@ JOIN user_groups ug ON ug.id = gm.group_id
 WHERE u.status = 'active' AND ug.slug = 'super_admin' AND ug.is_system = true;
 
 -- name: CreateBroadcastNotifications :exec
-INSERT INTO notifications (recipient_id, notification_type, actor_type, actor_id, title, body, created_at, updated_at)
-SELECT $1, unnest($2::uuid[]), 'system_announcement', 'system', $3, $4, $5, now(), now();
+-- BUG-001: the previous version mapped the SENDER into recipient_id,
+-- unnested recipient UUIDs into notification_type, put 'system' into the
+-- uuid actor_id, and inserted into a nonexistent updated_at column — every
+-- broadcast INSERT failed at runtime. Correct shape: one row per recipient,
+-- 'broadcast' type (seeded §35 catalog), system actor (NULL actor_id —
+-- actor_id is uuid and 'system' is not a valid uuid).
+INSERT INTO notifications (recipient_id, notification_type, actor_type, title, body, created_at)
+SELECT unnest($1::uuid[]), 'broadcast', 'system', $2, $3, $4;
 
 -- name: CreateAdminBroadcastRecord :exec
 INSERT INTO admin_broadcasts (title, body, sent_by, recipient_count, sent_at) VALUES ($1, $2, $3, $4, now())
@@ -302,10 +337,25 @@ RETURNING *;
 -- name: ListDueScheduledBroadcasts :many
 SELECT * FROM admin_broadcasts
 WHERE scheduled_at IS NOT NULL AND sent_at IS NULL AND scheduled_at <= now()
+ AND (claimed_at IS NULL OR claimed_at < now() - interval '10 minutes')
 ORDER BY scheduled_at
 LIMIT 50;
 
+-- name: ClaimBroadcast :execrows
+-- Send-vs-sweep race: a claimant stamps claimed_at atomically — only one
+-- claimant can win (0 rows → already claimed/in-flight or sent).
+UPDATE admin_broadcasts
+SET claimed_at = now()
+WHERE id = $1 AND sent_at IS NULL
+ AND (claimed_at IS NULL OR claimed_at < now() - interval '10 minutes');
+
+-- name: UnclaimBroadcast :exec
+-- Roll back a claim when dispatch fails so the row can be retried.
+UPDATE admin_broadcasts
+SET claimed_at = NULL
+WHERE id = $1 AND sent_at IS NULL;
+
 -- name: MarkBroadcastSent :exec
 UPDATE admin_broadcasts
-SET sent_at = now(), recipient_count = $2
+SET sent_at = now(), recipient_count = $2, claimed_at = NULL
 WHERE id = $1;

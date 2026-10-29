@@ -1868,10 +1868,13 @@ var engagementIncrements = map[string]func(q *gen.Queries, ctx context.Context, 
 		return q.IncrementScoreComment(ctx, gen.IncrementScoreCommentParams{Delta: delta, ContentID: contentID})
 	},
 	"vote": func(q *gen.Queries, ctx context.Context, delta int32, contentID pgtype.UUID) error {
-		return q.IncrementScoreVote(ctx, gen.IncrementScoreVoteParams{Delta: delta, ContentID: contentID})
+		// Recomputes from the live vote tables — delta intentionally unused.
+		return q.IncrementScoreVote(ctx, contentID)
 	},
 	"reaction": func(q *gen.Queries, ctx context.Context, delta int32, contentID pgtype.UUID) error {
-		return q.IncrementScoreReaction(ctx, gen.IncrementScoreReactionParams{Delta: delta, ContentID: contentID})
+		// Recomputes from the live reactions table — delta intentionally
+		// unused so the denormalized counter can never drift.
+		return q.IncrementScoreReaction(ctx, contentID)
 	},
 	"bookmark": func(q *gen.Queries, ctx context.Context, delta int32, contentID pgtype.UUID) error {
 		return q.IncrementScoreBookmark(ctx, gen.IncrementScoreBookmarkParams{Delta: delta, ContentID: contentID})
@@ -4673,14 +4676,19 @@ func RegisterPushDelivery(d interface {
 // DM notification handlers (critical tier — push notifications for DM events)
 // ---------------------------------------------------------------------------
 
-// HandleDMNotifyRequest enqueues a push notification for a new DM request.
-// Payload: { recipient_id, , sender_username, conversation_id }.
-func HandleDMNotifyRequest(_ context.Context, t *asynq.Task) error {
+// HandleDMNotifyRequest creates the in-app dm.request notification for a new
+// DM request. Payload: { recipient_id, sender_id, sender_username, conversation_id }.
+// BUG-005: previously only enqueued web push — no notification-centre row was
+// ever written and user preferences were bypassed. CreateNotification writes
+// the row, broadcasts the WS event, and fans out push/email per prefs.
+// BUG-006: action_url now targets the frontend route (/messages/requests),
+// not the API path /dm/conversations/{id} which 404s on tap.
+func HandleDMNotifyRequest(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:dm:notify_request")
 
 	var payload struct {
-		RecipientID string `json:"recipient_id"`
-
+		RecipientID    string `json:"recipient_id"`
+		SenderID       string `json:"sender_id"`
 		SenderUsername string `json:"sender_username"`
 		ConversationID string `json:"conversation_id"`
 	}
@@ -4690,41 +4698,58 @@ func HandleDMNotifyRequest(_ context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if taskEnqueuer == nil {
-		slog.Warn("task:dm:notify_request: no task enqueuer, skipping")
+	if dmNotificationCreator == nil {
+		slog.Warn("task:dm:notify_request: no notification creator registered, skipping")
 		return nil
+	}
+
+	recipientID, err := scanUUID(payload.RecipientID)
+	if err != nil {
+		return fmt.Errorf("task:dm:notify_request: invalid recipient_id: %w", err)
+	}
+
+	senderID, _ := scanUUID(payload.SenderID)
+
+	var convID pgtype.UUID
+	if payload.ConversationID != "" {
+		convID, _ = scanUUID(payload.ConversationID)
 	}
 
 	title := "New message request"
 	body := payload.SenderUsername + " wants to send you a message"
-	actionURL := "/dm/conversations/" + payload.ConversationID
 
-	pushPayload, _ := json.Marshal(map[string]string{
-		"user_id":    payload.RecipientID,
-		"title":      title,
-		"body":       body,
-		"action_url": actionURL,
-	})
+	// Dedup: an unread dm.request for this conversation already covers the
+	// alert — deliver push only, don't stack a second in-app row.
+	if has, err := dmNotificationCreator.HasUnreadNotification(ctx, recipientID,
+		"dm.request", "dm_conversation", convID); err == nil && has {
+		dmPushOnly(payload.RecipientID, title, body, "/messages/requests")
+		return nil
+	}
 
-	if err := taskEnqueuer.Enqueue(TypePushDelivery, pushPayload); err != nil {
-		slog.Error("task:dm:notify_request: failed to enqueue push", "error", err)
+	if err := dmNotificationCreator.CreateNotification(ctx, recipientID,
+		"dm.request", "user", senderID,
+		"dm_conversation", convID,
+		title, body, "/messages/requests"); err != nil {
+		slog.Error("task:dm:notify_request: notification failed", "error", err)
 		return err
 	}
 
-	slog.Info("task:dm:notify_request: push enqueued", "recipient_id", payload.RecipientID)
+	slog.Info("task:dm:notify_request: notification created", "recipient_id", payload.RecipientID)
 
 	return nil
 }
 
-// HandleDMNotifyMessage enqueues a push notification for a new DM message
-// when the conversation is not currently open. Payload:
-// { recipient_id, , sender_username, conversation_id, body_preview }.
-func HandleDMNotifyMessage(_ context.Context, t *asynq.Task) error {
+// HandleDMNotifyMessage creates the in-app dm.message notification for a new
+// DM message. Payload:
+// { recipient_id, sender_id, sender_username, conversation_id, body_preview }.
+// BUG-005/006: same fix as HandleDMNotifyRequest — real in-app row +
+// preference-aware delivery + a deep link that resolves to a frontend route.
+func HandleDMNotifyMessage(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:dm:notify_message")
 
 	var payload struct {
-		RecipientID string `json:"recipient_id"`
-
+		RecipientID    string `json:"recipient_id"`
+		SenderID       string `json:"sender_id"`
 		SenderUsername string `json:"sender_username"`
 		ConversationID string `json:"conversation_id"`
 		BodyPreview    string `json:"body_preview"`
@@ -4735,9 +4760,21 @@ func HandleDMNotifyMessage(_ context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if taskEnqueuer == nil {
-		slog.Warn("task:dm:notify_message: no task enqueuer, skipping")
+	if dmNotificationCreator == nil {
+		slog.Warn("task:dm:notify_message: no notification creator registered, skipping")
 		return nil
+	}
+
+	recipientID, err := scanUUID(payload.RecipientID)
+	if err != nil {
+		return fmt.Errorf("task:dm:notify_message: invalid recipient_id: %w", err)
+	}
+
+	senderID, _ := scanUUID(payload.SenderID)
+
+	var convID pgtype.UUID
+	if payload.ConversationID != "" {
+		convID, _ = scanUUID(payload.ConversationID)
 	}
 
 	title := payload.SenderUsername
@@ -4747,23 +4784,49 @@ func HandleDMNotifyMessage(_ context.Context, t *asynq.Task) error {
 		body = "Sent you a message"
 	}
 
-	actionURL := "/dm/conversations/" + payload.ConversationID
+	actionURL := "/messages"
+	if payload.ConversationID != "" {
+		actionURL = "/messages?c=" + payload.ConversationID
+	}
+
+	// Dedup: an unread dm.message for this conversation already covers the
+	// alert — deliver push only so an active chat doesn't flood the
+	// notification centre with one row per message.
+	if has, err := dmNotificationCreator.HasUnreadNotification(ctx, recipientID,
+		"dm.message", "dm_conversation", convID); err == nil && has {
+		dmPushOnly(payload.RecipientID, title, body, actionURL)
+		return nil
+	}
+
+	if err := dmNotificationCreator.CreateNotification(ctx, recipientID,
+		"dm.message", "user", senderID,
+		"dm_conversation", convID,
+		title, body, actionURL); err != nil {
+		slog.Error("task:dm:notify_message: notification failed", "error", err)
+		return err
+	}
+
+	slog.Info("task:dm:notify_message: notification created", "recipient_id", payload.RecipientID)
+
+	return nil
+}
+
+// dmPushOnly enqueues a bare web push for a DM event whose in-app row already
+// exists unread — keeps per-message push delivery without stacking rows.
+func dmPushOnly(recipientID, title, body, actionURL string) {
+	if taskEnqueuer == nil {
+		return
+	}
 
 	pushPayload, _ := json.Marshal(map[string]string{
-		"user_id":    payload.RecipientID,
+		"user_id":    recipientID,
 		"title":      title,
 		"body":       body,
 		"action_url": actionURL,
 	})
-
 	if err := taskEnqueuer.Enqueue(TypePushDelivery, pushPayload); err != nil {
-		slog.Error("task:dm:notify_message: failed to enqueue push", "error", err)
-		return err
+		slog.Warn("task:dm: push-only enqueue failed", "error", err)
 	}
-
-	slog.Info("task:dm:notify_message: push enqueued", "recipient_id", payload.RecipientID)
-
-	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -6241,6 +6304,19 @@ func HandleBroadcastDispatchScheduled(ctx context.Context, _ *asynq.Task) error 
 	q := gen.New(dbPool.Writer)
 
 	for _, b := range due {
+		// Claim the row atomically before dispatch — closes the race where a
+		// manual send (or a second worker) could double-insert notifications
+		// for a due scheduled broadcast. 0 rows = already claimed/sent.
+		claimed, err := q.ClaimBroadcast(ctx, b.ID)
+		if err != nil {
+			slog.Error("task:broadcast:dispatch_scheduled: claim failed", "id", b.ID, "error", err)
+			continue
+		}
+
+		if claimed == 0 {
+			continue
+		}
+
 		var recipients []pgtype.UUID
 
 		switch b.Target {
@@ -6248,23 +6324,29 @@ func HandleBroadcastDispatchScheduled(ctx context.Context, _ *asynq.Task) error 
 			recipients, err = q.ListActiveUserIDsByGeoSpace(ctx, b.TargetID)
 		case "user_group":
 			recipients, err = q.ListActiveUserIDsByGroup(ctx, b.TargetID)
-		default:
+		case "all", "":
 			recipients, err = q.ListActiveUserIDs(ctx)
+		default:
+			// Unknown scope — never fall through to "all" (BUG-031): a bad
+			// stored row must not mass-notify every active user.
+			err = fmt.Errorf("invalid broadcast target: %q", b.Target)
 		}
 		if err != nil {
 			slog.Error("task:broadcast:dispatch_scheduled: scope resolve failed", "id", b.ID, "error", err)
+			_ = q.UnclaimBroadcast(ctx, b.ID)
 			continue
 		}
 
 		if len(recipients) > 0 {
+			// BUG-001: param order — Column1 is the recipients array.
 			if err := q.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
-				RecipientID: b.SentBy,
-				Column2:     recipients,
-				Title:       b.Title,
-				Body:        &b.Body,
-				CreatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+				Column1:   recipients,
+				Title:     b.Title,
+				Body:      &b.Body,
+				CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			}); err != nil {
 				slog.Error("task:broadcast:dispatch_scheduled: notify failed", "id", b.ID, "error", err)
+				_ = q.UnclaimBroadcast(ctx, b.ID)
 				continue
 			}
 		}

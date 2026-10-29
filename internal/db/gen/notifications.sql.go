@@ -124,32 +124,39 @@ func (q *Queries) CountNotificationsByRecipient(ctx context.Context, arg CountNo
 	return count, err
 }
 
-const createBatchWindow = `-- name: CreateBatchWindow :exec
-INSERT INTO notification_batch_windows (recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at) VALUES ($1, $2, $3, $4, ARRAY[$5::uuid], 1, $5, now() + make_interval(mins => $6))
+const createNotificationType = `-- name: CreateNotificationType :exec
+INSERT INTO notification_types (key, label, description, category, enabled, default_in_app, default_email, default_push) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
-type CreateBatchWindowParams struct {
-	RecipientID      pgtype.UUID `json:"recipient_id"`
-	NotificationType string      `json:"notification_type"`
-	SubjectType      string      `json:"subject_type"`
-	SubjectID        pgtype.UUID `json:"subject_id"`
-	ActorID          pgtype.UUID `json:"actor_id"`
-	WindowMinutes    int32       `json:"window_minutes"`
+type CreateNotificationTypeParams struct {
+	Key          string  `json:"key"`
+	Label        string  `json:"label"`
+	Description  *string `json:"description"`
+	Category     string  `json:"category"`
+	Enabled      bool    `json:"enabled"`
+	DefaultInApp bool    `json:"default_in_app"`
+	DefaultEmail bool    `json:"default_email"`
+	DefaultPush  bool    `json:"default_push"`
 }
 
-func (q *Queries) CreateBatchWindow(ctx context.Context, arg CreateBatchWindowParams) error {
-	_, err := q.db.Exec(ctx, createBatchWindow,
-		arg.RecipientID,
-		arg.NotificationType,
-		arg.SubjectType,
-		arg.SubjectID,
-		arg.ActorID,
-		arg.WindowMinutes,
+// Plain INSERT — POST /admin/notification-types is a create; an existing
+// key must surface SQLSTATE 23505 → 409 instead of silently overwriting
+// the type's labels/defaults (the PATCH path uses UpdateNotificationType).
+func (q *Queries) CreateNotificationType(ctx context.Context, arg CreateNotificationTypeParams) error {
+	_, err := q.db.Exec(ctx, createNotificationType,
+		arg.Key,
+		arg.Label,
+		arg.Description,
+		arg.Category,
+		arg.Enabled,
+		arg.DefaultInApp,
+		arg.DefaultEmail,
+		arg.DefaultPush,
 	)
 	return err
 }
 
-const deleteNotification = `-- name: DeleteNotification :exec
+const deleteNotification = `-- name: DeleteNotification :execrows
 DELETE FROM notifications WHERE id = $1 AND recipient_id = $2
 `
 
@@ -158,24 +165,33 @@ type DeleteNotificationParams struct {
 	RecipientID pgtype.UUID `json:"recipient_id"`
 }
 
-func (q *Queries) DeleteNotification(ctx context.Context, arg DeleteNotificationParams) error {
-	_, err := q.db.Exec(ctx, deleteNotification, arg.ID, arg.RecipientID)
-	return err
+func (q *Queries) DeleteNotification(ctx context.Context, arg DeleteNotificationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteNotification, arg.ID, arg.RecipientID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
-const deleteNotificationType = `-- name: DeleteNotificationType :exec
-DELETE FROM notification_types WHERE key = $1
+const deleteNotificationType = `-- name: DeleteNotificationType :execrows
+UPDATE notification_types SET enabled = false WHERE key = $1
 `
 
-func (q *Queries) DeleteNotificationType(ctx context.Context, key string) error {
-	_, err := q.db.Exec(ctx, deleteNotificationType, key)
-	return err
+// BUG-007: spec §35 defines DELETE as "disable type". A hard DELETE violates
+// the notifications.notification_type FK (SQLSTATE 23503) the moment any
+// notification references the key, so this now flips enabled=false.
+func (q *Queries) DeleteNotificationType(ctx context.Context, key string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteNotificationType, key)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const extendBatchWindow = `-- name: ExtendBatchWindow :exec
 UPDATE notification_batch_windows
-SET actor_ids = array_append(actor_ids, $1),
- actor_count = actor_count + 1,
+SET actor_ids = CASE WHEN $1::uuid = ANY(actor_ids) THEN actor_ids ELSE array_append(actor_ids, $1) END,
+ actor_count = actor_count + CASE WHEN $1::uuid = ANY(actor_ids) THEN 0 ELSE 1 END,
  last_actor_id = $1
 WHERE id = $2
 `
@@ -185,6 +201,8 @@ type ExtendBatchWindowParams struct {
 	ID      pgtype.UUID `json:"id"`
 }
 
+// BUG-008: guard against counting the same actor twice — a repeat reaction
+// from one user must not read "Alice and 1 other reacted".
 func (q *Queries) ExtendBatchWindow(ctx context.Context, arg ExtendBatchWindowParams) error {
 	_, err := q.db.Exec(ctx, extendBatchWindow, arg.ActorID, arg.ID)
 	return err
@@ -192,7 +210,8 @@ func (q *Queries) ExtendBatchWindow(ctx context.Context, arg ExtendBatchWindowPa
 
 const getBatchWindowByID = `-- name: GetBatchWindowByID :one
 SELECT id, recipient_id, notification_type, subject_type, subject_id,
- actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched
+ actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched,
+ subject_title, action_url
 FROM notification_batch_windows
 WHERE id = $1
 `
@@ -212,8 +231,89 @@ func (q *Queries) GetBatchWindowByID(ctx context.Context, id pgtype.UUID) (Notif
 		&i.WindowOpenAt,
 		&i.WindowCloseAt,
 		&i.Dispatched,
+		&i.SubjectTitle,
+		&i.ActionUrl,
 	)
 	return i, err
+}
+
+const getBatchWindowForUpdate = `-- name: GetBatchWindowForUpdate :one
+SELECT id, recipient_id, notification_type, subject_type, subject_id,
+ actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched,
+ subject_title, action_url
+FROM notification_batch_windows
+WHERE id = $1
+FOR UPDATE
+`
+
+// BUG-018: row lock for the transactional claim+insert in DispatchBatch, so a
+// retry can never double-insert the notification row.
+func (q *Queries) GetBatchWindowForUpdate(ctx context.Context, id pgtype.UUID) (NotificationBatchWindow, error) {
+	row := q.db.QueryRow(ctx, getBatchWindowForUpdate, id)
+	var i NotificationBatchWindow
+	err := row.Scan(
+		&i.ID,
+		&i.RecipientID,
+		&i.NotificationType,
+		&i.SubjectType,
+		&i.SubjectID,
+		&i.ActorIds,
+		&i.ActorCount,
+		&i.LastActorID,
+		&i.WindowOpenAt,
+		&i.WindowCloseAt,
+		&i.Dispatched,
+		&i.SubjectTitle,
+		&i.ActionUrl,
+	)
+	return i, err
+}
+
+const getEnabledNotificationTypes = `-- name: GetEnabledNotificationTypes :many
+SELECT key, label, description, category, enabled, default_in_app, default_email, default_push
+FROM notification_types WHERE enabled = true ORDER BY key
+`
+
+type GetEnabledNotificationTypesRow struct {
+	Key          string  `json:"key"`
+	Label        string  `json:"label"`
+	Description  *string `json:"description"`
+	Category     string  `json:"category"`
+	Enabled      bool    `json:"enabled"`
+	DefaultInApp bool    `json:"default_in_app"`
+	DefaultEmail bool    `json:"default_email"`
+	DefaultPush  bool    `json:"default_push"`
+}
+
+// BUG-015: the member-facing /me/notification-types endpoint must not leak
+// types an admin has disabled (the admin list intentionally returns all).
+func (q *Queries) GetEnabledNotificationTypes(ctx context.Context) ([]GetEnabledNotificationTypesRow, error) {
+	rows, err := q.db.Query(ctx, getEnabledNotificationTypes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetEnabledNotificationTypesRow
+	for rows.Next() {
+		var i GetEnabledNotificationTypesRow
+		if err := rows.Scan(
+			&i.Key,
+			&i.Label,
+			&i.Description,
+			&i.Category,
+			&i.Enabled,
+			&i.DefaultInApp,
+			&i.DefaultEmail,
+			&i.DefaultPush,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getNotificationPreferences = `-- name: GetNotificationPreferences :many
@@ -422,17 +522,31 @@ type GetOpenBatchWindowParams struct {
 	SubjectID        pgtype.UUID `json:"subject_id"`
 }
 
+type GetOpenBatchWindowRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	RecipientID      pgtype.UUID        `json:"recipient_id"`
+	NotificationType string             `json:"notification_type"`
+	SubjectType      string             `json:"subject_type"`
+	SubjectID        pgtype.UUID        `json:"subject_id"`
+	ActorIds         []pgtype.UUID      `json:"actor_ids"`
+	ActorCount       int32              `json:"actor_count"`
+	LastActorID      pgtype.UUID        `json:"last_actor_id"`
+	WindowOpenAt     pgtype.Timestamptz `json:"window_open_at"`
+	WindowCloseAt    pgtype.Timestamptz `json:"window_close_at"`
+	Dispatched       bool               `json:"dispatched"`
+}
+
 // =====================
 // Batch Dedup Windows
 // =====================
-func (q *Queries) GetOpenBatchWindow(ctx context.Context, arg GetOpenBatchWindowParams) (NotificationBatchWindow, error) {
+func (q *Queries) GetOpenBatchWindow(ctx context.Context, arg GetOpenBatchWindowParams) (GetOpenBatchWindowRow, error) {
 	row := q.db.QueryRow(ctx, getOpenBatchWindow,
 		arg.RecipientID,
 		arg.NotificationType,
 		arg.SubjectType,
 		arg.SubjectID,
 	)
-	var i NotificationBatchWindow
+	var i GetOpenBatchWindowRow
 	err := row.Scan(
 		&i.ID,
 		&i.RecipientID,
@@ -460,6 +574,39 @@ func (q *Queries) GetUnreadNotificationCount(ctx context.Context, recipientID pg
 	var count int32
 	err := row.Scan(&count)
 	return count, err
+}
+
+const hasUnreadNotificationForSubject = `-- name: HasUnreadNotificationForSubject :one
+SELECT EXISTS(
+ SELECT 1 FROM notifications
+ WHERE recipient_id = $1
+  AND notification_type = $2
+  AND subject_type = $3
+  AND subject_id = $4
+  AND read_at IS NULL
+) AS has_unread
+`
+
+type HasUnreadNotificationForSubjectParams struct {
+	RecipientID      pgtype.UUID `json:"recipient_id"`
+	NotificationType string      `json:"notification_type"`
+	SubjectType      *string     `json:"subject_type"`
+	SubjectID        pgtype.UUID `json:"subject_id"`
+}
+
+// Repeat-event dedup for DM-style flows: one unread notification per
+// (recipient, type, subject) is enough — a second row for the same
+// conversation would spam the notification centre during a live chat.
+func (q *Queries) HasUnreadNotificationForSubject(ctx context.Context, arg HasUnreadNotificationForSubjectParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasUnreadNotificationForSubject,
+		arg.RecipientID,
+		arg.NotificationType,
+		arg.SubjectType,
+		arg.SubjectID,
+	)
+	var has_unread bool
+	err := row.Scan(&has_unread)
+	return has_unread, err
 }
 
 const insertNotification = `-- name: InsertNotification :one
@@ -525,7 +672,7 @@ func (q *Queries) MarkBatchWindowDispatched(ctx context.Context, id pgtype.UUID)
 	return err
 }
 
-const markNotificationRead = `-- name: MarkNotificationRead :exec
+const markNotificationRead = `-- name: MarkNotificationRead :execrows
 UPDATE notifications SET read_at = now() WHERE id = $1 AND recipient_id = $2
 `
 
@@ -534,12 +681,15 @@ type MarkNotificationReadParams struct {
 	RecipientID pgtype.UUID `json:"recipient_id"`
 }
 
-func (q *Queries) MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) error {
-	_, err := q.db.Exec(ctx, markNotificationRead, arg.ID, arg.RecipientID)
-	return err
+func (q *Queries) MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markNotificationRead, arg.ID, arg.RecipientID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
-const updateNotificationType = `-- name: UpdateNotificationType :exec
+const updateNotificationType = `-- name: UpdateNotificationType :execrows
 UPDATE notification_types
 SET label = $1, description = $2, category = $3, enabled = $4,
  default_in_app = $5, default_email = $6, default_push = $7
@@ -557,8 +707,8 @@ type UpdateNotificationTypeParams struct {
 	Key          string  `json:"key"`
 }
 
-func (q *Queries) UpdateNotificationType(ctx context.Context, arg UpdateNotificationTypeParams) error {
-	_, err := q.db.Exec(ctx, updateNotificationType,
+func (q *Queries) UpdateNotificationType(ctx context.Context, arg UpdateNotificationTypeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateNotificationType,
 		arg.Label,
 		arg.Description,
 		arg.Category,
@@ -568,7 +718,78 @@ func (q *Queries) UpdateNotificationType(ctx context.Context, arg UpdateNotifica
 		arg.DefaultPush,
 		arg.Key,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const upsertBatchWindow = `-- name: UpsertBatchWindow :one
+INSERT INTO notification_batch_windows (recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at, subject_title, action_url)
+VALUES ($1, $2, $3, $4, ARRAY[$5::uuid], 1, $5, now() + make_interval(mins => $6), $7, $8)
+ON CONFLICT (recipient_id, notification_type, subject_type, subject_id) DO UPDATE SET
+ actor_ids = CASE
+   WHEN notification_batch_windows.dispatched OR notification_batch_windows.window_close_at <= now() THEN ARRAY[EXCLUDED.last_actor_id]
+   WHEN notification_batch_windows.actor_ids @> ARRAY[EXCLUDED.last_actor_id] THEN notification_batch_windows.actor_ids
+   ELSE array_append(notification_batch_windows.actor_ids, EXCLUDED.last_actor_id)
+ END,
+ actor_count = CASE
+   WHEN notification_batch_windows.dispatched OR notification_batch_windows.window_close_at <= now() THEN 1
+   WHEN notification_batch_windows.actor_ids @> ARRAY[EXCLUDED.last_actor_id] THEN notification_batch_windows.actor_count
+   ELSE notification_batch_windows.actor_count + 1
+ END,
+ last_actor_id = EXCLUDED.last_actor_id,
+ subject_title = COALESCE(EXCLUDED.subject_title, notification_batch_windows.subject_title),
+ action_url = COALESCE(EXCLUDED.action_url, notification_batch_windows.action_url),
+ dispatched = CASE
+   WHEN notification_batch_windows.dispatched OR notification_batch_windows.window_close_at <= now() THEN false
+   ELSE notification_batch_windows.dispatched
+ END,
+ window_close_at = CASE
+   WHEN notification_batch_windows.dispatched OR notification_batch_windows.window_close_at <= now() THEN EXCLUDED.window_close_at
+   ELSE notification_batch_windows.window_close_at
+ END
+RETURNING id, window_close_at
+`
+
+type UpsertBatchWindowParams struct {
+	RecipientID      pgtype.UUID `json:"recipient_id"`
+	NotificationType string      `json:"notification_type"`
+	SubjectType      string      `json:"subject_type"`
+	SubjectID        pgtype.UUID `json:"subject_id"`
+	ActorID          pgtype.UUID `json:"actor_id"`
+	WindowMinutes    int32       `json:"window_minutes"`
+	SubjectTitle     *string     `json:"subject_title"`
+	ActionUrl        *string     `json:"action_url"`
+}
+
+type UpsertBatchWindowRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	WindowCloseAt pgtype.Timestamptz `json:"window_close_at"`
+}
+
+// BUG-002: UNIQUE(recipient_id, notification_type, subject_type, subject_id)
+// previously made a second batch impossible — after the first window
+// dispatched, every later event for the same subject hit a unique violation
+// and was dropped. On conflict we now:
+//   - dispatched or expired window → reset it into a fresh batch
+//     (actor list rebuilt, close_at re-scheduled, subject fields updated)
+//   - still-open window (concurrent-create race) → extend it, counting each
+//     actor once (BUG-008: array_append previously double-counted repeats)
+func (q *Queries) UpsertBatchWindow(ctx context.Context, arg UpsertBatchWindowParams) (UpsertBatchWindowRow, error) {
+	row := q.db.QueryRow(ctx, upsertBatchWindow,
+		arg.RecipientID,
+		arg.NotificationType,
+		arg.SubjectType,
+		arg.SubjectID,
+		arg.ActorID,
+		arg.WindowMinutes,
+		arg.SubjectTitle,
+		arg.ActionUrl,
+	)
+	var i UpsertBatchWindowRow
+	err := row.Scan(&i.ID, &i.WindowCloseAt)
+	return i, err
 }
 
 const upsertNotificationPreference = `-- name: UpsertNotificationPreference :exec
@@ -593,44 +814,6 @@ func (q *Queries) UpsertNotificationPreference(ctx context.Context, arg UpsertNo
 		arg.InApp,
 		arg.Email,
 		arg.Push,
-	)
-	return err
-}
-
-const upsertNotificationType = `-- name: UpsertNotificationType :exec
-INSERT INTO notification_types (key, label, description, category, enabled, default_in_app, default_email, default_push) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-
-ON CONFLICT (key) DO UPDATE SET
- label = EXCLUDED.label,
- description = EXCLUDED.description,
- category = EXCLUDED.category,
- enabled = EXCLUDED.enabled,
- default_in_app = EXCLUDED.default_in_app,
- default_email = EXCLUDED.default_email,
- default_push = EXCLUDED.default_push
-`
-
-type UpsertNotificationTypeParams struct {
-	Key          string  `json:"key"`
-	Label        string  `json:"label"`
-	Description  *string `json:"description"`
-	Category     string  `json:"category"`
-	Enabled      bool    `json:"enabled"`
-	DefaultInApp bool    `json:"default_in_app"`
-	DefaultEmail bool    `json:"default_email"`
-	DefaultPush  bool    `json:"default_push"`
-}
-
-func (q *Queries) UpsertNotificationType(ctx context.Context, arg UpsertNotificationTypeParams) error {
-	_, err := q.db.Exec(ctx, upsertNotificationType,
-		arg.Key,
-		arg.Label,
-		arg.Description,
-		arg.Category,
-		arg.Enabled,
-		arg.DefaultInApp,
-		arg.DefaultEmail,
-		arg.DefaultPush,
 	)
 	return err
 }
