@@ -67,8 +67,11 @@ describe('ChannelEditor.svelte', () => {
 		render(ChannelEditor, {
 			props: { open: true, onSubmit }
 		});
-		const textarea = screen.getByLabelText(/Provider config/);
-		await fireEvent.input(textarea, { target: { value: '{bad json' } });
+		// Provider config renders JsonValueEditor — flip to Raw JSON mode and
+		// inject unparseable text; it binds verbatim into provider_config_text
+		// so the submit guard must still block.
+		await fireEvent.click(screen.getByText('Raw JSON'));
+		await fireEvent.input(document.getElementById('ce-provider')!, { target: { value: '{bad json' } });
 		await fireEvent.input(screen.getByLabelText(/Label/), { target: { value: 'Feed' } });
 		await fireEvent.input(screen.getByLabelText(/Entry URL/), { target: { value: 'https://x.test/feed' } });
 		// Submit button stays disabled while the JSON is invalid only after

@@ -30,6 +30,7 @@ describe('SignupForm', () => {
 
 	it('shows validation error for empty fields on submit', async () => {
 		const { getByRole } = render(SignupForm);
+		vi.mocked(global.fetch).mockClear(); // clear mount-time fetches — only assert on submit
 		await fireEvent.click(getByRole('button', { name: /create account/i }));
 		expect(global.fetch).not.toHaveBeenCalled();
 	});
@@ -67,6 +68,7 @@ describe('SignupForm', () => {
 		global.fetch = mockFetch;
 
 		const { getByRole, container, getByText } = render(SignupForm);
+		mockFetch.mockClear(); // mount-time oauth-providers fetch — only assert on submit
 		const emailInput = container.querySelector('#signup-email') as HTMLInputElement;
 		const usernameInput = container.querySelector('#signup-username') as HTMLInputElement;
 		const passwordInput = container.querySelector('#signup-password') as HTMLInputElement;
