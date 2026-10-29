@@ -40,3 +40,19 @@ afterEach(async () => {
     cleanup();
     await new Promise((resolve) => setTimeout(resolve, 50));
 });
+
+// jsdom does not implement matchMedia. Components that use Svelte's
+// MediaQuery rune (theme/responsive helpers, LayerChart motion) call it at
+// evaluation time — polyfill before any component imports run.
+if (typeof window !== 'undefined' && !window.matchMedia) {
+	window.matchMedia = (query: string): MediaQueryList => ({
+		matches: false,
+		media: query,
+		onchange: null,
+		addEventListener: () => {},
+		removeEventListener: () => {},
+		addListener: () => {},
+		removeListener: () => {},
+		dispatchEvent: () => false
+	});
+}
