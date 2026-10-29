@@ -68,7 +68,7 @@ export const load: LayoutServerLoad = async (event) => {
 	// than rendering a shell whose API calls all fail. `=== false` (not
 	// `!== true`) so a transient flags-fetch failure can't take the site down.
 	if (features['feature.academy'] === false) {
-		throw error(404, { message: 'This feature is not available' });
+		throw error(404, { code: 'feature_disabled', message: 'This feature is not available' });
 	}
 
 	// Navigation menu — ADR-054 cross-app menu system. The Academy nav slug is
