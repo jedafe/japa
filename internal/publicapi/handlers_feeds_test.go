@@ -2,6 +2,8 @@ package publicapi
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -176,7 +178,30 @@ func assignScan(vals []any) func(dest ...any) error {
 				return fmt.Errorf("assignScan: dest[%d] is %v (kind %v), not a pointer", i, dv.Type(), dv.Kind())
 			}
 
-			dv.Elem().Set(reflect.ValueOf(vals[i]))
+			elem := dv.Elem()
+			v := reflect.ValueOf(vals[i])
+			if v.Type().AssignableTo(elem.Type()) {
+				elem.Set(v)
+				continue
+			}
+			// Dest knows how to scan (pgtype.* wrapper fields).
+			if elem.CanAddr() {
+				if sc, ok := elem.Addr().Interface().(sql.Scanner); ok {
+					if err := sc.Scan(vals[i]); err == nil {
+						continue
+					}
+				}
+			}
+			// Src is a pgtype.* wrapper — unwrap via driver.Valuer to the primitive.
+			if vr, ok := vals[i].(driver.Valuer); ok {
+				if pv, err := vr.Value(); err == nil && pv != nil {
+					if vv := reflect.ValueOf(pv); vv.Type().AssignableTo(elem.Type()) {
+						elem.Set(vv)
+						continue
+					}
+				}
+			}
+			return fmt.Errorf("assignScan: dest[%d] type %v cannot take val[%d] type %v", i, elem.Type(), i, v.Type())
 		}
 
 		return nil
@@ -668,12 +693,14 @@ func newMarkdownHandlers(t *testing.T, canonical *string) (*Handlers, pgtype.UUI
 	h.SetQueries(gen.New(stubDBTX{
 		queryRowFn: func(sql string, _ ...any) pgx.Row {
 			switch {
+			case strings.Contains(sql, "FROM users u"):
+				// Must precede the FROM spaces case — GetPublicUserByID's
+				// follower-count EXISTS subquery also contains "FROM spaces".
+				return rowOf(publicUserVals(authorID, "jane_doe"))
 			case strings.Contains(sql, "FROM contents"):
 				return rowOf(publishedContentVals(contentID, authorID, spaceID, canonical))
 			case strings.Contains(sql, "FROM spaces"):
 				return rowOf(spaceByIDVals(spaceID, "canada"))
-			case strings.Contains(sql, "FROM users u"):
-				return rowOf(publicUserVals(authorID, "jane_doe"))
 			default:
 				return errRow(pgx.ErrNoRows)
 			}

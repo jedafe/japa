@@ -111,6 +111,8 @@ func TestPublicProfileResponseJSONTags(t *testing.T) {
 		"created_at":       "2026-01-01T00:00:00Z",
 		"is_synthetic":     false,
 		"synthetic_source": nil,
+		"ai_disclosed":     false,
+		"is_following":     false,
 		"location":         nil,
 		"banner_url":       nil,
 		"website_url":      nil,

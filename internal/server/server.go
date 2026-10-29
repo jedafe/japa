@@ -3403,15 +3403,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		}
 		for _, tf := range rssmodel.TypeFeeds() {
 			feedHandler := rssHandlers.HandleTypeFeed(tf.Prefix)
+			// Variable path: the routes_test.go source parser only understands
+			// string literals — a computed concat would scan as a duplicate "GET /".
+			feedPath := "/" + tf.Prefix + "/feed.xml"
 			if keys, gated := rssFeedFlags[tf.Prefix]; gated {
 				gates := make([]func(http.Handler) http.Handler, 0, len(keys))
 				for _, key := range keys {
 					gates = append(gates, features.Gate(featureChecker, key))
 				}
-				r.With(gates...).Get("/"+tf.Prefix+"/feed.xml", feedHandler)
+				r.With(gates...).Get(feedPath, feedHandler)
 				continue
 			}
-			r.Get("/"+tf.Prefix+"/feed.xml", feedHandler)
+			r.Get(feedPath, feedHandler)
 		}
 
 		// Public settings endpoint (no auth required, platform-scoped)
