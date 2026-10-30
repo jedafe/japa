@@ -25,20 +25,6 @@ func (q *Queries) CheckIdempotencyKey(ctx context.Context, idempotencyKey *strin
 	return exists, err
 }
 
-const countActivityEventsByReferencePrefix = `-- name: CountActivityEventsByReferencePrefix :one
-SELECT COUNT(*)::bigint FROM activity_events
-WHERE reference LIKE $1
-`
-
-// Counts events whose reference starts with the given prefix — used by
-// vote emitters to build monotonic per-transition references (ADR-136).
-func (q *Queries) CountActivityEventsByReferencePrefix(ctx context.Context, prefix string) (int64, error) {
-	row := q.db.QueryRow(ctx, countActivityEventsByReferencePrefix, prefix)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const countUserActivityThisWeek = `-- name: CountUserActivityThisWeek :one
 SELECT COUNT(*) FROM activity_events
 WHERE user_id = $1 AND activity_key = $2
@@ -450,6 +436,48 @@ func (q *Queries) InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryPa
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listActivityEventsUndoing = `-- name: ListActivityEventsUndoing :many
+SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
+WHERE payload->>'undoes' = $1::text AND payload->>'undoes_key' = $2::text
+  AND processed IS NOT TRUE
+`
+
+type ListActivityEventsUndoingParams struct {
+	Undoes      string `json:"undoes"`
+	ActivityKey string `json:"activity_key"`
+}
+
+// Unprocessed events whose undoes payload references the given award
+// event — dependents to run after that award completes (ADR-136).
+func (q *Queries) ListActivityEventsUndoing(ctx context.Context, arg ListActivityEventsUndoingParams) ([]ActivityEvent, error) {
+	rows, err := q.db.Query(ctx, listActivityEventsUndoing, arg.Undoes, arg.ActivityKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ActivityEvent
+	for rows.Next() {
+		var i ActivityEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ActivityKey,
+			&i.Reference,
+			&i.Payload,
+			&i.Processed,
+			&i.ProcessedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listActivityRules = `-- name: ListActivityRules :many

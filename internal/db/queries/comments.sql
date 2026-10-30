@@ -294,10 +294,10 @@ WHERE id = @id AND deleted_at IS NULL
 -- =====================
 
 -- name: UpsertCommentVote :one
-INSERT INTO comment_votes (comment_id, user_id, value) VALUES (@comment_id, @user_id, @value)
+INSERT INTO comment_votes (comment_id, user_id, value, updated_at) VALUES (@comment_id, @user_id, @value, clock_timestamp())
 
-ON CONFLICT (comment_id, user_id) DO UPDATE SET value = EXCLUDED.value
-RETURNING comment_id, user_id, value, created_at;
+ON CONFLICT (comment_id, user_id) DO UPDATE SET value = EXCLUDED.value, updated_at = clock_timestamp()
+RETURNING comment_id, user_id, value, created_at, updated_at;
 
 -- name: DeleteCommentVote :exec
 DELETE FROM comment_votes

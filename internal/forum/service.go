@@ -1,6 +1,7 @@
 package forum
 
 import (
+	"time"
 	"context"
 	"encoding/json"
 	"errors"
@@ -891,7 +892,7 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 	// removing a previous vote emits the matching revert so the balance
 	// converges to the current vote value (monotonic seq references).
 	if delta != 0 && entityAuthor.Valid && entityAuthor != userID {
-		s.emitVoteEvents(ctx, input.EntityType, input.EntityID, userID, entityAuthor, input.Value, input.Value-delta)
+		s.emitVoteEvents(ctx, input.EntityType, input.EntityID, userID, entityAuthor, input.Value, input.Value-delta, vote.UpdatedAt.Time.UnixMicro())
 	}
 
 	return vote, thread.ContentID, delta, nil
@@ -901,13 +902,12 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 // removed previous vote. prevValue is the stored vote before this change
 // (0 = none). Fire-and-forget; seq refs make every physical transition
 // unique while replays of the same transition dedupe.
-func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityID, voterID, authorID pgtype.UUID, value, prevValue int16) {
+func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityID, voterID, authorID pgtype.UUID, value, prevValue int16, transitionMicro int64) {
 	prefix := fmt.Sprintf("vote:%s:%s:%s:", entityType, entityID.String(), voterID.String())
-	seq, err := s.store.write.CountActivityEventsByReferencePrefix(ctx, prefix+"%")
-	if err != nil {
-		seq = 0
-	}
-	ref := fmt.Sprintf("%s%d", prefix, seq+1)
+	// The ref embeds the transition timestamp — unique per physical change
+	// without any counting, and replay-safe since unchanged votes emit
+	// nothing (ADR-136).
+	ref := fmt.Sprintf("%s%d:%d", prefix, value, transitionMicro)
 
 	if value == 1 {
 		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionAdded, ref, nil)
@@ -1005,7 +1005,7 @@ func (s *Service) RemoveVote(ctx context.Context, userID pgtype.UUID, entityType
 
 	// ADR-136: removing a vote reverts its award/penalty (value 0 = removed).
 	if delta != 0 && entityAuthor.Valid && entityAuthor != userID {
-		s.emitVoteEvents(ctx, entityType, entityID, userID, entityAuthor, 0, -delta)
+		s.emitVoteEvents(ctx, entityType, entityID, userID, entityAuthor, 0, -delta, time.Now().UTC().UnixMicro())
 	}
 
 	return contentID, delta, nil

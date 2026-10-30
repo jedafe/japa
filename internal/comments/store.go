@@ -932,6 +932,7 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 	// The previous vote is read inside the tx so the returned delta is the
 	// true score change (new=+value, switch=±2, repeat=0).
 	var delta int16
+	var voteTsMicro int64
 	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		prev, err := q.GetCommentVote(ctx, gen.GetCommentVoteParams{
 			CommentID: commentID,
@@ -944,13 +945,15 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 			return fmt.Errorf("getting previous comment vote: %w", err)
 		}
 
-		if _, err := q.UpsertCommentVote(ctx, gen.UpsertCommentVoteParams{
+		vote, err := q.UpsertCommentVote(ctx, gen.UpsertCommentVoteParams{
 			CommentID: commentID,
 			UserID:    userID,
 			Value:     value,
-		}); err != nil {
+		})
+		if err != nil {
 			return fmt.Errorf("voting on comment: %w", err)
 		}
+		voteTsMicro = vote.UpdatedAt.Time.UnixMicro()
 
 		if err := q.RecalculateCommentVoteScore(ctx,
 			commentID,
@@ -969,7 +972,7 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 	// a previous vote emits the matching revert so the balance converges
 	// to the current vote value (monotonic seq references).
 	if delta != 0 && target.AuthorUserID != userID {
-		s.emitVoteEvents(ctx, "comment", commentID, userID, target.AuthorUserID, value, value-delta)
+		s.emitVoteEvents(ctx, "comment", commentID, userID, target.AuthorUserID, value, value-delta, voteTsMicro)
 	}
 
 	return target.ContentID, delta, nil
@@ -979,13 +982,12 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 // removed previous vote. prevValue is the stored vote before this change
 // (0 = none). Fire-and-forget; seq refs make every physical transition
 // unique while replays of the same transition dedupe.
-func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityID, voterID, authorID pgtype.UUID, value, prevValue int16) {
+func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityID, voterID, authorID pgtype.UUID, value, prevValue int16, transitionMicro int64) {
 	prefix := fmt.Sprintf("vote:%s:%s:%s:", entityType, entityID.String(), voterID.String())
-	seq, err := s.write.CountActivityEventsByReferencePrefix(ctx, prefix+"%")
-	if err != nil {
-		seq = 0 // best-effort — a collision only dedupes this transition
-	}
-	ref := fmt.Sprintf("%s%d", prefix, seq+1)
+	// The ref embeds the transition timestamp (clock_timestamp on the vote
+	// row, wall time for removals) — unique per physical change without any
+	// counting, and replay-safe since unchanged votes emit nothing.
+	ref := fmt.Sprintf("%s%d:%d", prefix, value, transitionMicro)
 
 	if value == 1 {
 		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionAdded, ref, nil)
@@ -1066,7 +1068,7 @@ func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtyp
 
 	// ADR-136: removing a vote reverts its award/penalty (value 0 = removed).
 	if delta != 0 && target.AuthorUserID != userID {
-		s.emitVoteEvents(ctx, "comment", commentID, userID, target.AuthorUserID, 0, -delta)
+		s.emitVoteEvents(ctx, "comment", commentID, userID, target.AuthorUserID, 0, -delta, time.Now().UTC().UnixMicro())
 	}
 
 	return target.ContentID, delta, nil

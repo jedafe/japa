@@ -60,7 +60,40 @@ func (s *Service) EmitActivityEvent(ctx context.Context, userID pgtype.UUID, inp
 }
 
 // ProcessActivityEvent processes a single activity event (called by Asynq task).
+// ProcessActivityEvent processes an activity event, then enqueues any
+// compensation events that were waiting on it (ADR-136 — a revert whose
+// undoes target was still unprocessed stays unprocessed until its award
+// completes, so it can never dead-letter waiting on a stalled award).
 func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error {
+	if err := s.processActivityEvent(ctx, eventID); err != nil {
+		return err
+	}
+	s.enqueueDependents(ctx, eventID)
+	return nil
+}
+
+// enqueueDependents enqueues unprocessed events whose undoes payload points
+// at the just-processed event — fire-and-forget (dedupe is idempotent).
+func (s *Service) enqueueDependents(ctx context.Context, eventID pgtype.UUID) {
+	event, err := s.store.getActivityEventByID(ctx, eventID)
+	if err != nil {
+		return
+	}
+	deps, err := s.store.read.ListActivityEventsUndoing(ctx, gen.ListActivityEventsUndoingParams{
+		Undoes:      event.Reference,
+		ActivityKey: event.ActivityKey,
+	})
+	if err != nil {
+		return
+	}
+	for _, dep := range deps {
+		if err := s.EnqueueProcessActivityEvent(ctx, dep.ID); err != nil {
+			slog.Warn("wallet: enqueue dependent event failed", "event_id", dep.ID.String(), "error", err)
+		}
+	}
+}
+
+func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID) error {
 	// Get the event
 	event, err := s.store.getActivityEventByID(ctx, eventID)
 	if err != nil {
@@ -195,9 +228,11 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 			return fmt.Errorf("getting undone event: %w", rerr)
 		}
 		if refEvent.Processed == nil || !*refEvent.Processed {
-			// The award event hasn't run yet — retry so the compensation
-			// always lands after the award it undoes.
-			return fmt.Errorf("undone award %s not yet processed", payloadObj.Undoes)
+			// The award event hasn't run yet — leave this event unprocessed
+			// and return success. When the award completes, its
+			// enqueueDependents step picks this revert up; no retry/DLQ
+			// window can strand it (ADR-136).
+			return nil
 		}
 
 		entry, lerr := qtx.GetLedgerEntryByReference(ctx, gen.GetLedgerEntryByReferenceParams{

@@ -923,6 +923,7 @@ type CommentVote struct {
 	UserID    pgtype.UUID        `json:"user_id"`
 	Value     int16              `json:"value"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type CommunityOrganisation struct {
@@ -2088,6 +2089,7 @@ type ForumVote struct {
 	EntityID   pgtype.UUID        `json:"entity_id"`
 	Value      int16              `json:"value"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
 type FxRate struct {

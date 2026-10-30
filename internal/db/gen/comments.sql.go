@@ -336,9 +336,16 @@ type GetCommentVoteParams struct {
 	UserID    pgtype.UUID `json:"user_id"`
 }
 
-func (q *Queries) GetCommentVote(ctx context.Context, arg GetCommentVoteParams) (CommentVote, error) {
+type GetCommentVoteRow struct {
+	CommentID pgtype.UUID        `json:"comment_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Value     int16              `json:"value"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetCommentVote(ctx context.Context, arg GetCommentVoteParams) (GetCommentVoteRow, error) {
 	row := q.db.QueryRow(ctx, getCommentVote, arg.CommentID, arg.UserID)
-	var i CommentVote
+	var i GetCommentVoteRow
 	err := row.Scan(
 		&i.CommentID,
 		&i.UserID,
@@ -1521,10 +1528,10 @@ func (q *Queries) UpdateCommentUnmarked(ctx context.Context, arg UpdateCommentUn
 
 const upsertCommentVote = `-- name: UpsertCommentVote :one
 
-INSERT INTO comment_votes (comment_id, user_id, value) VALUES ($1, $2, $3)
+INSERT INTO comment_votes (comment_id, user_id, value, updated_at) VALUES ($1, $2, $3, clock_timestamp())
 
-ON CONFLICT (comment_id, user_id) DO UPDATE SET value = EXCLUDED.value
-RETURNING comment_id, user_id, value, created_at
+ON CONFLICT (comment_id, user_id) DO UPDATE SET value = EXCLUDED.value, updated_at = clock_timestamp()
+RETURNING comment_id, user_id, value, created_at, updated_at
 `
 
 type UpsertCommentVoteParams struct {
@@ -1544,6 +1551,7 @@ func (q *Queries) UpsertCommentVote(ctx context.Context, arg UpsertCommentVotePa
 		&i.UserID,
 		&i.Value,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

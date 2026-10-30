@@ -475,14 +475,14 @@ WHERE id = @id AND deleted_at IS NULL;
 -- =====================
 
 -- name: UpsertForumVote :one
-INSERT INTO forum_votes (user_id, entity_type, entity_id, value) VALUES (@user_id, @entity_type, @entity_id, @value)
+INSERT INTO forum_votes (user_id, entity_type, entity_id, value, updated_at) VALUES (@user_id, @entity_type, @entity_id, @value, clock_timestamp())
 
 ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE
- SET value = @value
-RETURNING id, user_id, entity_type, entity_id, value, created_at;
+ SET value = @value, updated_at = clock_timestamp()
+RETURNING id, user_id, entity_type, entity_id, value, created_at, updated_at;
 
 -- name: GetForumVote :one
-SELECT id, user_id, entity_type, entity_id, value, created_at
+SELECT id, user_id, entity_type, entity_id, value, created_at, updated_at
 FROM forum_votes
 WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
 

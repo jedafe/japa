@@ -930,7 +930,7 @@ func (q *Queries) GetForumThreadSpaceIDByID(ctx context.Context, id pgtype.UUID)
 }
 
 const getForumVote = `-- name: GetForumVote :one
-SELECT id, user_id, entity_type, entity_id, value, created_at
+SELECT id, user_id, entity_type, entity_id, value, created_at, updated_at
 FROM forum_votes
 WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
 `
@@ -951,6 +951,7 @@ func (q *Queries) GetForumVote(ctx context.Context, arg GetForumVoteParams) (For
 		&i.EntityID,
 		&i.Value,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2721,11 +2722,11 @@ func (q *Queries) UpdateThreadVoteScore(ctx context.Context, entityID pgtype.UUI
 
 const upsertForumVote = `-- name: UpsertForumVote :one
 
-INSERT INTO forum_votes (user_id, entity_type, entity_id, value) VALUES ($1, $2, $3, $4)
+INSERT INTO forum_votes (user_id, entity_type, entity_id, value, updated_at) VALUES ($1, $2, $3, $4, clock_timestamp())
 
 ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE
- SET value = $4
-RETURNING id, user_id, entity_type, entity_id, value, created_at
+ SET value = $4, updated_at = clock_timestamp()
+RETURNING id, user_id, entity_type, entity_id, value, created_at, updated_at
 `
 
 type UpsertForumVoteParams struct {
@@ -2753,6 +2754,7 @@ func (q *Queries) UpsertForumVote(ctx context.Context, arg UpsertForumVoteParams
 		&i.EntityID,
 		&i.Value,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

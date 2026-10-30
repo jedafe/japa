@@ -2120,7 +2120,7 @@ func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, 
 	// again while replays dedupe (same pattern as comment/forum votes).
 	if entityType == "content" {
 		if authorID, aerr := s.read.GetContentAuthorID(ctx, entityID); aerr == nil && authorID.Valid && authorID != userID {
-			s.emitReactionAward(ctx, entityID, userID, authorID, reactionKey)
+			s.emitReactionAward(ctx, entityID, userID, authorID, reactionKey, reaction.CreatedAt.Time.UnixMicro())
 		}
 	}
 
@@ -2133,14 +2133,12 @@ func reactionRefPrefix(entityID, userID pgtype.UUID, reactionKey string) string 
 	return "reaction:" + entityID.String() + ":" + userID.String() + ":" + reactionKey + ":"
 }
 
-// emitReactionAward emits reaction.added with a monotonic seq reference.
-func (s *Service) emitReactionAward(ctx context.Context, entityID, userID, authorID pgtype.UUID, reactionKey string) {
+// emitReactionAward emits reaction.added with the reaction row's
+// created_at as the transition marker — unique per physical insert and
+// replay-safe (re-adds after removal get a fresh row + timestamp).
+func (s *Service) emitReactionAward(ctx context.Context, entityID, userID, authorID pgtype.UUID, reactionKey string, createdMicro int64) {
 	prefix := reactionRefPrefix(entityID, userID, reactionKey)
-	seq, err := s.write.CountActivityEventsByReferencePrefix(ctx, prefix+"%")
-	if err != nil {
-		seq = 0
-	}
-	s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionAdded, fmt.Sprintf("%s%d", prefix, seq+1), nil)
+	s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionAdded, fmt.Sprintf("%s%d", prefix, createdMicro), nil)
 }
 
 // RemoveReaction removes a user's reaction from an entity. Returns whether

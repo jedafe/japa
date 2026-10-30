@@ -1595,7 +1595,7 @@ func (q *Queries) GdprExportUserCalendarSubscriptions(ctx context.Context, userI
 
 const gdprExportUserCommentVotes = `-- name: GdprExportUserCommentVotes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT comment_id, user_id, value, created_at FROM comment_votes WHERE user_id = $1) t
+FROM (SELECT comment_id, user_id, value, created_at, updated_at FROM comment_votes WHERE user_id = $1) t
 `
 
 // E-009: comment_votes belong in the right-to-access export alongside
@@ -2031,7 +2031,7 @@ func (q *Queries) GdprExportUserForumThreads(ctx context.Context, userID pgtype.
 
 const gdprExportUserForumVotes = `-- name: GdprExportUserForumVotes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, user_id, entity_type, entity_id, value, created_at FROM forum_votes WHERE user_id = $1) t
+FROM (SELECT id, user_id, entity_type, entity_id, value, created_at, updated_at FROM forum_votes WHERE user_id = $1) t
 `
 
 func (q *Queries) GdprExportUserForumVotes(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
