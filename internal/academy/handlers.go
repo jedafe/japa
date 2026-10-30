@@ -74,11 +74,11 @@ type Handlers struct {
 	lit            literalResolver  // nil disables literal resolution (§14)
 	adminChecker   AdminChecker     // nil disables the platform-admin bypass
 	// activity emits wallet activity events — lesson/track completion
-	// points (ADR-129). Optional — nil-safe.
+	// points (ADR-136). Optional — nil-safe.
 	activity wallet.ActivityEmitter
 }
 
-// SetActivityEmitter injects the wallet activity emitter (ADR-129).
+// SetActivityEmitter injects the wallet activity emitter (ADR-136).
 func (h *Handlers) SetActivityEmitter(e wallet.ActivityEmitter) { h.activity = e }
 
 // emitActivity records a points activity event — fire-and-forget (Rule 8).
@@ -498,7 +498,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// ADR-129: completing a lesson earns points (dedupe by ref).
+		// ADR-136: completing a lesson earns points (dedupe by ref).
 		h.emitActivity(r.Context(), user.UserID, wallet.ActivityKeyAcademyLessonCompleted,
 			"lesson:"+lessonID.String()+":"+user.UserID.String())
 
@@ -1092,7 +1092,15 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 		if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, pct); uerr != nil {
 			slog.Warn("academy: complete_lesson — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
 		}
+		if completed == total {
+			h.emitActivity(r.Context(), user.UserID, wallet.ActivityKeyAcademyTrackCompleted,
+				"track:"+mod.TrackID.String()+":"+user.UserID.String())
+		}
 	}
+
+	// ADR-136: completing a lesson earns points (dedupe by ref).
+	h.emitActivity(r.Context(), user.UserID, wallet.ActivityKeyAcademyLessonCompleted,
+		"lesson:"+lessonID.String()+":"+user.UserID.String())
 
 	h.maybeIssueCertificate(r.Context(), user.UserID, lesson.ModuleID)
 
@@ -1282,7 +1290,16 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 			if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, calculatePercent(completed, ltotal)); uerr != nil {
 				slog.Warn("academy: submit_quiz — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
 			}
+			if completed == ltotal {
+				h.emitActivity(r.Context(), user.UserID, wallet.ActivityKeyAcademyTrackCompleted,
+					"track:"+mod.TrackID.String()+":"+user.UserID.String())
+			}
 		}
+
+		// ADR-136: a passing quiz completes the lesson — emit the same
+		// lesson/track points as CompleteLesson (dedupe by ref).
+		h.emitActivity(r.Context(), user.UserID, wallet.ActivityKeyAcademyLessonCompleted,
+			"lesson:"+lessonID.String()+":"+user.UserID.String())
 
 		h.enqueueTrackCompletionUpdate(user.UserID, mod.TrackID)
 		h.maybeIssueCertificate(r.Context(), user.UserID, lesson.ModuleID)

@@ -97,7 +97,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 	}
 
 	// Check the global earning killswitch (BUG-003). EnableEarning gates
-	// *earning* only — penalty rules (negative point_value, ADR-129) are
+	// *earning* only — penalty rules (negative point_value, ADR-136) are
 	// moderation signals and always apply.
 	if s.settings != nil && rule.PointValue > 0 {
 		ws, werr := s.store.getWalletSettings(ctx)
@@ -200,7 +200,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 	// entries for this user today; if adding this rule's points would exceed
 	// the cap, skip the award. The cap is read from wallet_settings
 	// (DailyEarningCap) or system_settings (wallet.max_daily_earn_points).
-	// Penalty rules (negative point_value, ADR-129) are not earnings — the
+	// Penalty rules (negative point_value, ADR-136) are not earnings — the
 	// cap does not gate them.
 	dailyCap := int64(0)
 	if rule.PointValue > 0 && s.settings != nil {
@@ -218,9 +218,12 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 	if dailyCap > 0 {
 		var earnedToday int64
 
+		// amount > 0: penalty entries (negative 'earn', ADR-136) must not
+		// refund cap headroom — the cap throttles points earned, not net
+		// balance change.
 		row := tx.QueryRow(ctx, `
 			SELECT COALESCE(SUM(amount), 0) FROM wallet_ledger
-			WHERE user_id = $1 AND ledger_type = 'points'
+			WHERE user_id = $1 AND ledger_type = 'points' AND amount > 0
 			  AND operation = 'earn' AND created_at >= CURRENT_DATE`, event.UserID)
 		if qerr := row.Scan(&earnedToday); qerr != nil {
 			return fmt.Errorf("checking daily earning cap: %w", qerr)
@@ -547,7 +550,7 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 }
 
 // GetWalletSettings returns wallet settings. When no wallet_settings row
-// exists yet, compiled-in defaults are synthesized (ADR-129 — conversion
+// exists yet, compiled-in defaults are synthesized (ADR-136 — conversion
 // settings removed; only earning cap + killswitch remain).
 func (s *Service) GetWalletSettings(ctx context.Context) (gen.WalletSetting, error) {
 	settings, err := s.store.getWalletSettings(ctx)
