@@ -16,11 +16,50 @@ import (
 // handler can invoke real moderation checks instead of the noop fallback.
 type WorkerAdapter struct {
 	pipeline *SpamPipeline
+	// activity emits the spam.detected points penalty (ADR-129).
+	activity ActivityEmitter
 }
 
 // NewWorkerAdapter creates a WorkerAdapter backed by the given pipeline.
 func NewWorkerAdapter(p *SpamPipeline) *WorkerAdapter {
 	return &WorkerAdapter{pipeline: p}
+}
+
+// ActivityEmitter records a wallet activity event — the spam.detected
+// penalty (ADR-129). Local interface avoids a spam→wallet import edge.
+type ActivityEmitter interface {
+	EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input SpamActivityInput) (SpamActivityEvent, error)
+	EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error
+}
+
+// SpamActivityInput mirrors wallet.EmitActivityEventInput.
+type SpamActivityInput struct {
+	ActivityKey string
+	Reference   string
+}
+
+// SpamActivityEvent mirrors the event id the enqueue call needs.
+type SpamActivityEvent struct {
+	ID pgtype.UUID
+}
+
+// SetActivityEmitter injects the wallet emitter (ADR-129).
+func (a *WorkerAdapter) SetActivityEmitter(e ActivityEmitter) { a.activity = e }
+
+// emitSpamPenalty deducts points for spam-flagged/blocked content —
+// fire-and-forget; deduped per entity via (activity_key, reference).
+func (a *WorkerAdapter) emitSpamPenalty(ctx context.Context, authorID pgtype.UUID, entityType, entityID string) {
+	if a.activity == nil || !authorID.Valid {
+		return
+	}
+	event, err := a.activity.EmitActivityEvent(ctx, authorID, SpamActivityInput{
+		ActivityKey: "spam.detected",
+		Reference:   "spam:" + entityType + ":" + entityID,
+	})
+	if err != nil {
+		return
+	}
+	_ = a.activity.EnqueueProcessActivityEvent(ctx, event.ID)
 }
 
 // ScanContent runs the moderation pipeline on the given entity.
@@ -39,6 +78,7 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID st
 	// accepted for backward compatibility. Comments are stored in the
 	// comments table with a []byte body column.
 	var body string
+	var authorID pgtype.UUID
 
 	if a.pipeline.db != nil {
 		var eid pgtype.UUID
@@ -52,11 +92,15 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID st
 				); err == nil {
 					body = row.Body
 				}
+				if aid, aerr := queries.GetContentAuthorID(ctx, eid); aerr == nil {
+					authorID = aid
+				}
 			case "comment":
 				if row, err := queries.GetComment(ctx,
 					eid,
 				); err == nil {
 					body = string(row.Body)
+					authorID = row.AuthorUserID
 				}
 			}
 		}
@@ -72,10 +116,13 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID st
 
 	switch {
 	case result.Blocked:
+		a.emitSpamPenalty(ctx, authorID, entityType, entityID)
 		slog.Warn("spam:worker_adapter: content blocked",
 			"entity_type", entityType, "entity_id", entityID,
 			"score", result.Score, "reasons", result.Reasons)
 	case result.Flagged:
+		// ADR-129: flagged content deducts the author's points (spam.detected).
+		a.emitSpamPenalty(ctx, authorID, entityType, entityID)
 		slog.Info("spam:worker_adapter: content flagged for review",
 			"entity_type", entityType, "entity_id", entityID,
 			"score", result.Score, "reasons", result.Reasons)

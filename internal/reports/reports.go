@@ -21,6 +21,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/valkey"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -158,7 +159,13 @@ type Service struct {
 	db       *db.DB
 	valkey   valkeycompat.Cmdable
 	rbac     *rbac.RBAC
+	// activity emits wallet activity events — upheld-report points
+	// penalties (ADR-129). Optional — nil-safe.
+	activity wallet.ActivityEmitter
 }
+
+// SetActivityEmitter injects the wallet emitter (ADR-129).
+func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
 
 // NewService creates a Service backed by the given database.
 func NewService(database *db.DB, settings *config.Settings, vk valkeycompat.Cmdable) *Service {

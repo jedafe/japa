@@ -28,6 +28,8 @@ var allowedTags = map[string]bool{
 	"img":   true,
 	"table": true, "tr": true, "td": true, "th": true, "thead": true, "tbody": true,
 	"div": true, "span": true,
+	// §45 FAQ accordion block — native <details>/<summary> markup.
+	"details": true, "summary": true,
 }
 
 // allowedAttributes is the set of attributes permitted per tag.
@@ -64,6 +66,16 @@ var allowedAttributes = map[string]map[string]bool{
 		"data-handle":      true,
 		"data-entity-type": true,
 		"data-url":         true,
+	},
+	// §45 FAQ accordion block — data-type="faq-item" lets the TipTap
+	// faqItem node parse stored HTML back into the document.
+	"details": {
+		// data-type marks faq-item nodes; name="jc-faq" gives the published
+		// accordion native single-open semantics; open is harmless.
+		"data-type": true, "open": true, "name": true,
+	},
+	"summary": {
+		"data-type": true,
 	},
 }
 

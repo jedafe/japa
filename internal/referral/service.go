@@ -24,6 +24,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -81,6 +82,7 @@ type Service struct {
 	checker      FeatureChecker
 	valkey       valkeycompat.Cmdable
 	enqueuer     TaskEnqueuer
+	activity     wallet.ActivityEmitter
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -121,6 +123,22 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.valkey = vk }
 
 // SetEnqueuer injects the Asynq task enqueuer.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetActivityEmitter injects the wallet activity emitter (ADR-129 —
+// referral.completed points for the referrer). Optional — nil-safe.
+func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
+
+// emitActivity records a points activity event — fire-and-forget (Rule 8).
+func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string) {
+	if s.activity == nil || !userID.Valid {
+		return
+	}
+	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{ActivityKey: key, Reference: reference})
+	if err != nil {
+		return // duplicate reference → already recorded
+	}
+	_ = s.activity.EnqueueProcessActivityEvent(ctx, event.ID)
+}
 
 // ---------------------------------------------------------------------------
 // Legacy: Referral Program admin settings (referral_programs table)
@@ -526,6 +544,9 @@ func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype
 	if err = tx.Commit(ctx); err != nil {
 		return fmt.Errorf("referral: commit: %w", err)
 	}
+
+	// ADR-129: a completed referral earns the referrer points (dedupe by ref).
+	s.emitActivity(ctx, referral.ReferrerID, "referral.completed", "referral:"+referral.ID.String())
 
 	// Award credits to referrer wallet (fire-and-forget per Rule 8).
 	if s.enqueuer != nil {

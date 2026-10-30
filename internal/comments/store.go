@@ -964,6 +964,17 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 		return pgtype.UUID{}, 0, err
 	}
 
+	// ADR-129: votes move the author's points — upvotes earn reaction.added,
+	// downvotes deduct via reaction.negative. Reference dedupes per
+	// (comment, voter) so a later vote-flip doesn't double-count.
+	if delta != 0 && target.AuthorUserID != userID {
+		key := wallet.ActivityKeyReactionAdded
+		if value == -1 {
+			key = wallet.ActivityKeyReactionNegative
+		}
+		s.emitActivity(ctx, target.AuthorUserID, key, "comment:"+commentID.String()+":vote:"+userID.String(), nil)
+	}
+
 	return target.ContentID, delta, nil
 }
 

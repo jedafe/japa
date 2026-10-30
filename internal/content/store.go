@@ -2115,6 +2115,15 @@ func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, 
 		return gen.Reaction{}, fmt.Errorf("adding reaction: %w", err)
 	}
 
+	// ADR-129: the content author earns reaction.added points (self-reacts
+	// excluded). Reference dedupes per (entity, reactor, key).
+	if entityType == "content" {
+		if authorID, aerr := s.read.GetContentAuthorID(ctx, entityID); aerr == nil && authorID.Valid && authorID != userID {
+			s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionAdded,
+				"reaction:"+entityID.String()+":"+userID.String()+":"+reactionKey, nil)
+		}
+	}
+
 	return reaction, nil
 }
 

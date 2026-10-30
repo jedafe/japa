@@ -47,7 +47,11 @@ type OAuthHandlers struct {
 	SourceManager       SourceManager         // Optional — wired by server for v2 source directory auto-creation
 	OwnerEmail          string                // JC_OWNER_EMAIL — designates the platform owner account (§03 owner amendment)
 	OwnerPromoter       SuperAdminPromoter    // Optional — promotes the owner account into the super_admin group at registration
+	Activity            ActivityEmitter       // Optional — wired by server for user.registered / daily.login point events (ADR-129)
 }
+
+// SetActivityEmitter injects the wallet activity emitter (ADR-129).
+func (h *OAuthHandlers) SetActivityEmitter(e ActivityEmitter) { h.Activity = e }
 
 // SetTierManager injects the tier manager used to assign the regular tier on
 // first-time OAuth registrations.
@@ -615,6 +619,9 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, info *OAuthUserInfo
 		// v2 source directory: auto-create a canonical source for publisher users.
 		h.maybeCreateUserSource(ctx, userID, candidate)
 
+		// ADR-129: signup earns points (one_time rule) — fire-and-forget.
+		emitDailyLogin0(ctx, h.Activity, "user.registered", "user:"+userID.String(), userID)
+
 		// Transactional emails (fire-and-forget, Golden Rule 8): welcome for
 		// every signup — parity with password Register — and a verification
 		// link only when the provider could not attest the address.
@@ -628,6 +635,19 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, info *OAuthUserInfo
 	}
 
 	return pgtype.UUID{}, fmt.Errorf("username collision after retries: %s", attempt)
+}
+
+// emitDailyLogin0 emits an arbitrary activity event — the OAuth counterpart
+// to AuthHandlers.emitActivity (package-private helper, fire-and-forget).
+func emitDailyLogin0(ctx context.Context, e ActivityEmitter, key, reference string, userID pgtype.UUID) {
+	if e == nil || !userID.Valid {
+		return
+	}
+	event, err := e.EmitActivityEvent(ctx, userID, AuthActivityInput{ActivityKey: key, Reference: reference})
+	if err != nil {
+		return
+	}
+	_ = e.EnqueueProcessActivityEvent(ctx, event.ID)
 }
 
 // sanitizeUsernameBase derives a username base from the email local-part or
@@ -690,6 +710,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 			slog.Warn("update last_login_at", "error", err)
 		}
 	}
+	emitDailyLogin(r.Context(), h.Activity, userID)
 
 	accessToken, err := h.KeyRot.MintAccessTokenWithContext(r.Context(), userID)
 	if err != nil {

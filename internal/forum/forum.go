@@ -19,6 +19,7 @@ import (
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -130,6 +131,9 @@ type Service struct {
 	asynq        *asynq.Client
 	notifier     NotificationDispatcher
 	amaQuestions AMAQuestionHandler
+	// activity emits wallet activity events — vote/solution points
+	// (ADR-129). Optional — nil-safe.
+	activity wallet.ActivityEmitter
 
 	// In-memory JSON-LD cache for solved threads. Used only when Valkey is
 	// not available so the service still degrades gracefully.
@@ -216,6 +220,21 @@ func (s *Service) SetAsynqClient(c *asynq.Client) { s.asynq = c }
 // SetFolderResolver injects the default bookmark folder resolver. Optional
 // — when not set, forum bookmarks fall back to the "default" folder.
 func (s *Service) SetFolderResolver(r folderResolver) { s.folderResolver = r }
+
+// emitActivity records a points activity event — fire-and-forget (Rule 8).
+func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string) {
+	if s.activity == nil || !userID.Valid {
+		return
+	}
+	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{ActivityKey: key, Reference: reference})
+	if err != nil {
+		return // duplicate reference → already recorded
+	}
+	_ = s.activity.EnqueueProcessActivityEvent(ctx, event.ID)
+}
+
+// SetActivityEmitter injects the wallet activity emitter (ADR-129).
+func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
 
 // NotificationDispatcher dispatches reply-to-author notifications
 // (Section 35). Fire-and-forget per Rule 8. Matches the

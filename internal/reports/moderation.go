@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // ErrActionNotAllowed is returned when the caller can see the report but the
@@ -337,7 +338,52 @@ func (s *Service) resolveWithAction(ctx context.Context, id, reviewerID pgtype.U
 		}
 	}
 
+	// ADR-129: upheld moderation deducts the offender's points —
+	// report.upheld for warn/ban; content.flagged_removed for removals
+	// (deduped per report id).
+	s.emitModerationPenalty(ctx, action, entityType, entityID, target, hasTarget, id)
+
 	return updated, nil
+}
+
+// emitModerationPenalty deducts points after an upheld moderation action —
+// fire-and-forget (Rule 8). warn/ban hit the resolved target user
+// (report.upheld); removals hit the reported entity's author
+// (content.flagged_removed).
+func (s *Service) emitModerationPenalty(ctx context.Context, action, entityType string, entityID, target pgtype.UUID, hasTarget bool, reportID pgtype.UUID) {
+	if s.activity == nil {
+		return
+	}
+
+	var penalized pgtype.UUID
+	var key string
+	switch action {
+	case "warn", "ban":
+		if !hasTarget {
+			return
+		}
+		penalized, key = target, wallet.ActivityKeyReportUpheld
+	case "remove":
+		t, found, err := s.ResolveTargetUser(ctx, entityType, entityID)
+		if err != nil || !found {
+			return
+		}
+		penalized, key = t, wallet.ActivityKeyContentFlagged
+	default:
+		return
+	}
+	if !penalized.Valid {
+		return
+	}
+
+	event, err := s.activity.EmitActivityEvent(ctx, penalized, wallet.EmitActivityEventInput{
+		ActivityKey: key,
+		Reference:   "report:" + reportID.String(),
+	})
+	if err != nil {
+		return
+	}
+	_ = s.activity.EnqueueProcessActivityEvent(ctx, event.ID)
 }
 
 // ActionModerationItem applies an action to a scoped report.

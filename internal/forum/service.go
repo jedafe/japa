@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -296,6 +297,13 @@ func (s *Service) SolveThread(ctx context.Context, id, solverUserID, parentReply
 	}
 
 	s.emitWebhook(ctx, "forum.thread.solved", map[string]any{"thread_id": id, "solver_id": solverUserID, "parent_reply_id": parentReplyID})
+
+	// ADR-129: the accepted-answer author earns forum.solution_marked points.
+	if parentReplyID.Valid {
+		if reply, rerr := s.store.getReplyByID(ctx, parentReplyID); rerr == nil && reply.AuthorUserID.Valid {
+			s.emitActivity(ctx, reply.AuthorUserID, wallet.ActivityKeyForumSolutionMarked, "reply:"+parentReplyID.String())
+		}
+	}
 
 	return nil
 }
@@ -796,6 +804,7 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 	// thread (or reply / reply on a deleted thread) rejects the vote.
 	// F-009: votes also only count where the voter can read the content.
 	var thread gen.ForumThread
+	var entityAuthor pgtype.UUID
 
 	switch input.EntityType {
 	case EntityTypeThread:
@@ -807,6 +816,7 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 			return gen.ForumVote{}, pgtype.UUID{}, 0, fmt.Errorf("%w: cannot vote on your own thread", errpkg.ErrInvalid)
 		}
 		thread = t
+		entityAuthor = t.AuthorUserID
 	case EntityTypeReply:
 		reply, err := s.store.getReplyByID(ctx, input.EntityID)
 		if err != nil {
@@ -815,6 +825,7 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 		if reply.AuthorUserID == userID {
 			return gen.ForumVote{}, pgtype.UUID{}, 0, fmt.Errorf("%w: cannot vote on your own reply", errpkg.ErrInvalid)
 		}
+		entityAuthor = reply.AuthorUserID
 
 		t, err := s.store.getThreadByID(ctx, reply.ThreadID)
 		if err != nil {
@@ -874,6 +885,17 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 		"entity_type": input.EntityType, "entity_id": input.EntityID,
 		"user_id": userID, "value": input.Value,
 	})
+
+	// ADR-129: votes move the entity author's points — upvotes earn
+	// reaction.added, downvotes deduct via reaction.negative. Reference
+	// dedupes per (entity, voter) so a later vote-flip doesn't double-count.
+	if delta != 0 {
+		key := wallet.ActivityKeyReactionAdded
+		if input.Value == VoteDown {
+			key = wallet.ActivityKeyReactionNegative
+		}
+		s.emitActivity(ctx, entityAuthor, key, "forum:"+input.EntityID.String()+":vote:"+userID.String())
+	}
 
 	return vote, thread.ContentID, delta, nil
 }

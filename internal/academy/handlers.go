@@ -23,6 +23,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -72,6 +73,25 @@ type Handlers struct {
 	settings       settingsReader   // nil falls back to defaults
 	lit            literalResolver  // nil disables literal resolution (§14)
 	adminChecker   AdminChecker     // nil disables the platform-admin bypass
+	// activity emits wallet activity events — lesson/track completion
+	// points (ADR-129). Optional — nil-safe.
+	activity wallet.ActivityEmitter
+}
+
+// SetActivityEmitter injects the wallet activity emitter (ADR-129).
+func (h *Handlers) SetActivityEmitter(e wallet.ActivityEmitter) { h.activity = e }
+
+// emitActivity records a points activity event — fire-and-forget (Rule 8).
+// A duplicate (activity_key, reference) is deduped to exactly-once.
+func (h *Handlers) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string) {
+	if h.activity == nil || !userID.Valid {
+		return
+	}
+	event, err := h.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{ActivityKey: key, Reference: reference})
+	if err != nil {
+		return
+	}
+	_ = h.activity.EnqueueProcessActivityEvent(ctx, event.ID)
 }
 
 // AdminChecker reports platform-level academy admin rights. Implemented by
@@ -472,7 +492,15 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 			if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, pct); uerr != nil {
 				slog.Warn("academy: update_progress — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
 			}
+			if completed == total {
+				h.emitActivity(r.Context(), user.UserID, wallet.ActivityKeyAcademyTrackCompleted,
+					"track:"+mod.TrackID.String()+":"+user.UserID.String())
+			}
 		}
+
+		// ADR-129: completing a lesson earns points (dedupe by ref).
+		h.emitActivity(r.Context(), user.UserID, wallet.ActivityKeyAcademyLessonCompleted,
+			"lesson:"+lessonID.String()+":"+user.UserID.String())
 
 		h.maybeIssueCertificate(r.Context(), user.UserID, lesson.ModuleID)
 	}

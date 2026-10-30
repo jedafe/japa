@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/visitor"
 )
@@ -34,6 +35,10 @@ type JourneyClassWriter interface {
 
 // Service provides onboarding business logic with reader/writer pool separation.
 type Service struct {
+	// activity emits wallet activity events — profile.completed points
+	// (ADR-129). Optional — nil-safe.
+	activity wallet.ActivityEmitter
+
 	store         *Store
 	db            *db.DB
 	settings      *config.Settings
@@ -576,7 +581,25 @@ func (s *Service) Complete(ctx context.Context, userID pgtype.UUID) error {
 		return fmt.Errorf("completing onboarding: %w", err)
 	}
 
+	// ADR-129: finishing onboarding earns profile.completed points (one_time).
+	s.emitActivity(ctx, userID, "profile.completed", "profile:"+userID.String())
+
 	return nil
+}
+
+// SetActivityEmitter injects the wallet activity emitter (ADR-129).
+func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
+
+// emitActivity records a points activity event — fire-and-forget (Rule 8).
+func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string) {
+	if s.activity == nil || !userID.Valid {
+		return
+	}
+	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{ActivityKey: key, Reference: reference})
+	if err != nil {
+		return
+	}
+	_ = s.activity.EnqueueProcessActivityEvent(ctx, event.ID)
 }
 
 // DismissTour marks the product tour as dismissed for the given surface.

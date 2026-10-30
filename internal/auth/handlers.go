@@ -77,6 +77,58 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 	SourceManager       SourceManager         // Optional — wired by server for v2 source directory auto-creation
 	OwnerEmail          string                // JC_OWNER_EMAIL — designates the platform owner account (§03 owner amendment)
 	OwnerPromoter       SuperAdminPromoter    // Optional — promotes the owner account into the super_admin group at registration
+	Activity            ActivityEmitter       // Optional — wired by server for user.registered / daily.login point events (ADR-129)
+}
+
+// ActivityEmitter records a wallet activity event and enqueues its async
+// processing. Local interface — satisfied by *wallet.Service without
+// importing internal/wallet (wallet imports auth → cycle).
+type ActivityEmitter interface {
+	EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input AuthActivityInput) (AuthActivityEvent, error)
+	EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error
+}
+
+// AuthActivityInput mirrors wallet.EmitActivityEventInput.
+type AuthActivityInput struct {
+	ActivityKey string
+	Reference   string
+	Payload     map[string]interface{}
+}
+
+// AuthActivityEvent mirrors the gen.ActivityEvent fields auth needs.
+type AuthActivityEvent struct {
+	ID pgtype.UUID
+}
+
+// SetActivityEmitter injects the wallet activity emitter (ADR-129).
+func (h *AuthHandlers) SetActivityEmitter(e ActivityEmitter) { h.Activity = e }
+
+// emitDailyLogin records the daily.login points event — once per UTC day
+// per user via the (activity_key, reference) dedupe index.
+func emitDailyLogin(ctx context.Context, e ActivityEmitter, userID pgtype.UUID) {
+	if e == nil || !userID.Valid {
+		return
+	}
+	ref := "login:" + userID.String() + ":" + time.Now().UTC().Format("2006-01-02")
+	event, err := e.EmitActivityEvent(ctx, userID, AuthActivityInput{ActivityKey: "daily.login", Reference: ref})
+	if err != nil {
+		return // already recorded today
+	}
+	_ = e.EnqueueProcessActivityEvent(ctx, event.ID)
+}
+
+// emitActivity records a points activity event — fire-and-forget (Rule 8).
+func (h *AuthHandlers) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string) {
+	if h.Activity == nil || !userID.Valid {
+		return
+	}
+	event, err := h.Activity.EmitActivityEvent(ctx, userID, AuthActivityInput{ActivityKey: key, Reference: reference})
+	if err != nil {
+		return // duplicate reference → already recorded
+	}
+	if err := h.Activity.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
+		slog.Warn("auth: enqueue activity event failed", "activity_key", key, "error", err)
+	}
 }
 
 // SetReferralCapturer injects the referral capture dependency (§60, ADR-078).
@@ -389,6 +441,9 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	// users when the platform setting is enabled. Non-fatal.
 	h.maybeCreateUserSource(r.Context(), userID, req.Username)
 
+	// ADR-129: signup earns points (one_time rule) — fire-and-forget.
+	h.emitActivity(r.Context(), userID, "user.registered", "user:"+userID.String())
+
 	// Send welcome email (fire-and-forget, Golden Rule 8).
 	if h.AsynqClient != nil {
 		welcomePayload, _ := json.Marshal(map[string]interface{}{
@@ -594,6 +649,8 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	); err != nil {
 		slog.Warn("update last_login_at", "error", err)
 	}
+
+	emitDailyLogin(r.Context(), h.Activity, user.ID)
 
 	// Check if 2FA is enabled — if so, require TOTP challenge before
 	// issuing a full session (AUDIT-BE-001).
@@ -1022,6 +1079,8 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		slog.Warn("update last_login_at", "error", err)
 	}
 
+	emitDailyLogin(r.Context(), h.Activity, userID)
+
 	accessToken, err := h.KeyRotation.MintAccessToken(userID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
@@ -1151,6 +1210,8 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	); err != nil {
 		slog.Warn("update last_login_at", "error", err)
 	}
+
+	emitDailyLogin(r.Context(), h.Activity, userID)
 
 	accessToken, err := h.KeyRotation.MintAccessToken(userID)
 	if err != nil {

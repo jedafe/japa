@@ -305,6 +305,32 @@ func TestSanitizeHTMLKeepsVideoEmbedSourceID(t *testing.T) {
 	}
 }
 
+func TestSanitizeHTML_FaqBlockPreserved(t *testing.T) {
+	t.Parallel()
+
+	// §45 FAQ accordion — the TipTap faq nodes serialize as semantic
+	// <details>/<summary> markup; the stored body must keep the tags and
+	// their data-type markers or the editor can't parse them back.
+	input := `<div data-type="faq" class="faq-block"><details name="jc-faq" data-type="faq-item" class="faq-item"><summary data-type="faq-question" class="faq-question">How long?</summary><div data-type="faq-answer" class="faq-answer"><p>3–10 days</p></div></details></div>`
+	got := SanitizeHTML(input)
+
+	for _, want := range []string{
+		`data-type="faq"`,
+		`<details`,
+		`name="jc-faq"`,
+		`data-type="faq-item"`,
+		`<summary`,
+		`data-type="faq-question"`,
+		`data-type="faq-answer"`,
+		`How long?`,
+		`3–10 days`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in sanitized output: %s", want, got)
+		}
+	}
+}
+
 func TestSanitizeHTML_LinkPreviewDataURLXSSBlocked(t *testing.T) {
 	t.Parallel()
 
