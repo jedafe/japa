@@ -16,10 +16,10 @@
 	let { data }: Props = $props();
 	const walletData = $derived(data as WalletData | null);
 
-	type Tab = 'details' | 'conversion' | 'purchase' | 'history' | 'withdraw';
+	type Tab = 'details' | 'purchase' | 'history' | 'withdraw';
 	// Seed from ?tab= so deep links (e.g. /dashboard/wallet/purchase →
 	// /settings/wallet?tab=purchase) land on the right tab.
-	const VALID_TABS: Tab[] = ['details', 'conversion', 'purchase', 'withdraw', 'history'];
+	const VALID_TABS: Tab[] = ['details', 'purchase', 'withdraw', 'history'];
 	let activeTab = $state<Tab>(
 		untrack(() => {
 			const q = page.url.searchParams.get('tab') as Tab | null;
