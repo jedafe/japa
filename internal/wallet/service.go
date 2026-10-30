@@ -154,6 +154,114 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		return fmt.Errorf("acquiring wallet lock: %w", err)
 	}
 
+	// ADR-136 compensation events: a revert (reaction.reverted /
+	// reaction.negative.reverted) carries {"undoes_key","undoes"} pointing at
+	// the award it undoes and applies the exact negative of that award's
+	// ledger amount — not its own rule's point_value. This converges the
+	// balance regardless of rule tuning, never deducts for an award that
+	// never credited (cap, killswitch, disabled rule), and retries if the
+	// award event hasn't processed yet (out-of-order delivery).
+	var undoes, undoesKey string
+	var payloadObj struct {
+		Undoes    string `json:"undoes"`
+		UndoesKey string `json:"undoes_key"`
+	}
+	if len(event.Payload) > 0 {
+		_ = json.Unmarshal(event.Payload, &payloadObj)
+	}
+	undoes, undoesKey = payloadObj.Undoes, payloadObj.UndoesKey
+
+	if undoes != "" && undoesKey != "" {
+		refEvent, rerr := qtx.GetActivityEventByReference(ctx, gen.GetActivityEventByReferenceParams{
+			ActivityKey: undoesKey,
+			Reference:   undoes,
+		})
+		if errors.Is(rerr, pgx.ErrNoRows) {
+			// No award event exists — nothing to undo. Mark processed.
+			if err := qtx.MarkEventProcessed(ctx, eventID); err != nil {
+				return fmt.Errorf("marking no-op revert processed: %w", err)
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return fmt.Errorf("committing no-op revert: %w", err)
+			}
+			s.evaluateGamification(ctx, event)
+			return nil
+		}
+		if rerr != nil {
+			return fmt.Errorf("getting undone event: %w", rerr)
+		}
+		if refEvent.Processed == nil || !*refEvent.Processed {
+			// The award event hasn't run yet — retry so the compensation
+			// always lands after the award it undoes.
+			return fmt.Errorf("undone award %s not yet processed", undoes)
+		}
+
+		entry, lerr := qtx.GetLedgerEntryByReference(ctx, gen.GetLedgerEntryByReferenceParams{
+			UserID:     event.UserID,
+			LedgerType: LedgerTypePoints,
+			Reference:  &undoes,
+		})
+		if errors.Is(lerr, pgx.ErrNoRows) {
+			// The award event processed but credited nothing (cap,
+			// killswitch, disabled) — there is no debt to undo.
+			if err := qtx.MarkEventProcessed(ctx, eventID); err != nil {
+				return fmt.Errorf("marking uncredited revert processed: %w", err)
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return fmt.Errorf("committing uncredited revert: %w", err)
+			}
+			s.evaluateGamification(ctx, event)
+			return nil
+		}
+		if lerr != nil {
+			return fmt.Errorf("getting undone ledger entry: %w", lerr)
+		}
+
+		// Compensation = exact negative of what actually credited. Skip the
+		// caps/killswitch entirely — a correction is not an earning.
+		compensation := -entry.Amount
+		balance, berr := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+			UserID:     event.UserID,
+			LedgerType: LedgerTypePoints,
+		})
+		if berr != nil && !errors.Is(berr, pgx.ErrNoRows) {
+			return fmt.Errorf("getting balance for revert: %w", berr)
+		}
+		newBalance := balance + compensation
+		idempotencyKey := fmt.Sprintf("activity::%s:%s:%s", event.UserID.String(), event.ActivityKey, event.Reference)
+		if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+			UserID:           event.UserID,
+			LedgerType:       LedgerTypePoints,
+			Operation:        OperationEarn,
+			Amount:           compensation,
+			ResultingBalance: newBalance,
+			Source:           &event.ActivityKey,
+			Reference:        &event.Reference,
+			IdempotencyKey:   &idempotencyKey,
+		}); err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				if merr := qtx.MarkEventProcessed(ctx, eventID); merr != nil {
+					return fmt.Errorf("marking duplicate revert processed: %w", merr)
+				}
+				if cerr := tx.Commit(ctx); cerr != nil {
+					return fmt.Errorf("committing duplicate revert: %w", cerr)
+				}
+				s.evaluateGamification(ctx, event)
+				return nil
+			}
+			return fmt.Errorf("inserting revert ledger entry: %w", err)
+		}
+		if err := qtx.MarkEventProcessed(ctx, eventID); err != nil {
+			return fmt.Errorf("marking revert processed: %w", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("committing revert: %w", err)
+		}
+		s.evaluateGamification(ctx, event)
+		return nil
+	}
+
 	// One-time rules: award only the first matching activity per user.
 	// Checked after the per-user lock so concurrent first-time events for the
 	// same source cannot both pass the count and insert.

@@ -153,6 +153,32 @@ func (q *Queries) GetActivityEventByID(ctx context.Context, id pgtype.UUID) (Act
 	return i, err
 }
 
+const getActivityEventByReference = `-- name: GetActivityEventByReference :one
+SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
+WHERE activity_key = $1 AND reference = $2
+`
+
+type GetActivityEventByReferenceParams struct {
+	ActivityKey string `json:"activity_key"`
+	Reference   string `json:"reference"`
+}
+
+func (q *Queries) GetActivityEventByReference(ctx context.Context, arg GetActivityEventByReferenceParams) (ActivityEvent, error) {
+	row := q.db.QueryRow(ctx, getActivityEventByReference, arg.ActivityKey, arg.Reference)
+	var i ActivityEvent
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ActivityKey,
+		&i.Reference,
+		&i.Payload,
+		&i.Processed,
+		&i.ProcessedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getActivityRuleByID = `-- name: GetActivityRuleByID :one
 SELECT id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
 WHERE id = $1
@@ -199,6 +225,26 @@ func (q *Queries) GetActivityRuleByKey(ctx context.Context, activityKey string) 
 	return i, err
 }
 
+const getLatestActivityEventReferenceByPrefixAndKey = `-- name: GetLatestActivityEventReferenceByPrefixAndKey :one
+SELECT reference FROM activity_events
+WHERE activity_key = $1 AND reference LIKE $2
+ORDER BY created_at DESC LIMIT 1
+`
+
+type GetLatestActivityEventReferenceByPrefixAndKeyParams struct {
+	ActivityKey string `json:"activity_key"`
+	Prefix      string `json:"prefix"`
+}
+
+// The most recent event reference for a key under a reference prefix —
+// used by vote emitters to link a revert to the award it undoes (ADR-136).
+func (q *Queries) GetLatestActivityEventReferenceByPrefixAndKey(ctx context.Context, arg GetLatestActivityEventReferenceByPrefixAndKeyParams) (string, error) {
+	row := q.db.QueryRow(ctx, getLatestActivityEventReferenceByPrefixAndKey, arg.ActivityKey, arg.Prefix)
+	var reference string
+	err := row.Scan(&reference)
+	return reference, err
+}
+
 const getLatestBalance = `-- name: GetLatestBalance :one
 SELECT resulting_balance FROM wallet_ledger
 WHERE user_id = $1 AND ledger_type = $2
@@ -225,6 +271,39 @@ WHERE id = $1
 
 func (q *Queries) GetLedgerEntryByID(ctx context.Context, id pgtype.UUID) (WalletLedger, error) {
 	row := q.db.QueryRow(ctx, getLedgerEntryByID, id)
+	var i WalletLedger
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.LedgerType,
+		&i.Operation,
+		&i.Amount,
+		&i.ResultingBalance,
+		&i.Source,
+		&i.ActorUserID,
+		&i.Reference,
+		&i.IdempotencyKey,
+		&i.Reason,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getLedgerEntryByReference = `-- name: GetLedgerEntryByReference :one
+SELECT id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger
+WHERE user_id = $1 AND ledger_type = $2 AND reference = $3
+ORDER BY created_at DESC LIMIT 1
+`
+
+type GetLedgerEntryByReferenceParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	LedgerType string      `json:"ledger_type"`
+	Reference  *string     `json:"reference"`
+}
+
+// The wallet entry written for a specific activity reference (ADR-136).
+func (q *Queries) GetLedgerEntryByReference(ctx context.Context, arg GetLedgerEntryByReferenceParams) (WalletLedger, error) {
+	row := q.db.QueryRow(ctx, getLedgerEntryByReference, arg.UserID, arg.LedgerType, arg.Reference)
 	var i WalletLedger
 	err := row.Scan(
 		&i.ID,

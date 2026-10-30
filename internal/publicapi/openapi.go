@@ -1330,13 +1330,16 @@ func buildPublicSchemas() map[string]any {
 		"Space": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id":           map[string]any{"type": "string", "format": "uuid"},
-				"name":         map[string]any{"type": "string"},
-				"slug":         map[string]any{"type": "string"},
-				"description":  map[string]any{"type": "string"},
-				"member_count": map[string]any{"type": "integer"},
-				"created_at":   map[string]any{"type": "string", "format": "date-time"},
-				"updated_at":   map[string]any{"type": "string", "format": "date-time"},
+				"id":             map[string]any{"type": "string", "format": "uuid"},
+				"name":           map[string]any{"type": "string"},
+				"slug":           map[string]any{"type": "string"},
+				"description":    map[string]any{"type": "string"},
+				"level":          map[string]any{"type": "string", "enum": []any{"country", "state", "city", "university", "custom", "global"}},
+				"is_primary":     map[string]any{"type": "boolean"},
+				"member_count":   map[string]any{"type": "integer"},
+				"follower_count": map[string]any{"type": "integer"},
+				"created_at":     map[string]any{"type": "string", "format": "date-time"},
+				"updated_at":     map[string]any{"type": "string", "format": "date-time"},
 			},
 		},
 		"Content": map[string]any{

@@ -109,6 +109,23 @@ RETURNING *;
 SELECT * FROM activity_events
 WHERE id = @id;
 
+-- name: GetActivityEventByReference :one
+SELECT * FROM activity_events
+WHERE activity_key = @activity_key AND reference = @reference;
+
+-- name: GetLatestActivityEventReferenceByPrefixAndKey :one
+-- The most recent event reference for a key under a reference prefix —
+-- used by vote emitters to link a revert to the award it undoes (ADR-136).
+SELECT reference FROM activity_events
+WHERE activity_key = @activity_key AND reference LIKE @prefix
+ORDER BY created_at DESC LIMIT 1;
+
+-- name: GetLedgerEntryByReference :one
+-- The wallet entry written for a specific activity reference (ADR-136).
+SELECT * FROM wallet_ledger
+WHERE user_id = @user_id AND ledger_type = @ledger_type AND reference = @reference
+ORDER BY created_at DESC LIMIT 1;
+
 -- name: MarkEventProcessed :exec
 UPDATE activity_events
 SET processed = true, processed_at = now()

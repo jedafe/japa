@@ -82,8 +82,20 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		// dropped here — audit fix).
 		var spaceTypeID pgtype.UUID
 		if scanErr := spaceTypeID.Scan(q.Get("type")); scanErr != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid type filter format")
-			return
+			// §05 amendment — ?type= also accepts a type slug. 'university' is
+			// a retired type slug: alias it to the education type and pin the
+			// level so the filter still resolves platform universities.
+			typeSlug := strings.ToLower(strings.TrimSpace(q.Get("type")))
+			if typeSlug == "university" {
+				typeSlug = "education"
+				levelFilter = "university"
+			}
+			st, typeErr := h.Service.GetSpaceTypeBySlug(r.Context(), typeSlug)
+			if typeErr != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid type filter format")
+				return
+			}
+			spaceTypeID = st.ID
 		}
 
 		rows, err := h.Service.ListSpacesPaginated(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, sort, spaceTypeID, joinedOnly, memberCreated, int32(limit), int32(offset))

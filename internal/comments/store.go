@@ -993,10 +993,28 @@ func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityI
 		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegative, ref, nil)
 	}
 
+	// Revert is a compensation entry: it applies the exact negative of the
+	// prior award's ledger amount (resolved at processing via undoes). No
+	// prior award event → nothing to undo (pre-feature votes, etc.).
+	var priorKey string
 	if prevValue == 1 {
-		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, ref+":undo", nil)
+		priorKey = wallet.ActivityKeyReactionAdded
 	} else if prevValue == -1 {
-		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegativeReverted, ref+":undo", nil)
+		priorKey = wallet.ActivityKeyReactionNegative
+	}
+	if priorKey == "" {
+		return
+	}
+	priorRef, err := s.read.GetLatestActivityEventReferenceByPrefixAndKey(ctx,
+		gen.GetLatestActivityEventReferenceByPrefixAndKeyParams{ActivityKey: priorKey, Prefix: prefix + "%"})
+	if err != nil {
+		return // nothing to undo
+	}
+	undoes := map[string]interface{}{"undoes_key": priorKey, "undoes": priorRef}
+	if prevValue == 1 {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, ref+":undo", undoes)
+	} else {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegativeReverted, ref+":undo", undoes)
 	}
 }
 

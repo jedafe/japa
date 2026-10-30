@@ -301,7 +301,7 @@ func (s *Service) SolveThread(ctx context.Context, id, solverUserID, parentReply
 	// ADR-136: the accepted-answer author earns forum.solution_marked points.
 	if parentReplyID.Valid {
 		if reply, rerr := s.store.getReplyByID(ctx, parentReplyID); rerr == nil && reply.AuthorUserID.Valid {
-			s.emitActivity(ctx, reply.AuthorUserID, wallet.ActivityKeyForumSolutionMarked, "reply:"+parentReplyID.String())
+			s.emitActivity(ctx, reply.AuthorUserID, wallet.ActivityKeyForumSolutionMarked, "reply:"+parentReplyID.String(), nil)
 		}
 	}
 
@@ -910,15 +910,33 @@ func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityI
 	ref := fmt.Sprintf("%s%d", prefix, seq+1)
 
 	if value == 1 {
-		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionAdded, ref)
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionAdded, ref, nil)
 	} else if value == -1 {
-		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegative, ref)
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegative, ref, nil)
 	}
 
+	// Revert is a compensation entry: it applies the exact negative of the
+	// prior award's ledger amount (resolved at processing via undoes). No
+	// prior award event → nothing to undo (pre-feature votes, etc.).
+	var priorKey string
 	if prevValue == 1 {
-		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, ref+":undo")
+		priorKey = wallet.ActivityKeyReactionAdded
 	} else if prevValue == -1 {
-		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegativeReverted, ref+":undo")
+		priorKey = wallet.ActivityKeyReactionNegative
+	}
+	if priorKey == "" {
+		return
+	}
+	priorRef, err := s.store.read.GetLatestActivityEventReferenceByPrefixAndKey(ctx,
+		gen.GetLatestActivityEventReferenceByPrefixAndKeyParams{ActivityKey: priorKey, Prefix: prefix + "%"})
+	if err != nil {
+		return
+	}
+	undoes := map[string]interface{}{"undoes_key": priorKey, "undoes": priorRef}
+	if prevValue == 1 {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, ref+":undo", undoes)
+	} else {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegativeReverted, ref+":undo", undoes)
 	}
 }
 

@@ -222,11 +222,11 @@ func (s *Service) SetAsynqClient(c *asynq.Client) { s.asynq = c }
 func (s *Service) SetFolderResolver(r folderResolver) { s.folderResolver = r }
 
 // emitActivity records a points activity event — fire-and-forget (Rule 8).
-func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string) {
+func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
 	if s.activity == nil || !userID.Valid {
 		return
 	}
-	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{ActivityKey: key, Reference: reference})
+	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{ActivityKey: key, Reference: reference, Payload: payload})
 	if err != nil {
 		return // duplicate reference → already recorded
 	}
