@@ -26,7 +26,7 @@
 
 	const isMultiStep = $derived(!!form?.is_multi_step && (form?.steps?.length ?? 0) > 0);
 	const steps = $derived<Step[]>(
-		isMultiStep ? [...form!.steps].sort((a, b) => a.position - b.position) : []
+		isMultiStep ? [...(form!.steps ?? [])].sort((a, b) => a.position - b.position) : []
 	);
 	const sortedFields = $derived<FormField[]>(
 		isMultiStep

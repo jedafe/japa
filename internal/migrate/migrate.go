@@ -168,6 +168,33 @@ func FindMigrationsDir() string {
 	return "migrations"
 }
 
+// duplicatePrefixFiles returns a human-readable list of migration files that
+// share the same numeric prefix (e.g. two files numbered 000958). The 000735
+// baseline schema/seed pair is intentionally exempt — it is a designed pair,
+// not an authoring collision.
+func duplicatePrefixFiles(files []string) []string {
+	seen := map[string]string{}
+
+	var dups []string
+
+	for _, f := range files {
+		name := filepath.Base(f)
+		prefix, _, ok := strings.Cut(name, "_")
+		if !ok || prefix == "000735" {
+			continue
+		}
+
+		if prev, dup := seen[prefix]; dup {
+			dups = append(dups, fmt.Sprintf("%s (%s, %s)", prefix, prev, name))
+			continue
+		}
+
+		seen[prefix] = name
+	}
+
+	return dups
+}
+
 // ApplyPending ensures the schema_migrations table exists, lists the
 // forward migration files in dir, and applies every one not yet recorded,
 // in alphabetical (i.e. numeric-prefix) order. It returns the filenames
@@ -184,6 +211,16 @@ func ApplyPending(ctx context.Context, pool *pgxpool.Pool, dir string) ([]string
 	files, err := ListMigrationFiles(dir)
 	if err != nil {
 		return nil, fmt.Errorf("listing migration files: %w", err)
+	}
+
+	// Duplicate numeric prefixes are almost always an authoring accident:
+	// apply order between same-numbered files falls back to lexical sort
+	// rather than intent, and the filename-keyed tracker makes later renames
+	// painful. Fail fast so the collision is caught at migrate time instead
+	// of silently interleaving on fresh environments. The 000735 baseline
+	// pair (schema + seed) is the one intentional exception.
+	if dups := duplicatePrefixFiles(files); len(dups) > 0 {
+		return nil, fmt.Errorf("duplicate migration number prefixes: %s", strings.Join(dups, ", "))
 	}
 
 	applied, err := GetAppliedMigrations(ctx, pool)

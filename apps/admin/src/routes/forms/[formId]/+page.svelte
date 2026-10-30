@@ -993,16 +993,11 @@
 	{:else if activeTab === 'fields'}
 		{#if loadingFields}
 			<TableSkeleton />
-		{:else if form?.is_multi_step}
-			<!-- Multi-step: fields grouped per step -->
-			{#if steps.length === 0}
-				<Card class="mt-4">
-					<CardContent class="p-4">
-						<p class="py-8 text-center text-sm text-muted">{t('forms.addStepsFirst', 'Add steps first, then add fields to each step.')}</p>
-					</CardContent>
-				</Card>
-			{:else}
-				{#each steps as step, stepIdx (stepIdx)}
+		{:else if form?.is_multi_step && steps.length > 0}
+			<!-- Multi-step: fields grouped per step. A multi-step form with no
+				 steps yet can still hold form-level fields (e.g. the seeded
+				 readiness assessment) — those fall through to the flat list. -->
+			{#each steps as step, stepIdx (stepIdx)}
 					<Card class="mt-4">
 						<CardContent class="p-4">
 							<div class="mb-4 flex items-center justify-between">
@@ -1051,8 +1046,7 @@
 							{/if}
 						</CardContent>
 					</Card>
-				{/each}
-			{/if}
+			{/each}
 		{:else}
 			<!-- Non-multi-step: flat field list -->
 			<Card class="mt-4">
