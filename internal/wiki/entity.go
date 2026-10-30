@@ -217,6 +217,18 @@ type EntityPageDTO struct {
 	// universities, program → all offering universities); nil when the
 	// category has no related config or the listing is empty.
 	Related *EntityRelatedDTO `json:"related,omitempty"`
+	// Categories is the type's category tab strip — every slug resolves
+	// lazily on the entity, so the tabs are always complete.
+	Categories []EntityCategoryDTO `json:"categories,omitempty"`
+}
+
+// EntityCategoryDTO is one tab on an entity-bound wiki page — a category
+// slug from the type's template plus its display label and category token.
+// //nolint:revive // exported: DTO naming follows package convention.
+type EntityCategoryDTO struct {
+	Slug     string `json:"slug"`
+	Category string `json:"category"`
+	Label    string `json:"label"`
 }
 
 // EntitySiblingDTO is a sibling page on the same entity (index links).
@@ -338,6 +350,7 @@ func (s *Service) attachEntityContext(ctx context.Context, userID, typeID pgtype
 		SpaceTypeID: typeID, Token: dto.Category,
 	})
 	s.attachEntityFields(ctx, userID, typeID, kind, ref, dto, cat)
+	dto.Categories = s.entityTypeCategories(ctx, typeID)
 
 	// Sibling pages on the same entity — the tab strip of categories.
 	if rows, err := s.store.read.ListEntityWikiPages(ctx, gen.ListEntityWikiPagesParams{
@@ -419,6 +432,7 @@ func (s *Service) entityLazyPage(ctx context.Context, userID, typeID pgtype.UUID
 		EntityID: uuidStr(ref.ID), EntitySlug: ref.Slug, EntityName: ref.Name,
 		Slug: pageSlug, Lazy: true,
 	}
+	base.Categories = s.entityTypeCategories(ctx, typeID)
 	// Page-template match first (subpages take precedence). {name} in
 	// the label resolves to the entity name — same substitution the
 	// space path runs via substituteTemplateLabel.
@@ -589,6 +603,23 @@ func (s *Service) directoryCoveredEntitySlugs(ctx context.Context, spaceTypeID p
 		for _, et := range entTypes {
 			out[et.TypeSlug] = true
 		}
+	}
+	return out
+}
+
+// entityTypeCategories lists a wiki type's category template as tab items
+// — entity pages resolve any category slug lazily, so every row earns a
+// tab regardless of materialization.
+func (s *Service) entityTypeCategories(ctx context.Context, spaceTypeID pgtype.UUID) []EntityCategoryDTO {
+	cats, err := s.store.ListWikiTypeCategories(ctx, spaceTypeID)
+	if err != nil {
+		return nil
+	}
+	out := make([]EntityCategoryDTO, 0, len(cats))
+	for _, c := range cats {
+		out = append(out, EntityCategoryDTO{
+			Slug: c.Slug, Category: c.Category, Label: bareNameTokenLabel(c.Label),
+		})
 	}
 	return out
 }

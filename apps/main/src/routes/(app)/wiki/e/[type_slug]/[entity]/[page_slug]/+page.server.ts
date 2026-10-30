@@ -23,6 +23,8 @@ export interface EntityWikiPage {
 		id: string; slug: string; name: string;
 		fields: { key: string; label: string; field_type: string; value?: unknown; section?: string }[];
 	};
+	/** §wiki-links — category tab strip (lazy-resolvable type categories). */
+	categories?: { slug: string; category: string; label: string }[];
 	/** §wiki-links — mode:"related" peer listing (universities). */
 	related?: {
 		kind: string;

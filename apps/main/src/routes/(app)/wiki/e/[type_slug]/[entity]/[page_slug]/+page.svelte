@@ -52,6 +52,26 @@
 		</p>
 	</header>
 
+	{#if page.categories && page.categories.length > 1}
+		<nav
+			class="flex gap-1 overflow-x-auto border-b border-[var(--color-border)] pb-2"
+			aria-label={t('wiki.categories', 'Categories')}
+		>
+			{#each page.categories as cat (cat.slug)}
+				{@const active = cat.category === page.category}
+				<a
+					href={entityPageHref(page.type_slug, page.entity_slug, cat.slug)}
+					class="whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium transition-colors {active
+						? 'bg-[var(--color-primary)] text-white'
+						: 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
+				>
+					{cat.label}
+				</a>
+			{/each}
+		</nav>
+	{/if}
+
+
 	{#if htmlContent}
 		<div class="prose max-w-none">{@html htmlContent}</div>
 	{:else}
