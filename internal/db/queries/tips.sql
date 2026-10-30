@@ -2,14 +2,14 @@
 -- Ref: .jeos/sections/125-donations-tips.md
 
 -- name: UpsertTipSettings :one
-INSERT INTO tip_settings (owner_type, owner_id, tips_enabled, accept_points, accept_credits,
+INSERT INTO tip_settings (owner_type, owner_id, tips_enabled, accept_credits,
     accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted,
     min_tip_amount, thank_you_message)
-VALUES (@owner_type, @owner_id, @tips_enabled, @accept_points, @accept_credits,
+VALUES (@owner_type, @owner_id, @tips_enabled, @accept_credits,
     @accept_fiat, @accept_external, @oc_collective_slug, @oc_api_token_encrypted,
     @min_tip_amount, @thank_you_message)
 ON CONFLICT (owner_type, owner_id) DO UPDATE SET
-    tips_enabled = @tips_enabled, accept_points = @accept_points,
+    tips_enabled = @tips_enabled,
     accept_credits = @accept_credits, accept_fiat = @accept_fiat,
     accept_external = @accept_external,
     oc_collective_slug = COALESCE(@oc_collective_slug, tip_settings.oc_collective_slug),
@@ -54,11 +54,11 @@ SELECT * FROM tip_external_links WHERE tip_settings_id = @tip_settings_id ORDER 
 
 -- name: InsertTip :one
 INSERT INTO tips (sender_user_id, external_sender_name, recipient_type, recipient_user_id,
-    recipient_organization_id, content_id, method, points_amount, credits_amount,
+    recipient_organization_id, recipient_space_id, content_id, method, credits_amount,
     fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id,
     message, is_anonymous, status, idempotency_key)
 VALUES (@sender_user_id, @external_sender_name, @recipient_type, @recipient_user_id,
-    @recipient_organization_id, @content_id, @method, @points_amount, @credits_amount,
+    @recipient_organization_id, @recipient_space_id, @content_id, @method, @credits_amount,
     @fiat_amount, @fiat_currency, @fee_amount, @net_credits, @payment_id, @oc_contribution_id,
     @message, @is_anonymous, @status, @idempotency_key)
 RETURNING *;
@@ -100,18 +100,9 @@ ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
 -- name: CountTipsReceived :one
 SELECT count(*)::int FROM tips WHERE recipient_type = 'user' AND recipient_user_id = @recipient_user_id AND status = 'completed';
 
--- name: SumTipperPointsToday :one
--- Only completed tips count — a refunded tip returned the points, so it
--- must not keep eating the sender's daily anti-laundering cap.
-SELECT COALESCE(sum(points_amount),0)::bigint FROM tips
-WHERE sender_user_id = @sender_user_id AND method = 'points'
-  AND status = 'completed'
-  AND created_at >= (date_trunc('day', timezone('UTC', now()))) AT TIME ZONE 'UTC';
-
 -- name: ContentTipSummary :one
 SELECT count(*)::int AS tip_count,
-       COALESCE(sum(net_credits),0)::bigint AS credits_total,
-       COALESCE(sum(points_amount),0)::bigint AS points_total
+       COALESCE(sum(net_credits),0)::bigint AS credits_total
 FROM tips WHERE content_id = @content_id AND status = 'completed';
 
 -- name: AdminListTips :many
@@ -160,14 +151,6 @@ WHERE id = @id AND status = 'pending';
 -- Title lookup for tip.received notifications on content-anchored tips.
 SELECT title FROM contents WHERE id = @id;
 
--- name: SumRecipientPointsToday :one
--- Recipient-side mirror of the sender cap — co-conspirator pairs can't
--- launder unlimited points through one wallet per UTC day (0=unlimited).
-SELECT COALESCE(sum(points_amount),0)::bigint FROM tips
-WHERE recipient_type = 'user' AND recipient_user_id = @recipient_user_id
-  AND method = 'points' AND status = 'completed'
-  AND created_at >= (date_trunc('day', timezone('UTC', now()))) AT TIME ZONE 'UTC';
-
 -- name: ListStalePendingTips :many
 -- Janitor input: pending tips past the TTL whose payment can no longer
 -- charge the donor (missing, or any non-succeeded status).
@@ -182,3 +165,27 @@ LIMIT @lim;
 SELECT fiat_currency, COALESCE(sum(fiat_amount),0)::bigint AS minor
 FROM tips WHERE status = 'completed' AND fiat_currency IS NOT NULL
   AND created_at >= @since GROUP BY fiat_currency;
+
+-- name: ListTipsBySpace :many
+-- §05 space tips ledger — newest first.
+SELECT * FROM tips WHERE recipient_space_id = @space_id
+ORDER BY created_at DESC LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountTipsBySpace :one
+SELECT COUNT(*) FROM tips WHERE recipient_space_id = @space_id;
+
+-- name: GetSpaceOwnerUserID :one
+-- Approved owner row → settlement wallet for space tips.
+SELECT user_id FROM space_members
+WHERE space_id = @space_id AND role = 'owner' AND status = 'approved'
+ORDER BY joined_at ASC LIMIT 1;
+
+-- name: GetSpaceTipEligibility :one
+-- §05 space tips: eligibility + settlement fields in one lookup — member-
+-- created custom spaces only (level='custom' + creator + active + not
+-- wiki_only + not deleted).
+SELECT s.id, s.level, s.status, s.creator_user_id, s.deleted_at, s.visibility, s.joining_perm,
+ st.wiki_only
+FROM spaces s
+JOIN space_types st ON st.id = s.space_type_id
+WHERE s.id = @id;

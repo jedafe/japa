@@ -140,11 +140,10 @@ SELECT * FROM wallet_settings
 
 -- name: UpsertWalletSettings :one
 WITH existing AS (SELECT id FROM wallet_settings LIMIT 1)
-INSERT INTO wallet_settings (id, points_to_credits_rate, daily_earning_cap, enable_earning)
+INSERT INTO wallet_settings (id, daily_earning_cap, enable_earning)
 SELECT COALESCE((SELECT id FROM existing), gen_random_uuid()),
-       @points_to_credits_rate, @daily_earning_cap, @enable_earning
+       @daily_earning_cap, @enable_earning
 ON CONFLICT (id) DO UPDATE SET
- points_to_credits_rate = EXCLUDED.points_to_credits_rate,
  daily_earning_cap = EXCLUDED.daily_earning_cap,
  enable_earning = EXCLUDED.enable_earning,
  updated_at = now()

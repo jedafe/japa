@@ -250,46 +250,6 @@ func (h *Handlers) GetLedger(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(entries)})
 }
 
-// ConvertPoints handles POST /api/v1/wallet/convert.
-func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	var input struct {
-		PointsToConvert int64 `json:"points_to_convert"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
-		return
-	}
-
-	if input.PointsToConvert <= 0 {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "Points to convert must be positive")
-		return
-	}
-
-	pointsBalance, creditsBalance, err := h.Service.ConvertPointsToCredits(r.Context(), user.UserID, ConvertPointsToCreditsInput{
-		PointsToConvert: input.PointsToConvert,
-	})
-	if err != nil {
-		slog.Error("points conversion failed", "user_id", user.UserID, "points", input.PointsToConvert, "error", err)
-		errpkg.CaptureException(fmt.Errorf("points conversion failed (user=%s, points=%d): %w", user.UserID, input.PointsToConvert, err))
-		handleServiceError(w, err)
-
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]int64{
-			"points_balance":  pointsBalance,
-			"credits_balance": creditsBalance,
-		},
-	})
-}
-
 // GetSettings handles GET /api/v1/wallet/settings.
 func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
@@ -297,7 +257,7 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, minConvert, err := h.Service.GetWalletSettingsWithMinConvert(r.Context())
+	settings, err := h.Service.GetWalletSettings(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -305,21 +265,17 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"settings":           settings,
-			"min_convert_points": minConvert,
+			"settings": settings,
 		},
 	})
 }
 
 // GetMemberSettings handles GET /api/v1/me/wallet/settings.
 //
-// Member-facing, read-only view of the conversion rate and minimum convertible
-// points so the Wallet settings page can display the effective rate without
-// requiring the admin `wallet.admin.settings.manage` node. Reuses the same
-// service resolution path as the admin endpoint (per-platform wallet_settings
-// row → global system_settings → compiled defaults), returning the same
-// envelope shape (`{ settings, min_convert_points }`) the frontend already
-// reads.
+// Member-facing, read-only view of wallet limits — daily earn cap, earning
+// killswitch, and the purchase/withdrawal minimums the wallet pages need —
+// without requiring the admin `wallet.admin.settings.manage` node (ADR-129:
+// conversion fields removed; Points and Credits never exchange).
 //
 // Ref: japaconnect-engineering/sections/28-wallet-credits.md (Wallet API Routes).
 func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
@@ -328,20 +284,15 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, minConvert, err := h.Service.GetWalletSettingsWithMinConvert(r.Context())
+	settings, err := h.Service.GetWalletSettings(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	// Member-facing shape: only the effective values, resolved with defaults —
-	// internal row internals (id/timestamps) are meaningless here and
-	// serialized as null when the settings row is synthesized from
-	// system_settings fallbacks.
 	memberSettings := map[string]any{
-		"points_to_credits_rate": settings.PointsToCreditsRate,
-		"daily_earning_cap":      settings.DailyEarningCap,
-		"enable_earning":         settings.EnableEarning,
+		"daily_earning_cap": settings.DailyEarningCap,
+		"enable_earning":    settings.EnableEarning,
 	}
 
 	// min_purchase_credits from system_settings (default 100, Section 58).
@@ -363,7 +314,6 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"settings":               memberSettings,
-			"min_convert_points":     minConvert,
 			"min_purchase_credits":   minPurchaseCredits,
 			"min_withdrawal_credits": minWithdrawalCredits,
 		},
@@ -378,9 +328,8 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		PointsToCreditsRate int32 `json:"points_to_credits_rate"`
-		DailyEarningCap     int32 `json:"daily_earning_cap"`
-		EnableEarning       bool  `json:"enable_earning"`
+		DailyEarningCap int32 `json:"daily_earning_cap"`
+		EnableEarning   bool  `json:"enable_earning"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -388,15 +337,9 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.PointsToCreditsRate <= 0 {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_rate", "points_to_credits_rate must be positive")
-		return
-	}
-
 	settings, err := h.Service.UpdateWalletSettings(r.Context(), UpdateWalletSettingsInput{
-		PointsToCreditsRate: input.PointsToCreditsRate,
-		DailyEarningCap:     input.DailyEarningCap,
-		EnableEarning:       input.EnableEarning,
+		DailyEarningCap: input.DailyEarningCap,
+		EnableEarning:   input.EnableEarning,
 	})
 	if err != nil {
 		handleServiceError(w, err)

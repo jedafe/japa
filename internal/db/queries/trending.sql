@@ -76,6 +76,19 @@ FROM (
  AND ts.expires_at > now()
  AND ($2::text IS NULL OR $2::text = '' OR ts.geo_code = $2)
  AND s.deleted_at IS NULL
+ -- Member-created spaces only — primary (auto-joined geo + platform-seeded)
+ -- spaces are not a discovery surface (Section 05 amendment).
+ AND s.level = 'custom'
+ AND s.creator_user_id IS NOT NULL
+ -- member-selectable type only — universities are primary like geo (§05 amendment).
+ AND EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university'
+ )
+ -- §80 wiki-only types (attraction) — never a trending surface.
+ AND NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
+ )
  ORDER BY s.id, ts.score DESC
 ) dedup
 ORDER BY score DESC
@@ -181,6 +194,15 @@ WHERE s.id NOT IN (
  SELECT space_id FROM space_members WHERE user_id = $1
 )
 AND s.deleted_at IS NULL
+-- Member-created spaces only — primary (auto-joined geo + platform-seeded)
+-- spaces are not a suggestion surface (Section 05 amendment).
+AND s.level = 'custom'
+AND s.creator_user_id IS NOT NULL
+-- member-selectable type only — universities are primary like geo (§05 amendment).
+AND st.category IS NOT NULL
+AND st.slug <> 'university'
+-- §80 wiki-only types (attraction) — never a suggestion surface.
+AND NOT st.wiki_only
 GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code, st.slug
 ORDER BY (CASE WHEN s.geo_code = sqlc.narg(geo_code) THEN 0 ELSE 1 END),
  (CASE WHEN st.slug = ANY(COALESCE(sqlc.narg(demote_space_types)::text[], '{}'::text[])) THEN 1 ELSE 0 END),

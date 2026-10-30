@@ -571,8 +571,6 @@ var defaultSettings = map[string]SettingCategory{
 		Key:   "wallet",
 		Label: "Wallet",
 		Settings: []SettingDef{
-			{Key: "min_convert_points", Label: "Min Convert Points", Type: "number"},
-			{Key: "points_to_credit_rate", Label: "Points to Credit Rate", Type: "number", Description: "1 point = N credits"},
 			{Key: "max_daily_earn_points", Label: "Max Daily Earn Points", Type: "number"},
 			{Key: "credit_purchase_enabled", Label: "Credit Purchase Enabled", Type: "toggle", Description: "Killswitch for credit purchasing. When false, `POST /wallet/purchase-credits` returns 403; spending existing credits still works. Ref: Section 58.", Value: true},
 			{Key: "default_currency", Label: "Default Currency", Type: "text", Description: "Fallback currency code when user has no country/preference (ISO 4217). Ref: Section 58, ADR-065.", Value: "NGN"},

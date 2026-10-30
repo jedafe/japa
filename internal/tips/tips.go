@@ -1,16 +1,20 @@
 // Package tips implements the Donations & Tips system (Section 125).
 // Three recipient kinds — platform, member (creator/mentor), organization —
-// settle over four methods: points/credits wallet-ledger pairs
-// (source='tip'), fiat via §17 payments (purpose_type='donation') settling
-// to recipient credits, and imported Open Collective contributions.
+// settle over credits wallet-ledger pairs (source='tip'), fiat via §17
+// payments (purpose_type='donation') settling to recipient credits, and
+// imported Open Collective contributions. ADR-129: points are no longer a
+// tip method — the sender earns tip.sent activity points instead.
 package tips
 
 import (
 	"context"
 	"errors"
+	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // Recipient kinds.
@@ -18,11 +22,15 @@ const (
 	RecipientPlatform     = "platform"
 	RecipientUser         = "user"
 	RecipientOrganization = "organization"
+	// §05 space tips: member-created custom spaces may receive tips; the
+	// credits land on the space owner's wallet (recipient_user_id snapshot).
+	RecipientSpace = "space"
 )
 
-// Settle methods (tips.method CHECK mirror).
+// Settle methods (tips.method CHECK mirror — the CHECK still allows
+// 'points' for historical rows; it is never produced in code, ADR-129).
 const (
-	MethodPoints         = "points"
+	MethodPoints         = "points" // retired — historical rows only
 	MethodCredits        = "credits"
 	MethodOpenCollective = "opencollective"
 )
@@ -57,12 +65,11 @@ var (
 	ErrAboveMaximum        = errors.New("tip above maximum")
 	ErrSelfTip             = errors.New("cannot tip yourself")
 	ErrInsufficientBalance = errors.New("insufficient balance")
-	ErrDailyPointsLimit    = errors.New("daily points tip limit reached")
-	ErrDailyRecipientLimit = errors.New("recipient daily points tip limit reached")
 	ErrNotEligible         = errors.New("tips.receive permission or mentor profile required")
 	ErrNotFound            = errors.New("tip or settings not found")
 	ErrInvalidMethod       = errors.New("invalid tip method")
 	ErrInvalidRecipient    = errors.New("invalid tip recipient")
+	ErrTipsNotAllowed      = errors.New("tips not allowed for this space")
 	ErrInvalidAmount       = errors.New("invalid tip amount")
 	ErrInvalidLink         = errors.New("invalid external link")
 	ErrTooManyLinks        = errors.New("too many external links")
@@ -84,9 +91,10 @@ var fiatMethods = map[string]bool{
 // IsFiatMethod reports whether m settles via a payment provider.
 func IsFiatMethod(m string) bool { return fiatMethods[m] }
 
-// IsValidMethod reports whether m is a tips.method enum value.
+// IsValidMethod reports whether m is a creatable tips.method value.
+// 'points' is deliberately excluded — retired (ADR-129).
 func IsValidMethod(m string) bool {
-	return m == MethodPoints || m == MethodCredits || m == MethodOpenCollective || fiatMethods[m]
+	return m == MethodCredits || m == MethodOpenCollective || fiatMethods[m]
 }
 
 // Owner identifies a tip_settings row's owner.
@@ -108,6 +116,9 @@ func PlatformOwner() Owner {
 	return Owner{Type: RecipientPlatform, ID: id}
 }
 
+// SpaceOwner returns the owner handle for a member-created custom space.
+func SpaceOwner(id pgtype.UUID) Owner { return Owner{Type: RecipientSpace, ID: id} }
+
 // Settings is the service-level view of a tip_settings row. The OC token
 // ciphertext never leaves the service — HasOCToken derives presence.
 type Settings struct {
@@ -115,7 +126,6 @@ type Settings struct {
 	OwnerType        string      `json:"owner_type"`
 	OwnerID          pgtype.UUID `json:"owner_id"`
 	TipsEnabled      bool        `json:"tips_enabled"`
-	AcceptPoints     bool        `json:"accept_points"`
 	AcceptCredits    bool        `json:"accept_credits"`
 	AcceptFiat       bool        `json:"accept_fiat"`
 	AcceptExternal   bool        `json:"accept_external"`
@@ -132,7 +142,6 @@ type Settings struct {
 // their current values (PUT semantics: body sends all fields).
 type UpdateSettingsInput struct {
 	TipsEnabled     bool    `json:"tips_enabled"`
-	AcceptPoints    bool    `json:"accept_points"`
 	AcceptCredits   bool    `json:"accept_credits"`
 	AcceptFiat      bool    `json:"accept_fiat"`
 	AcceptExternal  bool    `json:"accept_external"`
@@ -182,7 +191,6 @@ type Tip struct {
 	RecipientName   string             `json:"recipient_name,omitempty"`
 	ContentID       pgtype.UUID        `json:"content_id,omitempty"`
 	Method          string             `json:"method"`
-	PointsAmount    int64              `json:"points_amount"`
 	CreditsAmount   int64              `json:"credits_amount"`
 	FiatAmount      *int64             `json:"fiat_amount,omitempty"`
 	FiatCurrency    *string            `json:"fiat_currency,omitempty"`
@@ -197,17 +205,17 @@ type Tip struct {
 
 // CreateTipInput is the POST /tips payload.
 type CreateTipInput struct {
-	RecipientType   string      `json:"recipient_type"` // user|organization|platform
-	RecipientUserID pgtype.UUID `json:"-"`
-	RecipientOrgID  pgtype.UUID `json:"-"`
-	ContentID       pgtype.UUID `json:"-"`
-	Method          string      `json:"method"`
-	PointsAmount    int64       `json:"points_amount,omitempty"`
-	CreditsAmount   int64       `json:"credits_amount,omitempty"`
-	FiatAmount      int64       `json:"fiat_amount,omitempty"`
-	FiatCurrency    string      `json:"fiat_currency,omitempty"`
-	Message         string      `json:"message,omitempty"`
-	IsAnonymous     bool        `json:"is_anonymous"`
+	RecipientType    string      `json:"recipient_type"` // user|organization|platform
+	RecipientUserID  pgtype.UUID `json:"-"`
+	RecipientOrgID   pgtype.UUID `json:"-"`
+	RecipientSpaceID pgtype.UUID `json:"-"`
+	ContentID        pgtype.UUID `json:"-"`
+	Method           string      `json:"method"`
+	CreditsAmount    int64       `json:"credits_amount,omitempty"`
+	FiatAmount       int64       `json:"fiat_amount,omitempty"`
+	FiatCurrency     string      `json:"fiat_currency,omitempty"`
+	Message          string      `json:"message,omitempty"`
+	IsAnonymous      bool        `json:"is_anonymous"`
 }
 
 // CreateTipResult carries the tip plus a checkout URL for fiat methods.
@@ -331,7 +339,10 @@ type Service struct {
 	enqueuer     tipEnqueuer
 	locker       SyncLocker
 	clawNotifier NotificationCreator
-	siteURL      string
+	// activity emits wallet activity events — the tip.sent points award for
+	// the sender (ADR-129). Optional — nil-safe.
+	activity wallet.ActivityEmitter
+	siteURL  string
 }
 
 // SetSettings injects the global system_settings reader.
@@ -369,6 +380,34 @@ func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 
 // SetEnqueuer injects the Asynq enqueuer.
 func (s *Service) SetEnqueuer(e tipEnqueuer) { s.enqueuer = e }
+
+// SetActivityEmitter injects the wallet activity emitter used to award the
+// sender tip.sent points on settled tips (ADR-129 — the tip sender is the
+// points recipient, not the tip receiver). Optional — nil-safe.
+func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
+
+// emitActivity records a wallet activity event and enqueues its processing.
+// Fire-and-forget (Rule 8): failures are logged, never propagated.
+func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string) {
+	if s.activity == nil || !userID.Valid {
+		return
+	}
+
+	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{
+		ActivityKey: key,
+		Reference:   reference,
+	})
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("tips: emit activity event failed", "activity_key", key, "error", err)
+		}
+		return
+	}
+
+	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
+		slog.Warn("tips: enqueue activity event failed", "activity_key", key, "error", err)
+	}
+}
 
 // SetSiteURL sets the public site URL for building webhook URLs.
 func (s *Service) SetSiteURL(u string) { s.siteURL = u }

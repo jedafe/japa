@@ -19,7 +19,7 @@ DELETE FROM user_groups WHERE slug = @slug AND is_system = false;
 DELETE FROM user_groups WHERE id = @id AND is_system = false;
 
 -- name: GetUserGroupByID :one
-SELECT id, name, slug, is_system, description
+SELECT id, name, slug, is_system, description, tier
 FROM user_groups
 WHERE id = @id;
 
@@ -154,6 +154,27 @@ LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE ugm.group_id = @group_id
 ORDER BY u.username;
 
+-- name: ListGroupMembersPaged :many
+-- Paginated/searched member list for the admin group members modal — the
+-- unbounded ListGroupMembersWithUser is unsafe on the members system group
+-- (every registered user is a member).
+SELECT u.id, u.username, COALESCE(up.display_name, '')
+FROM user_group_memberships ugm
+JOIN users u ON ugm.user_id = u.id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE ugm.group_id = @group_id
+  AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR COALESCE(up.display_name, '') ILIKE '%' || @search || '%')
+ORDER BY u.username
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountGroupMembersFiltered :one
+SELECT COUNT(*)::int AS count
+FROM user_group_memberships ugm
+JOIN users u ON ugm.user_id = u.id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE ugm.group_id = @group_id
+  AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR COALESCE(up.display_name, '') ILIKE '%' || @search || '%');
+
 -- name: UpdateUserGroup :exec
 UPDATE user_groups SET name = @name, slug = @slug, description = @description WHERE id = @id;
 
@@ -171,6 +192,16 @@ SELECT id, name, slug
 FROM user_roles
 
 ORDER BY name;
+
+-- name: GetUserRoleByID :one
+SELECT id, name, slug
+FROM user_roles
+WHERE id = @id;
+
+-- name: GetUserRoleBySlug :one
+SELECT id, name, slug
+FROM user_roles
+WHERE slug = @slug;
 
 -- name: ListRolesPaginated :many
 -- user_count = distinct users holding the role through their group
@@ -241,7 +272,7 @@ DELETE FROM group_roles WHERE group_id = @group_id AND role_id = @role_id;
 DELETE FROM user_roles WHERE id = @role_id;
 
 -- name: UpdateUserRole :exec
-UPDATE user_roles SET name = @name WHERE id = @id;
+UPDATE user_roles SET name = @name, slug = @slug WHERE id = @id;
 
 -- =====================
 -- Permission Operations

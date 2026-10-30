@@ -1,6 +1,6 @@
 // create_test.go — §125 CreateTip validation + wallet-settlement paths:
 // eligibility, recipient resolution, self-tip, method acceptance, minimums,
-// daily points cap, fee math, idempotent replay.
+// retired points method, fee math, idempotent replay.
 package tips
 
 import (
@@ -50,7 +50,7 @@ func enabledRecipient(fs *fakeStore, owner Owner) gen.TipSetting {
 	row := gen.TipSetting{
 		ID:        mustUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
 		OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
-		AcceptPoints: true, AcceptCredits: true, AcceptFiat: true,
+		AcceptCredits: true, AcceptFiat: true,
 	}
 	fs.settings[key(owner.Type, owner.ID)] = row
 	return row
@@ -155,27 +155,14 @@ func TestCreateTipCreditsSettles(t *testing.T) {
 	}
 }
 
-func TestCreateTipPointsNoFeeAndDailyCap(t *testing.T) {
+func TestCreateTipPointsMethodRejected(t *testing.T) {
 	fs := newFakeStore()
-	fs.pointsToday = 490
 	enabledRecipient(fs, UserOwner(recipientID))
-	svc := &Service{
-		store:    fs,
-		settings: fakeSettings{m: map[string]any{"tips.enabled": true, "tips.fee_percent": 50, "tips.points_daily_limit": 500}},
-		perms:    fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}},
-	}
-	in := CreateTipInput{RecipientType: RecipientUser, RecipientUserID: recipientID, Method: MethodPoints, PointsAmount: 20}
-	if _, err := svc.CreateTip(context.Background(), senderID, in, ""); !errors.Is(err, ErrDailyPointsLimit) {
-		t.Fatalf("expected daily limit, got %v", err)
-	}
-	fs.pointsToday = 100
-	res, err := svc.CreateTip(context.Background(), senderID, in, "")
-	if err != nil {
-		t.Fatalf("CreateTip: %v", err)
-	}
-	_ = res
-	if fs.settled[0].fee != 0 || fs.settled[0].net != 20 {
-		t.Fatalf("points should pass through whole: %+v", fs.settled[0])
+	svc := baseSvc(fs)
+	// ADR-129: points are retired as a tip method.
+	in := CreateTipInput{RecipientType: RecipientUser, RecipientUserID: recipientID, Method: MethodPoints, CreditsAmount: 20}
+	if _, err := svc.CreateTip(context.Background(), senderID, in, ""); !errors.Is(err, ErrInvalidMethod) {
+		t.Fatalf("expected invalid method, got %v", err)
 	}
 }
 

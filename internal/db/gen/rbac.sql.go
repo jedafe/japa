@@ -110,6 +110,27 @@ func (q *Queries) CountGroupMembers(ctx context.Context) ([]CountGroupMembersRow
 	return items, nil
 }
 
+const countGroupMembersFiltered = `-- name: CountGroupMembersFiltered :one
+SELECT COUNT(*)::int AS count
+FROM user_group_memberships ugm
+JOIN users u ON ugm.user_id = u.id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE ugm.group_id = $1
+  AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR COALESCE(up.display_name, '') ILIKE '%' || $2 || '%')
+`
+
+type CountGroupMembersFilteredParams struct {
+	GroupID pgtype.UUID `json:"group_id"`
+	Search  string      `json:"search"`
+}
+
+func (q *Queries) CountGroupMembersFiltered(ctx context.Context, arg CountGroupMembersFilteredParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countGroupMembersFiltered, arg.GroupID, arg.Search)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countGroupsByRole = `-- name: CountGroupsByRole :many
 SELECT gr.role_id, COUNT(gr.group_id)::int AS group_count
 FROM group_roles gr
@@ -249,7 +270,7 @@ func (q *Queries) DeleteUserRole(ctx context.Context, roleID pgtype.UUID) error 
 }
 
 const getUserGroupByID = `-- name: GetUserGroupByID :one
-SELECT id, name, slug, is_system, description
+SELECT id, name, slug, is_system, description, tier
 FROM user_groups
 WHERE id = $1
 `
@@ -260,6 +281,7 @@ type GetUserGroupByIDRow struct {
 	Slug        string      `json:"slug"`
 	IsSystem    bool        `json:"is_system"`
 	Description *string     `json:"description"`
+	Tier        *string     `json:"tier"`
 }
 
 func (q *Queries) GetUserGroupByID(ctx context.Context, id pgtype.UUID) (GetUserGroupByIDRow, error) {
@@ -271,6 +293,7 @@ func (q *Queries) GetUserGroupByID(ctx context.Context, id pgtype.UUID) (GetUser
 		&i.Slug,
 		&i.IsSystem,
 		&i.Description,
+		&i.Tier,
 	)
 	return i, err
 }
@@ -301,6 +324,44 @@ func (q *Queries) GetUserGroupBySlug(ctx context.Context, slug string) (GetUserG
 		&i.IsSystem,
 		&i.Description,
 	)
+	return i, err
+}
+
+const getUserRoleByID = `-- name: GetUserRoleByID :one
+SELECT id, name, slug
+FROM user_roles
+WHERE id = $1
+`
+
+type GetUserRoleByIDRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+	Slug string      `json:"slug"`
+}
+
+func (q *Queries) GetUserRoleByID(ctx context.Context, id pgtype.UUID) (GetUserRoleByIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserRoleByID, id)
+	var i GetUserRoleByIDRow
+	err := row.Scan(&i.ID, &i.Name, &i.Slug)
+	return i, err
+}
+
+const getUserRoleBySlug = `-- name: GetUserRoleBySlug :one
+SELECT id, name, slug
+FROM user_roles
+WHERE slug = $1
+`
+
+type GetUserRoleBySlugRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+	Slug string      `json:"slug"`
+}
+
+func (q *Queries) GetUserRoleBySlug(ctx context.Context, slug string) (GetUserRoleBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getUserRoleBySlug, slug)
+	var i GetUserRoleBySlugRow
+	err := row.Scan(&i.ID, &i.Name, &i.Slug)
 	return i, err
 }
 
@@ -453,6 +514,58 @@ func (q *Queries) ListGroupMembersByGroupID(ctx context.Context, groupID pgtype.
 			return nil, err
 		}
 		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGroupMembersPaged = `-- name: ListGroupMembersPaged :many
+SELECT u.id, u.username, COALESCE(up.display_name, '')
+FROM user_group_memberships ugm
+JOIN users u ON ugm.user_id = u.id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE ugm.group_id = $1
+  AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR COALESCE(up.display_name, '') ILIKE '%' || $2 || '%')
+ORDER BY u.username
+LIMIT $4 OFFSET $3
+`
+
+type ListGroupMembersPagedParams struct {
+	GroupID    pgtype.UUID `json:"group_id"`
+	Search     string      `json:"search"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListGroupMembersPagedRow struct {
+	ID          pgtype.UUID `json:"id"`
+	Username    string      `json:"username"`
+	DisplayName string      `json:"display_name"`
+}
+
+// Paginated/searched member list for the admin group members modal — the
+// unbounded ListGroupMembersWithUser is unsafe on the members system group
+// (every registered user is a member).
+func (q *Queries) ListGroupMembersPaged(ctx context.Context, arg ListGroupMembersPagedParams) ([]ListGroupMembersPagedRow, error) {
+	rows, err := q.db.Query(ctx, listGroupMembersPaged,
+		arg.GroupID,
+		arg.Search,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGroupMembersPagedRow
+	for rows.Next() {
+		var i ListGroupMembersPagedRow
+		if err := rows.Scan(&i.ID, &i.Username, &i.DisplayName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1109,15 +1222,16 @@ func (q *Queries) UpdateUserGroup(ctx context.Context, arg UpdateUserGroupParams
 }
 
 const updateUserRole = `-- name: UpdateUserRole :exec
-UPDATE user_roles SET name = $1 WHERE id = $2
+UPDATE user_roles SET name = $1, slug = $2 WHERE id = $3
 `
 
 type UpdateUserRoleParams struct {
 	Name string      `json:"name"`
+	Slug string      `json:"slug"`
 	ID   pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error {
-	_, err := q.db.Exec(ctx, updateUserRole, arg.Name, arg.ID)
+	_, err := q.db.Exec(ctx, updateUserRole, arg.Name, arg.Slug, arg.ID)
 	return err
 }

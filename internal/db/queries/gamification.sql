@@ -201,13 +201,12 @@ SET reward_claimed = true
 WHERE id = @id;
 
 -- =====================================================================
--- Leaderboard — computed from wallet_ledger. The all_time leaderboard
--- sums positive 'points' earns per user (lifetime_points semantics per
--- Section 28 — never decreases). The period leaderboard aggregates the
--- same ledger filtered by created_at for weekly/monthly windows.
--- NOTE: wallet_ledger.operation values are earn|spend|purchase|convert|
--- refund|clawback|admin_adjust — there is no 'credit' operation. Lifetime
--- points = SUM(amount) over positive entries, matching GetLifetimePoints.
+-- Leaderboard — computed from wallet_ledger. Ranks on the current points
+-- balance (SUM of all signed entries) so penalty entries (negative
+-- point_value rules: spam, downvotes, upheld reports) demote users —
+-- ADR-129. The period leaderboard aggregates the same ledger filtered by
+-- created_at for weekly/monthly windows. lifetime_points (positive earns
+-- only, GetLifetimePoints) remains the badge-threshold metric.
 -- space_id is nullable: when set, only members of that space rank
 -- (per-space scope, Section 64).
 -- =====================================================================
@@ -215,7 +214,7 @@ WHERE id = @id;
 -- name: LeaderboardAllTime :many
 SELECT
  wl.user_id,
- COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS lifetime_points,
+ COALESCE(SUM(wl.amount), 0)::bigint AS points_balance,
  COALESCE(u.public_username, u.username, '') AS username,
  up.display_name,
  up.avatar_url,
@@ -232,13 +231,13 @@ WHERE wl.ledger_type = 'points'
  WHERE sm.space_id = sqlc.narg(space_id)::uuid
  AND sm.user_id = wl.user_id))
 GROUP BY wl.user_id, u.username, u.public_username, up.display_name, up.avatar_url, u.profile_type
-ORDER BY lifetime_points DESC
+ORDER BY points_balance DESC
 LIMIT @top_n;
 
 -- name: LeaderboardByPeriod :many
 SELECT
  wl.user_id,
- COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS period_points,
+ COALESCE(SUM(wl.amount), 0)::bigint AS period_points,
  COALESCE(u.public_username, u.username, '') AS username,
  up.display_name,
  up.avatar_url,

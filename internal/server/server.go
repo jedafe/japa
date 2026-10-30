@@ -909,7 +909,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
-	walletService.SetSettings(settingsService) // SETTING-007/008: global conversion rate + min convert points
+	walletService.SetSettings(settingsService) // SETTING-007/008: global earn cap + currency settings
 	walletHandlers := wallet.NewHandlers(walletService)
 	walletService.SetEnqueuer(taskEnqueuer)
 
@@ -961,6 +961,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// seams are wired as they become available; the settings/config surface
 	// works without them.
 	tipsService := tips.NewService(database)
+	// §05: wire the tips-lookup so space PATCH can enforce tips-vs-paid
+	// mutual exclusivity (a space is either tips-funded or paid — never both).
+	spaceHandlers.SetTipSettingsChecker(tipsService)
 	tipsService.SetSettings(settingsService)
 	tipsService.SetPermChecker(tipsPermAdapter{rbac: rbacResolver})
 	tipsService.SetOrgChecker(tipsOrgAdapter{svc: orgService})
@@ -972,6 +975,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tipsService.SetNotifier(tipsNotifierAdapter{enq: taskEnqueuer})
 	tipsService.SetSyncLocker(tipsSyncLockAdapter{rdb: vkClient.Redis()})
 	tipsService.SetClawbackNotifier(tipsNotifyDispatchAdapter{svc: notificationService})
+	tipsService.SetActivityEmitter(walletService) // ADR-129: tip.sent points for the sender
 	tipsService.SetSiteURL(cfg.SiteURL)
 	tipsHandlers := tips.NewHandlers(tipsService)
 
@@ -3112,9 +3116,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	appealsService := appeals.NewService(database, ticketService)
 	appealsHandlers := appeals.NewHandlers(appealsService)
 	appealsService.SetAccessCacheInvalidator(func(ctx context.Context, uid pgtype.UUID) {
-		if err := rbac.InvalidatePermCache(ctx, vkClient.Redis(), uid); err != nil {
-			slog.Error("appeals: perm cache invalidation failed", "error", err)
-		}
+		// InvalidateUserCache clears L1 + L2 — the package-level
+		// InvalidatePermCache only clears L2, leaving this process's
+		// in-memory entries stale for up to 60s.
+		rbacResolver.InvalidateUserCache(ctx, uid)
 		// Both enforcement caches — a stale jc:restrictions entry would keep
 		// an overturned operation ban in effect until TTL expiry.
 		_ = vkClient.Redis().Del(ctx,
@@ -3937,6 +3942,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Invite path (§05 joining='invite'): owner/mod/admin adds a member directly.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Post("/spaces/{slug}/members", spaceHandlers.AddMember)
+			// Space tips (§05 addendum): public button state, owner writes, tips ledger.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).
+				Get("/spaces/{slug}/tip-settings", tipsHandlers.GetSpaceTipSettings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Patch("/spaces/{slug}/tip-settings", tipsHandlers.UpdateSpaceTipSettings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/spaces/{slug}/tips", tipsHandlers.ListSpaceTips)
 
 			// Space follow/unfollow (Section 31) — M5: rate-limited
 			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), spaces.SpaceResolver(spaceService), mw.RateLimit(vkClient.Redis(), "moderate")).
@@ -5070,14 +5082,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/wallet/credits", walletHandlers.GetCreditsBalance)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
 					Get("/me/wallet/ledger", walletHandlers.GetLedger)
-					// Member-facing, read-only conversion rate + min convert (catalog: /me/wallet/settings).
-				// Reuses wallet.points.balance — anyone who can view their balance can view the rate.
+					// Member-facing, read-only wallet limits (catalog: /me/wallet/settings).
+				// Reuses wallet.points.balance — anyone who can view their balance can view them.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
 					Get("/me/wallet/settings", walletHandlers.GetMemberSettings)
-					// Conversion — idempotency middleware prevents duplicate point-to-credit conversions. See AUDIT-BE-004 / Rule 9.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.convert"),
-					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
-					Post("/me/wallet/convert", walletHandlers.ConvertPoints)
 				// Settings (admin)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
 					Get("/admin/wallet/settings", walletHandlers.GetSettings)
@@ -6917,6 +6925,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// affected group members' caches (Rule 6).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.rbac.manage")).
 				Post("/admin/user-groups/{id}/roles", rbacHandlers.AssignRoleToGroup)
+			// AUDIT-RULE6: role detach mutates group_roles → members' caches
+			// are invalidated inside the store (Rule 6).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.rbac.manage")).
+				Delete("/admin/user-groups/{id}/roles/{roleId}", rbacHandlers.RemoveRoleFromGroup)
+			// Additive grant: merge permission keys into the group's role
+			// without replacing existing grants (PATCH = full-set replace).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.rbac.manage")).
+				Post("/admin/user-groups/{id}/permissions", rbacHandlers.AddGroupPermissions)
 
 			// GetUserPermissions resolves the CALLER's own permission set (no admin
 			// gate in the handler itself) — was never registered as a route, so the
@@ -6994,6 +7010,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/roles/{id}", rbacHandlers.UpdateRole)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
 				Patch("/admin/roles/{id}/permissions", rbacHandlers.SetRolePermissions)
+			// AUDIT-RULE6: revoking one node mutates role_permissions → members'
+			// caches are invalidated inside the store (Rule 6).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermissionWithInvalidation(rbacResolver, "admin.rbac.manage")).
+				Delete("/admin/roles/{id}/permissions/{key}", rbacHandlers.RemovePermissionFromRole)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.rbac.manage")).
 				Patch("/admin/user-groups/{id}", rbacHandlers.UpdateGroup)
 
@@ -9058,8 +9078,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(rbac.RequirePermission(rbacResolver, "system.settings.view")).
 				Get("/deployments", controlHandlers.ListDeployments)
 
-			// Permission Nodes — list all registered permission nodes
-			r.Get("/permission-nodes", controlHandlers.ListPermissionNodes)
+			// Permission Nodes — list all registered permission nodes. Gated
+			// on the RBAC view node for parity with the admin roles surface.
+			r.With(rbac.RequirePermission(rbacResolver, "admin.roles.view")).
+				Get("/permission-nodes", controlHandlers.ListPermissionNodes)
 
 			// Webhook Endpoints — control-panel CRUD. Mutations require
 			// api.keys.manage (outbound-integration secrets surface); reads

@@ -3259,30 +3259,28 @@ func authUserFromContext(r *http.Request) pgtype.UUID {
 // Permission Nodes Handler (RBAC CRUD gap — lists all registered nodes)
 // ---------------------------------------------------------------------------
 
-// ListPermissionNodes is an exported method.
+// ListPermissionNodes returns every registered RBAC permission key via the
+// generated queries (the raw-SQL version bypassed the sqlc layer).
 func (h *Handlers) ListPermissionNodes(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.DB.Reader.Query(r.Context(), `SELECT key, description FROM permissions ORDER BY key`)
+	rows, err := gen.New(h.DB.Reader).ListAllPermissions(r.Context())
 	if err != nil {
 		slog.Error("control: list permission nodes", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list permission nodes")
 
 		return
 	}
-	defer rows.Close()
 
 	type permNode struct {
 		Key         string `json:"key"`
 		Description string `json:"description"`
 	}
 
-	nodes := make([]permNode, 0)
-
-	for rows.Next() {
-		var n permNode
-		if err := rows.Scan(&n.Key, &n.Description); err != nil {
-			continue
+	nodes := make([]permNode, 0, len(rows))
+	for _, p := range rows {
+		n := permNode{Key: p.Key}
+		if p.Description != nil {
+			n.Description = *p.Description
 		}
-
 		nodes = append(nodes, n)
 	}
 

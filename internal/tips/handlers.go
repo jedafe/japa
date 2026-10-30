@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/middleware"
 )
@@ -54,6 +55,8 @@ func writeTipError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_method", "Invalid tip method")
 	case errors.Is(err, ErrInvalidRecipient):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_recipient", "Invalid tip recipient")
+	case errors.Is(err, ErrTipsNotAllowed):
+		errpkg.WriteError(w, http.StatusConflict, "tips_not_allowed", "Tips are not enabled for this space")
 	case errors.Is(err, ErrInvalidAmount):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "Invalid tip amount")
 	case errors.Is(err, ErrBelowMinimum):
@@ -64,10 +67,6 @@ func writeTipError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "self_tip", "You cannot tip yourself")
 	case errors.Is(err, ErrInsufficientBalance):
 		errpkg.WriteError(w, http.StatusBadRequest, "insufficient_balance", "Insufficient balance")
-	case errors.Is(err, ErrDailyPointsLimit):
-		errpkg.WriteError(w, http.StatusTooManyRequests, "daily_points_limit", "Daily points tip limit reached")
-	case errors.Is(err, ErrDailyRecipientLimit):
-		errpkg.WriteError(w, http.StatusTooManyRequests, "daily_recipient_points_limit", "Recipient daily points tip limit reached")
 	case errors.Is(err, ErrInvalidLink):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_link", "Invalid external link")
 	case errors.Is(err, ErrTooManyLinks):
@@ -449,8 +448,7 @@ func (h *Handlers) DisconnectOrgOC(w http.ResponseWriter, r *http.Request) {
 // --- Tip creation ---------------------------------------------------------------
 
 // createTipRequest is the POST /api/v1/tips body. `amount` maps onto the
-// per-method column: points→points_amount, credits→credits_amount,
-// fiat→fiat_amount.
+// per-method column: credits→credits_amount, fiat→fiat_amount.
 type createTipRequest struct {
 	RecipientType string `json:"recipient_type"`
 	RecipientID   string `json:"recipient_id"`
@@ -489,12 +487,9 @@ func (h *Handlers) CreateTip(w http.ResponseWriter, r *http.Request) {
 	input.Message = in.Message
 	input.IsAnonymous = in.IsAnonymous
 	input.FiatCurrency = in.Currency
-	switch in.Method {
-	case MethodPoints:
-		input.PointsAmount = in.Amount
-	case MethodCredits:
+	if in.Method == MethodCredits {
 		input.CreditsAmount = in.Amount
-	default:
+	} else {
 		input.FiatAmount = in.Amount
 	}
 	if in.RecipientID != "" {
@@ -505,6 +500,8 @@ func (h *Handlers) CreateTip(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.RecipientType == RecipientOrganization {
 			input.RecipientOrgID = rid
+		} else if in.RecipientType == RecipientSpace {
+			input.RecipientSpaceID = rid
 		} else {
 			input.RecipientUserID = rid
 		}
@@ -848,4 +845,139 @@ func (h *Handlers) AdminDeleteDonationLink(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// spaceBySlug resolves a space by slug for the space tip endpoints.
+func (h *Handlers) spaceBySlug(w http.ResponseWriter, r *http.Request) (gen.GetSpaceBySlugRow, bool) {
+	var space gen.GetSpaceBySlugRow
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space slug is required")
+		return space, false
+	}
+	space, err := h.service.store.getSpaceBySlug(r.Context(), slug)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+		return space, false
+	}
+	return space, true
+}
+
+// canViewSpaceTips enforces the same visibility contract as the spaces
+// endpoints: non-public spaces hide their tip config and ledger from
+// non-members; non-active spaces are manager-only (owner/mod/admin).
+func (h *Handlers) canViewSpaceTips(r *http.Request, spaceID pgtype.UUID, visibility, status string) bool {
+	if visibility == "public" && status == "active" {
+		return true
+	}
+	user := auth.FromContext(r.Context())
+	if user == nil || !user.UserID.Valid {
+		return false
+	}
+	ctx := r.Context()
+	// Managers (owner, assigned moderator, spaces.moderate/admin node) can
+	// always see the space's tip state — mirrors canManageRestrictedSpace.
+	isManager := false
+	if ok, err := h.service.store.checkSpaceOwnership(ctx, spaceID, user.UserID); err == nil && ok {
+		isManager = true
+	} else if ok, err := h.service.store.getSpaceModerator(ctx, spaceID, user.UserID); err == nil && ok {
+		isManager = true
+	} else if h.service.perms != nil &&
+		(h.service.perms.Can(ctx, user.UserID, "spaces.moderate") || h.service.perms.Can(ctx, user.UserID, "spaces.admin")) {
+		isManager = true
+	}
+	if status != "active" {
+		return isManager
+	}
+	if isManager {
+		return true
+	}
+	if ok, err := h.service.store.checkSpaceMembership(ctx, spaceID, user.UserID); err == nil && ok {
+		return true
+	}
+	return false
+}
+
+func spaceTipReadGate(h *Handlers, w http.ResponseWriter, r *http.Request, space gen.GetSpaceBySlugRow) bool {
+	if !h.canViewSpaceTips(r, space.ID, space.Visibility, space.Status) {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+		return false
+	}
+	return true
+}
+
+// GetSpaceTipSettings handles GET /api/v1/spaces/{slug}/tip-settings — the
+// public button state for a tip-eligible space.
+func (h *Handlers) GetSpaceTipSettings(w http.ResponseWriter, r *http.Request) {
+	space, ok := h.spaceBySlug(w, r)
+	if !ok || !spaceTipReadGate(h, w, r, space) {
+		return
+	}
+	cfg, err := h.service.PublicConfig(r.Context(), SpaceOwner(space.ID))
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cfg})
+}
+
+// UpdateSpaceTipSettings handles PATCH /api/v1/spaces/{slug}/tip-settings —
+// owner/admin only; the service re-checks ownership and eligibility.
+func (h *Handlers) UpdateSpaceTipSettings(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	space, ok := h.spaceBySlug(w, r)
+	if !ok {
+		return
+	}
+	var in UpdateSettingsInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	st, err := h.service.UpdateSettingsFor(r.Context(), SpaceOwner(space.ID), user.UserID, in)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
+}
+
+// ListSpaceTips handles GET /api/v1/spaces/{slug}/tips — paginated tips the
+// space has received.
+func (h *Handlers) ListSpaceTips(w http.ResponseWriter, r *http.Request) {
+	space, ok := h.spaceBySlug(w, r)
+	if !ok || !spaceTipReadGate(h, w, r, space) {
+		return
+	}
+	limit := parsePageSize(r)
+	offset := parsePage(r, limit)
+	rows, err := h.service.store.listTipsBySpace(r.Context(), gen.ListTipsBySpaceParams{
+		SpaceID: space.ID, PageLimit: limit, PageOffset: offset,
+	})
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tips")
+		return
+	}
+
+	// Anonymous tips hide sender identity for everyone except the recipient
+	// owner and tips moderators — same masking as the other tip lists.
+	mask := true
+	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
+		if ownerID, oerr := h.service.store.getSpaceTipRecipient(r.Context(), space.ID); oerr == nil && ownerID == user.UserID {
+			mask = false
+		}
+		if mask && h.service.perms != nil && h.service.perms.Can(r.Context(), user.UserID, "tips.moderate") {
+			mask = false
+		}
+	}
+	items := h.service.hydrateTips(r.Context(), rows, mask)
+
+	total, _ := h.service.store.countTipsBySpace(r.Context(), space.ID)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": items,
+		"meta": map[string]any{"total": total},
+	})
 }

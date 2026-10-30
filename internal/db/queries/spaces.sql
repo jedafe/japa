@@ -29,12 +29,14 @@ ORDER BY created_at ASC, id ASC;
 -- name: ListSpaceTypesFiltered :many
 -- Supports optional search (q), category filter, and a selectable-only flag
 -- for the admin panel and the member space-creation flow. Pass empty strings
--- and false booleans to skip filters.
+-- and false booleans to skip filters. Selectable = member-creatable types:
+-- has a category AND not 'university' (a platform-run primary type —
+-- universities are platform-seeded, never member-created).
 SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
 FROM space_types
 WHERE (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
  AND (@category_filter::text = '' OR category = @category_filter)
- AND (@selectable_only::boolean = false OR category IS NOT NULL)
+ AND (@selectable_only::boolean = false OR (category IS NOT NULL AND slug <> 'university'))
 ORDER BY created_at ASC, id ASC;
 
 -- name: GetSpaceTypeByID :one
@@ -76,15 +78,23 @@ WHERE id = @id AND is_system = false;
 -- =====================
 
 -- name: ListSpaces :many
--- Public discovery list. Filters by visibility so unauthenticated callers
--- only see public spaces; authenticated callers also see members/private
--- spaces they belong to (Section 05 line 272, §9 platform scoping).
--- Pass @viewer_user_id as NULL for unauthenticated requests.
+-- Public discovery list for external/internal consumers (/public/spaces,
+-- AI spaces.list, video default-space fallback) — includes primary spaces,
+-- which consumers legitimately need (geo pickers, attribution). The member-
+-- facing directory filter is opt-in on ListSpacesPaginated
+-- (@member_created). is_primary flags platform-run spaces. Filters by
+-- visibility so unauthenticated callers only see public spaces;
+-- authenticated callers also see members/private spaces they belong to
+-- (Section 05 line 272, §9 platform scoping). Pass @viewer_user_id as NULL
+-- for unauthenticated requests.
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code
+ s.updated_at, s.deleted_at, s.currency_code,
+ (s.creator_user_id IS NULL OR s.level <> 'custom' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university')) AS is_primary
 FROM spaces s
 WHERE s.deleted_at IS NULL
  AND s.status = 'active'
@@ -111,11 +121,20 @@ ORDER BY s.created_at DESC, s.id DESC;
 -- @joined_only restricts the list to spaces the viewer is an approved
 -- member of (the /spaces "My spaces" chip — Rule 16: server-side filter so
 -- pagination stays correct). @space_type_id filters by space type.
+-- @member_created restricts the list to member-created spaces (Section 05
+-- primary/member-created amendment: level='custom' AND creator_user_id IS NOT
+-- NULL) — the /spaces directory always passes it; internal geo pickers
+-- (?level=country|state|city, ?geo=) leave it off so primary spaces still
+-- resolve. is_primary flags platform-run spaces (geo levels or
+-- platform-seeded) so cards can suppress the Join CTA.
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code
+ s.updated_at, s.deleted_at, s.currency_code,
+ (s.creator_user_id IS NULL OR s.level <> 'custom' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university')) AS is_primary
 FROM spaces s
 WHERE s.deleted_at IS NULL
  AND s.status = 'active'
@@ -135,6 +154,15 @@ WHERE s.deleted_at IS NULL
  AND (@region::text = '' OR s.region = @region)
  AND (@subregion::text = '' OR s.subregion = @subregion)
  AND (@space_type_id::uuid IS NULL OR s.space_type_id = @space_type_id::uuid)
+ -- member-created = custom level + has a creator + member-selectable type
+ -- (category IS NOT NULL AND not university). University-typed spaces are
+ -- primary like geo regardless of creator (§05 amendment).
+ AND (@member_created::bool = false OR (
+ s.level = 'custom' AND s.creator_user_id IS NOT NULL
+ AND EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university'
+ )))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.
  AND NOT EXISTS (
@@ -185,6 +213,13 @@ WHERE s.deleted_at IS NULL
  AND (@region::text = '' OR s.region = @region)
  AND (@subregion::text = '' OR s.subregion = @subregion)
  AND (@space_type_id::uuid IS NULL OR s.space_type_id = @space_type_id::uuid)
+ -- @member_created mirrors ListSpacesPaginated (member-created spaces only).
+ AND (@member_created::bool = false OR (
+ s.level = 'custom' AND s.creator_user_id IS NOT NULL
+ AND EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university'
+ )))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.
  AND NOT EXISTS (
@@ -347,7 +382,10 @@ WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code,
+ (s.creator_user_id IS NULL OR s.level <> 'custom' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university')) AS is_primary
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE s.deleted_at IS NULL
@@ -373,6 +411,13 @@ WHERE s.deleted_at IS NULL
  AND (@level::text = '' OR s.level = @level)
  AND (@region::text = '' OR s.region = @region)
  AND (@subregion::text = '' OR s.subregion = @subregion)
+ -- @member_created mirrors ListSpacesPaginated (member-created spaces only).
+ AND (@member_created::bool = false OR (
+ s.level = 'custom' AND s.creator_user_id IS NOT NULL
+ AND EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university'
+ )))
  AND (
  @joined_only::bool = false
  OR (
@@ -423,6 +468,13 @@ WHERE s.deleted_at IS NULL
  AND (@level::text = '' OR s.level = @level)
  AND (@region::text = '' OR s.region = @region)
  AND (@subregion::text = '' OR s.subregion = @subregion)
+ -- @member_created mirrors ListSpacesByParentPaginated.
+ AND (@member_created::bool = false OR (
+ s.level = 'custom' AND s.creator_user_id IS NOT NULL
+ AND EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university'
+ )))
  AND (
  @joined_only::bool = false
  OR (
@@ -634,8 +686,14 @@ WHERE (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE 
 -- Returns the lean fields the main-app nav, composer, and dashboard need
 -- (id, name, slug, is_primary). is_primary is derived from the user's
 -- current_geo_space_id so the dashboard can badge the primary space.
+-- is_primary_space is the §05 platform-primary flag (geo level or
+-- platform-seeded type like university) — distinct from is_primary.
+-- @member_created restricts to member-created spaces (composers).
 SELECT s.id, s.name, s.slug, s.level, s.space_type_id,
- (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary
+ (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary,
+ (s.creator_user_id IS NULL OR s.level <> 'custom' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university')) AS is_primary_space
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 LEFT JOIN users u ON u.id = @user_id
@@ -643,6 +701,12 @@ WHERE sm.user_id = @user_id AND s.deleted_at IS NULL
  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
  AND (@level::text = '' OR s.level = @level)
  AND (@space_type_id::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = @space_type_id)
+ AND (@member_created::bool = false OR (
+ s.level = 'custom' AND s.creator_user_id IS NOT NULL
+ AND EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university'
+ )))
 ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) DESC, sm.joined_at DESC, s.id DESC
 LIMIT @limit_val OFFSET @offset_val;
 
@@ -651,14 +715,25 @@ LIMIT @limit_val OFFSET @offset_val;
 -- filter. Used by GET /me/spaces when the caller is a super_admin so they can
 -- post to any space without joining it first (Section 03 — admin override).
 -- Selects the lean fields and flags the caller's primary geo space.
+-- is_primary_space is the §05 platform-primary flag; @member_created
+-- restricts to member-created spaces (composers).
 SELECT s.id, s.name, s.slug, s.level, s.space_type_id,
- (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary
+ (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary,
+ (s.creator_user_id IS NULL OR s.level <> 'custom' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university')) AS is_primary_space
 FROM spaces s
 LEFT JOIN users u ON u.id = @user_id
 WHERE s.deleted_at IS NULL
  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
  AND (@level::text = '' OR s.level = @level)
  AND (@space_type_id::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = @space_type_id)
+ AND (@member_created::bool = false OR (
+ s.level = 'custom' AND s.creator_user_id IS NOT NULL
+ AND EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university'
+ )))
 ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) DESC, s.created_at DESC, s.id DESC
 LIMIT @limit_val OFFSET @offset_val;
 
@@ -744,7 +819,10 @@ ORDER BY s.name;
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code,
+ (creator_user_id IS NULL OR level <> 'custom' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = spaces.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university')) AS is_primary
 FROM spaces
 WHERE id = @id AND deleted_at IS NULL;
 
@@ -906,7 +984,10 @@ LIMIT 1;
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code,
+ (creator_user_id IS NULL OR level <> 'custom' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = spaces.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university')) AS is_primary
 FROM spaces
 WHERE deleted_at IS NULL
   AND (
@@ -926,7 +1007,10 @@ WHERE deleted_at IS NULL
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code,
+ (creator_user_id IS NULL OR level <> 'custom' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = spaces.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university')) AS is_primary
 FROM spaces
 WHERE slug = @slug
  AND visibility = 'public'
@@ -950,7 +1034,10 @@ WHERE geo_code = @geo_code
  AND deleted_at IS NULL;
 
 -- name: CreateSpace :one
-INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status) VALUES (sqlc.narg(parent_id), @space_type_id, @name, @slug, sqlc.narg(description), sqlc.narg(wiki_content), sqlc.narg(geo_code), @level, @visibility, @posting_perm, @replying_perm, @commenting_perm, @joining_perm, @status)
+-- creator_user_id is the member-created discriminator (§05 amendment):
+-- member creation paths (CreateSpaceWithOwner) set it; platform-seeded
+-- paths (universities, geo, attractions) leave it NULL → is_primary.
+INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, creator_user_id) VALUES (sqlc.narg(parent_id), @space_type_id, @name, @slug, sqlc.narg(description), sqlc.narg(wiki_content), sqlc.narg(geo_code), @level, @visibility, @posting_perm, @replying_perm, @commenting_perm, @joining_perm, @status, sqlc.narg(creator_user_id))
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
@@ -1027,13 +1114,15 @@ SELECT EXISTS(SELECT 1 FROM spaces WHERE id = @id AND deleted_at IS NULL) AS exi
 -- Dependency probe for the hard-delete path (subspaces must go first).
 SELECT EXISTS(SELECT 1 FROM spaces WHERE parent_id = @id) AS exists;
 
--- name: IncrementSpaceCount :exec
--- BUG-023: recompute from the authoritative table instead of incrementing
--- a delta — non-transactional +/- calls drifted the counter.
-UPDATE spaces
-SET member_count = (SELECT COUNT(*) FROM space_members sm
- WHERE sm.space_id = spaces.id AND sm.status = 'approved')
-WHERE spaces.id = @id;
+-- member_count is maintained by trg_space_member_count (migration 000967) —
+-- no IncrementSpaceCount query: every write path self-maintains the counter.
+-- Caveats: (1) rolling back 000967 must be paired with a code rollback, since
+-- no app-level increments remain; (2) the trigger is FOR EACH ROW — a bulk
+-- member insert path (e.g. a future seed) should use ALTER TABLE ...
+-- DISABLE TRIGGER + a recount afterward if it ever lands.
+-- post_count/follower_count still use the legacy increment pattern — drift
+-- was healed manually (16 + 2 rows); convert to the same trigger pattern
+-- when those counters are touched next.
 
 -- =====================
 -- Space Rules
@@ -1320,9 +1409,12 @@ ORDER BY s.name LIMIT 20;
 
 
 -- name: ListPublicSpacesByMemberUser :many
--- Public profile Spaces tab: PUBLIC, active spaces the user is a member of.
--- Excludes 'members'/'private' visibility and non-active spaces. Public-safe.
--- Includes the member's role (sm.role) so the profile card can show it.
+-- Public profile Spaces tab: PUBLIC, active member-created spaces the user
+-- is a member of. Excludes 'members'/'private' visibility, non-active
+-- spaces, and primary (auto-joined geo + platform-seeded) spaces — those are
+-- attached automatically, not communities the member chose to join.
+-- Public-safe. Includes the member's role (sm.role) so the profile card can
+-- show it.
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
@@ -1332,6 +1424,15 @@ FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 WHERE sm.user_id = @user_id
  AND s.visibility = 'public' AND s.status = 'active' AND s.deleted_at IS NULL
+ AND s.level = 'custom' AND s.creator_user_id IS NOT NULL
+ AND EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
+ AND st.category IS NOT NULL AND st.slug <> 'university'
+ )
+ -- §80 wiki-only types (attraction) — never on the member-facing profile.
+ AND NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
+ )
 ORDER BY sm.joined_at DESC, s.id DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -1578,3 +1679,11 @@ FROM spaces s WHERE s.id = @id;
 -- delete would then die on the FK).
 SELECT COUNT(*) AS total FROM spaces
 WHERE space_type_id = @space_type_id AND deleted_at IS NULL;
+
+-- name: GetSpaceVisibilityByIDs :many
+-- Batch visibility/state lookup used to post-filter space entities in
+-- social-graph lists (follows) — a non-public or non-active space must not
+-- be revealed to viewers who are not members.
+SELECT id, visibility, status, deleted_at
+FROM spaces
+WHERE id = ANY(@space_ids::uuid[]);

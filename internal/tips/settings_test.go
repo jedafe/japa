@@ -23,7 +23,6 @@ type fakeStore struct {
 	emailToUser   map[string]pgtype.UUID
 	idemTip       gen.Tip
 	hasIdemTip    bool
-	pointsToday   int64
 	contentAuthor pgtype.UUID
 	mentor        bool
 	mentorErr     error
@@ -43,6 +42,31 @@ func newFakeStore() *fakeStore {
 
 func key(t string, id pgtype.UUID) string { return t + ":" + id.String() }
 
+func (f *fakeStore) checkSpaceMembership(_ context.Context, _, _ pgtype.UUID) (bool, error) {
+	return false, nil
+}
+func (f *fakeStore) checkSpaceOwnership(_ context.Context, _, _ pgtype.UUID) (bool, error) {
+	return false, nil
+}
+func (f *fakeStore) getSpaceModerator(_ context.Context, _, _ pgtype.UUID) (bool, error) {
+	return false, nil
+}
+func (f *fakeStore) getSpaceTipOwner(_ context.Context, _ pgtype.UUID) (pgtype.UUID, error) {
+	return pgtype.UUID{}, ErrNotFound
+}
+func (f *fakeStore) getSpaceTipRecipient(_ context.Context, _ pgtype.UUID) (pgtype.UUID, error) {
+	return pgtype.UUID{}, ErrNotFound
+}
+func (f *fakeStore) getSpaceBySlug(_ context.Context, _ string) (gen.GetSpaceBySlugRow, error) {
+	return gen.GetSpaceBySlugRow{}, ErrNotFound
+}
+func (f *fakeStore) listTipsBySpace(_ context.Context, _ gen.ListTipsBySpaceParams) ([]gen.Tip, error) {
+	return nil, nil
+}
+func (f *fakeStore) countTipsBySpace(_ context.Context, _ pgtype.UUID) (int64, error) {
+	return 0, nil
+}
+
 func (f *fakeStore) getSettings(_ context.Context, t string, id pgtype.UUID) (gen.TipSetting, error) {
 	f.getCalls++
 	row, ok := f.settings[key(t, id)]
@@ -56,7 +80,7 @@ func (f *fakeStore) upsertSettings(_ context.Context, p gen.UpsertTipSettingsPar
 	f.upsertParams = p
 	row := gen.TipSetting{
 		ID: p.OwnerID, OwnerType: p.OwnerType, OwnerID: p.OwnerID,
-		TipsEnabled: p.TipsEnabled, AcceptPoints: p.AcceptPoints, AcceptCredits: p.AcceptCredits,
+		TipsEnabled: p.TipsEnabled, AcceptCredits: p.AcceptCredits,
 		AcceptFiat: p.AcceptFiat, AcceptExternal: p.AcceptExternal,
 		MinTipAmount: p.MinTipAmount, ThankYouMessage: p.ThankYouMessage,
 	}
@@ -121,9 +145,6 @@ func (f *fakeStore) listTipsReceived(context.Context, pgtype.UUID, int32, int32)
 	return nil, nil
 }
 func (f *fakeStore) countTipsReceived(context.Context, pgtype.UUID) (int32, error) { return 0, nil }
-func (f *fakeStore) sumTipperPointsToday(context.Context, pgtype.UUID) (int64, error) {
-	return f.pointsToday, nil
-}
 func (f *fakeStore) contentTipSummary(context.Context, pgtype.UUID) (gen.ContentTipSummaryRow, error) {
 	return gen.ContentTipSummaryRow{}, nil
 }
@@ -170,9 +191,6 @@ func (f *fakeStore) getOrgOwnerID(context.Context, pgtype.UUID) (pgtype.UUID, er
 	return f.orgOwner, nil
 }
 func (f *fakeStore) settleWalletTip(_ context.Context, p settleWalletParams) (gen.Tip, error) {
-	if p.pointsDailyLimit > 0 && f.pointsToday+p.gross > p.pointsDailyLimit {
-		return gen.Tip{}, ErrDailyPointsLimit
-	}
 	f.settled = append(f.settled, p)
 	return gen.Tip{Method: p.method, Status: StatusCompleted}, nil
 }
@@ -203,8 +221,8 @@ func TestGetSettingsDefaultWhenMissing(t *testing.T) {
 	if st.TipsEnabled || st.hasRow {
 		t.Fatal("expected disabled synthesized settings")
 	}
-	if !st.AcceptCredits || !st.AcceptPoints || !st.AcceptFiat {
-		t.Fatal("defaults should accept points/credits/fiat")
+	if !st.AcceptCredits || !st.AcceptFiat {
+		t.Fatal("defaults should accept credits/fiat")
 	}
 }
 
@@ -249,7 +267,7 @@ func TestPublicConfigMethods(t *testing.T) {
 	settingID := uid(t, "22222222-2222-2222-2222-222222222222")
 	fs.settings[key(owner.Type, owner.ID)] = gen.TipSetting{
 		ID: settingID, OwnerType: owner.Type, OwnerID: owner.ID, TipsEnabled: true,
-		AcceptPoints: true, AcceptCredits: false, AcceptFiat: false, AcceptExternal: true,
+		AcceptCredits: false, AcceptFiat: false, AcceptExternal: true,
 		OcCollectiveSlug: &slug,
 	}
 	fs.links[settingID] = []gen.TipExternalLink{{Kind: "paypal", Label: "PayPal", Url: "https://paypal.me/x"}}
@@ -262,7 +280,7 @@ func TestPublicConfigMethods(t *testing.T) {
 	if !cfg.Enabled {
 		t.Fatal("expected enabled")
 	}
-	want := map[string]bool{MethodPoints: true, MethodOpenCollective: true}
+	want := map[string]bool{MethodOpenCollective: true}
 	for _, m := range cfg.Methods {
 		delete(want, m)
 	}
@@ -368,9 +386,6 @@ func (f *fakeStore) listStalePendingTips(context.Context, int32, int32) ([]pgtyp
 }
 func (f *fakeStore) adminTipStatsByCurrency(context.Context, pgtype.Timestamptz) ([]gen.AdminTipStatsByCurrencyRow, error) {
 	return nil, nil
-}
-func (f *fakeStore) sumRecipientPointsToday(context.Context, pgtype.UUID) (int64, error) {
-	return 0, nil
 }
 func (f *fakeStore) getContentTitle(context.Context, pgtype.UUID) (string, error) {
 	return "test content", nil

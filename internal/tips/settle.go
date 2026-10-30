@@ -12,30 +12,24 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
-// settleWalletParams describes a completed points/credits tip for the atomic
+// settleWalletParams describes a completed credits tip for the atomic
 // ledger-pair write.
 type settleWalletParams struct {
-	senderID        pgtype.UUID
-	walletOwnerID   pgtype.UUID // user the wallet credits land on (recipient user, or org owner)
-	recipientUserID pgtype.UUID // set when recipient_type='user'
-	ledgerType      string      // 'points' | 'credits'
-	gross           int64       // debited from sender
-	net             int64       // credited to recipient (gross − fee)
-	fee             int64
-	method          string
-	recipientType   string
-	recipientOrgID  pgtype.UUID
-	contentID       pgtype.UUID
-	message         string
-	isAnonymous     bool
-	idempotencyKey  string
-	// pointsDailyLimit caps a sender's UTC-day points tips (0 = unlimited).
-	// Enforced inside the tx under the sender's wallet lock.
-	pointsDailyLimit int64
-	// pointsDailyRecipientLimit caps a recipient's UTC-day inbound points
-	// tips (0 = unlimited) — closes the co-conspirator laundering loop the
-	// sender-side cap alone leaves open.
-	pointsDailyRecipientLimit int64
+	senderID         pgtype.UUID
+	walletOwnerID    pgtype.UUID // user the wallet credits land on (recipient user, or org owner)
+	recipientUserID  pgtype.UUID // set when recipient_type='user'
+	ledgerType       string      // 'credits' — the only wallet method (ADR-129)
+	gross            int64       // debited from sender
+	net              int64       // credited to recipient (gross − fee)
+	fee              int64
+	method           string
+	recipientType    string
+	recipientOrgID   pgtype.UUID
+	recipientSpaceID pgtype.UUID
+	contentID        pgtype.UUID
+	message          string
+	isAnonymous      bool
+	idempotencyKey   string
 }
 
 // lockWalletUsers acquires the per-user advisory locks in uuid order so two
@@ -69,7 +63,7 @@ func latestBalance(ctx context.Context, qtx *gen.Queries, userID pgtype.UUID, le
 	return bal, nil
 }
 
-// settleWalletTip performs the §125 points/credits settlement: sender spend +
+// settleWalletTip performs the §125 credits settlement: sender spend +
 // recipient earn in one advisory-locked transaction, then the completed tip row.
 func (s *Store) settleWalletTip(ctx context.Context, p settleWalletParams) (gen.Tip, error) {
 	tx, err := s.db.Writer.Begin(ctx)
@@ -92,38 +86,15 @@ func (s *Store) settleWalletTip(ctx context.Context, p settleWalletParams) (gen.
 		return gen.Tip{}, ErrInsufficientBalance
 	}
 
-	// §125 daily anti-laundering caps — evaluated under the wallet advisory
-	// locks so concurrent points tips can't race past either limit. The
-	// recipient-side check mirrors the sender's: without it a pair of
-	// co-conspirators could launder the sender cap via multiple tippers.
-	if p.pointsDailyLimit > 0 {
-		today, err := qtx.SumTipperPointsToday(ctx, p.senderID)
-		if err != nil {
-			return gen.Tip{}, fmt.Errorf("reading daily points total: %w", err)
-		}
-		if today+p.gross > p.pointsDailyLimit {
-			return gen.Tip{}, ErrDailyPointsLimit
-		}
-	}
-	if p.pointsDailyRecipientLimit > 0 && p.recipientType == RecipientUser {
-		today, err := qtx.SumRecipientPointsToday(ctx, p.walletOwnerID)
-		if err != nil {
-			return gen.Tip{}, fmt.Errorf("reading recipient daily points total: %w", err)
-		}
-		if today+p.gross > p.pointsDailyRecipientLimit {
-			return gen.Tip{}, ErrDailyRecipientLimit
-		}
-	}
-
 	// Insert the tip first — its generated id becomes the ledger reference.
 	tip, err := qtx.InsertTip(ctx, gen.InsertTipParams{
 		SenderUserID:            p.senderID,
 		RecipientType:           p.recipientType,
 		RecipientUserID:         p.recipientUserID,
 		RecipientOrganizationID: p.recipientOrgID,
+		RecipientSpaceID:        p.recipientSpaceID,
 		ContentID:               p.contentID,
 		Method:                  p.method,
-		PointsAmount:            pointsFor(p, "points"),
 		CreditsAmount:           creditsFor(p),
 		FeeAmount:               p.fee,
 		NetCredits:              netCreditsFor(p),
@@ -181,13 +152,6 @@ func (s *Store) settleWalletTip(ctx context.Context, p settleWalletParams) (gen.
 		return gen.Tip{}, fmt.Errorf("committing settlement: %w", err)
 	}
 	return tip, nil
-}
-
-func pointsFor(p settleWalletParams, ledger string) int64 {
-	if p.ledgerType == ledger {
-		return p.gross
-	}
-	return 0
 }
 
 func creditsFor(p settleWalletParams) int64 {
@@ -287,23 +251,18 @@ func (s *Store) clawbackTip(ctx context.Context, tipID pgtype.UUID, walletOwnerI
 		return ErrInvalidStatus
 	}
 
-	// The recipient received value in the ledger matching the method —
-	// points tips credit the points ledger (points_amount, fee-free);
-	// credits/fiat/OC tips credit the credits ledger (net_credits). Claw
-	// back from the same ledger or a refunded points tip would refund the
-	// sender while the recipient keeps the value.
+	// Credits/fiat/OC tips credit the recipient's credits ledger
+	// (net_credits); historical 'points' tips (ADR-129 — method retired,
+	// points_amount column dropped) have net_credits=0, so their clawback
+	// correctly degenerates to a status flip with no ledger writes.
 	clawLedger := "credits"
 	clawAmount := tip.NetCredits
-	if tip.Method == MethodPoints {
-		clawLedger = "points"
-		clawAmount = tip.PointsAmount
-	}
 
 	var lockIDs []pgtype.UUID
 	if clawAmount > 0 && walletOwnerID.Valid {
 		lockIDs = append(lockIDs, walletOwnerID)
 	}
-	if tip.SenderUserID.Valid && (tip.Method == MethodPoints || tip.Method == MethodCredits) {
+	if tip.SenderUserID.Valid && tip.Method == MethodCredits {
 		lockIDs = append(lockIDs, tip.SenderUserID)
 	}
 	if err := lockWalletUsers(ctx, tx, lockIDs...); err != nil {
@@ -332,16 +291,13 @@ func (s *Store) clawbackTip(ctx context.Context, tipID pgtype.UUID, walletOwnerI
 		}
 	}
 
-	// Wallet-method refunds return the sender's spend in the same ledger
-	// type — previously a "refund" only clawed back the recipient and the
-	// sender's points/credits were lost permanently.
+	// Wallet-method refunds return the sender's spend in the credits
+	// ledger — previously a "refund" only clawed back the recipient and
+	// the sender's credits were lost permanently.
 	if tip.SenderUserID.Valid {
 		var refundAmount int64
 		ledgerType := tip.Method
-		switch tip.Method {
-		case MethodPoints:
-			refundAmount = tip.PointsAmount
-		case MethodCredits:
+		if tip.Method == MethodCredits {
 			refundAmount = tip.CreditsAmount
 		}
 		if refundAmount > 0 {

@@ -4283,7 +4283,6 @@ type Tip struct {
 	RecipientOrganizationID pgtype.UUID        `json:"recipient_organization_id"`
 	ContentID               pgtype.UUID        `json:"content_id"`
 	Method                  string             `json:"method"`
-	PointsAmount            int64              `json:"points_amount"`
 	CreditsAmount           int64              `json:"credits_amount"`
 	FiatAmount              *int64             `json:"fiat_amount"`
 	FiatCurrency            *string            `json:"fiat_currency"`
@@ -4298,6 +4297,7 @@ type Tip struct {
 	CreatedAt               pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
 	CheckoutUrl             *string            `json:"checkout_url"`
+	RecipientSpaceID        pgtype.UUID        `json:"recipient_space_id"`
 }
 
 type TipExternalLink struct {
@@ -4315,7 +4315,6 @@ type TipSetting struct {
 	OwnerType           string             `json:"owner_type"`
 	OwnerID             pgtype.UUID        `json:"owner_id"`
 	TipsEnabled         bool               `json:"tips_enabled"`
-	AcceptPoints        bool               `json:"accept_points"`
 	AcceptCredits       bool               `json:"accept_credits"`
 	AcceptFiat          bool               `json:"accept_fiat"`
 	AcceptExternal      bool               `json:"accept_external"`
@@ -4950,12 +4949,11 @@ type WalletLedger struct {
 }
 
 type WalletSetting struct {
-	ID                  pgtype.UUID        `json:"id"`
-	PointsToCreditsRate *int32             `json:"points_to_credits_rate"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	DailyEarningCap     int32              `json:"daily_earning_cap"`
-	EnableEarning       bool               `json:"enable_earning"`
+	ID              pgtype.UUID        `json:"id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DailyEarningCap int32              `json:"daily_earning_cap"`
+	EnableEarning   bool               `json:"enable_earning"`
 }
 
 type WalletWithdrawal struct {

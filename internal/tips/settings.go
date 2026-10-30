@@ -19,7 +19,6 @@ func (s *Service) toSettings(row gen.TipSetting) Settings {
 		OwnerType:        row.OwnerType,
 		OwnerID:          row.OwnerID,
 		TipsEnabled:      row.TipsEnabled,
-		AcceptPoints:     row.AcceptPoints,
 		AcceptCredits:    row.AcceptCredits,
 		AcceptFiat:       row.AcceptFiat,
 		AcceptExternal:   row.AcceptExternal,
@@ -42,7 +41,6 @@ func emptySettings(owner Owner) Settings {
 	return Settings{
 		OwnerType:     owner.Type,
 		OwnerID:       owner.ID,
-		AcceptPoints:  true,
 		AcceptCredits: true,
 		AcceptFiat:    true,
 	}
@@ -74,7 +72,6 @@ func (s *Service) UpsertSettings(ctx context.Context, owner Owner, in UpdateSett
 		OwnerType:        owner.Type,
 		OwnerID:          owner.ID,
 		TipsEnabled:      in.TipsEnabled,
-		AcceptPoints:     in.AcceptPoints,
 		AcceptCredits:    in.AcceptCredits,
 		AcceptFiat:       in.AcceptFiat,
 		AcceptExternal:   in.AcceptExternal,
@@ -101,6 +98,13 @@ func (s *Service) CanReceive(ctx context.Context, userID pgtype.UUID) (bool, err
 		return true, nil
 	}
 	return s.store.isMentor(ctx, userID)
+}
+
+// SpaceTipsEnabled reports whether the space currently accepts tips —
+// drives the §05 monetization mutual-exclusivity gate on the paid path.
+func (s *Service) SpaceTipsEnabled(ctx context.Context, spaceID pgtype.UUID) bool {
+	st, err := s.GetSettings(ctx, SpaceOwner(spaceID))
+	return err == nil && st.TipsEnabled
 }
 
 // ensureWritable authorizes settings writes: users write their own row, org
@@ -134,6 +138,22 @@ func (s *Service) ensureWritable(ctx context.Context, owner Owner, actorID pgtyp
 			}
 		}
 		return ErrNotAuthorized
+	case RecipientSpace:
+		// Only the space owner may change tip settings — tips settle to the
+		// owner's wallet, so moderators must not redirect them. Ownership is
+		// checked WITHOUT eligibility so owners can still DISABLE tips on an
+		// ineligible (suspended/paid) space.
+		ownerID, err := s.store.getSpaceTipOwner(ctx, owner.ID)
+		if err != nil {
+			return err
+		}
+		if ownerID == actorID {
+			return nil
+		}
+		if s.perms != nil && s.perms.Can(ctx, actorID, "spaces.admin") {
+			return nil
+		}
+		return ErrNotAuthorized
 	case RecipientPlatform:
 		if s.perms != nil && s.perms.Can(ctx, actorID, "tips.moderate") {
 			return nil
@@ -149,22 +169,24 @@ func (s *Service) UpdateSettingsFor(ctx context.Context, owner Owner, actorID pg
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
 		return Settings{}, err
 	}
+	// Space eligibility is required only to ENABLE tips — disabling is always
+	// allowed so an ineligible space can never get stuck with tips on.
+	if owner.Type == RecipientSpace && in.TipsEnabled {
+		if _, err := s.store.getSpaceTipRecipient(ctx, owner.ID); err != nil {
+			return Settings{}, err
+		}
+	}
 	return s.UpsertSettings(ctx, owner, in)
 }
 
 // acceptedMethods derives the public method list from a settings row. The
-// platform owner has no wallet — points/credits are never advertised for it
+// platform owner has no wallet — credits are never advertised for it
 // (fiat-only settlement). Fiat methods are filtered to providers actually
 // configured at boot when a ProviderLister seam is injected.
 func (s *Service) acceptedMethods(owner Owner, st Settings) []string {
 	out := make([]string, 0, 4)
-	if owner.Type != RecipientPlatform {
-		if st.AcceptPoints {
-			out = append(out, MethodPoints)
-		}
-		if st.AcceptCredits {
-			out = append(out, MethodCredits)
-		}
+	if owner.Type != RecipientPlatform && st.AcceptCredits {
+		out = append(out, MethodCredits)
 	}
 	if st.AcceptFiat {
 		fiat := make([]string, 0, len(fiatMethods))

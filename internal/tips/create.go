@@ -1,5 +1,6 @@
 // create.go — §125 POST /tips: recipient resolution, validation, and the
-// points/credits settlement path (fiat branches into fiat.go).
+// credits settlement path (fiat branches into fiat.go). Points are not a
+// tip method (ADR-129).
 package tips
 
 import (
@@ -8,10 +9,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
-// CreateTip validates and settles a tip. points/credits settle synchronously
-// via the wallet ledger pair; fiat methods create a pending tip + payment row
+// CreateTip validates and settles a tip. Credits settle synchronously via
+// the wallet ledger pair; fiat methods create a pending tip + payment row
 // (fiat.go) and return a checkout URL.
 func (s *Service) CreateTip(ctx context.Context, senderID pgtype.UUID, in CreateTipInput, idempotencyKey string) (CreateTipResult, error) {
 	if s.settings != nil && !s.featureEnabled(ctx) {
@@ -88,7 +90,7 @@ func (s *Service) CreateTip(ctx context.Context, senderID pgtype.UUID, in Create
 	sett := s.toSettings(st)
 
 	switch in.Method {
-	case MethodPoints, MethodCredits:
+	case MethodCredits:
 		return s.createWalletTip(ctx, senderID, owner, walletOwner, sett, in, idempotencyKey)
 	default:
 		if IsFiatMethod(in.Method) {
@@ -131,6 +133,15 @@ func (s *Service) resolveRecipient(ctx context.Context, in CreateTipInput) (Owne
 			return Owner{}, pgtype.UUID{}, ErrNotFound
 		}
 		return OrgOwner(in.RecipientOrgID), ownerID, nil
+	case RecipientSpace:
+		if !in.RecipientSpaceID.Valid {
+			return Owner{}, pgtype.UUID{}, ErrInvalidRecipient
+		}
+		walletOwnerID, err := s.store.getSpaceTipRecipient(ctx, in.RecipientSpaceID)
+		if err != nil {
+			return Owner{}, pgtype.UUID{}, err
+		}
+		return SpaceOwner(in.RecipientSpaceID), walletOwnerID, nil
 	case RecipientPlatform:
 		return PlatformOwner(), pgtype.UUID{}, nil
 	default:
@@ -138,9 +149,10 @@ func (s *Service) resolveRecipient(ctx context.Context, in CreateTipInput) (Owne
 	}
 }
 
-// createWalletTip runs the synchronous points/credits path.
+// createWalletTip runs the synchronous credits path (ADR-129 — the only
+// wallet-ledger method; points are retired).
 func (s *Service) createWalletTip(ctx context.Context, senderID pgtype.UUID, owner Owner, walletOwner pgtype.UUID, st Settings, in CreateTipInput, idemKey string) (CreateTipResult, error) {
-	// Platform has no wallet — points/credits tips to it are invalid.
+	// Platform has no wallet — credits tips to it are invalid.
 	if owner.Type == RecipientPlatform {
 		return CreateTipResult{}, ErrMethodNotAccepted
 	}
@@ -149,63 +161,36 @@ func (s *Service) createWalletTip(ctx context.Context, senderID pgtype.UUID, own
 		return CreateTipResult{}, ErrInvalidRecipient
 	}
 
-	var amount int64
-	var ledgerType string
-	var accepted bool
-	if in.Method == MethodPoints {
-		amount, ledgerType, accepted = in.PointsAmount, "points", st.AcceptPoints
-		if in.PointsAmount <= 0 && in.CreditsAmount <= 0 && in.FiatAmount <= 0 {
-			amount = genericAmount(in)
-		}
-	} else {
-		amount, ledgerType, accepted = in.CreditsAmount, "credits", st.AcceptCredits
-		if in.CreditsAmount <= 0 && in.PointsAmount <= 0 && in.FiatAmount <= 0 {
-			amount = genericAmount(in)
-		}
+	amount := in.CreditsAmount
+	if !st.AcceptCredits {
+		return CreateTipResult{}, ErrMethodNotAccepted
 	}
 	if amount <= 0 {
 		return CreateTipResult{}, ErrInvalidAmount
-	}
-	if !accepted {
-		return CreateTipResult{}, ErrMethodNotAccepted
 	}
 	if amount < st.MinTipAmount {
 		return CreateTipResult{}, ErrBelowMinimum
 	}
 
-	// Points tips enforce the daily anti-laundering cap. The check runs
-	// inside the settlement tx under the sender's wallet advisory lock —
-	// an unlocked pre-check would let concurrent requests race past it.
-	var dailyPointsLimit, dailyRecipientLimit int64
-	if in.Method == MethodPoints && s.settings != nil {
-		dailyPointsLimit = int64(s.settings.GetIntOr(ctx, "tips.points_daily_limit", 500))
-		dailyRecipientLimit = int64(s.settings.GetIntOr(ctx, "tips.points_daily_recipient_limit", 0))
-	}
-
-	// Fee applies to credits (and fiat) only — points pass through whole.
-	var fee int64
-	if in.Method == MethodCredits {
-		fee = amount * int64(s.feePercent(ctx)) / 100
-	}
+	fee := amount * int64(s.feePercent(ctx)) / 100
 	net := amount - fee
 
 	tip, err := s.store.settleWalletTip(ctx, settleWalletParams{
-		senderID:                  senderID,
-		walletOwnerID:             walletOwner,
-		recipientUserID:           nullableOwnerUser(owner),
-		recipientOrgID:            nullableOwnerOrg(owner),
-		ledgerType:                ledgerType,
-		gross:                     amount,
-		net:                       net,
-		fee:                       fee,
-		method:                    in.Method,
-		recipientType:             owner.Type,
-		contentID:                 in.ContentID,
-		message:                   in.Message,
-		isAnonymous:               in.IsAnonymous,
-		idempotencyKey:            idemKey,
-		pointsDailyLimit:          dailyPointsLimit,
-		pointsDailyRecipientLimit: dailyRecipientLimit,
+		senderID:         senderID,
+		walletOwnerID:    walletOwner,
+		recipientUserID:  nullableOwnerUser(owner),
+		recipientOrgID:   nullableOwnerOrg(owner),
+		recipientSpaceID: nullableOwnerSpace(owner),
+		ledgerType:       "credits",
+		gross:            amount,
+		net:              net,
+		fee:              fee,
+		method:           in.Method,
+		recipientType:    owner.Type,
+		contentID:        in.ContentID,
+		message:          in.Message,
+		isAnonymous:      in.IsAnonymous,
+		idempotencyKey:   idemKey,
 	})
 	if err != nil {
 		// tips_idem_unique (000949): a concurrent same-key request that won
@@ -218,21 +203,12 @@ func (s *Service) createWalletTip(ctx context.Context, senderID pgtype.UUID, own
 		return CreateTipResult{}, err
 	}
 
+	// ADR-129: the sender earns tip.sent points (engagement), the recipient
+	// gets credits (transaction). Reference = tip id → exactly-once award.
+	s.emitActivity(ctx, senderID, wallet.ActivityKeyTipSent, "tip:"+tip.ID.String())
+
 	s.notifyReceived(ctx, tip.ID)
 	return CreateTipResult{Tip: tipFromRow(tip)}, nil
-}
-
-// genericAmount maps the handler's single `amount` field onto per-method
-// columns when the caller didn't populate the typed fields.
-func genericAmount(in CreateTipInput) int64 {
-	switch {
-	case in.PointsAmount > 0:
-		return in.PointsAmount
-	case in.CreditsAmount > 0:
-		return in.CreditsAmount
-	default:
-		return in.FiatAmount
-	}
 }
 
 func nullableOwnerUser(o Owner) pgtype.UUID {
@@ -244,6 +220,13 @@ func nullableOwnerUser(o Owner) pgtype.UUID {
 
 func nullableOwnerOrg(o Owner) pgtype.UUID {
 	if o.Type == RecipientOrganization {
+		return o.ID
+	}
+	return pgtype.UUID{}
+}
+
+func nullableOwnerSpace(o Owner) pgtype.UUID {
+	if o.Type == RecipientSpace {
 		return o.ID
 	}
 	return pgtype.UUID{}
@@ -267,7 +250,6 @@ func tipFromRow(t gen.Tip) Tip {
 		RecipientOrgID:  t.RecipientOrganizationID,
 		ContentID:       t.ContentID,
 		Method:          t.Method,
-		PointsAmount:    t.PointsAmount,
 		CreditsAmount:   t.CreditsAmount,
 		FiatAmount:      t.FiatAmount,
 		FiatCurrency:    t.FiatCurrency,

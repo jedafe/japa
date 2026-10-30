@@ -10,6 +10,7 @@ import (
 	"log/slog"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -69,6 +70,9 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 			slog.Warn("tips: failed to repair payment link", "tip_id", tipID.String(), "error", err)
 		}
 	}
+	// ADR-129: the sender earns tip.sent points for settling a fiat tip.
+	s.emitActivity(ctx, tip.SenderUserID, wallet.ActivityKeyTipSent, "tip:"+tipID.String())
+
 	s.notifyReceived(ctx, tipID)
 	return nil
 }
@@ -117,15 +121,11 @@ func (s *Service) notifyClawback(ctx context.Context, tip gen.Tip, walletOwner p
 	if s.clawNotifier == nil || !walletOwner.Valid {
 		return
 	}
-	unit := "credits"
-	if tip.Method == MethodPoints {
-		unit = "points"
-	}
 	if err := s.clawNotifier.CreateNotification(ctx, walletOwner,
 		"tip.received", "system", pgtype.UUID{},
 		"tip", tip.ID,
 		"Tip refunded",
-		"A tip you received was refunded and the "+unit+" were removed from your wallet.",
+		"A tip you received was refunded and the credits were removed from your wallet.",
 		"/me/tips"); err != nil {
 		slog.Warn("tips: clawback notification failed", "tip_id", tip.ID.String(), "error", err)
 	}
@@ -251,8 +251,6 @@ func (s *Service) NotifyTipReceived(ctx context.Context, tipID pgtype.UUID, noti
 // tipDisplayAmount renders a human amount for notifications.
 func tipDisplayAmount(tip gen.Tip) string {
 	switch {
-	case tip.Method == MethodPoints:
-		return fmt.Sprintf("%d points", tip.PointsAmount)
 	case tip.Method == MethodCredits:
 		return fmt.Sprintf("%d credits", tip.CreditsAmount)
 	case tip.FiatAmount != nil && tip.FiatCurrency != nil:

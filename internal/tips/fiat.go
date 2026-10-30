@@ -24,9 +24,6 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 
 	amount := in.FiatAmount
 	if amount <= 0 {
-		amount = genericAmount(in)
-	}
-	if amount <= 0 {
 		return CreateTipResult{}, ErrInvalidAmount
 	}
 	if s.settings != nil {

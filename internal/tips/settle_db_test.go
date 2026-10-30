@@ -80,8 +80,8 @@ func balance(t *testing.T, ctx context.Context, d *db.DB, userID pgtype.UUID, le
 func seedSettings(t *testing.T, ctx context.Context, d *db.DB, ownerType string, ownerID pgtype.UUID) {
 	t.Helper()
 	if _, err := d.Writer.Exec(ctx,
-		`INSERT INTO tip_settings (owner_type, owner_id, tips_enabled, accept_points, accept_credits, accept_fiat, accept_external, min_tip_amount)
-		 VALUES ($1, $2, true, true, true, true, false, 0)`,
+		`INSERT INTO tip_settings (owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, min_tip_amount)
+		 VALUES ($1, $2, true, true, true, false, 0)`,
 		ownerType, ownerID); err != nil {
 		t.Fatalf("seeding tip_settings: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestDBSettleCreditsTip(t *testing.T) {
 	}
 }
 
-func TestDBSettlePointsNoFee(t *testing.T) {
+func TestDBPointsMethodRejected(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()
 	sender := newUser(t, ctx, d, "pts_sender")
@@ -126,18 +126,17 @@ func TestDBSettlePointsNoFee(t *testing.T) {
 	grantCredits(t, ctx, d, sender, "points", 500)
 
 	svc := NewService(d)
-	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true, "tips.fee_percent": 50, "tips.points_daily_limit": 0}}
+	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true}}
 	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
 
+	// ADR-129: points are retired as a tip method — the wallet method
+	// branch no longer accepts them even though the balance exists.
 	_, err := svc.CreateTip(ctx, sender, CreateTipInput{
 		RecipientType: RecipientUser, RecipientUserID: recip,
-		Method: MethodPoints, PointsAmount: 50,
+		Method: MethodPoints, CreditsAmount: 50,
 	}, "")
-	if err != nil {
-		t.Fatalf("CreateTip: %v", err)
-	}
-	if got := balance(t, ctx, d, recip, "points"); got != 50 {
-		t.Fatalf("points should pass through whole: got %d", got)
+	if !errors.Is(err, ErrInvalidMethod) {
+		t.Fatalf("expected ErrInvalidMethod, got %v", err)
 	}
 }
 

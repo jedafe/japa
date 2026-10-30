@@ -103,8 +103,6 @@ var settingsCatalog = map[string]settingMeta{
 	"security.max_login_attempts":  {Type: "int", DefaultValue: "5", Description: "Max failed login attempts before lockout.", Panel: "admin"},
 	"security.fail_window_minutes": {Type: "int", DefaultValue: "15", Description: "Lockout window in minutes.", Panel: "admin"},
 	// Wallet
-	"wallet.min_convert_points":    {Type: "int", DefaultValue: "100", Description: "Minimum points for conversion.", Panel: "admin"},
-	"wallet.points_to_credit_rate": {Type: "float", DefaultValue: "0.01", Description: "1 point = 0.01 credits by default.", Panel: "admin"},
 	"wallet.max_daily_earn_points": {Type: "int", DefaultValue: "500", Description: "Cap on points earned per user per day.", Panel: "admin"},
 	// API Rate Limits
 	"api.rate_limit.basic":      {Type: "int", DefaultValue: "100", Description: "Requests per minute — basic tier.", Panel: "admin"},
@@ -830,8 +828,6 @@ var settingsCatalog = map[string]settingMeta{
 	"trending.weight.views":             {Type: "float", DefaultValue: "1", Description: "Content/user velocity: views multiplier", Panel: "admin"},
 	"trending.weight.votes":             {Type: "float", DefaultValue: "10", Description: "Content/user velocity: votes multiplier", Panel: "admin"},
 	"tips.fee_percent":                  {Type: "int", DefaultValue: "0", Min: 0, Max: 50, Description: "Platform fee percentage deducted from credit and fiat tips before crediting the recipient. Ref: Section 125.", Panel: "admin"},
-	"tips.points_daily_limit":           {Type: "int", DefaultValue: "500", Description: "Maximum points a member may tip per UTC day (anti-laundering). Ref: Section 125.", Panel: "admin"},
-	"tips.points_daily_recipient_limit": {Type: "int", DefaultValue: "0", Description: "Maximum points a single recipient may receive via tips per UTC day (0 = unlimited; anti-laundering complement to the sender cap). Ref: Section 125.", Panel: "admin"},
 	"tips.min_fiat_minor":               {Type: "int", DefaultValue: "100", Description: "Minimum fiat tip amount in the currency's minor units (cents). Ref: Section 125.", Panel: "admin"},
 	"tips.pending_ttl_hours":            {Type: "int", DefaultValue: "48", Description: "Hours a pending fiat tip may sit before the stale sweep marks it failed. Ref: Section 125.", Panel: "admin"},
 	"tips.max_fiat_minor":               {Type: "int", DefaultValue: "1000000", Description: "Maximum fiat tip amount in the currency's minor units. Ref: Section 125.", Panel: "admin"},

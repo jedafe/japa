@@ -1,7 +1,8 @@
 // Package wallet implements the Wallet & Credits System (Section 28).
-// // Two-tier internal currency: Points (soft, activity-earned, non-monetary)
-// and Credits (spendable, monetary-equivalent). Conversion is one-way only
-// (Points → Credits, never reversed), at a fixed but admin-configurable global rate.
+// // Two independent internal currencies (ADR-129): Points (activity-earned
+// reputation — leaderboard rank, badge thresholds, profile boost; also
+// deducted by negative-activity rules) and Credits (spendable,
+// monetary-equivalent). No conversion exists in either direction.
 package wallet
 
 import (
@@ -49,23 +50,22 @@ const (
 	ActivityKeyScamAlertConfirmed  = "scam_alert.confirmed"
 	ActivityKeyAchievementCreated  = "achievement.created"
 
-	// Reserved keys for modules without emitters yet — kept so admins can
-	// pre-configure activity_point_rules against stable names.
-	ActivityKeyReactionAdded     = "reaction.added"
-	ActivityKeyContentFlagged    = "content.flagged_removed"
-	ActivityKeySpamDetected      = "spam.detected"
-	ActivityKeyReferralCompleted = "referral.completed"
-	ActivityKeyDailyLogin        = "daily.login"
-	ActivityKeyProfileCompleted  = "profile.completed"
-)
-
-// Default wallet settings.
-const (
-	DefaultPointsToCreditsRate = 100 // 100 points = 1 credit
-	// DefaultMinConvertPoints is the fallback minimum points required for a
-	// single conversion when wallet.min_convert_points is unset in
-	// system_settings (AUDIT-BE2-SETTING-008).
-	DefaultMinConvertPoints = 100
+	// Emitted by domain services across the site (ADR-129 — full activity
+	// coverage; negative point_value rules make the *_negative/spam/report
+	// keys penalties).
+	ActivityKeyUserRegistered         = "user.registered"
+	ActivityKeyDailyLogin             = "daily.login"
+	ActivityKeyProfileCompleted       = "profile.completed"
+	ActivityKeyReferralCompleted      = "referral.completed"
+	ActivityKeyReactionAdded          = "reaction.added"
+	ActivityKeyAcademyLessonCompleted = "academy.lesson_completed"
+	ActivityKeyAcademyTrackCompleted  = "academy.track_completed"
+	ActivityKeyForumSolutionMarked    = "forum.solution_marked"
+	ActivityKeyTipSent                = "tip.sent"
+	ActivityKeyReactionNegative       = "reaction.negative"
+	ActivityKeySpamDetected           = "spam.detected"
+	ActivityKeyContentFlagged         = "content.flagged_removed"
+	ActivityKeyReportUpheld           = "report.upheld"
 )
 
 // SettingsReader is the subset of the config.Settings API that wallet uses to
@@ -90,7 +90,7 @@ type Service struct {
 	db       *db.DB
 	enqueuer walletEnqueuer
 	// settings is the optional global system_settings reader used for
-	// wallet.points_to_credit_rate and wallet.min_convert_points
+	// wallet.max_daily_earn_points and wallet.default_currency
 	// (AUDIT-BE2-SETTING-007/008). When nil, compiled-in defaults are used.
 	settings SettingsReader
 	// currencyResolver resolves the active fiat currency for a user at

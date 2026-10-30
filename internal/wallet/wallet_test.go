@@ -61,14 +61,6 @@ func TestActivityKeys(t *testing.T) {
 	}
 }
 
-func TestDefaultSettings(t *testing.T) {
-	t.Parallel()
-
-	if DefaultPointsToCreditsRate != 100 {
-		t.Errorf("Expected DefaultPointsToCreditsRate to be 100, got %d", DefaultPointsToCreditsRate)
-	}
-}
-
 func TestPaginationDefaults(t *testing.T) {
 	t.Parallel()
 

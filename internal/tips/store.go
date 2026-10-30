@@ -43,8 +43,6 @@ type tipStore interface {
 	listTipsSent(ctx context.Context, senderID pgtype.UUID, limit, offset int32) ([]gen.Tip, error)
 	listTipsReceived(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Tip, error)
 	countTipsReceived(ctx context.Context, userID pgtype.UUID) (int32, error)
-	sumTipperPointsToday(ctx context.Context, senderID pgtype.UUID) (int64, error)
-	sumRecipientPointsToday(ctx context.Context, recipientID pgtype.UUID) (int64, error)
 	getContentTitle(ctx context.Context, contentID pgtype.UUID) (string, error)
 	contentTipSummary(ctx context.Context, contentID pgtype.UUID) (gen.ContentTipSummaryRow, error)
 	adminListTips(ctx context.Context, p gen.AdminListTipsParams) ([]gen.Tip, error)
@@ -56,6 +54,14 @@ type tipStore interface {
 	getOrgDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetOrgDisplayNamesRow, error)
 	isMentor(ctx context.Context, userID pgtype.UUID) (bool, error)
 	getCurrencyByCode(ctx context.Context, code string) (gen.Currency, error)
+	getSpaceTipRecipient(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, error)
+	checkSpaceMembership(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
+	checkSpaceOwnership(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
+	getSpaceModerator(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
+	getSpaceTipOwner(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, error)
+	getSpaceBySlug(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error)
+	listTipsBySpace(ctx context.Context, p gen.ListTipsBySpaceParams) ([]gen.Tip, error)
+	countTipsBySpace(ctx context.Context, spaceID pgtype.UUID) (int64, error)
 	getContentAuthorID(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error)
 	getUserIDByUsername(ctx context.Context, username string) (pgtype.UUID, error)
 	getUserIDByEmail(ctx context.Context, email string) (pgtype.UUID, error)
@@ -242,14 +248,6 @@ func (s *Store) countTipsReceived(ctx context.Context, userID pgtype.UUID) (int3
 	return s.read.CountTipsReceived(ctx, userID)
 }
 
-func (s *Store) sumTipperPointsToday(ctx context.Context, senderID pgtype.UUID) (int64, error) {
-	return s.read.SumTipperPointsToday(ctx, senderID)
-}
-
-func (s *Store) sumRecipientPointsToday(ctx context.Context, recipientID pgtype.UUID) (int64, error) {
-	return s.read.SumRecipientPointsToday(ctx, recipientID)
-}
-
 func (s *Store) getContentTitle(ctx context.Context, contentID pgtype.UUID) (string, error) {
 	t, err := s.read.GetContentTitle(ctx, contentID)
 	if err != nil {
@@ -327,6 +325,77 @@ func (s *Store) getUserIDByEmail(ctx context.Context, email string) (pgtype.UUID
 
 func (s *Store) getUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
 	return s.read.GetUserEmail(ctx, userID)
+}
+
+// getSpaceTipOwner resolves who administers a space's tips — approved owner,
+// falling back to creator_user_id. Unlike getSpaceTipRecipient it performs NO
+// eligibility checks — owners must retain write access to DISABLE tips even
+// when the space has become ineligible (suspended, archived, turned paid).
+func (s *Store) getSpaceTipOwner(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, error) {
+	ownerID, err := s.read.GetSpaceOwnerUserID(ctx, spaceID)
+	if err == nil && ownerID.Valid {
+		return ownerID, nil
+	}
+	row, rerr := s.read.GetSpaceTipEligibility(ctx, spaceID)
+	if rerr != nil || !row.CreatorUserID.Valid {
+		return pgtype.UUID{}, ErrNotFound
+	}
+	return row.CreatorUserID, nil
+}
+
+// checkSpaceOwnership reports whether the user is an approved owner member.
+func (s *Store) checkSpaceOwnership(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+	return s.read.CheckSpaceOwnership(ctx, gen.CheckSpaceOwnershipParams{SpaceID: spaceID, UserID: userID})
+}
+
+// getSpaceModerator returns whether the user is an assigned space moderator.
+func (s *Store) getSpaceModerator(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+	_, err := s.read.GetSpaceModerator(ctx, gen.GetSpaceModeratorParams{SpaceID: spaceID, UserID: userID})
+	if err != nil {
+		return false, nil // sql.ErrNoRows → not a moderator
+	}
+	return true, nil
+}
+
+// getSpaceTipRecipient resolves the wallet owner for a space tip — the
+// space's approved owner, falling back to creator_user_id. Eligibility per
+// §05: member-created custom spaces only (level='custom' +
+// creator_user_id set + active + not wiki_only).
+func (s *Store) getSpaceTipRecipient(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, error) {
+	space, err := s.read.GetSpaceTipEligibility(ctx, spaceID)
+	if err != nil {
+		return pgtype.UUID{}, ErrNotFound
+	}
+	if space.Level != "custom" || !space.CreatorUserID.Valid ||
+		space.Status != "active" || space.DeletedAt.Valid || space.WikiOnly {
+		return pgtype.UUID{}, ErrTipsNotAllowed
+	}
+	// Monetization is mutually exclusive (§05): a space either accepts
+	// voluntary tips OR charges a compulsory membership fee — never both.
+	if space.Visibility == "paid" || space.JoiningPerm == "paid" {
+		return pgtype.UUID{}, ErrTipsNotAllowed
+	}
+	ownerID, err := s.read.GetSpaceOwnerUserID(ctx, spaceID)
+	if err != nil || !ownerID.Valid {
+		return space.CreatorUserID, nil
+	}
+	return ownerID, nil
+}
+
+func (s *Store) checkSpaceMembership(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+	return s.read.CheckSpaceMembership(ctx, gen.CheckSpaceMembershipParams{SpaceID: spaceID, UserID: userID})
+}
+
+func (s *Store) getSpaceBySlug(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error) {
+	return s.read.GetSpaceBySlug(ctx, slug)
+}
+
+func (s *Store) listTipsBySpace(ctx context.Context, p gen.ListTipsBySpaceParams) ([]gen.Tip, error) {
+	return s.read.ListTipsBySpace(ctx, p)
+}
+
+func (s *Store) countTipsBySpace(ctx context.Context, spaceID pgtype.UUID) (int64, error) {
+	return s.read.CountTipsBySpace(ctx, spaceID)
 }
 
 func (s *Store) getOrgOwnerID(ctx context.Context, orgID pgtype.UUID) (pgtype.UUID, error) {

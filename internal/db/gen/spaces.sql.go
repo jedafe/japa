@@ -472,13 +472,15 @@ WHERE s.deleted_at IS NULL
  AND ($5::text = '' OR s.region = $5)
  AND ($6::text = '' OR s.subregion = $6)
  AND ($7::uuid IS NULL OR s.space_type_id = $7::uuid)
+ -- @member_created mirrors ListSpacesPaginated (member-created spaces only).
+ AND ($8::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.
  AND NOT EXISTS (
  SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
  )
  AND (
- $8::bool = false
+ $9::bool = false
  OR (
  $1::uuid IS NOT NULL
  AND EXISTS (
@@ -490,14 +492,15 @@ WHERE s.deleted_at IS NULL
 `
 
 type CountSpacesParams struct {
-	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
-	Search       string      `json:"search"`
-	GeoCode      string      `json:"geo_code"`
-	Level        string      `json:"level"`
-	Region       string      `json:"region"`
-	Subregion    string      `json:"subregion"`
-	SpaceTypeID  pgtype.UUID `json:"space_type_id"`
-	JoinedOnly   bool        `json:"joined_only"`
+	ViewerUserID  pgtype.UUID `json:"viewer_user_id"`
+	Search        string      `json:"search"`
+	GeoCode       string      `json:"geo_code"`
+	Level         string      `json:"level"`
+	Region        string      `json:"region"`
+	Subregion     string      `json:"subregion"`
+	SpaceTypeID   pgtype.UUID `json:"space_type_id"`
+	MemberCreated bool        `json:"member_created"`
+	JoinedOnly    bool        `json:"joined_only"`
 }
 
 // SPACES-009: total count for the paginated discovery list.
@@ -510,6 +513,7 @@ func (q *Queries) CountSpaces(ctx context.Context, arg CountSpacesParams) (int64
 		arg.Region,
 		arg.Subregion,
 		arg.SpaceTypeID,
+		arg.MemberCreated,
 		arg.JoinedOnly,
 	)
 	var total int64
@@ -587,8 +591,10 @@ WHERE s.deleted_at IS NULL
  AND ($5::text = '' OR s.level = $5)
  AND ($6::text = '' OR s.region = $6)
  AND ($7::text = '' OR s.subregion = $7)
+ -- @member_created mirrors ListSpacesByParentPaginated.
+ AND ($8::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
  AND (
- $8::bool = false
+ $9::bool = false
  OR (
  $2::uuid IS NOT NULL
  AND EXISTS (
@@ -600,14 +606,15 @@ WHERE s.deleted_at IS NULL
 `
 
 type CountSpacesByParentParams struct {
-	ParentID     pgtype.UUID `json:"parent_id"`
-	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
-	Search       string      `json:"search"`
-	GeoCode      string      `json:"geo_code"`
-	Level        string      `json:"level"`
-	Region       string      `json:"region"`
-	Subregion    string      `json:"subregion"`
-	JoinedOnly   bool        `json:"joined_only"`
+	ParentID      pgtype.UUID `json:"parent_id"`
+	ViewerUserID  pgtype.UUID `json:"viewer_user_id"`
+	Search        string      `json:"search"`
+	GeoCode       string      `json:"geo_code"`
+	Level         string      `json:"level"`
+	Region        string      `json:"region"`
+	Subregion     string      `json:"subregion"`
+	MemberCreated bool        `json:"member_created"`
+	JoinedOnly    bool        `json:"joined_only"`
 }
 
 // Total for ListSpacesByParentPaginated (same filter set).
@@ -620,6 +627,7 @@ func (q *Queries) CountSpacesByParent(ctx context.Context, arg CountSpacesByPare
 		arg.Level,
 		arg.Region,
 		arg.Subregion,
+		arg.MemberCreated,
 		arg.JoinedOnly,
 	)
 	var total int64
@@ -703,7 +711,7 @@ func (q *Queries) CountSpacesUsingType(ctx context.Context, spaceTypeID pgtype.U
 }
 
 const createSpace = `-- name: CreateSpace :one
-INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+INSERT INTO spaces (parent_id, space_type_id, name, slug, description, wiki_content, geo_code, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status, creator_user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 RETURNING id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
@@ -725,6 +733,7 @@ type CreateSpaceParams struct {
 	CommentingPerm string      `json:"commenting_perm"`
 	JoiningPerm    string      `json:"joining_perm"`
 	Status         string      `json:"status"`
+	CreatorUserID  pgtype.UUID `json:"creator_user_id"`
 }
 
 type CreateSpaceRow struct {
@@ -754,6 +763,9 @@ type CreateSpaceRow struct {
 	CurrencyCode   *string            `json:"currency_code"`
 }
 
+// creator_user_id is the member-created discriminator (§05 amendment):
+// member creation paths (CreateSpaceWithOwner) set it; platform-seeded
+// paths (universities, geo, attractions) leave it NULL → is_primary.
 func (q *Queries) CreateSpace(ctx context.Context, arg CreateSpaceParams) (CreateSpaceRow, error) {
 	row := q.db.QueryRow(ctx, createSpace,
 		arg.ParentID,
@@ -770,6 +782,7 @@ func (q *Queries) CreateSpace(ctx context.Context, arg CreateSpaceParams) (Creat
 		arg.CommentingPerm,
 		arg.JoiningPerm,
 		arg.Status,
+		arg.CreatorUserID,
 	)
 	var i CreateSpaceRow
 	err := row.Scan(
@@ -1477,7 +1490,8 @@ const getPublicSpaceBySlug = `-- name: GetPublicSpaceBySlug :one
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code,
+ (creator_user_id IS NULL OR level <> 'custom') AS is_primary
 FROM spaces
 WHERE slug = $1
  AND visibility = 'public'
@@ -1510,6 +1524,7 @@ type GetPublicSpaceBySlugRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	CurrencyCode   *string            `json:"currency_code"`
+	IsPrimary      *bool              `json:"is_primary"`
 }
 
 // Public API (Section 47): returns a single space only if it is public,
@@ -1544,6 +1559,7 @@ func (q *Queries) GetPublicSpaceBySlug(ctx context.Context, slug string) (GetPub
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.CurrencyCode,
+		&i.IsPrimary,
 	)
 	return i, err
 }
@@ -1622,7 +1638,8 @@ const getSpaceByID = `-- name: GetSpaceByID :one
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code,
+ (creator_user_id IS NULL OR level <> 'custom') AS is_primary
 FROM spaces
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -1652,6 +1669,7 @@ type GetSpaceByIDRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	CurrencyCode   *string            `json:"currency_code"`
+	IsPrimary      *bool              `json:"is_primary"`
 }
 
 func (q *Queries) GetSpaceByID(ctx context.Context, id pgtype.UUID) (GetSpaceByIDRow, error) {
@@ -1682,6 +1700,7 @@ func (q *Queries) GetSpaceByID(ctx context.Context, id pgtype.UUID) (GetSpaceByI
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.CurrencyCode,
+		&i.IsPrimary,
 	)
 	return i, err
 }
@@ -1690,7 +1709,8 @@ const getSpaceBySlug = `-- name: GetSpaceBySlug :one
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
- joining_perm, status, created_at, updated_at, deleted_at, currency_code
+ joining_perm, status, created_at, updated_at, deleted_at, currency_code,
+ (creator_user_id IS NULL OR level <> 'custom') AS is_primary
 FROM spaces
 WHERE deleted_at IS NULL
   AND (
@@ -1728,6 +1748,7 @@ type GetSpaceBySlugRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	CurrencyCode   *string            `json:"currency_code"`
+	IsPrimary      *bool              `json:"is_primary"`
 }
 
 // The {slug} route param also accepts a space UUID — callers holding only
@@ -1762,6 +1783,7 @@ func (q *Queries) GetSpaceBySlug(ctx context.Context, slug string) (GetSpaceBySl
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.CurrencyCode,
+		&i.IsPrimary,
 	)
 	return i, err
 }
@@ -2066,6 +2088,47 @@ func (q *Queries) GetSpaceTypesByIDs(ctx context.Context, ids []pgtype.UUID) ([]
 	return items, nil
 }
 
+const getSpaceVisibilityByIDs = `-- name: GetSpaceVisibilityByIDs :many
+SELECT id, visibility, status, deleted_at
+FROM spaces
+WHERE id = ANY($1::uuid[])
+`
+
+type GetSpaceVisibilityByIDsRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	Visibility string             `json:"visibility"`
+	Status     string             `json:"status"`
+	DeletedAt  pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// Batch visibility/state lookup used to post-filter space entities in
+// social-graph lists (follows) — a non-public or non-active space must not
+// be revealed to viewers who are not members.
+func (q *Queries) GetSpaceVisibilityByIDs(ctx context.Context, spaceIds []pgtype.UUID) ([]GetSpaceVisibilityByIDsRow, error) {
+	rows, err := q.db.Query(ctx, getSpaceVisibilityByIDs, spaceIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSpaceVisibilityByIDsRow
+	for rows.Next() {
+		var i GetSpaceVisibilityByIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Visibility,
+			&i.Status,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSpacesByIDs = `-- name: GetSpacesByIDs :many
 SELECT id, name, geo_code FROM spaces
 WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
@@ -2133,20 +2196,6 @@ func (q *Queries) HardDeleteSpace(ctx context.Context, id pgtype.UUID) (int64, e
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const incrementSpaceCount = `-- name: IncrementSpaceCount :exec
-UPDATE spaces
-SET member_count = (SELECT COUNT(*) FROM space_members sm
- WHERE sm.space_id = spaces.id AND sm.status = 'approved')
-WHERE spaces.id = $1
-`
-
-// BUG-023: recompute from the authoritative table instead of incrementing
-// a delta — non-transactional +/- calls drifted the counter.
-func (q *Queries) IncrementSpaceCount(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, incrementSpaceCount, id)
-	return err
 }
 
 const isUserSpaceMember = `-- name: IsUserSpaceMember :one
@@ -2598,6 +2647,11 @@ FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 WHERE sm.user_id = $1
  AND s.visibility = 'public' AND s.status = 'active' AND s.deleted_at IS NULL
+ AND s.level = 'custom' AND s.creator_user_id IS NOT NULL
+ -- §80 wiki-only types (attraction) — never on the member-facing profile.
+ AND NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
+ )
 ORDER BY sm.joined_at DESC, s.id DESC
 LIMIT $3 OFFSET $2
 `
@@ -2639,9 +2693,12 @@ type ListPublicSpacesByMemberUserRow struct {
 // =====================
 // Space Follower Count
 // =====================
-// Public profile Spaces tab: PUBLIC, active spaces the user is a member of.
-// Excludes 'members'/'private' visibility and non-active spaces. Public-safe.
-// Includes the member's role (sm.role) so the profile card can show it.
+// Public profile Spaces tab: PUBLIC, active member-created spaces the user
+// is a member of. Excludes 'members'/'private' visibility, non-active
+// spaces, and primary (auto-joined geo + platform-seeded) spaces — those are
+// attached automatically, not communities the member chose to join.
+// Public-safe. Includes the member's role (sm.role) so the profile card can
+// show it.
 func (q *Queries) ListPublicSpacesByMemberUser(ctx context.Context, arg ListPublicSpacesByMemberUserParams) ([]ListPublicSpacesByMemberUserRow, error) {
 	rows, err := q.db.Query(ctx, listPublicSpacesByMemberUser, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
@@ -2967,12 +3024,22 @@ func (q *Queries) ListSpaceModerators(ctx context.Context, spaceID pgtype.UUID) 
 
 const listSpaceRulesBySpace = `-- name: ListSpaceRulesBySpace :many
 
+
 SELECT id, space_id, title, body, position, created_at, updated_at
 FROM space_rules
 WHERE space_id = $1
 ORDER BY position ASC, created_at ASC
 `
 
+// member_count is maintained by trg_space_member_count (migration 000967) —
+// no IncrementSpaceCount query: every write path self-maintains the counter.
+// Caveats: (1) rolling back 000967 must be paired with a code rollback, since
+// no app-level increments remain; (2) the trigger is FOR EACH ROW — a bulk
+// member insert path (e.g. a future seed) should use ALTER TABLE ...
+// DISABLE TRIGGER + a recount afterward if it ever lands.
+// post_count/follower_count still use the legacy increment pattern — drift
+// was healed manually (16 + 2 rows); convert to the same trigger pattern
+// when those counters are touched next.
 // =====================
 // Space Rules
 // =====================
@@ -3080,7 +3147,7 @@ SELECT id, name, slug, description, icon, field_group_id, is_system, created_at,
 FROM space_types
 WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR category = $2)
- AND ($3::boolean = false OR category IS NOT NULL)
+ AND ($3::boolean = false OR (category IS NOT NULL AND slug <> 'university'))
 ORDER BY created_at ASC, id ASC
 `
 
@@ -3092,7 +3159,9 @@ type ListSpaceTypesFilteredParams struct {
 
 // Supports optional search (q), category filter, and a selectable-only flag
 // for the admin panel and the member space-creation flow. Pass empty strings
-// and false booleans to skip filters.
+// and false booleans to skip filters. Selectable = member-creatable types:
+// has a category AND not 'university' (a platform-run primary type —
+// universities are platform-seeded, never member-created).
 func (q *Queries) ListSpaceTypesFiltered(ctx context.Context, arg ListSpaceTypesFilteredParams) ([]SpaceType, error) {
 	rows, err := q.db.Query(ctx, listSpaceTypesFiltered, arg.Search, arg.CategoryFilter, arg.SelectableOnly)
 	if err != nil {
@@ -3131,7 +3200,8 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code
+ s.updated_at, s.deleted_at, s.currency_code,
+ (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary
 FROM spaces s
 WHERE s.deleted_at IS NULL
  AND s.status = 'active'
@@ -3173,15 +3243,21 @@ type ListSpacesRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	CurrencyCode   *string            `json:"currency_code"`
+	IsPrimary      *bool              `json:"is_primary"`
 }
 
 // =====================
 // Spaces
 // =====================
-// Public discovery list. Filters by visibility so unauthenticated callers
-// only see public spaces; authenticated callers also see members/private
-// spaces they belong to (Section 05 line 272, §9 platform scoping).
-// Pass @viewer_user_id as NULL for unauthenticated requests.
+// Public discovery list for external/internal consumers (/public/spaces,
+// AI spaces.list, video default-space fallback) — includes primary spaces,
+// which consumers legitimately need (geo pickers, attribution). The member-
+// facing directory filter is opt-in on ListSpacesPaginated
+// (@member_created). is_primary flags platform-run spaces. Filters by
+// visibility so unauthenticated callers only see public spaces;
+// authenticated callers also see members/private spaces they belong to
+// (Section 05 line 272, §9 platform scoping). Pass @viewer_user_id as NULL
+// for unauthenticated requests.
 func (q *Queries) ListSpaces(ctx context.Context, viewerUserID pgtype.UUID) ([]ListSpacesRow, error) {
 	rows, err := q.db.Query(ctx, listSpaces, viewerUserID)
 	if err != nil {
@@ -3216,6 +3292,7 @@ func (q *Queries) ListSpaces(ctx context.Context, viewerUserID pgtype.UUID) ([]L
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.CurrencyCode,
+			&i.IsPrimary,
 		); err != nil {
 			return nil, err
 		}
@@ -3752,7 +3829,8 @@ const listSpacesByParentPaginated = `-- name: ListSpacesByParentPaginated :many
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
  s.follower_count, s.visibility, s.posting_perm, s.replying_perm, s.commenting_perm,
- s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code
+ s.joining_perm, s.status, s.created_at, s.updated_at, s.deleted_at, s.currency_code,
+ (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE s.deleted_at IS NULL
@@ -3778,8 +3856,10 @@ WHERE s.deleted_at IS NULL
  AND ($5::text = '' OR s.level = $5)
  AND ($6::text = '' OR s.region = $6)
  AND ($7::text = '' OR s.subregion = $7)
+ -- @member_created mirrors ListSpacesPaginated (member-created spaces only).
+ AND ($8::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
  AND (
- $8::bool = false
+ $9::bool = false
  OR (
  $2::uuid IS NOT NULL
  AND EXISTS (
@@ -3789,31 +3869,32 @@ WHERE s.deleted_at IS NULL
  )
  )
 ORDER BY
- CASE WHEN $9::text = 'name' THEN s.name ELSE NULL END ASC,
- CASE WHEN $9::text = 'name_desc' THEN s.name ELSE NULL END DESC,
+ CASE WHEN $10::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN $10::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
- WHEN $9::text = 'members' THEN s.member_count
- WHEN $9::text = 'followers' THEN s.follower_count
- WHEN $9::text = 'posts' THEN s.post_count
+ WHEN $10::text = 'members' THEN s.member_count
+ WHEN $10::text = 'followers' THEN s.follower_count
+ WHEN $10::text = 'posts' THEN s.post_count
  ELSE NULL
  END DESC,
- CASE WHEN $9::text = 'activity' THEN s.updated_at ELSE NULL END DESC,
+ CASE WHEN $10::text = 'activity' THEN s.updated_at ELSE NULL END DESC,
  s.name ASC, s.id ASC
-LIMIT $11 OFFSET $10
+LIMIT $12 OFFSET $11
 `
 
 type ListSpacesByParentPaginatedParams struct {
-	ParentID     pgtype.UUID `json:"parent_id"`
-	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
-	Search       string      `json:"search"`
-	GeoCode      string      `json:"geo_code"`
-	Level        string      `json:"level"`
-	Region       string      `json:"region"`
-	Subregion    string      `json:"subregion"`
-	JoinedOnly   bool        `json:"joined_only"`
-	Sort         string      `json:"sort"`
-	OffsetVal    int32       `json:"offset_val"`
-	LimitVal     int32       `json:"limit_val"`
+	ParentID      pgtype.UUID `json:"parent_id"`
+	ViewerUserID  pgtype.UUID `json:"viewer_user_id"`
+	Search        string      `json:"search"`
+	GeoCode       string      `json:"geo_code"`
+	Level         string      `json:"level"`
+	Region        string      `json:"region"`
+	Subregion     string      `json:"subregion"`
+	MemberCreated bool        `json:"member_created"`
+	JoinedOnly    bool        `json:"joined_only"`
+	Sort          string      `json:"sort"`
+	OffsetVal     int32       `json:"offset_val"`
+	LimitVal      int32       `json:"limit_val"`
 }
 
 type ListSpacesByParentPaginatedRow struct {
@@ -3841,6 +3922,7 @@ type ListSpacesByParentPaginatedRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	CurrencyCode   *string            `json:"currency_code"`
+	IsPrimary      *bool              `json:"is_primary"`
 }
 
 // Directory ?parent= branch — children of a parent space via the canonical
@@ -3856,6 +3938,7 @@ func (q *Queries) ListSpacesByParentPaginated(ctx context.Context, arg ListSpace
 		arg.Level,
 		arg.Region,
 		arg.Subregion,
+		arg.MemberCreated,
 		arg.JoinedOnly,
 		arg.Sort,
 		arg.OffsetVal,
@@ -3893,6 +3976,7 @@ func (q *Queries) ListSpacesByParentPaginated(ctx context.Context, arg ListSpace
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.CurrencyCode,
+			&i.IsPrimary,
 		); err != nil {
 			return nil, err
 		}
@@ -4166,7 +4250,8 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.wiki_content, s.logo_media_id, s.header_image_id, s.geo_code, s.level,
  s.member_count, s.post_count, s.follower_count, s.visibility, s.posting_perm,
  s.replying_perm, s.commenting_perm, s.joining_perm, s.status, s.created_at,
- s.updated_at, s.deleted_at, s.currency_code
+ s.updated_at, s.deleted_at, s.currency_code,
+ (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary
 FROM spaces s
 WHERE s.deleted_at IS NULL
  AND s.status = 'active'
@@ -4186,13 +4271,14 @@ WHERE s.deleted_at IS NULL
  AND ($5::text = '' OR s.region = $5)
  AND ($6::text = '' OR s.subregion = $6)
  AND ($7::uuid IS NULL OR s.space_type_id = $7::uuid)
+ AND ($8::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.
  AND NOT EXISTS (
  SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
  )
  AND (
- $8::bool = false
+ $9::bool = false
  OR (
  $1::uuid IS NOT NULL
  AND EXISTS (
@@ -4202,31 +4288,32 @@ WHERE s.deleted_at IS NULL
  )
  )
 ORDER BY
- CASE WHEN $9::text = 'name' THEN s.name ELSE NULL END ASC,
- CASE WHEN $9::text = 'name_desc' THEN s.name ELSE NULL END DESC,
+ CASE WHEN $10::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN $10::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
- WHEN $9::text = 'members' THEN s.member_count
- WHEN $9::text = 'followers' THEN s.follower_count
- WHEN $9::text = 'posts' THEN s.post_count
+ WHEN $10::text = 'members' THEN s.member_count
+ WHEN $10::text = 'followers' THEN s.follower_count
+ WHEN $10::text = 'posts' THEN s.post_count
  ELSE NULL
  END DESC,
- CASE WHEN $9::text = 'activity' THEN s.updated_at ELSE NULL END DESC,
+ CASE WHEN $10::text = 'activity' THEN s.updated_at ELSE NULL END DESC,
  s.created_at DESC, s.id DESC
-LIMIT $11 OFFSET $10
+LIMIT $12 OFFSET $11
 `
 
 type ListSpacesPaginatedParams struct {
-	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
-	Search       string      `json:"search"`
-	GeoCode      string      `json:"geo_code"`
-	Level        string      `json:"level"`
-	Region       string      `json:"region"`
-	Subregion    string      `json:"subregion"`
-	SpaceTypeID  pgtype.UUID `json:"space_type_id"`
-	JoinedOnly   bool        `json:"joined_only"`
-	Sort         string      `json:"sort"`
-	OffsetVal    int32       `json:"offset_val"`
-	LimitVal     int32       `json:"limit_val"`
+	ViewerUserID  pgtype.UUID `json:"viewer_user_id"`
+	Search        string      `json:"search"`
+	GeoCode       string      `json:"geo_code"`
+	Level         string      `json:"level"`
+	Region        string      `json:"region"`
+	Subregion     string      `json:"subregion"`
+	SpaceTypeID   pgtype.UUID `json:"space_type_id"`
+	MemberCreated bool        `json:"member_created"`
+	JoinedOnly    bool        `json:"joined_only"`
+	Sort          string      `json:"sort"`
+	OffsetVal     int32       `json:"offset_val"`
+	LimitVal      int32       `json:"limit_val"`
 }
 
 type ListSpacesPaginatedRow struct {
@@ -4254,6 +4341,7 @@ type ListSpacesPaginatedRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	CurrencyCode   *string            `json:"currency_code"`
+	IsPrimary      *bool              `json:"is_primary"`
 }
 
 // SPACES-009/011: SQL-level paginated discovery list with search, geo,
@@ -4266,6 +4354,12 @@ type ListSpacesPaginatedRow struct {
 // @joined_only restricts the list to spaces the viewer is an approved
 // member of (the /spaces "My spaces" chip — Rule 16: server-side filter so
 // pagination stays correct). @space_type_id filters by space type.
+// @member_created restricts the list to member-created spaces (Section 05
+// primary/member-created amendment: level='custom' AND creator_user_id IS NOT
+// NULL) — the /spaces directory always passes it; internal geo pickers
+// (?level=country|state|city, ?geo=) leave it off so primary spaces still
+// resolve. is_primary flags platform-run spaces (geo levels or
+// platform-seeded) so cards can suppress the Join CTA.
 func (q *Queries) ListSpacesPaginated(ctx context.Context, arg ListSpacesPaginatedParams) ([]ListSpacesPaginatedRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesPaginated,
 		arg.ViewerUserID,
@@ -4275,6 +4369,7 @@ func (q *Queries) ListSpacesPaginated(ctx context.Context, arg ListSpacesPaginat
 		arg.Region,
 		arg.Subregion,
 		arg.SpaceTypeID,
+		arg.MemberCreated,
 		arg.JoinedOnly,
 		arg.Sort,
 		arg.OffsetVal,
@@ -4312,6 +4407,7 @@ func (q *Queries) ListSpacesPaginated(ctx context.Context, arg ListSpacesPaginat
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.CurrencyCode,
+			&i.IsPrimary,
 		); err != nil {
 			return nil, err
 		}

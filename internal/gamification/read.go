@@ -161,7 +161,7 @@ func (s *Service) GetLeaderboard(ctx context.Context, scope, period string, limi
 				Username:    r.Username,
 				DisplayName: ptrStr(r.DisplayName),
 				AvatarURL:   r.AvatarUrl,
-				Points:      r.LifetimePoints,
+				Points:      r.PointsBalance,
 				Rank:        i + 1,
 			})
 		}

@@ -13,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	mw "github.com/jedafe/japa/internal/middleware"
 )
 
 // EmitActivityEventInput holds parameters for emitting an activity event.
@@ -97,12 +96,10 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		return nil
 	}
 
-	// Check the global earning killswitch and daily earning cap (BUG-003).
-	// EnableEarning is read from wallet_settings; when false, no points are
-	// awarded. The daily cap (DailyEarningCap from wallet_settings or
-	// wallet.max_daily_earn_points from system_settings) limits total points
-	// earned per user per day across all activity types.
-	if s.settings != nil {
+	// Check the global earning killswitch (BUG-003). EnableEarning gates
+	// *earning* only — penalty rules (negative point_value, ADR-129) are
+	// moderation signals and always apply.
+	if s.settings != nil && rule.PointValue > 0 {
 		ws, werr := s.store.getWalletSettings(ctx)
 		if werr == nil {
 			// EnableEarning killswitch — no points, but the activity still
@@ -203,12 +200,14 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 	// entries for this user today; if adding this rule's points would exceed
 	// the cap, skip the award. The cap is read from wallet_settings
 	// (DailyEarningCap) or system_settings (wallet.max_daily_earn_points).
+	// Penalty rules (negative point_value, ADR-129) are not earnings — the
+	// cap does not gate them.
 	dailyCap := int64(0)
-	if s.settings != nil {
+	if rule.PointValue > 0 && s.settings != nil {
 		dailyCap = int64(s.settings.GetIntOr(ctx, "wallet.max_daily_earn_points", 0))
 	}
 
-	if dailyCap == 0 {
+	if rule.PointValue > 0 && dailyCap == 0 {
 		// Fall back to wallet_settings DailyEarningCap.
 		ws, werr := s.store.getWalletSettings(ctx)
 		if werr == nil && ws.DailyEarningCap > 0 {
@@ -373,180 +372,6 @@ func (s *Service) GetLifetimePoints(ctx context.Context, userID pgtype.UUID) (in
 func (s *Service) GetPointsBalance(ctx context.Context, userID pgtype.UUID) (int64, error) {
 	points, _, err := s.GetBalance(ctx, userID)
 	return points, err
-}
-
-// ConvertPointsToCreditsInput holds parameters for converting points to credits.
-type ConvertPointsToCreditsInput struct {
-	PointsToConvert int64
-}
-
-// ConvertPointsToCredits converts points to credits at the configured rate.
-// The rate is resolved in priority order: (1) per-platform wallet_settings row,
-// (2) global system_settings key wallet.points_to_credit_rate, (3) compiled-in
-// DefaultPointsToCreditsRate (AUDIT-BE2-SETTING-007). The minimum convertible
-// amount is enforced from wallet.min_convert_points (AUDIT-BE2-SETTING-008).
-func (s *Service) ConvertPointsToCredits(ctx context.Context, userID pgtype.UUID, input ConvertPointsToCreditsInput) (pointsBalance, creditsBalance int64, err error) {
-	if input.PointsToConvert <= 0 {
-		return 0, 0, fmt.Errorf("%w: points to convert must be positive", errpkg.ErrInvalid)
-	}
-
-	// AUDIT-BE2-SETTING-008: enforce minimum convertible points from settings.
-	minConvert := int64(DefaultMinConvertPoints)
-	if s.settings != nil {
-		minConvert = int64(s.settings.GetIntOr(ctx, "wallet.min_convert_points", DefaultMinConvertPoints))
-	}
-
-	if input.PointsToConvert < minConvert {
-		return 0, 0, fmt.Errorf("%w: minimum %d points required for conversion", errpkg.ErrInvalid, minConvert)
-	}
-
-	// Get wallet settings for conversion rate
-	settings, err := s.store.getWalletSettings(ctx)
-	rate := int32(DefaultPointsToCreditsRate)
-
-	if err == nil && settings.PointsToCreditsRate != nil && *settings.PointsToCreditsRate > 0 {
-		// (1) per-platform wallet_settings row takes precedence.
-		rate = *settings.PointsToCreditsRate
-	} else if s.settings != nil {
-		// (2) fall back to global system_settings (AUDIT-BE2-SETTING-007).
-		// The catalog key is a float (0.01 means 1 point = 0.01 credits), but
-		// the wallet ledger uses an integer "points per credit" rate, so we
-		// invert: rate = round(1 / points_to_credit_rate). Guard against zero.
-		if perCredit := s.settings.GetFloatOr(ctx, "wallet.points_to_credit_rate", 0); perCredit > 0 {
-			if computed := int32(1.0 / perCredit); computed > 0 {
-				rate = computed
-			}
-		}
-	}
-
-	settings = gen.WalletSetting{PointsToCreditsRate: &rate}
-
-	// Begin transaction to atomically check balance and insert ledger entries.
-	tx, err := s.db.Writer.Begin(ctx)
-	if err != nil {
-		return 0, 0, fmt.Errorf("beginning transaction: %w", err)
-	}
-
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	qtx := s.store.write.WithTx(tx)
-
-	// Serialize concurrent balance mutations for this user. The Wallet ledger is
-	// append-only (no mutable balance row to lock with FOR UPDATE), so a plain
-	// SELECT of the latest balance does not stop two concurrent conversions from
-	// both passing the sufficient-funds check and double-spending. A
-	// transaction-scoped advisory lock keyed on the user serializes them; it is
-	// released automatically on commit/rollback. See AUDIT-BE-005.
-	lockKey := "wallet:" + "" + ":" + userID.String()
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
-		return 0, 0, fmt.Errorf("acquiring wallet lock: %w", err)
-	}
-
-	// Get current points balance within the transaction.
-	currentPoints, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		UserID:     userID,
-		LedgerType: LedgerTypePoints,
-	})
-	if err != nil {
-		return 0, 0, fmt.Errorf("getting points balance: %w", err)
-	}
-
-	// Check sufficient balance
-	if currentPoints < input.PointsToConvert {
-		return 0, 0, fmt.Errorf("%w: insufficient points balance", errpkg.ErrInsufficientBalance)
-	}
-
-	// Calculate credits to add (integer division). Only the whole-credit
-	// portion is converted; the remainder points stay in the user's balance
-	// so no value is destroyed (BUG-001, ADR-024 one-way conversion).
-	creditsToAdd := input.PointsToConvert / int64(*settings.PointsToCreditsRate)
-	if creditsToAdd <= 0 {
-		return 0, 0, fmt.Errorf("%w: conversion rate too high for amount", errpkg.ErrInvalid)
-	}
-
-	// Only debit the points that were actually converted to whole credits.
-	pointsToDebit := creditsToAdd * int64(*settings.PointsToCreditsRate)
-
-	// New points balance — remainder stays with the user.
-	newPointsBalance := currentPoints - pointsToDebit
-
-	// Get current credits balance within the transaction. No rows = zero
-	// balance; a real error must propagate — writing a ledger entry with a
-	// wrong resulting_balance corrupts the denormalized trail (ALG-016).
-	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		UserID:     userID,
-		LedgerType: LedgerTypeCredits,
-	})
-	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return 0, 0, fmt.Errorf("getting credits balance: %w", err)
-		}
-
-		currentCredits = 0
-	}
-
-	newCreditsBalance := currentCredits + creditsToAdd
-
-	// Create idempotency keys. Prefer the request's Idempotency-Key header
-	// (propagated via context by the idempotency middleware) so retries of the
-	// same logical request dedupe at the ledger level too. When no header is
-	// present, generate a unique UUID per request — deriving the key from
-	// (userID, points) would falsely collide across distinct same-amount
-	// conversions, permanently blocking a user from converting the same amount
-	// twice (Rule 9 / §13).
-	reqKey := mw.IdempotencyKeyFromContext(ctx)
-
-	pointsKey := reqKey
-	if pointsKey == "" {
-		pointsKey = "convert:" + uuid.NewString()
-	} else {
-		pointsKey = "convert:" + pointsKey + ":points"
-	}
-
-	creditsKey := reqKey
-	if creditsKey == "" {
-		creditsKey = "convert_credits:" + uuid.NewString()
-	} else {
-		creditsKey = "convert_credits:" + creditsKey + ":credits"
-	}
-
-	// Insert points debit entry — only the points actually converted.
-	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		UserID:           userID,
-		LedgerType:       LedgerTypePoints,
-		Operation:        OperationConvert,
-		Amount:           -pointsToDebit,
-		ResultingBalance: newPointsBalance,
-		Source:           strPtr("wallet_conversion"),
-		Reference:        strPtr(fmt.Sprintf("Converted %d points to %d credits", pointsToDebit, creditsToAdd)),
-		IdempotencyKey:   &pointsKey,
-		Reason:           nil,
-	})
-	if err != nil {
-		return 0, 0, fmt.Errorf("inserting points debit entry: %w", err)
-	}
-
-	// Insert credits credit entry
-	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		UserID:           userID,
-		LedgerType:       LedgerTypeCredits,
-		Operation:        OperationConvert,
-		Amount:           creditsToAdd,
-		ResultingBalance: newCreditsBalance,
-		Source:           strPtr("wallet_conversion"),
-		Reference:        strPtr(fmt.Sprintf("Converted %d points to %d credits", pointsToDebit, creditsToAdd)),
-		IdempotencyKey:   &creditsKey,
-		Reason:           nil,
-	})
-	if err != nil {
-		return 0, 0, fmt.Errorf("inserting credits credit entry: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return 0, 0, fmt.Errorf("committing transaction: %w", err)
-	}
-
-	return newPointsBalance, newCreditsBalance, nil
 }
 
 // SpendCreditsInput holds parameters for spending credits.
@@ -721,33 +546,16 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 	return newBalance, nil
 }
 
-// GetWalletSettings returns wallet settings for a platform.
-// If no per-platform wallet_settings row exists yet, the conversion rate is
-// resolved from the global system_settings key wallet.points_to_credit_rate
-// (a float: credits-per-point, e.g. 0.001 = 1000 points per credit) and
-// inverted to the integer "points per credit" rate the ledger uses, falling
-// back to DefaultPointsToCreditsRate when unset. This MUST stay consistent
-// with the resolution in ConvertPointsToCredits so the displayed rate matches
-// the rate actually enforced at conversion time (AUDIT-BE2-SETTING-007).
+// GetWalletSettings returns wallet settings. When no wallet_settings row
+// exists yet, compiled-in defaults are synthesized (ADR-129 — conversion
+// settings removed; only earning cap + killswitch remain).
 func (s *Service) GetWalletSettings(ctx context.Context) (gen.WalletSetting, error) {
 	settings, err := s.store.getWalletSettings(ctx)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// No settings row yet — resolve rate from system_settings, then defaults.
-			rate := int32(DefaultPointsToCreditsRate)
-
-			if s.settings != nil {
-				if perCredit := s.settings.GetFloatOr(ctx, "wallet.points_to_credit_rate", 0); perCredit > 0 {
-					if computed := int32(1.0 / perCredit); computed > 0 {
-						rate = computed
-					}
-				}
-			}
-
 			return gen.WalletSetting{
-				PointsToCreditsRate: &rate,
-				DailyEarningCap:     1000,
-				EnableEarning:       true,
+				DailyEarningCap: 1000,
+				EnableEarning:   true,
 			}, nil
 		}
 
@@ -757,38 +565,15 @@ func (s *Service) GetWalletSettings(ctx context.Context) (gen.WalletSetting, err
 	return settings, nil
 }
 
-// GetWalletSettingsWithMinConvert returns wallet settings plus the effective
-// minimum points required for a single conversion. The minimum is read from
-// system_settings key wallet.min_convert_points, falling back to
-// DefaultMinConvertPoints when unset.
-func (s *Service) GetWalletSettingsWithMinConvert(ctx context.Context) (gen.WalletSetting, int64, error) {
-	settings, err := s.GetWalletSettings(ctx)
-	if err != nil {
-		return gen.WalletSetting{}, 0, err
-	}
-
-	minConvert := int64(DefaultMinConvertPoints)
-	if s.settings != nil {
-		minConvert = int64(s.settings.GetIntOr(ctx, "wallet.min_convert_points", DefaultMinConvertPoints))
-	}
-
-	return settings, minConvert, nil
-}
-
 // UpdateWalletSettingsInput holds parameters for updating wallet settings.
 type UpdateWalletSettingsInput struct {
-	PointsToCreditsRate int32
-	DailyEarningCap     int32
-	EnableEarning       bool
+	DailyEarningCap int32
+	EnableEarning   bool
 }
 
 // UpdateWalletSettings updates wallet settings for a platform.
 func (s *Service) UpdateWalletSettings(ctx context.Context, input UpdateWalletSettingsInput) (gen.WalletSetting, error) {
-	if input.PointsToCreditsRate <= 0 {
-		return gen.WalletSetting{}, errors.New("points_to_credits_rate must be positive")
-	}
-
-	return s.store.upsertWalletSettings(ctx, input.PointsToCreditsRate, input.DailyEarningCap, input.EnableEarning)
+	return s.store.upsertWalletSettings(ctx, input.DailyEarningCap, input.EnableEarning)
 }
 
 // ListActivityRules returns activity rules for a platform.
