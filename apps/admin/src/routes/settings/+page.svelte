@@ -100,7 +100,7 @@
 		ai: t('settings.cat_ai_desc', 'AI-powered features configuration'),
 		spaces: t('settings.cat_spaces_desc', 'Space hierarchy and pinning settings'),
 		moderation: t('settings.cat_moderation_desc', 'Content moderation and spam detection'),
-		wallet: t('settings.cat_wallet_desc', 'Points and credit conversion settings'),
+		wallet: t('settings.cat_wallet_desc', 'Points earning and credits settings'),
 		api: t('settings.cat_api_desc', 'API rate limits and key management'),
 		ads: t('settings.cat_ads_desc', 'Advertising and campaign settings'),
 		notifications: t('settings.cat_notifications_desc', 'Notification delivery settings'),
@@ -672,7 +672,7 @@
 
 	<!-- Category sidebar + content -->
 	{#if categories.length > 0}
-		<div class="flex gap-6">
+		<div class="flex flex-col gap-4 md:flex-row md:gap-6">
 			<!-- Sidebar Navigation -->
 			<nav class="hidden w-56 shrink-0 md:block">
 				<div class="sticky top-4">
