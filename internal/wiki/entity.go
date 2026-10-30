@@ -332,7 +332,12 @@ func (s *Service) GetEntityWikiPage(ctx context.Context, userID pgtype.UUID, typ
 // fields block. The host space (ref.ParentSpaceID) supplies §58
 // currency defaults.
 func (s *Service) attachEntityContext(ctx context.Context, userID, typeID pgtype.UUID, kind string, ref EntityRef, pageID pgtype.UUID, dto *EntityPageDTO) {
-	s.attachEntityFields(ctx, userID, typeID, kind, ref, dto)
+	// Resolve the page's category row once — the fields group's fallback
+	// and the mode:"related" check share it (one lookup per page read).
+	cat, _ := s.store.read.ResolveWikiTypeCategoryToken(ctx, gen.ResolveWikiTypeCategoryTokenParams{
+		SpaceTypeID: typeID, Token: dto.Category,
+	})
+	s.attachEntityFields(ctx, userID, typeID, kind, ref, dto, cat)
 
 	// Sibling pages on the same entity — the tab strip of categories.
 	if rows, err := s.store.read.ListEntityWikiPages(ctx, gen.ListEntityWikiPagesParams{
@@ -357,16 +362,12 @@ func (s *Service) attachEntityContext(ctx context.Context, userID, typeID pgtype
 	// mode:"related" categories attach the entity's peer listing — the
 	// category row's rollup decides (a course's 'universities' page lists
 	// sibling-offering universities, a program's lists all offering unis).
-	if cat, err := s.store.read.ResolveWikiTypeCategoryToken(ctx, gen.ResolveWikiTypeCategoryTokenParams{
-		SpaceTypeID: typeID, Token: dto.Category,
-	}); err == nil {
-		if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && rcfg.Mode == rollupModeRelated {
-			dto.Related = s.computeEntityRelated(ctx, kind, ref)
-		}
+	if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && rcfg.Mode == rollupModeRelated {
+		dto.Related = s.computeEntityRelated(ctx, kind, ref)
 	}
 }
 
-func (s *Service) attachEntityFields(ctx context.Context, userID, typeID pgtype.UUID, kind string, ref EntityRef, dto *EntityPageDTO) {
+func (s *Service) attachEntityFields(ctx context.Context, userID, typeID pgtype.UUID, kind string, ref EntityRef, dto *EntityPageDTO, cat gen.WikiTypeCategory) {
 	var groupID pgtype.UUID
 	if dto.FieldGroupID != nil {
 		_ = groupID.Scan(*dto.FieldGroupID)
@@ -375,11 +376,16 @@ func (s *Service) attachEntityFields(ctx context.Context, userID, typeID pgtype.
 		// Pages bound before the group's binding (or seeded without it)
 		// fall back to the category's bound group — same precedence as
 		// the space path (cat.FieldGroupID fills page.FieldGroupID NULL).
-		cat, err := s.store.read.ResolveWikiTypeCategoryToken(ctx, gen.ResolveWikiTypeCategoryTokenParams{
-			SpaceTypeID: typeID, Token: dto.Category,
-		})
-		if err != nil {
-			return
+		// The caller passes the already-resolved row; a zero row means
+		// the lookup still has to run (template-matched lazy pages).
+		if !cat.ID.Valid {
+			var err error
+			cat, err = s.store.read.ResolveWikiTypeCategoryToken(ctx, gen.ResolveWikiTypeCategoryTokenParams{
+				SpaceTypeID: typeID, Token: dto.Category,
+			})
+			if err != nil {
+				return
+			}
 		}
 		groupID = cat.FieldGroupID
 	}
@@ -425,7 +431,7 @@ func (s *Service) entityLazyPage(ctx context.Context, userID, typeID pgtype.UUID
 			g := uuidStr(t.FieldGroupID)
 			base.FieldGroupID = &g
 		}
-		s.attachEntityFields(ctx, userID, typeID, kind, ref, &base)
+		s.attachEntityFields(ctx, userID, typeID, kind, ref, &base, gen.WikiTypeCategory{})
 		return base, nil
 	}
 	// Category match — the type's canonical category pages render lazily.
@@ -441,7 +447,7 @@ func (s *Service) entityLazyPage(ctx context.Context, userID, typeID pgtype.UUID
 		if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && rcfg.Mode == rollupModeRelated {
 			base.Related = s.computeEntityRelated(ctx, kind, ref)
 		}
-		s.attachEntityFields(ctx, userID, typeID, kind, ref, &base)
+		s.attachEntityFields(ctx, userID, typeID, kind, ref, &base, cat)
 		return base, nil
 	}
 	return EntityPageDTO{}, pgx.ErrNoRows
@@ -532,8 +538,16 @@ func (s *Service) entityChildren(ctx context.Context, spaceID, spaceTypeID pgtyp
 	if err != nil || len(types) == 0 {
 		return nil
 	}
+	// Types a directory-mode category already lists (a university's
+	// 'programs' page shows its courses) are skipped — the index would
+	// otherwise surface them twice: once in the category grid and once
+	// in this raw list.
+	covered := s.directoryCoveredEntitySlugs(ctx, spaceTypeID)
 	out := make(map[string][]EntityChild, len(types))
 	for _, t := range types {
+		if covered[t.TypeSlug] {
+			continue
+		}
 		kind := ""
 		if t.EntityKind != nil {
 			kind = *t.EntityKind
@@ -546,6 +560,35 @@ func (s *Service) entityChildren(ctx context.Context, spaceID, spaceTypeID pgtyp
 	}
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+// directoryCoveredEntitySlugs returns the entity-bound type slugs a
+// space type's directory-mode categories already list — entityChildren
+// skips them so the index doesn't double-surface the same rows.
+func (s *Service) directoryCoveredEntitySlugs(ctx context.Context, spaceTypeID pgtype.UUID) map[string]bool {
+	cats, err := s.store.ListWikiTypeCategories(ctx, spaceTypeID)
+	if err != nil {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, c := range cats {
+		rcfg := parseRollupConfig(c.Rollup)
+		if rcfg == nil || rcfg.Mode != rollupModeDirectory {
+			continue
+		}
+		typeIDs, terr := s.rollupTypeIDs(ctx, spaceTypeID, rcfg.Levels)
+		if terr != nil || len(typeIDs) == 0 {
+			continue
+		}
+		entTypes, terr := s.store.ListWikiEntityTypesForIDs(ctx, typeIDs)
+		if terr != nil {
+			continue
+		}
+		for _, et := range entTypes {
+			out[et.TypeSlug] = true
+		}
 	}
 	return out
 }
