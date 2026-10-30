@@ -245,6 +245,31 @@ func (q *Queries) DeleteTipExternalLink(ctx context.Context, arg DeleteTipExtern
 	return err
 }
 
+const failTip = `-- name: FailTip :exec
+UPDATE tips SET status = 'failed', idempotency_key = NULL, updated_at = now()
+WHERE id = $1 AND status = 'pending'
+`
+
+// Marks a pending tip failed and releases the idempotency key so the same
+// Idempotency-Key can retry a fresh attempt (the unique partial index
+// would otherwise trap the key on the dead row).
+func (q *Queries) FailTip(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, failTip, id)
+	return err
+}
+
+const getContentTitle = `-- name: GetContentTitle :one
+SELECT title FROM contents WHERE id = $1
+`
+
+// Title lookup for tip.received notifications on content-anchored tips.
+func (q *Queries) GetContentTitle(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getContentTitle, id)
+	var title string
+	err := row.Scan(&title)
+	return title, err
+}
+
 const getOrgDisplayNames = `-- name: GetOrgDisplayNames :many
 SELECT o.id, o.name FROM organizations o WHERE o.id = ANY($1::uuid[])
 `
@@ -810,7 +835,7 @@ func (q *Queries) SetOCCredentials(ctx context.Context, arg SetOCCredentialsPara
 
 const settleTip = `-- name: SettleTip :exec
 UPDATE tips SET status = 'completed', net_credits = $1, updated_at = now()
-WHERE id = $2
+WHERE id = $2 AND status = 'pending'
 `
 
 type SettleTipParams struct {
@@ -818,9 +843,26 @@ type SettleTipParams struct {
 	ID         pgtype.UUID `json:"id"`
 }
 
+// Conditional on pending so a settle racing a fail/refund can't resurrect.
 func (q *Queries) SettleTip(ctx context.Context, arg SettleTipParams) error {
 	_, err := q.db.Exec(ctx, settleTip, arg.NetCredits, arg.ID)
 	return err
+}
+
+const sumRecipientPointsToday = `-- name: SumRecipientPointsToday :one
+SELECT COALESCE(sum(points_amount),0)::bigint FROM tips
+WHERE recipient_type = 'user' AND recipient_user_id = $1
+  AND method = 'points' AND status = 'completed'
+  AND created_at >= (date_trunc('day', timezone('UTC', now()))) AT TIME ZONE 'UTC'
+`
+
+// Recipient-side mirror of the sender cap — co-conspirator pairs can't
+// launder unlimited points through one wallet per UTC day (0=unlimited).
+func (q *Queries) SumRecipientPointsToday(ctx context.Context, recipientUserID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumRecipientPointsToday, recipientUserID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const sumTipperPointsToday = `-- name: SumTipperPointsToday :one

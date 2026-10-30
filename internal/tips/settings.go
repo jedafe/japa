@@ -31,7 +31,7 @@ func (s *Service) toSettings(row gen.TipSetting) Settings {
 		hasRow:           true,
 	}
 	if row.OcWebhookSecret != nil && *row.OcWebhookSecret != "" && s.siteURL != "" {
-		u := strings.TrimRight(s.siteURL, "/") + "/api/v1/tips/webhook/opencollective?s=" + *row.OcWebhookSecret
+		u := strings.TrimRight(s.siteURL, "/") + "/api/v1/tips/webhook/opencollective/" + *row.OcWebhookSecret
 		out.OCWebhookURL = &u
 	}
 	return out
@@ -248,7 +248,9 @@ func validateLinkInput(in LinkInput) error {
 		return ErrInvalidLink
 	}
 	u, err := url.Parse(in.URL)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+	// Outbound payment links must be TLS — http exposes donors to
+	// downgrade/MITM on the linked payment page.
+	if err != nil || u.Scheme != "https" || u.Host == "" {
 		return ErrInvalidLink
 	}
 	return nil

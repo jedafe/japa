@@ -3576,6 +3576,10 @@ type ScamReport struct {
 	AiGeneratedAt         pgtype.Timestamptz `json:"ai_generated_at"`
 	HitlReviewedBy        pgtype.UUID        `json:"hitl_reviewed_by"`
 	HitlReviewedAt        pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	SubjectType           *string            `json:"subject_type"`
+	SubjectID             pgtype.UUID        `json:"subject_id"`
+	SubjectLabel          *string            `json:"subject_label"`
+	DuplicateOfReportID   pgtype.UUID        `json:"duplicate_of_report_id"`
 }
 
 type Scholarship struct {

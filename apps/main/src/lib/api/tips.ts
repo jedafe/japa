@@ -96,7 +96,7 @@ export const updateTipLink = (id: string, body: TipExternalLink) =>
 	api.patch<TipExternalLink>(`/me/tip-settings/links/${id}`, body);
 export const deleteTipLink = (id: string) => api.delete<void>(`/me/tip-settings/links/${id}`);
 
-export const connectOC = (body: { collective_slug: string; api_token?: string }) =>
+export const connectOC = (body: { collective_slug: string; api_token?: string; rotate_secret?: boolean }) =>
 	api.put<TipSettings>('/me/tip-settings/opencollective', body);
 export const disconnectOC = () => api.delete<void>('/me/tip-settings/opencollective');
 
@@ -106,3 +106,33 @@ export const listTipsReceived = (page = 1, pageSize = 20) =>
 	api.get<Tip[]>(`/me/tips/received?page=${page}&page_size=${pageSize}`);
 
 export const newIdempotencyKey = () => crypto.randomUUID();
+
+/* ---- Org-scoped tip settings (org owner/admin) ---- */
+export const getOrgTipSettings = (orgId: string) =>
+	api.get<{ settings: TipSettings; external_links: TipExternalLink[] }>(`/organizations/${orgId}/tip-settings`);
+export const updateOrgTipSettings = (orgId: string, body: Partial<TipSettings>) =>
+	api.put<TipSettings>(`/organizations/${orgId}/tip-settings`, body);
+export const createOrgTipLink = (orgId: string, body: TipExternalLink) =>
+	api.post<TipExternalLink>(`/organizations/${orgId}/tip-settings/links`, body);
+export const updateOrgTipLink = (orgId: string, linkId: string, body: TipExternalLink) =>
+	api.patch<TipExternalLink>(`/organizations/${orgId}/tip-settings/links/${linkId}`, body);
+export const deleteOrgTipLink = (orgId: string, linkId: string) =>
+	api.delete<void>(`/organizations/${orgId}/tip-settings/links/${linkId}`);
+export const connectOrgOC = (orgId: string, body: { collective_slug: string; api_token?: string; rotate_secret?: boolean }) =>
+	api.put<TipSettings>(`/organizations/${orgId}/tip-settings/opencollective`, body);
+export const disconnectOrgOC = (orgId: string) =>
+	api.delete<void>(`/organizations/${orgId}/tip-settings/opencollective`);
+
+/* ---- Fiat minor-unit helpers (ISO-4217 exponents — mirror backend
+   currencyExponent(): JPY/KRW/VND/XOF/XAF=0, BHD/JOD/KWD/OMR=3, else 2). ---- */
+export const fiatExponent = (currency: string) =>
+	['JPY', 'KRW', 'VND', 'XOF', 'XAF'].includes(currency) ? 0 : ['BHD', 'JOD', 'KWD', 'OMR'].includes(currency) ? 3 : 2;
+export const fiatMajor = (minor: number, currency: string) => minor / Math.pow(10, fiatExponent(currency));
+export const fiatDisplay = (minor: number, currency: string) => {
+	const exp = fiatExponent(currency);
+	return `${fiatMajor(minor, currency).toFixed(exp)} ${currency}`;
+};
+
+/* ---- Wallet balance for the tip dialog's "you have X" hint ---- */
+export const getWalletBalance = () =>
+	api.get<{ points_balance?: number; credits_balance?: number }>('/me/wallet');

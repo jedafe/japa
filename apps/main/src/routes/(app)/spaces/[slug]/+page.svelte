@@ -7,7 +7,7 @@
 		Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3,
 		UserPlus, UserCheck, Loader2, BellOff, Bell, Flag, Pin, PinOff,
 		Check, X, Inbox, ChevronUp, ChevronDown, BookOpen, Star
-	} from 'lucide-svelte';
+	, TriangleAlert } from 'lucide-svelte';
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import SpaceSidebar from '$lib/components/spaces/SpaceSidebar.svelte';
@@ -35,6 +35,22 @@ import { flagUrl } from '$lib/utils/flags';
 	let { data }: { data: PageData } = $props();
 
 	const space = $derived(data.space);
+
+	// BUG-021: §81 sticky warnings — confirmed scam reports pinned to this
+	// space surface as a banner above the tabs (list already returns
+	// pinned-first; we only need the pinned ones).
+	let pinnedScamAlerts = $state<{ id: string; scam_type: string; description: string }[]>([]);
+	$effect(() => {
+		const sid = space?.id;
+		if (!sid || !page.data.features?.['scam_alert.enabled']) return;
+		api
+			.get<{ id: string; scam_type: string; description: string; is_pinned: boolean }[]>(
+				`/scam-alerts?dest=${sid}&limit=10`
+			)
+			.then((res) => {
+				if (!res.error && res.data) pinnedScamAlerts = res.data.filter((a) => a.is_pinned);
+			});
+	});
 	// Country spaces use the bundled flag as their identity artwork —
 	// logo_url remains for other space types and unresolvable codes.
 	const spaceLogo = $derived(
@@ -681,6 +697,24 @@ import { flagUrl } from '$lib/utils/flags';
 </div>
 
 <div class="mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} /></div>
+
+{#if pinnedScamAlerts.length > 0}
+	<div class="mx-auto w-full max-w-3xl px-4 pt-3">
+		<div class="rounded-[var(--radius-card)] border border-red-500/40 bg-red-500/10 px-4 py-3" role="alert">
+			<p class="flex items-center gap-1.5 text-sm font-semibold text-red-600">
+				<TriangleAlert size={15} /> {t('scam_alerts.space_warning_title', 'Active scam warning')}
+			</p>
+			{#each pinnedScamAlerts.slice(0, 2) as alert (alert.id)}
+				<a href="/scam-alerts/{alert.id}" class="mt-1.5 block text-sm text-red-700 hover:underline">
+					{alert.description.length > 120 ? alert.description.slice(0, 120).trimEnd() + '…' : alert.description}
+				</a>
+			{/each}
+			<a href="/scam-alerts?dest={space.id}" class="mt-2 inline-block text-xs font-medium text-red-700 hover:underline">
+				{t('scam_alerts.space_warning_more', 'View all scam alerts for this destination')} →
+			</a>
+		</div>
+	</div>
+{/if}
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<div class="mx-auto w-full max-w-3xl p-4">

@@ -21,7 +21,7 @@ export const load: PageServerLoad = async (event) => {
 		apiList<GeoCountry>(ctx, '/geo/countries')
 			.then((r) => r.items)
 			.catch(() => [] as GeoCountry[]),
-		apiGet<{ scam_types: { value: string; label: string }[]; platforms: { value: string; label: string }[] }>(
+		apiGet<{ scam_types: { value: string; label: string }[]; platforms: { value: string; label: string }[]; anonymous_reports?: boolean }>(
 			ctx,
 			'/scam-alerts/schema'
 		).catch(() => null)
@@ -29,5 +29,26 @@ export const load: PageServerLoad = async (event) => {
 	const scamTypes = (schema?.scam_types ?? []).map((o) => o.value as ScamType);
 	const scamPlatforms = (schema?.platforms ?? []).map((o) => o.value as ScamPlatform);
 
-	return { countries, scamTypes, scamPlatforms, user, features };
+	// BUG-017: CTAs on profiles/orgs/services prefill the accused entity +
+	// platform via query params. Validated loosely here — the backend
+	// re-validates subject_type against its enum.
+	const subjectType = event.url.searchParams.get('subject_type') ?? '';
+	const subjectId = event.url.searchParams.get('subject_id') ?? '';
+	const subjectLabel = event.url.searchParams.get('subject_label') ?? '';
+	const platform = event.url.searchParams.get('platform') ?? '';
+
+	return {
+		countries,
+		scamTypes,
+		scamPlatforms,
+		user,
+		features,
+		anonymousReports: schema?.anonymous_reports !== false,
+		prefill: {
+			platform: scamPlatforms.includes(platform as ScamPlatform) ? platform : '',
+			subject_type: subjectType,
+			subject_id: subjectId,
+			subject_label: subjectLabel
+		}
+	};
 };

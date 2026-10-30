@@ -831,6 +831,7 @@ var settingsCatalog = map[string]settingMeta{
 	"trending.weight.votes":           {Type: "float", DefaultValue: "10", Description: "Content/user velocity: votes multiplier", Panel: "admin"},
 	"tips.fee_percent":                {Type: "int", DefaultValue: "0", Min: 0, Max: 50, Description: "Platform fee percentage deducted from credit and fiat tips before crediting the recipient. Ref: Section 125.", Panel: "admin"},
 	"tips.points_daily_limit":         {Type: "int", DefaultValue: "500", Description: "Maximum points a member may tip per UTC day (anti-laundering). Ref: Section 125.", Panel: "admin"},
+	"tips.points_daily_recipient_limit": {Type: "int", DefaultValue: "0", Description: "Maximum points a single recipient may receive via tips per UTC day (0 = unlimited; anti-laundering complement to the sender cap). Ref: Section 125.", Panel: "admin"},
 	"tips.min_fiat_minor":             {Type: "int", DefaultValue: "100", Description: "Minimum fiat tip amount in the currency's minor units (cents). Ref: Section 125.", Panel: "admin"},
 	"tips.max_fiat_minor":             {Type: "int", DefaultValue: "1000000", Description: "Maximum fiat tip amount in the currency's minor units. Ref: Section 125.", Panel: "admin"},
 	"tips.oc_sync_interval_minutes":   {Type: "int", DefaultValue: "10", Description: "Open Collective contribution poll interval (informational; cron spec lives in SchedulerCronSpecs). Ref: Section 125.", Panel: "admin"},

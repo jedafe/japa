@@ -41,6 +41,20 @@
 			</a>
 		{/if}
 
+		{#if config.oc_collective_slug}
+			<!-- §125 — platform collective renders as the OC donate embed
+			     (iframe — no third-party script on our origin); the outbound
+			     link stays as a fallback for users who prefer it. -->
+			<div class="mb-8 overflow-hidden rounded-lg border border-border">
+				<iframe
+					src="https://opencollective.com/embed/{config.oc_collective_slug}/donate"
+					title={t('donate.oc_title', 'Donate via Open Collective')}
+					class="h-[380px] w-full"
+					loading="lazy"
+				></iframe>
+			</div>
+		{/if}
+
 		{#if config.oc_collective_slug || (config.external_links ?? []).length > 0}
 			<div class="mt-8 border-t border-border pt-6">
 				<p class="mb-3 text-xs font-semibold uppercase text-muted-foreground">{t('tips.external')}</p>

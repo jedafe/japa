@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/appeals"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/organizations"
@@ -2255,13 +2256,23 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 		affected, err := h.Queries.HardDeleteContent(r.Context(), cid)
 		if err != nil {
 			if errpkg.IsFKViolation(err) {
-				errpkg.WriteError(w, http.StatusConflict, "in_use", "Content is referenced by other records and cannot be permanently deleted")
+				// Dependent rows block the bare delete — sweep the FK graph
+				// inside a transaction instead of refusing. ForceDelete
+				// removes NO ACTION/RESTRICT dependents recursively, nulls
+				// SET NULL references, and leaves CASCADE to the database.
+				if sweepErr := db.WithTxHandle(r.Context(), h.DB.Writer, func(tx pgx.Tx, _ *gen.Queries) error {
+					return db.ForceDelete(r.Context(), tx, "contents", "id", cid)
+				}); sweepErr != nil {
+					errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete content")
+					return
+				}
+
+				affected = 1
+			} else {
+				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete content")
+
 				return
 			}
-
-			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete content")
-
-			return
 		}
 
 		if affected == 0 {

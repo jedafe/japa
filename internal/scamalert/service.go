@@ -54,6 +54,12 @@ type ScamReportDTO struct {
 	PinnedSpaceID string `json:"pinned_space_id,omitempty"`
 	ReviewedBy    string `json:"reviewed_by,omitempty"`
 	ReviewedAt    string `json:"reviewed_at,omitempty"`
+	// BUG-002: accused-entity linkage — moderation context, redacted on
+	// public surfaces for non-reporters like reporter identity.
+	SubjectType         string `json:"subject_type,omitempty"`
+	SubjectID           string `json:"subject_id,omitempty"`
+	SubjectLabel        string `json:"subject_label,omitempty"`
+	DuplicateOfReportID string `json:"duplicate_of_report_id,omitempty"`
 	// ADR-088 universal AI-generation fields (admin review surfaces).
 	// AiGenerated is a *bool so the public redaction path can omit the key
 	// entirely — §81 strips ai_*/hitl_* provenance for every caller except
@@ -79,6 +85,12 @@ type SubmitReportInput struct {
 	AmountRange           string `json:"amount_range"`
 	Description           string `json:"description"`
 	ReportedToAuthorities bool   `json:"reported_to_authorities"`
+	// BUG-002: optional accused-entity linkage (prefilled by profile/org/
+	// service CTAs). subject_type is user|organization|service|other;
+	// subject_label is a display-name snapshot for the review queue.
+	SubjectType  string `json:"subject_type"`
+	SubjectID    string `json:"subject_id"`
+	SubjectLabel string `json:"subject_label"`
 }
 
 // UpdateReportInput is the request body for PATCH /scam-alerts/:id.
@@ -88,8 +100,9 @@ type UpdateReportInput SubmitReportInput
 
 // ReviewInput is the request body for PATCH /admin/scam-alerts/:id.
 type ReviewInput struct {
-	Status        string `json:"status"` // confirmed|debunked|duplicate
-	ModeratorNote string `json:"moderator_note"`
+	Status              string `json:"status"` // confirmed|debunked|duplicate
+	ModeratorNote       string `json:"moderator_note"`
+	DuplicateOfReportID string `json:"duplicate_of_report_id"`
 }
 
 // Notifier is the interface used by the scam-alert service to dispatch
@@ -281,6 +294,16 @@ func (s *Service) Schema() SchemaOptions {
 
 // validReviewStatuses are the status values a moderator may set via Review
 // (§81 status machine: under_review → confirmed | debunked | duplicate).
+// validSubjectTypes are the accused-entity kinds a report may reference
+// (BUG-002). Optional — empty means the report is about a pattern, not an
+// on-platform entity.
+var validSubjectTypes = map[string]bool{
+	"user":         true,
+	"organization": true,
+	"service":      true,
+	"other":        true,
+}
+
 var validReviewStatuses = map[string]bool{
 	"confirmed": true,
 	"debunked":  true,
@@ -309,6 +332,13 @@ var ErrInvalidDestination = errors.New("invalid destination_space_id")
 // ErrInvalidOrigin is returned when origin_space_id does not resolve to a
 // live country-level space.
 var ErrInvalidOrigin = errors.New("invalid origin_space_id")
+
+// ErrInvalidSubjectType is returned when subject_type is not in the
+// BUG-002 enum.
+var ErrInvalidSubjectType = errors.New("invalid subject_type")
+
+// ErrFutureDate is returned when approximate_date is in the future.
+var ErrFutureDate = errors.New("approximate_date cannot be in the future")
 
 // ErrModeratorNoteRequired is returned when a report is confirmed without a
 // moderator note. §81 legal boundary: a confirmed report must always carry a
@@ -445,7 +475,10 @@ func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 	// Sanitize on write (mirror content/store.go:460): description is the
 	// rich-text field (whitelist HTML), origin_community/amount_range are
 	// plain text.
-	input.Description = content.SanitizeHTML(input.Description)
+	// BUG-015: description is a plain-text field — SanitizeText strips
+	// markup entirely; SanitizeHTML persists a full <html><body> document
+	// wrapper that the plaintext renderers surface literally.
+	input.Description = content.SanitizeText(input.Description)
 	input.OriginCommunity = content.SanitizeText(input.OriginCommunity)
 	input.AmountRange = content.SanitizeText(input.AmountRange)
 
@@ -481,6 +514,32 @@ func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 		if err := approximateDate.Scan(input.ApproximateDate); err != nil {
 			return ScamReport{}, fmt.Errorf("invalid approximate_date: %w", err)
 		}
+		if approximateDate.Valid && approximateDate.Time.After(time.Now().AddDate(0, 0, 1)) {
+			return ScamReport{}, ErrFutureDate
+		}
+	}
+
+	// BUG-002: optional accused-entity linkage.
+	var subjectType *string
+	var subjectLabel *string
+	var subjectID pgtype.UUID
+	if input.SubjectType != "" {
+		if !validSubjectTypes[input.SubjectType] {
+			return ScamReport{}, ErrInvalidSubjectType
+		}
+		subjectType = &input.SubjectType
+	}
+	if input.SubjectID != "" {
+		if err := subjectID.Scan(input.SubjectID); err != nil {
+			return ScamReport{}, fmt.Errorf("invalid subject_id: %w", err)
+		}
+	}
+	if input.SubjectLabel != "" {
+		lbl := content.SanitizeText(input.SubjectLabel)
+		if len([]rune(lbl)) > 200 {
+			lbl = string([]rune(lbl)[:200])
+		}
+		subjectLabel = &lbl
 	}
 
 	return ScamReport{
@@ -493,6 +552,9 @@ func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 		AmountRange:           amountRange,
 		Description:           input.Description,
 		ReportedToAuthorities: input.ReportedToAuthorities,
+		SubjectType:           subjectType,
+		SubjectID:             subjectID,
+		SubjectLabel:          subjectLabel,
 	}, nil
 }
 
@@ -526,6 +588,18 @@ func (s *Service) Update(ctx context.Context, id, callerID pgtype.UUID, input Up
 	row, err := s.store.UpdateReport(ctx, id, report)
 	if err != nil {
 		return ScamReportDTO{}, fmt.Errorf("scamalert: update: %w", err)
+	}
+
+	// BUG-001: a reporter (non-edit_any) editing an already-decided report
+	// must send it back through moderation — otherwise confirmed, publicly
+	// published content could be rewritten after review. Moderator edits
+	// (edit_any) leave the status untouched.
+	if !editAny && existing.Status != "under_review" {
+		if rerr := s.store.ResetReportReview(ctx, id); rerr != nil {
+			slog.Error("scamalert: reset review after reporter edit failed", "id", id, "error", rerr)
+		}
+		row.Status = "under_review"
+		cdn.PurgePublicPaths(ctx, []string{"scam_alert:" + id.String()}, "/scam-alerts/"+id.String(), "/scam-alerts")
 	}
 
 	return rowToDTO(row), nil
@@ -715,7 +789,7 @@ func (s *Service) AdminList(ctx context.Context, status string, destSpaceID pgty
 // subscribers of the report's destination space, award the Community
 // Guardian badge to the reporter (§64), and enqueue wallet:award_points
 // for the reporter's contribution.
-func (s *Service) Review(ctx context.Context, id pgtype.UUID, status, note string, reviewerID pgtype.UUID) error {
+func (s *Service) Review(ctx context.Context, id pgtype.UUID, status, note, duplicateOfReportID string, reviewerID pgtype.UUID) error {
 	if !validReviewStatuses[status] {
 		return ErrInvalidStatus
 	}
@@ -727,7 +801,22 @@ func (s *Service) Review(ctx context.Context, id pgtype.UUID, status, note strin
 		return ErrModeratorNoteRequired
 	}
 
-	if err := s.store.UpdateReportStatus(ctx, id, status, note, reviewerID); err != nil {
+	// BUG-008: capture the previous status so the fan-out task only
+	// notifies subscribers on a real transition INTO 'confirmed' — a
+	// re-confirm of an already-confirmed report must not re-alert.
+	prevStatus := ""
+	if existing, gerr := s.store.GetReportForUpdate(ctx, id); gerr == nil {
+		prevStatus = existing.Status
+	}
+
+	var duplicateOf pgtype.UUID
+	if duplicateOfReportID != "" {
+		if err := duplicateOf.Scan(duplicateOfReportID); err != nil {
+			return fmt.Errorf("scamalert: review: invalid duplicate_of_report_id: %w", err)
+		}
+	}
+
+	if err := s.store.UpdateReportStatus(ctx, id, status, note, reviewerID, duplicateOf); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -740,11 +829,13 @@ func (s *Service) Review(ctx context.Context, id pgtype.UUID, status, note strin
 
 	// §81: on confirm, enqueue the notification + badge fan-out task.
 	// Fire-and-forget — never block the review response (Rule 8).
-	if status == "confirmed" && s.enqueuer != nil {
+	if s.enqueuer != nil {
 		payload, err := json.Marshal(struct {
-			ReportID string `json:"report_id"`
+			ReportID   string `json:"report_id"`
+			PrevStatus string `json:"prev_status"`
 		}{
-			ReportID: id.String(),
+			ReportID:   id.String(),
+			PrevStatus: prevStatus,
 		})
 		if err != nil {
 			slog.Error("scamalert: review: marshal notify payload failed", "error", err)
@@ -770,8 +861,8 @@ func (s *Service) Review(ctx context.Context, id pgtype.UUID, status, note strin
 // // All steps are nil-safe: if the notifier/awarder/enqueuer is not wired,
 // the method logs a warning and continues. This makes the feature
 // gracefully degrade in tests and development.
-func (s *Service) NotifySubscribers(ctx context.Context, reportID pgtype.UUID) error {
-	destSpaceID, reporterID, scamType, description, err := s.store.GetReportForNotification(ctx, reportID)
+func (s *Service) NotifySubscribers(ctx context.Context, reportID pgtype.UUID, prevStatus string) error {
+	destSpaceID, reporterID, scamType, description, status, err := s.store.GetReportForNotification(ctx, reportID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("scamalert: notify: report not found or not confirmed", "report_id", reportID.String())
@@ -779,6 +870,31 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID pgtype.UUID) e
 		}
 
 		return fmt.Errorf("scamalert: notify: get report: %w", err)
+	}
+
+	// BUG-006: notify the reporter of the review outcome — previously only
+	// destination subscribers heard anything, so debunked reporters never
+	// learned their appeal path existed. Anonymous reports (NULL
+	// reporter_id) have nobody to notify.
+	if s.notifier != nil && reporterID.Valid && status != "under_review" {
+		title := "Your scam report was " + status
+		body := "A moderator reviewed your " + scamType + " report"
+		if status == "confirmed" {
+			body = "Thanks for helping protect the community — your report was confirmed and is now public."
+		}
+		if nerr := s.notifier.CreateNotification(
+			ctx, reporterID,
+			"scam_alert.reviewed", "system", pgtype.UUID{},
+			"scam_report", reportID,
+			title, body, "/scam-alerts/"+reportID.String(),
+		); nerr != nil {
+			slog.Warn("scamalert: notify: reporter notification failed", "reporter_id", reporterID.String(), "error", nerr)
+		}
+	}
+
+	// Subscriber fan-out only on a real transition INTO 'confirmed'.
+	if status != "confirmed" || prevStatus == "confirmed" {
+		return nil
 	}
 
 	// 1. Fan out notifications to subscribers.
@@ -880,6 +996,16 @@ func excerpt(s string, n int) string {
 
 // Pin pins a confirmed report to a space.
 func (s *Service) Pin(ctx context.Context, id, spaceID pgtype.UUID) error {
+	// BUG-010: validate the pin target resolves to a live space — the body
+	// previously accepted any UUID and silently stored dead references.
+	ok, err := s.store.SpaceExists(ctx, spaceID)
+	if err != nil {
+		return fmt.Errorf("scamalert: pin: %w", err)
+	}
+	if !ok {
+		return ErrInvalidDestination
+	}
+
 	if err := s.store.PinReport(ctx, id, spaceID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -907,9 +1033,12 @@ func (s *Service) Unpin(ctx context.Context, id pgtype.UUID) error {
 // rowToDTO converts a ScamReportRow (joined query result) to a ScamReportDTO.
 func rowToDTO(r ScamReportRow) ScamReportDTO {
 	dto := ScamReportDTO{
-		ID:                    r.ID.String(),
-		ScamType:              r.ScamType,
-		Description:           r.Description,
+		ID:       r.ID.String(),
+		ScamType: r.ScamType,
+		// BUG-015: strip any markup on read so legacy rows stored through
+		// the old SanitizeHTML path (with the <html><body> wrapper) render
+		// as clean plain text too.
+		Description:           content.SanitizeText(r.Description),
 		ReportedToAuthorities: r.ReportedToAuthorities,
 		Status:                r.Status,
 		IsPinned:              r.IsPinned,
@@ -973,6 +1102,19 @@ func rowToDTO(r ScamReportRow) ScamReportDTO {
 		dto.ReviewedBy = r.ReviewedBy.String()
 	}
 
+	if r.SubjectType != nil {
+		dto.SubjectType = *r.SubjectType
+	}
+	if r.SubjectID.Valid {
+		dto.SubjectID = r.SubjectID.String()
+	}
+	if r.SubjectLabel != nil {
+		dto.SubjectLabel = *r.SubjectLabel
+	}
+	if r.DuplicateOfReportID.Valid {
+		dto.DuplicateOfReportID = r.DuplicateOfReportID.String()
+	}
+
 	aiGen := r.AiGenerated
 	dto.AiGenerated = &aiGen
 	dto.AiGeneratedAt = formatTs(r.AiGeneratedAt)
@@ -1000,4 +1142,70 @@ func formatTs(t pgtype.Timestamptz) string {
 	}
 
 	return t.Time.UTC().Format(time.RFC3339)
+}
+
+// SubscriptionDTO is the API shape for a scam-alert subscription.
+type SubscriptionDTO struct {
+	DestinationSpaceID   string `json:"destination_space_id"`
+	DestinationSpaceName string `json:"destination_space_name,omitempty"`
+	DestinationSpaceCode string `json:"destination_space_code,omitempty"`
+	CreatedAt            string `json:"created_at"`
+}
+
+// MyReports returns the caller's own reports in any status — powers the
+// "My reports" tracking surface (BUG-016).
+func (s *Service) MyReports(ctx context.Context, reporterID pgtype.UUID, page, limit int32) ([]ScamReportDTO, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+	rows, total, err := s.store.ListReportsByReporter(ctx, reporterID, limit, (page-1)*limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("scamalert: my reports: %w", err)
+	}
+	dtos := make([]ScamReportDTO, 0, len(rows))
+	for _, r := range rows {
+		dtos = append(dtos, rowToDTO(r))
+	}
+	return dtos, total, nil
+}
+
+// MySubscriptions returns the caller's scam-alert subscriptions with
+// destination names (BUG-019).
+func (s *Service) MySubscriptions(ctx context.Context, userID pgtype.UUID) ([]SubscriptionDTO, error) {
+	rows, err := s.store.ListSubscriptionsByUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("scamalert: my subscriptions: %w", err)
+	}
+	out := make([]SubscriptionDTO, 0, len(rows))
+	for _, r := range rows {
+		d := SubscriptionDTO{
+			DestinationSpaceID: r.DestinationSpaceID.String(),
+			CreatedAt:          formatTs(r.CreatedAt),
+		}
+		if r.DestinationSpaceName != nil {
+			d.DestinationSpaceName = *r.DestinationSpaceName
+		}
+		if r.DestinationSpaceCode != nil {
+			d.DestinationSpaceCode = *r.DestinationSpaceCode
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// SubscribeDest subscribes the caller to scam alerts for a destination space
+// directly (without going through a report id) — the filtered-board
+// subscribe CTA (BUG-019). Validates the country-level space.
+func (s *Service) SubscribeDest(ctx context.Context, userID, destSpaceID pgtype.UUID) error {
+	ok, err := s.store.CountrySpaceExists(ctx, destSpaceID)
+	if err != nil {
+		return fmt.Errorf("scamalert: subscribe dest: %w", err)
+	}
+	if !ok {
+		return ErrInvalidDestination
+	}
+	return s.Subscribe(ctx, userID, destSpaceID)
 }

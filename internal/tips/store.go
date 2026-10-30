@@ -35,11 +35,17 @@ type tipStore interface {
 	updateTipStatus(ctx context.Context, id pgtype.UUID, status string) error
 	attachTipPayment(ctx context.Context, id, paymentID pgtype.UUID) error
 	settleTip(ctx context.Context, id pgtype.UUID, netCredits int64) error
+	// failTip marks a pending tip failed and releases its idempotency key.
+	failTip(ctx context.Context, id pgtype.UUID) error
+	// insertAuditLog writes a moderation audit trail row (admin refund).
+	insertAuditLog(ctx context.Context, actorID pgtype.UUID, action, targetType, targetID, metadata string) error
 
 	listTipsSent(ctx context.Context, senderID pgtype.UUID, limit, offset int32) ([]gen.Tip, error)
 	listTipsReceived(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Tip, error)
 	countTipsReceived(ctx context.Context, userID pgtype.UUID) (int32, error)
 	sumTipperPointsToday(ctx context.Context, senderID pgtype.UUID) (int64, error)
+	sumRecipientPointsToday(ctx context.Context, recipientID pgtype.UUID) (int64, error)
+	getContentTitle(ctx context.Context, contentID pgtype.UUID) (string, error)
 	contentTipSummary(ctx context.Context, contentID pgtype.UUID) (gen.ContentTipSummaryRow, error)
 	adminListTips(ctx context.Context, p gen.AdminListTipsParams) ([]gen.Tip, error)
 	adminCountTips(ctx context.Context, p gen.AdminCountTipsParams) (int32, error)
@@ -200,6 +206,20 @@ func (s *Store) settleTip(ctx context.Context, id pgtype.UUID, netCredits int64)
 	return s.write.SettleTip(ctx, gen.SettleTipParams{ID: id, NetCredits: netCredits})
 }
 
+func (s *Store) failTip(ctx context.Context, id pgtype.UUID) error {
+	return s.write.FailTip(ctx, id)
+}
+
+// insertAuditLog records the admin refund in audit_logs (same shape as the
+// other moderation writes — actor, action, target, jsonb metadata).
+func (s *Store) insertAuditLog(ctx context.Context, actorID pgtype.UUID, action, targetType, targetID, metadata string) error {
+	_, err := s.db.Writer.Exec(ctx, `
+		INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata)
+		VALUES ($1, $2, $3, $4::uuid, $5::jsonb)`,
+		actorID, action, targetType, targetID, metadata)
+	return err
+}
+
 func (s *Store) listTipsSent(ctx context.Context, senderID pgtype.UUID, limit, offset int32) ([]gen.Tip, error) {
 	return s.read.ListTipsSent(ctx, gen.ListTipsSentParams{SenderUserID: senderID, PageLimit: limit, PageOffset: offset})
 }
@@ -214,6 +234,18 @@ func (s *Store) countTipsReceived(ctx context.Context, userID pgtype.UUID) (int3
 
 func (s *Store) sumTipperPointsToday(ctx context.Context, senderID pgtype.UUID) (int64, error) {
 	return s.read.SumTipperPointsToday(ctx, senderID)
+}
+
+func (s *Store) sumRecipientPointsToday(ctx context.Context, recipientID pgtype.UUID) (int64, error) {
+	return s.read.SumRecipientPointsToday(ctx, recipientID)
+}
+
+func (s *Store) getContentTitle(ctx context.Context, contentID pgtype.UUID) (string, error) {
+	t, err := s.read.GetContentTitle(ctx, contentID)
+	if err != nil {
+		return "", mapNotFound(err, ErrNotFound)
+	}
+	return t, nil
 }
 
 func (s *Store) contentTipSummary(ctx context.Context, contentID pgtype.UUID) (gen.ContentTipSummaryRow, error) {

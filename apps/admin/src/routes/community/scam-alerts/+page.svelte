@@ -33,6 +33,12 @@
 		ai_model?: string;
 		hitl_reviewed_by?: string;
 		ai_generated_at?: string;
+		reporter_id?: string;
+		reporter_name?: string;
+		destination_space_id?: string;
+		subject_type?: string;
+		subject_id?: string;
+		subject_label?: string;
 	};
 
 	const canReview = $derived(hasPermission('scam_alert.review'));
@@ -73,6 +79,7 @@
 	let reviewStatus = $state<'confirmed' | 'debunked' | 'duplicate'>('confirmed');
 	let moderatorNote = $state('');
 	let reviewSubmitting = $state(false);
+	let duplicateOfId = $state('');
 
 
 
@@ -97,7 +104,10 @@
 		try {
 			const result = await scamAlertAdminApi.update(reviewTarget.id, {
 				status: reviewStatus,
-				moderator_note: moderatorNote.trim()
+				moderator_note: moderatorNote.trim(),
+				...(reviewStatus === 'duplicate' && duplicateOfId.trim()
+					? { duplicate_of_report_id: duplicateOfId.trim() }
+					: {})
 			});
 			if (result.ok) {
 				reviewOpen = false;
@@ -116,7 +126,7 @@
 		acting = true;
 		pageError = '';
 		try {
-			const result = await scamAlertAdminApi.pin(item.id);
+			const result = await scamAlertAdminApi.pin(item.id, item.destination_space_id);
 			if (result.ok) {
 				entityController?.reload();
 			} else {
@@ -156,7 +166,9 @@
 				label: t('app.scam_alert.review', 'Review'),
 				icon: CheckCircle,
 				onclick: openReview,
-				show: (row: ScamAlertItem) => row.status === 'under_review'
+				// BUG-005: decisions must be reversible — allow re-review of any
+				// status (backend permits transitions; only the note gate differs).
+				show: () => true
 			});
 		}
 		if (canPin) {
@@ -253,6 +265,7 @@
 			}
 			if (params.filter?.status) qs.set('status', params.filter.status);
 			if (params.filter?.dest) qs.set('dest', params.filter.dest);
+			if (params.filter?.scam_type) qs.set('scam_type', params.filter.scam_type);
 			const result = await scamAlertAdminApi.listRaw(qs.toString());
 			if (result.ok) {
 				const data = (result.data.data as ScamAlertItem[]) ?? [];
@@ -363,6 +376,23 @@
 						style="color: var(--color-foreground)"
 					></textarea>
 				</div>
+
+				{#if reviewStatus === 'duplicate'}
+					<div class="flex flex-col gap-1.5">
+						<label for="duplicate-of" class="text-sm font-medium" style="color: var(--color-foreground)">
+							{t('app.scam_alert.duplicate_of', 'Original report ID')}
+						</label>
+						<input
+							id="duplicate-of"
+							type="text"
+							value={duplicateOfId}
+							oninput={(e) => (duplicateOfId = e.currentTarget.value)}
+							placeholder={t('app.scam_alert.duplicate_of_placeholder', 'UUID of the canonical report')}
+							class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
+							style="color: var(--color-foreground)"
+						/>
+					</div>
+				{/if}
 			</div>
 
 			<div class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] px-4 py-3">
@@ -433,6 +463,22 @@
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.scam_alert.detail_description', 'Description')}</p>
 			<p class="mt-1 whitespace-pre-wrap text-sm" style="color: var(--color-foreground)">{row.description || '—'}</p>
+		</div>
+		{#if row.reporter_name || row.reporter_id}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.scam_alert.col_reporter', 'Reporter')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.reporter_name ?? row.reporter_id}</p>
+			</div>
+		{/if}
+		{#if row.subject_type}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.scam_alert.col_subject', 'Reported entity')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.subject_label ?? '—'} ({row.subject_type})</p>
+			</div>
+		{/if}
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.scam_alert.col_authorities', 'Reported to authorities')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.reported_to_authorities ? t('common.yes', 'Yes') : t('common.no', 'No')}</p>
 		</div>
 		{#if row.moderator_note}
 			<div>

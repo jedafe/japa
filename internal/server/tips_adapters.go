@@ -179,8 +179,13 @@ type tipsSettlementAdapter struct {
 }
 
 // SettleFiatTip delegates.
-func (a tipsSettlementAdapter) SettleFiatTip(ctx context.Context, tipID pgtype.UUID) error {
-	return a.svc.SettleFiatTip(ctx, tipID)
+func (a tipsSettlementAdapter) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUID) error {
+	return a.svc.SettleFiatTip(ctx, tipID, paymentID)
+}
+
+// FailTip delegates.
+func (a tipsSettlementAdapter) FailTip(ctx context.Context, tipID pgtype.UUID) error {
+	return a.svc.FailTip(ctx, tipID)
 }
 
 // ClawbackTip delegates.
@@ -210,4 +215,20 @@ func (a tipsFeatureAdapter) IsEnabled(ctx context.Context, key string) bool {
 		return false
 	}
 	return a.checker.IsEnabled(ctx, key)
+}
+
+// tipsRefundAdapter adapts *payments.Service to tips.PaymentRefunder — admin
+// tip refunds issue a real provider-side refund for fiat tips.
+type tipsRefundAdapter struct {
+	svc *payments.Service
+}
+
+// RefundPayment delegates to CreateRefund with the tip's full fiat amount.
+func (a tipsRefundAdapter) RefundPayment(ctx context.Context, paymentID string, amount int64, reason string) error {
+	_, err := a.svc.CreateRefund(ctx, payments.CreateRefundInput{
+		PaymentID: paymentID,
+		Amount:    amount,
+		Reason:    reason,
+	})
+	return err
 }

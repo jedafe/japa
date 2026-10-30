@@ -15,6 +15,7 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { OrganizationAdmin, OrgInvitation, OrgMedia, OrgMember, ProfilePost } from '$lib/types';
+	import TipsSection from '$lib/components/hub/settings/sections/TipsSection.svelte';
 
 	let { data } = $props();
 	const org = $derived(data.org);
@@ -77,7 +78,10 @@
 		{ value: 'settings', label: t('org_admin.tab_settings', 'Settings') },
 		{ value: 'content', label: t('org_admin.tab_content', 'Content') },
 		{ value: 'media', label: t('org_admin.tab_media', 'Media') },
-		{ value: 'analytics', label: t('org_admin.tab_analytics', 'Analytics') }
+		{ value: 'analytics', label: t('org_admin.tab_analytics', 'Analytics') },
+		...(page.data.features?.['tips.enabled']
+			? [{ value: 'donations', label: t('org_admin.tab_donations', 'Donations') }]
+			: [])
 	];
 
 	let name = $state(untrack(() => data.org?.name ?? ''));
@@ -733,5 +737,11 @@
 			</button>
 		</div>
 	{/if}
+	{/if}
+	{#if activeTab === 'donations' && org?.id}
+		<div class="mt-6 max-w-2xl">
+			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('org_admin.donations_section', 'Donation settings')}</h2>
+			<TipsSection orgId={org.id} />
+		</div>
 	{/if}
 </section>

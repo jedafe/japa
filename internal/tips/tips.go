@@ -58,6 +58,7 @@ var (
 	ErrSelfTip             = errors.New("cannot tip yourself")
 	ErrInsufficientBalance = errors.New("insufficient balance")
 	ErrDailyPointsLimit    = errors.New("daily points tip limit reached")
+	ErrDailyRecipientLimit = errors.New("recipient daily points tip limit reached")
 	ErrNotEligible         = errors.New("tips.receive permission or mentor profile required")
 	ErrNotFound            = errors.New("tip or settings not found")
 	ErrInvalidMethod       = errors.New("invalid tip method")
@@ -70,6 +71,9 @@ var (
 	ErrAlreadySettled      = errors.New("tip already settled")
 	ErrDuplicateKey        = errors.New("duplicate idempotency key")
 	ErrInvalidStatus       = errors.New("invalid tip status for this operation")
+	ErrBlocked             = errors.New("cannot tip this user")
+	ErrMessageTooLong      = errors.New("tip message is too long")
+	ErrOCAccess            = errors.New("token has no access to this collective")
 )
 
 // fiatMethods are the §17 payment providers usable for fiat tips.
@@ -232,6 +236,13 @@ type PaymentCreator interface {
 	CreatePayment(ctx context.Context, userID pgtype.UUID, input PaymentCreateInput) (PaymentCreateResult, error)
 }
 
+// PaymentRefunder issues a provider-side refund through §17 for fiat tips
+// (payments.Service.CreateRefund — marks the payment refunded and enqueues
+// the webhook reversal, which re-runs ClawbackTip idempotently).
+type PaymentRefunder interface {
+	RefundPayment(ctx context.Context, paymentID string, amount int64, reason string) error
+}
+
 // ProviderLister reports which §17 payment providers are actually configured
 // at boot — public tip-configs only advertise usable fiat methods.
 type ProviderLister interface {
@@ -311,6 +322,7 @@ type Service struct {
 	settings     SettingsReader
 	perms        PermChecker
 	payments     PaymentCreator
+	refunder     PaymentRefunder
 	providers    ProviderLister
 	features     FeatureChecker
 	orgs         OrgRoleChecker
@@ -334,6 +346,10 @@ func (s *Service) SetPaymentsService(p PaymentCreator) { s.payments = p }
 // SetProviderLister injects the configured-provider reporter for public
 // fiat-method filtering.
 func (s *Service) SetProviderLister(p ProviderLister) { s.providers = p }
+
+// SetPaymentRefunder injects the §17 provider-refund seam used by
+// AdminRefundTip so fiat tips refund the donor, not just claw back credits.
+func (s *Service) SetPaymentRefunder(r PaymentRefunder) { s.refunder = r }
 
 // SetSyncLocker injects the distributed lock used by OC collective sync.
 func (s *Service) SetSyncLocker(l SyncLocker) { s.locker = l }

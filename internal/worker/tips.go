@@ -15,8 +15,9 @@ import (
 // TipSettlement is the worker-side seam into internal/tips.Service — kept
 // narrow so worker never imports the domain package directly.
 type TipSettlement interface {
-	SettleFiatTip(ctx context.Context, tipID pgtype.UUID) error
+	SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUID) error
 	ClawbackTip(ctx context.Context, tipID pgtype.UUID) error
+	FailTip(ctx context.Context, tipID pgtype.UUID) error
 	NotifyTipReceived(ctx context.Context, tipID pgtype.UUID) error
 	SyncOC(ctx context.Context) error
 }
@@ -28,13 +29,16 @@ func RegisterTipSettlement(s TipSettlement) {
 	tipSettlement = s
 }
 
-// HandleTipsSettleFiat processes tips:settle_fiat — payload {"tip_id": uuid}.
+// HandleTipsSettleFiat processes tips:settle_fiat — payload
+// {"tip_id": uuid, "payment_id": uuid}. payment_id repairs tip.payment_id
+// when the create-time attach raced/failed.
 func HandleTipsSettleFiat(ctx context.Context, t *asynq.Task) error {
 	if tipSettlement == nil {
 		return fmt.Errorf("tips settlement not registered")
 	}
 	var p struct {
-		TipID string `json:"tip_id"`
+		TipID     string `json:"tip_id"`
+		PaymentID string `json:"payment_id"`
 	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("unmarshaling tip_id: %w", err)
@@ -43,7 +47,11 @@ func HandleTipsSettleFiat(ctx context.Context, t *asynq.Task) error {
 	if err := tipID.Scan(p.TipID); err != nil {
 		return fmt.Errorf("invalid tip_id %q: %w", p.TipID, err)
 	}
-	if err := tipSettlement.SettleFiatTip(ctx, tipID); err != nil {
+	var paymentID pgtype.UUID
+	if p.PaymentID != "" {
+		_ = paymentID.Scan(p.PaymentID)
+	}
+	if err := tipSettlement.SettleFiatTip(ctx, tipID, paymentID); err != nil {
 		return fmt.Errorf("settling fiat tip %s: %w", p.TipID, err)
 	}
 	return nil
@@ -78,10 +86,10 @@ func HandleTipsOCSync(ctx context.Context, t *asynq.Task) error {
 
 // enqueueTipsSettleFiat fires the fiat settlement task from the payment
 // success hook — fire-and-forget (Rule 8).
-func enqueueTipsSettleFiat(tipID pgtype.UUID) {
+func enqueueTipsSettleFiat(tipID, paymentID pgtype.UUID) {
 	if taskEnqueuer == nil {
 		return
 	}
-	payload, _ := json.Marshal(map[string]string{"tip_id": tipID.String()})
+	payload, _ := json.Marshal(map[string]string{"tip_id": tipID.String(), "payment_id": paymentID.String()})
 	_ = taskEnqueuer.Enqueue(TypeTipsSettleFiat, payload)
 }

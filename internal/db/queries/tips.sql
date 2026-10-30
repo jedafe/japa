@@ -84,8 +84,9 @@ UPDATE tips SET payment_id = @payment_id, updated_at = now()
 WHERE id = @id;
 
 -- name: SettleTip :exec
+-- Conditional on pending so a settle racing a fail/refund can't resurrect.
 UPDATE tips SET status = 'completed', net_credits = @net_credits, updated_at = now()
-WHERE id = @id;
+WHERE id = @id AND status = 'pending';
 
 -- name: ListTipsSent :many
 SELECT * FROM tips WHERE sender_user_id = @sender_user_id
@@ -147,3 +148,22 @@ SELECT o.id, o.name FROM organizations o WHERE o.id = ANY(@ids::uuid[]);
 
 -- name: IsMentorProfile :one
 SELECT COALESCE(is_mentor, false) FROM user_profiles WHERE user_id = @user_id;
+
+-- name: FailTip :exec
+-- Marks a pending tip failed and releases the idempotency key so the same
+-- Idempotency-Key can retry a fresh attempt (the unique partial index
+-- would otherwise trap the key on the dead row).
+UPDATE tips SET status = 'failed', idempotency_key = NULL, updated_at = now()
+WHERE id = @id AND status = 'pending';
+
+-- name: GetContentTitle :one
+-- Title lookup for tip.received notifications on content-anchored tips.
+SELECT title FROM contents WHERE id = @id;
+
+-- name: SumRecipientPointsToday :one
+-- Recipient-side mirror of the sender cap — co-conspirator pairs can't
+-- launder unlimited points through one wallet per UTC day (0=unlimited).
+SELECT COALESCE(sum(points_amount),0)::bigint FROM tips
+WHERE recipient_type = 'user' AND recipient_user_id = @recipient_user_id
+  AND method = 'points' AND status = 'completed'
+  AND created_at >= (date_trunc('day', timezone('UTC', now()))) AT TIME ZONE 'UTC';

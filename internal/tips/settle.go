@@ -32,6 +32,10 @@ type settleWalletParams struct {
 	// pointsDailyLimit caps a sender's UTC-day points tips (0 = unlimited).
 	// Enforced inside the tx under the sender's wallet lock.
 	pointsDailyLimit int64
+	// pointsDailyRecipientLimit caps a recipient's UTC-day inbound points
+	// tips (0 = unlimited) — closes the co-conspirator laundering loop the
+	// sender-side cap alone leaves open.
+	pointsDailyRecipientLimit int64
 }
 
 // lockWalletUsers acquires the per-user advisory locks in uuid order so two
@@ -88,8 +92,10 @@ func (s *Store) settleWalletTip(ctx context.Context, p settleWalletParams) (gen.
 		return gen.Tip{}, ErrInsufficientBalance
 	}
 
-	// §125 daily anti-laundering cap — evaluated under the sender's wallet
-	// advisory lock so concurrent points tips can't race past the limit.
+	// §125 daily anti-laundering caps — evaluated under the wallet advisory
+	// locks so concurrent points tips can't race past either limit. The
+	// recipient-side check mirrors the sender's: without it a pair of
+	// co-conspirators could launder the sender cap via multiple tippers.
 	if p.pointsDailyLimit > 0 {
 		today, err := qtx.SumTipperPointsToday(ctx, p.senderID)
 		if err != nil {
@@ -97,6 +103,15 @@ func (s *Store) settleWalletTip(ctx context.Context, p settleWalletParams) (gen.
 		}
 		if today+p.gross > p.pointsDailyLimit {
 			return gen.Tip{}, ErrDailyPointsLimit
+		}
+	}
+	if p.pointsDailyRecipientLimit > 0 && p.recipientType == RecipientUser {
+		today, err := qtx.SumRecipientPointsToday(ctx, p.walletOwnerID)
+		if err != nil {
+			return gen.Tip{}, fmt.Errorf("reading recipient daily points total: %w", err)
+		}
+		if today+p.gross > p.pointsDailyRecipientLimit {
+			return gen.Tip{}, ErrDailyRecipientLimit
 		}
 	}
 

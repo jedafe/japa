@@ -1939,6 +1939,13 @@ export const tipsAdminApi = {
 	getDonationSettings: () => api<unknown>('/admin/donation-settings'),
 	updateDonationSettings: (body: Record<string, unknown>) =>
 		api<unknown>('/admin/donation-settings', { method: 'PUT', body }),
+	get: (id: string) => api<unknown>(`/admin/tips/${id}`),
+	createDonationLink: (body: Record<string, unknown>) =>
+		api<unknown>('/admin/donation-settings/links', { method: 'POST', body }),
+	updateDonationLink: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/donation-settings/links/${id}`, { method: 'PATCH', body }),
+	deleteDonationLink: (id: string) =>
+		api<unknown>(`/admin/donation-settings/links/${id}`, { method: 'DELETE' }),
 };
 
 // ── Video (§106, ADR-117) — admin CRUD for sources, imports, and claims ───
@@ -2185,7 +2192,8 @@ export const scamAlertAdminApi = {
 		),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/scam-alerts/${id}`, { method: 'PATCH', body }),
-	pin: (id: string) => api<unknown>(`/admin/scam-alerts/${id}/pin`, { method: 'POST', body: {} }),
+	pin: (id: string, spaceId?: string) =>
+		api<unknown>(`/admin/scam-alerts/${id}/pin`, { method: 'POST', body: spaceId ? { space_id: spaceId } : {} }),
 	unpin: (id: string) => api<unknown>(`/admin/scam-alerts/${id}/pin`, { method: 'DELETE' }),
 };
 

@@ -24,11 +24,15 @@
 	let destinationSpaceId = $state('');
 	let originSpaceId = $state('');
 	let originCommunity = $state('');
-	let platformUsed = $state<ScamPlatform | ''>('');
+	let platformUsed = $state<ScamPlatform | ''>(untrack(() => (data.prefill?.platform as ScamPlatform | '') ?? ''));
 	let approximateDate = $state('');
 	let amountRange = $state('');
 	let description = $state('');
 	let reportedToAuthorities = $state(false);
+	const subjectType = $derived(data.prefill?.subject_type ?? '');
+	const subjectId = $derived(data.prefill?.subject_id ?? '');
+	const subjectLabel = $derived(data.prefill?.subject_label ?? '');
+	const anonymousBlocked = $derived(!data.user && !data.anonymousReports);
 
 	let loading = $state(false);
 	let errorKey = $state('');
@@ -37,7 +41,8 @@
 		scamType.length > 0 &&
 			destinationSpaceId.length > 0 &&
 			description.trim().length > 0 &&
-			!loading
+			!loading &&
+			!anonymousBlocked
 	);
 
 
@@ -61,6 +66,9 @@
 			if (originCommunity.trim()) body.origin_community = originCommunity.trim();
 			if (approximateDate) body.approximate_date = approximateDate;
 			if (amountRange.trim()) body.amount_range = amountRange.trim();
+			if (subjectType) body.subject_type = subjectType;
+			if (subjectId) body.subject_id = subjectId;
+			if (subjectLabel) body.subject_label = subjectLabel;
 			body.reported_to_authorities = reportedToAuthorities;
 
 			const res = await api.post<{ id: string }>('/scam-alerts', body);
@@ -72,8 +80,17 @@
 			} else {
 				errorKey = 'scam_alerts.errors.submit_failed';
 			}
-		} catch {
-			errorKey = 'scam_alerts.errors.submit_failed';
+		} catch (e) {
+			const code = (e as { code?: string; status?: number })?.code ?? '';
+			if (code === 'anonymous_disabled' || code === 'unauthorized') {
+				errorKey = 'scam_alerts.errors.sign_in_required';
+			} else if (code === 'rate_limited' || (e as { status?: number })?.status === 429) {
+				errorKey = 'scam_alerts.errors.rate_limited';
+			} else if (code === 'future_date') {
+				errorKey = 'scam_alerts.errors.future_date';
+			} else {
+				errorKey = 'scam_alerts.errors.submit_failed';
+			}
 		} finally {
 			loading = false;
 		}
@@ -153,6 +170,20 @@
 			</div>
 		{/if}
 
+		{#if anonymousBlocked}
+			<div class="rounded-[var(--radius)] border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700" role="alert">
+				{t('scam_alerts.anonymous_disabled', 'Anonymous reporting is currently disabled.')}
+				<a href="/login?redirect=/scam-alerts/new" class="font-medium text-[var(--color-primary)] hover:underline">{t('scam_alerts.sign_in_to_report', 'Sign in to report')}</a>
+			</div>
+		{/if}
+
+		{#if subjectLabel}
+			<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text)]">
+				{t('scam_alerts.reporting_about', 'Reporting about:')} <span class="font-medium">{subjectLabel}</span>
+				{#if subjectType}<span class="text-[var(--color-muted)]"> · {t(`scam_alerts.subject.${subjectType}`, subjectType)}</span>{/if}
+			</div>
+		{/if}
+
 		<!-- Destination + origin country — destination-first per the geo-aware
 		     tool pattern (§§79–101: destination country is the primary axis). -->
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -214,7 +245,7 @@
 				type="text"
 				value={originCommunity}
 				oninput={(e) => (originCommunity = e.currentTarget.value)}
-				placeholder={t('scam_alerts.placeholder_origin_community', 'e.g. Yoruba, Igbo')}
+				placeholder={t('scam_alerts.placeholder_origin_community', 'e.g. your diaspora community')}
 				maxlength={200}
 				class={inputClass}
 			/>

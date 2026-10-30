@@ -3,16 +3,16 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { TriangleAlert, Plus, Pin, X, Check } from 'lucide-svelte';
+	import { TriangleAlert, Plus, Pin, X, Check, Bell } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { i18n } from '$lib/i18n';
-	import { scamTypeLabel } from '$lib/enumOptions';
+	import { scamTypeLabel, scamPlatformLabel } from '$lib/enumOptions';
 	import { EmptyState, LoadingSkeleton, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
-	import type { ScamReport, ScamType, ScamStatus } from '$lib/types';
+	import type { ScamReport, ScamType, ScamPlatform, ScamStatus } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -105,6 +105,18 @@
 	]);
 
 	let showFilters = $state(false);
+	let subscribingDest = $state(false);
+	let destSubscribed = $state(false);
+
+	async function subscribeDest() {
+		if (!destFilter || subscribingDest) return;
+		subscribingDest = true;
+		const res = destSubscribed
+			? await api.delete(`/me/scam-alert-subscriptions/${destFilter}`)
+			: await api.post('/me/scam-alert-subscriptions', { destination_space_id: destFilter });
+		if (!res.error) destSubscribed = !destSubscribed;
+		subscribingDest = false;
+	}
 	let submittedDismissed = $state(false);
 	const showSubmitted = $derived(data.submitted && !submittedDismissed);
 	$effect(() => {
@@ -184,6 +196,12 @@
 			class="!border-b-0 !bg-transparent"
 		/>
 		{#snippet actions()}
+			{#if data.isAuthed}
+				<a
+					href="/scam-alerts/mine"
+					class="rounded-[var(--radius)] px-3 py-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+				>{t('scam_alerts.my_reports', 'My reports')}</a>
+			{/if}
 			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="scam-alerts-filter-panel" />
 			<PageAction
 				href="/scam-alerts/new"
@@ -232,6 +250,17 @@
 				onClear={() => { destFilter = ''; applyFilters(); }}
 			/>
 		</div>
+		{#if data.isAuthed && destFilter}
+			<button
+				type="button"
+				disabled={subscribingDest}
+				onclick={subscribeDest}
+				class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+			>
+				<Bell size={13} />
+				{destSubscribed ? t('scam_alerts.unsubscribe_dest', 'Unsubscribe from alerts') : t('scam_alerts.subscribe_dest', 'Get alerts for this destination')}
+			</button>
+		{/if}
 		{#if hasActiveFilters}
 			<button
 				type="button"
@@ -298,7 +327,7 @@
 								<span>{t('scam_alerts.destination', 'Destination')}: <span class="font-medium text-[var(--color-text)]">{alert.destination_space_name}</span></span>
 							{/if}
 							{#if alert.platform_used}
-								<span>{t('scam_alerts.platform', 'Platform')}: <span class="font-medium text-[var(--color-text)]">{alert.platform_used}</span></span>
+								<span>{t('scam_alerts.platform', 'Platform')}: <span class="font-medium text-[var(--color-text)]">{scamPlatformLabel(t, alert.platform_used as ScamPlatform)}</span></span>
 							{/if}
 							{#if alert.approximate_date}
 								<span>{t('scam_alerts.date', 'Date')}: <span class="font-medium text-[var(--color-text)]">{alert.approximate_date}</span></span>

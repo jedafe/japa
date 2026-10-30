@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -27,6 +28,35 @@ func WithTx(ctx context.Context, pool *pgxpool.Pool, fn func(queries *gen.Querie
 	q := gen.New(tx)
 
 	if err := fn(q); err != nil {
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			return errors.Join(
+				fmt.Errorf("rolling back transaction: %w", rbErr),
+				err,
+			)
+		}
+
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+
+	return nil
+}
+
+// WithTxHandle is WithTx but also exposes the live transaction, for callers
+// that must run dynamic SQL (e.g. ForceDelete's FK-graph sweep) inside the
+// same transaction as the generated queries.
+func WithTxHandle(ctx context.Context, pool *pgxpool.Pool, fn func(tx pgx.Tx, queries *gen.Queries) error) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+
+	q := gen.New(tx)
+
+	if err := fn(tx, q); err != nil {
 		if rbErr := tx.Rollback(ctx); rbErr != nil {
 			return errors.Join(
 				fmt.Errorf("rolling back transaction: %w", rbErr),

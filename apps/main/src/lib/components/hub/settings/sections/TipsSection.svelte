@@ -7,12 +7,16 @@
 	import {
 		getMyTipSettings, updateMyTipSettings, createTipLink, deleteTipLink,
 		connectOC, disconnectOC,
+		getOrgTipSettings, updateOrgTipSettings, createOrgTipLink, deleteOrgTipLink,
+		connectOrgOC, disconnectOrgOC,
 		type TipSettings, type TipExternalLink
 	} from '$lib/api/tips';
 	import { CheckCircle2, ExternalLink, Loader2, Plus, Trash2 } from 'lucide-svelte';
 	import { SelectField } from '$lib/components/ui';
 
-	let { data }: { data?: unknown } = $props();
+	// orgId scopes the section to an organization's tip settings (org
+	// owner/admin dashboard); absent → the member's own /me settings.
+	let { data, orgId }: { data?: unknown; orgId?: string } = $props();
 
 	let settings = $state<TipSettings | null>(null);
 	let links = $state<TipExternalLink[]>([]);
@@ -27,9 +31,10 @@
 	let ocSlug = $state('');
 	let ocToken = $state('');
 	let ocBusy = $state(false);
+	let eligible = $state(true);
 
 	onMount(async () => {
-		const res = await getMyTipSettings();
+		const res = orgId ? await getOrgTipSettings(orgId) : await getMyTipSettings();
 		loading = false;
 		if (res.error || !res.data) {
 			error = res.error?.message ?? 'load_failed';
@@ -38,6 +43,7 @@
 		settings = res.data.settings;
 		links = res.data.external_links ?? [];
 		ocSlug = settings?.oc_collective_slug ?? '';
+		eligible = (res.data as { eligible?: boolean }).eligible !== false;
 	});
 
 	async function save() {
@@ -45,15 +51,25 @@
 		saving = true;
 		error = null;
 		saved = false;
-		const res = await updateMyTipSettings({
+		const res = orgId
+			? await updateOrgTipSettings(orgId, {
+					tips_enabled: settings.tips_enabled,
+					accept_points: settings.accept_points,
+					accept_credits: settings.accept_credits,
+					accept_fiat: settings.accept_fiat,
+					accept_external: settings.accept_external,
+					min_tip_amount: settings.min_tip_amount,
+					thank_you_message: settings.thank_you_message
+				})
+			: await updateMyTipSettings({
 			tips_enabled: settings.tips_enabled,
 			accept_points: settings.accept_points,
 			accept_credits: settings.accept_credits,
 			accept_fiat: settings.accept_fiat,
 			accept_external: settings.accept_external,
 			min_tip_amount: settings.min_tip_amount,
-			thank_you_message: settings.thank_you_message
-		});
+				thank_you_message: settings.thank_you_message
+			});
 		saving = false;
 		if (res.error) {
 			error = res.error.message;
@@ -66,7 +82,9 @@
 
 	async function addLink() {
 		if (!linkLabel || !linkUrl) return;
-		const res = await createTipLink({ kind: linkKind, label: linkLabel, url: linkUrl });
+		const res = orgId
+			? await createOrgTipLink(orgId, { kind: linkKind, label: linkLabel, url: linkUrl })
+			: await createTipLink({ kind: linkKind, label: linkLabel, url: linkUrl });
 		if (res.error) {
 			error = res.error.message;
 			return;
@@ -77,14 +95,16 @@
 	}
 
 	async function removeLink(id: string) {
-		const res = await deleteTipLink(id);
+		const res = orgId ? await deleteOrgTipLink(orgId, id) : await deleteTipLink(id);
 		if (!res.error) links = links.filter((l) => l.id !== id);
 	}
 
 	async function ocConnect() {
 		if (!ocSlug) return;
 		ocBusy = true;
-		const res = await connectOC({ collective_slug: ocSlug, api_token: ocToken || undefined });
+		const res = orgId
+			? await connectOrgOC(orgId, { collective_slug: ocSlug, api_token: ocToken || undefined })
+			: await connectOC({ collective_slug: ocSlug, api_token: ocToken || undefined });
 		ocBusy = false;
 		if (res.error) {
 			error = res.error.message;
@@ -94,9 +114,24 @@
 		ocToken = '';
 	}
 
+	async function ocRotate() {
+		if (!settings?.oc_collective_slug) return;
+		ocBusy = true;
+		const res = orgId
+			? await connectOrgOC(orgId, { collective_slug: settings.oc_collective_slug, rotate_secret: true })
+			: await connectOC({ collective_slug: settings.oc_collective_slug, rotate_secret: true });
+		ocBusy = false;
+		if (res.error) {
+			error = res.error.message;
+			return;
+		}
+		if (res.data) settings = res.data;
+	}
+
 	async function ocDisconnect() {
 		ocBusy = true;
-		await disconnectOC();
+		if (orgId) await disconnectOrgOC(orgId);
+		else await disconnectOC();
 		ocBusy = false;
 		if (settings) {
 			settings.oc_collective_slug = null;
@@ -110,6 +145,11 @@
 	<div class="flex justify-center py-8"><Loader2 class="size-6 animate-spin text-muted-foreground" /></div>
 {:else if settings}
 	<div class="space-y-6">
+		{#if !eligible}
+			<div class="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-600">
+				{t('tips.not_eligible', 'Your plan does not include receiving tips — upgrade or become a mentor to enable this.')}
+			</div>
+		{/if}
 		{#if error}
 			<div class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>
 		{/if}
@@ -202,6 +242,11 @@
 						<button type="button" class="shrink-0 text-primary hover:opacity-70"
 							onclick={() => navigator.clipboard.writeText(settings?.oc_webhook_url ?? '')}>
 							{t('tips.oc_webhook_copy', 'Copy')}
+						</button>
+						<button type="button" class="shrink-0 text-amber-600 hover:opacity-70" disabled={ocBusy}
+							onclick={ocRotate}
+							title={t('tips.oc_rotate_hint', 'Regenerate the webhook URL — the old one stops working immediately')}>
+							{t('tips.oc_rotate', 'Rotate')}
 						</button>
 					</div>
 				{/if}

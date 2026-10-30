@@ -226,7 +226,7 @@ func TestDBFiatSettleConversion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert pending tip: %v", err)
 	}
-	if err := svc.SettleFiatTip(ctx, tip.ID); err != nil {
+	if err := svc.SettleFiatTip(ctx, tip.ID, pgtype.UUID{}); err != nil {
 		t.Fatalf("SettleFiatTip: %v", err)
 	}
 	wantNet := int64(amt) * int64(usdCPU) / 100 * 90 / 100
@@ -234,7 +234,7 @@ func TestDBFiatSettleConversion(t *testing.T) {
 		t.Fatalf("USD settle: got %d credits, want %d (cpu=%d)", got, wantNet, usdCPU)
 	}
 	// Idempotent re-settle.
-	if err := svc.SettleFiatTip(ctx, tip.ID); err != nil {
+	if err := svc.SettleFiatTip(ctx, tip.ID, pgtype.UUID{}); err != nil {
 		t.Fatalf("re-settle: %v", err)
 	}
 	if got := balance(t, ctx, d, recip, "credits"); got != wantNet {
@@ -253,7 +253,7 @@ func TestDBFiatSettleConversion(t *testing.T) {
 			t.Fatalf("insert jpy tip: %v", err)
 		}
 		svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true, "tips.fee_percent": 0}}
-		if err := svc.SettleFiatTip(ctx, tip2.ID); err != nil {
+		if err := svc.SettleFiatTip(ctx, tip2.ID, pgtype.UUID{}); err != nil {
 			t.Fatalf("JPY settle: %v", err)
 		}
 		wantTotal := wantNet + int64(amt2)*int64(jpyCPU)

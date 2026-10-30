@@ -22,6 +22,10 @@
 	}
 
 	let settings = $state<PlatformSettings | null>(null);
+	let links = $state<{ id?: string; kind: string; label: string; url: string }[]>([]);
+	let linkLabel = $state('');
+	let linkUrl = $state('');
+	let linkKind = $state('paypal');
 	let loading = $state(true);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
@@ -34,7 +38,9 @@
 			error = res.error;
 			return;
 		}
-		settings = (res.data as PlatformSettings) ?? {
+		const env = res.data as { settings?: PlatformSettings; external_links?: typeof links };
+		links = env?.external_links ?? [];
+		settings = env?.settings ?? {
 			tips_enabled: false,
 			accept_points: false,
 			accept_credits: true,
@@ -69,6 +75,23 @@
 		saved = true;
 		setTimeout(() => (saved = false), 2500);
 	}
+
+	async function addLink() {
+		if (!linkLabel || !linkUrl) return;
+		const res = await tipsAdminApi.createDonationLink({ kind: linkKind, label: linkLabel, url: linkUrl });
+		if (!res.ok) {
+			error = res.error ?? 'add_link_failed';
+			return;
+		}
+		if (res.data) links = [...links, res.data as (typeof links)[number]];
+		linkLabel = '';
+		linkUrl = '';
+	}
+
+	async function removeLink(id: string) {
+		const res = await tipsAdminApi.deleteDonationLink(id);
+		if (res.ok) links = links.filter((l) => l.id !== id);
+	}
 </script>
 
 <div class="mx-auto max-w-2xl p-6">
@@ -99,12 +122,8 @@
 			</label>
 
 			<div class="grid grid-cols-2 gap-3">
-				<label class="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
-					<input bind:checked={settings.accept_points} type="checkbox" class="size-4" />{t('tips.points', 'Points')}
-				</label>
-				<label class="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
-					<input bind:checked={settings.accept_credits} type="checkbox" class="size-4" />{t('tips.credits', 'Credits')}
-				</label>
+				<!-- The platform has no wallet — points/credits toggles are
+				     meaningless here and are intentionally not offered. -->
 				<label class="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
 					<input bind:checked={settings.accept_fiat} type="checkbox" class="size-4" />{t('tips.fiat', 'Fiat (card/crypto)')}
 				</label>
@@ -133,6 +152,28 @@
 					{t('donation_settings.oc_hint', 'Shown as an outbound donation option. The API token is set via Control → Settings.')}
 				</span>
 			</label>
+
+			<div class="rounded-lg border border-border p-4">
+				<h3 class="mb-3 text-sm font-semibold">{t('tips.external', 'External donation links')}</h3>
+				{#each links as link (link.id)}
+					<div class="mb-2 flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
+						<span class="truncate">{link.label} — {link.url}</span>
+						<button type="button" onclick={() => removeLink(link.id!)} class="shrink-0 text-destructive hover:opacity-70">✕</button>
+					</div>
+				{/each}
+				<div class="mt-3 flex flex-wrap gap-2">
+					<select bind:value={linkKind} class="rounded-md border border-border bg-background px-2 py-2 text-sm">
+						<option value="paypal">PayPal</option>
+						<option value="kofi">Ko-fi</option>
+						<option value="buymeacoffee">Buy Me a Coffee</option>
+						<option value="opencollective">Open Collective</option>
+						<option value="other">Other</option>
+					</select>
+					<input bind:value={linkLabel} placeholder="Label" class="w-32 rounded-md border border-border bg-background px-2 py-2 text-sm" />
+					<input bind:value={linkUrl} placeholder="https://" class="flex-1 rounded-md border border-border bg-background px-2 py-2 text-sm" />
+					<button type="button" onclick={addLink} class="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground">+</button>
+				</div>
+			</div>
 
 			<button type="button" onclick={save} disabled={saving}
 				class="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50">

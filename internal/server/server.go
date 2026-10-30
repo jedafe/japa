@@ -966,6 +966,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tipsService.SetOrgChecker(tipsOrgAdapter{svc: orgService})
 	tipsService.SetOCClient(tipsOCAdapter{client: opencollective.New()})
 	tipsService.SetPaymentsService(tipsPaymentAdapter{svc: paymentService})
+	tipsService.SetPaymentRefunder(tipsRefundAdapter{svc: paymentService})
 	tipsService.SetProviderLister(tipsPaymentAdapter{svc: paymentService})
 	tipsService.SetFeatureChecker(tipsFeatureAdapter{checker: featureChecker})
 	tipsService.SetNotifier(tipsNotifierAdapter{enq: taskEnqueuer})
@@ -1573,6 +1574,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md (ADR-089)
 	scamAlertStore := scamalert.NewStore(database)
+	scamAlertAgentWriter := scamalert.NewAgentWriter(scamAlertStore)
 	scamAlertService := scamalert.NewService(scamAlertStore, settingsService)
 	scamAlertService.SetFeatureChecker(featureChecker)
 	scamAlertService.SetRBAC(rbacResolver)
@@ -2434,7 +2436,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		communityOrg:         communityLocatorStore,
 		wikiPage:             wikiStore,
 		calendarEntry:        calendarStore,
-		scamReport:           scamAlertStore,
+		scamReport:           scamAlertAgentWriter,
 		planningGroup:        planningGroupService,
 		visaTimeline:         visaTimelineService,
 		digestEdition:        digestStore,
@@ -5197,12 +5199,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/donation-settings", tipsHandlers.AdminGetDonationSettings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Put("/admin/donation-settings", tipsHandlers.AdminUpdateDonationSettings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Post("/admin/donation-settings/links", tipsHandlers.AdminCreateDonationLink)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Patch("/admin/donation-settings/links/{id}", tipsHandlers.AdminUpdateDonationLink)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Delete("/admin/donation-settings/links/{id}", tipsHandlers.AdminDeleteDonationLink)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate"),
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).Post("/admin/tips/{id}/refund", tipsHandlers.AdminRefundTip)
 
 				// §125 inbound Open Collective contribution webhook —
 				// per-collective secret in the query param identifies the owner.
-				r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/tips/webhook/opencollective", tipsHandlers.HandleOCWebhook)
+				// Gated by tips.opencollective so disabling OC stops imports.
+				r.With(features.Gate(featureChecker, "tips.opencollective"), mw.RateLimit(vkClient.Redis(), "webhook")).
+					Post("/tips/webhook/opencollective", tipsHandlers.HandleOCWebhook)
+				// Path-param secret variant — keeps the secret out of
+				// query-string access logs (same handler, same auth).
+				r.With(features.Gate(featureChecker, "tips.opencollective"), mw.RateLimit(vkClient.Redis(), "webhook")).
+					Post("/tips/webhook/opencollective/{secret}", tipsHandlers.HandleOCWebhook)
 			})
 
 			// Advertising routes (Section 25 — Ad Placement)
@@ -7741,6 +7752,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/scam-alerts/{id}/subscribe", scamAlertHandlers.HandleSubscribe)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Delete("/scam-alerts/{id}/subscribe", scamAlertHandlers.HandleUnsubscribe)
+				// Reporter tracking + subscription management (BUG-016/BUG-019).
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/scam-alerts", scamAlertHandlers.HandleMyReports)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/scam-alert-subscriptions", scamAlertHandlers.HandleMySubscriptions)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Post("/me/scam-alert-subscriptions", scamAlertHandlers.HandleSubscribeDest)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Delete("/me/scam-alert-subscriptions/{space_id}", scamAlertHandlers.HandleUnsubscribeDest)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scam_alert.review")).
 					Get("/admin/scam-alerts", scamAlertHandlers.HandleAdminList)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scam_alert.review")).

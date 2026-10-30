@@ -138,7 +138,7 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 		"embassy":                   {create: "CreateEmbassy", update: "UpdateEmbassy"},
 		"appointment_alert":         {create: "CreateAlert", update: "UpdateAlert", delete: "DeleteAlert"},
 		"calendar_entry":            {create: "CreateEntry", update: "UpdateEntry", delete: "AdminSoftDeleteEntry", mergeGetter: "GetEntry"},
-		"scam_report":               {create: "CreateReport", update: "UpdateReport", mergeGetter: "GetReport"},
+		"scam_report":               {create: "CreateReport", update: "UpdateReport", mergeGetter: "GetReportForUpdate"},
 		"cv_formatter":              {create: "CreateStandard", update: "UpdateStandard", delete: "DeleteStandard", mergeGetter: "GetStandardByDest", mergeIDKey: "destination_space_id"},
 		"tax_treaty_pair":           {create: "CreateOrUpdateTreaty", update: "UpdateTreaty", delete: "DeleteTreaty"},
 		"digest_edition":            {create: "CreateEdition", update: "UpdateEdition", delete: "DeleteEdition"},

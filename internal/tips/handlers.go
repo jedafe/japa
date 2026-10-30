@@ -66,6 +66,8 @@ func writeTipError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "insufficient_balance", "Insufficient balance")
 	case errors.Is(err, ErrDailyPointsLimit):
 		errpkg.WriteError(w, http.StatusTooManyRequests, "daily_points_limit", "Daily points tip limit reached")
+	case errors.Is(err, ErrDailyRecipientLimit):
+		errpkg.WriteError(w, http.StatusTooManyRequests, "daily_recipient_points_limit", "Recipient daily points tip limit reached")
 	case errors.Is(err, ErrInvalidLink):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_link", "Invalid external link")
 	case errors.Is(err, ErrTooManyLinks):
@@ -76,6 +78,12 @@ func writeTipError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusConflict, "already_settled", "Tip already settled")
 	case errors.Is(err, ErrInvalidStatus):
 		errpkg.WriteError(w, http.StatusConflict, "invalid_status", "Invalid tip status for this operation")
+	case errors.Is(err, ErrBlocked):
+		errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot tip this user")
+	case errors.Is(err, ErrMessageTooLong):
+		errpkg.WriteError(w, http.StatusBadRequest, "message_too_long", "Tip message is too long")
+	case errors.Is(err, ErrOCAccess):
+		errpkg.WriteError(w, http.StatusBadRequest, "oc_access_denied", "Token has no access to this collective")
 	default:
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal", "Internal error")
 	}
@@ -105,16 +113,23 @@ func parsePageSize(r *http.Request) int32 {
 	return int32(n) // #nosec G109
 }
 
-func parsePageOffset(r *http.Request) int32 {
-	s := r.URL.Query().Get("page_offset")
-	if s == "" {
-		return 0
+// parsePage resolves the 1-based page number. `page` is the cataloged
+// contract; `page_offset` is honored as a legacy fallback for older clients.
+func parsePage(r *http.Request, limit int32) int32 {
+	if s := r.URL.Query().Get("page"); s != "" {
+		// Cap before int32 conversion — a huge value wraps negative and
+		// yields a negative SQL OFFSET (500 instead of empty page).
+		if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 1_000_000 {
+			return int32(n) // #nosec G109 G115
+		}
+		return 1
 	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n < 0 {
-		return 0
+	if s := r.URL.Query().Get("page_offset"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 100_000_000 && limit > 0 {
+			return int32(n)/limit + 1 // #nosec G109 G115
+		}
 	}
-	return int32(n) // #nosec G109 G115
+	return 1
 }
 
 // --- My settings --------------------------------------------------------------
@@ -135,9 +150,11 @@ func (h *Handlers) GetMyTipSettings(w http.ResponseWriter, r *http.Request) {
 		writeTipError(w, err)
 		return
 	}
+	eligible, _ := h.service.CanReceive(r.Context(), user.UserID)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"settings":       st,
 		"external_links": links,
+		"eligible":       eligible,
 	}})
 }
 
@@ -353,6 +370,8 @@ func (h *Handlers) DeleteOrgTipLink(w http.ResponseWriter, r *http.Request) {
 type ocConnectRequest struct {
 	CollectiveSlug string `json:"collective_slug"`
 	APIToken       string `json:"api_token"`
+	// RotateSecret regenerates the webhook secret (compromised/lost URL).
+	RotateSecret bool `json:"rotate_secret,omitempty"`
 }
 
 // ConnectMyOC handles PUT /api/v1/me/tip-settings/opencollective.
@@ -366,7 +385,7 @@ func (h *Handlers) ConnectMyOC(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	st, err := h.service.ConnectOC(r.Context(), UserOwner(user.UserID), user.UserID, in.CollectiveSlug, in.APIToken)
+	st, err := h.service.ConnectOC(r.Context(), UserOwner(user.UserID), user.UserID, in.CollectiveSlug, in.APIToken, in.RotateSecret)
 	if err != nil {
 		writeTipError(w, err)
 		return
@@ -402,7 +421,7 @@ func (h *Handlers) ConnectOrgOC(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
-	st, err := h.service.ConnectOC(r.Context(), OrgOwner(orgID), user.UserID, in.CollectiveSlug, in.APIToken)
+	st, err := h.service.ConnectOC(r.Context(), OrgOwner(orgID), user.UserID, in.CollectiveSlug, in.APIToken, in.RotateSecret)
 	if err != nil {
 		writeTipError(w, err)
 		return
@@ -488,11 +507,6 @@ func (h *Handlers) CreateTip(w http.ResponseWriter, r *http.Request) {
 			input.RecipientOrgID = rid
 		} else {
 			input.RecipientUserID = rid
-			// §41: tips are an interaction — blocked pairs cannot transact.
-			if blocked, bErr := h.service.IsBlocked(r.Context(), user.UserID, rid); bErr == nil && blocked {
-				errpkg.WriteError(w, http.StatusForbidden, "user_blocked", "Cannot tip this user")
-				return
-			}
 		}
 	}
 	if in.ContentID != "" {
@@ -555,7 +569,12 @@ type ocWebhookPayload struct {
 // — per-collective secret in the query identifies the owner (OC has no
 // signature header on webhooks).
 func (h *Handlers) HandleOCWebhook(w http.ResponseWriter, r *http.Request) {
-	secret := r.URL.Query().Get("s")
+	// Path-param secret (preferred — keeps it out of query-string logs) with
+	// the spec's ?s= form kept for webhooks already configured that way.
+	secret := chi.URLParam(r, "secret")
+	if secret == "" {
+		secret = r.URL.Query().Get("s")
+	}
 	if secret == "" {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Missing webhook secret")
 		return
@@ -594,8 +613,8 @@ func (h *Handlers) ListMyTipsSent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	page, limit := parsePageOffset(r), parsePageSize(r)
-	tips, err := h.service.ListTipsSent(r.Context(), user.UserID, page/limit+1, limit)
+	limit := parsePageSize(r)
+	tips, err := h.service.ListTipsSent(r.Context(), user.UserID, parsePage(r, limit), limit)
 	if err != nil {
 		writeTipError(w, err)
 		return
@@ -609,8 +628,8 @@ func (h *Handlers) ListMyTipsReceived(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	page, limit := parsePageOffset(r), parsePageSize(r)
-	tips, err := h.service.ListTipsReceived(r.Context(), user.UserID, page/limit+1, limit)
+	limit := parsePageSize(r)
+	tips, err := h.service.ListTipsReceived(r.Context(), user.UserID, parsePage(r, limit), limit)
 	if err != nil {
 		writeTipError(w, err)
 		return
@@ -645,8 +664,8 @@ func (h *Handlers) AdminListTips(w http.ResponseWriter, r *http.Request) {
 	method := r.URL.Query().Get("method")
 	recipientType := r.URL.Query().Get("recipient_type")
 	q := r.URL.Query().Get("q")
-	page, limit := parsePageOffset(r), parsePageSize(r)
-	tips, total, err := h.service.AdminListTips(r.Context(), status, method, recipientType, q, page/limit+1, limit)
+	limit := parsePageSize(r)
+	tips, total, err := h.service.AdminListTips(r.Context(), status, method, recipientType, q, parsePage(r, limit), limit)
 	if err != nil {
 		writeTipError(w, err)
 		return
@@ -764,4 +783,65 @@ func (h *Handlers) AdminUpdateDonationSettings(w http.ResponseWriter, r *http.Re
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
+}
+
+// --- Admin platform donation links -------------------------------------------
+
+// AdminCreateDonationLink handles POST /api/v1/admin/donation-settings/links.
+func (h *Handlers) AdminCreateDonationLink(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var in LinkInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	link, err := h.service.CreateLink(r.Context(), PlatformOwner(), user.UserID, in)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": link})
+}
+
+// AdminUpdateDonationLink handles PATCH /api/v1/admin/donation-settings/links/{id}.
+func (h *Handlers) AdminUpdateDonationLink(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	linkID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	var in LinkInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+	link, err := h.service.UpdateLink(r.Context(), PlatformOwner(), user.UserID, linkID, in)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": link})
+}
+
+// AdminDeleteDonationLink handles DELETE /api/v1/admin/donation-settings/links/{id}.
+func (h *Handlers) AdminDeleteDonationLink(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	linkID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := h.service.DeleteLink(r.Context(), PlatformOwner(), user.UserID, linkID); err != nil {
+		writeTipError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

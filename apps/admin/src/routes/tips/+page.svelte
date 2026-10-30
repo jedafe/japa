@@ -4,6 +4,7 @@
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { tipsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { RotateCcw } from 'lucide-svelte';
@@ -25,9 +26,12 @@
 	};
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
-	let stats = $state<{ total?: number; credits_settled?: number } | null>(null);
+	let stats = $state<{ total?: number; credits_settled?: number; fiat_minor_settled?: number; oc_count?: number } | null>(null);
 	let refunding = $state<string | null>(null);
 	let pageError = $state('');
+	let detailOpen = $state(false);
+	let detail = $state<Record<string, unknown> | null>(null);
+	let detailLoading = $state(false);
 
 	onMount(async () => {
 		const res = await tipsAdminApi.stats(30);
@@ -37,12 +41,22 @@
 	function amount(r: TipRow): string {
 		if (r.method === 'points') return `${r.points_amount ?? 0} pts`;
 		if (r.method === 'credits') return `${r.credits_amount ?? 0} cr`;
-		if (r.fiat_amount != null) return `${(r.fiat_amount / 100).toFixed(2)} ${r.fiat_currency ?? ''}`;
+		if (r.fiat_amount != null) {
+			const exp = ['JPY', 'KRW', 'VND', 'XOF', 'XAF'].includes(r.fiat_currency ?? '')
+				? 0
+				: ['BHD', 'JOD', 'KWD', 'OMR'].includes(r.fiat_currency ?? '')
+					? 3
+					: 2;
+			return `${(r.fiat_amount / Math.pow(10, exp)).toFixed(exp)} ${r.fiat_currency ?? ''}`;
+		}
 		return '—';
 	}
 
 	async function refund(row: TipRow) {
 		if (refunding) return;
+		// Fiat tips now refund the donor provider-side too — confirm the
+		// destructive financial action explicitly.
+		if (!confirm(t('tips.refund_confirm', 'Refund this tip? The recipient credits are clawed back and any fiat payment is refunded.'))) return;
 		refunding = row.id;
 		pageError = '';
 		const res = await tipsAdminApi.refund(row.id);
@@ -54,6 +68,21 @@
 		entityController?.reload();
 		const s = await tipsAdminApi.stats(30);
 		if (s.ok && s.data) stats = s.data as typeof stats;
+	}
+
+	async function openDetail(id: string) {
+		detailOpen = true;
+		detail = null;
+		detailLoading = true;
+		const res = await tipsAdminApi.get(id);
+		detailLoading = false;
+		if (!res.ok) {
+			pageError = res.error ?? t('tips.detail_failed', 'Failed to load tip');
+			detailOpen = false;
+			return;
+		}
+		const env = res.data as { data?: Record<string, unknown> };
+		detail = env?.data ?? (res.data as Record<string, unknown>);
 	}
 
 	const config: EntityPageConfig = {
@@ -102,6 +131,16 @@
 				]
 			},
 			{
+				key: 'recipient_type',
+				label: t('tips.recipient_type', 'Recipient type'),
+				type: 'select',
+				options: [
+					{ value: 'platform', label: 'Platform' },
+					{ value: 'user', label: 'User' },
+					{ value: 'organization', label: 'Organization' }
+				]
+			},
+			{
 				key: 'method',
 				label: t('tips.method', 'Method'),
 				type: 'select',
@@ -118,6 +157,10 @@
 		],
 		actions: [
 			{
+				label: t('tips.view', 'View'),
+				onclick: (row: TipRow) => openDetail(row.id)
+			},
+			{
 				label: t('tips.refund', 'Refund'),
 				icon: RotateCcw,
 				variant: 'destructive',
@@ -126,10 +169,12 @@
 			}
 		],
 		fields: [],
-		load: async ({ page, pageSize, filter }) => {
+		load: async ({ page, pageSize, filter, q }) => {
 			const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+			if (q) params.set('q', String(q));
 			if (filter?.status) params.set('status', String(filter.status));
 			if (filter?.method) params.set('method', String(filter.method));
+			if (filter?.recipient_type) params.set('recipient_type', String(filter.recipient_type));
 			const res = await tipsAdminApi.list(params.toString());
 			if (!res.ok) return { data: [], total: 0, totalPages: 0 };
 			const env = res.data as { data?: TipRow[]; meta?: { total?: number } };
@@ -148,7 +193,24 @@
 	<div class="mb-4 flex gap-6 rounded-lg border border-border px-4 py-3 text-sm">
 		<span><strong>{stats.total ?? 0}</strong> {t('tips.stats_30d', 'tips (30d)')}</span>
 		<span><strong>{stats.credits_settled ?? 0}</strong> {t('tips.stats_credits', 'credits settled')}</span>
+		<span><strong>{stats.fiat_minor_settled ?? 0}</strong> {t('tips.stats_fiat', 'fiat settled (minor)')}</span>
+		<span><strong>{stats.oc_count ?? 0}</strong> {t('tips.stats_oc', 'via Open Collective')}</span>
 	</div>
 {/if}
 
 <EntityPage {config} bind:controller={entityController} />
+
+<SlideOver bind:open={detailOpen} title={t('tips.detail_title', 'Tip detail')}>
+	{#if detailLoading}
+		<p class="text-sm text-muted-foreground">{t('common.loading', 'Loading…')}</p>
+	{:else if detail}
+		<dl class="space-y-2 text-sm">
+			{#each Object.entries(detail) as [k, v]}
+				<div class="flex justify-between gap-4 border-b border-border/50 pb-1">
+					<dt class="shrink-0 font-medium text-muted-foreground">{k}</dt>
+					<dd class="min-w-0 truncate text-right">{v === null || v === undefined || v === '' ? '—' : String(v)}</dd>
+				</div>
+			{/each}
+		</dl>
+	{/if}
+</SlideOver>

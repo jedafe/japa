@@ -203,7 +203,7 @@
 				type="text"
 				value={originCommunity}
 				oninput={(e) => (originCommunity = e.currentTarget.value)}
-				placeholder={t('scam_alerts.placeholder_origin_community', 'e.g. Yoruba, Igbo')}
+				placeholder={t('scam_alerts.placeholder_origin_community', 'e.g. your diaspora community')}
 				maxlength={200}
 				class={inputClass}
 			/>

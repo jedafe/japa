@@ -29,12 +29,14 @@
 	async function ensureConfig(): Promise<TipConfig | null> {
 		if (!fetched) {
 			loading = true;
-			fetched = true;
 			const res =
 				recipientType === 'user'
 					? await getUserTipConfig(recipientKey)
 					: await getOrgTipConfig(recipientKey);
 			loading = false;
+			// Latch only on a definitive answer — a transient failure leaves the
+			// button retryable instead of permanently dead (BUG-021).
+			if (!res.error) fetched = true;
 			if (!res.error && res.data?.enabled) config = res.data;
 		}
 		return config;

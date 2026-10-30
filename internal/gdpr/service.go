@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db"
@@ -1048,7 +1049,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 
 	// All four steps run in one transaction so a failure cannot leave the user
 	// half-erased (e.g. authorship reassigned but the user row still present).
-	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+	if err := db.WithTxHandle(ctx, s.db.Writer, func(tx pgx.Tx, q *gen.Queries) error {
 		// 0. Retire + scrub the mentor's shadow service listing (000824)
 		//    BEFORE authorship moves to the placeholder. The admin
 		//    hard-delete path (DELETE /admin/users/{id}/hard) reaches this
@@ -2167,6 +2168,14 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			WHERE hitl_reviewed_by = $1
 		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning wiki_revisions hitl_reviewed_by: %w", err)
+		}
+
+		// Sweep residual references whose FK lacks CASCADE/SET NULL — the
+		// explicit steps above cover known dependents, but the inbound-FK
+		// list for users moves with every migration; ForceDelete traverses
+		// pg_constraint dynamically so new dependents cannot block erasure.
+		if err := db.ForceDelete(ctx, tx, "users", "id", userID); err != nil {
+			return fmt.Errorf("sweeping residual user references: %w", err)
 		}
 
 		if err := q.HardDeleteUser(ctx,

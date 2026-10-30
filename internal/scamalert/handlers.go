@@ -82,6 +82,10 @@ func redactReportForCaller(report *ScamReportDTO, callerID string) {
 	report.ReporterID = ""
 	report.ReporterName = ""
 	report.ReviewedBy = ""
+	report.SubjectType = ""
+	report.SubjectID = ""
+	report.SubjectLabel = ""
+	report.DuplicateOfReportID = ""
 	report.AiGenerated = nil
 	report.AiModel = ""
 	report.AiGeneratedAt = ""
@@ -213,7 +217,14 @@ func (h *Handlers) HandleSchema(w http.ResponseWriter, r *http.Request) {
 	}
 
 	schema := h.service.Schema()
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": schema})
+	// BUG-019/020: surface submission mode + subject vocabulary so forms can
+	// adapt before the user fills anything in.
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"scam_types":        schema.ScamTypes,
+		"platforms":         schema.Platforms,
+		"subject_types":     []string{"user", "organization", "service", "other"},
+		"anonymous_reports": h.service.AnonymousReportsAllowed(r.Context()),
+	}})
 }
 
 // HandleGet handles GET /scam-alerts/:id — single confirmed scam report.
@@ -325,6 +336,15 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
 	if user != nil {
+		// BUG-009: make the scam_alert.create node real for authenticated
+		// callers — revoking it now actually blocks submission. Guests are
+		// governed by the scam_alert.anonymous_reports setting (they have no
+		// resolvable identity for the RBAC check).
+		if h.service != nil && h.service.rbac != nil &&
+			!h.service.rbac.HasPermission(r.Context(), user.UserID, "scam_alert.create") {
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to submit scam reports")
+			return
+		}
 		reporterID = user.UserID
 	} else {
 		// Anonymous submission — only allowed when the setting is enabled.
@@ -353,6 +373,16 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 		if errors.Is(err, ErrInvalidOrigin) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_origin", "Origin must be a country")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidSubjectType) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_subject_type", "Subject type must be one of: user, organization, service, other")
+			return
+		}
+
+		if errors.Is(err, ErrFutureDate) {
+			errpkg.WriteError(w, http.StatusBadRequest, "future_date", "Approximate date cannot be in the future")
 			return
 		}
 
@@ -453,6 +483,16 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 		if errors.Is(err, ErrEditForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "edit_forbidden", "You do not have permission to edit this report")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidSubjectType) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_subject_type", "Subject type must be one of: user, organization, service, other")
+			return
+		}
+
+		if errors.Is(err, ErrFutureDate) {
+			errpkg.WriteError(w, http.StatusBadRequest, "future_date", "Approximate date cannot be in the future")
 			return
 		}
 
@@ -668,7 +708,7 @@ func (h *Handlers) HandleReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Review(r.Context(), id, input.Status, input.ModeratorNote, user.UserID); err != nil {
+	if err := h.service.Review(r.Context(), id, input.Status, input.ModeratorNote, input.DuplicateOfReportID, user.UserID); err != nil {
 		if errors.Is(err, ErrInvalidStatus) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be 'confirmed', 'debunked', or 'duplicate'")
 			return
@@ -720,13 +760,18 @@ func (h *Handlers) HandlePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.SpaceID == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_space_id", "space_id is required")
-		return
-	}
-
 	var spaceID pgtype.UUID
-	if err := spaceID.Scan(body.SpaceID); err != nil {
+	if body.SpaceID == "" {
+		// BUG-003: default the pin target to the report's destination space —
+		// that is "the relevant destination Space" per §81, and the admin UI
+		// pins without picking a space.
+		report, err := h.service.Get(r.Context(), id)
+		if err != nil || report.DestinationSpaceID == "" {
+			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Confirmed scam report not found")
+			return
+		}
+		_ = spaceID.Scan(report.DestinationSpaceID)
+	} else if err := spaceID.Scan(body.SpaceID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
 		return
 	}
@@ -777,4 +822,112 @@ func (h *Handlers) HandleUnpin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"pinned": false}})
+}
+
+// ---------------------------------------------------------------------------
+// "My" surfaces — own reports + destination subscriptions (BUG-016/BUG-019)
+// ---------------------------------------------------------------------------
+
+// HandleMyReports handles GET /me/scam-alerts — the caller's own reports in
+// any status so they can track review state and reach the appeal surface.
+func (h *Handlers) HandleMyReports(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
+		return
+	}
+	page, limit := parsePageParams(r)
+	reports, total, err := h.service.MyReports(r.Context(), user.UserID, page, limit)
+	if err != nil {
+		slog.Error("scamalert: my reports failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list your reports")
+		return
+	}
+	for i := range reports {
+		reports[i].IsReporter = true
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":       reports,
+		"pagination": map[string]any{"page": page, "limit": limit, "total": total},
+	})
+}
+
+// HandleMySubscriptions handles GET /me/scam-alert-subscriptions — every
+// destination the caller is subscribed to.
+func (h *Handlers) HandleMySubscriptions(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
+		return
+	}
+	subs, err := h.service.MySubscriptions(r.Context(), user.UserID)
+	if err != nil {
+		slog.Error("scamalert: my subscriptions failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list subscriptions")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": subs})
+}
+
+// HandleSubscribeDest handles POST /me/scam-alert-subscriptions — subscribe
+// to a destination space directly (filtered-board CTA).
+func (h *Handlers) HandleSubscribeDest(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
+		return
+	}
+	var body struct {
+		DestinationSpaceID string `json:"destination_space_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	var dest pgtype.UUID
+	if err := dest.Scan(body.DestinationSpaceID); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination", "Invalid destination space")
+		return
+	}
+	if err := h.service.SubscribeDest(r.Context(), user.UserID, dest); err != nil {
+		if errors.Is(err, ErrInvalidDestination) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination", "Destination must be a country")
+			return
+		}
+		slog.Error("scamalert: subscribe dest failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "subscribe_failed", "Failed to subscribe")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"subscribed": true}})
+}
+
+// HandleUnsubscribeDest handles DELETE /me/scam-alert-subscriptions/{space_id}.
+func (h *Handlers) HandleUnsubscribeDest(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "scam_alert_disabled", "Scam alert board is not available")
+		return
+	}
+	dest, ok := scanUUIDParam(w, r, "space_id")
+	if !ok {
+		return
+	}
+	if err := h.service.Unsubscribe(r.Context(), user.UserID, dest); err != nil {
+		slog.Error("scamalert: unsubscribe dest failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "unsubscribe_failed", "Failed to unsubscribe")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"subscribed": false}})
 }

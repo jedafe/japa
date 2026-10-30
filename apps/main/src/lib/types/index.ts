@@ -3731,12 +3731,23 @@ export interface ScamReport {
 	/** True when the caller is the report's submitter (public surfaces only —
 	 * reporter_id itself is withheld from non-reporters). §22 appeal/edit gate. */
 	is_reporter?: boolean;
+	subject_type?: 'user' | 'organization' | 'service' | 'other';
+	subject_id?: string;
+	subject_label?: string;
+	duplicate_of_report_id?: string;
 	pinned_space_id?: string;
 	reviewed_by?: string;
 	reviewed_at?: string;
 	created_at: string;
 	updated_at?: string;
 	reporter_name?: string;
+}
+
+export interface ScamAlertSubscription {
+	destination_space_id: string;
+	destination_space_name?: string;
+	destination_space_code?: string;
+	created_at: string;
 }
 
 // --- Section 82: Japa Planning Groups ---

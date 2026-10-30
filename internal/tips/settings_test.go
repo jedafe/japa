@@ -358,3 +358,14 @@ func TestEnsureWritablePlatform(t *testing.T) {
 		t.Fatalf("expected ErrNotAuthorized, got %v", err)
 	}
 }
+
+func (f *fakeStore) failTip(context.Context, pgtype.UUID) error { return nil }
+func (f *fakeStore) sumRecipientPointsToday(context.Context, pgtype.UUID) (int64, error) {
+	return 0, nil
+}
+func (f *fakeStore) getContentTitle(context.Context, pgtype.UUID) (string, error) {
+	return "test content", nil
+}
+func (f *fakeStore) insertAuditLog(context.Context, pgtype.UUID, string, string, string, string) error {
+	return nil
+}

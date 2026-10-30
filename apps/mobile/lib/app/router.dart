@@ -31,6 +31,9 @@ import '../features/tools/remittance/screens/remittance_screen.dart';
 import '../features/tools/remittance/screens/remittance_rate_screen.dart';
 import '../features/spaces/screens/space_list_screen.dart';
 import '../features/spaces/screens/space_detail_screen.dart';
+import '../features/scam_alerts/screens/scam_alerts_screen.dart';
+import '../features/scam_alerts/screens/report_scam_screen.dart';
+import '../features/scam_alerts/screens/scam_alert_detail_screen.dart';
 import '../features/social/screens/notifications_screen.dart';
 import '../features/social/screens/messages_list_screen.dart';
 import '../features/social/screens/message_thread_screen.dart';
@@ -85,6 +88,16 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
             path: '/spaces/:slug',
             builder: (ctx, state) =>
                 SpaceDetailScreen(slug: state.pathParameters['slug']!),
+          ),
+          GoRoute(
+              path: '/scam-alerts', builder: (_, _) => const ScamAlertsScreen()),
+          GoRoute(
+              path: '/scam-alerts/new',
+              builder: (_, _) => const ReportScamScreen()),
+          GoRoute(
+            path: '/scam-alerts/:id',
+            builder: (_, state) =>
+                ScamAlertDetailScreen(id: state.pathParameters['id']!),
           ),
           GoRoute(
               path: '/notifications',

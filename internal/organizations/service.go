@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/brand"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/httpx"
@@ -1209,6 +1210,14 @@ func (s *Service) AdminDeleteOrganization(ctx context.Context, id pgtype.UUID, f
 	var err error
 	if force {
 		err = s.store.HardDeleteOrganization(ctx, id)
+		if err != nil && errpkg.IsFKViolation(err) {
+			// Dependent rows block the bare delete — sweep the FK graph
+			// inside a transaction instead of refusing (see
+			// admin.RemoveContent for the same fallback).
+			err = db.WithTxHandle(ctx, s.db.Writer, func(tx pgx.Tx, _ *gen.Queries) error {
+				return db.ForceDelete(ctx, tx, "organizations", "id", id)
+			})
+		}
 	} else {
 		err = s.store.SoftDeleteOrganization(ctx, id)
 	}

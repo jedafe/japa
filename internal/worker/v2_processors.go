@@ -264,7 +264,7 @@ type PlanningGroupProcessor interface {
 // reporter's contribution. Called fire-and-forget from the Review handler.
 // Ref: japaconnect-engineering/sections/81-scam-alert-board.md.
 type ScamAlertProcessor interface {
-	NotifySubscribers(ctx context.Context, reportID pgtype.UUID) error
+	NotifySubscribers(ctx context.Context, reportID pgtype.UUID, prevStatus string) error
 }
 
 // VisaTimelineProcessor handles Visa Timeline Tracker background tasks (§83,
@@ -1341,8 +1341,8 @@ func HandlePlanningGroupCheckinReminder(ctx context.Context, _ *asynq.Task) erro
 // the default queue.
 func HandleScamAlertNotifySubscribers(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "scam_alert:notify_subscribers", scamAlertProcessor != nil, []string{"report_id"},
-		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return scamAlertProcessor.NotifySubscribers(ctx, ids[0])
+		func(ctx context.Context, ids []pgtype.UUID, m map[string]string) error {
+			return scamAlertProcessor.NotifySubscribers(ctx, ids[0], m["prev_status"])
 		})
 }
 

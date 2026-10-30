@@ -2,7 +2,7 @@
 	// /me/tips — sent & received tip history (§125).
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { t } from '$lib/i18n';
-	import { listTipsSent, listTipsReceived, type Tip } from '$lib/api/tips';
+	import { listTipsSent, listTipsReceived, fiatDisplay, type Tip } from '$lib/api/tips';
 	import { Loader2 } from 'lucide-svelte';
 
 	let tab = $state<'received' | 'sent'>('received');
@@ -33,7 +33,7 @@
 	function amount(tip: Tip): string {
 		if (tip.method === 'points') return `${tip.points_amount ?? 0} pts`;
 		if (tip.method === 'credits') return `${tip.credits_amount ?? 0} cr`;
-		if (tip.fiat_amount != null) return `${(tip.fiat_amount / 100).toFixed(2)} ${tip.fiat_currency ?? ''}`;
+		if (tip.fiat_amount != null) return fiatDisplay(tip.fiat_amount, tip.fiat_currency ?? '');
 		return '—';
 	}
 </script>

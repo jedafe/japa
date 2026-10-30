@@ -47,6 +47,11 @@ class ToolsHubScreen extends ConsumerWidget {
                 title: Text(t('tools.japabot')),
                 onTap: () => context.push('/tools/japabot'),
               ),
+            if (flags.isEnabled('scam_alert.enabled'))
+              ListTile(
+                title: Text(t('tools.scam_alerts')),
+                onTap: () => context.push('/scam-alerts'),
+              ),
           ];
           return ListView(children: items);
         },

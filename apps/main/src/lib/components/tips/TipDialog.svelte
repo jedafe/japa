@@ -6,10 +6,12 @@
 	// render as outbound CTAs per the public tip-config.
 	//
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { Modal } from '$lib/components/ui';
-	import { sendTip, newIdempotencyKey, type TipConfig } from '$lib/api/tips';
-	import { AlertCircle, CheckCircle2, Clock, Coins, CreditCard, ExternalLink, Heart, Loader2, Sparkles } from 'lucide-svelte';
+	import { sendTip, newIdempotencyKey, fiatExponent, getWalletBalance, type TipConfig } from '$lib/api/tips';
+	import { getAccessToken } from '$lib/api/token.svelte';
+	import { AlertCircle, CheckCircle2, Clock, Coins, CreditCard, ExternalLink, Heart, Loader2, LogIn, Sparkles } from 'lucide-svelte';
 
 	interface Props {
 		open: boolean;
@@ -31,6 +33,10 @@
 	let succeeded = $state(false);
 	let pendingTransfer = $state(false);
 	let idemKey = newIdempotencyKey();
+	let balance = $state<{ points?: number; credits?: number }>({});
+
+	const authed = $derived(!!getAccessToken());
+	const returnUrl = $derived(`/login?return=${encodeURIComponent(page.url.pathname)}`);
 
 	const methods = $derived(config.methods ?? []);
 	const internal = $derived(methods.filter((m) => ['points', 'credits'].includes(m)));
@@ -39,10 +45,25 @@
 
 	const currency = $derived(config.fiat_currency ?? 'NGN');
 	const isFiat = $derived(fiat.includes(method));
-	// ISO-4217 minor-unit exponents (JPY=0; default 2) — mirrors the backend's
-	// currencyExponent() so the input can stay in major units.
-	const exponent = $derived(['JPY', 'KRW', 'VND', 'XOF', 'XAF'].includes(currency) ? 0 : 2);
+	// ISO-4217 minor-unit exponents — shared helper mirrors the backend's
+	// currencyExponent() so the input stays in major units.
+	const exponent = $derived(fiatExponent(currency));
 	const unit = $derived(method === 'points' ? 'points' : method === 'credits' ? 'credits' : currency);
+
+	// §125 frontend spec — amount presets + custom input.
+	const presets = $derived(
+		method === 'points' ? [50, 100, 250, 500] : method === 'credits' ? [5, 10, 25, 50] : [5, 10, 25, 100]
+	);
+	const minMajor = $derived(
+		config.min_tip_amount ? (isFiat ? config.min_tip_amount / Math.pow(10, exponent) : config.min_tip_amount) : 0
+	);
+	const balanceHint = $derived(
+		method === 'points' && balance.points != null
+			? t('tips.balance_points', 'Balance: {n} pts').replace('{n}', String(balance.points))
+			: method === 'credits' && balance.credits != null
+				? t('tips.balance_credits', 'Balance: {n} cr').replace('{n}', String(balance.credits))
+				: ''
+	);
 
 	const providerLabels: Record<string, string> = {
 		stripe: 'Stripe',
@@ -61,6 +82,13 @@
 			succeeded = false;
 			pendingTransfer = false;
 			idemKey = newIdempotencyKey();
+			if (getAccessToken()) {
+				getWalletBalance().then((res) => {
+					if (!res.error && res.data) {
+						balance = { points: res.data.points_balance, credits: res.data.credits_balance };
+					}
+				});
+			}
 		}
 	});
 
@@ -105,6 +133,12 @@
 			window.location.href = res.data.checkout_url; // provider checkout
 			return;
 		}
+		if (res.data.tip?.status === 'failed' || res.data.tip?.status === 'refunded') {
+			// Dead replay — rotate the key so the next attempt is a fresh tip.
+			idemKey = newIdempotencyKey();
+			error = t('tips.failed', 'Tip failed — try again');
+			return;
+		}
 		if (isFiat) {
 			// Fiat method with no checkout URL (manual_transfer): the payment
 			// is pending off-platform settlement — show instructions state.
@@ -131,6 +165,17 @@
 			<Clock class="size-10 text-amber-500" />
 			<p class="font-medium">{t('tips.transfer_pending', 'Tip created — complete the payment to settle it.')}</p>
 			<p class="text-sm text-muted-foreground">{t('tips.transfer_pending_hint', 'The tip is recorded once the payment is confirmed.')}</p>
+		</div>
+	{:else if !authed}
+		<!-- Guests can see the dialog surface but must sign in to transact —
+		     POST /tips requires auth (BUG-014). -->
+		<div class="flex flex-col items-center gap-3 py-6 text-center">
+			<LogIn class="size-10 text-primary" />
+			<p class="text-sm text-muted-foreground">{t('tips.sign_in_hint', 'Sign in to send a tip.')}</p>
+			<a href={returnUrl}
+				class="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90">
+				{t('tips.sign_in', 'Sign in')}
+			</a>
 		</div>
 	{:else}
 		{#if error}
@@ -165,13 +210,26 @@
 		{/if}
 
 		{#if sendable}
+			<div class="mb-2 flex flex-wrap gap-2">
+				{#each presets as p}
+					<button type="button" onclick={() => (amount = String(p))}
+						class="rounded-full border px-3 py-1 text-xs font-medium transition {Number(amount) === p ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'}">
+						{p} {unit}
+					</button>
+				{/each}
+			</div>
 			<label class="mb-3 block">
-				<span class="mb-1 block text-sm font-medium">
-					{t('tips.amount')} ({unit})
-					{#if isFiat && config.min_tip_amount}
-						<span class="font-normal text-muted-foreground">
-							— min {(config.min_tip_amount / Math.pow(10, exponent)).toFixed(exponent)} {currency}
-						</span>
+				<span class="mb-1 flex items-center justify-between text-sm font-medium">
+					<span>
+						{t('tips.amount')} ({unit})
+						{#if minMajor > 0}
+							<span class="font-normal text-muted-foreground">
+								— min {minMajor} {unit}
+							</span>
+						{/if}
+					</span>
+					{#if balanceHint}
+						<span class="text-xs font-normal text-muted-foreground">{balanceHint}</span>
 					{/if}
 				</span>
 				<input bind:value={amount} type="number" min="0" step={isFiat && exponent > 0 ? '0.01' : '1'} inputmode="decimal"
@@ -182,10 +240,11 @@
 				<textarea bind:value={message} rows="2" maxlength="280" placeholder={t('tips.message_placeholder')}
 					class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"></textarea>
 			</label>
-			<label class="mb-4 flex items-center gap-2 text-sm">
+			<label class="mb-1 flex items-center gap-2 text-sm">
 				<input bind:checked={isAnonymous} type="checkbox" class="size-4 rounded border-border" />
 				{t('tips.anonymous')}
 			</label>
+			<p class="mb-4 text-xs text-muted-foreground">{t('tips.anonymous_hint', 'The recipient still sees your name — anonymity only hides you from public stats.')}</p>
 			<button type="button" onclick={submit} disabled={submitting}
 				class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50">
 				{#if submitting}<Loader2 class="size-4 animate-spin" />{:else}<Heart class="size-4" />{/if}
@@ -198,13 +257,13 @@
 				<p class="mb-2 text-xs font-semibold uppercase text-muted-foreground">{t('tips.external')}</p>
 				<div class="flex flex-col gap-2">
 					{#if config.oc_collective_slug}
-						<a href="https://opencollective.com/{config.oc_collective_slug}/donate" target="_blank" rel="noopener"
+						<a href="https://opencollective.com/{config.oc_collective_slug}/donate" target="_blank" rel="noopener noreferrer"
 							class="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-muted">
 							<ExternalLink class="size-4" />Open Collective
 						</a>
 					{/if}
 					{#each config.external_links ?? [] as link}
-						<a href={link.url} target="_blank" rel="noopener"
+						<a href={link.url} target="_blank" rel="noopener noreferrer"
 							class="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-muted">
 							<ExternalLink class="size-4" />{link.label}
 						</a>

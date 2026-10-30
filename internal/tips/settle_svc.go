@@ -22,8 +22,10 @@ type NotificationCreator interface {
 
 // SettleFiatTip converts a succeeded donation payment into recipient credits:
 // gross = fiat_amount / 10^exp × credits_per_unit; net = gross − fee.
-// Idempotent — the store no-ops on an already-completed tip.
-func (s *Service) SettleFiatTip(ctx context.Context, tipID pgtype.UUID) error {
+// Idempotent — the store no-ops on an already-completed tip. paymentID is the
+// §17 payment that triggered settlement; it repairs tip.payment_id when the
+// create-time attach raced/failed.
+func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUID) error {
 	tip, err := s.store.getTip(ctx, tipID)
 	if err != nil {
 		return err
@@ -62,8 +64,19 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID pgtype.UUID) error {
 	if err := s.store.settleFiatTip(ctx, tipID, net, walletOwner); err != nil {
 		return err
 	}
+	if !tip.PaymentID.Valid && paymentID.Valid {
+		if err := s.store.attachTipPayment(ctx, tipID, paymentID); err != nil {
+			slog.Warn("tips: failed to repair payment link", "tip_id", tipID.String(), "error", err)
+		}
+	}
 	s.notifyReceived(ctx, tipID)
 	return nil
+}
+
+// FailTip marks a pending tip failed — the payment-failed/expired branch of
+// the fiat lifecycle. Idempotent: only pending rows transition.
+func (s *Service) FailTip(ctx context.Context, tipID pgtype.UUID) error {
+	return s.store.failTip(ctx, tipID)
 }
 
 // ClawbackTip reverses a settled tip's recipient credits and marks it
@@ -119,10 +132,50 @@ func (s *Service) notifyClawback(ctx context.Context, tip gen.Tip, walletOwner p
 }
 
 // AdminRefundTip is the admin moderation path — tips.moderate is enforced at
-// the route layer; the payment-side provider refund runs through §17's own
-// refund flow, which enqueues tips:clawback via the payment-status hook.
-func (s *Service) AdminRefundTip(ctx context.Context, tipID, _ pgtype.UUID) error {
-	return s.ClawbackTip(ctx, tipID)
+// the route layer. For fiat tips the donor's payment is refunded provider-side
+// first (§17 CreateRefund, which marks the payment refunded and enqueues the
+// webhook reversal — the clawback here is the idempotent immediate version of
+// that hook); for wallet/OC tips only the ledger clawback runs. Every call
+// writes an audit_logs row.
+func (s *Service) AdminRefundTip(ctx context.Context, tipID, adminID pgtype.UUID) error {
+	tip, err := s.store.getTip(ctx, tipID)
+	if err != nil {
+		return err
+	}
+	// Provider-side refund first: without it the donor loses the fiat AND the
+	// recipient's credits are clawed back — the platform would keep both.
+	// Pending tips get a best-effort attempt too: a payment may have succeeded
+	// before the settle task ran (it DLQs harmlessly once the tip is refunded).
+	// A failed attempt on a pending tip means the payment was never
+	// chargeable — the clawback below is still the right local action.
+	if IsFiatMethod(tip.Method) && tip.PaymentID.Valid && tip.Status != StatusRefunded && s.refunder == nil {
+		// Belt-and-suspenders: an un-wired refunder must not silently
+		// reproduce the clawback-without-donor-refund asymmetry.
+		if tip.Status == StatusCompleted {
+			return errors.New("tips: payment refunder seam not configured")
+		}
+		slog.Warn("tips: refund without provider refund — refunder seam not wired", "tip_id", tipID.String())
+	}
+	if IsFiatMethod(tip.Method) && tip.PaymentID.Valid && tip.Status != StatusRefunded && s.refunder != nil {
+		amount := int64(0)
+		if tip.FiatAmount != nil {
+			amount = *tip.FiatAmount
+		}
+		if err := s.refunder.RefundPayment(ctx, tip.PaymentID.String(), amount, "admin tip refund"); err != nil {
+			if tip.Status == StatusCompleted {
+				return fmt.Errorf("provider refund for tip %s: %w", tipID.String(), err)
+			}
+			slog.Warn("tips: provider refund skipped for pending tip", "tip_id", tipID.String(), "error", err)
+		}
+	}
+	if err := s.ClawbackTip(ctx, tipID); err != nil {
+		return err
+	}
+	if err := s.store.insertAuditLog(ctx, adminID, "tips.admin_refund", "tip", tipID.String(),
+		fmt.Sprintf(`{"tip_id":%q,"method":%q,"status":%q}`, tipID.String(), tip.Method, tip.Status)); err != nil {
+		slog.Warn("tips: refund audit log failed", "tip_id", tipID.String(), "error", err)
+	}
+	return nil
 }
 
 // walletOwnerFor resolves which user's credits wallet receives a settlement —
@@ -173,8 +226,17 @@ func (s *Service) NotifyTipReceived(ctx context.Context, tipID pgtype.UUID, noti
 	}
 	title := fmt.Sprintf("%s tipped you %s", sender, amount)
 	var body string
+	// §125 payload — content title when the tip is content-anchored.
+	if tip.ContentID.Valid {
+		if ct, err := s.store.getContentTitle(ctx, tip.ContentID); err == nil && ct != "" {
+			body = "on " + ct
+		}
+	}
 	if tip.Message != nil {
-		body = *tip.Message
+		if body != "" {
+			body += " — "
+		}
+		body += *tip.Message
 	}
 	actionURL := "/me/tips"
 	// Anonymous tips keep the sender identity out of the notification actor —

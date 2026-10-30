@@ -25,7 +25,7 @@ var ocSlugPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$`)
 // is verified against OC before being stored AES-256-GCM encrypted (same
 // treatment as BYOK keys); a slug-only connect renders as a plain outbound
 // link without sync. A fresh webhook secret is generated on every connect.
-func (s *Service) ConnectOC(ctx context.Context, owner Owner, actorID pgtype.UUID, slug, token string) (*Settings, error) {
+func (s *Service) ConnectOC(ctx context.Context, owner Owner, actorID pgtype.UUID, slug, token string, rotateSecret bool) (*Settings, error) {
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
 		return nil, err
 	}
@@ -39,7 +39,7 @@ func (s *Service) ConnectOC(ctx context.Context, owner Owner, actorID pgtype.UUI
 			return nil, ErrOCNotConnected
 		}
 		if _, err := s.oc.VerifyToken(ctx, token); err != nil {
-			return nil, fmt.Errorf("%w: token verification failed", ErrInvalidLink)
+			return nil, ErrOCAccess
 		}
 		// The token must belong to an account that administers/members the
 		// collective — otherwise anyone could attach a popular collective and
@@ -49,7 +49,7 @@ func (s *Service) ConnectOC(ctx context.Context, owner Owner, actorID pgtype.UUI
 			return nil, fmt.Errorf("verifying collective access: %w", err)
 		}
 		if !ok {
-			return nil, fmt.Errorf("%w: token has no access to this collective", ErrInvalidLink)
+			return nil, ErrOCAccess
 		}
 		enc, err := crypto.Encrypt(token)
 		if err != nil {
@@ -70,9 +70,10 @@ func (s *Service) ConnectOC(ctx context.Context, owner Owner, actorID pgtype.UUI
 	}
 
 	// Reuse an existing webhook secret — regenerating it silently breaks a
-	// webhook the owner already configured in the OC dashboard.
+	// webhook the owner already configured in the OC dashboard — unless the
+	// caller explicitly asks to rotate (compromised/lost URL).
 	secret := ""
-	if st.row.OcWebhookSecret != nil {
+	if st.row.OcWebhookSecret != nil && !rotateSecret {
 		secret = *st.row.OcWebhookSecret
 	}
 	if secret == "" {
@@ -81,6 +82,15 @@ func (s *Service) ConnectOC(ctx context.Context, owner Owner, actorID pgtype.UUI
 			return nil, fmt.Errorf("generating webhook secret: %w", err)
 		}
 		secret = hex.EncodeToString(secretBytes)
+	}
+
+	// A slug-only reconnect preserves a stored token — wiping it on every
+	// connect would break sync for owners who only meant to rotate the
+	// secret or fix the slug.
+	if encrypted == nil {
+		if row, err := s.store.getSettings(ctx, owner.Type, owner.ID); err == nil && row.OcApiTokenEncrypted != nil {
+			encrypted = row.OcApiTokenEncrypted
+		}
 	}
 
 	if err := s.store.setOCCredentials(ctx, gen.SetOCCredentialsParams{
@@ -118,6 +128,9 @@ func (s *Service) ImportContribution(ctx context.Context, owner Owner, c OCContr
 		return false, err
 	}
 
+	// OC does not expose contributor emails to personal tokens, so this
+	// match is normally a no-op — sender_user_id stays NULL per §125. The
+	// lookup remains for sources that do supply an email.
 	var senderID pgtype.UUID
 	if c.FromEmail != "" {
 		if id, err := s.store.getUserIDByEmail(ctx, c.FromEmail); err == nil {

@@ -1,15 +1,15 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { page } from '$app/state';
-	import { ArrowLeft, Pin, Bell, BellOff, TriangleAlert, ShieldCheck, Pencil } from 'lucide-svelte';
+	import { ArrowLeft, Pin, Bell, BellOff, TriangleAlert, ShieldCheck, Pencil, Link2, Check } from 'lucide-svelte';
 	import { t, siteName} from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { relativeTime } from '$lib/feed/time';
 	import { EmptyState } from '$lib/components/ui';
 	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
-	import { scamTypeLabel } from '$lib/enumOptions';
-	import type { ScamReport, ScamStatus, ScamType } from '$lib/types';
+	import { scamTypeLabel, scamPlatformLabel } from '$lib/enumOptions';
+	import type { ScamReport, ScamPlatform, ScamStatus, ScamType } from '$lib/types';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
@@ -45,6 +45,17 @@
 
 	let subscribed = $state(false);
 	let subscribing = $state(false);
+	let copied = $state(false);
+
+	async function copyLink() {
+		try {
+			await navigator.clipboard.writeText(canonical);
+			copied = true;
+			setTimeout(() => (copied = false), 2000);
+		} catch {
+			// clipboard unavailable — no-op
+		}
+	}
 
 	$effect(() => {
 		subscribed = data.alert?.is_subscribed ?? false;
@@ -103,14 +114,25 @@
 		>
 			<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('scam_alerts.back', 'Back to scam alerts')}
 		</a>
-		{#if data.canEdit && alert}
-			<a
-				href="/scam-alerts/{alert.id}/edit"
+		<div class="flex items-center gap-2">
+			<button
+				type="button"
+				onclick={copyLink}
+				aria-label={t('scam_alerts.copy_link', 'Copy link')}
 				class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
 			>
-				<Pencil size={14} /> {t('common.edit', 'Edit')}
-			</a>
-		{/if}
+				{#if copied}<Check size={14} class="text-emerald-600" />{:else}<Link2 size={14} />{/if}
+				{copied ? t('scam_alerts.link_copied', 'Copied') : t('scam_alerts.copy_link', 'Copy link')}
+			</button>
+			{#if data.canEdit && alert}
+				<a
+					href="/scam-alerts/{alert.id}/edit"
+					class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+				>
+					<Pencil size={14} /> {t('common.edit', 'Edit')}
+				</a>
+			{/if}
+		</div>
 	</div>
 
 	{#if data.loadError || !alert}
@@ -167,7 +189,7 @@
 				{#if alert.platform_used}
 					<div>
 						<dt class="text-xs font-medium text-[var(--color-text-subtle)]">{t('scam_alerts.platform', 'Platform')}</dt>
-						<dd class="mt-0.5 text-sm text-[var(--color-text)]">{alert.platform_used}</dd>
+						<dd class="mt-0.5 text-sm text-[var(--color-text)]">{scamPlatformLabel(t, alert.platform_used as ScamPlatform)}</dd>
 					</div>
 				{/if}
 				{#if alert.approximate_date}

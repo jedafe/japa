@@ -52,6 +52,14 @@ type ScamReport struct {
 	PinnedSpaceID         pgtype.UUID
 	ReviewedBy            pgtype.UUID
 	ReviewedAt            pgtype.Timestamptz
+	// BUG-002: accused-entity linkage — the org/user/service listing the
+	// report is about (prefilled by profile/org/service CTAs). Moderation
+	// context only; redacted on public surfaces like reporter identity.
+	SubjectType  *string // user|organization|service|other
+	SubjectID    pgtype.UUID
+	SubjectLabel *string // display name snapshot (org name, username, listing title)
+	// BUG-012: which earlier report this was marked a duplicate of.
+	DuplicateOfReportID pgtype.UUID
 	// ADR-088 universal AI-generation columns.
 	AiGenerated    bool
 	AiModel        *string
@@ -83,10 +91,12 @@ INSERT INTO scam_reports (
     reporter_id, scam_type, destination_space_id,
     origin_space_id, origin_community, platform_used,
     approximate_date, amount_range, description, reported_to_authorities,
+    subject_type, subject_id, subject_label,
+    ai_generated, ai_model, ai_generated_at,
     status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_review')
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'under_review')
 RETURNING id
-`, report.ReporterID, report.ScamType, report.DestinationSpaceID, report.OriginSpaceID, report.OriginCommunity, report.PlatformUsed, report.ApproximateDate, report.AmountRange, report.Description, report.ReportedToAuthorities).Scan(&id)
+`, report.ReporterID, report.ScamType, report.DestinationSpaceID, report.OriginSpaceID, report.OriginCommunity, report.PlatformUsed, report.ApproximateDate, report.AmountRange, report.Description, report.ReportedToAuthorities, report.SubjectType, report.SubjectID, report.SubjectLabel, report.AiGenerated, report.AiModel, report.AiGeneratedAt).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("scamalert: create report: %w", err)
 	}
@@ -102,6 +112,7 @@ SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
+       sr.subject_type, sr.subject_id, sr.subject_label, sr.duplicate_of_report_id,
        sr.ai_generated, sr.ai_model, sr.ai_generated_at,
        sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
@@ -124,7 +135,7 @@ LIMIT 1
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 		&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
-		&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt,
+		&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.DuplicateOfReportID,
 		&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
 		&r.HitlReviewedBy, &r.HitlReviewedAt,
 		&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -152,6 +163,7 @@ SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
+       sr.subject_type, sr.subject_id, sr.subject_label, sr.duplicate_of_report_id,
        sr.ai_generated, sr.ai_model, sr.ai_generated_at,
        sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
@@ -173,7 +185,7 @@ LIMIT 1
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 		&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
-		&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt,
+		&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.DuplicateOfReportID,
 		&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
 		&r.HitlReviewedBy, &r.HitlReviewedAt,
 		&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -279,6 +291,7 @@ SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
+       sr.subject_type, sr.subject_id, sr.subject_label, sr.duplicate_of_report_id,
        sr.ai_generated, sr.ai_model, sr.ai_generated_at,
        sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
@@ -311,7 +324,7 @@ LIMIT $%d OFFSET $%d
 			&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
-			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt,
+			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.DuplicateOfReportID,
 			&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
 			&r.HitlReviewedBy, &r.HitlReviewedAt,
 			&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -437,17 +450,17 @@ WHERE destination_space_id = $1
 // GetReportForNotification returns the report's destination_space_id and
 // reporter_id for the notify_subscribers task. Returns pgx.ErrNoRows if
 // the report does not exist or does not belong to the platform.
-func (s *Store) GetReportForNotification(ctx context.Context, id pgtype.UUID) (destSpaceID, reporterID pgtype.UUID, scamType, description string, err error) {
+func (s *Store) GetReportForNotification(ctx context.Context, id pgtype.UUID) (destSpaceID, reporterID pgtype.UUID, scamType, description, status string, err error) {
 	err = s.pool.Reader.QueryRow(ctx, `
-SELECT destination_space_id, reporter_id, scam_type, description
+SELECT destination_space_id, reporter_id, scam_type, description, status
 FROM scam_reports
-WHERE id = $1 AND status = 'confirmed'
-`, id).Scan(&destSpaceID, &reporterID, &scamType, &description)
+WHERE id = $1 AND deleted_at IS NULL
+`, id).Scan(&destSpaceID, &reporterID, &scamType, &description, &status)
 	if err != nil {
-		return pgtype.UUID{}, pgtype.UUID{}, "", "", err
+		return pgtype.UUID{}, pgtype.UUID{}, "", "", "", err
 	}
 
-	return destSpaceID, reporterID, scamType, description, nil
+	return destSpaceID, reporterID, scamType, description, status, nil
 }
 
 // AdminListReportsFilter holds filter parameters for the admin moderation list.
@@ -547,6 +560,7 @@ SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
+       sr.subject_type, sr.subject_id, sr.subject_label, sr.duplicate_of_report_id,
        sr.ai_generated, sr.ai_model, sr.ai_generated_at,
        sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
@@ -579,7 +593,7 @@ LIMIT $%d OFFSET $%d
 			&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
-			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt,
+			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.DuplicateOfReportID,
 			&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
 			&r.HitlReviewedBy, &r.HitlReviewedAt,
 			&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -616,7 +630,7 @@ SELECT COUNT(*) FROM scam_reports sr WHERE %s
 // ADR-088: the review action itself is the human-in-the-loop approval — when
 // an AI-generated report is reviewed for the first time, hitl_reviewed_by /
 // hitl_reviewed_at are stamped with the reviewing moderator.
-func (s *Store) UpdateReportStatus(ctx context.Context, id pgtype.UUID, status, moderatorNote string, reviewerID pgtype.UUID) error {
+func (s *Store) UpdateReportStatus(ctx context.Context, id pgtype.UUID, status, moderatorNote string, reviewerID, duplicateOf pgtype.UUID) error {
 	var notePtr *string
 	if moderatorNote != "" {
 		notePtr = &moderatorNote
@@ -625,6 +639,7 @@ func (s *Store) UpdateReportStatus(ctx context.Context, id pgtype.UUID, status, 
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE scam_reports
 SET status = $2, moderator_note = $3, reviewed_by = $4, reviewed_at = now(),
+    duplicate_of_report_id = $5,
     hitl_reviewed_by = CASE
         WHEN ai_generated AND hitl_reviewed_by IS NULL THEN $4
         ELSE hitl_reviewed_by
@@ -635,7 +650,7 @@ SET status = $2, moderator_note = $3, reviewed_by = $4, reviewed_at = now(),
     END,
     updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-`, id, status, notePtr, reviewerID)
+`, id, status, notePtr, reviewerID, duplicateOf)
 	if err != nil {
 		return fmt.Errorf("scamalert: update report status: %w", err)
 	}
@@ -681,4 +696,139 @@ WHERE id = $1 AND deleted_at IS NULL
 	}
 
 	return nil
+}
+
+// SpaceExists reports whether the given id resolves to a live space (any
+// level) — used to validate pin targets.
+func (s *Store) SpaceExists(ctx context.Context, spaceID pgtype.UUID) (bool, error) {
+	var exists bool
+	err := s.pool.Reader.QueryRow(ctx, `
+SELECT EXISTS (SELECT 1 FROM spaces WHERE id = $1 AND deleted_at IS NULL)
+`, spaceID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("scamalert: space exists: %w", err)
+	}
+	return exists, nil
+}
+
+// ResetReportReview returns a report to 'under_review' and clears the
+// reviewer stamps — used when a reporter edits an already-decided report so
+// the changed content goes back through moderation (§81 status machine).
+func (s *Store) ResetReportReview(ctx context.Context, id pgtype.UUID) error {
+	_, err := s.pool.Writer.Exec(ctx, `
+UPDATE scam_reports
+SET status = 'under_review', reviewed_by = NULL, reviewed_at = NULL, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+`, id)
+	if err != nil {
+		return fmt.Errorf("scamalert: reset report review: %w", err)
+	}
+	return nil
+}
+
+// ListReportsByReporter returns a reporter's own reports in any status —
+// powers the "My reports" surface so submitters can track review state.
+func (s *Store) ListReportsByReporter(ctx context.Context, reporterID pgtype.UUID, limit, offset int32) ([]ScamReportRow, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.pool.Reader.Query(ctx, `
+SELECT sr.id, sr.reporter_id, sr.scam_type,
+       sr.destination_space_id, sr.origin_space_id, sr.origin_community,
+       sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
+       sr.reported_to_authorities, sr.status, sr.moderator_note,
+       sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
+       sr.subject_type, sr.subject_id, sr.subject_label, sr.duplicate_of_report_id,
+       sr.ai_generated, sr.ai_model, sr.ai_generated_at,
+       sr.hitl_reviewed_by, sr.hitl_reviewed_at,
+       sr.created_at, sr.updated_at, sr.deleted_at,
+       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       os.name AS origin_space_name, os.geo_code AS origin_space_code,
+       u.username AS reporter_name
+FROM scam_reports sr
+LEFT JOIN spaces ds ON ds.id = sr.destination_space_id
+LEFT JOIN spaces os ON os.id = sr.origin_space_id
+LEFT JOIN users u ON u.id = sr.reporter_id
+WHERE sr.reporter_id = $1 AND sr.deleted_at IS NULL
+ORDER BY sr.created_at DESC
+LIMIT $2 OFFSET $3
+`, reporterID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("scamalert: list reports by reporter: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ScamReportRow
+	for rows.Next() {
+		var r ScamReportRow
+		if err := rows.Scan(
+			&r.ID, &r.ReporterID, &r.ScamType,
+			&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
+			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
+			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
+			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt,
+			&r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.DuplicateOfReportID,
+			&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
+			&r.HitlReviewedBy, &r.HitlReviewedAt,
+			&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
+			&r.DestSpaceName, &r.DestSpaceCode,
+			&r.OriginSpaceName, &r.OriginSpaceCode,
+			&r.ReporterName,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scamalert: scan own report row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("scamalert: iterate own report rows: %w", err)
+	}
+
+	var total int64
+	if err := s.pool.Reader.QueryRow(ctx,
+		`SELECT COUNT(*) FROM scam_reports WHERE reporter_id = $1 AND deleted_at IS NULL`,
+		reporterID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("scamalert: count own reports: %w", err)
+	}
+	return out, total, nil
+}
+
+// SubscriptionRow is a user's scam-alert subscription joined to its
+// destination space for display.
+type SubscriptionRow struct {
+	DestinationSpaceID   pgtype.UUID
+	DestinationSpaceName *string
+	DestinationSpaceCode *string
+	CreatedAt            pgtype.Timestamptz
+}
+
+// ListSubscriptionsByUser returns every scam-alert subscription a user holds,
+// with destination space names for display.
+func (s *Store) ListSubscriptionsByUser(ctx context.Context, userID pgtype.UUID) ([]SubscriptionRow, error) {
+	rows, err := s.pool.Reader.Query(ctx, `
+SELECT s.destination_space_id, ds.name, ds.geo_code, s.created_at
+FROM scam_alert_subscriptions s
+LEFT JOIN spaces ds ON ds.id = s.destination_space_id
+WHERE s.user_id = $1
+ORDER BY s.created_at DESC
+`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("scamalert: list subscriptions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []SubscriptionRow
+	for rows.Next() {
+		var r SubscriptionRow
+		if err := rows.Scan(&r.DestinationSpaceID, &r.DestinationSpaceName, &r.DestinationSpaceCode, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scamalert: scan subscription: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

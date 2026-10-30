@@ -13,6 +13,7 @@
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { openLightbox } from '$lib/lightbox.svelte';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
+	import TipButton from '$lib/components/tips/TipButton.svelte';
 	import type { ProfilePost, FeedItem } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
@@ -139,9 +140,12 @@
 <div class="mx-auto w-full max-w-3xl">
 <OrgHeader {org} {canManage}>
 	{#snippet children()}
+		{#if page.data.features?.['tips.enabled']}
+			<TipButton recipientType="organization" recipientKey={org.id} recipientId={org.id} recipientName={org.name} />
+		{/if}
 		{#if page.data.features?.['scam_alert.enabled']}
 			<a
-				href="/scam-alerts/new"
+				href="/scam-alerts/new?platform=japaconnect&subject_type=organization&subject_id={org.id}&subject_label={encodeURIComponent(org.name ?? org.slug)}"
 				class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 				title={t('scam_alerts.report_button', 'Report a Scam')}
 			>

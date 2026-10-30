@@ -685,6 +685,16 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		onPaymentSucceeded(ctx, queries, p)
 	}
 
+	// §125: a failed/expired donation payment marks the pending tip failed —
+	// there is no other terminal transition for it.
+	if (payload.Status == "failed" || payload.Status == "expired") &&
+		p.PurposeType == "donation" && p.PurposeID.Valid && tipSettlement != nil {
+		if err := tipSettlement.FailTip(ctx, p.PurposeID); err != nil {
+			slog.Error("task:payment:process_webhook: failed to mark donation tip failed",
+				"payment_id", p.ID, "tip_id", p.PurposeID, "error", err)
+		}
+	}
+
 	slog.Info("task:payment:process_webhook: payment updated", "payment_id", p.ID, "status", payload.Status)
 
 	return nil
@@ -724,7 +734,7 @@ func onPaymentSucceeded(ctx context.Context, queries *gen.Queries, p gen.Payment
 	// §125: a succeeded donation payment settles the pending tip — the
 	// handler converts fiat to recipient credits and marks the tip complete.
 	if p.PurposeType == "donation" && p.PurposeID.Valid {
-		enqueueTipsSettleFiat(p.PurposeID)
+		enqueueTipsSettleFiat(p.PurposeID, p.ID)
 	}
 }
 

@@ -8,6 +8,7 @@
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
+	import TipButton from '$lib/components/tips/TipButton.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
 	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
@@ -418,13 +419,25 @@
 		     this are ADR-058 exceptions, so the shell's mobile tab bar is
 		     absent), falling back to the horizontal strip under the body on sm+. -->
 		<div class="mt-8">
-			<ReactionRail
-				contentId={article.id}
-				voteScore={article.reaction_count}
-				commentCount={article.comment_count}
-				authed={data.authed}
-				bottom
-			/>
+			<div class="flex items-center gap-1">
+				<ReactionRail
+					contentId={article.id}
+					voteScore={article.reaction_count}
+					commentCount={article.comment_count}
+					authed={data.authed}
+					bottom
+				/>
+				{#if page.data.features?.['tips.enabled'] && article.author_username && sidebarUser?.id !== article.author_id}
+					<TipButton
+						recipientType="user"
+						recipientKey={article.author_username}
+						recipientId={article.author_id ?? ''}
+						recipientName={article.author_name ?? article.author_username}
+						contentId={article.id}
+						compact
+					/>
+				{/if}
+			</div>
 		</div>
 
 		<!-- Mobile right sidebar: author card + widgets, stacked below the body on small screens. -->

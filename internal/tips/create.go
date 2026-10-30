@@ -63,7 +63,16 @@ func (s *Service) CreateTip(ctx context.Context, senderID pgtype.UUID, in Create
 	}
 
 	if len(in.Message) > maxTipMessageLen {
-		return CreateTipResult{}, ErrInvalidAmount
+		return CreateTipResult{}, ErrMessageTooLong
+	}
+
+	// §41: blocked pairs cannot transact — checked against the resolved
+	// wallet owner so content-anchored tips (author) and org tips (org
+	// owner's wallet) can't bypass the direct-recipient check.
+	if walletOwner.Valid && walletOwner != senderID {
+		if blocked, bErr := s.IsBlocked(ctx, senderID, walletOwner); bErr == nil && blocked {
+			return CreateTipResult{}, ErrBlocked
+		}
 	}
 
 	st, err := s.store.getSettings(ctx, owner.Type, owner.ID)
@@ -167,9 +176,10 @@ func (s *Service) createWalletTip(ctx context.Context, senderID pgtype.UUID, own
 	// Points tips enforce the daily anti-laundering cap. The check runs
 	// inside the settlement tx under the sender's wallet advisory lock —
 	// an unlocked pre-check would let concurrent requests race past it.
-	var dailyPointsLimit int64
+	var dailyPointsLimit, dailyRecipientLimit int64
 	if in.Method == MethodPoints && s.settings != nil {
 		dailyPointsLimit = int64(s.settings.GetIntOr(ctx, "tips.points_daily_limit", 500))
+		dailyRecipientLimit = int64(s.settings.GetIntOr(ctx, "tips.points_daily_recipient_limit", 0))
 	}
 
 	// Fee applies to credits (and fiat) only — points pass through whole.
@@ -180,21 +190,22 @@ func (s *Service) createWalletTip(ctx context.Context, senderID pgtype.UUID, own
 	net := amount - fee
 
 	tip, err := s.store.settleWalletTip(ctx, settleWalletParams{
-		senderID:         senderID,
-		walletOwnerID:    walletOwner,
-		recipientUserID:  nullableOwnerUser(owner),
-		recipientOrgID:   nullableOwnerOrg(owner),
-		ledgerType:       ledgerType,
-		gross:            amount,
-		net:              net,
-		fee:              fee,
-		method:           in.Method,
-		recipientType:    owner.Type,
-		contentID:        in.ContentID,
-		message:          in.Message,
-		isAnonymous:      in.IsAnonymous,
-		idempotencyKey:   idemKey,
-		pointsDailyLimit: dailyPointsLimit,
+		senderID:                  senderID,
+		walletOwnerID:             walletOwner,
+		recipientUserID:           nullableOwnerUser(owner),
+		recipientOrgID:            nullableOwnerOrg(owner),
+		ledgerType:                ledgerType,
+		gross:                     amount,
+		net:                       net,
+		fee:                       fee,
+		method:                    in.Method,
+		recipientType:             owner.Type,
+		contentID:                 in.ContentID,
+		message:                   in.Message,
+		isAnonymous:               in.IsAnonymous,
+		idempotencyKey:            idemKey,
+		pointsDailyLimit:          dailyPointsLimit,
+		pointsDailyRecipientLimit: dailyRecipientLimit,
 	})
 	if err != nil {
 		// tips_idem_unique (000949): a concurrent same-key request that won

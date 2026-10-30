@@ -118,6 +118,13 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 		},
 	})
 	if err != nil {
+		// The pending tip can never settle without a payment row. Mark it
+		// failed — which also releases the idempotency key — so a client
+		// retry creates a fresh attempt instead of replaying a dead tip
+		// with no checkout URL (BUG-001).
+		if ferr := s.store.failTip(ctx, tip.ID); ferr != nil {
+			slog.Warn("tips: failed to mark dead fiat tip failed", "tip_id", tip.ID.String(), "error", ferr)
+		}
 		return CreateTipResult{}, err
 	}
 
