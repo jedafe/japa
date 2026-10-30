@@ -54,7 +54,6 @@
 		const res = orgId
 			? await updateOrgTipSettings(orgId, {
 					tips_enabled: settings.tips_enabled,
-					accept_points: settings.accept_points,
 					accept_credits: settings.accept_credits,
 					accept_fiat: settings.accept_fiat,
 					accept_external: settings.accept_external,
@@ -63,7 +62,6 @@
 				})
 			: await updateMyTipSettings({
 			tips_enabled: settings.tips_enabled,
-			accept_points: settings.accept_points,
 			accept_credits: settings.accept_credits,
 			accept_fiat: settings.accept_fiat,
 			accept_external: settings.accept_external,
@@ -174,9 +172,6 @@
 		</label>
 
 		<div class="grid grid-cols-2 gap-3">
-			<label class="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
-				<input bind:checked={settings.accept_points} type="checkbox" class="size-4" onchange={save} />{t('tips.points')}
-			</label>
 			<label class="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
 				<input bind:checked={settings.accept_credits} type="checkbox" class="size-4" onchange={save} />{t('tips.credits')}
 			</label>

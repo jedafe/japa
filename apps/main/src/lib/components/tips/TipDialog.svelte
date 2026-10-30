@@ -1,5 +1,5 @@
 <script lang="ts">
-	// TipDialog (§125) — send points/credits/fiat tips to a user, org, or the
+	// TipDialog (§125) — send credits/fiat tips to a user, org, or the
 	// platform. Fiat methods redirect to the provider checkout URL returned
 	// by POST /tips; a fiat result without a checkout URL (manual_transfer)
 	// shows a pending-instructions state. External links and Open Collective
@@ -11,11 +11,11 @@
 	import { Modal } from '$lib/components/ui';
 	import { sendTip, newIdempotencyKey, fiatExponent, getWalletBalance, type TipConfig } from '$lib/api/tips';
 	import { getAccessToken } from '$lib/api/token.svelte';
-	import { AlertCircle, CheckCircle2, Clock, Coins, CreditCard, ExternalLink, Heart, Loader2, LogIn, Sparkles } from 'lucide-svelte';
+	import { AlertCircle, CheckCircle2, Clock, Coins, CreditCard, ExternalLink, Heart, Loader2, LogIn } from 'lucide-svelte';
 
 	interface Props {
 		open: boolean;
-		recipientType: 'user' | 'organization' | 'platform';
+		recipientType: 'user' | 'organization' | 'platform' | 'space';
 		recipientId?: string; // uuid for user/org
 		contentId?: string;
 		recipientName: string;
@@ -33,14 +33,14 @@
 	let succeeded = $state(false);
 	let pendingTransfer = $state(false);
 	let idemKey = newIdempotencyKey();
-	let balance = $state<{ points?: number; credits?: number }>({});
+	let balance = $state<{ credits?: number }>({});
 
 	const authed = $derived(!!getAccessToken());
 	const returnUrl = $derived(`/login?return=${encodeURIComponent(page.url.pathname)}`);
 
 	const methods = $derived(config.methods ?? []);
-	const internal = $derived(methods.filter((m) => ['points', 'credits'].includes(m)));
-	const fiat = $derived(methods.filter((m) => !['points', 'credits', 'opencollective'].includes(m)));
+	const internal = $derived(methods.filter((m) => m === 'credits'));
+	const fiat = $derived(methods.filter((m) => !['credits', 'opencollective'].includes(m)));
 	const sendable = $derived(internal.length + fiat.length > 0);
 
 	const currency = $derived(config.fiat_currency ?? 'NGN');
@@ -48,21 +48,19 @@
 	// ISO-4217 minor-unit exponents — shared helper mirrors the backend's
 	// currencyExponent() so the input stays in major units.
 	const exponent = $derived(fiatExponent(currency));
-	const unit = $derived(method === 'points' ? 'points' : method === 'credits' ? 'credits' : currency);
+	const unit = $derived(method === 'credits' ? 'credits' : currency);
 
 	// §125 frontend spec — amount presets + custom input.
 	const presets = $derived(
-		method === 'points' ? [50, 100, 250, 500] : method === 'credits' ? [5, 10, 25, 50] : [5, 10, 25, 100]
+		method === 'credits' ? [5, 10, 25, 50] : [5, 10, 25, 100]
 	);
 	const minMajor = $derived(
 		config.min_tip_amount ? (isFiat ? config.min_tip_amount / Math.pow(10, exponent) : config.min_tip_amount) : 0
 	);
 	const balanceHint = $derived(
-		method === 'points' && balance.points != null
-			? t('tips.balance_points', 'Balance: {n} pts').replace('{n}', String(balance.points))
-			: method === 'credits' && balance.credits != null
-				? t('tips.balance_credits', 'Balance: {n} cr').replace('{n}', String(balance.credits))
-				: ''
+		method === 'credits' && balance.credits != null
+			? t('tips.balance_credits', 'Balance: {n} cr').replace('{n}', String(balance.credits))
+			: ''
 	);
 
 	const providerLabels: Record<string, string> = {
@@ -85,7 +83,7 @@
 			if (getAccessToken()) {
 				getWalletBalance().then((res) => {
 					if (!res.error && res.data) {
-						balance = { points: res.data.points_balance, credits: res.data.credits_balance };
+						balance = { credits: res.data.credits_balance };
 					}
 				});
 			}
@@ -192,8 +190,7 @@
 				{#each internal as m}
 					<button type="button" onclick={() => (method = m)}
 						class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition {method === m ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'}">
-						{#if m === 'points'}<Sparkles class="size-4" />{t('tips.points')}
-						{:else}<Coins class="size-4" />{t('tips.credits')}{/if}
+						<Coins class="size-4" />{t('tips.credits')}
 					</button>
 				{/each}
 			</div>

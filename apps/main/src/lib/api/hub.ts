@@ -157,13 +157,6 @@ export const createWithdrawalMethod = (body: {
 		metadata?: unknown;
 	}>('/me/wallet/withdrawal-methods', body);
 
-export const convertWallet = (points: number) =>
-	api.post('/me/wallet/convert', { points_to_convert: points }, {
-		// Rule 9: financial endpoints require an Idempotency-Key so the backend
-		// dedupes retries of the same conversion attempt (and distinct attempts
-		// get distinct keys). A fresh UUID per call is the correct granularity.
-		'Idempotency-Key': crypto.randomUUID()
-	});
 export const cancelSubscription = () =>
 	api.post('/me/subscription/cancel', undefined, {
 		// Rule 9: financial state-change endpoints require an Idempotency-Key.

@@ -1590,16 +1590,16 @@ func (q *Queries) InsertWikiRevision(ctx context.Context, arg InsertWikiRevision
 }
 
 const isUniversitySpaceBySlug = `-- name: IsUniversitySpaceBySlug :one
-SELECT (sp.level = 'university' OR st.slug = 'university') AS is_university
+SELECT (sp.level = 'university') AS is_university
 FROM spaces sp
 LEFT JOIN space_types st ON st.id = sp.space_type_id
 WHERE sp.slug = $1 AND sp.status = 'active'
 LIMIT 1
 `
 
-func (q *Queries) IsUniversitySpaceBySlug(ctx context.Context, slug string) (*bool, error) {
+func (q *Queries) IsUniversitySpaceBySlug(ctx context.Context, slug string) (bool, error) {
 	row := q.db.QueryRow(ctx, isUniversitySpaceBySlug, slug)
-	var is_university *bool
+	var is_university bool
 	err := row.Scan(&is_university)
 	return is_university, err
 }
@@ -1814,7 +1814,7 @@ func (q *Queries) ListScholarshipsForWiki(ctx context.Context, spaceID pgtype.UU
 }
 
 const listUniversitiesForCourseOffering = `-- name: ListUniversitiesForCourseOffering :many
-SELECT s.id, s.slug, s.name, s.geo_code, MIN(o2.slug) AS offering_slug
+SELECT s.id, s.slug, s.name, s.geo_code, MIN(o2.slug)::text AS offering_slug
 FROM university_course_offerings o
 JOIN university_course_offerings o2
   ON o2.course_id = o.course_id AND o2.id <> o.id
@@ -1832,7 +1832,7 @@ type ListUniversitiesForCourseOfferingRow struct {
 	Slug         string      `json:"slug"`
 	Name         string      `json:"name"`
 	GeoCode      *string     `json:"geo_code"`
-	OfferingSlug interface{} `json:"offering_slug"`
+	OfferingSlug string      `json:"offering_slug"`
 }
 
 // Sibling published offerings of the same catalog course → their host
@@ -1865,7 +1865,7 @@ func (q *Queries) ListUniversitiesForCourseOffering(ctx context.Context, slug st
 }
 
 const listUniversitiesForProgram = `-- name: ListUniversitiesForProgram :many
-SELECT s.id, s.slug, s.name, s.geo_code, MIN(o.slug) AS offering_slug
+SELECT s.id, s.slug, s.name, s.geo_code, MIN(o.slug)::text AS offering_slug
 FROM university_course_catalog c
 JOIN university_course_offerings o
   ON o.course_id = c.id AND o.deleted_at IS NULL AND o.is_published = true
@@ -1882,7 +1882,7 @@ type ListUniversitiesForProgramRow struct {
 	Slug         string      `json:"slug"`
 	Name         string      `json:"name"`
 	GeoCode      *string     `json:"geo_code"`
-	OfferingSlug interface{} `json:"offering_slug"`
+	OfferingSlug string      `json:"offering_slug"`
 }
 
 // Every published offering of a catalog course → host universities

@@ -5,7 +5,6 @@
 	import { goto } from '$app/navigation';
 	import type { WalletData } from './wallet/types';
 	import WalletDetailsTab from './wallet/WalletDetailsTab.svelte';
-	import WalletConvertTab from './wallet/WalletConvertTab.svelte';
 	import WalletPurchaseTab from './wallet/WalletPurchaseTab.svelte';
 	import WalletHistoryTab from './wallet/WalletHistoryTab.svelte';
 	import WalletWithdrawTab from './wallet/WalletWithdrawTab.svelte';
@@ -30,7 +29,6 @@
 
 	const allTabs: { key: Tab; labelKey: string; default: string; requiresWithdraw: boolean }[] = [
 		{ key: 'details', labelKey: 'settings.wallet.tab_details', default: 'Details', requiresWithdraw: false },
-		{ key: 'conversion', labelKey: 'settings.wallet.tab_conversion', default: 'Convert', requiresWithdraw: false },
 		{ key: 'purchase', labelKey: 'settings.wallet.tab_purchase', default: 'Purchase', requiresWithdraw: false },
 		{ key: 'withdraw', labelKey: 'settings.wallet.tab_withdraw', default: 'Withdraw', requiresWithdraw: true },
 		{ key: 'history', labelKey: 'settings.wallet.tab_history', default: 'History', requiresWithdraw: false }
@@ -77,8 +75,6 @@
 	{#if walletData}
 		{#if activeTab === 'details'}
 			<WalletDetailsTab data={walletData} />
-		{:else if activeTab === 'conversion'}
-			<WalletConvertTab data={walletData} />
 		{:else if activeTab === 'purchase'}
 			<WalletPurchaseTab data={walletData} />
 		{:else if activeTab === 'withdraw'}

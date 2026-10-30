@@ -214,7 +214,7 @@ export const walletApi = {
 		api(`/admin/wallet/rules/${id}`, { method: 'DELETE' }),
 
 	getSettings: () => api<unknown>('/admin/wallet/settings'),
-	updateSettings: (body: { points_to_credits_rate: number; daily_earning_cap: number; enable_earning: boolean }) =>
+	updateSettings: (body: { daily_earning_cap: number; enable_earning: boolean }) =>
 		api('/admin/wallet/settings', { method: 'PUT', body }),
 
 	getUserBalance: (userId: string) => api<unknown>(`/admin/wallet/user/${userId}/balance`),
@@ -479,6 +479,9 @@ export interface UserDetail {
 	username: string;
 	email: string;
 	groups: string[];
+	// Machine-readable memberships for the group editor — display names in
+	// `groups` collide on duplicates, so diffs must key on ids.
+	group_refs?: Array<{ id: string; name: string; slug: string }>;
 	status: string;
 	profile_type: 'regular' | 'pro' | 'business';
 	avatar_url?: string;
@@ -598,6 +601,20 @@ export const userManagementApi = {
 		api(`/admin/user-groups/${groupId}/members`, { method: 'POST', body: { user_id: userId } }),
 	removeGroupMember: (groupId: string, userId: string) =>
 		api(`/admin/user-groups/${groupId}/members/${userId}`, { method: 'DELETE' }),
+	listGroupMembers: (groupId: string, params?: string) =>
+		api<{ members: Array<{ id: string; username: string; display_name: string }>; total?: number; total_pages?: number }>(`/admin/user-groups/${groupId}/members${params ? `?${params}` : ''}`),
+	listGroupRoles: (groupId: string) =>
+		api<{ roles: Array<{ id: string; name: string; slug: string }> }>(`/admin/user-groups/${groupId}/roles`),
+	assignRoleToGroup: (groupId: string, roleId: string) =>
+		api(`/admin/user-groups/${groupId}/roles`, { method: 'POST', body: { role_id: roleId } }),
+	removeRoleFromGroup: (groupId: string, roleId: string) =>
+		api(`/admin/user-groups/${groupId}/roles/${roleId}`, { method: 'DELETE' }),
+	// Additive grant — merges keys into the group's permission role without
+	// replacing existing grants (PATCH permissions = full-set replace).
+	addGroupPermissions: (groupId: string, permissionKeys: string[]) =>
+		api(`/admin/user-groups/${groupId}/permissions`, { method: 'POST', body: { permission_keys: permissionKeys } }),
+	removeRolePermission: (roleId: string, permissionKey: string) =>
+		api(`/admin/roles/${roleId}/permissions/${encodeURIComponent(permissionKey)}`, { method: 'DELETE' }),
 	createUser: (body: { email: string; username: string; password: string; display_name?: string }) =>
 		api<{ id: string; email: string; username: string }>('/admin/users', { method: 'POST', body }),
 	deleteUser: (userId: string) =>

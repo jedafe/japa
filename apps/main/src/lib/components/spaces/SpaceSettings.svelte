@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api/client';
+	import type { TipConfig, TipSettings } from '$lib/api/tips';
 	import { t } from '$lib/i18n';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -108,6 +109,46 @@
 	let joiningPerm = $state(untrack(() => space.joining_perm));
 	let keywords = $state<string>(untrack(() => initialKeywords.join(', ')));
 	let saving = $state(false);
+
+	// --- Tips & donations (§05 addendum; PATCH /spaces/{slug}/tip-settings) ---
+	// Owner-only for member-created custom spaces; mutually exclusive with a
+	// paid membership — the backend returns tips_not_allowed/monetization_conflict.
+	let tipsEnabled = $state(false);
+	let acceptCredits = $state(true);
+	let tipsLoaded = $state(false);
+	let tipsSaving = $state(false);
+	let tipsError = $state('');
+	let tipsSaved = $state(false);
+
+	$effect(() => {
+		if (isOwner && space.level === 'custom' && !tipsLoaded) {
+			void (async () => {
+				const res = await api.get<TipConfig>(`/spaces/${space.slug}/tip-settings`);
+				if (!res.error && res.data) {
+					tipsEnabled = res.data.enabled ?? false;
+					acceptCredits = res.data.methods?.includes('credits') ?? true;
+				}
+				tipsLoaded = true;
+			})();
+		}
+	});
+
+	async function saveTips() {
+		tipsSaving = true;
+		tipsError = '';
+		tipsSaved = false;
+		const res = await api.patch<TipSettings>(`/spaces/${space.slug}/tip-settings`, {
+			tips_enabled: tipsEnabled,
+			accept_credits: acceptCredits,
+		});
+		tipsSaving = false;
+		if (res.error) {
+			tipsError = res.error.message ?? 'Failed to save tip settings';
+		} else {
+			tipsSaved = true;
+			setTimeout(() => (tipsSaved = false), 2500);
+		}
+	}
 	let saved = $state(false);
 	let error = $state('');
 
@@ -955,6 +996,48 @@
 	</form>
 
 	<!-- Danger zone — delete space (Ref: §05; DELETE /spaces/{id}; creator-only, 0 members) -->
+	{#if isOwner && space.level === 'custom'}
+		<fieldset class="mt-6 rounded-lg border border-[var(--color-border)] p-5">
+			<legend class="px-2 text-sm font-semibold text-[var(--color-text)]">
+				{t('space.tips_section', 'Tips & donations')}
+			</legend>
+
+			<p class="mb-4 text-xs text-[var(--color-muted)]">
+				{t('space.tips_hint', 'Let members support this space with tips. A space either accepts tips or charges a membership fee — not both.')}
+			</p>
+
+			{#if tipsError}
+				<p class="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{tipsError}</p>
+			{/if}
+			{#if tipsSaved}
+				<p class="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">{t('space.tips_saved', 'Tip settings saved')}</p>
+			{/if}
+
+			<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+				<input type="checkbox" bind:checked={tipsEnabled} class="rounded" />
+				{t('space.tips_enabled', 'Accept tips for this space')}
+			</label>
+
+			{#if tipsEnabled}
+				<div class="mt-3 flex flex-col gap-2 pl-6 text-sm text-[var(--color-text)]">
+					<label class="flex items-center gap-2">
+						<input type="checkbox" bind:checked={acceptCredits} class="rounded" />
+						{t('space.tips_credits', 'Accept credits')}
+					</label>
+				</div>
+			{/if}
+
+			<button
+				type="button"
+				onclick={saveTips}
+				disabled={tipsSaving || !tipsLoaded}
+				class="mt-4 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+			>
+				{tipsSaving ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
+			</button>
+		</fieldset>
+	{/if}
+
 	{#if isOwner}
 		<fieldset class="mt-6 rounded-lg border border-red-300 p-5 dark:border-red-900">
 			<legend class="px-2 text-sm font-semibold text-red-700 dark:text-red-400">

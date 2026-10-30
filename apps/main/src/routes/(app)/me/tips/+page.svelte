@@ -31,7 +31,6 @@
 	});
 
 	function amount(tip: Tip): string {
-		if (tip.method === 'points') return `${tip.points_amount ?? 0} pts`;
 		if (tip.method === 'credits') return `${tip.credits_amount ?? 0} cr`;
 		if (tip.fiat_amount != null) return fiatDisplay(tip.fiat_amount, tip.fiat_currency ?? '');
 		return '—';

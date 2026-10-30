@@ -24,7 +24,6 @@ export interface TipSettings {
 	id?: string;
 	owner_type: string;
 	tips_enabled: boolean;
-	accept_points: boolean;
 	accept_credits: boolean;
 	accept_fiat: boolean;
 	accept_external: boolean;
@@ -45,7 +44,6 @@ export interface Tip {
 	recipient_name?: string;
 	content_id?: string | null;
 	method: string;
-	points_amount?: number;
 	credits_amount?: number;
 	fiat_amount?: number | null;
 	fiat_currency?: string | null;
@@ -65,11 +63,11 @@ export interface CreateTipResult {
 export interface TipSummary {
 	count: number;
 	credits_total: number;
-	points_total: number;
 }
 
 export const getUserTipConfig = (username: string) => api.get<TipConfig>(`/users/${username}/tip-config`);
 export const getOrgTipConfig = (orgId: string) => api.get<TipConfig>(`/organizations/${orgId}/donation-config`);
+export const getSpaceTipConfig = (slug: string) => api.get<TipConfig>(`/spaces/${slug}/tip-settings`);
 export const getPlatformDonateConfig = () => api.get<TipConfig>(`/donate`);
 export const getContentTipSummary = (contentId: string) => api.get<TipSummary>(`/content/${contentId}/tip-summary`);
 

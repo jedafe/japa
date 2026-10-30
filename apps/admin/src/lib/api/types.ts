@@ -20,9 +20,13 @@ export interface User {
 	created_at: string;
 	avatar_url?: string;
 	last_login_at?: string;
+	is_owner?: boolean;
 }
 
 export interface UserDetail extends User {
+	// Machine-readable memberships for the group editor — display names in
+	// `groups` collide on duplicates, so diffs must key on ids.
+	group_refs?: Array<{ id: string; name: string; slug: string }>;
 	profile?: Record<string, unknown>;
 	roles?: string[];
 	active_bans?: Ban[];
@@ -237,7 +241,6 @@ export interface WalletRule {
 }
 
 export interface WalletSettings {
-	points_to_credits_rate: number;
 	daily_earning_cap: number;
 	enable_earning: boolean;
 }

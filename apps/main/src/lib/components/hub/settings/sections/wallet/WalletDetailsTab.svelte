@@ -15,7 +15,6 @@
 	const points = $derived(data.wallet?.points_balance ?? 0);
 	const credits = $derived(data.wallet?.credits_balance ?? 0);
 	const lifetimePoints = $derived(data.wallet?.lifetime_points ?? 0);
-	const rate = $derived(data.settings?.settings?.points_to_credits_rate ?? 0);
 	const preferredCode = $derived(data.preferredCurrency?.preferred_currency ?? '');
 	const currency = $derived(data.currencies.find((c) => c.code === preferredCode) ?? null);
 
@@ -61,11 +60,6 @@
 		</div>
 	</div>
 
-	{#if rate > 0}
-		<p class="text-sm text-[var(--color-muted)]">
-			{t('settings.wallet.conversion_rate', '1 credit = {rate} points').replace('{rate}', rate.toLocaleString())}
-		</p>
-	{/if}
 
 	{#if data.currencies.length > 0}
 		<div>

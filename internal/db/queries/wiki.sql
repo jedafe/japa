@@ -473,7 +473,7 @@ JOIN wiki_type_configs wtc ON wtc.space_type_id = s.space_type_id AND wtc.seed_s
 WHERE s.status = 'active' AND s.deleted_at IS NULL;
 
 -- name: IsUniversitySpaceBySlug :one
-SELECT (sp.level = 'university' OR st.slug = 'university') AS is_university
+SELECT (sp.level = 'university') AS is_university
 FROM spaces sp
 LEFT JOIN space_types st ON st.id = sp.space_type_id
 WHERE sp.slug = @slug AND sp.status = 'active'
@@ -770,7 +770,7 @@ LIMIT 1;
 -- Sibling published offerings of the same catalog course → their host
 -- universities ("also offered at" grid on an offering wiki page).
 -- offering_slug is the per-uni course wiki page link.
-SELECT s.id, s.slug, s.name, s.geo_code, MIN(o2.slug) AS offering_slug
+SELECT s.id, s.slug, s.name, s.geo_code, MIN(o2.slug)::text AS offering_slug
 FROM university_course_offerings o
 JOIN university_course_offerings o2
   ON o2.course_id = o.course_id AND o2.id <> o.id
@@ -785,7 +785,7 @@ LIMIT 200;
 -- name: ListUniversitiesForProgram :many
 -- Every published offering of a catalog course → host universities
 -- ("universities offering this program" grid on a program wiki page).
-SELECT s.id, s.slug, s.name, s.geo_code, MIN(o.slug) AS offering_slug
+SELECT s.id, s.slug, s.name, s.geo_code, MIN(o.slug)::text AS offering_slug
 FROM university_course_catalog c
 JOIN university_course_offerings o
   ON o.course_id = c.id AND o.deleted_at IS NULL AND o.is_published = true

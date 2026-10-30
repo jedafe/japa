@@ -12,7 +12,6 @@
 
 	interface PlatformSettings {
 		tips_enabled: boolean;
-		accept_points: boolean;
 		accept_credits: boolean;
 		accept_fiat: boolean;
 		accept_external: boolean;
@@ -42,7 +41,6 @@
 		links = env?.external_links ?? [];
 		settings = env?.settings ?? {
 			tips_enabled: false,
-			accept_points: false,
 			accept_credits: true,
 			accept_fiat: true,
 			accept_external: false,
@@ -59,7 +57,6 @@
 		saved = false;
 		const res = await tipsAdminApi.updateDonationSettings({
 			tips_enabled: settings.tips_enabled,
-			accept_points: settings.accept_points,
 			accept_credits: settings.accept_credits,
 			accept_fiat: settings.accept_fiat,
 			accept_external: settings.accept_external,

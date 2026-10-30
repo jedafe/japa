@@ -15,7 +15,6 @@
 		recipient_type: string;
 		recipient_name?: string;
 		method: string;
-		points_amount?: number;
 		credits_amount?: number;
 		fiat_amount?: number | null;
 		fiat_currency?: string | null;
@@ -39,7 +38,6 @@
 	});
 
 	function amount(r: TipRow): string {
-		if (r.method === 'points') return `${r.points_amount ?? 0} pts`;
 		if (r.method === 'credits') return `${r.credits_amount ?? 0} cr`;
 		if (r.fiat_amount != null) {
 			const exp = ['JPY', 'KRW', 'VND', 'XOF', 'XAF'].includes(r.fiat_currency ?? '')

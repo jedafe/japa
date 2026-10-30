@@ -134,8 +134,7 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 	},
 	wallet: async (ctx) => {
 		const walletSettings = await apiGet<{
-			settings?: { points_to_credits_rate?: number };
-			min_convert_points?: number;
+			settings?: { enable_earning?: boolean; daily_earning_cap?: number };
 			min_purchase_credits?: number;
 			min_withdrawal_credits?: number;
 		}>(ctx, '/me/wallet/settings').catch(() => null);
@@ -183,7 +182,6 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 			// GET /me/wallet/settings — when the endpoint is unavailable the
 			// tabs get null and skip client-side minimum checks (the backend
 			// still validates), rather than enforcing invented numbers.
-			minConvertPoints: walletSettings?.min_convert_points ?? null,
 			minPurchaseCredits: walletSettings?.min_purchase_credits ?? null,
 			minWithdrawCredits: walletSettings?.min_withdrawal_credits ?? null,
 			ledger,

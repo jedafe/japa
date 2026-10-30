@@ -80,15 +80,13 @@ export interface WalletData {
 	pointsLoaded?: number;
 	creditsLoaded?: number;
 	settings?: {
-		settings?: { points_to_credits_rate?: number };
-		min_convert_points?: number;
+		settings?: { enable_earning?: boolean; daily_earning_cap?: number };
 		min_purchase_credits?: number;
 		min_withdrawal_credits?: number;
 	} | null;
 	/** Server-configured minimums; null when /me/wallet/settings is
 	 *  unavailable — tabs must treat null as "unknown" (no client-side
 	 *  minimum check), not substitute an invented default (Rule 3). */
-	minConvertPoints: number | null;
 	minPurchaseCredits: number | null;
 	minWithdrawCredits: number | null;
 	currencies: Currency[];

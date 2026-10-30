@@ -26,7 +26,6 @@
 	};
 
 	type WalletSettings = {
-		points_to_credits_rate: number;
 		daily_earning_cap: number;
 		enable_earning: boolean;
 	};
@@ -49,7 +48,7 @@
 	let ruleForm = $state({ activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false });
 	let ruleSaving = $state(false);
 
-	let settings = $state<WalletSettings>({ points_to_credits_rate: 100, daily_earning_cap: 1000, enable_earning: true });
+	let settings = $state<WalletSettings>({ daily_earning_cap: 1000, enable_earning: true });
 	let settingsLoading = $state(true);
 	let settingsSaving = $state(false);
 	let settingsError = $state('');
@@ -441,10 +440,6 @@
 					<p class="py-8 text-center text-sm text-muted">{t('common.loading', 'Loading...')}</p>
 				{:else}
 					<div class="max-w-md space-y-4">
-						<div>
-							<label for="ws-rate" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.points_to_credit_ratio_2', 'Points to Credit Ratio')}</label>
-							<input id="ws-rate" type="number" min="1" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={settings.points_to_credits_rate} />
-						</div>
 						<div>
 							<label for="ws-cap" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.daily_earning_cap', 'Daily Earning Cap')}</label>
 							<input id="ws-cap" type="number" min="0" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={settings.daily_earning_cap} />
