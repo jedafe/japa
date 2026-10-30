@@ -1631,6 +1631,13 @@ func (s *Store) ListDirectoryChildren(ctx context.Context, spaceID pgtype.UUID, 
 	return out, nil
 }
 
+// ListWikiEntityTypesForIDs returns the entity-bound wiki types among a
+// resolved descendant-type set (slug + entity_kind + discriminator) —
+// computeDirectory splits space vs entity children by entity_kind.
+func (s *Store) ListWikiEntityTypesForIDs(ctx context.Context, typeIDs []pgtype.UUID) ([]gen.ListWikiEntityTypesForIDsRow, error) {
+	return s.read.ListWikiEntityTypesForIDs(ctx, typeIDs)
+}
+
 // ListMediaByIDs batch-fetches media rows for directory-card image
 // resolution (§80) — one query for a capped page of children rather than a
 // per-card lookup through the media service.

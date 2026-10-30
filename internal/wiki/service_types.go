@@ -411,9 +411,35 @@ func (s *Service) ListCategoriesForSpace(ctx context.Context, spaceSlug string) 
 			continue
 		}
 
-		has, herr := s.store.HasDirectoryChildren(ctx, spaceID, typeIDs)
-		if herr != nil {
-			continue
+		// Entity-bound descendants resolve via entity tables — the
+		// space-hierarchy check can't see them.
+		spaceIDs := typeIDs
+		has := false
+		if entTypes, terr := s.store.ListWikiEntityTypesForIDs(ctx, typeIDs); terr == nil {
+			entIDs := make(map[pgtype.UUID]bool, len(entTypes))
+			for _, et := range entTypes {
+				entIDs[et.SpaceTypeID] = true
+				if et.EntityKind == nil {
+					continue
+				}
+				kids, kerr := s.store.ListEntityChildren(ctx, spaceID, *et.EntityKind, discriminatorValue(et.EntityDiscriminator))
+				if kerr == nil && len(kids) > 0 {
+					has = true
+				}
+			}
+			spaceIDs = make([]pgtype.UUID, 0, len(typeIDs))
+			for _, id := range typeIDs {
+				if !entIDs[id] {
+					spaceIDs = append(spaceIDs, id)
+				}
+			}
+		}
+		// Same empty-array guard as computeDirectory: cardinality 0 means
+		// unfiltered, not "none" — skip the space query when every
+		// resolved type is entity-bound.
+		if !has && len(spaceIDs) > 0 {
+			h, herr := s.store.HasDirectoryChildren(ctx, spaceID, spaceIDs)
+			has = herr == nil && h
 		}
 
 		cats[i].Empty = !has
@@ -851,7 +877,7 @@ func validateRollupInput(raw json.RawMessage) ([]byte, error) {
 	// descendant spaces (default), "directory" = child-space list,
 	// "pages" = same-space sub-page aggregation (§80). Anything else is
 	// a typo the frontend would silently ignore — reject it.
-	if cfg.Mode != "" && cfg.Mode != rollupModeDirectory && cfg.Mode != rollupModePages {
+	if cfg.Mode != "" && cfg.Mode != rollupModeDirectory && cfg.Mode != rollupModePages && cfg.Mode != rollupModeRelated {
 		return nil, fmt.Errorf("%w: unknown rollup mode %q", ErrInvalidInput, cfg.Mode)
 	}
 

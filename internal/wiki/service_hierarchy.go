@@ -92,6 +92,12 @@ const rollupModePages = "pages"
 // the frontend picks row labels/links off it.
 const rollupScopePages = "pages"
 
+// rollupModeRelated switches an entity-bound category rollup to a peer
+// listing resolved through the entity kind — course → sibling-offering
+// universities, program → all offering universities. Meaningless on
+// space-bound categories (compute ignores it there).
+const rollupModeRelated = "related"
+
 // defaultRollupRowsLimit bounds the descendants table when the category
 // config sets no section_limit — the full set remains reachable through
 // GET /wiki/destinations?within={slug}&level={level}.
@@ -192,7 +198,11 @@ type WikiDirectoryChildDTO struct {
 type WikiDirectoryDTO struct {
 	Levels   []string                `json:"levels"`
 	Children []WikiDirectoryChildDTO `json:"children"`
-	Total    int                     `json:"total"`
+	// EntityChildren lists entity-bound descendants (course offerings on
+	// a university) keyed by child type slug — resolved via
+	// ListEntityChildren, not the space hierarchy.
+	EntityChildren map[string][]EntityChild `json:"entity_children,omitempty"`
+	Total          int                      `json:"total"`
 }
 
 // defaultDirectoryLimit caps the directory card grid — the full set stays
@@ -220,14 +230,50 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 		return nil
 	}
 
-	children, err := s.store.ListDirectoryChildren(ctx, spaceID, typeIDs)
-	if err != nil {
-		slog.Warn("wiki: directory: children failed",
-			"space_id", spaceID.String(), "error", err)
-		return nil
+	// Entity-bound descendant types resolve via entity tables — the
+	// space-hierarchy query can't see them (a university's course
+	// offerings).
+	entTypes, terr := s.store.ListWikiEntityTypesForIDs(ctx, typeIDs)
+	if terr != nil {
+		slog.Warn("wiki: directory: entity types failed", "error", terr)
+	}
+	entIDs := make(map[pgtype.UUID]bool, len(entTypes))
+	entityChildren := map[string][]EntityChild{}
+	for _, et := range entTypes {
+		entIDs[et.SpaceTypeID] = true
+		if et.EntityKind == nil {
+			continue
+		}
+		kids, kerr := s.store.ListEntityChildren(ctx, spaceID, *et.EntityKind, discriminatorValue(et.EntityDiscriminator))
+		if kerr != nil {
+			slog.Warn("wiki: directory: entity children failed", "type", et.TypeSlug, "error", kerr)
+			continue
+		}
+		if len(kids) > 0 {
+			entityChildren[et.TypeSlug] = kids
+		}
+	}
+	spaceIDs := make([]pgtype.UUID, 0, len(typeIDs))
+	for _, id := range typeIDs {
+		if !entIDs[id] {
+			spaceIDs = append(spaceIDs, id)
+		}
 	}
 
-	if len(children) == 0 {
+	// Guard: the children query treats cardinality(@type_ids)=0 as "no
+	// type filter" — an all-entity type set would list unrelated
+	// descendants, not none.
+	var children []WikiDirectoryChild
+	if len(spaceIDs) > 0 {
+		children, err = s.store.ListDirectoryChildren(ctx, spaceID, spaceIDs)
+		if err != nil {
+			slog.Warn("wiki: directory: children failed",
+				"space_id", spaceID.String(), "error", err)
+			return nil
+		}
+	}
+
+	if len(children) == 0 && len(entityChildren) == 0 {
 		return nil
 	}
 
@@ -255,6 +301,19 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 		levels = append(levels, c.SpaceTypeSlug)
 	}
 
+	// Entity-bound child types get filter chips too — the entity group
+	// renders under its own section in the panel.
+	entTotal := 0
+	for _, et := range entTypes {
+		if kids := entityChildren[et.TypeSlug]; len(kids) > 0 {
+			entTotal += len(kids)
+			if !seen[et.TypeSlug] {
+				seen[et.TypeSlug] = true
+				levels = append(levels, et.TypeSlug)
+			}
+		}
+	}
+
 	// §80 directory cards: sort+cap first so image/field batch resolution
 	// only touches the children actually rendered — not the full listing.
 	sortDirectoryChildren(children)
@@ -270,10 +329,20 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 	kinds := s.directoryChildKinds(ctx, capped)
 
 	return &WikiDirectoryDTO{
-		Levels:   levels,
-		Children: directoryChildDTOs(capped, imageURLs, kinds),
-		Total:    len(children),
+		Levels:         levels,
+		Children:       directoryChildDTOs(capped, imageURLs, kinds),
+		EntityChildren: entityChildrenOrNil(entityChildren),
+		Total:          len(children) + entTotal,
 	}
+}
+
+// entityChildrenOrNil normalizes an empty map to nil so the JSON key
+// stays absent on space-only directories.
+func entityChildrenOrNil(m map[string][]EntityChild) map[string][]EntityChild {
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 // sortDirectoryChildren orders directory children by depth, then name,

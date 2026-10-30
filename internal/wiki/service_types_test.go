@@ -780,3 +780,11 @@ func TestUpsertWikiType_RejectsTransitiveParentCycle(t *testing.T) {
 			[]pgtype.UUID{typeID, otherA, otherB})
 	})
 }
+
+// TestValidateRollupInput_RelatedMode — mode:"related" is the entity-page
+// peer-listing mode; validation accepts it like directory/pages.
+func TestValidateRollupInput_RelatedMode(t *testing.T) {
+	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"mode":"related"}`)); err != nil {
+		t.Fatalf("related mode rejected: %v", err)
+	}
+}

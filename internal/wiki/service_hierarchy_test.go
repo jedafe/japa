@@ -2312,3 +2312,56 @@ func TestTopLevelTemplates_CategoryPageSet(t *testing.T) {
 		t.Fatalf("category-page composite set must be top-level templates: %+v", got)
 	}
 }
+
+// TestComputeDirectory_EntityChildren — a directory-mode category whose
+// levels include an entity-bound type lists that kind's entity rows.
+func TestComputeDirectory_EntityChildren(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	hf := seedHierarchyFixture(t, ctx, database)
+	uniq := strings.ReplaceAll(genUUID(t, ctx, database), "-", "")[:12]
+
+	spaceID := mustIDF(t, ctx, database,
+		`INSERT INTO spaces (id,space_type_id,name,slug,level,visibility,status)
+		 VALUES (gen_random_uuid(),$1,$2,$2,'custom','public','active') RETURNING id`,
+		hf.typeID, "wop-dir-"+uniq)
+	childType := mustIDF(t, ctx, database,
+		`INSERT INTO space_types (id,name,slug) VALUES (gen_random_uuid(),$1,$1) RETURNING id`, "wop-ent-"+uniq)
+	mustIDF(t, ctx, database,
+		`INSERT INTO wiki_type_configs (space_type_id,enabled,entity_kind) VALUES ($1,true,'course') RETURNING space_type_id`, childType)
+	mustIDF(t, ctx, database,
+		`INSERT INTO wiki_type_parents (space_type_id,parent_space_type_id) VALUES ($1,$2) RETURNING space_type_id`, childType, hf.typeID)
+
+	courseID := mustIDF(t, ctx, database,
+		`INSERT INTO university_course_catalog (id,title,slug,is_published)
+		 VALUES (gen_random_uuid(),$1,$2,true) RETURNING id`,
+		"Wop Program "+uniq, "wop-program-"+uniq)
+	mustIDF(t, ctx, database,
+		`INSERT INTO university_course_offerings (id,course_id,university_id,slug,is_published)
+		 VALUES (gen_random_uuid(),$1,$2,$3,true) RETURNING id`,
+		courseID, spaceID, "wop-offering-"+uniq)
+
+	t.Cleanup(func() {
+		cctx := t.Context()
+		database.Writer.Exec(cctx, `DELETE FROM university_course_offerings WHERE slug = $1`, "wop-offering-"+uniq)
+		database.Writer.Exec(cctx, `DELETE FROM university_course_catalog WHERE slug = $1`, "wop-program-"+uniq)
+		database.Writer.Exec(cctx, `DELETE FROM spaces WHERE id = $1`, spaceID)
+		database.Writer.Exec(cctx, `DELETE FROM wiki_type_parents WHERE space_type_id = $1`, childType)
+		database.Writer.Exec(cctx, `DELETE FROM wiki_type_configs WHERE space_type_id = $1`, childType)
+		database.Writer.Exec(cctx, `DELETE FROM space_types WHERE id = $1`, childType)
+	})
+
+	svc := NewService(store, nil)
+	d := svc.computeDirectory(ctx, spaceID, hf.typeID,
+		&WikiRollupConfig{Enabled: true, Mode: rollupModeDirectory, Levels: []string{"wop-ent-" + uniq}})
+	if d == nil {
+		t.Fatal("directory nil for entity-child config")
+	}
+	kids := d.EntityChildren["wop-ent-"+uniq]
+	if len(kids) != 1 || kids[0].Slug != "wop-offering-"+uniq {
+		t.Fatalf("entity children: %+v", kids)
+	}
+	if kids[0].ProgramSlug != "wop-program-"+uniq {
+		t.Fatalf("program slug missing: %+v", kids[0])
+	}
+}

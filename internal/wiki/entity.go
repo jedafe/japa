@@ -42,6 +42,25 @@ type EntityChild struct {
 	Slug          string `json:"slug"`
 	Name          string `json:"name"`
 	Discriminator string `json:"discriminator,omitempty"`
+	// ProgramSlug links a course offering to its canonical catalog wiki
+	// page (/wiki/e/program/{slug}) — empty for other kinds.
+	ProgramSlug string `json:"program_slug,omitempty"`
+}
+
+// discriminatorValue returns the first value of an entity_discriminator
+// {column: value} map; "" when empty or malformed.
+func discriminatorValue(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var m map[string]string
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return ""
+	}
+	for _, v := range m {
+		return v
+	}
+	return ""
 }
 
 // GetEntityKindConfig resolves the wiki type config for a type key slug
@@ -79,6 +98,12 @@ func (s *Store) ResolveEntityRef(ctx context.Context, kind, ref string) (EntityR
 		r, err = s.read.GetCourseOfferingForWiki(ctx, ref)
 		if err == nil {
 			out.ID, out.Name, out.ParentSpaceID = r.ID, r.Name, r.UniversityID
+		}
+	case "program":
+		var r gen.GetProgramForWikiRow
+		r, err = s.read.GetProgramForWiki(ctx, ref)
+		if err == nil {
+			out.ID, out.Name = r.ID, r.Name
 		}
 	case "scholarship":
 		var r gen.GetScholarshipForWikiRow
@@ -134,7 +159,7 @@ func (s *Store) ListEntityChildren(ctx context.Context, spaceID pgtype.UUID, kin
 		}
 		out := make([]EntityChild, 0, len(rows))
 		for _, r := range rows {
-			out = append(out, EntityChild{ID: uuidStr(r.ID), Slug: r.Slug, Name: r.Name})
+			out = append(out, EntityChild{ID: uuidStr(r.ID), Slug: r.Slug, Name: r.Name, ProgramSlug: r.ProgramSlug})
 		}
 		return out, nil
 	case "scholarship":
@@ -163,18 +188,18 @@ func uuidStr(id pgtype.UUID) string {
 
 // EntityPageDTO is the entity-bound counterpart of WikiPageDetailDTO.
 type EntityPageDTO struct {
-	ID          string          `json:"id"`
-	Kind        string          `json:"kind"`
-	TypeSlug    string          `json:"type_slug"`
-	EntityID    string          `json:"entity_id"`
-	EntitySlug  string          `json:"entity_slug"`
-	EntityName  string          `json:"entity_name"`
-	Slug        string          `json:"slug"`
-	Title       string          `json:"title"`
-	Category    string          `json:"category"`
-	IsLocked    bool            `json:"is_locked"`
-	IsFeatured  bool            `json:"is_featured"`
-	Lazy        bool            `json:"lazy"`
+	ID             string               `json:"id"`
+	Kind           string               `json:"kind"`
+	TypeSlug       string               `json:"type_slug"`
+	EntityID       string               `json:"entity_id"`
+	EntitySlug     string               `json:"entity_slug"`
+	EntityName     string               `json:"entity_name"`
+	Slug           string               `json:"slug"`
+	Title          string               `json:"title"`
+	Category       string               `json:"category"`
+	IsLocked       bool                 `json:"is_locked"`
+	IsFeatured     bool                 `json:"is_featured"`
+	Lazy           bool                 `json:"lazy"`
 	Content        json.RawMessage      `json:"content,omitempty"`
 	FieldGroupID   *string              `json:"field_group_id,omitempty"`
 	FieldGroupSlug string               `json:"field_group_slug,omitempty"`
@@ -182,12 +207,16 @@ type EntityPageDTO struct {
 	Fields         *EntityFieldGroupDTO `json:"fields,omitempty"`
 	// Parity with WikiPageDetailDTO: revision metadata, reader feedback,
 	// sibling pages on the same entity, and host-space breadcrumbs.
-	RevisionSummary string                 `json:"revision_summary,omitempty"`
-	SubmittedBy     string                 `json:"submitted_by,omitempty"`
-	Helpful         *WikiHelpfulDTO        `json:"helpful,omitempty"`
-	Siblings        []EntitySiblingDTO     `json:"siblings,omitempty"`
-	Ancestors       []WikiSpaceRefDTO      `json:"ancestors,omitempty"`
-	AncestorsAlt    []WikiSpaceRefDTO      `json:"ancestors_alt,omitempty"`
+	RevisionSummary string             `json:"revision_summary,omitempty"`
+	SubmittedBy     string             `json:"submitted_by,omitempty"`
+	Helpful         *WikiHelpfulDTO    `json:"helpful,omitempty"`
+	Siblings        []EntitySiblingDTO `json:"siblings,omitempty"`
+	Ancestors       []WikiSpaceRefDTO  `json:"ancestors,omitempty"`
+	AncestorsAlt    []WikiSpaceRefDTO  `json:"ancestors_alt,omitempty"`
+	// Related is the mode:"related" peer listing (course → sibling-offering
+	// universities, program → all offering universities); nil when the
+	// category has no related config or the listing is empty.
+	Related *EntityRelatedDTO `json:"related,omitempty"`
 }
 
 // EntitySiblingDTO is a sibling page on the same entity (index links).
@@ -195,6 +224,25 @@ type EntitySiblingDTO struct {
 	Slug     string `json:"slug"`
 	Title    string `json:"title"`
 	Category string `json:"category"`
+}
+
+// WikiRelatedSpaceDTO is one card in an entity's related-universities
+// grid — the space identity plus the linking offering's wiki slug.
+// //nolint:revive // exported: DTO naming follows package convention.
+type WikiRelatedSpaceDTO struct {
+	Slug         string  `json:"slug"`
+	Name         string  `json:"name"`
+	GeoCode      *string `json:"geo_code,omitempty"`
+	OfferingSlug string  `json:"offering_slug,omitempty"`
+}
+
+// EntityRelatedDTO is the peer listing attached to a mode:"related"
+// entity category page. Kind names the relation ("universities").
+// //nolint:revive // exported: DTO naming follows package convention.
+type EntityRelatedDTO struct {
+	Kind  string                `json:"kind"`
+	Items []WikiRelatedSpaceDTO `json:"items"`
+	Total int                   `json:"total"`
 }
 
 // GetEntityWikiPage resolves GET /wiki/e/{type_slug}/{entity}/{page_slug}.
@@ -305,6 +353,17 @@ func (s *Service) attachEntityContext(ctx context.Context, userID, typeID pgtype
 			dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, ref.ParentSpaceID, hostTypeID)
 		}
 	}
+
+	// mode:"related" categories attach the entity's peer listing — the
+	// category row's rollup decides (a course's 'universities' page lists
+	// sibling-offering universities, a program's lists all offering unis).
+	if cat, err := s.store.read.ResolveWikiTypeCategoryToken(ctx, gen.ResolveWikiTypeCategoryTokenParams{
+		SpaceTypeID: typeID, Token: dto.Category,
+	}); err == nil {
+		if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && rcfg.Mode == rollupModeRelated {
+			dto.Related = s.computeEntityRelated(ctx, kind, ref)
+		}
+	}
 }
 
 func (s *Service) attachEntityFields(ctx context.Context, userID, typeID pgtype.UUID, kind string, ref EntityRef, dto *EntityPageDTO) {
@@ -379,6 +438,9 @@ func (s *Service) entityLazyPage(ctx context.Context, userID, typeID pgtype.UUID
 			g := uuidStr(cat.FieldGroupID)
 			base.FieldGroupID = &g
 		}
+		if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && rcfg.Mode == rollupModeRelated {
+			base.Related = s.computeEntityRelated(ctx, kind, ref)
+		}
 		s.attachEntityFields(ctx, userID, typeID, kind, ref, &base)
 		return base, nil
 	}
@@ -423,6 +485,45 @@ func (h *Handlers) HandleGetEntityPage(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
 }
 
+// computeEntityRelated resolves an entity-bound type's peer listing:
+// course → sibling published offerings' universities (self excluded),
+// program → every published offering's universities. Fails open — nil
+// on lookup error or empty so the page renders without the grid.
+func (s *Service) computeEntityRelated(ctx context.Context, kind string, ref EntityRef) *EntityRelatedDTO {
+	dto := &EntityRelatedDTO{Kind: "universities"}
+	switch kind {
+	case "course":
+		rows, err := s.store.read.ListUniversitiesForCourseOffering(ctx, ref.Slug)
+		if err != nil {
+			slog.Warn("wiki: related: course siblings failed", "error", err)
+			return nil
+		}
+		for _, r := range rows {
+			dto.Items = append(dto.Items, WikiRelatedSpaceDTO{
+				Slug: r.Slug, Name: r.Name, GeoCode: r.GeoCode, OfferingSlug: r.OfferingSlug,
+			})
+		}
+	case "program":
+		rows, err := s.store.read.ListUniversitiesForProgram(ctx, ref.Slug)
+		if err != nil {
+			slog.Warn("wiki: related: program universities failed", "error", err)
+			return nil
+		}
+		for _, r := range rows {
+			dto.Items = append(dto.Items, WikiRelatedSpaceDTO{
+				Slug: r.Slug, Name: r.Name, GeoCode: r.GeoCode, OfferingSlug: r.OfferingSlug,
+			})
+		}
+	default:
+		return nil
+	}
+	if len(dto.Items) == 0 {
+		return nil
+	}
+	dto.Total = len(dto.Items)
+	return dto
+}
+
 // entityChildren builds the index's entity-children map: every
 // entity-bound wiki type parented to the host space's type contributes
 // one key (type_slug → children), filtered by the type's discriminator.
@@ -437,17 +538,7 @@ func (s *Service) entityChildren(ctx context.Context, spaceID, spaceTypeID pgtyp
 		if t.EntityKind != nil {
 			kind = *t.EntityKind
 		}
-		disc := ""
-		if len(t.EntityDiscriminator) > 0 {
-			var m map[string]string
-			if err := json.Unmarshal(t.EntityDiscriminator, &m); err == nil {
-				for _, v := range m {
-					disc = v
-					break
-				}
-			}
-		}
-		children, cerr := s.store.ListEntityChildren(ctx, spaceID, kind, disc)
+		children, cerr := s.store.ListEntityChildren(ctx, spaceID, kind, discriminatorValue(t.EntityDiscriminator))
 		if cerr != nil || len(children) == 0 {
 			continue
 		}
