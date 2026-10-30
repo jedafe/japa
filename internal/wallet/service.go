@@ -96,10 +96,22 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		return nil
 	}
 
+	// ADR-136 compensation events carry {undoes_key, undoes} — decoded here
+	// so the early gates below can treat them as corrections, not earnings.
+	var payloadObj struct {
+		Undoes    string `json:"undoes"`
+		UndoesKey string `json:"undoes_key"`
+	}
+	if len(event.Payload) > 0 {
+		_ = json.Unmarshal(event.Payload, &payloadObj)
+	}
+	isCompensation := payloadObj.Undoes != "" && payloadObj.UndoesKey != ""
+
 	// Check the global earning killswitch (BUG-003). EnableEarning gates
 	// *earning* only — penalty rules (negative point_value, ADR-136) are
-	// moderation signals and always apply.
-	if s.settings != nil && rule.PointValue > 0 {
+	// moderation signals and always apply. Compensation events are
+	// corrections, not earnings, and likewise bypass the switch.
+	if !isCompensation && s.settings != nil && rule.PointValue > 0 {
 		ws, werr := s.store.getWalletSettings(ctx)
 		if werr == nil {
 			// EnableEarning killswitch — no points, but the activity still
@@ -111,8 +123,10 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		}
 	}
 
-	// Check frequency caps (read-only queries outside tx — safe, caps are advisory)
-	if rule.CapPerDay != nil {
+	// Check frequency caps (read-only queries outside tx — safe, caps are
+	// advisory). Compensation events bypass caps — reverting an award must
+	// not depend on how many reversions happened today.
+	if !isCompensation && rule.CapPerDay != nil {
 		count, err := s.store.countUserActivityToday(ctx, event.UserID, event.ActivityKey)
 		if err != nil {
 			return fmt.Errorf("checking daily cap: %w", err)
@@ -124,7 +138,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		}
 	}
 
-	if rule.CapPerWeek != nil {
+	if !isCompensation && rule.CapPerWeek != nil {
 		count, err := s.store.countUserActivityThisWeek(ctx, event.UserID, event.ActivityKey)
 		if err != nil {
 			return fmt.Errorf("checking weekly cap: %w", err)
@@ -161,20 +175,10 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 	// balance regardless of rule tuning, never deducts for an award that
 	// never credited (cap, killswitch, disabled rule), and retries if the
 	// award event hasn't processed yet (out-of-order delivery).
-	var undoes, undoesKey string
-	var payloadObj struct {
-		Undoes    string `json:"undoes"`
-		UndoesKey string `json:"undoes_key"`
-	}
-	if len(event.Payload) > 0 {
-		_ = json.Unmarshal(event.Payload, &payloadObj)
-	}
-	undoes, undoesKey = payloadObj.Undoes, payloadObj.UndoesKey
-
-	if undoes != "" && undoesKey != "" {
+	if isCompensation {
 		refEvent, rerr := qtx.GetActivityEventByReference(ctx, gen.GetActivityEventByReferenceParams{
-			ActivityKey: undoesKey,
-			Reference:   undoes,
+			ActivityKey: payloadObj.UndoesKey,
+			Reference:   payloadObj.Undoes,
 		})
 		if errors.Is(rerr, pgx.ErrNoRows) {
 			// No award event exists — nothing to undo. Mark processed.
@@ -193,13 +197,13 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		if refEvent.Processed == nil || !*refEvent.Processed {
 			// The award event hasn't run yet — retry so the compensation
 			// always lands after the award it undoes.
-			return fmt.Errorf("undone award %s not yet processed", undoes)
+			return fmt.Errorf("undone award %s not yet processed", payloadObj.Undoes)
 		}
 
 		entry, lerr := qtx.GetLedgerEntryByReference(ctx, gen.GetLedgerEntryByReferenceParams{
 			UserID:     event.UserID,
 			LedgerType: LedgerTypePoints,
-			Reference:  &undoes,
+			Reference:  &payloadObj.Undoes,
 		})
 		if errors.Is(lerr, pgx.ErrNoRows) {
 			// The award event processed but credited nothing (cap,

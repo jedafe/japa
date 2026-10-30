@@ -981,7 +981,7 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 // unique while replays of the same transition dedupe.
 func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityID, voterID, authorID pgtype.UUID, value, prevValue int16) {
 	prefix := fmt.Sprintf("vote:%s:%s:%s:", entityType, entityID.String(), voterID.String())
-	seq, err := s.read.CountActivityEventsByReferencePrefix(ctx, prefix+"%")
+	seq, err := s.write.CountActivityEventsByReferencePrefix(ctx, prefix+"%")
 	if err != nil {
 		seq = 0 // best-effort — a collision only dedupes this transition
 	}
@@ -1005,7 +1005,7 @@ func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityI
 	if priorKey == "" {
 		return
 	}
-	priorRef, err := s.read.GetLatestActivityEventReferenceByPrefixAndKey(ctx,
+	priorRef, err := s.write.GetLatestActivityEventReferenceByPrefixAndKey(ctx,
 		gen.GetLatestActivityEventReferenceByPrefixAndKeyParams{ActivityKey: priorKey, Prefix: prefix + "%"})
 	if err != nil {
 		return // nothing to undo

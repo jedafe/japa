@@ -2116,15 +2116,31 @@ func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, 
 	}
 
 	// ADR-136: the content author earns reaction.added points (self-reacts
-	// excluded). Reference dedupes per (entity, reactor, key).
+	// excluded). Monotonic seq references let a remove→re-add cycle award
+	// again while replays dedupe (same pattern as comment/forum votes).
 	if entityType == "content" {
 		if authorID, aerr := s.read.GetContentAuthorID(ctx, entityID); aerr == nil && authorID.Valid && authorID != userID {
-			s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionAdded,
-				"reaction:"+entityID.String()+":"+userID.String()+":"+reactionKey, nil)
+			s.emitReactionAward(ctx, entityID, userID, authorID, reactionKey)
 		}
 	}
 
 	return reaction, nil
+}
+
+// reactionRefPrefix is the dedupe namespace for one (entity, reactor, key)
+// tuple of reaction point events.
+func reactionRefPrefix(entityID, userID pgtype.UUID, reactionKey string) string {
+	return "reaction:" + entityID.String() + ":" + userID.String() + ":" + reactionKey + ":"
+}
+
+// emitReactionAward emits reaction.added with a monotonic seq reference.
+func (s *Service) emitReactionAward(ctx context.Context, entityID, userID, authorID pgtype.UUID, reactionKey string) {
+	prefix := reactionRefPrefix(entityID, userID, reactionKey)
+	seq, err := s.write.CountActivityEventsByReferencePrefix(ctx, prefix+"%")
+	if err != nil {
+		seq = 0
+	}
+	s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionAdded, fmt.Sprintf("%s%d", prefix, seq+1), nil)
 }
 
 // RemoveReaction removes a user's reaction from an entity. Returns whether
@@ -2139,6 +2155,20 @@ func (s *Service) RemoveReaction(ctx context.Context, entityType string, entityI
 	})
 	if err != nil {
 		return false, fmt.Errorf("removing reaction: %w", err)
+	}
+
+	// ADR-136: removing a reaction reverts its award. undoes targets the
+	// most recent reaction.added event for this (entity, reactor, key);
+	// processing skips cleanly if it never credited.
+	if rows > 0 && entityType == "content" {
+		if authorID, aerr := s.read.GetContentAuthorID(ctx, entityID); aerr == nil && authorID.Valid && authorID != userID {
+			prefix := reactionRefPrefix(entityID, userID, reactionKey)
+			if priorRef, lerr := s.write.GetLatestActivityEventReferenceByPrefixAndKey(ctx,
+				gen.GetLatestActivityEventReferenceByPrefixAndKeyParams{ActivityKey: wallet.ActivityKeyReactionAdded, Prefix: prefix + "%"}); lerr == nil {
+				s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, priorRef+":undo",
+					map[string]interface{}{"undoes_key": wallet.ActivityKeyReactionAdded, "undoes": priorRef})
+			}
+		}
 	}
 
 	return rows > 0, nil

@@ -104,7 +104,7 @@ type MoatReaders struct {
 	ScamAlerts    ScamAlertReader
 }
 
-const universitySpaceTypeSlug = "university"
+const universitySpaceTypeSlug = "education"
 
 // ---------------------------------------------------------------------------
 // Service wiring + delegation
@@ -278,7 +278,7 @@ func (s *Service) GetUniversity(ctx context.Context, slug string) (gen.GetPublic
 		return gen.GetPublicSpaceBySlugRow{}, err
 	}
 
-	if space.SpaceTypeID != st.ID {
+	if space.SpaceTypeID != st.ID || space.Level != "university" {
 		return gen.GetPublicSpaceBySlugRow{}, ErrDestinationNotFound
 	}
 

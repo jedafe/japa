@@ -890,7 +890,7 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 	// earns reaction.added / deducts reaction.negative, and flipping or
 	// removing a previous vote emits the matching revert so the balance
 	// converges to the current vote value (monotonic seq references).
-	if delta != 0 {
+	if delta != 0 && entityAuthor.Valid && entityAuthor != userID {
 		s.emitVoteEvents(ctx, input.EntityType, input.EntityID, userID, entityAuthor, input.Value, input.Value-delta)
 	}
 
@@ -903,7 +903,7 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 // unique while replays of the same transition dedupe.
 func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityID, voterID, authorID pgtype.UUID, value, prevValue int16) {
 	prefix := fmt.Sprintf("vote:%s:%s:%s:", entityType, entityID.String(), voterID.String())
-	seq, err := s.store.read.CountActivityEventsByReferencePrefix(ctx, prefix+"%")
+	seq, err := s.store.write.CountActivityEventsByReferencePrefix(ctx, prefix+"%")
 	if err != nil {
 		seq = 0
 	}
@@ -927,7 +927,7 @@ func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityI
 	if priorKey == "" {
 		return
 	}
-	priorRef, err := s.store.read.GetLatestActivityEventReferenceByPrefixAndKey(ctx,
+	priorRef, err := s.store.write.GetLatestActivityEventReferenceByPrefixAndKey(ctx,
 		gen.GetLatestActivityEventReferenceByPrefixAndKeyParams{ActivityKey: priorKey, Prefix: prefix + "%"})
 	if err != nil {
 		return

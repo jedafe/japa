@@ -37,9 +37,10 @@ type SpacesResolver interface {
 	GetSpace(ctx context.Context, id pgtype.UUID) (gen.GetSpaceByIDRow, error)
 }
 
-// universitySpaceTypeSlug is the space_types.slug seeded for universities
+// universitySpaceTypeSlug resolves the education type — universities are
+// education-typed spaces at level='university' (§05 amendment).
 // (migrations/000009_geo_first_space_system.sql).
-const universitySpaceTypeSlug = "university"
+const universitySpaceTypeSlug = "education"
 
 // resolveUniversitySpace resolves a university slug to its space row and
 // verifies it belongs to the university space-type. Non-university spaces
@@ -63,7 +64,7 @@ func (h *Handlers) resolveUniversitySpace(w http.ResponseWriter, r *http.Request
 		return gen.GetSpaceBySlugRow{}, false
 	}
 
-	if space.SpaceTypeID != spaceType.ID {
+	if space.SpaceTypeID != spaceType.ID || space.Level != "university" {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return gen.GetSpaceBySlugRow{}, false
 	}
@@ -687,7 +688,7 @@ func (h *Handlers) defaultOfferingSlug(ctx context.Context, courseID, university
 		return "", err
 	}
 
-	if space.SpaceTypeID != spaceType.ID {
+	if space.SpaceTypeID != spaceType.ID || space.Level != "university" {
 		return "", errpkg.ErrNotFound
 	}
 
