@@ -2,12 +2,12 @@
 	import { siteName } from '$lib/stores/site.svelte';
 	// /remittance — migrated to the EntityPage scaffold: server-paginated
 	// fetch loop + client-side q/sort/filter (the backend only supports
-	// limit/offset/active_only), ActionMenu row actions, SlideOver forms.
+	// limit/offset/active_only), ActionMenu row actions, Modal forms.
 	//
 	// Ref: japaconnect-engineering/sections/74-remittance-tracker.md
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Banknote, Pencil, Download } from 'lucide-svelte';
 	import { api, apiRaw, walletApi } from '$lib/api';
@@ -40,7 +40,7 @@
 	// manual data_source providers; the route exists in §74 but was never
 	// consumed by the UI.
 	let rateProvider = $state<RemittanceProvider | null>(null);
-	let rateSlideOverOpen = $state(false);
+	let rateModalOpen = $state(false);
 	let rateForm = $state({
 		send_currency: '',
 		receive_currency: '',
@@ -54,7 +54,7 @@
 
 	function openRateEntry(provider: RemittanceProvider) {
 		rateProvider = provider;
-		rateSlideOverOpen = true;
+		rateModalOpen = true;
 		rateForm = {
 			send_currency: '',
 			receive_currency: '',
@@ -88,7 +88,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('remittance.rate_added', 'Manual rate recorded.');
-				rateSlideOverOpen = false;
+				rateModalOpen = false;
 				rateProvider = null;
 			} else {
 				messageType = 'error';
@@ -397,7 +397,7 @@
 <EntityPage {config} bind:controller={entityController} />
 
 <!-- Manual rate entry — POST /admin/remittance/providers/{id}/rates (§74). -->
-<SlideOver bind:open={rateSlideOverOpen} title={t('remittance.enter_rate_title', 'Enter Manual Rate')}>
+<Modal bind:open={rateModalOpen} title={t('remittance.enter_rate_title', 'Enter Manual Rate')}>
 	{#if rateProvider}
 		<p class="mb-3 text-sm" style="color: var(--color-muted)">{rateProvider.name}</p>
 		<div class="space-y-3">
@@ -453,10 +453,10 @@
 	{/if}
 	{#snippet footer()}
 		<div class="mt-6 flex justify-end gap-2">
-			<Button variant="outline" onclick={() => (rateSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant="outline" onclick={() => (rateModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
 			<Button onclick={submitManualRate} disabled={rateSaving || !rateForm.send_currency || !rateForm.receive_currency || !(parseFloat(rateForm.rate) > 0)}>
 				{rateSaving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>

@@ -1,8 +1,8 @@
 <script lang="ts">
-	// /blog — migrated to shared components (ActionMenu, FilterPanel, SlideOver,
+	// /blog — migrated to shared components (ActionMenu, FilterPanel, Modal,
 	// bulkActionsList). Tabbed page with state actions (publish/unpublish/restore/
 	// reject/delete); keeps page-local Modals for reject (form input) and delete
-	// (confirmation). View detail opens in a SlideOver.
+	// (confirmation). View detail opens in a Modal.
 	import { t } from '$lib/stores/i18n.svelte';
 	import { goto } from '$app/navigation';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -11,7 +11,6 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 	import { FileText, Plus, RefreshCw, Trash2, ExternalLink, CheckCircle, XCircle } from 'lucide-svelte';
@@ -115,8 +114,8 @@
 	let searchQuery = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
 
-	// View SlideOver
-	let showViewSlideOver = $state(false);
+	// View Modal
+	let showViewModal = $state(false);
 	let viewTarget = $state<BlogPost | null>(null);
 
 	// Reject Modal (page-local — has form input)
@@ -247,7 +246,7 @@
 
 	function openView(post: BlogPost) {
 		viewTarget = post;
-		showViewSlideOver = true;
+		showViewModal = true;
 	}
 
 	function openReject(post: BlogPost) {
@@ -411,8 +410,8 @@
 	</Card>
 </div>
 
-<!-- View SlideOver -->
-<SlideOver bind:open={showViewSlideOver} title={t('app.blog.modal_post_details', 'Post Details')} size="lg">
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t('app.blog.modal_post_details', 'Post Details')} size="lg">
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
@@ -465,7 +464,7 @@
 			{/if}
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Reject Modal (page-local — has form input) -->
 <Modal bind:open={showRejectModal} title={t('app.blog.modal_reject_post', 'Reject Post')}>

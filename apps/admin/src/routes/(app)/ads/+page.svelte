@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
-	// /ads — migrated to shared components (ActionMenu, BulkBar, SlideOver).
+	// /ads — migrated to shared components (ActionMenu, BulkBar, Modal).
 	// Tabbed page (campaigns + boosts) — not an EntityPage candidate; keeps the
 	// tab structure but uses the shared DataTable `actions`/`bulkActionsList` props
-	// and SlideOver for the stats view-detail.
+	// and Modal for the stats view-detail.
 	import { adsAdminApi, api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -13,7 +13,6 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 	import { BarChart3, Zap, Pause, Play, StopCircle, Plus, Eye, Trash2, Check, XCircle } from 'lucide-svelte';
 
@@ -61,8 +60,8 @@
 
 	const canManageAds = $derived(hasPermission('ad.campaign.manage'));
 
-	// Stats slide-over (view-detail)
-	let showStatsSlideOver = $state(false);
+	// Stats modal (view-detail)
+	let showStatsModal = $state(false);
 	let statsCampaign = $state<Campaign | null>(null);
 	let stats = $state<CampaignStats | null>(null);
 	let statsLoading = $state(false);
@@ -336,7 +335,7 @@
 		if (!campaign) return;
 		statsCampaign = campaign;
 		statsLoading = true;
-		showStatsSlideOver = true;
+		showStatsModal = true;
 		stats = null;
 		try {
 			const result = await adsAdminApi.getCampaignStats(campaign.id);
@@ -482,8 +481,8 @@
 	{/if}
 </div>
 
-<!-- Stats SlideOver (view-detail) -->
-<SlideOver bind:open={showStatsSlideOver} title={statsCampaign ? `${t('ads.stats')}: ${statsCampaign.name}` : t('ads.stats')} size="lg">
+<!-- Stats Modal (view-detail) -->
+<Modal bind:open={showStatsModal} title={statsCampaign ? `${t('ads.stats')}: ${statsCampaign.name}` : t('ads.stats')} size="lg">
 	{#if statsLoading}
 		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else if stats}
@@ -547,10 +546,10 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end">
-			<Button variant="outline" onclick={() => showStatsSlideOver = false}>{t('common.close')}</Button>
+			<Button variant="outline" onclick={() => showStatsModal = false}>{t('common.close')}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- End Campaign Confirm -->
 <Modal bind:open={showEndCampaignConfirm} title={t('common.confirmDelete', 'Confirm End')}>

@@ -7,7 +7,6 @@
 	import { Plus, Pencil, Trash2, ArrowLeft, GripVertical } from 'lucide-svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import type { ActionItem, Column } from '$lib/components/ui/data-table';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
@@ -61,7 +60,7 @@
 	const canDelete = $derived(hasPermission('custom_fields.field.delete'));
 
 	// --- Add/Edit field modal ---
-	let slideOverOpen = $state(false);
+	let modalOpen = $state(false);
 	let editingField = $state<CustomField | null>(null);
 	let saving = $state(false);
 	let fieldError = $state('');
@@ -232,7 +231,7 @@
 		newPartLabel = '';
 		newPartKind = 'money';
 		fieldError = '';
-		slideOverOpen = true;
+		modalOpen = true;
 	}
 
 	function openEditField(f: CustomField) {
@@ -270,7 +269,7 @@
 		newPartLabel = '';
 		newPartKind = 'money';
 		fieldError = '';
-		slideOverOpen = true;
+		modalOpen = true;
 	}
 
 	function autoKey() {
@@ -385,7 +384,7 @@
 					return;
 				}
 			}
-			slideOverOpen = false;
+			modalOpen = false;
 			await load();
 		} catch {
 			fieldError = t('common.error');
@@ -472,8 +471,8 @@
 	{/if}
 </div>
 
-<!-- Add/Edit Field SlideOver -->
-<SlideOver bind:open={slideOverOpen} title={editingField ? `${t('fieldGroups.edit_field')}: ${editingField.label}` : t('fieldGroups.add_field')}>
+<!-- Add/Edit Field Modal -->
+<Modal bind:open={modalOpen} title={editingField ? `${t('fieldGroups.edit_field')}: ${editingField.label}` : t('fieldGroups.add_field')}>
 	<div class="space-y-4">
 		<!-- Label -->
 		<div>
@@ -687,11 +686,11 @@
 	</div>
 	{#snippet footer()}
 		<div class="mt-6 flex justify-end gap-2">
-			<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (slideOverOpen = false)}>{t('common.cancel')}</button>
+			<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="border: 1px solid var(--color-border)" onclick={() => (modalOpen = false)}>{t('common.cancel')}</button>
 			<button class="rounded-md px-4 py-2 text-sm font-medium transition-colors" style="background: var(--color-primary); color: var(--color-primary-foreground)" onclick={saveField} disabled={saving}>{saving ? t('common.saving') : t('common.save')}</button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Delete Field Confirmation -->
 <Modal bind:open={showDeleteConfirm} title={t('fieldGroups.delete_field')} size="sm">

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
 	// /forms — migrated to shared components (ActionMenu, FilterPanel,
-	// SlideOver, bulkActionsList). Tabbed page (all/system/active/inactive);
+	// Modal, bulkActionsList). Tabbed page (all/system/active/inactive);
 	// keeps page-local Modals for create/edit (forms with slug auto-fill) and
-	// delete confirmation. View detail opens in a SlideOver.
+	// delete confirmation. View detail opens in a Modal.
 	import { t, locale } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
@@ -11,7 +11,6 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 	import { FileText, Plus, Eye, RefreshCw, Trash2, Pencil, ExternalLink, Settings } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
@@ -50,12 +49,12 @@
 	let deleteTarget = $state<Form | null>(null);
 	let deleting = $state(false);
 
-	// View SlideOver
-	let showViewSlideOver = $state(false);
+	// View Modal
+	let showViewModal = $state(false);
 	let viewTarget = $state<Form | null>(null);
 
-	// Edit SlideOver
-	let showEditSlideOver = $state(false);
+	// Edit Modal
+	let showEditModal = $state(false);
 	let editTarget = $state<Form | null>(null);
 	let editTitle = $state('');
 	let editDescription = $state('');
@@ -66,8 +65,8 @@
 	let editSubmissionFeeCredits = $state(0);
 	let savingEdit = $state(false);
 
-	// Create SlideOver
-	let showCreateSlideOver = $state(false);
+	// Create Modal
+	let showCreateModal = $state(false);
 	let createTitle = $state('');
 	let createSlug = $state('');
 	let createDescription = $state('');
@@ -200,7 +199,7 @@
 
 	function openView(form: Form) {
 		viewTarget = form;
-		showViewSlideOver = true;
+		showViewModal = true;
 	}
 
 	function confirmDelete(form: Form) {
@@ -217,7 +216,7 @@
 		editSubmitLabel = form.submit_label ?? '';
 		editSuccessMessage = form.success_message ?? '';
 		editSubmissionFeeCredits = form.submission_fee_credits ?? 0;
-		showEditSlideOver = true;
+		showEditModal = true;
 	}
 
 	async function saveEdit() {
@@ -234,7 +233,7 @@
 				submission_fee_credits: editSubmissionFeeCredits
 			});
 			if (result.ok) {
-				showEditSlideOver = false;
+				showEditModal = false;
 				loadForms(filterValue.space || undefined);
 			}
 		} catch { /* API not available */ } finally {
@@ -297,7 +296,7 @@
 		createSuccessMessage = '';
 		createSubmissionFeeCredits = 0;
 		slugTouched = false;
-		showCreateSlideOver = true;
+		showCreateModal = true;
 	}
 
 	function onTitleInput() {
@@ -319,7 +318,7 @@
 				submission_fee_credits: createSubmissionFeeCredits
 			});
 			if (result.ok) {
-				showCreateSlideOver = false;
+				showCreateModal = false;
 				loadForms(filterValue.space || undefined);
 			}
 		} catch { /* API not available */ } finally {
@@ -422,8 +421,8 @@
 	</div>
 </div>
 
-<!-- Create SlideOver -->
-<SlideOver bind:open={showCreateSlideOver} title={t('forms.create', 'Create Form')}>
+<!-- Create Modal -->
+<Modal bind:open={showCreateModal} title={t('forms.create', 'Create Form')}>
 	<div class="space-y-4">
 		<div>
 			<label for="form-create-title" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.title_label', 'Title')}</label>
@@ -466,16 +465,16 @@
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-3">
-			<Button variant="outline" onclick={() => (showCreateSlideOver = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 			<Button onclick={createForm} disabled={savingCreate || !createTitle.trim() || !createSlug.trim()}>
 				{savingCreate ? t('common.creating', 'Creating...') : t('common.create', 'Create Form')}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
-<!-- Edit SlideOver -->
-<SlideOver bind:open={showEditSlideOver} title={t('forms.edit', 'Edit Form')}>
+<!-- Edit Modal -->
+<Modal bind:open={showEditModal} title={t('forms.edit', 'Edit Form')}>
 	{#if editTarget}
 		<div class="space-y-4">
 			<div>
@@ -511,13 +510,13 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end gap-3">
-			<Button variant="outline" onclick={() => (showEditSlideOver = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant="outline" onclick={() => (showEditModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 			<Button onclick={saveEdit} disabled={savingEdit || !editTitle.trim()}>
 				{savingEdit ? t('common.saving', 'Saving...') : t('common.save_changes', 'Save Changes')}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={showDeleteModal} title={t('forms.delete', 'Delete Form')} description={t('forms.delete_warning', 'This action cannot be undone. All submissions will be lost.')} size="sm">
@@ -537,8 +536,8 @@
 	</div>
 </Modal>
 
-<!-- View SlideOver -->
-<SlideOver bind:open={showViewSlideOver} title={t('forms.details', 'Form Details')}>
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t('forms.details', 'Form Details')}>
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
@@ -561,7 +560,7 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end">
-			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('forms.cancel')}</Button>
+			<Button variant="outline" onclick={() => (showViewModal = false)}>{t('forms.cancel')}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>

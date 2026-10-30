@@ -183,7 +183,7 @@
 	</div>
 </Modal>
 
-<!-- View slide-over body -->
+<!-- View modal body -->
 {#snippet SubmissionView({ row }: { row: RoadmapSubmission })}
 	<div class="space-y-4">
 		<div>

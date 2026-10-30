@@ -18,13 +18,13 @@ are migrated via the recipe in the next section.
 
 | Component | Path | Purpose |
 |---|---|---|
-| `EntityPage` | `src/lib/components/entity/entity-page.svelte` | Mandatory scaffold for every entity list page. Composes PageHeader + DataTable + SlideOver + confirm Modal into a declarative CRUD page driven by an `EntityPageConfig`. |
+| `EntityPage` | `src/lib/components/entity/entity-page.svelte` | Mandatory scaffold for every entity list page. Composes PageHeader + DataTable + Modals into a declarative CRUD page driven by an `EntityPageConfig`. |
 | `EntityForm` | `src/lib/components/entity/entity-form.svelte` | Declarative form renderer driven by a `FieldDef[]`. Used by `EntityPage` when no `formSnippet` is supplied. |
 | `DataTable` | `src/lib/components/ui/data-table/data-table.svelte` | Table with server-side pagination, search, sort, filters, bulk selection, and row actions. Use `serverSide` for all server-paginated lists. Every table gets a built-in "Export Selected" bulk action (row checkboxes appear automatically) unless it uses the legacy `bulkActions` snippet path or sets `bulkExport={false}`; use `exportFilename` to name the CSV. |
 | `ActionMenu` | `src/lib/components/ui/data-table/action-menu.svelte` | The ⋮ dropdown for row actions. Do not render inline action buttons — wire actions through the `actions` config. |
 | `FilterPanel` | `src/lib/components/ui/data-table/filter-panel.svelte` | Accordion-based multi-filter UI. Do not use `<FilterBar>` for new pages (legacy pages keep it until migrated). |
 | `BulkBar` | `src/lib/components/ui/data-table/bulk-bar.svelte` | Bulk-action bar shown when rows are selected. Driven by `bulkActionsList` / `BulkAction[]`. |
-| `SlideOver` | `src/lib/components/ui/slide-over/slide-over.svelte` | Right-edge slide-in panel for create/edit/view-detail. Replaces `<Modal>` for those flows. `<Modal>` is only for short confirmations. |
+| `Modal` | `src/lib/components/ui/modal/modal.svelte` | Centered dialog for create/edit/view-detail flows and short confirmations. Accepts a `footer` snippet for action buttons. |
 | Sidebar store | `src/lib/stores/sidebar.svelte.ts` | `sidebarCollapsed()`, `setSidebarCollapsed()`, `toggleSidebar()`, `initSidebarFromStorage()`. State persists to `localStorage` under `jc.admin.sidebar.collapsed`. Toggle via `Ctrl/Cmd+B` or the TopBar PanelLeft button. |
 
 ### Sidebar collapse
@@ -41,9 +41,9 @@ A standard CRUD list page can be replaced wholesale with `<EntityPage {config} /
 Pages with rich forms, sub-flows, or state actions keep `EntityPage` for the list
 and use the `formSnippet` / `viewSnippet` escape hatches plus page-local state.
 
-1. **Replace `<Modal>` create/edit with `<SlideOver>`.** Create/edit/view-detail
-   open in a right-edge slide-over, not a centered modal. `<Modal>` is retained
-   only for short confirmations (delete, ban, warn, etc.).
+1. **Use `<Modal>` for create/edit/view-detail and confirmations.** All of
+   these open in a centered modal; pass a `footer` snippet for the action
+   buttons (save/cancel, close, etc.).
 2. **Replace `<FilterBar>` + external `<Pagination>` with
    `<DataTable serverSide filters bulkActionsList actions>`.** DataTable owns
    pagination, search, sort, filter, and bulk selection state internally.
@@ -69,7 +69,7 @@ new page:
 
 - **`/tags`** (`src/routes/tags/+page.svelte`) — rich page: `formSnippet` (media
   pickers + custom fields), `viewSnippet`, custom `componentSnippet` column,
-  moderators sub-flow as a page-local `<SlideOver>`, bulk delete with remount.
+  moderators sub-flow as a page-local `<Modal>`, bulk delete with remount.
 - **`/share-platforms`** (`src/routes/share-platforms/+page.svelte`) — simple
   page: declarative `fields` (EntityForm), `viewSnippet`, bulk delete. The
   canonical "easy migration" template.
@@ -121,7 +121,7 @@ interface EntityPageConfig {
   isDeleted?: (row: any) => boolean;  // default: row.status==='deleted' || row.deleted_at!=null
   exportable?: boolean;           // show Export CSV button (opt-in)
   exportFilename?: string;        // default: `${title}-export`
-  viewSnippet?: Snippet<[{ row: any }]>;   // custom view slide-over body
+  viewSnippet?: Snippet<[{ row: any }]>;   // custom view modal body
   formSnippet?: Snippet<[{ value; editing }]>; // custom create/edit form body
 }
 ```
@@ -238,7 +238,7 @@ interface ActionItem {
   danger color.
 - The second argument `ctx` gives custom action handlers access to the
   scaffold's built-in `openView`/`openEdit`/`openDelete`/`reload` functions,
-  so a custom action can trigger a slide-over or refetch without a page-local
+  so a custom action can trigger a modal or refetch without a page-local
   workaround.
 - State actions that need a confirmation dialog keep a page-local `<Modal>`
   (EntityPage's built-in confirm only covers the default delete). After the
@@ -377,17 +377,15 @@ Tests use **vitest** + **@testing-library/svelte**. Co-located as
 
 ### Component tests
 
-- **bits-ui portals:** `SlideOver` (and any bits-ui Dialog/Popover) renders
+- **bits-ui portals:** `Modal` (and any bits-ui Dialog/Popover) renders
   content into a portal on `document.body`. Use `waitFor` before asserting on
   portaled content, and query `document.body.querySelector(...)` for
   portal-rendered nodes. Do not assume content is in the component's
   `container`.
 - **Snippet props:** Svelte 5 snippets cannot be passed as plain props in
   tests. Use a **test wrapper component** that renders the component under test
-  and declares the snippets inline. See
-  `src/lib/components/ui/slide-over/slide-over-test-wrapper.svelte` — it wraps
-  `<SlideOver>` and forwards `body`/`footerText` as snippet content. The test
-  renders the wrapper, not `SlideOver` directly, when snippets are needed.
+  and declares the snippets inline. The test renders the wrapper, not the
+  component directly, when snippets are needed.
 - **ActionMenu:** click the `[data-action-menu-trigger]` element, then
   `waitFor` the menu item text, then click the item. Assert `onclick` was
   called with the row object (see `action-menu.test.ts`).

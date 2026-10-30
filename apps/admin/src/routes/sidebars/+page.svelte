@@ -5,11 +5,10 @@
 	// The sidebar list + sidebar CRUD use EntityPage. The sidebar create/edit
 	// form uses the `formSnippet` escape hatch because it includes a
 	// required_group_ids multi-select (autocomplete) that EntityForm cannot
-	// render. The rich WIDGET editor is kept as a page-local `<SlideOver>`
-	// sub-flow (mirrors the /tags moderators SlideOver pattern).
+	// render. The rich WIDGET editor is kept as a page-local `<Modal>`
+	// sub-flow (mirrors the /tags moderators Modal pattern).
 	// Ref: Section 59 (Sidebar Management System), ADR-066.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
-	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
 	import AutocompleteSelect from "$lib/components/ui/AutocompleteSelect.svelte";
@@ -233,13 +232,13 @@
 		{ key: "required_group_ids", label: "Required Group IDs", type: "text" },
 	]);
 
-	// ── Widget editor sub-flow (page-local SlideOver) ───────────────────────
-	let showWidgetsSlideOver = $state(false);
+	// ── Widget editor sub-flow (page-local Modal) ───────────────────────
+	let showWidgetsModal = $state(false);
 	let widgetsSidebar = $state<Sidebar | null>(null);
 	let loadingWidgets = $state(false);
 	let widgetMessage = $state("");
 
-	// Widget create/edit modal (inside the SlideOver)
+	// Widget create/edit modal (inside the Modal)
 	let showWidgetModal = $state(false);
 	let editingWidget = $state<SidebarWidget | null>(null);
 	let savingWidget = $state(false);
@@ -365,7 +364,7 @@
 
 	async function openWidgets(sidebar: Sidebar) {
 		widgetsSidebar = sidebar;
-		showWidgetsSlideOver = true;
+		showWidgetsModal = true;
 		widgetMessage = "";
 		await reloadWidgets();
 	}
@@ -715,8 +714,8 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- ── Widget Editor SlideOver (page-local sub-flow) ─────────────────────── -->
-<SlideOver bind:open={showWidgetsSlideOver} title={t("sidebars.widgets", "Widgets")} size="lg">
+<!-- ── Widget Editor Modal (page-local sub-flow) ─────────────────────── -->
+<Modal bind:open={showWidgetsModal} title={t("sidebars.widgets", "Widgets")} size="lg">
 	{#if widgetsSidebar}
 		<div class="space-y-4">
 			<div>
@@ -794,11 +793,11 @@
 	{/if}
 
 	{#snippet footer()}
-		<Button variant="outline" onclick={() => (showWidgetsSlideOver = false)}>
+		<Button variant="outline" onclick={() => (showWidgetsModal = false)}>
 			{t("common.close", "Close")}
 		</Button>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- ── Widget Create/Edit Modal ──────────────────────────────────────────── -->
 <Modal bind:open={showWidgetModal} title={editingWidget ? t("sidebars.edit_widget", "Edit Widget") : t("sidebars.add_widget", "Add Widget")}>
@@ -1021,7 +1020,7 @@
 	</span>
 {/snippet}
 
-<!-- View slide-over body: sidebar basic fields + read-only widget list -->
+<!-- View modal body: sidebar basic fields + read-only widget list -->
 {#snippet SidebarView({ row }: { row: Sidebar })}
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">

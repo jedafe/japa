@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
-	// /wallet — migrated to shared components (ActionMenu, BulkBar, SlideOver).
+	// /wallet — migrated to shared components (ActionMenu, BulkBar, Modal).
 	// Tabbed page (rules + settings + adjust) — not an EntityPage candidate; keeps
 	// the tab structure but uses DataTable `actions`/`bulkActionsList` props and
-	// SlideOver for the rule create/edit form.
+	// Modal for the rule create/edit form.
 	import { t } from '$lib/stores/i18n.svelte';
 	import { walletApi, userManagementApi } from '$lib/api';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -11,7 +11,7 @@
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
-	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { Modal } from '$lib/components/ui/modal';
 	import { Select } from '$lib/components/ui/select';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 	import { Wallet, DollarSign, Plus, Settings, Trash2, X, Pencil, ToggleLeft } from 'lucide-svelte';
@@ -44,7 +44,7 @@
 	let searchQuery = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
-	let showRuleSlideOver = $state(false);
+	let showRuleModal = $state(false);
 	let editingRule = $state<ActivityRule | null>(null);
 	let ruleForm = $state({ activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false });
 	let ruleSaving = $state(false);
@@ -166,7 +166,7 @@
 		editingRule = null;
 		ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false };
 		activityKeyMode = 'select';
-		showRuleSlideOver = true;
+		showRuleModal = true;
 	}
 
 	function openEditRuleModal(rule: ActivityRule) {
@@ -180,7 +180,7 @@
 			is_enabled: rule.is_enabled,
 			one_time: rule.one_time ?? false
 		};
-		showRuleSlideOver = true;
+		showRuleModal = true;
 	}
 
 	function handleActivityKeySelect(val: string) {
@@ -214,7 +214,7 @@
 			});
 
 		if (result.ok) {
-			showRuleSlideOver = false;
+			showRuleModal = false;
 			editingRule = null;
 			ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false };
 			loadRules();
@@ -521,8 +521,8 @@
 	{/if}
 </div>
 
-<!-- Rule Create/Edit SlideOver -->
-<SlideOver bind:open={showRuleSlideOver} title={editingRule ? t('app.wallet.edit_rule', 'Edit Activity Rule') : t('app.wallet.modal_add_rule', 'Add Activity Rule')}>
+<!-- Rule Create/Edit Modal -->
+<Modal bind:open={showRuleModal} title={editingRule ? t('app.wallet.edit_rule', 'Edit Activity Rule') : t('app.wallet.modal_add_rule', 'Add Activity Rule')}>
 	<div class="space-y-4">
 		<div>
 			<label for="rule-key" class="mb-1 block text-sm font-medium">{t('app.wallet.activity_key', 'Activity Key')}</label>
@@ -559,8 +559,8 @@
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => (showRuleSlideOver = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant="outline" onclick={() => (showRuleModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 			<Button onclick={submitRule} disabled={ruleSaving}>{ruleSaving ? t('common.saving', 'Saving...') : editingRule ? t('common.save', 'Save') : t('app.wallet.add_rule', 'Add Rule')}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>

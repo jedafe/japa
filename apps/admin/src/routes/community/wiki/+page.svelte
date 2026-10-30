@@ -528,7 +528,7 @@
 
 	// data_entity_type binds the page to a child entity class (e.g.
 	// 'visa_route') so §80 field ops target that entity — PATCHed from the
-	// view slide-over (wiki.manage).
+	// view modal (wiki.manage).
 	let detSaving = $state(false);
 	let detDraft = $state('');
 	let detRowId = $state('');
@@ -1207,7 +1207,7 @@
 	});
 
 	// Revision content is stored as a TipTap JSON doc (or a plain JSON string);
-	// extract the text nodes for a readable preview in the view slide-over.
+	// extract the text nodes for a readable preview in the view modal.
 	function extractContentText(content: unknown): string {
 		if (content == null) return '';
 		if (typeof content === 'string') return content;
@@ -1437,7 +1437,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet WikiView({ row }: { row: WikiItem })}
 	<div class="space-y-4">
 		<div>
@@ -1541,7 +1541,7 @@
 	</div>
 {/snippet}
 
-<!-- ── Revision view slide-over body (revisions queue) ───────────────────── -->
+<!-- ── Revision view modal body (revisions queue) ───────────────────── -->
 {#snippet RevisionView({ row }: { row: WikiRevisionItem })}
 	<div class="space-y-4">
 		<div>

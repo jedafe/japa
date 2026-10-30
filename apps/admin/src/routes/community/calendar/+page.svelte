@@ -438,7 +438,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet CalendarView({ row }: { row: CalendarItem })}
 	<div class="space-y-4">
 		<div>

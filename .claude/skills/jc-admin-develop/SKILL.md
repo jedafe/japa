@@ -44,7 +44,7 @@ Every entity list uses the shared `<DataTable>` with ALL of the following. No ex
 4. **Paginated** — page size selector (25/50/100) + navigation; from API `meta`
 5. **Action column** — EVERY row, via `<DropdownMenu.Root>` (⋮):
    - **View** (opens `<Dialog.Root>` preview modal — never navigates away)
-   - **Edit** (opens slide-over/dialog form)
+   - **Edit** (opens modal/dialog form)
    - **Delete** (opens `<Dialog.Root>` confirmation)
    - **State actions** where the entity supports them: Suspend/Unsuspend, Ban/Unban, Approve/Reject, Activate/Deactivate, Verify/Unverify — shown conditionally on current state (e.g. suspended row shows Unsuspend)
 6. **Bulk actions** — per-row checkboxes (`Set<string>`), select-all, bulk bar visible when `selectedIds.size > 0` with contextual actions (Delete, Suspend, Approve, Export)

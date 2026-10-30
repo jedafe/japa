@@ -671,7 +671,7 @@
 	</div>
 </Modal>
 
-<!-- View slide-over body -->
+<!-- View modal body -->
 {#snippet ItemView({ row }: { row: RoadmapItem })}
 	<div class="space-y-4">
 		<div>

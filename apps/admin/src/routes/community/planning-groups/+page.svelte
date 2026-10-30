@@ -192,7 +192,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet PlanningGroupView({ row }: { row: PlanningGroupItem })}
 	<div class="space-y-4">
 		<div>

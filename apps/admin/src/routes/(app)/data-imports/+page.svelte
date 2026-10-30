@@ -2,7 +2,7 @@
 	// /data-imports — Platform Data Import (Section 67).
 	// Migrated to the EntityPage scaffold per apps/admin/AGENTS.md.
 	// Non-standard CRUD: no edit, custom create form (select/file-url),
-	// status filter, summary cards, error log in view slide-over.
+	// status filter, summary cards, error log in view modal.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
@@ -418,7 +418,7 @@
 	</div>
 {/snippet}
 
-<!-- View slide-over body (viewSnippet) -->
+<!-- View modal body (viewSnippet) -->
 {#snippet ImportView({ row }: { row: DataImport })}
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">

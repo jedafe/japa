@@ -472,7 +472,7 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet ScholarshipView({ row }: { row: Scholarship })}
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">

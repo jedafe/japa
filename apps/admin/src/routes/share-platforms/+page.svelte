@@ -194,7 +194,7 @@
 	</span>
 {/snippet}
 
-<!-- View slide-over body (mirrors the legacy view modal) -->
+<!-- View modal body (mirrors the legacy view modal) -->
 {#snippet PlatformView({ row }: { row: SharePlatform })}
 	<div class="space-y-4">
 		<div>

@@ -176,7 +176,7 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet ChecklistView({ row }: { row: ChecklistProgressRow })}
 	<div class="space-y-4">
 		<div>

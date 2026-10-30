@@ -242,7 +242,7 @@
 	</div>
 {/snippet}
 
-<!-- View slide-over body (mirrors the legacy view) -->
+<!-- View modal body (mirrors the legacy view) -->
 {#snippet TypeView({ row }: { row: NotificationType })}
 	<div class="space-y-4">
 		<div>

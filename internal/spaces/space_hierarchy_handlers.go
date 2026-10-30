@@ -129,6 +129,17 @@ func (h *Handlers) RemoveParentSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-011: a custom space must keep at least one primary parent —
+	// refuse to unlink the last one (Section 05 invariant).
+	if space.Level == LevelCustom {
+		parents, perr := h.Service.GetParentSpaces(r.Context(), space.ID)
+		if perr == nil && len(parents) <= 1 {
+			errpkg.WriteError(w, http.StatusConflict, "last_parent",
+				"A custom space must keep at least one primary parent")
+			return
+		}
+	}
+
 	if err := h.Service.RemoveParentSpace(r.Context(), space.ID, parentID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Parent relationship not found")
@@ -148,6 +159,12 @@ func (h *Handlers) RemoveParentSpace(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
 	if !ok {
+		return
+	}
+
+	// BUG-001: hierarchy of non-public spaces is member-only.
+	if space.Visibility != VisibilityPublic && !h.canViewRestrictedSpace(r, space.ID) {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 		return
 	}
 

@@ -4,7 +4,6 @@
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
 	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
-	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
@@ -53,8 +52,8 @@
 	let statusFilter = $state(filterFromUrl("status"));
 	let selectedIds = $state<Set<string>>(new Set());
 
-	// View SlideOver
-	let showViewSlideOver = $state(false);
+	// View Modal
+	let showViewModal = $state(false);
 	let viewTarget = $state<TicketItem | null>(null);
 	let loadingView = $state(false);
 	let ticketEvents = $state<any[]>([]);
@@ -63,8 +62,8 @@
 	let addingComment = $state(false);
 	let addingNote = $state(false);
 
-	// Edit SlideOver
-	let showEditSlideOver = $state(false);
+	// Edit Modal
+	let showEditModal = $state(false);
 	let editingTicket = $state<TicketItem | null>(null);
 	let editForm = $state({ subject: "", status: "", priority: "", assigned_to: "" });
 	let savingEdit = $state(false);
@@ -178,7 +177,7 @@
 
 	async function openView(ticket: TicketItem) {
 		viewTarget = ticket;
-		showViewSlideOver = true;
+		showViewModal = true;
 		loadingView = true;
 		ticketEvents = [];
 		newComment = "";
@@ -247,7 +246,7 @@
 			priority: ticket.priority,
 			assigned_to: ticket.assigned_to ?? ""
 		};
-		showEditSlideOver = true;
+		showEditModal = true;
 	}
 
 	async function submitEdit() {
@@ -262,7 +261,7 @@
 				assigned_to: editForm.assigned_to
 			});
 			if (result.ok) {
-				showEditSlideOver = false;
+				showEditModal = false;
 				loadTickets();
 			} else {
 				error = result.error ?? t("common.error", "Failed to update ticket");
@@ -435,8 +434,8 @@
 	</CardContent>
 </Card>
 
-<!-- View SlideOver -->
-<SlideOver bind:open={showViewSlideOver} title={t("tickets.details", "Ticket Details")}>
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t("tickets.details", "Ticket Details")}>
 	{#if loadingView}
 		<p class="text-sm" style="color: var(--color-muted)">{t("common.loading", "Loading...")}</p>
 	{:else if viewTarget}
@@ -524,13 +523,13 @@
 	{/if}
 	{#snippet footer()}
 		<div class="mt-6 flex justify-end">
-			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t("common.close", "Close")}</Button>
+			<Button variant="outline" onclick={() => (showViewModal = false)}>{t("common.close", "Close")}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
-<!-- Edit SlideOver -->
-<SlideOver bind:open={showEditSlideOver} title={t("tickets.edit", "Edit Ticket")}>
+<!-- Edit Modal -->
+<Modal bind:open={showEditModal} title={t("tickets.edit", "Edit Ticket")}>
 	<div class="space-y-4">
 		<div>
 			<label for="tk-subject" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.subject", "Subject")}</label>
@@ -561,11 +560,11 @@
 	</div>
 	{#snippet footer()}
 		<div class="mt-4 flex justify-end gap-2">
-			<Button variant="ghost" onclick={() => (showEditSlideOver = false)}>{t("common.cancel", "Cancel")}</Button>
+			<Button variant="ghost" onclick={() => (showEditModal = false)}>{t("common.cancel", "Cancel")}</Button>
 			<Button onclick={submitEdit} disabled={savingEdit}>{savingEdit ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")}>

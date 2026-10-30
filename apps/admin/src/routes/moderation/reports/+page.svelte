@@ -340,7 +340,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body (mirrors the legacy expanded detail panel) ──── -->
+<!-- ── View modal body (mirrors the legacy expanded detail panel) ──── -->
 {#snippet ReportView({ row }: { row: Report })}
 	<div class="space-y-4">
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">

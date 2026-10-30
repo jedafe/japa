@@ -4,7 +4,6 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import type { ActionItem } from '$lib/components/ui/data-table';
@@ -31,7 +30,7 @@
 		const t = page.url.searchParams.get('tab');
 		if (t === 'generate' || t === 'models') void goto(`/ai?tab=${t}`);
 	});
-	let showEditSlideOver = $state(false);
+	let showEditModal = $state(false);
 	let editingTool = $state<AiTool | null>(null);
 	let saving = $state(false);
 	let searchQuery = $state('');
@@ -98,7 +97,7 @@
 
 	function editTool(tool: AiTool) {
 		editingTool = { ...tool };
-		showEditSlideOver = true;
+		showEditModal = true;
 	}
 
 	async function saveTool() {
@@ -114,7 +113,7 @@
 				required_permission: editingTool.required_permission ?? null
 			});
 			if (result.ok) {
-				showEditSlideOver = false;
+				showEditModal = false;
 				load();
 			} else {
 				error = result.error;
@@ -228,9 +227,9 @@
 	<p class="text-sm" style="color: var(--color-muted)">{t('ai.no_usage_data')}</p>
 {/if}
 
-{#if showEditSlideOver && editingTool}
-	<SlideOver
-		bind:open={showEditSlideOver}
+{#if showEditModal && editingTool}
+	<Modal
+		bind:open={showEditModal}
 		title={t('ai.edit_tool')}
 	>
 		<div class="space-y-4">
@@ -280,7 +279,7 @@
 		</div>
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
-				<Button variant="outline" onclick={() => { showEditSlideOver = false; }}>
+				<Button variant="outline" onclick={() => { showEditModal = false; }}>
 					{t('common.cancel')}
 				</Button>
 				<Button onclick={saveTool} disabled={saving}>
@@ -288,7 +287,7 @@
 				</Button>
 			</div>
 		{/snippet}
-	</SlideOver>
+	</Modal>
 {/if}
 
 {#if showDeleteConfirm && deletingTool}

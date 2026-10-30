@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -303,6 +304,30 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 // every handler stays consistent.
 func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
+}
+
+// canViewRestrictedSpace reports whether the caller may view a non-public or
+// non-active space: approved member, moderator, owner, or a holder of the
+// spaces.moderate node. Fail-closed (BUG-001/002/006).
+func (h *Handlers) canViewRestrictedSpace(r *http.Request, spaceID pgtype.UUID) bool {
+	user := auth.FromContext(r.Context())
+	if user == nil || !user.UserID.Valid {
+		return false
+	}
+
+	ctx := r.Context()
+
+	if ok, err := h.Service.IsMember(ctx, spaceID, user.UserID); err == nil && ok {
+		return true
+	}
+	if ok, err := h.Service.IsModerator(ctx, spaceID, user.UserID); err == nil && ok {
+		return true
+	}
+	if ok, err := h.Service.IsOwner(ctx, spaceID, user.UserID); err == nil && ok {
+		return true
+	}
+
+	return h.permChecker != nil && h.permChecker.HasPermission(ctx, user.UserID, "spaces.moderate")
 }
 
 // spaceFromContext writes a 404 error and returns false when no resolved space

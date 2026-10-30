@@ -7,7 +7,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Tabs } from '$lib/components/ui/tabs';
-	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { Modal } from '$lib/components/ui/modal';
 	import CampaignManager from '$lib/components/campaigns/campaign-manager.svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Wand, Plus, RefreshCw, BarChart3, RotateCcw, X, Eye, Link2, Megaphone } from 'lucide-svelte';
@@ -71,7 +71,7 @@
 	let stats = $state<StudioStats | null>(null);
 	let loading = $state(true);
 	let error = $state('');
-	let createJobSlideOverOpen = $state(false);
+	let createJobModalOpen = $state(false);
 	let saving = $state(false);
 	let message = $state('');
 	let messageType = $state('');
@@ -247,13 +247,13 @@
 	}
 
 	let viewingJob = $state<StudioJob | null>(null);
-	let viewJobSlideOverOpen = $state(false);
+	let viewJobModalOpen = $state(false);
 
 	// In-flight guard for row actions (retry/cancel) to prevent duplicate
 	// API calls on double-click (per AGENTS.md bulk-delete guard pattern).
 	let busyJobId = $state('');
 
-	let createBatchSlideOverOpen = $state(false);
+	let createBatchModalOpen = $state(false);
 	let savingBatch = $state(false);
 	let newBatch = $state({
 		name: '',
@@ -276,14 +276,14 @@
 		};
 	};
 	let viewingBatch = $state<BatchDetail | null>(null);
-	let viewBatchSlideOverOpen = $state(false);
+	let viewBatchModalOpen = $state(false);
 
 	async function viewJob(id: string) {
 		try {
 			const result = await api<StudioJob>(`/admin/studio/jobs/${id}`);
 			if (result.ok && result.data) {
 				viewingJob = result.data;
-				viewJobSlideOverOpen = true;
+				viewJobModalOpen = true;
 			}
 		} catch {
 			// silent
@@ -332,7 +332,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('studio.create_success', 'Studio job created.');
-				createJobSlideOverOpen = false;
+				createJobModalOpen = false;
 				newJob = { persona_id: '', content_type: '', topic_prompt: '', guide_category: '', target_space_id: '', target_tags: '', intel_record_id: '', ai_model: '', voice_id: '' };
 				load();
 			} else {
@@ -383,7 +383,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('studio.batch_create_success', 'Batch created.');
-				createBatchSlideOverOpen = false;
+				createBatchModalOpen = false;
 				newBatch = { name: '', description: '', jobs: [] };
 				load();
 			} else {
@@ -403,7 +403,7 @@
 			const result = await api<BatchDetail>(`/admin/studio/batches/${id}`);
 			if (result.ok && result.data) {
 				viewingBatch = result.data;
-				viewBatchSlideOverOpen = true;
+				viewBatchModalOpen = true;
 			}
 		} catch {
 			// silent
@@ -539,9 +539,9 @@
 		if (ct) newJob.content_type = ct;
 		const topic = params.get('topic_prompt');
 		if (topic) newJob.topic_prompt = topic;
-		// Open the create-job slide-over and load options (personas, types).
+		// Open the create-job modal and load options (personas, types).
 		loadCreateOptions();
-		createJobSlideOverOpen = true;
+		createJobModalOpen = true;
 		// Clean the URL so a refresh doesn't re-trigger the pre-fill.
 		replaceState('/studio', {});
 	});
@@ -553,8 +553,8 @@
 	title={t('studio.title', 'AI Content Studio')}
 	description={t('studio.description', 'Manage AI-generated content jobs and batches.')}
 	actions={canCreate ? [
-		{ label: t('studio.create_job', 'Create Job'), icon: Plus, onclick: () => { loadCreateOptions(); createJobSlideOverOpen = true; } },
-		{ label: t('studio.create_batch', 'Create Batch'), icon: BarChart3, onclick: () => { loadCreateOptions(); createBatchSlideOverOpen = true; } }
+		{ label: t('studio.create_job', 'Create Job'), icon: Plus, onclick: () => { loadCreateOptions(); createJobModalOpen = true; } },
+		{ label: t('studio.create_batch', 'Create Batch'), icon: BarChart3, onclick: () => { loadCreateOptions(); createBatchModalOpen = true; } }
 	] : []}
 />
 
@@ -694,9 +694,9 @@
 	{/if}
 {/if}
 
-{#if createJobSlideOverOpen}
-	<SlideOver
-		bind:open={createJobSlideOverOpen}
+{#if createJobModalOpen}
+	<Modal
+		bind:open={createJobModalOpen}
 		title={t('studio.create_job_title', 'Create Studio Job')}
 	>
 		<div class="space-y-3">
@@ -768,18 +768,18 @@
 		</div>
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
-				<Button variant="outline" onclick={() => (createJobSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button variant="outline" onclick={() => (createJobModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
 				<Button onclick={createJob} disabled={saving || !newJob.persona_id || !newJob.topic_prompt}>
 					{saving ? t('common.saving', 'Saving...') : t('studio.create', 'Create Job')}
 				</Button>
 			</div>
 		{/snippet}
-	</SlideOver>
+	</Modal>
 {/if}
 
-{#if viewJobSlideOverOpen && viewingJob}
-	<SlideOver
-		bind:open={viewJobSlideOverOpen}
+{#if viewJobModalOpen && viewingJob}
+	<Modal
+		bind:open={viewJobModalOpen}
 		title={t('studio.job_detail', 'Job Detail')}
 	>
 		<div class="space-y-3 text-sm">
@@ -809,20 +809,20 @@
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
 				{#if viewingJob && canManage && viewingJob.status === 'failed'}
-					<Button variant="outline" onclick={() => { retryJob(viewingJob!.id); viewJobSlideOverOpen = false; }}>
+					<Button variant="outline" onclick={() => { retryJob(viewingJob!.id); viewJobModalOpen = false; }}>
 						<RotateCcw class="h-4 w-4" />
 						{t('studio.retry', 'Retry')}
 					</Button>
 				{/if}
-				<Button onclick={() => { viewJobSlideOverOpen = false; viewingJob = null; }}>{t('common.close', 'Close')}</Button>
+				<Button onclick={() => { viewJobModalOpen = false; viewingJob = null; }}>{t('common.close', 'Close')}</Button>
 			</div>
 		{/snippet}
-	</SlideOver>
+	</Modal>
 {/if}
 
-{#if createBatchSlideOverOpen}
-	<SlideOver
-		bind:open={createBatchSlideOverOpen}
+{#if createBatchModalOpen}
+	<Modal
+		bind:open={createBatchModalOpen}
 		title={t('studio.create_batch_title', 'Create Studio Batch')}
 	>
 		<div class="space-y-3">
@@ -880,18 +880,18 @@
 		</div>
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
-				<Button variant="outline" onclick={() => (createBatchSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button variant="outline" onclick={() => (createBatchModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
 				<Button onclick={createBatch} disabled={savingBatch || !newBatch.name}>
 					{savingBatch ? t('common.saving', 'Saving...') : t('studio.create_batch', 'Create Batch')}
 				</Button>
 			</div>
 		{/snippet}
-	</SlideOver>
+	</Modal>
 {/if}
 
-{#if viewBatchSlideOverOpen && viewingBatch}
-	<SlideOver
-		bind:open={viewBatchSlideOverOpen}
+{#if viewBatchModalOpen && viewingBatch}
+	<Modal
+		bind:open={viewBatchModalOpen}
 		title={t('studio.batch_detail', 'Batch Detail')}
 	>
 		<div class="space-y-3 text-sm">
@@ -928,13 +928,13 @@
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
 				{#if canManage && viewingBatch && viewingBatch.stats.failed > 0}
-					<Button variant="outline" onclick={() => { retryBatch(viewingBatch!.batch.id); viewBatchSlideOverOpen = false; }}>
+					<Button variant="outline" onclick={() => { retryBatch(viewingBatch!.batch.id); viewBatchModalOpen = false; }}>
 						<RotateCcw class="h-4 w-4" />
 						{t('studio.retry_failed', 'Retry Failed')}
 					</Button>
 				{/if}
-				<Button onclick={() => { viewBatchSlideOverOpen = false; viewingBatch = null; }}>{t('common.close', 'Close')}</Button>
+				<Button onclick={() => { viewBatchModalOpen = false; viewingBatch = null; }}>{t('common.close', 'Close')}</Button>
 			</div>
 		{/snippet}
-	</SlideOver>
+	</Modal>
 {/if}

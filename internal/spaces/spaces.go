@@ -283,7 +283,7 @@ func (s *Service) invalidateMutedSpacesCache(ctx context.Context, userID pgtype.
 		return
 	}
 
-	key := valkey.MustKey("muted_spaces::%s", userID.String())
+	key := valkey.MustKey("muted_spaces:%s", userID.String())
 	if err := s.vk.Del(ctx, key).Err(); err != nil {
 		slog.Warn("invalidate muted_spaces cache", "error", err)
 	}

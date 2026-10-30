@@ -9,11 +9,10 @@
 		listMyMedia,
 		initiateUpload,
 		uploadToPresigned,
-		confirmMedia
+		confirmMedia,
+		getMedia
 	} from '$lib/api/create';
 	import { listStockProviders, searchStock, importStockPhoto } from '$lib/api/stock';
-	import { PUBLIC_JC_API_URL } from '$env/static/public';
-	import { buildApiUrl } from '@japaconnect/api-url';
 	import type { MediaAsset } from '$lib/types';
 
 	interface Props {
@@ -55,11 +54,14 @@
 		if (!up.ok) throw new Error('upload failed');
 		const conf = await confirmMedia(init.data.media_id);
 		if (conf.error) throw new Error(conf.error.message);
-		// confirmMedia returns { confirmed: true }, not a full MediaAsset,
-		// so construct the URL from the storage_path returned by initiateUpload.
+		// confirmMedia returns { confirmed: true } and initiateUpload carries
+		// no storage bucket, so fetch the serialized asset — its imgproxy URL
+		// is canonical and avoids constructing a serve URL with the wrong
+		// bucket (which rendered as a placeholder until the next reload).
+		const media = await getMedia(init.data.media_id);
 		return {
 			id: init.data.media_id,
-			url: buildApiUrl(`/media/serve/media/${init.data.storage_path}`, PUBLIC_JC_API_URL ?? ''),
+			url: media.data?.url ?? '',
 			filename: file.name,
 			mime_type: file.type,
 			file_size: file.size,

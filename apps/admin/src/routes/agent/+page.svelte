@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
 	// /agent — Admin AI Agent session viewer. Read-only audit surface with
-	// three tabs: Sessions (list + detail slide-over), Tool Stats, Cost Report.
+	// three tabs: Sessions (list + detail modal), Tool Stats, Cost Report.
 	//
 	// All data from GET /admin/agent/sessions, /admin/agent/sessions/{id},
 	// /admin/agent/tool-stats, /admin/agent/cost-report. No mutations — the
@@ -15,7 +15,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { apiFetch } from '$lib/api';
 	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
-	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import {
 		Sparkles, Wrench, DollarSign, BarChart3, Eye, Loader2, AlertCircle,
@@ -574,8 +574,8 @@
 		{/if}
 	</div>
 
-	<!-- ─── Session detail slide-over ─────────────────────────────────── -->
-	<SlideOver bind:open={detailOpen} title={t('admin.agent.session_detail', 'Session Detail')}>
+	<!-- ─── Session detail modal ─────────────────────────────────── -->
+	<Modal bind:open={detailOpen} title={t('admin.agent.session_detail', 'Session Detail')}>
 		{#if detailLoading}
 			<div class="flex items-center justify-center py-12">
 				<Loader2 class="h-6 w-6 animate-spin" style="color: var(--color-muted)" />
@@ -663,5 +663,5 @@
 				{t('admin.agent.session_not_found', 'Session not found.')}
 			</div>
 		{/if}
-	</SlideOver>
+	</Modal>
 {/if}

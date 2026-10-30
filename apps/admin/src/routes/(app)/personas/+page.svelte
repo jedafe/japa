@@ -2,7 +2,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { Modal } from '$lib/components/ui/modal';
 	import { EntityPage, type EntityPageConfig, type FieldDef, type EntityPageController } from '$lib/components/entity';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { Plus, Trash2, Activity, Pencil, Pause, Play, Eye } from 'lucide-svelte';
@@ -95,8 +95,8 @@
 	const canViewActivity = $derived(hasPermission('persona.view') || hasPermission('participation.view'));
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
-	let createSlideOverOpen = $state(false);
-	let activitySlideOverOpen = $state(false);
+	let createModalOpen = $state(false);
+	let activityModalOpen = $state(false);
 	let activityLog = $state<ActivityEntry[]>([]);
 	let activityLoading = $state(false);
 	let activityTotal = $state(0);
@@ -145,8 +145,8 @@
 
 	let newPersonas = $state<PersonaInput[]>([newPersonaInput()]);
 
-	// Edit SlideOver
-	let editSlideOverOpen = $state(false);
+	// Edit Modal
+	let editModalOpen = $state(false);
 	let editingPersona = $state<Persona | null>(null);
 	let editForm = $state<UpdateInput>({});
 	let editViewOnly = $state(false);
@@ -172,7 +172,7 @@
 	async function viewActivity(id: string) {
 		activityPersonaId = id;
 		activityPage = 0;
-		activitySlideOverOpen = true;
+		activityModalOpen = true;
 		await loadActivity();
 	}
 
@@ -222,7 +222,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('personas.create_success', '{count} persona(s) provisioned.').replace('{count}', String(inputs.length));
-				createSlideOverOpen = false;
+				createModalOpen = false;
 				newPersonas = [newPersonaInput()];
 				entityController?.reload();
 			} else {
@@ -259,7 +259,7 @@
 			status: persona.status,
 			activity_policy: policy ? { ...defaultPolicy(), ...policy } as ActivityPolicy : defaultPolicy()
 		};
-		editSlideOverOpen = true;
+		editModalOpen = true;
 	}
 
 	function openEdit(persona: Persona) {
@@ -278,7 +278,7 @@
 			status: persona.status,
 			activity_policy: policy ? { ...defaultPolicy(), ...policy } as ActivityPolicy : defaultPolicy()
 		};
-		editSlideOverOpen = true;
+		editModalOpen = true;
 	}
 
 	async function updatePersonaStatus(persona: Persona, status: string) {
@@ -369,7 +369,7 @@
 			if (result.ok) {
 				messageType = 'success';
 				message = t('personas.update_success', 'Persona updated.');
-				editSlideOverOpen = false;
+				editModalOpen = false;
 				editingPersona = null;
 				entityController?.reload();
 			} else {
@@ -466,7 +466,7 @@
 
 	// EntityPage config — the scaffold owns the list (server-side table,
 	// URL-synced sort/search/page/filters, bulk bar, action menu). The batch
-	// create flow and the edit/activity sub-flows stay page-local slide-overs
+	// create flow and the edit/activity sub-flows stay page-local modals
 	// because EntityForm can't express a multi-row batch input or the
 	// activity log viewer (per the AGENTS.md rich-page escape hatches).
 	const fields: FieldDef[] = [];
@@ -490,7 +490,7 @@
 		],
 		actions: rowActions,
 		bulkActions: canManage ? bulkActionsList : [],
-		hideCreate: true, // batch create lives in the custom slide-over below
+		hideCreate: true, // batch create lives in the custom modal below
 		bulkDelete: false, // personas retire, never soft-delete (§68)
 		editPermission: 'persona.manage',
 		fields,
@@ -531,7 +531,7 @@
 
 {#if canManage}
 	<div class="mb-3 flex justify-end">
-		<Button onclick={() => (createSlideOverOpen = true)}>
+		<Button onclick={() => (createModalOpen = true)}>
 			<Plus class="h-4 w-4" /> {t('personas.create', 'Create Personas')}
 		</Button>
 	</div>
@@ -539,9 +539,9 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-{#if createSlideOverOpen}
-	<SlideOver
-		bind:open={createSlideOverOpen}
+{#if createModalOpen}
+	<Modal
+		bind:open={createModalOpen}
 		title={t('personas.create_title', 'Create AI Personas')}
 	>
 		<div class="space-y-4">
@@ -761,18 +761,18 @@
 		</div>
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
-				<Button variant="outline" onclick={() => (createSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button variant="outline" onclick={() => (createModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
 				<Button onclick={createPersonas} disabled={saving}>
 					{saving ? t('common.saving', 'Saving...') : t('personas.provision', 'Provision Personas')}
 				</Button>
 			</div>
 		{/snippet}
-	</SlideOver>
+	</Modal>
 {/if}
 
-{#if activitySlideOverOpen}
-	<SlideOver
-		bind:open={activitySlideOverOpen}
+{#if activityModalOpen}
+	<Modal
+		bind:open={activityModalOpen}
 		title={t('personas.activity_log', 'Persona Activity Log')}
 	>
 		{#if activityLoading}
@@ -828,12 +828,12 @@
 				</div>
 			{/if}
 		{/if}
-	</SlideOver>
+	</Modal>
 {/if}
 
-{#if editSlideOverOpen}
-	<SlideOver
-		bind:open={editSlideOverOpen}
+{#if editModalOpen}
+	<Modal
+		bind:open={editModalOpen}
 		title={editViewOnly ? t('personas.view_title', 'View Persona') : t('personas.edit_title', 'Edit Persona')}
 		onclose={() => { editingPersona = null; editViewOnly = false; }}
 	>
@@ -1016,14 +1016,14 @@
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
 				{#if editViewOnly}
-					<Button onclick={() => (editSlideOverOpen = false)}>{t('common.close', 'Close')}</Button>
+					<Button onclick={() => (editModalOpen = false)}>{t('common.close', 'Close')}</Button>
 				{:else}
-					<Button variant="outline" onclick={() => (editSlideOverOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+					<Button variant="outline" onclick={() => (editModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
 					<Button onclick={submitEdit} disabled={savingEdit}>
 						{savingEdit ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
 					</Button>
 				{/if}
 			</div>
 		{/snippet}
-	</SlideOver>
+	</Modal>
 {/if}

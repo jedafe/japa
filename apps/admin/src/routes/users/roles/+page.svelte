@@ -169,7 +169,7 @@
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-<!-- View slide-over body -->
+<!-- View modal body -->
 {#snippet RoleView({ row }: { row: Role })}
 	<div class="space-y-4">
 		<div>

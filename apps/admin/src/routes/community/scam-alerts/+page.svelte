@@ -74,7 +74,7 @@
 	const scamTypeLabel = (v?: string) => (v ? t(`app.scam_alert.type_${v}`, v) : '—');
 	const platformLabel = (v?: string) => (v ? t(`app.scam_alert.platform_${v}`, v) : '—');
 
-	// Review slide-over state
+	// Review modal state
 	let reviewOpen = $state(false);
 	let reviewTarget = $state<ScamAlertItem | undefined>(undefined);
 	let reviewStatus = $state<'confirmed' | 'debunked' | 'duplicate'>('confirmed');
@@ -297,7 +297,7 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- ── Review slide-over ─────────────────────────────────────────────────── -->
+<!-- ── Review modal ─────────────────────────────────────────────────── -->
 {#if reviewOpen && reviewTarget}
 	<div class="fixed inset-0 z-50 flex justify-end">
 		<!-- backdrop -->
@@ -420,7 +420,7 @@
 	</div>
 {/if}
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet ScamAlertView({ row }: { row: ScamAlertItem })}
 	<div class="space-y-4">
 		<div>

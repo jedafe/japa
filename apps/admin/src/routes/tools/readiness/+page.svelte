@@ -8,7 +8,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Settings, BarChart3 } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { Modal } from '$lib/components/ui/modal';
 	import { readinessAdminApi } from '$lib/api';
 	import { JsonValueEditor } from '@japaconnect/ui';
 
@@ -87,7 +87,7 @@
 		return color;
 	}
 
-	// ── Result detail slide-over (dimension breakdown, roadmap, answers) ────
+	// ── Result detail modal (dimension breakdown, roadmap, answers) ────
 	type ResultDetail = {
 		id: string;
 		total_score: number;
@@ -384,8 +384,8 @@
 	</p>
 {/if}
 
-<!-- ── Result detail slide-over ─────────────────────────────────────────── -->
-<SlideOver bind:open={detailOpen} title={t('app.tools.readiness_result_detail', 'Result detail')} size="lg">
+<!-- ── Result detail modal ─────────────────────────────────────────── -->
+<Modal bind:open={detailOpen} title={t('app.tools.readiness_result_detail', 'Result detail')} size="lg">
 			{#if detailLoading}
 				<p class="text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading…')}</p>
 			{:else if detail}
@@ -441,11 +441,11 @@
 					{/if}
 				</div>
 			{/if}
-</SlideOver>
+</Modal>
 
 
 
-<!-- ── Form config slide-over ────────────────────────────────────────────── -->
+<!-- ── Form config modal ────────────────────────────────────────────── -->
 {#if showConfig && scoringConfig}
 	<div class="fixed inset-0 z-50 flex justify-end">
 		<button

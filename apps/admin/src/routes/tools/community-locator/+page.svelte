@@ -451,7 +451,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet CommunityView({ row }: { row: CommunityItem })}
 	<div class="space-y-4">
 		<div>

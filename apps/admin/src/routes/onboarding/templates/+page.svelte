@@ -290,7 +290,7 @@
 	</div>
 {/snippet}
 
-<!-- View slide-over body -->
+<!-- View modal body -->
 {#snippet TemplateView({ row }: { row: OnboardingTemplate })}
 	<div class="space-y-4">
 		<div>

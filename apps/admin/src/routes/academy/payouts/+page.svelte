@@ -4,7 +4,6 @@
 	import { DataTable } from "$lib/components/ui/data-table";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
-	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import type { ActionItem } from "$lib/components/ui/data-table";
 	import { DollarSign, RefreshCw, AlertTriangle, Eye } from "lucide-svelte";
@@ -39,7 +38,7 @@
 
 	let showProcessModal = $state(false);
 	let showFailModal = $state(false);
-	let showViewSlideOver = $state(false);
+	let showViewModal = $state(false);
 	let target = $state<Payout | null>(null);
 	let actionLoading = $state(false);
 	let failReason = $state("");
@@ -133,7 +132,7 @@
 
 	function openProcess(p: Payout) { target = p; showProcessModal = true; }
 	function openFail(p: Payout) { target = p; failReason = p.failure_reason ?? ""; showFailModal = true; }
-	function openView(p: Payout) { target = p; showViewSlideOver = true; }
+	function openView(p: Payout) { target = p; showViewModal = true; }
 
 	async function doProcess() {
 		if (!target) return;
@@ -265,8 +264,8 @@
 	</div>
 </Modal>
 
-<!-- View SlideOver -->
-<SlideOver bind:open={showViewSlideOver} title={t("academy.payout_details", "Payout Details")}>
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t("academy.payout_details", "Payout Details")}>
 	{#if target}
 		<div class="grid grid-cols-2 gap-4">
 			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.instructor_id", "Instructor ID")}</p><p class="mt-1 text-sm font-mono">{target.instructor_id}</p></div>
@@ -288,10 +287,10 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end">
-			<Button variant="outline" onclick={() => { showViewSlideOver = false; }}>{t("common.close", "Close")}</Button>
+			<Button variant="outline" onclick={() => { showViewModal = false; }}>{t("common.close", "Close")}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 {#snippet PayoutStatusBadge({ value }: { value: string; row: Payout })}
 	<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium

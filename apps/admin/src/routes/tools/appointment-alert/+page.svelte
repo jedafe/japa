@@ -201,7 +201,7 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet EmbassyView({ row }: { row: EmbassyItem })}
 	<div class="space-y-4">
 		<div>

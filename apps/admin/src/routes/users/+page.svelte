@@ -411,7 +411,7 @@
 	});
 
 	// ── Create form fields ──────────────────────────────────────────────────
-	// Edit form lives on /users/[id]; EntityPage's create slide-over only handles creation.
+	// Edit form lives on /users/[id]; EntityPage's create modal only handles creation.
 	const fields: FieldDef[] = [
 		{ key: "email", label: t("users.email", "Email"), type: "email", placeholder: "user@example.com", required: true },
 		{ key: "username", label: t("users.username", "Username"), type: "text", placeholder: "username", required: true },

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
-	// /affiliate — migrated to shared components (ActionMenu, BulkBar, SlideOver, FilterPanel).
+	// /affiliate — migrated to shared components (ActionMenu, BulkBar, Modal, FilterPanel).
 	// Tabbed page (6 tabs) — not an EntityPage candidate; keeps the tab structure but
-	// uses DataTable `actions`/`bulkActionsList`/`filters` props and SlideOver for create.
+	// uses DataTable `actions`/`bulkActionsList`/`filters` props and Modal for create.
 	import { api, affiliateProvidersAdminApi, affiliateProgramAdminApi, affiliateLinksAdminApi, affiliateEnhancementsAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -12,7 +12,6 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem, BulkAction, FilterDef } from '$lib/components/ui/data-table';
 	import { Plus, Trash2, Link2, Users, Percent, DollarSign, BarChart3, Pencil } from 'lucide-svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
@@ -108,13 +107,13 @@
 	let stats = $state<ProgramStats | null>(null);
 	let loading = $state(true);
 	let error = $state('');
-	let showCreateSlideOver = $state(false);
+	let showCreateModal = $state(false);
 	let newProvider = $state({ name: '', base_url: '', category: '', commission_rate: 0 });
 	// Provider edit — PATCH UpdateProvider rewrites every column, so the form
 	// seeds from the full row (GET /admin/affiliate-providers/{id}) and the
 	// payload carries the complete field set except slug (not in the
 	// update SQL). A partial PATCH would NULL tracking/commission fields.
-	let showEditProviderSlideOver = $state(false);
+	let showEditProviderModal = $state(false);
 	let editProviderTarget = $state<AffiliateProvider | null>(null);
 	let editProviderLoading = $state(false);
 	let editProvider = $state({
@@ -168,8 +167,8 @@
 	let showMemberStatusConfirm = $state(false);
 	let memberStatusTarget = $state<{ member: AffiliateMember; status: string } | null>(null);
 
-	// Record Commission SlideOver (POST /admin/affiliate/commissions — BUG-014)
-	let showRecordCommissionSlideOver = $state(false);
+	// Record Commission Modal (POST /admin/affiliate/commissions — BUG-014)
+	let showRecordCommissionModal = $state(false);
 	let newCommission = $state({ provider_id: '', content_id: '', external_commission: 0, event_description: '' });
 
 	const tabs = $derived([
@@ -432,7 +431,7 @@
 			const slug = newProvider.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 			const result = await affiliateProvidersAdminApi.create({ ...newProvider, category: newProvider.category || null, slug });
 			if (result.ok) {
-				showCreateSlideOver = false;
+				showCreateModal = false;
 				newProvider = { name: '', base_url: '', category: '', commission_rate: 0 };
 				load();
 			} else {
@@ -477,7 +476,7 @@
 				is_active: p.is_active,
 				is_featured: p.is_featured
 			};
-			showEditProviderSlideOver = true;
+			showEditProviderModal = true;
 		} catch {
 			error = t('common.error');
 		} finally {
@@ -505,7 +504,7 @@
 				is_featured: editProvider.is_featured
 			});
 			if (result.ok) {
-				showEditProviderSlideOver = false;
+				showEditProviderModal = false;
 				editProviderTarget = null;
 				load();
 			} else {
@@ -542,7 +541,7 @@
 				event_description: newCommission.event_description || undefined
 			});
 			if (result.ok) {
-				showRecordCommissionSlideOver = false;
+				showRecordCommissionModal = false;
 				newCommission = { provider_id: '', content_id: '', external_commission: 0, event_description: '' };
 				load();
 			} else {
@@ -654,7 +653,7 @@
 	title={t('affiliate.title')}
 	description={t('affiliate.description')}
 	actions={activeTab === 'providers' && canManageProviders
-		? [{ label: t('affiliate.add_provider'), icon: Plus, onclick: () => showCreateSlideOver = true }]
+		? [{ label: t('affiliate.add_provider'), icon: Plus, onclick: () => showCreateModal = true }]
 		: []}
 />
 
@@ -816,7 +815,7 @@
 			<CardContent class="p-0">
 				{#if canManageProgram}
 					<div class="flex justify-end p-3 border-b border-border">
-						<Button onclick={() => (showRecordCommissionSlideOver = true)}>
+						<Button onclick={() => (showRecordCommissionModal = true)}>
 							<Plus size={16} />
 							{t('affiliate.record_commission', 'Record Commission')}
 						</Button>
@@ -837,8 +836,8 @@
 	{/if}
 </div>
 
-<!-- Add Provider SlideOver -->
-<SlideOver bind:open={showCreateSlideOver} title={t('affiliate.add_provider')}>
+<!-- Add Provider Modal -->
+<Modal bind:open={showCreateModal} title={t('affiliate.add_provider')}>
 	<div class="space-y-4">
 		<div>
 			<label for="provider-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.name')}</label>
@@ -862,17 +861,17 @@
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => showCreateSlideOver = false}>{t('common.cancel')}</Button>
+			<Button variant="outline" onclick={() => showCreateModal = false}>{t('common.cancel')}</Button>
 			<Button onclick={createProvider} disabled={saving || !newProvider.name || !newProvider.base_url}>
 				{saving ? t('common.creating') : t('common.create')}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
-<!-- Edit Provider SlideOver — full-column PATCH; every UpdateProviderInput
+<!-- Edit Provider Modal — full-column PATCH; every UpdateProviderInput
      field except slug is carried so the overwrite can't NULL hidden columns. -->
-<SlideOver bind:open={showEditProviderSlideOver} title={t('affiliate.edit_provider', 'Edit Provider')}>
+<Modal bind:open={showEditProviderModal} title={t('affiliate.edit_provider', 'Edit Provider')}>
 	<div class="space-y-4">
 		<div>
 			<label for="edit-provider-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.name')}</label>
@@ -933,13 +932,13 @@
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => (showEditProviderSlideOver = false)}>{t('common.cancel')}</Button>
+			<Button variant="outline" onclick={() => (showEditProviderModal = false)}>{t('common.cancel')}</Button>
 			<Button onclick={saveProviderEdit} disabled={saving || !editProvider.name.trim()}>
 				{saving ? t('common.saving') : t('common.save')}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Delete Provider Confirm -->
 <Modal bind:open={showDeleteProviderConfirm} title={t('common.confirmDelete', 'Confirm Delete')}>
@@ -968,8 +967,8 @@
 	</div>
 </Modal>
 
-<!-- Record Commission SlideOver (POST /admin/affiliate/commissions — BUG-014) -->
-<SlideOver bind:open={showRecordCommissionSlideOver} title={t('affiliate.record_commission', 'Record Commission')}>
+<!-- Record Commission Modal (POST /admin/affiliate/commissions — BUG-014) -->
+<Modal bind:open={showRecordCommissionModal} title={t('affiliate.record_commission', 'Record Commission')}>
 	<div class="space-y-4">
 		<div>
 			<label for="comm-provider" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.provider', 'Provider')}</label>
@@ -995,10 +994,10 @@
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => (showRecordCommissionSlideOver = false)}>{t('common.cancel')}</Button>
+			<Button variant="outline" onclick={() => (showRecordCommissionModal = false)}>{t('common.cancel')}</Button>
 			<Button onclick={recordCommission} disabled={saving || !newCommission.provider_id || !newCommission.content_id || newCommission.external_commission <= 0}>
 				{saving ? t('common.saving') : t('common.record', 'Record')}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>

@@ -224,7 +224,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet MutualAidView({ row }: { row: MutualAidItem })}
 	<div class="space-y-4">
 		<div>

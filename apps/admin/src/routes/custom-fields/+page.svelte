@@ -4,10 +4,9 @@
 	//
 	// The field-group list + group CRUD is driven declaratively by EntityPage.
 	// The field-editor sub-flow (add/edit/delete/reorder fields within a group)
-	// is kept as a page-local <SlideOver> triggered by a custom "Manage Fields"
-	// row action — mirrors the tags page's moderators SlideOver.
+	// is kept as a page-local <Modal> triggered by a custom "Manage Fields"
+	// row action — mirrors the tags page's moderators Modal.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
@@ -231,7 +230,7 @@
 		viewSnippet: GroupView
 	});
 
-	// ── Field-editor sub-flow (page-local SlideOver) ────────────────────────
+	// ── Field-editor sub-flow (page-local Modal) ────────────────────────
 	const canManageFields = $derived(hasPermission('custom_fields.field.create'));
 	const canEditField = $derived(hasPermission('custom_fields.field.edit'));
 	const canDeleteField = $derived(hasPermission('custom_fields.field.delete'));
@@ -631,8 +630,8 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- Field-editor SlideOver (page-local sub-flow) -->
-<SlideOver bind:open={showFieldEditor} title={t('fieldGroups.manage_fields', 'Manage Fields')} size="lg">
+<!-- Field-editor Modal (page-local sub-flow) -->
+<Modal bind:open={showFieldEditor} title={t('fieldGroups.manage_fields', 'Manage Fields')} size="lg">
 	{#if editorGroup}
 		<div class="space-y-4">
 			<div>
@@ -748,7 +747,7 @@
 			{t('common.close', 'Close')}
 		</Button>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Add/Edit Field Modal -->
 <Modal bind:open={fieldModalOpen} title={editingField ? `${t('fieldGroups.edit_field', 'Edit Field')}: ${editingField.label}` : t('fieldGroups.add_field', 'Add Field')}>
@@ -1038,7 +1037,7 @@
 	{/if}
 {/snippet}
 
-<!-- View slide-over body showing the group's fields -->
+<!-- View modal body showing the group's fields -->
 {#snippet GroupView({ row }: { row: FieldGroup })}
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">

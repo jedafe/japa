@@ -4,7 +4,6 @@
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { DataTable } from "$lib/components/ui/data-table";
 	import type { ActionItem } from "$lib/components/ui/data-table";
-	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Badge } from "$lib/components/ui/badge";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
@@ -61,7 +60,7 @@
 	const canManageWebhooks = $derived(hasPermission("integrations.webhooks.manage"));
 
 	// Modal state
-	let showSlideOver = $state(false);
+	let showModal = $state(false);
 	let modalMode = $state<"create" | "edit">("create");
 	let editingEndpoint = $state<WebhookEndpoint | null>(null);
 	let saving = $state(false);
@@ -209,7 +208,7 @@
 		formEvents = [];
 		formActive = true;
 		formSecret = "";
-		showSlideOver = true;
+		showModal = true;
 	}
 
 	function openEdit(ep: WebhookEndpoint) {
@@ -220,7 +219,7 @@
 		formEvents = [...(ep.event_types ?? [])];
 		formActive = ep.is_active;
 		formSecret = "";
-		showSlideOver = true;
+		showModal = true;
 	}
 
 	function toggleEvent(event: string) {
@@ -245,7 +244,7 @@
 				};
 				const result = await webhooksAdminApiExtended.update(editingEndpoint.id, body);
 				if (result.ok) {
-					showSlideOver = false;
+					showModal = false;
 					success = t("webhooks.updated", "Webhook updated");
 					loadEndpoints();
 				} else {
@@ -255,7 +254,7 @@
 				const body = { name: formName.trim(), url: formUrl.trim(), event_types: formEvents };
 				const result = await webhooksAdminApiExtended.create(body);
 				if (result.ok) {
-					showSlideOver = false;
+					showModal = false;
 					success = t("webhooks.created", "Webhook created");
 					const created = result.data as { secret?: string } | undefined;
 					if (created?.secret) {
@@ -475,8 +474,8 @@
 	</CardContent>
 </Card>
 
-<!-- Create/Edit SlideOver -->
-<SlideOver bind:open={showSlideOver} title={modalMode === "create" ? t("webhooks.add", "Add Endpoint") : t("webhooks.edit", "Edit Endpoint")}>
+<!-- Create/Edit Modal -->
+<Modal bind:open={showModal} title={modalMode === "create" ? t("webhooks.add", "Add Endpoint") : t("webhooks.edit", "Edit Endpoint")}>
 	<div class="space-y-4">
 		<div>
 			<label for="wh-name" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("webhooks.name", "Name")}</label>
@@ -508,13 +507,13 @@
 	</div>
 	{#snippet footer()}
 		<div class="mt-4 flex justify-end gap-2">
-			<Button variant="ghost" onclick={() => showSlideOver = false}>{t("common.cancel", "Cancel")}</Button>
+			<Button variant="ghost" onclick={() => showModal = false}>{t("common.cancel", "Cancel")}</Button>
 			<Button onclick={saveEndpoint} disabled={saving || !formName.trim() || !formUrl.trim()}>
 				{saving ? t("common.saving", "Saving...") : t("common.save", "Save")}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Test Modal -->
 <Modal bind:open={showTestModal} title={t("webhooks.test_title", "Test Webhook")}>
@@ -543,8 +542,8 @@
 	</div>
 </Modal>
 
-<!-- Delivery Log SlideOver -->
-<SlideOver bind:open={showDeliveries} title={t("webhooks.deliveries", "Delivery Log")}>
+<!-- Delivery Log Modal -->
+<Modal bind:open={showDeliveries} title={t("webhooks.deliveries", "Delivery Log")}>
 	{#if deliveriesTarget}
 		<p class="mb-4 text-sm" style="color: var(--color-muted)">
 			{t("webhooks.deliveries_title", "Deliveries for {name}").replace("{name}", deliveriesTarget.name)}
@@ -607,4 +606,4 @@
 			<Button variant="ghost" onclick={() => showDeliveries = false}>{t("common.close", "Close")}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>

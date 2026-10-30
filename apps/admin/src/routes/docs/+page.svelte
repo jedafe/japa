@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
 	// /docs — migrated to shared components (ActionMenu, FilterPanel, Modal,
-	// SlideOver). Replaces the legacy FilterBar.svelte and hand-rolled bits-ui
-	// Dialog with shared Modal/SlideOver. State action: toggle publish.
+	// Modal). Replaces the legacy FilterBar.svelte and hand-rolled bits-ui
+	// Dialog with shared Modal/Modal. State action: toggle publish.
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
@@ -10,7 +10,6 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { api, docsApi } from '$lib/api';
 	import { goto } from '$app/navigation';
@@ -44,8 +43,8 @@
 	let filterValue = $state<Record<string, string>>({});
 	let searchQuery = $state('');
 
-	// Create/Edit SlideOver
-	let showFormSlideOver = $state(false);
+	// Create/Edit Modal
+	let showFormModal = $state(false);
 	let editingId = $state<string | null>(null);
 	let editingOriginalStatus = $state('');
 	// True once openEdit's detail fetch populated the body — guards submit from
@@ -167,8 +166,8 @@
 	// admin.settings permission — gate the entry point the same way.
 	const canManageCategories = $derived(hasPermission('admin.settings'));
 
-	// AI generation slide-over state (DOC-010)
-	let showGenerateSlideOver = $state(false);
+	// AI generation modal state (DOC-010)
+	let showGenerateModal = $state(false);
 	let generateTitle = $state('');
 	let generateSlug = $state('');
 	let generatePrompt = $state('');
@@ -292,7 +291,7 @@
 		editingId = null;
 		editingOriginalStatus = '';
 		form = { title: '', slug: '', audience: 'users', status: 'draft', body: '', category: '', subcategory: '', parentId: '', position: 0 };
-		showFormSlideOver = true;
+		showFormModal = true;
 	}
 
 	// unwrapTipTap flattens stored TipTap JSON back to the plain-text lines the
@@ -328,7 +327,7 @@
 			parentId: item.parent_id ?? '',
 			position: item.position ?? 0
 		};
-		showFormSlideOver = true;
+		showFormModal = true;
 		// The list row is a summary (no content body, §44) — fetch the full page
 		// so editing doesn't clobber stored TipTap content with empty text.
 		const detail = await docsApi.get(item.id);
@@ -393,7 +392,7 @@
 					if (!r.ok) errorMessage = t('docs.saved_transition_failed', `Saved, but publish failed: ${r.error}`);
 				}
 			}
-			showFormSlideOver = false;
+			showFormModal = false;
 			loadDocs();
 		} else {
 			errorMessage = result.error;
@@ -455,7 +454,7 @@
 		generateSubcategory = '';
 		generateError = '';
 		generateSuccess = '';
-		showGenerateSlideOver = true;
+		showGenerateModal = true;
 	}
 
 	function slugifyGenerateTitle() {
@@ -465,7 +464,7 @@
 	}
 
 	function closeGenerate() {
-		showGenerateSlideOver = false;
+		showGenerateModal = false;
 	}
 
 	async function submitGenerate() {
@@ -495,7 +494,7 @@
 			generatePrompt = '';
 			generateRelated = '';
 			setTimeout(() => {
-				showGenerateSlideOver = false;
+				showGenerateModal = false;
 				generateSuccess = '';
 			}, 2000);
 		} else {
@@ -549,8 +548,8 @@
 	actions={rowActions}
 />
 
-<!-- Create/Edit SlideOver -->
-<SlideOver bind:open={showFormSlideOver} title={editingId ? t('docs.edit_doc_page') : t('docs.new_doc_page')} size="lg">
+<!-- Create/Edit Modal -->
+<Modal bind:open={showFormModal} title={editingId ? t('docs.edit_doc_page') : t('docs.new_doc_page')} size="lg">
 	<div class="space-y-3">
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div>
@@ -636,16 +635,16 @@
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => { showFormSlideOver = false; }}>{t('docs.cancel')}</Button>
+			<Button variant="outline" onclick={() => { showFormModal = false; }}>{t('docs.cancel')}</Button>
 			<Button onclick={submit} disabled={saving}>
 				{saving ? t('docs.saving') : (editingId ? t('docs.update') : t('docs.create'))}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
-<!-- AI Generation SlideOver (DOC-010) -->
-<SlideOver bind:open={showGenerateSlideOver} title={t('docs.generate_with_ai', 'Generate with AI')} size="lg">
+<!-- AI Generation Modal (DOC-010) -->
+<Modal bind:open={showGenerateModal} title={t('docs.generate_with_ai', 'Generate with AI')} size="lg">
 	<div class="space-y-3">
 		{#if generateError}
 			<div class="rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
@@ -729,7 +728,7 @@
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={showDeleteConfirm} title={t('docs.confirm_delete')} size="sm">

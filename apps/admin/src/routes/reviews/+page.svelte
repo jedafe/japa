@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
 	// /reviews — migrated to the EntityPage scaffold. Moderation entity (no create):
-	// View (slide-over), Moderate (page-local Modal → PATCH status), Delete (confirm → DELETE).
+	// View (modal), Moderate (page-local Modal → PATCH status), Delete (confirm → DELETE).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
@@ -335,7 +335,7 @@
 	</div>
 </Modal>
 
-<!-- ── View snippet (slide-over body) ────────────────────────────────────── -->
+<!-- ── View snippet (modal body) ────────────────────────────────────── -->
 {#snippet ReviewView({ row }: { row: Review })}
 	<div class="space-y-4">
 		<div>

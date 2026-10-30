@@ -1032,6 +1032,26 @@ func (q *Queries) GdprDeleteReactionsByUser(ctx context.Context, userID pgtype.U
 	return err
 }
 
+const gdprDeleteSpaceMembersByUser = `-- name: GdprDeleteSpaceMembersByUser :exec
+DELETE FROM space_members WHERE user_id = $1
+`
+
+// BUG-033: membership rows reference the erased user; delete on erasure.
+func (q *Queries) GdprDeleteSpaceMembersByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteSpaceMembersByUser, userID)
+	return err
+}
+
+const gdprDeleteSpaceModeratorsByUser = `-- name: GdprDeleteSpaceModeratorsByUser :exec
+DELETE FROM space_moderators WHERE user_id = $1 OR assigned_by_user_id = $1
+`
+
+// BUG-033: moderator assignments reference the erased user; delete on erasure.
+func (q *Queries) GdprDeleteSpaceModeratorsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteSpaceModeratorsByUser, userID)
+	return err
+}
+
 const gdprDeleteUnifiedForumBookmarksByUser = `-- name: GdprDeleteUnifiedForumBookmarksByUser :exec
 DELETE FROM bookmarks
 WHERE user_id = $1 AND entity_type IN ('forum_thread', 'forum_reply')
@@ -2591,6 +2611,28 @@ type GdprReassignCalendarEntriesSubmittedByParams struct {
 // erasure (BUG-025). The entries are community content, not user PII.
 func (q *Queries) GdprReassignCalendarEntriesSubmittedBy(ctx context.Context, arg GdprReassignCalendarEntriesSubmittedByParams) error {
 	_, err := q.db.Exec(ctx, gdprReassignCalendarEntriesSubmittedBy, arg.TargetUserID, arg.UserID)
+	return err
+}
+
+const gdprSoftDeleteSoleOwnedSpacesByUser = `-- name: GdprSoftDeleteSoleOwnedSpacesByUser :exec
+UPDATE spaces SET deleted_at = now(), status = 'deleted'
+WHERE deleted_at IS NULL
+  AND id IN (
+    SELECT sm.space_id FROM space_members sm
+    WHERE sm.user_id = $1 AND sm.role = 'owner' AND sm.status = 'approved'
+      AND NOT EXISTS (
+        SELECT 1 FROM space_members o
+        WHERE o.space_id = sm.space_id AND o.role = 'owner'
+          AND o.status = 'approved' AND o.user_id != $1
+      )
+  )
+`
+
+// BUG-033: a space whose only approved owner is being erased would be
+// permanently orphaned (sole owner cannot leave; only the owner can delete).
+// Soft-delete it alongside the user so moderation cannot stall forever.
+func (q *Queries) GdprSoftDeleteSoleOwnedSpacesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprSoftDeleteSoleOwnedSpacesByUser, userID)
 	return err
 }
 

@@ -84,26 +84,35 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	assignedBy := "site_admin"
 	assignedByID := user.UserID
 
-	isOwner, err := h.Service.IsOwner(r.Context(), space.ID, user.UserID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
+	// BUG-013: a caller holding the static spaces.moderator.assign node uses
+	// the site_admin path (no membership requirement) even when they also
+	// happen to own the space. Only a caller whose grant comes purely from
+	// ownership takes the space_owner path.
+	hasStaticNode := h.permChecker != nil &&
+		h.permChecker.HasPermission(r.Context(), user.UserID, "spaces.moderator.assign")
 
-	if isOwner {
-		assignedBy = "space_owner"
-		// Section 03: space_owner path requires the target to be an existing
-		// member of the space before promoting to moderator.
-		isMember, err := h.Service.IsMember(r.Context(), space.ID, targetUserID)
+	if !hasStaticNode {
+		isOwner, err := h.Service.IsOwner(r.Context(), space.ID, user.UserID)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		if !isMember {
-			errpkg.WriteError(w, http.StatusBadRequest, "not_a_member",
-				"Target user must be a member of the space before being assigned as a moderator")
-			return
+		if isOwner {
+			assignedBy = "space_owner"
+			// Section 03: space_owner path requires the target to be an
+			// existing member of the space before promoting to moderator.
+			isMember, err := h.Service.IsMember(r.Context(), space.ID, targetUserID)
+			if err != nil {
+				handleServiceError(w, err)
+				return
+			}
+
+			if !isMember {
+				errpkg.WriteError(w, http.StatusBadRequest, "not_a_member",
+					"Target user must be a member of the space before being assigned as a moderator")
+				return
+			}
 		}
 	}
 

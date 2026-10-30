@@ -20,8 +20,14 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
   Future<void> _join() async {
     setState(() => _loading = true);
     try {
-      await ref.read(spacesServiceProvider).join(widget.slug);
+      final result = await ref.read(spacesServiceProvider).join(widget.slug);
       if (mounted) {
+        final t = ref.read(tProvider);
+        if (result['pending'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t('spaces.join_request_pending'))),
+          );
+        }
         ref.invalidate(spaceDetailProvider(widget.slug));
       }
     } catch (e) {

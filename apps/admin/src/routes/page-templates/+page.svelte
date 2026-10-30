@@ -211,7 +211,7 @@
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-<!-- View slide-over body (mirrors the legacy view fields) -->
+<!-- View modal body (mirrors the legacy view fields) -->
 {#snippet TemplateView({ row }: { row: PageTemplate })}
 	<div class="space-y-4">
 		<div>

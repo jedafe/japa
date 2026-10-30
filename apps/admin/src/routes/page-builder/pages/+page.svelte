@@ -4,7 +4,7 @@
 	// List + page metadata CRUD via EntityPage; state actions (publish/archive)
 	// keep page-local confirm Modals and refetch via entityController.reload().
 	// The block-editor detail page lives at /page-builder/pages/[id] (untouched):
-	// Edit navigates there rather than opening a SlideOver form.
+	// Edit navigates there rather than opening a Modal form.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
@@ -285,7 +285,7 @@
 
 	// ── Row actions ─────────────────────────────────────────────────────────
 	// Custom actions replace defaults. Edit navigates to the dnd-kit block
-	// editor at /page-builder/pages/[id] rather than opening a SlideOver form.
+	// editor at /page-builder/pages/[id] rather than opening a Modal form.
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
 			{ label: t('common.view', 'View'), icon: Eye, onclick: (row: Page, ctx) => ctx?.openView(row) },
@@ -581,7 +581,7 @@
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-<!-- View slide-over body (mirrors the legacy view) -->
+<!-- View modal body (mirrors the legacy view) -->
 {#snippet PageView({ row }: { row: Page })}
 	<div class="space-y-4">
 		<div>

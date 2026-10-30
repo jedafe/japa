@@ -5,10 +5,9 @@
 	// The menu list + menu CRUD use the shared EntityPage scaffold (declarative
 	// `fields`). The rich menu-ITEM editor (add/edit/delete/reorder items with
 	// icon picker, route suggestions, permission node, group selection, nesting,
-	// visibility, target) is kept as a page-local `<SlideOver>` sub-flow that
-	// mirrors the tags moderators SlideOver pattern.
+	// visibility, target) is kept as a page-local `<Modal>` sub-flow that
+	// mirrors the tags moderators Modal pattern.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -229,8 +228,8 @@
 		viewSnippet: MenuView
 	};
 
-	// ── Menu-ITEM editor (page-local SlideOver sub-flow) ──────────────────────
-	// Mirrors the tags moderators SlideOver pattern. Loads the full items tree via
+	// ── Menu-ITEM editor (page-local Modal sub-flow) ──────────────────────
+	// Mirrors the tags moderators Modal pattern. Loads the full items tree via
 	// `menusAdminApi.get(id)` and supports add/edit/delete/reorder through the
 	// item endpoints, calling `entityController?.reload()` after every mutation.
 	let showItemsModal = $state(false);
@@ -609,8 +608,8 @@ loadPermissionNodes();
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- Menu Items editor (page-local SlideOver) -->
-<SlideOver bind:open={showItemsModal} title={t('menus.items', 'Items')} size="lg">
+<!-- Menu Items editor (page-local Modal) -->
+<Modal bind:open={showItemsModal} title={t('menus.items', 'Items')} size="lg">
 	{#if itemsMenu}
 		<div class="space-y-4">
 			<div>
@@ -705,7 +704,7 @@ loadPermissionNodes();
 			{t('common.close', 'Close')}
 		</Button>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Item Create/Edit Modal -->
 <Modal bind:open={showItemModal} title={editingItem ? t('menus.edit_item', 'Edit Item') : t('menus.add_item', 'Add Item')}>
@@ -878,7 +877,7 @@ loadPermissionNodes();
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-<!-- View slide-over body: menu basic fields + read-only tree of its items -->
+<!-- View modal body: menu basic fields + read-only tree of its items -->
 {#snippet MenuView({ row }: { row: Menu })}
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">

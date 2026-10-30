@@ -2,13 +2,12 @@
 	import { siteName } from '$lib/stores/site.svelte';
 	// /spaces — migrated to EntityPage scaffold. EntityPage owns list/pagination/
 	// search/filter state and URL sync. Page keeps local Modals for Suspend
-	// (reason input) and Delete confirmation, plus a page-local Edit SlideOver
+	// (reason input) and Delete confirmation, plus a page-local Edit Modal
 	// (name + visibility). View opens via ctx.openView; Manage navigates to the
 	// dedicated detail route.
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
-	import { SlideOver } from "$lib/components/ui/slide-over";
 	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
 	import { spacesAdminApi, adminCatalogApi, spaceTypesApi, type CatalogOption } from "$lib/api";
 	import { goto } from "$app/navigation";
@@ -83,8 +82,8 @@
 	let pageError = $state("");
 	let acting = $state(false);
 
-	// Edit SlideOver (page-local — name + visibility)
-	let showEditSlideOver = $state(false);
+	// Edit Modal (page-local — name + visibility)
+	let showEditModal = $state(false);
 	let editTarget = $state<Space | null>(null);
 	let editName = $state("");
 	let editVisibility = $state("");
@@ -181,7 +180,7 @@
 		description: t("spaces.description", "Manage platform spaces"),
 		createPermission: "spaces.admin",
 		// No built-in EntityForm — spaces use the dedicated /spaces/new page
-		// and a page-local edit SlideOver (type/level/parent can't be edited
+		// and a page-local edit Modal (type/level/parent can't be edited
 		// through the generic form anyway). hideCreate suppresses the generic
 		// Create button; the "Create Space" header action navigates instead.
 		fields: [],
@@ -270,7 +269,7 @@
 		editTarget = space;
 		editName = space.name;
 		editVisibility = space.visibility;
-		showEditSlideOver = true;
+		showEditModal = true;
 	}
 
 	function confirmDelete(space: Space) {
@@ -290,7 +289,7 @@
 		try {
 			const result = await spacesAdminApi.update(editTarget.id, { name: editName, visibility: editVisibility });
 			if (result.ok) {
-				showEditSlideOver = false;
+				showEditModal = false;
 				entityController?.reload();
 			} else {
 				pageError = result.error;
@@ -411,8 +410,8 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- Edit SlideOver (page-local — name + visibility) -->
-<SlideOver bind:open={showEditSlideOver} title={t("spaces.edit", "Edit Space")}>
+<!-- Edit Modal (page-local — name + visibility) -->
+<Modal bind:open={showEditModal} title={t("spaces.edit", "Edit Space")}>
 	{#if editTarget}
 		<div class="space-y-4">
 			<div>
@@ -437,11 +436,11 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => (showEditSlideOver = false)}>{t('spaces.cancel')}</Button>
+			<Button variant="outline" onclick={() => (showEditModal = false)}>{t('spaces.cancel')}</Button>
 			<Button onclick={saveEdit} disabled={acting}>{acting ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={showDeleteConfirm} title={t("common.confirmDelete", "Confirm Delete")} size="sm">

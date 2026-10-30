@@ -5,7 +5,6 @@
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { DataTable } from '$lib/components/ui/data-table';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
@@ -87,7 +86,7 @@
 		bulkDelete?: boolean;
 		/** Set true to hide the built-in "Create" header button — for pages that
 		 *  create rows through a dedicated route or `headerActions` instead of
-		 *  the generic EntityForm slide-over. Default: shown when permitted. */
+		 *  the generic EntityForm modal. Default: shown when permitted. */
 		hideCreate?: boolean;
 		/** Show an Export button that downloads all filtered rows as CSV. */
 		exportable?: boolean;
@@ -95,7 +94,7 @@
 		exportFilename?: string;
 		onCreated?: (id: string) => void;
 		viewSnippet?: Snippet<[{ row: any }]>;
-		/** Called whenever the view slide-over transitions from open to closed.
+		/** Called whenever the view modal transitions from open to closed.
 		 *  Lets pages clear deep-link params (e.g. ?view=<id>) so re-clicking the
 		 *  same link re-opens the view. */
 		onViewClose?: () => void;
@@ -157,14 +156,14 @@
 	// untrack: we deliberately only read the initial defaultViewMode once.
 	let viewMode = $state<'list' | 'grid'>(untrack(() => config.defaultViewMode ?? 'list'));
 
-	// Create/edit slide-over
+	// Create/edit modal
 	let formOpen = $state(false);
 	let editing = $state<any | null>(null);
 	let formValue = $state<Record<string, any>>({});
 	let formErrors = $state<Record<string, string>>({});
 	let saving = $state(false);
 
-	// View slide-over
+	// View modal
 	let viewOpen = $state(false);
 	let viewTarget = $state<any | null>(null);
 
@@ -355,7 +354,7 @@
 		if (ps && ps !== untrack(() => pageSize)) pageSize = ps;
 	});
 
-	// ── Row actions: custom actions get an ActionContext; defaults open the slide-overs ──
+	// ── Row actions: custom actions get an ActionContext; defaults open the modals ──
 	const actionCtx = $derived.by<ActionContext>(() => ({ openView, openEdit, openDelete, reload }));
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		if (config.actions) {
@@ -457,7 +456,7 @@
 		viewOpen = true;
 	}
 
-	// Notify on view slide-over close so pages can clear deep-link params.
+	// Notify on view modal close so pages can clear deep-link params.
 	let prevViewOpen = false;
 	$effect(() => {
 		if (prevViewOpen && !viewOpen) config.onViewClose?.();
@@ -996,8 +995,8 @@
 	</CardContent>
 </Card>
 
-<!-- Create/Edit slide-over -->
-<SlideOver bind:open={formOpen} title={formTitle}>
+<!-- Create/Edit modal -->
+<Modal bind:open={formOpen} title={formTitle}>
 	{#if config.formSnippet}
 		{@render config.formSnippet({ value: formValue, editing })}
 	{:else}
@@ -1012,10 +1011,10 @@
 			{t('common.save', 'Save Changes')}
 		</Button>
 	{/snippet}
-</SlideOver>
+</Modal>
 
-<!-- View slide-over -->
-<SlideOver bind:open={viewOpen} title={t('common.view', 'View')}>
+<!-- View modal -->
+<Modal bind:open={viewOpen} title={t('common.view', 'View')}>
 	{#if viewTarget}
 		{#if config.viewSnippet}
 			{@render config.viewSnippet({ row: viewTarget })}
@@ -1040,7 +1039,7 @@
 			{t('common.close', 'Close')}
 		</Button>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Delete-confirm modal (soft delete) -->
 <Modal bind:open={confirmOpen} title={t('common.confirmDelete', 'Confirm Delete')}>

@@ -345,7 +345,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet CredentialCheckerView({ row }: { row: CredentialCheckerItem })}
 	<div class="space-y-4">
 		<div>

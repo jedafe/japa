@@ -320,7 +320,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet ArrivalChecklistView({ row }: { row: ArrivalChecklistGuide })}
 	<div class="space-y-4">
 		<div>

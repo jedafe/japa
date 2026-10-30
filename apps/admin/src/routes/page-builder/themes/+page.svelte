@@ -244,7 +244,7 @@
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-<!-- View slide-over body (mirrors the legacy view) -->
+<!-- View modal body (mirrors the legacy view) -->
 {#snippet ThemeView({ row }: { row: PageTheme })}
 	<div class="space-y-4">
 		<div>

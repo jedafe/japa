@@ -3934,6 +3934,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/spaces/{slug}/join", spaceHandlers.ToggleSpaceMembership)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/members", spaceHandlers.ListMembers)
+			// Invite path (§05 joining='invite'): owner/mod/admin adds a member directly.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
+				Post("/spaces/{slug}/members", spaceHandlers.AddMember)
 
 			// Space follow/unfollow (Section 31) — M5: rate-limited
 			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), spaces.SpaceResolver(spaceService), mw.RateLimit(vkClient.Redis(), "moderate")).

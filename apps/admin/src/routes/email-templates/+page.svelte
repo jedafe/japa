@@ -316,7 +316,7 @@
 	</span>
 {/snippet}
 
-<!-- View slide-over body -->
+<!-- View modal body -->
 {#snippet TemplateView({ row }: { row: EmailTemplate })}
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">

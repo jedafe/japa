@@ -211,7 +211,7 @@
 	</span>
 {/snippet}
 
-<!-- View slide-over body (mirrors the legacy view modal) -->
+<!-- View modal body (mirrors the legacy view modal) -->
 {#snippet AlertView({ row }: { row: ModerationAlert })}
 	<div class="space-y-3">
 		<div>

@@ -419,7 +419,7 @@
 	</div>
 </Modal>
 
-<!-- View slide-over body -->
+<!-- View modal body -->
 {#snippet ComparisonView({ row }: { row: Comparison })}
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">

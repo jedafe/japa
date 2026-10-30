@@ -32,7 +32,7 @@ func NewUnreadCounter(vk *valkey.Client) *UnreadCounter {
 
 // unreadKey builds the Valkey key for a platform/user/space unread counter pair.
 func unreadKey(userID, spaceID pgtype.UUID) string {
-	return valkey.MustKey("space_unread::%s:%s", userID.String(), spaceID.String())
+	return valkey.MustKey("space_unread:%s:%s", userID.String(), spaceID.String())
 }
 
 // Increment increments the unread count for a user in a space.

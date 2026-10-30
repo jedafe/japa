@@ -22,6 +22,12 @@ func (h *Handlers) ListSpaceRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-001: rules of non-public spaces are member-only.
+	if space.Visibility != VisibilityPublic && !h.canViewRestrictedSpace(r, space.ID) {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+		return
+	}
+
 	rules, err := h.Service.ListSpaceRules(r.Context(), space.ID)
 	if err != nil {
 		handleServiceError(w, err)

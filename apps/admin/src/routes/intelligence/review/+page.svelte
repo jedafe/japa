@@ -6,7 +6,6 @@
 	// /intel/review/{id}/*.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -506,8 +505,8 @@
 	</div>
 </Modal>
 
-<!-- ── Edit slide-over ───── -->
-<SlideOver bind:open={showEditPanel} title={t('intel.edit_extracted', 'Edit Extracted Data')} size="lg">
+<!-- ── Edit modal ───── -->
+<Modal bind:open={showEditPanel} title={t('intel.edit_extracted', 'Edit Extracted Data')} size="lg">
 	{#if editTarget}
 		<div class="space-y-4">
 			<div>
@@ -538,7 +537,7 @@
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- ── View snippet ──────────────────────────────────────────────────────── -->
 {#snippet ReviewView({ row }: { row: ReviewRecord })}

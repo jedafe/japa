@@ -219,7 +219,7 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet AchievementView({ row }: { row: AchievementItem })}
 	<div class="space-y-4">
 		<div>

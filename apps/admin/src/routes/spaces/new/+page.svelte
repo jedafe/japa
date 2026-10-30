@@ -32,7 +32,8 @@
 		{ value: "country", label: t("spaces.level_country", "Country") },
 		{ value: "state", label: t("spaces.level_state", "State") },
 		{ value: "city", label: t("spaces.level_city", "City") },
-		{ value: "custom", label: t("spaces.level_custom", "Custom") }
+		{ value: "custom", label: t("spaces.level_custom", "Custom") },
+		{ value: "global", label: t("spaces.level_global", "Global") }
 	]);
 
 	// Local-list fetchers — every option set is loaded from the API once and

@@ -82,7 +82,7 @@
 	}
 
 	// ── Row actions ─────────────────────────────────────────────────────────
-	// Custom actions replace defaults; View opens the slide-over, Approve/Reject are state actions, View Live opens the public post.
+	// Custom actions replace defaults; View opens the modal, Approve/Reject are state actions, View Live opens the public post.
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
 			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: ReviewItem, ctx) => ctx?.openView(_row) }
@@ -219,7 +219,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet ReviewView({ row }: { row: ReviewItem })}
 	<div class="space-y-4">
 		<div>

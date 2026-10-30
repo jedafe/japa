@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -21,6 +22,16 @@ import (
 // ---------------------------------------------------------------------------
 // Space Handlers
 // ---------------------------------------------------------------------------
+
+// spaceSlugRe validates member-supplied space slugs (BUG-007); uuidLikeRe
+// and reservedSlugs reject values that would collide with UUID-lookup or
+// static sibling routes under /spaces/.
+var spaceSlugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,63}$`)
+var uuidLikeRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+var reservedSlugs = map[string]bool{
+	"search": true, "regions": true, "subregions": true,
+	"suggest-parents": true, "me": true, "admin": true, "new": true,
+}
 
 // ListSpaces handles GET /api/v1/spaces. Optional query params filter the
 // result set: q (search by name/slug), level (by hierarchy level), type (by
@@ -586,36 +597,20 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if space.Visibility == VisibilityPrivate {
-		allowed := false
+	// BUG-001: non-public spaces (visibility='members' or 'private') are
+	// hidden from non-members — same rule the list queries enforce. The
+	// 'private' and 'admin_only' presets produce visibility='members', so
+	// gating only 'private' leaked every members-only space by slug.
+	if space.Visibility != VisibilityPublic && !h.canViewRestrictedSpace(r, space.ID) {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+		return
+	}
 
-		if viewer := auth.FromContext(r.Context()); viewer != nil && viewer.UserID.Valid {
-			ctx := r.Context()
-			if isMember, err := h.Service.IsMember(ctx, space.ID, viewer.UserID); err == nil && isMember {
-				allowed = true
-			}
-
-			if !allowed {
-				if isModerator, err := h.Service.IsModerator(ctx, space.ID, viewer.UserID); err == nil && isModerator {
-					allowed = true
-				}
-			}
-
-			if !allowed {
-				if isOwner, err := h.Service.IsOwner(ctx, space.ID, viewer.UserID); err == nil && isOwner {
-					allowed = true
-				}
-			}
-
-			if !allowed && h.permChecker != nil && h.permChecker.HasPermission(ctx, viewer.UserID, "spaces.moderate") {
-				allowed = true
-			}
-		}
-
-		if !allowed {
-			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
-			return
-		}
+	// BUG-006: non-active spaces (suspended/archived/draft) are offline —
+	// only the owner/moderators/platform moderators may still view them.
+	if space.Status != StatusActive && !h.canViewRestrictedSpace(r, space.ID) {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+		return
 	}
 
 	rules, err := h.Service.ListSpaceRules(r.Context(), space.ID)
@@ -689,6 +684,11 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 			isMember = rel.IsMember
 			isPending = rel.IsPending
 			isFollowing = rel.IsFollowing
+		}
+
+		// BUG-016: visiting the space resets its unread counter (§05).
+		if isMember && h.Unread != nil {
+			_ = h.Unread.Reset(r.Context(), user.UserID, space.ID)
 		}
 	}
 
@@ -820,13 +820,33 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-003: primary geo levels are system-seeded — members create custom
+	// spaces only. Geo levels require the spaces.admin node.
+	isAdmin := h.permChecker != nil && h.permChecker.HasPermission(r.Context(), user.UserID, "spaces.admin")
+	if req.Level != LevelCustom && !isAdmin {
+		errpkg.WriteError(w, http.StatusForbidden, "invalid_level",
+			"Only platform admins can create geo-level spaces")
+		return
+	}
+
+	// BUG-007: validate the slug — unvalidated slugs could collide with
+	// static routes (/spaces/search, /spaces/regions, ...) or a raw UUID.
+	slug := strings.ToLower(strings.TrimSpace(req.Slug))
+	if !spaceSlugRe.MatchString(slug) || uuidLikeRe.MatchString(slug) || reservedSlugs[slug] {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug",
+			"Slug must be 2-64 chars of lowercase letters, numbers, or hyphens, and not reserved")
+		return
+	}
+
 	// §26 / Section 03: enforce max_spaces_creatable quota from the caller's
 	// user group. -1 = unlimited, 0 = none, N = capped at N spaces.
 	maxSpaces, err := h.Service.GetUserMaxSpacesCreatable(r.Context(), user.UserID)
 	if err != nil {
+		// BUG-012: fail closed — a quota lookup error must not bypass the cap.
 		slog.Warn("create space: failed to load max_spaces_creatable quota",
 			"user_id", user.UserID.String(), "error", err)
-		// Fail open — don't block creation on a quota lookup failure.
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify space quota")
+		return
 	} else if maxSpaces == 0 {
 		errpkg.WriteError(w, http.StatusForbidden, "quota_exceeded",
 			"Your account is not allowed to create spaces")
@@ -836,6 +856,8 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Warn("create space: failed to count owned spaces",
 				"user_id", user.UserID.String(), "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify space quota")
+			return
 		} else if currentCount >= maxSpaces {
 			errpkg.WriteError(w, http.StatusForbidden, "quota_exceeded",
 				"You have reached the maximum number of spaces you can create")
@@ -853,6 +875,20 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	if req.ParentID != "" {
 		if err := parentID.Scan(req.ParentID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid parent_id format")
+			return
+		}
+
+		// BUG-004: parent_id must resolve to a primary (country/state/city)
+		// space — the same rule applied to parent_space_ids below.
+		parent, err := h.Service.GetSpace(r.Context(), parentID)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent", "Parent space not found")
+			return
+		}
+
+		if parent.Level != LevelCountry && parent.Level != LevelState && parent.Level != LevelCity {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent",
+				"Parent spaces must be primary (country, state, or city)")
 			return
 		}
 	}
@@ -938,7 +974,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		ParentID:       parentID,
 		SpaceTypeID:    spaceTypeID,
 		Name:           req.Name,
-		Slug:           req.Slug,
+		Slug:           slug,
 		Description:    req.Description,
 		GeoCode:        req.GeoCode,
 		Level:          req.Level,
@@ -957,8 +993,13 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	// Parent linkage was resolved before CreateSpaceWithOwner; see the
 	// Section 05 pre-check above.
 
-	// Enqueue async auto-population (Wikipedia summary, flag image, etc.).
-	h.Service.EnqueueAutoPopulate(r.Context(), space.ID)
+	// BUG-017: auto-population (Wikipedia/flag enrichment) is only
+	// meaningful for geo spaces and universities — skip it for ordinary
+	// member-created custom spaces.
+	if st, terr := h.Service.GetSpaceType(r.Context(), spaceTypeID); terr == nil &&
+		(req.Level != LevelCustom || st.Slug == "university" || st.WikiOnly) {
+		h.Service.EnqueueAutoPopulate(r.Context(), space.ID)
+	}
 	// Enqueue Meilisearch index sync so the new space is searchable
 	// immediately (BL-004).
 	h.Service.EnqueueSearchIndex(r.Context(), space.ID, "index")
@@ -1043,6 +1084,29 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	if req.JoiningPerm != "" && !validJoiningPerm[req.JoiningPerm] {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid joining_perm value")
 		return
+	}
+
+	// BUG-005: status transitions are admin-only. Without this, a space
+	// owner could re-activate a space an admin suspended (moderation
+	// bypass), or write a value outside the CHECK constraint.
+	if req.Status != "" {
+		if req.Status != StatusActive && req.Status != StatusArchived &&
+			req.Status != StatusDraft && req.Status != "suspended" {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Invalid status value")
+			return
+		}
+
+		statusAdmin := false
+		if resolver := rbac.FromContext(r.Context()); resolver != nil {
+			if u := auth.FromContext(r.Context()); u != nil && u.UserID.Valid {
+				statusAdmin = resolver.HasPermission(r.Context(), u.UserID, "spaces.admin")
+			}
+		}
+
+		if !statusAdmin {
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Only platform admins can change space status")
+			return
+		}
 	}
 
 	// Overlay provided fields onto the existing space, keeping current values
@@ -1281,7 +1345,9 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if memberCount > 1 {
+	// BUG-014: platform admins may delete regardless of member count —
+	// otherwise a populated space could never be removed.
+	if memberCount > 1 && !isAdmin {
 		errpkg.WriteError(w, http.StatusConflict, "space_not_empty",
 			"Cannot delete a space that still has members")
 		return

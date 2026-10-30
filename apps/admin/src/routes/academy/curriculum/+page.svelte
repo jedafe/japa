@@ -6,7 +6,6 @@
 	import { DataTable } from "$lib/components/ui/data-table";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
-	import { SlideOver } from "$lib/components/ui/slide-over";
 	import type { ActionItem, BulkAction } from "$lib/components/ui/data-table";
 	import { Plus, GraduationCap, Layers, FileText, Trash2, Send, Pencil, Users } from "lucide-svelte";
 	import { onMount } from "svelte";
@@ -80,8 +79,8 @@
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
 
-	// Create SlideOver
-	let showCreateSlideOver = $state(false);
+	// Create Modal
+	let showCreateModal = $state(false);
 	let creating = $state(false);
 	let newTrack = $state({ title: "", slug: "", description: "", difficulty: "", category: "", subscription_eligible: false });
 	let newModule = $state({ track_id: "", title: "", slug: "", description: "" });
@@ -96,8 +95,8 @@
 		sort_order: 0
 	});
 
-	// Edit SlideOver
-	let showEditSlideOver = $state(false);
+	// Edit Modal
+	let showEditModal = $state(false);
 	let editingItem = $state<any>(null);
 	let editForm = $state<Record<string, any>>({});
 	let savingEdit = $state(false);
@@ -358,7 +357,7 @@
 	// ── Create ─────────────────────────────────────────────────────────────
 
 	function openCreate() {
-		showCreateSlideOver = true;
+		showCreateModal = true;
 	}
 
 	async function createTrack() {
@@ -379,7 +378,7 @@
 				}
 			});
 			if (result.ok) {
-				showCreateSlideOver = false;
+				showCreateModal = false;
 				newTrack = { title: "", slug: "", description: "", difficulty: "", category: "", subscription_eligible: false };
 				await refresh();
 			} else {
@@ -407,7 +406,7 @@
 				}
 			});
 			if (result.ok) {
-				showCreateSlideOver = false;
+				showCreateModal = false;
 				newModule = { track_id: "", title: "", slug: "", description: "" };
 				await refresh();
 			} else {
@@ -438,7 +437,7 @@
 				}
 			});
 			if (result.ok) {
-				showCreateSlideOver = false;
+				showCreateModal = false;
 				newLesson = {
 					selectedTrackId: "",
 					module_id: "",
@@ -520,7 +519,7 @@
 				sort_order: item.sort_order ?? 0
 			};
 		}
-		showEditSlideOver = true;
+		showEditModal = true;
 	}
 
 	async function saveEdit() {
@@ -548,7 +547,7 @@
 				});
 			}
 			if (result.ok) {
-				showEditSlideOver = false;
+				showEditModal = false;
 				editingItem = null;
 				await refresh();
 			} else {
@@ -657,14 +656,14 @@
 
 	// When lesson create modal opens and we're on the lessons tab, pre-fetch tracks
 	$effect(() => {
-		if (showCreateSlideOver && activeTab === "lessons") {
+		if (showCreateModal && activeTab === "lessons") {
 			fetchTracks();
 		}
 	});
 
 	// When module create modal opens, pre-fetch tracks
 	$effect(() => {
-		if (showCreateSlideOver && activeTab === "modules") {
+		if (showCreateModal && activeTab === "modules") {
 			fetchTracks();
 		}
 	});
@@ -723,8 +722,8 @@
 <!-- ══════════════════════════════════════════════════════════════════════════
      CREATE MODAL
      ══════════════════════════════════════════════════════════════════════════ -->
-<SlideOver
-	bind:open={showCreateSlideOver}
+<Modal
+	bind:open={showCreateModal}
 	title={`${t('app.academy.create_prefix', 'Create')} ${activeTab === "tracks" ? t('app.academy.track', 'Track') : activeTab === "modules" ? t('app.academy.module', 'Module') : t('app.academy.lesson', 'Lesson')}`}
 	size="lg"
 >
@@ -918,7 +917,7 @@
 
 	{#snippet footer()}
 		<div class="flex justify-end gap-3">
-			<Button variant="outline" onclick={() => (showCreateSlideOver = false)}>{t('academy.cancel')}</Button>
+			<Button variant="outline" onclick={() => (showCreateModal = false)}>{t('academy.cancel')}</Button>
 			<Button
 				onclick={activeTab === "tracks" ? createTrack : activeTab === "modules" ? createModule : createLesson}
 				disabled={creating}
@@ -931,13 +930,13 @@
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
      EDIT MODAL
      ══════════════════════════════════════════════════════════════════════════ -->
-<SlideOver
-	bind:open={showEditSlideOver}
+<Modal
+	bind:open={showEditModal}
 	title={editingItem?._type === "track"
 		? t('app.academy.edit_track', 'Edit Track')
 		: editingItem?._type === "module"
@@ -1102,7 +1101,7 @@
 
 	{#snippet footer()}
 		<div class="flex justify-end gap-3">
-			<Button variant="outline" onclick={() => (showEditSlideOver = false)}>{t('academy.cancel')}</Button>
+			<Button variant="outline" onclick={() => (showEditModal = false)}>{t('academy.cancel')}</Button>
 			<Button onclick={saveEdit} disabled={savingEdit}>
 				{#if savingEdit}
 					{t('app.academy.saving', 'Saving...')}
@@ -1112,7 +1111,7 @@
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
      DELETE CONFIRMATION MODAL

@@ -26,6 +26,14 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-002: the content filter gates on content visibility, not the
+	// space's — without this, guests could read public posts inside
+	// members-only/private spaces.
+	if space.Visibility != VisibilityPublic && !h.canViewRestrictedSpace(r, space.ID) {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+		return
+	}
+
 	limit := parsePageSize(r)
 	filter := visibility.VisibilityFilterFromRequest(r)
 
@@ -91,6 +99,12 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListPinned(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
 	if !ok {
+		return
+	}
+
+	// BUG-002: same space-visibility gate as ListSpaceContent.
+	if space.Visibility != VisibilityPublic && !h.canViewRestrictedSpace(r, space.ID) {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 		return
 	}
 

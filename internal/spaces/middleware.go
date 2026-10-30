@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
@@ -50,6 +51,28 @@ func SpaceResolver(service *Service) func(http.Handler) http.Handler {
 				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
 
 				return
+			}
+
+			// BUG-006: non-active spaces are offline for non-managers. The
+			// resolver is on every slug-scoped route, so this single gate
+			// blocks joins, rules, parents, mutes, etc. for suspended spaces.
+			if space.Status != StatusActive {
+				allowed := false
+				if u := auth.FromContext(r.Context()); u != nil && u.UserID.Valid {
+					if ok, cerr := service.CanManageSpace(r.Context(), space.ID, u.UserID); cerr == nil && ok {
+						allowed = true
+					}
+					if !allowed {
+						if res := rbac.FromContext(r.Context()); res != nil &&
+							res.HasPermission(r.Context(), u.UserID, "spaces.admin") {
+							allowed = true
+						}
+					}
+				}
+				if !allowed {
+					errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+					return
+				}
 			}
 
 			ctx := context.WithValue(r.Context(), SpaceContextKey, &space)

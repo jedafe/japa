@@ -24,7 +24,7 @@
 	import { Eye, Pencil, Trash2, FolderTree, Layers, X, CheckCircle, XCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { Modal } from '$lib/components/ui/modal';
 
 	const canManage = $derived(hasPermission('wiki.manage'));
 
@@ -142,7 +142,7 @@
 	}
 
 	// ── §80 attractions: Wikidata bulk seed ──────────────────────────────
-	// The seed slide-over resolves a geo parent space (country/state/city)
+	// The seed modal resolves a geo parent space (country/state/city)
 	// by slug, previews candidates via dry_run, then enqueues the
 	// wiki:seed_attractions task.
 	let seedOpen = $state(false);
@@ -266,7 +266,7 @@
 			}
 		},
 		// §80 attractions: Wikidata bulk seed — only meaningful on the
-		// attraction wiki type; opens the seed slide-over.
+		// attraction wiki type; opens the seed modal.
 		{
 			label: t('app.wiki.seed_attractions', 'Seed attractions'),
 			icon: Sparkles,
@@ -979,9 +979,9 @@
 	{/if}
 </div>
 
-<!-- §80 attractions — Wikidata bulk seed slide-over: pick a geo parent,
+<!-- §80 attractions — Wikidata bulk seed modal: pick a geo parent,
      preview candidates (dry run), then enqueue wiki:seed_attractions. -->
-<SlideOver bind:open={seedOpen} title={t('app.wiki.seed_attractions_title', 'Seed attractions')} size="default">
+<Modal bind:open={seedOpen} title={t('app.wiki.seed_attractions_title', 'Seed attractions')} size="default">
 	<div class="space-y-4">
 		<p class="text-xs leading-relaxed" style="color: var(--color-muted)">
 			{t(
@@ -1073,7 +1073,7 @@
 			</Button>
 		</div>
 	</div>
-</SlideOver>
+</Modal>
 
 {#snippet BoolCell({ value }: { value: boolean; row: unknown })}
 	<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {value ? 'bg-success/15 text-success' : 'bg-muted/15 text-muted'}">

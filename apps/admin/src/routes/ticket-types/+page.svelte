@@ -184,7 +184,7 @@
 	</span>
 {/snippet}
 
-<!-- View slide-over body -->
+<!-- View modal body -->
 {#snippet TicketTypeView({ row }: { row: TicketType })}
 	<div class="space-y-4">
 		<div>

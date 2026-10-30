@@ -10,7 +10,6 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { ArrowLeft, Pause, Play, StopCircle, BarChart3 } from 'lucide-svelte';
 
 	// Ref: japaconnect-engineering/sections/25-ad-placement.md — backend
@@ -66,7 +65,7 @@
 	// Stats
 	let stats = $state<CampaignStats | null>(null);
 	let statsLoading = $state(false);
-	let showStatsSlideOver = $state(false);
+	let showStatsModal = $state(false);
 
 	// End campaign confirm
 	let showEndConfirm = $state(false);
@@ -165,7 +164,7 @@
 	async function viewStats() {
 		if (!campaign) return;
 		statsLoading = true;
-		showStatsSlideOver = true;
+		showStatsModal = true;
 		stats = null;
 		try {
 			const result = await adsAdminApi.getCampaignStats(campaign.id);
@@ -381,8 +380,8 @@
 	</div>
 {/if}
 
-<!-- Stats SlideOver (view-detail) -->
-<SlideOver bind:open={showStatsSlideOver} title={campaign ? `${t('ads.stats', 'Statistics')}: ${campaign.name}` : t('ads.stats', 'Statistics')} size="lg">
+<!-- Stats Modal (view-detail) -->
+<Modal bind:open={showStatsModal} title={campaign ? `${t('ads.stats', 'Statistics')}: ${campaign.name}` : t('ads.stats', 'Statistics')} size="lg">
 	{#if statsLoading}
 		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else if stats}
@@ -446,10 +445,10 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end">
-			<Button variant="outline" onclick={() => (showStatsSlideOver = false)}>{t('common.close', 'Close')}</Button>
+			<Button variant="outline" onclick={() => (showStatsModal = false)}>{t('common.close', 'Close')}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- End Campaign Confirm -->
 <Modal bind:open={showEndConfirm} title={t('common.confirmDelete', 'Confirm End')}>

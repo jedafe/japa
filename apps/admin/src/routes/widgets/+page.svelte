@@ -528,7 +528,7 @@
 	</div>
 {/snippet}
 
-<!-- View slide-over body -->
+<!-- View modal body -->
 {#snippet WidgetView({ row }: { row: Widget })}
 	<div class="space-y-4">
 		<div>

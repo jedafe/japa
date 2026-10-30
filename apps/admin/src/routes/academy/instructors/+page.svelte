@@ -3,7 +3,6 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
-	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { academyAdminApi, adminCatalogApi, type CatalogOption } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -60,12 +59,12 @@
 	let pageError = $state("");
 	let acting = $state(false);
 
-	let showApproveSlideOver = $state(false);
+	let showApproveModal = $state(false);
 	let showRejectModal = $state(false);
 	let showSuspendModal = $state(false);
 	let showReinstateModal = $state(false);
 	let showDeleteModal = $state(false);
-	let showEditTierSlideOver = $state(false);
+	let showEditTierModal = $state(false);
 	let target = $state<AcademyInstructorProfile | null>(null);
 
 	let approveTier = $state("standard");
@@ -191,7 +190,7 @@
 		target = i;
 		approveTier = i.tier === "pending" ? "standard" : i.tier;
 		approveCommission = i.commission_pct_override != null ? String(i.commission_pct_override) : "";
-		showApproveSlideOver = true;
+		showApproveModal = true;
 	}
 
 	function openReject(i: AcademyInstructorProfile) { target = i; showRejectModal = true; }
@@ -203,7 +202,7 @@
 		target = i;
 		editTier = i.tier;
 		editCommission = i.commission_pct_override != null ? String(i.commission_pct_override) : "";
-		showEditTierSlideOver = true;
+		showEditTierModal = true;
 	}
 
 	async function doApprove() {
@@ -215,7 +214,7 @@
 			if (approveTier) body.tier = approveTier;
 			if (approveCommission.trim()) body.commission_pct_override = Number(approveCommission);
 			const result = await academyAdminApi.approveInstructor(target.id, body);
-			if (result.ok) { showApproveSlideOver = false; entityController?.reload(); }
+			if (result.ok) { showApproveModal = false; entityController?.reload(); }
 			else { pageError = result.error; }
 		} catch { pageError = t("common.error", "Failed to approve instructor"); } finally { acting = false; }
 	}
@@ -273,7 +272,7 @@
 			if (editTier) body.tier = editTier;
 			if (editCommission.trim()) body.commission_pct_override = Number(editCommission);
 			const result = await academyAdminApi.updateInstructor(target.id, body);
-			if (result.ok) { showEditTierSlideOver = false; entityController?.reload(); }
+			if (result.ok) { showEditTierModal = false; entityController?.reload(); }
 			else { pageError = result.error; }
 		} catch { pageError = t("common.error", "Failed to update instructor"); } finally { acting = false; }
 	}
@@ -293,8 +292,8 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- ── Approve slide-over (page-local because approve isn't in EntityPage config) ── -->
-<SlideOver bind:open={showApproveSlideOver} title={t("academy.approve_instructor", "Approve Instructor")}>
+<!-- ── Approve modal (page-local because approve isn't in EntityPage config) ── -->
+<Modal bind:open={showApproveModal} title={t("academy.approve_instructor", "Approve Instructor")}>
 	{#if target}
 		<div class="space-y-4">
 			<p class="text-sm" style="color: var(--color-muted)">{t("academy.approve_confirm", "Approve")} <strong>{target.display_name}</strong>?</p>
@@ -315,13 +314,13 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => { showApproveSlideOver = false; }}>{t("common.cancel", "Cancel")}</Button>
+			<Button variant="outline" onclick={() => { showApproveModal = false; }}>{t("common.cancel", "Cancel")}</Button>
 			<Button onclick={doApprove} disabled={acting}>
 				{acting ? t("common.processing", "Processing...") : t("common.approve", "Approve")}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- ── Reject modal ── -->
 <Modal bind:open={showRejectModal} title={t("academy.reject_instructor", "Reject Instructor")}>
@@ -373,8 +372,8 @@
 	</div>
 </Modal>
 
-<!-- ── Edit Tier & Commission slide-over (page-local) ── -->
-<SlideOver bind:open={showEditTierSlideOver} title={t("academy.edit_tier", "Edit Tier & Commission")}>
+<!-- ── Edit Tier & Commission modal (page-local) ── -->
+<Modal bind:open={showEditTierModal} title={t("academy.edit_tier", "Edit Tier & Commission")}>
 	{#if target}
 		<div class="space-y-4">
 			<p class="text-sm" style="color: var(--color-muted)">{t("academy.update_tier_for", "Update tier for")} <strong>{target.display_name}</strong></p>
@@ -395,11 +394,11 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => { showEditTierSlideOver = false; }}>{t("common.cancel", "Cancel")}</Button>
+			<Button variant="outline" onclick={() => { showEditTierModal = false; }}>{t("common.cancel", "Cancel")}</Button>
 			<Button onclick={doEditTier} disabled={acting}>{acting ? t("common.saving", "Saving...") : t("common.save", "Save")}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- ── View snippet ──────────────────────────────────────────────────────── -->
 {#snippet InstructorView({ row }: { row: AcademyInstructorProfile })}

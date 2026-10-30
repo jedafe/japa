@@ -87,6 +87,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 WHERE s.deleted_at IS NULL
+ AND s.status = 'active'
  AND (
  s.visibility = 'public'
  OR (
@@ -117,6 +118,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 WHERE s.deleted_at IS NULL
+ AND s.status = 'active'
  AND (
  s.visibility = 'public'
  OR (
@@ -166,6 +168,7 @@ LIMIT @limit_val OFFSET @offset_val;
 SELECT COUNT(*) AS total
 FROM spaces s
 WHERE s.deleted_at IS NULL
+ AND s.status = 'active'
  AND (
  s.visibility = 'public'
  OR (
@@ -209,6 +212,7 @@ SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE spaces.level = @level AND deleted_at IS NULL
+ AND status = 'active'
  AND (
  visibility = 'public'
  OR (
@@ -229,6 +233,7 @@ SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE spaces.space_type_id = @space_type_id AND spaces.deleted_at IS NULL
+ AND status = 'active'
  AND (
  visibility = 'public'
  OR (
@@ -258,6 +263,7 @@ LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
  AND cfv.entity_type = 'space'
  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
 WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
+ AND s.status = 'active'
  AND (@search::text = ''
  OR s.name ILIKE '%' || @search || '%'
  OR s.slug ILIKE '%' || @search || '%'
@@ -341,6 +347,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE s.deleted_at IS NULL
+ AND s.status = 'active'
  AND sps.parent_space_id = @parent_id
  AND (
  s.visibility = 'public'
@@ -391,6 +398,7 @@ SELECT COUNT(*) AS total
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE s.deleted_at IS NULL
+ AND s.status = 'active'
  AND sps.parent_space_id = @parent_id
  AND (
  s.visibility = 'public'
@@ -1064,7 +1072,7 @@ SELECT EXISTS(
 SELECT EXISTS(
  SELECT 1 FROM space_members
  WHERE space_id = @space_id AND user_id = @user_id
- AND role = 'owner'
+ AND role = 'owner' AND status = 'approved'
 ) AS is_owner;
 
 -- name: AddSpaceMember :execrows
@@ -1086,7 +1094,8 @@ ON CONFLICT (space_id, user_id) DO NOTHING;
 -- routes (Section 05 lines 358-360).
 INSERT INTO space_members (space_id, user_id, role, status) VALUES (@space_id, @user_id, 'member', 'pending')
 
-ON CONFLICT (space_id, user_id) DO NOTHING;
+ON CONFLICT (space_id, user_id) DO UPDATE SET status = 'pending'
+WHERE space_members.status = 'rejected';
 
 -- name: CountSpaceOwners :one
 -- SPACES-017: count approved owners so the sole owner cannot orphan the
@@ -1186,6 +1195,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
 WHERE sps.space_id = @space_id AND s.deleted_at IS NULL
+ AND s.status = 'active'
 ORDER BY s.name;
 
 -- name: GetChildSpacesByParentID :many
@@ -1197,6 +1207,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = @parent_space_id AND s.deleted_at IS NULL
+ AND s.status = 'active'
 ORDER BY s.name;
 
 -- name: UpdateSpaceSourceID :exec
@@ -1250,10 +1261,10 @@ LEFT JOIN spaces s ON s.id = sm.space_id
 WHERE sm.status = 'pending'
 ORDER BY sm.joined_at ASC;
 
--- name: UpdateSpaceJoinRequest :exec
+-- name: UpdateSpaceJoinRequest :execrows
 UPDATE space_members
 SET status = @status
-WHERE space_id = @space_id AND user_id = @user_id;
+WHERE space_id = @space_id AND user_id = @user_id AND status = 'pending';
 
 -- =====================
 -- Space Content Views

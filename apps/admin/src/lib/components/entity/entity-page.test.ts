@@ -46,13 +46,13 @@ describe('EntityPage', () => {
 		await waitFor(() => expect(screen.getByText('Alpha')).toBeTruthy());
 	});
 
-	it('shows a Create button that opens the form slide-over', async () => {
+	it('shows a Create button that opens the form modal', async () => {
 		const config = makeConfig();
 		render(EntityPage, { config });
 		await waitFor(() => expect(screen.getByText('Alpha')).toBeTruthy());
 		const createBtn = screen.getByRole('button', { name: 'Create Tag' });
 		await fireEvent.click(createBtn);
-		// SlideOver opens with the form field label rendered inside EntityForm.
+		// Modal opens with the form field label rendered inside EntityForm.
 		await waitFor(() => expect(screen.getByLabelText('Name')).toBeTruthy());
 	});
 
@@ -81,7 +81,7 @@ describe('EntityPage', () => {
 		await fireEvent.click(trigger);
 		await waitFor(() => expect(screen.getByText('Edit')).toBeTruthy());
 		await fireEvent.click(screen.getByText('Edit'));
-		// Form slide-over opens with the row value seeded.
+		// Form modal opens with the row value seeded.
 		await waitFor(() => expect(screen.getByLabelText('Name')).toBeTruthy());
 		expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Alpha');
 		await fireEvent.submit(document.querySelector('form') as HTMLFormElement);

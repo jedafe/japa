@@ -307,7 +307,7 @@
 	</span>
 {/snippet}
 
-<!-- View slide-over body (mirrors the legacy view modal) -->
+<!-- View modal body (mirrors the legacy view modal) -->
 {#snippet TemplateView({ row }: { row: Template })}
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">

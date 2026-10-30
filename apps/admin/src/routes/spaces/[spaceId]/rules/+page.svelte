@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
 	// /spaces/[spaceId]/rules — migrated to shared components (ActionMenu,
-	// SlideOver, shared Modal). Reorder arrows stay as a componentSnippet
+	// Modal, shared Modal). Reorder arrows stay as a componentSnippet
 	// (inline up/down UI that doesn't fit the ⋮ dropdown). Create/edit open
-	// in a SlideOver; delete confirmation uses the shared Modal.
+	// in a Modal; delete confirmation uses the shared Modal.
 	import { page } from '$app/state';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { api, spacesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -40,7 +39,7 @@
 
 	let searchQuery = $state('');
 
-	let showSlideOver = $state(false);
+	let showModal = $state(false);
 	let editingRule = $state<Rule | null>(null);
 	let formTitle = $state('');
 	let formBody = $state('');
@@ -118,14 +117,14 @@
 		editingRule = null;
 		formTitle = '';
 		formBody = '';
-		showSlideOver = true;
+		showModal = true;
 	}
 
 	function openEdit(rule: Rule) {
 		editingRule = rule;
 		formTitle = rule.title;
 		formBody = rule.body;
-		showSlideOver = true;
+		showModal = true;
 	}
 
 	async function saveRule() {
@@ -142,7 +141,7 @@
 				errorMessage = (result as { error?: string }).error ?? t('space_rules.save_error');
 				return;
 			}
-			showSlideOver = false;
+			showModal = false;
 			load();
 		} catch {
 			errorMessage = t('space_rules.save_error');
@@ -248,8 +247,8 @@
 	actions={rowActions}
 />
 
-<!-- Create / Edit SlideOver -->
-<SlideOver bind:open={showSlideOver} title={editingRule ? t('space_rules.edit_title') : t('space_rules.add_title')}>
+<!-- Create / Edit Modal -->
+<Modal bind:open={showModal} title={editingRule ? t('space_rules.edit_title') : t('space_rules.add_title')}>
 	<div class="space-y-4">
 		<div>
 			<label for="rule-title" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('space_rules.title_label')}</label>
@@ -276,13 +275,13 @@
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => { showSlideOver = false; }}>{t('common.cancel')}</Button>
+			<Button variant="outline" onclick={() => { showModal = false; }}>{t('common.cancel')}</Button>
 			<Button onclick={saveRule} disabled={saving || !formTitle.trim() || !formBody.trim()}>
 				{saving ? t('common.saving') : t('common.save')}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={showDelete} title={t('space_rules.delete_title')} size="sm">

@@ -6,7 +6,6 @@
 	// the tag-moderators sub-flow cannot be expressed by the basic EntityForm, so
 	// they are rendered via the `formSnippet` escape hatch and page-local state.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
-	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
@@ -105,7 +104,7 @@
 		void loadTagFieldDefs();
 	});
 
-	// ── Tag moderators sub-flow (page-local SlideOver) ───────────────────────
+	// ── Tag moderators sub-flow (page-local Modal) ───────────────────────
 	let showModeratorsModal = $state(false);
 	let moderatorTag = $state<Tag | null>(null);
 	let tagModerators = $state<TagModerator[]>([]);
@@ -347,8 +346,8 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- Tag Moderators SlideOver (page-local sub-flow) -->
-<SlideOver bind:open={showModeratorsModal} title={t("tags.moderators", "Tag Moderators")} size="lg">
+<!-- Tag Moderators Modal (page-local sub-flow) -->
+<Modal bind:open={showModeratorsModal} title={t("tags.moderators", "Tag Moderators")} size="lg">
 	{#if moderatorTag}
 		<div class="space-y-4">
 			<div>
@@ -427,7 +426,7 @@
 			{t("common.close", "Close")}
 		</Button>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Remove Tag Moderator Confirm -->
 <Modal bind:open={showRemoveModeratorConfirm} title={t("common.confirmDelete", "Confirm Remove")}>
@@ -465,7 +464,7 @@
 
 <!-- Manage-moderators row action (kept as a column because EntityPage does not
      expose its internal openView/openEdit/openDelete, so a custom "actions"
-     array cannot trigger the scaffold's built-in slide-overs) -->
+     array cannot trigger the scaffold's built-in modals) -->
 {#snippet ModeratorsCell({ row }: { row: Tag })}
 	{#if canManageTags}
 		<Button
@@ -480,7 +479,7 @@
 	{/if}
 {/snippet}
 
-<!-- View slide-over body -->
+<!-- View modal body -->
 {#snippet TagView({ row }: { row: Tag })}
 	<div class="space-y-4">
 		{#if row.cover_url}

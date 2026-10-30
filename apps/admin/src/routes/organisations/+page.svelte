@@ -442,7 +442,7 @@
 	{/if}
 {/snippet}
 
-<!-- View slide-over body (mirrors the legacy view modal) -->
+<!-- View modal body (mirrors the legacy view modal) -->
 {#snippet OrgView({ row }: { row: Organisation })}
 	<div class="grid grid-cols-2 gap-4">
 		<div>

@@ -380,7 +380,7 @@
 	{/if}
 {/snippet}
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet LiteralView({ row }: { row: TemplateLiteral })}
 	<div class="space-y-4">
 		<div>

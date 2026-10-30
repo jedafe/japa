@@ -3,7 +3,8 @@
   import { Dialog } from "bits-ui";
   import { X } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";
-  
+  import type { Snippet } from "svelte";
+
   let {
     open = $bindable(false),
     title,
@@ -11,6 +12,7 @@
     size = "default",
     class: className,
     children,
+    footer,
     onclose
   }: {
     open?: boolean;
@@ -19,6 +21,7 @@
     size?: "sm" | "default" | "lg" | "xl";
     class?: ClassValue;
     children?: any;
+    footer?: Snippet;
     onclose?: () => void;
   } = $props();
   
@@ -39,6 +42,7 @@
   <Dialog.Portal>
     <Dialog.Overlay class="fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
     <Dialog.Content
+      data-modal-content
       class={clsx(
         "fixed start-[50%] top-[50%] z-50 flex max-h-[85dvh] w-full translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden border p-6 shadow-xl duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] sm:rounded-xl",
         sizes[size],
@@ -71,7 +75,13 @@
       <div class="min-h-0 overflow-y-auto overscroll-contain">
         {@render children?.()}
       </div>
-      
+
+      {#if footer}
+        <div class="flex shrink-0 items-center justify-end gap-2 border-t pt-4" style="border-color: var(--color-border)">
+          {@render footer()}
+        </div>
+      {/if}
+
       <Dialog.Close
         class="absolute end-4 top-4 rounded-lg p-1 opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"
         style="color: var(--color-muted)"

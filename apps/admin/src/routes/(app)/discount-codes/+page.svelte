@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
 	// /discount-codes — migrated to the EntityPage scaffold with computed-status filter
-	// and a page-local usage SlideOver (view-detail sub-flow).
+	// and a page-local usage Modal (view-detail sub-flow).
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { dateInputToStartOfDayISO, dateInputToEndOfDayISO } from '$lib/utils/date';
 	import { escapeHtml } from '$lib/utils/html';
-	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Eye, Trash2 } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
@@ -39,8 +39,8 @@
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
 
-	// Usage slide-over (view-detail sub-flow)
-	let showUsageSlideOver = $state(false);
+	// Usage modal (view-detail sub-flow)
+	let showUsageModal = $state(false);
 	let usageCode = $state<DiscountCode | null>(null);
 	let usageData = $state<UsageData | null>(null);
 	let usageLoading = $state(false);
@@ -75,7 +75,7 @@
 		usageCode = codeItem;
 		usageData = null;
 		usageLoading = true;
-		showUsageSlideOver = true;
+		showUsageModal = true;
 		try {
 			const result = await api<UsageData>(`/admin/discount-codes/${codeItem.id}/usage`);
 			if (result.ok) {
@@ -271,8 +271,8 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- Usage SlideOver (view-detail sub-flow) -->
-<SlideOver bind:open={showUsageSlideOver} title={usageCode ? `${t('discounts.usage', 'Usage')}: ${usageCode.code}` : t('discounts.usage', 'Usage')} size="lg">
+<!-- Usage Modal (view-detail sub-flow) -->
+<Modal bind:open={showUsageModal} title={usageCode ? `${t('discounts.usage', 'Usage')}: ${usageCode.code}` : t('discounts.usage', 'Usage')} size="lg">
 	{#if usageLoading}
 		<p class="py-8 text-center text-sm text-muted">{t('common.loading', 'Loading...')}</p>
 	{:else if usageData}
@@ -304,10 +304,10 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end">
-			<Button variant="outline" onclick={() => (showUsageSlideOver = false)}>{t('common.close', 'Close')}</Button>
+			<Button variant="outline" onclick={() => (showUsageModal = false)}>{t('common.close', 'Close')}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 {#snippet CodeView({ row }: { row: DiscountCode })}
 	<div class="space-y-4">

@@ -1542,3 +1542,27 @@ FROM (SELECT * FROM tips WHERE recipient_user_id = @user_id ORDER BY created_at 
 -- financial record survives pseudonymized (§19 retention).
 UPDATE tips SET recipient_user_id = @target_user_id
 WHERE recipient_user_id = @user_id;
+
+-- name: GdprDeleteSpaceMembersByUser :exec
+-- BUG-033: membership rows reference the erased user; delete on erasure.
+DELETE FROM space_members WHERE user_id = @user_id;
+
+-- name: GdprDeleteSpaceModeratorsByUser :exec
+-- BUG-033: moderator assignments reference the erased user; delete on erasure.
+DELETE FROM space_moderators WHERE user_id = @user_id OR assigned_by_user_id = @user_id;
+
+-- name: GdprSoftDeleteSoleOwnedSpacesByUser :exec
+-- BUG-033: a space whose only approved owner is being erased would be
+-- permanently orphaned (sole owner cannot leave; only the owner can delete).
+-- Soft-delete it alongside the user so moderation cannot stall forever.
+UPDATE spaces SET deleted_at = now(), status = 'deleted'
+WHERE deleted_at IS NULL
+  AND id IN (
+    SELECT sm.space_id FROM space_members sm
+    WHERE sm.user_id = @user_id AND sm.role = 'owner' AND sm.status = 'approved'
+      AND NOT EXISTS (
+        SELECT 1 FROM space_members o
+        WHERE o.space_id = sm.space_id AND o.role = 'owner'
+          AND o.status = 'approved' AND o.user_id != @user_id
+      )
+  );

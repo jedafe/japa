@@ -77,14 +77,6 @@ export const load: PageServerLoad = async (event) => {
 	if (parentFilter) params.set('parent', parentFilter);
 	if (joinedOnly) params.set('joined', '1');
 
-	// Second wave — the spaces list, viewer's following state, region options,
-	// the country picker list, and the parent-name chip are all independent
-	// once typeID is resolved. Run them concurrently.
-	const followingPromise = event.locals.user
-		? apiGet<{ entity_id: string }[]>(ctx, '/me/following?type=space&page_size=100')
-				.then((f) => (f ?? []).map((x) => x.entity_id))
-				.catch(() => [] as string[])
-		: Promise.resolve([] as string[]);
 
 	const spacesPromise = apiList<Space>(ctx, `/spaces?${params.toString()}`).then(
 		(result) => ({
@@ -121,8 +113,7 @@ export const load: PageServerLoad = async (event) => {
 				.catch(() => '')
 		: Promise.resolve('');
 
-	const [followingSpaceIds, spacesResult, countries, regions, parentName] = await Promise.all([
-		followingPromise,
+	const [spacesResult, countries, regions, parentName] = await Promise.all([
 		spacesPromise,
 		countriesPromise,
 		regionsPromise,
@@ -157,6 +148,6 @@ export const load: PageServerLoad = async (event) => {
 		levels,
 		forbidden,
 		loadError,
-		followingSpaceIds
+		followingSpaceIds: [] as string[]
 	};
 };

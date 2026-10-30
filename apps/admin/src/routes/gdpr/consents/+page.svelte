@@ -5,7 +5,6 @@
 	import { DataTable } from "$lib/components/ui/data-table";
 	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
 	import { RefreshCw, Eye, Trash2 } from "lucide-svelte";
@@ -82,12 +81,12 @@
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
 
-	let showViewSlideOver = $state(false);
+	let showViewModal = $state(false);
 	let viewTarget = $state<Consent | null>(null);
 
 	function openView(consent: Consent) {
 		viewTarget = consent;
-		showViewSlideOver = true;
+		showViewModal = true;
 	}
 
 	function openDelete(consent: Consent) {
@@ -241,8 +240,8 @@
 	</CardContent>
 </Card>
 
-<!-- View SlideOver -->
-<SlideOver bind:open={showViewSlideOver} title={t("gdpr.consent_details", "Consent Details")}>
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t("gdpr.consent_details", "Consent Details")}>
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
@@ -277,10 +276,10 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end">
-			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t("common.close", "Close")}</Button>
+			<Button variant="outline" onclick={() => (showViewModal = false)}>{t("common.close", "Close")}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Delete Modal -->
 <Modal bind:open={showDeleteModal} title={t("gdpr.consent_delete_title", "Delete Consent")}>

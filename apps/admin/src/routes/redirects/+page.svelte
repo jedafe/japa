@@ -230,7 +230,7 @@
 	</span>
 {/snippet}
 
-<!-- View slide-over body (mirrors the legacy view) -->
+<!-- View modal body (mirrors the legacy view) -->
 {#snippet RedirectView({ row }: { row: Redirect })}
 	<div class="space-y-4">
 		<div>

@@ -184,7 +184,7 @@
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-<!-- View slide-over body (mirrors the legacy row details) -->
+<!-- View modal body (mirrors the legacy row details) -->
 {#snippet DeletionRequestView({ row }: { row: DeletionRequest })}
 	<div class="space-y-4">
 		<div>

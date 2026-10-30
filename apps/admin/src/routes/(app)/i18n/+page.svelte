@@ -7,7 +7,6 @@
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
@@ -38,8 +37,8 @@
 	let loading = $state(true);
 	let activeTab = $state('languages');
 	let selectedLocale = $state('en');
-	let createSlideOverOpen = $state(false);
-	let editSlideOverOpen = $state(false);
+	let createModalOpen = $state(false);
+	let editModalOpen = $state(false);
 	let editingString = $state<TranslationEntry | null>(null);
 	let deleteConfirmOpen = $state(false);
 	let deletingTarget = $state<{ type: 'string'; id: string } | null>(null);
@@ -52,7 +51,7 @@
 	let selectedTranslationIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
 
-	let showViewSlideOver = $state(false);
+	let showViewModal = $state(false);
 	let viewLanguage = $state<Language | null>(null);
 	let viewString = $state<TranslationEntry | null>(null);
 
@@ -185,12 +184,12 @@
 
 	function openLanguageView(lang: Language) {
 		viewLanguage = lang;
-		showViewSlideOver = true;
+		showViewModal = true;
 	}
 
 	function openStringView(entry: TranslationEntry) {
 		viewString = entry;
-		showViewSlideOver = true;
+		showViewModal = true;
 	}
 
 	async function submitLanguage() {
@@ -213,7 +212,7 @@
 		}));
 		const res = await i18nAdminApiExtended.batchCreate({ translations: batch });
 		if (res.ok) {
-			createSlideOverOpen = false;
+			createModalOpen = false;
 			form = { code: '', name: '', flag: '' };
 			successMessage = t('app.i18n.language_added', 'Language added successfully');
 			loadLanguages();
@@ -225,7 +224,7 @@
 
 	function openEditModal(entry: TranslationEntry) {
 		editingString = { ...entry };
-		editSlideOverOpen = true;
+		editModalOpen = true;
 	}
 
 	async function submitEditString() {
@@ -238,7 +237,7 @@
 			value: editingString.value
 		});
 		if (res.ok) {
-			editSlideOverOpen = false;
+			editModalOpen = false;
 			editingString = null;
 			successMessage = t('app.i18n.translation_updated', 'Translation updated');
 			loadTranslations();
@@ -327,7 +326,7 @@
 	description={t('app.i18n.description')}
 	actions={[
 		...(canManageI18n
-			? [{ label: t('app.i18n.add_language'), icon: Plus, onclick: () => (createSlideOverOpen = true) }]
+			? [{ label: t('app.i18n.add_language'), icon: Plus, onclick: () => (createModalOpen = true) }]
 			: []),
 		{ label: t('common.refresh'), icon: RefreshCw, variant: 'ghost', onclick: loadData }
 	]}
@@ -421,8 +420,8 @@
 	{/if}
 </div>
 
-<!-- Add Language SlideOver -->
-<SlideOver bind:open={createSlideOverOpen} title={t('app.i18n.add_language')}>
+<!-- Add Language Modal -->
+<Modal bind:open={createModalOpen} title={t('app.i18n.add_language')}>
 	<div class="space-y-4">
 		<div>
 			<label for="lang-code" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.i18n.language_code', 'Language Code')}</label>
@@ -458,16 +457,16 @@
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => (createSlideOverOpen = false)}>{t("common.cancel")}</Button>
+			<Button variant="outline" onclick={() => (createModalOpen = false)}>{t("common.cancel")}</Button>
 			<Button onclick={submitLanguage} disabled={creatingLocale || !form.code.trim() || !form.name.trim()}>
 				{creatingLocale ? t('common.saving') : t('app.i18n.create')}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
-<!-- Edit Translation SlideOver -->
-<SlideOver bind:open={editSlideOverOpen} title={t('app.i18n.edit_translation')}>
+<!-- Edit Translation Modal -->
+<Modal bind:open={editModalOpen} title={t('app.i18n.edit_translation')}>
 	{#if editingString}
 		<div class="space-y-4">
 			<div>
@@ -487,11 +486,11 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end gap-3 pt-2">
-			<Button variant="outline" onclick={() => (editSlideOverOpen = false)}>{t("common.cancel")}</Button>
+			<Button variant="outline" onclick={() => (editModalOpen = false)}>{t("common.cancel")}</Button>
 			<Button onclick={submitEditString} disabled={saving}>{saving ? t('common.saving') : t('common.save')}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Delete Confirmation Modal -->
 <Modal bind:open={deleteConfirmOpen} title={t('common.confirmDelete')} description={t('app.i18n.delete_confirm_desc')}>
@@ -508,8 +507,8 @@
 	</div>
 </Modal>
 
-<!-- View SlideOver -->
-<SlideOver bind:open={showViewSlideOver} title={t('common.details', 'Details')}>
+<!-- View Modal -->
+<Modal bind:open={showViewModal} title={t('common.details', 'Details')}>
 	{#if viewLanguage}
 		<div class="space-y-4">
 			<div class="grid grid-cols-2 gap-4">
@@ -545,7 +544,7 @@
 	{/if}
 	{#snippet footer()}
 		<div class="flex justify-end">
-			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('common.close', 'Close')}</Button>
+			<Button variant="outline" onclick={() => (showViewModal = false)}>{t('common.close', 'Close')}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>

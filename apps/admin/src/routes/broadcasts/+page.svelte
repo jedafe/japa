@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
 	// /broadcasts — migrated to shared components (ActionMenu, FilterPanel,
-	// SlideOver, bulkActionsList). Tabbed page (all/drafts/sent); keeps
+	// Modal, bulkActionsList). Tabbed page (all/drafts/sent); keeps
 	// page-local Modals for create broadcast (form) and send confirmation.
-	// View detail opens in a SlideOver.
+	// View detail opens in a Modal.
 	import { t, locale } from '$lib/stores/i18n.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
@@ -11,7 +11,6 @@
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Select } from '$lib/components/ui/select';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 	import { Send, Plus, Radio, Clock, CheckCircle, Trash2, Eye } from 'lucide-svelte';
@@ -52,8 +51,8 @@
 	let sendTarget = $state<Broadcast | null>(null);
 	let sending = $state(false);
 
-	// View SlideOver
-	let showViewSlideOver = $state(false);
+	// View Modal
+	let showViewModal = $state(false);
 	let viewTarget = $state<Broadcast | null>(null);
 
 	const tabs = [
@@ -200,7 +199,7 @@
 
 	function openView(broadcast: Broadcast) {
 		viewTarget = broadcast;
-		showViewSlideOver = true;
+		showViewModal = true;
 	}
 
 	let initialized = false;
@@ -298,8 +297,8 @@
 	</div>
 </Modal>
 
-<!-- View Broadcast SlideOver -->
-<SlideOver bind:open={showViewSlideOver} title={t('broadcasts.broadcast_details', 'Broadcast Details')} size="lg">
+<!-- View Broadcast Modal -->
+<Modal bind:open={showViewModal} title={t('broadcasts.broadcast_details', 'Broadcast Details')} size="lg">
 	{#if viewTarget}
 		<div class="space-y-4">
 			<div>
@@ -326,11 +325,11 @@
 		<div class="flex justify-end gap-2">
 			{#if canManage && viewTarget?.status === 'draft'}
 				{@const bt = viewTarget}
-				<Button onclick={() => { showViewSlideOver = false; confirmSend(bt); }}>
+				<Button onclick={() => { showViewModal = false; confirmSend(bt); }}>
 					<Send class="me-1 h-3.5 w-3.5 rtl:-scale-x-100" /> {t('common.send', 'Send')}
 				</Button>
 			{/if}
-			<Button variant="outline" onclick={() => (showViewSlideOver = false)}>{t('common.close', 'Close')}</Button>
+			<Button variant="outline" onclick={() => (showViewModal = false)}>{t('common.close', 'Close')}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>

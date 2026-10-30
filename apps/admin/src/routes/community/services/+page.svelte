@@ -338,7 +338,7 @@
 	{/if}
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet ServiceView({ row }: { row: ServiceItem })}
 	<div class="space-y-4">
 		<div>

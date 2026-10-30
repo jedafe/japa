@@ -187,7 +187,7 @@
 	{/if}
 {/snippet}
 
-<!-- View slide-over body (mirrors the legacy view) -->
+<!-- View modal body (mirrors the legacy view) -->
 {#snippet EntityTypeView({ row }: { row: CustomFieldEntityType })}
 	<div class="space-y-4">
 		<div>

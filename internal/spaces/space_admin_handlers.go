@@ -74,13 +74,21 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.Service.write.UpdateSpaceJoinRequest(r.Context(), gen.UpdateSpaceJoinRequestParams{
+	// BUG-008/020: the update only affects status='pending' rows — a
+	// missing or already-resolved request is a no-op, not a member_count
+	// increment or a phantom approval.
+	affected, err := h.Service.write.UpdateSpaceJoinRequest(r.Context(), gen.UpdateSpaceJoinRequestParams{
 		SpaceID: spaceID,
 		UserID:  requestID,
 		Status:  input.Status,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
+		return
+	}
+	if affected == 0 {
+		errpkg.WriteError(w, http.StatusConflict, "request_not_pending",
+			"No pending join request for this user in this space")
 		return
 	}
 	// SPACES-004: increment member_count only on approval. The pending
@@ -95,6 +103,15 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 		// record space.joined so badge/challenge triggers fire for this
 		// path too (parity with AdminResolveJoinRequest).
 		h.Service.emitActivity(r.Context(), requestID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
+
+		// BUG-009: join approval auto-follows the space (§05/§31) — the
+		// POST approve path already did; the PATCH path must match.
+		if h.follows != nil {
+			if _, ferr := h.follows.EnsureFollow(r.Context(), requestID, "space", spaceID); ferr != nil {
+				slog.Warn("join-approval: auto-follow failed",
+					"space_id", spaceID.String(), "user_id", requestID.String(), "error", ferr)
+			}
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": requestID.String(), "status": input.Status}})
@@ -290,12 +307,18 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.Service.write.UpdateSpaceJoinRequest(r.Context(), gen.UpdateSpaceJoinRequestParams{
+	affected, err := h.Service.write.UpdateSpaceJoinRequest(r.Context(), gen.UpdateSpaceJoinRequestParams{
 		SpaceID: spaceID,
 		UserID:  userID,
 		Status:  status,
-	}); err != nil {
+	})
+	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
+		return
+	}
+	if affected == 0 {
+		errpkg.WriteError(w, http.StatusConflict, "request_not_pending",
+			"No pending join request for this user in this space")
 		return
 	}
 

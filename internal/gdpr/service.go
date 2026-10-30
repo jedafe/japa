@@ -1419,6 +1419,20 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			return fmt.Errorf("deleting space mutes: %w", err)
 		}
 
+		// BUG-033: spaces solely owned by the erased user would be
+		// permanently orphaned (sole owner cannot leave; only the owner can
+		// delete) — soft-delete them first, then remove membership and
+		// moderator rows referencing the user.
+		if err := q.GdprSoftDeleteSoleOwnedSpacesByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting sole-owned spaces: %w", err)
+		}
+		if err := q.GdprDeleteSpaceMembersByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting space members: %w", err)
+		}
+		if err := q.GdprDeleteSpaceModeratorsByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting space moderators: %w", err)
+		}
+
 		// BUG-M006: delete notifications addressed to the erased user.
 		// Notification rows are user-owned data (the recipient's inbox) and
 		// must be removed during GDPR erasure (Section 19).

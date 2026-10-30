@@ -406,7 +406,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet VisaRouteView({ row }: { row: VisaRoute })}
 	<div class="space-y-4">
 		<div>

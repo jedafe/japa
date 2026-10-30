@@ -1,9 +1,11 @@
 package spaces
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -37,6 +39,13 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 	isMember, err := h.Service.IsMember(r.Context(), space.ID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
+		return
+	}
+
+	// BUG-028: a private space is invisible to non-members — a joining_perm
+	// misconfiguration cannot leak join access. Members may still leave.
+	if !isMember && space.Visibility == VisibilityPrivate {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 		return
 	}
 
@@ -155,6 +164,67 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"left": true}})
 }
 
+// AddMember handles POST /api/v1/spaces/{slug}/members — the invite path for
+// joining_perm='invite' spaces (Section 05: only invited users can join).
+// An invite is delivered as a moderator-added membership: the route is
+// gated by spaces.moderate per space (owner / assigned moderator / admin).
+func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
+	space, ok := spaceFromContext(w, r)
+	if !ok {
+		return
+	}
+
+	if h.rejectWikiOnly(w, r, space) {
+		return
+	}
+
+	var req struct {
+		UserID   string `json:"user_id"`
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	var targetUserID pgtype.UUID
+	switch {
+	case strings.TrimSpace(req.UserID) != "":
+		if err := targetUserID.Scan(req.UserID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user_id format")
+			return
+		}
+	case strings.TrimSpace(req.Username) != "":
+		var uerr error
+		targetUserID, uerr = h.Service.GetUserIDByUsername(r.Context(), strings.TrimSpace(req.Username))
+		if uerr != nil {
+			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "No user with that username was found")
+			return
+		}
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "user_id or username is required")
+		return
+	}
+
+	if err := h.Service.Join(r.Context(), space.ID, targetUserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if h.follows != nil {
+		if _, ferr := h.follows.EnsureFollow(r.Context(), targetUserID, "space", space.ID); ferr != nil {
+			slog.Warn("invite: auto-follow failed", "space_id", space.ID, "error", ferr)
+		}
+	}
+	if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, 1); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
+		"data": map[string]any{"space_id": space.ID, "user_id": targetUserID},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Space Members Listing Handler
 // ---------------------------------------------------------------------------
@@ -174,7 +244,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if space.Visibility == VisibilityPrivate && !h.canViewPrivateMembers(r, space) {
+	if space.Visibility != VisibilityPublic && !h.canViewPrivateMembers(r, space) {
 		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 		return
 	}
@@ -193,7 +263,11 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": members})
+	total, _ := h.Service.CountMembers(r.Context(), space.ID)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": members,
+		"meta": map[string]any{"total": total},
+	})
 }
 
 // canViewPrivateMembers reports whether the caller may list the members of a

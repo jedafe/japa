@@ -3,7 +3,6 @@
 	import { aiApi, aiAdminApi, aiModelsAdminApi, type HitlReview, type HitlVerifyResult, type GenerateResult, type AiTool, type AiUsageSummary, type AiToolUsageStats } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import type { ActionItem } from '$lib/components/ui/data-table';
@@ -63,8 +62,8 @@
 	let toolsLoading = $state(false);
 	let toolsError = $state('');
 
-	// Tool edit slide-over
-	let showToolSlideOver = $state(false);
+	// Tool edit modal
+	let showToolModal = $state(false);
 	let editingTool = $state<AiTool | null>(null);
 	let toolName = $state('');
 	let toolDescription = $state('');
@@ -352,7 +351,7 @@
 		toolName = tool.name;
 		toolDescription = tool.description || '';
 		toolEnabled = tool.is_enabled;
-		showToolSlideOver = true;
+		showToolModal = true;
 	}
 
 	async function saveTool() {
@@ -366,7 +365,7 @@
 				is_enabled: toolEnabled
 			});
 			if (result.ok) {
-				showToolSlideOver = false;
+				showToolModal = false;
 				loadTools();
 			} else {
 				toolsError = result.error;
@@ -928,8 +927,8 @@
 	{/if}
 </Modal>
 
-<!-- ═══ Tool Edit SlideOver ═══ -->
-<SlideOver bind:open={showToolSlideOver} title={t('ai.tools.configure')}>
+<!-- ═══ Tool Edit Modal ═══ -->
+<Modal bind:open={showToolModal} title={t('ai.tools.configure')}>
 	<div class="space-y-4">
 		<div>
 			<label for="tool-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('ai.tools.name')}</label>
@@ -949,13 +948,13 @@
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-3 pt-4">
-			<Button variant="outline" onclick={() => showToolSlideOver = false}>{t('ai.cancel')}</Button>
+			<Button variant="outline" onclick={() => showToolModal = false}>{t('ai.cancel')}</Button>
 			<Button onclick={saveTool} disabled={toolSaving}>
 				{toolSaving ? 'Saving...' : 'Save Changes'}
 			</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- ═══ Tool Delete Confirmation Modal ═══ -->
 <Modal bind:open={showDeleteConfirm} title={t('ai.tools.delete_title', 'Delete Tool')}>

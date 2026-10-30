@@ -53,7 +53,8 @@ func (q *Queries) AddSpaceMember(ctx context.Context, arg AddSpaceMemberParams) 
 const addSpaceMemberPending = `-- name: AddSpaceMemberPending :exec
 INSERT INTO space_members (space_id, user_id, role, status) VALUES ($1, $2, 'member', 'pending')
 
-ON CONFLICT (space_id, user_id) DO NOTHING
+ON CONFLICT (space_id, user_id) DO UPDATE SET status = 'pending'
+WHERE space_members.status = 'rejected'
 `
 
 type AddSpaceMemberPendingParams struct {
@@ -327,7 +328,7 @@ const checkSpaceOwnership = `-- name: CheckSpaceOwnership :one
 SELECT EXISTS(
  SELECT 1 FROM space_members
  WHERE space_id = $1 AND user_id = $2
- AND role = 'owner'
+ AND role = 'owner' AND status = 'approved'
 ) AS is_owner
 `
 
@@ -453,6 +454,7 @@ const countSpaces = `-- name: CountSpaces :one
 SELECT COUNT(*) AS total
 FROM spaces s
 WHERE s.deleted_at IS NULL
+ AND s.status = 'active'
  AND (
  s.visibility = 'public'
  OR (
@@ -563,6 +565,7 @@ SELECT COUNT(*) AS total
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE s.deleted_at IS NULL
+ AND s.status = 'active'
  AND sps.parent_space_id = $1
  AND (
  s.visibility = 'public'
@@ -1174,6 +1177,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = $1 AND s.deleted_at IS NULL
+ AND s.status = 'active'
 ORDER BY s.name
 `
 
@@ -1274,6 +1278,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.parent_space_id = s.id
 WHERE sps.space_id = $1 AND s.deleted_at IS NULL
+ AND s.status = 'active'
 ORDER BY s.name
 `
 
@@ -3042,6 +3047,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 WHERE s.deleted_at IS NULL
+ AND s.status = 'active'
  AND (
  s.visibility = 'public'
  OR (
@@ -3266,6 +3272,7 @@ SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE spaces.level = $1 AND deleted_at IS NULL
+ AND status = 'active'
  AND (
  visibility = 'public'
  OR (
@@ -3662,6 +3669,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki
 FROM spaces s
 JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE s.deleted_at IS NULL
+ AND s.status = 'active'
  AND sps.parent_space_id = $1
  AND (
  s.visibility = 'public'
@@ -3816,6 +3824,7 @@ SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
 WHERE spaces.space_type_id = $1 AND spaces.deleted_at IS NULL
+ AND status = 'active'
  AND (
  visibility = 'public'
  OR (
@@ -3918,6 +3927,7 @@ LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
  AND cfv.entity_type = 'space'
  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
 WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
+ AND s.status = 'active'
  AND ($2::text = ''
  OR s.name ILIKE '%' || $2 || '%'
  OR s.slug ILIKE '%' || $2 || '%'
@@ -4067,6 +4077,7 @@ SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description,
  s.updated_at, s.deleted_at, s.currency_code
 FROM spaces s
 WHERE s.deleted_at IS NULL
+ AND s.status = 'active'
  AND (
  s.visibility = 'public'
  OR (
@@ -4875,10 +4886,10 @@ func (q *Queries) UpdateSpaceHeaderImageID(ctx context.Context, arg UpdateSpaceH
 	return i, err
 }
 
-const updateSpaceJoinRequest = `-- name: UpdateSpaceJoinRequest :exec
+const updateSpaceJoinRequest = `-- name: UpdateSpaceJoinRequest :execrows
 UPDATE space_members
 SET status = $1
-WHERE space_id = $2 AND user_id = $3
+WHERE space_id = $2 AND user_id = $3 AND status = 'pending'
 `
 
 type UpdateSpaceJoinRequestParams struct {
@@ -4887,9 +4898,12 @@ type UpdateSpaceJoinRequestParams struct {
 	UserID  pgtype.UUID `json:"user_id"`
 }
 
-func (q *Queries) UpdateSpaceJoinRequest(ctx context.Context, arg UpdateSpaceJoinRequestParams) error {
-	_, err := q.db.Exec(ctx, updateSpaceJoinRequest, arg.Status, arg.SpaceID, arg.UserID)
-	return err
+func (q *Queries) UpdateSpaceJoinRequest(ctx context.Context, arg UpdateSpaceJoinRequestParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateSpaceJoinRequest, arg.Status, arg.SpaceID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateSpaceKeywords = `-- name: UpdateSpaceKeywords :exec

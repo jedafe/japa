@@ -9,7 +9,6 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import { Select } from '$lib/components/ui/select';
 	import type { ActionItem } from '$lib/components/ui/data-table';
@@ -123,11 +122,11 @@
 
 	let submissions = $state<Submission[]>([]);
 	let loadingSubmissions = $state(false);
-	let showSubmissionSlideOver = $state(false);
+	let showSubmissionModal = $state(false);
 	let selectedSubmission = $state<Submission | null>(null);
 
 	const submissionActions: ActionItem[] = [
-		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: Submission) => { selectedSubmission = row; showSubmissionSlideOver = true; } }
+		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: Submission) => { selectedSubmission = row; showSubmissionModal = true; } }
 	];
 
 	// --- Triggers Tab ---
@@ -722,7 +721,7 @@
 		try {
 			await formsAdminApi.updateSubmission(formId, subId, { status });
 			loadSubmissions();
-			showSubmissionSlideOver = false;
+			showSubmissionModal = false;
 		} catch {
 			// ignore
 		}
@@ -732,7 +731,7 @@
 		try {
 			await formsAdminApi.deleteSubmission(formId, subId);
 			loadSubmissions();
-			showSubmissionSlideOver = false;
+			showSubmissionModal = false;
 		} catch {
 			// ignore
 		}
@@ -1174,8 +1173,8 @@
 				</CardContent>
 			</Card>
 
-			<!-- Submission Detail SlideOver -->
-			<SlideOver bind:open={showSubmissionSlideOver} title={t('forms.submissionDetail', 'Submission Detail')} size="lg">
+			<!-- Submission Detail Modal -->
+			<Modal bind:open={showSubmissionModal} title={t('forms.submissionDetail', 'Submission Detail')} size="lg">
 				{#if selectedSubmission}
 					<div class="space-y-4">
 						<div class="grid grid-cols-2 gap-4">
@@ -1205,7 +1204,7 @@
 				{/if}
 				{#snippet footer()}
 					<div class="flex flex-wrap justify-end gap-3">
-						<Button variant="outline" onclick={() => (showSubmissionSlideOver = false)}>{t('common.close', 'Close')}</Button>
+						<Button variant="outline" onclick={() => (showSubmissionModal = false)}>{t('common.close', 'Close')}</Button>
 						{#if selectedSubmission && selectedSubmission.status !== 'reviewed'}
 							<Button variant="outline" onclick={() => updateSubmissionStatus(selectedSubmission!.id, 'reviewed')}>{t('forms.markReviewed', 'Mark Reviewed')}</Button>
 						{/if}
@@ -1220,7 +1219,7 @@
 						{/if}
 					</div>
 				{/snippet}
-			</SlideOver>
+			</Modal>
 		{/if}
 
 	<!-- Triggers Tab -->

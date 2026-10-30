@@ -6,10 +6,10 @@
 	// checkbox on edit, and auto-slugify-from-name on create — none of which
 	// EntityForm supports — so the form is rendered via the `formSnippet` escape
 	// hatch. The dimensions + access-control sub-flow (legacy expand row) is kept
-	// as a page-local `<SlideOver>` triggered by a custom row action, mirroring
+	// as a page-local `<Modal>` triggered by a custom row action, mirroring
 	// the `/tags` moderators sub-flow pattern.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
@@ -171,7 +171,7 @@
 		}
 	}
 
-	// ── Dimensions + access sub-flow (page-local SlideOver) ──────────────────
+	// ── Dimensions + access sub-flow (page-local Modal) ──────────────────
 	let showDetailModal = $state(false);
 	let detailType = $state<ComparisonType | null>(null);
 	let detail = $state<ComparisonTypeDetail | null>(null);
@@ -401,8 +401,8 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- Dimensions + Access sub-flow (page-local SlideOver) -->
-<SlideOver bind:open={showDetailModal} title={t('comparison_types.dimensions', 'Dimensions & Access')} size="lg">
+<!-- Dimensions + Access sub-flow (page-local Modal) -->
+<Modal bind:open={showDetailModal} title={t('comparison_types.dimensions', 'Dimensions & Access')} size="lg">
 	{#if detailType}
 		<div class="space-y-4">
 			<div>
@@ -519,7 +519,7 @@
 			{t('common.close', 'Close')}
 		</Button>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
@@ -533,7 +533,7 @@
 	</span>
 {/snippet}
 
-<!-- View slide-over body (mirrors the legacy view) -->
+<!-- View modal body (mirrors the legacy view) -->
 {#snippet ComparisonTypeView({ row }: { row: ComparisonType })}
 	<div class="space-y-4">
 		<div>

@@ -93,7 +93,7 @@
 	let pageError = $state("");
 	let bulkRemoving = $state(false);
 
-	// ── Deep-link: ?view=<id> opens the row's view slide-over. The dashboard's
+	// ── Deep-link: ?view=<id> opens the row's view modal. The dashboard's
 	// Top Content links land here; fetch by id so the view works even when the
 	// row is not in the current page of results.
 	let viewHandled = $state("");
@@ -116,7 +116,7 @@
 		})();
 	});
 
-	// Clear ?view= when the slide-over closes so re-clicking the same link
+	// Clear ?view= when the modal closes so re-clicking the same link
 	// re-opens the view.
 	function clearViewParam() {
 		const url = new URL(window.location.href);
@@ -525,7 +525,7 @@
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-<!-- View slide-over body (mirrors the legacy view modal) -->
+<!-- View modal body (mirrors the legacy view modal) -->
 {#snippet ContentView({ row }: { row: ContentItem })}
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">

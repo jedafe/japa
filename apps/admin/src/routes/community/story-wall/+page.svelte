@@ -345,7 +345,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet StoryView({ row }: { row: StoryItem })}
 	<div class="space-y-4">
 		<div>

@@ -4,7 +4,7 @@
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { onMount } from 'svelte';
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
-	import { SlideOver } from '$lib/components/ui/slide-over';
+	import { Modal } from '$lib/components/ui/modal';
 	import { tipsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { RotateCcw } from 'lucide-svelte';
@@ -203,7 +203,7 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<SlideOver bind:open={detailOpen} title={t('tips.detail_title', 'Tip detail')}>
+<Modal bind:open={detailOpen} title={t('tips.detail_title', 'Tip detail')}>
 	{#if detailLoading}
 		<p class="text-sm text-muted-foreground">{t('common.loading', 'Loading…')}</p>
 	{:else if detail}
@@ -216,4 +216,4 @@
 			{/each}
 		</dl>
 	{/if}
-</SlideOver>
+</Modal>

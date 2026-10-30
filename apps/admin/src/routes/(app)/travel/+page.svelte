@@ -449,7 +449,7 @@
 	</div>
 {/snippet}
 
-<!-- View slide-over body -->
+<!-- View modal body -->
 {#snippet ProviderView({ row }: { row: TravelProvider & { affiliate_pairs: ConfigPair[] } })}
 	<div class="space-y-4">
 		<div>

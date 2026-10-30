@@ -378,7 +378,7 @@
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-<!-- View slide-over body (mirrors the legacy view) -->
+<!-- View modal body (mirrors the legacy view) -->
 {#snippet PlanView({ row }: { row: Plan })}
 	<div class="space-y-4">
 		<div>

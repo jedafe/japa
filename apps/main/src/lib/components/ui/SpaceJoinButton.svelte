@@ -55,10 +55,19 @@
 		followPending = false;
 	});
 
-	/** POST /spaces/{slug}/join toggles membership (join ↔ leave). */
+	/** POST /spaces/{slug}/join toggles membership (join ↔ leave). A
+	 * pending request is cancelled via DELETE /spaces/{slug}/leave —
+	 * the pending row is user-owned and deletable (BUG-034). */
 	async function toggleJoin() {
-		if (joinPending || requestPending) return;
+		if (joinPending) return;
 		if (!(await requireAuthOrRedirect())) return;
+		if (requestPending) {
+			joinPending = true;
+			const res = await api.delete<{ left?: boolean }>(`/spaces/${entitySlug}/leave`);
+			if (!res.error) requestPending = false;
+			joinPending = false;
+			return;
+		}
 		const wasJoined = joined;
 		joined = !wasJoined; // optimistic
 		joinPending = true;

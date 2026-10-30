@@ -249,7 +249,7 @@
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
-<!-- View slide-over body (mirrors the legacy preview modal) -->
+<!-- View modal body (mirrors the legacy preview modal) -->
 {#snippet BlockView({ row }: { row: Block })}
 	<div class="space-y-4">
 		<!-- Preview header -->

@@ -312,7 +312,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body (mirrors the legacy view modal) ──────────────── -->
+<!-- ── View modal body (mirrors the legacy view modal) ──────────────── -->
 {#snippet ModItemView({ row }: { row: ModItem })}
 	<div class="space-y-4">
 		<div class="grid grid-cols-2 gap-4">

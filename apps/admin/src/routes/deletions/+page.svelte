@@ -70,7 +70,7 @@
 						: `<span class="text-xs" style="color: var(--color-muted)">—</span>`
 			}
 		],
-		// Read-only: only a View action (opens the view slide-over). No Edit/Delete/Create.
+		// Read-only: only a View action (opens the view modal). No Edit/Delete/Create.
 		actions: [
 			{
 				label: t('common.view', 'View'),
@@ -118,7 +118,7 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- View slide-over body: full deleted content record -->
+<!-- View modal body: full deleted content record -->
 {#snippet DeletionView({ row }: { row: DeletedContent })}
 	<div class="space-y-4">
 		<div>

@@ -313,7 +313,7 @@
 	});
 
 	// `fields` is required by EntityPage for edit-form seeding; this page is read-only
-	// (no create/edit slide-over), so a minimal metadata field set is declared.
+	// (no create/edit modal), so a minimal metadata field set is declared.
 	const fields: FieldDef[] = [
 		{ key: 'alt_text', label: t('app.media.field_alt_text', 'Alt Text'), type: 'text' },
 		{ key: 'status', label: t('app.media.field_status', 'Status'), type: 'text' }
@@ -1664,7 +1664,7 @@
 	</Card>
 {/snippet}
 
-<!-- View slide-over body (mirrors the legacy view modal) -->
+<!-- View modal body (mirrors the legacy view modal) -->
 {#snippet MediaView({ row }: { row: MediaItem })}
 	<div class="space-y-4">
 		<div class="relative flex aspect-video items-center justify-center rounded-lg" style="background: var(--color-surface)">

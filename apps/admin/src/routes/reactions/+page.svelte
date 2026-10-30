@@ -162,7 +162,7 @@
 	</span>
 {/snippet}
 
-<!-- View slide-over body (mirrors the legacy view modal) -->
+<!-- View modal body (mirrors the legacy view modal) -->
 {#snippet ReactionView({ row }: { row: ReactionType })}
 	<div class="space-y-4">
 		<div>

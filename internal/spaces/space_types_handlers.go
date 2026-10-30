@@ -213,6 +213,27 @@ func (h *Handlers) DeleteSpaceType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-022: surface 403/409 instead of a raw 500 when the type is a
+	// system type or still in use by spaces.
+	st, err := h.Service.GetSpaceType(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if st.IsSystem {
+		errpkg.WriteError(w, http.StatusForbidden, "system_type", "System space types cannot be deleted")
+		return
+	}
+	inUse, err := h.Service.read.CountSpacesByType(r.Context(), gen.CountSpacesByTypeParams{SpaceTypeID: id})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if inUse > 0 {
+		errpkg.WriteError(w, http.StatusConflict, "type_in_use", "Space type is still used by existing spaces")
+		return
+	}
+
 	if err := h.Service.DeleteSpaceType(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return

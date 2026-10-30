@@ -4,7 +4,6 @@
 	// Admin can publish drafts/reviews and trigger manual generation.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { digestAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { JsonValueEditor } from '@japaconnect/ui';
@@ -331,8 +330,8 @@
 	</div>
 </Modal>
 
-<!-- ── Edit content slide-over (draft/review only — PATCH /admin/digest/:id) ── -->
-<SlideOver bind:open={showEditModal} title={t('app.digest.modal_edit', 'Edit Digest Content')} size="lg">
+<!-- ── Edit content modal (draft/review only — PATCH /admin/digest/:id) ── -->
+<Modal bind:open={showEditModal} title={t('app.digest.modal_edit', 'Edit Digest Content')} size="lg">
 	<div class="space-y-4">
 		<p class="text-sm" style="color: var(--color-muted)">
 			{t('app.digest.edit_desc', 'Edit the digest content JSON (sections: top_threads, new_members, events, story, poll).')}
@@ -348,9 +347,9 @@
 			{acting ? t('app.digest.saving', 'Saving...') : t('app.digest.save', 'Save')}
 		</Button>
 	{/snippet}
-</SlideOver>
+</Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet DigestView({ row }: { row: DigestItem })}
 	<div class="space-y-4">
 		<div>

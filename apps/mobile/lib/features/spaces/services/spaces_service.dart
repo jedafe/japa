@@ -19,8 +19,16 @@ class SpacesService {
     );
   }
 
-  Future<void> join(String slug) async {
-    await _client.post<void>('/spaces/$slug/join', parse: (_) {});
+  /// Returns {joined: bool, pending: bool} — a 202 pending response for
+  /// request-only spaces must not be presented as a join (BUG-035).
+  Future<Map<String, bool>> join(String slug) async {
+    return _client.post<Map<String, bool>>(
+      '/spaces/$slug/join',
+      parse: (json) => {
+        'joined': (json as Map<String, dynamic>)['joined'] as bool? ?? true,
+        'pending': json['pending'] as bool? ?? false,
+      },
+    );
   }
 
   Future<void> leave(String slug) async {

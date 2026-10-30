@@ -312,7 +312,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet GuideView({ row }: { row: GuideItem })}
 	<div class="space-y-4">
 		<div>

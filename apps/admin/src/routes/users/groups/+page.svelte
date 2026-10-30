@@ -6,7 +6,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import { Modal } from '$lib/components/ui/modal';
-	import { SlideOver } from '$lib/components/ui/slide-over';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
@@ -30,7 +29,7 @@
 	let sortKey = $state(initialParams.get('sort') ?? '');
 	let sortDir = $state<'asc' | 'desc'>(initialParams.get('dir') === 'desc' ? 'desc' : 'asc');
 
-	let showSlideOver = $state(false);
+	let showModal = $state(false);
 	let editingGroup = $state<UserGroup | null>(null);
 	let formName = $state('');
 	let formDescription = $state('');
@@ -113,7 +112,7 @@
 		saveError = '';
 		permSearch = '';
 		permCategory = '';
-		showSlideOver = true;
+		showModal = true;
 	}
 
 	function openEdit(group: UserGroup) {
@@ -124,7 +123,7 @@
 		saveError = '';
 		permSearch = '';
 		permCategory = '';
-		showSlideOver = true;
+		showModal = true;
 	}
 
 	async function handleSave() {
@@ -137,7 +136,7 @@
 			: await userManagementApi.createGroup(body);
 		saving = false;
 		if (result.ok) {
-			showSlideOver = false;
+			showModal = false;
 			load();
 		} else {
 			saveError = result.error ?? t('users.groups.save_error', 'Failed to save group');
@@ -294,8 +293,8 @@
 	</CardContent>
 </Card>
 
-<!-- Create / Edit SlideOver -->
-<SlideOver bind:open={showSlideOver} title={editingGroup ? t('users.groups.edit_title', 'Edit Group') : t('users.groups.create_title', 'Create Group')}>
+<!-- Create / Edit Modal -->
+<Modal bind:open={showModal} title={editingGroup ? t('users.groups.edit_title', 'Edit Group') : t('users.groups.create_title', 'Create Group')}>
 	{#if saveError}
 		<div class="mb-3 rounded-md border px-3 py-2 text-xs" style="border-color: var(--color-danger); color: var(--color-danger)">{saveError}</div>
 	{/if}
@@ -372,11 +371,11 @@
 	</div>
 	{#snippet footer()}
 		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => { showSlideOver = false; }}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant="outline" onclick={() => { showModal = false; }}>{t('common.cancel', 'Cancel')}</Button>
 			<Button onclick={handleSave} disabled={saving}>{saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}</Button>
 		</div>
 	{/snippet}
-</SlideOver>
+</Modal>
 
 <!-- Delete Confirmation -->
 <Modal bind:open={showDeleteConfirm} title={t('common.delete', 'Delete')} size="sm">

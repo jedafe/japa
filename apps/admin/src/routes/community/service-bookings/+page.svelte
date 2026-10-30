@@ -294,7 +294,7 @@
 	{/if}
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet BookingView({ row }: { row: BookingItem })}
 	<div class="space-y-4">
 		<div>

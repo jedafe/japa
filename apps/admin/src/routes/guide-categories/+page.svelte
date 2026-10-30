@@ -148,7 +148,7 @@
 
 <EntityPage {config} bind:controller={entityController} />
 
-<!-- View slide-over body -->
+<!-- View modal body -->
 {#snippet CategoryView({ row }: { row: GuideCategory & { id: string } })}
 	<div class="space-y-4">
 		<div>

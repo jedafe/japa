@@ -582,7 +582,7 @@
 	</div>
 </Modal>
 
-<!-- ── View slide-over body ──────────────────────────────────────────────── -->
+<!-- ── View modal body ──────────────────────────────────────────────── -->
 {#snippet PathwayView({ row }: { row: PathwayItem })}
 	<div class="space-y-4">
 		<div>
