@@ -303,10 +303,8 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 
 	// Entity-bound child types get filter chips too — the entity group
 	// renders under its own section in the panel.
-	entTotal := 0
 	for _, et := range entTypes {
 		if kids := entityChildren[et.TypeSlug]; len(kids) > 0 {
-			entTotal += len(kids)
 			if !seen[et.TypeSlug] {
 				seen[et.TypeSlug] = true
 				levels = append(levels, et.TypeSlug)
@@ -332,7 +330,10 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 		Levels:         levels,
 		Children:       directoryChildDTOs(capped, imageURLs, kinds),
 		EntityChildren: entityChildrenOrNil(entityChildren),
-		Total:          len(children) + entTotal,
+		// Total counts space children only — the frontend's "Showing X of
+		// Y" note compares it against children.length; entity children are
+		// uncapped and render in their own groups.
+		Total: len(children),
 	}
 }
 

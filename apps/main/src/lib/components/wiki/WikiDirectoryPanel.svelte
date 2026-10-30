@@ -58,7 +58,10 @@
 	// space hierarchy can't see them, so they ride as their own groups
 	// keyed by child type slug.
 	const entityGroups = $derived(
-		Object.entries(directory.entity_children ?? {}).filter(([, items]) => items.length > 0)
+		Object.entries(directory.entity_children ?? {}).filter(
+			([typeSlug, items]) =>
+				items.length > 0 && (selectedType === null || selectedType === typeSlug)
+		)
 	);
 
 	async function searchChildren(q: string): Promise<AutocompleteItem[]> {
