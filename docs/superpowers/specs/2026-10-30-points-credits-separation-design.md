@@ -67,6 +67,12 @@ New activity keys (constants in `wallet.go`) + emitter wiring. Emitters use the 
 
 Badge unlocks and challenge completions already award points via `reward_points`/`AwardPoints` — no change. Daily-login *streaks* are modeled as gamification challenges on `daily.login` (no new infrastructure).
 
+### Points → badge unlocks (already wired)
+
+`badge_definitions.trigger_type='lifetime_points'` + `trigger_value` already exists and is evaluated on every points ledger write (`EvaluateForWallet` → `EvaluatePointsBadges`, `gamification/service.go`). The admin badge UI already exposes the "Lifetime Points" trigger. No new work — but the implementation must not regress it when removing conversion code paths (it lives on the same `EvaluateForWallet` hook).
+
+**Leaderboard ranking fix:** the leaderboard currently orders by `lifetime_points` (sum of *positive* earns only — `gamification.sql` query). Under the new model penalties must actually demote users, so the leaderboard switches to ordering by **current points balance** (sum of *all* signed entries). `lifetime_points` is retained for badge thresholds and the `/me/wallet` payload — the two metrics now mean different things on purpose: lifetime = total ever earned (badges), balance = current standing (rank).
+
 ### Negative events (penalties bypass the earn killswitch and daily earn cap)
 
 | Activity key | Emitter site | Proposed default |
