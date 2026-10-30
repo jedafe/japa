@@ -1067,6 +1067,50 @@ func (q *Queries) ListWikiDirectoryChildren(ctx context.Context, arg ListWikiDir
 	return items, nil
 }
 
+const listWikiEntityTypesForIDs = `-- name: ListWikiEntityTypesForIDs :many
+SELECT wtc.space_type_id, st.slug AS type_slug,
+       wtc.entity_kind, wtc.entity_discriminator
+FROM wiki_type_configs wtc
+JOIN space_types st ON st.id = wtc.space_type_id
+WHERE wtc.space_type_id = ANY($1::uuid[])
+  AND wtc.enabled = true AND wtc.entity_kind IS NOT NULL
+`
+
+type ListWikiEntityTypesForIDsRow struct {
+	SpaceTypeID         pgtype.UUID `json:"space_type_id"`
+	TypeSlug            string      `json:"type_slug"`
+	EntityKind          *string     `json:"entity_kind"`
+	EntityDiscriminator []byte      `json:"entity_discriminator"`
+}
+
+// Entity-bound wiki types among a resolved descendant-type id set —
+// computeDirectory and the directory `empty` check split space vs entity
+// children by entity_kind.
+func (q *Queries) ListWikiEntityTypesForIDs(ctx context.Context, typeIds []pgtype.UUID) ([]ListWikiEntityTypesForIDsRow, error) {
+	rows, err := q.db.Query(ctx, listWikiEntityTypesForIDs, typeIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWikiEntityTypesForIDsRow
+	for rows.Next() {
+		var i ListWikiEntityTypesForIDsRow
+		if err := rows.Scan(
+			&i.SpaceTypeID,
+			&i.TypeSlug,
+			&i.EntityKind,
+			&i.EntityDiscriminator,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWikiPageTemplates = `-- name: ListWikiPageTemplates :many
 
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,

@@ -539,3 +539,14 @@ JOIN space_types st ON st.id = wtc.space_type_id
 WHERE p.parent_space_type_id = @parent_space_type_id
   AND wtc.entity_kind IS NOT NULL
 ORDER BY wtc.position;
+
+-- name: ListWikiEntityTypesForIDs :many
+-- Entity-bound wiki types among a resolved descendant-type id set —
+-- computeDirectory and the directory `empty` check split space vs entity
+-- children by entity_kind.
+SELECT wtc.space_type_id, st.slug AS type_slug,
+       wtc.entity_kind, wtc.entity_discriminator
+FROM wiki_type_configs wtc
+JOIN space_types st ON st.id = wtc.space_type_id
+WHERE wtc.space_type_id = ANY(@type_ids::uuid[])
+  AND wtc.enabled = true AND wtc.entity_kind IS NOT NULL;

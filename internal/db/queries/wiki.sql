@@ -745,18 +745,56 @@ WHERE host_space_id = @space_id AND is_active = true
 ORDER BY name;
 
 -- name: GetCourseOfferingForWiki :one
-SELECT o.id, o.slug, o.university_id, c.title AS name
+SELECT o.id, o.slug, o.university_id, o.course_id,
+       c.title AS name, c.slug AS program_slug
 FROM university_course_offerings o
 JOIN university_course_catalog c ON c.id = o.course_id
 WHERE o.slug = @slug AND o.deleted_at IS NULL AND o.is_published = true
 LIMIT 1;
 
 -- name: ListCourseOfferingsForWiki :many
-SELECT o.id, o.slug, c.title AS name
+SELECT o.id, o.slug, c.title AS name, c.slug AS program_slug
 FROM university_course_offerings o
 JOIN university_course_catalog c ON c.id = o.course_id
 WHERE o.university_id = @space_id AND o.deleted_at IS NULL AND o.is_published = true
 ORDER BY c.title;
+
+-- name: GetProgramForWiki :one
+-- Canonical catalog course (program wiki entity) by slug.
+SELECT id, slug, title AS name
+FROM university_course_catalog
+WHERE slug = @slug AND deleted_at IS NULL AND is_published = true
+LIMIT 1;
+
+-- name: ListUniversitiesForCourseOffering :many
+-- Sibling published offerings of the same catalog course → their host
+-- universities ("also offered at" grid on an offering wiki page).
+-- offering_slug is the per-uni course wiki page link.
+SELECT s.id, s.slug, s.name, s.geo_code, MIN(o2.slug) AS offering_slug
+FROM university_course_offerings o
+JOIN university_course_offerings o2
+  ON o2.course_id = o.course_id AND o2.id <> o.id
+ AND o2.deleted_at IS NULL AND o2.is_published = true
+JOIN spaces s ON s.id = o2.university_id
+ AND s.deleted_at IS NULL AND s.status = 'active'
+WHERE o.slug = @slug AND o.deleted_at IS NULL AND o.is_published = true
+GROUP BY s.id, s.slug, s.name, s.geo_code
+ORDER BY s.name
+LIMIT 200;
+
+-- name: ListUniversitiesForProgram :many
+-- Every published offering of a catalog course → host universities
+-- ("universities offering this program" grid on a program wiki page).
+SELECT s.id, s.slug, s.name, s.geo_code, MIN(o.slug) AS offering_slug
+FROM university_course_catalog c
+JOIN university_course_offerings o
+  ON o.course_id = c.id AND o.deleted_at IS NULL AND o.is_published = true
+JOIN spaces s ON s.id = o.university_id
+ AND s.deleted_at IS NULL AND s.status = 'active'
+WHERE c.slug = @slug AND c.deleted_at IS NULL AND c.is_published = true
+GROUP BY s.id, s.slug, s.name, s.geo_code
+ORDER BY s.name
+LIMIT 200;
 
 -- name: GetScholarshipForWiki :one
 SELECT id, slug, title, country_space_id
