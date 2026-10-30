@@ -218,7 +218,9 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		}
 
 		// Compensation = exact negative of what actually credited. Skip the
-		// caps/killswitch entirely — a correction is not an earning.
+		// caps/killswitch entirely — a correction is not an earning. The
+		// 'refund' operation keeps reverts out of lifetime_points and the
+		// positive-earn cap (both filter operation='earn').
 		compensation := -entry.Amount
 		balance, berr := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
 			UserID:     event.UserID,
@@ -232,7 +234,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 			UserID:           event.UserID,
 			LedgerType:       LedgerTypePoints,
-			Operation:        OperationEarn,
+			Operation:        OperationRefund,
 			Amount:           compensation,
 			ResultingBalance: newBalance,
 			Source:           &event.ActivityKey,

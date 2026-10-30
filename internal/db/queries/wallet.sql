@@ -27,7 +27,7 @@ LIMIT 1;
 -- Section 28). BUG-W-003: surfaced in GET /me/wallet response.
 SELECT COALESCE(SUM(amount), 0)::bigint FROM wallet_ledger
 WHERE user_id = @user_id
- AND ledger_type = 'points' AND amount > 0;
+ AND ledger_type = 'points' AND operation = 'earn' AND amount > 0;
 
 -- name: CheckIdempotencyKey :one
 SELECT EXISTS(

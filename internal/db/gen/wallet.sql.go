@@ -325,7 +325,7 @@ func (q *Queries) GetLedgerEntryByReference(ctx context.Context, arg GetLedgerEn
 const getLifetimePoints = `-- name: GetLifetimePoints :one
 SELECT COALESCE(SUM(amount), 0)::bigint FROM wallet_ledger
 WHERE user_id = $1
- AND ledger_type = 'points' AND amount > 0
+ AND ledger_type = 'points' AND operation = 'earn' AND amount > 0
 `
 
 // Sum of all positive points earns (never decreases; used for badges/tiers,
