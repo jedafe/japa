@@ -31,6 +31,7 @@
 		success_message?: string;
 		status: 'active' | 'draft';
 		is_system: boolean;
+		form_type?: string;
 		space_id?: string;
 		field_group_id?: string;
 		fields?: FieldDef[];
@@ -869,8 +870,10 @@
 			</CardContent>
 		</Card>
 
-		<!-- Steps (multi-step forms) -->
-		{#if form?.is_multi_step}
+		<!-- Steps (multi-step standard forms). Assessment forms derive their
+			 steps from field dimensions — the backend rejects explicit steps
+			 (assessment_derives_steps), so the editor is hidden for them. -->
+		{#if form?.is_multi_step && form?.form_type !== 'assessment'}
 			<Card class="mt-4">
 				<CardContent class="p-6">
 					<div class="mb-4 flex items-center justify-between">

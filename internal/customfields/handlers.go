@@ -1734,6 +1734,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 			"submit_label":    form.SubmitLabel,
 			"success_message": form.SuccessMessage,
 			"is_system":              form.IsSystem,
+			"form_type":              form.FormType,
 			"submission_fee_credits": form.SubmissionFeeCredits,
 			"fields":                 fieldList,
 			"field_group_id":  fieldGroupID,
@@ -3564,6 +3565,15 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 	form, err := h.Service.GetForm(r.Context(), formID)
 	if err != nil {
 		handleServiceError(w, err)
+		return
+	}
+
+	// Assessment forms derive their steps from field dimensions at render
+	// time — an explicit form_steps row would split the model: the Fields
+	// tab and embed would switch to per-step groups while the bespoke
+	// engine keeps reading the form-level fields.
+	if form.FormType == "assessment" {
+		errpkg.WriteError(w, http.StatusBadRequest, "assessment_derives_steps", "Assessment forms derive steps from field dimensions — explicit steps cannot be added")
 		return
 	}
 

@@ -3580,6 +3580,7 @@ type ScamReport struct {
 	SubjectID             pgtype.UUID        `json:"subject_id"`
 	SubjectLabel          *string            `json:"subject_label"`
 	DuplicateOfReportID   pgtype.UUID        `json:"duplicate_of_report_id"`
+	PlatformRef           *string            `json:"platform_ref"`
 }
 
 type Scholarship struct {

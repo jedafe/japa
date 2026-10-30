@@ -252,7 +252,8 @@ func (q *Queries) DeleteFormSubmissionTrigger(ctx context.Context, arg DeleteFor
 
 const getFormByID = `-- name: GetFormByID :one
 SELECT id, space_id, name, slug, description, is_multi_step,
- submit_label, success_message, status, is_system, submission_fee_credits, created_at
+ submit_label, success_message, status, is_system, form_type,
+ submission_fee_credits, created_at
 FROM forms
 WHERE id = $1
 `
@@ -268,6 +269,7 @@ type GetFormByIDRow struct {
 	SuccessMessage       *string            `json:"success_message"`
 	Status               string             `json:"status"`
 	IsSystem             bool               `json:"is_system"`
+	FormType             string             `json:"form_type"`
 	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 }
@@ -286,6 +288,7 @@ func (q *Queries) GetFormByID(ctx context.Context, id pgtype.UUID) (GetFormByIDR
 		&i.SuccessMessage,
 		&i.Status,
 		&i.IsSystem,
+		&i.FormType,
 		&i.SubmissionFeeCredits,
 		&i.CreatedAt,
 	)
@@ -294,7 +297,8 @@ func (q *Queries) GetFormByID(ctx context.Context, id pgtype.UUID) (GetFormByIDR
 
 const getFormBySlug = `-- name: GetFormBySlug :one
 SELECT id, space_id, name, slug, description, is_multi_step,
- submit_label, success_message, status, is_system, submission_fee_credits, created_at
+ submit_label, success_message, status, is_system, form_type,
+ submission_fee_credits, created_at
 FROM forms
 WHERE slug = $1
 `
@@ -310,6 +314,7 @@ type GetFormBySlugRow struct {
 	SuccessMessage       *string            `json:"success_message"`
 	Status               string             `json:"status"`
 	IsSystem             bool               `json:"is_system"`
+	FormType             string             `json:"form_type"`
 	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 }
@@ -328,6 +333,7 @@ func (q *Queries) GetFormBySlug(ctx context.Context, slug string) (GetFormBySlug
 		&i.SuccessMessage,
 		&i.Status,
 		&i.IsSystem,
+		&i.FormType,
 		&i.SubmissionFeeCredits,
 		&i.CreatedAt,
 	)

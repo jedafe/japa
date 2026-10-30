@@ -29,13 +29,15 @@ ORDER BY f.created_at DESC, f.id DESC;
 
 -- name: GetFormByID :one
 SELECT id, space_id, name, slug, description, is_multi_step,
- submit_label, success_message, status, is_system, submission_fee_credits, created_at
+ submit_label, success_message, status, is_system, form_type,
+ submission_fee_credits, created_at
 FROM forms
 WHERE id = @id;
 
 -- name: GetFormBySlug :one
 SELECT id, space_id, name, slug, description, is_multi_step,
- submit_label, success_message, status, is_system, submission_fee_credits, created_at
+ submit_label, success_message, status, is_system, form_type,
+ submission_fee_credits, created_at
 FROM forms
 WHERE slug = @slug;
 
