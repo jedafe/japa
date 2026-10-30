@@ -1107,9 +1107,14 @@ func timestamptzPtr(t pgtype.Timestamptz) *string {
 	return &s
 }
 
-// slugify converts a title into a URL-safe slug.
+// nonSlugChars matches runs of characters that are not valid slug segments —
+// slugify output always satisfies docSlugRe (or is empty).
+var nonSlugChars = regexp.MustCompile(`[^a-z0-9]+`)
+
+// slugify converts a title into a URL-safe slug: lowercase alphanumeric
+// segments joined by single dashes (the docSlugRe shape).
 func slugify(s string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), " ", "-"))
+	return strings.Trim(nonSlugChars.ReplaceAllString(strings.ToLower(strings.TrimSpace(s)), "-"), "-")
 }
 
 // GenerateDraft creates a doc page draft via the Content Agent (ADR-088).
@@ -1131,7 +1136,7 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 
 	audience := input.Audience
 	if audience == "" {
-		audience = "public"
+		audience = "users"
 	}
 
 	// Build the prompt sent to the Content Agent.
@@ -1173,37 +1178,25 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 	}
 
 	// Build TipTap JSON content from the generated text.
-	contentBytes := []byte(fmt.Sprintf(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":%q}]}]}`, generatedText))
+	contentBytes := json.RawMessage(fmt.Sprintf(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":%q}]}]}`, generatedText))
 
-	category, err := normalizeTaxonomy(&input.Category)
-	if err != nil {
-		return GenerateDraftResponse{}, err
-	}
-
-	subcategory, err := normalizeTaxonomy(&input.Subcategory)
-	if err != nil {
-		return GenerateDraftResponse{}, err
-	}
-
-	// Create the doc page with ai_generated=true, review_status='draft'.
-	id, err := s.store.create(ctx, gen.CreateDocPageParams{
+	// Create the draft through CreateDocPage so slug/audience/taxonomy/
+	// content-size validation and cache invalidation stay in one place —
+	// a direct store write here previously skipped all of it.
+	id, err := s.CreateDocPage(ctx, CreateDocPageRequest{
 		Title:        input.Title,
 		Slug:         slug,
 		Audience:     audience,
 		Content:      contentBytes,
-		AiGenerated:  true,
+		AIGenerated:  true,
 		ReviewStatus: "draft",
-		ParentID:     pgtype.UUID{},
 		Position:     0,
-		Category:     category,
-		Subcategory:  subcategory,
+		Category:     &input.Category,
+		Subcategory:  &input.Subcategory,
 	})
 	if err != nil {
 		return GenerateDraftResponse{}, fmt.Errorf("docs: generate draft: %w", err)
 	}
-
-	// Invalidate cache for this audience+slug.
-	s.invalidateCache(ctx, audience, slug)
 
 	return GenerateDraftResponse{
 		Status:  "accepted",

@@ -118,7 +118,7 @@ WHERE activity_key = @activity_key AND reference = @reference;
 -- used by vote emitters to link a revert to the award it undoes (ADR-136).
 SELECT reference FROM activity_events
 WHERE activity_key = @activity_key AND reference LIKE @prefix
-ORDER BY created_at DESC LIMIT 1;
+ORDER BY reference DESC LIMIT 1;
 
 -- name: GetLedgerEntryByReference :one
 -- The wallet entry written for a specific activity reference (ADR-136).

@@ -9,4 +9,11 @@ BEGIN;
 ALTER TABLE comment_votes ADD COLUMN IF NOT EXISTS updated_at timestamptz;
 ALTER TABLE forum_votes ADD COLUMN IF NOT EXISTS updated_at timestamptz;
 
+-- Dependent-enqueue lookup (processed events enqueue events whose undoes
+-- payload references them). Partial index — only pending events are
+-- indexed, which is exactly the query filter.
+CREATE INDEX IF NOT EXISTS idx_activity_events_undoes_pending
+    ON activity_events ((payload->>'undoes_key'), (payload->>'undoes'))
+    WHERE processed IS NOT TRUE;
+
 COMMIT;

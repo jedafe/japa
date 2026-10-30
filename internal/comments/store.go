@@ -1010,13 +1010,19 @@ func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityI
 	priorRef, err := s.write.GetLatestActivityEventReferenceByPrefixAndKey(ctx,
 		gen.GetLatestActivityEventReferenceByPrefixAndKeyParams{ActivityKey: priorKey, Prefix: prefix + "%"})
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("emit vote events: prior award lookup failed", "prefix", prefix, "error", err)
+		}
 		return // nothing to undo
 	}
+	// The undo ref derives from the award (priorRef:undo), not this
+	// transition — one compensation can ever fire per award, even if a
+	// racing lookup picks a stale reference (ADR-136).
 	undoes := map[string]interface{}{"undoes_key": priorKey, "undoes": priorRef}
 	if prevValue == 1 {
-		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, ref+":undo", undoes)
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, priorRef+":undo", undoes)
 	} else {
-		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegativeReverted, ref+":undo", undoes)
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegativeReverted, priorRef+":undo", undoes)
 	}
 }
 

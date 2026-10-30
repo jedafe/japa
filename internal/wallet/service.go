@@ -75,11 +75,13 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 // enqueueDependents enqueues unprocessed events whose undoes payload points
 // at the just-processed event — fire-and-forget (dedupe is idempotent).
 func (s *Service) enqueueDependents(ctx context.Context, eventID pgtype.UUID) {
-	event, err := s.store.getActivityEventByID(ctx, eventID)
+	// Read via the write pool — the dependent events were committed moments
+	// ago and a lagging replica could miss them and strand the revert.
+	event, err := s.store.write.GetActivityEventByID(ctx, eventID)
 	if err != nil {
 		return
 	}
-	deps, err := s.store.read.ListActivityEventsUndoing(ctx, gen.ListActivityEventsUndoingParams{
+	deps, err := s.store.write.ListActivityEventsUndoing(ctx, gen.ListActivityEventsUndoingParams{
 		Undoes:      event.Reference,
 		ActivityKey: event.ActivityKey,
 	})

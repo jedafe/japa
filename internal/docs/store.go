@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -175,12 +176,17 @@ func (s *Store) listPublished(ctx context.Context) ([]gen.ListPublishedDocPagesR
 	return rows, nil
 }
 
+// likeEscaper escapes LIKE metacharacters so a literal "%" or "_" in the
+// search term isn't treated as a wildcard (Postgres' default LIKE escape is
+// the backslash).
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 // search returns published doc pages matching the query by title or content.
 // When audience is non-nil, results are filtered to that audience section.
 func (s *Store) search(ctx context.Context, query string, audience *string, limit int32) ([]gen.SearchDocPagesRow, error) {
 	rows, err := s.read.SearchDocPages(ctx, gen.SearchDocPagesParams{
 		Audience:    audience,
-		Query:       query,
+		Query:       likeEscaper.Replace(query),
 		ResultLimit: limit,
 	})
 	if err != nil {
@@ -230,9 +236,9 @@ func (s *Store) getStatus(ctx context.Context, id pgtype.UUID) (string, error) {
 	return status, nil
 }
 
-// delete removes a doc page and orphans its children (parent_id is not an
-// FK — children must be unlinked explicitly or they'd carry a dead
-// reference; nav promotes them to roots).
+// delete removes a doc page and orphans its children. parent_id is an FK to
+// doc_pages, so children must be unlinked before the delete or the FK would
+// reject it; the nav tree promotes orphans to roots.
 func (s *Store) delete(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.ClearDocPageParent(ctx, id); err != nil {
 		return fmt.Errorf("unlinking doc page children: %w", err)
@@ -300,7 +306,7 @@ func (s *Store) deleteVote(ctx context.Context, pageID, userID pgtype.UUID) erro
 func (s *Store) searchInAudiences(ctx context.Context, query string, audiences []string, limit int32) ([]gen.SearchDocPagesInAudiencesRow, error) {
 	rows, err := s.read.SearchDocPagesInAudiences(ctx, gen.SearchDocPagesInAudiencesParams{
 		Audiences:   audiences,
-		Query:       query,
+		Query:       likeEscaper.Replace(query),
 		ResultLimit: limit,
 	})
 	if err != nil {

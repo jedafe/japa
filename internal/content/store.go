@@ -2165,6 +2165,8 @@ func (s *Service) RemoveReaction(ctx context.Context, entityType string, entityI
 				gen.GetLatestActivityEventReferenceByPrefixAndKeyParams{ActivityKey: wallet.ActivityKeyReactionAdded, Prefix: prefix + "%"}); lerr == nil {
 				s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, priorRef+":undo",
 					map[string]interface{}{"undoes_key": wallet.ActivityKeyReactionAdded, "undoes": priorRef})
+			} else if !errors.Is(lerr, pgx.ErrNoRows) {
+				slog.Warn("content: prior reaction award lookup failed", "prefix", prefix, "error", lerr)
 			}
 		}
 	}

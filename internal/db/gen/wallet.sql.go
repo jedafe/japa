@@ -214,7 +214,7 @@ func (q *Queries) GetActivityRuleByKey(ctx context.Context, activityKey string) 
 const getLatestActivityEventReferenceByPrefixAndKey = `-- name: GetLatestActivityEventReferenceByPrefixAndKey :one
 SELECT reference FROM activity_events
 WHERE activity_key = $1 AND reference LIKE $2
-ORDER BY created_at DESC LIMIT 1
+ORDER BY reference DESC LIMIT 1
 `
 
 type GetLatestActivityEventReferenceByPrefixAndKeyParams struct {

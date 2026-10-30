@@ -187,6 +187,20 @@ func publicAudiences() []string {
 	return allowed
 }
 
+// checkPageAudienceGate fetches the page and verifies the requester may read
+// its audience. Admin-side reads and writes into gated audiences require the
+// same access as public reads — docs.manage alone must not expose or mutate
+// admin/superadmin documentation.
+func (h *Handlers) checkPageAudienceGate(w http.ResponseWriter, r *http.Request, id pgtype.UUID) bool {
+	page, err := h.Service.GetDocPageByID(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return false
+	}
+
+	return h.checkAudienceGate(w, r, page.Audience)
+}
+
 // requireUser resolves the authenticated user from the request context.
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
@@ -358,8 +372,9 @@ func (h *Handlers) GetDocFeedback(w http.ResponseWriter, r *http.Request) {
 }
 
 // SubmitDocPageFeedback handles POST /api/v1/docs/{audience}/{slug}/feedback.
-// Records the caller's vote in doc_page_votes — per-user dedupe makes the
-// vote idempotent (repeat = no-op, change = counters move). Returns the
+// Records the caller's vote in doc_page_votes — per-user dedupe: a new vote
+// inserts, a changed vote switches the counters, and re-posting the current
+// vote retracts it (same toggle as wiki page feedback). Returns the
 // post-vote feedback state. CSRF is enforced by the route middleware
 // (DOC-011 + §44 amendment 2).
 func (h *Handlers) SubmitDocPageFeedback(w http.ResponseWriter, r *http.Request) {
@@ -439,6 +454,10 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if !h.checkAudienceGate(w, r, audience) {
+			return
+		}
+
 		pages, err := h.Service.ListAllDocPagesByAudience(r.Context(), audience)
 		if err != nil {
 			handleServiceError(w, err)
@@ -456,7 +475,23 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": pages})
+	// docs.manage holders without a gated audience's permission must not see
+	// that audience's pages — filter the unscoped list the same way the
+	// public nav is filtered.
+	allowed := h.accessibleAudiences(r)
+	allowedSet := make(map[string]bool, len(allowed))
+	for _, a := range allowed {
+		allowedSet[a] = true
+	}
+
+	filtered := make([]DocPage, 0, len(pages))
+	for _, p := range pages {
+		if allowedSet[p.Audience] {
+			filtered = append(filtered, p)
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": filtered})
 }
 
 // CreateDocPage handles POST /api/v1/admin/docs/pages.
@@ -469,6 +504,12 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 
 	if req.Title == "" || req.Slug == "" || req.Audience == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "title, slug, and audience are required")
+		return
+	}
+
+	// Writes into a gated audience require read access to it — docs.manage
+	// alone does not cover admin/superadmin documentation.
+	if !h.checkAudienceGate(w, r, req.Audience) {
 		return
 	}
 
@@ -503,6 +544,10 @@ func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.checkPageAudienceGate(w, r, id) {
+		return
+	}
+
 	page, err := h.Service.GetDocPageByID(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
@@ -521,6 +566,10 @@ func (h *Handlers) GetAdminDocPageBySlug(w http.ResponseWriter, r *http.Request)
 
 	if !ValidAudiences[audience] || slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "audience and slug are required")
+		return
+	}
+
+	if !h.checkAudienceGate(w, r, audience) {
 		return
 	}
 
@@ -554,6 +603,14 @@ func (h *Handlers) UpdateDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.checkPageAudienceGate(w, r, id) {
+		return
+	}
+
+	if req.Audience != nil && *req.Audience != "" && !h.checkAudienceGate(w, r, *req.Audience) {
+		return
+	}
+
 	if err := h.Service.UpdateDocPage(r.Context(), id, req); err != nil {
 		handleServiceError(w, err)
 		return
@@ -577,6 +634,10 @@ func (h *Handlers) ApproveDocPage(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	if !h.checkPageAudienceGate(w, r, id) {
 		return
 	}
 
@@ -604,6 +665,10 @@ func (h *Handlers) PublishDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.checkPageAudienceGate(w, r, id) {
+		return
+	}
+
 	if err := h.Service.PublishDocPage(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
@@ -618,6 +683,10 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
+	}
+
+	if !h.checkPageAudienceGate(w, r, id) {
 		return
 	}
 

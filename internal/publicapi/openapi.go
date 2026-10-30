@@ -1,9 +1,21 @@
 package publicapi
 
+import "strings"
+
 // GetPublicOpenAPISpec returns an OpenAPI 3.0.3 spec scoped to the public
 // developer API. Only read-only endpoints exposed via X-API-Key auth are
 // included. The spec is served at /api/v1/developer/swagger.json.
 func GetPublicOpenAPISpec(siteURL, siteName string) map[string]any {
+	servers := []any{
+		map[string]any{"url": siteURL + "/api/v1", "description": "Production"},
+	}
+	// The localhost server entry exists for developer convenience but must
+	// not ship in the production-served document — include it only when the
+	// deployment itself is local.
+	if isLocalSiteURL(siteURL) {
+		servers = append(servers, map[string]any{"url": "http://localhost:8080/api/v1", "description": "Local development"})
+	}
+
 	return map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{
@@ -16,10 +28,7 @@ func GetPublicOpenAPISpec(siteURL, siteName string) map[string]any {
 				"url":   siteURL + "/docs",
 			},
 		},
-		"servers": []any{
-			map[string]any{"url": siteURL + "/api/v1", "description": "Production"},
-			map[string]any{"url": "http://localhost:8080/api/v1", "description": "Local development"},
-		},
+		"servers": servers,
 		"security": []any{
 			map[string]any{"apiKeyAuth": []any{}},
 		},
@@ -48,6 +57,11 @@ func GetPublicOpenAPISpec(siteURL, siteName string) map[string]any {
 			"responses": buildPublicResponses(),
 		},
 	}
+}
+
+// isLocalSiteURL reports whether the site URL points at a loopback address.
+func isLocalSiteURL(siteURL string) bool {
+	return strings.Contains(siteURL, "localhost") || strings.Contains(siteURL, "127.0.0.1")
 }
 
 // mergePaths combines two path maps without overwriting existing entries.
