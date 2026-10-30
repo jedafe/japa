@@ -80,7 +80,7 @@ UPDATE tips SET status = @status, updated_at = now()
 WHERE id = @id;
 
 -- name: AttachTipPayment :exec
-UPDATE tips SET payment_id = @payment_id, updated_at = now()
+UPDATE tips SET payment_id = @payment_id, checkout_url = @checkout_url, updated_at = now()
 WHERE id = @id;
 
 -- name: SettleTip :exec
@@ -167,3 +167,18 @@ SELECT COALESCE(sum(points_amount),0)::bigint FROM tips
 WHERE recipient_type = 'user' AND recipient_user_id = @recipient_user_id
   AND method = 'points' AND status = 'completed'
   AND created_at >= (date_trunc('day', timezone('UTC', now()))) AT TIME ZONE 'UTC';
+
+-- name: ListStalePendingTips :many
+-- Janitor input: pending tips past the TTL whose payment can no longer
+-- charge the donor (missing, or any non-succeeded status).
+SELECT t.id FROM tips t
+LEFT JOIN payments p ON p.id = t.payment_id
+WHERE t.status = 'pending'
+  AND t.created_at < now() - make_interval(hours => @hours)
+  AND (t.payment_id IS NULL OR p.status != 'succeeded')
+LIMIT @lim;
+
+-- name: AdminTipStatsByCurrency :many
+SELECT fiat_currency, COALESCE(sum(fiat_amount),0)::bigint AS minor
+FROM tips WHERE status = 'completed' AND fiat_currency IS NOT NULL
+  AND created_at >= @since GROUP BY fiat_currency;

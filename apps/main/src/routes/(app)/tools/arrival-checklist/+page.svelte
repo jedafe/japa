@@ -15,7 +15,7 @@
 		CheckSquare,
 		Loader2,
 		Play
-	} from 'lucide-svelte';
+	, TriangleAlert } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type {
@@ -327,6 +327,15 @@
 						</div>
 					{/if}
 				</div>
+
+				{#if page.data.features?.['scam_alert.enabled'] && selectedDestId}
+					<div class="mb-4 flex items-center gap-2 rounded-[var(--radius)] border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+						<TriangleAlert size={15} class="shrink-0 text-amber-600" />
+						<a href="/scam-alerts?dest={selectedDestId}" class="font-medium text-amber-700 hover:underline">
+							{t('scam_alerts.checklist_link', 'Check confirmed scam alerts for this destination')}
+						</a>
+					</div>
+				{/if}
 
 				{#if loadingItems}
 					<LoadingSkeleton variant="lines" />

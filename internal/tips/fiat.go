@@ -97,6 +97,8 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 		return CreateTipResult{}, err
 	}
 
+	// Replay check happens at the service entry — a duplicate fiat tip
+	// returns the stored checkout_url so the donor can resume checkout.
 	// Paystack requires the payer email at /transaction/initialize; resolve it
 	// from the sender's user row (best-effort — providers that don't need it
 	// ignore the field).
@@ -130,7 +132,7 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 
 	var paymentID pgtype.UUID
 	if err := paymentID.Scan(pay.ID); err == nil {
-		if err := s.store.attachTipPayment(ctx, tip.ID, paymentID); err != nil {
+		if err := s.store.attachTipPayment(ctx, tip.ID, paymentID, pay.CheckoutURL); err != nil {
 			slog.Warn("tips: failed to attach payment to tip", "tip_id", tip.ID.String(), "payment_id", pay.ID, "error", err)
 		}
 	}

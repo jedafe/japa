@@ -18,18 +18,26 @@ class _ReportScamScreenState extends ConsumerState<ReportScamScreen> {
   String? _destId;
   String? _scamType;
   String? _platform;
+  String? _subjectType;
+  final _subjectCtrl = TextEditingController();
+  final _refCtrl = TextEditingController();
   bool _authorities = false;
   bool _sending = false;
 
   @override
   void dispose() {
     _descCtrl.dispose();
+    _subjectCtrl.dispose();
+    _refCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     final t = ref.read(tProvider);
-    if (_destId == null || _scamType == null || _descCtrl.text.trim().length < 20) {
+    if (_destId == null ||
+        _scamType == null ||
+        _descCtrl.text.trim().length < 20 ||
+        (_platform == 'internal' && (_subjectType == null || _subjectCtrl.text.trim().isEmpty))) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(t('scam_alerts.form.incomplete'))));
       return;
@@ -42,6 +50,12 @@ class _ReportScamScreenState extends ConsumerState<ReportScamScreen> {
       'reported_to_authorities': _authorities,
     };
     if (_platform != null && _platform!.isNotEmpty) body['platform_used'] = _platform;
+    if (_platform == 'internal') {
+      body['subject_type'] = _subjectType;
+      body['subject_label'] = _subjectCtrl.text.trim();
+    } else if (_platform != null && _refCtrl.text.trim().isNotEmpty) {
+      body['platform_ref'] = _refCtrl.text.trim();
+    }
     try {
       await ref.read(scamAlertsServiceProvider).submit(body);
       if (!mounted) return;
@@ -106,6 +120,36 @@ class _ReportScamScreenState extends ConsumerState<ReportScamScreen> {
               ),
             ]),
           ),
+          if (_platform == 'internal') ...[
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _subjectType,
+              decoration: InputDecoration(labelText: t('scam_alerts.form.subject_type')),
+              items: [
+                for (final st in ['user', 'organization', 'service'])
+                  DropdownMenuItem(value: st, child: Text(t('scam_alerts.subject.\$st'))),
+              ],
+              onChanged: (v) => setState(() => _subjectType = v),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _subjectCtrl,
+              decoration: InputDecoration(
+                labelText: t('scam_alerts.form.subject_entity'),
+                hintText: t('scam_alerts.form.subject_entity_hint'),
+              ),
+            ),
+          ],
+          if (_platform != null && _platform != 'internal') ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _refCtrl,
+              decoration: InputDecoration(
+                labelText: t('scam_alerts.form.platform_ref'),
+                hintText: t('scam_alerts.form.platform_ref_hint'),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           TextField(
             controller: _descCtrl,

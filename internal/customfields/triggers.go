@@ -13,6 +13,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/linkpreview"
+	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // TriggerDispatcher dispatches form submission triggers. It is the
@@ -52,7 +55,30 @@ type TriggerDispatcher struct {
 func NewTriggerDispatcher(service *Service) *TriggerDispatcher {
 	return &TriggerDispatcher{
 		service:    service,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		httpClient: newSSRFSafeWebhookClient(),
+	}
+}
+
+// newSSRFSafeWebhookClient returns an http.Client whose redirect hops are
+// validated against the shared SSRF blocklist — same posture as the oEmbed
+// resolver (CF-S2). A webhook target that 30x's into a private/reserved IP
+// is aborted before the request is sent.
+func newSSRFSafeWebhookClient() *http.Client {
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("stopped after 5 redirects")
+			}
+
+			if err := linkpreview.ValidateRedirectURL(req.URL.String()); err != nil {
+				slog.Warn("customfields: blocking webhook redirect to private/reserved IP",
+					"url", req.URL.String(), "error", err)
+				return fmt.Errorf("webhook redirect blocked: %w", err)
+			}
+
+			return nil
+		},
 	}
 }
 
@@ -111,6 +137,16 @@ func (d *TriggerDispatcher) FireSubmissionTriggers(
 	}
 
 	for _, trig := range triggers {
+		// CF-B3: dedupe per (submission, trigger) — a redelivered Asynq task
+		// must not send the same email/webhook/ticket twice. Best-effort:
+		// when no cache is configured (tests) every trigger fires.
+		if d.service.cache != nil {
+			key := valkey.MustKey("form_trigger_fired:%s:%s", submissionID.String(), trig.ID.String())
+			if acquired, err := d.service.cache.SetNX(ctx, key, "1", 24*time.Hour).Result(); err == nil && !acquired {
+				continue
+			}
+		}
+
 		if err := d.dispatchOne(ctx, trig, submissionID, submitterUserID, values); err != nil {
 			slog.Warn("customfields: form trigger failed",
 				"submission_id", submissionID.String(),
@@ -184,6 +220,14 @@ func (d *TriggerDispatcher) fireAssignUserGroup(ctx context.Context, cfg map[str
 		return fmt.Errorf("assign_user_group: invalid user_group_id: %w", err)
 	}
 
+	// CF-S1: re-check the escalation guard at fire time — rows predating
+	// the create/update gate must not grant a system group either.
+	if g, err := d.service.GetUserGroup(ctx, groupID); err != nil {
+		return fmt.Errorf("assign_user_group: group lookup: %w", err)
+	} else if rbac.IsSystemGroup(g.Slug) {
+		return fmt.Errorf("assign_user_group: %q is a system group and cannot be assigned via form triggers", g.Slug)
+	}
+
 	return d.rbacAssigner(ctx, *submitterUserID, groupID)
 }
 
@@ -218,6 +262,12 @@ func (d *TriggerDispatcher) fireSendWebhook(ctx context.Context, cfg map[string]
 
 	if !validWebhookURL(url) {
 		return errors.New("send_webhook: 'url' must be an http(s) URL")
+	}
+
+	// CF-S2: SSRF guard — reject private/reserved targets, not just
+	// non-http(s) schemes. Redirect hops are validated by the client.
+	if err := linkpreview.ValidateURL(url); err != nil {
+		return fmt.Errorf("send_webhook: 'url' rejected: %w", err)
 	}
 
 	payload := map[string]any{

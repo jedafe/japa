@@ -84,6 +84,7 @@ const (
 	TypeTipsSettleFiat     = "tips:settle_fiat"     // credit recipient after donation payment success
 	TypeTipsNotifyReceived = "tips:notify_received" // fan-out tip.received notification
 	TypeTipsOCSync         = "tips:oc_sync"         // poll Open Collective collectives for new contributions
+	TypeTipsStaleSweep     = "tips:stale_sweep"     // fail stale pending fiat tips past the checkout TTL
 
 	TypeServiceBookingCreated       = "service:booking_created"
 	TypeServiceBookingStatusChanged = "service:booking_status_changed"
@@ -266,6 +267,7 @@ var handlerRegistry = []struct {
 	{TypeTipsSettleFiat, HandleTipsSettleFiat},
 	{TypeTipsNotifyReceived, HandleTipsNotifyReceived},
 	{TypeTipsOCSync, HandleTipsOCSync},
+	{TypeTipsStaleSweep, HandleTipsStaleSweep},
 	// Japa Academy creator economy (ADR-063)
 	{TypeAcademyProcessEnrollment, HandleAcademyProcessEnrollment},
 	{TypeAcademyNotifyInstructorApproved, HandleAcademyNotifyInstructorApproved},

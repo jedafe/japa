@@ -154,9 +154,13 @@ func (s *Service) ImportContribution(ctx context.Context, owner Owner, c OCContr
 		params.RecipientOrganizationID = owner.ID
 	}
 
-	if _, err := s.store.insertTip(ctx, params); err != nil {
+	tip, err := s.store.insertTip(ctx, params)
+	if err != nil {
 		return false, fmt.Errorf("importing OC contribution: %w", err)
 	}
+	// Recipients should hear about OC donations the same as on-platform
+	// tips (§125 tip.received) — fire-and-forget.
+	s.notifyReceived(ctx, tip.ID)
 	return true, nil
 }
 

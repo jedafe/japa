@@ -58,6 +58,9 @@ type ScamReport struct {
 	SubjectType  *string // user|organization|service|other
 	SubjectID    pgtype.UUID
 	SubjectLabel *string // display name snapshot (org name, username, listing title)
+	// PlatformRef is the external contact reference (social URL, number,
+	// site URL, email). Moderation context only; redacted publicly.
+	PlatformRef *string
 	// BUG-012: which earlier report this was marked a duplicate of.
 	DuplicateOfReportID pgtype.UUID
 	// ADR-088 universal AI-generation columns.
@@ -91,12 +94,12 @@ INSERT INTO scam_reports (
     reporter_id, scam_type, destination_space_id,
     origin_space_id, origin_community, platform_used,
     approximate_date, amount_range, description, reported_to_authorities,
-    subject_type, subject_id, subject_label,
+    subject_type, subject_id, subject_label, platform_ref,
     ai_generated, ai_model, ai_generated_at,
     status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'under_review')
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'under_review')
 RETURNING id
-`, report.ReporterID, report.ScamType, report.DestinationSpaceID, report.OriginSpaceID, report.OriginCommunity, report.PlatformUsed, report.ApproximateDate, report.AmountRange, report.Description, report.ReportedToAuthorities, report.SubjectType, report.SubjectID, report.SubjectLabel, report.AiGenerated, report.AiModel, report.AiGeneratedAt).Scan(&id)
+`, report.ReporterID, report.ScamType, report.DestinationSpaceID, report.OriginSpaceID, report.OriginCommunity, report.PlatformUsed, report.ApproximateDate, report.AmountRange, report.Description, report.ReportedToAuthorities, report.SubjectType, report.SubjectID, report.SubjectLabel, report.PlatformRef, report.AiGenerated, report.AiModel, report.AiGeneratedAt).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("scamalert: create report: %w", err)
 	}
@@ -112,7 +115,7 @@ SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
-       sr.subject_type, sr.subject_id, sr.subject_label, sr.duplicate_of_report_id,
+       sr.subject_type, sr.subject_id, sr.subject_label, sr.platform_ref, sr.duplicate_of_report_id,
        sr.ai_generated, sr.ai_model, sr.ai_generated_at,
        sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
@@ -135,7 +138,7 @@ LIMIT 1
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 		&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
-		&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.DuplicateOfReportID,
+		&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.PlatformRef, &r.DuplicateOfReportID,
 		&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
 		&r.HitlReviewedBy, &r.HitlReviewedAt,
 		&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -163,7 +166,7 @@ SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
-       sr.subject_type, sr.subject_id, sr.subject_label, sr.duplicate_of_report_id,
+       sr.subject_type, sr.subject_id, sr.subject_label, sr.platform_ref, sr.duplicate_of_report_id,
        sr.ai_generated, sr.ai_model, sr.ai_generated_at,
        sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
@@ -185,7 +188,7 @@ LIMIT 1
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 		&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
-		&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.DuplicateOfReportID,
+		&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.PlatformRef, &r.DuplicateOfReportID,
 		&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
 		&r.HitlReviewedBy, &r.HitlReviewedAt,
 		&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -291,7 +294,7 @@ SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
-       sr.subject_type, sr.subject_id, sr.subject_label, sr.duplicate_of_report_id,
+       sr.subject_type, sr.subject_id, sr.subject_label, sr.platform_ref, sr.duplicate_of_report_id,
        sr.ai_generated, sr.ai_model, sr.ai_generated_at,
        sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
@@ -324,7 +327,7 @@ LIMIT $%d OFFSET $%d
 			&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
-			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.DuplicateOfReportID,
+			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.PlatformRef, &r.DuplicateOfReportID,
 			&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
 			&r.HitlReviewedBy, &r.HitlReviewedAt,
 			&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -560,7 +563,7 @@ SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
-       sr.subject_type, sr.subject_id, sr.subject_label, sr.duplicate_of_report_id,
+       sr.subject_type, sr.subject_id, sr.subject_label, sr.platform_ref, sr.duplicate_of_report_id,
        sr.ai_generated, sr.ai_model, sr.ai_generated_at,
        sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
@@ -593,7 +596,7 @@ LIMIT $%d OFFSET $%d
 			&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
-			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.DuplicateOfReportID,
+			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt, &r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.PlatformRef, &r.DuplicateOfReportID,
 			&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
 			&r.HitlReviewedBy, &r.HitlReviewedAt,
 			&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -744,7 +747,7 @@ SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
-       sr.subject_type, sr.subject_id, sr.subject_label, sr.duplicate_of_report_id,
+       sr.subject_type, sr.subject_id, sr.subject_label, sr.platform_ref, sr.duplicate_of_report_id,
        sr.ai_generated, sr.ai_model, sr.ai_generated_at,
        sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
@@ -773,7 +776,7 @@ LIMIT $2 OFFSET $3
 			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
 			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt,
-			&r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.DuplicateOfReportID,
+			&r.SubjectType, &r.SubjectID, &r.SubjectLabel, &r.PlatformRef, &r.DuplicateOfReportID,
 			&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
 			&r.HitlReviewedBy, &r.HitlReviewedAt,
 			&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,

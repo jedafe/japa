@@ -154,6 +154,14 @@
 						</li>
 					{/each}
 				</ul>
+				{#if page.data.features?.['scam_alert.enabled']}
+					<a
+						href="/scam-alerts?scam_type=housing_fraud&dest={guide.destination_space_id}"
+						class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
+					>
+						{t('scam_alerts.see_alerts', 'See housing scam alerts for this destination')} →
+					</a>
+				{/if}
 			</div>
 		{/if}
 

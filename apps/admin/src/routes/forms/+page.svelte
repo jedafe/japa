@@ -37,6 +37,7 @@
 	let activeTab = $state('all');
 	let forms = $state<Form[]>([]);
 	let loading = $state(true);
+	let loadError = $state('');
 	let filterValue = $state<Record<string, string>>({});
 	let selectedIds = $state<Set<string>>(new Set());
 	let bulkDeleting = $state(false);
@@ -115,7 +116,7 @@
 			key: 'status',
 			label: t('forms.columnStatus', 'Status'),
 			render: (v: string) => {
-				const isActive = v === 'active';
+				const isActive = v !== 'draft';
 				const cls = isActive ? 'bg-success/15 text-success border-success' : 'bg-surface text-foreground border';
 				return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${isActive ? t('forms.status.active', 'Active') : t('forms.status.inactive', 'Inactive')}</span>`;
 			}
@@ -141,7 +142,10 @@
 			icon: Trash2,
 			variant: 'destructive',
 			onclick: (row) => confirmDelete(row),
-			show: () => canManageForms
+			// System forms are consumed by bespoke pages keyed on their slug —
+			// the backend rejects deletion (403 system_form_protected), so the
+			// menu shouldn't offer it in the first place.
+			show: (row: Form) => canManageForms && !row.is_system
 		}
 	];
 
@@ -152,8 +156,8 @@
 	let filteredForms = $derived.by(() => {
 		let result = [...forms];
 		if (activeTab === 'system') result = result.filter((f) => f.is_system === true);
-		if (activeTab === 'active') result = result.filter((f) => f.status === 'active');
-		if (activeTab === 'inactive') result = result.filter((f) => f.status !== 'active');
+		if (activeTab === 'active') result = result.filter((f) => f.status !== 'draft');
+		if (activeTab === 'inactive') result = result.filter((f) => f.status === 'draft');
 		if (filterValue.type === 'system') result = result.filter((f) => f.is_system === true);
 		if (filterValue.type === 'custom') result = result.filter((f) => f.is_system !== true);
 		return result;
@@ -177,14 +181,19 @@
 
 	async function loadForms(spaceId?: string) {
 		loading = true;
+		loadError = '';
 		try {
 			const params = spaceId ? `space_id=${spaceId}` : undefined;
 			const result = await formsAdminApi.list(params);
 			if (result.ok) {
 				const raw = result.data;
 				forms = Array.isArray(raw) ? raw : (raw as any)?.data ?? [];
+			} else {
+				loadError = t('forms.load_error', 'Could not load forms — check the API connection and try Refresh.');
 			}
-		} catch { /* API not available */ } finally {
+		} catch {
+			loadError = t('forms.load_error', 'Could not load forms — check the API connection and try Refresh.');
+		} finally {
 			loading = false;
 		}
 	}
@@ -203,7 +212,7 @@
 		editTarget = form;
 		editTitle = form.name;
 		editDescription = form.description ?? '';
-		editIsActive = form.status === 'active';
+		editIsActive = form.status !== 'draft';
 		editIsMultiStep = form.is_multi_step ?? false;
 		editSubmitLabel = form.submit_label ?? '';
 		editSuccessMessage = form.success_message ?? '';
@@ -218,7 +227,7 @@
 			const result = await formsAdminApi.update(editTarget.id, {
 				name: editTitle.trim(),
 				description: editDescription.trim() || undefined,
-				status: editIsActive ? 'active' : 'draft',
+				status: editIsActive ? 'published' : 'draft',
 				is_multi_step: editIsMultiStep,
 				submit_label: editSubmitLabel.trim() || undefined,
 				success_message: editSuccessMessage.trim() || undefined,
@@ -233,7 +242,35 @@
 		}
 	}
 
+	let pendingBulkIds = $state<Set<string>>(new Set());
+
+	function bulkDelete(ids: Set<string>) {
+		if (ids.size === 0 || bulkDeleting) return;
+		// Skip system forms — the backend rejects them with 403; offering
+		// them in a bulk delete would produce confusing partial failures.
+		const deletable = new Set([...ids].filter((id) => forms.find((f) => f.id === id)?.is_system !== true));
+		if (deletable.size === 0) return;
+		// Confirm first, then refetch — the list is only patched after the
+		// server confirms, matching the invalidate-on-confirm pattern.
+		pendingBulkIds = deletable;
+		deleteTarget = null;
+		showDeleteModal = true;
+	}
+
 	async function deleteForm() {
+		if (pendingBulkIds.size > 0) {
+			bulkDeleting = true;
+			try {
+				await Promise.all([...pendingBulkIds].map((id) => formsAdminApi.delete(id)));
+			} catch { /* API not available */ } finally {
+				bulkDeleting = false;
+			}
+			pendingBulkIds = new Set();
+			showDeleteModal = false;
+			selectedIds = new Set();
+			loadForms(filterValue.space || undefined);
+			return;
+		}
 		if (!deleteTarget) return;
 		deleting = true;
 		try {
@@ -243,17 +280,6 @@
 			deleteTarget = null;
 		} catch { /* API not available */ } finally {
 			deleting = false;
-		}
-	}
-
-	async function bulkDelete(ids: Set<string>) {
-		const idArr = Array.from(ids);
-		if (idArr.length === 0 || bulkDeleting) return;
-		bulkDeleting = true;
-		try {
-			await Promise.all(idArr.map((id) => formsAdminApi.delete(id)));
-		} catch { /* API not available */ } finally {
-			bulkDeleting = false;
 		}
 	}
 
@@ -286,7 +312,7 @@
 				name: createTitle.trim(),
 				slug: createSlug.trim(),
 				description: createDescription.trim() || undefined,
-				status: createIsActive ? 'active' : 'draft',
+				status: createIsActive ? 'published' : 'draft',
 				is_multi_step: createIsMultiStep,
 				submit_label: createSubmitLabel.trim() || undefined,
 				success_message: createSuccessMessage.trim() || undefined,
@@ -343,6 +369,12 @@
 <div class="space-y-6">
 	<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
 
+	{#if loadError}
+		<div class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
+			{loadError}
+		</div>
+	{/if}
+
 	<Card>
 		<CardContent class="p-0">
 			<DataTable
@@ -372,7 +404,7 @@
 		<Card>
 			<CardContent class="p-4">
 				<p class="text-sm text-muted">{t('forms.statActive', 'Active Forms')}</p>
-				<p class="text-2xl font-bold text-foreground">{forms.filter((f) => f.status === 'active').length}</p>
+				<p class="text-2xl font-bold text-foreground">{forms.filter((f) => f.status !== 'draft').length}</p>
 			</CardContent>
 		</Card>
 		<Card>

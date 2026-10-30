@@ -2489,11 +2489,14 @@ export interface AddTicketCommentInput {
 /** A single field on an embeddable form (GET /forms/{slug}/embed). */
 export interface FormField {
 	id: string;
+	key?: string;
 	label: string;
 	type: string;
 	required: boolean;
 	sort_order: number;
 	options: string[] | null;
+	placeholder?: string | null;
+	default_value?: string | null;
 }
 
 /** A single step in a multi-step Form Builder form (§06). */
@@ -3700,12 +3703,14 @@ export type ScamType =
 export type ScamStatus = 'under_review' | 'confirmed' | 'debunked' | 'duplicate';
 
 export type ScamPlatform =
+	| 'internal'
 	| 'whatsapp'
+	| 'telegram'
+	| 'facebook'
 	| 'instagram'
 	| 'linkedin'
 	| 'email'
 	| 'website'
-	| 'japaconnect'
 	| 'other';
 
 export interface ScamReport {
@@ -3734,6 +3739,7 @@ export interface ScamReport {
 	subject_type?: 'user' | 'organization' | 'service' | 'other';
 	subject_id?: string;
 	subject_label?: string;
+	platform_ref?: string;
 	duplicate_of_report_id?: string;
 	pinned_space_id?: string;
 	reviewed_by?: string;

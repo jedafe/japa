@@ -133,6 +133,9 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// §35 scheduled admin broadcasts — every minute.
 	schedule("* * * * *", TypeBroadcastDispatch, 1*time.Minute)
 
+	// §125 stale pending-tip janitor — hourly (TTL from tips.pending_ttl_hours).
+	schedule("23 * * * *", TypeTipsStaleSweep, 1*time.Hour)
+
 	// §125 Open Collective contribution poll — every 10 minutes
 	// (overridable via SchedulerCronSpecs["tips:oc_sync"]).
 	schedule("*/10 * * * *", TypeTipsOCSync, 10*time.Minute)

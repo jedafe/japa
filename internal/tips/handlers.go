@@ -696,12 +696,16 @@ func (h *Handlers) AdminTipStats(w http.ResponseWriter, r *http.Request) {
 	}
 	var since pgtype.Timestamptz
 	_ = since.Scan(time.Now().AddDate(0, 0, -days))
-	stats, err := h.service.AdminTipStats(r.Context(), since)
+	stats, byCur, err := h.service.AdminTipStats(r.Context(), since)
 	if err != nil {
 		writeTipError(w, err)
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"total": stats.Total, "credits_settled": stats.CreditsSettled,
+		"fiat_minor_settled": stats.FiatMinorSettled, "oc_count": stats.OcCount,
+		"fiat_by_currency": byCur,
+	}})
 }
 
 // --- Public config ------------------------------------------------------------

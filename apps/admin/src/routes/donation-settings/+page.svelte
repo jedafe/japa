@@ -65,7 +65,7 @@
 			accept_external: settings.accept_external,
 			min_tip_amount: Number(settings.min_tip_amount) || 0,
 			thank_you_message: settings.thank_you_message || null,
-			oc_collective_slug: settings.oc_collective_slug || null
+			oc_collective_slug: settings.oc_collective_slug ?? null
 		});
 		saving = false;
 		if (!res.ok) {

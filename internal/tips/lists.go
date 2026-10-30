@@ -71,9 +71,23 @@ func (s *Service) GetTip(ctx context.Context, tipID pgtype.UUID) (Tip, error) {
 	return out[0], nil
 }
 
-// AdminTipStats returns aggregate stats since the given cutoff.
-func (s *Service) AdminTipStats(ctx context.Context, since pgtype.Timestamptz) (gen.AdminTipStatsRow, error) {
-	return s.store.adminTipStats(ctx, since)
+// AdminTipStats returns aggregate stats since the given cutoff plus a
+// per-currency fiat breakdown — summing minor units across currencies is
+// meaningless, so the aggregate stays credits-focused.
+func (s *Service) AdminTipStats(ctx context.Context, since pgtype.Timestamptz) (gen.AdminTipStatsRow, map[string]int64, error) {
+	row, err := s.store.adminTipStats(ctx, since)
+	if err != nil {
+		return gen.AdminTipStatsRow{}, nil, err
+	}
+	byCur := map[string]int64{}
+	if rows, err := s.store.adminTipStatsByCurrency(ctx, since); err == nil {
+		for _, r := range rows {
+			if r.FiatCurrency != nil {
+				byCur[*r.FiatCurrency] = r.Minor
+			}
+		}
+	}
+	return row, byCur, nil
 }
 
 // hydrateTips maps rows onto Tip DTOs, batch-resolving sender display names

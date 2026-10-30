@@ -129,7 +129,7 @@
 							]}
 							onValueChange={(v) => (values = { ...values, [field.label]: v })}
 						/>
-					{:else if field.type === 'checkbox'}
+					{:else if field.type === 'boolean' || field.type === 'checkbox'}
 						<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
 							<input
 								type="checkbox"

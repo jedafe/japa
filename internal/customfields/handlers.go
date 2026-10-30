@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"net/netip"
 	neturl "net/url"
 	"sort"
@@ -33,6 +34,7 @@ import (
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/payments"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -167,6 +169,29 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
 }
 
+// isFormPublic reports whether a form status exposes the public surface —
+// the embed schema and the submission endpoint. "active" is the legacy
+// alias of "published" (pre-CF13 seeds); both accept submissions, while
+// "draft" and any unknown status do not.
+func isFormPublic(status string) bool {
+	return status == "published" || status == "active"
+}
+
+// validFormStatuses is the accepted set for form create/update.
+var validFormStatuses = map[string]bool{"draft": true, "active": true, "published": true}
+
+// validSubmissionStatuses is the accepted set for submission status updates.
+var validSubmissionStatuses = map[string]bool{
+	"new": true, "reviewed": true, "actioned": true, "spam": true,
+	"pending_payment": true, "expired": true,
+}
+
+// validReturnURL accepts only same-origin relative paths — a hosted checkout
+// must never redirect the payer to an arbitrary external site.
+func validReturnURL(u string) bool {
+	return strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//")
+}
+
 // ---------------------------------------------------------------------------
 // Custom Field Groups
 // ---------------------------------------------------------------------------
@@ -279,10 +304,17 @@ func (h *Handlers) enrichFieldGroups(
 	ctx context.Context,
 
 	groups []gen.CustomFieldGroup,
-) []fieldGroupEnriched {
+) ([]fieldGroupEnriched, error) {
 	// Bulk-fetch all assignments and fields for the platform's groups.
-	assignments, _ := h.Service.ListAllAssignmentsByPlatform(ctx)
-	allFields, _ := h.Service.ListAllFieldsByPlatform(ctx)
+	assignments, err := h.Service.ListAllAssignmentsByPlatform(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing group assignments: %w", err)
+	}
+
+	allFields, err := h.Service.ListAllFieldsByPlatform(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing custom fields: %w", err)
+	}
 
 	// Build lookup maps: group_id → entity_type (from first assignment),
 	// group_id → fields[].
@@ -322,7 +354,7 @@ func (h *Handlers) enrichFieldGroups(
 		})
 	}
 
-	return enriched
+	return enriched, nil
 }
 
 // ListFieldGroups handles GET /api/v1/custom-field-groups.
@@ -375,7 +407,11 @@ func (h *Handlers) ListFieldGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	enriched := h.enrichFieldGroups(r.Context(), groups)
+	enriched, err := h.enrichFieldGroups(r.Context(), groups)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
 
 	// Post-filter by simplified entity_type token when requested.
 	if entityType != "" {
@@ -722,6 +758,16 @@ func (h *Handlers) DeleteFieldGroup(w http.ResponseWriter, r *http.Request) {
 
 	force := r.URL.Query().Get("force") == "true"
 
+	// A group bound to a system form is part of a shipped flow — deleting
+	// it (even with force) orphans the form's field schema.
+	if bound, err := h.Service.GroupBoundToSystemForm(r.Context(), id); err != nil {
+		handleServiceError(w, err)
+		return
+	} else if bound {
+		errpkg.WriteError(w, http.StatusForbidden, "system_form_protected", "This field group backs a system form and cannot be deleted")
+		return
+	}
+
 	if err := h.Service.DeleteFieldGroup(r.Context(), id, force); err != nil {
 		handleServiceError(w, err)
 		return
@@ -1003,6 +1049,19 @@ func (h *Handlers) deleteFieldByParam(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
+	// Fields on a system-form-bound group are load-bearing for a bespoke
+	// page — deleting one breaks that page's bindings even when the field
+	// row itself isn't flagged is_system.
+	if field, ferr := h.Service.GetField(r.Context(), id); ferr == nil {
+		if bound, berr := h.Service.GroupBoundToSystemForm(r.Context(), field.GroupID); berr != nil {
+			handleServiceError(w, berr)
+			return
+		} else if bound {
+			errpkg.WriteError(w, http.StatusForbidden, "system_form_protected", "This field belongs to a system form and cannot be deleted")
+			return
+		}
+	}
+
 	if err := h.Service.DeleteField(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
@@ -1055,7 +1114,9 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("customfields: reorder pre-check failed", "group_id", groupID.String(), "error", err)
 		}
 
-		for i, idStr := range req.OrderedFieldIDs {
+		ids := make([]pgtype.UUID, 0, len(req.OrderedFieldIDs))
+
+		for _, idStr := range req.OrderedFieldIDs {
 			var fieldID pgtype.UUID
 			if err := fieldID.Scan(idStr); err != nil {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+idStr)
@@ -1067,11 +1128,13 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			//nolint:gosec // G115: bounded
-			if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, int32(i)); err != nil { // #nosec //nolint:gosec // G115: bounded
-				handleServiceError(w, err)
-				return
-			}
+			ids = append(ids, fieldID)
+		}
+
+		// CF-B8: single transaction — a partial reorder is never committed.
+		if err := h.Service.ReorderFields(r.Context(), groupID, ids); err != nil {
+			handleServiceError(w, err)
+			return
 		}
 
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"reordered": true}})
@@ -1670,8 +1733,9 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 			"is_multi_step":   form.IsMultiStep,
 			"submit_label":    form.SubmitLabel,
 			"success_message": form.SuccessMessage,
-			"is_system":       form.IsSystem,
-			"fields":          fieldList,
+			"is_system":              form.IsSystem,
+			"submission_fee_credits": form.SubmissionFeeCredits,
+			"fields":                 fieldList,
 			"field_group_id":  fieldGroupID,
 			"space_id":        form.SpaceID,
 			"steps":           stepList,
@@ -1706,6 +1770,9 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 	status := req.Status
 	if status == "" {
 		status = "draft"
+	} else if !validFormStatuses[status] {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "status must be one of: draft, active, published")
+		return
 	}
 
 	form, err := h.Service.CreateForm(r.Context(), gen.CreateFormParams{
@@ -1744,6 +1811,13 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 	spaceID, err := parseUUIDParam(r, "spaceId")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space ID format")
+		return
+	}
+
+	// Verify the space exists before creating the form — otherwise the FK
+	// violation surfaces as a raw 500 instead of a clean 404.
+	if !h.Service.SpaceExists(r.Context(), spaceID) {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 		return
 	}
 
@@ -1907,13 +1981,25 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 		feeCredits = existing.SubmissionFeeCredits
 	}
 
+	if req.Status != "" && !validFormStatuses[req.Status] {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "status must be one of: draft, active, published")
+		return
+	}
+
+	// An omitted status preserves the current one — writing "" would break
+	// the lifecycle gate (embed + submission only accept a known status).
+	status := req.Status
+	if status == "" {
+		status = existing.Status
+	}
+
 	form, err := h.Service.UpdateForm(r.Context(), gen.UpdateFormParams{
 		Name:                 req.Name,
 		Description:          req.Description,
 		IsMultiStep:          req.IsMultiStep,
 		SubmitLabel:          req.SubmitLabel,
 		SuccessMessage:       req.SuccessMessage,
-		Status:               req.Status,
+		Status:               status,
 		SubmissionFeeCredits: feeCredits,
 		ID:                   id,
 	})
@@ -1930,6 +2016,20 @@ func (h *Handlers) DeleteForm(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	// System forms (is_system=true) are consumed by bespoke pages keyed on
+	// their slug — deleting one orphans the flow and cascades its
+	// submissions. Mirrors the entity-types rule: reject, don't delete.
+	existing, err := h.Service.GetForm(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if existing.IsSystem {
+		errpkg.WriteError(w, http.StatusForbidden, "system_form_protected", "System forms cannot be deleted")
 		return
 	}
 
@@ -2054,7 +2154,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 		fields = nil
 	}
 
-	if form.Status != "published" {
+	if !isFormPublic(form.Status) {
 		errpkg.WriteError(w, http.StatusNotFound, "form_not_published", "This form is not published")
 		return
 	}
@@ -2062,12 +2162,15 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 	fields = filterGuestViewableFields(r.Context(), h.Service, fields)
 
 	type fieldJSON struct {
-		ID        string   `json:"id"`
-		Label     string   `json:"label"`
-		Type      string   `json:"type"`
-		Required  bool     `json:"required"`
-		SortOrder int32    `json:"sort_order"`
-		Options   []string `json:"options"`
+		ID           string   `json:"id"`
+		Key          string   `json:"key"`
+		Label        string   `json:"label"`
+		Type         string   `json:"type"`
+		Required     bool     `json:"required"`
+		SortOrder    int32    `json:"sort_order"`
+		Options      []string `json:"options"`
+		Placeholder  *string  `json:"placeholder"`
+		DefaultValue *string  `json:"default_value"`
 	}
 
 	toFieldJSON := func(f gen.ListCustomFieldsByGroupRow) fieldJSON {
@@ -2088,12 +2191,15 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 		}
 
 		return fieldJSON{
-			ID:        f.ID.String(),
-			Label:     f.Label,
-			Type:      f.FieldType,
-			Required:  f.IsRequired,
-			SortOrder: f.Position,
-			Options:   options,
+			ID:           f.ID.String(),
+			Key:          f.Key,
+			Label:        f.Label,
+			Type:         f.FieldType,
+			Required:     f.IsRequired,
+			SortOrder:    f.Position,
+			Options:      options,
+			Placeholder:  f.Placeholder,
+			DefaultValue: f.DefaultValue,
 		}
 	}
 
@@ -2130,6 +2236,11 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 					if sfErr != nil {
 						slog.Warn("get form embed step fields", "slug", slug, "step_id", st.ID, "error", sfErr)
 					}
+
+					// CF-A2: step fields go through the same guest-visible
+					// gate as the flat fields list — otherwise admin-only
+					// or frontend-hidden step fields leak on the public embed.
+					rawFields = filterGuestViewableFields(r.Context(), h.Service, rawFields)
 
 					stepFields = make([]fieldJSON, 0, len(rawFields))
 					for _, f := range rawFields {
@@ -2194,6 +2305,9 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		// payment (§17 ReturnURL) — lets flows like /verification-request
 		// resume the request that the payment unlocked.
 		ReturnURL string `json:"return_url"`
+		// Step is the §06 multi-step resume hint — accepted for contract
+		// compatibility; the server validates against all steps' fields.
+		Step *int `json:"step"`
 		// §06/§07: business-record intent carried into the payment metadata
 		// so the payment webhook can auto-create the linked record
 		// (verification request / ownership claim) even when the submitter
@@ -2240,10 +2354,26 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// CF-S4: the checkout return target must be a same-origin relative path —
+	// an arbitrary external URL would turn our hosted-checkout flow into an
+	// open redirect for phishing.
+	if req.ReturnURL != "" && !validReturnURL(req.ReturnURL) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_return_url", "return_url must be a same-origin relative path")
+		return
+	}
+
 	// Look up the form to check submission_fee_credits.
 	form, err := h.Service.GetForm(r.Context(), formID)
 	if err != nil {
 		handleServiceError(w, err)
+		return
+	}
+
+	// CF-A5: the submission endpoint shares the embed's lifecycle gate —
+	// a draft or otherwise non-public form rejects submissions, otherwise
+	// anyone holding the form UUID could file entries against it.
+	if !isFormPublic(form.Status) {
+		errpkg.WriteError(w, http.StatusNotFound, "form_not_published", "This form is not published")
 		return
 	}
 
@@ -2252,7 +2382,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	// rich_text HTML (BUG-001) in-place. When the form has no field
 	// definitions, validation is skipped (lenient posture for legacy forms).
 	if req.FieldValues != nil {
-		if msg, ok := h.validateFormSubmission(r.Context(), formID, req.FieldValues); !ok {
+		if msg, ok := h.validateFormSubmission(r.Context(), form, req.FieldValues); !ok {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_values", msg)
 			return
 		}
@@ -2326,29 +2456,39 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_, spendErr := h.wallet.SpendCredits(r.Context(), userID, wallet.SpendCreditsInput{
-			Amount:      feeCredits,
-			Source:      "form_submission",
-			Reference:   "form_submission:" + formID.String(),
-			PurposeType: "form_submission",
-			PurposeID:   formID.String(),
-		})
-		if spendErr != nil {
-			errpkg.WriteError(w, http.StatusPaymentRequired, "insufficient_credits", "Insufficient credits to pay the submission fee")
-			return
-		}
-
-		// Create the submission with status='new' (payment confirmed).
+		// CF-A6: create the pending row first so a failed debit can't leave
+		// the user charged with no submission — the hourly sweep expires
+		// abandoned pending_payment rows. The wallet idempotency reference
+		// carries the submission ID, which also fixes CF-A4 (per-attempt
+		// uniqueness instead of per-form) and links the ledger entry to the
+		// exact submission for reconciliation.
 		submission, sErr := h.Service.CreateFormSubmission(r.Context(), gen.CreateFormSubmissionParams{
 			FormID: formID,
 
 			UserID:      userID,
 			IpAddress:   ipAddr,
 			FieldValues: fieldValues,
-			Status:      "new",
+			Status:      "pending_payment",
 		})
 		if sErr != nil {
 			handleServiceError(w, sErr)
+			return
+		}
+
+		_, spendErr := h.wallet.SpendCredits(r.Context(), userID, wallet.SpendCreditsInput{
+			Amount:      feeCredits,
+			Source:      "form_submission",
+			Reference:   "form_submission:" + submission.ID.String(),
+			PurposeType: "form_submission",
+			PurposeID:   submission.ID.String(),
+		})
+		if spendErr != nil {
+			errpkg.WriteError(w, http.StatusPaymentRequired, "insufficient_credits", "Insufficient credits to pay the submission fee")
+			return
+		}
+
+		if err := h.Service.UpdateFormSubmissionStatus(r.Context(), submission.ID, "new"); err != nil {
+			handleServiceError(w, err)
 			return
 		}
 
@@ -2365,10 +2505,11 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// CF-S3: only the form link travels to the payment provider —
+		// field_values contain submitter PII and are already persisted on
+		// the submission row, so they must not leave the platform.
 		metadata := map[string]interface{}{
 			"form_id": formID.String(),
-
-			"field_values": req.FieldValues,
 		}
 		// Only the verification-request and claim-ownership system forms
 		// consume a link intent — other forms ignore it. The linked record
@@ -2499,18 +2640,73 @@ func (h *Handlers) enqueueFormTriggers(formID, submissionID, userID pgtype.UUID,
 // when it passes. When the form has no field definitions (e.g. a legacy
 // form with no assigned field group), validation is skipped — all values
 // are accepted — to avoid breaking existing flows.
-func (h *Handlers) validateFormSubmission(ctx context.Context, formID pgtype.UUID, fieldValues map[string]any) (string, bool) {
-	fields, err := h.Service.GetFormFields(ctx, formID)
+func (h *Handlers) validateFormSubmission(ctx context.Context, form gen.GetFormByIDRow, fieldValues map[string]any) (string, bool) {
+	fields, err := h.Service.GetFormFields(ctx, form.ID)
 	if err != nil {
 		// If we can't load fields, don't block the submission — log and
 		// proceed. This matches the lenient posture for forms with no
 		// field definitions.
-		slog.Warn("customfields: loading form fields for validation", "form_id", formID.String(), "error", err)
+		slog.Warn("customfields: loading form fields for validation", "form_id", form.ID.String(), "error", err)
 		return "", true
+	}
+
+	// CF-A1: multi-step forms keep their fields on per-step groups —
+	// merge them so submitted step values aren't rejected as unknown.
+	if form.IsMultiStep {
+		if steps, sErr := h.Service.ListFormSteps(ctx, form.ID); sErr == nil {
+			for _, st := range steps {
+				if sfs, sfErr := h.Service.GetStepFields(ctx, st.ID); sfErr == nil {
+					fields = append(fields, sfs...)
+				}
+			}
+		}
 	}
 
 	if len(fields) == 0 {
 		return "", true
+	}
+
+	// CF-S6: the write path honors the same field visibility the embed
+	// renders — anonymous submitters may only write guest-visible fields,
+	// authenticated non-super-admins are limited to fields their group can
+	// view. Super-admins bypass; nil RBAC (tests) skips the gate.
+	if h.rbac != nil {
+		var visible []pgtype.UUID
+
+		var vErr error
+
+		user := auth.FromContext(ctx)
+
+		switch {
+		case user != nil && user.UserID.Valid && h.rbac.IsSuperAdmin(ctx, user.UserID):
+			visible = nil // super-admin — all fields writable
+		case user != nil && user.UserID.Valid:
+			visible, vErr = h.Service.ListVisibleFieldIDsForUser(ctx, user.UserID)
+		default:
+			visible, vErr = h.Service.ListVisibleFieldIDsForGroupSlug(ctx, "guest")
+		}
+
+		if vErr != nil {
+			slog.Warn("customfields: submission visibility lookup failed, rejecting", "error", vErr)
+			return "Could not validate field permissions", false
+		}
+
+		if visible != nil {
+			allowed := make(map[pgtype.UUID]bool, len(visible))
+			for _, vid := range visible {
+				allowed[vid] = true
+			}
+
+			kept := fields[:0]
+
+			for _, f := range fields {
+				if allowed[f.ID] {
+					kept = append(kept, f)
+				}
+			}
+
+			fields = kept
+		}
 	}
 
 	// Build lookup maps: label→field and key→field.
@@ -2523,9 +2719,10 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID pgtype.UUI
 		byKey[f.Key] = fd
 	}
 
-	// 1. Check required fields are present and non-empty.
+	// 1. Check required fields are present and non-empty. Structural
+	// 'group' fields store no value — requiring one would be unsatisfiable.
 	for _, f := range fields {
-		if !f.IsRequired {
+		if !f.IsRequired || f.FieldType == FieldTypeGroup {
 			continue
 		}
 
@@ -2930,6 +3127,11 @@ func (h *Handlers) UpdateFormSubmission(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if !validSubmissionStatuses[req.Status] {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "status must be one of: new, reviewed, actioned, spam, pending_payment, expired")
+		return
+	}
+
 	submission, err := h.Service.GetFormSubmission(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
@@ -3051,6 +3253,16 @@ func (h *Handlers) CreateFormTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// CF-S1: assign_user_group may not target a system group — a form
+	// trigger is fired by any submitter, so letting it grant super_admin,
+	// members, or guest would be self-serve privilege escalation.
+	if req.TriggerType == "assign_user_group" {
+		if msg, ok := h.checkTriggerGroupAssignable(r.Context(), req.Config); !ok {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_trigger_config", msg)
+			return
+		}
+	}
+
 	trigger, err := h.Service.CreateFormTrigger(r.Context(), gen.CreateFormSubmissionTriggerParams{
 		FormID:      formID,
 		TriggerType: req.TriggerType,
@@ -3090,7 +3302,22 @@ func (h *Handlers) UpdateFormTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !validTriggerTypes[req.TriggerType] {
+	// PATCH semantics: an omitted trigger_type keeps the stored one so a
+	// config-only edit doesn't have to resend it.
+	triggerType := req.TriggerType
+
+	if triggerType == "" {
+		if trigs, terr := h.Service.ListFormTriggers(r.Context(), formID); terr == nil {
+			for _, t := range trigs {
+				if t.ID == triggerID {
+					triggerType = t.TriggerType
+					break
+				}
+			}
+		}
+	}
+
+	if !validTriggerTypes[triggerType] {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_trigger_type",
 			"trigger_type must be one of: assign_user_group, send_email, send_webhook, create_ticket, notify_admin")
 		return
@@ -3100,15 +3327,25 @@ func (h *Handlers) UpdateFormTrigger(w http.ResponseWriter, r *http.Request) {
 		req.Config = json.RawMessage("{}")
 	}
 
-	if msg, ok := validateTriggerConfig(req.TriggerType, req.Config); !ok {
+	if msg, ok := validateTriggerConfig(triggerType, req.Config); !ok {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_trigger_config", msg)
 		return
+	}
+
+	// CF-S1: assign_user_group may not target a system group — a form
+	// trigger is fired by any submitter, so letting it grant super_admin,
+	// members, or guest would be self-serve privilege escalation.
+	if triggerType == "assign_user_group" {
+		if msg, ok := h.checkTriggerGroupAssignable(r.Context(), req.Config); !ok {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_trigger_config", msg)
+			return
+		}
 	}
 
 	trigger, err := h.Service.UpdateFormTrigger(r.Context(), gen.UpdateFormSubmissionTriggerParams{
 		ID:          triggerID,
 		FormID:      formID,
-		TriggerType: req.TriggerType,
+		TriggerType: triggerType,
 		Config:      req.Config,
 		Position:    req.Position,
 	})
@@ -3142,6 +3379,37 @@ func (h *Handlers) DeleteFormTrigger(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
 
+// checkTriggerGroupAssignable enforces the CF-S1 escalation guard on
+// assign_user_group triggers: the target group must exist and must not be
+// one of the system groups (super_admin / members / guest) — a trigger is
+// fired by any form submitter, so a privileged target would be self-serve
+// privilege escalation.
+func (h *Handlers) checkTriggerGroupAssignable(ctx context.Context, raw json.RawMessage) (string, bool) {
+	var cfg struct {
+		UserGroupID string `json:"user_group_id"`
+	}
+
+	if err := json.Unmarshal(raw, &cfg); err != nil || cfg.UserGroupID == "" {
+		return "assign_user_group requires config.user_group_id", false
+	}
+
+	var groupID pgtype.UUID
+	if err := groupID.Scan(cfg.UserGroupID); err != nil {
+		return "assign_user_group config.user_group_id must be a UUID", false
+	}
+
+	group, err := h.Service.GetUserGroup(ctx, groupID)
+	if err != nil {
+		return "assign_user_group target user group not found", false
+	}
+
+	if rbac.IsSystemGroup(group.Slug) {
+		return fmt.Sprintf("assign_user_group cannot target the %q system group", group.Slug), false
+	}
+
+	return "", true
+}
+
 // validateTriggerConfig enforces the per-type config schema (CF14) for form
 // submission triggers: required keys per trigger_type, and a scheme
 // allowlist for send_webhook URLs (http/https only — no file/data/javascript
@@ -3170,6 +3438,14 @@ func validateTriggerConfig(triggerType string, raw json.RawMessage) (string, boo
 	case "send_email":
 		if !nonEmpty("to") {
 			return "send_email requires config.to", false
+		}
+
+		// CF-S5: validate the recipient as a single RFC 5322 address —
+		// raw strings with control characters could inject headers in
+		// downstream mail transports.
+		to, _ := cfg["to"].(string)
+		if addr, err := mail.ParseAddress(to); err != nil || addr.Address != to {
+			return "send_email config.to must be a single email address", false
 		}
 	case "send_webhook":
 		u, _ := cfg["url"].(string)

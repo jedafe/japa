@@ -26,7 +26,7 @@
 	};
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
-	let stats = $state<{ total?: number; credits_settled?: number; fiat_minor_settled?: number; oc_count?: number } | null>(null);
+	let stats = $state<{ total?: number; credits_settled?: number; fiat_minor_settled?: number; oc_count?: number; fiat_by_currency?: Record<string, number> } | null>(null);
 	let refunding = $state<string | null>(null);
 	let pageError = $state('');
 	let detailOpen = $state(false);
@@ -194,6 +194,9 @@
 		<span><strong>{stats.total ?? 0}</strong> {t('tips.stats_30d', 'tips (30d)')}</span>
 		<span><strong>{stats.credits_settled ?? 0}</strong> {t('tips.stats_credits', 'credits settled')}</span>
 		<span><strong>{stats.fiat_minor_settled ?? 0}</strong> {t('tips.stats_fiat', 'fiat settled (minor)')}</span>
+		{#each Object.entries(stats.fiat_by_currency ?? {}) as [cur, minor]}
+			<span class="text-muted-foreground">{cur}: <strong>{minor}</strong></span>
+		{/each}
 		<span><strong>{stats.oc_count ?? 0}</strong> {t('tips.stats_oc', 'via Open Collective')}</span>
 	</div>
 {/if}

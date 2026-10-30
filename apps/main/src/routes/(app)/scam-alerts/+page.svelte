@@ -12,7 +12,7 @@
 	import { i18n } from '$lib/i18n';
 	import { scamTypeLabel, scamPlatformLabel } from '$lib/enumOptions';
 	import { EmptyState, LoadingSkeleton, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
-	import type { ScamReport, ScamType, ScamPlatform, ScamStatus } from '$lib/types';
+	import type { ScamReport, ScamAlertSubscription, ScamType, ScamPlatform, ScamStatus } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -106,7 +106,10 @@
 
 	let showFilters = $state(false);
 	let subscribingDest = $state(false);
-	let destSubscribed = $state(false);
+	let mySubscriptions = $state<ScamAlertSubscription[]>(untrack(() => data.mySubscriptions) ?? []);
+	const destSubscribed = $derived(
+		mySubscriptions.some((sub) => sub.destination_space_id === destFilter)
+	);
 
 	async function subscribeDest() {
 		if (!destFilter || subscribingDest) return;
@@ -114,7 +117,11 @@
 		const res = destSubscribed
 			? await api.delete(`/me/scam-alert-subscriptions/${destFilter}`)
 			: await api.post('/me/scam-alert-subscriptions', { destination_space_id: destFilter });
-		if (!res.error) destSubscribed = !destSubscribed;
+		if (!res.error) {
+			mySubscriptions = destSubscribed
+				? mySubscriptions.filter((sub) => sub.destination_space_id !== destFilter)
+				: [...mySubscriptions, { destination_space_id: destFilter, created_at: new Date().toISOString() }];
+		}
 		subscribingDest = false;
 	}
 	let submittedDismissed = $state(false);

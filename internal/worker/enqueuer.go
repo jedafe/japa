@@ -90,6 +90,7 @@ var idempotentTasks = map[string]bool{
 	TypeTipsSettleFiat:                  true, // §125 — dedupe settle by tip_id payload
 	TypeTipsNotifyReceived:              true, // §125 — one receipt notification per tip
 	TypeTipsOCSync:                      true, // §125 — collapse duplicate sweep enqueues
+	TypeTipsStaleSweep:                  true, // §125 — collapse duplicate stale sweeps
 	TypeWikiPopulateFacts:               true, // enrichment — collapse repeat fact-fetches for the same space_id
 }
 
@@ -307,7 +308,7 @@ var taskTier = func() map[string]string {
 		TypeMaintenancePruneOldFeeds, TypeMaintenancePruneAuditLogs,
 		TypeMaintenancePrunePushTokens, TypeModerationAutoHide,
 		TypeMediaCleanupDeleted, TypeMediaReconcileMissing,
-		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents, TypeTipsOCSync,
+		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents, TypeTipsOCSync, TypeTipsStaleSweep,
 		TypeCouponExpireCheck,
 		TypeSubscriptionExpirySweep, // §17 — webhook-miss safety net
 		TypeAffiliateExpireCheck,
@@ -462,6 +463,7 @@ var taskTypeCatalog = []struct {
 	{TypeTipsSettleFiat, "critical", "Credit recipient wallet when a donation payment succeeds"},
 	{TypeTipsNotifyReceived, "default", "Notify recipient that a tip was received"},
 	{TypeTipsOCSync, "low", "Scheduled poll — import new Open Collective contributions"},
+	{TypeTipsStaleSweep, "low", "Fail pending fiat tips past the checkout TTL"},
 	// §113 Public Product Roadmap (ADR-127)
 	{TypeRoadmapShipNotify, "default", "Notify roadmap voters + submitter that an item shipped"},
 	{TypeAssessmentScoreSubmission, "default", "Score a completed readiness assessment, generate roadmap, notify (§71, ADR-071)"},

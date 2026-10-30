@@ -145,7 +145,7 @@
 		{/if}
 		{#if page.data.features?.['scam_alert.enabled']}
 			<a
-				href="/scam-alerts/new?platform=japaconnect&subject_type=organization&subject_id={org.id}&subject_label={encodeURIComponent(org.name ?? org.slug)}"
+				href="/scam-alerts/new?platform=internal&subject_type=organization&subject_id={org.id}&subject_label={encodeURIComponent(org.name ?? org.slug)}"
 				class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 				title={t('scam_alerts.report_button', 'Report a Scam')}
 			>

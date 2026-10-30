@@ -24,7 +24,7 @@ func (s *Service) CreateTip(ctx context.Context, senderID pgtype.UUID, in Create
 	// Idempotency replay — return the original tip instead of double-settling.
 	if idempotencyKey != "" {
 		if existing, err := s.store.getTipByIdempotencyKey(ctx, senderID, idempotencyKey); err == nil {
-			return CreateTipResult{Tip: tipFromRow(existing), Duplicate: true}, nil
+			return CreateTipResult{Tip: tipFromRow(existing), CheckoutURL: derefStr(existing.CheckoutUrl), Duplicate: true}, nil
 		}
 	}
 
@@ -289,4 +289,11 @@ func senderName(t gen.Tip) string {
 		return *t.ExternalSenderName
 	}
 	return ""
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

@@ -208,6 +208,14 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 	if s.settings != nil {
 		cfg.FiatCurrency = s.settings.GetStringOr(ctx, "wallet.default_currency", "NGN")
 	}
+	// A recipient whose tips.receive grant was revoked (or whose mentor
+	// profile went inactive) must not advertise an enabled config — the
+	// create path rejects the tip anyway, so advertising it is a trap.
+	if owner.Type == RecipientUser {
+		if ok, err := s.CanReceive(ctx, owner.ID); err == nil && !ok {
+			return cfg, nil
+		}
+	}
 	if !st.TipsEnabled {
 		return cfg, nil
 	}
@@ -240,6 +248,16 @@ var validLinkKinds = map[string]bool{
 	"paypal": true, "kofi": true, "buymeacoffee": true, "opencollective": true, "other": true,
 }
 
+// linkKindDomains constrains branded kinds to their real domains — a "PayPal"
+// badge pointing at an arbitrary host is a phishing vector on the public
+// tip dialog. 'other' stays unrestricted.
+var linkKindDomains = map[string][]string{
+	"paypal":         {"paypal.com", "paypal.me"},
+	"kofi":           {"ko-fi.com"},
+	"buymeacoffee":   {"buymeacoffee.com"},
+	"opencollective": {"opencollective.com"},
+}
+
 func validateLinkInput(in LinkInput) error {
 	if !validLinkKinds[in.Kind] {
 		return ErrInvalidLink
@@ -252,6 +270,19 @@ func validateLinkInput(in LinkInput) error {
 	// downgrade/MITM on the linked payment page.
 	if err != nil || u.Scheme != "https" || u.Host == "" {
 		return ErrInvalidLink
+	}
+	if domains, ok := linkKindDomains[in.Kind]; ok {
+		host := strings.ToLower(u.Hostname())
+		matched := false
+		for _, d := range domains {
+			if host == d || strings.HasSuffix(host, "."+d) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return ErrInvalidLink
+		}
 	}
 	return nil
 }

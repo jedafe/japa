@@ -108,9 +108,11 @@ func (f *fakeStore) insertTip(_ context.Context, p gen.InsertTipParams) (gen.Tip
 	f.inserted = append(f.inserted, p)
 	return gen.Tip{Method: p.Method, Status: p.Status}, nil
 }
-func (f *fakeStore) updateTipStatus(context.Context, pgtype.UUID, string) error       { return nil }
-func (f *fakeStore) attachTipPayment(context.Context, pgtype.UUID, pgtype.UUID) error { return nil }
-func (f *fakeStore) settleTip(context.Context, pgtype.UUID, int64) error              { return nil }
+func (f *fakeStore) updateTipStatus(context.Context, pgtype.UUID, string) error { return nil }
+func (f *fakeStore) settleTip(context.Context, pgtype.UUID, int64) error        { return nil }
+func (f *fakeStore) attachTipPayment(context.Context, pgtype.UUID, pgtype.UUID, string) error {
+	return nil
+}
 
 func (f *fakeStore) listTipsSent(context.Context, pgtype.UUID, int32, int32) ([]gen.Tip, error) {
 	return nil, nil
@@ -241,6 +243,7 @@ func TestPublicConfigDisabled(t *testing.T) {
 
 func TestPublicConfigMethods(t *testing.T) {
 	fs := newFakeStore()
+	fs.mentor = true // recipient must be tips.receive-eligible for a public config
 	owner := UserOwner(uid(t, "11111111-1111-1111-1111-111111111111"))
 	slug := "collective"
 	settingID := uid(t, "22222222-2222-2222-2222-222222222222")
@@ -360,6 +363,12 @@ func TestEnsureWritablePlatform(t *testing.T) {
 }
 
 func (f *fakeStore) failTip(context.Context, pgtype.UUID) error { return nil }
+func (f *fakeStore) listStalePendingTips(context.Context, int32, int32) ([]pgtype.UUID, error) {
+	return nil, nil
+}
+func (f *fakeStore) adminTipStatsByCurrency(context.Context, pgtype.Timestamptz) ([]gen.AdminTipStatsByCurrencyRow, error) {
+	return nil, nil
+}
 func (f *fakeStore) sumRecipientPointsToday(context.Context, pgtype.UUID) (int64, error) {
 	return 0, nil
 }

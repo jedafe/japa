@@ -20,6 +20,7 @@ type TipSettlement interface {
 	FailTip(ctx context.Context, tipID pgtype.UUID) error
 	NotifyTipReceived(ctx context.Context, tipID pgtype.UUID) error
 	SyncOC(ctx context.Context) error
+	SweepStalePending(ctx context.Context) error
 }
 
 var tipSettlement TipSettlement
@@ -92,4 +93,13 @@ func enqueueTipsSettleFiat(tipID, paymentID pgtype.UUID) {
 	}
 	payload, _ := json.Marshal(map[string]string{"tip_id": tipID.String(), "payment_id": paymentID.String()})
 	_ = taskEnqueuer.Enqueue(TypeTipsSettleFiat, payload)
+}
+
+// HandleTipsStaleSweep processes tips:stale_sweep — TTL-janitor for pending
+// fiat tips whose payment can no longer charge (abandoned checkout).
+func HandleTipsStaleSweep(ctx context.Context, t *asynq.Task) error {
+	if tipSettlement == nil {
+		return nil
+	}
+	return tipSettlement.SweepStalePending(ctx)
 }

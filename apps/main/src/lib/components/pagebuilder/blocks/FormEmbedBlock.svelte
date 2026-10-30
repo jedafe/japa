@@ -21,7 +21,7 @@
 				class="w-full"
 				style="height: {height}px; border: 0;"
 				loading="lazy"
-				sandbox="allow-forms allow-scripts allow-same-origin allow-popups"
+				sandbox="allow-forms allow-scripts allow-same-origin"
 				referrerpolicy="no-referrer"
 			></iframe>
 		</div>

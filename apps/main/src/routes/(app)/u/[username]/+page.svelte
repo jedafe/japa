@@ -844,7 +844,7 @@
 					icon={TriangleAlert}
 					onSelect={() =>
 						goto(
-							`/scam-alerts/new?platform=japaconnect&subject_type=user&subject_id=${user.id}&subject_label=${encodeURIComponent(user.display_name ?? user.username)}`
+							`/scam-alerts/new?platform=internal&subject_type=user&subject_id=${user.id}&subject_label=${encodeURIComponent('@' + user.username)}`
 						)}
 				>
 					{t('scam_alerts.report_button', 'Report a Scam')}

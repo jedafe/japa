@@ -65,7 +65,7 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 		return err
 	}
 	if !tip.PaymentID.Valid && paymentID.Valid {
-		if err := s.store.attachTipPayment(ctx, tipID, paymentID); err != nil {
+		if err := s.store.attachTipPayment(ctx, tipID, paymentID, ""); err != nil {
 			slog.Warn("tips: failed to repair payment link", "tip_id", tipID.String(), "error", err)
 		}
 	}
@@ -260,4 +260,26 @@ func tipDisplayAmount(tip gen.Tip) string {
 	default:
 		return "a tip"
 	}
+}
+
+// SweepStalePending fails pending tips past tips.pending_ttl_hours whose
+// payment can no longer charge the donor — the TTL janitor for abandoned
+// checkouts (default 48h; provider sessions die well before that).
+func (s *Service) SweepStalePending(ctx context.Context) error {
+	hours := int32(48)
+	if s.settings != nil {
+		if h := s.settings.GetIntOr(ctx, "tips.pending_ttl_hours", 48); h > 0 {
+			hours = int32(h)
+		}
+	}
+	ids, err := s.store.listStalePendingTips(ctx, hours, 500)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := s.store.failTip(ctx, id); err != nil {
+			slog.Warn("tips: stale sweep failTip", "tip_id", id.String(), "error", err)
+		}
+	}
+	return nil
 }

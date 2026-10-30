@@ -237,7 +237,7 @@
 					editDescription = form.description ?? '';
 					editSubmitLabel = form.submit_label ?? '';
 					editSuccessMessage = form.success_message ?? '';
-					editIsActive = String(form.status ?? 'active').toLowerCase() === 'active';
+					editIsActive = String(form.status ?? 'draft').toLowerCase() !== 'draft';
 					editSubmissionFeeCredits = form.submission_fee_credits ?? 0;
 					// Extract field_group_id for field operations
 					if (form.field_group_id) {
@@ -538,7 +538,7 @@
 				description: editDescription.trim() || undefined,
 				submit_label: editSubmitLabel.trim() || undefined,
 				success_message: editSuccessMessage.trim() || undefined,
-				status: editIsActive ? 'active' : 'draft',
+				status: editIsActive ? 'published' : 'draft',
 				submission_fee_credits: editSubmissionFeeCredits,
 			});
 			if (result.ok) {

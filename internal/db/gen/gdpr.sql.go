@@ -1416,7 +1416,7 @@ func (q *Queries) GdprExportRevenueSplits(ctx context.Context, userID pgtype.UUI
 
 const gdprExportTipsReceived = `-- name: GdprExportTipsReceived :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, points_amount, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at FROM tips WHERE recipient_user_id = $1 ORDER BY created_at DESC) t
+FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, points_amount, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url FROM tips WHERE recipient_user_id = $1 ORDER BY created_at DESC) t
 `
 
 func (q *Queries) GdprExportTipsReceived(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
@@ -1428,7 +1428,7 @@ func (q *Queries) GdprExportTipsReceived(ctx context.Context, userID pgtype.UUID
 
 const gdprExportTipsSent = `-- name: GdprExportTipsSent :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, points_amount, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at FROM tips WHERE sender_user_id = $1 ORDER BY created_at DESC) t
+FROM (SELECT id, sender_user_id, external_sender_name, recipient_type, recipient_user_id, recipient_organization_id, content_id, method, points_amount, credits_amount, fiat_amount, fiat_currency, fee_amount, net_credits, payment_id, oc_contribution_id, message, is_anonymous, status, idempotency_key, created_at, updated_at, checkout_url FROM tips WHERE sender_user_id = $1 ORDER BY created_at DESC) t
 `
 
 func (q *Queries) GdprExportTipsSent(ctx context.Context, userID pgtype.UUID) (interface{}, error) {

@@ -4296,6 +4296,7 @@ type Tip struct {
 	IdempotencyKey          *string            `json:"idempotency_key"`
 	CreatedAt               pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	CheckoutUrl             *string            `json:"checkout_url"`
 }
 
 type TipExternalLink struct {

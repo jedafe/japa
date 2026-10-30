@@ -85,6 +85,7 @@ func redactReportForCaller(report *ScamReportDTO, callerID string) {
 	report.SubjectType = ""
 	report.SubjectID = ""
 	report.SubjectLabel = ""
+	report.PlatformRef = ""
 	report.DuplicateOfReportID = ""
 	report.AiGenerated = nil
 	report.AiModel = ""
@@ -383,6 +384,11 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 		if errors.Is(err, ErrFutureDate) {
 			errpkg.WriteError(w, http.StatusBadRequest, "future_date", "Approximate date cannot be in the future")
+			return
+		}
+
+		if errors.Is(err, ErrSubjectRequired) {
+			errpkg.WriteError(w, http.StatusBadRequest, "subject_required", "Select the JapaConnect user, organization, or service this report is about")
 			return
 		}
 
@@ -706,6 +712,14 @@ func (h *Handlers) HandleReview(w http.ResponseWriter, r *http.Request) {
 	if input.Status != "confirmed" && input.Status != "debunked" && input.Status != "duplicate" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be 'confirmed', 'debunked', or 'duplicate'")
 		return
+	}
+
+	if input.DuplicateOfReportID != "" {
+		var dup pgtype.UUID
+		if err := dup.Scan(input.DuplicateOfReportID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid duplicate_of_report_id")
+			return
+		}
 	}
 
 	if err := h.service.Review(r.Context(), id, input.Status, input.ModeratorNote, input.DuplicateOfReportID, user.UserID); err != nil {

@@ -5,11 +5,10 @@
 
 BEGIN;
 
-INSERT INTO menu_items (tenant_id, menu_id, label, url, icon, sort_order, visibility, target, status, feature_flag)
-SELECT '00000000-0000-0000-0000-000000000001', m.id, 'Support us', '/donate', 'heart', 90, 'all', '_self', 'active', 'tips.enabled'
+INSERT INTO menu_items (menu_id, label, url, icon, sort_order, visibility, target, status, feature_flag)
+SELECT m.id, 'Support us', '/donate', 'heart', 90, 'all', '_self', 'active', 'tips.enabled'
 FROM menus m
 WHERE m.slug = 'main_sidebar'
-  AND m.tenant_id = '00000000-0000-0000-0000-000000000001'
 ON CONFLICT DO NOTHING;
 
 COMMIT;

@@ -29,9 +29,13 @@
 	let amountRange = $state('');
 	let description = $state('');
 	let reportedToAuthorities = $state(false);
-	const subjectType = $derived(data.prefill?.subject_type ?? '');
-	const subjectId = $derived(data.prefill?.subject_id ?? '');
-	const subjectLabel = $derived(data.prefill?.subject_label ?? '');
+	// Subject fields are mutable: prefilled CTAs (profile/org/service
+	// buttons) seed them, and picking platform='internal' exposes the
+	// @username / entity pickers to set them manually.
+	let subjectType = $state(untrack(() => data.prefill?.subject_type) ?? '');
+	let subjectId = $state(untrack(() => data.prefill?.subject_id) ?? '');
+	let subjectLabel = $state(untrack(() => data.prefill?.subject_label) ?? '');
+	const isInternal = $derived(platformUsed === 'internal');
 	const anonymousBlocked = $derived(!data.user && !data.anonymousReports);
 
 	let loading = $state(false);
@@ -41,9 +45,59 @@
 		scamType.length > 0 &&
 			destinationSpaceId.length > 0 &&
 			description.trim().length > 0 &&
+			(!isInternal || (subjectType !== '' && subjectLabel.trim() !== '')) &&
 			!loading &&
 			!anonymousBlocked
 	);
+
+	// @username / @organization autocomplete for internal reports — the
+	// unified search autocomplete endpoint filters by entity type.
+	async function fetchSubjectUsers(q: string): Promise<AutocompleteItem[]> {
+		if (q.trim().length < 2) return [];
+		const res = await api.get<{ suggestions?: { id: string; username?: string; display_name?: string }[] }>(
+			`/search/autocomplete?type=user&q=${encodeURIComponent(q.trim())}`
+		);
+		const suggestions = res.data?.suggestions ?? [];
+		return suggestions.map((u) => ({
+			id: u.id,
+			label: u.display_name ?? u.username ?? '',
+			sublabel: u.username ? '@' + u.username : ''
+		}));
+	}
+	async function fetchSubjectOrgs(q: string): Promise<AutocompleteItem[]> {
+		if (q.trim().length < 2) return [];
+		const res = await api.get<{ suggestions?: { id: string; name?: string; title?: string; slug?: string }[] }>(
+			`/search/autocomplete?type=organization&q=${encodeURIComponent(q.trim())}`
+		);
+		const suggestions = res.data?.suggestions ?? [];
+		return suggestions.map((o) => ({
+			id: o.id,
+			label: o.name ?? o.title ?? '',
+			sublabel: o.slug ? '@' + o.slug : ''
+		}));
+	}
+
+	// External platforms need a contact reference — the label follows the
+	// platform: social URL, WhatsApp/Telegram number, site URL, or email.
+	let platformRef = $state('');
+	const isExternal = $derived(platformUsed !== '' && platformUsed !== 'internal');
+	const platformRefLabel = $derived.by(() => {
+		switch (platformUsed) {
+			case 'whatsapp':
+			case 'telegram':
+				return t('scam_alerts.field_ref_number', 'WhatsApp/Telegram number or handle');
+			case 'facebook':
+			case 'instagram':
+			case 'linkedin':
+				return t('scam_alerts.field_ref_social', 'Profile or post link');
+			case 'website':
+				return t('scam_alerts.field_ref_website', 'Website URL');
+			case 'email':
+				return t('scam_alerts.field_ref_email', 'Email address');
+			default:
+				return t('scam_alerts.field_ref_other', 'Contact details or link');
+		}
+	});
 
 
 
@@ -69,6 +123,7 @@
 			if (subjectType) body.subject_type = subjectType;
 			if (subjectId) body.subject_id = subjectId;
 			if (subjectLabel) body.subject_label = subjectLabel;
+			if (isExternal && platformRef.trim()) body.platform_ref = platformRef.trim();
 			body.reported_to_authorities = reportedToAuthorities;
 
 			const res = await api.post<{ id: string }>('/scam-alerts', body);
@@ -265,6 +320,94 @@
 				onValueChange={(v) => (platformUsed = v as ScamPlatform | '')}
 			/>
 		</div>
+
+		<!-- Internal (on-platform) reports need the accused entity -->
+		{#if isInternal}
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+				<div class="flex flex-col gap-1.5">
+					<label for="subject_type" class="text-sm font-medium text-[var(--color-text)]">
+						{t('scam_alerts.field_subject_type', 'Who are you reporting?')} <span class="text-red-500">*</span>
+					</label>
+					<AutocompleteSelect
+						id="subject_type"
+						value={subjectType}
+						options={[
+							{ value: 'user', label: t('scam_alerts.subject.user', 'a user or mentor') },
+							{ value: 'organization', label: t('scam_alerts.subject.organization', 'an organization') },
+							{ value: 'service', label: t('scam_alerts.subject.service', 'a service listing') }
+						]}
+						placeholder={t('scam_alerts.placeholder_subject_type', 'Select entity type')}
+						onValueChange={(v) => { subjectType = v; subjectId = ''; subjectLabel = ''; }}
+					/>
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<label for="subject_entity" class="text-sm font-medium text-[var(--color-text)]">
+						{subjectType === 'user'
+							? t('scam_alerts.field_subject_user', '@username')
+							: t('scam_alerts.field_subject_entity', 'Entity name')} <span class="text-red-500">*</span>
+					</label>
+					{#if subjectType === 'user'}
+						<Autocomplete
+							id="subject_entity"
+							placeholder={t('scam_alerts.placeholder_username', 'Search @username')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchSubjectUsers}
+							initialFetcher={() => Promise.resolve([])}
+							selectedId={subjectId || null}
+							selectedLabel={subjectLabel || null}
+							onSelect={(item) => {
+								subjectId = item.id;
+								subjectLabel = item.sublabel || item.label;
+							}}
+							onClear={() => { subjectId = ''; subjectLabel = ''; }}
+						/>
+					{:else if subjectType === 'organization'}
+						<Autocomplete
+							id="subject_entity"
+							placeholder={t('scam_alerts.placeholder_org', 'Search organization name')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchSubjectOrgs}
+							initialFetcher={() => Promise.resolve([])}
+							selectedId={subjectId || null}
+							selectedLabel={subjectLabel || null}
+							onSelect={(item) => {
+								subjectId = item.id;
+								subjectLabel = item.sublabel || item.label;
+							}}
+							onClear={() => { subjectId = ''; subjectLabel = ''; }}
+						/>
+					{:else}
+						<input
+							id="subject_entity"
+							type="text"
+							value={subjectLabel}
+							oninput={(e) => { subjectLabel = e.currentTarget.value; subjectId = ''; }}
+							placeholder={t('scam_alerts.placeholder_entity', 'Organization or service name')}
+							maxlength={200}
+							class={inputClass}
+						/>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
+		<!-- External platforms carry a contact reference -->
+		{#if isExternal}
+			<div class="flex flex-col gap-1.5">
+				<label for="platform_ref" class="text-sm font-medium text-[var(--color-text)]">
+					{platformRefLabel}
+				</label>
+				<input
+					id="platform_ref"
+					type="text"
+					value={platformRef}
+					oninput={(e) => (platformRef = e.currentTarget.value)}
+					placeholder={t('scam_alerts.placeholder_ref', 'e.g. the profile link, number, or site address used to reach you')}
+					maxlength={500}
+					class={inputClass}
+				/>
+			</div>
+		{/if}
 
 		<!-- Approximate date + amount range -->
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">

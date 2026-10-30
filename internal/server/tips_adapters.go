@@ -203,6 +203,11 @@ func (a tipsSettlementAdapter) SyncOC(ctx context.Context) error {
 	return a.svc.SyncAll(ctx)
 }
 
+// SweepStalePending delegates.
+func (a tipsSettlementAdapter) SweepStalePending(ctx context.Context) error {
+	return a.svc.SweepStalePending(ctx)
+}
+
 // tipsFeatureAdapter adapts *features.Checker to tips.FeatureChecker — the
 // flags live in feature_flags, toggled via admin → Extensions.
 type tipsFeatureAdapter struct {

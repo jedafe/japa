@@ -59,6 +59,7 @@ type ScamReportDTO struct {
 	SubjectType         string `json:"subject_type,omitempty"`
 	SubjectID           string `json:"subject_id,omitempty"`
 	SubjectLabel        string `json:"subject_label,omitempty"`
+	PlatformRef         string `json:"platform_ref,omitempty"`
 	DuplicateOfReportID string `json:"duplicate_of_report_id,omitempty"`
 	// ADR-088 universal AI-generation fields (admin review surfaces).
 	// AiGenerated is a *bool so the public redaction path can omit the key
@@ -91,6 +92,9 @@ type SubmitReportInput struct {
 	SubjectType  string `json:"subject_type"`
 	SubjectID    string `json:"subject_id"`
 	SubjectLabel string `json:"subject_label"`
+	// PlatformRef is the external contact reference — social URL, number,
+	// site URL, or email matching the external platform selected.
+	PlatformRef string `json:"platform_ref"`
 }
 
 // UpdateReportInput is the request body for PATCH /scam-alerts/:id.
@@ -240,13 +244,19 @@ var validScamTypes = map[string]bool{
 }
 
 var validPlatforms = map[string]bool{
-	"whatsapp":    true,
-	"instagram":   true,
-	"linkedin":    true,
-	"email":       true,
-	"website":     true,
-	"japaconnect": true,
-	"other":       true,
+	// Platform classification is binary: 'internal' = the JapaConnect
+	// ecosystem itself (the accused entity is captured via
+	// subject_type/subject_id/subject_label), every other value names an
+	// external channel.
+	"internal":  true,
+	"whatsapp":  true,
+	"telegram":  true,
+	"facebook":  true,
+	"instagram": true,
+	"linkedin":  true,
+	"email":     true,
+	"website":   true,
+	"other":     true,
 }
 
 // human labels for schema endpoint (Rule 16: backend owns canonical values).
@@ -260,13 +270,15 @@ var scamTypeLabels = map[string]string{
 }
 
 var platformLabels = map[string]string{
-	"whatsapp":    "WhatsApp",
-	"instagram":   "Instagram",
-	"linkedin":    "LinkedIn",
-	"email":       "Email",
-	"website":     "Website",
-	"japaconnect": "japa.to",
-	"other":       "Other",
+	"internal":  "JapaConnect (internal)",
+	"whatsapp":  "WhatsApp",
+	"telegram":  "Telegram",
+	"facebook":  "Facebook",
+	"instagram": "Instagram",
+	"linkedin":  "LinkedIn",
+	"email":     "Email",
+	"website":   "Website",
+	"other":     "Other",
 }
 
 func sortOptions(opts []Option) {
@@ -282,12 +294,16 @@ func (s *Service) Schema() SchemaOptions {
 
 	sortOptions(scamTypes)
 
+	// Explicit platform order: 'internal' (this platform) first, 'other'
+	// last — per the internal/external classification flow.
+	platformOrder := []string{
+		"internal", "facebook", "instagram", "linkedin",
+		"telegram", "whatsapp", "email", "website", "other",
+	}
 	platforms := make([]Option, 0, len(validPlatforms))
-	for v := range validPlatforms {
+	for _, v := range platformOrder {
 		platforms = append(platforms, Option{Value: v, Label: platformLabels[v]})
 	}
-
-	sortOptions(platforms)
 
 	return SchemaOptions{ScamTypes: scamTypes, Platforms: platforms}
 }
@@ -332,6 +348,15 @@ var ErrInvalidDestination = errors.New("invalid destination_space_id")
 // ErrInvalidOrigin is returned when origin_space_id does not resolve to a
 // live country-level space.
 var ErrInvalidOrigin = errors.New("invalid origin_space_id")
+
+// ErrInvalidDuplicateTarget is returned when duplicate_of_report_id does
+// not reference an existing report.
+var ErrInvalidDuplicateTarget = errors.New("duplicate_of_report_id does not reference an existing report")
+
+// ErrSubjectRequired is returned when platform_used is 'internal' but no
+// accused on-platform entity was supplied — an internal report is always
+// about a JapaConnect user/org/service.
+var ErrSubjectRequired = errors.New("subject required for internal reports")
 
 // ErrInvalidSubjectType is returned when subject_type is not in the
 // BUG-002 enum.
@@ -519,7 +544,14 @@ func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 		}
 	}
 
-	// BUG-002: optional accused-entity linkage.
+	// Optional accused-entity linkage. For 'internal' reports (the scam
+	// happened on JapaConnect itself) the on-platform entity is required —
+	// otherwise the report has no subject to moderate against.
+	if platformUsed != nil && *platformUsed == "internal" &&
+		input.SubjectType == "" && input.SubjectID == "" && input.SubjectLabel == "" {
+		return ScamReport{}, ErrSubjectRequired
+	}
+
 	var subjectType *string
 	var subjectLabel *string
 	var subjectID pgtype.UUID
@@ -534,6 +566,15 @@ func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 			return ScamReport{}, fmt.Errorf("invalid subject_id: %w", err)
 		}
 	}
+	var platformRef *string
+	if input.PlatformRef != "" {
+		ref := content.SanitizeText(input.PlatformRef)
+		if len([]rune(ref)) > 500 {
+			ref = string([]rune(ref)[:500])
+		}
+		platformRef = &ref
+	}
+
 	if input.SubjectLabel != "" {
 		lbl := content.SanitizeText(input.SubjectLabel)
 		if len([]rune(lbl)) > 200 {
@@ -555,6 +596,7 @@ func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 		SubjectType:           subjectType,
 		SubjectID:             subjectID,
 		SubjectLabel:          subjectLabel,
+		PlatformRef:           platformRef,
 	}, nil
 }
 
@@ -598,6 +640,10 @@ func (s *Service) Update(ctx context.Context, id, callerID pgtype.UUID, input Up
 		if rerr := s.store.ResetReportReview(ctx, id); rerr != nil {
 			slog.Error("scamalert: reset review after reporter edit failed", "id", id, "error", rerr)
 		}
+		// Clear the stale review fields on the returned row too — the DTO
+		// must not claim a moderator reviewed content that is pending again.
+		row.ReviewedBy = pgtype.UUID{}
+		row.ReviewedAt = pgtype.Timestamptz{}
 		row.Status = "under_review"
 		cdn.PurgePublicPaths(ctx, []string{"scam_alert:" + id.String()}, "/scam-alerts/"+id.String(), "/scam-alerts")
 	}
@@ -814,6 +860,11 @@ func (s *Service) Review(ctx context.Context, id pgtype.UUID, status, note, dupl
 		if err := duplicateOf.Scan(duplicateOfReportID); err != nil {
 			return fmt.Errorf("scamalert: review: invalid duplicate_of_report_id: %w", err)
 		}
+		// The duplicate link must point at a real report — storing a dead
+		// reference would make the moderation note meaningless.
+		if _, derr := s.store.GetReportForUpdate(ctx, duplicateOf); derr != nil {
+			return ErrInvalidDuplicateTarget
+		}
 	}
 
 	if err := s.store.UpdateReportStatus(ctx, id, status, note, reviewerID, duplicateOf); err != nil {
@@ -908,6 +959,13 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID pgtype.UUID, p
 			actionURL := "/scam-alerts/" + reportID.String()
 
 			for _, subID := range subscribers {
+				// The reporter already received the 'reviewed' outcome
+				// notification — skip them in the subscriber fan-out so a
+				// reporter who is also subscribed isn't notified twice.
+				if subID == reporterID {
+					continue
+				}
+
 				// Dedup guard — jc:scam_alert:notified:{user_id}:{report_id}
 				// (valkey-keys-catalog, 24h TTL). Asynq retries must not
 				// re-notify a subscriber who already got this alert.
@@ -1110,6 +1168,9 @@ func rowToDTO(r ScamReportRow) ScamReportDTO {
 	}
 	if r.SubjectLabel != nil {
 		dto.SubjectLabel = *r.SubjectLabel
+	}
+	if r.PlatformRef != nil {
+		dto.PlatformRef = *r.PlatformRef
 	}
 	if r.DuplicateOfReportID.Valid {
 		dto.DuplicateOfReportID = r.DuplicateOfReportID.String()

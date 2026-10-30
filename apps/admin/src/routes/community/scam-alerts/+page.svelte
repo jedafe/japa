@@ -39,6 +39,7 @@
 		subject_type?: string;
 		subject_id?: string;
 		subject_label?: string;
+		platform_ref?: string;
 	};
 
 	const canReview = $derived(hasPermission('scam_alert.review'));
@@ -480,6 +481,12 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.scam_alert.col_authorities', 'Reported to authorities')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.reported_to_authorities ? t('common.yes', 'Yes') : t('common.no', 'No')}</p>
 		</div>
+		{#if row.platform_ref}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.scam_alert.col_contact_ref', 'Contact reference')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.platform_ref}</p>
+			</div>
+		{/if}
 		{#if row.moderator_note}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.scam_alert.col_moderator_note', 'Moderator Note')}</p>

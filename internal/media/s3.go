@@ -73,7 +73,15 @@ func NewS3ClientFromConfig(c S3Config) *S3Client {
 		// No total Timeout — ResponseHeaderTimeout bounds the connect+headers
 		// phase while body streaming (media serve/uploads) can run as long as
 		// the payload needs.
-		httpClient: &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: 30 * time.Second}},
+		httpClient: &http.Client{Transport: &http.Transport{
+			// Bound the pool so a dead keep-alive to SeaweedFS gets pruned
+			// and re-dialed instead of persisting until process restart —
+			// stale connections here were the "placeholder until restart" bug.
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   16,
+			IdleConnTimeout:       60 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+		}},
 	}
 }
 

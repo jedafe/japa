@@ -33,7 +33,7 @@ type tipStore interface {
 	getTipByOCContributionID(ctx context.Context, ocID string) (gen.Tip, error)
 	insertTip(ctx context.Context, p gen.InsertTipParams) (gen.Tip, error)
 	updateTipStatus(ctx context.Context, id pgtype.UUID, status string) error
-	attachTipPayment(ctx context.Context, id, paymentID pgtype.UUID) error
+	attachTipPayment(ctx context.Context, id, paymentID pgtype.UUID, checkoutURL string) error
 	settleTip(ctx context.Context, id pgtype.UUID, netCredits int64) error
 	// failTip marks a pending tip failed and releases its idempotency key.
 	failTip(ctx context.Context, id pgtype.UUID) error
@@ -50,6 +50,8 @@ type tipStore interface {
 	adminListTips(ctx context.Context, p gen.AdminListTipsParams) ([]gen.Tip, error)
 	adminCountTips(ctx context.Context, p gen.AdminCountTipsParams) (int32, error)
 	adminTipStats(ctx context.Context, since pgtype.Timestamptz) (gen.AdminTipStatsRow, error)
+	adminTipStatsByCurrency(ctx context.Context, since pgtype.Timestamptz) ([]gen.AdminTipStatsByCurrencyRow, error)
+	listStalePendingTips(ctx context.Context, hours, lim int32) ([]pgtype.UUID, error)
 	getUserDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetUserDisplayNamesRow, error)
 	getOrgDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetOrgDisplayNamesRow, error)
 	isMentor(ctx context.Context, userID pgtype.UUID) (bool, error)
@@ -198,8 +200,16 @@ func (s *Store) updateTipStatus(ctx context.Context, id pgtype.UUID, status stri
 	return s.write.UpdateTipStatus(ctx, gen.UpdateTipStatusParams{ID: id, Status: status})
 }
 
-func (s *Store) attachTipPayment(ctx context.Context, id, paymentID pgtype.UUID) error {
-	return s.write.AttachTipPayment(ctx, gen.AttachTipPaymentParams{ID: id, PaymentID: paymentID})
+func (s *Store) attachTipPayment(ctx context.Context, id, paymentID pgtype.UUID, checkoutURL string) error {
+	return s.write.AttachTipPayment(ctx, gen.AttachTipPaymentParams{ID: id, PaymentID: paymentID, CheckoutUrl: &checkoutURL})
+}
+
+func (s *Store) listStalePendingTips(ctx context.Context, hours int32, lim int32) ([]pgtype.UUID, error) {
+	return s.read.ListStalePendingTips(ctx, gen.ListStalePendingTipsParams{Hours: hours, Lim: lim})
+}
+
+func (s *Store) adminTipStatsByCurrency(ctx context.Context, since pgtype.Timestamptz) ([]gen.AdminTipStatsByCurrencyRow, error) {
+	return s.read.AdminTipStatsByCurrency(ctx, since)
 }
 
 func (s *Store) settleTip(ctx context.Context, id pgtype.UUID, netCredits int64) error {

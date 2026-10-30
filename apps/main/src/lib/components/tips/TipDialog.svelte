@@ -129,7 +129,9 @@
 			error = res.error?.message ?? t('tips.failed', 'Tip failed — try again');
 			return;
 		}
-		if (res.data.checkout_url) {
+		// Redirect only when the tip is still awaiting payment — a replayed
+		// completed tip can carry a stored checkout_url from the first attempt.
+		if (res.data.checkout_url && res.data.tip?.status === 'pending') {
 			window.location.href = res.data.checkout_url; // provider checkout
 			return;
 		}

@@ -254,6 +254,65 @@ func (s *Service) UpdateFieldPosition(ctx context.Context, id, groupID pgtype.UU
 	return nil
 }
 
+// ReorderFields persists a bulk field reorder inside a single transaction so
+// a mid-loop failure can't leave a partial reorder behind (CF-B8 — the
+// trigger/step reorders already run transactionally; fields now match).
+// The fieldIDs array is in the desired order; position is assigned by index.
+func (s *Service) ReorderFields(ctx context.Context, groupID pgtype.UUID, fieldIDs []pgtype.UUID) error {
+	return db.WithTx(ctx, s.pool, func(q *gen.Queries) error {
+		for i, id := range fieldIDs {
+			if err := q.UpdateCustomFieldPosition(ctx, gen.UpdateCustomFieldPositionParams{
+				Position: int32(i), // #nosec G115: bounded by request size
+				ID:       id,
+				GroupID:  groupID,
+			}); err != nil {
+				return fmt.Errorf("reordering fields at index %d: %w", i, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// SpaceExists reports whether a space row exists (used by CreateSpaceForm to
+// turn a missing-space FK violation into a clean 404).
+func (s *Service) SpaceExists(ctx context.Context, id pgtype.UUID) bool {
+	_, err := s.read.GetSpaceByID(ctx, id)
+	return err == nil
+}
+
+// GetUserGroup returns the user_group row for the CF-S1 assign_user_group
+// escalation guard (trigger target must exist and not be a system group).
+func (s *Service) GetUserGroup(ctx context.Context, id pgtype.UUID) (gen.GetUserGroupByIDRow, error) {
+	return s.read.GetUserGroupByID(ctx, id)
+}
+
+// GroupBoundToSystemForm reports whether the field group is assigned to any
+// is_system form (entity_class='form' + entity_id). System forms are consumed
+// by bespoke frontend pages that bind to specific field keys, so deleting the
+// group — or any of its fields — would orphan a shipped flow (verification
+// request, claim-ownership, feedback...). Used by the delete guards; the
+// field-row is_system flag covers the rest at the SQL level.
+func (s *Service) GroupBoundToSystemForm(ctx context.Context, groupID pgtype.UUID) (bool, error) {
+	all, err := s.read.ListAllGroupAssignments(ctx)
+	if err != nil {
+		return false, fmt.Errorf("listing group assignments: %w", err)
+	}
+
+	for _, a := range all {
+		if a.GroupID != groupID || a.EntityClass != "form" || !a.EntityID.Valid {
+			continue
+		}
+
+		f, ferr := s.read.GetFormByID(ctx, a.EntityID)
+		if ferr == nil && f.IsSystem {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 // ---------------------------------------------------------------------------
 // Group Assignments
 // ---------------------------------------------------------------------------
@@ -877,13 +936,42 @@ func (s *Service) CreateFormWithFields(ctx context.Context, spaceID pgtype.UUID,
 	})
 }
 
+// assignmentForEntity resolves the (entity_class, entity_id) assignment,
+// falling back to the entity_id IS NULL wildcard row documented in §06
+// ("NULL means applies to all of entity_class"). Previously the exact-match
+// query left wildcard assignments unresolvable — a group attached to a bare
+// entity type (e.g. "form") silently applied to nothing.
+func (s *Service) assignmentForEntity(ctx context.Context, entityClass string, entityID pgtype.UUID) (gen.CustomFieldGroupAssignment, error) {
+	a, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
+		EntityClass: entityClass,
+		EntityID:    entityID,
+	})
+	if err == nil {
+		return a, nil
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return gen.CustomFieldGroupAssignment{}, err
+	}
+
+	all, lErr := s.read.ListAssignmentsByEntityClass(ctx, entityClass)
+	if lErr != nil {
+		return gen.CustomFieldGroupAssignment{}, lErr
+	}
+
+	for _, wa := range all {
+		if !wa.EntityID.Valid {
+			return wa, nil
+		}
+	}
+
+	return gen.CustomFieldGroupAssignment{}, pgx.ErrNoRows
+}
+
 // GetFormFields returns the custom fields attached to a form via the
 // custom_field_group_assignments polymorphic link (entity_class = "form").
 func (s *Service) GetFormFields(ctx context.Context, formID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
-	assignment, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
-		EntityClass: "form",
-		EntityID:    formID,
-	})
+	assignment, err := s.assignmentForEntity(ctx, "form", formID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil // form has no fields yet
@@ -905,10 +993,7 @@ func (s *Service) GetFormFields(ctx context.Context, formID pgtype.UUID) ([]gen.
 // GetFormGroupID returns the field group UUID assigned to the given form,
 // or nil if no group is assigned yet.
 func (s *Service) GetFormGroupID(ctx context.Context, formID pgtype.UUID) *string {
-	assignment, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
-		EntityClass: "form",
-		EntityID:    formID,
-	})
+	assignment, err := s.assignmentForEntity(ctx, "form", formID)
 	if err != nil {
 		return nil
 	}
@@ -992,10 +1077,7 @@ func (s *Service) ListFormSteps(ctx context.Context, formID pgtype.UUID) ([]gen.
 // GetStepFields returns the custom fields attached to a form step via the
 // custom_field_group_assignments polymorphic link (entity_class = "form_step").
 func (s *Service) GetStepFields(ctx context.Context, stepID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
-	assignment, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
-		EntityClass: "form_step",
-		EntityID:    stepID,
-	})
+	assignment, err := s.assignmentForEntity(ctx, "form_step", stepID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil // step has no fields yet
@@ -1017,10 +1099,7 @@ func (s *Service) GetStepFields(ctx context.Context, stepID pgtype.UUID) ([]gen.
 // GetStepFormGroupID returns the field group UUID assigned to the given step,
 // or nil if no group is assigned yet.
 func (s *Service) GetStepFormGroupID(ctx context.Context, stepID pgtype.UUID) *string {
-	assignment, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
-		EntityClass: "form_step",
-		EntityID:    stepID,
-	})
+	assignment, err := s.assignmentForEntity(ctx, "form_step", stepID)
 	if err != nil {
 		return nil
 	}
