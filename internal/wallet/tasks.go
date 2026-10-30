@@ -30,7 +30,14 @@ func (s *Service) EnqueueProcessActivityEvent(ctx context.Context, eventID pgtyp
 	}
 
 	if s.enqueuer != nil {
-		return s.enqueuer.Enqueue(worker.TypeWalletProcessActivityEvent, payload)
+		if err := s.enqueuer.Enqueue(worker.TypeWalletProcessActivityEvent, payload); err != nil {
+			// A failed enqueue would strand the event unprocessed forever
+			// (ADR-136 review) — fall back to synchronous processing instead
+			// of dropping the award/penalty.
+			slog.Warn("wallet: activity enqueue failed, processing inline", "event_id", eventID.String(), "error", err)
+			return s.ProcessActivityEvent(ctx, eventID)
+		}
+		return nil
 	}
 
 	// Fallback: process synchronously when Asynq is not wired.

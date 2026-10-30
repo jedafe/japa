@@ -381,6 +381,9 @@ func (s *Service) emitModerationPenalty(ctx context.Context, action, entityType 
 		Reference:   "report:" + reportID.String(),
 	})
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("moderation: emit activity event failed", "activity_key", key, "error", err)
+		}
 		return
 	}
 	_ = s.activity.EnqueueProcessActivityEvent(ctx, event.ID)

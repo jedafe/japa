@@ -205,6 +205,14 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 	dailyCap := int64(0)
 	if rule.PointValue > 0 && s.settings != nil {
 		dailyCap = int64(s.settings.GetIntOr(ctx, "wallet.max_daily_earn_points", 0))
+		// Tier-scoped override (wallet.max_daily_earn_points.{tier}) — a
+		// negative value means unlimited for that tier (ADR-136); a missing
+		// key falls back to the global cap.
+		if s.tierResolver != nil {
+			if tier, terr := s.tierResolver.ResolveUserTier(ctx, event.UserID); terr == nil && tier != "" {
+				dailyCap = int64(s.settings.GetIntOr(ctx, "wallet.max_daily_earn_points."+tier, int(dailyCap)))
+			}
+		}
 	}
 
 	if rule.PointValue > 0 && dailyCap == 0 {
@@ -229,7 +237,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID pgtype.UUID)
 			return fmt.Errorf("checking daily earning cap: %w", qerr)
 		}
 
-		if earnedToday+int64(rule.PointValue) > dailyCap {
+		if dailyCap > 0 && earnedToday+int64(rule.PointValue) > dailyCap {
 			// Cap reached — no points, but the activity still counts toward
 			// badges/challenges. Mark processed inside the tx for exactly-once
 			// evaluation on any replay (same pattern as the one-time skip).

@@ -4327,6 +4327,16 @@ type TipSetting struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
+type TipsPointsLegacy struct {
+	ID                      pgtype.UUID        `json:"id"`
+	SenderUserID            pgtype.UUID        `json:"sender_user_id"`
+	RecipientType           string             `json:"recipient_type"`
+	RecipientUserID         pgtype.UUID        `json:"recipient_user_id"`
+	RecipientOrganizationID pgtype.UUID        `json:"recipient_organization_id"`
+	PointsAmount            int64              `json:"points_amount"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+}
+
 type TotpCredential struct {
 	ID              pgtype.UUID        `json:"id"`
 	UserID          pgtype.UUID        `json:"user_id"`

@@ -4,9 +4,11 @@ package spam
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -48,15 +50,18 @@ func (a *WorkerAdapter) SetActivityEmitter(e ActivityEmitter) { a.activity = e }
 
 // emitSpamPenalty deducts points for spam-flagged/blocked content —
 // fire-and-forget; deduped per entity via (activity_key, reference).
-func (a *WorkerAdapter) emitSpamPenalty(ctx context.Context, authorID pgtype.UUID, entityType, entityID string) {
+func (a *WorkerAdapter) emitSpamPenalty(ctx context.Context, authorID pgtype.UUID, key, reference string) {
 	if a.activity == nil || !authorID.Valid {
 		return
 	}
 	event, err := a.activity.EmitActivityEvent(ctx, authorID, SpamActivityInput{
-		ActivityKey: "spam.detected",
-		Reference:   "spam:" + entityType + ":" + entityID,
+		ActivityKey: key,
+		Reference:   reference,
 	})
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("spam: emit activity event failed", "activity_key", key, "error", err)
+		}
 		return
 	}
 	_ = a.activity.EnqueueProcessActivityEvent(ctx, event.ID)
@@ -116,13 +121,14 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID st
 
 	switch {
 	case result.Blocked:
-		a.emitSpamPenalty(ctx, authorID, entityType, entityID)
+		a.emitSpamPenalty(ctx, authorID, "spam.detected", "spam:"+entityType+":"+entityID)
 		slog.Warn("spam:worker_adapter: content blocked",
 			"entity_type", entityType, "entity_id", entityID,
 			"score", result.Score, "reasons", result.Reasons)
 	case result.Flagged:
-		// ADR-136: flagged content deducts the author's points (spam.detected).
-		a.emitSpamPenalty(ctx, authorID, entityType, entityID)
+		// ADR-136: auto-flagged content may emit spam.flagged (seeded
+		// disabled — opt-in; only confirmed blocks penalize by default).
+		a.emitSpamPenalty(ctx, authorID, "spam.flagged", "spamflag:"+entityType+":"+entityID)
 		slog.Info("spam:worker_adapter: content flagged for review",
 			"entity_type", entityType, "entity_id", entityID,
 			"score", result.Score, "reasons", result.Reasons)

@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // ocSlugPattern bounds collective slugs to OC's URL-safe charset — the slug
@@ -158,6 +159,9 @@ func (s *Service) ImportContribution(ctx context.Context, owner Owner, c OCContr
 	if err != nil {
 		return false, fmt.Errorf("importing OC contribution: %w", err)
 	}
+	// ADR-136: a member-matched OC donation earns the sender tip.sent
+	// points (senderID is NULL for unmatched contributors — nil-safe).
+	s.emitActivity(ctx, senderID, wallet.ActivityKeyTipSent, "tip:"+tip.ID.String())
 	// Recipients should hear about OC donations the same as on-platform
 	// tips (§125 tip.received) — fire-and-forget.
 	s.notifyReceived(ctx, tip.ID)

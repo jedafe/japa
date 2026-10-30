@@ -597,6 +597,9 @@ func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, ref
 	}
 	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{ActivityKey: key, Reference: reference})
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("emit activity event failed", "activity_key", key, "error", err)
+		}
 		return
 	}
 	_ = s.activity.EnqueueProcessActivityEvent(ctx, event.ID)

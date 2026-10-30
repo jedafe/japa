@@ -964,18 +964,40 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 		return pgtype.UUID{}, 0, err
 	}
 
-	// ADR-136: votes move the author's points — upvotes earn reaction.added,
-	// downvotes deduct via reaction.negative. Reference dedupes per
-	// (comment, voter) so a later vote-flip doesn't double-count.
+	// ADR-136: votes move the author's points — the current direction earns
+	// reaction.added / deducts reaction.negative, and flipping or removing
+	// a previous vote emits the matching revert so the balance converges
+	// to the current vote value (monotonic seq references).
 	if delta != 0 && target.AuthorUserID != userID {
-		key := wallet.ActivityKeyReactionAdded
-		if value == -1 {
-			key = wallet.ActivityKeyReactionNegative
-		}
-		s.emitActivity(ctx, target.AuthorUserID, key, "comment:"+commentID.String()+":vote:"+userID.String(), nil)
+		s.emitVoteEvents(ctx, "comment", commentID, userID, target.AuthorUserID, value, value-delta)
 	}
 
 	return target.ContentID, delta, nil
+}
+
+// emitVoteEvents emits the direction award plus the revert for a flipped or
+// removed previous vote. prevValue is the stored vote before this change
+// (0 = none). Fire-and-forget; seq refs make every physical transition
+// unique while replays of the same transition dedupe.
+func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityID, voterID, authorID pgtype.UUID, value, prevValue int16) {
+	prefix := fmt.Sprintf("vote:%s:%s:%s:", entityType, entityID.String(), voterID.String())
+	seq, err := s.read.CountActivityEventsByReferencePrefix(ctx, prefix+"%")
+	if err != nil {
+		seq = 0 // best-effort — a collision only dedupes this transition
+	}
+	ref := fmt.Sprintf("%s%d", prefix, seq+1)
+
+	if value == 1 {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionAdded, ref, nil)
+	} else if value == -1 {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegative, ref, nil)
+	}
+
+	if prevValue == 1 {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, ref+":undo", nil)
+	} else if prevValue == -1 {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegativeReverted, ref+":undo", nil)
+	}
 }
 
 // RemoveCommentVote removes a user's vote and recalculates the score.
@@ -1022,6 +1044,11 @@ func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtyp
 		return nil
 	}); err != nil {
 		return pgtype.UUID{}, 0, err
+	}
+
+	// ADR-136: removing a vote reverts its award/penalty (value 0 = removed).
+	if delta != 0 && target.AuthorUserID != userID {
+		s.emitVoteEvents(ctx, "comment", commentID, userID, target.AuthorUserID, 0, -delta)
 	}
 
 	return target.ContentID, delta, nil

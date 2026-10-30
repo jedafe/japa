@@ -1430,6 +1430,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	referralService.SetValkey(vkClient.Redis())       // jc:referral_attr attribution key
 	referralService.SetEnqueuer(taskEnqueuer)         // referral:record_click + wallet:award_points
 	referralService.SetActivityEmitter(walletService) // ADR-136: referral.completed
+	walletService.SetTierResolver(tierService)        // ADR-136: tier-scoped daily earn caps
 	referralHandlers := referral.NewHandlers(referralService)
 	// Wire referral capture into the auth signup flow (§60 — ?ref=CODE at
 	// registration creates a pending referrals row). Injected here because

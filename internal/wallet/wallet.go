@@ -98,6 +98,10 @@ type Service struct {
 	// wallet.max_daily_earn_points and wallet.default_currency
 	// (AUDIT-BE2-SETTING-007/008). When nil, compiled-in defaults are used.
 	settings SettingsReader
+	// tierResolver resolves the member's tier for the tier-scoped daily earn
+	// cap (wallet.max_daily_earn_points.{regular,pro,business}). Optional —
+	// when nil, the global cap applies to everyone.
+	tierResolver TierResolver
 	// currencyResolver resolves the active fiat currency for a user at
 	// checkout time (Section 58, ADR-065). Optional — when nil, the system
 	// default (wallet.default_currency) is used.
@@ -156,6 +160,15 @@ type PaymentCreateResult struct {
 
 // SetSettings injects the global system_settings reader (AUDIT-BE2-SETTING-007/008).
 func (s *Service) SetSettings(r SettingsReader) { s.settings = r }
+
+// TierResolver resolves a user's membership tier — satisfied by
+// *tiers.Service. Optional (ADR-136: tier-scoped daily earn caps).
+type TierResolver interface {
+	ResolveUserTier(ctx context.Context, userID pgtype.UUID) (string, error)
+}
+
+// SetTierResolver injects the tier resolver for tier-scoped earn caps.
+func (s *Service) SetTierResolver(t TierResolver) { s.tierResolver = t }
 
 // SetCurrencyResolver injects the currency resolver for geo-aware currency
 // resolution at checkout (Section 58, ADR-065).

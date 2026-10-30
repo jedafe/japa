@@ -25,6 +25,20 @@ func (q *Queries) CheckIdempotencyKey(ctx context.Context, idempotencyKey *strin
 	return exists, err
 }
 
+const countActivityEventsByReferencePrefix = `-- name: CountActivityEventsByReferencePrefix :one
+SELECT COUNT(*)::bigint FROM activity_events
+WHERE reference LIKE $1
+`
+
+// Counts events whose reference starts with the given prefix — used by
+// vote emitters to build monotonic per-transition references (ADR-136).
+func (q *Queries) CountActivityEventsByReferencePrefix(ctx context.Context, prefix string) (int64, error) {
+	row := q.db.QueryRow(ctx, countActivityEventsByReferencePrefix, prefix)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countUserActivityThisWeek = `-- name: CountUserActivityThisWeek :one
 SELECT COUNT(*) FROM activity_events
 WHERE user_id = $1 AND activity_key = $2

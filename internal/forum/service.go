@@ -886,18 +886,40 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 		"user_id": userID, "value": input.Value,
 	})
 
-	// ADR-136: votes move the entity author's points — upvotes earn
-	// reaction.added, downvotes deduct via reaction.negative. Reference
-	// dedupes per (entity, voter) so a later vote-flip doesn't double-count.
+	// ADR-136: votes move the entity author's points — the current direction
+	// earns reaction.added / deducts reaction.negative, and flipping or
+	// removing a previous vote emits the matching revert so the balance
+	// converges to the current vote value (monotonic seq references).
 	if delta != 0 {
-		key := wallet.ActivityKeyReactionAdded
-		if input.Value == VoteDown {
-			key = wallet.ActivityKeyReactionNegative
-		}
-		s.emitActivity(ctx, entityAuthor, key, "forum:"+input.EntityID.String()+":vote:"+userID.String())
+		s.emitVoteEvents(ctx, input.EntityType, input.EntityID, userID, entityAuthor, input.Value, input.Value-delta)
 	}
 
 	return vote, thread.ContentID, delta, nil
+}
+
+// emitVoteEvents emits the direction award plus the revert for a flipped or
+// removed previous vote. prevValue is the stored vote before this change
+// (0 = none). Fire-and-forget; seq refs make every physical transition
+// unique while replays of the same transition dedupe.
+func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityID, voterID, authorID pgtype.UUID, value, prevValue int16) {
+	prefix := fmt.Sprintf("vote:%s:%s:%s:", entityType, entityID.String(), voterID.String())
+	seq, err := s.store.read.CountActivityEventsByReferencePrefix(ctx, prefix+"%")
+	if err != nil {
+		seq = 0
+	}
+	ref := fmt.Sprintf("%s%d", prefix, seq+1)
+
+	if value == 1 {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionAdded, ref)
+	} else if value == -1 {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegative, ref)
+	}
+
+	if prevValue == 1 {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, ref+":undo")
+	} else if prevValue == -1 {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionNegativeReverted, ref+":undo")
+	}
 }
 
 // RemoveVote retracts the user's vote on a thread or reply and recalculates
@@ -909,14 +931,18 @@ func (s *Service) RemoveVote(ctx context.Context, userID pgtype.UUID, entityType
 		return pgtype.UUID{}, 0, fmt.Errorf("%w: entity type must be 'thread' or 'reply'", errpkg.ErrInvalid)
 	}
 
-	// Resolve the thread's backing content id + the previous vote before the
-	// tx so the engagement delta is exact.
+	// Resolve the thread's backing content id + the entity author before the
+	// tx so the engagement delta is exact and the vote revert reaches the
+	// right wallet (ADR-136).
 	var contentID pgtype.UUID
+	var entityAuthor pgtype.UUID
 	if entityType == EntityTypeThread {
 		if t, err := s.store.getThreadByID(ctx, entityID); err == nil {
 			contentID = t.ContentID
+			entityAuthor = t.AuthorUserID
 		}
 	} else if r, err := s.store.getReplyByID(ctx, entityID); err == nil {
+		entityAuthor = r.AuthorUserID
 		if t, err := s.store.getThreadByID(ctx, r.ThreadID); err == nil {
 			contentID = t.ContentID
 		}
@@ -957,6 +983,11 @@ func (s *Service) RemoveVote(ctx context.Context, userID pgtype.UUID, entityType
 		return nil
 	}); err != nil {
 		return pgtype.UUID{}, 0, err
+	}
+
+	// ADR-136: removing a vote reverts its award/penalty (value 0 = removed).
+	if delta != 0 && entityAuthor.Valid && entityAuthor != userID {
+		s.emitVoteEvents(ctx, entityType, entityID, userID, entityAuthor, 0, -delta)
 	}
 
 	return contentID, delta, nil
