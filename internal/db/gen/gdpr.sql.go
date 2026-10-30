@@ -2615,7 +2615,7 @@ func (q *Queries) GdprReassignCalendarEntriesSubmittedBy(ctx context.Context, ar
 }
 
 const gdprSoftDeleteSoleOwnedSpacesByUser = `-- name: GdprSoftDeleteSoleOwnedSpacesByUser :exec
-UPDATE spaces SET deleted_at = now(), status = 'deleted'
+UPDATE spaces SET deleted_at = now()
 WHERE deleted_at IS NULL
   AND id IN (
     SELECT sm.space_id FROM space_members sm

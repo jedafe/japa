@@ -41,6 +41,11 @@ func (s *Service) CanPostInSpace(
 		return false
 	}
 
+	// Non-active spaces are frozen — no new posts regardless of the axis.
+	if space.Status != StatusActive {
+		return false
+	}
+
 	switch space.PostingPerm {
 	case PermOpen:
 		return true
@@ -126,6 +131,11 @@ func canActInSpace(
 	// §80 wiki-only space types accept no community writes — structural rule,
 	// applied before the axis so even admin-granted writes can't land.
 	if s.IsWikiOnlyType(ctx, space.SpaceTypeID) {
+		return false
+	}
+
+	// Non-active spaces are frozen — no replies/comments regardless of axis.
+	if space.Status != StatusActive {
 		return false
 	}
 

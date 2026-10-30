@@ -330,6 +330,30 @@ func (h *Handlers) canViewRestrictedSpace(r *http.Request, spaceID pgtype.UUID) 
 	return h.permChecker != nil && h.permChecker.HasPermission(ctx, user.UserID, "spaces.moderate")
 }
 
+// canManageRestrictedSpace is the stricter variant used for non-active
+// spaces: suspension/archival is a moderation freeze — only the space's
+// managers (owner/assigned moderator) or platform moderation may still see
+// it. Regular members do not retain read access.
+func (h *Handlers) canManageRestrictedSpace(r *http.Request, spaceID pgtype.UUID) bool {
+	user := auth.FromContext(r.Context())
+	if user == nil || !user.UserID.Valid {
+		return false
+	}
+
+	ctx := r.Context()
+
+	if ok, err := h.Service.IsModerator(ctx, spaceID, user.UserID); err == nil && ok {
+		return true
+	}
+	if ok, err := h.Service.IsOwner(ctx, spaceID, user.UserID); err == nil && ok {
+		return true
+	}
+
+	return h.permChecker != nil &&
+		(h.permChecker.HasPermission(ctx, user.UserID, "spaces.moderate") ||
+			h.permChecker.HasPermission(ctx, user.UserID, "spaces.admin"))
+}
+
 // spaceFromContext writes a 404 error and returns false when no resolved space
 // is present in the request context. Callers should abort when the boolean is
 // false.

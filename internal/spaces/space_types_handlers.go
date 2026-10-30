@@ -224,7 +224,7 @@ func (h *Handlers) DeleteSpaceType(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusForbidden, "system_type", "System space types cannot be deleted")
 		return
 	}
-	inUse, err := h.Service.read.CountSpacesByType(r.Context(), gen.CountSpacesByTypeParams{SpaceTypeID: id})
+	inUse, err := h.Service.read.CountSpacesUsingType(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return

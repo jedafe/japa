@@ -182,5 +182,6 @@
   "tools.turns": "tours",
   "tools.unknown_provider": "Fournisseur inconnu",
   "tools.view_rates": "Voir les taux",
-  "tools.visa_checklist": "Liste de contrôle visa"
+  "tools.visa_checklist": "Liste de contrôle visa",
+  "spaces.join_request_pending": "Demande envoyée — en attente d'approbation"
 }

@@ -24,9 +24,11 @@ func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.Service.read.ListSpaceJoinRequests(r.Context(),
-		spaceID,
-	)
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+	rows, err := h.Service.read.ListSpaceJoinRequests(r.Context(), gen.ListSpaceJoinRequestsParams{
+		SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
+	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
 		return
@@ -94,7 +96,7 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 	// SPACES-004: increment member_count only on approval. The pending
 	// join path did not increment, so the approval must.
 	if input.Status == "approved" {
-		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID, 1); err != nil {
+		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID); err != nil {
 			slog.Error("spaces: failed to increment member_count on join approval",
 				"space_id", spaceID.String(), "user_id", requestID.String(), "error", err)
 		}
@@ -172,6 +174,15 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 			slog.Error("spaces: failed to write status-update audit log",
 				"space_id", spaceID.String(), "error", aerr)
 		}
+	}
+
+	// Suspend/archive/draft removes the space from discovery; re-activation
+	// re-indexes it — otherwise a suspended space stayed searchable and
+	// linked to a 404.
+	if input.Status != StatusActive {
+		h.Service.EnqueueSearchIndex(r.Context(), spaceID, "delete")
+	} else {
+		h.Service.EnqueueSearchIndex(r.Context(), spaceID, "index")
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": spaceID.String(), "status": input.Status}})
@@ -252,7 +263,11 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 // given a composite id (space_id::user_id) so the panel can target a specific
 // request for approval/rejection.
 func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.Service.read.ListAllSpaceJoinRequests(r.Context())
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+	rows, err := h.Service.read.ListAllSpaceJoinRequests(r.Context(), gen.ListAllSpaceJoinRequestsParams{
+		PageLimit: limit, PageOffset: offset,
+	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
 		return
@@ -324,7 +339,7 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 
 	// SPACES-004: increment member_count only on approval.
 	if status == "approved" {
-		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID, 1); err != nil {
+		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID); err != nil {
 			slog.Error("spaces: failed to increment member_count on join approval",
 				"space_id", spaceID.String(), "user_id", userID.String(), "error", err)
 		}

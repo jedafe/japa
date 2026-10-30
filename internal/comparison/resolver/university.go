@@ -143,7 +143,7 @@ func (r *universityResolver) Search(ctx context.Context, query string, filters m
 	}
 
 	if !found {
-		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, query, "", "", "", "", spaceSortArg(filters), limit, offset)
+		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, query, "", "", "", "", false, spaceSortArg(filters), limit, offset)
 		if err != nil {
 			return nil, fmt.Errorf("searching universities: %w", err)
 		}
@@ -212,7 +212,7 @@ func (r *universityResolver) Count(ctx context.Context, query string, filters ma
 		}
 	}
 
-	return r.svc.CountSpacesByType(ctx, typeID, query, "", "", "", "")
+	return r.svc.CountSpacesByType(ctx, typeID, query, "", "", "", "", false)
 }
 
 func (r *universityResolver) universityTypeID(ctx context.Context) (pgtype.UUID, error) {

@@ -34,7 +34,8 @@ func (q *Queries) AddParentSpace(ctx context.Context, arg AddParentSpaceParams) 
 const addSpaceMember = `-- name: AddSpaceMember :execrows
 INSERT INTO space_members (space_id, user_id, role) VALUES ($1, $2, 'member')
 
-ON CONFLICT (space_id, user_id) DO NOTHING
+ON CONFLICT (space_id, user_id) DO UPDATE SET status = 'approved'
+WHERE space_members.status != 'approved'
 `
 
 type AddSpaceMemberParams struct {
@@ -633,15 +634,16 @@ LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
  AND cfv.entity_type = 'space'
  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
 WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
- AND ($2::text = ''
- OR s.name ILIKE '%' || $2 || '%'
- OR s.slug ILIKE '%' || $2 || '%'
- OR cfv.value_text ILIKE '%' || $2 || '%')
- AND ($3::text = '' OR s.geo_code = $3)
- AND ($4::text = '' OR s.region = $4)
- AND ($5::text = '' OR s.subregion = $5)
+ AND ($2::bool OR s.status = 'active')
+ AND ($3::text = ''
+ OR s.name ILIKE '%' || $3 || '%'
+ OR s.slug ILIKE '%' || $3 || '%'
+ OR cfv.value_text ILIKE '%' || $3 || '%')
+ AND ($4::text = '' OR s.geo_code = $4)
+ AND ($5::text = '' OR s.region = $5)
+ AND ($6::text = '' OR s.subregion = $6)
  -- @within mirrors ListSpacesByTypePaginated (junction + parent_id subtree).
- AND ($6::text = '' OR EXISTS (
+ AND ($7::text = '' OR EXISTS (
  SELECT 1
  FROM (
  SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
@@ -651,19 +653,20 @@ WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = $6 AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = $6 AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = $6 AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = $7 AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = $7 AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = $7 AND ggp.level IN ('country', 'state', 'city'))
  ))
 `
 
 type CountSpacesByTypeParams struct {
-	SpaceTypeID pgtype.UUID `json:"space_type_id"`
-	Search      string      `json:"search"`
-	GeoCode     string      `json:"geo_code"`
-	Region      string      `json:"region"`
-	Subregion   string      `json:"subregion"`
-	Within      string      `json:"within"`
+	SpaceTypeID     pgtype.UUID `json:"space_type_id"`
+	IncludeInactive bool        `json:"include_inactive"`
+	Search          string      `json:"search"`
+	GeoCode         string      `json:"geo_code"`
+	Region          string      `json:"region"`
+	Subregion       string      `json:"subregion"`
+	Within          string      `json:"within"`
 }
 
 // Counts spaces with the same filters as ListSpacesByTypePaginated, including
@@ -672,12 +675,28 @@ type CountSpacesByTypeParams struct {
 func (q *Queries) CountSpacesByType(ctx context.Context, arg CountSpacesByTypeParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countSpacesByType,
 		arg.SpaceTypeID,
+		arg.IncludeInactive,
 		arg.Search,
 		arg.GeoCode,
 		arg.Region,
 		arg.Subregion,
 		arg.Within,
 	)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
+const countSpacesUsingType = `-- name: CountSpacesUsingType :one
+SELECT COUNT(*) AS total FROM spaces
+WHERE space_type_id = $1 AND deleted_at IS NULL
+`
+
+// All non-deleted spaces on a type (any status) — used by DeleteSpaceType's
+// in-use guard (active-only counts would miss suspended spaces and the
+// delete would then die on the FK).
+func (q *Queries) CountSpacesUsingType(ctx context.Context, spaceTypeID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countSpacesUsingType, spaceTypeID)
 	var total int64
 	err := row.Scan(&total)
 	return total, err
@@ -1840,6 +1859,35 @@ func (q *Queries) GetSpaceCountryCurrencyCode(ctx context.Context, spaceID pgtyp
 	return currency_code, err
 }
 
+const getSpaceIndexSignals = `-- name: GetSpaceIndexSignals :one
+SELECT s.member_count, s.post_count,
+ (SELECT count(*) FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+  WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public') AS forum_count,
+ (SELECT count(*) FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+  WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public' AND ft.solved = true) AS question_count
+FROM spaces s WHERE s.id = $1
+`
+
+type GetSpaceIndexSignalsRow struct {
+	MemberCount   int32 `json:"member_count"`
+	PostCount     int32 `json:"post_count"`
+	ForumCount    int64 `json:"forum_count"`
+	QuestionCount int64 `json:"question_count"`
+}
+
+// §43 sitemap quality counters for one space (BUG-032: previously raw SQL).
+func (q *Queries) GetSpaceIndexSignals(ctx context.Context, id pgtype.UUID) (GetSpaceIndexSignalsRow, error) {
+	row := q.db.QueryRow(ctx, getSpaceIndexSignals, id)
+	var i GetSpaceIndexSignalsRow
+	err := row.Scan(
+		&i.MemberCount,
+		&i.PostCount,
+		&i.ForumCount,
+		&i.QuestionCount,
+	)
+	return i, err
+}
+
 const getSpaceKeywords = `-- name: GetSpaceKeywords :one
 SELECT keywords FROM spaces
 WHERE id = $1 AND deleted_at IS NULL
@@ -2089,17 +2137,15 @@ func (q *Queries) HardDeleteSpace(ctx context.Context, id pgtype.UUID) (int64, e
 
 const incrementSpaceCount = `-- name: IncrementSpaceCount :exec
 UPDATE spaces
-SET member_count = GREATEST(0, member_count + $1)
-WHERE id = $2
+SET member_count = (SELECT COUNT(*) FROM space_members sm
+ WHERE sm.space_id = spaces.id AND sm.status = 'approved')
+WHERE spaces.id = $1
 `
 
-type IncrementSpaceCountParams struct {
-	Delta int32       `json:"delta"`
-	ID    pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) IncrementSpaceCount(ctx context.Context, arg IncrementSpaceCountParams) error {
-	_, err := q.db.Exec(ctx, incrementSpaceCount, arg.Delta, arg.ID)
+// BUG-023: recompute from the authoritative table instead of incrementing
+// a delta — non-transactional +/- calls drifted the counter.
+func (q *Queries) IncrementSpaceCount(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, incrementSpaceCount, id)
 	return err
 }
 
@@ -2135,7 +2181,13 @@ LEFT JOIN user_profiles up ON up.user_id = sm.user_id
 LEFT JOIN spaces s ON s.id = sm.space_id
 WHERE sm.status = 'pending'
 ORDER BY sm.joined_at ASC
+LIMIT $2 OFFSET $1
 `
+
+type ListAllSpaceJoinRequestsParams struct {
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
+}
 
 type ListAllSpaceJoinRequestsRow struct {
 	SpaceID     pgtype.UUID        `json:"space_id"`
@@ -2151,8 +2203,8 @@ type ListAllSpaceJoinRequestsRow struct {
 // Admin-wide pending join requests across every space in the admin's platform.
 // space_id is included so the admin panel can build a composite request id
 // (space_id::user_id) for the approve/reject endpoints.
-func (q *Queries) ListAllSpaceJoinRequests(ctx context.Context) ([]ListAllSpaceJoinRequestsRow, error) {
-	rows, err := q.db.Query(ctx, listAllSpaceJoinRequests)
+func (q *Queries) ListAllSpaceJoinRequests(ctx context.Context, arg ListAllSpaceJoinRequestsParams) ([]ListAllSpaceJoinRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listAllSpaceJoinRequests, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -2709,7 +2761,14 @@ JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
 WHERE sm.space_id = $1 AND sm.status = 'pending'
 ORDER BY sm.joined_at ASC
+LIMIT $3 OFFSET $2
 `
+
+type ListSpaceJoinRequestsParams struct {
+	SpaceID    pgtype.UUID `json:"space_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
 
 type ListSpaceJoinRequestsRow struct {
 	UserID      pgtype.UUID        `json:"user_id"`
@@ -2726,8 +2785,8 @@ type ListSpaceJoinRequestsRow struct {
 // =====================
 // Space Join Requests
 // =====================
-func (q *Queries) ListSpaceJoinRequests(ctx context.Context, spaceID pgtype.UUID) ([]ListSpaceJoinRequestsRow, error) {
-	rows, err := q.db.Query(ctx, listSpaceJoinRequests, spaceID)
+func (q *Queries) ListSpaceJoinRequests(ctx context.Context, arg ListSpaceJoinRequestsParams) ([]ListSpaceJoinRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceJoinRequests, arg.SpaceID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -2938,6 +2997,34 @@ func (q *Queries) ListSpaceRulesBySpace(ctx context.Context, spaceID pgtype.UUID
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpaceTypeCategories = `-- name: ListSpaceTypeCategories :many
+SELECT DISTINCT COALESCE(category, '') AS value
+FROM space_types
+ORDER BY value
+`
+
+// Distinct space-type categories for the admin category picker (BUG-032:
+// previously a raw SQL string in store.go).
+func (q *Queries) ListSpaceTypeCategories(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listSpaceTypeCategories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		items = append(items, value)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -3927,20 +4014,20 @@ LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
  AND cfv.entity_type = 'space'
  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
 WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
- AND s.status = 'active'
- AND ($2::text = ''
- OR s.name ILIKE '%' || $2 || '%'
- OR s.slug ILIKE '%' || $2 || '%'
- OR cfv.value_text ILIKE '%' || $2 || '%')
- AND ($3::text = '' OR s.geo_code = $3)
- AND ($4::text = '' OR s.region = $4)
- AND ($5::text = '' OR s.subregion = $5)
+ AND ($2::bool OR s.status = 'active')
+ AND ($3::text = ''
+ OR s.name ILIKE '%' || $3 || '%'
+ OR s.slug ILIKE '%' || $3 || '%'
+ OR cfv.value_text ILIKE '%' || $3 || '%')
+ AND ($4::text = '' OR s.geo_code = $4)
+ AND ($5::text = '' OR s.region = $5)
+ AND ($6::text = '' OR s.subregion = $6)
  -- @within is a primary-space slug (country/state/city): match when the
  -- space is linked — via the space_parent_spaces junction or spaces.parent_id
  -- — to that space or any of its descendants (e.g. a state slug also matches
  -- spaces linked to one of its cities). The level guard keeps non-geo slugs
  -- from matching, and deleted ancestors can't satisfy the filter.
- AND ($6::text = '' OR EXISTS (
+ AND ($7::text = '' OR EXISTS (
  SELECT 1
  FROM (
  SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
@@ -3950,33 +4037,34 @@ WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = $6 AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = $6 AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = $6 AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = $7 AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = $7 AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = $7 AND ggp.level IN ('country', 'state', 'city'))
  ))
 ORDER BY
- CASE WHEN $7::text = 'name' THEN s.name ELSE NULL END ASC,
- CASE WHEN $7::text = 'name_desc' THEN s.name ELSE NULL END DESC,
+ CASE WHEN $8::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN $8::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
- WHEN $7::text = 'members' THEN s.member_count
- WHEN $7::text = 'followers' THEN s.follower_count
- WHEN $7::text = 'posts' THEN s.post_count
+ WHEN $8::text = 'members' THEN s.member_count
+ WHEN $8::text = 'followers' THEN s.follower_count
+ WHEN $8::text = 'posts' THEN s.post_count
  ELSE NULL
  END DESC,
  s.created_at DESC, s.id DESC
-LIMIT $9 OFFSET $8
+LIMIT $10 OFFSET $9
 `
 
 type ListSpacesByTypePaginatedParams struct {
-	SpaceTypeID pgtype.UUID `json:"space_type_id"`
-	Search      string      `json:"search"`
-	GeoCode     string      `json:"geo_code"`
-	Region      string      `json:"region"`
-	Subregion   string      `json:"subregion"`
-	Within      string      `json:"within"`
-	Sort        string      `json:"sort"`
-	OffsetVal   int32       `json:"offset_val"`
-	LimitVal    int32       `json:"limit_val"`
+	SpaceTypeID     pgtype.UUID `json:"space_type_id"`
+	IncludeInactive bool        `json:"include_inactive"`
+	Search          string      `json:"search"`
+	GeoCode         string      `json:"geo_code"`
+	Region          string      `json:"region"`
+	Subregion       string      `json:"subregion"`
+	Within          string      `json:"within"`
+	Sort            string      `json:"sort"`
+	OffsetVal       int32       `json:"offset_val"`
+	LimitVal        int32       `json:"limit_val"`
 }
 
 type ListSpacesByTypePaginatedRow struct {
@@ -4012,10 +4100,14 @@ type ListSpacesByTypePaginatedRow struct {
 // The initials column comes from the university_fields custom field group
 // (key = 'initials', deterministic id 00000000-0000-0000-0000-000000000090)
 // and is left-joined so it is NULL for non-university space types.
+// @include_inactive: when true, spaces of any status are returned (admin
+// lists need pending rows to verify them); false keeps the active-only
+// filter for public listings.
 // Ref: japaconnect-engineering/sections/39-space-types-university.md
 func (q *Queries) ListSpacesByTypePaginated(ctx context.Context, arg ListSpacesByTypePaginatedParams) ([]ListSpacesByTypePaginatedRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByTypePaginated,
 		arg.SpaceTypeID,
+		arg.IncludeInactive,
 		arg.Search,
 		arg.GeoCode,
 		arg.Region,

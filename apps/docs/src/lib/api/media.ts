@@ -88,9 +88,13 @@ export async function uploadMediaImage(
 	const json = await res.json().catch(() => null);
 	const asset = res.ok ? ((json?.data ?? json) as MediaPickerItem | null) : null;
 
+	// Fallback: initiateUpload carries no bucket, but the presigned URL
+	// embeds it as /seaweedfs/upload/{bucket}/{path} — a hardcoded 'media'
+	// bucket here 404s into the placeholder SVG.
+	const bucket = init.data.presigned_url.split('/seaweedfs/upload/')[1]?.split('/')[0] ?? 'media';
 	return asset?.url
 		? asset
-		: { id: init.data.media_id, url: buildApiUrl(`/media/serve/media/${init.data.storage_path}`, API_BASE), filename: file.name, mime_type: file.type };
+		: { id: init.data.media_id, url: buildApiUrl(`/media/serve/${bucket}/${init.data.storage_path}`, API_BASE), filename: file.name, mime_type: file.type };
 }
 
 /** Stock photo providers (Unsplash/Pexels et al.) — Stock tab of the picker. */

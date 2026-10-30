@@ -11,6 +11,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // ---------------------------------------------------------------------------
@@ -55,7 +56,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
-		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, -1); err != nil {
+		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID); err != nil {
 			handleServiceError(w, err)
 			return
 		}
@@ -102,7 +103,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 				}
 			}
 
-			if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, 1); err != nil {
+			if err := h.Service.IncrementSpaceCount(r.Context(), space.ID); err != nil {
 				handleServiceError(w, err)
 				return
 			}
@@ -155,7 +156,7 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 
 	// SPACES-016: only decrement if the user was an approved member.
 	if wasApproved {
-		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, -1); err != nil {
+		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID); err != nil {
 			handleServiceError(w, err)
 			return
 		}
@@ -206,16 +207,25 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Already a member — the invite is a no-op.
+	if isMember, _ := h.Service.IsMember(r.Context(), space.ID, targetUserID); isMember {
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+			"data": map[string]any{"space_id": space.ID, "user_id": targetUserID, "already_member": true},
+		})
+		return
+	}
+
 	if err := h.Service.Join(r.Context(), space.ID, targetUserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
+	h.Service.emitActivity(r.Context(), targetUserID, wallet.ActivityKeySpaceJoined, "space:"+space.ID.String(), nil)
 	if h.follows != nil {
 		if _, ferr := h.follows.EnsureFollow(r.Context(), targetUserID, "space", space.ID); ferr != nil {
 			slog.Warn("invite: auto-follow failed", "space_id", space.ID, "error", ferr)
 		}
 	}
-	if err := h.Service.IncrementSpaceCount(r.Context(), space.ID, 1); err != nil {
+	if err := h.Service.IncrementSpaceCount(r.Context(), space.ID); err != nil {
 		handleServiceError(w, err)
 		return
 	}

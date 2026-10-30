@@ -2419,6 +2419,15 @@ func fanOutToSpace(ctx context.Context, queries *gen.Queries, contentID, spaceID
 			continue
 		}
 
+		// BUG-016: bump the per-user space unread counter (§05) — reset on
+		// the member's next visit to the space (spaces.GetSpace).
+		if rdb != nil {
+			key := valkey.MustKey("space_unread:%s:%s", userID.String(), spaceID.String())
+			if err := rdb.Incr(ctx, key).Err(); err == nil {
+				_ = rdb.Expire(ctx, key, 24*time.Hour).Err()
+			}
+		}
+
 		fedCount++
 	}
 
@@ -2503,6 +2512,15 @@ func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, contentID, 
 	for _, userID := range memberIDs {
 		if err := insertFeedItem(ctx, queries, userID, contentID, spaceID, contentType); err != nil {
 			continue
+		}
+
+		// BUG-016: bump the per-user space unread counter (§05) — reset on
+		// the member's next visit to the space (spaces.GetSpace).
+		if rdb != nil {
+			key := valkey.MustKey("space_unread:%s:%s", userID.String(), spaceID.String())
+			if err := rdb.Incr(ctx, key).Err(); err == nil {
+				_ = rdb.Expire(ctx, key, 24*time.Hour).Err()
+			}
 		}
 
 		fed++

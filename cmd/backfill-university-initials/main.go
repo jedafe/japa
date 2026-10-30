@@ -134,15 +134,15 @@ func main() {
 				sb.WriteString(", ")
 			}
 
-			base := j*3 + 2
-			fmt.Fprintf(&sb, "($%d::uuid, $%d::uuid, $%d::text)", base, base+1, base+2)
+			base := j*2 + 2
+			fmt.Fprintf(&sb, "($%d::uuid, $%d::text)", base, base+1)
 
 			initials := universities.DeriveInitials(e.Name, nil, []string{e.Website})
-			args = append(args, e.SpaceID, (pgtype.UUID{}), initials)
+			args = append(args, e.SpaceID, initials)
 		}
 
 		sb.WriteString(`) AS v(space_id, initials)
-			ON s.id = v.space_id AND s.the id = v.the id
+			ON s.id = v.space_id
 		`)
 		sb.WriteString(`
 			ON CONFLICT (field_id, entity_type, entity_id) DO UPDATE

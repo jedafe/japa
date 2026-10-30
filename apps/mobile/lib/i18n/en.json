@@ -182,5 +182,6 @@
   "tools.turns": "turns",
   "tools.unknown_provider": "Unknown provider",
   "tools.view_rates": "View rates",
-  "tools.visa_checklist": "Visa Checklist"
+  "tools.visa_checklist": "Visa Checklist",
+  "spaces.join_request_pending": "Join request submitted — pending approval"
 }

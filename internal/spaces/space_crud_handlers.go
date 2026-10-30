@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -253,13 +254,29 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UU
 		m := rowToMap(elem.Interface())
 
 		if logoField := elem.FieldByName("LogoMediaID"); logoField.IsValid() {
-			if logoID, ok := logoField.Interface().(pgtype.UUID); ok {
-				m["logo_url"] = h.resolveLogoURL(ctx, logoID)
+			if logoID, ok := logoField.Interface().(pgtype.UUID); ok && logoID.Valid {
+				m["logo_url"] = logoID
 			}
 		}
 
 		out = append(out, m)
 	}
+
+	// BUG-029: resolve logos concurrently — a sequential GetMedia per card
+	// was an N+1 against media/imgproxy on every directory page.
+	var wg sync.WaitGroup
+	for _, m := range out {
+		logoID, ok := m["logo_url"].(pgtype.UUID)
+		if !ok {
+			continue
+		}
+		wg.Add(1)
+		go func(m map[string]any, id pgtype.UUID) {
+			defer wg.Done()
+			m["logo_url"] = h.resolveLogoURL(ctx, id)
+		}(m, logoID)
+	}
+	wg.Wait()
 
 	// §80 wiki-only space types: per-row wiki_only on space list rows so the
 	// frontend can suppress community CTAs without a per-card type lookup.
@@ -607,8 +624,9 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BUG-006: non-active spaces (suspended/archived/draft) are offline —
-	// only the owner/moderators/platform moderators may still view them.
-	if space.Status != StatusActive && !h.canViewRestrictedSpace(r, space.ID) {
+	// suspension is a moderation freeze: managers and platform moderation
+	// only, not ordinary members (matches the SpaceResolver gate).
+	if space.Status != StatusActive && !h.canManageRestrictedSpace(r, space.ID) {
 		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 		return
 	}

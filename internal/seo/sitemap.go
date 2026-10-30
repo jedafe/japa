@@ -953,7 +953,6 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 		FROM contents c
 		LEFT JOIN content_type_jsonld_templates jt
 		       ON jt.content_type = c.content_type
-		      AND jt.the id = c.the id
 		      AND jt.is_active = true
 		WHERE c.id = $1`
 

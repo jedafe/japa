@@ -252,6 +252,9 @@ ORDER BY created_at DESC, id DESC;
 -- The initials column comes from the university_fields custom field group
 -- (key = 'initials', deterministic id 00000000-0000-0000-0000-000000000090)
 -- and is left-joined so it is NULL for non-university space types.
+-- @include_inactive: when true, spaces of any status are returned (admin
+-- lists need pending rows to verify them); false keeps the active-only
+-- filter for public listings.
 -- Ref: japaconnect-engineering/sections/39-space-types-university.md
 SELECT s.id, s.parent_id, s.space_type_id, s.name, s.slug, s.description, s.wiki_content,
  s.logo_media_id, s.header_image_id, s.geo_code, s.level, s.member_count, s.post_count,
@@ -263,7 +266,7 @@ LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
  AND cfv.entity_type = 'space'
  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
 WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
- AND s.status = 'active'
+ AND (@include_inactive::bool OR s.status = 'active')
  AND (@search::text = ''
  OR s.name ILIKE '%' || @search || '%'
  OR s.slug ILIKE '%' || @search || '%'
@@ -312,6 +315,7 @@ LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
  AND cfv.entity_type = 'space'
  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
 WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
+ AND (@include_inactive::bool OR s.status = 'active')
  AND (@search::text = ''
  OR s.name ILIKE '%' || @search || '%'
  OR s.slug ILIKE '%' || @search || '%'
@@ -1024,9 +1028,12 @@ SELECT EXISTS(SELECT 1 FROM spaces WHERE id = @id AND deleted_at IS NULL) AS exi
 SELECT EXISTS(SELECT 1 FROM spaces WHERE parent_id = @id) AS exists;
 
 -- name: IncrementSpaceCount :exec
+-- BUG-023: recompute from the authoritative table instead of incrementing
+-- a delta — non-transactional +/- calls drifted the counter.
 UPDATE spaces
-SET member_count = GREATEST(0, member_count + @delta)
-WHERE id = @id;
+SET member_count = (SELECT COUNT(*) FROM space_members sm
+ WHERE sm.space_id = spaces.id AND sm.status = 'approved')
+WHERE spaces.id = @id;
 
 -- =====================
 -- Space Rules
@@ -1078,7 +1085,8 @@ SELECT EXISTS(
 -- name: AddSpaceMember :execrows
 INSERT INTO space_members (space_id, user_id, role) VALUES (@space_id, @user_id, 'member')
 
-ON CONFLICT (space_id, user_id) DO NOTHING;
+ON CONFLICT (space_id, user_id) DO UPDATE SET status = 'approved'
+WHERE space_members.status != 'approved';
 
 -- name: AddSpaceOwner :exec
 -- Inserts the creator as the space owner (role='owner'). Used by CreateSpace
@@ -1246,7 +1254,8 @@ FROM space_members sm
 JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
 WHERE sm.space_id = @space_id AND sm.status = 'pending'
-ORDER BY sm.joined_at ASC;
+ORDER BY sm.joined_at ASC
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListAllSpaceJoinRequests :many
 -- Admin-wide pending join requests across every space in the admin's platform.
@@ -1259,7 +1268,8 @@ JOIN users u ON u.id = sm.user_id
 LEFT JOIN user_profiles up ON up.user_id = sm.user_id
 LEFT JOIN spaces s ON s.id = sm.space_id
 WHERE sm.status = 'pending'
-ORDER BY sm.joined_at ASC;
+ORDER BY sm.joined_at ASC
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateSpaceJoinRequest :execrows
 UPDATE space_members
@@ -1543,3 +1553,28 @@ LEFT JOIN (
 WHERE s.deleted_at IS NULL AND s.visibility = 'public' AND s.status = 'active'
 ORDER BY s.member_count DESC, s.follower_count DESC, s.name ASC
 LIMIT 100;
+
+
+-- name: ListSpaceTypeCategories :many
+-- Distinct space-type categories for the admin category picker (BUG-032:
+-- previously a raw SQL string in store.go).
+SELECT DISTINCT COALESCE(category, '') AS value
+FROM space_types
+ORDER BY value;
+
+-- name: GetSpaceIndexSignals :one
+-- §43 sitemap quality counters for one space (BUG-032: previously raw SQL).
+SELECT s.member_count, s.post_count,
+ (SELECT count(*) FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+  WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public') AS forum_count,
+ (SELECT count(*) FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
+  WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public' AND ft.solved = true) AS question_count
+FROM spaces s WHERE s.id = @id;
+
+
+-- name: CountSpacesUsingType :one
+-- All non-deleted spaces on a type (any status) — used by DeleteSpaceType's
+-- in-use guard (active-only counts would miss suspended spaces and the
+-- delete would then die on the FK).
+SELECT COUNT(*) AS total FROM spaces
+WHERE space_type_id = @space_type_id AND deleted_at IS NULL;

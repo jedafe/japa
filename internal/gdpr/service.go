@@ -2718,7 +2718,6 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 	export.RoadmapVotes = s.exportRows(ctx, `SELECT item_id, created_at FROM roadmap_votes WHERE user_id = $1`, userID, "roadmap_votes")
 	export.RoadmapSubmissions = s.exportRows(ctx, `SELECT id, title, slug, summary, status, created_at FROM roadmap_items WHERE submitted_by = $1`, userID, "roadmap_items")
 
-
 	// Forum votes cast by the user.
 	if rows, err := s.store.gdprExportUserForumVotes(ctx, userID); err == nil {
 		export.ForumVotes = rows

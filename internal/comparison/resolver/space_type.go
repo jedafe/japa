@@ -147,7 +147,7 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 		region := parseStringFilter(filters, "region")
 		subregion := parseStringFilter(filters, "subregion")
 
-		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", region, subregion, "", spaceSortArg(filters), limit, offset)
+		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", region, subregion, "", false, spaceSortArg(filters), limit, offset)
 		if err != nil {
 			return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 		}
@@ -156,7 +156,7 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 	case "state":
 		countryID := parseUUIDFilter(filters, "country_id")
 		if !countryID.Valid {
-			rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", spaceSortArg(filters), limit, offset)
+			rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", false, spaceSortArg(filters), limit, offset)
 			if err != nil {
 				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 			}
@@ -173,7 +173,7 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 	case "city":
 		stateID := parseUUIDFilter(filters, "state_id")
 		if !stateID.Valid {
-			rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", spaceSortArg(filters), limit, offset)
+			rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", false, spaceSortArg(filters), limit, offset)
 			if err != nil {
 				return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 			}
@@ -188,7 +188,7 @@ func (r *spaceTypeResolver) Search(ctx context.Context, query string, filters ma
 			items = rows
 		}
 	default:
-		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", spaceSortArg(filters), limit, offset)
+		rows, err := r.svc.ListSpacesByTypePaginated(ctx, typeID, search, "", "", "", "", false, spaceSortArg(filters), limit, offset)
 		if err != nil {
 			return nil, fmt.Errorf("searching %s: %w", r.entityType, err)
 		}
@@ -246,22 +246,22 @@ func (r *spaceTypeResolver) Count(ctx context.Context, query string, filters map
 		region := parseStringFilter(filters, "region")
 		subregion := parseStringFilter(filters, "subregion")
 
-		return r.svc.CountSpacesByType(ctx, typeID, search, "", region, subregion, "")
+		return r.svc.CountSpacesByType(ctx, typeID, search, "", region, subregion, "", false)
 	case "state":
 		countryID := parseUUIDFilter(filters, "country_id")
 		if !countryID.Valid {
-			return r.svc.CountSpacesByType(ctx, typeID, search, "", "", "", "")
+			return r.svc.CountSpacesByType(ctx, typeID, search, "", "", "", "", false)
 		}
 
 		return r.svc.CountSpacesByAncestorAndType(ctx, typeID, countryID, search)
 	case "city":
 		stateID := parseUUIDFilter(filters, "state_id")
 		if !stateID.Valid {
-			return r.svc.CountSpacesByType(ctx, typeID, search, "", "", "", "")
+			return r.svc.CountSpacesByType(ctx, typeID, search, "", "", "", "", false)
 		}
 
 		return r.svc.CountSpacesByAncestorAndType(ctx, typeID, stateID, search)
 	default:
-		return r.svc.CountSpacesByType(ctx, typeID, search, "", "", "", "")
+		return r.svc.CountSpacesByType(ctx, typeID, search, "", "", "", "", false)
 	}
 }

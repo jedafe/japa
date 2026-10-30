@@ -1555,7 +1555,7 @@ DELETE FROM space_moderators WHERE user_id = @user_id OR assigned_by_user_id = @
 -- BUG-033: a space whose only approved owner is being erased would be
 -- permanently orphaned (sole owner cannot leave; only the owner can delete).
 -- Soft-delete it alongside the user so moderation cannot stall forever.
-UPDATE spaces SET deleted_at = now(), status = 'deleted'
+UPDATE spaces SET deleted_at = now()
 WHERE deleted_at IS NULL
   AND id IN (
     SELECT sm.space_id FROM space_members sm

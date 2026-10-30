@@ -136,9 +136,13 @@ export async function uploadMediaImage(
 
 	const asset = await api.get<MediaPickerItem>(`/media/${init.data.media_id}`);
 	if (asset.data?.url) return asset.data;
+	// Fallback: initiateUpload carries no bucket, but the presigned URL
+	// embeds it as /seaweedfs/upload/{bucket}/{path} — a hardcoded 'media'
+	// bucket here 404s into the placeholder SVG.
+	const bucket = init.data.presigned_url.split('/seaweedfs/upload/')[1]?.split('/')[0] ?? 'media';
 	return {
 		id: init.data.media_id,
-		url: buildApiUrl(`/media/serve/media/${init.data.storage_path}`, API_BASE),
+		url: buildApiUrl(`/media/serve/${bucket}/${init.data.storage_path}`, API_BASE),
 		filename: file.name,
 		mime_type: file.type
 	};

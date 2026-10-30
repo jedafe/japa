@@ -70,38 +70,20 @@ type SpaceTypeCategory struct {
 // for this platform, plus the global system geo categories that are not selectable
 // when creating custom types.
 func (s *Service) ListSpaceTypeCategories(ctx context.Context) ([]SpaceTypeCategory, error) {
-	query := `
-		SELECT DISTINCT COALESCE(category, '') AS value
-		FROM space_types
-		
-		ORDER BY value`
-
-	rows, err := s.db.Reader.Query(ctx, query)
+	values, err := s.read.ListSpaceTypeCategories(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing space type categories: %w", err)
 	}
-	defer rows.Close()
 
-	var categories []SpaceTypeCategory
-
-	for rows.Next() {
-		var value string
-		if err := rows.Scan(&value); err != nil {
-			return nil, fmt.Errorf("scanning space type category: %w", err)
-		}
-
+	categories := make([]SpaceTypeCategory, 0, len(values))
+	for _, value := range values {
 		if value == "" {
 			continue
 		}
-
 		categories = append(categories, SpaceTypeCategory{
 			Value:      value,
 			Selectable: isAllowedCategory(value),
 		})
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating space type categories: %w", err)
 	}
 
 	return categories, nil
@@ -583,17 +565,18 @@ func (s *Service) ListSpacesByType(ctx context.Context, viewerUserID, spaceTypeI
 // 'members', 'followers', 'posts'). within is a primary-space slug
 // (country/state/city) matched against the space_parent_spaces junction and
 // spaces.parent_id, including descendants of the target.
-func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
+func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within string, includeInactive bool, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
 	spaces, err := s.read.ListSpacesByTypePaginated(ctx, gen.ListSpacesByTypePaginatedParams{
-		SpaceTypeID: spaceTypeID,
-		Search:      search,
-		GeoCode:     geoCode,
-		Region:      region,
-		Subregion:   subregion,
-		Within:      within,
-		Sort:        sort,
-		LimitVal:    limit,
-		OffsetVal:   offset,
+		SpaceTypeID:     spaceTypeID,
+		IncludeInactive: includeInactive,
+		Search:          search,
+		GeoCode:         geoCode,
+		Region:          region,
+		Subregion:       subregion,
+		Within:          within,
+		Sort:            sort,
+		LimitVal:        limit,
+		OffsetVal:       offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by type (paginated): %w", err)
@@ -605,14 +588,15 @@ func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgt
 // CountSpacesByType returns the total count of spaces of the given type,
 // matching the same optional search, geo_code, region, subregion, and
 // within filters as ListSpacesByTypePaginated.
-func (s *Service) CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within string) (int64, error) {
+func (s *Service) CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within string, includeInactive bool) (int64, error) {
 	total, err := s.read.CountSpacesByType(ctx, gen.CountSpacesByTypeParams{
-		SpaceTypeID: spaceTypeID,
-		Search:      search,
-		GeoCode:     geoCode,
-		Region:      region,
-		Subregion:   subregion,
-		Within:      within,
+		SpaceTypeID:     spaceTypeID,
+		IncludeInactive: includeInactive,
+		Search:          search,
+		GeoCode:         geoCode,
+		Region:          region,
+		Subregion:       subregion,
+		Within:          within,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting spaces by type: %w", err)
@@ -858,10 +842,7 @@ func (s *Service) CreateSpaceWithOwner(
 			return gen.CreateSpaceRow{}, fmt.Errorf("adding space owner: %w", err)
 		}
 
-		if err := q.IncrementSpaceCount(ctx, gen.IncrementSpaceCountParams{
-			Delta: 1,
-			ID:    space.ID,
-		}); err != nil {
+		if err := q.IncrementSpaceCount(ctx, space.ID); err != nil {
 			return gen.CreateSpaceRow{}, fmt.Errorf("incrementing member count: %w", err)
 		}
 
@@ -1326,11 +1307,8 @@ func (s *Service) HardDeleteSpace(ctx context.Context, id pgtype.UUID) error {
 
 // IncrementSpaceCount adjusts the member count of a space by delta (positive
 // or negative), scoped to the platform.
-func (s *Service) IncrementSpaceCount(ctx context.Context, id pgtype.UUID, delta int32) error {
-	if err := s.write.IncrementSpaceCount(ctx, gen.IncrementSpaceCountParams{
-		Delta: delta,
-		ID:    id,
-	}); err != nil {
+func (s *Service) IncrementSpaceCount(ctx context.Context, id pgtype.UUID) error {
+	if err := s.write.IncrementSpaceCount(ctx, id); err != nil {
 		return fmt.Errorf("incrementing space count: %w", err)
 	}
 
@@ -1830,16 +1808,10 @@ func (s *Service) GetSpaceAnalyticsSummary(ctx context.Context, spaceID pgtype.U
 // sitemap uses) plus forum and solved-question counts from published public
 // content joined to forum_threads.
 func (s *Service) SpaceIndexSignals(ctx context.Context, spaceID pgtype.UUID) (members, posts, forums, questions int, err error) {
-	err = s.db.Reader.QueryRow(ctx,
-		`SELECT s.member_count, s.post_count,
-		        (SELECT count(*) FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
-		          WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'),
-		        (SELECT count(*) FROM contents c JOIN forum_threads ft ON ft.content_id = c.id
-		          WHERE c.space_id = s.id AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public' AND ft.solved = true)
-		 FROM spaces s WHERE s.id = $1`, spaceID).Scan(&members, &posts, &forums, &questions)
+	row, err := s.read.GetSpaceIndexSignals(ctx, spaceID)
 	if err != nil {
 		return 0, 0, 0, 0, fmt.Errorf("spaces: index signals: %w", err)
 	}
 
-	return members, posts, forums, questions, nil
+	return int(row.MemberCount), int(row.PostCount), int(row.ForumCount), int(row.QuestionCount), nil
 }
