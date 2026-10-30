@@ -56,10 +56,6 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
-		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID); err != nil {
-			handleServiceError(w, err)
-			return
-		}
 	} else {
 		// BUG-004: honor the space's joining_perm axis (Section 05 lines 358-360).
 		// - 'open': immediate membership (existing behavior).
@@ -103,10 +99,6 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 				}
 			}
 
-			if err := h.Service.IncrementSpaceCount(r.Context(), space.ID); err != nil {
-				handleServiceError(w, err)
-				return
-			}
 		}
 	}
 
@@ -141,25 +133,11 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if the user is an approved member before removing. Pending
-	// members (status='pending') are removed but don't affect the count.
-	wasApproved, err := h.Service.IsMember(r.Context(), space.ID, user.UserID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
+	// member_count is maintained by trg_space_member_count — removing the
+	// membership row (or flipping its status) decrements automatically.
 	if err := h.Service.Leave(r.Context(), space.ID, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
-	}
-
-	// SPACES-016: only decrement if the user was an approved member.
-	if wasApproved {
-		if err := h.Service.IncrementSpaceCount(r.Context(), space.ID); err != nil {
-			handleServiceError(w, err)
-			return
-		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"left": true}})
@@ -224,10 +202,6 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		if _, ferr := h.follows.EnsureFollow(r.Context(), targetUserID, "space", space.ID); ferr != nil {
 			slog.Warn("invite: auto-follow failed", "space_id", space.ID, "error", ferr)
 		}
-	}
-	if err := h.Service.IncrementSpaceCount(r.Context(), space.ID); err != nil {
-		handleServiceError(w, err)
-		return
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{

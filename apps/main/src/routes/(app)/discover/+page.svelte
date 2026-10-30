@@ -261,7 +261,7 @@
 						<DirectoryCard
 							href="/universities/{uni.slug}"
 							title={uni.name}
-							subtitle="{uni.geo_code ? `${uni.geo_code} · ` : ''}{count('meta.members', '{n} members', uni.member_count)}"
+							subtitle="{uni.geo_code ? `${uni.geo_code} · ` : ''}{count('meta.followers', '{n} followers', uni.follower_count)}"
 							description={uni.description}
 							imageUrl={uni.logo_url}
 							fallback={uniMark(uni)}
@@ -274,7 +274,7 @@
 							viewProfileLabel={t('discover.view_university', 'View university')}
 						>
 							{#snippet headerAction()}
-								<SpaceJoinButton entityId={uni.id} entitySlug={uni.slug} initiallyJoined={uni.is_member ?? false} initiallyPending={uni.is_pending ?? false} initiallyFollowing={uni.is_following ?? false} compact />
+								<SpaceJoinButton entityId={uni.id} entitySlug={uni.slug} initiallyJoined={uni.is_member ?? false} initiallyPending={uni.is_pending ?? false} initiallyFollowing={uni.is_following ?? false} compact followOnly />
 							{/snippet}
 						</DirectoryCard>
 					{/each}

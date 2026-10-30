@@ -1255,8 +1255,8 @@ func (s *Store) ListSeedSpaceIDs(ctx context.Context) ([]pgtype.UUID, error) {
 }
 
 // IsUniversitySpaceBySlug reports whether the slug resolves to an active
-// university space — typed via space_types.slug = 'university' or, for the
-// seeded university spaces, level = 'university'. Unknown slugs return false.
+// university space — level = 'university' on an education-typed row
+// (§05 amendment). Unknown slugs return false.
 func (s *Store) IsUniversitySpaceBySlug(ctx context.Context, spaceSlug string) (bool, error) {
 	isUni, err := s.read.IsUniversitySpaceBySlug(ctx, spaceSlug)
 	if err != nil {
@@ -1267,7 +1267,7 @@ func (s *Store) IsUniversitySpaceBySlug(ctx context.Context, spaceSlug string) (
 		return false, fmt.Errorf("wiki: is university space: %w", err)
 	}
 
-	return boolDeref(isUni), nil
+	return isUni, nil
 }
 
 // GetSpaceByID resolves a wiki-bearing space ID to its slug and level —

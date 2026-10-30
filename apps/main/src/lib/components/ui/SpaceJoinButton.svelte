@@ -26,6 +26,9 @@
 		initiallyFollowing?: boolean;
 		/** Compact mode — smaller padding for card overlays. */
 		compact?: boolean;
+		/** §05 amendment — primary (platform-run) spaces have no Join CTA:
+		 *  Follow is the only action (they're auto-joined / have no owner). */
+		followOnly?: boolean;
 	}
 
 	let {
@@ -34,7 +37,8 @@
 		initiallyJoined = false,
 		initiallyPending = false,
 		initiallyFollowing = false,
-		compact = false
+		compact = false,
+		followOnly = false
 	}: Props = $props();
 
 	let joined = $state(untrack(() => initiallyJoined));
@@ -127,7 +131,8 @@
 </script>
 
 <div class="flex shrink-0 items-center gap-1.5">
-	<!-- Join / Joined (membership toggle) -->
+	<!-- Join / Joined (membership toggle) — hidden on primary spaces. -->
+	{#if !followOnly}
 	<button
 		type="button"
 		onclick={toggleJoin}
@@ -150,9 +155,11 @@
 			{t('spaces.join', 'Join')}
 		{/if}
 	</button>
+	{/if}
 
 	<!-- Follow / Following — shown independently of membership so the
-	     user can follow without joining or unfollow while staying joined. -->
+	     user can follow without joining or unfollow while staying joined.
+	     In followOnly mode it carries a text label (it's the sole CTA). -->
 	<button
 			type="button"
 			onclick={() => doFollow(false)}
@@ -171,6 +178,9 @@
 				<UserCheck size={iconSize} />
 			{:else}
 				<UserPlus size={iconSize} />
+			{/if}
+			{#if followOnly}
+				{following ? t('profile.following_label', 'Following') : t('profile.follow', 'Follow')}
 			{/if}
 		</button>
 </div>

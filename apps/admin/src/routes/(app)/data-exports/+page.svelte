@@ -406,7 +406,7 @@
 				bind:value={value.name}
 			/>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<label for="export-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.data_exports.data_type', 'Data Type')}</label>
 				<Select bind:value={value.type} options={exportTypes} />
@@ -431,7 +431,7 @@
 <!-- View modal body (viewSnippet) -->
 {#snippet ExportView({ row }: { row: DataExport })}
 	<div class="space-y-4">
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.data_exports.detail_name', 'Name')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>

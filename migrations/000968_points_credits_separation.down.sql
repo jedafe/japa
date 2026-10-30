@@ -9,8 +9,29 @@ ALTER TABLE wallet_settings ADD COLUMN IF NOT EXISTS points_to_credits_rate inte
 ALTER TABLE tip_settings ADD COLUMN IF NOT EXISTS accept_points boolean DEFAULT true NOT NULL;
 ALTER TABLE tips ADD COLUMN IF NOT EXISTS points_amount bigint DEFAULT 0 NOT NULL;
 
+-- Restore point-tip amounts from the audit copy created by the up
+-- migration, then drop the audit table.
+UPDATE tips t SET points_amount = l.points_amount
+FROM tips_points_legacy l WHERE t.id = l.id;
+DROP TABLE IF EXISTS tips_points_legacy;
+
 INSERT INTO permissions (key, description) VALUES
     ('wallet.points.convert', 'Convert points to credits')
+ON CONFLICT (key) DO NOTHING;
+
+-- Restore the member-tier grants and retired system_settings keys
+-- (mirrors 000917 + baseline seed values).
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.id, p.id FROM user_roles r
+JOIN permissions p ON p.key = 'wallet.points.convert'
+WHERE r.slug IN ('member', 'pro_member', 'business_member')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO system_settings (key, value) VALUES
+    ('wallet.points_to_credit_rate', '"0.001"'),
+    ('wallet.min_convert_points', '"100"'),
+    ('tips.points_daily_limit', '"500"'),
+    ('tips.points_daily_recipient_limit', '"0"')
 ON CONFLICT (key) DO NOTHING;
 
 DELETE FROM activity_point_rules WHERE activity_key IN (

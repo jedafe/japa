@@ -103,8 +103,17 @@
 	{#if seg.type === 'html'}
 		{@html seg.frag}
 	{:else}
-		<div class="not-prose my-6 flex justify-center">
+		<div class="ad-slot-wrap not-prose my-6 flex justify-center">
 			<AdSlot {slot} format="inline" {spaceId} pickIndex={seg.pick} />
 		</div>
 	{/if}
 {/each}
+
+<style>
+	/* AdSlot hides its own root (.hidden) when no campaign serves —
+	 * collapse the wrapper too or its my-6 margins leave a ~48px
+	 * phantom gap between article blocks. */
+	.ad-slot-wrap:has(> :global(.hidden)) {
+		display: none;
+	}
+</style>

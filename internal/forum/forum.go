@@ -132,7 +132,7 @@ type Service struct {
 	notifier     NotificationDispatcher
 	amaQuestions AMAQuestionHandler
 	// activity emits wallet activity events — vote/solution points
-	// (ADR-129). Optional — nil-safe.
+	// (ADR-136). Optional — nil-safe.
 	activity wallet.ActivityEmitter
 
 	// In-memory JSON-LD cache for solved threads. Used only when Valkey is
@@ -233,7 +233,7 @@ func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, ref
 	_ = s.activity.EnqueueProcessActivityEvent(ctx, event.ID)
 }
 
-// SetActivityEmitter injects the wallet activity emitter (ADR-129).
+// SetActivityEmitter injects the wallet activity emitter (ADR-136).
 func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
 
 // NotificationDispatcher dispatches reply-to-author notifications

@@ -1,4 +1,4 @@
-// Tests for the ADR-129 journey lifecycle graph and travel-window
+// Tests for the ADR-136 journey lifecycle graph and travel-window
 // validation — pure logic, no database.
 package japastage
 

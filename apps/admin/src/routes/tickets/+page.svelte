@@ -444,7 +444,7 @@
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.subject", "Subject")}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.subject}</p>
 			</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("tickets.type", "Type")}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.type_name}</p>
@@ -454,7 +454,7 @@
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.priority}</p>
 			</div>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("common.status", "Status")}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.status}</p>
@@ -535,7 +535,7 @@
 			<label for="tk-subject" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("tickets.subject", "Subject")}</label>
 			<input id="tk-subject" type="text" bind:value={editForm.subject} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<label for="tk-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}</label>
 				<Select

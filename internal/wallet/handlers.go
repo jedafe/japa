@@ -274,7 +274,7 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 //
 // Member-facing, read-only view of wallet limits — daily earn cap, earning
 // killswitch, and the purchase/withdrawal minimums the wallet pages need —
-// without requiring the admin `wallet.admin.settings.manage` node (ADR-129:
+// without requiring the admin `wallet.admin.settings.manage` node (ADR-136:
 // conversion fields removed; Points and Credits never exchange).
 //
 // Ref: japaconnect-engineering/sections/28-wallet-credits.md (Wallet API Routes).

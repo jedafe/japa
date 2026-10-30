@@ -80,7 +80,7 @@
 
 {#if status.active}
 	<div
-		class="flex items-center justify-between gap-3 px-4 py-2 text-sm"
+		class="flex flex-wrap items-center justify-between gap-3 px-4 py-2 text-sm"
 		class:animate-pulse={isWarning}
 		style="background-color: color-mix(in srgb, var(--color-warning) 15%, transparent); border-bottom: 1px solid var(--color-warning); color: var(--color-warning)"
 		role="alert"

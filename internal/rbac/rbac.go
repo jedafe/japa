@@ -560,6 +560,10 @@ func (r *RBAC) ClearCache() {
 }
 
 // InvalidatePermCache removes a single user's permission entries from Valkey.
+// NOTE: L2-only — it does not clear the in-memory L1 map (no *RBAC receiver).
+// In-process callers should prefer (*RBAC).InvalidateUserCache, which evicts
+// both layers; this helper exists for code paths that only hold the Valkey
+// client. The L1 remainder self-heals within l1CacheMaxAge (60s).
 // Ref: japaconnect-engineering/sections/03-rbac.md (Amendment: Permission Cache Invalidation)
 // Called after: group reassignment, role grant/revoke, ban create, moderator assignment/removal.
 // Returns nil when v is nil (graceful degradation when Valkey is unreachable).

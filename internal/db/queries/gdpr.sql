@@ -253,7 +253,7 @@ SET display_name = 'Deleted User',
 WHERE user_id = @user_id;
 
 -- name: AnonymizeUserJourneys :exec
--- Scrubs PII from user_journeys rows (ADR-129): the member-supplied label,
+-- Scrubs PII from user_journeys rows (ADR-136): the member-supplied label,
 -- destination, per-journey stage history, and visibility flag are erased
 -- and every row is soft-deleted so nothing renders during the retention
 -- window. Rows hard-delete with the user (user_id ON DELETE CASCADE) in

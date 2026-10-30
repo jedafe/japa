@@ -214,7 +214,7 @@
 			<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{row.query || row.source_url || t('video_import_jobs.untitled', 'Untitled import')}</h3>
 			<p class="text-sm text-muted capitalize">{row.source_type}</p>
 		</div>
-		<dl class="grid grid-cols-2 gap-2 text-sm">
+		<dl class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
 			<div class="col-span-2 sm:col-span-1">
 				<dt class="text-muted">{t('video_import_jobs.owner', 'Owner')}</dt>
 				<dd>{row.owner_username || row.user_id}</dd>

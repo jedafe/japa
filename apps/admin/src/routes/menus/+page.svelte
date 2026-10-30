@@ -708,7 +708,7 @@ loadPermissionNodes();
 
 <!-- Item Create/Edit Modal -->
 <Modal bind:open={showItemModal} title={editingItem ? t('menus.edit_item', 'Edit Item') : t('menus.add_item', 'Add Item')}>
-	<div class="grid grid-cols-2 gap-4">
+	<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 		<div>
 			<label for="item-label" class="block text-sm font-medium" style="color: var(--color-foreground)">{t('menus.item_label', 'Label')}</label>
 			<input id="item-label" type="text" bind:value={itemLabel} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t('menus.ph_home', 'Home')} />
@@ -880,7 +880,7 @@ loadPermissionNodes();
 <!-- View modal body: menu basic fields + read-only tree of its items -->
 {#snippet MenuView({ row }: { row: Menu })}
 	<div class="space-y-4">
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('menus.name', 'Name')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>

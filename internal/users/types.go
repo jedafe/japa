@@ -105,6 +105,9 @@ type UserProfileResponse struct {
 	FollowerCount int32    `json:"follower_count"`
 	UserGroupName string   `json:"user_group_name"`
 	Groups        []string `json:"groups"`
+	// GroupRefs carries the same memberships with ids so admin clients can
+	// diff memberships without name-keyed lookups (display names collide).
+	GroupRefs     []GroupRef `json:"group_refs"`
 	LastLoginAt   *string  `json:"last_login_at"`
 	CreatedAt     string   `json:"created_at"`
 	UpdatedAt     string   `json:"updated_at"`
@@ -193,6 +196,14 @@ type UserListItem struct {
 	IsOwner       bool     `json:"is_owner"`
 	CreatedAt     string   `json:"created_at"`
 	UpdatedAt     string   `json:"updated_at"`
+}
+
+// GroupRef identifies one of a user's group memberships by id/name/slug —
+// the machine-readable counterpart to the display-only Groups []string.
+type GroupRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
 }
 
 // PublicProfileResponse is the PII-safe API response for GET /users/{username}.

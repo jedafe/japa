@@ -152,7 +152,7 @@
 />
 
 {#if stats}
-	<div class="mb-4 grid grid-cols-3 gap-4">
+	<div class="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
 		<div class="rounded-lg border border-border p-4">
 			<p class="text-xs font-medium text-muted-foreground">{t('participation.active_personas', 'Active Personas')}</p>
 			<p class="mt-1 text-2xl font-bold text-foreground">{stats.active_personas}</p>

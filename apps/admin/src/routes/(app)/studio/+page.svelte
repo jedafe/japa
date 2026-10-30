@@ -913,7 +913,7 @@
 			{/if}
 			<div class="border-t pt-2" style="border-color: var(--color-border)">
 				<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.progress', 'Progress')}</span>
-				<div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+				<div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
 					<div>Total: <span class="font-bold" style="color: var(--color-foreground)">{viewingBatch.stats.total}</span></div>
 					<div>Queued: <span style="color: var(--color-muted)">{viewingBatch.stats.queued}</span></div>
 					<div>Generating: <span style="color: var(--color-warning)">{viewingBatch.stats.generating}</span></div>

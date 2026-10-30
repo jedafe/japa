@@ -429,7 +429,7 @@
 				<p class="mb-3 text-[10px]" style="color: var(--color-muted)">
 					{t('widgets.cards_note', 'How content cards are rendered on the frontend. This is the source of truth — the page builder only controls the number of columns.')}
 				</p>
-				<div class="grid grid-cols-2 gap-2">
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
 					{#each cardTypeOptions as opt}
 						<button
 							type="button"

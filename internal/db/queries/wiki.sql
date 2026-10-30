@@ -105,6 +105,9 @@ WHERE sp.status = 'active'
   -- (ancestor hops were already deleted-checked; the candidate itself
   -- was not, leaking e.g. deleted cities into Popular widgets).
   AND sp.deleted_at IS NULL
+  -- §05 amendment — education type carries universities AND member-created
+  -- education spaces; wiki is restricted to platform universities only.
+  AND (st.slug <> 'education' OR sp.level = 'university')
   AND (@level::text = '' OR sp.level = @level OR st.slug = @level)
   AND (@region::text = '' OR sp.region = @region)
   AND (@search::text = '' OR sp.name ILIKE '%' || @search || '%')
@@ -160,6 +163,7 @@ SELECT COUNT(*) FROM (
     LEFT JOIN wiki_pages wp ON wp.space_id = sp.id
     WHERE sp.status = 'active'
       AND sp.deleted_at IS NULL
+      AND (st.slug <> 'education' OR sp.level = 'university')
       AND (@level::text = '' OR sp.level = @level OR st.slug = @level)
       AND (@region::text = '' OR sp.region = @region)
       AND (@search::text = '' OR sp.name ILIKE '%' || @search || '%')
@@ -455,6 +459,9 @@ SELECT sp.id, sp.name
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
 WHERE sp.slug = @slug AND sp.status = 'active'
+ -- §05 amendment — education-typed spaces need level='university' for wiki.
+ AND (sp.level = 'university' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = sp.space_type_id AND st.slug = 'education'))
 LIMIT 1;
 
 -- name: GetWikiSpaceByID :one
@@ -462,6 +469,9 @@ SELECT sp.slug, sp.level
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
 WHERE sp.id = @id AND sp.status = 'active'
+ -- §05 amendment — education-typed spaces need level='university' for wiki.
+ AND (sp.level = 'university' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = sp.space_type_id AND st.slug = 'education'))
 LIMIT 1;
 
 -- name: ListWikiSeedSpaceIDs :many
@@ -470,7 +480,10 @@ LIMIT 1;
 SELECT s.id
 FROM spaces s
 JOIN wiki_type_configs wtc ON wtc.space_type_id = s.space_type_id AND wtc.seed_stubs = true
-WHERE s.status = 'active' AND s.deleted_at IS NULL;
+WHERE s.status = 'active' AND s.deleted_at IS NULL
+ -- §05 amendment — education-typed spaces need level='university' for wiki.
+ AND (s.level = 'university' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.slug = 'education'));
 
 -- name: IsUniversitySpaceBySlug :one
 SELECT (sp.level = 'university') AS is_university

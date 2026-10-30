@@ -229,7 +229,7 @@
 			<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{row.title || t('video_sources.untitled', 'Untitled')}</h3>
 			<p class="text-sm text-muted">{row.source_type} — {row.source_url}</p>
 		</div>
-		<dl class="grid grid-cols-2 gap-2 text-sm">
+		<dl class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
 			<div class="col-span-2 sm:col-span-1">
 				<dt class="text-muted">{t('video_sources.author', 'Author')}</dt>
 				<dd>{row.author_username || row.author_user_id}</dd>

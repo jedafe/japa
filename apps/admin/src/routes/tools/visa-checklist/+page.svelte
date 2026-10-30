@@ -152,7 +152,8 @@
 				{t('app.tools.visa_checklist_stats_empty', 'No completion data yet.')}
 			</p>
 		{:else}
-			<table class="mt-3 w-full text-sm">
+			<div class="mt-3 overflow-x-auto">
+		<table class="w-full text-sm">
 				<thead>
 					<tr style="color: var(--color-muted)">
 						<th class="pb-2 text-start font-medium">{t('app.tools.col_guide_id', 'Guide')}</th>
@@ -170,6 +171,7 @@
 					{/each}
 				</tbody>
 			</table>
+		</div>
 		{/if}
 	</div>
 {/if}

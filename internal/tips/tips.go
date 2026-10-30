@@ -2,7 +2,7 @@
 // Three recipient kinds — platform, member (creator/mentor), organization —
 // settle over credits wallet-ledger pairs (source='tip'), fiat via §17
 // payments (purpose_type='donation') settling to recipient credits, and
-// imported Open Collective contributions. ADR-129: points are no longer a
+// imported Open Collective contributions. ADR-136: points are no longer a
 // tip method — the sender earns tip.sent activity points instead.
 package tips
 
@@ -28,7 +28,7 @@ const (
 )
 
 // Settle methods (tips.method CHECK mirror — the CHECK still allows
-// 'points' for historical rows; it is never produced in code, ADR-129).
+// 'points' for historical rows; it is never produced in code, ADR-136).
 const (
 	MethodPoints         = "points" // retired — historical rows only
 	MethodCredits        = "credits"
@@ -92,7 +92,7 @@ var fiatMethods = map[string]bool{
 func IsFiatMethod(m string) bool { return fiatMethods[m] }
 
 // IsValidMethod reports whether m is a creatable tips.method value.
-// 'points' is deliberately excluded — retired (ADR-129).
+// 'points' is deliberately excluded — retired (ADR-136).
 func IsValidMethod(m string) bool {
 	return m == MethodCredits || m == MethodOpenCollective || fiatMethods[m]
 }
@@ -340,7 +340,7 @@ type Service struct {
 	locker       SyncLocker
 	clawNotifier NotificationCreator
 	// activity emits wallet activity events — the tip.sent points award for
-	// the sender (ADR-129). Optional — nil-safe.
+	// the sender (ADR-136). Optional — nil-safe.
 	activity wallet.ActivityEmitter
 	siteURL  string
 }
@@ -382,7 +382,7 @@ func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 func (s *Service) SetEnqueuer(e tipEnqueuer) { s.enqueuer = e }
 
 // SetActivityEmitter injects the wallet activity emitter used to award the
-// sender tip.sent points on settled tips (ADR-129 — the tip sender is the
+// sender tip.sent points on settled tips (ADR-136 — the tip sender is the
 // points recipient, not the tip receiver). Optional — nil-safe.
 func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
 

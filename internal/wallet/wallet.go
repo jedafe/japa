@@ -1,5 +1,5 @@
 // Package wallet implements the Wallet & Credits System (Section 28).
-// // Two independent internal currencies (ADR-129): Points (activity-earned
+// // Two independent internal currencies (ADR-136): Points (activity-earned
 // reputation — leaderboard rank, badge thresholds, profile boost; also
 // deducted by negative-activity rules) and Credits (spendable,
 // monetary-equivalent). No conversion exists in either direction.
@@ -50,7 +50,7 @@ const (
 	ActivityKeyScamAlertConfirmed  = "scam_alert.confirmed"
 	ActivityKeyAchievementCreated  = "achievement.created"
 
-	// Emitted by domain services across the site (ADR-129 — full activity
+	// Emitted by domain services across the site (ADR-136 — full activity
 	// coverage; negative point_value rules make the *_negative/spam/report
 	// keys penalties).
 	ActivityKeyUserRegistered         = "user.registered"
@@ -66,6 +66,11 @@ const (
 	ActivityKeySpamDetected           = "spam.detected"
 	ActivityKeyContentFlagged         = "content.flagged_removed"
 	ActivityKeyReportUpheld           = "report.upheld"
+	// ADR-136: revert keys undo a prior vote award when the vote flips or
+	// is removed — keep magnitudes mirrored with the direction they undo.
+	ActivityKeyReactionReverted        = "reaction.reverted"
+	ActivityKeyReactionNegativeReverted = "reaction.negative.reverted"
+	ActivityKeySpamFlagged             = "spam.flagged"
 )
 
 // SettingsReader is the subset of the config.Settings API that wallet uses to

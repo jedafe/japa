@@ -118,7 +118,7 @@
 				<input bind:checked={settings.tips_enabled} type="checkbox" class="size-4" />
 			</label>
 
-			<div class="grid grid-cols-2 gap-3">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 				<!-- The platform has no wallet — points/credits toggles are
 				     meaningless here and are intentionally not offered. -->
 				<label class="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">

@@ -34,6 +34,26 @@ func (s *Store) getSpaceJoiningPerm(ctx context.Context, spaceID pgtype.UUID) (s
 	return space.JoiningPerm, nil
 }
 
+// canViewSpaceFollowers reports whether the caller may view a space's
+// follower list: public + active spaces are open to all; anything else is
+// restricted to approved members (BUG-046).
+func (s *Store) canViewSpaceFollowers(ctx context.Context, spaceID, callerID pgtype.UUID) (bool, error) {
+	space, err := s.read.GetSpaceByID(ctx, spaceID)
+	if err != nil {
+		return false, err
+	}
+	if space.Visibility == "public" && space.Status == "active" && !space.DeletedAt.Valid {
+		return true, nil
+	}
+	if !callerID.Valid {
+		return false, nil
+	}
+	return s.read.CheckSpaceMembership(ctx, gen.CheckSpaceMembershipParams{
+		SpaceID: spaceID,
+		UserID:  callerID,
+	})
+}
+
 // addSpaceMember adds the user as a member of the space, returning whether
 // the row was actually inserted (ON CONFLICT DO NOTHING → 0 rows when the
 // user is already a member). Callers use the flag to drive member_count.

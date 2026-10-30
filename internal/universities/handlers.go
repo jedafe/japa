@@ -34,7 +34,10 @@ import (
 
 // universitySpaceTypeSlug is the space_types.slug seeded for universities
 // (migrations/000009_geo_first_space_system.sql).
-const universitySpaceTypeSlug = "university"
+const universitySpaceTypeSlug = "education"
+
+// universityLevel isolates platform universities from member-created
+// education spaces on the same type (§05 amendment).
 
 // customFieldEntityTypeSpace is the entity_type literal used across the
 // custom-fields system for space-scoped values (matches follows.EntityTypeSpace).
@@ -44,8 +47,8 @@ const customFieldEntityTypeSpace = "space"
 type SpacesService interface {
 	GetSpaceTypeBySlug(ctx context.Context, slug string) (gen.SpaceType, error)
 	ListSpacesByType(ctx context.Context, viewerUserID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error)
-	ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within string, includeInactive bool, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
-	CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within string, includeInactive bool) (int64, error)
+	ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within, level string, includeInactive bool, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
+	CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within, level string, includeInactive bool) (int64, error)
 	GetSpaceBySlug(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error)
 	GetSpace(ctx context.Context, id pgtype.UUID) (gen.GetSpaceByIDRow, error)
 	CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error)
@@ -318,13 +321,13 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 
-	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", within, false, sort, limit32, offset)
+	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", within, "university", false, sort, limit32, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
-	total, err := h.spaces.CountSpacesByType(r.Context(), spaceType.ID, search, country, "", "", within, false)
+	total, err := h.spaces.CountSpacesByType(r.Context(), spaceType.ID, search, country, "", "", within, "university", false)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
 		return
@@ -432,13 +435,13 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 
-	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", within, true, sort, limit32, offset)
+	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", within, "university", true, sort, limit32, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
-	total, err := h.spaces.CountSpacesByType(r.Context(), spaceType.ID, search, country, "", "", within, true)
+	total, err := h.spaces.CountSpacesByType(r.Context(), spaceType.ID, search, country, "", "", within, "university", true)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
 		return
@@ -483,7 +486,10 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if space.SpaceTypeID != spaceType.ID {
+	// §05 amendment — universities are education-typed spaces at
+	// level='university'; member-created education spaces share the type,
+	// so the level is the real discriminator here.
+	if space.SpaceTypeID != spaceType.ID || space.Level != "university" {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
@@ -763,7 +769,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		SpaceTypeID:    spaceType.ID,
 		Name:           strings.TrimSpace(input.Name),
 		Slug:           slug,
-		Level:          "custom",
+		Level:          "university",
 		Visibility:     "public",
 		PostingPerm:    "members",
 		ReplyingPerm:   "members",
@@ -819,7 +825,7 @@ func (h *Handlers) requireUniversitySpace(w http.ResponseWriter, r *http.Request
 		return gen.GetSpaceByIDRow{}, false
 	}
 
-	if existing.SpaceTypeID != spaceType.ID {
+	if existing.SpaceTypeID != spaceType.ID || existing.Level != "university" {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return gen.GetSpaceByIDRow{}, false
 	}
@@ -1223,7 +1229,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 			SpaceTypeID:    spaceType.ID,
 			Name:           name,
 			Slug:           slug,
-			Level:          "custom",
+			Level:          "university",
 			Visibility:     "public",
 			PostingPerm:    "members",
 			ReplyingPerm:   "members",
@@ -1298,7 +1304,7 @@ func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if space.SpaceTypeID != spaceType.ID {
+	if space.SpaceTypeID != spaceType.ID || space.Level != "university" {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}

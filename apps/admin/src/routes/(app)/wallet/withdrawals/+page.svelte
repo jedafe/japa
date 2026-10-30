@@ -196,7 +196,7 @@
 
 {#snippet WithdrawalView({ row }: { row: Withdrawal })}
 	<div class="space-y-4">
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('common.id', 'ID')}</p>
 				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.id}</p>
@@ -206,7 +206,7 @@
 				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.user_id ?? '—'}</p>
 			</div>
 		</div>
-		<div class="grid grid-cols-3 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.credits', 'Credits')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.credit_amount.toLocaleString()}</p>
@@ -220,7 +220,7 @@
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
 			</div>
 		</div>
-		<div class="grid grid-cols-3 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.fiat_amount', 'Fiat Amount')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{formatFiat(row.fiat_amount, row.currency_code)}</p>
@@ -234,7 +234,7 @@
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{formatFiat(row.net_amount, row.currency_code)}</p>
 			</div>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.payout_provider', 'Payout Provider')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.payout_provider ?? '—'}</p>

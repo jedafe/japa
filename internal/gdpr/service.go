@@ -603,7 +603,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if err := s.scrubFollowsForErasure(ctx, request.UserID); err != nil {
 			slog.Warn("failed to scrub follows during anonymization", "user_id", request.UserID.String(), "error", err)
 		}
-		// Scrub PII from user_journeys (ADR-129) — member label, destination,
+		// Scrub PII from user_journeys (ADR-136) — member label, destination,
 		// and per-journey stage history — and soft-delete the rows so nothing
 		// renders during the retention window. Rows cascade with the user row
 		// at hard-delete. Best-effort like the sibling scrubs.

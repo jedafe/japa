@@ -5,12 +5,10 @@
 	import { t } from '$lib/i18n';
 	import { Layers, Users, MessageSquare, Plus, ShieldX, ChevronLeft, ChevronRight, X } from 'lucide-svelte';
 	import { EmptyState, SpaceJoinButton, SearchInput, DirectoryCard, ListPageBar, FilterToggle, PageAction, SelectField, UrlTabs, type SearchSuggestion, type CardMetaItem, type UrlTab } from '$lib/components/ui';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
 	import SpaceCombobox from '$lib/components/spaces/SpaceCombobox.svelte';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
-	import { pinMarketsFirst, servedMarkets } from '$lib/utils/geoMarkets';
 	import { flagUrl } from '$lib/utils/flags';
 	import type { Space } from '$lib/types';
 	import type { PageData } from './$types';
@@ -107,8 +105,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const kindOptions = $derived([
 		{ value: '', label: t('common.all_types', 'All types') },
 		// §80 — wiki-only types (attraction) live under /wiki, not /spaces;
-		// offering them here filters to an empty list.
-		...data.spaceTypes.filter((st) => !st.wiki_only).map((st) => ({ value: st.slug, label: st.name })),
+		// offering them here filters to an empty list. §05 amendment — the
+		// directory lists member-created spaces only, so types members can't
+		// create (geo types have no category) are hidden too: they always
+		// filter to an empty list. Education is a member-creatable type —
+		// universities (level='university') don't match member_created.
+		...data.spaceTypes
+			.filter((st) => !st.wiki_only && !!st.category)
+			.map((st) => ({ value: st.slug, label: st.name })),
 		...(data.levels ?? [])
 			.filter((l) => !typeCoveredLevels.has(l))
 			.map((l) => ({
@@ -144,39 +148,12 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		onFilterChange();
 	}
 
-	const regionOptions = $derived([
-		{ value: '', label: t('spaces.region_all', 'All regions') },
-		...data.regions.map((r) => ({ value: r, label: r }))
-	]);
-
 	// Scope tabs — ?joined=1 switches between the full directory and the
 	// viewer's memberships (guests only get the directory).
 	const scopeTabs = $derived<UrlTab[]>([
 		{ value: 'all', label: t('spaces.tab_all', 'All spaces') },
 		{ value: 'joined', label: t('spaces.joined_only', 'My spaces') }
 	]);
-
-	// Country picker for ?geo= — filters the server-loaded /geo/countries
-	// list client-side (same pattern as /scholarships), submits the geo_code.
-	// The configured origin/destination markets (ADR-064, public settings)
-	// are pinned first; every seeded country stays selectable.
-	const geoPins = $derived(servedMarkets(data.siteSettings));
-	const orderedCountries = $derived(pinMarketsFirst(data.countries, geoPins, (c) => c.geo_code));
-	function toCountryItems(list: PageData['countries']): AutocompleteItem[] {
-		return list.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }));
-	}
-	function countryFetcher(q: string): Promise<AutocompleteItem[]> {
-		const query = q.toLowerCase().trim();
-		const filtered = query === ''
-			? orderedCountries
-			: orderedCountries.filter(
-					(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
-				);
-		return Promise.resolve(toCountryItems(filtered));
-	}
-	const geoSelectedLabel = $derived(
-		data.countries.find((c) => c.geo_code === selectedGeo)?.name ?? (selectedGeo || null)
-	);
 
 	const followingSpaceIdSet = $derived(new Set(data.followingSpaceIds ?? []));
 
@@ -377,34 +354,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					</div>
 				{/if}
 
-				<div>
-					<Autocomplete
-						id="spaces-filter-country"
-						placeholder={t('common.all_countries', 'All countries')}
-						ariaLabel={t('spaces.country_label', 'Country')}
-						emptyMessage={t('spaces.no_countries', 'No countries found')}
-						fetcher={countryFetcher}
-						initialFetcher={async () => toCountryItems(data.countries)}
-						selectedId={selectedGeo || null}
-						selectedLabel={geoSelectedLabel}
-						onSelect={(item) => { selectedGeo = item.id; onFilterChange(); }}
-						onClear={() => { selectedGeo = ''; onFilterChange(); }}
-					/>
-				</div>
-
-				{#if regionOptions.length > 1}
-					<div>
-						<label for="spaces-filter-region" class="sr-only">{t('spaces.region_label', 'Region')}</label>
-						<SelectField
-							id="spaces-filter-region"
-							value={selectedRegion}
-							options={regionOptions}
-							placeholder={t('spaces.region_all', 'All regions')}
-							onValueChange={(v) => { selectedRegion = v; selectedSubregion = ''; onFilterChange(); }}
-							class="w-full"
-						/>
-					</div>
-				{/if}
+				<!-- §05 amendment — geo/region filters only match primary spaces
+				     (member spaces carry no geo_code/region); removed from the
+				     member-directory UI. The URL params still resolve server-side. -->
 
 				<div class="sm:col-span-2">
 					<SpaceCombobox
@@ -487,6 +439,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 									initiallyPending={space.is_pending ?? false}
 									initiallyFollowing={space.is_following ?? followingSpaceIdSet.has(space.id)}
 									compact
+									followOnly={!!space.is_primary}
 								/>
 							{/if}
 						{/snippet}

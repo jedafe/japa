@@ -269,7 +269,7 @@
 						<MapPin class="h-4 w-4" style="color: var(--color-primary)" />
 						{t('geo.result', 'Lookup Result')}
 					</h3>
-					<div class="grid grid-cols-2 gap-4">
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 						<div>
 							<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('geo.country', 'Country')}</p>
 							<p class="mt-1 text-sm font-medium">{lookupResult.country_name} ({lookupResult.country_code})</p>

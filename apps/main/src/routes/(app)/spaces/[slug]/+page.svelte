@@ -236,7 +236,9 @@ import { flagUrl } from '$lib/utils/flags';
 		...(pinnedItems.length > 0 ? [{ value: 'pinned', label: t('space.tab.pinned', 'Pinned') }] : []),
 		{ value: 'forum', label: t('space.tab.forum', 'Forum') },
 		{ value: 'search', label: t('space.tab.search', 'Search') },
-		{ value: 'members', label: t('space.tab.members', 'Members') },
+		// §05 amendment — on follow-only primary spaces the members list is
+		// the follower set (join↔follow are coupled), so label it that way.
+		{ value: 'members', label: space.is_primary ? t('space.tab.followers', 'Followers') : t('space.tab.members', 'Members') },
 		...(isUniversity ? [{ value: 'reviews', label: t('space.tab.reviews', 'Reviews') }] : []),
 		{ value: 'about', label: t('space.tab.about', 'About') },
 		// Analytics dashboard — space-admin only per JEOS §215 [auth,

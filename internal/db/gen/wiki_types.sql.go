@@ -294,6 +294,9 @@ SELECT COALESCE(wtc.seed_stubs, false) AS seed_stubs
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id
 WHERE sp.id = $1
+ -- §05 amendment — education-typed spaces need level='university' for wiki.
+ AND (sp.level = 'university' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = sp.space_type_id AND st.slug = 'education'))
 `
 
 func (q *Queries) GetSpaceSeedStubs(ctx context.Context, spaceID pgtype.UUID) (bool, error) {

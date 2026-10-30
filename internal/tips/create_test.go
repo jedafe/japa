@@ -159,7 +159,7 @@ func TestCreateTipPointsMethodRejected(t *testing.T) {
 	fs := newFakeStore()
 	enabledRecipient(fs, UserOwner(recipientID))
 	svc := baseSvc(fs)
-	// ADR-129: points are retired as a tip method.
+	// ADR-136: points are retired as a tip method.
 	in := CreateTipInput{RecipientType: RecipientUser, RecipientUserID: recipientID, Method: MethodPoints, CreditsAmount: 20}
 	if _, err := svc.CreateTip(context.Background(), senderID, in, ""); !errors.Is(err, ErrInvalidMethod) {
 		t.Fatalf("expected invalid method, got %v", err)

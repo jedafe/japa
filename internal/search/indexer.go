@@ -434,6 +434,12 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID [16]byte) error {
 		return fmt.Errorf("fetching space for index: %w", err)
 	}
 
+	// BUG-045: the spaces index has no visibility filter — non-public and
+	// non-active spaces must never be indexed (delete any stale doc).
+	if row.Visibility != "public" || row.Status != "active" || row.DeletedAt.Valid {
+		return ix.DeleteDocument(ctx, IndexSpaces, spaceID)
+	}
+
 	desc := ""
 	if row.Description != nil {
 		desc = *row.Description

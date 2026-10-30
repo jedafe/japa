@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { ServerLoadEvent } from '@sveltejs/kit';
 import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
+import { hasPerm } from '$lib/server/auth';
 import type { ContentArticle, ContentAnalytics, SeriesPost } from '$lib/types/content';
 import type { Comment } from '$lib/types';
 
@@ -59,8 +60,8 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 			const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
 			const perms = permRes?.permissions ?? [];
 			hasContentEditPermission =
-				perms.includes('content.edit_own') || perms.includes('content.edit_any');
-			hasCommentsPinPermission = perms.includes('comments.pin');
+				hasPerm(perms, 'content.edit_own') || hasPerm(perms, 'content.edit_any');
+			hasCommentsPinPermission = hasPerm(perms, 'comments.pin');
 		} catch {
 			hasContentEditPermission = false;
 			hasCommentsPinPermission = false;

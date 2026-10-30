@@ -106,6 +106,11 @@
 	});
 
 	const PAGE_PERMISSIONS: Record<string, string> = {
+		// More-specific user-management sub-routes gate on the RBAC manage
+		// node (their APIs require it) — the matcher sorts keys longest-first
+		// so these win over the bare '/users' → admin.users.view entry.
+		'/users/groups': 'admin.rbac.manage',
+		'/users/roles': 'admin.rbac.manage',
 		'/users': 'admin.users.view',
 		'/content': 'admin.content.view',
 		'/content-types': 'admin.settings',
@@ -113,7 +118,6 @@
 		'/analytics': 'admin.analytics.view',
 		'/settings': 'admin.settings.view',
 		'/seo': 'admin.settings',
-		'/roles': 'admin.roles.view',
 		'/audit-logs': 'admin.audit.view',
 		'/advertising': 'admin.advertising.view',
 		'/payments': 'admin.payments.view',
@@ -241,9 +245,12 @@
 
 	let requiredPermission = $derived.by(() => {
 		const path = page.url.pathname;
-		for (const [prefix, perm] of Object.entries(PAGE_PERMISSIONS)) {
+		// Longest-prefix-first: a '/users/groups' entry must win over the
+		// bare '/users' entry regardless of object insertion order.
+		const prefixes = Object.keys(PAGE_PERMISSIONS).sort((a, b) => b.length - a.length);
+		for (const prefix of prefixes) {
 			if (path === prefix || path.startsWith(prefix + '/')) {
-				return perm;
+				return PAGE_PERMISSIONS[prefix];
 			}
 		}
 		return '';

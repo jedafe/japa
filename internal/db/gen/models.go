@@ -5175,3 +5175,12 @@ type WsTicket struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 }
+
+type XlinkCatSeed struct {
+	TypeSlug *string `json:"type_slug"`
+	Slug     *string `json:"slug"`
+	Category *string `json:"category"`
+	Label    *string `json:"label"`
+	Position *int32  `json:"position"`
+	Rollup   []byte  `json:"rollup"`
+}

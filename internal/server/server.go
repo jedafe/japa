@@ -975,7 +975,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tipsService.SetNotifier(tipsNotifierAdapter{enq: taskEnqueuer})
 	tipsService.SetSyncLocker(tipsSyncLockAdapter{rdb: vkClient.Redis()})
 	tipsService.SetClawbackNotifier(tipsNotifyDispatchAdapter{svc: notificationService})
-	tipsService.SetActivityEmitter(walletService) // ADR-129: tip.sent points for the sender
+	tipsService.SetActivityEmitter(walletService) // ADR-136: tip.sent points for the sender
 	tipsService.SetSiteURL(cfg.SiteURL)
 	tipsHandlers := tips.NewHandlers(tipsService)
 
@@ -990,9 +990,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	commentsService.SetActivityEmitter(walletService)
 	followService.SetActivityEmitter(walletService)
 	spaceService.SetActivityEmitter(walletService)
-	authHandlers.SetActivityEmitter(&authActivityEmitter{svc: walletService})   // ADR-129: user.registered / daily.login
-	oauthHandlers.SetActivityEmitter(&authActivityEmitter{svc: walletService})  // ADR-129: OAuth signup + login
-	reportsService.SetActivityEmitter(walletService)                          // ADR-129: report.upheld / content.flagged_removed
+	authHandlers.SetActivityEmitter(&authActivityEmitter{svc: walletService})   // ADR-136: user.registered / daily.login
+	oauthHandlers.SetActivityEmitter(&authActivityEmitter{svc: walletService})  // ADR-136: OAuth signup + login
+	reportsService.SetActivityEmitter(walletService)                          // ADR-136: report.upheld / content.flagged_removed
 
 	// Register payment providers so InitiatePayment can call real provider APIs.
 	paymentService.SetProvider(payments.NewPaystackProvider(cfg.PaystackSecretKey))
@@ -1387,7 +1387,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	academyHandlers := academy.NewHandlers(academyStore, contentService)
 	academyHandlers.AsynqClient = asynqClient
 	academyHandlers.SetAdminChecker(rbacResolver)     // platform admins bypass learner-side gates (§36)
-	academyHandlers.SetActivityEmitter(walletService) // ADR-129: academy.lesson/track_completed
+	academyHandlers.SetActivityEmitter(walletService) // ADR-136: academy.lesson/track_completed
 
 	// Register academy processor for the worker's academy tasks.
 	academyAdapter := academy.NewProcessorAdapter(academyStore)
@@ -1429,7 +1429,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	referralService.SetFeatureChecker(featureChecker) // feature.referral reads feature_flags
 	referralService.SetValkey(vkClient.Redis())       // jc:referral_attr attribution key
 	referralService.SetEnqueuer(taskEnqueuer)         // referral:record_click + wallet:award_points
-	referralService.SetActivityEmitter(walletService) // ADR-129: referral.completed
+	referralService.SetActivityEmitter(walletService) // ADR-136: referral.completed
 	referralHandlers := referral.NewHandlers(referralService)
 	// Wire referral capture into the auth signup flow (§60 — ?ref=CODE at
 	// registration creates a pending referrals row). Injected here because
@@ -2665,7 +2665,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	credentialCheckerService.SetAIDispatcher(&credentialCheckerAIDispatcher{dispatcher: aiDispatcher})
 
 	moderationProcessorAdapter := spam.NewWorkerAdapter(spamPipeline)
-	moderationProcessorAdapter.SetActivityEmitter(&spamActivityEmitter{svc: walletService}) // ADR-129: spam.detected
+	moderationProcessorAdapter.SetActivityEmitter(&spamActivityEmitter{svc: walletService}) // ADR-136: spam.detected
 	worker.RegisterModerationProcessor(moderationProcessorAdapter)
 
 	// Register no-op implementations for any remaining processor interface
@@ -3278,7 +3278,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Onboarding subsystem (Section 09).
 	onboardingService := onboarding.NewService(database, settingsService)
-	onboardingService.SetActivityEmitter(walletService) // ADR-129: profile.completed
+	onboardingService.SetActivityEmitter(walletService) // ADR-136: profile.completed
 	onboardingService.SetFollower(followService)
 	// ADR-128: promote onboarding journey answers (primary_goal → japa_intent,
 	// japa_status → japa_stage) into the canonical profile columns.
@@ -4613,7 +4613,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// BUG-013: wire notification dispatcher for reply-to-author
 			// notifications. Ref: Section 35.
 			forumService.SetNotificationDispatcher(commentNotificationAdapter{svc: notificationService})
-			forumService.SetActivityEmitter(walletService) // ADR-129: reaction.negative / forum.solution_marked
+			forumService.SetActivityEmitter(walletService) // ADR-136: reaction.negative / forum.solution_marked
 			// §08 forum agent tools: wired here because forumService only
 			// exists inside the API route group. Handlers read deps lazily.
 			agentDeps.Forum = &agentForumAdapter{svc: forumService}
@@ -7938,7 +7938,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/japa-stage", japaStageHandlers.HandleGetOwn)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
 					Patch("/me/japa-stage", japaStageHandlers.HandleUpdateOwn)
-				// ADR-129: concurrent journey instances beside the primary
+				// ADR-136: concurrent journey instances beside the primary
 				// profile journey. Same permission node; record-only —
 				// personalization keys on japa_intent, not these rows.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
@@ -9596,7 +9596,7 @@ func (a *achievementActivityEmitter) EnqueueProcessActivityEvent(ctx context.Con
 	return a.svc.EnqueueProcessActivityEvent(ctx, eventID)
 }
 
-// authActivityEmitter adapts *wallet.Service to auth.ActivityEmitter (ADR-129).
+// authActivityEmitter adapts *wallet.Service to auth.ActivityEmitter (ADR-136).
 type authActivityEmitter struct {
 	svc *wallet.Service
 }
@@ -9618,7 +9618,7 @@ func (a *authActivityEmitter) EnqueueProcessActivityEvent(ctx context.Context, e
 	return a.svc.EnqueueProcessActivityEvent(ctx, eventID)
 }
 
-// spamActivityEmitter adapts *wallet.Service to spam.ActivityEmitter (ADR-129).
+// spamActivityEmitter adapts *wallet.Service to spam.ActivityEmitter (ADR-136).
 type spamActivityEmitter struct {
 	svc *wallet.Service
 }

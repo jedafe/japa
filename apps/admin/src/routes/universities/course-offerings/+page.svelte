@@ -332,7 +332,7 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('courses.slug', 'Slug')}</p>
 			<p class="mt-1 font-mono text-sm" style="color: var(--color-foreground)">{row.slug}</p>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('courses.tuition', 'Tuition')}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.tuition != null ? formatMoney(row.tuition, row.currency, currencies) : '—'}</p>

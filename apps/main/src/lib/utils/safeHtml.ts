@@ -17,7 +17,9 @@ const ALLOWED_TAGS = new Set([
 	'h4', 'h5', 'h6', 'img', 'figure', 'figcaption', 'section', 'article',
 	'header', 'footer', 'nav', 'aside', 'table', 'thead', 'tbody', 'tr',
 	'th', 'td', 'button', 'svg', 'rect', 'path', 'line', 'polyline',
-	'circle', 'ellipse', 'g', 'defs', 'use'
+	'circle', 'ellipse', 'g', 'defs', 'use',
+	// §45 FAQ accordion block — native details/summary markup.
+	'details', 'summary'
 ]);
 
 const ALLOWED_ATTRS = new Set([
@@ -25,7 +27,9 @@ const ALLOWED_ATTRS = new Set([
 	'd', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'viewBox',
 	'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
 	'rx', 'ry', 'cx', 'cy', 'r', 'xmlns', 'xlink:href', 'points', 'src',
-	'alt', 'colspan', 'rowspan', 'id', 'data-*'
+	'alt', 'colspan', 'rowspan', 'id', 'data-*',
+	// §45 FAQ accordion — details open state + name group (single-open).
+	'open', 'name'
 ]);
 
 /**
@@ -301,6 +305,14 @@ export function sanitizeContentHtml(html: string, allowedIframeHosts?: string): 
 	if (!/<div[^>]*\bclass\s*=\s*["'][^"']*\bprose-table-wrapper\b[^"']*["']/i.test(out)) {
 		out = out.replace(/(<table\b[\s\S]*?<\/table>)/gi, '<div class="prose-table-wrapper">$1</div>');
 	}
+
+	// §45 FAQ accordion — stored markup is fully collapsed; the first item
+	// in each faq block opens by default. The shared name="jc-faq" group
+	// keeps single-open semantics (opening another item closes it).
+	out = out.replace(
+		/(<div\b[^>]*data-type="faq"[^>]*>)(\s*<details\b)/gi,
+		(_m, wrap: string, d: string) => `${wrap}${d.replace('<details', '<details open')}`
+	);
 
 	return out;
 }

@@ -330,7 +330,7 @@
 <!-- ── View snippet: import details with error log ─────────────────────── -->
 {#snippet ImportView({ row }: { row: ContentImport })}
 	<div class="space-y-4">
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 					{t('imports.detail_user', 'User')}

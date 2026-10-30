@@ -1040,7 +1040,7 @@
 <!-- View modal body showing the group's fields -->
 {#snippet GroupView({ row }: { row: FieldGroup })}
 	<div class="space-y-4">
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 					{t('fieldGroups.name', 'Name')}

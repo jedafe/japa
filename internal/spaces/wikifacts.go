@@ -193,6 +193,12 @@ func (a *ProcessorAdapter) PopulateWikiFacts(ctx context.Context, spaceID string
 	if st, err := a.svc.GetSpaceType(ctx, space.SpaceTypeID); err == nil {
 		spaceType = st.Slug
 	}
+	// §05 amendment — universities are education-typed; level is the
+	// discriminator so university fact branches (course offerings, seed
+	// data) keep firing for platform universities only.
+	if space.Level == LevelUniversity {
+		spaceType = "university"
+	}
 
 	// Resolve the entity QID: wiki_content stamp first, then wbsearchentities
 	// with parent-aware disambiguation ("Georgia, US state" style) — the

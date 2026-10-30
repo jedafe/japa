@@ -286,22 +286,13 @@ func (s *Service) afterFollowChange(ctx context.Context, followerID pgtype.UUID,
 			slog.Warn("auto-join: failed to read space joining_perm",
 				"space_id", entityId, "error", permErr)
 		} else if perm == joiningPermOpen {
-			inserted, joinErr := s.store.addSpaceMember(ctx, entityId, followerID)
+			_, joinErr := s.store.addSpaceMember(ctx, entityId, followerID)
 			if joinErr != nil {
 				slog.Warn("auto-join: failed to add space member",
 					"space_id", entityId, "user_id", followerID, "error", joinErr)
 			} else {
-				// member_count is incremented only when the member row was
-				// actually inserted — the Join+IncrementSpaceCount path does
-				// the same accounting, so skip it when the user was already
-				// a member (SPACES-004 parity).
-				if inserted {
-					if _, cntErr := s.db.Writer.Exec(ctx,
-						"UPDATE spaces SET member_count = member_count + 1 WHERE id = $1", entityId); cntErr != nil {
-						slog.Warn("auto-join: failed to increment member_count",
-							"space_id", entityId, "error", cntErr)
-					}
-				}
+				// member_count is maintained by trg_space_member_count —
+				// an insert here already bumps the counter (SPACES-004 parity).
 
 				// §64: auto-join via follow is a real membership — record
 				// space.joined so badge/challenge triggers (e.g.
@@ -467,6 +458,18 @@ func (s *Service) IsMutualFollow(ctx context.Context, followerID, entityID pgtyp
 // callerID is valid, each item includes is_following indicating whether the
 // caller follows that follower back (Section 31: bulk is_following per item).
 func (s *Service) GetFollowers(ctx context.Context, callerID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]FollowerInfo, error) {
+	// BUG-046: follower lists of non-public spaces are member-only —
+	// otherwise the generic follows endpoint leaks a private space's social
+	// graph by entity ID.
+	if entityType == EntityTypeSpace {
+		ok, err := s.store.canViewSpaceFollowers(ctx, entityID, callerID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, ErrEntityNotFound
+		}
+	}
 	// §41 strict variant: a blocked viewer cannot read the target's social
 	// graph — 403, same as the profile itself.
 	if entityType == EntityTypeUser && callerID.Valid {
@@ -522,6 +525,76 @@ func (s *Service) GetFollowers(ctx context.Context, callerID pgtype.UUID, entity
 	return result, nil
 }
 
+// filterSpaceVisibility drops space entities the caller may not see from a
+// following list: non-public, non-active, or deleted spaces are revealed
+// only to the list owner or an approved member of that space. Fail-closed —
+// a space that can't be resolved is treated as hidden. (Residual leak fix:
+// the list resolves name+slug, which would expose a private space's
+// existence and join surface.)
+func (s *Service) filterSpaceVisibility(ctx context.Context, callerID, followerID pgtype.UUID, rows []FollowingInfo) ([]FollowingInfo, error) {
+	var spaceIDs []pgtype.UUID
+	for _, r := range rows {
+		if r.EntityType == EntityTypeSpace {
+			spaceIDs = append(spaceIDs, r.EntityID)
+		}
+	}
+	if len(spaceIDs) == 0 {
+		return rows, nil
+	}
+
+	hidden := map[pgtype.UUID]bool{}
+	var needMember []pgtype.UUID
+
+	visRows, err := s.store.read.GetSpaceVisibilityByIDs(ctx, spaceIDs)
+	if err != nil {
+		return nil, fmt.Errorf("resolving space visibility for following list: %w", err)
+	}
+	found := map[pgtype.UUID]bool{}
+	for _, sp := range visRows {
+		found[sp.ID] = true
+		if sp.Visibility != "public" || sp.Status != "active" || sp.DeletedAt.Valid {
+			hidden[sp.ID] = true
+			needMember = append(needMember, sp.ID)
+		}
+	}
+	for _, id := range spaceIDs {
+		if !found[id] {
+			hidden[id] = true
+		}
+	}
+	if len(hidden) == 0 {
+		return rows, nil
+	}
+
+	// The list owner always sees their own follows.
+	ownList := callerID.Valid && callerID == followerID
+
+	memberOf := map[pgtype.UUID]bool{}
+	if !ownList && callerID.Valid && len(needMember) > 0 {
+		rels, err := s.store.read.ListViewerSpaceRelations(ctx, gen.ListViewerSpaceRelationsParams{
+			ViewerUserID: callerID,
+			SpaceIds:     needMember,
+		})
+		if err == nil {
+			for _, rel := range rels {
+				if rel.IsMember {
+					memberOf[rel.SpaceID] = true
+				}
+			}
+		}
+	}
+
+	out := make([]FollowingInfo, 0, len(rows))
+	for _, r := range rows {
+		if r.EntityType == EntityTypeSpace && hidden[r.EntityID] && !ownList && !memberOf[r.EntityID] {
+			continue
+		}
+		out = append(out, r)
+	}
+
+	return out, nil
+}
+
 // GetFollowing returns paginated entities that a user follows. When callerID
 // is valid, each item includes is_following indicating whether the caller
 // also follows that entity (Section 31: bulk is_following per item).
@@ -560,7 +633,7 @@ func (s *Service) GetFollowing(ctx context.Context, callerID, followerID pgtype.
 		}
 	}
 
-	return result, nil
+	return s.filterSpaceVisibility(ctx, callerID, followerID, result)
 }
 
 // GetFollowingByType returns paginated entities of one entity_type that a
@@ -608,7 +681,7 @@ func (s *Service) GetFollowingByType(ctx context.Context, callerID, followerID p
 		}
 	}
 
-	return result, nil
+	return s.filterSpaceVisibility(ctx, callerID, followerID, result)
 }
 
 // resolveBulkFollowingByType resolves is_following for a mixed-type following

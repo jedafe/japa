@@ -80,11 +80,6 @@ FROM (
  -- spaces are not a discovery surface (Section 05 amendment).
  AND s.level = 'custom'
  AND s.creator_user_id IS NOT NULL
- -- member-selectable type only — universities are primary like geo (§05 amendment).
- AND EXISTS (
- SELECT 1 FROM space_types st WHERE st.id = s.space_type_id
- AND st.category IS NOT NULL AND st.slug <> 'university'
- )
  -- §80 wiki-only types (attraction) — never a trending surface.
  AND NOT EXISTS (
  SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
@@ -198,9 +193,6 @@ AND s.deleted_at IS NULL
 -- spaces are not a suggestion surface (Section 05 amendment).
 AND s.level = 'custom'
 AND s.creator_user_id IS NOT NULL
--- member-selectable type only — universities are primary like geo (§05 amendment).
-AND st.category IS NOT NULL
-AND st.slug <> 'university'
 -- §80 wiki-only types (attraction) — never a suggestion surface.
 AND NOT st.wiki_only
 GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code, st.slug

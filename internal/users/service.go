@@ -228,10 +228,12 @@ func (s *Service) GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProf
 		userID,
 	)
 	groups := make([]string, 0, len(groupRows))
+	groupRefs := make([]GroupRef, 0, len(groupRows))
 
 	if err == nil {
 		for _, g := range groupRows {
 			groups = append(groups, g.Name)
+			groupRefs = append(groupRefs, GroupRef{ID: g.ID.String(), Name: g.Name, Slug: g.Slug})
 		}
 	}
 
@@ -311,6 +313,7 @@ func (s *Service) GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProf
 		FollowerCount:            p.FollowerCount,
 		UserGroupName:            groupName,
 		Groups:                   groups,
+		GroupRefs:                groupRefs,
 		LastLoginAt:              lastLogin,
 		CreatedAt:                p.CreatedAt.Time.Format(time.RFC3339),
 		UpdatedAt:                p.UpdatedAt.Time.Format(time.RFC3339),

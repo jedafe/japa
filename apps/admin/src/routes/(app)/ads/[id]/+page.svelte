@@ -246,7 +246,7 @@
 		<Card>
 			<CardContent class="space-y-4">
 				<h2 class="text-sm font-semibold uppercase tracking-wider text-muted">{t('ads.basic_info', 'Basic Information')}</h2>
-				<div class="grid grid-cols-2 gap-4">
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 					<div>
 						<p class="text-xs text-muted">{t('ads.fields.name', 'Name')}</p>
 						<p class="text-sm font-medium text-foreground">{campaign.name}</p>
@@ -341,7 +341,7 @@
 		<Card>
 			<CardContent class="space-y-4">
 				<h2 class="text-sm font-semibold uppercase tracking-wider text-muted">{t('ads.sections.budget', 'Budget & Bidding')}</h2>
-				<div class="grid grid-cols-2 gap-4">
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 					<div>
 						<p class="text-xs text-muted">{t('ads.budget', 'Budget')}</p>
 						<p class="text-sm font-medium text-foreground">{campaign.budget ?? '—'}</p>
@@ -386,7 +386,7 @@
 		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else if stats}
 		<div class="space-y-4">
-			<div class="grid grid-cols-2 gap-3">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 				<div class="rounded-lg border border-border bg-surface p-3">
 					<p class="text-xs text-muted">{t('ads.impressions', 'Impressions')}</p>
 					<p class="text-lg font-bold text-foreground">{(stats.impressions ?? 0).toLocaleString()}</p>
@@ -415,7 +415,7 @@
 			{#if stats.daily_stats?.length}
 				<div>
 					<h3 class="mb-2 text-sm font-medium text-foreground">{t('ads.daily_breakdown', 'Daily Breakdown')}</h3>
-					<div class="max-h-64 overflow-y-auto rounded-lg border border-border">
+					<div class="max-h-64 overflow-auto rounded-lg border border-border">
 						<table class="w-full text-xs">
 							<thead>
 								<tr class="border-b border-border bg-surface">

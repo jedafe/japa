@@ -298,7 +298,7 @@ func (s *Service) SolveThread(ctx context.Context, id, solverUserID, parentReply
 
 	s.emitWebhook(ctx, "forum.thread.solved", map[string]any{"thread_id": id, "solver_id": solverUserID, "parent_reply_id": parentReplyID})
 
-	// ADR-129: the accepted-answer author earns forum.solution_marked points.
+	// ADR-136: the accepted-answer author earns forum.solution_marked points.
 	if parentReplyID.Valid {
 		if reply, rerr := s.store.getReplyByID(ctx, parentReplyID); rerr == nil && reply.AuthorUserID.Valid {
 			s.emitActivity(ctx, reply.AuthorUserID, wallet.ActivityKeyForumSolutionMarked, "reply:"+parentReplyID.String())
@@ -886,7 +886,7 @@ func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput)
 		"user_id": userID, "value": input.Value,
 	})
 
-	// ADR-129: votes move the entity author's points — upvotes earn
+	// ADR-136: votes move the entity author's points — upvotes earn
 	// reaction.added, downvotes deduct via reaction.negative. Reference
 	// dedupes per (entity, voter) so a later vote-flip doesn't double-count.
 	if delta != 0 {

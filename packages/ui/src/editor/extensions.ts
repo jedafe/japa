@@ -15,6 +15,7 @@ import type { EditorSearchHit } from './types';
 import { createSuggestionRenderer } from './suggestionRenderer';
 import { LinkPreviewNode } from './linkPreviewNode';
 import { VideoNode } from './nodes/VideoNode';
+import { FaqNode, FaqItemNode, FaqSummaryNode, FaqContentNode } from './nodes/FaqNode';
 
 /**
  * Coupon embed node (Section 55 — render-time coupon/affiliate URL
@@ -65,7 +66,14 @@ export interface EditorExtensionOptions {
 		image?: boolean;
 		youtube?: boolean;
 		markdown?: boolean;
+		/** §45 FAQ accordion block (details/summary). On unless false. */
+		faq?: boolean;
 	};
+	/** Label for the faq node view's editor-only "add item" button. */
+	faqAddItemLabel?: string;
+	/** Live getter for the host document's title — used by the faq insert
+	 *  command to seed its auto-generated subheading. */
+	getPostTitle?: () => string;
 }
 
 // Unique plugin keys per suggestion trigger — without these, multiple
@@ -304,6 +312,19 @@ export function buildEditorExtensions(opts: EditorExtensionOptions = {}): Extens
 		// (Section 15 / ROADMAP-MAIN 07.09). Stores URL; hydrated into a
 		// LinkPreviewCard component by the editor and view page.
 		extensions.push(LinkPreviewNode);
+	}
+	if (opts.features?.faq !== false) {
+		// FAQ accordion — faq > faqItem(details) > faqSummary(summary) +
+		// faqContent(answer). §45 V1 Block Catalog "FAQ Accordion".
+		extensions.push(
+			FaqNode.configure({
+				addItemLabel: opts.faqAddItemLabel ?? 'Add question',
+				getPostTitle: opts.getPostTitle ?? (() => '')
+			}),
+			FaqItemNode,
+			FaqSummaryNode,
+			FaqContentNode
+		);
 	}
 
 	if (opts.features?.markdown !== false) {

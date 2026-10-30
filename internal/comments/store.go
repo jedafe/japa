@@ -964,7 +964,7 @@ func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID
 		return pgtype.UUID{}, 0, err
 	}
 
-	// ADR-129: votes move the author's points — upvotes earn reaction.added,
+	// ADR-136: votes move the author's points — upvotes earn reaction.added,
 	// downvotes deduct via reaction.negative. Reference dedupes per
 	// (comment, voter) so a later vote-flip doesn't double-count.
 	if delta != 0 && target.AuthorUserID != userID {

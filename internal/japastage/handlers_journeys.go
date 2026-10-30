@@ -1,5 +1,5 @@
 // Package japastage — handlers_journeys.go provides the HTTP handlers for
-// the concurrent-journeys CRUD routes (ADR-129). Journeys are record-only
+// the concurrent-journeys CRUD routes (ADR-136). Journeys are record-only
 // instances beside the primary profile journey; all routes sit inside the
 // japa_stage.enabled feature gate and require profile.japa_stage.edit.
 //
@@ -12,7 +12,7 @@
 //
 // Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 //
-//	japaconnect-engineering/adr/ADR-129-concurrent-journeys.md
+//	japaconnect-engineering/adr/ADR-136-concurrent-journeys.md
 package japastage
 
 import (
@@ -140,7 +140,7 @@ func (h *Handlers) HandleCreateJourney(w http.ResponseWriter, r *http.Request) {
 
 // HandleUpdateJourney handles PATCH /me/japa-stage/journeys/:id — a
 // partial update of intent/stage/destination/label/window/visibility plus
-// lifecycle transitions per validJourneyTransitions (ADR-129).
+// lifecycle transitions per validJourneyTransitions (ADR-136).
 func (h *Handlers) HandleUpdateJourney(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {

@@ -293,7 +293,7 @@
 	{#if stats.by_type && stats.by_type.length > 0}
 		<div class="mt-8">
 			<h3 class="mb-3 text-sm font-semibold" style="color: var(--color-foreground)">{t('rag.by_type')}</h3>
-			<div class="overflow-hidden rounded-lg border" style="border-color: var(--color-border)">
+			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 				<table class="w-full text-sm">
 					<thead style="background: var(--color-surface-alt)">
 						<tr>
@@ -341,7 +341,7 @@
 			{/if}
 		</h3>
 		{#if stats.recent_failures && stats.recent_failures.length > 0}
-			<div class="overflow-hidden rounded-lg border" style="border-color: var(--color-border)">
+			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
 				<table class="w-full text-sm">
 					<thead style="background: var(--color-surface-alt)">
 						<tr>

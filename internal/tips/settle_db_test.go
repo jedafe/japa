@@ -129,7 +129,7 @@ func TestDBPointsMethodRejected(t *testing.T) {
 	svc.settings = fakeSettings{m: map[string]any{"tips.enabled": true}}
 	svc.perms = fakePerms{map[string]bool{"tips.send": true, "tips.receive": true}}
 
-	// ADR-129: points are retired as a tip method — the wallet method
+	// ADR-136: points are retired as a tip method — the wallet method
 	// branch no longer accepts them even though the balance exists.
 	_, err := svc.CreateTip(ctx, sender, CreateTipInput{
 		RecipientType: RecipientUser, RecipientUserID: recip,

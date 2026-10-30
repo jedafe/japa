@@ -252,7 +252,7 @@
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("gdpr.consent_type", "Consent Type")}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.consent_type}</p>
 			</div>
-			<div class="grid grid-cols-2 gap-4">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("gdpr.granted", "Granted")}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.granted ? t("common.yes", "Yes") : t("common.no", "No")}</p>
@@ -262,7 +262,7 @@
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.ip_address || "—"}</p>
 				</div>
 			</div>
-			<div class="grid grid-cols-2 gap-4">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("gdpr.granted_at", "Granted At")}</p>
 					<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{viewTarget.granted_at ? new Date(viewTarget.granted_at).toLocaleString() : "—"}</p>

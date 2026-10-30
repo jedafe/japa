@@ -22,7 +22,10 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		const [spacesRes, tagsRes] = await Promise.all([
-			apiList<Space>(ctx, `/spaces?page_size=${ENTITY_LIMIT}&sort=members`),
+			// member_created — the RSS directory lists member-created spaces
+			// only (§05 amendment); primary spaces' feeds remain reachable via
+			// their direct URLs.
+			apiList<Space>(ctx, `/spaces?page_size=${ENTITY_LIMIT}&sort=members&member_created=1`),
 			apiList<TagDetail>(ctx, `/tags?page_size=${ENTITY_LIMIT}`)
 		]);
 		spaces = spacesRes.items;

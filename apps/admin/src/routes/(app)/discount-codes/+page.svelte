@@ -280,7 +280,7 @@
 		{#if usageData.users.length === 0}
 			<p class="text-sm text-muted">{t('discounts.usage_empty', 'No usage recorded yet')}</p>
 		{:else}
-			<div class="max-h-96 overflow-y-auto rounded-lg border" style="border-color: var(--color-border)">
+			<div class="max-h-96 overflow-auto rounded-lg border" style="border-color: var(--color-border)">
 				<table class="w-full text-sm">
 					<thead>
 						<tr class="border-b" style="border-color: var(--color-border); background: var(--color-surface)">
@@ -319,7 +319,7 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('discounts.description', 'Description')}</p>
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.description ?? '—'}</p>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('discounts.discount', 'Discount')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.discount_type === 'percent' ? `${row.discount_value}%` : `${row.discount_value} credits`}</p>
@@ -329,7 +329,7 @@
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.used_count ?? 0}{row.max_uses ? ` / ${row.max_uses}` : ''}</p>
 			</div>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('discounts.valid_from', 'Valid From')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.valid_from ? new Date(row.valid_from).toLocaleDateString() : '—'}</p>

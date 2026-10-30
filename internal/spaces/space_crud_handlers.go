@@ -61,6 +61,11 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	// of — the /spaces "My spaces" chip (audit fix: previously client-side
 	// page-scoped filtering against the capped /me/spaces list).
 	joinedOnly := q.Get("joined") == "1" || q.Get("joined") == "true"
+	// ?member_created=1 restricts the list to member-created spaces (Section 05
+	// amendment: level='custom' AND creator_user_id IS NOT NULL). The /spaces
+	// directory always sends it; internal geo pickers (?level=, ?geo=) omit it
+	// so primary spaces still resolve.
+	memberCreated := q.Get("member_created") == "1" || q.Get("member_created") == "true"
 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -81,13 +86,13 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		rows, err := h.Service.ListSpacesPaginated(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, sort, spaceTypeID, joinedOnly, int32(limit), int32(offset))
+		rows, err := h.Service.ListSpacesPaginated(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, sort, spaceTypeID, joinedOnly, memberCreated, int32(limit), int32(offset))
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		count, err := h.Service.CountSpaces(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, spaceTypeID, joinedOnly)
+		count, err := h.Service.CountSpaces(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, spaceTypeID, joinedOnly, memberCreated)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -105,13 +110,13 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		rows, err := h.Service.ListSpacesByParentPaginated(r.Context(), viewerUserID, parentID, search, geoCode, levelFilter, region, subregion, sort, joinedOnly, int32(limit), int32(offset))
+		rows, err := h.Service.ListSpacesByParentPaginated(r.Context(), viewerUserID, parentID, search, geoCode, levelFilter, region, subregion, sort, joinedOnly, memberCreated, int32(limit), int32(offset))
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		count, err := h.Service.CountSpacesByParent(r.Context(), viewerUserID, parentID, search, geoCode, levelFilter, region, subregion, joinedOnly)
+		count, err := h.Service.CountSpacesByParent(r.Context(), viewerUserID, parentID, search, geoCode, levelFilter, region, subregion, joinedOnly, memberCreated)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -122,13 +127,13 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	default:
 		// SPACES-009/011: SQL-level pagination, search, geo, level, region,
 		// subregion, and sort for the default branch.
-		rows, err := h.Service.ListSpacesPaginated(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, sort, pgtype.UUID{}, joinedOnly, int32(limit), int32(offset))
+		rows, err := h.Service.ListSpacesPaginated(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, sort, pgtype.UUID{}, joinedOnly, memberCreated, int32(limit), int32(offset))
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		count, err := h.Service.CountSpaces(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, pgtype.UUID{}, joinedOnly)
+		count, err := h.Service.CountSpaces(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, pgtype.UUID{}, joinedOnly, memberCreated)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -448,6 +453,9 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	// switcher) still get an accurate list for super admins instead of an
 	// arbitrary first page of every space in the platform.
 	memberOnly := r.URL.Query().Get("member_only") == "1"
+	// §05 amendment — ?member_created=1 restricts to member-created spaces
+	// (composers: primary geo/university spaces auto-attach via keywords).
+	memberCreated := r.URL.Query().Get("member_created") == "1" || r.URL.Query().Get("member_created") == "true"
 
 	isSuperAdmin, err := h.Service.IsSuperAdmin(r.Context(), user.UserID)
 	if err != nil {
@@ -455,7 +463,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isSuperAdmin && !memberOnly {
-		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), user.UserID, q, level, spaceTypeID, limit, offset)
+		spaces, lerr := h.Service.ListAllSpacesForAdmin(r.Context(), user.UserID, q, level, spaceTypeID, memberCreated, limit, offset)
 		if lerr != nil {
 			handleServiceError(w, lerr)
 			return
@@ -470,7 +478,7 @@ func (h *Handlers) ListMySpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaces, err := h.Service.ListSpacesByMember(r.Context(), user.UserID, q, level, spaceTypeID, limit, offset)
+	spaces, err := h.Service.ListSpacesByMember(r.Context(), user.UserID, q, level, spaceTypeID, memberCreated, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -676,6 +684,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	isMember := false
 	isPending := false
 	isFollowing := false
+	unreadCount := 0
 
 	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
 		isOwner, err = h.Service.IsOwner(r.Context(), space.ID, user.UserID)
@@ -704,8 +713,10 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 			isFollowing = rel.IsFollowing
 		}
 
-		// BUG-016: visiting the space resets its unread counter (§05).
+		// BUG-016: visiting the space resets its unread counter (§05); the
+		// pre-reset value is returned so the client can show the badge.
 		if isMember && h.Unread != nil {
+			unreadCount, _ = h.Unread.Get(r.Context(), user.UserID, space.ID)
 			_ = h.Unread.Reset(r.Context(), user.UserID, space.ID)
 		}
 	}
@@ -758,6 +769,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 			"is_owner":              isOwner,
 			"is_moderator":          isModerator,
 			"is_member":             isMember,
+			"unread_count":          unreadCount,
 			"is_pending":            isPending,
 			"is_following":          isFollowing,
 			"country_currency_code": countryCurrency,
@@ -828,7 +840,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !IsValidLevel(req.Level) {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, custom, or global")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, custom, university, or global")
 		return
 	}
 
@@ -838,12 +850,12 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// BUG-003: primary geo levels are system-seeded — members create custom
-	// spaces only. Geo levels require the spaces.admin node.
+	// BUG-003: primary levels (geo, university) are platform-seeded — members
+	// create custom spaces only. Non-custom levels require the spaces.admin node.
 	isAdmin := h.permChecker != nil && h.permChecker.HasPermission(r.Context(), user.UserID, "spaces.admin")
 	if req.Level != LevelCustom && !isAdmin {
 		errpkg.WriteError(w, http.StatusForbidden, "invalid_level",
-			"Only platform admins can create geo-level spaces")
+			"Only platform admins can create primary-level spaces")
 		return
 	}
 
@@ -904,6 +916,11 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if parent.Status != StatusActive {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent", "Parent space is not active")
+			return
+		}
+
 		if parent.Level != LevelCountry && parent.Level != LevelState && parent.Level != LevelCity {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent",
 				"Parent spaces must be primary (country, state, or city)")
@@ -961,7 +978,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 
 		if !matchedParentID.Valid {
 			errpkg.WriteError(w, http.StatusBadRequest, "missing_primary_parent",
-				"Custom spaces must be linked to at least one primary space. Select a country, state, or city, or include one in the name.")
+				"Custom spaces must be linked to at least one primary space — include a country, state, or city in the space name.")
 			return
 		}
 
@@ -1015,7 +1032,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	// meaningful for geo spaces and universities — skip it for ordinary
 	// member-created custom spaces.
 	if st, terr := h.Service.GetSpaceType(r.Context(), spaceTypeID); terr == nil &&
-		(req.Level != LevelCustom || st.Slug == "university" || st.WikiOnly) {
+		(req.Level != LevelCustom || st.WikiOnly) {
 		h.Service.EnqueueAutoPopulate(r.Context(), space.ID)
 	}
 	// Enqueue Meilisearch index sync so the new space is searchable
@@ -1101,6 +1118,15 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 
 	if req.JoiningPerm != "" && !validJoiningPerm[req.JoiningPerm] {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_permission_axes", "Invalid joining_perm value")
+		return
+	}
+
+	// Monetization is mutually exclusive (§05): paid axes conflict with an
+	// active tips configuration — owner must disable tips first.
+	if (req.JoiningPerm == "paid" || req.Visibility == "paid") &&
+		h.tipSettings != nil && h.tipSettings.SpaceTipsEnabled(r.Context(), id) {
+		errpkg.WriteError(w, http.StatusConflict, "monetization_conflict",
+			"Disable tips before enabling paid membership — a space is either tips-funded or paid")
 		return
 	}
 

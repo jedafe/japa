@@ -6,6 +6,7 @@
 	import { api } from '$lib/api/client';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import AchievementWidget from '$lib/components/spaces/AchievementWidget.svelte';
+	import TipButton from '$lib/components/tips/TipButton.svelte';
 	import SpaceFollowListModal from '$lib/components/spaces/SpaceFollowListModal.svelte';
 	import type { Space, SpaceMember, SpaceRule, Achievement } from '$lib/types';
 
@@ -162,8 +163,12 @@
 		<dl
 			class="mt-4 grid grid-flow-col grid-cols-3 grid-rows-2 gap-x-2 gap-y-1 text-center"
 		>
-			<dt class="text-xs text-[var(--color-muted)]">{t('space.members', 'Members')}</dt>
-			<dd class="text-sm font-medium text-[var(--color-text)]">{space.member_count}</dd>
+			<!-- §05 amendment — primary spaces are follow-only; the Members
+			     figure (auto-joins) is meaningless, show Followers only. -->
+			{#if !space.is_primary}
+				<dt class="text-xs text-[var(--color-muted)]">{t('space.members', 'Members')}</dt>
+				<dd class="text-sm font-medium text-[var(--color-text)]">{space.member_count}</dd>
+			{/if}
 			<dt class="text-xs text-[var(--color-muted)]">{t('space.posts', 'Posts')}</dt>
 			<dd class="text-sm font-medium text-[var(--color-text)]">{space.post_count}</dd>
 			<dt class="text-xs text-[var(--color-muted)]">{t('space.followers', 'Followers')}</dt>
@@ -180,6 +185,10 @@
 			</dd>
 		</dl>
 
+		<!-- §05 amendment — primary (platform-run) spaces are follow-only:
+		     no Join CTA (auto-joined; the platform owns them). The header
+		     Follow button remains the action. -->
+		{#if !space.is_primary}
 		{#if authed}
 			{#if joinError}
 				<p class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{joinError}</p>
@@ -211,6 +220,20 @@
 			>
 				<LogIn class="rtl:-scale-x-100" size={16} /> {t('space.join', 'Join')}
 			</a>
+		{/if}
+		{/if}
+
+		<!-- §05 space tips: member-created custom spaces only — the button
+		     fetches tip-settings and self-hides when disabled/ineligible. -->
+		{#if space.level === 'custom'}
+			<div class="mt-3">
+				<TipButton
+					recipientType="space"
+					recipientKey={space.slug}
+					recipientId={space.id}
+					recipientName={space.name}
+				/>
+			</div>
 		{/if}
 	</section>
 
@@ -256,11 +279,12 @@
 	<!-- New members widget — shows the newest approved members (the members
 	     list is ordered joined_at DESC). Hidden when the space has no
 	     members yet (audit fix: previously rendered a raw member_count line
-	     labelled "New members"). -->
+	     labelled "New members"). On primary spaces the member set IS the
+	     follower set — labelled accordingly (§05 amendment). -->
 	{#if members.length > 0}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-				<Users size={16} /> {t('space.new_members', 'New members')}
+				<Users size={16} /> {space.is_primary ? t('space.new_followers', 'New followers') : t('space.new_members', 'New members')}
 			</h2>
 			<ul class="space-y-2.5">
 				{#each members.slice(0, 5) as member (member.user_id)}
@@ -281,7 +305,9 @@
 					</li>
 				{/each}
 			</ul>
-			<p class="mt-3 text-xs text-[var(--color-muted)]">{t('space.member_count', '{n} members').replace('{n}', String(space.member_count))}</p>
+			<p class="mt-3 text-xs text-[var(--color-muted)]">{space.is_primary
+				? t('space.follower_count', '{n} followers').replace('{n}', String(space.follower_count))
+				: t('space.member_count', '{n} members').replace('{n}', String(space.member_count))}</p>
 		</section>
 	{/if}
 

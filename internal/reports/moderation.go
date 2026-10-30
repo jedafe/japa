@@ -338,7 +338,7 @@ func (s *Service) resolveWithAction(ctx context.Context, id, reviewerID pgtype.U
 		}
 	}
 
-	// ADR-129: upheld moderation deducts the offender's points —
+	// ADR-136: upheld moderation deducts the offender's points —
 	// report.upheld for warn/ban; content.flagged_removed for removals
 	// (deduped per report id).
 	s.emitModerationPenalty(ctx, action, entityType, entityID, target, hasTarget, id)

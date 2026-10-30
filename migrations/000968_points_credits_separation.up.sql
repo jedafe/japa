@@ -12,6 +12,14 @@ BEGIN;
 
 ALTER TABLE wallet_settings DROP COLUMN IF EXISTS points_to_credits_rate;
 ALTER TABLE tip_settings DROP COLUMN IF EXISTS accept_points;
+
+-- Preserve historical point-tip amounts for audit before dropping the
+-- column — the points value itself is lost data otherwise (ADR-136).
+CREATE TABLE IF NOT EXISTS tips_points_legacy AS
+SELECT id, sender_user_id, recipient_type, recipient_user_id,
+       recipient_organization_id, points_amount, created_at
+FROM tips WHERE method = 'points' AND points_amount > 0;
+
 ALTER TABLE tips DROP COLUMN IF EXISTS points_amount;
 
 DELETE FROM system_settings WHERE key IN (

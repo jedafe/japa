@@ -60,7 +60,8 @@
 	const sortOptions = $derived([
 		{ value: 'newest', label: t('universities.sort_newest', 'Newest') },
 		{ value: 'name', label: t('universities.sort_name', 'Name (A–Z)') },
-		{ value: 'members', label: t('universities.sort_members', 'Most members') },
+		// §05 amendment — universities are follow-only primary spaces; the
+		// meaningful count is followers, not (auto-joined) members.
 		{ value: 'followers', label: t('universities.sort_followers', 'Most followers') },
 		{ value: 'posts', label: t('universities.sort_posts', 'Most posts') }
 	]);
@@ -452,7 +453,7 @@
 						<DirectoryCard
 							href="/universities/{uni.slug}"
 							title={uni.name}
-							subtitle="{uni.geo_code ? `${uni.geo_code} · ` : ''}{t('meta.members', '{n} members').replace('{n}', String(uni.member_count))}"
+							subtitle="{uni.geo_code ? `${uni.geo_code} · ` : ''}{t('meta.followers', '{n} followers').replace('{n}', String(uni.follower_count))}"
 							description={uni.description}
 							imageUrl={uni.logo_url}
 							fallback={uniMark(uni)}
@@ -468,6 +469,7 @@
 										initiallyPending={uni.is_pending ?? false}
 										initiallyFollowing={uni.is_following ?? false}
 										compact
+									followOnly
 									/>
 								{/if}
 							{/snippet}
@@ -481,7 +483,6 @@
 							<tr>
 								<th class="px-4 py-2 font-medium">{t('universities.col_name', 'Name')}</th>
 								<th class="px-4 py-2 text-center font-medium">{t('universities.col_initials', 'Initials')}</th>
-								<th class="px-4 py-2 text-end font-medium">{t('universities.col_members', 'Members')}</th>
 								<th class="px-4 py-2 text-end font-medium">{t('universities.col_posts', 'Posts')}</th>
 								<th class="px-4 py-2 text-end font-medium">{t('universities.col_followers', 'Followers')}</th>
 							</tr>
@@ -516,7 +517,6 @@
 												>{uni.initials}</span>
 										{/if}
 									</td>
-									<td class="px-4 py-2.5 text-end tabular-nums text-[var(--color-muted)]">{uni.member_count}</td>
 									<td class="px-4 py-2.5 text-end tabular-nums text-[var(--color-muted)]">{uni.post_count}</td>
 									<td class="px-4 py-2.5 text-end tabular-nums text-[var(--color-muted)]">{uni.follower_count}</td>
 								</tr>

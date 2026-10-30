@@ -642,16 +642,19 @@ LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
  AND cfv.entity_type = 'space'
  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
 WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
- AND ($2::bool OR s.status = 'active')
- AND ($3::text = ''
- OR s.name ILIKE '%' || $3 || '%'
- OR s.slug ILIKE '%' || $3 || '%'
- OR cfv.value_text ILIKE '%' || $3 || '%')
- AND ($4::text = '' OR s.geo_code = $4)
- AND ($5::text = '' OR s.region = $5)
- AND ($6::text = '' OR s.subregion = $6)
+ -- @level further narrows to a hierarchy level — 'university' isolates
+ -- platform universities from member-created education spaces (§05).
+ AND ($2::text = '' OR s.level = $2)
+ AND ($3::bool OR s.status = 'active')
+ AND ($4::text = ''
+ OR s.name ILIKE '%' || $4 || '%'
+ OR s.slug ILIKE '%' || $4 || '%'
+ OR cfv.value_text ILIKE '%' || $4 || '%')
+ AND ($5::text = '' OR s.geo_code = $5)
+ AND ($6::text = '' OR s.region = $6)
+ AND ($7::text = '' OR s.subregion = $7)
  -- @within mirrors ListSpacesByTypePaginated (junction + parent_id subtree).
- AND ($7::text = '' OR EXISTS (
+ AND ($8::text = '' OR EXISTS (
  SELECT 1
  FROM (
  SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
@@ -661,14 +664,15 @@ WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = $7 AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = $7 AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = $7 AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = $8 AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = $8 AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = $8 AND ggp.level IN ('country', 'state', 'city'))
  ))
 `
 
 type CountSpacesByTypeParams struct {
 	SpaceTypeID     pgtype.UUID `json:"space_type_id"`
+	Level           string      `json:"level"`
 	IncludeInactive bool        `json:"include_inactive"`
 	Search          string      `json:"search"`
 	GeoCode         string      `json:"geo_code"`
@@ -683,6 +687,7 @@ type CountSpacesByTypeParams struct {
 func (q *Queries) CountSpacesByType(ctx context.Context, arg CountSpacesByTypeParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countSpacesByType,
 		arg.SpaceTypeID,
+		arg.Level,
 		arg.IncludeInactive,
 		arg.Search,
 		arg.GeoCode,
@@ -1023,7 +1028,7 @@ keyword_matches AS (
  WHERE s.deleted_at IS NULL
  AND s.visibility = 'public'
  AND s.status = 'active'
- AND (s.level IN ('country', 'state', 'city') OR st.category = 'education')
+ AND s.level IN ('country', 'state', 'city', 'university')
  AND s.keywords && $1::text[]
 ),
 name_matches AS (
@@ -1040,7 +1045,7 @@ name_matches AS (
  WHERE s.deleted_at IS NULL
  AND s.visibility = 'public'
  AND s.status = 'active'
- AND (s.level IN ('country', 'state', 'city') OR st.category = 'education')
+ AND s.level IN ('country', 'state', 'city', 'university')
  AND LOWER(s.name) = tn.kw
 ),
 initials_matches AS (
@@ -1059,7 +1064,7 @@ initials_matches AS (
  WHERE s.deleted_at IS NULL
  AND s.visibility = 'public'
  AND s.status = 'active'
- AND st.slug = 'university'
+ AND s.level = 'university'
  AND LOWER(cfv.value_text) = tn.kw
 )
 SELECT
@@ -1491,12 +1496,12 @@ SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
  joining_perm, status, created_at, updated_at, deleted_at, currency_code,
- (creator_user_id IS NULL OR level <> 'custom') AS is_primary
+ (spaces.creator_user_id IS NULL OR spaces.level <> 'custom') AS is_primary
 FROM spaces
-WHERE slug = $1
- AND visibility = 'public'
- AND status = 'active'
- AND deleted_at IS NULL
+WHERE spaces.slug = $1
+ AND spaces.visibility = 'public'
+ AND spaces.status = 'active'
+ AND spaces.deleted_at IS NULL
 `
 
 type GetPublicSpaceBySlugRow struct {
@@ -1639,9 +1644,9 @@ SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
  joining_perm, status, created_at, updated_at, deleted_at, currency_code,
- (creator_user_id IS NULL OR level <> 'custom') AS is_primary
+ (spaces.creator_user_id IS NULL OR spaces.level <> 'custom') AS is_primary
 FROM spaces
-WHERE id = $1 AND deleted_at IS NULL
+WHERE spaces.id = $1 AND spaces.deleted_at IS NULL
 `
 
 type GetSpaceByIDRow struct {
@@ -1710,12 +1715,12 @@ SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
  joining_perm, status, created_at, updated_at, deleted_at, currency_code,
- (creator_user_id IS NULL OR level <> 'custom') AS is_primary
+ (spaces.creator_user_id IS NULL OR spaces.level <> 'custom') AS is_primary
 FROM spaces
-WHERE deleted_at IS NULL
+WHERE spaces.deleted_at IS NULL
   AND (
-    slug = $1
-    OR id = CASE
+    spaces.slug = $1
+    OR spaces.id = CASE
         WHEN $1 ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
         THEN $1::uuid
         ELSE NULL
@@ -2283,45 +2288,52 @@ func (q *Queries) ListAllSpaceJoinRequests(ctx context.Context, arg ListAllSpace
 
 const listAllSpacesForAdmin = `-- name: ListAllSpacesForAdmin :many
 SELECT s.id, s.name, s.slug, s.level, s.space_type_id,
- (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary
+ (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary,
+ (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary_space
 FROM spaces s
 LEFT JOIN users u ON u.id = $1
 WHERE s.deleted_at IS NULL
  AND ($2::text = '' OR s.name ILIKE '%' || $2 || '%' OR s.slug ILIKE '%' || $2 || '%')
  AND ($3::text = '' OR s.level = $3)
  AND ($4::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = $4)
+ AND ($5::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
 ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) DESC, s.created_at DESC, s.id DESC
-LIMIT $6 OFFSET $5
+LIMIT $7 OFFSET $6
 `
 
 type ListAllSpacesForAdminParams struct {
-	UserID      pgtype.UUID `json:"user_id"`
-	Search      string      `json:"search"`
-	Level       string      `json:"level"`
-	SpaceTypeID pgtype.UUID `json:"space_type_id"`
-	OffsetVal   int32       `json:"offset_val"`
-	LimitVal    int32       `json:"limit_val"`
+	UserID        pgtype.UUID `json:"user_id"`
+	Search        string      `json:"search"`
+	Level         string      `json:"level"`
+	SpaceTypeID   pgtype.UUID `json:"space_type_id"`
+	MemberCreated bool        `json:"member_created"`
+	OffsetVal     int32       `json:"offset_val"`
+	LimitVal      int32       `json:"limit_val"`
 }
 
 type ListAllSpacesForAdminRow struct {
-	ID          pgtype.UUID `json:"id"`
-	Name        string      `json:"name"`
-	Slug        string      `json:"slug"`
-	Level       string      `json:"level"`
-	SpaceTypeID pgtype.UUID `json:"space_type_id"`
-	IsPrimary   *bool       `json:"is_primary"`
+	ID             pgtype.UUID `json:"id"`
+	Name           string      `json:"name"`
+	Slug           string      `json:"slug"`
+	Level          string      `json:"level"`
+	SpaceTypeID    pgtype.UUID `json:"space_type_id"`
+	IsPrimary      *bool       `json:"is_primary"`
+	IsPrimarySpace *bool       `json:"is_primary_space"`
 }
 
 // Returns every active space in the platform with no visibility or membership
 // filter. Used by GET /me/spaces when the caller is a super_admin so they can
 // post to any space without joining it first (Section 03 — admin override).
 // Selects the lean fields and flags the caller's primary geo space.
+// is_primary_space is the §05 platform-primary flag; @member_created
+// restricts to member-created spaces (composers).
 func (q *Queries) ListAllSpacesForAdmin(ctx context.Context, arg ListAllSpacesForAdminParams) ([]ListAllSpacesForAdminRow, error) {
 	rows, err := q.db.Query(ctx, listAllSpacesForAdmin,
 		arg.UserID,
 		arg.Search,
 		arg.Level,
 		arg.SpaceTypeID,
+		arg.MemberCreated,
 		arg.OffsetVal,
 		arg.LimitVal,
 	)
@@ -2339,6 +2351,7 @@ func (q *Queries) ListAllSpacesForAdmin(ctx context.Context, arg ListAllSpacesFo
 			&i.Level,
 			&i.SpaceTypeID,
 			&i.IsPrimary,
+			&i.IsPrimarySpace,
 		); err != nil {
 			return nil, err
 		}
@@ -3147,7 +3160,7 @@ SELECT id, name, slug, description, icon, field_group_id, is_system, created_at,
 FROM space_types
 WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR category = $2)
- AND ($3::boolean = false OR (category IS NOT NULL AND slug <> 'university'))
+ AND ($3::boolean = false OR category IS NOT NULL)
 ORDER BY created_at ASC, id ASC
 `
 
@@ -3160,8 +3173,8 @@ type ListSpaceTypesFilteredParams struct {
 // Supports optional search (q), category filter, and a selectable-only flag
 // for the admin panel and the member space-creation flow. Pass empty strings
 // and false booleans to skip filters. Selectable = member-creatable types:
-// has a category AND not 'university' (a platform-run primary type —
-// universities are platform-seeded, never member-created).
+// has a category (education included — members create custom education
+// spaces; universities are level='university' rows under it).
 func (q *Queries) ListSpaceTypesFiltered(ctx context.Context, arg ListSpaceTypesFilteredParams) ([]SpaceType, error) {
 	rows, err := q.db.Query(ctx, listSpaceTypesFiltered, arg.Search, arg.CategoryFilter, arg.SelectableOnly)
 	if err != nil {
@@ -3533,7 +3546,8 @@ func (q *Queries) ListSpacesByLevel(ctx context.Context, arg ListSpacesByLevelPa
 
 const listSpacesByMemberUser = `-- name: ListSpacesByMemberUser :many
 SELECT s.id, s.name, s.slug, s.level, s.space_type_id,
- (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary
+ (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary,
+ (s.creator_user_id IS NULL OR s.level <> 'custom') AS is_primary_space
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 LEFT JOIN users u ON u.id = $1
@@ -3541,37 +3555,44 @@ WHERE sm.user_id = $1 AND s.deleted_at IS NULL
  AND ($2::text = '' OR s.name ILIKE '%' || $2 || '%' OR s.slug ILIKE '%' || $2 || '%')
  AND ($3::text = '' OR s.level = $3)
  AND ($4::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = $4)
+ AND ($5::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
 ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) DESC, sm.joined_at DESC, s.id DESC
-LIMIT $6 OFFSET $5
+LIMIT $7 OFFSET $6
 `
 
 type ListSpacesByMemberUserParams struct {
-	UserID      pgtype.UUID `json:"user_id"`
-	Search      string      `json:"search"`
-	Level       string      `json:"level"`
-	SpaceTypeID pgtype.UUID `json:"space_type_id"`
-	OffsetVal   int32       `json:"offset_val"`
-	LimitVal    int32       `json:"limit_val"`
+	UserID        pgtype.UUID `json:"user_id"`
+	Search        string      `json:"search"`
+	Level         string      `json:"level"`
+	SpaceTypeID   pgtype.UUID `json:"space_type_id"`
+	MemberCreated bool        `json:"member_created"`
+	OffsetVal     int32       `json:"offset_val"`
+	LimitVal      int32       `json:"limit_val"`
 }
 
 type ListSpacesByMemberUserRow struct {
-	ID          pgtype.UUID `json:"id"`
-	Name        string      `json:"name"`
-	Slug        string      `json:"slug"`
-	Level       string      `json:"level"`
-	SpaceTypeID pgtype.UUID `json:"space_type_id"`
-	IsPrimary   *bool       `json:"is_primary"`
+	ID             pgtype.UUID `json:"id"`
+	Name           string      `json:"name"`
+	Slug           string      `json:"slug"`
+	Level          string      `json:"level"`
+	SpaceTypeID    pgtype.UUID `json:"space_type_id"`
+	IsPrimary      *bool       `json:"is_primary"`
+	IsPrimarySpace *bool       `json:"is_primary_space"`
 }
 
 // Returns the lean fields the main-app nav, composer, and dashboard need
 // (id, name, slug, is_primary). is_primary is derived from the user's
 // current_geo_space_id so the dashboard can badge the primary space.
+// is_primary_space is the §05 platform-primary flag (geo level or
+// platform-seeded type like university) — distinct from is_primary.
+// @member_created restricts to member-created spaces (composers).
 func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMemberUserParams) ([]ListSpacesByMemberUserRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByMemberUser,
 		arg.UserID,
 		arg.Search,
 		arg.Level,
 		arg.SpaceTypeID,
+		arg.MemberCreated,
 		arg.OffsetVal,
 		arg.LimitVal,
 	)
@@ -3589,6 +3610,7 @@ func (q *Queries) ListSpacesByMemberUser(ctx context.Context, arg ListSpacesByMe
 			&i.Level,
 			&i.SpaceTypeID,
 			&i.IsPrimary,
+			&i.IsPrimarySpace,
 		); err != nil {
 			return nil, err
 		}
@@ -4098,20 +4120,23 @@ LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
  AND cfv.entity_type = 'space'
  AND cfv.field_id = '00000000-0000-0000-0000-000000000090'::uuid
 WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
- AND ($2::bool OR s.status = 'active')
- AND ($3::text = ''
- OR s.name ILIKE '%' || $3 || '%'
- OR s.slug ILIKE '%' || $3 || '%'
- OR cfv.value_text ILIKE '%' || $3 || '%')
- AND ($4::text = '' OR s.geo_code = $4)
- AND ($5::text = '' OR s.region = $5)
- AND ($6::text = '' OR s.subregion = $6)
+ -- @level further narrows to a hierarchy level — 'university' isolates
+ -- platform universities from member-created education spaces (§05).
+ AND ($2::text = '' OR s.level = $2)
+ AND ($3::bool OR s.status = 'active')
+ AND ($4::text = ''
+ OR s.name ILIKE '%' || $4 || '%'
+ OR s.slug ILIKE '%' || $4 || '%'
+ OR cfv.value_text ILIKE '%' || $4 || '%')
+ AND ($5::text = '' OR s.geo_code = $5)
+ AND ($6::text = '' OR s.region = $6)
+ AND ($7::text = '' OR s.subregion = $7)
  -- @within is a primary-space slug (country/state/city): match when the
  -- space is linked — via the space_parent_spaces junction or spaces.parent_id
  -- — to that space or any of its descendants (e.g. a state slug also matches
  -- spaces linked to one of its cities). The level guard keeps non-geo slugs
  -- from matching, and deleted ancestors can't satisfy the filter.
- AND ($7::text = '' OR EXISTS (
+ AND ($8::text = '' OR EXISTS (
  SELECT 1
  FROM (
  SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
@@ -4121,25 +4146,26 @@ WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = $7 AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = $7 AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = $7 AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = $8 AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = $8 AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = $8 AND ggp.level IN ('country', 'state', 'city'))
  ))
 ORDER BY
- CASE WHEN $8::text = 'name' THEN s.name ELSE NULL END ASC,
- CASE WHEN $8::text = 'name_desc' THEN s.name ELSE NULL END DESC,
+ CASE WHEN $9::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN $9::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
- WHEN $8::text = 'members' THEN s.member_count
- WHEN $8::text = 'followers' THEN s.follower_count
- WHEN $8::text = 'posts' THEN s.post_count
+ WHEN $9::text = 'members' THEN s.member_count
+ WHEN $9::text = 'followers' THEN s.follower_count
+ WHEN $9::text = 'posts' THEN s.post_count
  ELSE NULL
  END DESC,
  s.created_at DESC, s.id DESC
-LIMIT $10 OFFSET $9
+LIMIT $11 OFFSET $10
 `
 
 type ListSpacesByTypePaginatedParams struct {
 	SpaceTypeID     pgtype.UUID `json:"space_type_id"`
+	Level           string      `json:"level"`
 	IncludeInactive bool        `json:"include_inactive"`
 	Search          string      `json:"search"`
 	GeoCode         string      `json:"geo_code"`
@@ -4191,6 +4217,7 @@ type ListSpacesByTypePaginatedRow struct {
 func (q *Queries) ListSpacesByTypePaginated(ctx context.Context, arg ListSpacesByTypePaginatedParams) ([]ListSpacesByTypePaginatedRow, error) {
 	rows, err := q.db.Query(ctx, listSpacesByTypePaginated,
 		arg.SpaceTypeID,
+		arg.Level,
 		arg.IncludeInactive,
 		arg.Search,
 		arg.GeoCode,
@@ -4271,6 +4298,9 @@ WHERE s.deleted_at IS NULL
  AND ($5::text = '' OR s.region = $5)
  AND ($6::text = '' OR s.subregion = $6)
  AND ($7::uuid IS NULL OR s.space_type_id = $7::uuid)
+ -- member-created = custom level + has a creator + member-selectable type
+ -- (category IS NOT NULL AND not university). University-typed spaces are
+ -- primary like geo regardless of creator (§05 amendment).
  AND ($8::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.

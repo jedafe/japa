@@ -402,7 +402,7 @@
 				</span>
 			</label>
 
-			<div class="grid grid-cols-2 gap-4">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div>
 					<label for="ad-budget" class="mb-1 block text-sm font-medium">{t('ads.budget', 'Budget (credits)')}</label>
 					<input id="ad-budget" type="number" min="0" disabled={isHouse} class="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-50" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={budget} placeholder={isHouse ? '—' : '1000'} />

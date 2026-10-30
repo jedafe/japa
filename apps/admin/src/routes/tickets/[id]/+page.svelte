@@ -311,7 +311,7 @@
 					<h2 class="text-lg font-semibold">{t('tickets.detail.details', 'Details')}</h2>
 				</CardHeader>
 				<CardContent>
-					<dl class="grid grid-cols-2 gap-4 text-sm">
+					<dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
 						<div>
 							<dt class="text-muted-foreground">{t('tickets.subject', 'Subject')}</dt>
 							<dd class="font-medium">{ticket.subject}</dd>
@@ -450,7 +450,7 @@
 			<label class="text-sm font-medium" for="edit-subject">{t('tickets.subject', 'Subject')}</label>
 			<input id="edit-subject" bind:value={editForm.subject} class="mt-1 w-full rounded-lg border border-border bg-background p-2 text-sm" />
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<label class="text-sm font-medium" for="edit-status">{t('common.status', 'Status')}</label>
 				<AutocompleteSelect

@@ -467,7 +467,7 @@
     </div>
   {/if}
   {#if searchable || (createLabel && onCreate) || hideableColumns.length > 0}
-    <div class="mb-3 flex items-center gap-3">
+    <div class="mb-3 flex flex-wrap items-center gap-3">
       {#if searchable}
         <!-- Optional debounced search box that persists the query to the URL. -->
         <div class="relative flex-1">

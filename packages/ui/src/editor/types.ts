@@ -45,4 +45,6 @@ export interface EditorFeatures {
 	youtube?: boolean;
 	/** Markdown mode tab + getMarkdown/setContent markdown round-trip. */
 	markdown?: boolean;
+	/** §45 FAQ accordion block (details/summary markup). On unless false. */
+	faq?: boolean;
 }

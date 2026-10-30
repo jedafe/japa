@@ -468,6 +468,7 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 WHERE c.content_type = 'achievement'
   AND c.status = 'published' AND c.deleted_at IS NULL
   AND ds.slug = $1
+  AND ds.deleted_at IS NULL AND ds.status = 'active' AND ds.visibility = 'public'
 ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
 LIMIT $2
 `

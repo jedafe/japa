@@ -217,19 +217,20 @@ func (s *Service) ListSpaces(ctx context.Context, viewerUserID pgtype.UUID) ([]g
 // level, region, subregion, sort, and visibility filtering (SPACES-009/011).
 // Replaces the in-memory filter+paginate in the ListSpaces handler for the
 // default (no type/parent filter) branch.
-func (s *Service) ListSpacesPaginated(ctx context.Context, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion, sort string, spaceTypeID pgtype.UUID, joinedOnly bool, limit, offset int32) ([]gen.ListSpacesPaginatedRow, error) {
+func (s *Service) ListSpacesPaginated(ctx context.Context, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion, sort string, spaceTypeID pgtype.UUID, joinedOnly, memberCreated bool, limit, offset int32) ([]gen.ListSpacesPaginatedRow, error) {
 	spaces, err := s.read.ListSpacesPaginated(ctx, gen.ListSpacesPaginatedParams{
-		ViewerUserID: viewerUserID,
-		Search:       search,
-		GeoCode:      geoCode,
-		Level:        level,
-		Region:       region,
-		Subregion:    subregion,
-		Sort:         sort,
-		SpaceTypeID:  spaceTypeID,
-		JoinedOnly:   joinedOnly,
-		LimitVal:     limit,
-		OffsetVal:    offset,
+		ViewerUserID:  viewerUserID,
+		Search:        search,
+		GeoCode:       geoCode,
+		Level:         level,
+		Region:        region,
+		Subregion:     subregion,
+		Sort:          sort,
+		SpaceTypeID:   spaceTypeID,
+		JoinedOnly:    joinedOnly,
+		MemberCreated: memberCreated,
+		LimitVal:      limit,
+		OffsetVal:     offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces paginated: %w", err)
@@ -240,16 +241,17 @@ func (s *Service) ListSpacesPaginated(ctx context.Context, viewerUserID pgtype.U
 
 // CountSpaces returns the total count of spaces matching the paginated
 // discovery filters (SPACES-009).
-func (s *Service) CountSpaces(ctx context.Context, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion string, spaceTypeID pgtype.UUID, joinedOnly bool) (int64, error) {
+func (s *Service) CountSpaces(ctx context.Context, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion string, spaceTypeID pgtype.UUID, joinedOnly, memberCreated bool) (int64, error) {
 	total, err := s.read.CountSpaces(ctx, gen.CountSpacesParams{
-		ViewerUserID: viewerUserID,
-		Search:       search,
-		GeoCode:      geoCode,
-		Level:        level,
-		Region:       region,
-		Subregion:    subregion,
-		SpaceTypeID:  spaceTypeID,
-		JoinedOnly:   joinedOnly,
+		ViewerUserID:  viewerUserID,
+		Search:        search,
+		GeoCode:       geoCode,
+		Level:         level,
+		Region:        region,
+		Subregion:     subregion,
+		SpaceTypeID:   spaceTypeID,
+		JoinedOnly:    joinedOnly,
+		MemberCreated: memberCreated,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting spaces: %w", err)
@@ -316,15 +318,16 @@ func (s *Service) AdminListSpacesCount(ctx context.Context, search, status, visi
 // no filter. level and spaceTypeID filter by hierarchy level and space type;
 // pass "" and a zero UUID to skip. limit/offset are applied at the SQL level
 // to keep the payload small for the authenticated shell (most callers only need the first page).
-func (s *Service) ListSpacesByMember(ctx context.Context, userID pgtype.UUID, search, level string, spaceTypeID pgtype.UUID, limit, offset int32) ([]gen.ListSpacesByMemberUserRow, error) {
+func (s *Service) ListSpacesByMember(ctx context.Context, userID pgtype.UUID, search, level string, spaceTypeID pgtype.UUID, memberCreated bool, limit, offset int32) ([]gen.ListSpacesByMemberUserRow, error) {
 	spaces, err := s.read.ListSpacesByMemberUser(ctx, gen.ListSpacesByMemberUserParams{
 		UserID: userID,
 
-		Search:      search,
-		Level:       level,
-		SpaceTypeID: spaceTypeID,
-		LimitVal:    limit,
-		OffsetVal:   offset,
+		Search:        search,
+		Level:         level,
+		SpaceTypeID:   spaceTypeID,
+		MemberCreated: memberCreated,
+		LimitVal:      limit,
+		OffsetVal:     offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by member: %w", err)
@@ -337,15 +340,16 @@ func (s *Service) ListSpacesByMember(ctx context.Context, userID pgtype.UUID, se
 // visibility or membership filter. Used by GET /me/spaces when the caller is
 // a super_admin so they can post to any space without joining it first
 // (Section 03 — admin override).
-func (s *Service) ListAllSpacesForAdmin(ctx context.Context, userID pgtype.UUID, search, level string, spaceTypeID pgtype.UUID, limit, offset int32) ([]gen.ListAllSpacesForAdminRow, error) {
+func (s *Service) ListAllSpacesForAdmin(ctx context.Context, userID pgtype.UUID, search, level string, spaceTypeID pgtype.UUID, memberCreated bool, limit, offset int32) ([]gen.ListAllSpacesForAdminRow, error) {
 	spaces, err := s.read.ListAllSpacesForAdmin(ctx, gen.ListAllSpacesForAdminParams{
 		UserID: userID,
 
-		Search:      search,
-		Level:       level,
-		SpaceTypeID: spaceTypeID,
-		LimitVal:    limit,
-		OffsetVal:   offset,
+		Search:        search,
+		Level:         level,
+		SpaceTypeID:   spaceTypeID,
+		MemberCreated: memberCreated,
+		LimitVal:      limit,
+		OffsetVal:     offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing all spaces for admin: %w", err)
@@ -565,7 +569,7 @@ func (s *Service) ListSpacesByType(ctx context.Context, viewerUserID, spaceTypeI
 // 'members', 'followers', 'posts'). within is a primary-space slug
 // (country/state/city) matched against the space_parent_spaces junction and
 // spaces.parent_id, including descendants of the target.
-func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within string, includeInactive bool, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
+func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within, level string, includeInactive bool, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
 	spaces, err := s.read.ListSpacesByTypePaginated(ctx, gen.ListSpacesByTypePaginatedParams{
 		SpaceTypeID:     spaceTypeID,
 		IncludeInactive: includeInactive,
@@ -574,6 +578,7 @@ func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgt
 		Region:          region,
 		Subregion:       subregion,
 		Within:          within,
+		Level:           level,
 		Sort:            sort,
 		LimitVal:        limit,
 		OffsetVal:       offset,
@@ -588,7 +593,7 @@ func (s *Service) ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgt
 // CountSpacesByType returns the total count of spaces of the given type,
 // matching the same optional search, geo_code, region, subregion, and
 // within filters as ListSpacesByTypePaginated.
-func (s *Service) CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within string, includeInactive bool) (int64, error) {
+func (s *Service) CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, within, level string, includeInactive bool) (int64, error) {
 	total, err := s.read.CountSpacesByType(ctx, gen.CountSpacesByTypeParams{
 		SpaceTypeID:     spaceTypeID,
 		IncludeInactive: includeInactive,
@@ -597,6 +602,7 @@ func (s *Service) CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID
 		Region:          region,
 		Subregion:       subregion,
 		Within:          within,
+		Level:           level,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting spaces by type: %w", err)
@@ -610,20 +616,21 @@ func (s *Service) CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID
 // search/geo/level/region/subregion/sort/visibility filter set as
 // ListSpacesPaginated. Replaces the unfiltered ListChildSpaces/
 // ListSpacesByParentAndLevel branches in the directory ListSpaces handler.
-func (s *Service) ListSpacesByParentPaginated(ctx context.Context, viewerUserID, parentID pgtype.UUID, search, geoCode, level, region, subregion, sort string, joinedOnly bool, limit, offset int32) ([]gen.ListSpacesByParentPaginatedRow, error) {
+func (s *Service) ListSpacesByParentPaginated(ctx context.Context, viewerUserID, parentID pgtype.UUID, search, geoCode, level, region, subregion, sort string, joinedOnly, memberCreated bool, limit, offset int32) ([]gen.ListSpacesByParentPaginatedRow, error) {
 	spaces, err := s.read.ListSpacesByParentPaginated(ctx, gen.ListSpacesByParentPaginatedParams{
 		ParentID: parentID,
 
-		ViewerUserID: viewerUserID,
-		Search:       search,
-		GeoCode:      geoCode,
-		Level:        level,
-		Region:       region,
-		Subregion:    subregion,
-		Sort:         sort,
-		JoinedOnly:   joinedOnly,
-		LimitVal:     limit,
-		OffsetVal:    offset,
+		ViewerUserID:  viewerUserID,
+		Search:        search,
+		GeoCode:       geoCode,
+		Level:         level,
+		Region:        region,
+		Subregion:     subregion,
+		Sort:          sort,
+		JoinedOnly:    joinedOnly,
+		MemberCreated: memberCreated,
+		LimitVal:      limit,
+		OffsetVal:     offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces by parent (paginated): %w", err)
@@ -634,17 +641,18 @@ func (s *Service) ListSpacesByParentPaginated(ctx context.Context, viewerUserID,
 
 // CountSpacesByParent returns the total count of child spaces matching the
 // same filters as ListSpacesByParentPaginated.
-func (s *Service) CountSpacesByParent(ctx context.Context, viewerUserID, parentID pgtype.UUID, search, geoCode, level, region, subregion string, joinedOnly bool) (int64, error) {
+func (s *Service) CountSpacesByParent(ctx context.Context, viewerUserID, parentID pgtype.UUID, search, geoCode, level, region, subregion string, joinedOnly, memberCreated bool) (int64, error) {
 	total, err := s.read.CountSpacesByParent(ctx, gen.CountSpacesByParentParams{
 		ParentID: parentID,
 
-		ViewerUserID: viewerUserID,
-		Search:       search,
-		GeoCode:      geoCode,
-		Level:        level,
-		Region:       region,
-		Subregion:    subregion,
-		JoinedOnly:   joinedOnly,
+		ViewerUserID:  viewerUserID,
+		Search:        search,
+		GeoCode:       geoCode,
+		Level:         level,
+		Region:        region,
+		Subregion:     subregion,
+		JoinedOnly:    joinedOnly,
+		MemberCreated: memberCreated,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting spaces by parent: %w", err)
@@ -829,6 +837,11 @@ func (s *Service) CreateSpaceWithOwner(
 ) (gen.CreateSpaceRow, error) {
 	s.coerceWikiOnlyAxes(ctx, &params)
 
+	// §05 amendment — member-created spaces stamp creator_user_id (the
+	// primary/member discriminator). Platform-seeded callers use plain
+	// CreateSpace and leave it NULL.
+	params.CreatorUserID = creatorUserID
+
 	space, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.CreateSpaceRow, error) {
 		space, err := q.CreateSpace(ctx, params)
 		if err != nil {
@@ -842,9 +855,8 @@ func (s *Service) CreateSpaceWithOwner(
 			return gen.CreateSpaceRow{}, fmt.Errorf("adding space owner: %w", err)
 		}
 
-		if err := q.IncrementSpaceCount(ctx, space.ID); err != nil {
-			return gen.CreateSpaceRow{}, fmt.Errorf("incrementing member count: %w", err)
-		}
+		// member_count: the AddSpaceOwner insert above fires
+		// trg_space_member_count, so no explicit increment is needed.
 
 		for _, psid := range parentSpaceIDs {
 			if err := q.AddParentSpace(ctx, gen.AddParentSpaceParams{
@@ -871,14 +883,9 @@ func (s *Service) maybeCreateSourceForSpace(ctx context.Context, space gen.Creat
 		return
 	}
 
-	st, err := s.GetSpaceType(ctx, space.SpaceTypeID)
-	if err != nil {
-		slog.Warn("spaces: failed to resolve space type for source creation", "space_id", space.ID, "error", err)
-		return
-	}
-
-	isUniversity := st.Slug == "university" || st.Slug == "universities"
-	if !isUniversity {
+	// §05 amendment — universities are education-typed; level is the
+	// discriminator (member education spaces are level='custom').
+	if space.Level != "university" {
 		return
 	}
 
@@ -1305,15 +1312,9 @@ func (s *Service) HardDeleteSpace(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// IncrementSpaceCount adjusts the member count of a space by delta (positive
-// or negative), scoped to the platform.
-func (s *Service) IncrementSpaceCount(ctx context.Context, id pgtype.UUID) error {
-	if err := s.write.IncrementSpaceCount(ctx, id); err != nil {
-		return fmt.Errorf("incrementing space count: %w", err)
-	}
-
-	return nil
-}
+// member_count is maintained by trg_space_member_count (migration 000967):
+// every space_members INSERT/DELETE/status change adjusts the counter in the
+// same transaction, so no IncrementSpaceCount service method exists.
 
 // ---------------------------------------------------------------------------
 // Space Rules

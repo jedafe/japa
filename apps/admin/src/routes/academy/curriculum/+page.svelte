@@ -888,7 +888,7 @@
 					bind:value={newLesson.content}
 				></textarea>
 			</div>
-			<div class="grid grid-cols-2 gap-4">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div>
 					<label for="lesson-duration" class="mb-1 block text-sm font-medium text-foreground">{t('app.academy.duration_minutes', 'Duration (min)')}</label>
 					<input
@@ -988,7 +988,7 @@
 					<label for="edit-track-subscription-eligible" class="text-sm text-foreground">{t('app.academy.subscription_eligible', 'Subscription eligible')}</label>
 					<span class="text-xs text-muted">{t('app.academy.subscription_eligible_hint', '(included in subscription packages)')}</span>
 				</div>
-				<div class="grid grid-cols-2 gap-4">
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 					<div>
 						<label for="edit-track-sort-order" class="mb-1 block text-sm font-medium text-foreground">{t('app.academy.sort_order', 'Sort Order')}</label>
 						<input
@@ -1067,7 +1067,7 @@
 						bind:value={editForm.content}
 					></textarea>
 				</div>
-				<div class="grid grid-cols-2 gap-4">
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 					<div>
 						<label for="edit-lesson-duration" class="mb-1 block text-sm font-medium text-foreground">{t('app.academy.duration_minutes', 'Duration (min)')}</label>
 						<input

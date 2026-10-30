@@ -188,6 +188,16 @@ export const SLASH_BLOCKS: SlashBlock[] = [
 			e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
 	},
 	{
+		key: 'faq',
+		labelKey: 'create.slash.faq',
+		descKey: 'create.slash.faq_desc',
+		label: 'FAQ',
+		desc: 'Collapsible questions & answers',
+		icon: 'MessageCircleQuestion',
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		run: (e) => (e.chain().focus() as any).insertFaq().run()
+	},
+	{
 		key: 'coupon',
 		labelKey: 'create.slash.coupon',
 		descKey: 'create.slash.coupon_desc',

@@ -1,4 +1,4 @@
-// Package japastage — journeys.go implements ADR-129 Concurrent Journeys.
+// Package japastage — journeys.go implements ADR-136 Concurrent Journeys.
 // user_journeys rows hold concurrent and past journeys beside the primary
 // profile journey (user_profiles.japa_intent/japa_stage). Each journey owns
 // an intent×stage pair under the ADR-122 class rule, a lifecycle status,
@@ -8,7 +8,7 @@
 //
 // Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 //
-//	japaconnect-engineering/adr/ADR-129-concurrent-journeys.md
+//	japaconnect-engineering/adr/ADR-136-concurrent-journeys.md
 package japastage
 
 import (
@@ -21,7 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// Journey lifecycle statuses (ADR-129). Transition rules live in
+// Journey lifecycle statuses (ADR-136). Transition rules live in
 // validJourneyTransitions — status changes only via those edges; travel
 // windows are informational and never drive transitions.
 const (
@@ -63,7 +63,7 @@ func ValidJourneyTransition(from, to string) bool {
 var ErrInvalidJourneyTransition = errors.New("japastage: invalid journey status transition")
 
 // ErrJourneyLimitReached is returned when a member holds
-// japa_stage.max_journeys non-deleted journeys (ADR-129).
+// japa_stage.max_journeys non-deleted journeys (ADR-136).
 var ErrJourneyLimitReached = errors.New("japastage: journey limit reached")
 
 // ErrInvalidJourneyDate is returned when a submitted travel_start or
@@ -213,7 +213,7 @@ func (s *Service) ListJourneys(ctx context.Context, userID pgtype.UUID) ([]Journ
 
 // CreateJourney inserts a journey row. Stage defaults to "planning" and is
 // validated against the intent class; status on create is planned|active
-// only. The member cap is japa_stage.max_journeys (ADR-129).
+// only. The member cap is japa_stage.max_journeys (ADR-136).
 func (s *Service) CreateJourney(ctx context.Context, userID pgtype.UUID, in JourneyInput) (JourneyDTO, error) {
 	if !ValidIntent(in.Intent) {
 		return JourneyDTO{}, ErrInvalidJourneyInput
@@ -251,7 +251,7 @@ func (s *Service) CreateJourney(ctx context.Context, userID pgtype.UUID, in Jour
 		return JourneyDTO{}, err
 	}
 
-	// japa_stage.max_journeys caps live journeys (ADR-129); fall back to
+	// japa_stage.max_journeys caps live journeys (ADR-136); fall back to
 	// the seeded default when settings are unavailable (tests).
 	max := 10
 	if s.settings != nil {

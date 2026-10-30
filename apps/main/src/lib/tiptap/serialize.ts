@@ -334,6 +334,21 @@ function renderNode(node: PMNode, deleted?: Set<string>, deletedLabel?: string):
 			const url = escapeAttr(safeUrl(String(node.attrs?.url ?? '')));
 			return `<div class="link-preview-placeholder" data-type="link-preview" data-url="${url}"></div>`;
 		}
+		// §45 FAQ accordion — same details/summary markup the editor emits.
+		// name="jc-faq" gives the published accordion single-open semantics.
+		case 'faq': {
+			// First item opens by default; the name="jc-faq" group on each
+			// item keeps single-open accordion semantics.
+			const kids = (node.content ?? []).map((n) => renderNode(n, deleted, deletedLabel));
+			if (kids.length) kids[0] = kids[0].replace('<details ', '<details open ');
+			return `<div data-type="faq" class="faq-block">${kids.join('')}</div>`;
+		}
+		case 'faqItem':
+			return `<details data-type="faq-item" class="faq-item" name="jc-faq">${inner}</details>`;
+		case 'faqSummary':
+			return `<summary data-type="faq-question" class="faq-question">${inner}</summary>`;
+		case 'faqContent':
+			return `<div data-type="faq-answer" class="faq-answer">${inner}</div>`;
 		default:
 			// Unknown node — render its children inline if any, else skip.
 			return inner;

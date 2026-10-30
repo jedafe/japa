@@ -185,7 +185,7 @@
 </script>
 
 {#if items.length > 1}
-	<nav class="mb-4 flex items-center gap-1 text-sm" aria-label={t('common.breadcrumb', 'Breadcrumb')}>
+	<nav class="mb-4 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm" aria-label={t('common.breadcrumb', 'Breadcrumb')}>
 		{#each items as item, i (i)}
 			{#if i > 0}
 				<ChevronRight class="h-3 w-3 rtl:-scale-x-100" style="color: var(--color-muted)" />

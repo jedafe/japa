@@ -64,7 +64,7 @@ func mustUUID(t *testing.T, s string) pgtype.UUID {
 func TestIsValidLevel(t *testing.T) {
 	t.Parallel()
 
-	for _, level := range []string{LevelCountry, LevelState, LevelCity, LevelCustom} {
+	for _, level := range []string{LevelCountry, LevelState, LevelCity, LevelCustom, LevelUniversity} {
 		if !IsValidLevel(level) {
 			t.Errorf("IsValidLevel(%q) = false, want true", level)
 		}

@@ -271,7 +271,7 @@
 		</div>
 
 		<!-- Details grid -->
-		<div class="grid grid-cols-2 gap-3">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<div>
 				<p class="mb-0.5 text-xs font-medium" style="color: var(--color-muted)">{t('pageBuilder.name', 'Name')}</p>
 				<p class="text-sm" style="color: var(--color-foreground)">{row.name}</p>

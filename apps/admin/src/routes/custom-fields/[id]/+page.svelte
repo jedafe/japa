@@ -623,7 +623,7 @@
 							</span>
 						{/each}
 					</div>
-					<div class="mt-3 grid grid-cols-2 gap-3">
+					<div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
 						<div>
 							<span class="mb-1 block text-xs font-medium">{t('fieldGroups.primary_part', 'Primary part (comparison)')}</span>
 							<AutocompleteSelect

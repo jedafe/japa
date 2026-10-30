@@ -397,7 +397,7 @@
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.description}</p>
 			</div>
 		{/if}
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('plans.tier', 'Tier')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
@@ -574,7 +574,7 @@
 			</div>
 		</div>
 
-		<div class="grid grid-cols-2 gap-3">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<div>
 				<label for="plan-monthly" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.monthly_kobo', 'Monthly (in kobo/cents)')}</label>
 				<input
@@ -599,7 +599,7 @@
 			</div>
 		</div>
 
-		<div class="grid grid-cols-2 gap-3">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<div>
 				<label for="plan-currency" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.currency', 'Currency')}</label>
 				<Select options={currencyOptions} bind:value={value.currency} />
@@ -610,7 +610,7 @@
 			</div>
 		</div>
 
-		<div class="grid grid-cols-2 gap-3">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<div>
 				<label for="plan-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.tier', 'Tier')}</label>
 				<Select options={tierOptions} bind:value={value.tier} />
@@ -623,7 +623,7 @@
 			</div>
 		</div>
 
-		<div class="grid grid-cols-2 gap-3">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<div>
 				<label for="plan-sort" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('plans.sort_order', 'Sort Order')}</label>
 				<input

@@ -70,7 +70,7 @@
 		{/if}
 	</div>
 
-	<div class="flex items-center gap-4">
+	<div class="flex items-center gap-2 sm:gap-4">
 		<div class="relative" data-notification-menu>
 			<button
 				type="button"
@@ -87,7 +87,7 @@
 			</button>
 
 			{#if showNotifications}
-				<div class="absolute end-0 top-full z-50 mt-1 w-80 rounded-md border shadow-lg" style="border-color: var(--color-border); background-color: var(--color-surface)">
+				<div class="absolute end-0 top-full z-50 mt-1 w-80 max-w-[calc(100vw-2rem)] rounded-md border shadow-lg" style="border-color: var(--color-border); background-color: var(--color-surface)">
 					<div class="flex items-center justify-between border-b px-3 py-2" style="border-color: var(--color-border)">
 						<span class="text-sm font-medium" style="color: var(--color-foreground)">{t('lib.components.layout.TopBar.svelte.notifications')}</span>
 						<button
@@ -145,7 +145,7 @@
 					onclick={() => (showDropdown = !showDropdown)}
 				>
 					<Avatar src={user.current.avatar_url} alt={user.current.username} size="sm" />
-					<span class="text-sm" style="color: var(--color-foreground)">{user.current.username}</span>
+					<span class="hidden text-sm sm:inline" style="color: var(--color-foreground)">{user.current.username}</span>
 				</button>
 
 				{#if showDropdown}

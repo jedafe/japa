@@ -68,8 +68,7 @@
 
 	const canEdit = $derived(
 		!!page.data.isAuthed &&
-			(!!userPerms.includes('intel.sources.manage') ||
-				!!page.data.user?.groups?.some((g) => g === 'super_admin' || g === 'Super Admin'))
+			(userPerms.includes('intel.sources.manage') || userPerms.includes('*'))
 	);
 
 	const canDelete = $derived(canEdit);

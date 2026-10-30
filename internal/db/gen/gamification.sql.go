@@ -501,7 +501,7 @@ type LeaderboardAllTimeRow struct {
 // Leaderboard — computed from wallet_ledger. Ranks on the current points
 // balance (SUM of all signed entries) so penalty entries (negative
 // point_value rules: spam, downvotes, upheld reports) demote users —
-// ADR-129. The period leaderboard aggregates the same ledger filtered by
+// ADR-136. The period leaderboard aggregates the same ledger filtered by
 // created_at for weekly/monthly windows. lifetime_points (positive earns
 // only, GetLifetimePoints) remains the badge-threshold metric.
 // space_id is nullable: when set, only members of that space rank

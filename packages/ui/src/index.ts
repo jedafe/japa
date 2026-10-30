@@ -41,6 +41,7 @@ export { SLASH_BLOCKS } from './editor/slashMenu';
 export type { SlashBlock, SlashBlockContext } from './editor/slashMenu';
 export { LinkPreviewNode } from './editor/linkPreviewNode';
 export { VideoNode } from './editor/nodes/VideoNode';
+export { FAQ_NODES, FaqNode, FaqItemNode, FaqSummaryNode, FaqContentNode } from './editor/nodes/FaqNode';
 export type {
 	EditorFeatures,
 	EditorMode,

@@ -28,14 +28,17 @@ import (
 )
 
 // Space hierarchy levels. Country is the root, state and city nest under
-// it, custom covers non-geographic communities (universities, clubs),
-// and global is for spaces not tied to any geo location at all.
+// it, custom covers member-created communities (clubs, education spaces),
+// university marks platform-seeded universities (§05 amendment — education
+// type, primary like geo), and global is for spaces not tied to any geo
+// location at all.
 const (
-	LevelCountry = "country"
-	LevelState   = "state"
-	LevelCity    = "city"
-	LevelCustom  = "custom"
-	LevelGlobal  = "global"
+	LevelCountry    = "country"
+	LevelState      = "state"
+	LevelCity       = "city"
+	LevelCustom     = "custom"
+	LevelUniversity = "university"
+	LevelGlobal     = "global"
 )
 
 // Visibility axis values. Public spaces are listed to everyone, members
@@ -85,7 +88,7 @@ type SpacePermAxes struct {
 
 // validLevels is the set of recognized space hierarchy levels.
 var validLevels = map[string]bool{
-	LevelCountry: true, LevelState: true, LevelCity: true, LevelCustom: true, LevelGlobal: true,
+	LevelCountry: true, LevelState: true, LevelCity: true, LevelCustom: true, LevelUniversity: true, LevelGlobal: true,
 }
 
 // IsValidLevel returns true if the given string is a recognized space level.
@@ -411,9 +414,9 @@ func extractSpaceKeywords(name string) []string {
 	return out
 }
 
-// FindSpacesByKeywords finds public primary (country/state/city) and public
-// education spaces whose configured keywords, full name, or university
-// initials overlap with the given keyword list. Used by the content
+// FindSpacesByKeywords finds public primary (country/state/city/university)
+// spaces whose configured keywords, full name, or university initials
+// overlap with the given keyword list. Used by the content
 // auto-assign feature to link content to spaces based on title matching.
 // Ref: sections/05-geo-first-space-system.md, sections/14-content-type-system.md.
 func (s *Service) FindSpacesByKeywords(ctx context.Context, keywords []string) ([]gen.FindSpacesByKeywordsRow, error) {

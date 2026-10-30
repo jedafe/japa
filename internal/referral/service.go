@@ -124,7 +124,7 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.valkey = vk }
 // SetEnqueuer injects the Asynq task enqueuer.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
-// SetActivityEmitter injects the wallet activity emitter (ADR-129 —
+// SetActivityEmitter injects the wallet activity emitter (ADR-136 —
 // referral.completed points for the referrer). Optional — nil-safe.
 func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
 
@@ -545,7 +545,7 @@ func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype
 		return fmt.Errorf("referral: commit: %w", err)
 	}
 
-	// ADR-129: a completed referral earns the referrer points (dedupe by ref).
+	// ADR-136: a completed referral earns the referrer points (dedupe by ref).
 	s.emitActivity(ctx, referral.ReferrerID, "referral.completed", "referral:"+referral.ID.String())
 
 	// Award credits to referrer wallet (fire-and-forget per Rule 8).

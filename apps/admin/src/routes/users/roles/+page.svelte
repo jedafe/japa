@@ -8,7 +8,13 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { userManagementApi, permissionsApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { user } from '$lib/stores/auth.svelte';
+	import PermissionGrid from '$lib/components/ui/PermissionGrid.svelte';
 	import { Trash2 } from 'lucide-svelte';
+
+	// The wildcard grant is owner-only on the backend — mirror that in the
+	// picker so non-owners see it locked instead of a 403 on save.
+	const isOwner = $derived(!!user.current?.is_owner);
 
 	type Role = {
 		id: string;
@@ -218,24 +224,7 @@
 				placeholder={t('users.roles.search_permissions', 'Search permissions...')}
 				bind:value={permSearch}
 			/>
-			<div class="grid max-h-60 grid-cols-2 gap-2 overflow-y-auto">
-				{#each filteredPermissions as perm (perm)}
-					<label class="flex items-center gap-2 text-xs">
-						<input
-							type="checkbox"
-							class="rounded"
-							checked={Array.isArray(value.permissions) && value.permissions.includes(perm)}
-							onchange={(e) => {
-								const current = Array.isArray(value.permissions) ? value.permissions : [];
-								value.permissions = e.currentTarget.checked
-									? [...current, perm]
-									: current.filter((p) => p !== perm);
-							}}
-						/>
-						{perm}
-					</label>
-				{/each}
-			</div>
+			<PermissionGrid permissions={filteredPermissions} bind:value={value.permissions} {isOwner} />
 		</div>
 	</div>
 {/snippet}

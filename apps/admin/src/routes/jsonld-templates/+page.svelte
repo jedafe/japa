@@ -310,7 +310,7 @@
 <!-- View modal body (mirrors the legacy view modal) -->
 {#snippet TemplateView({ row }: { row: Template })}
 	<div class="space-y-4">
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 					{t('jsonld-templates.content_type', 'Content Type')}
@@ -355,7 +355,7 @@
 	{@const _seed = value.content ??= editing ? JSON.stringify(editing?.template ?? {}, null, 2) : DEFAULT_TEMPLATE}
 	{@const jsonError = validateJson(value.content)}
 	<div class="space-y-4">
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<label for="template-content-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">
 					{t('jsonld-templates.content_type', 'Content Type')}

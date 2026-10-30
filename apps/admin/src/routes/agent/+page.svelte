@@ -594,7 +594,7 @@
 						</span>
 					</div>
 					<p class="text-sm font-medium" style="color: var(--color-foreground)">{detailSession.prompt}</p>
-					<div class="mt-3 grid grid-cols-2 gap-2 text-xs" style="color: var(--color-muted)">
+					<div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs" style="color: var(--color-muted)">
 						<div><Clock size={10} class="inline" /> {fmtDate(detailSession.started_at)}</div>
 						<div><Cpu size={10} class="inline" /> {detailSession.total_tokens.toLocaleString()} tokens</div>
 						<div><Database size={10} class="inline" /> {fmtCost(detailSession.estimated_cost)}</div>

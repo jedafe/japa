@@ -1484,7 +1484,7 @@
 			{/if}
 
 			<!-- Dimension inputs -->
-			<div class="grid grid-cols-2 gap-3">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 				<div>
 					<label for="resize-width" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.width', 'Width (px)')}</label>
 					<input
@@ -1720,7 +1720,7 @@
 			{/if}
 		</div>
 
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.media.field_filename', 'Filename')}</p>
 				<p class="mt-1 break-all text-sm font-medium" style="color: var(--color-foreground)">{row.filename}</p>

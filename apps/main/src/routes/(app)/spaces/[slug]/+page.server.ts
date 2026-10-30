@@ -12,8 +12,7 @@ import type {
 	DigestEdition,
 	WikiPageIndex,
 	Achievement,
-	SpaceReview,
-	SpaceType
+	SpaceReview
 } from '$lib/types';
 
 /**
@@ -47,15 +46,12 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
 
-	// Independent fetches kick off immediately — settings + space-types are
-	// shared public catalogs, mute status only needs the slug. None depend
-	// on the space detail fetch below, so they shouldn't wait for it.
+	// Independent fetches kick off immediately — settings are a shared public
+	// catalog, mute status only needs the slug. None depend on the space
+	// detail fetch below, so they shouldn't wait for it.
 	const siteSettingsPromise = apiGet<Record<string, unknown>>(ctx, '/site/settings/public')
 		.then((s): Record<string, unknown> => s ?? {})
 		.catch((): Record<string, unknown> => ({}));
-	const spaceTypesPromise = apiGet<SpaceType[]>(ctx, '/space-types').catch(
-		() => [] as SpaceType[]
-	);
 	const muteStatusPromise = event.locals.user
 		? apiGet<{ muted: boolean }>(ctx, `/spaces/${slug}/mute-status`)
 				.then((r) => r.muted)
@@ -102,13 +98,10 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(302, `/wiki/${encodeURIComponent(slug)}?from_space=1`);
 	}
 
-	// Determine whether this space is a university type so the Reviews tab is
-	// only shown for spaces that can have reviews. Section 39: universities
-	// are identified by the space type slug 'university' — the /space-types
-	// response has no is_university flag, so match on the canonical slug.
-	const spaceTypes = await spaceTypesPromise;
-	const isUniversity =
-		spaceTypes?.find((st) => st.id === space.space_type_id)?.slug === 'university';
+	// §05 amendment — universities are education-typed spaces marked by
+	// level='university' (the 'university' space type was retired), so the
+	// level is the discriminator for the Reviews tab.
+	const isUniversity = space.level === 'university';
 
 	// Fetch reviews for university spaces; the route is public and returns an
 	// empty list for non-university spaces, but the tab is only rendered when

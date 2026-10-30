@@ -77,7 +77,7 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 	SourceManager       SourceManager         // Optional — wired by server for v2 source directory auto-creation
 	OwnerEmail          string                // JC_OWNER_EMAIL — designates the platform owner account (§03 owner amendment)
 	OwnerPromoter       SuperAdminPromoter    // Optional — promotes the owner account into the super_admin group at registration
-	Activity            ActivityEmitter       // Optional — wired by server for user.registered / daily.login point events (ADR-129)
+	Activity            ActivityEmitter       // Optional — wired by server for user.registered / daily.login point events (ADR-136)
 }
 
 // ActivityEmitter records a wallet activity event and enqueues its async
@@ -100,7 +100,7 @@ type AuthActivityEvent struct {
 	ID pgtype.UUID
 }
 
-// SetActivityEmitter injects the wallet activity emitter (ADR-129).
+// SetActivityEmitter injects the wallet activity emitter (ADR-136).
 func (h *AuthHandlers) SetActivityEmitter(e ActivityEmitter) { h.Activity = e }
 
 // emitDailyLogin records the daily.login points event — once per UTC day
@@ -441,7 +441,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	// users when the platform setting is enabled. Non-fatal.
 	h.maybeCreateUserSource(r.Context(), userID, req.Username)
 
-	// ADR-129: signup earns points (one_time rule) — fire-and-forget.
+	// ADR-136: signup earns points (one_time rule) — fire-and-forget.
 	h.emitActivity(r.Context(), userID, "user.registered", "user:"+userID.String())
 
 	// Send welcome email (fire-and-forget, Golden Rule 8).

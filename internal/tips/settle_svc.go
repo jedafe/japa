@@ -70,7 +70,7 @@ func (s *Service) SettleFiatTip(ctx context.Context, tipID, paymentID pgtype.UUI
 			slog.Warn("tips: failed to repair payment link", "tip_id", tipID.String(), "error", err)
 		}
 	}
-	// ADR-129: the sender earns tip.sent points for settling a fiat tip.
+	// ADR-136: the sender earns tip.sent points for settling a fiat tip.
 	s.emitActivity(ctx, tip.SenderUserID, wallet.ActivityKeyTipSent, "tip:"+tipID.String())
 
 	s.notifyReceived(ctx, tipID)

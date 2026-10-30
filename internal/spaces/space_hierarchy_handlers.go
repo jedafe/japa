@@ -92,6 +92,12 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 	}
 	// SPACES-008: parent spaces must be primary (country/state/city).
 	// Custom or global spaces cannot serve as parents (Section 05 line 14).
+	if parent.Status != StatusActive {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent",
+			"Parent space is not active")
+		return
+	}
+
 	if parent.Level != LevelCountry && parent.Level != LevelState && parent.Level != LevelCity {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent",
 			"Parent spaces must be primary (country, state, or city)")

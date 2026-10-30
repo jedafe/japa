@@ -401,7 +401,7 @@
 	{#if rateProvider}
 		<p class="mb-3 text-sm" style="color: var(--color-muted)">{rateProvider.name}</p>
 		<div class="space-y-3">
-			<div class="grid grid-cols-2 gap-3">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 				<div>
 					<label for="rate-send" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.send_currency', 'Send currency')}</label>
 					<Autocomplete
@@ -431,7 +431,7 @@
 				<label for="rate-value" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.rate', 'Rate')}</label>
 				<input id="rate-value" type="number" step="any" min="0" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={rateForm.rate} />
 			</div>
-			<div class="grid grid-cols-2 gap-3">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 				<div>
 					<label for="rate-fee-flat" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.fee_flat', 'Fee (flat, send ccy)')}</label>
 					<input id="rate-fee-flat" type="number" step="any" min="0" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={rateForm.fee_flat} />

@@ -123,7 +123,9 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 
 	viewer := pgtype.UUID{}
 
-	items, err := r.svc.ListSpacesPaginated(ctx, viewer, query, geoCode, level, region, subregion, spaceSortArg(filters), pgtype.UUID{}, false, limit, offset)
+	// memberCreated=false — comparison pickers may legitimately target primary
+	// (geo/university) spaces, e.g. destination comparisons.
+	items, err := r.svc.ListSpacesPaginated(ctx, viewer, query, geoCode, level, region, subregion, spaceSortArg(filters), pgtype.UUID{}, false, false, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces: %w", err)
 	}
@@ -156,7 +158,7 @@ func (r *SpaceResolver) Count(ctx context.Context, query string, filters map[str
 	geoCode, level, region, subregion := spaceFilters(filters)
 	viewer := pgtype.UUID{}
 
-	return r.svc.CountSpaces(ctx, viewer, query, geoCode, level, region, subregion, pgtype.UUID{}, false)
+	return r.svc.CountSpaces(ctx, viewer, query, geoCode, level, region, subregion, pgtype.UUID{}, false, false)
 }
 
 func spaceMetadata(id pgtype.UUID, slug, level string, geoCode *string, imageID string, memberCount int32) map[string]any {

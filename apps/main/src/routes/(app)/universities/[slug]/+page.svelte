@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
-	import { GraduationCap, Users, MessageSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink, Pencil, Trash2, Heart } from 'lucide-svelte';
+	import { GraduationCap, MessageSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink, Pencil, Trash2, Heart } from 'lucide-svelte';
 	import { EmptyState, UrlTabs, type UrlTab, SpaceJoinButton } from '$lib/components/ui';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
@@ -216,12 +216,8 @@
 		cancelEdit();
 	}
 
+	// §05 amendment — universities are follow-only; no Members stat.
 	const stats = $derived([
-		{
-			icon: Users,
-			label: t('university.members', 'Members'),
-			value: university.member_count
-		},
 		{
 			icon: MessageSquare,
 			label: t('university.posts', 'Posts'),
@@ -239,7 +235,9 @@
 		{ value: 'posts', label: t('university.tab_posts', 'Posts') },
 		{ value: 'forums', label: t('university.tab_forums', 'Forums') },
 		{ value: 'programs', label: t('university.tab_programs', 'Programs') },
-		{ value: 'members', label: t('university.tab_members', 'Members') },
+		// §05 amendment — universities are follow-only; the members list IS
+		// the follower set.
+		{ value: 'members', label: t('university.tab_followers', 'Followers') },
 		{ value: 'reviews', label: t('university.tab_reviews', 'Reviews') },
 		{ value: 'compare', label: t('university.tab_compare', 'Compare') }
 	];
@@ -289,6 +287,7 @@
 			initiallyPending={university.is_pending ?? false}
 			initiallyFollowing={university.is_following ?? false}
 			compact
+			followOnly
 		/>
 
 		{#if wikiFacts.length > 0}
@@ -398,6 +397,7 @@
 				initiallyJoined={university.is_member ?? false}
 				initiallyPending={university.is_pending ?? false}
 				initiallyFollowing={university.is_following ?? false}
+			followOnly
 			/>
 		</div>
 	</div>
@@ -647,7 +647,7 @@
 			<!-- Members tab -->
 			{#if members.length === 0}
 				<div class="mt-3">
-					<EmptyState icon={UsersRound} title={t('university.no_members', 'No members yet')} />
+					<EmptyState icon={UsersRound} title={t('university.no_followers', 'No followers yet')} />
 				</div>
 			{:else}
 				<ul class="mt-3 space-y-2">

@@ -153,6 +153,7 @@
 			</div>
 			{#if scanError}<p class="err-text">{scanError}</p>{/if}
 			{#if scanOut}
+				<div class="overflow-x-auto">
 				<table>
 					<thead><tr><th>Strategy</th>{#each CATS as c}<th>{c}</th>{/each}<th>LCP</th><th>TBT</th><th>CLS</th></tr></thead>
 					<tbody>
@@ -170,11 +171,13 @@
 						{/each}
 					</tbody>
 				</table>
+				</div>
 			{/if}
 		</div>
 
 		{#if report}
 		<div class="card">
+			<div class="overflow-x-auto">
 			<table>
 				<thead>
 					<tr><th>Target</th><th>Strategy</th>{#each CATS as c}<th>{c}</th>{/each}<th>LCP</th><th>TBT</th><th>CLS</th></tr>
@@ -196,6 +199,7 @@
 					{/each}
 				</tbody>
 			</table>
+			</div>
 		</div>
 		{:else if pending}
 		<p class="muted">Audit is running — results will appear here shortly…</p>

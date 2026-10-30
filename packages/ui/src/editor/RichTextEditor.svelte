@@ -45,7 +45,8 @@
 		FileCode,
 		Rows3,
 		Columns3,
-		Trash2
+		Trash2,
+		MessageCircleQuestion
 	} from 'lucide-svelte';
 
 	const ICONS: Record<string, typeof Heading2> = {
@@ -61,7 +62,8 @@
 		Table,
 		Ticket,
 		Type,
-		Link: LinkIcon
+		Link: LinkIcon,
+		MessageCircleQuestion
 	};
 
 	type InsertKind = 'youtube' | 'link' | 'coupon';
@@ -114,6 +116,9 @@
 		minHeight?: number;
 		/** aria-label for the editable region. */
 		ariaLabel?: string;
+		/** Title of the document being edited — read live when the FAQ
+		 *  insert command seeds its auto-generated subheading. */
+		postTitle?: string;
 	}
 
 	let {
@@ -134,7 +139,8 @@
 		features,
 		aiTrigger,
 		minHeight = 355,
-		ariaLabel
+		ariaLabel,
+		postTitle
 	}: Props = $props();
 
 	const feat = $derived<Required<EditorFeatures>>({
@@ -144,7 +150,8 @@
 		video: features?.video ?? false,
 		image: features?.image ?? true,
 		youtube: features?.youtube ?? true,
-		markdown: features?.markdown ?? true
+		markdown: features?.markdown ?? true,
+		faq: features?.faq ?? true
 	});
 
 	// Visible mode tabs — markdown requires the markdown extension.
@@ -273,8 +280,13 @@
 					video: initialFeat.video,
 					coupon: initialFeat.coupon,
 					linkPreview: initialFeat.linkPreview,
+					faq: initialFeat.faq,
 					markdown: initialFeat.markdown
-				}
+				},
+				faqAddItemLabel: untrack(() => t('create.editor.faq_add_item', 'Add question')),
+				// Read the prop live at command time — the title may change
+				// after the editor mounts.
+				getPostTitle: () => postTitle ?? ''
 			}),
 			content: '',
 			editable: initialMode !== 'markdown',
@@ -391,6 +403,7 @@
 			if (b.key === 'image') return feat.image;
 			if (b.key === 'youtube') return feat.youtube;
 			if (b.key === 'coupon') return feat.coupon;
+			if (b.key === 'faq') return feat.faq;
 			return true;
 		})
 	);
@@ -798,6 +811,9 @@
 				{/if}
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.divider', 'Divider')} onclick={() => tb('setHorizontalRule')}><Minus size={16} /></button>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.table', 'Table')} onclick={() => tb('insertTable', { rows: 3, cols: 3, withHeaderRow: true })}><Table size={16} /></button>
+				{#if feat.faq}
+					<button type="button" class="tb-btn" class:active={isActive('faq')} title={t('create.editor.toolbar.faq', 'FAQ')} onclick={() => tb('insertFaq')}><MessageCircleQuestion size={16} /></button>
+				{/if}
 				{#if inTable}
 					<button type="button" class="tb-btn" title={t('create.editor.toolbar.add_row', 'Add row')} onclick={() => tb('addRowAfter')}><Rows3 size={16} /></button>
 					<button type="button" class="tb-btn" title={t('create.editor.toolbar.add_col', 'Add column')} onclick={() => tb('addColumnAfter')}><Columns3 size={16} /></button>
@@ -1094,6 +1110,66 @@
 		outline: 2px solid var(--color-primary);
 		outline-offset: 2px;
 		border-radius: 0.625rem;
+	}
+
+	/* FAQ accordion block (§45) — details/summary markup emitted by the
+	 * faq/faqItem/faqSummary/faqContent nodes. */
+	.prose-content :global(div[data-type="faq"]) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin: 1rem 0;
+	}
+	.prose-content :global(div[data-type="faq"] .faq-items) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	/* Editor-only "add question" button rendered by the faq node view. */
+	.prose-content :global(button.faq-add) {
+		align-self: flex-start;
+		padding: 0.375rem 0.75rem;
+		font-size: 0.8125rem;
+		color: var(--color-text-subtle);
+		border: 1px dashed var(--color-border);
+		border-radius: var(--radius);
+		background: transparent;
+	}
+	.prose-content :global(button.faq-add:hover) {
+		color: var(--color-text);
+		background: var(--color-surface-subtle);
+	}
+	.prose-content :global(details.faq-item) {
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+		overflow: hidden;
+	}
+	.prose-content :global(summary.faq-question) {
+		position: relative;
+		padding: 0.625rem 0.875rem;
+		padding-inline-end: 2.25rem;
+		font-weight: 500;
+		list-style: none;
+	}
+	.prose-content :global(summary.faq-question)::after {
+		content: '▸';
+		position: absolute;
+		inset-inline-end: 0.875rem;
+		top: 0.625rem;
+		color: var(--color-muted);
+		transition: transform 0.12s;
+		pointer-events: none;
+	}
+	.prose-content :global(details.faq-item[open] > summary.faq-question)::after {
+		transform: rotate(90deg);
+	}
+	.prose-content :global(div.faq-answer) {
+		padding: 0 0.875rem 0.75rem;
+		border-top: 1px solid var(--color-border);
+	}
+	.prose-content :global(div.faq-answer > :first-child) {
+		margin-top: 0.75rem;
 	}
 
 	.prose-content :global(h1) {

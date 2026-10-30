@@ -160,7 +160,7 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.pack_description', 'Description')}</p>
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.description ?? '—'}</p>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.credit_amount', 'Credit Amount')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.credit_amount.toLocaleString()}</p>
@@ -170,7 +170,7 @@
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.bonus_credits > 0 ? `+${row.bonus_credits.toLocaleString()}` : '—'}</p>
 			</div>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wallet.min_user_level', 'Min User Level')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.min_user_level ?? '—'}</p>

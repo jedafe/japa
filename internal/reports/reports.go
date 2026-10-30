@@ -160,11 +160,11 @@ type Service struct {
 	valkey   valkeycompat.Cmdable
 	rbac     *rbac.RBAC
 	// activity emits wallet activity events — upheld-report points
-	// penalties (ADR-129). Optional — nil-safe.
+	// penalties (ADR-136). Optional — nil-safe.
 	activity wallet.ActivityEmitter
 }
 
-// SetActivityEmitter injects the wallet emitter (ADR-129).
+// SetActivityEmitter injects the wallet emitter (ADR-136).
 func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
 
 // NewService creates a Service backed by the given database.

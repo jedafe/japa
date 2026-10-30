@@ -4,13 +4,12 @@
 	// selectable space types (default: community), enter a name, and the
 	// backend keyword-matches the name against primary geo spaces to auto-link.
 	import { Modal } from '$lib/components/ui';
-	import { X, Rocket, Loader2 } from 'lucide-svelte';
+	import { Rocket, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
 	import { suggestSlug } from '../create/slug';
-	import SpaceCombobox from './SpaceCombobox.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	interface SpaceType {
@@ -63,11 +62,6 @@
 	// Permission presets (BUG-009).
 	let presets = $state<PermissionPreset[]>([]);
 	let selectedPresetName = $state('');
-
-	// Primary parent(s) for the new custom space (Section 05: custom spaces
-	// must be linked to one or more primary spaces). We support multiple parents
-	// via the parent_space_ids field.
-	let selectedParents = $state<{ id: string; name: string; slug: string }[]>([]);
 
 	$effect(() => {
 		if (open) {
@@ -174,7 +168,6 @@
 				description: description.trim() || undefined
 			};
 			if (selectedPresetName) body.preset_name = selectedPresetName;
-			if (selectedParents.length > 0) body.parent_space_ids = selectedParents.map((p) => p.id);
 
 			const res = await api.post<{ id: string; slug: string; name: string }>('/spaces', body);
 			if (res.data?.slug) {
@@ -203,7 +196,6 @@
 		description = '';
 		selectedSpaceTypeId = '';
 		selectedPresetName = '';
-		selectedParents = [];
 		nameSuggestions = [];
 		showNameSuggestions = false;
 		error = '';
@@ -290,40 +282,9 @@
 						></textarea>
 					</div>
 
-					<div>
-						<p class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
-							{t('spaces.parent_label', 'Primary parent space(s)')}
-							<span class="font-normal text-[var(--color-muted)]">({t('spaces.optional_label', 'optional')})</span>
-						</p>
-						<SpaceCombobox
-							parentMode
-							selected={null}
-							onSelect={(space) => {
-								if (!selectedParents.find((p) => p.id === space.id)) {
-									selectedParents = [...selectedParents, space];
-								}
-							}}
-							placeholder={t('spaces.parent_search_placeholder', 'Search a country, state, or city…')}
-							disabled={submitting}
-						/>
-						{#if selectedParents.length > 0}
-							<div class="mt-2 flex flex-wrap gap-1.5">
-								{#each selectedParents as parent (parent.id)}
-									<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs text-[var(--color-primary)]">
-										{parent.name}
-										<button
-											type="button"
-											onclick={() => { selectedParents = selectedParents.filter((p) => p.id !== parent.id); }}
-											class="text-[var(--color-muted)] hover:text-[var(--color-text)]"
-											aria-label={t('common.remove', 'Remove')}
-										>
-											<X size={11} />
-										</button>
-									</span>
-								{/each}
-							</div>
-						{/if}
-					</div>
+					<!-- §05 amendment — no parent picker: the backend keyword-matches
+					     the space name against primary geo spaces and auto-links the
+					     geo parent(s). Owners can still manage parents in Settings. -->
 
 					{#if presets.length > 0}
 						<div>

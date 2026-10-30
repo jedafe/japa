@@ -251,7 +251,9 @@ class JceCapabilities {
 
   const JceCapabilities({required this.flags, required this.permissions});
 
-  bool _hasPerm(String key) => permissions.contains(key);
+  // The backend RBAC resolver grants super-admin '*' as a wildcard — every
+  // node check must honor it (same contract as the web hasPermission).
+  bool _hasPerm(String key) => permissions.contains(key) || permissions.contains('*');
 
   bool get canViewFreshness => flags.isEnabled('feature.jce.refresh');
 

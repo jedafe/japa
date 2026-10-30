@@ -225,6 +225,10 @@ func (h *Handlers) GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 	followers, err := h.service.GetFollowers(r.Context(), callerID, entityType, entityID, limit, offset)
 	if err != nil {
+		if errors.Is(err, ErrEntityNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "entity_not_found", "Space not found")
+			return
+		}
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get followers")
 		return
 	}

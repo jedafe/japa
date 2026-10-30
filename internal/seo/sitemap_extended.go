@@ -67,7 +67,7 @@ func (h *SitemapHandler) ServeUniversitiesSitemap(w http.ResponseWriter, r *http
 
 	rows, err := h.reader.Query(r.Context(), `SELECT s.slug, s.updated_at
 		 FROM spaces s
-		 JOIN space_types st ON st.id = s.space_type_id AND st.slug = 'university'
+		 JOIN space_types st ON st.id = s.space_type_id AND s.level = 'university'
 		 WHERE s.status = 'active' AND s.deleted_at IS NULL AND s.visibility = 'public'`+
 		gate+`
 		 ORDER BY s.updated_at DESC`, args...)
@@ -105,7 +105,7 @@ func (h *SitemapHandler) ServeUniversitiesSitemap(w http.ResponseWriter, r *http
 func (h *SitemapHandler) latestUniversitiesLastMod() string {
 	return h.latestSimpleLastMod(`SELECT s.updated_at
 		 FROM spaces s
-		 JOIN space_types st ON st.id = s.space_type_id AND st.slug = 'university'
+		 JOIN space_types st ON st.id = s.space_type_id AND s.level = 'university'
 		 WHERE s.status = 'active' AND s.deleted_at IS NULL AND s.visibility = 'public'
 		 ORDER BY s.updated_at DESC LIMIT 1`)
 }

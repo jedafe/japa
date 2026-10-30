@@ -231,7 +231,7 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.bots.user_agent_pattern', 'User-Agent Pattern')}</p>
 			<p class="mt-1 font-mono text-sm font-medium" style="color: var(--color-foreground)">{row.user_agent_pattern}</p>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('bots.type', 'Type')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{botTypeLabels[row.bot_type] || row.bot_type}</p>
@@ -241,7 +241,7 @@
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.policy}</p>
 			</div>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.bots.crawl_delay', 'Crawl Delay')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.crawl_delay > 0 ? row.crawl_delay + 's' : '—'}</p>

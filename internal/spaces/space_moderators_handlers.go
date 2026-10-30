@@ -176,6 +176,12 @@ func (h *Handlers) ListModerators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Non-public spaces hide their moderator roster from non-members.
+	if space.Visibility != VisibilityPublic && !h.canViewRestrictedSpace(r, space.ID) {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+		return
+	}
+
 	mods, err := h.Service.ListModerators(r.Context(), space.ID)
 	if err != nil {
 		handleServiceError(w, err)

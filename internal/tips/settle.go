@@ -18,7 +18,7 @@ type settleWalletParams struct {
 	senderID         pgtype.UUID
 	walletOwnerID    pgtype.UUID // user the wallet credits land on (recipient user, or org owner)
 	recipientUserID  pgtype.UUID // set when recipient_type='user'
-	ledgerType       string      // 'credits' — the only wallet method (ADR-129)
+	ledgerType       string      // 'credits' — the only wallet method (ADR-136)
 	gross            int64       // debited from sender
 	net              int64       // credited to recipient (gross − fee)
 	fee              int64
@@ -252,7 +252,7 @@ func (s *Store) clawbackTip(ctx context.Context, tipID pgtype.UUID, walletOwnerI
 	}
 
 	// Credits/fiat/OC tips credit the recipient's credits ledger
-	// (net_credits); historical 'points' tips (ADR-129 — method retired,
+	// (net_credits); historical 'points' tips (ADR-136 — method retired,
 	// points_amount column dropped) have net_credits=0, so their clawback
 	// correctly degenerates to a status flip with no ledger writes.
 	clawLedger := "credits"

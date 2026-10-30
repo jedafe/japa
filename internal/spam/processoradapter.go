@@ -16,7 +16,7 @@ import (
 // handler can invoke real moderation checks instead of the noop fallback.
 type WorkerAdapter struct {
 	pipeline *SpamPipeline
-	// activity emits the spam.detected points penalty (ADR-129).
+	// activity emits the spam.detected points penalty (ADR-136).
 	activity ActivityEmitter
 }
 
@@ -26,7 +26,7 @@ func NewWorkerAdapter(p *SpamPipeline) *WorkerAdapter {
 }
 
 // ActivityEmitter records a wallet activity event — the spam.detected
-// penalty (ADR-129). Local interface avoids a spam→wallet import edge.
+// penalty (ADR-136). Local interface avoids a spam→wallet import edge.
 type ActivityEmitter interface {
 	EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input SpamActivityInput) (SpamActivityEvent, error)
 	EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error
@@ -43,7 +43,7 @@ type SpamActivityEvent struct {
 	ID pgtype.UUID
 }
 
-// SetActivityEmitter injects the wallet emitter (ADR-129).
+// SetActivityEmitter injects the wallet emitter (ADR-136).
 func (a *WorkerAdapter) SetActivityEmitter(e ActivityEmitter) { a.activity = e }
 
 // emitSpamPenalty deducts points for spam-flagged/blocked content —
@@ -121,7 +121,7 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID st
 			"entity_type", entityType, "entity_id", entityID,
 			"score", result.Score, "reasons", result.Reasons)
 	case result.Flagged:
-		// ADR-129: flagged content deducts the author's points (spam.detected).
+		// ADR-136: flagged content deducts the author's points (spam.detected).
 		a.emitSpamPenalty(ctx, authorID, entityType, entityID)
 		slog.Info("spam:worker_adapter: content flagged for review",
 			"entity_type", entityType, "entity_id", entityID,

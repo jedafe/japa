@@ -902,7 +902,7 @@
 			<label for="edit-provider-logo" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.logo_media_id', 'Logo Media ID')}</label>
 			<input id="edit-provider-logo" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 font-mono text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="UUID" bind:value={editProvider.logo_media_id} />
 		</div>
-		<div class="grid grid-cols-2 gap-3">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<div>
 				<label for="edit-provider-tp" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.tracking_param', 'Tracking Param')}</label>
 				<input id="edit-provider-tp" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editProvider.tracking_param} />

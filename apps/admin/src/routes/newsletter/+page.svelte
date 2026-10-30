@@ -625,7 +625,7 @@
 
 {#snippet CampaignView({ row }: { row: Campaign })}
 	<div class="space-y-4">
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('newsletter.subject_line', 'Subject')}</p>
 				<p class="mt-1 text-sm font-medium text-foreground">{row.subject || row.name}</p>
@@ -641,7 +641,7 @@
 				<p class="mt-1 text-sm text-foreground">{row.preview}</p>
 			</div>
 		{/if}
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('newsletter.recipients', 'Recipients')}</p>
 				<p class="mt-1 text-sm font-medium text-foreground">{row.recipient_count != null ? row.recipient_count.toLocaleString() : '—'}</p>

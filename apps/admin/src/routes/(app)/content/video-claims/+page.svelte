@@ -227,7 +227,7 @@
 			</h3>
 			<p class="text-sm text-muted capitalize">{row.status}</p>
 		</div>
-		<dl class="grid grid-cols-2 gap-2 text-sm">
+		<dl class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
 			<div class="col-span-2 sm:col-span-1">
 				<dt class="text-muted">{t('video_claims.claimant', 'Claimant')}</dt>
 				<dd>{row.claimant_username || row.claimant_user_id}</dd>

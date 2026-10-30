@@ -125,6 +125,12 @@ SELECT COUNT(*) FROM activity_events
 WHERE user_id = @user_id AND activity_key = @activity_key
  AND created_at >= date_trunc('day', now());
 
+-- name: CountActivityEventsByReferencePrefix :one
+-- Counts events whose reference starts with the given prefix — used by
+-- vote emitters to build monotonic per-transition references (ADR-136).
+SELECT COUNT(*)::bigint FROM activity_events
+WHERE reference LIKE @prefix;
+
 -- name: CountUserActivityThisWeek :one
 SELECT COUNT(*) FROM activity_events
 WHERE user_id = @user_id AND activity_key = @activity_key

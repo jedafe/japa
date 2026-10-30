@@ -375,7 +375,7 @@
 >
 	{#if target}
 		<div class="space-y-4">
-			<div class="grid grid-cols-2 gap-4">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 						{t("organisations.name", "Organization")}

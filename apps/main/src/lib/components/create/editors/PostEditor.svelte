@@ -26,6 +26,9 @@
 		onfocus?: () => void;
 		defaultMode?: EditorMode;
 		aiTrigger?: import('svelte').Snippet;
+		/** Current post title — read live when the FAQ block seeds its
+		 *  auto-generated subheading. */
+		postTitle?: string;
 	}
 
 	let {
@@ -35,7 +38,8 @@
 		onjson,
 		onfocus,
 		defaultMode = 'block',
-		aiTrigger
+		aiTrigger,
+		postTitle
 	}: Props = $props();
 
 	let rte = $state.raw<RichTextEditor | undefined>(undefined);
@@ -91,6 +95,7 @@
 	{onfocus}
 	{defaultMode}
 	{aiTrigger}
+	{postTitle}
 	placeholder={t('create.editor.placeholder')}
 	onSearch={searchHits}
 	onSearchCoupons={(q) => searchHits('coupons', q)}

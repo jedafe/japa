@@ -681,7 +681,7 @@ func (s *Service) pageFeedbackDTO(ctx context.Context, pageID, viewerID pgtype.U
 }
 
 // IsUniversitySpace reports whether the slug resolves to a university space
-// (spaces.level = 'university' or space_types.slug = 'university'). Unknown
+// (spaces.level = 'university' — education-typed row, §05 amendment). Unknown
 // slugs return false.
 func (s *Service) IsUniversitySpace(ctx context.Context, spaceSlug string) (bool, error) {
 	return s.store.IsUniversitySpaceBySlug(ctx, spaceSlug)

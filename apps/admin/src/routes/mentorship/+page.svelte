@@ -516,7 +516,7 @@
 			<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.status', 'Status')}</p>
 			<p class="mt-1 text-sm font-medium text-foreground">{row.is_active ? t('app.mentorship.status.active', 'Active') : t('app.mentorship.status.inactive', 'Inactive')}</p>
 		</div>
-		<div class="grid grid-cols-3 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider text-muted">{t('app.mentorship.field.mentors', 'Mentors')}</p>
 				<p class="mt-1 text-sm font-medium text-foreground">{row.mentor_count ?? 0}</p>

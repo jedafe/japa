@@ -5,12 +5,12 @@
 	//
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { t } from '$lib/i18n';
-	import { getUserTipConfig, getOrgTipConfig, type TipConfig } from '$lib/api/tips';
+	import { getUserTipConfig, getOrgTipConfig, getSpaceTipConfig, type TipConfig } from '$lib/api/tips';
 	import TipDialog from './TipDialog.svelte';
 	import { Gift } from 'lucide-svelte';
 
 	interface Props {
-		recipientType: 'user' | 'organization';
+		recipientType: 'user' | 'organization' | 'space';
 		recipientKey: string; // username or org uuid
 		recipientId?: string; // user uuid — required for POST /tips
 		recipientName: string;
@@ -32,7 +32,9 @@
 			const res =
 				recipientType === 'user'
 					? await getUserTipConfig(recipientKey)
-					: await getOrgTipConfig(recipientKey);
+					: recipientType === 'space'
+						? await getSpaceTipConfig(recipientKey)
+						: await getOrgTipConfig(recipientKey);
 			loading = false;
 			// Latch only on a definitive answer — a transient failure leaves the
 			// button retryable instead of permanently dead (BUG-021).

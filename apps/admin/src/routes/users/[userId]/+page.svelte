@@ -23,6 +23,9 @@
     username: string;
     email: string;
     groups: string[];
+    // Machine-readable memberships — `groups` display names collide on
+    // duplicates, so the group editor diffs on ids via group_refs.
+    group_refs?: Array<{ id: string; name: string; slug: string }>;
     status: string;
     profile_type: 'regular' | 'pro' | 'business';
     created_at: string;
@@ -142,8 +145,9 @@
   let restrictDuration = $state("7d");
   let restrictReason = $state("");
   let suspendReason = $state("");
-  let groupOptions = $state<string[]>([]);
-  let groupIdsByName = $state<Record<string, string>>({});
+  // Group options carry id+slug — membership diffs are keyed on ids, not
+  // display names (duplicate group names would silently map to one id).
+  let groupOptions = $state<Array<{ id: string; name: string; slug: string }>>([]);
   let actionError = $state("");
   let actionSuccess = $state("");
 
@@ -217,8 +221,9 @@
       if (result.ok) {
         const d = result.data;
         d.groups = d.groups ?? [];
+        d.group_refs = d.group_refs ?? [];
         user = d;
-        selectedGroups = [...d.groups];
+        selectedGroups = d.group_refs.map((g: any) => g.id);
         loadRestrictions();
       }
     } catch {
@@ -424,28 +429,20 @@
 
   async function handleGroupChange() {
     showGroupModal = false;
-    const current = new Set(user?.groups ?? []);
+    // Membership diff is keyed on group ids via group_refs — name-keyed
+    // lookups silently collapse duplicate display names.
+    const current = new Set<string>((user?.group_refs ?? []).map((g: any) => g.id));
     const selected = new Set(selectedGroups);
-    const added = selectedGroups.filter((g) => !current.has(g));
-    const removed = [...current].filter((g) => !selected.has(g));
+    const added = selectedGroups.filter((id) => !current.has(id));
+    const removed = [...current].filter((id) => !selected.has(id));
 
     let allOk = true;
     let lastError: string | undefined;
-    for (const name of added) {
-      const groupId = groupIdsByName[name];
-      if (!groupId) {
-        allOk = false;
-        continue;
-      }
+    for (const groupId of added) {
       const result = await userManagementApi.addGroupMember(groupId, userId);
       if (!result.ok) { allOk = false; lastError = result.error; }
     }
-    for (const name of removed) {
-      const groupId = groupIdsByName[name];
-      if (!groupId) {
-        allOk = false;
-        continue;
-      }
+    for (const groupId of removed) {
       const result = await userManagementApi.removeGroupMember(groupId, userId);
       if (!result.ok) { allOk = false; lastError = result.error; }
     }
@@ -529,8 +526,13 @@
         try {
           const groupsResult = await userManagementApi.listGroups();
           if (groupsResult.ok) {
-            groupOptions = groupsResult.data.groups.map((g) => g.name);
-            groupIdsByName = Object.fromEntries(groupsResult.data.groups.map((g) => [g.name, g.id]));
+            groupOptions = groupsResult.data.groups.map((g) => ({ id: g.id, name: g.name, slug: g.slug }));
+            // Fallback for responses without group_refs: map names→ids.
+            if (selectedGroups.length === 0 && (user?.groups?.length ?? 0) > 0) {
+              selectedGroups = user!.groups
+                .map((n: string) => groupOptions.find((o) => o.name === n)?.id)
+                .filter(Boolean) as string[];
+            }
           }
         } catch {
         }
@@ -807,7 +809,7 @@
     {/if}
     <div>
       <p class="mb-2 text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.detail.restrict_operations', 'Operations to restrict')}</p>
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {#each restrictionOps as op (op)}
           {@const alreadyRestricted = restrictions.some(r => r.operation === op.value)}
           <label class="flex items-center gap-2 text-sm" class:opacity-50={alreadyRestricted}>
@@ -938,10 +940,11 @@
 
 <Modal bind:open={showGroupModal} title={t('users.detail.change_group', 'Change Group')} size="sm">
   <div class="space-y-2">
-    {#each groupOptions as group (group)}
+    {#each groupOptions as group (group.id)}
       <label class="flex items-center gap-2 text-sm">
-        <input type="checkbox" value={group} bind:group={selectedGroups} class="rounded" />
-        {group}
+        <input type="checkbox" value={group.id} bind:group={selectedGroups} class="rounded" />
+        {group.name}
+        <span class="text-xs" style="color: var(--color-muted)">({group.slug})</span>
       </label>
     {/each}
   </div>

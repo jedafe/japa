@@ -1,12 +1,12 @@
 // Package japastage — journeys_store.go is the data-access layer for
-// user_journeys (ADR-129 Concurrent Journeys). Raw pgx queries following
+// user_journeys (ADR-136 Concurrent Journeys). Raw pgx queries following
 // the package convention — the table is new and has no sqlc-generated
 // queries. No business logic here; lifecycle and class-rule validation
 // live in journeys.go.
 //
 // Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 //
-//	japaconnect-engineering/adr/ADR-129-concurrent-journeys.md
+//	japaconnect-engineering/adr/ADR-136-concurrent-journeys.md
 package japastage
 
 import (
@@ -76,7 +76,7 @@ func scanJourneyRows(rows pgx.Rows) ([]JourneyRow, error) {
 }
 
 // ListJourneys returns the member's non-deleted journeys (including
-// cancelled — ADR-129 keeps cancelled trips visible) ordered by recency.
+// cancelled — ADR-136 keeps cancelled trips visible) ordered by recency.
 func (s *Store) ListJourneys(ctx context.Context, userID pgtype.UUID) ([]JourneyRow, error) {
 	const q = journeyColumns + `
 WHERE j.user_id = $1 AND j.deleted_at IS NULL
@@ -122,7 +122,7 @@ LIMIT 1
 
 // CountLiveJourneys counts the member's non-deleted journeys in a live
 // lifecycle state (planned|active) — the input to the
-// japa_stage.max_journeys cap (ADR-129). Completed and cancelled journeys
+// japa_stage.max_journeys cap (ADR-136). Completed and cancelled journeys
 // are history and do not count against the cap.
 func (s *Store) CountLiveJourneys(ctx context.Context, userID pgtype.UUID) (int64, error) {
 	const q = `SELECT COUNT(*) FROM user_journeys WHERE user_id = $1 AND deleted_at IS NULL AND status IN ('planned','active')`

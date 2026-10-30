@@ -228,6 +228,12 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID string
 	if st, err := a.svc.GetSpaceType(ctx, space.SpaceTypeID); err == nil {
 		spaceType = st.Slug
 	}
+	// §05 amendment — universities are education-typed; level is the
+	// discriminator so the 'university' populate branch keeps firing while
+	// member-created education spaces (level='custom') stay unpopulated.
+	if space.Level == LevelUniversity {
+		spaceType = "university"
+	}
 
 	var populateErr error
 

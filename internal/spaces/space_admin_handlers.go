@@ -93,13 +93,9 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 			"No pending join request for this user in this space")
 		return
 	}
-	// SPACES-004: increment member_count only on approval. The pending
-	// join path did not increment, so the approval must.
+	// SPACES-004: approval also flips the member row to 'approved' —
+	// trg_space_member_count bumps member_count in the same transaction.
 	if input.Status == "approved" {
-		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID); err != nil {
-			slog.Error("spaces: failed to increment member_count on join approval",
-				"space_id", spaceID.String(), "user_id", requestID.String(), "error", err)
-		}
 
 		// §64: approval is the moment a pending requester becomes a member —
 		// record space.joined so badge/challenge triggers fire for this
@@ -337,12 +333,9 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// SPACES-004: increment member_count only on approval.
+	// SPACES-004: approval flips the member row to 'approved' —
+	// trg_space_member_count bumps member_count in the same transaction.
 	if status == "approved" {
-		if err := h.Service.IncrementSpaceCount(r.Context(), spaceID); err != nil {
-			slog.Error("spaces: failed to increment member_count on join approval",
-				"space_id", spaceID.String(), "user_id", userID.String(), "error", err)
-		}
 
 		// §64: approval is the moment a pending requester becomes a member —
 		// record space.joined so badge/challenge triggers (e.g.

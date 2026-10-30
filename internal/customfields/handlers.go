@@ -3404,8 +3404,18 @@ func (h *Handlers) checkTriggerGroupAssignable(ctx context.Context, raw json.Raw
 		return "assign_user_group target user group not found", false
 	}
 
-	if rbac.IsSystemGroup(group.Slug) {
+	// is_system (DB flag) covers all system groups — super_admin, members,
+	// guest AND pro (a self-serve form trigger must not grant a paid tier);
+	// the slug list is belt-and-braces for unseeded variants.
+	if group.IsSystem || rbac.IsSystemGroup(group.Slug) {
 		return fmt.Sprintf("assign_user_group cannot target the %q system group", group.Slug), false
+	}
+
+	// Paid-tier groups (tier = pro|business) are not self-serve — a form
+	// submitter must not trigger their own tier upgrade. "regular" tier is
+	// the free baseline and stays assignable.
+	if group.Tier != nil && *group.Tier != "regular" {
+		return fmt.Sprintf("assign_user_group cannot target the %q tier group", group.Slug), false
 	}
 
 	return "", true

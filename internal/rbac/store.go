@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -89,48 +90,72 @@ func (s *Store) CreateGroup(ctx context.Context, name, slug, description string)
 	return id, nil
 }
 
-// DeleteGroup deletes a user group. System groups cannot be deleted.
-// After deletion, it invalidates the permission cache for all former
-// members so they don't retain the group's capabilities for up to 5
-// minutes (Rule 6).
-func (s *Store) DeleteGroup(ctx context.Context, slug string) error {
+// CreateGroupWithRole creates a user group, its backing role, the role's
+// permission set, and the group→role assignment in a single transaction.
+// A failure at any step rolls the whole create back — the previous
+// sequential version could leave an orphaned group or role behind.
+func (s *Store) CreateGroupWithRole(ctx context.Context, name, slug, description string, permKeys []string) (pgtype.UUID, error) {
 	if IsSystemGroup(slug) {
-		return fmt.Errorf("cannot delete system group %s via API", slug)
+		return pgtype.UUID{}, fmt.Errorf("cannot create system group %s via API", slug)
 	}
 
-	// Collect member IDs before deletion so we can invalidate their caches
-	// after the group is removed.
-	memberRows, err := s.read.ListUserGroups(ctx)
+	if err := s.validatePermissionKeys(ctx, permKeys); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
-		slog.Warn("rbac: failed to list groups for member lookup", "error", err)
+		return pgtype.UUID{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	q := gen.New(tx)
+
+	var descPtr *string
+	if description != "" {
+		descPtr = &description
 	}
 
-	var memberIDs []pgtype.UUID
+	groupID, err := q.CreateUserGroup(ctx, gen.CreateUserGroupParams{
+		Name:        name,
+		Slug:        slug,
+		Description: descPtr,
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("creating group: %w", err)
+	}
 
-	for _, g := range memberRows {
-		if g.Slug == slug {
-			memberIDs, err = s.read.ListGroupMembersByGroupID(ctx, g.ID)
-			if err != nil {
-				slog.Warn("rbac: failed to list group members for cache invalidation", "group_id", g.ID, "error", err)
+	if len(permKeys) > 0 {
+		roleID, err := q.CreateUserRole(ctx, gen.CreateUserRoleParams{
+			Name: name + " Role",
+			Slug: slugify(name + " Role"),
+		})
+		if err != nil {
+			return pgtype.UUID{}, fmt.Errorf("creating role for group: %w", err)
+		}
+
+		for _, key := range permKeys {
+			if err := q.InsertRolePermissionByKey(ctx, gen.InsertRolePermissionByKeyParams{
+				RoleID:  roleID,
+				PermKey: key,
+			}); err != nil {
+				return pgtype.UUID{}, fmt.Errorf("setting role permissions: %w", err)
 			}
+		}
 
-			break
+		if err := q.AssignRoleToGroup(ctx, gen.AssignRoleToGroupParams{
+			GroupID: groupID,
+			RoleID:  roleID,
+		}); err != nil {
+			return pgtype.UUID{}, fmt.Errorf("assigning role to group: %w", err)
 		}
 	}
 
-	if err := s.write.DeleteUserGroup(ctx,
-
-		slug,
-	); err != nil {
-		return fmt.Errorf("deleting group: %w", err)
+	if err := tx.Commit(ctx); err != nil {
+		return pgtype.UUID{}, err
 	}
 
-	// Invalidate cache for all former members (Rule 6).
-	for _, userID := range memberIDs {
-		s.invalidateUserCache(ctx, userID)
-	}
-
-	return nil
+	return groupID, nil
 }
 
 // DeleteGroupByID deletes a user group by its UUID. System groups cannot be
@@ -151,6 +176,14 @@ func (s *Store) DeleteGroupByID(ctx context.Context, groupID pgtype.UUID) error 
 		groupID,
 	); err != nil {
 		return fmt.Errorf("deleting group by ID: %w", err)
+	}
+
+	// §102/000824: members who lost mentorship.become_mentor with the group
+	// get their shadow listing retired — same sweep as single-member removal.
+	for _, userID := range memberIDs {
+		if err := s.write.RetireMentorWithoutBecomeMentorPerm(ctx, userID); err != nil {
+			slog.Warn("rbac: mentor retire sweep failed after group delete", "user_id", userID, "error", err)
+		}
 	}
 
 	// Invalidate cache for all former members (Rule 6).
@@ -206,14 +239,55 @@ func (s *Store) RemoveUserFromGroup(ctx context.Context, userID, groupID pgtype.
 	return nil
 }
 
-// RegisterPermission creates a permission node if it doesn't exist.
-// Called at application startup for all known permission keys.
-func (s *Store) RegisterPermission(ctx context.Context, key, description string) error {
-	if err := s.write.RegisterPermission(ctx, gen.RegisterPermissionParams{
-		Key:         key,
-		Description: &description,
-	}); err != nil {
-		return fmt.Errorf("registering permission %s: %w", key, err)
+// ErrUnknownPermissionKey is returned when a grant references a permission
+// key that is not registered in the permissions table. Grants must fail
+// loudly — the INSERT...SELECT used for role_permissions silently no-ops on
+// unknown keys, which let typo'd permissions appear to save successfully.
+var ErrUnknownPermissionKey = errors.New("unknown permission key")
+
+// UnknownPermissionError carries the rejected keys so handlers can report
+// exactly which permission keys failed validation.
+type UnknownPermissionError struct {
+	Keys []string
+}
+
+func (e *UnknownPermissionError) Error() string {
+	return fmt.Sprintf("unknown permission keys: %s", strings.Join(e.Keys, ", "))
+}
+
+func (e *UnknownPermissionError) Unwrap() error { return ErrUnknownPermissionKey }
+
+// validatePermissionKeys rejects keys that are not registered in the
+// permissions table. An empty input is a no-op.
+func (s *Store) validatePermissionKeys(ctx context.Context, permKeys []string) error {
+	if len(permKeys) == 0 {
+		return nil
+	}
+
+	rows, err := s.read.ListAllPermissions(ctx)
+	if err != nil {
+		return fmt.Errorf("loading permission catalog: %w", err)
+	}
+
+	known := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		known[r.Key] = struct{}{}
+	}
+
+	var unknown []string
+	seen := make(map[string]struct{}, len(permKeys))
+	for _, key := range permKeys {
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		if _, ok := known[key]; !ok {
+			unknown = append(unknown, key)
+		}
+	}
+
+	if len(unknown) > 0 {
+		return &UnknownPermissionError{Keys: unknown}
 	}
 
 	return nil
@@ -222,6 +296,10 @@ func (s *Store) RegisterPermission(ctx context.Context, key, description string)
 // AssignPermissionToRole grants a permission to a role and invalidates cache
 // for every user in groups that hold this role.
 func (s *Store) AssignPermissionToRole(ctx context.Context, roleID pgtype.UUID, permKey string) error {
+	if err := s.validatePermissionKeys(ctx, []string{permKey}); err != nil {
+		return err
+	}
+
 	s.auditWildcardGrant(ctx, roleID, permKey)
 
 	if err := s.write.AssignPermissionToRole(ctx, gen.AssignPermissionToRoleParams{
@@ -440,6 +518,41 @@ func (s *Store) ListGroupMembers(ctx context.Context, groupID pgtype.UUID) ([]Gr
 	return members, nil
 }
 
+// ListGroupMembersPaged returns a searched/paginated member list plus the
+// total match count. Use this for any surface that can hit the members
+// system group (every registered user is a member — the unbounded variant
+// would return the whole user table).
+func (s *Store) ListGroupMembersPaged(ctx context.Context, groupID pgtype.UUID, search string, limit, offset int32) ([]GroupMember, int32, error) {
+	rows, err := s.read.ListGroupMembersPaged(ctx, gen.ListGroupMembersPagedParams{
+		GroupID:    groupID,
+		Search:     search,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing group members paged: %w", err)
+	}
+
+	total, err := s.read.CountGroupMembersFiltered(ctx, gen.CountGroupMembersFilteredParams{
+		GroupID: groupID,
+		Search:  search,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting group members: %w", err)
+	}
+
+	members := make([]GroupMember, 0, len(rows))
+	for _, r := range rows {
+		members = append(members, GroupMember{
+			ID:          r.ID,
+			Username:    r.Username,
+			DisplayName: r.DisplayName,
+		})
+	}
+
+	return members, total, nil
+}
+
 // ListPermissions returns all registered permission nodes.
 func (s *Store) ListPermissions(ctx context.Context) ([]Permission, error) {
 	rows, err := s.read.ListAllPermissions(ctx)
@@ -471,25 +584,6 @@ type Role struct {
 	Slug        string      `json:"slug"`
 	Permissions []string    `json:"permissions"`
 	UserCount   int32       `json:"user_count"`
-}
-
-// ListRoles returns all roles for a platform.
-func (s *Store) ListRoles(ctx context.Context) ([]Role, error) {
-	rows, err := s.read.ListAllRoles(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing roles: %w", err)
-	}
-
-	roles := make([]Role, 0, len(rows))
-
-	for _, r := range rows {
-		roles = append(roles, Role{
-			ID:   r.ID,
-			Name: r.Name,
-		})
-	}
-
-	return roles, nil
 }
 
 // roleSortKeys is the whitelist of ListRolesPaginated sort columns.
@@ -665,23 +759,69 @@ func (s *Store) RemovePermissionFromRole(ctx context.Context, roleID pgtype.UUID
 	return nil
 }
 
-// slugify converts a name to a URL-safe slug (lowercase, hyphens for spaces).
+// slugify converts a name to a URL-safe slug: lowercase, hyphens for
+// whitespace/underscores, every other byte dropped, runs collapsed. The
+// previous version passed punctuation through verbatim ("Mod's!" →
+// "mod's!"), producing unusable slugs and opaque unique-violation 500s.
 func slugify(name string) string {
-	slug := strings.ToLower(name)
-	slug = strings.ReplaceAll(slug, " ", "-")
-	slug = strings.ReplaceAll(slug, "_", "-")
+	var b strings.Builder
+	b.Grow(len(name))
 
-	return slug
+	prevDash := false
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevDash = false
+		case r == ' ', r == '_', r == '-', r == '.':
+			if b.Len() > 0 && !prevDash {
+				b.WriteByte('-')
+				prevDash = true
+			}
+		default:
+			// drop every other character
+		}
+	}
+
+	return strings.TrimSuffix(b.String(), "-")
 }
+
+// systemRoleSlugs are the seeded role slugs that must not be deleted — they
+// back the is_system user groups (and the tier groups), so removing one
+// would silently strip a whole system group's permission set.
+var systemRoleSlugs = map[string]bool{
+	"super_admin":      true,
+	"super_admin_role": true,
+	"member":           true,
+	"guest":            true,
+	"pro_member":       true,
+	"business_member":  true,
+	"admin-group-role": true,
+}
+
+// ErrSystemRole is returned when a delete targets a seeded/system role.
+var ErrSystemRole = errors.New("system role cannot be deleted")
 
 // DeleteRole removes a role and all its permission/group assignments (P5.6).
 // role_permissions and group_rows cascade-delete with the user_roles row.
+// Roles backing a system group (or carrying a seeded system slug) are
+// protected — deleting e.g. the member role would demote every member.
 // After deletion, it invalidates the permission cache for every group that
 // held this role so members don't retain the role's capabilities for up to
 // 5 minutes (Rule 6).
 func (s *Store) DeleteRole(ctx context.Context, roleID pgtype.UUID) error {
+	role, err := s.read.GetUserRoleByID(ctx, roleID)
+	if err != nil {
+		return fmt.Errorf("looking up role: %w", err)
+	}
+
+	if systemRoleSlugs[role.Slug] {
+		return ErrSystemRole
+	}
+
 	// Collect affected groups before deletion so we can invalidate their
-	// members' caches after the role is removed.
+	// members' caches after the role is removed — and refuse the delete
+	// when the role backs a system group.
 	groupIDs, err := s.read.ListGroupsByRoleID(ctx, roleID)
 	if err != nil {
 		slog.Warn("rbac: failed to list groups for role cache invalidation", "role_id", roleID, "error", err)
@@ -689,10 +829,24 @@ func (s *Store) DeleteRole(ctx context.Context, roleID pgtype.UUID) error {
 		groupIDs = nil // proceed — don't block the mutation
 	}
 
+	for _, groupID := range groupIDs {
+		if g, err := s.read.GetUserGroupByID(ctx, groupID); err == nil && g.IsSystem {
+			return ErrSystemRole
+		}
+	}
+
 	if err := s.write.DeleteUserRole(ctx,
 		roleID,
 	); err != nil {
 		return fmt.Errorf("deleting role: %w", err)
+	}
+
+	// §102/000824: members who lost mentorship.become_mentor with this role
+	// get their shadow listing retired (same sweep as permission revoke).
+	for _, groupID := range groupIDs {
+		if err := s.write.RetireGroupMentorsWithoutBecomeMentorPerm(ctx, groupID); err != nil {
+			slog.Warn("rbac: mentor retire sweep failed", "group_id", groupID, "error", err)
+		}
 	}
 
 	// Invalidate cache for all groups that held this role (Rule 6).
@@ -703,11 +857,22 @@ func (s *Store) DeleteRole(ctx context.Context, roleID pgtype.UUID) error {
 	return nil
 }
 
-// UpdateRole updates a role's name (P5.6).
+// UpdateRole updates a role's name and re-derives its slug (P5.6). Role
+// slugs are display/catalog values — nothing resolves a role by slug at
+// runtime — so re-deriving on rename keeps the two in sync safely.
+// Exception: roles carrying a seeded system slug keep it — re-deriving
+// would evict them from systemRoleSlugs protection.
 func (s *Store) UpdateRole(ctx context.Context, roleID pgtype.UUID, name string) error {
+	slug := slugify(name)
+
+	if current, err := s.read.GetUserRoleByID(ctx, roleID); err == nil && systemRoleSlugs[current.Slug] {
+		slug = current.Slug
+	}
+
 	if err := s.write.UpdateUserRole(ctx, gen.UpdateUserRoleParams{
 		ID:   roleID,
 		Name: name,
+		Slug: slug,
 	}); err != nil {
 		return fmt.Errorf("updating role: %w", err)
 	}
@@ -720,6 +885,10 @@ func (s *Store) UpdateRole(ctx context.Context, roleID pgtype.UUID, name string)
 // every group that holds this role so members don't retain stale capabilities
 // for up to 5 minutes (Rule 6).
 func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, permKeys []string) error {
+	if err := s.validatePermissionKeys(ctx, permKeys); err != nil {
+		return err
+	}
+
 	// Collect affected groups before the transaction so we can invalidate
 	// their members' caches after commit.
 	groupIDs, err := s.read.ListGroupsByRoleID(ctx, roleID)
@@ -762,6 +931,15 @@ func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, perm
 
 	if err := tx.Commit(ctx); err != nil {
 		return err
+	}
+
+	// §102/000824: members who lost mentorship.become_mentor through this
+	// replace get their shadow listing retired — the PATCH path previously
+	// skipped the sweep that RemovePermissionFromRole already ran.
+	for _, groupID := range groupIDs {
+		if err := s.write.RetireGroupMentorsWithoutBecomeMentorPerm(ctx, groupID); err != nil {
+			slog.Warn("rbac: mentor retire sweep failed", "group_id", groupID, "error", err)
+		}
 	}
 
 	// Invalidate cache for all groups that hold this role (Rule 6).

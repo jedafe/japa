@@ -715,7 +715,7 @@
 <!-- ── View snippet ──────────────────────────────────────────────────────── -->
 {#snippet UserView({ row }: { row: User })}
 	<div class="space-y-4">
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("users.username", "Username")}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.username}</p>

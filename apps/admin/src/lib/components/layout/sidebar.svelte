@@ -88,7 +88,8 @@
 				{ path: "/universities", label: t("nav.universities", "Universities"), icon: GraduationCap, permission: "admin.settings" },
 				{ path: "/universities/course-catalog", label: t("nav.course_catalog", "Course Catalog"), icon: BookOpen, permission: "universities.course_catalog.list" },
 				{ path: "/universities/course-offerings", label: t("nav.course_offerings", "Course Offerings"), icon: GraduationCap, permission: "universities.course_offering.list" },
-				{ path: "/users/groups", label: t("nav.users_groups", "Groups"), icon: Users2, permission: "admin.users.view" }
+				{ path: "/users/groups", label: t("nav.users_groups", "Groups"), icon: Users2, permission: "admin.rbac.manage" },
+				{ path: "/users/roles", label: t("nav.users_roles", "Roles"), icon: Shield, permission: "admin.rbac.manage" }
 			]
 		},
 		{
@@ -335,7 +336,7 @@
 <aside
 	class={clsx(
 		"flex h-full flex-col border-e transition-transform duration-200",
-		"fixed inset-y-0 start-0 z-50 w-64 md:static md:translate-x-0",
+		"fixed inset-y-0 start-0 z-50 w-64 max-w-[85vw] md:static md:translate-x-0",
 		!mobileOpen && "-translate-x-full md:translate-x-0",
 		effectiveCollapsed && "md:w-16"
 	)}

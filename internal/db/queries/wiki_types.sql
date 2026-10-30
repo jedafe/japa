@@ -196,7 +196,10 @@ WHERE space_type_id = @space_type_id;
 SELECT COALESCE(wtc.seed_stubs, false) AS seed_stubs
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id
-WHERE sp.id = @space_id;
+WHERE sp.id = @space_id
+ -- §05 amendment — education-typed spaces need level='university' for wiki.
+ AND (sp.level = 'university' OR NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = sp.space_type_id AND st.slug = 'education'));
 
 -- name: ListAllWikiCategories :many
 SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup, wtc.icon,

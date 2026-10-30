@@ -1,260 +1,270 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { TableSkeleton } from '$lib/components/ui/skeleton';
-	import { Modal } from '$lib/components/ui/modal';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
-	import { Plus, RefreshCw, Trash2, Pencil } from 'lucide-svelte';
-	import { userManagementApi, permissionsApi } from '$lib/api';
+	// /users/groups — migrated to the EntityPage scaffold (admin AGENTS.md
+	// mandate for entity list pages). The permission checkbox grid and the
+	// members sub-flow live in snippets/page-local state, same pattern as
+	// /tags and /users/roles.
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { userManagementApi, permissionsApi, api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { pageFromUrl, pageSizeFromUrl, searchFromUrl, syncListStateToUrl } from '$lib/utils/url-sync.svelte';
-	import type { UserGroup } from '$lib/api';
+	import { user } from '$lib/stores/auth.svelte';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
+	import PermissionGrid from '$lib/components/ui/PermissionGrid.svelte';
+	import { Trash2, Users2 } from 'lucide-svelte';
 
-	let groups = $state<UserGroup[]>([]);
-	let loading = $state(true);
-	let currentPage = $state(pageFromUrl());
-	let totalItems = $state(0);
-	let pageSize = $state(pageSizeFromUrl(25));
-	let totalPages = $state(1);
+	type GroupRole = { id: string; name: string; slug: string };
+	type GroupMember = { id: string; username: string; display_name: string };
+	type Group = {
+		id: string;
+		name: string;
+		slug: string;
+		description: string;
+		is_system: boolean;
+		member_count: number;
+		permissions: string[];
+	};
 
-	// URL-seeded sort state (DataTable writes ?sort=/?dir=; seeding here means
-	// the first load() already sends the restored sort to the backend).
-	const initialParams = typeof window !== 'undefined' ? new URL(window.location.href).searchParams : new URLSearchParams();
-	let sortKey = $state(initialParams.get('sort') ?? '');
-	let sortDir = $state<'asc' | 'desc'>(initialParams.get('dir') === 'desc' ? 'desc' : 'asc');
+	// The wildcard grant is owner-only on the backend; the picker mirrors
+	// that — non-owners see it locked instead of discovering the 403 on save.
+	const isOwner = $derived(!!user.current?.is_owner);
 
-	let showModal = $state(false);
-	let editingGroup = $state<UserGroup | null>(null);
-	let formName = $state('');
-	let formDescription = $state('');
-	let formPermissions = $state<string[]>([]);
-	let saveError = $state('');
-	let saving = $state(false);
-
-	let showDeleteConfirm = $state(false);
-	let deleteTarget = $state<UserGroup | null>(null);
-	let bulkDeleting = $state(false);
-	let pageError = $state('');
-
-	let selectedIds = $state<Set<string>>(new Set());
-
+	// Full permission catalogue — fetched once on mount for the form grid.
 	let allPermissions = $state<string[]>([]);
-	let permSearch = $state('');
-	let permCategory = $state('');
-	let searchQuery = $state(searchFromUrl());
 
-	const canManageGroups = $derived(hasPermission('admin.rbac.manage'));
-
-	const permissionCategories = $derived(() => {
-		const cats = new Set<string>();
-		for (const p of allPermissions) {
-			const dot = p.indexOf('.');
-			if (dot > 0) cats.add(p.slice(0, dot));
-		}
-		return [...cats].sort();
+	$effect(() => {
+		void (async () => {
+			const result = await permissionsApi.list();
+			if (result.ok) allPermissions = result.data ?? [];
+		})();
 	});
 
+	let permSearch = $state('');
 	const filteredPermissions = $derived(
-		allPermissions.filter((p) => {
-			if (permCategory && !p.startsWith(permCategory + '.') && !(permCategory === 'other' && !p.includes('.'))) return false;
-			if (permSearch && !p.toLowerCase().includes(permSearch.toLowerCase())) return false;
-			return true;
-		})
+		permSearch
+			? allPermissions.filter((p) => p.toLowerCase().includes(permSearch.toLowerCase()))
+			: allPermissions
 	);
 
-	async function load() {
-		loading = true;
-		// Server-side list state changed — stale selections must not carry over.
-		selectedIds = new Set();
-		try {
-			// Contract: page_size/page_offset/search/sort/sort_dir — the backend
-			// consumes all of them when page_size is present.
+	// ── Members sub-flow ──────────────────────────────────────────────
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state('');
+
+	let membersGroup = $state<Group | null>(null);
+	let showMembersModal = $state(false);
+	let members = $state<GroupMember[]>([]);
+	let membersTotal = $state(0);
+	let membersPage = $state(0);
+	let membersSearch = $state('');
+	let membersLoading = $state(false);
+	let membersError = $state('');
+	const membersPageSize = 25;
+
+	// Add-member state — resolves a user by search (admin users list).
+	let addMemberQuery = $state('');
+	let addMemberOptions = $state<Array<{ id: string; username: string; display_name?: string }>>([]);
+	let addMemberSelected = $state<string>('');
+	let memberActionError = $state('');
+
+	async function loadMembers() {
+		if (!membersGroup) return;
+		membersLoading = true;
+		const params = new URLSearchParams({
+			page_size: String(membersPageSize),
+			page_offset: String(membersPage * membersPageSize)
+		});
+		if (membersSearch) params.set('search', membersSearch);
+		const result = await userManagementApi.listGroupMembers(membersGroup.id, params.toString());
+		if (result.ok) {
+			members = result.data.members ?? [];
+			membersTotal = result.data.total ?? 0;
+			membersError = '';
+		} else {
+			membersError = result.error ?? t('users.groups.members_error', 'Failed to load members');
+		}
+		membersLoading = false;
+	}
+
+	function openMembers(group: Group) {
+		membersGroup = group;
+		membersPage = 0;
+		membersSearch = '';
+		membersError = '';
+		memberActionError = '';
+		addMemberQuery = '';
+		addMemberOptions = [];
+		addMemberSelected = '';
+		showMembersModal = true;
+		// No explicit loadMembers() — the $effect below fires on
+		// showMembersModal/page/search changes and performs the fetch.
+	}
+
+	$effect(() => {
+		if (!showMembersModal) return;
+		void membersPage;
+		void membersSearch;
+		loadMembers();
+	});
+
+	async function searchUsers(q: string) {
+		const params = new URLSearchParams({ page_size: '10', search: q });
+		const result = await api<{ users: Array<{ id: string; username: string; display_name?: string }> }>(`/admin/users?${params}`);
+		if (result.ok) addMemberOptions = result.data.users ?? [];
+	}
+
+	async function addMember() {
+		if (!membersGroup || !addMemberSelected) return;
+		const result = await userManagementApi.addGroupMember(membersGroup.id, addMemberSelected);
+		if (result.ok) {
+			addMemberSelected = '';
+			addMemberQuery = '';
+			addMemberOptions = [];
+			memberActionError = '';
+			loadMembers();
+			entityController?.reload();
+		} else {
+			memberActionError = result.error ?? t('users.groups.member_add_error', 'Failed to add member');
+		}
+	}
+
+	async function removeMember(userId: string) {
+		if (!membersGroup) return;
+		const result = await userManagementApi.removeGroupMember(membersGroup.id, userId);
+		if (result.ok) {
+			memberActionError = '';
+			loadMembers();
+			entityController?.reload();
+		} else {
+			memberActionError = result.error ?? t('users.groups.member_remove_error', 'Failed to remove member');
+		}
+	}
+
+	// Bulk delete uses the built-in confirm-gated "Delete Selected" — a
+	// page-declared destructive entry with that label is auto-replaced by the
+	// scaffold, which runs config.remove per row and collects failures.
+
+	const fields: FieldDef[] = [
+		{ key: 'name', label: t('users.groups.name', 'Name'), type: 'text', required: true },
+		{ key: 'description', label: t('users.groups.description_label', 'Description'), type: 'textarea' },
+		{ key: 'permissions', label: t('users.groups.permissions', 'Permissions'), type: 'text' }
+	];
+
+	const config: EntityPageConfig = {
+		title: t('users.groups.title', 'User Groups'),
+		description: t('users.groups.description', 'Manage user groups and their permissions'),
+		createLabel: t('users.groups.create', 'Create Group'),
+		createPermission: 'admin.rbac.manage',
+		pageSize: 25,
+		columns: [
+			{ key: 'name', label: t('users.groups.name', 'Name'), sortable: true },
+			{
+				key: 'slug',
+				label: 'Slug',
+				defaultHidden: true,
+				render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v ?? ''}</span>`
+			},
+			{
+				key: 'is_system',
+				label: t('users.groups.type', 'Type'),
+				render: (v: boolean) =>
+					v
+						? `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold" style="background-color: color-mix(in srgb, var(--color-warning) 15%, transparent); color: var(--color-foreground)">system</span>`
+						: ''
+			},
+			{ key: 'description', label: t('users.groups.description_label', 'Description') },
+			{
+				key: 'member_count',
+				label: t('users.groups.members', 'Members'),
+				sortable: true,
+				render: (v: number) => `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold" style="background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)">${v}</span>`
+			},
+			{
+				key: 'permissions',
+				label: t('users.groups.permissions', 'Permissions'),
+				render: (v: string[]) => {
+					if (!v || !Array.isArray(v)) return '';
+					const shown = v.slice(0, 3);
+					const rest = v.length > 3 ? `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs" style="background-color: var(--color-surface); color: var(--color-muted)">+${v.length - 3}</span>` : '';
+					return `<div class="flex flex-wrap gap-1">${shown.map((p) => `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs" style="background-color: var(--color-surface); color: var(--color-muted)">${p}</span>`).join('')}${rest}</div>`;
+				}
+			}
+		],
+		actions: [
+			// Custom actions replace the defaults entirely (scaffold contract) —
+			// View/Edit/Delete are re-declared here via the ActionContext so the
+			// standard modals still work alongside the members sub-flow.
+			{
+				label: t('common.view', 'View'),
+				onclick: (_row: Group, ctx) => ctx?.openView(_row)
+			},
+			{
+				label: t('common.edit', 'Edit'),
+				onclick: (_row: Group, ctx) => ctx?.openEdit(_row)
+			},
+			{
+				label: t('users.groups.view_members', 'Members'),
+				icon: Users2,
+				onclick: (row: Group) => openMembers(row)
+			},
+			{
+				label: t('common.delete', 'Delete'),
+				icon: Trash2,
+				variant: 'destructive',
+				onclick: (row: Group, ctx) => ctx?.openDelete(row),
+				show: (row: Group) => !row.is_system
+			}
+		],
+		fields,
+		load: async ({ page, pageSize, q, sort }) => {
 			const params = new URLSearchParams({
 				page_size: String(pageSize),
-				page_offset: String(currentPage * pageSize)
+				page_offset: String(page * pageSize)
 			});
-			if (searchQuery) params.set('search', searchQuery);
-			if (sortKey) {
-				params.set('sort', sortKey);
-				params.set('sort_dir', sortDir);
+			if (q) params.set('search', q);
+			if (sort) {
+				const [key, dir] = sort.split(':');
+				params.set('sort', key);
+				params.set('sort_dir', dir === 'desc' ? 'desc' : 'asc');
 			}
-			const [groupsResult, permsResult] = await Promise.all([
-				userManagementApi.listGroups(params.toString()),
-				permissionsApi.list()
-			]);
-			if (groupsResult.ok) {
-				const d = groupsResult.data;
-				groups = d.groups ?? [];
-				totalItems = d.total ?? 0;
-				totalPages = d.total_pages ?? (Math.ceil(totalItems / pageSize) || 1);
-				pageError = '';
-			} else {
-				pageError = groupsResult.error ?? t('common.error', 'Failed to load groups');
+			const result = await userManagementApi.listGroups(params.toString());
+			if (result.ok) {
+				const d = result.data;
+				return {
+					data: d.groups ?? [],
+					total: d.total ?? 0,
+					totalPages: d.total_pages ?? (Math.ceil((d.total ?? 0) / pageSize) || 1)
+				};
 			}
-			if (permsResult.ok) allPermissions = permsResult.data;
-		} catch (e) {
-			console.error('Failed to load groups:', e instanceof Error ? e.message : String(e));
-		}
-		finally { loading = false; }
-	}
-
-	function openCreate() {
-		editingGroup = null;
-		formName = '';
-		formDescription = '';
-		formPermissions = [];
-		saveError = '';
-		permSearch = '';
-		permCategory = '';
-		showModal = true;
-	}
-
-	function openEdit(group: UserGroup) {
-		editingGroup = group;
-		formName = group.name;
-		formDescription = group.description;
-		formPermissions = [...(group.permissions ?? [])];
-		saveError = '';
-		permSearch = '';
-		permCategory = '';
-		showModal = true;
-	}
-
-	async function handleSave() {
-		if (!formName.trim()) { saveError = t('users.groups.name_required', 'Name is required'); return; }
-		saving = true;
-		saveError = '';
-		const body = { name: formName, description: formDescription, permissions: formPermissions };
-		const result = editingGroup
-			? await userManagementApi.updateGroup(editingGroup.id, body)
-			: await userManagementApi.createGroup(body);
-		saving = false;
-		if (result.ok) {
-			showModal = false;
-			load();
-		} else {
-			saveError = result.error ?? t('users.groups.save_error', 'Failed to save group');
-		}
-	}
-
-	function confirmDelete(group: UserGroup) {
-		deleteTarget = group;
-		showDeleteConfirm = true;
-	}
-
-	async function handleDelete() {
-		if (!deleteTarget) return;
-		const result = await userManagementApi.deleteGroup(deleteTarget.id);
-		if (result.ok) {
-			showDeleteConfirm = false;
-			deleteTarget = null;
-			load();
-		} else {
-			pageError = result.error ?? t('users.groups.delete_error', 'Failed to delete group');
-			showDeleteConfirm = false;
-		}
-	}
-
-	async function bulkDelete(ids: Set<string>) {
-		const idArr = Array.from(ids);
-		if (idArr.length === 0 || bulkDeleting) return;
-		bulkDeleting = true;
-		try {
-			const results = await Promise.all(idArr.map((id) => userManagementApi.deleteGroup(id)));
-			const failed = results.filter((r) => !r.ok);
-			if (failed.length > 0) {
-				pageError = failed[0].error ?? t('users.groups.delete_error', 'Failed to delete group');
-			}
-			load();
-		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('users.groups.delete_error', 'Failed to delete group');
-		}
-		bulkDeleting = false;
-	}
-
-	const columns = [
-		{ key: 'name', label: t('users.groups.name', 'Name'), sortable: true },
-		{ key: 'description', label: t('users.groups.description_label', 'Description') },
-		{
-			key: 'member_count',
-			label: t('users.groups.members', 'Members'),
-			sortable: true,
-			render: (v: number) => `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold" style="background-color: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary)">${v}</span>`
+			throw new Error(result.error ?? t('common.error', 'Failed to load groups'));
 		},
-		{
-			key: 'permissions',
-			label: t('users.groups.permissions', 'Permissions'),
-			render: (v: string[]) => {
-				if (!v || !Array.isArray(v)) return '';
-				const shown = v.slice(0, 3);
-				const rest = v.length > 3 ? `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs" style="background-color: var(--color-surface); color: var(--color-muted)">+${v.length - 3}</span>` : '';
-				return `<div class="flex flex-wrap gap-1">${shown.map((p) => `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs" style="background-color: var(--color-surface); color: var(--color-muted)">${p}</span>`).join('')}${rest}</div>`;
-			}
-		}
-	];
-
-	const rowActions: ActionItem[] = [
-		{
-			label: t('common.edit', 'Edit'),
-			icon: Pencil,
-			onclick: (row: UserGroup) => openEdit(row),
-			show: () => canManageGroups
+		create: async (body) => {
+			const res = await userManagementApi.createGroup({
+				name: String(body.name ?? '').trim(),
+				description: String(body.description ?? ''),
+				permissions: Array.isArray(body.permissions) ? body.permissions : []
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
-		{
-			label: t('common.delete', 'Delete'),
-			icon: Trash2,
-			variant: 'destructive',
-			onclick: (row: UserGroup) => confirmDelete(row),
-			show: () => canManageGroups
-		}
-	];
-
-	const bulkActions: BulkAction[] = $derived(canManageGroups
-		? [{ label: t('users.groups.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }]
-		: []);
-
-	// Sync list state (page, search) to URL for back/forward survival.
-	// ?sort=/?dir= are written by the DataTable itself (urlSync).
-	$effect(() => {
-		void currentPage;
-		void pageSize;
-		void searchQuery;
-		syncListStateToUrl({
-			page: currentPage,
-			pageSize,
-			defaultPageSize: 25,
-			search: searchQuery
-		});
-	});
-
-	$effect(() => {
-		void currentPage;
-		void pageSize;
-		void searchQuery;
-		void sortKey;
-		void sortDir;
-		load();
-	});
+		update: async (id, body) => {
+			const res = await userManagementApi.updateGroup(id, {
+				name: String(body.name ?? '').trim(),
+				description: String(body.description ?? ''),
+				permissions: Array.isArray(body.permissions) ? body.permissions : []
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await userManagementApi.deleteGroup(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		viewSnippet: GroupView,
+		formSnippet: GroupForm
+	};
 </script>
 
 <svelte:head>
 	<title>{t('users.groups.title', 'User Groups')} — {siteName()} Admin</title>
 </svelte:head>
-
-<PageHeader
-	title={t('users.groups.title', 'User Groups')}
-	description={t('users.groups.description', 'Manage user groups and their permissions')}
-	actions={[
-		...(canManageGroups ? [{ label: t('users.groups.create', 'Create Group'), icon: Plus, onclick: openCreate }] : []),
-		{ label: t('common.refresh', 'Refresh'), icon: RefreshCw, variant: 'ghost', onclick: load }
-	]}
-/>
 
 {#if pageError}
 	<div
@@ -265,39 +275,49 @@
 	</div>
 {/if}
 
-<Card>
-	<CardContent>
-		{#if loading}
-			<TableSkeleton rows={5} columns={4} />
-		{:else}
-			<DataTable
-				{columns}
-				data={groups}
-				serverSide
-				page={currentPage}
-				{pageSize}
-				totalRows={totalItems}
-				{totalPages}
-				onpagechange={(p) => { currentPage = p; }}
-				onpagesizechange={(s) => { pageSize = s; currentPage = 0; }}
-				onsortchange={(s) => { sortKey = s.key ?? ''; sortDir = s.dir; currentPage = 0; }}
-				emptyMessage={t('users.groups.empty', 'No groups found')}
-				searchable
-				onsearch={(q) => { searchQuery = q; currentPage = 0; }}
-				selectable={canManageGroups}
-				bind:selectedIds
-				actions={rowActions}
-				bulkActionsList={bulkActions}
-			/>
-		{/if}
-	</CardContent>
-</Card>
+<EntityPage {config} bind:controller={entityController} />
 
-<!-- Create / Edit Modal -->
-<Modal bind:open={showModal} title={editingGroup ? t('users.groups.edit_title', 'Edit Group') : t('users.groups.create_title', 'Create Group')}>
-	{#if saveError}
-		<div class="mb-3 rounded-md border px-3 py-2 text-xs" style="border-color: var(--color-danger); color: var(--color-danger)">{saveError}</div>
-	{/if}
+<!-- ── Snippets ─────────────────────────────────────────────────────────── -->
+
+<!-- View modal body -->
+{#snippet GroupView({ row }: { row: Group })}
+	<div class="space-y-4">
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.groups.name', 'Name')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}
+				{#if row.is_system}
+					<span class="ml-1 rounded-full px-2 py-0.5 text-xs" style="background-color: color-mix(in srgb, var(--color-warning) 15%, transparent)">system</span>
+				{/if}
+			</p>
+			<p class="mt-0.5 font-mono text-xs" style="color: var(--color-muted)">{row.slug}</p>
+		</div>
+		{#if row.description}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.groups.description_label', 'Description')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.description}</p>
+			</div>
+		{/if}
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.groups.members', 'Members')}</p>
+			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.member_count}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.groups.permissions', 'Permissions')}</p>
+			{#if !row.permissions || row.permissions.length === 0}
+				<p class="mt-1 text-sm" style="color: var(--color-muted)">—</p>
+			{:else}
+				<div class="mt-1 flex flex-wrap gap-1">
+					{#each row.permissions as perm (perm)}
+						<span class="inline-block rounded-full px-2 py-0.5 text-xs" style="background-color: color-mix(in srgb, var(--color-secondary) 15%, transparent); color: var(--color-foreground)">{perm}</span>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
+<!-- Create/Edit form body (searchable permissions checkbox grid) -->
+{#snippet GroupForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
 	<div class="space-y-4">
 		<div>
 			<label for="group-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.name', 'Name')}</label>
@@ -307,8 +327,13 @@
 				class="w-full rounded-md border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 				placeholder={t('users.groups.name_placeholder', 'Enter group name')}
-				bind:value={formName}
+				bind:value={value.name}
 			/>
+			{#if editing?.is_system}
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('users.groups.system_slug_locked', 'System group — the slug is locked.')}</p>
+			{:else if editing}
+				<p class="mt-1 font-mono text-xs" style="color: var(--color-muted)">slug: {editing.slug}</p>
+			{/if}
 		</div>
 		<div>
 			<label for="group-desc" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.description_label', 'Description')}</label>
@@ -318,76 +343,104 @@
 				class="w-full rounded-md border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 				placeholder={t('users.groups.desc_placeholder', 'Enter group description')}
-				bind:value={formDescription}
+				bind:value={value.description}
 			></textarea>
 		</div>
 		<div>
 			<p class="mb-2 text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.permissions', 'Permissions')}</p>
-			<div class="mb-2 flex gap-2">
-				<div class="flex-1">
-					<!-- 'all' sentinel maps to '' (all categories) -->
-					<Autocomplete
-						id="group-perm-category"
-						placeholder={t('users.groups.all_categories', 'All categories')}
-						emptyMessage={t('common.no_results', 'No results found')}
-						fetcher={async (q: string) => {
-							const needle = q.trim().toLowerCase();
-							return [
-								{ id: 'all', label: t('users.groups.all_categories', 'All categories') },
-								...permissionCategories().map((c) => ({ id: c, label: c })),
-								{ id: 'other', label: t('users.groups.other', 'Other') }
-							].filter((o) => !needle || o.label.toLowerCase().includes(needle));
-						}}
-						initialFetcher={async () => [
-							{ id: 'all', label: t('users.groups.all_categories', 'All categories') },
-							...permissionCategories().map((c) => ({ id: c, label: c })),
-							{ id: 'other', label: t('users.groups.other', 'Other') }
-						]}
-						selectedId={permCategory || 'all'}
-						selectedLabel={permCategory
-							? (permCategory === 'other' ? t('users.groups.other', 'Other') : permCategory)
-							: t('users.groups.all_categories', 'All categories')}
-						onSelect={(item: AutocompleteItem) => { permCategory = item.id === 'all' ? '' : item.id; }}
-						onClear={() => { permCategory = ''; }}
-					/>
-				</div>
-				<input
-					type="text"
-					class="flex-1 rounded-md border px-2 py-1.5 text-xs"
-					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-					placeholder={t('users.groups.search_permissions', 'Search permissions...')}
-					bind:value={permSearch}
-				/>
-			</div>
-			<div class="grid max-h-60 grid-cols-2 gap-2 overflow-y-auto">
-				{#each filteredPermissions as perm (perm)}
-					<label class="flex items-center gap-2 text-xs">
-						<input type="checkbox" value={perm} bind:group={formPermissions} class="rounded" />
-						{perm}
-					</label>
+			<input
+				type="text"
+				class="mb-2 w-full rounded-md border px-3 py-1.5 text-xs"
+				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+				placeholder={t('users.groups.search_permissions', 'Search permissions...')}
+				bind:value={permSearch}
+			/>
+			<PermissionGrid permissions={filteredPermissions} bind:value={value.permissions} {isOwner} />
+		</div>
+	</div>
+{/snippet}
+
+<!-- Members modal -->
+<Modal bind:open={showMembersModal} title={membersGroup ? `${t('users.groups.members', 'Members')} — ${membersGroup.name}` : t('users.groups.members', 'Members')} size="lg">
+	<div class="space-y-3">
+		{#if memberActionError}
+			<div class="rounded-md border px-3 py-2 text-xs" style="border-color: var(--color-danger); color: var(--color-danger)">{memberActionError}</div>
+		{/if}
+		<div class="flex gap-2">
+			<input
+				type="text"
+				class="flex-1 rounded-md border px-3 py-1.5 text-xs"
+				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+				placeholder={t('users.groups.search_members', 'Search members...')}
+				bind:value={membersSearch}
+				oninput={() => { membersPage = 0; }}
+			/>
+		</div>
+
+		{#if membersError}
+			<p class="text-xs" style="color: var(--color-danger)">{membersError}</p>
+		{:else if membersLoading}
+			<p class="text-xs" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
+		{:else if members.length === 0}
+			<p class="text-xs" style="color: var(--color-muted)">{t('users.groups.no_members', 'No members in this group.')}</p>
+		{:else}
+			<div class="max-h-64 overflow-y-auto">
+				{#each members as m (m.id)}
+					<div class="flex items-center justify-between border-b py-1.5 text-xs" style="border-color: var(--color-border)">
+						<span>
+							<span class="font-medium" style="color: var(--color-foreground)">{m.username}</span>
+							{#if m.display_name}<span style="color: var(--color-muted)"> — {m.display_name}</span>{/if}
+						</span>
+						{#if !membersGroup?.is_system}
+							<button
+								class="rounded px-2 py-0.5 text-xs"
+								style="color: var(--color-danger)"
+								onclick={() => removeMember(m.id)}
+							>{t('common.remove', 'Remove')}</button>
+						{/if}
+					</div>
 				{/each}
 			</div>
-		</div>
+			{#if membersTotal > membersPageSize}
+				<div class="flex items-center justify-between text-xs" style="color: var(--color-muted)">
+					<Button variant="outline" size="sm" disabled={membersPage === 0} onclick={() => { membersPage -= 1; }}>{t('common.previous', 'Previous')}</Button>
+					<span>{membersPage + 1} / {Math.ceil(membersTotal / membersPageSize)}</span>
+					<Button variant="outline" size="sm" disabled={(membersPage + 1) * membersPageSize >= membersTotal} onclick={() => { membersPage += 1; }}>{t('common.next', 'Next')}</Button>
+				</div>
+			{/if}
+		{/if}
+
+		{#if !membersGroup?.is_system}
+			<div class="border-t pt-3" style="border-color: var(--color-border)">
+				<p class="mb-2 text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.add_member', 'Add member')}</p>
+				<div class="flex gap-2">
+					<input
+						type="text"
+						class="flex-1 rounded-md border px-3 py-1.5 text-xs"
+						style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+						placeholder={t('users.groups.search_users', 'Search users by username...')}
+						bind:value={addMemberQuery}
+						oninput={() => { if (addMemberQuery.length >= 2) searchUsers(addMemberQuery); else addMemberOptions = []; }}
+					/>
+					<Button size="sm" onclick={addMember} disabled={!addMemberSelected}>{t('common.add', 'Add')}</Button>
+				</div>
+				{#if addMemberOptions.length > 0}
+					<div class="mt-1 max-h-32 overflow-y-auto rounded-md border" style="border-color: var(--color-border)">
+						{#each addMemberOptions as u (u.id)}
+							<button
+								class="block w-full px-3 py-1.5 text-left text-xs hover:opacity-80"
+								style="color: var(--color-foreground); background-color: {addMemberSelected === u.id ? 'var(--color-surface)' : 'transparent'}"
+								onclick={() => { addMemberSelected = u.id; addMemberQuery = u.username; addMemberOptions = []; }}
+							>
+								{u.username}{#if u.display_name} — {u.display_name}{/if}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
 	</div>
 	{#snippet footer()}
-		<div class="flex justify-end gap-2">
-			<Button variant="outline" onclick={() => { showModal = false; }}>{t('common.cancel', 'Cancel')}</Button>
-			<Button onclick={handleSave} disabled={saving}>{saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}</Button>
-		</div>
+		<Button variant="outline" onclick={() => { showMembersModal = false; }}>{t('common.close', 'Close')}</Button>
 	{/snippet}
-</Modal>
-
-<!-- Delete Confirmation -->
-<Modal bind:open={showDeleteConfirm} title={t('common.delete', 'Delete')} size="sm">
-	<p class="text-sm" style="color: var(--color-foreground)">
-		{t('users.groups.delete_confirm', 'Are you sure you want to delete this group?')}
-	</p>
-	<p class="mt-2 text-sm font-medium" style="color: var(--color-foreground)">{deleteTarget?.name}</p>
-	<p class="mt-1 text-sm" style="color: var(--color-danger)">
-		{t('common.cannotUndo', 'This action cannot be undone.')}
-	</p>
-	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => { showDeleteConfirm = false; }}>{t('common.cancel', 'Cancel')}</Button>
-		<Button variant="destructive" onclick={handleDelete}>{t('common.delete', 'Delete')}</Button>
-	</div>
 </Modal>

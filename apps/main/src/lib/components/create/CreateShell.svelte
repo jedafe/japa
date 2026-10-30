@@ -603,6 +603,7 @@
 				onfocus={() => (focusedField = 'body')}
 				defaultMode={defaultEditor}
 				aiTrigger={aiButtonSnippet}
+				postTitle={title}
 			/>
 		{/if}
 

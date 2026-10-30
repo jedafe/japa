@@ -32,7 +32,7 @@
 
 <div class="mb-4 flex flex-wrap items-end gap-3">
 	{#each filters as filter (filter)}
-		<div>
+		<div class="w-full sm:w-auto">
 			<label for="filter-{filter.key}" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{filter.label}</label>
 			{#if filter.type === 'select'}
 				<Select
@@ -45,7 +45,7 @@
 				<input
 					id="filter-{filter.key}"
 					type="date"
-					class="rounded-md border px-3 py-1.5 text-sm"
+					class="w-full rounded-md border px-3 py-1.5 text-sm sm:w-auto"
 					style="border-color: var(--color-border); background-color: var(--color-surface)"
 					bind:value={localValues[filter.key]}
 				/>
@@ -53,7 +53,7 @@
 				<input
 					id="filter-{filter.key}"
 					type="text"
-					class="rounded-md border px-3 py-1.5 text-sm"
+					class="w-full rounded-md border px-3 py-1.5 text-sm sm:w-auto"
 					style="border-color: var(--color-border); background-color: var(--color-surface)"
 					placeholder={filter.label}
 					bind:value={localValues[filter.key]}

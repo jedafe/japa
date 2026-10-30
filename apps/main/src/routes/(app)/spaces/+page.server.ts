@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet, ApiError } from '$lib/server/api';
-import type { GeoCountry, Space, SpaceType } from '$lib/types';
+import type { Space, SpaceType } from '$lib/types';
 
 /**
  * Spaces index at /spaces — public (OptionalAuth), SSR. Lists every
@@ -67,6 +67,10 @@ export const load: PageServerLoad = async (event) => {
 	const params = new URLSearchParams();
 	params.set('page_size', String(pageSize));
 	params.set('page_offset', String(offset));
+	// §05 amendment — the directory lists member-created spaces only. Primary
+	// (geo + platform-seeded) spaces are reachable via /wiki, /universities,
+	// direct URLs, and search — never this listing.
+	params.set('member_created', '1');
 	if (q) params.set('q', q);
 	if (typeID) params.set('type', typeID);
 	if (levelFilter) params.set('level', levelFilter);
@@ -95,17 +99,6 @@ export const load: PageServerLoad = async (event) => {
 		})
 	);
 
-	// Country list powers the ?geo= filter picker (was a free-text code input).
-	const countriesPromise = apiGet<GeoCountry[]>(ctx, '/geo/countries')
-		.then((c) => (Array.isArray(c) ? c : []))
-		.catch(() => [] as GeoCountry[]);
-
-	// Fetch region options for the directory filters. ?subregion= remains a
-	// valid URL-only param (passed through above) — no dedicated UI control.
-	const regionsPromise = apiGet<string[]>(ctx, '/spaces/regions')
-		.then((r) => (Array.isArray(r) ? r : []))
-		.catch(() => [] as string[]);
-
 	// Try to resolve the parent filter name so the UI can display a chip.
 	const parentNamePromise = parentFilter
 		? apiGet<{ id: string; name: string }[]>(ctx, '/spaces/suggest-parents')
@@ -113,10 +106,8 @@ export const load: PageServerLoad = async (event) => {
 				.catch(() => '')
 		: Promise.resolve('');
 
-	const [spacesResult, countries, regions, parentName] = await Promise.all([
+	const [spacesResult, parentName] = await Promise.all([
 		spacesPromise,
-		countriesPromise,
-		regionsPromise,
 		parentNamePromise
 	]);
 
@@ -139,8 +130,6 @@ export const load: PageServerLoad = async (event) => {
 		parent: parentFilter,
 		joined: joinedOnly,
 		parentName,
-		countries,
-		regions,
 		page,
 		totalPages,
 		total,

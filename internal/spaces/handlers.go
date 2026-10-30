@@ -94,6 +94,10 @@ type Handlers struct {
 	// permChecker resolves static RBAC nodes (e.g. spaces.moderate for the
 	// private-space member-list gate). Wired by the server; nil-safe.
 	permChecker PermissionChecker
+
+	// tipSettings reports a space's tips_enabled flag for the
+	// monetization exclusivity gate (§05); nil-safe.
+	tipSettings TipSettingsChecker
 }
 
 // FollowToggleService is the subset of the follows.Service used by the space
@@ -257,7 +261,9 @@ func (h *Handlers) ensureImageMedia(ctx context.Context, mediaID pgtype.UUID, fi
 
 	m, err := h.media.GetMedia(ctx, mediaID)
 	if err != nil {
-		return nil
+		// Fail closed — a media ID that can't be resolved would store a
+		// permanently broken logo/header reference.
+		return fmt.Errorf("%s references media that could not be loaded", field)
 	}
 
 	if !strings.HasPrefix(strings.ToLower(m.MimeType), "image/") {
@@ -284,6 +290,9 @@ func (h *Handlers) invalidateTargetPermCache(ctx context.Context, targetUserID p
 // private-space member-list gate). Nil degrades to membership-only gating.
 func (h *Handlers) SetPermissionChecker(p PermissionChecker) { h.permChecker = p }
 
+// SetTipSettingsChecker wires the tips lookup for the exclusivity gate.
+func (h *Handlers) SetTipSettingsChecker(c TipSettingsChecker) { h.tipSettings = c }
+
 // NewHandlers creates Handlers with the given Service and UnreadCounter.
 func NewHandlers(service *Service, unread *UnreadCounter, contentService ContentService) *Handlers {
 	return &Handlers{Service: service, Unread: unread, content: contentService}
@@ -304,6 +313,12 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 // every handler stays consistent.
 func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
+}
+
+// TipSettingsChecker reports whether a space currently accepts tips — used
+// to enforce the tips-vs-paid mutual exclusivity rule (§05).
+type TipSettingsChecker interface {
+	SpaceTipsEnabled(ctx context.Context, spaceID pgtype.UUID) bool
 }
 
 // canViewRestrictedSpace reports whether the caller may view a non-public or

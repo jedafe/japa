@@ -36,7 +36,7 @@ type JourneyClassWriter interface {
 // Service provides onboarding business logic with reader/writer pool separation.
 type Service struct {
 	// activity emits wallet activity events — profile.completed points
-	// (ADR-129). Optional — nil-safe.
+	// (ADR-136). Optional — nil-safe.
 	activity wallet.ActivityEmitter
 
 	store         *Store
@@ -581,13 +581,13 @@ func (s *Service) Complete(ctx context.Context, userID pgtype.UUID) error {
 		return fmt.Errorf("completing onboarding: %w", err)
 	}
 
-	// ADR-129: finishing onboarding earns profile.completed points (one_time).
+	// ADR-136: finishing onboarding earns profile.completed points (one_time).
 	s.emitActivity(ctx, userID, "profile.completed", "profile:"+userID.String())
 
 	return nil
 }
 
-// SetActivityEmitter injects the wallet activity emitter (ADR-129).
+// SetActivityEmitter injects the wallet activity emitter (ADR-136).
 func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
 
 // emitActivity records a points activity event — fire-and-forget (Rule 8).

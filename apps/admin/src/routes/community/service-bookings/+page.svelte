@@ -301,7 +301,7 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_listing', 'Listing')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.listing_title || '—'}</p>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_booker', 'Booker')}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.booker_username ? `@${row.booker_username}` : '—'}</p>
@@ -344,7 +344,7 @@
 			</div>
 		{/if}
 		{#if row.total_price != null || row.fee_amount != null}
-			<div class="grid grid-cols-2 gap-4">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_total', 'Total')}</p>
 					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{formatMoney(row.total_price, row.fee_currency, null, { minor: true }) || '—'}</p>
@@ -385,7 +385,7 @@
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.cancel_reason}</p>
 			</div>
 		{/if}
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_created', 'Created')}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{fmtDate(row.created_at)}</p>

@@ -29,12 +29,18 @@
 			.filter((s): s is MeSpace => s != null)
 	);
 
+	// §05 amendment — primary spaces (geo levels + universities) are excluded
+	// from content space suggestions: posts auto-attach via title keywords,
+	// so only member-created spaces are selectable. searchSpaces already
+	// scopes server-side with member_created=1.
+	const isSelectable = (s: MeSpace) => s.is_primary_space === false || (!s.is_primary_space && (!s.level || s.level === 'custom'));
+
 	// Debounced fetcher — calls GET /me/spaces?q=… via the API client.
 	async function fetcher(q: string): Promise<AutocompleteItem[]> {
 		const res = await searchSpaces(q);
 		const qLower = q.toLowerCase();
 		return (res.data ?? [])
-			.filter((s) => !spaceIds.includes(s.id))
+			.filter((s) => isSelectable(s) && !spaceIds.includes(s.id))
 			.map((s) => ({
 				id: s.id,
 				label: s.name,
@@ -51,10 +57,11 @@
 			});
 	}
 
-	// Initial suggestions — show up to 5 unselected spaces (primary first) when focused.
+	// Initial suggestions — show up to 5 unselected member spaces (the
+	// caller's own geo space first) when focused.
 	async function initialFetcher(): Promise<AutocompleteItem[]> {
 		return spaces
-			.filter((s) => !spaceIds.includes(s.id))
+			.filter((s) => isSelectable(s) && !spaceIds.includes(s.id))
 			.slice()
 			.sort((a, b) => (a.is_primary ? -1 : b.is_primary ? 1 : 0))
 			.slice(0, 5)

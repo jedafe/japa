@@ -451,6 +451,12 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 
 	for i, idx := range indexes {
 		filters := []FilterExpr{}
+		// BUG-045: the spaces index carries `status` — never surface
+		// suspended/archived/draft spaces in search (visibility is not an
+		// index attribute; non-public spaces are simply never indexed).
+		if idx == IndexSpaces {
+			filters = append(filters, Eq{Field: "status", Value: "active"})
+		}
 
 		// §54: apply content_type / space_id / tag_slug filters to the
 		// posts index only. These attributes don't exist on other indexes.

@@ -248,7 +248,7 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.space_types.description_label', 'Description')}</p>
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.description || '—'}</p>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.space_types.category_label', 'Category')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">

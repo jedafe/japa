@@ -295,6 +295,9 @@ export interface MeSpace {
 	slug: string;
 	name: string;
 	is_primary?: boolean;
+	/** §05 amendment — platform-primary space (geo level or
+	 *  level='university'), distinct from is_primary (caller's geo). */
+	is_primary_space?: boolean;
 	level?: string;
 	space_type_id?: string;
 	/** Present on /me/spaces/owned rows — 'suspended' spaces gate the §22 appeal control. */
@@ -1408,6 +1411,10 @@ export interface Space {
 	is_following?: boolean;
 	/** §80 — the space's type is wiki-only (no community surface). */
 	wiki_only?: boolean;
+	/** §05 amendment — platform-run primary space (geo level or
+	 *  platform-seeded, e.g. universities). Primary spaces are follow-only:
+	 *  no Join button (no owner — the platform owns them). */
+	is_primary?: boolean;
 }
 
 /** GET /spaces/{slug} response — `{ space, rules, keywords, logo_url }` bundle. */

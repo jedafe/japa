@@ -348,7 +348,7 @@ WHERE user_id = $1
   AND deleted_at IS NULL
 `
 
-// Scrubs PII from user_journeys rows (ADR-129): the member-supplied label,
+// Scrubs PII from user_journeys rows (ADR-136): the member-supplied label,
 // destination, per-journey stage history, and visibility flag are erased
 // and every row is soft-deleted so nothing renders during the retention
 // window. Rows hard-delete with the user (user_id ON DELETE CASCADE) in

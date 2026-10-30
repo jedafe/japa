@@ -1,6 +1,6 @@
 // create.go — §125 POST /tips: recipient resolution, validation, and the
 // credits settlement path (fiat branches into fiat.go). Points are not a
-// tip method (ADR-129).
+// tip method (ADR-136).
 package tips
 
 import (
@@ -149,7 +149,7 @@ func (s *Service) resolveRecipient(ctx context.Context, in CreateTipInput) (Owne
 	}
 }
 
-// createWalletTip runs the synchronous credits path (ADR-129 — the only
+// createWalletTip runs the synchronous credits path (ADR-136 — the only
 // wallet-ledger method; points are retired).
 func (s *Service) createWalletTip(ctx context.Context, senderID pgtype.UUID, owner Owner, walletOwner pgtype.UUID, st Settings, in CreateTipInput, idemKey string) (CreateTipResult, error) {
 	// Platform has no wallet — credits tips to it are invalid.
@@ -203,7 +203,7 @@ func (s *Service) createWalletTip(ctx context.Context, senderID pgtype.UUID, own
 		return CreateTipResult{}, err
 	}
 
-	// ADR-129: the sender earns tip.sent points (engagement), the recipient
+	// ADR-136: the sender earns tip.sent points (engagement), the recipient
 	// gets credits (transaction). Reference = tip id → exactly-once award.
 	s.emitActivity(ctx, senderID, wallet.ActivityKeyTipSent, "tip:"+tip.ID.String())
 

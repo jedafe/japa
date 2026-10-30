@@ -32,7 +32,7 @@ export const load: PageServerLoad = async (event) => {
 	// so the cap is generous enough to cover heavy joiners.
 	let spaces: MeSpace[] = [];
 	try {
-		spaces = (await apiList<MeSpace>(ctx, '/me/spaces?member_only=1&page_size=500')).items;
+		spaces = (await apiList<MeSpace>(ctx, '/me/spaces?member_only=1&member_created=1&page_size=500')).items;
 	} catch {
 		spaces = [];
 	}

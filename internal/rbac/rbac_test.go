@@ -346,3 +346,32 @@ func TestInvalidatePermCache_NilValkey(t *testing.T) {
 		t.Errorf("InvalidatePermCache with nil Valkey should return nil, got %v", err)
 	}
 }
+
+func TestSlugifySanitizes(t *testing.T) {
+	cases := map[string]string{
+		"Moderators":      "moderators",
+		"Mod's!":          "mods",
+		"Pro  Members":    "pro-members",
+		"a__b":            "a-b",
+		" spaces ":        "spaces",
+		"UPPER_case-Name": "upper-case-name",
+		"!!!":             "",
+	}
+	for in, want := range cases {
+		if got := slugify(in); got != want {
+			t.Errorf("slugify(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestContainsWildcard(t *testing.T) {
+	if !containsWildcard([]string{"blog.create", "*"}) {
+		t.Error("expected containsWildcard true for set containing '*'")
+	}
+	if containsWildcard([]string{"blog.create", "admin.*"}) {
+		t.Error("expected containsWildcard false for non-exact '*'")
+	}
+	if containsWildcard(nil) {
+		t.Error("expected containsWildcard false for nil")
+	}
+}
