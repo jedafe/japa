@@ -111,7 +111,7 @@ Badge unlocks and challenge completions already award points via `reward_points`
 - Amend §28: remove conversion route/settings; document separation.
 - Amend §58: note credits have no points provenance.
 - Amend §125: tips settle credits/fiat only; sender earns `tip.sent` points.
-- New ADR (e.g. ADR-129) superseding ADR-024's one-way conversion clause and amending ADR-028's "points serve double duty" rationale — points are now reputation-only.
+- New ADR (e.g. ADR-136) superseding ADR-024's one-way conversion clause and amending ADR-028's "points serve double duty" rationale — points are now reputation-only.
 - Update `conventions/api-routes-catalog.md`, `conventions/system-settings-catalog.md`, permission catalog.
 
 ## 9. Verification
