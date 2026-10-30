@@ -10,6 +10,7 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { WikiDestination, WikiDirectory, WikiDirectoryChild } from '$lib/types';
+	import { entityPageHref } from '$lib/utils/wikiEntityLinks';
 	import { MapPin } from 'lucide-svelte';
 
 	let {
@@ -52,6 +53,13 @@
 		}
 		return out;
 	});
+
+	// Entity-bound children (e.g. a university's course offerings) — the
+	// space hierarchy can't see them, so they ride as their own groups
+	// keyed by child type slug.
+	const entityGroups = $derived(
+		Object.entries(directory.entity_children ?? {}).filter(([, items]) => items.length > 0)
+	);
 
 	async function searchChildren(q: string): Promise<AutocompleteItem[]> {
 		const query = q.trim();
@@ -174,6 +182,36 @@
 				{/each}
 			</div>
 		{/each}
+	{#each entityGroups as [typeSlug, items] (typeSlug)}
+		{#if groups.size > 0 || entityGroups.length > 1}
+			<h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+				{typeLabel(typeSlug)}
+			</h2>
+		{/if}
+		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			{#each items as child (child.id)}
+				<!-- Entity cards carry a primary + secondary link, so the
+				     card is a div (nested <a> is invalid). -->
+				<div class="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)]">
+					<a
+						href={entityPageHref(typeSlug, child.slug)}
+						class="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+						data-sveltekit-preload-data="hover"
+					>
+						{child.name}
+					</a>
+					{#if child.program_slug}
+						<a
+							href={entityPageHref('program', child.program_slug)}
+							class="text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+						>
+							{t('wiki.view_canonical_program', 'Canonical program')}
+						</a>
+					{/if}
+				</div>
+			{/each}
+		</div>
+	{/each}
 	{#if directory.total > directory.children.length}
 		<p class="text-xs text-[var(--color-muted)]">
 			{t('wiki.directory_truncated', 'Showing {shown} of {total} — search to find the rest.', {

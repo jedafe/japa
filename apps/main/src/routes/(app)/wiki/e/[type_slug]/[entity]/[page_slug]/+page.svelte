@@ -2,6 +2,7 @@
 	import { t, siteName } from '$lib/i18n';
 	import { tiptapToHtml, type TipTapDoc } from '$lib/tiptap/serialize';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { entityPageHref } from '$lib/utils/wikiEntityLinks';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -18,6 +19,15 @@
 		}
 		return '';
 	});
+
+	// §wiki-links — mode:"related" grid heading: an offering page lists
+	// other universities with the same catalog course; a program page
+	// lists every university offering it.
+	const relatedHeading = $derived(
+		page?.kind === 'course'
+			? t('wiki.also_offered_at', 'Also offered at')
+			: t('wiki.universities_offering', 'Universities offering this program')
+	);
 </script>
 
 <svelte:head>
@@ -67,6 +77,46 @@
 					</div>
 				{/each}
 			</dl>
+		</section>
+	{/if}
+
+	{#if page.related && page.related.items.length > 0}
+		<section class="space-y-3">
+			<h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+				{relatedHeading}
+			</h2>
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+				{#each page.related.items as uni (uni.slug)}
+					<div class="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)]">
+						<a
+							href="/wiki/{encodeURIComponent(uni.slug)}"
+							class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+							data-sveltekit-preload-data="hover"
+						>
+							{uni.name}
+							{#if uni.geo_code}
+								<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--color-muted)]">{uni.geo_code}</span>
+							{/if}
+						</a>
+						{#if uni.offering_slug}
+							<a
+								href={entityPageHref('course', uni.offering_slug)}
+								class="text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+							>
+								{t('wiki.view_at_university', 'View at {name}', { name: uni.name })}
+							</a>
+						{/if}
+					</div>
+				{/each}
+			</div>
+			{#if page.related.total > page.related.items.length}
+				<p class="text-xs text-[var(--color-muted)]">
+					{t('wiki.directory_truncated', 'Showing {shown} of {total} — search to find the rest.', {
+						shown: page.related.items.length,
+						total: page.related.total
+					})}
+				</p>
+			{/if}
 		</section>
 	{/if}
 </article>

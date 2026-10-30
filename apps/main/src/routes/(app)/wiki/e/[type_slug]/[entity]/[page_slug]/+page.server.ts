@@ -23,6 +23,12 @@ export interface EntityWikiPage {
 		id: string; slug: string; name: string;
 		fields: { key: string; label: string; field_type: string; value?: unknown; section?: string }[];
 	};
+	/** §wiki-links — mode:"related" peer listing (universities). */
+	related?: {
+		kind: string;
+		items: { slug: string; name: string; geo_code?: string; offering_slug?: string }[];
+		total: number;
+	};
 }
 
 // Entity-bound wiki page: /wiki/e/{type_slug}/{entity}/{page_slug}

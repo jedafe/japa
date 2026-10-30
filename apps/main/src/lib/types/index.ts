@@ -3580,7 +3580,20 @@ export interface WikiDirectoryChild {
 export interface WikiDirectory {
 	levels: string[];
 	children: WikiDirectoryChild[];
+	/** §wiki-links — entity-bound descendants keyed by child type slug
+	 *  (e.g. {course: [...]}) — resolved outside the space hierarchy. */
+	entity_children?: Record<string, WikiEntityChild[]>;
 	total: number;
+}
+
+/** §wiki-links — one entity-bound directory child (a university's course
+ *  offering); program_slug links the canonical program wiki when set. */
+export interface WikiEntityChild {
+	id: string;
+	slug: string;
+	name: string;
+	discriminator?: string;
+	program_slug?: string;
 }
 
 export interface WikiPage extends WikiPageIndex {
