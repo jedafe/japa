@@ -327,14 +327,30 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 	kinds := s.directoryChildKinds(ctx, capped)
 
 	return &WikiDirectoryDTO{
-		Levels:         levels,
-		Children:       directoryChildDTOs(capped, imageURLs, kinds),
-		EntityChildren: entityChildrenOrNil(entityChildren),
+		Levels:   levels,
+		Children: directoryChildDTOs(capped, imageURLs, kinds),
+		// Entity groups cap at the same per-page limit — a uni could carry
+		// hundreds of offerings and the grid must stay bounded.
+		EntityChildren: entityChildrenOrNil(capEntityChildren(entityChildren, limit)),
 		// Total counts space children only — the frontend's "Showing X of
-		// Y" note compares it against children.length; entity children are
-		// uncapped and render in their own groups.
+		// Y" note compares it against children.length; entity groups
+		// render and truncate independently in their own sections.
 		Total: len(children),
 	}
+}
+
+// capEntityChildren bounds each entity-type group to limit rows — same
+// treatment space children get via the capped slice.
+func capEntityChildren(m map[string][]EntityChild, limit int) map[string][]EntityChild {
+	if limit <= 0 {
+		limit = defaultDirectoryLimit
+	}
+	for k, kids := range m {
+		if len(kids) > limit {
+			m[k] = kids[:limit]
+		}
+	}
+	return m
 }
 
 // entityChildrenOrNil normalizes an empty map to nil so the JSON key
