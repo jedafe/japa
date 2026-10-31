@@ -11,6 +11,30 @@ ORDER BY
  CASE WHEN status = 'open' THEN 0 ELSE 1 END,
  created_at DESC;
 
+-- name: ListModerationAlertsFiltered :many
+-- Admin alerts list — server-side severity/status/q filters + pagination so
+-- the DataTable spec holds (was status-only, everything else ignored).
+SELECT * FROM moderation_alerts
+WHERE (NULLIF(@status, '') IS NULL OR status = @status)
+ AND (NULLIF(@severity, '') IS NULL OR severity = @severity)
+ AND (NULLIF(@q, '') IS NULL OR
+   title ILIKE '%' || @q || '%'
+   OR COALESCE(description, '') ILIKE '%' || @q || '%'
+   OR alert_type ILIKE '%' || @q || '%')
+ORDER BY
+ CASE WHEN status = 'open' THEN 0 ELSE 1 END,
+ created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountModerationAlertsFiltered :one
+SELECT COUNT(*)::int FROM moderation_alerts
+WHERE (NULLIF(@status, '') IS NULL OR status = @status)
+ AND (NULLIF(@severity, '') IS NULL OR severity = @severity)
+ AND (NULLIF(@q, '') IS NULL OR
+   title ILIKE '%' || @q || '%'
+   OR COALESCE(description, '') ILIKE '%' || @q || '%'
+   OR alert_type ILIKE '%' || @q || '%');
+
 -- name: GetModerationAlert :one
 SELECT * FROM moderation_alerts
 WHERE id = @id;

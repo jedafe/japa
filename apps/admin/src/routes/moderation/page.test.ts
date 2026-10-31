@@ -6,8 +6,13 @@ vi.mock('$lib/api', () => ({
 	moderationAdminApi: {
 		getQueue: vi.fn().mockResolvedValue({ ok: true, data: { items: [], total: 0, total_pages: 1 } }),
 		updateItem: vi.fn().mockResolvedValue({ ok: true }),
+		assignItem: vi.fn().mockResolvedValue({ ok: true }),
 		bulkAction: vi.fn().mockResolvedValue({ ok: true }),
 		getOptions: vi.fn().mockResolvedValue({ ok: true, data: { statuses: [], content_types: [] } }),
+	},
+	adsAdminApi: {
+		activateCampaign: vi.fn().mockResolvedValue({ ok: true }),
+		rejectCampaign: vi.fn().mockResolvedValue({ ok: true }),
 	},
 }));
 vi.mock('$app/state', () => ({
@@ -19,11 +24,14 @@ vi.mock('$lib/stores/permissions.svelte', () => ({
 	getPermissions: () => ['*'],
 	getPermissionState: () => ({}),
 }));
+vi.mock('$lib/stores/auth.svelte', () => ({
+	user: { current: { id: 'admin-1', username: 'admin', email: 'admin@example.com' } },
+}));
 
 describe('/moderation', () => {
-	it('renders the Moderation heading', () => {
+	it('renders the Moderation Queue heading', () => {
 		render(Page);
-		expect(screen.getByText('Content Moderation')).toBeTruthy();
+		expect(screen.getByText('Moderation Queue')).toBeTruthy();
 	});
 
 	it('shows empty state when no items', async () => {

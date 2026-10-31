@@ -17,6 +17,7 @@ package university_courses
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -401,7 +402,8 @@ func numericFromFloat(f *float64) pgtype.Numeric {
 		return n
 	}
 
-	if err := n.Scan(*f); err != nil {
+	// pgtype.Numeric cannot Scan a float64 — format it first.
+	if err := n.Scan(strconv.FormatFloat(*f, 'f', -1, 64)); err != nil {
 		return pgtype.Numeric{}
 	}
 
@@ -452,6 +454,33 @@ func (h *Handlers) AdminCreateCatalog(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, catalogToJSON(c))
 }
 
+// jsonPresence reports which keys a JSON object body set explicitly, so PATCH
+// can distinguish "absent" (keep current) from "null" (clear the column).
+type jsonPresence map[string]json.RawMessage
+
+func (p jsonPresence) has(key string) bool { _, ok := p[key]; return ok }
+
+func (p jsonPresence) isNull(key string) bool {
+	raw, ok := p[key]
+	return ok && string(raw) == "null"
+}
+
+// decodeWithPresence decodes a JSON object body into req and returns the
+// per-key presence map alongside it.
+func decodeWithPresence(body io.Reader, req any) (jsonPresence, error) {
+	b, err := io.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(b, req); err != nil {
+		return nil, err
+	}
+	p := jsonPresence{}
+	// A non-object body leaves p empty — every field then reads as absent.
+	_ = json.Unmarshal(b, &p)
+	return p, nil
+}
+
 // AdminUpdateCatalog handles PATCH /api/v1/admin/course-catalog/{id}.
 // [admin: universities.course_catalog.update].
 func (h *Handlers) AdminUpdateCatalog(w http.ResponseWriter, r *http.Request) {
@@ -462,7 +491,8 @@ func (h *Handlers) AdminUpdateCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req catalogRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	presence, err := decodeWithPresence(r.Body, &req)
+	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "Invalid JSON body")
 		return
 	}
@@ -479,7 +509,9 @@ func (h *Handlers) AdminUpdateCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Omitted scalars keep their current values — a bare {title} PATCH must
-	// not reset language to English or unpublish the row.
+	// not reset language to English or unpublish the row. An explicit null
+	// clears the nullable column (description/degree_type/department/
+	// field_of_study/default_duration_years).
 	current, err := h.svc.GetCatalogByID(r.Context(), id)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
@@ -497,28 +529,48 @@ func (h *Handlers) AdminUpdateCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	duration := current.DefaultDurationYears
-	if req.DefaultDurationYears != nil {
-		duration = numericFromFloat(req.DefaultDurationYears)
+	if presence.has("default_duration_years") {
+		if presence.isNull("default_duration_years") {
+			duration = pgtype.Numeric{}
+		} else {
+			duration = numericFromFloat(req.DefaultDurationYears)
+		}
 	}
 
 	description := current.Description
-	if req.Description != nil {
-		description = req.Description
+	if presence.has("description") {
+		if presence.isNull("description") {
+			description = nil
+		} else {
+			description = req.Description
+		}
 	}
 
 	degreeType := current.DegreeType
-	if req.DegreeType != nil {
-		degreeType = req.DegreeType
+	if presence.has("degree_type") {
+		if presence.isNull("degree_type") {
+			degreeType = nil
+		} else {
+			degreeType = req.DegreeType
+		}
 	}
 
 	department := current.Department
-	if req.Department != nil {
-		department = req.Department
+	if presence.has("department") {
+		if presence.isNull("department") {
+			department = nil
+		} else {
+			department = req.Department
+		}
 	}
 
 	fieldOfStudy := current.FieldOfStudy
-	if req.FieldOfStudy != nil {
-		fieldOfStudy = req.FieldOfStudy
+	if presence.has("field_of_study") {
+		if presence.isNull("field_of_study") {
+			fieldOfStudy = nil
+		} else {
+			fieldOfStudy = req.FieldOfStudy
+		}
 	}
 
 	c, err := h.svc.UpdateCatalog(r.Context(), gen.UpdateCourseCatalogParams{
@@ -769,13 +821,15 @@ func (h *Handlers) AdminUpdateOffering(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req offeringRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	presence, err := decodeWithPresence(r.Body, &req)
+	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "Invalid JSON body")
 		return
 	}
 
 	// Full-row update — load the current row so omitted fields keep their
-	// values rather than being zeroed.
+	// values rather than being zeroed. An explicit null clears the nullable
+	// column (tuition/currency/duration/mode/intake/entry/accreditation).
 	current, err := h.svc.GetOfferingByID(r.Context(), id)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
@@ -797,11 +851,13 @@ func (h *Handlers) AdminUpdateOffering(w http.ResponseWriter, r *http.Request) {
 		slug = current.Slug
 	}
 
-	var intake []string
-	if req.IntakeMonths != nil {
-		intake = *req.IntakeMonths
-	} else {
-		intake = current.IntakeMonths
+	intake := current.IntakeMonths
+	if presence.has("intake_months") {
+		if presence.isNull("intake_months") || req.IntakeMonths == nil {
+			intake = nil
+		} else {
+			intake = *req.IntakeMonths
+		}
 	}
 
 	published := current.IsPublished
@@ -809,36 +865,58 @@ func (h *Handlers) AdminUpdateOffering(w http.ResponseWriter, r *http.Request) {
 		published = *req.IsPublished
 	}
 
-	// Omitted scalars keep their current values — a bare {slug} PATCH must
-	// not zero tuition/duration or clear currency/mode/entry/accreditation.
 	tuition := current.Tuition
-	if req.Tuition != nil {
-		tuition = numericFromFloat(req.Tuition)
+	if presence.has("tuition") {
+		if presence.isNull("tuition") {
+			tuition = pgtype.Numeric{}
+		} else {
+			tuition = numericFromFloat(req.Tuition)
+		}
 	}
 
 	duration := current.DurationYears
-	if req.DurationYears != nil {
-		duration = numericFromFloat(req.DurationYears)
+	if presence.has("duration_years") {
+		if presence.isNull("duration_years") {
+			duration = pgtype.Numeric{}
+		} else {
+			duration = numericFromFloat(req.DurationYears)
+		}
 	}
 
 	currency := current.Currency
-	if req.Currency != nil {
-		currency = req.Currency
+	if presence.has("currency") {
+		if presence.isNull("currency") {
+			currency = nil
+		} else {
+			currency = req.Currency
+		}
 	}
 
 	studyMode := current.StudyMode
-	if req.StudyMode != nil {
-		studyMode = req.StudyMode
+	if presence.has("study_mode") {
+		if presence.isNull("study_mode") {
+			studyMode = nil
+		} else {
+			studyMode = req.StudyMode
+		}
 	}
 
 	entryRequirements := current.EntryRequirements
-	if req.EntryRequirements != nil {
-		entryRequirements = req.EntryRequirements
+	if presence.has("entry_requirements") {
+		if presence.isNull("entry_requirements") {
+			entryRequirements = nil
+		} else {
+			entryRequirements = req.EntryRequirements
+		}
 	}
 
 	accreditation := current.Accreditation
-	if req.Accreditation != nil {
-		accreditation = req.Accreditation
+	if presence.has("accreditation") {
+		if presence.isNull("accreditation") {
+			accreditation = nil
+		} else {
+			accreditation = req.Accreditation
+		}
 	}
 
 	if _, err := h.svc.UpdateOffering(r.Context(), gen.UpdateCourseOfferingParams{

@@ -4,6 +4,7 @@
 export { default as Autocomplete } from './Autocomplete.svelte';
 export type { AutocompleteItem } from './Autocomplete.svelte';
 export { default as AutocompleteSelect } from './AutocompleteSelect.svelte';
+export { default as MultiAutocomplete } from './MultiAutocomplete.svelte';
 export { default as EmptyState } from './EmptyState.svelte';
 export { default as LoadingSkeleton } from './LoadingSkeleton.svelte';
 export { default as Avatar } from './Avatar.svelte';

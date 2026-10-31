@@ -65,13 +65,13 @@ LEFT JOIN contents c        ON cr.entity_type = 'content' AND c.id = cr.entity_i
 LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
 LEFT JOIN contents pc       ON pc.id = cm.content_id
 LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
-LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id, rc.space_id)
 LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
 LEFT JOIN dm_messages dm    ON cr.entity_type = 'message' AND dm.id = cr.entity_id
 LEFT JOIN intel_sources isrc ON cr.entity_type = 'source' AND isrc.id = cr.entity_id
 LEFT JOIN forum_replies fr  ON cr.entity_type = 'forum_reply' AND fr.id = cr.entity_id
 LEFT JOIN forum_threads rt  ON rt.id = fr.thread_id
 LEFT JOIN contents rc       ON rc.id = rt.content_id
+LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id, rc.space_id)
 LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id, dm.sender_id, fr.author_user_id)
 WHERE (sqlc.narg(status)::text IS NULL OR cr.status = sqlc.narg(status))
  AND (sqlc.narg(entity_type)::text IS NULL OR cr.entity_type = sqlc.narg(entity_type))
@@ -229,13 +229,13 @@ WITH scoped AS (
     LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
     LEFT JOIN contents pc       ON pc.id = cm.content_id
     LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
-    LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id, rc.space_id)
     LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
     LEFT JOIN dm_messages dm    ON cr.entity_type = 'message' AND dm.id = cr.entity_id
     LEFT JOIN intel_sources isrc ON cr.entity_type = 'source' AND isrc.id = cr.entity_id
     LEFT JOIN forum_replies fr  ON cr.entity_type = 'forum_reply' AND fr.id = cr.entity_id
     LEFT JOIN forum_threads rt  ON rt.id = fr.thread_id
     LEFT JOIN contents rc       ON rc.id = rt.content_id
+    LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id, rc.space_id)
     LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id, dm.sender_id, fr.author_user_id)
 )
 SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
@@ -349,12 +349,12 @@ LEFT JOIN contents c        ON cr.entity_type = 'content' AND c.id = cr.entity_i
 LEFT JOIN comments cm       ON cr.entity_type = 'comment' AND cm.id = cr.entity_id
 LEFT JOIN contents pc       ON pc.id = cm.content_id
 LEFT JOIN spaces s          ON cr.entity_type = 'space' AND s.id = cr.entity_id
-LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id, rc.space_id)
 LEFT JOIN users tu          ON cr.entity_type = 'user' AND tu.id = cr.entity_id
 LEFT JOIN dm_messages dm    ON cr.entity_type = 'message' AND dm.id = cr.entity_id
 LEFT JOIN intel_sources isrc ON cr.entity_type = 'source' AND isrc.id = cr.entity_id
 LEFT JOIN forum_replies fr  ON cr.entity_type = 'forum_reply' AND fr.id = cr.entity_id
 LEFT JOIN forum_threads rt  ON rt.id = fr.thread_id
 LEFT JOIN contents rc       ON rc.id = rt.content_id
+LEFT JOIN spaces sp         ON sp.id = COALESCE(c.space_id, pc.space_id, rc.space_id)
 LEFT JOIN users au          ON au.id = COALESCE(c.author_id, cm.author_user_id, dm.sender_id, fr.author_user_id)
 WHERE cr.id = @id;

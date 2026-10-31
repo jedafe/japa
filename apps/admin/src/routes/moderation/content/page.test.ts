@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
 vi.mock('$lib/api', () => ({
+	apiRaw: vi.fn().mockResolvedValue({ ok: true, data: { data: [], total: 0, total_pages: 1 } }),
 	contentAdminApi: {
 		list: vi.fn().mockResolvedValue({ ok: true, data: { items: [] } }),
 		remove: vi.fn().mockResolvedValue({ ok: true }),

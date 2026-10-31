@@ -23,8 +23,9 @@
 		resolved_at?: string;
 	};
 
-	// Permission node — same as the legacy page's manage gate.
-	const canManage = $derived(hasPermission('moderation.review_queue'));
+	// Permission node — matches the backend route gate on
+	// /admin/moderation/alerts/* and the sidebar nav item.
+	const canManage = $derived(hasPermission('moderation.alerts.manage'));
 
 	// `fields` is required by EntityPage even on read-only pages (used to seed the
 	// edit-form value); this page never opens create/edit, so an empty array is fine.
@@ -155,15 +156,17 @@
 			if (filter.severity) params.set('severity', filter.severity);
 			if (filter.status) params.set('status', filter.status);
 			if (q) params.set('q', q);
-			// Use apiRaw to access top-level total/total_pages alongside data.
-			const result = await apiRaw<{ data?: ModerationAlert[]; alerts?: ModerationAlert[]; items?: ModerationAlert[]; total?: number; total_pages?: number }>(`/admin/moderation/alerts${params.toString() ? `?${params.toString()}` : ''}`);
+			// apiRaw keeps the envelope — the endpoint returns
+			// { data: { items, total, total_pages } }.
+			const result = await apiRaw<{ data?: ModerationAlert[] | { items?: ModerationAlert[]; total?: number; total_pages?: number }; alerts?: ModerationAlert[]; items?: ModerationAlert[]; total?: number; total_pages?: number }>(`/admin/moderation/alerts${params.toString() ? `?${params.toString()}` : ''}`);
 			if (result.ok) {
 				const d = result.data;
-				const arr = (d?.data ?? d?.alerts ?? d?.items ?? []) as ModerationAlert[];
+				const inner = d?.data && !Array.isArray(d.data) ? d.data : d;
+				const arr = (Array.isArray(d?.data) ? d.data : inner?.items ?? inner?.alerts ?? []) as ModerationAlert[];
 				return {
 					data: arr,
-					total: d?.total ?? arr.length,
-					totalPages: d?.total_pages ?? 1
+					total: inner?.total ?? arr.length,
+					totalPages: inner?.total_pages ?? 1
 				};
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load moderation alerts'));

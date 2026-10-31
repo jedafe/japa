@@ -67,6 +67,145 @@ func (q *Queries) AdminCountContents(ctx context.Context, arg AdminCountContents
 	return count, err
 }
 
+const adminGetContent = `-- name: AdminGetContent :one
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url, c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes, c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at, c.auto_hidden, c.auto_hidden_at, c.deleted_at, c.organization_id, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable, c.guide_category, c.ai_exempt, c.ai_generated, c.ai_model, c.ai_generated_at, c.hitl_reviewed_by, c.hitl_reviewed_at, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id, c.intel_source_id, c.intel_record_id,
+ EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
+ AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
+ u.username AS author_username, up.display_name AS author_display_name,
+ s.name AS space_name,
+ (SELECT COUNT(*)::int FROM content_reports cr
+  WHERE cr.entity_type = 'content' AND cr.entity_id = c.id
+  AND cr.status IN ('pending', 'reviewing')) AS reports_count
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+WHERE c.id = $1
+`
+
+type AdminGetContentRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	AuthorID          pgtype.UUID        `json:"author_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	ContentType       string             `json:"content_type"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              string             `json:"body"`
+	BodyHtml          string             `json:"body_html"`
+	FieldValues       []byte             `json:"field_values"`
+	ContentHash       *string            `json:"content_hash"`
+	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID     pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID   pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl      *string            `json:"canonical_url"`
+	Status            string             `json:"status"`
+	Visibility        string             `json:"visibility"`
+	IsLocked          bool               `json:"is_locked"`
+	IsPinned          bool               `json:"is_pinned"`
+	ReadTimeMinutes   int32              `json:"read_time_minutes"`
+	ViewCount         int32              `json:"view_count"`
+	CommentCount      int32              `json:"comment_count"`
+	ShareCount        int32              `json:"share_count"`
+	ReshareCount      int32              `json:"reshare_count"`
+	PublishAt         pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt       pgtype.Timestamptz `json:"published_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	AutoHidden        bool               `json:"auto_hidden"`
+	AutoHiddenAt      pgtype.Timestamptz `json:"auto_hidden_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	OrganizationID    pgtype.UUID        `json:"organization_id"`
+	MetaTitle         *string            `json:"meta_title"`
+	MetaDescription   *string            `json:"meta_description"`
+	OgImageUrl        *string            `json:"og_image_url"`
+	SeoIndexable      bool               `json:"seo_indexable"`
+	GuideCategory     *string            `json:"guide_category"`
+	AiExempt          bool               `json:"ai_exempt"`
+	AiGenerated       bool               `json:"ai_generated"`
+	AiModel           *string            `json:"ai_model"`
+	AiGeneratedAt     pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy    pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt    pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	JourneyStage      *string            `json:"journey_stage"`
+	VisaRoute         *string            `json:"visa_route"`
+	SourceCountry     *string            `json:"source_country"`
+	TargetCountry     *string            `json:"target_country"`
+	VideoSourceID     pgtype.UUID        `json:"video_source_id"`
+	IntelSourceID     pgtype.UUID        `json:"intel_source_id"`
+	IntelRecordID     pgtype.UUID        `json:"intel_record_id"`
+	IsFeatured        bool               `json:"is_featured"`
+	AuthorUsername    *string            `json:"author_username"`
+	AuthorDisplayName *string            `json:"author_display_name"`
+	SpaceName         *string            `json:"space_name"`
+	ReportsCount      int32              `json:"reports_count"`
+}
+
+// Admin single-content detail — same joined shape as AdminListContents plus
+// the full contents row (c.* keeps the response a strict superset of the
+// legacy bare-row payload). Includes soft-deleted rows so the view modal
+// works on removed content; report count covers open reports (§22, §51).
+func (q *Queries) AdminGetContent(ctx context.Context, id pgtype.UUID) (AdminGetContentRow, error) {
+	row := q.db.QueryRow(ctx, adminGetContent, id)
+	var i AdminGetContentRow
+	err := row.Scan(
+		&i.ID,
+		&i.AuthorID,
+		&i.SpaceID,
+		&i.ContentType,
+		&i.Title,
+		&i.Slug,
+		&i.Body,
+		&i.BodyHtml,
+		&i.FieldValues,
+		&i.ContentHash,
+		&i.GeoSpaceID,
+		&i.HeaderImageID,
+		&i.FeaturedImageID,
+		&i.CanonicalUrl,
+		&i.Status,
+		&i.Visibility,
+		&i.IsLocked,
+		&i.IsPinned,
+		&i.ReadTimeMinutes,
+		&i.ViewCount,
+		&i.CommentCount,
+		&i.ShareCount,
+		&i.ReshareCount,
+		&i.PublishAt,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AutoHidden,
+		&i.AutoHiddenAt,
+		&i.DeletedAt,
+		&i.OrganizationID,
+		&i.MetaTitle,
+		&i.MetaDescription,
+		&i.OgImageUrl,
+		&i.SeoIndexable,
+		&i.GuideCategory,
+		&i.AiExempt,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.AiGeneratedAt,
+		&i.HitlReviewedBy,
+		&i.HitlReviewedAt,
+		&i.JourneyStage,
+		&i.VisaRoute,
+		&i.SourceCountry,
+		&i.TargetCountry,
+		&i.VideoSourceID,
+		&i.IntelSourceID,
+		&i.IntelRecordID,
+		&i.IsFeatured,
+		&i.AuthorUsername,
+		&i.AuthorDisplayName,
+		&i.SpaceName,
+		&i.ReportsCount,
+	)
+	return i, err
+}
+
 const adminListContents = `-- name: AdminListContents :many
 SELECT id, author_id, space_id, content_type, title, slug, body, status, visibility, view_count, comment_count, published_at, created_at, updated_at, deleted_at, is_featured, author_username, author_display_name, space_name, reports_count FROM (
  SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body,
@@ -99,16 +238,20 @@ SELECT id, author_id, space_id, content_type, title, slug, body, status, visibil
 ORDER BY
  CASE WHEN $7::text = 'title' AND $8::text = 'desc' THEN sub.title END DESC,
  CASE WHEN $7::text = 'title' AND $8::text <> 'desc' THEN sub.title END ASC,
- CASE WHEN $7::text = 'author' AND $8::text = 'desc' THEN sub.author_display_name END DESC NULLS LAST,
- CASE WHEN $7::text = 'author' AND $8::text <> 'desc' THEN sub.author_display_name END ASC NULLS LAST,
+ CASE WHEN $7::text IN ('author', 'author_display_name') AND $8::text = 'desc' THEN sub.author_display_name END DESC NULLS LAST,
+ CASE WHEN $7::text IN ('author', 'author_display_name') AND $8::text <> 'desc' THEN sub.author_display_name END ASC NULLS LAST,
  CASE WHEN $7::text = 'content_type' AND $8::text = 'desc' THEN sub.content_type END DESC,
  CASE WHEN $7::text = 'content_type' AND $8::text <> 'desc' THEN sub.content_type END ASC,
+ CASE WHEN $7::text = 'space_name' AND $8::text = 'desc' THEN sub.space_name END DESC NULLS LAST,
+ CASE WHEN $7::text = 'space_name' AND $8::text <> 'desc' THEN sub.space_name END ASC NULLS LAST,
  CASE WHEN $7::text = 'status' AND $8::text = 'desc' THEN sub.status END DESC,
  CASE WHEN $7::text = 'status' AND $8::text <> 'desc' THEN sub.status END ASC,
+ CASE WHEN $7::text = 'view_count' AND $8::text = 'asc' THEN sub.view_count END ASC,
+ CASE WHEN $7::text = 'view_count' AND $8::text <> 'asc' THEN sub.view_count END DESC,
  CASE WHEN $7::text = 'reports_count' AND $8::text = 'asc' THEN sub.reports_count END ASC,
  CASE WHEN $7::text = 'reports_count' AND $8::text <> 'asc' THEN sub.reports_count END DESC,
  CASE WHEN $7::text = 'created_at' AND $8::text = 'asc' THEN sub.created_at END ASC,
- CASE WHEN $7::text NOT IN ('title', 'author', 'content_type', 'status', 'reports_count', 'created_at')
+ CASE WHEN $7::text NOT IN ('title', 'author', 'author_display_name', 'content_type', 'space_name', 'status', 'view_count', 'reports_count', 'created_at')
   OR ($7::text = 'created_at' AND $8::text <> 'asc') THEN sub.created_at END DESC,
  sub.id DESC
 LIMIT $10 OFFSET $9
@@ -240,7 +383,7 @@ func (q *Queries) AppealReviewToFlagged(ctx context.Context, id pgtype.UUID) (in
 	return result.RowsAffected(), nil
 }
 
-const assignContentReport = `-- name: AssignContentReport :exec
+const assignContentReport = `-- name: AssignContentReport :execrows
 
 UPDATE content_reports SET reviewed_by = $1, status = 'reviewing' WHERE id = $2
 `
@@ -253,9 +396,168 @@ type AssignContentReportParams struct {
 // =====================
 // Content Reports
 // =====================
-func (q *Queries) AssignContentReport(ctx context.Context, arg AssignContentReportParams) error {
-	_, err := q.db.Exec(ctx, assignContentReport, arg.ReviewedBy, arg.ID)
-	return err
+func (q *Queries) AssignContentReport(ctx context.Context, arg AssignContentReportParams) (int64, error) {
+	result, err := q.db.Exec(ctx, assignContentReport, arg.ReviewedBy, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const assignContentReview = `-- name: AssignContentReview :execrows
+UPDATE content_reviews SET reviewer_user_id = $1, updated_at = now() WHERE id = $2
+`
+
+type AssignContentReviewParams struct {
+	ReviewerUserID pgtype.UUID `json:"reviewer_user_id"`
+	ID             pgtype.UUID `json:"id"`
+}
+
+// Unified-queue assign target — persona/studio content_reviews rows treat
+// reviewer_user_id as the reviewer (set again on approve/reject).
+func (q *Queries) AssignContentReview(ctx context.Context, arg AssignContentReviewParams) (int64, error) {
+	result, err := q.db.Exec(ctx, assignContentReview, arg.ReviewerUserID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const assignCrsRuleset = `-- name: AssignCrsRuleset :execrows
+UPDATE crs_rulesets SET assigned_to = $1 WHERE id = $2
+`
+
+type AssignCrsRulesetParams struct {
+	AssignedTo pgtype.UUID `json:"assigned_to"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) AssignCrsRuleset(ctx context.Context, arg AssignCrsRulesetParams) (int64, error) {
+	result, err := q.db.Exec(ctx, assignCrsRuleset, arg.AssignedTo, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const assignEcaCommunityUpdate = `-- name: AssignEcaCommunityUpdate :execrows
+UPDATE eca_community_updates SET reviewed_by = $1 WHERE id = $2
+`
+
+type AssignEcaCommunityUpdateParams struct {
+	ReviewedBy pgtype.UUID `json:"reviewed_by"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) AssignEcaCommunityUpdate(ctx context.Context, arg AssignEcaCommunityUpdateParams) (int64, error) {
+	result, err := q.db.Exec(ctx, assignEcaCommunityUpdate, arg.ReviewedBy, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const assignEcaGuide = `-- name: AssignEcaGuide :execrows
+UPDATE eca_guides SET assigned_to = $1 WHERE id = $2
+`
+
+type AssignEcaGuideParams struct {
+	AssignedTo pgtype.UUID `json:"assigned_to"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) AssignEcaGuide(ctx context.Context, arg AssignEcaGuideParams) (int64, error) {
+	result, err := q.db.Exec(ctx, assignEcaGuide, arg.AssignedTo, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const assignHitlReview = `-- name: AssignHitlReview :execrows
+UPDATE ai_hitl_reviews SET reviewer_id = $1 WHERE id = $2
+`
+
+type AssignHitlReviewParams struct {
+	ReviewerID pgtype.UUID `json:"reviewer_id"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) AssignHitlReview(ctx context.Context, arg AssignHitlReviewParams) (int64, error) {
+	result, err := q.db.Exec(ctx, assignHitlReview, arg.ReviewerID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const assignPofRequirement = `-- name: AssignPofRequirement :execrows
+UPDATE pof_requirements SET assigned_to = $1 WHERE id = $2
+`
+
+type AssignPofRequirementParams struct {
+	AssignedTo pgtype.UUID `json:"assigned_to"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) AssignPofRequirement(ctx context.Context, arg AssignPofRequirementParams) (int64, error) {
+	result, err := q.db.Exec(ctx, assignPofRequirement, arg.AssignedTo, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const assignReview = `-- name: AssignReview :execrows
+UPDATE reviews SET assigned_to = $1 WHERE id = $2
+`
+
+type AssignReviewParams struct {
+	AssignedTo pgtype.UUID `json:"assigned_to"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+// Migration 000988 assigned_to — reviewer_user_id is the author, not assignee.
+func (q *Queries) AssignReview(ctx context.Context, arg AssignReviewParams) (int64, error) {
+	result, err := q.db.Exec(ctx, assignReview, arg.AssignedTo, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const assignSopSample = `-- name: AssignSopSample :execrows
+UPDATE sop_samples SET assigned_to = $1 WHERE id = $2
+`
+
+type AssignSopSampleParams struct {
+	AssignedTo pgtype.UUID `json:"assigned_to"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) AssignSopSample(ctx context.Context, arg AssignSopSampleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, assignSopSample, arg.AssignedTo, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const assignSopTemplate = `-- name: AssignSopTemplate :execrows
+UPDATE sop_templates SET assigned_to = $1 WHERE id = $2
+`
+
+type AssignSopTemplateParams struct {
+	AssignedTo pgtype.UUID `json:"assigned_to"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) AssignSopTemplate(ctx context.Context, arg AssignSopTemplateParams) (int64, error) {
+	result, err := q.db.Exec(ctx, assignSopTemplate, arg.AssignedTo, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const checkUserBanExists = `-- name: CheckUserBanExists :one

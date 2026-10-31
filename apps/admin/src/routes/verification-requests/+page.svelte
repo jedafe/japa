@@ -44,10 +44,6 @@
 	let successMessage = $state("");
 	let busy = $state(false);
 
-	// Evidence (view modal) — the linked form submission is fetched per row.
-	let submission = $state<Submission | null>(null);
-	let submissionLoading = $state(false);
-
 	// Page-local state-action modals (EntityPage's built-in confirm only
 	// covers the default delete — state actions keep their own Modals).
 	let rejectTarget = $state<VRequest | null>(null);
@@ -66,8 +62,10 @@
 
 	// Only http(s)/relative URLs may render as links — field_values are
 	// requester-controlled, so anything else renders as plain text (XSS).
+	// Protocol-relative "//host" is rejected: it silently goes off-site.
 	function isSafeHref(u: unknown): u is string {
-		return typeof u === "string" && (/^https?:\/\//i.test(u) || u.startsWith("/") || u.startsWith("#"));
+		if (typeof u !== "string" || u.startsWith("//")) return false;
+		return /^https?:\/\//i.test(u) || u.startsWith("/") || u.startsWith("#");
 	}
 
 	const entityVerified = (row: VRequest) =>
@@ -76,13 +74,21 @@
 	const entityLabel = (row: VRequest) =>
 		row.entity_type + (row.org_name ? ` — ${row.org_name}` : "");
 
+	// Evidence (view modal) — the linked form submission is fetched per row.
+	// viewTargetId guards against a slow fetch for a previously-opened row
+	// overwriting the current row's evidence.
+	let submission = $state<Submission | null>(null);
+	let submissionLoading = $state(false);
+	let viewTargetId = $state("");
+
 	function openView(row: VRequest, ctx?: ActionContext) {
+		viewTargetId = row.id;
 		submission = null;
 		submissionLoading = true;
 		verificationAdminApi.requestSubmission(row.id)
-			.then((res) => { submission = res.ok ? res.data : null; })
-			.catch(() => { submission = null; })
-			.finally(() => { submissionLoading = false; });
+			.then((res) => { if (viewTargetId === row.id) submission = res.ok ? res.data : null; })
+			.catch(() => { if (viewTargetId === row.id) submission = null; })
+			.finally(() => { if (viewTargetId === row.id) submissionLoading = false; });
 		ctx?.openView(row);
 	}
 
@@ -93,6 +99,7 @@
 		if (busy) return;
 		busy = true;
 		pageError = "";
+		successMessage = "";
 		const res = await verificationAdminApi.review(row.id, { status: "approved" });
 		busy = false;
 		if (!res.ok) { pageError = res.error; return; }
@@ -104,6 +111,7 @@
 		if (!rejectTarget || busy) return;
 		busy = true;
 		pageError = "";
+		successMessage = "";
 		const res = await verificationAdminApi.review(rejectTarget.id, { status: "rejected", resolution_note: rejectNote });
 		busy = false;
 		if (!res.ok) { pageError = res.error; return; }
@@ -117,6 +125,7 @@
 		if (!grantTarget || busy) return;
 		busy = true;
 		pageError = "";
+		successMessage = "";
 		const res = grantTarget.entity_type === "organization" && grantTarget.organization_id
 			? await organisationsAdminApi.verify(grantTarget.organization_id, { verification_type: grantType || undefined })
 			: await verificationAdminApi.verifyUser(grantTarget.requester_user_id, { verification_type: grantType || undefined });
@@ -228,7 +237,7 @@
 			return {
 				data: res.data.data ?? [],
 				total: res.data.meta?.total ?? 0,
-				totalPages: res.data.meta?.page_count ?? 1
+				totalPages: Math.max(res.data.meta?.page_count ?? 1, 1)
 			};
 		},
 		viewSnippet: RequestView
@@ -255,7 +264,7 @@
 {/snippet}
 
 {#if pageError}
-	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">{pageError}</div>
+	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)" role="alert">{pageError}</div>
 {/if}
 {#if successMessage}
 	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)" role="status">{successMessage}</div>
@@ -273,7 +282,7 @@
 	</dl>
 	{#if submissionLoading}
 		<p class="mt-4 text-sm" style="color: var(--color-muted)">{t("vreq.loading_evidence", "Loading evidence…")}</p>
-	{:else if submission?.field_values}
+	{:else if submission?.field_values && typeof submission.field_values === "object" && !Array.isArray(submission.field_values)}
 		<h3 class="mt-4 text-sm font-semibold">{t("vreq.submission", "Form submission")}</h3>
 		<dl class="mt-2 space-y-1 text-sm">
 			{#each Object.entries(submission.field_values) as [k, v]}
@@ -289,7 +298,7 @@
 										<span class="block">{item.url ?? item.id}</span>
 									{/if}
 								{:else}
-									{String(item)}
+									{item ?? "—"}
 								{/if}
 							{/each}
 						{:else if v && typeof v === "object" && ((v as Record<string, unknown>).url || (v as Record<string, unknown>).id)}
@@ -300,7 +309,7 @@
 								{String(vo.url ?? vo.id)}
 							{/if}
 						{:else}
-							{String(v)}
+							{v ?? "—"}
 						{/if}
 					</dd>
 				</div>

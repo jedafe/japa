@@ -172,8 +172,38 @@ UPDATE moderation_appeals SET status = $1, updated_at = now() WHERE id = $2;
 -- Content Reports
 -- =====================
 
--- name: AssignContentReport :exec
+-- name: AssignContentReport :execrows
 UPDATE content_reports SET reviewed_by = $1, status = 'reviewing' WHERE id = $2;
+
+-- name: AssignContentReview :execrows
+-- Unified-queue assign target — persona/studio content_reviews rows treat
+-- reviewer_user_id as the reviewer (set again on approve/reject).
+UPDATE content_reviews SET reviewer_user_id = $1, updated_at = now() WHERE id = $2;
+
+-- name: AssignHitlReview :execrows
+UPDATE ai_hitl_reviews SET reviewer_id = $1 WHERE id = $2;
+
+-- name: AssignEcaCommunityUpdate :execrows
+UPDATE eca_community_updates SET reviewed_by = $1 WHERE id = $2;
+
+-- name: AssignReview :execrows
+-- Migration 000988 assigned_to — reviewer_user_id is the author, not assignee.
+UPDATE reviews SET assigned_to = $1 WHERE id = $2;
+
+-- name: AssignCrsRuleset :execrows
+UPDATE crs_rulesets SET assigned_to = $1 WHERE id = $2;
+
+-- name: AssignPofRequirement :execrows
+UPDATE pof_requirements SET assigned_to = $1 WHERE id = $2;
+
+-- name: AssignEcaGuide :execrows
+UPDATE eca_guides SET assigned_to = $1 WHERE id = $2;
+
+-- name: AssignSopTemplate :execrows
+UPDATE sop_templates SET assigned_to = $1 WHERE id = $2;
+
+-- name: AssignSopSample :execrows
+UPDATE sop_samples SET assigned_to = $1 WHERE id = $2;
 
 -- name: ModerateContentReport :exec
 UPDATE content_reports
@@ -207,30 +237,78 @@ LIMIT $1;
 -- 'only' = deleted only, 'all' = both. Powers the /admin/content page's
 -- Deleted filter; kept separate from the public ListContents query so the
 -- deleted view can never leak to unauthenticated callers.
+-- §22 adds author_id/space_id filters, reports_count (open reports per
+-- §51), and ?sort/?sort_dir ordering over a whitelisted column set
+-- (EntityPage column keys). Unknown/empty sort falls back to newest-first;
+-- sort_dir is 'asc'/'desc' (validated in the handler).
 -- name: AdminListContents :many
-SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body,
- c.status, c.visibility, c.view_count, c.comment_count, c.published_at,
- c.created_at, c.updated_at, c.deleted_at,
+SELECT * FROM (
+ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body,
+  c.status, c.visibility, c.view_count, c.comment_count, c.published_at,
+  c.created_at, c.updated_at, c.deleted_at,
+  EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
+  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
+  u.username AS author_username, up.display_name AS author_display_name,
+  s.name AS space_name,
+  (SELECT COUNT(*)::int FROM content_reports cr
+   WHERE cr.entity_type = 'content' AND cr.entity_id = c.id
+   AND cr.status IN ('pending', 'reviewing')) AS reports_count
+ FROM contents c
+ LEFT JOIN users u ON u.id = c.author_id
+ LEFT JOIN user_profiles up ON up.user_id = c.author_id
+ LEFT JOIN spaces s ON s.id = c.space_id
+ WHERE (
+  CASE @deleted::text
+  WHEN 'only' THEN c.deleted_at IS NOT NULL
+  WHEN 'all' THEN TRUE
+  ELSE c.deleted_at IS NULL
+  END
+  )
+  AND (@content_type::text = '' OR c.content_type = @content_type)
+  AND (@status::text = '' OR c.status = @status)
+  AND (@q::text = '' OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%' OR c.body ILIKE '%' || @q || '%')
+  AND (sqlc.narg(author_id)::uuid IS NULL OR c.author_id = sqlc.narg(author_id))
+  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id))
+) sub
+ORDER BY
+ CASE WHEN @sort::text = 'title' AND @sort_dir::text = 'desc' THEN sub.title END DESC,
+ CASE WHEN @sort::text = 'title' AND @sort_dir::text <> 'desc' THEN sub.title END ASC,
+ CASE WHEN @sort::text IN ('author', 'author_display_name') AND @sort_dir::text = 'desc' THEN sub.author_display_name END DESC NULLS LAST,
+ CASE WHEN @sort::text IN ('author', 'author_display_name') AND @sort_dir::text <> 'desc' THEN sub.author_display_name END ASC NULLS LAST,
+ CASE WHEN @sort::text = 'content_type' AND @sort_dir::text = 'desc' THEN sub.content_type END DESC,
+ CASE WHEN @sort::text = 'content_type' AND @sort_dir::text <> 'desc' THEN sub.content_type END ASC,
+ CASE WHEN @sort::text = 'space_name' AND @sort_dir::text = 'desc' THEN sub.space_name END DESC NULLS LAST,
+ CASE WHEN @sort::text = 'space_name' AND @sort_dir::text <> 'desc' THEN sub.space_name END ASC NULLS LAST,
+ CASE WHEN @sort::text = 'status' AND @sort_dir::text = 'desc' THEN sub.status END DESC,
+ CASE WHEN @sort::text = 'status' AND @sort_dir::text <> 'desc' THEN sub.status END ASC,
+ CASE WHEN @sort::text = 'view_count' AND @sort_dir::text = 'asc' THEN sub.view_count END ASC,
+ CASE WHEN @sort::text = 'view_count' AND @sort_dir::text <> 'asc' THEN sub.view_count END DESC,
+ CASE WHEN @sort::text = 'reports_count' AND @sort_dir::text = 'asc' THEN sub.reports_count END ASC,
+ CASE WHEN @sort::text = 'reports_count' AND @sort_dir::text <> 'asc' THEN sub.reports_count END DESC,
+ CASE WHEN @sort::text = 'created_at' AND @sort_dir::text = 'asc' THEN sub.created_at END ASC,
+ CASE WHEN @sort::text NOT IN ('title', 'author', 'author_display_name', 'content_type', 'space_name', 'status', 'view_count', 'reports_count', 'created_at')
+  OR (@sort::text = 'created_at' AND @sort_dir::text <> 'asc') THEN sub.created_at END DESC,
+ sub.id DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: AdminGetContent :one
+-- Admin single-content detail — same joined shape as AdminListContents plus
+-- the full contents row (c.* keeps the response a strict superset of the
+-- legacy bare-row payload). Includes soft-deleted rows so the view modal
+-- works on removed content; report count covers open reports (§22, §51).
+SELECT c.*,
  EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  u.username AS author_username, up.display_name AS author_display_name,
- s.name AS space_name
+ s.name AS space_name,
+ (SELECT COUNT(*)::int FROM content_reports cr
+  WHERE cr.entity_type = 'content' AND cr.entity_id = c.id
+  AND cr.status IN ('pending', 'reviewing')) AS reports_count
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
-WHERE (
- CASE @deleted::text
- WHEN 'only' THEN c.deleted_at IS NOT NULL
- WHEN 'all' THEN TRUE
- ELSE c.deleted_at IS NULL
- END
- )
- AND (@content_type::text = '' OR c.content_type = @content_type)
- AND (@status::text = '' OR c.status = @status)
- AND (@q::text = '' OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%' OR c.body ILIKE '%' || @q || '%')
-ORDER BY c.created_at DESC, c.id DESC
-LIMIT @page_limit OFFSET @page_offset;
+WHERE c.id = @id;
 
 -- name: AdminCountContents :one
 SELECT COUNT(*)::int AS count
@@ -244,7 +322,9 @@ WHERE (
  )
  AND (@content_type::text = '' OR c.content_type = @content_type)
  AND (@status::text = '' OR c.status = @status)
- AND (@q::text = '' OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%' OR c.body ILIKE '%' || @q || '%');
+ AND (@q::text = '' OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%' OR c.body ILIKE '%' || @q || '%')
+ AND (sqlc.narg(author_id)::uuid IS NULL OR c.author_id = sqlc.narg(author_id))
+ AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id));
 
 -- =====================
 -- Broadcasts

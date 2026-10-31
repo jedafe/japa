@@ -75,6 +75,21 @@ export type FieldDef =
 	| ({
 			key: string;
 			label: string;
+			/** Multi-value dropdown rendered through the shared
+			 *  MultiAutocomplete — picks append as removable chips and the
+			 *  bound value is a string[] (e.g. intake_months). */
+			type: 'multiselect';
+			options: Array<{ value: string; label: string }>;
+			placeholder?: string;
+			required?: boolean;
+			help?: string;
+			class?: string;
+			readonlyInEdit?: boolean;
+			hideInEdit?: boolean;
+	  } & RowLockProps)
+	| ({
+			key: string;
+			label: string;
 			/** Structured JSON editor (object rows / array repeater / typed
 			 *  inputs) backed by the shared JsonValueEditor. The bound value
 			 *  stays a JSON string — pages keep their existing JSON.parse in

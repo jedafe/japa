@@ -298,8 +298,9 @@ WHERE spaces.space_type_id = @space_type_id AND spaces.deleted_at IS NULL
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListSpacesByTypePaginated :many
--- sort accepts: '' (default → newest), 'name' (A–Z), 'name_desc' (Z–A), 'members', 'followers',
--- 'posts' (all numeric DESC). Unknown values fall back to newest.
+-- sort accepts: '' (default → newest), 'name' (A–Z), 'name_desc' (Z–A), 'created' (oldest
+-- first), 'members', 'followers', 'posts' (all numeric DESC). Unknown values fall back
+-- to newest.
 -- The initials column comes from the university_fields custom field group
 -- (key = 'initials', deterministic id 00000000-0000-0000-0000-000000000090)
 -- and is left-joined so it is NULL for non-university space types.
@@ -350,6 +351,7 @@ WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
 ORDER BY
  CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
  CASE WHEN @sort::text = 'name_desc' THEN s.name ELSE NULL END DESC,
+ CASE WHEN @sort::text = 'created' THEN s.created_at ELSE NULL END ASC,
  CASE
  WHEN @sort::text = 'members' THEN s.member_count
  WHEN @sort::text = 'followers' THEN s.follower_count

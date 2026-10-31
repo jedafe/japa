@@ -47,6 +47,29 @@ func (q *Queries) AcknowledgeModerationAlert(ctx context.Context, arg Acknowledg
 	return i, err
 }
 
+const countModerationAlertsFiltered = `-- name: CountModerationAlertsFiltered :one
+SELECT COUNT(*)::int FROM moderation_alerts
+WHERE (NULLIF($1, '') IS NULL OR status = $1)
+ AND (NULLIF($2, '') IS NULL OR severity = $2)
+ AND (NULLIF($3, '') IS NULL OR
+   title ILIKE '%' || $3 || '%'
+   OR COALESCE(description, '') ILIKE '%' || $3 || '%'
+   OR alert_type ILIKE '%' || $3 || '%')
+`
+
+type CountModerationAlertsFilteredParams struct {
+	Status   interface{} `json:"status"`
+	Severity interface{} `json:"severity"`
+	Q        interface{} `json:"q"`
+}
+
+func (q *Queries) CountModerationAlertsFiltered(ctx context.Context, arg CountModerationAlertsFilteredParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countModerationAlertsFiltered, arg.Status, arg.Severity, arg.Q)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countPendingReportsByEntity = `-- name: CountPendingReportsByEntity :one
 SELECT COUNT(*) FROM content_reports
 WHERE entity_type = $1 AND entity_id = $2
@@ -156,6 +179,70 @@ ORDER BY
 
 func (q *Queries) ListModerationAlerts(ctx context.Context, status interface{}) ([]ModerationAlert, error) {
 	rows, err := q.db.Query(ctx, listModerationAlerts, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ModerationAlert
+	for rows.Next() {
+		var i ModerationAlert
+		if err := rows.Scan(
+			&i.ID,
+			&i.AlertType,
+			&i.Severity,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.Meta,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AcknowledgedAt,
+			&i.ResolvedAt,
+			&i.AcknowledgedBy,
+			&i.ResolvedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listModerationAlertsFiltered = `-- name: ListModerationAlertsFiltered :many
+SELECT id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by FROM moderation_alerts
+WHERE (NULLIF($1, '') IS NULL OR status = $1)
+ AND (NULLIF($2, '') IS NULL OR severity = $2)
+ AND (NULLIF($3, '') IS NULL OR
+   title ILIKE '%' || $3 || '%'
+   OR COALESCE(description, '') ILIKE '%' || $3 || '%'
+   OR alert_type ILIKE '%' || $3 || '%')
+ORDER BY
+ CASE WHEN status = 'open' THEN 0 ELSE 1 END,
+ created_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListModerationAlertsFilteredParams struct {
+	Status     interface{} `json:"status"`
+	Severity   interface{} `json:"severity"`
+	Q          interface{} `json:"q"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+// Admin alerts list — server-side severity/status/q filters + pagination so
+// the DataTable spec holds (was status-only, everything else ignored).
+func (q *Queries) ListModerationAlertsFiltered(ctx context.Context, arg ListModerationAlertsFilteredParams) ([]ModerationAlert, error) {
+	rows, err := q.db.Query(ctx, listModerationAlertsFiltered,
+		arg.Status,
+		arg.Severity,
+		arg.Q,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

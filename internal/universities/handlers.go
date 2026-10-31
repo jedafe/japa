@@ -463,8 +463,20 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 
 	h.resolveLiterals(r, &universities)
 
+	// Attach the resolved logo URL (imgproxy-signed via Section 34 media) so the
+	// admin edit form + view modal can preview the existing logo — the raw
+	// response only carries logo_media_id.
+	items := make([]map[string]any, 0, len(universities))
+	for _, u := range universities {
+		b, _ := json.Marshal(u)
+		var m map[string]any
+		_ = json.Unmarshal(b, &m)
+		m["logo_url"] = h.resolveLogoURL(r.Context(), u.LogoMediaID)
+		items = append(items, m)
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": universities,
+		"data": items,
 		"meta": map[string]any{
 			"total":       total,
 			"page":        page,
@@ -744,12 +756,27 @@ func slugify(s string) string {
 	return s
 }
 
+// alpha2GeoCode matches an ISO 3166-1 alpha-2 country code (spaces.geo_code).
+var alpha2GeoCode = regexp.MustCompile(`^[A-Za-z]{2}$`)
+
+// normalizeGeoCode uppercases and validates an alpha-2 geo code; anything
+// else returns "" (treated as unset, never stored).
+func normalizeGeoCode(s string) string {
+	c := strings.ToUpper(strings.TrimSpace(s))
+	if !alpha2GeoCode.MatchString(c) {
+		return ""
+	}
+
+	return c
+}
+
 // CreateUniversity handles POST /admin/universities — creates a University-type space.
 func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name     string `json:"name"`
 		Slug     string `json:"slug"`
 		Initials string `json:"initials"`
+		Country  string `json:"country"`
 		Verified bool   `json:"verified"`
 		LogoURL  string `json:"logo_url"`
 	}
@@ -775,6 +802,13 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		slug = slugify(input.Name)
 	}
 
+	// country is an ISO 3166-1 alpha-2 geo code — stored on spaces.geo_code,
+	// the same column the ?country= list filter matches (Section 39).
+	var geoCode *string
+	if c := normalizeGeoCode(input.Country); c != "" {
+		geoCode = &c
+	}
+
 	status := "active"
 	if !input.Verified {
 		status = "pending"
@@ -784,6 +818,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		SpaceTypeID:    spaceType.ID,
 		Name:           strings.TrimSpace(input.Name),
 		Slug:           slug,
+		GeoCode:        geoCode,
 		Level:          "university",
 		Visibility:     "public",
 		PostingPerm:    "members",
@@ -896,6 +931,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		Name     *string `json:"name"`
 		Slug     *string `json:"slug"`
 		Initials *string `json:"initials"`
+		Country  *string `json:"country"`
 		Verified *bool   `json:"verified"`
 		LogoURL  *string `json:"logo_url"`
 	}
@@ -911,14 +947,26 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// U-2 fix: verified=false → "pending" (consistent with CreateUniversity),
-	// not "suspended" (which is a moderation/punishment status).
+	// not "suspended" (which is a moderation/punishment status). A suspended
+	// university stays suspended — only the explicit status endpoint can
+	// lift a suspension.
 	status := existing.Status
 
 	if input.Verified != nil {
 		if *input.Verified {
 			status = "active"
-		} else {
+		} else if status != "suspended" {
 			status = "pending"
+		}
+	}
+
+	// country is an ISO 3166-1 alpha-2 geo code — stored on spaces.geo_code,
+	// the same column the ?country= list filter matches (Section 39).
+	geoCode := existing.GeoCode
+	if input.Country != nil {
+		geoCode = nil
+		if c := normalizeGeoCode(*input.Country); c != "" {
+			geoCode = &c
 		}
 	}
 
@@ -928,7 +976,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		Name:           name,
 		Description:    existing.Description,
 		WikiContent:    existing.WikiContent,
-		GeoCode:        existing.GeoCode,
+		GeoCode:        geoCode,
 		Visibility:     existing.Visibility,
 		PostingPerm:    existing.PostingPerm,
 		ReplyingPerm:   existing.ReplyingPerm,

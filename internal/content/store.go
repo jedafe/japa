@@ -757,6 +757,19 @@ func (s *Service) GetContent(ctx context.Context, id pgtype.UUID) (gen.GetConten
 	return content, nil
 }
 
+// GetAdminContent returns the admin detail view of a single content row —
+// full contents columns plus author/space joins, is_featured, and the open
+// report count. Includes soft-deleted rows so removed content stays viewable
+// (and restorable) in the admin panel.
+func (s *Service) GetAdminContent(ctx context.Context, id pgtype.UUID) (gen.AdminGetContentRow, error) {
+	content, err := s.read.AdminGetContent(ctx, id)
+	if err != nil {
+		return gen.AdminGetContentRow{}, fmt.Errorf("getting admin content: %w", err)
+	}
+
+	return content, nil
+}
+
 // GetContentBySlug returns the content matching the given slug, scoped to
 // the platform.
 func (s *Service) GetContentBySlug(ctx context.Context, slug string) (gen.GetContentBySlugRow, error) {

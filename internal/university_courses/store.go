@@ -82,8 +82,9 @@ func toCourseOffering(row any) (CourseOffering, error) {
 			StudyMode: r.StudyMode, IntakeMonths: r.IntakeMonths, EntryRequirements: r.EntryRequirements,
 			Accreditation: r.Accreditation, IsPublished: r.IsPublished, DeletedAt: r.DeletedAt,
 			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-			CourseTitle: r.CourseTitle, CourseSlug: r.CourseSlug,
-			DegreeType:     r.DegreeType,
+			CourseTitle: r.CourseTitle, CourseSlug: r.CourseSlug, CourseDescription: r.CourseDescription,
+			DegreeType: r.DegreeType, Department: r.Department, FieldOfStudy: r.FieldOfStudy,
+			Language: r.Language, DefaultDurationYears: r.DefaultDurationYears,
 			UniversityName: r.UniversityName, UniversitySlug: r.UniversitySlug,
 		}, nil
 	default:

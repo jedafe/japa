@@ -28,7 +28,7 @@
 					label = t('forms.title');
 					break;
 				case 'moderation':
-					label = t('moderation.title');
+					label = t('moderationQueue.title');
 					break;
 				case 'content':
 					label = t('moderation.content');

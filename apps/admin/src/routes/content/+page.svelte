@@ -34,10 +34,10 @@
 		is_featured?: boolean;
 	};
 
-	// Backend gates /admin/content list on admin.moderation, remove/restore on
-	// content.delete_any, and blog feature/unfeature on blog.feature.
+	// Backend gates /admin/content list on admin.moderation OR admin.content.view,
+	// remove/restore on content.delete_any, and feature/unfeature on content.feature.
 	const canModerate = $derived(hasPermission("content.delete_any"));
-	const canEditContent = $derived(hasPermission("blog.feature") || hasPermission("content.edit_any"));
+	const canEditContent = $derived(hasPermission("content.feature"));
 	// Rule 11 amendment: permanent delete requires the dedicated node.
 	const canHardDelete = $derived(hasPermission("admin.hard_delete"));
 
@@ -73,13 +73,13 @@
 				if (typesRes.ok) {
 					contentTypeOptions = (typesRes.data as { value: string; label: string }[]).map((ct) => ({
 						value: ct.value,
-						label: t(`content.type_${ct.value}`, ct.label)
+						label: t(`content.type.${ct.value}`, ct.label)
 					}));
 				}
 				if (statusRes.ok) {
 					statusOptions = (statusRes.data as { value: string; label: string }[]).map((s) => ({
 						value: s.value,
-						label: t(`content.status_${s.value}`, s.label)
+						label: t(`content.status.${s.value}`, s.label)
 					}));
 				}
 			} catch {
@@ -425,7 +425,7 @@
 				: [])
 		],
 		fields,
-		load: async ({ page, pageSize, q, filter }) => {
+		load: async ({ page, pageSize, q, sort, filter }) => {
 			const params = new URLSearchParams({
 				page_size: String(pageSize),
 				page_offset: String(page * pageSize)
@@ -434,6 +434,11 @@
 			if (filter.content_type) params.set("type", filter.content_type);
 			if (filter.status) params.set("status", filter.status);
 			if (filter.deleted) params.set("deleted", filter.deleted);
+			if (sort) {
+				const [key, dir] = sort.split(":");
+				params.set("sort", key);
+				params.set("sort_dir", dir === "asc" ? "asc" : "desc");
+			}
 			// Use apiRaw to access top-level total/total_pages alongside data.
 			const result = await apiRaw<{ data?: ContentItem[]; items?: ContentItem[]; total?: number; total_pages?: number }>(`/admin/content?${params.toString()}`);
 			if (result.ok) {

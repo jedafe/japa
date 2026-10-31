@@ -45,7 +45,7 @@ func (q *Queries) CountAdminReviewsFiltered(ctx context.Context, arg CountAdminR
 const createReview = `-- name: CreateReview :one
 INSERT INTO reviews (entity_type, entity_id, reviewer_user_id, rating, title, body) VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+ rating, title, body, status, created_at, updated_at, removed_by, assigned_to
 `
 
 type CreateReviewParams struct {
@@ -79,6 +79,7 @@ func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (Rev
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemovedBy,
+		&i.AssignedTo,
 	)
 	return i, err
 }
@@ -121,7 +122,7 @@ func (q *Queries) GetReviewAggregate(ctx context.Context, arg GetReviewAggregate
 
 const getReviewByID = `-- name: GetReviewByID :one
 SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+ rating, title, body, status, created_at, updated_at, removed_by, assigned_to
 FROM reviews
 WHERE id = $1
 `
@@ -141,6 +142,7 @@ func (q *Queries) GetReviewByID(ctx context.Context, id pgtype.UUID) (Review, er
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemovedBy,
+		&i.AssignedTo,
 	)
 	return i, err
 }
@@ -170,7 +172,7 @@ func (q *Queries) HasUserReviewedEntity(ctx context.Context, arg HasUserReviewed
 
 const listAdminReviews = `-- name: ListAdminReviews :many
 SELECT r.id, r.entity_type, r.entity_id, r.reviewer_user_id,
- r.rating, r.title, r.body, r.status, r.created_at, r.updated_at, r.removed_by,
+ r.rating, r.title, r.body, r.status, r.created_at, r.updated_at, r.removed_by, r.assigned_to,
  COALESCE(
  CASE r.entity_type
  WHEN 'organization' THEN (SELECT o.name FROM organizations o WHERE o.id = r.entity_id)
@@ -203,6 +205,7 @@ type ListAdminReviewsRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	RemovedBy      pgtype.UUID        `json:"removed_by"`
+	AssignedTo     pgtype.UUID        `json:"assigned_to"`
 	EntityName     string             `json:"entity_name"`
 }
 
@@ -227,6 +230,7 @@ func (q *Queries) ListAdminReviews(ctx context.Context, arg ListAdminReviewsPara
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemovedBy,
+			&i.AssignedTo,
 			&i.EntityName,
 		); err != nil {
 			return nil, err
@@ -241,7 +245,7 @@ func (q *Queries) ListAdminReviews(ctx context.Context, arg ListAdminReviewsPara
 
 const listAdminReviewsFiltered = `-- name: ListAdminReviewsFiltered :many
 SELECT r.id, r.entity_type, r.entity_id, r.reviewer_user_id,
- r.rating, r.title, r.body, r.status, r.created_at, r.updated_at, r.removed_by,
+ r.rating, r.title, r.body, r.status, r.created_at, r.updated_at, r.removed_by, r.assigned_to,
  COALESCE(
  CASE r.entity_type
  WHEN 'organization' THEN (SELECT o.name FROM organizations o WHERE o.id = r.entity_id)
@@ -277,6 +281,7 @@ type ListAdminReviewsFilteredRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	RemovedBy      pgtype.UUID        `json:"removed_by"`
+	AssignedTo     pgtype.UUID        `json:"assigned_to"`
 	EntityName     string             `json:"entity_name"`
 }
 
@@ -306,6 +311,7 @@ func (q *Queries) ListAdminReviewsFiltered(ctx context.Context, arg ListAdminRev
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemovedBy,
+			&i.AssignedTo,
 			&i.EntityName,
 		); err != nil {
 			return nil, err
@@ -320,7 +326,7 @@ func (q *Queries) ListAdminReviewsFiltered(ctx context.Context, arg ListAdminRev
 
 const listReviews = `-- name: ListReviews :many
 SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+ rating, title, body, status, created_at, updated_at, removed_by, assigned_to
 FROM reviews
 
 ORDER BY created_at DESC
@@ -353,6 +359,7 @@ func (q *Queries) ListReviews(ctx context.Context, arg ListReviewsParams) ([]Rev
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemovedBy,
+			&i.AssignedTo,
 		); err != nil {
 			return nil, err
 		}
@@ -366,7 +373,7 @@ func (q *Queries) ListReviews(ctx context.Context, arg ListReviewsParams) ([]Rev
 
 const listReviewsByEntity = `-- name: ListReviewsByEntity :many
 SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+ rating, title, body, status, created_at, updated_at, removed_by, assigned_to
 FROM reviews
 WHERE entity_type = $1
  AND entity_id = $2
@@ -408,6 +415,7 @@ func (q *Queries) ListReviewsByEntity(ctx context.Context, arg ListReviewsByEnti
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemovedBy,
+			&i.AssignedTo,
 		); err != nil {
 			return nil, err
 		}
@@ -421,7 +429,7 @@ func (q *Queries) ListReviewsByEntity(ctx context.Context, arg ListReviewsByEnti
 
 const listReviewsByEntityHighestRating = `-- name: ListReviewsByEntityHighestRating :many
 SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+ rating, title, body, status, created_at, updated_at, removed_by, assigned_to
 FROM reviews
 WHERE entity_type = $1
  AND entity_id = $2
@@ -464,6 +472,7 @@ func (q *Queries) ListReviewsByEntityHighestRating(ctx context.Context, arg List
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemovedBy,
+			&i.AssignedTo,
 		); err != nil {
 			return nil, err
 		}
@@ -477,7 +486,7 @@ func (q *Queries) ListReviewsByEntityHighestRating(ctx context.Context, arg List
 
 const listReviewsByEntityLowestRating = `-- name: ListReviewsByEntityLowestRating :many
 SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+ rating, title, body, status, created_at, updated_at, removed_by, assigned_to
 FROM reviews
 WHERE entity_type = $1
  AND entity_id = $2
@@ -520,6 +529,7 @@ func (q *Queries) ListReviewsByEntityLowestRating(ctx context.Context, arg ListR
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemovedBy,
+			&i.AssignedTo,
 		); err != nil {
 			return nil, err
 		}
@@ -533,7 +543,7 @@ func (q *Queries) ListReviewsByEntityLowestRating(ctx context.Context, arg ListR
 
 const listReviewsByEntityWithAuthor = `-- name: ListReviewsByEntityWithAuthor :many
 SELECT r.id, r.entity_type, r.entity_id, r.reviewer_user_id,
- r.rating, r.title, r.body, r.status, r.created_at, r.updated_at, r.removed_by,
+ r.rating, r.title, r.body, r.status, r.created_at, r.updated_at, r.removed_by, r.assigned_to,
  COALESCE(u.public_username, u.username, '') AS author_username,
  up.display_name AS author_display_name,
  up.avatar_url AS author_avatar_url
@@ -566,6 +576,7 @@ type ListReviewsByEntityWithAuthorRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	RemovedBy         pgtype.UUID        `json:"removed_by"`
+	AssignedTo        pgtype.UUID        `json:"assigned_to"`
 	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	AuthorAvatarUrl   *string            `json:"author_avatar_url"`
@@ -602,6 +613,7 @@ func (q *Queries) ListReviewsByEntityWithAuthor(ctx context.Context, arg ListRev
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemovedBy,
+			&i.AssignedTo,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.AuthorAvatarUrl,
@@ -618,7 +630,7 @@ func (q *Queries) ListReviewsByEntityWithAuthor(ctx context.Context, arg ListRev
 
 const listReviewsByReviewer = `-- name: ListReviewsByReviewer :many
 SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+ rating, title, body, status, created_at, updated_at, removed_by, assigned_to
 FROM reviews
 WHERE reviewer_user_id = $1
 ORDER BY created_at DESC
@@ -652,6 +664,7 @@ func (q *Queries) ListReviewsByReviewer(ctx context.Context, arg ListReviewsByRe
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemovedBy,
+			&i.AssignedTo,
 		); err != nil {
 			return nil, err
 		}
@@ -685,7 +698,7 @@ SET status = 'removed', removed_by = $1, updated_at = now()
 WHERE id = $2
  AND reviewer_user_id = $1
 RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+ rating, title, body, status, created_at, updated_at, removed_by, assigned_to
 `
 
 type SoftDeleteOwnReviewParams struct {
@@ -711,6 +724,7 @@ func (q *Queries) SoftDeleteOwnReview(ctx context.Context, arg SoftDeleteOwnRevi
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemovedBy,
+		&i.AssignedTo,
 	)
 	return i, err
 }
@@ -722,7 +736,7 @@ SET rating = $1, title = $2, body = $3,
 WHERE id = $4
  AND reviewer_user_id = $5
 RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+ rating, title, body, status, created_at, updated_at, removed_by, assigned_to
 `
 
 type UpdateReviewParams struct {
@@ -754,6 +768,7 @@ func (q *Queries) UpdateReview(ctx context.Context, arg UpdateReviewParams) (Rev
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemovedBy,
+		&i.AssignedTo,
 	)
 	return i, err
 }
@@ -763,7 +778,7 @@ UPDATE reviews
 SET status = $1, removed_by = $2, updated_at = now()
 WHERE id = $3
 RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+ rating, title, body, status, created_at, updated_at, removed_by, assigned_to
 `
 
 type UpdateReviewStatusParams struct {
@@ -789,6 +804,7 @@ func (q *Queries) UpdateReviewStatus(ctx context.Context, arg UpdateReviewStatus
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemovedBy,
+		&i.AssignedTo,
 	)
 	return i, err
 }

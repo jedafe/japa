@@ -7265,9 +7265,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/appeals/{id}", adminHandlers.UpdateAppeal)
 
 			// Task 23: Content admin moderation
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+			// List/detail are read-only: admin.moderation (moderation surface)
+			// or admin.content.view (read-only All Content page node, §03).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "admin.moderation", "admin.content.view")).
 				Get("/admin/content", adminHandlers.ListContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "admin.moderation", "admin.content.view")).
 				Get("/admin/content/{id}", contentHandlers.GetAdminContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_any")).
 				Patch("/admin/content/{id}", contentHandlers.UpdateContent)

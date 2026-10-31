@@ -3,6 +3,7 @@
 	import type { FieldDef } from './index';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import MultiAutocomplete from '$lib/components/ui/MultiAutocomplete.svelte';
 	import { JsonValueEditor } from '@japaconnect/ui';
 	import { t } from '$lib/stores/i18n.svelte';
 
@@ -115,6 +116,31 @@
 					onSelect={(item: AutocompleteItem) => { value[field.key] = item.id; }}
 					onClear={() => { value[field.key] = ''; }}
 				/>
+			{:else if field.type === 'multiselect'}
+				<!-- Multi-value fields render through the shared MultiAutocomplete —
+				     picks append as removable chips; the bound value is a string[]. -->
+				{@const opts = field.options ?? []}
+				{@const selected = Array.isArray(value[field.key])
+					? (value[field.key] as string[])
+					: String(value[field.key] ?? '').split(',').map((s) => s.trim()).filter(Boolean)}
+				<div class:opacity-50={fieldDisabled} class:pointer-events-none={fieldDisabled}>
+					<MultiAutocomplete
+						id={field.key}
+						disabled={fieldDisabled}
+						placeholder={field.placeholder ?? field.label}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={async (q: string) => {
+							const needle = q.trim().toLowerCase();
+							return opts
+								.filter((o) => !needle || o.label.toLowerCase().includes(needle) || o.value.toLowerCase().includes(needle))
+								.map((o) => ({ id: o.value, label: o.label }));
+						}}
+						initialFetcher={async () => opts.map((o) => ({ id: o.value, label: o.label }))}
+						values={selected}
+						labels={Object.fromEntries(opts.map((o) => [o.value, o.label]))}
+						onchange={(ids) => { value[field.key] = ids; }}
+					/>
+				</div>
 			{:else if field.type === 'json'}
 				<!-- Structured JSON editor — the bound value stays a JSON string so
 				     page create/update handlers keep their JSON.parse unchanged. -->

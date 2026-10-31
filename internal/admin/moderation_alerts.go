@@ -25,28 +25,56 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 	}
 
 	status := r.URL.Query().Get("status")
+	severity := r.URL.Query().Get("severity")
+	q := r.URL.Query().Get("q")
 
-	alerts, err := gen.New(h.DB.Reader).ListModerationAlerts(r.Context(),
+	limit := int32(25)
+	if s := r.URL.Query().Get("page_size"); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n > 0 {
+			limit = min(int32(n), 100)
+		}
+	}
+	offset := int32(0)
+	if s := r.URL.Query().Get("page_offset"); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n >= 0 {
+			offset = int32(n)
+		}
+	}
 
-		status,
-	)
+	queries := gen.New(h.DB.Reader)
+	alerts, err := queries.ListModerationAlertsFiltered(r.Context(), gen.ListModerationAlertsFilteredParams{
+		Status:     status,
+		Severity:   severity,
+		Q:          q,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load moderation alerts")
 		return
 	}
 
-	// Count total matching alerts for pagination metadata.
-	var total int32
+	total, err := queries.CountModerationAlertsFiltered(r.Context(), gen.CountModerationAlertsFilteredParams{
+		Status:   status,
+		Severity: severity,
+		Q:        q,
+	})
+	if err != nil {
+		slog.Warn("moderation: counting alerts", "error", err)
+	}
 
-	countErr := h.DB.Reader.QueryRow(r.Context(), `SELECT COUNT(*)::int FROM moderation_alerts
-		 WHERE (NULLIF($1, '') IS NULL OR status = $1)`, status).Scan(&total)
-	if countErr != nil {
-		slog.Warn("moderation: counting alerts", "error", countErr)
+	totalPages := int32(0)
+	if limit > 0 {
+		totalPages = int32(math.Ceil(float64(total) / float64(limit)))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": alerts,
-		"meta": map[string]any{"total": total},
+		"data": map[string]any{
+			"items":       alerts,
+			"total":       total,
+			"page":        offset / limit,
+			"total_pages": totalPages,
+		},
 	})
 }
 

@@ -1531,6 +1531,7 @@ type CrsRuleset struct {
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
+	AssignedTo           pgtype.UUID        `json:"assigned_to"`
 }
 
 type CrsScoreHistory struct {
@@ -1869,6 +1870,7 @@ type EcaGuide struct {
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
+	AssignedTo           pgtype.UUID        `json:"assigned_to"`
 }
 
 type EcaProvider struct {
@@ -3242,6 +3244,7 @@ type PofRequirement struct {
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
+	AssignedTo           pgtype.UUID        `json:"assigned_to"`
 }
 
 type ProfessionalDocument struct {
@@ -3474,6 +3477,7 @@ type Review struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	RemovedBy      pgtype.UUID        `json:"removed_by"`
+	AssignedTo     pgtype.UUID        `json:"assigned_to"`
 }
 
 type ReviewAggregate struct {
@@ -3904,6 +3908,7 @@ type SopSample struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	IsJapabotIndexed   *bool              `json:"is_japabot_indexed"`
+	AssignedTo         pgtype.UUID        `json:"assigned_to"`
 }
 
 type SopTemplate struct {
@@ -3922,6 +3927,7 @@ type SopTemplate struct {
 	HitlReviewNotes    *string            `json:"hitl_review_notes"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	AssignedTo         pgtype.UUID        `json:"assigned_to"`
 }
 
 type SourceCollection struct {

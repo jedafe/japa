@@ -33,6 +33,22 @@ function cookieSecure(): boolean {
 }
 
 /**
+ * Parent domain shared by sibling surfaces (docs./academy./admin.*) — the
+ * session cookie set at login must be visible to every *.{base} host or
+ * cross-app auth silently breaks. Derived from the public API URL the same
+ * way CSRF_COOKIE_DOMAIN is in hooks.server.ts (api.japa.to → japa.to);
+ * empty in dev so cookies stay host-only.
+ */
+const SESSION_COOKIE_DOMAIN = (() => {
+	try {
+		const apiHost = new URL(env.PUBLIC_JC_API_URL ?? '').hostname;
+		return apiHost.startsWith('api.') ? `.${apiHost.slice(4)}` : '';
+	} catch {
+		return '';
+	}
+})();
+
+/**
  * RBAC node check against a permission list (event.locals.user.permissions).
  * The backend resolver grants super-admin '*' as a wildcard — every node
  * check must honor it or wildcard admins lose staff affordances (same
@@ -46,6 +62,7 @@ export function hasPerm(perms: string[] | null | undefined, node: string): boole
 export function setSessionCookie(event: RequestEvent, accessToken: string): void {
 	event.cookies.set(SESSION_COOKIE, accessToken, {
 		path: '/',
+		...(SESSION_COOKIE_DOMAIN ? { domain: SESSION_COOKIE_DOMAIN } : {}),
 		httpOnly: true,
 		secure: cookieSecure(),
 		sameSite: 'lax',
@@ -60,6 +77,7 @@ export function setSessionCookie(event: RequestEvent, accessToken: string): void
 export function setRefreshCookie(event: RequestEvent, refreshToken: string): void {
 	event.cookies.set(REFRESH_COOKIE, refreshToken, {
 		path: '/',
+		...(SESSION_COOKIE_DOMAIN ? { domain: SESSION_COOKIE_DOMAIN } : {}),
 		httpOnly: true,
 		secure: cookieSecure(),
 		sameSite: 'strict',
@@ -67,10 +85,16 @@ export function setRefreshCookie(event: RequestEvent, refreshToken: string): voi
 	});
 }
 
-/** Clear the jc_token cookie (logout). */
+/** Clear the jc_token cookie (logout). Deletes both the domain-shared and
+ * legacy host-only variants — sessions minted before the domain attribute
+ * existed are still host-scoped. */
 export function clearSessionCookie(event: RequestEvent): void {
 	event.cookies.delete(SESSION_COOKIE, { path: '/' });
 	event.cookies.delete(REFRESH_COOKIE, { path: '/' });
+	if (SESSION_COOKIE_DOMAIN) {
+		event.cookies.delete(SESSION_COOKIE, { path: '/', domain: SESSION_COOKIE_DOMAIN });
+		event.cookies.delete(REFRESH_COOKIE, { path: '/', domain: SESSION_COOKIE_DOMAIN });
+	}
 }
 
 /** Extract the jc_refresh token value from a backend response's Set-Cookie
@@ -482,6 +506,17 @@ export function sanitizePostLoginTarget(target: string | null): string {
 		const u = new URL(target);
 		const apiOrigin = new URL(API_PUBLIC_ORIGIN).origin;
 		if ((u.protocol === 'https:' || u.protocol === 'http:') && u.origin === apiOrigin) {
+			return u.toString();
+		}
+		// Sibling surfaces (docs./academy./admin.{base}) share the
+		// SESSION_COOKIE_DOMAIN session — a login bounce returning there
+		// keeps the user in the same authenticated session.
+		const siblingBase = SESSION_COOKIE_DOMAIN.replace(/^\./, '');
+		if (
+			(u.protocol === 'https:' || u.protocol === 'http:') &&
+			siblingBase &&
+			(u.hostname === siblingBase || u.hostname.endsWith('.' + siblingBase))
+		) {
 			return u.toString();
 		}
 	} catch {

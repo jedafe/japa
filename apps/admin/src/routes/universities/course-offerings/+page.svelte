@@ -13,33 +13,59 @@
 	import { CheckCircle, EyeOff, Trash2 } from 'lucide-svelte';
 
 	type SelectOption = { value: string; label: string };
+	type AutocompleteItem = { id: string; label: string; sublabel?: string };
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let bulkBusy = $state(false);
-	let courseOptions = $state<SelectOption[]>([]);
-	let universityOptions = $state<SelectOption[]>([]);
 	// §58 — managed currency list for the currency select + tuition display.
 	let currencies = $state<CurrencyInfo[]>([]);
 
+	// ── Course/university pickers ─────────────────────────────────────────
+	// API-backed Autocomplete fetchers (no 200-row cap — the query is sent
+	// server-side) plus a label cache so selected chips render without a
+	// re-fetch. The cache is seeded from list rows (each offering embeds
+	// course.title + university.name) and from fetched options.
+	const courseLabels = new Map<string, string>();
+	const universityLabels = new Map<string, string>();
+
+	const courseLabel = (id: string) => courseLabels.get(id) ?? id;
+	const universityLabel = (id: string) => universityLabels.get(id) ?? id;
+
+	async function fetchCourses(q: string): Promise<AutocompleteItem[]> {
+		const params = new URLSearchParams({ limit: '25' });
+		if (q.trim()) params.set('q', q.trim());
+		const res = await courseCatalogAdminApi.list(params.toString());
+		if (!res.ok) return [];
+		return (res.data.data ?? []).map((c) => {
+			courseLabels.set(c.id, c.title);
+			return { id: c.id, label: c.title, sublabel: c.degree_type ?? undefined };
+		});
+	}
+
+	async function fetchUniversities(q: string): Promise<AutocompleteItem[]> {
+		const params = new URLSearchParams({ limit: '25' });
+		if (q.trim()) params.set('q', q.trim());
+		const res = await universitiesAdminApi.listPublic(params.toString());
+		if (!res.ok) return [];
+		// listPublic goes through api() which already unwraps the {data, meta}
+		// envelope — res.data is the universities array, not the envelope.
+		const rows = (Array.isArray(res.data) ? res.data : []) as { id: string; name: string; geo_code?: string }[];
+		return rows.map((u) => {
+			universityLabels.set(u.id, u.name);
+			return { id: u.id, label: u.name, sublabel: u.geo_code ?? undefined };
+		});
+	}
+
+	// Initial suggestions when the picker opens with an empty query.
+	const initialCourses = () => fetchCourses('');
+	const initialUniversities = () => fetchUniversities('');
+
 	$effect(() => {
 		loadCurrencies().then((list) => (currencies = list));
-		void (async () => {
-			const [courses, universities] = await Promise.all([
-				courseCatalogAdminApi.list('limit=200&is_published=true'),
-				universitiesAdminApi.listPublic('limit=200')
-			]);
-			if (courses.ok) {
-				courseOptions = (courses.data.data ?? []).map((c) => ({ value: c.id, label: c.title }));
-			}
-			if (universities.ok) {
-				const rows = (universities.data as { data?: { id: string; name: string }[] }).data ?? [];
-				universityOptions = rows.map((u) => ({ value: u.id, label: u.name }));
-			}
-		})();
 	});
 
-	async function bulkAction(action: 'publish' | 'unpublish' | 'delete', ids: Set<string>) {
+	async function bulkAction(action: 'publish' | 'unpublish', ids: Set<string>) {
 		const idArr = Array.from(ids);
 		if (idArr.length === 0 || bulkBusy) return;
 		bulkBusy = true;
@@ -105,14 +131,43 @@
 
 	function parseIntakeMonths(v: unknown): string[] | undefined {
 		if (v === undefined || v === null) return undefined;
-		const raw = Array.isArray(v) ? v.join(',') : String(v);
-		const months = raw.split(',').map((m) => m.trim()).filter(Boolean);
-		return months.length ? months : [];
+		if (Array.isArray(v)) return v;
+		const months = String(v).split(',').map((m) => m.trim()).filter(Boolean);
+		return months;
 	}
 
+	// ── Intake months ─────────────────────────────────────────────────────
+	// Calendar months are a fixed canonical set (not tenant data) — the
+	// stored values are English month names matching the seed format.
+	const MONTH_OPTIONS: SelectOption[] = [
+		'January', 'February', 'March', 'April', 'May', 'June',
+		'July', 'August', 'September', 'October', 'November', 'December'
+	].map((m) => ({ value: m, label: m }));
+
+	// ── Accreditation ─────────────────────────────────────────────────────
+	// Canonical accreditor suggestion list (same class as study_mode) —
+	// freeText stays enabled for bodies outside the list.
+	const ACCREDITORS = [
+		'NUC accredited', 'NMCN accredited', 'COREN accredited',
+		'AACSB', 'ABET', 'EQUIS', 'AMBA', 'QAA', 'NAAC',
+		'WASC', 'SACSCOC', 'TEQSA', 'HLC', 'CAA'
+	];
+	const accreditorFetcher = async (q: string) => {
+		const needle = q.trim().toLowerCase();
+		return ACCREDITORS.filter((a) => !needle || a.toLowerCase().includes(needle))
+			.map((a) => ({ id: a, label: a }));
+	};
+	const accreditorInitial = async () => ACCREDITORS.map((a) => ({ id: a, label: a }));
+
 	const fields: FieldDef[] = $derived([
-		{ key: 'course_id', label: t('courses.course', 'Course'), type: 'select', required: true, options: courseOptions },
-		{ key: 'university_id', label: t('courses.university', 'University'), type: 'select', required: true, options: universityOptions },
+		{ key: 'course_id', label: t('courses.course', 'Course'), type: 'autocomplete', required: true,
+			placeholder: t('courses.search_courses', 'Search courses...'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: fetchCourses, initialFetcher: initialCourses, getSelectedLabel: courseLabel },
+		{ key: 'university_id', label: t('courses.university', 'University'), type: 'autocomplete', required: true,
+			placeholder: t('courses.search_universities', 'Search universities...'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: fetchUniversities, initialFetcher: initialUniversities, getSelectedLabel: universityLabel },
 		{ key: 'slug', label: t('courses.slug', 'Slug'), type: 'text', placeholder: t('courses.offering_slug_hint', 'Auto: {university}-{course} if empty') },
 		{ key: 'tuition', label: t('courses.tuition', 'Tuition'), type: 'number' },
 		currencies.length > 0
@@ -129,9 +184,14 @@
 				{ value: 'Hybrid', label: t('courses.mode_hybrid', 'Hybrid') }
 			]
 		},
-		{ key: 'intake_months', label: t('courses.intake_months', 'Intake Months'), type: 'text', placeholder: 'September, January' },
+		{ key: 'intake_months', label: t('courses.intake_months', 'Intake Months'), type: 'multiselect', options: MONTH_OPTIONS,
+			placeholder: t('courses.intake_months_hint', 'Select intake months...') },
 		{ key: 'entry_requirements', label: t('courses.entry_requirements', 'Entry Requirements'), type: 'textarea' },
-		{ key: 'accreditation', label: t('courses.accreditation', 'Accreditation'), type: 'text' },
+		{ key: 'accreditation', label: t('courses.accreditation', 'Accreditation'), type: 'autocomplete',
+			placeholder: t('courses.accreditation_hint', 'Search accreditors...'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: accreditorFetcher, initialFetcher: accreditorInitial,
+			getSelectedLabel: (v) => v, freeText: true, allowFreeText: true },
 		{ key: 'is_published', label: t('courses.published', 'Published'), type: 'checkbox' }
 	]);
 
@@ -164,6 +224,26 @@
 		],
 		filters: [
 			{
+				key: 'university_id',
+				label: t('courses.university', 'University'),
+				type: 'autocomplete',
+				placeholder: t('courses.search_universities', 'Search universities...'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: fetchUniversities,
+				initialFetcher: initialUniversities,
+				getSelectedLabel: universityLabel
+			},
+			{
+				key: 'course_id',
+				label: t('courses.course', 'Course'),
+				type: 'autocomplete',
+				placeholder: t('courses.search_courses', 'Search courses...'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: fetchCourses,
+				initialFetcher: initialCourses,
+				getSelectedLabel: courseLabel
+			},
+			{
 				key: 'is_published',
 				label: t('courses.status', 'Status'),
 				options: [
@@ -195,14 +275,9 @@
 				onclick: (ids) => bulkAction('unpublish', ids),
 				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
 			},
-			{
-				label: t('common.deleteSelected', 'Delete Selected'),
-				icon: Trash2,
-				variant: 'destructive',
-				onclick: (ids) => bulkAction('delete', ids),
-				// Rows already soft-deleted can't be deleted again.
-				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
-			},
+			// "Delete Selected" is the scaffold's built-in (confirm-gated,
+			// per-row config.remove) — publish/unpublish use the §39 bulk
+			// endpoint; only the custom force-delete stays besides them.
 			{
 				label: t('common.force_delete', 'Force Delete Selected'),
 				icon: Trash2,
@@ -216,25 +291,34 @@
 			const params = new URLSearchParams();
 			params.set('page', String(page + 1));
 			params.set('limit', String(pageSize));
+			if (filter.university_id) params.set('university_id', filter.university_id);
+			if (filter.course_id) params.set('course_id', filter.course_id);
 			if (filter.is_published) params.set('is_published', filter.is_published);
 			if (filter.deleted) params.set('deleted', filter.deleted);
 			if (q) params.set('q', q);
+			// DataTable emits the column sortKey ('title' | 'university') —
+			// both map 1:1 onto the backend's ?sort= vocabulary.
 			if (sort) {
 				const [key] = sort.split(':');
-				if (key === 'course_title') params.set('sort', 'title');
-				else if (key === 'university_name') params.set('sort', 'university');
+				if (key === 'title') params.set('sort', 'title');
+				else if (key === 'university') params.set('sort', 'university');
 			}
 			const result = await courseOfferingsAdminApi.list(params.toString());
 			if (result.ok) {
 				const rows = result.data.data ?? [];
-				for (const r of rows) offeringRowMap.set(r.id, r);
+				for (const r of rows) {
+					offeringRowMap.set(r.id, r);
+					// Seed the picker label caches from the joined names so edit
+					// + filter chips render without an extra lookup.
+					if (r.course?.title) courseLabels.set(r.course_id, r.course.title);
+					if (r.university?.name) universityLabels.set(r.university_id, r.university.name);
+				}
 				const data = rows.map((o) => ({
 					...o,
 					course_title: o.course?.title ?? '',
 					university_name: o.university?.name ?? '',
 					degree_type: o.course?.degree_type ?? null,
-					tuition_display: o.tuition != null ? formatMoney(o.tuition, o.currency, currencies) : '—',
-					intake_months: (o.intake_months ?? []).join(', ')
+					tuition_display: o.tuition != null ? formatMoney(o.tuition, o.currency, currencies) : '—'
 				}));
 				const total = result.data.meta?.total ?? data.length;
 				const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
@@ -254,7 +338,9 @@
 				intake_months: parseIntakeMonths(body.intake_months),
 				entry_requirements: body.entry_requirements ? String(body.entry_requirements) : undefined,
 				accreditation: body.accreditation ? String(body.accreditation) : undefined,
-				is_published: body.is_published === undefined ? true : !!body.is_published
+				// EntityPage seeds checkbox fields to '' — '' is falsy so the
+				// unchecked default (unpublished) is what the form shows.
+				is_published: !!body.is_published
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -347,7 +433,7 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('courses.intake_months', 'Intake Months')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.intake_months?.length ? row.intake_months.join(', ') : '—'}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{Array.isArray(row.intake_months) && row.intake_months.length ? row.intake_months.join(', ') : '—'}</p>
 			</div>
 		</div>
 		{#if row.entry_requirements}

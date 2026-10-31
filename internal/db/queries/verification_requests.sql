@@ -66,7 +66,10 @@ ORDER BY
   CASE WHEN sqlc.arg(sort)::text = 'status' AND sqlc.arg(sort_dir)::text <> 'desc' THEN vr.status END ASC,
   CASE WHEN sqlc.arg(sort)::text = 'created_at' AND sqlc.arg(sort_dir)::text = 'asc' THEN vr.created_at END ASC,
   CASE WHEN sqlc.arg(sort)::text NOT IN ('requester', 'entity_type', 'status', 'created_at')
-        OR (sqlc.arg(sort)::text = 'created_at' AND sqlc.arg(sort_dir)::text <> 'asc') THEN vr.created_at END DESC
+        OR (sqlc.arg(sort)::text = 'created_at' AND sqlc.arg(sort_dir)::text <> 'asc') THEN vr.created_at END DESC,
+  -- Unconditional tiebreaker: non-unique sort keys (status/entity_type) need a
+  -- stable order or rows drift between pages.
+  vr.created_at DESC, vr.id
 LIMIT $4 OFFSET $5;
 
 -- name: CountVerificationRequests :one

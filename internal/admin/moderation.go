@@ -1761,12 +1761,58 @@ func (h *Handlers) AssignModerationItem(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	err := h.Queries.AssignContentReport(r.Context(), gen.AssignContentReportParams{
-		ReviewedBy: assigneeID,
-		ID:         rid,
-	})
-	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to assign moderation item")
+	// The unified queue unions several source tables, so the assign target is
+	// resolved by probing each table for a matching row. Tables without a
+	// native reviewer/assignee column take the assigned_to column added by
+	// migration 000988; a row matching no table returns not_assignable.
+	ctx := r.Context()
+	assigned := int64(0)
+
+	for _, assign := range []func() (int64, error){
+		func() (int64, error) {
+			return h.Queries.AssignContentReport(ctx, gen.AssignContentReportParams{ReviewedBy: assigneeID, ID: rid})
+		},
+		func() (int64, error) {
+			return h.Queries.AssignContentReview(ctx, gen.AssignContentReviewParams{ReviewerUserID: assigneeID, ID: rid})
+		},
+		func() (int64, error) {
+			return h.Queries.AssignHitlReview(ctx, gen.AssignHitlReviewParams{ReviewerID: assigneeID, ID: rid})
+		},
+		func() (int64, error) {
+			return h.Queries.AssignEcaCommunityUpdate(ctx, gen.AssignEcaCommunityUpdateParams{ReviewedBy: assigneeID, ID: rid})
+		},
+		func() (int64, error) {
+			return h.Queries.AssignReview(ctx, gen.AssignReviewParams{AssignedTo: assigneeID, ID: rid})
+		},
+		func() (int64, error) {
+			return h.Queries.AssignCrsRuleset(ctx, gen.AssignCrsRulesetParams{AssignedTo: assigneeID, ID: rid})
+		},
+		func() (int64, error) {
+			return h.Queries.AssignPofRequirement(ctx, gen.AssignPofRequirementParams{AssignedTo: assigneeID, ID: rid})
+		},
+		func() (int64, error) {
+			return h.Queries.AssignEcaGuide(ctx, gen.AssignEcaGuideParams{AssignedTo: assigneeID, ID: rid})
+		},
+		func() (int64, error) {
+			return h.Queries.AssignSopTemplate(ctx, gen.AssignSopTemplateParams{AssignedTo: assigneeID, ID: rid})
+		},
+		func() (int64, error) {
+			return h.Queries.AssignSopSample(ctx, gen.AssignSopSampleParams{AssignedTo: assigneeID, ID: rid})
+		},
+	} {
+		var err error
+		assigned, err = assign()
+		if err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to assign moderation item")
+			return
+		}
+		if assigned > 0 {
+			break
+		}
+	}
+
+	if assigned == 0 {
+		errpkg.WriteError(w, http.StatusNotFound, "not_assignable", "This queue item cannot be assigned")
 		return
 	}
 
@@ -2196,16 +2242,49 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deleted := r.URL.Query().Get("deleted")
+	status := r.URL.Query().Get("status")
+	// §22 contract: 'removed' is a status value in the API surface but the
+	// schema expresses removal via deleted_at — translate to the deleted view.
+	if status == "removed" {
+		status = ""
+		deleted = "only"
+	}
 	if deleted != "" && deleted != "only" && deleted != "all" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "deleted must be 'only' or 'all'")
+		return
+	}
+
+	var authorID pgtype.UUID
+	if v := r.URL.Query().Get("author_id"); v != "" {
+		if err := authorID.Scan(v); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "author_id must be a valid UUID")
+			return
+		}
+	}
+
+	var spaceID pgtype.UUID
+	if v := r.URL.Query().Get("space_id"); v != "" {
+		if err := spaceID.Scan(v); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "space_id must be a valid UUID")
+			return
+		}
+	}
+
+	sortDir := r.URL.Query().Get("sort_dir")
+	if sortDir != "" && sortDir != "asc" && sortDir != "desc" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "sort_dir must be 'asc' or 'desc'")
 		return
 	}
 
 	params := gen.AdminListContentsParams{
 		Deleted:     deleted,
 		ContentType: r.URL.Query().Get("type"),
-		Status:      r.URL.Query().Get("status"),
+		Status:      status,
 		Q:           r.URL.Query().Get("q"),
+		AuthorID:    authorID,
+		SpaceID:     spaceID,
+		Sort:        r.URL.Query().Get("sort"),
+		SortDir:     sortDir,
 		PageLimit:   limit,
 		PageOffset:  offset,
 	}
@@ -2221,6 +2300,8 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 		ContentType: params.ContentType,
 		Status:      params.Status,
 		Q:           params.Q,
+		AuthorID:    params.AuthorID,
+		SpaceID:     params.SpaceID,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count content")

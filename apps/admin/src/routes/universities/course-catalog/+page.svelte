@@ -13,19 +13,40 @@
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
 
-	async function bulkDelete(ids: Set<string>) {
-		const idArr = Array.from(ids);
-		if (idArr.length === 0 || bulkDeleting) return;
-		bulkDeleting = true;
-		pageError = '';
-		try {
-			await Promise.all(idArr.map((id) => courseCatalogAdminApi.delete(id)));
-		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete courses');
-		} finally {
-			bulkDeleting = false;
-		}
-	}
+	// ── Canonical suggestion lists for the dropdown fields ───────────────
+	// Degree types, fields of study/departments, and instruction languages
+	// are canonical academic vocabulary (same class as study_mode/months) —
+	// fixed suggestion lists rendered through Autocomplete with freeText so
+	// non-canonical values remain allowed. Languages mirror the platform's
+	// supported locales (/admin/i18n/languages: en, fr, ar, de, es, it, nl,
+	// pt, yo, zh).
+	const DEGREE_TYPES = [
+		'Associate', 'BSc', 'BA', 'BEng', 'BEd', 'BBA', 'BCom', 'BPharm', 'LLB',
+		'MBBS', 'ND', 'HND', 'Diploma', 'Certificate',
+		'MSc', 'MA', 'MEng', 'MEd', 'MBA', 'MCom', 'LLM', 'MPhil', 'MPH',
+		'PharmD', 'DVM', 'DDS', 'PhD', 'EdD', 'DBA'
+	];
+	const STUDY_FIELDS = [
+		'Computer Science', 'Engineering', 'Medicine', 'Law',
+		'Business Administration', 'Economics', 'Accounting', 'Nursing',
+		'Pharmacy', 'Architecture', 'Agriculture', 'Education', 'Mathematics',
+		'Physics', 'Chemistry', 'Biology', 'Political Science', 'Sociology',
+		'Psychology', 'Arts'
+	];
+	const LANGUAGES = [
+		'English', 'French', 'Arabic', 'German', 'Spanish', 'Italian',
+		'Dutch', 'Portuguese', 'Yoruba', 'Chinese'
+	];
+
+	const suggestionFetcher = (options: string[]) => async (q: string) => {
+		const needle = q.trim().toLowerCase();
+		return options
+			.filter((o) => !needle || o.toLowerCase().includes(needle))
+			.map((o) => ({ id: o, label: o }));
+	};
+	const suggestionInitial = (options: string[]) => async () =>
+		options.map((o) => ({ id: o, label: o }));
+	const identityLabel = (v: string) => v;
 
 	// ── Bulk force delete — single-row force delete is handled by the
 	// scaffold's built-in Hard Delete action (config.hardRemove). ──
@@ -80,10 +101,22 @@
 		{ key: 'title', label: t('courses.title', 'Course Title'), type: 'text', required: true },
 		{ key: 'slug', label: t('courses.slug', 'Slug'), type: 'text', placeholder: t('courses.slug_hint', 'Auto-generated from title if empty') },
 		{ key: 'description', label: t('courses.description', 'Description'), type: 'textarea' },
-		{ key: 'degree_type', label: t('courses.degree_type', 'Degree Type'), type: 'text', placeholder: 'BSc / MSc / MBA / PhD' },
-		{ key: 'department', label: t('courses.department', 'Department'), type: 'text' },
-		{ key: 'field_of_study', label: t('courses.field_of_study', 'Field of Study'), type: 'text' },
-		{ key: 'language', label: t('courses.language', 'Language'), type: 'text', placeholder: 'English' },
+		{ key: 'degree_type', label: t('courses.degree_type', 'Degree Type'), type: 'autocomplete',
+			placeholder: 'BSc / MSc / MBA / PhD', emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: suggestionFetcher(DEGREE_TYPES), initialFetcher: suggestionInitial(DEGREE_TYPES),
+			getSelectedLabel: identityLabel, freeText: true, allowFreeText: true },
+		{ key: 'department', label: t('courses.department', 'Department'), type: 'autocomplete',
+			placeholder: t('courses.department_hint', 'Search departments...'), emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: suggestionFetcher(STUDY_FIELDS), initialFetcher: suggestionInitial(STUDY_FIELDS),
+			getSelectedLabel: identityLabel, freeText: true, allowFreeText: true },
+		{ key: 'field_of_study', label: t('courses.field_of_study', 'Field of Study'), type: 'autocomplete',
+			placeholder: t('courses.field_hint', 'Search fields of study...'), emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: suggestionFetcher(STUDY_FIELDS), initialFetcher: suggestionInitial(STUDY_FIELDS),
+			getSelectedLabel: identityLabel, freeText: true, allowFreeText: true },
+		{ key: 'language', label: t('courses.language', 'Language'), type: 'autocomplete',
+			placeholder: 'English', emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: suggestionFetcher(LANGUAGES), initialFetcher: suggestionInitial(LANGUAGES),
+			getSelectedLabel: identityLabel, freeText: true, allowFreeText: true },
 		{ key: 'default_duration_years', label: t('courses.default_duration', 'Default Duration (years)'), type: 'number' },
 		{ key: 'is_published', label: t('courses.published', 'Published'), type: 'checkbox' }
 	];
@@ -117,6 +150,12 @@
 		],
 		filters: [
 			{
+				key: 'degree_type',
+				label: t('courses.degree_type', 'Degree Type'),
+				type: 'select',
+				options: DEGREE_TYPES.map((d) => ({ value: d, label: d }))
+			},
+			{
 				key: 'is_published',
 				label: t('courses.status', 'Status'),
 				options: [
@@ -136,14 +175,8 @@
 			}
 		],
 		bulkActions: [
-			{
-				label: t('common.deleteSelected', 'Delete Selected'),
-				icon: Trash2,
-				variant: 'destructive',
-				onclick: bulkDelete,
-				// Rows already soft-deleted can't be deleted again.
-				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
-			},
+			// "Delete Selected" is the scaffold's built-in (confirm-gated,
+			// per-row config.remove) — only the custom force-delete stays.
 			{
 				label: t('common.force_delete', 'Force Delete Selected'),
 				icon: Trash2,
@@ -157,6 +190,7 @@
 			const params = new URLSearchParams();
 			params.set('page', String(page + 1));
 			params.set('limit', String(pageSize));
+			if (filter.degree_type) params.set('degree_type', filter.degree_type);
 			if (filter.is_published) params.set('is_published', filter.is_published);
 			if (filter.deleted) params.set('deleted', filter.deleted);
 			if (q) params.set('q', q);
@@ -184,7 +218,9 @@
 				field_of_study: body.field_of_study ? String(body.field_of_study) : undefined,
 				language: body.language ? String(body.language) : undefined,
 				default_duration_years: body.default_duration_years ? Number(body.default_duration_years) : undefined,
-				is_published: body.is_published === undefined ? true : !!body.is_published
+				// EntityPage seeds checkbox fields to '' — '' is falsy so the
+				// unchecked default (unpublished) is what the form shows.
+				is_published: !!body.is_published
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -196,9 +232,13 @@
 				degree_type: body.degree_type === undefined ? undefined : String(body.degree_type || '') || null,
 				department: body.department === undefined ? undefined : String(body.department || '') || null,
 				field_of_study: body.field_of_study === undefined ? undefined : String(body.field_of_study || '') || null,
-				language: body.language ? String(body.language) : 'English',
-				default_duration_years: body.default_duration_years ? Number(body.default_duration_years) : undefined,
-				is_published: body.is_published === undefined ? true : !!body.is_published
+				language: body.language ? String(body.language) : undefined,
+				default_duration_years: body.default_duration_years === '' || body.default_duration_years == null
+					? null
+					: Number(body.default_duration_years),
+				// undefined when the checkbox isn't seeded — keeps the current
+				// published state rather than forcing it.
+				is_published: body.is_published === undefined ? undefined : !!body.is_published
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},

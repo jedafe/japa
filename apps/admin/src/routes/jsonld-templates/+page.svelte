@@ -32,7 +32,7 @@
 			if (res.ok && res.data) {
 				contentTypeOptions = res.data.map((ct) => ({
 					value: ct.value,
-					label: t(`content.type_${ct.value}`, ct.label)
+					label: t(`content.type.${ct.value}`, ct.label)
 				}));
 			}
 		})();

@@ -154,37 +154,30 @@
 		createPermission: "admin.settings",
 		pageSize: 25,
 		columns: [
-			{ key: "name", label: t("universities.name", "Name"), sortable: true },
-			{ key: "slug", label: t("universities.slug", "Slug"), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
-			{ key: "initials", label: t("universities.initials", "Initials"), sortable: true, render: (v: string) => v ? `<span class="font-mono text-xs font-semibold">${v}</span>` : '' },
+			{ key: "name", label: t("universities.name", "Name"), sortable: true, sortKey: "name" },
+			{ key: "slug", label: t("universities.slug", "Slug"), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+			{ key: "initials", label: t("universities.initials", "Initials"), render: (v: string) => v ? `<span class="font-mono text-xs font-semibold">${v}</span>` : '' },
 			{
 				key: "status",
 				label: t("universities.status", "Status"),
-				sortable: true,
 				render: (v: string) => {
 					const cls = v === "active" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : "bg-amber-500/15 text-amber-700 dark:text-amber-400";
 					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${v}</span>`;
 				}
 			},
-			{ key: "member_count", label: t("universities.students", "Members"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
-			{ key: "created_at", label: t("universities.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() }
+			{ key: "member_count", label: t("universities.students", "Members"), sortable: true, sortKey: "members", render: (v: number) => (v ?? 0).toLocaleString() },
+			{ key: "created_at", label: t("universities.created", "Created"), sortable: true, sortKey: "created", render: (v: string) => new Date(v).toLocaleDateString() }
 		],
 		filters: filterDefs,
 		actions: rowActions,
-		bulkActions: canManage ? [
-			{
-				label: t("universities.deleteSelected", "Delete Selected"),
-				icon: Trash2,
-				variant: "destructive",
-				onclick: bulkDelete
-			}
-		] : [],
+		// No page-declared bulk actions — the scaffold's built-in confirm-gated
+		// "Delete Selected" runs config.remove per row when `remove` is set.
 		fields,
 		formSnippet: UniversityForm,
 		headerActions: canManage ? [
 			{ label: t("universities.bulkImport", "CSV Import"), icon: Upload, onclick: openBulkImport, variant: "outline" }
 		] : [],
-		load: async ({ page, pageSize, q, filter }) => {
+		load: async ({ page, pageSize, q, filter, sort }) => {
 			const params = new URLSearchParams({
 				page: String(page + 1),
 				limit: String(pageSize)
@@ -192,13 +185,23 @@
 			if (q) params.set("q", q);
 			// Section 39: admin list filterable by country (geo_code).
 			if (filter?.country) params.set("country", filter.country);
+			// Map DataTable sort keys to the ListSpacesByTypePaginated sort
+			// vocabulary: name (dir-aware), members, created (oldest first).
+			if (sort) {
+				const [key, dir] = sort.split(":");
+				if (key === "name") params.set("sort", dir === "desc" ? "name_desc" : "name");
+				else if (key === "members") params.set("sort", "members");
+				else if (key === "created") params.set("sort", "created");
+			}
 			const result = await universitiesAdminApi.list(params.toString());
 			if (result.ok) {
 				const body = result.data as any;
 				const raw: UniversityRaw[] = body?.data ?? [];
 				const meta = body?.meta ?? { total: raw.length, total_pages: 1 };
 				return {
-					data: raw.map(deriveVerified),
+					// Alias geo_code → country so the edit form's country
+					// Autocomplete seeds from the row (field key is 'country').
+					data: raw.map((u) => ({ ...deriveVerified(u), country: u.geo_code ?? "" })),
 					total: meta.total ?? raw.length,
 					totalPages: meta.total_pages ?? 1
 				};
@@ -221,7 +224,10 @@
 				name: String(body.name ?? "").trim(),
 				slug: String(body.slug ?? "").trim(),
 				initials: String(body.initials ?? "").trim() || undefined as any,
-				country: String(body.country ?? "").trim() || undefined as any,
+				// Always send the key — "" explicitly clears geo_code (the
+				// backend treats an empty alpha-2 as unset), while omitting it
+				// would keep the previous value.
+				country: String(body.country ?? "").trim() as any,
 				logo_url: String(body.logo_url ?? "").trim() || undefined as any,
 				verified: !!body.verified
 			});
@@ -256,21 +262,6 @@
 			if (result.ok) { showDeleteConfirm = false; deleteTarget = null; entityController?.reload(); }
 			else { pageError = result.error; }
 		} catch { pageError = t("common.error", "Failed to delete"); } finally { acting = false; }
-	}
-
-	let bulkDeleting = $state(false);
-	async function bulkDelete(ids: Set<string>) {
-		const idArr = Array.from(ids);
-		if (idArr.length === 0 || bulkDeleting) return;
-		bulkDeleting = true;
-		pageError = "";
-		try {
-			await Promise.all(idArr.map((id) => universitiesAdminApi.delete(id)));
-		} catch (e) {
-			pageError = e instanceof Error ? e.message : t("common.error", "Failed to delete");
-		} finally {
-			bulkDeleting = false;
-		}
 	}
 
 	async function toggleVerify(uni: University) {
@@ -453,6 +444,14 @@
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("universities.status", "Status")}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("universities.country", "Country")}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.geo_code ? `${countryUtils.getSelectedLabel(row.geo_code)} (${row.geo_code})` : '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("universities.verified", "Verified")}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.verified ? t('common.yes', 'Yes') : t('common.no', 'No')}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("universities.students", "Members")}</p>

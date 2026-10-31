@@ -2066,7 +2066,7 @@ func (h *Handlers) GetAdminContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := h.Service.GetContent(r.Context(), id)
+	content, err := h.Service.GetAdminContent(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return

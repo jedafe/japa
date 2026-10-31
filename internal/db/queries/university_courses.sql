@@ -175,6 +175,8 @@ SELECT o.id, o.course_id, o.university_id, o.slug,
  o.entry_requirements, o.accreditation, o.is_published, o.created_at, o.updated_at,
  o.deleted_at,
  c.title AS course_title, c.slug AS course_slug, c.degree_type,
+ c.description AS course_description, c.department, c.field_of_study,
+ c.language, c.default_duration_years,
  s.name AS university_name, s.slug AS university_slug
 FROM university_course_offerings o
 JOIN university_course_catalog c ON c.id = o.course_id
