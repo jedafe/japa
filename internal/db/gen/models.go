@@ -1265,6 +1265,7 @@ type ContentReport struct {
 	ResolutionNote *string            `json:"resolution_note"`
 	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ContentReview struct {

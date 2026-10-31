@@ -1274,8 +1274,21 @@ const refreshDailyContentStatsView = `-- name: RefreshDailyContentStatsView :exe
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_content_stats
 `
 
+// REFRESH ... CONCURRENTLY fails on a view that has never been populated
+// (fresh installs create these views WITH NO DATA), so each view also has a
+// Blocking variant callers fall back to for the first refresh.
+// Ref: sections/40-analytics-dashboard.md, sections/66-advanced-analytics.md
 func (q *Queries) RefreshDailyContentStatsView(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, refreshDailyContentStatsView)
+	return err
+}
+
+const refreshDailyContentStatsViewBlocking = `-- name: RefreshDailyContentStatsViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_daily_content_stats
+`
+
+func (q *Queries) RefreshDailyContentStatsViewBlocking(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, refreshDailyContentStatsViewBlocking)
 	return err
 }
 
@@ -1288,6 +1301,15 @@ func (q *Queries) RefreshDailySpaceStatsView(ctx context.Context) error {
 	return err
 }
 
+const refreshDailySpaceStatsViewBlocking = `-- name: RefreshDailySpaceStatsViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_daily_space_stats
+`
+
+func (q *Queries) RefreshDailySpaceStatsViewBlocking(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, refreshDailySpaceStatsViewBlocking)
+	return err
+}
+
 const refreshRevenueStreamsView = `-- name: RefreshRevenueStreamsView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_revenue_streams
 `
@@ -1297,12 +1319,30 @@ func (q *Queries) RefreshRevenueStreamsView(ctx context.Context) error {
 	return err
 }
 
+const refreshRevenueStreamsViewBlocking = `-- name: RefreshRevenueStreamsViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_revenue_streams
+`
+
+func (q *Queries) RefreshRevenueStreamsViewBlocking(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, refreshRevenueStreamsViewBlocking)
+	return err
+}
+
 const refreshTopContent30dView = `-- name: RefreshTopContent30dView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_top_content_30d
 `
 
 func (q *Queries) RefreshTopContent30dView(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, refreshTopContent30dView)
+	return err
+}
+
+const refreshTopContent30dViewBlocking = `-- name: RefreshTopContent30dViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_top_content_30d
+`
+
+func (q *Queries) RefreshTopContent30dViewBlocking(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, refreshTopContent30dViewBlocking)
 	return err
 }
 
@@ -1319,6 +1359,15 @@ func (q *Queries) RefreshTopContent7dView(ctx context.Context) error {
 	return err
 }
 
+const refreshTopContent7dViewBlocking = `-- name: RefreshTopContent7dViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_top_content_7d
+`
+
+func (q *Queries) RefreshTopContent7dViewBlocking(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, refreshTopContent7dViewBlocking)
+	return err
+}
+
 const refreshTopContent90dView = `-- name: RefreshTopContent90dView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_top_content_90d
 `
@@ -1328,12 +1377,30 @@ func (q *Queries) RefreshTopContent90dView(ctx context.Context) error {
 	return err
 }
 
+const refreshTopContent90dViewBlocking = `-- name: RefreshTopContent90dViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_top_content_90d
+`
+
+func (q *Queries) RefreshTopContent90dViewBlocking(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, refreshTopContent90dViewBlocking)
+	return err
+}
+
 const refreshUserEngagementStatsView = `-- name: RefreshUserEngagementStatsView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_user_engagement_stats
 `
 
 func (q *Queries) RefreshUserEngagementStatsView(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, refreshUserEngagementStatsView)
+	return err
+}
+
+const refreshUserEngagementStatsViewBlocking = `-- name: RefreshUserEngagementStatsViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_user_engagement_stats
+`
+
+func (q *Queries) RefreshUserEngagementStatsViewBlocking(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, refreshUserEngagementStatsViewBlocking)
 	return err
 }
 

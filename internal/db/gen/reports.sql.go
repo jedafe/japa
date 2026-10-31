@@ -258,7 +258,7 @@ INSERT INTO content_reports (reporter_user_id, entity_type, entity_id, reason, n
 
 ON CONFLICT (reporter_user_id, entity_type, entity_id) WHERE reporter_user_id IS NOT NULL DO NOTHING
 RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at
 `
 
 type CreateReportParams struct {
@@ -293,6 +293,7 @@ func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Con
 		&i.ResolutionNote,
 		&i.ResolvedAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -435,7 +436,7 @@ func (q *Queries) GetModerationQueueItem(ctx context.Context, arg GetModerationQ
 
 const getReport = `-- name: GetReport :one
 SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at
 FROM content_reports
 WHERE id = $1
 `
@@ -456,6 +457,7 @@ func (q *Queries) GetReport(ctx context.Context, id pgtype.UUID) (ContentReport,
 		&i.ResolutionNote,
 		&i.ResolvedAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -952,10 +954,11 @@ func (q *Queries) ListReportsByReporter(ctx context.Context, arg ListReportsByRe
 const resolveReportIfOpen = `-- name: ResolveReportIfOpen :one
 UPDATE content_reports
 SET status = $1, reviewed_by = $2, resolution_note = $3,
- resolved_at = CASE WHEN $1 IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END
+ resolved_at = CASE WHEN $1 IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END,
+ updated_at = now()
 WHERE id = $4 AND status IN ('pending', 'reviewing')
 RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at
 `
 
 type ResolveReportIfOpenParams struct {
@@ -989,6 +992,7 @@ func (q *Queries) ResolveReportIfOpen(ctx context.Context, arg ResolveReportIfOp
 		&i.ResolutionNote,
 		&i.ResolvedAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -996,10 +1000,11 @@ func (q *Queries) ResolveReportIfOpen(ctx context.Context, arg ResolveReportIfOp
 const updateReportStatus = `-- name: UpdateReportStatus :one
 UPDATE content_reports
 SET status = $1, reviewed_by = $2, resolution_note = $3,
- resolved_at = CASE WHEN $1 IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END
+ resolved_at = CASE WHEN $1 IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END,
+ updated_at = now()
 WHERE id = $4
 RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at
 `
 
 type UpdateReportStatusParams struct {
@@ -1030,6 +1035,7 @@ func (q *Queries) UpdateReportStatus(ctx context.Context, arg UpdateReportStatus
 		&i.ResolutionNote,
 		&i.ResolvedAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

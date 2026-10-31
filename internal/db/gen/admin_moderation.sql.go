@@ -210,9 +210,9 @@ const adminListContentModerationHistory = `-- name: AdminListContentModerationHi
 SELECT kind, event, status, note, actor_id, actor_name, created_at FROM (
  -- 1. Reports filed against the content (§51).
  SELECT 'report'::text AS kind,
-        'reported'::text AS event,
+        'report_filed'::text AS event,
         cr.status,
-        cr.reason AS note,
+        (cr.reason || COALESCE(' — ' || cr.notes, '')) AS note,
         cr.reporter_user_id AS actor_id,
         COALESCE(up.display_name, u.username, '') AS actor_name,
         cr.created_at
@@ -224,18 +224,36 @@ SELECT kind, event, status, note, actor_id, actor_name, created_at FROM (
  UNION ALL
 
  -- 2. Report resolutions (actioned/dismissed) — actor is the reviewer.
+ -- COALESCE covers legacy rows resolved before resolved_at was stamped.
  SELECT 'report'::text,
-        cr.status::text,
+        ('report_' || cr.status)::text,
         cr.status,
         COALESCE(cr.resolution_note, ''),
         cr.reviewed_by,
         COALESCE(rup.display_name, ru.username, ''),
-        cr.resolved_at
+        COALESCE(cr.resolved_at, cr.updated_at)
  FROM content_reports cr
  LEFT JOIN users ru ON ru.id = cr.reviewed_by
  LEFT JOIN user_profiles rup ON rup.user_id = cr.reviewed_by
  WHERE cr.entity_type = 'content' AND cr.entity_id = $1
-   AND cr.status IN ('actioned', 'dismissed') AND cr.resolved_at IS NOT NULL
+   AND cr.status IN ('actioned', 'dismissed')
+
+ UNION ALL
+
+ -- 2b. A report a moderator has claimed/assigned — work in progress, still
+ -- part of the timeline so reviewers see who picked it up and when.
+ SELECT 'report'::text,
+        'report_reviewing'::text,
+        cr.status,
+        ''::text,
+        cr.reviewed_by,
+        COALESCE(iup.display_name, iu.username, ''),
+        cr.updated_at
+ FROM content_reports cr
+ LEFT JOIN users iu ON iu.id = cr.reviewed_by
+ LEFT JOIN user_profiles iup ON iup.user_id = cr.reviewed_by
+ WHERE cr.entity_type = 'content' AND cr.entity_id = $1
+   AND cr.status = 'reviewing'
 
  UNION ALL
 
@@ -256,7 +274,7 @@ SELECT kind, event, status, note, actor_id, actor_name, created_at FROM (
 
  -- 4. Appeals filed against moderation decisions on the content.
  SELECT 'appeal'::text,
-        'filed'::text,
+        'appeal_filed'::text,
         ma.status,
         ma.reason,
         ma.user_id,
@@ -269,9 +287,10 @@ SELECT kind, event, status, note, actor_id, actor_name, created_at FROM (
 
  UNION ALL
 
- -- 5. Appeal resolutions (approved/rejected) — actor is the reviewer.
+ -- 5. Appeal resolutions — actor is the reviewer. The §22 vocabulary
+ -- (migration 000818) is upheld/overturn/dismissed, not approved/rejected.
  SELECT 'appeal'::text,
-        ma.status::text,
+        ('appeal_' || ma.status)::text,
         ma.status,
         COALESCE(ma.resolution_note, ''),
         ma.reviewed_by,
@@ -281,13 +300,15 @@ SELECT kind, event, status, note, actor_id, actor_name, created_at FROM (
  LEFT JOIN users mru ON mru.id = ma.reviewed_by
  LEFT JOIN user_profiles mrup ON mrup.user_id = ma.reviewed_by
  WHERE ma.entity_type IN ('content', 'content_removal') AND ma.entity_id = $1
-   AND ma.status IN ('approved', 'rejected') AND ma.resolved_at IS NOT NULL
+   AND ma.status IN ('upheld', 'overturn', 'dismissed') AND ma.resolved_at IS NOT NULL
 
  UNION ALL
 
- -- 6. Editorial / persona review decisions on the content.
+ -- 6. Editorial / persona review decisions on the content. persona_action
+ -- rows are AI-persona review actions — the event name is distinct so the
+ -- UI can label them differently from human editorial decisions.
  SELECT 'review'::text,
-        ('review_' || crv.status)::text,
+        ((CASE WHEN crv.source = 'persona_action' THEN 'persona_review_' ELSE 'review_' END) || crv.status)::text,
         crv.status,
         COALESCE(crv.feedback, ''),
         crv.reviewer_user_id,
@@ -327,6 +348,22 @@ SELECT kind, event, status, note, actor_id, actor_name, created_at FROM (
         c.auto_hidden_at
  FROM contents c
  WHERE c.id = $1 AND c.auto_hidden AND c.auto_hidden_at IS NOT NULL
+
+ UNION ALL
+
+ -- 9. Edit revisions — the §22 "audit trail" half of the contract. Every
+ -- save writes a content_revisions row stamped with edited_by.
+ SELECT 'revision'::text,
+        'edited'::text,
+        ''::text,
+        ''::text,
+        rv.edited_by,
+        COALESCE(eup.display_name, eu.username, ''),
+        rv.created_at
+ FROM content_revisions rv
+ LEFT JOIN users eu ON eu.id = rv.edited_by
+ LEFT JOIN user_profiles eup ON eup.user_id = rv.edited_by
+ WHERE rv.content_id = $1
 ) hist
 ORDER BY hist.created_at DESC
 LIMIT 200
@@ -336,7 +373,7 @@ type AdminListContentModerationHistoryRow struct {
 	Kind      string             `json:"kind"`
 	Event     string             `json:"event"`
 	Status    string             `json:"status"`
-	Note      string             `json:"note"`
+	Note      interface{}        `json:"note"`
 	ActorID   pgtype.UUID        `json:"actor_id"`
 	ActorName string             `json:"actor_name"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
@@ -555,7 +592,7 @@ func (q *Queries) AppealReviewToFlagged(ctx context.Context, id pgtype.UUID) (in
 
 const assignContentReport = `-- name: AssignContentReport :execrows
 
-UPDATE content_reports SET reviewed_by = $1, status = 'reviewing' WHERE id = $2
+UPDATE content_reports SET reviewed_by = $1, status = 'reviewing', updated_at = now() WHERE id = $2
 `
 
 type AssignContentReportParams struct {
@@ -1580,7 +1617,9 @@ func (q *Queries) MarkBroadcastSent(ctx context.Context, arg MarkBroadcastSentPa
 
 const moderateContentReport = `-- name: ModerateContentReport :exec
 UPDATE content_reports
-SET status = $1, reviewed_by = $2, resolution_note = $3
+SET status = $1, reviewed_by = $2, resolution_note = $3,
+ resolved_at = CASE WHEN $1 IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END,
+ updated_at = now()
 WHERE id = $4
 `
 
@@ -1591,6 +1630,8 @@ type ModerateContentReportParams struct {
 	ID             pgtype.UUID `json:"id"`
 }
 
+// resolved_at is stamped on terminal transitions — the §22 moderation
+// history keys resolution events off it (was previously left NULL here).
 func (q *Queries) ModerateContentReport(ctx context.Context, arg ModerateContentReportParams) error {
 	_, err := q.db.Exec(ctx, moderateContentReport,
 		arg.Status,
@@ -1601,28 +1642,36 @@ func (q *Queries) ModerateContentReport(ctx context.Context, arg ModerateContent
 	return err
 }
 
-const removeContentByAdmin = `-- name: RemoveContentByAdmin :exec
+const removeContentByAdmin = `-- name: RemoveContentByAdmin :execrows
 
 UPDATE contents SET status = 'archived', auto_hidden = true, deleted_at = now(), updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 // =====================
 // Content Moderation
 // =====================
-func (q *Queries) RemoveContentByAdmin(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, removeContentByAdmin, id)
-	return err
+// deleted_at IS NULL keeps the action single-fire: a repeat remove returns
+// 0 rows so the handler can 409 instead of writing a duplicate audit entry.
+func (q *Queries) RemoveContentByAdmin(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, removeContentByAdmin, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
-const restoreContentByAdmin = `-- name: RestoreContentByAdmin :exec
+const restoreContentByAdmin = `-- name: RestoreContentByAdmin :execrows
 UPDATE contents SET status = 'draft', auto_hidden = false, deleted_at = NULL, updated_at = now()
 WHERE id = $1 AND deleted_at IS NOT NULL
 `
 
-func (q *Queries) RestoreContentByAdmin(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, restoreContentByAdmin, id)
-	return err
+func (q *Queries) RestoreContentByAdmin(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, restoreContentByAdmin, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const softDeleteUserBan = `-- name: SoftDeleteUserBan :exec

@@ -243,8 +243,9 @@ DELETE FROM doc_page_revisions WHERE doc_page_id = @doc_page_id;
 -- revision insert so the window never grows.
 DELETE FROM doc_page_revisions dpr
 WHERE dpr.doc_page_id = @doc_page_id
-  AND dpr.version <= (
-    SELECT COALESCE(MAX(r.version), 0) - 5
-    FROM doc_page_revisions r
+  AND dpr.id NOT IN (
+    SELECT r.id FROM doc_page_revisions r
     WHERE r.doc_page_id = @doc_page_id
+    ORDER BY r.version DESC
+    LIMIT 5
   );
