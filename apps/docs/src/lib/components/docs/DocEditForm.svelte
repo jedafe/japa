@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { beforeNavigate } from '$app/navigation';
 	import { onMount, untrack } from 'svelte';
+	import { Check } from 'lucide-svelte';
 	import DocEditor from '$lib/components/docs/DocEditor.svelte';
 	import FeatureImageField from '$lib/components/docs/FeatureImageField.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
@@ -65,6 +66,7 @@
 	let contentEdited = $state(false);
 	let saving = $state(false);
 	let reviewing = $state(false);
+	let justSaved = $state(false);
 
 	// Reseed when the page identity changes (client-side nav between pages).
 	let seededFor = $state('');
@@ -83,6 +85,7 @@
 			editSummary = '';
 			contentJson = null;
 			contentEdited = false;
+			justSaved = false;
 		}
 	});
 
@@ -134,6 +137,10 @@
 	const parentLabel = $derived(
 		existingPages.find((p) => p.id === editParentId)?.title ?? null
 	);
+
+	$effect(() => {
+		if (dirty) justSaved = false;
+	});
 
 	const dirty = $derived(
 		editSummary.trim() !== '' ||
@@ -216,6 +223,7 @@
 			if (result.type === 'success' || result.type === 'redirect') {
 				contentEdited = false;
 				editSummary = '';
+				justSaved = true;
 			}
 		};
 	}}
@@ -344,8 +352,15 @@
 	</label>
 
 	<div class="ef-actions">
-		<button type="submit" class="ef-save" disabled={saving || reviewing}>
-			{saving ? t('edit.saving', 'Saving…') : t('edit.save', 'Save changes')}
+		<button type="submit" class="ef-save" disabled={saving || reviewing || !dirty}>
+			{#if saving}
+				{t('edit.saving', 'Saving…')}
+			{:else if justSaved}
+				<Check size={14} />
+				{t('edit.saved', 'Saved')}
+			{:else}
+				{t('edit.save', 'Save changes')}
+			{/if}
 		</button>
 		<a href={viewPath} class="ef-cancel">{t('editor.cancel', 'Cancel')}</a>
 		{#if demoteWarning}
@@ -461,6 +476,9 @@
 		margin-top: 0.25rem;
 	}
 	.ef-save {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
 		padding: 0.625rem 1.5rem;
 		border: none;
 		border-radius: var(--radius);

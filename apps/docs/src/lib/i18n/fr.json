@@ -577,5 +577,6 @@
   "history.restored": "Restauré.",
   "history.view": "Voir",
   "page.feature_image_alt": "Image à la une",
-  "notice.saved_restored": "Restauré — la page correspond à cette révision."
+  "notice.saved_restored": "Restauré — la page correspond à cette révision.",
+  "edit.saved": "Enregistré"
 }

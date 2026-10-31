@@ -577,5 +577,6 @@
   "history.restored": "Restored.",
   "history.view": "View",
   "page.feature_image_alt": "Feature image",
-  "notice.saved_restored": "Restored — the page now matches that revision."
+  "notice.saved_restored": "Restored — the page now matches that revision.",
+  "edit.saved": "Saved"
 }
