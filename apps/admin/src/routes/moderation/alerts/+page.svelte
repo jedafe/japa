@@ -162,7 +162,7 @@
 			if (result.ok) {
 				const d = result.data;
 				const inner = d?.data && !Array.isArray(d.data) ? d.data : d;
-				const arr = (Array.isArray(d?.data) ? d.data : inner?.items ?? inner?.alerts ?? []) as ModerationAlert[];
+				const arr = (Array.isArray(d?.data) ? d.data : inner?.items ?? d?.alerts ?? []) as ModerationAlert[];
 				return {
 					data: arr,
 					total: inner?.total ?? arr.length,
