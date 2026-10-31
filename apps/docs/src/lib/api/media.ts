@@ -61,11 +61,15 @@ export async function uploadMediaImage(
 	});
 	if (!init.ok) throw new Error(init.error);
 
-	// The presigned URL is self-authorizing — no session headers (matches the
-	// main app's uploadToPresigned).
-	const put = await fetch(init.data.presigned_url, {
+	// The presigned_url targets the API's /seaweedfs/upload/{bucket}/{path}
+	// route — RequireAuth + owner-bound, so browser JS (HttpOnly cookie) must
+	// bounce the bytes through the same-origin authed proxy.
+	const presigned = new URL(init.data.presigned_url);
+	const putPath = presigned.pathname.replace(/^\/api\/v1/, '');
+	const put = await fetch(`/api/authed${putPath}${presigned.search}`, {
 		method: 'PUT',
-		body: file
+		body: file,
+		headers: { 'content-type': file.type || 'application/octet-stream' }
 	});
 	if (!put.ok) throw new Error('File transfer failed');
 
@@ -85,6 +89,26 @@ export async function uploadMediaImage(
 	return asset?.url
 		? asset
 		: { id: init.data.media_id, url: buildApiUrl(`/media/serve/${bucket}/${init.data.storage_path}`, API_BASE), filename: file.name, mime_type: file.type };
+}
+
+/** PATCH /media/{id} — update the caller's own media metadata (media.edit_own). */
+export async function updateMediaImage(
+	id: string,
+	updates: { alt_text?: string | null; caption?: string | null }
+): Promise<void> {
+	const res = await fetch(`/api/authed/media/${id}`, {
+		method: 'PATCH',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			'X-JC-Surface': JC_SURFACE
+		},
+		body: JSON.stringify(updates)
+	});
+	if (!res.ok) {
+		const json = await res.json().catch(() => null);
+		throw new Error(json?.error?.message ?? json?.message ?? 'Update failed');
+	}
 }
 
 /** Stock photo providers (Unsplash/Pexels et al.) — Stock tab of the picker. */

@@ -4,7 +4,7 @@
 	// helpers DocEditor wires for inline images.
 	import { MediaPickerModal } from '@japaconnect/ui';
 	import { t } from '$lib/i18n';
-	import { listMyMedia, uploadMediaImage, stockApi } from '$lib/api/media';
+	import { listMyMedia, uploadMediaImage, updateMediaImage, stockApi } from '$lib/api/media';
 	import { ImagePlus, X } from 'lucide-svelte';
 
 	interface Props {
@@ -56,6 +56,7 @@
 		allowedType="image"
 		fetchItems={listMyMedia}
 		onUpload={uploadMediaImage}
+		onUpdate={updateMediaImage}
 		stock={stockApi}
 		onSelect={(item) => {
 			onchange(item.id ?? '', item.url ?? '');

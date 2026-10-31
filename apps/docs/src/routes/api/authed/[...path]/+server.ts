@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { apiContext, apiGet, apiPost, apiPatch, apiDelete, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiPost, apiPatch, apiDelete, ApiError, API_V1 } from '$lib/server/api';
 import type { RequestHandler } from './$types';
 
 /**
@@ -12,7 +12,7 @@ import type { RequestHandler } from './$types';
  * Only backend prefixes the docs surface legitimately calls are proxied —
  * this is not an open relay.
  */
-const ALLOWED = /^(me\/media|media\/|stock\/|onboarding\/|newsletter\/|ads\/events)/;
+const ALLOWED = /^(me\/media|media\/|stock\/|onboarding\/|newsletter\/|ads\/events|seaweedfs\/)/;
 
 async function forward(event: Parameters<RequestHandler>[0], method: 'GET' | 'POST' | 'PATCH' | 'DELETE') {
 	const path = event.params.path ?? '';
@@ -48,6 +48,44 @@ async function forward(event: Parameters<RequestHandler>[0], method: 'GET' | 'PO
 		throw error(502, { code: 'proxy_error', message: 'Backend request failed' });
 	}
 }
+
+/**
+ * PUT is the media byte-upload path: InitiateUpload's presigned_url points at
+ * /seaweedfs/upload/{bucket}/{path} on the API (the object store is
+ * unreachable from browsers), and that route is RequireAuth + owner-bound —
+ * so raw bytes must flow through here with the session Bearer attached.
+ * Bodies are streamed as-is; the backend sniffs MIME, never trusts the
+ * Content-Type header.
+ */
+export const PUT: RequestHandler = async (event) => {
+	const path = event.params.path ?? '';
+	if (!ALLOWED.test(path)) {
+		throw error(404, { code: 'not_found', message: 'Unknown proxy path' });
+	}
+	const ctx = apiContext(event);
+	if (!ctx.token) {
+		throw error(401, { code: 'unauthorized', message: 'Sign in to upload' });
+	}
+	const body = await event.request.arrayBuffer();
+	const res = await ctx.fetch(`${API_V1}/${path}${event.url.search}`, {
+		method: 'PUT',
+		body,
+		headers: {
+			authorization: `Bearer ${ctx.token}`,
+			'content-type': event.request.headers.get('content-type') ?? 'application/octet-stream',
+			'x-jc-surface': 'docs',
+			...(ctx.csrfToken ? { 'x-csrf-token': ctx.csrfToken } : {})
+		}
+	});
+	const payload = await res.json().catch(() => null);
+	if (!res.ok) {
+		throw error(res.status, {
+			code: payload?.error?.code ?? 'upload_failed',
+			message: payload?.error?.message ?? 'Upload failed'
+		});
+	}
+	return json(payload ?? { data: { ok: true } });
+};
 
 export const GET: RequestHandler = (event) => forward(event, 'GET');
 export const POST: RequestHandler = (event) => forward(event, 'POST');

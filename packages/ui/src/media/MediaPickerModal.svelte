@@ -30,6 +30,10 @@
 		onUpload?: (file: File, context: 'media' | 'avatar' | 'document') => Promise<MediaPickerItem>;
 		/** Host: stock-photo provider APIs — omit to hide the Stock tab. */
 		stock?: StockApi;
+		/** Host: persist metadata edits for a library item (PATCH /media/{id}).
+		 *  When provided, selecting a library item reveals an alt-text/title
+		 *  editor beneath the grid. Omit to hide it. */
+		onUpdate?: (id: string, updates: { alt_text?: string | null; caption?: string | null }) => Promise<void>;
 		/** i18n translator injected by the host app. */
 		t?: EditorTranslator;
 	}
@@ -43,6 +47,7 @@
 		fetchItems,
 		onUpload,
 		stock,
+		onUpdate,
 		t = (_k, fb) => fb ?? _k
 	}: Props = $props();
 
@@ -68,6 +73,13 @@
 	let selectedId = $state<string | null>(null);
 	let uploading = $state(false);
 	let uploadError = $state<string | null>(null);
+
+	// --- Library item metadata editor (alt text + title/caption) ---
+	let editAlt = $state('');
+	let editCaption = $state('');
+	let editSaving = $state(false);
+	let editError = $state<string | null>(null);
+	let selectedItem = $derived(items.find((i) => i.id === selectedId) ?? null);
 
 	// --- Stock tab state ---
 	let stockProviders = $state<StockProvider[]>([]);
@@ -122,6 +134,24 @@
 
 	function selectItem(item: MediaPickerItem) {
 		selectedId = item.id ?? null;
+		editAlt = item.alt_text ?? '';
+		editCaption = item.caption ?? '';
+		editError = null;
+	}
+
+	async function saveEdit() {
+		if (!onUpdate || !selectedId) return;
+		editSaving = true;
+		editError = null;
+		try {
+			const updates = { alt_text: editAlt.trim() || null, caption: editCaption.trim() || null };
+			await onUpdate(selectedId, updates);
+			items = items.map((i) => (i.id === selectedId ? { ...i, ...updates } : i));
+		} catch (err) {
+			editError = err instanceof Error ? err.message : t('media.picker.edit_failed', 'Could not save changes');
+		} finally {
+			editSaving = false;
+		}
 	}
 
 	function confirmSelection() {
@@ -352,6 +382,42 @@
 						</div>
 					{/if}
 				</div>
+
+				{#if onUpdate && tab === 'library' && selectedItem}
+					<!-- Selected item metadata editor — PATCH /media/{id} via host onUpdate. -->
+					<div class="media-edit">
+						<div class="media-edit-row">
+							<label class="media-edit-label">
+								<span>{t('media.picker.alt_text', 'Alt text')}</span>
+								<input
+									type="text"
+									class="media-edit-input"
+									bind:value={editAlt}
+									placeholder={t('media.picker.alt_placeholder', 'Describe the image for screen readers')}
+								/>
+							</label>
+							<label class="media-edit-label">
+								<span>{t('media.picker.title', 'Title')}</span>
+								<input
+									type="text"
+									class="media-edit-input"
+									bind:value={editCaption}
+									placeholder={t('media.picker.title_placeholder', 'Optional caption/title')}
+								/>
+							</label>
+							<button
+								type="button"
+								class="btn-primary media-edit-save"
+								disabled={editSaving}
+								onclick={saveEdit}
+							>
+								{#if editSaving}<Loader2 class="spin" size={14} />{/if}
+								{t('media.picker.save', 'Save')}
+							</button>
+						</div>
+						{#if editError}<div class="media-edit-error">{editError}</div>{/if}
+					</div>
+				{/if}
 
 				<!-- Footer -->
 				<footer class="modal-footer">
@@ -718,6 +784,44 @@
 		background: var(--color-primary);
 		border-color: var(--color-primary);
 		color: var(--color-primary-contrast, var(--color-on-primary, #fff));
+	}
+	.media-edit {
+		border-top: 1px solid var(--media-border, #333);
+		padding: 12px 16px;
+	}
+	.media-edit-row {
+		display: flex;
+		gap: 10px;
+		align-items: flex-end;
+	}
+	.media-edit-label {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		flex: 1;
+		font-size: 12px;
+		opacity: 0.8;
+	}
+	.media-edit-input {
+		background: var(--media-input-bg, #1a1a1a);
+		border: 1px solid var(--media-border, #333);
+		border-radius: 6px;
+		color: inherit;
+		font-size: 13px;
+		padding: 7px 10px;
+		width: 100%;
+	}
+	.media-edit-input:focus {
+		border-color: var(--media-accent, #4fae9b);
+		outline: none;
+	}
+	.media-edit-save {
+		white-space: nowrap;
+	}
+	.media-edit-error {
+		color: #e57373;
+		font-size: 12px;
+		margin-top: 8px;
 	}
 	.btn-primary:hover:not(:disabled) {
 		background: var(--color-primary-hover, var(--color-primary));

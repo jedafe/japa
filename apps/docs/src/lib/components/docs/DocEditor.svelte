@@ -5,7 +5,7 @@
 	// backend stores doc_pages.content as TipTap JSON (§44).
 	import { RichTextEditor, MediaPickerModal } from '@japaconnect/ui';
 	import { t } from '$lib/i18n';
-	import { listMyMedia, uploadMediaImage, stockApi } from '$lib/api/media';
+	import { listMyMedia, uploadMediaImage, updateMediaImage, stockApi } from '$lib/api/media';
 
 	interface Props {
 		/**
@@ -74,6 +74,7 @@
 		allowedType="image"
 		fetchItems={listMyMedia}
 		onUpload={uploadMediaImage}
+		onUpdate={updateMediaImage}
 		stock={stockApi}
 		onSelect={(item) => {
 			pendingImageInsert?.(item.url, item.alt_text ?? item.filename);
