@@ -1,6 +1,7 @@
 import { error, type Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
+import { env as publicEnv } from '$env/dynamic/public';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import { buildThemeOverrides } from '@japaconnect/ui/theme';
 import { isRtl } from '$lib/i18n/rtl';
@@ -25,7 +26,7 @@ const settingsCache = new Map<string, { value: Record<string, unknown>; expiresA
  */
 function docsCookieDomain(): string {
 	try {
-		const apiHost = new URL(env.PUBLIC_JC_API_URL ?? '').hostname;
+		const apiHost = new URL(publicEnv.PUBLIC_JC_API_URL ?? '').hostname;
 		return apiHost.startsWith('api.') ? `.${apiHost.slice(4)}` : '';
 	} catch {
 		return '';
@@ -328,7 +329,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
-	if (BLOCKS_INDEXING.has((env.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase())) {
+	if (BLOCKS_INDEXING.has((publicEnv.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase())) {
 		response.headers.set('X-Robots-Tag', 'noindex');
 	}
 	if (response.headers.get('content-type')?.startsWith('text/html')) {

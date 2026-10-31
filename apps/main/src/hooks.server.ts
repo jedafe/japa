@@ -1,6 +1,7 @@
 import type { Handle, HandleFetch } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
+import { env as publicEnv } from '$env/dynamic/public';
 import { apiContext, apiGet, ApiError, API_BASE, JC_SURFACE } from '$lib/server/api';
 import {
 	refreshSession,
@@ -74,7 +75,7 @@ const BASE_DOMAIN = (env.JC_BASE_DOMAIN ?? 'japa.to').trim().toLowerCase() || 'j
  */
 const CSRF_COOKIE_DOMAIN = (() => {
 	try {
-		const apiHost = new URL(env.PUBLIC_JC_API_URL ?? '').hostname;
+		const apiHost = new URL(publicEnv.PUBLIC_JC_API_URL ?? '').hostname;
 		return apiHost.startsWith('api.') ? apiHost.slice(4) : '';
 	} catch {
 		return '';
@@ -492,7 +493,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
-	if (BLOCKS_INDEXING.has((env.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase())) {
+	if (BLOCKS_INDEXING.has((publicEnv.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase())) {
 		response.headers.set('X-Robots-Tag', 'noindex');
 	}
 	// Let nginx/CDN flush SSR chunks as they stream — without this, a proxy

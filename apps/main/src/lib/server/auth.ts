@@ -5,6 +5,7 @@
 
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
+import { env as publicEnv } from '$env/dynamic/public';
 import { API_BASE, ApiError, apiContext, JC_SURFACE, type ApiContext } from '$lib/server/api';
 import { buildApiUrl } from '@japaconnect/api-url';
 import type { AuthSession, AuthTotpChallenge, AuthUser, OnboardingStatus } from '$lib/types';
@@ -41,7 +42,7 @@ function cookieSecure(): boolean {
  */
 const SESSION_COOKIE_DOMAIN = (() => {
 	try {
-		const apiHost = new URL(env.PUBLIC_JC_API_URL ?? '').hostname;
+		const apiHost = new URL(publicEnv.PUBLIC_JC_API_URL ?? '').hostname;
 		return apiHost.startsWith('api.') ? `.${apiHost.slice(4)}` : '';
 	} catch {
 		return '';
