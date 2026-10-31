@@ -6,14 +6,20 @@
 	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { History, ArrowLeft, Bot, ChevronLeft, ChevronRight, Table2 } from 'lucide-svelte';
+	import { enhance } from '$app/forms';
+	import { History, ArrowLeft, Bot, ChevronLeft, ChevronRight, Table2, Trash2 } from 'lucide-svelte';
 	import type { WikiRevision, WikiRevisionStatus } from '$lib/types';
-	import type { PageData } from './$types';
+	import type { PageData, ActionData } from './$types';
 	import { tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// §44 amendment 5 parity — wiki.manage can clear a page's resolved
+	// revision history; pending submissions resolve through review, not here.
+	let confirmingClear = $state(false);
+	let clearing = $state(false);
 
 	function statusBadge(status: WikiRevisionStatus): { label: string; cls: string } {
 		switch (status) {
@@ -127,10 +133,66 @@
 		>
 			<ArrowLeft class="rtl:-scale-x-100" size={14} /> {t('wiki.back_to_index', 'Back to page')}
 		</a>
-		<h1 class="text-lg font-semibold text-[var(--color-text)]">
-			{t('wiki.history_title', 'Revision history')}
-		</h1>
+		<div class="flex w-full items-center justify-between gap-2">
+			<h1 class="text-lg font-semibold text-[var(--color-text)]">
+				{t('wiki.history_title', 'Revision history')}
+			</h1>
+			{#if data.canClear && data.revisions.length > 0}
+				<button
+					type="button"
+					class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-red-500/40 px-2.5 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-500/10"
+					onclick={() => (confirmingClear = true)}
+				>
+					<Trash2 size={12} />
+					{t('wiki.history_clear', 'Clear history')}
+				</button>
+			{/if}
+		</div>
 	</div>
+
+	{#if confirmingClear}
+		<div
+			class="mx-auto mt-2 flex max-w-3xl flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-red-500/40 bg-red-500/5 px-4 py-3"
+			role="alert"
+		>
+			<p class="min-w-56 flex-1 text-sm text-[var(--color-text)]">
+				{t('wiki.history_clear_confirm', 'Clear all resolved revisions for this page? Pending submissions are kept; approved and rejected history is deleted.')}
+			</p>
+			<form
+				method="POST"
+				action="?/clear"
+				use:enhance={() => {
+					clearing = true;
+					return async ({ update }) => {
+						await update();
+						clearing = false;
+						confirmingClear = false;
+					};
+				}}
+			>
+				<button
+					type="submit"
+					class="rounded-[var(--radius)] bg-red-600 px-3 py-1.5 text-xs font-semibold text-white"
+					disabled={clearing}
+				>
+					{t('wiki.history_clear', 'Clear history')}
+				</button>
+			</form>
+			<button
+				type="button"
+				class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)]"
+				onclick={() => (confirmingClear = false)}
+			>
+				{t('common.cancel', 'Cancel')}
+			</button>
+		</div>
+	{/if}
+
+	{#if form?.error}
+		<div class="mx-auto mt-2 max-w-3xl rounded-[var(--radius)] border border-red-500/40 px-4 py-2 text-sm text-red-600" role="alert">
+			{form.error}
+		</div>
+	{/if}
 
 	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if !wikiEnabled && data.loadError}

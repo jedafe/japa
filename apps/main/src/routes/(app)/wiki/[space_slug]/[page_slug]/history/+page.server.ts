@@ -1,6 +1,7 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
-import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGet, apiGetEnvelope } from '$lib/server/api';
+import { fail } from '@sveltejs/kit';
+import type { PageServerLoad, Actions } from './$types';
+import { apiContext, apiList, apiGet, apiGetEnvelope, apiDelete, ApiError } from '$lib/server/api';
 import type { WikiRevision, WikiPageIndex, SpaceDetail } from '$lib/types';
 
 type ListMeta = { total: number; page: number; limit: number };
@@ -45,6 +46,7 @@ export const load: PageServerLoad = async (event) => {
 		return {
 			spaceSlug,
 			pageSlug,
+			canClear: event.locals.user?.permissions?.includes('wiki.manage') ?? false,
 			revisions: revRes.items,
 			meta: revRes.meta ?? { total: revRes.items.length, page, limit },
 			loadError: false,
@@ -57,6 +59,7 @@ export const load: PageServerLoad = async (event) => {
 		return {
 			spaceSlug,
 			pageSlug,
+			canClear: event.locals.user?.permissions?.includes('wiki.manage') ?? false,
 			revisions: [] as WikiRevision[],
 			meta: { total: 0, page, limit },
 			loadError: true,
@@ -65,5 +68,39 @@ export const load: PageServerLoad = async (event) => {
 			apiCategories: [] as WikiApiCategory[],
 			wikiScope: 'geo' as const
 		};
+	}
+};
+
+export const actions: Actions = {
+	/**
+	 * Clear a page's resolved revision history (§44 amendment 5 parity —
+	 * wiki.manage only, pending submissions are never touched). The slug is
+	 * resolved server-side to the page id — the client never supplies it.
+	 */
+	clear: async (event) => {
+		if (!(event.locals.user?.permissions?.includes('wiki.manage') ?? false)) {
+			return fail(403, { error: 'forbidden' });
+		}
+
+		const ctx = apiContext(event);
+		let pageId: string;
+		try {
+			const detail = await apiGet<{ id: string }>(
+				ctx,
+				`/wiki/${encodeURIComponent(event.params.space_slug)}/${encodeURIComponent(event.params.page_slug)}`
+			);
+			pageId = detail.id;
+		} catch {
+			return fail(404, { error: 'page_not_found' });
+		}
+
+		try {
+			await apiDelete(ctx, `/admin/wiki/${pageId}/revisions`);
+		} catch (err) {
+			if (err instanceof ApiError) return fail(err.status, { error: err.code });
+			return fail(500, { error: 'internal_error' });
+		}
+
+		return { cleared: true };
 	}
 };
