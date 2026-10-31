@@ -27,6 +27,7 @@
 		reviewStatus?: string;
 		slugTouched?: boolean;
 		featureImageId?: string;
+		featureImageUrl?: string;
 		summary?: string;
 		error?: string;
 		message?: string;
@@ -77,7 +78,7 @@
 	let position = $state(untrack(() => String(data.nextPosition)));
 	let contentJson = $state<unknown>(null);
 	let featureImageId = $state(untrack(() => form?.featureImageId ?? ''));
-	let featureImageUrl = $state('');
+	let featureImageUrl = $state(untrack(() => form?.featureImageUrl ?? ''));
 	let summary = $state(untrack(() => form?.summary ?? ''));
 	let submitting = $state(false);
 	let contentEdited = $state(false);
@@ -268,6 +269,7 @@
 				formData.set('subcategory', subcategory);
 				formData.set('parent_id', parentId);
 				formData.set('feature_image_id', featureImageId);
+				formData.set('feature_image_url', featureImageUrl);
 				formData.set('summary', summary.trim());
 				submitting = true;
 				return async ({ update }) => {

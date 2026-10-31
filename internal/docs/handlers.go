@@ -797,10 +797,12 @@ func (h *Handlers) GetDocRevision(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var pageID pgtype.UUID
-	if err := pageID.Scan(rev.DocPageID); err == nil {
-		if !h.checkPageAudienceGate(w, r, pageID) {
-			return
-		}
+	if err := pageID.Scan(rev.DocPageID); err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Invalid page reference")
+		return
+	}
+	if !h.checkPageAudienceGate(w, r, pageID) {
+		return
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rev})
@@ -858,10 +860,12 @@ func (h *Handlers) DeleteDocRevision(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var pageID pgtype.UUID
-	if err := pageID.Scan(rev.DocPageID); err == nil {
-		if !h.checkPageAudienceGate(w, r, pageID) {
-			return
-		}
+	if err := pageID.Scan(rev.DocPageID); err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Invalid page reference")
+		return
+	}
+	if !h.checkPageAudienceGate(w, r, pageID) {
+		return
 	}
 
 	if err := h.Service.DeleteDocPageRevision(r.Context(), revID); err != nil {

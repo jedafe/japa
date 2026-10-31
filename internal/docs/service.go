@@ -1460,7 +1460,12 @@ func (s *Service) GetDocPageRevision(ctx context.Context, revID pgtype.UUID) (*D
 		return nil, errpkg.ErrNotFound
 	}
 
-	rev := docRevisionFromRow(r, 0, true)
+	maxV, err := s.store.read.GetDocPageMaxRevisionVersion(ctx, r.DocPageID)
+	if err != nil {
+		return nil, fmt.Errorf("getting max revision version: %w", err)
+	}
+
+	rev := docRevisionFromRow(r, maxV, true)
 
 	return &rev, nil
 }

@@ -209,9 +209,10 @@ export async function createDocPageAction(event: RequestEvent, audience: DocAudi
 	const positionRaw = Number(form.get('position') ?? 0);
 	const contentRaw = String(form.get('content') ?? '');
 	const featureImageId = String(form.get('feature_image_id') ?? '').trim();
+	const featureImageUrl = String(form.get('feature_image_url') ?? '').trim();
 	const summary = String(form.get('summary') ?? '').trim();
 
-	const values = { title, slug, category, subcategory, parentId, reviewStatus, slugTouched, featureImageId, summary, message: '' };
+	const values = { title, slug, category, subcategory, parentId, reviewStatus, slugTouched, featureImageId, featureImageUrl, summary, message: '' };
 
 	if (!title) {
 		return fail(400, { ...values, error: 'title_required' });
@@ -302,9 +303,10 @@ export async function saveDocPageAction(event: RequestEvent, audience: string, s
 	const expectedUpdatedAt = String(form.get('expected_updated_at') ?? '').trim();
 	const contentRaw = String(form.get('content') ?? '');
 	const featureImageId = String(form.get('feature_image_id') ?? '').trim();
+	const featureImageUrl = String(form.get('feature_image_url') ?? '').trim();
 	const summary = String(form.get('summary') ?? '').trim();
 
-	const values = { title, reviewStatus, category, subcategory, slug: newSlug, parentId, message: '' };
+	const values = { title, reviewStatus, category, subcategory, slug: newSlug, parentId, featureImageId, featureImageUrl, summary, message: '' };
 
 	if (!title) {
 		return fail(400, { ...values, error: 'title_required' });

@@ -17,6 +17,9 @@
 		error?: string;
 		message?: string;
 		saved?: boolean;
+		featureImageId?: string;
+		featureImageUrl?: string;
+		summary?: string;
 	}
 
 	interface Props {
@@ -55,9 +58,9 @@
 	let editStatus = $state(untrack(() => page.review_status));
 	let editParentId = $state(untrack(() => page.parent_id ?? ''));
 	let editPosition = $state(untrack(() => String(page.position)));
-	let editFeatureImageId = $state(untrack(() => page.feature_image_id ?? ''));
-	let editFeatureImageUrl = $state(untrack(() => page.feature_image_url ?? ''));
-	let editSummary = $state('');
+	let editFeatureImageId = $state(untrack(() => form?.featureImageId ?? page.feature_image_id ?? ''));
+	let editFeatureImageUrl = $state(untrack(() => form?.featureImageUrl ?? page.feature_image_url ?? ''));
+	let editSummary = $state(untrack(() => form?.summary ?? ''));
 	let contentJson = $state<unknown>(null);
 	let contentEdited = $state(false);
 	let saving = $state(false);
