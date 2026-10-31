@@ -14,6 +14,19 @@
 	import { Eye, Trash2, RotateCcw, Star } from "lucide-svelte";
 	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
 
+	// §22 moderation-history projection — one entry per moderation event on the
+	// content (reports + resolutions, admin audit actions, appeals, editorial
+	// and AI reviews, auto-hide). Only present on the detail payload.
+	type ModerationEvent = {
+		kind: string;
+		event: string;
+		status?: string;
+		note?: string;
+		actor_id?: string;
+		actor_name?: string;
+		created_at?: string;
+	};
+
 	type ContentItem = {
 		id: string;
 		title: string;
@@ -32,6 +45,7 @@
 		slug?: string;
 		body?: string;
 		is_featured?: boolean;
+		moderation_history?: ModerationEvent[];
 	};
 
 	// Backend gates /admin/content list on admin.moderation OR admin.content.view,
@@ -93,6 +107,16 @@
 	let pageError = $state("");
 	let bulkRemoving = $state(false);
 
+	// Detail payload for the open view modal — the list row lacks the
+	// moderation-history projection (§22), so it is fetched in the background
+	// when the modal opens. Read by ContentView through historyFor(row).
+	let viewDetail = $state<ContentItem | null>(null);
+
+	function historyFor(row: ContentItem): ModerationEvent[] {
+		if (viewDetail && viewDetail.id === row.id) return viewDetail.moderation_history ?? [];
+		return row.moderation_history ?? [];
+	}
+
 	// ── Deep-link: ?view=<id> opens the row's view modal. The dashboard's
 	// Top Content links land here; fetch by id so the view works even when the
 	// row is not in the current page of results.
@@ -112,6 +136,7 @@
 				pageError = res.error ?? t("content.view_failed", "Failed to load content");
 				return;
 			}
+			viewDetail = res.data as ContentItem;
 			ctrl.openView(res.data as ContentItem);
 		})();
 	});
@@ -119,6 +144,7 @@
 	// Clear ?view= when the modal closes so re-clicking the same link
 	// re-opens the view.
 	function clearViewParam() {
+		viewDetail = null;
 		const url = new URL(window.location.href);
 		if (!url.searchParams.has("view")) return;
 		url.searchParams.delete("view");
@@ -280,7 +306,21 @@
 	// /guides, /stories, /forum), so it applies to every content_type.
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
-			{ label: t("common.view", "View"), icon: Eye, onclick: (_row, ctx) => ctx?.openView(_row) }
+			{
+				label: t("common.view", "View"),
+				icon: Eye,
+				onclick: (_row, ctx) => {
+					ctx?.openView(_row);
+					// §22: the list row lacks the moderation-history projection —
+					// fetch the detail payload in the background. Stored in
+					// viewDetail (not openView) so a closed modal never reopens
+					// and a stale response can't overwrite a newer view.
+					viewDetail = null;
+					void contentAdminApi.get(_row.id).then((res) => {
+						if (res.ok) viewDetail = res.data as ContentItem;
+					});
+				}
+			}
 		];
 		if (canEditContent) {
 			acts.push({
@@ -578,6 +618,27 @@
 				<div class="col-span-2">
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.body", "Body")}</p>
 					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.body.substring(0, 200)}{row.body.length > 200 ? "..." : ""}</p>
+				</div>
+			{/if}
+			{#if historyFor(row).length > 0}
+				<div class="col-span-2">
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("content.moderation_history", "Moderation History")}</p>
+					<ul class="mt-2 space-y-2">
+						{#each historyFor(row) as ev}
+							<li class="flex items-start justify-between gap-3 text-sm">
+								<div>
+									<span class="font-medium" style="color: var(--color-foreground)">{t(`content.history.${ev.event}`, ev.event.replace(/[._]/g, " "))}</span>
+									{#if ev.actor_name}
+										<span style="color: var(--color-muted)"> — {ev.actor_name}</span>
+									{/if}
+									{#if ev.note}
+										<p class="text-xs" style="color: var(--color-muted)">{ev.note}</p>
+									{/if}
+								</div>
+								<span class="shrink-0 text-xs whitespace-nowrap" style="color: var(--color-muted)">{ev.created_at ? new Date(ev.created_at).toLocaleString() : ""}</span>
+							</li>
+						{/each}
+					</ul>
 				</div>
 			{/if}
 		</div>

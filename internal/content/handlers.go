@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -2052,6 +2053,25 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
 	// (Section 15 — external links get async OG/oEmbed scrape, BUG-003).
 	h.enqueueLinkPreviewsForBody(input.BodyHtml, id)
+
+	// §22 audit trail: edits that arrive through the /admin mount are admin
+	// moderation actions — log them (best-effort) so they surface in the
+	// content's moderation history. Author edits via PATCH /content/{id} are
+	// already covered by content_revisions, not admin audit.
+	if strings.Contains(r.URL.Path, "/admin/") {
+		fields := make([]string, 0, len(rawFields))
+		for k := range rawFields {
+			if k == "expected_updated_at" {
+				continue
+			}
+			fields = append(fields, k)
+		}
+		sort.Strings(fields)
+		if err := h.Service.WriteContentAudit(r.Context(), user.UserID, "admin.content.update", id,
+			map[string]any{"fields": fields}); err != nil {
+			slog.Warn("admin content update: audit log failed", "content_id", id.String(), "error", err)
+		}
+	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }

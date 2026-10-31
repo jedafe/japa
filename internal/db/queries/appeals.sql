@@ -224,7 +224,8 @@ WHERE id = @id;
 
 -- name: ReopenContentReportOnAppeal :execrows
 UPDATE content_reports
-SET status = 'pending', reviewed_by = NULL, resolution_note = NULL, resolved_at = NULL
+SET status = 'pending', reviewed_by = NULL, resolution_note = NULL, resolved_at = NULL,
+ updated_at = now()
 WHERE id = @id AND status = 'dismissed';
 
 -- name: GetScamReportForAppeal :one

@@ -757,17 +757,55 @@ func (s *Service) GetContent(ctx context.Context, id pgtype.UUID) (gen.GetConten
 	return content, nil
 }
 
+// AdminContentDetail is the §22 admin content detail payload: the full
+// joined content row plus its moderation-history projection (reports and
+// resolutions, admin audit actions, appeals and resolutions, editorial/AI
+// reviews, and the auto-hide event).
+type AdminContentDetail struct {
+	gen.AdminGetContentRow
+	ModerationHistory []gen.AdminListContentModerationHistoryRow `json:"moderation_history"`
+}
+
 // GetAdminContent returns the admin detail view of a single content row —
-// full contents columns plus author/space joins, is_featured, and the open
-// report count. Includes soft-deleted rows so removed content stays viewable
-// (and restorable) in the admin panel.
-func (s *Service) GetAdminContent(ctx context.Context, id pgtype.UUID) (gen.AdminGetContentRow, error) {
+// full contents columns plus author/space joins, is_featured, the open
+// report count, and the §22 moderation-history projection. Includes
+// soft-deleted rows so removed content stays viewable (and restorable) in
+// the admin panel.
+func (s *Service) GetAdminContent(ctx context.Context, id pgtype.UUID) (AdminContentDetail, error) {
 	content, err := s.read.AdminGetContent(ctx, id)
 	if err != nil {
-		return gen.AdminGetContentRow{}, fmt.Errorf("getting admin content: %w", err)
+		return AdminContentDetail{}, fmt.Errorf("getting admin content: %w", err)
 	}
 
-	return content, nil
+	// History is a read-side projection: a transient failure must not take
+	// the whole detail view down — log and return the content with an empty
+	// timeline instead.
+	history, err := s.read.AdminListContentModerationHistory(ctx, id)
+	if err != nil {
+		slog.Warn("admin content: moderation history failed", "content_id", id.String(), "error", err)
+	}
+	if history == nil {
+		history = []gen.AdminListContentModerationHistoryRow{}
+	}
+
+	return AdminContentDetail{AdminGetContentRow: content, ModerationHistory: history}, nil
+}
+
+// WriteContentAudit records an admin audit_logs entry for a moderation
+// action on content — feeds the §22 audit trail and surfaces in the
+// moderation-history projection (target_type 'content'). Callers treat the
+// returned error as best-effort (log, don't fail the request).
+func (s *Service) WriteContentAudit(ctx context.Context, actor pgtype.UUID, actionType string, contentID pgtype.UUID, metadata map[string]any) error {
+	targetType := "content"
+	meta, _ := json.Marshal(metadata)
+	_, err := s.write.CreateAuditLog(ctx, gen.CreateAuditLogParams{
+		ActorUserID: actor,
+		ActionType:  actionType,
+		TargetType:  &targetType,
+		TargetID:    contentID,
+		Metadata:    meta,
+	})
+	return err
 }
 
 // GetContentBySlug returns the content matching the given slug, scoped to

@@ -173,7 +173,7 @@ UPDATE moderation_appeals SET status = $1, updated_at = now() WHERE id = $2;
 -- =====================
 
 -- name: AssignContentReport :execrows
-UPDATE content_reports SET reviewed_by = $1, status = 'reviewing' WHERE id = $2;
+UPDATE content_reports SET reviewed_by = $1, status = 'reviewing', updated_at = now() WHERE id = $2;
 
 -- name: AssignContentReview :execrows
 -- Unified-queue assign target — persona/studio content_reviews rows treat
@@ -206,19 +206,25 @@ UPDATE sop_templates SET assigned_to = $1 WHERE id = $2;
 UPDATE sop_samples SET assigned_to = $1 WHERE id = $2;
 
 -- name: ModerateContentReport :exec
+-- resolved_at is stamped on terminal transitions — the §22 moderation
+-- history keys resolution events off it (was previously left NULL here).
 UPDATE content_reports
-SET status = $1, reviewed_by = $2, resolution_note = $3
+SET status = $1, reviewed_by = $2, resolution_note = $3,
+ resolved_at = CASE WHEN $1 IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END,
+ updated_at = now()
 WHERE id = $4;
 
 -- =====================
 -- Content Moderation
 -- =====================
 
--- name: RemoveContentByAdmin :exec
+-- name: RemoveContentByAdmin :execrows
+-- deleted_at IS NULL keeps the action single-fire: a repeat remove returns
+-- 0 rows so the handler can 409 instead of writing a duplicate audit entry.
 UPDATE contents SET status = 'archived', auto_hidden = true, deleted_at = now(), updated_at = now()
-WHERE id = $1;
+WHERE id = $1 AND deleted_at IS NULL;
 
--- name: RestoreContentByAdmin :exec
+-- name: RestoreContentByAdmin :execrows
 UPDATE contents SET status = 'draft', auto_hidden = false, deleted_at = NULL, updated_at = now()
 WHERE id = $1 AND deleted_at IS NOT NULL;
 
@@ -325,6 +331,174 @@ WHERE (
  AND (@q::text = '' OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%' OR c.body ILIKE '%' || @q || '%')
  AND (sqlc.narg(author_id)::uuid IS NULL OR c.author_id = sqlc.narg(author_id))
  AND (sqlc.narg(space_id)::uuid IS NULL OR c.space_id = sqlc.narg(space_id));
+
+-- name: AdminListContentModerationHistory :many
+-- §22 moderation-history projection for GET /admin/content/{id}: a unified,
+-- newest-first timeline merging user reports and their resolutions (§51),
+-- admin audit actions targeting the content, moderation appeals and their
+-- resolutions, editorial/persona content reviews, AI HITL flags, and the
+-- system auto-hide event. Each row is one event; actor_name resolves to the
+-- actor's display name or username when the actor is a user.
+SELECT * FROM (
+ -- 1. Reports filed against the content (§51).
+ SELECT 'report'::text AS kind,
+        'report_filed'::text AS event,
+        cr.status,
+        (cr.reason || COALESCE(' — ' || cr.notes, '')) AS note,
+        cr.reporter_user_id AS actor_id,
+        COALESCE(up.display_name, u.username, '') AS actor_name,
+        cr.created_at
+ FROM content_reports cr
+ LEFT JOIN users u ON u.id = cr.reporter_user_id
+ LEFT JOIN user_profiles up ON up.user_id = cr.reporter_user_id
+ WHERE cr.entity_type = 'content' AND cr.entity_id = @id
+
+ UNION ALL
+
+ -- 2. Report resolutions (actioned/dismissed) — actor is the reviewer.
+ -- COALESCE covers legacy rows resolved before resolved_at was stamped.
+ SELECT 'report'::text,
+        ('report_' || cr.status)::text,
+        cr.status,
+        COALESCE(cr.resolution_note, ''),
+        cr.reviewed_by,
+        COALESCE(rup.display_name, ru.username, ''),
+        COALESCE(cr.resolved_at, cr.updated_at)
+ FROM content_reports cr
+ LEFT JOIN users ru ON ru.id = cr.reviewed_by
+ LEFT JOIN user_profiles rup ON rup.user_id = cr.reviewed_by
+ WHERE cr.entity_type = 'content' AND cr.entity_id = @id
+   AND cr.status IN ('actioned', 'dismissed')
+
+ UNION ALL
+
+ -- 2b. A report a moderator has claimed/assigned — work in progress, still
+ -- part of the timeline so reviewers see who picked it up and when.
+ SELECT 'report'::text,
+        'report_reviewing'::text,
+        cr.status,
+        ''::text,
+        cr.reviewed_by,
+        COALESCE(iup.display_name, iu.username, ''),
+        cr.updated_at
+ FROM content_reports cr
+ LEFT JOIN users iu ON iu.id = cr.reviewed_by
+ LEFT JOIN user_profiles iup ON iup.user_id = cr.reviewed_by
+ WHERE cr.entity_type = 'content' AND cr.entity_id = @id
+   AND cr.status = 'reviewing'
+
+ UNION ALL
+
+ -- 3. Admin audit actions targeting the content (remove/restore/etc.).
+ SELECT 'audit'::text,
+        al.action_type,
+        ''::text,
+        COALESCE(al.metadata->>'reason', al.metadata->>'resolution_note', al.metadata->>'note', ''),
+        al.actor_user_id,
+        COALESCE(aup.display_name, au.username, ''),
+        al.created_at
+ FROM audit_logs al
+ LEFT JOIN users au ON au.id = al.actor_user_id
+ LEFT JOIN user_profiles aup ON aup.user_id = al.actor_user_id
+ WHERE al.target_type = 'content' AND al.target_id = @id
+
+ UNION ALL
+
+ -- 4. Appeals filed against moderation decisions on the content.
+ SELECT 'appeal'::text,
+        'appeal_filed'::text,
+        ma.status,
+        ma.reason,
+        ma.user_id,
+        COALESCE(pup.display_name, pu.username, ''),
+        ma.created_at
+ FROM moderation_appeals ma
+ LEFT JOIN users pu ON pu.id = ma.user_id
+ LEFT JOIN user_profiles pup ON pup.user_id = ma.user_id
+ WHERE ma.entity_type IN ('content', 'content_removal') AND ma.entity_id = @id
+
+ UNION ALL
+
+ -- 5. Appeal resolutions — actor is the reviewer. The §22 vocabulary
+ -- (migration 000818) is upheld/overturn/dismissed, not approved/rejected.
+ SELECT 'appeal'::text,
+        ('appeal_' || ma.status)::text,
+        ma.status,
+        COALESCE(ma.resolution_note, ''),
+        ma.reviewed_by,
+        COALESCE(mrup.display_name, mru.username, ''),
+        ma.resolved_at
+ FROM moderation_appeals ma
+ LEFT JOIN users mru ON mru.id = ma.reviewed_by
+ LEFT JOIN user_profiles mrup ON mrup.user_id = ma.reviewed_by
+ WHERE ma.entity_type IN ('content', 'content_removal') AND ma.entity_id = @id
+   AND ma.status IN ('upheld', 'overturn', 'dismissed') AND ma.resolved_at IS NOT NULL
+
+ UNION ALL
+
+ -- 6. Editorial / persona review decisions on the content. persona_action
+ -- rows are AI-persona review actions — the event name is distinct so the
+ -- UI can label them differently from human editorial decisions.
+ SELECT 'review'::text,
+        ((CASE WHEN crv.source = 'persona_action' THEN 'persona_review_' ELSE 'review_' END) || crv.status)::text,
+        crv.status,
+        COALESCE(crv.feedback, ''),
+        crv.reviewer_user_id,
+        COALESCE(vup.display_name, vu.username, ''),
+        crv.updated_at
+ FROM content_reviews crv
+ LEFT JOIN users vu ON vu.id = crv.reviewer_user_id
+ LEFT JOIN user_profiles vup ON vup.user_id = crv.reviewer_user_id
+ WHERE crv.content_id = @id AND crv.deleted_at IS NULL
+
+ UNION ALL
+
+ -- 7. AI HITL flags/reviews raised against the content.
+ SELECT 'ai_review'::text,
+        ('hitl_' || hr.status)::text,
+        hr.status,
+        COALESCE(hr.reason, ''),
+        hr.reviewer_id,
+        COALESCE(hup.display_name, hu.username, ''),
+        COALESCE(hr.reviewed_at, hr.created_at)
+ FROM ai_hitl_reviews hr
+ LEFT JOIN users hu ON hu.id = hr.reviewer_id
+ LEFT JOIN user_profiles hup ON hup.user_id = hr.reviewer_id
+ WHERE hr.content_id = @id AND hr.target_table = 'contents'
+
+ UNION ALL
+
+ -- 8. System auto-hide event — the moderation:auto_hide worker flips
+ -- auto_hidden when open reports cross moderation.auto_hide_report_count;
+ -- contents.auto_hidden_at is the only record of when it fired.
+ SELECT 'system'::text,
+        'auto_hidden'::text,
+        ''::text,
+        ''::text,
+        NULL::uuid,
+        ''::text,
+        c.auto_hidden_at
+ FROM contents c
+ WHERE c.id = @id AND c.auto_hidden AND c.auto_hidden_at IS NOT NULL
+
+ UNION ALL
+
+ -- 9. Edit revisions — the §22 "audit trail" half of the contract. Every
+ -- save writes a content_revisions row stamped with edited_by.
+ SELECT 'revision'::text,
+        'edited'::text,
+        ''::text,
+        ''::text,
+        rv.edited_by,
+        COALESCE(eup.display_name, eu.username, ''),
+        rv.created_at
+ FROM content_revisions rv
+ LEFT JOIN users eu ON eu.id = rv.edited_by
+ LEFT JOIN user_profiles eup ON eup.user_id = rv.edited_by
+ WHERE rv.content_id = @id
+) hist
+ORDER BY hist.created_at DESC
+LIMIT 200;
 
 -- =====================
 -- Broadcasts

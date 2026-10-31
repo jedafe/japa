@@ -3,11 +3,11 @@ INSERT INTO content_reports (reporter_user_id, entity_type, entity_id, reason, n
 
 ON CONFLICT (reporter_user_id, entity_type, entity_id) WHERE reporter_user_id IS NOT NULL DO NOTHING
 RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at;
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at;
 
 -- name: GetReport :one
 SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at
 FROM content_reports
 WHERE id = @id;
 
@@ -115,10 +115,11 @@ WHERE (sqlc.narg(status)::text IS NULL OR cr.status = sqlc.narg(status))
 -- name: UpdateReportStatus :one
 UPDATE content_reports
 SET status = @status, reviewed_by = @reviewed_by, resolution_note = @resolution_note,
- resolved_at = CASE WHEN @status IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END
+ resolved_at = CASE WHEN @status IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END,
+ updated_at = now()
 WHERE id = @id
 RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at;
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at;
 
 -- name: CountPendingReportsForEntity :one
 SELECT COUNT(*)::int FROM content_reports
@@ -184,10 +185,11 @@ WHERE reviewed_by = @user_id;
 -- (e.g. two concurrent bans). ErrNoRows means already resolved.
 UPDATE content_reports
 SET status = @status, reviewed_by = @reviewed_by, resolution_note = @resolution_note,
- resolved_at = CASE WHEN @status IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END
+ resolved_at = CASE WHEN @status IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END,
+ updated_at = now()
 WHERE id = @id AND status IN ('pending', 'reviewing')
 RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at;
+ status, reviewed_by, resolution_note, resolved_at, created_at, updated_at;
 
 -- name: ListModerationQueue :many
 WITH scoped AS (

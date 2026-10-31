@@ -2333,6 +2333,13 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optional body: { reason } — feeds the audit trail (§41). The GET alias
+	// for this route carries no body, so a decode failure is ignored.
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
 	if r.URL.Query().Get("force") == "true" {
 		affected, err := h.Queries.HardDeleteContent(r.Context(), cid)
 		if err != nil {
@@ -2373,18 +2380,39 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		h.auditContentAction(r, "admin.content.hard_delete", cid, body.Reason)
+
 		w.WriteHeader(http.StatusNoContent)
 
 		return
 	}
 
-	err := h.Queries.RemoveContentByAdmin(r.Context(),
+	affected, err := h.Queries.RemoveContentByAdmin(r.Context(),
 		cid,
 	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove content")
 		return
 	}
+
+	if affected == 0 {
+		// deleted_at IS NULL in the UPDATE — 0 rows means the content is
+		// missing or already removed; check which so the error is accurate
+		// and a duplicate "removed" audit entry is never written.
+		exists, err := h.Queries.ContentExistsAny(r.Context(), cid)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove content")
+			return
+		}
+		if !exists {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+			return
+		}
+		errpkg.WriteError(w, http.StatusConflict, "already_removed", "Content is already removed")
+		return
+	}
+
+	h.auditContentAction(r, "admin.content.remove", cid, body.Reason)
 
 	h.enqueueRSSRegenerate()
 
@@ -2402,7 +2430,7 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.Queries.RestoreContentByAdmin(r.Context(),
+	affected, err := h.Queries.RestoreContentByAdmin(r.Context(),
 		cid,
 	)
 	if err != nil {
@@ -2410,9 +2438,52 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if affected == 0 {
+		// The UPDATE carries AND deleted_at IS NOT NULL — 0 rows means the
+		// content is missing or was never removed; check which so the error
+		// is accurate (a bogus "restored" audit entry is never written).
+		exists, err := h.Queries.ContentExistsAny(r.Context(), cid)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restore content")
+			return
+		}
+		if !exists {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+			return
+		}
+		errpkg.WriteError(w, http.StatusConflict, "not_removed", "Content is not removed")
+		return
+	}
+
+	h.auditContentAction(r, "admin.content.restore", cid, "")
+
 	h.enqueueRSSRegenerate()
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": "restored"})
+}
+
+// auditContentAction writes a best-effort audit_logs entry for an admin
+// content moderation action so it surfaces in the §22 moderation-history
+// projection on GET /admin/content/{id} and the admin audit-log viewer.
+// An audit failure never fails the request — the moderation action is
+// already committed.
+func (h *Handlers) auditContentAction(r *http.Request, actionType string, contentID pgtype.UUID, reason string) {
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		return
+	}
+
+	targetType := "content"
+	metadata, _ := json.Marshal(map[string]string{"reason": reason})
+	if _, err := h.Queries.CreateAuditLog(r.Context(), gen.CreateAuditLogParams{
+		ActorUserID: user.UserID,
+		ActionType:  actionType,
+		TargetType:  &targetType,
+		TargetID:    contentID,
+		Metadata:    metadata,
+	}); err != nil {
+		slog.Warn("admin content action: audit log failed", "action", actionType, "content_id", contentID.String(), "error", err)
+	}
 }
 
 // ListDeletedContents handles GET /admin/deletions.
