@@ -15,6 +15,9 @@ vi.mock('$lib/api', () => ({
 		remove: vi.fn().mockResolvedValue({ ok: true }),
 	},
 	api: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+	apiRaw: vi
+		.fn()
+		.mockResolvedValue({ ok: true, data: { data: [], total: 0, total_pages: 1 } }),
 }));
 vi.mock('$app/state', () => ({
 	page: { params: {}, url: new URL('http://localhost/') },

@@ -66,6 +66,26 @@ func (q *Queries) CompleteNextActionByRuleSlug(ctx context.Context, arg Complete
 	return err
 }
 
+const countNextActionRules = `-- name: CountNextActionRules :one
+SELECT count(*) FROM next_action_rules
+WHERE ($1::text = '' OR slug ILIKE '%' || $1 || '%' OR name ILIKE '%' || $1 || '%')
+  AND ($2::text = '' OR enabled = ($2::text = 'true'))
+`
+
+type CountNextActionRulesParams struct {
+	Q       string `json:"q"`
+	Enabled string `json:"enabled"`
+}
+
+// Total rules matching the admin list filters — feeds the pagination envelope
+// (api-response-format.md offset convention: total/page/total_pages siblings).
+func (q *Queries) CountNextActionRules(ctx context.Context, arg CountNextActionRulesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countNextActionRules, arg.Q, arg.Enabled)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countSessionEvents = `-- name: CountSessionEvents :one
 SELECT count(*) FROM platform_events
 WHERE session_id = $1 AND event_type = $2
@@ -633,11 +653,47 @@ SELECT id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
        created_by, created_at, updated_at, upsell
 FROM next_action_rules
-ORDER BY priority ASC, created_at DESC
+WHERE ($1::text = '' OR slug ILIKE '%' || $1 || '%' OR name ILIKE '%' || $1 || '%')
+  AND ($2::text = '' OR enabled = ($2::text = 'true'))
+ORDER BY
+ CASE WHEN $3::text = 'slug' AND $4::text = 'desc' THEN slug END DESC,
+ CASE WHEN $3::text = 'slug' AND $4::text <> 'desc' THEN slug END ASC,
+ CASE WHEN $3::text = 'name' AND $4::text = 'desc' THEN name END DESC,
+ CASE WHEN $3::text = 'name' AND $4::text <> 'desc' THEN name END ASC,
+ CASE WHEN $3::text = 'enabled' AND $4::text = 'desc' THEN enabled END DESC,
+ CASE WHEN $3::text = 'enabled' AND $4::text <> 'desc' THEN enabled END ASC,
+ CASE WHEN $3::text = 'upsell' AND $4::text = 'desc' THEN upsell END DESC,
+ CASE WHEN $3::text = 'upsell' AND $4::text <> 'desc' THEN upsell END ASC,
+ CASE WHEN $3::text = 'priority' AND $4::text = 'desc' THEN priority END DESC,
+ CASE WHEN $3::text = 'priority' AND $4::text <> 'desc' THEN priority END ASC,
+ CASE WHEN $3::text = 'created_at' AND $4::text = 'asc' THEN created_at END ASC,
+ CASE WHEN $3::text = 'created_at' AND $4::text <> 'asc' THEN created_at END DESC,
+ priority ASC, id ASC
+LIMIT $6 OFFSET $5
 `
 
-func (q *Queries) ListNextActionRules(ctx context.Context) ([]NextActionRule, error) {
-	rows, err := q.db.Query(ctx, listNextActionRules)
+type ListNextActionRulesParams struct {
+	Q          string `json:"q"`
+	Enabled    string `json:"enabled"`
+	Sort       string `json:"sort"`
+	SortDir    string `json:"sort_dir"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
+}
+
+// Admin list with offset pagination + search + whitelisted CASE sort keys —
+// same pattern as AdminListTags: the Control DataTable sends column keys
+// (slug, name, enabled, upsell, priority, created_at) plus sort_dir; unknown
+// or empty sort falls back to priority/created_at, id as stable tiebreaker.
+func (q *Queries) ListNextActionRules(ctx context.Context, arg ListNextActionRulesParams) ([]NextActionRule, error) {
+	rows, err := q.db.Query(ctx, listNextActionRules,
+		arg.Q,
+		arg.Enabled,
+		arg.Sort,
+		arg.SortDir,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

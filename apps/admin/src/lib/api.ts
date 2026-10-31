@@ -818,6 +818,9 @@ export const organisationsAdminApi = {
 	// ?force=true hard delete — 409 not_deleted unless the org was soft-deleted first.
 	hardDelete: (id: string) =>
 		api(`/admin/organizations/${id}?force=true`, { method: 'DELETE' }),
+	// Reverses a soft delete (deleted_at → NULL).
+	restore: (id: string) =>
+		api(`/admin/organizations/${id}/restore`, { method: 'POST' }),
 	listMembers: (id: string) => api<unknown>(`/admin/organizations/${id}/members`),
 	listInvitations: (id: string) => api<unknown>(`/admin/organizations/${id}/invitations`),
 	verify: (id: string, body: { verified?: boolean; verification_type?: string }) =>
@@ -844,6 +847,23 @@ export const organisationsAdminApi = {
 			reviewed_at?: string | null;
 			created_at: string;
 		}[]>(`/admin/organizations/pending-claims${params ? `?${params}` : ''}`),
+	// Review a specific ownership claim by claim id — deterministic target
+	// (POST /admin/organizations/{orgId}/claim resolves the NEWEST pending
+	// claim on the org, which misfires when several users have pending claims
+	// on the same org). PATCH /claim-ownership/{id} is the §07 spec route and
+	// performs the transactional review (approve → ownership transfer +
+	// owner-member insert).
+	reviewClaim: (claimId: string, body: { status: 'approved' | 'rejected'; resolution_note?: string }) =>
+		api(`/claim-ownership/${claimId}`, { method: 'PATCH', body }),
+	// §07 badge-type vocabulary (business|embassy|notable|immigration_lawyer|
+	// professional_body) — public route; the admin Verify modal consumes it
+	// (Rule 16).
+	verificationTypes: () =>
+		api<{ types: string[] }>('/verification-requests/types'),
+	// Paginated claims list — passes page/limit/q/sort/dir through; the
+	// backend returns {data, meta:{total,total_pages}} on this path.
+	pendingClaimsMeta: (params = "") =>
+		apiRaw<{ data?: unknown[]; meta?: { total?: number; total_pages?: number } }>(`/admin/organizations/pending-claims?${params}`),
 	claimSubmission: (claimId: string) =>
 		api<{
 			id: string;
@@ -855,8 +875,8 @@ export const organisationsAdminApi = {
 		}>(`/admin/organizations/claims/${claimId}/submission`),
 	// BUG-022/023: Org metadata endpoint for API-driven option lists (Rule 16).
 	// org_types are read from the custom_fields table (key='org_type').
-	// Admins manage org type options via the Custom Fields admin page
-	// (organization_fields group → org_type field → options editor).
+	// Admins manage org type options on the /organizations page's "Org Types"
+	// tab (organization_fields group → org_type field → options editor).
 	meta: () =>
 		api<{
 			org_types: { value: string; label: string }[];

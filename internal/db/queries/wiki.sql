@@ -833,3 +833,15 @@ JOIN wiki_type_categories c ON c.id = t.category_id
 WHERE c.space_type_id = @space_type_id AND t.slug = @slug
 ORDER BY c.position, t.position
 LIMIT 1;
+
+-- name: ListEntityWikiPageSiblings :many
+-- Same-category sibling pages on one entity — the entity-bound counterpart
+-- of ListPageSiblings (§80 Hierarchical UX): ordered position, created_at,
+-- slug and INCLUDING the current row so the service can flag it for
+-- Prev/Next derivation.
+SELECT wp.id, wp.slug, wp.title, wp.category, wp.position
+FROM wiki_pages wp
+WHERE wp.entity_type = @entity_type AND wp.entity_id = @entity_id
+  AND wp.category = @category
+  AND wp.is_active = true AND wp.deleted_at IS NULL
+ORDER BY wp.position, wp.created_at, wp.slug;

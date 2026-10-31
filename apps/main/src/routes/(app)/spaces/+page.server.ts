@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet, ApiError } from '$lib/server/api';
-import type { Space, SpaceType } from '$lib/types';
+import type { Space, SpaceType, GeoCountry, GeoState, GeoCity, SpaceDetail } from '$lib/types';
 
 /**
  * Spaces index at /spaces — public (OptionalAuth), SSR. Lists every
@@ -27,6 +27,12 @@ export const load: PageServerLoad = async (event) => {
 	const regionFilter = (event.url.searchParams.get('region') ?? '').trim();
 	const subregionFilter = (event.url.searchParams.get('subregion') ?? '').trim();
 	const parentFilter = (event.url.searchParams.get('parent') ?? '').trim();
+	// Universities-style geo cascade (filter parity with /universities):
+	// ?country= is an ISO geo_code; ?state=/?city= are primary-space slugs
+	// resolved to a parent-space id — the deepest selection wins.
+	const countryParam = (event.url.searchParams.get('country') ?? '').trim();
+	const stateParam = event.url.searchParams.get('state') ?? '';
+	const cityParam = event.url.searchParams.get('city') ?? '';
 	// joined=1 — server-side "My spaces" filter (audit fix: the chip used to
 	// filter only the current page client-side against the capped /me/spaces
 	// list, which is both incomplete and wrong for super-admins).
@@ -35,14 +41,30 @@ export const load: PageServerLoad = async (event) => {
 	const page = isNaN(pageParam) || pageParam < 0 ? 0 : pageParam;
 
 	// Rule 3 / Rule 16: configurable page size and level set from system_settings.
-	// Settings + space types are shared catalogs; fetch them concurrently.
-	const [siteSettingsRes, spaceTypesRes] = await Promise.all([
+	// Settings + space types are shared catalogs; fetch them concurrently —
+	// alongside the geo cascade's option lists and slug→id resolutions.
+	const effectiveCountry = countryParam || geoFilter;
+	// Parent filter resolves the deepest selection (city > state); the cities
+	// option list needs the STATE id, so resolve state and city separately —
+	// a single city||state resolution returns the city id and the cities
+	// endpoint 404s on /geo/states/{city-id}/cities.
+	const parentSlug = cityParam || stateParam;
+	const [siteSettingsRes, spaceTypesRes, countries, parentDetail, stateDetail] = await Promise.all([
 		apiGet<Record<string, unknown>>(ctx, '/site/settings/public')
 			.then((s): Record<string, unknown> => s ?? {})
 			.catch((): Record<string, unknown> => ({})),
 		apiGet<SpaceType[]>(ctx, '/space-types')
 			.then((t) => (Array.isArray(t) ? t : []))
-			.catch(() => [] as SpaceType[])
+			.catch(() => [] as SpaceType[]),
+		apiList<GeoCountry>(ctx, '/geo/countries')
+			.then((r) => r.items)
+			.catch(() => [] as GeoCountry[]),
+		parentSlug
+			? apiGet<SpaceDetail>(ctx, `/spaces/${encodeURIComponent(parentSlug)}`).catch(() => null)
+			: Promise.resolve(null),
+		stateParam
+			? apiGet<SpaceDetail>(ctx, `/spaces/${encodeURIComponent(stateParam)}`).catch(() => null)
+			: Promise.resolve(null)
 	]);
 	const siteSettings = siteSettingsRes;
 	const spaceTypes = spaceTypesRes;
@@ -78,9 +100,42 @@ export const load: PageServerLoad = async (event) => {
 	if (geoFilter) params.set('geo', geoFilter);
 	if (regionFilter) params.set('region', regionFilter);
 	if (subregionFilter) params.set('subregion', subregionFilter);
-	if (parentFilter) params.set('parent', parentFilter);
+	// Geo cascade → ?within= (deepest selection wins: city > state >
+	// country). The hierarchical closure matches spaces linked to the geo
+	// subtree through space_parent_spaces/parent_id — ?parent= only ever
+	// matched DIRECT junction children, so a space linked to a city was
+	// missed when filtering by its state. ?geo= is the fallback when the
+	// country isn't a resolvable space slug, and ?parent=<id> still works
+	// for hand-crafted links when no cascade selection exists.
+	const withinSlug =
+		cityParam ||
+		stateParam ||
+		countries.find((c) => c.geo_code === countryParam)?.slug ||
+		'';
+	if (withinSlug) params.set('within', withinSlug);
+	else if (countryParam) params.set('geo', countryParam);
+	if (parentFilter && !withinSlug) params.set('parent', parentFilter);
 	if (joinedOnly) params.set('joined', '1');
 
+
+	// Geo cascade option lists — states for the effective country, cities for
+	// the selected state (same fetch pattern as /universities).
+	// Cities options need the STATE id — ?state= resolves to it directly;
+	// a city-only URL surfaces it via the city space's parent_id.
+	const stateSpaceId = stateParam
+		? (stateDetail?.space?.id ?? null)
+		: (parentDetail?.space?.parent_id ?? null);
+	const statesPromise = effectiveCountry
+		? apiList<GeoState>(ctx, `/geo/countries/${encodeURIComponent(effectiveCountry)}/states`)
+				.then((r) => r.items)
+				.catch(() => [] as GeoState[])
+		: Promise.resolve([] as GeoState[]);
+	const citiesPromise =
+		(stateParam || cityParam) && stateSpaceId
+			? apiList<GeoCity>(ctx, `/geo/states/${stateSpaceId}/cities`)
+					.then((r) => r.items)
+					.catch(() => [] as GeoCity[])
+			: Promise.resolve([] as GeoCity[]);
 
 	const spacesPromise = apiList<Space>(ctx, `/spaces?${params.toString()}`).then(
 		(result) => ({
@@ -106,9 +161,11 @@ export const load: PageServerLoad = async (event) => {
 				.catch(() => '')
 		: Promise.resolve('');
 
-	const [spacesResult, parentName] = await Promise.all([
+	const [spacesResult, parentName, states, cities] = await Promise.all([
 		spacesPromise,
-		parentNamePromise
+		parentNamePromise,
+		statesPromise,
+		citiesPromise
 	]);
 
 	const spaces = spacesResult.items;
@@ -128,6 +185,14 @@ export const load: PageServerLoad = async (event) => {
 		region: regionFilter,
 		subregion: subregionFilter,
 		parent: parentFilter,
+		// Geo cascade (universities-style filter fields) — selections plus
+		// the option lists that feed the autocompletes.
+		country: countryParam,
+		state: stateParam,
+		city: cityParam,
+		countries,
+		states,
+		cities,
 		joined: joinedOnly,
 		parentName,
 		page,

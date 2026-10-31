@@ -87,6 +87,7 @@ type Handlers struct {
 	Settings            *config.Settings
 	GDPR                GDPRService
 	Orgs                OrgVerifier
+	OrgClaims           OrgClaimReviewer // Optional — wired by server after organizations.Service is constructed
 	Users               UserVerifier
 	Tasks               TaskEnqueuer
 	StudioHook          StudioReviewHook
@@ -172,10 +173,19 @@ type OrgVerifier interface {
 	UnverifyOrganization(ctx context.Context, id, adminID pgtype.UUID) error
 }
 
+// OrgClaimReviewer is the subset of the organizations service the admin
+// ownership-claim handler needs to approve/reject a claim through the same
+// transactional path as PATCH /claim-ownership/{id} (claim review + ownership
+// transfer + owner-member insert in one txn). Local interface so admin does
+// not import organizations (cycle-safe).
 // UserVerifier is the subset of the users service the admin verify handlers
 // need to grant/revoke the §07 profile verification badge and emit the
 // user.verified / user.unverified webhook events (Section 12).
 // Local interface so admin does not import users (cycle-safe).
+type OrgClaimReviewer interface {
+	AdminReviewOwnershipClaim(ctx context.Context, claimID, reviewedBy pgtype.UUID, action, note string) error
+}
+
 type UserVerifier interface {
 	VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype *string) error
 	UnverifyUser(ctx context.Context, id, adminID pgtype.UUID) error
@@ -216,6 +226,12 @@ func (h *Handlers) SetGDPR(g GDPRService) {
 // flow (which emits the organization.verified webhook event, Section 12).
 func (h *Handlers) SetOrgVerifier(o OrgVerifier) {
 	h.Orgs = o
+}
+
+// SetOrgClaimReviewer injects the organizations service for the admin
+// claim-review flow (transactional ownership transfer on approve).
+func (h *Handlers) SetOrgClaimReviewer(o OrgClaimReviewer) {
+	h.OrgClaims = o
 }
 
 // SetUserVerifier injects the users service for the admin profile-verify

@@ -167,6 +167,12 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 		}
 		return gen.VerificationRequest{}, fmt.Errorf("fetching form submission: %w", err)
 	}
+	if submission.Status == "pending_payment" {
+		// Distinct from "consumed": the checkout hasn't settled, so the
+		// frontend can keep retrying and the submitter can be told the
+		// payment — not the request — is what's missing.
+		return gen.VerificationRequest{}, fmt.Errorf("%w: payment for this submission has not completed", errpkg.ErrInvalidStatusTransition)
+	}
 	if submission.Status != "new" {
 		return gen.VerificationRequest{}, fmt.Errorf("%w: form submission has already been consumed", errpkg.ErrInvalidStatusTransition)
 	}

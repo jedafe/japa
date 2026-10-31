@@ -219,7 +219,7 @@
 			<EntityHoverChip
 				type={hoverType}
 				id={item.id}
-				slug={item.slug}
+				slug={item.slug ?? item.url?.split('/').filter(Boolean).pop()}
 				name={item.name ?? title}
 				class="block w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-start transition-colors hover:bg-[var(--color-surface-subtle)]"
 			>

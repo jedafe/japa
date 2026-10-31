@@ -211,6 +211,9 @@
 	const hiddenDirCats = $derived(
 		new Set(apiCategories.filter((c) => c.directory && c.empty).map((c) => c.slug))
 	);
+	// Sidebar related-articles: same empty-directory exclusion — a stub in a
+	// hidden category links to a page that can only show "no content yet".
+	const sidebarPages = $derived(data.index.filter((p) => !hiddenDirCats.has(p.category)));
 	const cardGroups = $derived.by<CardGroup[]>(() => {
 		const order = new Map(apiCategories.map((c, i) => [c.slug, i]));
 		const groups = new Map<string, WikiPageIndex[]>();
@@ -369,7 +372,7 @@
 		{spaceName}
 		{spaceId}
 		{spaceLevel}
-		pages={data.index}
+		pages={sidebarPages}
 		wikiOnly={data.spaceDetail?.wiki_only ?? false}
 	/>
 </SetSidebar>

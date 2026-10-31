@@ -59,7 +59,7 @@
 	let withdrawTarget = $state<string | null>(null);
 	let values = $state<Record<string, unknown>>({});
 	let fieldErrors = $state<Record<string, string>>({});
-	let mediaField = $state<{ id: string; label: string; type: string } | null>(null);
+	let mediaField = $state<{ id: string; type: string } | null>(null);
 	let requestedType = $state('');
 	let paymentMethod = $state<'credit' | 'paystack' | 'stripe'>('credit');
 	let loading = $state(false);
@@ -119,12 +119,15 @@
 
 	const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-	// Resume-after-checkout: the provider redirected us back to ?paid=1.
-	// The payment webhook flips the submission pending_payment → new, which
-	// can lag the redirect by a few seconds, so we retry createRequest until
-	// the submission becomes consumable.
+	// Pending-submission marker: restored on ANY visit to this entity's
+	// form — not only the ?paid=1 return — so a user who abandoned or
+	// lost the checkout round-trip links their existing submission on
+	// submit instead of paying for a second one. The auto-resume itself
+	// still only fires on the ?paid=1 provider redirect, where the
+	// payment webhook flipping the submission pending_payment → new can
+	// lag the redirect by a few seconds (hence the retry loop).
 	$effect(() => {
-		if (!browser || resumed || !data.resumePayment || !isRequestMode) return;
+		if (!browser || resumed || !isRequestMode) return;
 		resumed = true;
 		const raw = sessionStorage.getItem(PENDING_KEY);
 		if (raw) {
@@ -142,13 +145,17 @@
 					if (m.requested_type) requestedType = m.requested_type;
 				}
 			} catch {
-				// malformed marker — fall through to the processing state
+				// malformed marker — nothing to restore
 			}
 		}
+		if (!data.resumePayment) return;
 		if (submissionId) {
 			phase = 'creating_request';
 			void resumeCreateRequest();
 		} else {
+			// Back from checkout with no marker to link — say so instead of
+			// showing "confirming your payment" forever.
+			errorKey = 'verification_request.errors.payment_unmatched';
 			phase = 'processing';
 		}
 	});
@@ -209,13 +216,13 @@
 
 	const MEDIA_TYPES = new Set(['media', 'image_single', 'image_multi']);
 
-	function mediaItems(label: string): { id: string; url?: string; alt?: string }[] {
-		const v = values[label];
+	function mediaItems(id: string): { id: string; url?: string; alt?: string }[] {
+		const v = values[id];
 		return Array.isArray(v) ? v : [];
 	}
 
-	function mediaSingle(label: string): { id: string; url?: string; alt?: string } | null {
-		const v = values[label];
+	function mediaSingle(id: string): { id: string; url?: string; alt?: string } | null {
+		const v = values[id];
 		return v && typeof v === 'object' && !Array.isArray(v) ? (v as { id: string; url?: string; alt?: string }) : null;
 	}
 
@@ -227,7 +234,7 @@
 	}
 
 	function fieldError(f: FormField): string {
-		const v = values[f.label];
+		const v = values[f.id];
 		if (f.required && isValueEmpty(v)) {
 			return t('verification_request.errors.field_required_inline', 'This field is required');
 		}
@@ -266,32 +273,54 @@
 		return true;
 	}
 
+	function discardPendingSubmission() {
+		sessionStorage.removeItem(PENDING_KEY);
+		submissionId = '';
+		errorKey = '';
+	}
+
+	let wizardCard = $state<HTMLElement | null>(null);
+
+	function scrollToWizard() {
+		const reduce =
+			typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+		requestAnimationFrame(() =>
+			wizardCard?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
+		);
+	}
+
 	function next() {
 		errorKey = '';
 		if (!validateStep(step)) return;
-		if (step < reviewIndex) step++;
+		if (step < reviewIndex) {
+			step++;
+			scrollToWizard();
+		}
 	}
 
 	function back() {
 		errorKey = '';
-		if (step > 0) step--;
+		if (step > 0) {
+			step--;
+			scrollToWizard();
+		}
 	}
 
 	function onMediaSelect(asset: MediaAsset) {
 		if (!mediaField) return;
 		const item = { id: asset.id, url: asset.url, alt: asset.alt_text ?? undefined };
 		if (mediaField.type === 'image_single') {
-			values = { ...values, [mediaField.label]: item };
+			values = { ...values, [mediaField.id]: item };
 		} else {
-			values = { ...values, [mediaField.label]: [...mediaItems(mediaField.label), item] };
+			values = { ...values, [mediaField.id]: [...mediaItems(mediaField.id), item] };
 		}
 		mediaField = null;
 	}
 
 	function displayValue(f: FormField): string {
-		const v = values[f.label];
+		const v = values[f.id];
 		if (MEDIA_TYPES.has(f.type)) {
-			const n = f.type === 'image_single' ? (mediaSingle(f.label) ? 1 : 0) : mediaItems(f.label).length;
+			const n = f.type === 'image_single' ? (mediaSingle(f.id) ? 1 : 0) : mediaItems(f.id).length;
 			return n
 				? t('verification_request.files_attached', '{n} file(s) attached', { n })
 				: '—';
@@ -321,7 +350,12 @@
 				await createRequest();
 				return;
 			}
-			const body: Record<string, unknown> = { field_values: values };
+			// Values are keyed by field id in memory (admin-added duplicate
+			// labels can't collide); the API contract is label→value — the
+			// keys reviewers see — so translate once here.
+			const fieldValues: Record<string, unknown> = {};
+			for (const f of allFields) fieldValues[f.label] = values[f.id];
+			const body: Record<string, unknown> = { field_values: fieldValues };
 			if (isPaid) {
 				body.payment_method = paymentMethod;
 				// §06 return_url: the hosted checkout sends the user back here
@@ -392,11 +426,15 @@
 				phase = 'done';
 				await invalidateAll();
 			} else {
-				errorKey = res.error?.code === 'already_exists'
+				const code = res.error?.code ?? '';
+				const msg = res.error?.message ?? '';
+				errorKey = code === 'already_exists'
 					? 'verification_request.errors.pending_exists'
-					: res.error?.code === 'invalid_status_transition' || res.error?.code === 'forbidden'
-						? 'verification_request.errors.not_eligible'
-						: 'verification_request.errors.request_failed';
+					: code === 'invalid_status_transition' && /payment/i.test(msg)
+						? 'verification_request.errors.payment_not_completed'
+						: code === 'invalid_status_transition' || code === 'forbidden'
+							? 'verification_request.errors.not_eligible'
+							: 'verification_request.errors.request_failed';
 				phase = 'form';
 			}
 		} catch {
@@ -581,7 +619,7 @@
 		{:else}
 			<!-- Wizard card — same visual language as /onboarding and the
 			     journey modal: brand panel + numbered stepper + pill actions. -->
-			<div class="grid grid-cols-1 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl lg:grid-cols-[280px_1fr]">
+			<div bind:this={wizardCard} class="grid scroll-mt-4 grid-cols-1 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl lg:grid-cols-[280px_1fr]">
 				<!-- Brand panel — verification-themed illustration + privacy note. -->
 				<aside aria-hidden="true" class="vr-side relative hidden flex-col gap-4 overflow-hidden p-7 lg:flex">
 					<h2 class="text-lg leading-snug font-bold text-[var(--color-text)]">
@@ -620,13 +658,13 @@
 					<nav aria-label={t('verification_request.steps_label', 'Verification request steps')} class="mb-7 flex items-start">
 						{#each wizardSteps as s, i (s.id)}
 							{@const n = i + 1}
-							<div class="flex flex-1 flex-col items-center gap-1.5 last:flex-none">
+							<div class="flex flex-1 flex-col items-center gap-1.5">
 								<div class="flex w-full items-center">
-									{#if i > 0}<span class="h-px flex-1 {n <= step + 1 ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"></span>{/if}
+									{#if i > 0}<span class="h-px flex-1 {n <= step + 1 ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"></span>{:else}<span class="flex-1" aria-hidden="true"></span>{/if}
 									<button
 										type="button"
 										disabled={i >= step}
-										onclick={() => { errorKey = ''; step = i; }}
+										onclick={() => { errorKey = ''; step = i; scrollToWizard(); }}
 										class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-semibold transition-colors disabled:cursor-default {i === step
 											? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
 											: i < step
@@ -637,9 +675,9 @@
 									>
 										{#if i < step}<Check size={15} />{:else}{n}{/if}
 									</button>
-									{#if i < totalSteps - 1}<span class="h-px flex-1 {n <= step ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"></span>{/if}
+									{#if i < totalSteps - 1}<span class="h-px flex-1 {n <= step ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"></span>{:else}<span class="flex-1" aria-hidden="true"></span>{/if}
 								</div>
-								<span class="hidden text-[11px] font-medium sm:block {i === step ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}">{s.title}</span>
+								<span class="hidden text-center text-[11px] font-medium sm:block {i === step ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}">{s.title}</span>
 							</div>
 						{/each}
 					</nav>
@@ -745,23 +783,23 @@
 										</label>
 									{/if}
 									{#if field.type === 'textarea' || field.type === 'long_text'}
-										<textarea id="field-{field.id}" rows="4" value={String(values[field.label] ?? '')} oninput={(e) => (values = { ...values, [field.label]: e.currentTarget.value })} aria-required={field.required} aria-invalid={Boolean(fieldErrors[field.id])} class={fieldInputClass(field.id)}></textarea>
+										<textarea id="field-{field.id}" rows="4" value={String(values[field.id] ?? '')} oninput={(e) => (values = { ...values, [field.id]: e.currentTarget.value })} aria-required={field.required} aria-invalid={Boolean(fieldErrors[field.id])} class={fieldInputClass(field.id)}></textarea>
 									{:else if field.type === 'select' && field.options && field.options.length > 0}
 										<AutocompleteSelect
 											id="field-{field.id}"
-											value={String(values[field.label] ?? '')}
+											value={String(values[field.id] ?? '')}
 											options={[{ value: '', label: t('verification_request.select_placeholder', 'Select an option') }, ...field.options.map((opt) => ({ value: opt, label: opt }))]}
-											onValueChange={(v) => (values = { ...values, [field.label]: v })}
+											onValueChange={(v) => (values = { ...values, [field.id]: v })}
 										/>
 									{:else if MEDIA_TYPES.has(field.type)}
-										{@const single = mediaSingle(field.label)}
-										{@const items = mediaItems(field.label)}
+										{@const single = mediaSingle(field.id)}
+										{@const items = mediaItems(field.id)}
 										<div class="space-y-2" id="field-{field.id}" tabindex="-1">
 											{#if single}
 												<div class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm">
 													{#if single.url}<img src={single.url} alt={single.alt ?? ''} class="h-10 w-10 rounded object-cover" />{/if}
 													<span class="min-w-0 flex-1 truncate text-[var(--color-muted)]">{single.url ?? single.id}</span>
-													<button type="button" onclick={() => (values = { ...values, [field.label]: '' })} class="text-[var(--color-danger)]" aria-label={t('verification_request.media_remove', 'Remove')}>
+													<button type="button" onclick={() => (values = { ...values, [field.id]: '' })} class="text-[var(--color-danger)]" aria-label={t('verification_request.media_remove', 'Remove')}>
 														<X size={14} />
 													</button>
 												</div>
@@ -770,14 +808,14 @@
 												<div class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm">
 													{#if item.url}<img src={item.url} alt={item.alt ?? ''} class="h-10 w-10 rounded object-cover" />{/if}
 													<span class="min-w-0 flex-1 truncate text-[var(--color-muted)]">{item.url ?? item.id}</span>
-													<button type="button" onclick={() => (values = { ...values, [field.label]: items.filter((_, j) => j !== i) })} class="text-[var(--color-danger)]" aria-label={t('verification_request.media_remove', 'Remove')}>
+													<button type="button" onclick={() => (values = { ...values, [field.id]: items.filter((_, j) => j !== i) })} class="text-[var(--color-danger)]" aria-label={t('verification_request.media_remove', 'Remove')}>
 														<X size={14} />
 													</button>
 												</div>
 											{/each}
 											<button
 												type="button"
-												onclick={() => (mediaField = { id: field.id, label: field.label, type: field.type })}
+												onclick={() => (mediaField = { id: field.id, type: field.type })}
 												class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
 											>
 												<Upload size={14} />
@@ -786,12 +824,12 @@
 										</div>
 									{:else if field.type === 'checkbox'}
 										<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
-											<input type="checkbox" id="field-{field.id}" checked={values[field.label] === 'true'} onchange={(e) => (values = { ...values, [field.label]: e.currentTarget.checked ? 'true' : '' })} aria-required={field.required} aria-invalid={Boolean(fieldErrors[field.id])} class="h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
+											<input type="checkbox" id="field-{field.id}" checked={values[field.id] === 'true'} onchange={(e) => (values = { ...values, [field.id]: e.currentTarget.checked ? 'true' : '' })} aria-required={field.required} aria-invalid={Boolean(fieldErrors[field.id])} class="h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
 											{field.label}
 											{#if field.required}<span class="text-red-500" aria-hidden="true">*</span>{/if}
 										</label>
 									{:else}
-										<input id="field-{field.id}" type={field.type === 'email' ? 'email' : field.type === 'number' ? 'number' : field.type === 'url' ? 'url' : 'text'} value={String(values[field.label] ?? '')} oninput={(e) => (values = { ...values, [field.label]: e.currentTarget.value })} aria-required={field.required} aria-invalid={Boolean(fieldErrors[field.id])} class={fieldInputClass(field.id)} />
+										<input id="field-{field.id}" type={field.type === 'email' ? 'email' : field.type === 'number' ? 'number' : field.type === 'url' ? 'url' : 'text'} value={String(values[field.id] ?? '')} oninput={(e) => (values = { ...values, [field.id]: e.currentTarget.value })} aria-required={field.required} aria-invalid={Boolean(fieldErrors[field.id])} class={fieldInputClass(field.id)} />
 									{/if}
 									{#if fieldErrors[field.id]}
 										<p class="text-xs text-[var(--color-danger)]" role="alert">{fieldErrors[field.id]}</p>
@@ -803,6 +841,11 @@
 
 					{#if errorKey}
 						<p class="mt-4 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">{t(errorKey)}</p>
+						{#if submissionId && errorKey === 'verification_request.errors.payment_not_completed'}
+							<button type="button" onclick={discardPendingSubmission} class="mt-2 text-sm font-medium text-[var(--color-primary)] hover:underline">
+								{t('verification_request.start_over', 'Discard it and start a new submission')}
+							</button>
+						{/if}
 					{/if}
 
 					<!-- Actions — pill buttons matching onboarding/journey. -->

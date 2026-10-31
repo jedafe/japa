@@ -245,7 +245,11 @@
 		const raw = String(setting.value ?? '');
 		if (setting.type === 'number') {
 			const trimmed = raw.trim();
-			if (trimmed === '' || Number.isNaN(Number(trimmed))) {
+			// Blank is allowed — it stores "" which the backend treats as
+			// unset (GetSettingInt fails → code falls back to the next
+			// candidate key / built-in default). This is how overrides like
+			// organizations.max_per_user are cleared without a reset call.
+			if (trimmed !== '' && Number.isNaN(Number(trimmed))) {
 				return t('settings.validation_number', '"{key}" must be a valid number.').replace('{key}', setting.label);
 			}
 			return null;
@@ -752,6 +756,14 @@
 												style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)"
 											>
 												{t('settings.badge_dirty', 'modified')}
+											</span>
+										{/if}
+										{#if !setting.overridden}
+											<span
+												class="rounded-full px-1.5 py-0.5 text-[9px] font-medium"
+												style="background: color-mix(in srgb, var(--color-muted) 10%, transparent); color: var(--color-muted)"
+											>
+												{t('settings.badge_default', 'default')}
 											</span>
 										{/if}
 									</div>

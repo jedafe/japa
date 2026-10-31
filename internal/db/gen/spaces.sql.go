@@ -482,13 +482,28 @@ WHERE s.deleted_at IS NULL
  AND ($7::uuid IS NULL OR s.space_type_id = $7::uuid)
  -- @member_created mirrors ListSpacesPaginated (member-created spaces only).
  AND ($8::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
+ -- @within mirrors ListSpacesPaginated (junction + parent_id subtree).
+ AND ($9::text = '' OR EXISTS (
+ SELECT 1
+ FROM (
+ SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
+ UNION ALL
+ SELECT s.parent_id WHERE s.parent_id IS NOT NULL
+ ) links
+ JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
+ LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
+ LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
+ WHERE (g.slug = $9 AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = $9 AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = $9 AND ggp.level IN ('country', 'state', 'city'))
+ ))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.
  AND NOT EXISTS (
  SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
  )
  AND (
- $9::bool = false
+ $10::bool = false
  OR (
  $1::uuid IS NOT NULL
  AND EXISTS (
@@ -508,6 +523,7 @@ type CountSpacesParams struct {
 	Subregion     string      `json:"subregion"`
 	SpaceTypeID   pgtype.UUID `json:"space_type_id"`
 	MemberCreated bool        `json:"member_created"`
+	Within        string      `json:"within"`
 	JoinedOnly    bool        `json:"joined_only"`
 }
 
@@ -522,6 +538,7 @@ func (q *Queries) CountSpaces(ctx context.Context, arg CountSpacesParams) (int64
 		arg.Subregion,
 		arg.SpaceTypeID,
 		arg.MemberCreated,
+		arg.Within,
 		arg.JoinedOnly,
 	)
 	var total int64
@@ -4310,13 +4327,28 @@ WHERE s.deleted_at IS NULL
  -- (category IS NOT NULL AND not university). University-typed spaces are
  -- primary like geo regardless of creator (§05 amendment).
  AND ($8::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
+ -- @within mirrors ListSpacesByTypePaginated (junction + parent_id subtree).
+ AND ($9::text = '' OR EXISTS (
+ SELECT 1
+ FROM (
+ SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
+ UNION ALL
+ SELECT s.parent_id WHERE s.parent_id IS NOT NULL
+ ) links
+ JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
+ LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
+ LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
+ WHERE (g.slug = $9 AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = $9 AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = $9 AND ggp.level IN ('country', 'state', 'city'))
+ ))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.
  AND NOT EXISTS (
  SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
  )
  AND (
- $9::bool = false
+ $10::bool = false
  OR (
  $1::uuid IS NOT NULL
  AND EXISTS (
@@ -4326,17 +4358,17 @@ WHERE s.deleted_at IS NULL
  )
  )
 ORDER BY
- CASE WHEN $10::text = 'name' THEN s.name ELSE NULL END ASC,
- CASE WHEN $10::text = 'name_desc' THEN s.name ELSE NULL END DESC,
+ CASE WHEN $11::text = 'name' THEN s.name ELSE NULL END ASC,
+ CASE WHEN $11::text = 'name_desc' THEN s.name ELSE NULL END DESC,
  CASE
- WHEN $10::text = 'members' THEN s.member_count
- WHEN $10::text = 'followers' THEN s.follower_count
- WHEN $10::text = 'posts' THEN s.post_count
+ WHEN $11::text = 'members' THEN s.member_count
+ WHEN $11::text = 'followers' THEN s.follower_count
+ WHEN $11::text = 'posts' THEN s.post_count
  ELSE NULL
  END DESC,
- CASE WHEN $10::text = 'activity' THEN s.updated_at ELSE NULL END DESC,
+ CASE WHEN $11::text = 'activity' THEN s.updated_at ELSE NULL END DESC,
  s.created_at DESC, s.id DESC
-LIMIT $12 OFFSET $11
+LIMIT $13 OFFSET $12
 `
 
 type ListSpacesPaginatedParams struct {
@@ -4348,6 +4380,7 @@ type ListSpacesPaginatedParams struct {
 	Subregion     string      `json:"subregion"`
 	SpaceTypeID   pgtype.UUID `json:"space_type_id"`
 	MemberCreated bool        `json:"member_created"`
+	Within        string      `json:"within"`
 	JoinedOnly    bool        `json:"joined_only"`
 	Sort          string      `json:"sort"`
 	OffsetVal     int32       `json:"offset_val"`
@@ -4408,6 +4441,7 @@ func (q *Queries) ListSpacesPaginated(ctx context.Context, arg ListSpacesPaginat
 		arg.Subregion,
 		arg.SpaceTypeID,
 		arg.MemberCreated,
+		arg.Within,
 		arg.JoinedOnly,
 		arg.Sort,
 		arg.OffsetVal,

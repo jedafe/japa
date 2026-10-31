@@ -46,6 +46,7 @@ import (
 	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/checklist"
 	"github.com/jedafe/japa/internal/comments"
+	"github.com/jedafe/japa/internal/drafts"
 	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/comparison/resolver"
@@ -847,6 +848,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	orgHandlers := organizations.NewHandlers(orgService, followService, contentService)
 	orgHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in org responses
 	orgHandlers.SetCustomFieldLookup(cfService)     // org_type options from custom_fields (Section 07 + 08)
+	orgService.SetCustomFieldLookup(cfService)      // validateOrgType reads the same org_type options
+	orgService.SetSuperAdminChecker(rbacResolver)   // super_admin bypasses the max_per_user gate
 	orgHandlers.SetAsynqClient(asynqClient)         // §12 stale-index fix: org CRUD enqueues search:index_entity
 
 	// Verification requests (Section 07 — Verification Requests). Webhook
@@ -1339,6 +1342,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	adminHandlers.SetSettings(settingsService)
 	adminHandlers.SetGDPR(gdprService)
 	adminHandlers.SetOrgVerifier(orgService)
+	adminHandlers.SetOrgClaimReviewer(orgService)
 	adminHandlers.SetTaskEnqueuer(taskEnqueuer)
 	adminHandlers.SetDefaultFolderProvider(defaultFolderResolver)
 	adminHandlers.SetTierManager(tierService)
@@ -1378,6 +1382,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Tracker:  analyticsService,
 	})
 	nextActionsHandlers := nextactions.NewHandlers(nextActionsSvc, settingsService)
+	nextActionsHandlers.SetAuditDB(database.Writer)
 	// §122 sweep path: dispatch materialized suggestions via §35.
 	nextActionsSvc.SetNotifier(nextactions.NewNotifier(notificationService))
 	worker.RegisterNextActionsService(nextActionsSvc)
@@ -1524,6 +1529,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	checklistService.SetEnqueuer(taskEnqueuer) // wallet:award_points on full completion (§28)
 	checklistHandlers := checklist.NewHandlers(checklistService, settingsService)
 	checklistHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in checklist responses
+
+	// §71 amendment — generic in-progress form drafts (reusable save-progress
+	// for multi-step tools: readiness, tour, sop, future wizards).
+	draftsHandlers := drafts.NewHandlers(gen.New(database.Writer))
 
 	// Ref: japaconnect-engineering/sections/79-community-story-wall.md (ADR-087)
 	storyStore := story.NewStore(database)
@@ -4262,6 +4271,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/users/{id}/report", reportsHandlers.ReportUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-users", interactionsHandlers.ListMutedUsers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-spaces", interactionsHandlers.ListMutedSpaces)
+
+			// Form drafts — reusable save-progress API (readiness, tour, sop…)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts", draftsHandlers.ListDrafts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts/{kind}", draftsHandlers.GetDraft)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/drafts/{kind}", draftsHandlers.PutDraft)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/drafts/{kind}", draftsHandlers.DeleteDraft)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts/{kind}/{key}", draftsHandlers.GetDraft)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/drafts/{kind}/{key}", draftsHandlers.PutDraft)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/drafts/{kind}/{key}", draftsHandlers.DeleteDraft)
 
 			// Notification System routes (Section 35 — Notification System)
 			r.With(features.Gate(featureChecker, "feature.notifications")).Group(func(r chi.Router) {
@@ -7070,6 +7088,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/organizations/{id}", orgHandlers.AdminUpdateOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation"), rbac.RequireForceDelete(rbacResolver)).
 				Delete("/admin/organizations/{id}", orgHandlers.AdminDeleteOrganization)
+			// Restore reverses a soft delete (deleted_at → NULL).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
+				Post("/admin/organizations/{id}/restore", orgHandlers.AdminRestoreOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/organizations/{id}/members", orgHandlers.AdminListMembers)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
@@ -7614,6 +7635,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				})
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "nextactions.view", "nextactions.manage")).
 					Get("/admin/next-actions/predicates", nextActionsHandlers.Predicates)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "nextactions.view", "nextactions.manage")).
+					Get("/admin/next-actions/vocab", nextActionsHandlers.Vocab)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "nextactions.view")).
 					Get("/admin/next-actions/stats", nextActionsHandlers.Stats)
 			})

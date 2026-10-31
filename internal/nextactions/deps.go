@@ -86,6 +86,10 @@ func (d *queryDeps) AssessmentDone(ctx context.Context, userID pgtype.UUID) (boo
 	return true, int(score), nil
 }
 
+func (d *queryDeps) DraftExists(ctx context.Context, userID pgtype.UUID, kind string) (bool, error) {
+	return d.read.UserHasDraftOfKind(ctx, gen.UserHasDraftOfKindParams{UserID: userID, Kind: kind})
+}
+
 func (d *queryDeps) HasPushSub(ctx context.Context, userID pgtype.UUID) (bool, error) {
 	return d.read.UserHasPushSubscription(ctx, userID)
 }

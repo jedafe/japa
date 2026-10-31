@@ -25,27 +25,32 @@
 
 	type Groups = { all: any[]; any: any[] };
 
-	function ensure() {
-		if (!value || typeof value !== 'object') value = {};
-		if (!Array.isArray(value.all)) value.all = [];
-		if (!Array.isArray(value.any)) value.any = [];
+	// Normalize in the derived itself — a persisted rule may carry only `all`
+	// or only `any`, and {#each} on undefined crashes. Writes go through
+	// setGroup so the parent's bound `value` is always a fresh object.
+	const groups = $derived.by<Groups>(() => ({
+		all: Array.isArray(value?.all) ? value.all : [],
+		any: Array.isArray(value?.any) ? value.any : []
+	}));
+
+	function setGroup(group: 'all' | 'any', list: any[]) {
+		value = { ...(value && typeof value === 'object' ? value : {}), [group]: list };
 	}
-	ensure();
-	const groups = $derived(value as Groups);
 
 	function addPred(group: 'all' | 'any') {
-		groups[group] = [...groups[group], { predicate: specs[0]?.name ?? '' }];
+		setGroup(group, [...groups[group], { predicate: specs[0]?.name ?? '' }]);
 	}
 
 	function removePred(group: 'all' | 'any', i: number) {
-		groups[group] = groups[group].filter((_: any, j: number) => j !== i);
+		setGroup(group, groups[group].filter((_: any, j: number) => j !== i));
 	}
 
 	function changeName(group: 'all' | 'any', i: number, name: string) {
 		// Reset args when the predicate changes — stale args from the old
 		// predicate would silently ship.
-		groups[group][i] = { predicate: name };
-		groups[group] = [...groups[group]];
+		const next = [...groups[group]];
+		next[i] = { predicate: name };
+		setGroup(group, next);
 	}
 
 	function setArg(group: 'all' | 'any', i: number, key: string, raw: string, type: string) {
@@ -62,8 +67,9 @@
 		} else {
 			p[key] = raw;
 		}
-		groups[group][i] = p;
-		groups[group] = [...groups[group]];
+		const next = [...groups[group]];
+		next[i] = p;
+		setGroup(group, next);
 	}
 
 	function argVal(p: any, key: string): string {

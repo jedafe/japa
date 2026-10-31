@@ -36,7 +36,7 @@ export interface EntityWikiPage {
 	 *  same shape as the space-page ancestors. */
 	ancestors?: { slug: string; name: string; level?: string }[];
 	ancestors_alt?: { slug: string; name: string; level?: string }[];
-	siblings?: { slug: string; title: string; current?: boolean }[];
+	siblings?: { slug: string; title: string; category?: string; current?: boolean }[];
 	helpful?: WikiHelpful | null;
 	revision_summary?: string;
 	submitted_by?: string;
@@ -47,9 +47,11 @@ export interface EntityWikiPage {
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const { type_slug, entity, page_slug } = event.params;
+	const authed = !!event.locals.user;
+	const userPermissions = event.locals.user?.permissions ?? [];
 	try {
 		const page = await apiGet<EntityWikiPage>(ctx, `/wiki/e/${type_slug}/${entity}/${page_slug}`);
-		return { page };
+		return { page, authed, userPermissions };
 	} catch (err) {
 		if (err instanceof ApiError) {
 			error(err.status === 404 ? 404 : 500, { code: 'wiki_page_error', message: err.message });

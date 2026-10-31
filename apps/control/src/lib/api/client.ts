@@ -119,14 +119,19 @@ export async function apiFetch<T>(
 	// /control/... and the request reaches the backend unchanged. For /control/*
 	// paths the /api/v1 suffix must also be stripped from the versioned
 	// PUBLIC_JC_API_URL, otherwise they resolve to /api/v1/control/* (404).
-	// Callers pass either /control/* routes or full /api/v1/* paths. version:''
-	// means buildApiUrl won't dedupe, so strip the /api/v1 prefix here —
-	// otherwise it doubles onto the versioned PUBLIC_JC_API_URL
-	// (api.b.japa.to/api/v1/api/v1/...).
-	const base = path.startsWith('/control/')
+	// Callers pass either /control/* routes or full /api/v1/* paths. Only
+	// /control/* paths need the versionless branch — for everything else the
+	// default /api/v1 anchor already dedupes a versioned PUBLIC_JC_API_URL
+	// and, crucially, re-adds the prefix when PUBLIC_JC_API_URL is empty in
+	// dev (relative /api/v1/* URLs through the Vite proxy). Using version:''
+	// for all paths stripped the prefix from relative URLs → /auth/refresh 404.
+	const isControlPath = path.startsWith('/control/');
+	const base = isControlPath
 		? PUBLIC_JC_API_URL.replace(/\/api\/v1\/?$/, '')
 		: PUBLIC_JC_API_URL;
-	const url = buildApiUrl(path.replace(/^\/api\/v1/, ''), base, { version: '' });
+	const url = isControlPath
+		? buildApiUrl(path, base, { version: '' })
+		: buildApiUrl(path, base);
 	const method = (options.method ?? 'GET').toString().toUpperCase();
 	const isMutating = MUTATING_METHODS.has(method);
 

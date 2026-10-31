@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -25,9 +26,11 @@ import (
 	"github.com/jedafe/japa/internal/worker"
 )
 
-// validOrgTypes is the allow-list enforced by the organizations.org_type
-// CHECK constraint (migration 000105). Validating here surfaces a 400
-// invalid_org_type envelope instead of a raw 500 from the DB constraint.
+// validOrgTypes is the fallback allow-list for organizations.org_type,
+// originally enforced by the DB CHECK constraint (migration 000105, dropped
+// by 000413). The authoritative list is the org_type custom field's options —
+// admins manage it via the org types editor — so this map only applies when
+// the custom field lookup is unavailable or the field has no options.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 var validOrgTypes = map[string]bool{
 	OrgTypeBusiness: true, OrgTypeNGO: true, OrgTypeGovernment: true,
@@ -36,10 +39,29 @@ var validOrgTypes = map[string]bool{
 }
 
 // validateOrgType returns errpkg.ErrInvalid wrapped with a descriptive
-// message when orgType is non-empty and not in the allow-list.
-func validateOrgType(orgType string) error {
+// message when orgType is non-empty and not an allowed type. The allow-list
+// is read from the org_type custom field's options (mirroring
+// /organizations/meta) so types added by admins are accepted; the hardcoded
+// constants are the fallback when the field can't be read.
+func (s *Service) validateOrgType(ctx context.Context, orgType string) error {
 	if orgType == "" {
 		return nil
+	}
+
+	if s.customFieldLookup != nil {
+		if field, err := s.customFieldLookup.GetCustomFieldByKey(ctx, "org_type"); err == nil && len(field.Options) > 0 {
+			var opts []struct {
+				Value string `json:"value"`
+			}
+			if jsonErr := json.Unmarshal(field.Options, &opts); jsonErr == nil && len(opts) > 0 {
+				for _, o := range opts {
+					if o.Value == orgType {
+						return nil
+					}
+				}
+				return fmt.Errorf("%w: invalid org_type %q", errpkg.ErrInvalid, orgType)
+			}
+		}
 	}
 
 	if !validOrgTypes[orgType] {
@@ -47,6 +69,22 @@ func validateOrgType(orgType string) error {
 	}
 
 	return nil
+}
+
+var (
+	invalidOrgSlugChars = regexp.MustCompile(`[^a-z0-9-]+`)
+	multiOrgSlugHyphens = regexp.MustCompile(`-{2,}`)
+	trimOrgSlugHyphens  = regexp.MustCompile(`^-+|-+$`)
+)
+
+// slugifyOrgSlug normalizes a caller-supplied slug to lowercase
+// [a-z0-9-] (same convention as universities/pagebuilder slugs). Returns ""
+// when nothing valid remains — the caller enforces "slug is required".
+func slugifyOrgSlug(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = invalidOrgSlugChars.ReplaceAllString(s, "-")
+	s = multiOrgSlugHyphens.ReplaceAllString(s, "-")
+	return trimOrgSlugHyphens.ReplaceAllString(s, "")
 }
 
 // CreateOrganizationInput is the input for creating an organization.
@@ -114,6 +152,9 @@ func (s *Service) CreateOrganization(ctx context.Context, userID pgtype.UUID, in
 		return gen.Organization{}, errors.New("name is required")
 	}
 
+	// Normalize the caller-supplied slug — raw values like "My Org!" were
+	// stored verbatim before, producing unreachable /org/{slug} URLs.
+	input.Slug = slugifyOrgSlug(input.Slug)
 	if input.Slug == "" {
 		return gen.Organization{}, errors.New("slug is required")
 	}
@@ -123,16 +164,19 @@ func (s *Service) CreateOrganization(ctx context.Context, userID pgtype.UUID, in
 		orgType = OrgTypeBusiness
 	}
 
-	if err := validateOrgType(orgType); err != nil {
+	if err := s.validateOrgType(ctx, orgType); err != nil {
 		return gen.Organization{}, err
 	}
 
-	// Quantity gate: per-tier organizations.max_per_user.{tier} (0 = disabled,
-	// -1 = unlimited, N = cap). Falls back to the legacy
-	// organizations.max_per_user key for backward compatibility. If neither is
-	// configured, the default is unlimited so unseeded platforms are not blocked.
+	// Quantity gate: organizations.max_per_user (0 = disabled, -1 = unlimited,
+	// N = cap). The flat key is checked first — it is the value admins set on
+	// the settings page, so an explicit setting must win over the per-tier
+	// catalog defaults (regular=1, pro=5, business=-1). When the flat key is
+	// unset, organizations.max_per_user.{tier} applies. If neither is
+	// configured, the default is unlimited so unseeded platforms are not
+	// blocked. super_admin members bypass the gate entirely.
 	// Ref: §unified-tiers, japaconnect-engineering/conventions/system-settings-catalog.md
-	if s.settings != nil {
+	if s.settings != nil && !(s.superAdmin != nil && s.superAdmin.IsSuperAdmin(ctx, userID)) {
 		tier := "regular"
 
 		if s.tierResolver != nil {
@@ -143,11 +187,10 @@ func (s *Service) CreateOrganization(ctx context.Context, userID pgtype.UUID, in
 		}
 
 		maxPerUser := -1
-		perTierKey := "organizations.max_per_user." + tier
 
-		if v, err := s.settings.GetSettingInt(ctx, perTierKey); err == nil {
+		if v, err := s.settings.GetSettingInt(ctx, "organizations.max_per_user"); err == nil {
 			maxPerUser = v
-		} else if v, err := s.settings.GetSettingInt(ctx, "organizations.max_per_user"); err == nil {
+		} else if v, err := s.settings.GetSettingInt(ctx, "organizations.max_per_user."+tier); err == nil {
 			maxPerUser = v
 		}
 
@@ -313,8 +356,8 @@ func (s *Service) GetOrganizationBySlug(ctx context.Context, slug string) (gen.O
 
 // ListOrganizations returns organizations filtered by type, country, search,
 // and verified status. Public callers pass deleted="".
-func (s *Service) ListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
-	items, err := s.store.ListOrganizations(ctx, orgType, countryCode, search, verified, deleted, limit, offset)
+func (s *Service) ListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted, sortKey, sortDir string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
+	items, err := s.store.ListOrganizations(ctx, orgType, countryCode, search, verified, deleted, sortKey, sortDir, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -329,7 +372,7 @@ func (s *Service) ListOrganizations(ctx context.Context, orgType, countryCode, s
 
 // UpdateOrganization updates an organization. Only owner or admin can update.
 func (s *Service) UpdateOrganization(ctx context.Context, id, userID pgtype.UUID, input UpdateOrganizationInput) error {
-	if err := validateOrgType(input.OrgType); err != nil {
+	if err := s.validateOrgType(ctx, input.OrgType); err != nil {
 		return err
 	}
 
@@ -837,6 +880,12 @@ func (s *Service) ClaimOwnership(ctx context.Context, userID, orgID pgtype.UUID,
 			return gen.OwnershipClaim{}, fmt.Errorf("fetching form submission: %w", err)
 		}
 
+		if submission.Status == "pending_payment" {
+			// Distinct from a consumed/invalid submission: the checkout
+			// hasn't settled, so the claim wizard can keep retrying and
+			// tell the claimant the payment — not the claim — is missing.
+			return gen.OwnershipClaim{}, fmt.Errorf("%w: payment for this submission has not completed", errpkg.ErrInvalidStatusTransition)
+		}
 		if submission.Status != "new" {
 			return gen.OwnershipClaim{}, fmt.Errorf("%w: form submission must have status 'new'", errpkg.ErrInvalid)
 		}
@@ -1152,8 +1201,8 @@ func (s *Service) GetOrganizationAnalytics(ctx context.Context, orgID pgtype.UUI
 
 // AdminListOrganizations lists all organisations for admin view (no
 // ownership filter). deleted is ” (live only), 'only', or 'all'.
-func (s *Service) AdminListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
-	items, err := s.store.ListOrganizations(ctx, orgType, countryCode, search, verified, deleted, limit, offset)
+func (s *Service) AdminListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted, sortKey, sortDir string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
+	items, err := s.store.ListOrganizations(ctx, orgType, countryCode, search, verified, deleted, sortKey, sortDir, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1173,7 +1222,7 @@ func (s *Service) AdminGetOrganization(ctx context.Context, id pgtype.UUID) (gen
 
 // AdminUpdateOrganization updates an organisation without checking membership role.
 func (s *Service) AdminUpdateOrganization(ctx context.Context, id pgtype.UUID, input UpdateOrganizationInput) error {
-	if err := validateOrgType(input.OrgType); err != nil {
+	if err := s.validateOrgType(ctx, input.OrgType); err != nil {
 		return err
 	}
 
@@ -1291,4 +1340,28 @@ func (s *Service) setDestinationCountry(ctx context.Context, userID pgtype.UUID,
 	}
 
 	return nil
+}
+
+// AdminRestoreOrganization reverses a soft delete (deleted_at → NULL).
+func (s *Service) AdminRestoreOrganization(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.RestoreOrganization(ctx, id); err != nil {
+		return err
+	}
+	s.InvalidateOrgCache(ctx)
+	return nil
+}
+
+// AdminReviewOwnershipClaim exposes ReviewOwnershipClaim to the admin package
+// through a primitive-typed signature (admin cannot import this package — the
+// local OrgClaimReviewer interface mirrors this method). action is
+// "approve"|"reject".
+func (s *Service) AdminReviewOwnershipClaim(ctx context.Context, claimID, reviewedBy pgtype.UUID, action, note string) error {
+	status := ClaimStatusRejected
+	if action == "approve" {
+		status = ClaimStatusApproved
+	}
+	return s.ReviewOwnershipClaim(ctx, claimID, reviewedBy, ReviewClaimInput{
+		Status:         status,
+		ResolutionNote: note,
+	})
 }

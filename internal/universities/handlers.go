@@ -316,7 +316,14 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	country := strings.TrimSpace(r.URL.Query().Get("country"))
 	// Slugs are lowercase — normalize so ?state=Lagos resolves lagos.
-	within := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("city")))
+	// ?within= is the unified parent-space filter (same semantics as
+	// /spaces ?parent=): any geo space slug — country, state, or city —
+	// resolves through space_parent_spaces; ?city=/?state= stay for
+	// back-compat links.
+	within := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("within")))
+	if within == "" {
+		within = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("city")))
+	}
 	if within == "" {
 		within = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("state")))
 	}

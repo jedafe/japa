@@ -32,6 +32,19 @@
 		(data.posts ?? []).filter((p) => p.content_type === 'job_listing')
 	);
 	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
+	// Live follower count — the SSR org.follower_count is a snapshot, so
+	// FollowButton's onFollowerCountChange overrides it after a toggle.
+	let followerOverride = $state<number | null>(null);
+	const displayOrg = $derived(
+		followerOverride === null ? org : { ...org, follower_count: followerOverride }
+	);
+	// Reset the override when navigating between orgs.
+	$effect(() => {
+		void org.id;
+		untrack(() => {
+			followerOverride = null;
+		});
+	});
 	// Map ProfilePost → FeedItem so org posts render through the shared FeedCard.
 	function toFeedItem(post: ProfilePost): FeedItem {
 		return {
@@ -138,7 +151,7 @@
 </SetSidebar>
 
 <div class="mx-auto w-full max-w-3xl">
-<OrgHeader {org} {canManage}>
+<OrgHeader org={displayOrg} {canManage}>
 	{#snippet children()}
 		{#if page.data.features?.['tips.enabled']}
 			<TipButton recipientType="organization" recipientKey={org.id} recipientId={org.id} recipientName={org.name} />
@@ -154,7 +167,7 @@
 			</a>
 		{/if}
 		{#if page.data.user}
-			<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} {initiallyFollowing} />
+			<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} {initiallyFollowing} onFollowerCountChange={(n) => (followerOverride = n)} />
 			{#if !org.verified}
 				<a
 					href="/claim-ownership?org={org.slug}"

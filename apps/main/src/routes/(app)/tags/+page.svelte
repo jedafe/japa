@@ -196,6 +196,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						imageUrl={tag.logo_url}
 						icon={Hash}
 						hueSeed={tag.id}
+						tintColor={tag.color}
 						round
 					>
 						{#snippet actions()}

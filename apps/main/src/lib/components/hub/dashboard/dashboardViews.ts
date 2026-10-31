@@ -1,4 +1,4 @@
-import type { HubGroup, Menu, MenuItem } from '$lib/types';
+import type { Menu, MenuItem } from '$lib/types';
 
 /**
  * Client-side view metadata for a dashboard rail item. The authoritative list
@@ -48,7 +48,9 @@ export function dashboardSlug(url: string): string {
 
 export function viewMetaFromMenuItem(item: MenuItem): ViewMeta | null {
 	const slug = dashboardSlug(item.url);
-	if (!slug) return null;
+	// 'dashboard' itself would produce /dashboard/dashboard — treat bare
+	// section-root URLs as non-leaf (e.g. a parent used only as a group header).
+	if (!slug || slug === 'dashboard') return null;
 	const isRoute = !DASHBOARD_COMPONENT_SLUGS.has(slug);
 	return {
 		slug,
@@ -77,12 +79,28 @@ export function resolveView(slug: string, menuItems?: MenuItem[]): ViewMeta | nu
 	};
 }
 
-export function viewsByGroup(menu: Menu | null): [HubGroup, ViewMeta[]][] {
+/**
+ * Map the dashboard_rail menu to rail groups. Top-level items with children
+ * become their own group (the parent label is the group header, passed through
+ * `t()` with a raw-label fallback); their own URL — when present — stays
+ * reachable as an ungrouped item so no route is lost. Flat items land under
+ * the menu name.
+ */
+export function viewsByGroup(menu: Menu | null): [string, ViewMeta[]][] {
 	if (!menu?.items?.length) return [];
-	const group = (menu.name || 'Activity') as HubGroup;
-	const views = menu.items
-		.filter((item) => !item.is_ad_slot && item.status === 'active' && item.url)
-		.map(viewMetaFromMenuItem)
-		.filter((v): v is ViewMeta => v != null);
-	return views.length ? [[group, views]] : [];
+	const visible = (item: MenuItem) => !item.is_ad_slot && item.status === 'active' && item.url;
+
+	const ungrouped: ViewMeta[] = [];
+	const groups: [string, ViewMeta[]][] = [];
+	for (const item of menu.items.filter(visible)) {
+		const views = (item.children ?? [])
+			.filter(visible)
+			.map(viewMetaFromMenuItem)
+			.filter((v): v is ViewMeta => v != null);
+		if (views.length) groups.push([item.label, views]);
+		const self = viewMetaFromMenuItem(item);
+		if (self) ungrouped.push(self);
+	}
+	if (ungrouped.length) groups.unshift([menu.name || 'Activity', ungrouped]);
+	return groups;
 }

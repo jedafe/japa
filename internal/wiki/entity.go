@@ -232,11 +232,15 @@ type EntityCategoryDTO struct {
 	Label    string `json:"label"`
 }
 
-// EntitySiblingDTO is a sibling page on the same entity (index links).
+// EntitySiblingDTO is a same-category sibling page on the same entity —
+// the entity-bound counterpart of WikiSiblingDTO: the current page is
+// included with Current=true so readers derive Prev/Next from position.
+// //nolint:revive // exported: DTO naming follows package convention.
 type EntitySiblingDTO struct {
 	Slug     string `json:"slug"`
 	Title    string `json:"title"`
 	Category string `json:"category"`
+	Current  bool   `json:"current,omitempty"`
 }
 
 // WikiRelatedSpaceDTO is one card in an entity's related-universities
@@ -353,25 +357,8 @@ func (s *Service) attachEntityContext(ctx context.Context, userID, typeID pgtype
 	s.attachEntityFields(ctx, userID, typeID, kind, ref, dto, cat)
 	dto.Categories = s.entityTypeCategories(ctx, typeID)
 
-	// Sibling pages on the same entity — the tab strip of categories.
-	if rows, err := s.store.read.ListEntityWikiPages(ctx, gen.ListEntityWikiPagesParams{
-		EntityType: &kind, EntityID: ref.ID,
-	}); err == nil {
-		for _, r := range rows {
-			if r.ID == pageID {
-				continue
-			}
-			dto.Siblings = append(dto.Siblings, EntitySiblingDTO{Slug: r.Slug, Title: r.Title, Category: r.Category})
-		}
-	}
+	s.attachEntityNav(ctx, kind, ref, pageID, dto)
 
-	// Host-space ancestors — the entity sits under its host space in the
-	// tree (a visa route's breadcrumbs are its country's).
-	if ref.ParentSpaceID.Valid {
-		if hostTypeID, _, _, terr := s.store.GetSpaceTypeRef(ctx, ref.ParentSpaceID); terr == nil {
-			dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, ref.ParentSpaceID, hostTypeID)
-		}
-	}
 
 	// mode:"related" categories attach the entity's peer listing — the
 	// category row's rollup decides (a course's 'universities' page lists
@@ -424,6 +411,36 @@ func (s *Service) attachEntityFields(ctx context.Context, userID, typeID pgtype.
 	}
 }
 
+// attachEntityNav populates the entity page's sibling list and host-space
+// breadcrumbs. Siblings are same-category pages (the space path's contract:
+// current row included with Current=true, position-ordered); the host space
+// closes the ancestor chain — a visa route's crumbs are its country's chain
+// plus the country itself. pageID is zero on lazy pages (nothing is current).
+func (s *Service) attachEntityNav(ctx context.Context, kind string, ref EntityRef, pageID pgtype.UUID, dto *EntityPageDTO) {
+	if rows, err := s.store.read.ListEntityWikiPageSiblings(ctx, gen.ListEntityWikiPageSiblingsParams{
+		EntityType: &kind, EntityID: ref.ID, Category: dto.Category,
+	}); err == nil {
+		for _, r := range rows {
+			dto.Siblings = append(dto.Siblings, EntitySiblingDTO{
+				Slug: r.Slug, Title: substituteTemplateLabel(r.Title, ref.Name),
+				Category: r.Category, Current: r.ID == pageID,
+			})
+		}
+	}
+
+	if ref.ParentSpaceID.Valid {
+		if host, herr := s.store.read.GetWikiSpaceRef(ctx, ref.ParentSpaceID); herr == nil {
+			chain, alternates := s.getAncestors(ctx, ref.ParentSpaceID, host.SpaceTypeID)
+			dto.Ancestors = append(chain, WikiSpaceRefDTO{
+				ID: host.ID.String(), Slug: host.Slug, Name: host.Name,
+				Level: host.Level, TypeSlug: host.SpaceTypeSlug,
+				TypeLabel: host.SpaceTypeLabel,
+			})
+			dto.AncestorsAlt = alternates
+		}
+	}
+}
+
 // entityLazyPage synthesizes an unmaterialized page when pageSlug matches a
 // category slug or page-template slug on the entity-bound type. Prose is
 // empty; the page materializes on the first submission.
@@ -447,6 +464,7 @@ func (s *Service) entityLazyPage(ctx context.Context, userID, typeID pgtype.UUID
 			base.FieldGroupID = &g
 		}
 		s.attachEntityFields(ctx, userID, typeID, kind, ref, &base, gen.WikiTypeCategory{})
+		s.attachEntityNav(ctx, kind, ref, pgtype.UUID{}, &base)
 		return base, nil
 	}
 	// Category match — the type's canonical category pages render lazily.
@@ -463,6 +481,7 @@ func (s *Service) entityLazyPage(ctx context.Context, userID, typeID pgtype.UUID
 			base.Related = s.computeEntityRelated(ctx, kind, ref)
 		}
 		s.attachEntityFields(ctx, userID, typeID, kind, ref, &base, cat)
+		s.attachEntityNav(ctx, kind, ref, pgtype.UUID{}, &base)
 		return base, nil
 	}
 	return EntityPageDTO{}, pgx.ErrNoRows

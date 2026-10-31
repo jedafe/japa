@@ -5,16 +5,17 @@
 	// The rich tag form (logo/cover media pickers, custom field definitions) and
 	// the tag-moderators sub-flow cannot be expressed by the basic EntityForm, so
 	// they are rendered via the `formSnippet` escape hatch and page-local state.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
+	import { EntityPage, type EntityPageConfig, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import UserAutocomplete from "$lib/components/ui/UserAutocomplete.svelte";
+	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
 	import MediaPickerModal from "$lib/components/ui/MediaPickerModal.svelte";
 	import { tagsAdminApi, tagsModeratorsAdminApi, api, apiRaw } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import { Shield, Trash2, Image as ImageIcon, X } from "lucide-svelte";
+	import { Shield, Eye, Pencil, Trash2, Image as ImageIcon, X } from "lucide-svelte";
 
 	type Tag = {
 		id: string;
@@ -46,7 +47,10 @@
 	type TagModerator = {
 		user_id: string;
 		username: string;
-		created_at: string;
+		display_name?: string;
+		avatar_url?: string;
+		created_at?: string;
+		added_at?: string;
 	};
 
 	const canManageTags = $derived(hasPermission("tags.manage"));
@@ -69,6 +73,50 @@
 
 	function slugify(text: string): string {
 		return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+	}
+
+	// The native <input type="color"> only understands #rrggbb — stored values
+	// like #rgb (valid per the backend validator) or mid-typing text would
+	// otherwise make the picker silently render black. The text input stays
+	// the source of truth; the picker gets a coerced 6-digit hex.
+	function pickerHex(v: unknown): string {
+		const s = String(v ?? "").trim();
+		if (/^#[0-9a-fA-F]{6}$/.test(s)) return s;
+		if (/^#[0-9a-fA-F]{3}$/.test(s)) {
+			return "#" + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+		}
+		return "#000000";
+	}
+
+	// related_tags is stored as a CSV of tag slugs in field_values; tolerate
+	// JSON arrays and legacy display-name entries ("Cost of Living") — each
+	// item is normalized through the same slugifier the backend uses so
+	// chips always link to a resolvable /tags/{slug} route.
+	function parseTagSlugList(v: unknown): string[] {
+		const items = Array.isArray(v) ? v.map(String) : String(v ?? "").split(",");
+		return [...new Set(items.map((s) => slugify(s)).filter(Boolean))];
+	}
+
+	// Only apply a stored color to inline styles when it is a valid hex
+	// value — the backend validates on write, but a non-hex legacy value
+	// must never reach a style attribute.
+	function validHex(v: unknown): string {
+		const s = String(v ?? "").trim();
+		return /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(s) ? s : "";
+	}
+
+	// Tag suggestion fetcher for the related_tags picker — server-side search
+	// over /admin/tags so large directories don't need a static option list.
+	// `exclude` hides already-selected slugs and the tag being edited.
+	async function relatedTagFetcher(q: string, exclude: string[]): Promise<AutocompleteItem[]> {
+		const params = new URLSearchParams({ page_size: "10" });
+		if (q) params.set("q", q);
+		const res = await apiRaw<{ data: Tag[] }>(`/admin/tags?${params.toString()}`);
+		if (!res.ok) return [];
+		const skip = new Set(exclude);
+		return (res.data.data ?? [])
+			.filter((t2) => !skip.has(t2.slug))
+			.map((t2) => ({ id: t2.slug, label: `#${t2.name}`, sublabel: t2.slug }));
 	}
 
 	// Tag custom field definitions — fetched from /custom-field-groups?entity_class=tag
@@ -173,27 +221,6 @@
 		}
 	}
 
-	// ── Bulk delete ─────────────────────────────────────────────────────────
-	// EntityPage auto-reloads + clears selection after a bulk action handler completes.
-	let entityController = $state<EntityPageController | undefined>(undefined);
-	let pageError = $state("");
-	let bulkDeleting = $state(false);
-
-	async function bulkDelete(ids: Set<string>) {
-		const idArr = Array.from(ids);
-		if (idArr.length === 0) return;
-		if (bulkDeleting) return;
-		bulkDeleting = true;
-		pageError = "";
-		try {
-			await Promise.all(idArr.map((id) => tagsAdminApi.delete(id)));
-		} catch (e) {
-			pageError = e instanceof Error ? e.message : t("common.error", "Failed to delete tags");
-		} finally {
-			bulkDeleting = false;
-		}
-	}
-
 	// ── Form body normalization (mirrors the legacy submit() logic) ──────────
 	function normalizeBody(formValue: Record<string, any>, isUpdate: boolean): Record<string, unknown> {
 		const body: Record<string, unknown> = {
@@ -210,14 +237,21 @@
 		if (formValue.cover_media_id) body.cover_media_id = formValue.cover_media_id;
 		body.is_system = !!formValue.is_system;
 		if (tagFieldDefs.length > 0) {
-			const fv: Record<string, string> = {};
+			// Merge over the stored field_values rather than building a fresh
+			// object — keys not covered by the loaded field defs (or defs that
+			// failed to load) must not be dropped on save.
 			const raw =
 				formValue.field_values && typeof formValue.field_values === "object"
 					? formValue.field_values
 					: {};
+			const fv: Record<string, unknown> = { ...raw };
 			for (const def of tagFieldDefs) {
 				const v = String(raw[def.key] ?? "").trim();
-				if (v) fv[def.key] = v;
+				if (v) {
+					fv[def.key] = v;
+				} else {
+					delete fv[def.key];
+				}
 			}
 			body.field_values = fv;
 		}
@@ -268,7 +302,6 @@
 				sortable: true,
 				render: (v: string) => new Date(v).toLocaleDateString(),
 			},
-			{ key: "moderators", label: "", class: "w-12", componentSnippet: ModeratorsCell },
 		],
 		filters: [
 			{
@@ -282,12 +315,34 @@
 				],
 			},
 		],
-		bulkActions: [
+		// Custom actions (defaults are replaced entirely): View/Edit/Delete via
+		// the scaffold's ActionContext plus the page-local Moderators flow.
+		// Delete is hidden on system tags — the backend rejects their deletion
+		// with 403 system_tag_protected, so offering the action always failed.
+		actions: [
 			{
-				label: t("common.deleteSelected", "Delete Selected"),
+				label: t("common.view", "View"),
+				icon: Eye,
+				onclick: (row: Tag, ctx) => ctx?.openView(row),
+			},
+			{
+				label: t("common.edit", "Edit"),
+				icon: Pencil,
+				onclick: (row: Tag, ctx) => ctx?.openEdit(row),
+				show: () => canManageTags,
+			},
+			{
+				label: t("tags.moderators", "Moderators"),
+				icon: Shield,
+				onclick: (row: Tag) => void openModerators(row),
+				show: () => canManageTags,
+			},
+			{
+				label: t("common.delete", "Delete"),
 				icon: Trash2,
 				variant: "destructive",
-				onclick: bulkDelete,
+				onclick: (row: Tag, ctx) => ctx?.openDelete(row),
+				show: (row: Tag) => canManageTags && !row.is_system,
 			},
 		],
 		fields,
@@ -298,9 +353,14 @@
 			});
 			if (q) params.set("q", q);
 			if (filter.post_count) params.set("min_content_count", filter.post_count);
-			// EntityPage emits sort as "key:dir"; the legacy API expects the bare key.
-			const sortKey = sort ? sort.split(":")[0] : "";
-			if (sortKey) params.set("sort", sortKey);
+			// EntityPage emits sort as "key:dir"; the API takes sort + sort_dir
+			// (same convention as /users). Whitelisted keys: name, slug,
+			// post_count, follower_count, created_at — others fall back to newest.
+			if (sort) {
+				const [key, dir] = sort.split(":");
+				params.set("sort", key);
+				params.set("sort_dir", dir === "asc" ? "asc" : "desc");
+			}
 			// Use apiRaw to access top-level total/total_pages alongside data.
 			const result = await apiRaw<{ data: Tag[]; total: number; total_pages: number }>(`/admin/tags?${params.toString()}`);
 			if (result.ok) {
@@ -335,16 +395,7 @@
 	<title>{t("tags.title", "Tags")} — {siteName()} Admin</title>
 </svelte:head>
 
-{#if pageError}
-	<div
-		class="mb-4 rounded-lg p-3 text-sm"
-		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
-	>
-		{pageError}
-	</div>
-{/if}
-
-<EntityPage {config} bind:controller={entityController} />
+<EntityPage {config} />
 
 <!-- Tag Moderators Modal (page-local sub-flow) -->
 <Modal bind:open={showModeratorsModal} title={t("tags.moderators", "Tag Moderators")} size="lg">
@@ -399,7 +450,10 @@
 							style="border-color: var(--color-border)"
 						>
 							<span class="text-sm font-medium" style="color: var(--color-foreground)">
-								{mod.username || "—"}
+								{mod.display_name || mod.username || "—"}
+								{#if mod.display_name && mod.username}
+									<span class="text-xs font-normal" style="color: var(--color-muted)">@{mod.username}</span>
+								{/if}
 							</span>
 							{#if canManageTags}
 								<Button
@@ -455,27 +509,12 @@
 	{:else}
 		<div
 			class="grid h-8 w-8 place-items-center rounded-lg"
-			style="background: var(--color-surface); color: var(--color-muted)"
+			style={validHex(row.color)
+				? `background: color-mix(in srgb, ${validHex(row.color)} 15%, transparent); color: ${validHex(row.color)}`
+				: "background: var(--color-surface); color: var(--color-muted)"}
 		>
 			<span class="text-xs font-semibold">#</span>
 		</div>
-	{/if}
-{/snippet}
-
-<!-- Manage-moderators row action (kept as a column because EntityPage does not
-     expose its internal openView/openEdit/openDelete, so a custom "actions"
-     array cannot trigger the scaffold's built-in modals) -->
-{#snippet ModeratorsCell({ row }: { row: Tag })}
-	{#if canManageTags}
-		<Button
-			variant="ghost"
-			size="sm"
-			onclick={() => openModerators(row)}
-			style="color: var(--color-primary)"
-			aria-label={t("tags.moderators", "Tag Moderators")}
-		>
-			<Shield class="h-3.5 w-3.5" />
-		</Button>
 	{/if}
 {/snippet}
 
@@ -512,6 +551,22 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t("tags.color", "Color")}
+				</p>
+				{#if row.color}
+					<p class="mt-1 flex items-center gap-2 text-sm font-mono" style="color: var(--color-foreground)">
+						<span
+							class="inline-block h-4 w-4 rounded border"
+							style="background: {validHex(row.color) || 'transparent'}; border-color: var(--color-border)"
+						></span>
+						{row.color}
+					</p>
+				{:else}
+					<p class="mt-1 text-sm" style="color: var(--color-muted)">—</p>
+				{/if}
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 					{t("tags.posts", "Posts")}
 				</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
@@ -526,12 +581,20 @@
 					{(row.follower_count ?? 0).toLocaleString()}
 				</p>
 			</div>
-			<div class="col-span-2">
+			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 					{t("common.created", "Created")}
 				</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
 					{new Date(row.created_at).toLocaleString()}
+				</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
+					{t("tags.is_system", "System tag")}
+				</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{row.is_system ? t("common.yes", "Yes") : t("common.no", "No")}
 				</p>
 			</div>
 			{#if row.description}
@@ -631,13 +694,16 @@
 					type="color"
 					class="h-9 w-12 cursor-pointer rounded border"
 					style="border-color: var(--color-border); background: var(--color-surface)"
-					bind:value={value.color}
+					value={pickerHex(value.color)}
+					oninput={(e) => (value.color = e.currentTarget.value)}
+					aria-label={t("tags.color_picker", "Pick a color")}
 				/>
 				<input
 					type="text"
 					class="w-full rounded-lg border p-2 text-sm font-mono"
 					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 					placeholder="#3b82f6"
+					aria-label={t("tags.color_hex", "Hex color")}
 					bind:value={value.color}
 				/>
 			</div>
@@ -746,7 +812,54 @@
 						>
 							{field.label}{#if field.is_required} <span style="color: var(--color-danger)">*</span>{/if}
 						</label>
-						{#if field.field_type === "rich_text" || field.field_type === "textarea"}
+						{#if field.key === "related_tags"}
+							{@const selectedSlugs = parseTagSlugList(fv[field.key])}
+							<div class="mt-1">
+								<Autocomplete
+									id="tag-field-{field.key}"
+									placeholder={field.placeholder || t("tags.related_tags_placeholder", "Search tags...")}
+									emptyMessage={t("common.no_results", "No results found")}
+									fetcher={(q) => relatedTagFetcher(q, [...selectedSlugs, editing?.slug].filter(Boolean))}
+									initialFetcher={() =>
+										relatedTagFetcher("", [...selectedSlugs, editing?.slug].filter(Boolean))}
+									selectedId={null}
+									onSelect={(item) => {
+										if (!value.field_values || typeof value.field_values !== "object") {
+											value.field_values = {};
+										}
+										value.field_values[field.key] = [...selectedSlugs, item.id].join(",");
+									}}
+									ariaLabel={field.label}
+								/>
+								{#if selectedSlugs.length > 0}
+									<div class="mt-2 flex flex-wrap gap-1.5">
+										{#each selectedSlugs as slug (slug)}
+											<span
+												class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+												style="background: var(--color-surface); color: var(--color-primary); border: 1px solid var(--color-border)"
+											>
+												#{slug}
+												<button
+													type="button"
+													onclick={() => {
+														if (!value.field_values || typeof value.field_values !== "object") {
+															value.field_values = {};
+														}
+														value.field_values[field.key] = selectedSlugs
+															.filter((s) => s !== slug)
+															.join(",");
+													}}
+													aria-label={t("common.remove", "Remove")}
+													style="color: var(--color-muted)"
+												>
+													<X class="h-3 w-3" />
+												</button>
+											</span>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						{:else if field.field_type === "rich_text" || field.field_type === "textarea"}
 							<textarea
 								id="tag-field-{field.key}"
 								rows="3"

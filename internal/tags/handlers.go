@@ -180,6 +180,10 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		sortParam = "newest"
 	}
 
+	// sort_dir (asc|desc) pairs with column-key sorts from the admin
+	// DataTable; the public aliases ignore it (always DESC per the query).
+	sortDir := r.URL.Query().Get("sort_dir")
+
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
@@ -200,6 +204,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		Q:               q,
 		MinContentCount: minContentCount,
 		Sort:            sortParam,
+		SortDir:         sortDir,
 		PageOffset:      offset,
 		PageLimit:       limit,
 	})
@@ -981,9 +986,11 @@ func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 	moderators := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		moderators = append(moderators, map[string]any{
-			"user_id":  row.UserID,
-			"username": row.Username,
-			"added_at": row.CreatedAt,
+			"user_id":      row.UserID,
+			"username":     row.Username,
+			"display_name": row.DisplayName,
+			"avatar_url":   row.AvatarUrl,
+			"added_at":     row.CreatedAt,
 		})
 	}
 

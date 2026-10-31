@@ -154,6 +154,21 @@ WHERE s.deleted_at IS NULL
  -- (category IS NOT NULL AND not university). University-typed spaces are
  -- primary like geo regardless of creator (§05 amendment).
  AND (@member_created::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
+ -- @within mirrors ListSpacesByTypePaginated (junction + parent_id subtree).
+ AND (@within::text = '' OR EXISTS (
+ SELECT 1
+ FROM (
+ SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
+ UNION ALL
+ SELECT s.parent_id WHERE s.parent_id IS NOT NULL
+ ) links
+ JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
+ LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
+ LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
+ WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city'))
+ ))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.
  AND NOT EXISTS (
@@ -206,6 +221,21 @@ WHERE s.deleted_at IS NULL
  AND (@space_type_id::uuid IS NULL OR s.space_type_id = @space_type_id::uuid)
  -- @member_created mirrors ListSpacesPaginated (member-created spaces only).
  AND (@member_created::bool = false OR (s.level = 'custom' AND s.creator_user_id IS NOT NULL))
+ -- @within mirrors ListSpacesPaginated (junction + parent_id subtree).
+ AND (@within::text = '' OR EXISTS (
+ SELECT 1
+ FROM (
+ SELECT parent_space_id AS pid FROM space_parent_spaces WHERE space_id = s.id
+ UNION ALL
+ SELECT s.parent_id WHERE s.parent_id IS NOT NULL
+ ) links
+ JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
+ LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
+ LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
+ WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city'))
+ OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city'))
+ OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city'))
+ ))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.
  AND NOT EXISTS (

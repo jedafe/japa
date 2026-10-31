@@ -99,19 +99,27 @@
 	// JCE multi-select state
 	let savingJCE = $state(false);
 	let selectedOrgIds = $state<Set<string>>(new Set());
+	// id → slug registry for every org selected this session — the POST needs
+	// a slug per selected id, but the card that supplied it may be on another
+	// results page (unmounted) when the form submits.
+	let selectedOrgSlugs = $state<Map<string, string>>(new Map());
 
 	const selectedOrgs = $derived(data.orgs.filter((o) => selectedOrgIds.has(o.id)));
 	const canCompare = $derived(selectedOrgIds.size >= 2 && selectedOrgIds.size <= 4);
 
-	function toggleOrgSelection(id: string) {
+	function toggleOrgSelection(id: string, slug: string) {
 		const next = new Set(selectedOrgIds);
+		const slugs = new Map(selectedOrgSlugs);
 		if (next.has(id)) {
 			next.delete(id);
+			slugs.delete(id);
 		} else {
 			if (next.size >= 4) return;
 			next.add(id);
+			slugs.set(id, slug);
 		}
 		selectedOrgIds = next;
+		selectedOrgSlugs = slugs;
 	}
 </script>
 
@@ -238,7 +246,13 @@
 					</div>
 				{/if}
 
-				{#if form?.error}
+				{#each [...selectedOrgIds] as id (id)}
+				{#if !data.orgs.some((o) => o.id === id)}
+					<input type="hidden" name="org_id" value={id} />
+					<input type="hidden" name="org_slug" value={selectedOrgSlugs.get(id) ?? ''} />
+				{/if}
+			{/each}
+			{#if form?.error}
 					<div
 						class="mb-4 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
 					>
@@ -274,7 +288,7 @@
 									name="org_id"
 									value={org.id}
 									checked={selectedOrgIds.has(org.id)}
-									onchange={() => toggleOrgSelection(org.id)}
+									onchange={() => toggleOrgSelection(org.id, org.slug)}
 									disabled={selectedOrgIds.size >= 4 && !selectedOrgIds.has(org.id)}
 									aria-label={t('organizations.select_for_compare', 'Select for comparison')}
 									class="mt-1 h-4 w-4 shrink-0 accent-[var(--color-primary)]"

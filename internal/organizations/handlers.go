@@ -953,7 +953,9 @@ func (h *Handlers) AdminListOrganizations(w http.ResponseWriter, r *http.Request
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	items, total, err := h.service.AdminListOrganizations(r.Context(), orgType, countryCode, search, verified, deleted, limit, offset)
+	sortKey := r.URL.Query().Get("sort")
+	sortDir := r.URL.Query().Get("sort_dir")
+	items, total, err := h.service.AdminListOrganizations(r.Context(), orgType, countryCode, search, verified, deleted, sortKey, sortDir, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1086,6 +1088,25 @@ func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Reques
 	h.enqueueSearchIndex("delete", id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization deleted"}})
+}
+
+// AdminRestoreOrganization handles POST /admin/organizations/{id}/restore —
+// reverses a soft delete (deleted_at → NULL). No-op on live rows.
+func (h *Handlers) AdminRestoreOrganization(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	if err := h.service.AdminRestoreOrganization(r.Context(), id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.enqueueSearchIndex("index", id)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization restored"}})
 }
 
 // AdminListMembers handles GET /admin/organizations/{id}/members.

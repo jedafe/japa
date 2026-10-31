@@ -4,14 +4,25 @@
      vocabularies are checkboxes; free-form lists are comma-separated. -->
 <script lang="ts">
 	import { t } from '$lib/stores/i18n.svelte';
+	import { getVocab } from '$lib/api/nextactions';
 	interface Props {
 		value: Record<string, unknown>;
 	}
 
 	let { value = $bindable() }: Props = $props();
 
-	const USER_CLASSES = ['guest', 'regular', 'pro', 'business'];
-	const SURFACES = ['main', 'tools', 'academy', 'docs', 'mobile'];
+	// Fallbacks mirror the backend enums; the live vocab endpoint is the
+	// source of truth (Rule 16) so a new class/surface can't drift the UI.
+	let userClasses = $state<string[]>(['guest', 'regular', 'pro', 'business']);
+	let surfaces = $state<string[]>(['main', 'tools', 'academy', 'docs', 'mobile']);
+
+	$effect(() => {
+		getVocab().then((r) => {
+			if (!r.ok || !r.data) return;
+			if (r.data.user_classes?.length) userClasses = r.data.user_classes;
+			if (r.data.surfaces?.length) surfaces = r.data.surfaces;
+		});
+	});
 
 	// Free-form audience axes — validated only for shape server-side.
 	const LIST_FIELDS = [
@@ -53,7 +64,7 @@
 	<div>
 		<span class="text-muted-foreground text-xs">{t('nextactions.audience_user_classes', 'User classes')}</span>
 		<div class="mt-1 flex flex-wrap gap-3">
-			{#each USER_CLASSES as uc}
+			{#each userClasses as uc}
 				<label class="flex items-center gap-1 text-sm">
 					<input
 						type="checkbox"
@@ -68,7 +79,7 @@
 	<div>
 		<span class="text-muted-foreground text-xs">{t('nextactions.audience_surfaces', 'Surfaces')}</span>
 		<div class="mt-1 flex flex-wrap gap-3">
-			{#each SURFACES as sf}
+			{#each surfaces as sf}
 				<label class="flex items-center gap-1 text-sm">
 					<input
 						type="checkbox"

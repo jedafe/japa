@@ -3,7 +3,9 @@ package admin
 import (
 	"encoding/json"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -161,6 +163,19 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Route through the organizations service so approval performs the full
+	// transactional review — marks the claim, transfers owner_user_id, and
+	// inserts the claimant as an 'owner' member in one txn (BUG-006/007).
+	// Falls back to the raw query path when the service isn't injected.
+	if h.OrgClaims != nil {
+		if err := h.OrgClaims.AdminReviewOwnershipClaim(ctx, claimID, user.UserID, action, note); err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to review ownership claim")
+			return
+		}
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_id": claimID.String(), "status": map[string]string{"approve": "approved", "reject": "rejected"}[action]}})
+		return
+	}
+
 	if action == "reject" {
 		rejected := "rejected"
 		if err := h.Queries.ReviewOwnershipClaim(ctx, gen.ReviewOwnershipClaimParams{
@@ -205,11 +220,79 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 		status = "pending"
 	}
 
+	q := r.URL.Query()
+
+	// Paginated path — the admin claims EntityPage passes page/limit/q/sort.
+	// Legacy callers (no pagination params) keep the unpaginated response.
+	if q.Get("page") != "" || q.Get("limit") != "" {
+		page, _ := strconv.Atoi(q.Get("page"))
+		if page < 1 {
+			page = 1
+		}
+		limit, _ := strconv.Atoi(q.Get("limit"))
+		if limit <= 0 || limit > 200 {
+			limit = 25
+		}
+		dir := q.Get("dir")
+		if dir != "asc" {
+			dir = "desc"
+		}
+		key := q.Get("sort")
+		switch key {
+		case "org_name", "claimant_username", "claimant_email", "status", "created_at":
+		default:
+			key = ""
+		}
+
+		claims, err := h.Queries.ListOwnershipClaimsForAdminPaged(r.Context(), gen.ListOwnershipClaimsForAdminPagedParams{
+			Column1: status,
+			Column2: q.Get("q"),
+			Limit:   int32(limit),
+			Offset:  int32((page - 1) * limit),
+			Column5: dir,
+			Column6: key,
+		})
+		if err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to fetch pending claims")
+			return
+		}
+		total, err := h.Queries.CountOwnershipClaimsForAdmin(r.Context(), gen.CountOwnershipClaimsForAdminParams{
+			Column1: status,
+			Column2: q.Get("q"),
+		})
+		if err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to count pending claims")
+			return
+		}
+
+		h.writeClaimsPage(w, claims, map[string]any{
+			"total":       total,
+			"total_pages": int(math.Ceil(float64(total) / float64(limit))),
+			"page":        page,
+			"limit":       limit,
+		})
+		return
+	}
+
 	claims, err := h.Queries.ListOwnershipClaimsForAdmin(r.Context(), status)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to fetch pending claims")
 		return
 	}
+
+	// Row types are identical sqlc structs — a direct conversion keeps the
+	// shared serializer single-typed.
+	converted := make([]gen.ListOwnershipClaimsForAdminPagedRow, len(claims))
+	for i, c := range claims {
+		converted[i] = gen.ListOwnershipClaimsForAdminPagedRow(c)
+	}
+	h.writeClaimsPage(w, converted, nil)
+}
+
+// writeClaimsPage serializes the shared claim response shape for both the
+// paginated and legacy unpaginated code paths. When meta is non-nil it is
+// included in the response envelope; {data:[...]} is preserved either way.
+func (h *Handlers) writeClaimsPage(w http.ResponseWriter, claims []gen.ListOwnershipClaimsForAdminPagedRow, meta map[string]any) {
 
 	type claimResponse struct {
 		ID                 string  `json:"id"`
@@ -264,7 +347,11 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+	resp := map[string]any{"data": items}
+	if meta != nil {
+		resp["meta"] = meta
+	}
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // GetClaimFormSubmission handles GET /admin/organizations/claims/{id}/submission.

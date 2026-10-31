@@ -131,6 +131,7 @@ func TestValidateRuleAllPredicatesKnown(t *testing.T) {
 		"feature_not_used":      {Predicate: "feature_not_used", Slug: "checklist"},
 		"event_count":           {Predicate: "event_count", Type: "content.viewed", Gte: intPtr(3)},
 		"feature_gate_hit":      {Predicate: "feature_gate_hit"},
+		"has_draft":             {Predicate: "has_draft", Slug: "readiness"},
 		"has_push_subscription": {Predicate: "has_push_subscription"},
 		"surface":               {Predicate: "surface", In: []string{"main"}},
 	}

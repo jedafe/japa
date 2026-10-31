@@ -78,6 +78,77 @@
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 	let destroyed = $state(false);
 
+	// Draft persistence — server-side for signed-in users (the generic
+	// /me/drafts API, reusable by other multi-step tools), localStorage for
+	// guests. Restores answers + step on load; clears on submit/reset.
+	const draftKind = 'readiness';
+	const localDraftKey = 'japa:readiness-draft:anon';
+	let draftRestored = $state(false);
+	let draftLoaded = $state(false);
+	let dirty = $state(false);
+	let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+	$effect(() => {
+		if (destroyed || draftRestored) return;
+		draftRestored = true;
+		if (user) {
+			api.get<{ data: { answers?: typeof answers; step?: number } }>(`/me/drafts/${draftKind}`)
+				.then((res) => {
+					// Skip the restore if the user already typed — their fresh
+					// input beats a stale draft (and will overwrite it on save).
+					if (!dirty && res.data?.data?.answers && Object.keys(res.data.data.answers).length > 0) {
+						applyDraft(res.data.data);
+					}
+				})
+				.finally(() => { draftLoaded = true; });
+			return;
+		}
+		try {
+			const raw = localStorage.getItem(localDraftKey);
+			if (raw) {
+				const draft = JSON.parse(raw) as { answers?: typeof answers; step?: number };
+				if (draft.answers && Object.keys(draft.answers).length > 0) applyDraft(draft);
+			}
+		} catch { /* corrupted draft — ignore */ }
+		draftLoaded = true;
+	});
+
+	function applyDraft(d: { answers?: typeof answers; step?: number }) {
+		if (d.answers && Object.keys(d.answers).length > 0) {
+			answers = d.answers;
+			currentStep = Math.min(d.step ?? 0, Math.max(totalSteps - 1, 0));
+		}
+	}
+
+	$effect(() => {
+		// draftLoaded gates writes so a slow restore can't clobber the saved
+		// draft — without it the empty mount-time answers would DELETE the
+		// server row before the GET resolves.
+		if (destroyed || !draftLoaded) return;
+		const snapshot = { answers, step: currentStep };
+		// Debounce server saves — every keystroke is a write otherwise.
+		if (draftSaveTimer) clearTimeout(draftSaveTimer);
+		draftSaveTimer = setTimeout(() => {
+			if (user) {
+				if (Object.keys(snapshot.answers).length === 0) {
+					api.delete(`/me/drafts/${draftKind}`);
+				} else {
+					api.put(`/me/drafts/${draftKind}`, { data: snapshot });
+				}
+			} else {
+				try {
+					if (Object.keys(snapshot.answers).length === 0) localStorage.removeItem(localDraftKey);
+					else localStorage.setItem(localDraftKey, JSON.stringify(snapshot));
+				} catch { /* storage full / private mode — non-fatal */ }
+			}
+		}, 600);
+	});
+
+	function clearDraft() {
+		if (user) api.delete(`/me/drafts/${draftKind}`);
+		try { if (typeof localStorage !== 'undefined') localStorage.removeItem(localDraftKey); } catch {}
+	}
+
 	// Track which result id has already been requested so a failed load (401,
 	// 404, network) does not trigger an infinite retry loop (§71 bug fix).
 	let attemptedResultId = $state<string | null>(null);
@@ -343,6 +414,7 @@
 	);
 
 	function setAnswer(key: string, value: string | string[] | number | boolean) {
+		dirty = true;
 		answers = { ...answers, [key]: value };
 	}
 
@@ -383,12 +455,28 @@
 		return out;
 	}
 
+	let formCard = $state<HTMLElement | null>(null);
+
+	function scrollToStep() {
+		const reduce =
+			typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+		requestAnimationFrame(() =>
+			formCard?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
+		);
+	}
+
 	function nextStep() {
-		if (currentStep < totalSteps - 1) currentStep++;
+		if (currentStep < totalSteps - 1) {
+			currentStep++;
+			scrollToStep();
+		}
 	}
 
 	function prevStep() {
-		if (currentStep > 0) currentStep--;
+		if (currentStep > 0) {
+			currentStep--;
+			scrollToStep();
+		}
 	}
 
 	function resetResult() {
@@ -399,6 +487,7 @@
 		submitError = null;
 		answers = {};
 		currentStep = 0;
+		clearDraft();
 		showRegisterPrompt = false;
 		resultLoadError = null;
 		// Keep attemptedResultId as the current result id while the URL is being
@@ -1005,14 +1094,19 @@
 										class="h-0.5 flex-1 rounded-full"
 										style="background: {i === 0 ? 'transparent' : i <= currentStep ? 'var(--r-ink-2)' : 'var(--r-line)'}"
 									></div>
-									<span
+									<button
+										type="button"
 										class="r-marker"
 										class:r-marker-current={i === currentStep}
 										class:r-marker-done={i < currentStep}
+										class:r-marker-click={i < currentStep}
+										disabled={i >= currentStep}
+										onclick={() => { currentStep = i; scrollToStep(); }}
 										aria-current={i === currentStep ? 'step' : undefined}
+										aria-label={stepLabel(s.name)}
 									>
 										{#if i < currentStep}<Check size={15} strokeWidth={3} />{:else}{i + 1}{/if}
-									</span>
+									</button>
 									<div
 										class="h-0.5 flex-1 rounded-full"
 										style="background: {i === steps.length - 1 ? 'transparent' : i < currentStep ? 'var(--r-ink-2)' : 'var(--r-line)'}"
@@ -1036,7 +1130,7 @@
 
 			<div class="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
 				<!-- Form card -->
-				<section class="r-card p-6 sm:p-8">
+				<section bind:this={formCard} class="r-card scroll-mt-4 p-6 sm:p-8">
 					{#if currentStepData}
 						{@const StepGlyph = stepIcon(currentStepData.name)}
 						<div class="flex items-start gap-4">
@@ -1397,6 +1491,20 @@
 		border-color: var(--r-ink-2);
 		background: var(--r-ink-2);
 		color: var(--r-on-accent);
+	}
+	.r-marker:disabled {
+		cursor: default;
+	}
+	.r-marker-click {
+		cursor: pointer;
+	}
+	.r-marker-click:hover {
+		background: var(--r-accent-hover);
+		border-color: var(--r-accent-hover);
+	}
+	.r-marker-click:focus-visible {
+		outline: 2px solid var(--r-lime);
+		outline-offset: 2px;
 	}
 
 	.r-continue {

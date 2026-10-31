@@ -15,8 +15,59 @@
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { Autocomplete, type AutocompleteItem } from '@japaconnect/ui';
 
 	let { data }: { data: PageData } = $props();
+
+	// The native <input type="color"> only understands #rrggbb — stored values
+	// like #rgb (valid per the backend validator) or mid-typing text would
+	// otherwise make the picker silently render black. The text input stays
+	// the source of truth; the picker gets a coerced 6-digit hex.
+	function pickerHex(v: string): string {
+		const s = (v ?? '').trim();
+		if (/^#[0-9a-fA-F]{6}$/.test(s)) return s;
+		if (/^#[0-9a-fA-F]{3}$/.test(s)) {
+			return '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+		}
+		return '#000000';
+	}
+
+	// url-type custom field values are rendered as links — only http(s)
+	// URLs may become an href; anything else (e.g. javascript:) renders
+	// as plain text.
+	function safeUrl(v: unknown): string {
+		const s = String(v ?? '').trim();
+		return /^https?:\/\//i.test(s) ? s : '';
+	}
+
+	// related_tags is stored as a CSV of tag slugs in field_values; tolerate
+	// JSON arrays and legacy display-name entries ("Cost of Living") — each
+	// item is normalized through the same slugifier the backend uses so
+	// chips always link to a resolvable /tags/{slug} route.
+	function parseTagSlugList(v: unknown): string[] {
+		const items = Array.isArray(v) ? v.map(String) : String(v ?? '').split(',');
+		return [
+			...new Set(
+				items
+					.map((s) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
+					.filter(Boolean)
+			)
+		];
+	}
+
+	// Tag suggestion fetcher for the related_tags picker — hits the public
+	// directory endpoint (same as the /tags page search), excluding already
+	// selected slugs and the tag being edited.
+	async function relatedTagFetcher(q: string, exclude: string[]): Promise<AutocompleteItem[]> {
+		const res = await api.get<{ id: string; name: string; slug: string }[]>(
+			`/tags?q=${encodeURIComponent(q)}&page_size=10`
+		);
+		if (res.error || !res.data) return [];
+		const skip = new Set(exclude);
+		return res.data
+			.filter((t2) => !skip.has(t2.slug))
+			.map((t2) => ({ id: t2.slug, label: `#${t2.name}`, sublabel: t2.slug }));
+	}
 
 	// Map ContentArticle → FeedItem so tagged posts render through FeedCard.
 	function toFeedItem(post: typeof data.items[number]): FeedItem {
@@ -72,12 +123,14 @@
 		try {
 			let url = `/tags/${tag.slug}/content?page_size=${data.pageSize}&cursor=${encodeURIComponent(nextCursor)}`;
 			if (nextCursorId) url += `&cursor_id=${encodeURIComponent(nextCursorId)}`;
-			const res = await api.get<{ data: typeof data.items }>(url);
+			// api.get unwraps the {data:[...]} envelope — res.data is the items
+			// array itself, not an object with a data property.
+			const res = await api.get<typeof data.items>(url);
 			if (res.error || !res.data) {
 				loadingMore = false;
 				return;
 			}
-			const fetched = res.data.data ?? [];
+			const fetched = res.data ?? [];
 			if (fetched.length > 0) {
 				extraItems = [...extraItems, ...fetched];
 			}
@@ -100,6 +153,14 @@
 	}
 
 	const tag = $derived(data.tag);
+	// Only apply the stored color to inline styles when it is a valid hex
+	// value — the backend validates on write, but a non-hex legacy value
+	// must never reach a style attribute.
+	const tagColor = $derived(
+		tag.color && /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(tag.color.trim())
+			? tag.color.trim()
+			: null
+	);
 	const authed = $derived(!!page.data.user);
 	const canManage = $derived(!!data.canManage);
 	const fieldDefs = $derived(data.fieldDefs ?? []);
@@ -170,7 +231,11 @@
 		fieldDefs.filter((f) => {
 			if (f.show_in_frontend === false) return false;
 			const v = fieldValues[f.key];
-			return v != null && String(v).trim() !== '';
+			if (v == null) return false;
+			// Objects have no scalar rendering ("[object Object]") — arrays
+			// (e.g. related_tags) join fine as text/chips, objects are skipped.
+			if (typeof v === 'object' && !Array.isArray(v)) return false;
+			return String(v).trim() !== '';
 		})
 	);
 
@@ -356,6 +421,9 @@
 			{:else}
 				<span
 					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+					style={tagColor
+						? `background: color-mix(in srgb, ${tagColor} 15%, transparent); color: ${tagColor}`
+						: ''}
 				>
 					<Hash size={24} />
 				</span>
@@ -394,16 +462,22 @@
 
 <!-- Center column: tag header + content grid -->
 <div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
-	<!-- Cover image hero -->
+	<!-- Cover image hero — falls back to a tag-color gradient when the tag
+	     has a color but no cover image. -->
 	{#if tag.cover_url}
 		<div class="relative mx-auto h-32 w-full max-w-3xl overflow-hidden border-b border-[var(--color-border)] sm:h-40">
 			<img src={tag.cover_url} alt={tag.name} class="h-full w-full object-cover" />
 		</div>
+	{:else if tagColor}
+		<div
+			class="mx-auto h-16 w-full max-w-3xl border-b border-[var(--color-border)] sm:h-20"
+			style="background: linear-gradient(135deg, color-mix(in srgb, {tagColor} 55%, transparent), color-mix(in srgb, {tagColor} 25%, transparent))"
+		></div>
 	{/if}
 
 	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<a
-			href="/discover?tab=tags"
+			href="/tags"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		>
 			<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('tag.back', 'All tags')}
@@ -418,6 +492,9 @@
 			{:else}
 				<span
 					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+					style={tagColor
+						? `background: color-mix(in srgb, ${tagColor} 15%, transparent); color: ${tagColor}`
+						: ''}
 				>
 					<Hash size={24} />
 				</span>
@@ -454,18 +531,33 @@
 					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 						<p class="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">{field.label}</p>
 						{#if field.field_type === 'url'}
-							<a
-								href={String(fieldValues[field.key])}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
-							>
-								{String(fieldValues[field.key])}
-								<ExternalLink class="rtl:-scale-x-100" size={12} />
-							</a>
+							{#if safeUrl(fieldValues[field.key])}
+								<a
+									href={safeUrl(fieldValues[field.key])}
+									target="_blank"
+									rel="noopener noreferrer"
+									class="inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
+								>
+									{String(fieldValues[field.key])}
+									<ExternalLink class="rtl:-scale-x-100" size={12} />
+								</a>
+							{:else}
+								<p class="whitespace-pre-line text-sm text-[var(--color-text-subtle)]">{String(fieldValues[field.key])}</p>
+							{/if}
 						{:else if field.field_type === 'rich_text'}
 							<div class="prose prose-sm max-w-none text-sm text-[var(--color-text-subtle)]">
 								{@html sanitizeContentHtml(String(fieldValues[field.key]))}
+							</div>
+						{:else if field.key === 'related_tags'}
+							<div class="flex flex-wrap gap-1.5">
+								{#each parseTagSlugList(fieldValues[field.key]) as slug (slug)}
+									<a
+										href="/tags/{slug}"
+										class="rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-border)]"
+									>
+										#{slug}
+									</a>
+								{/each}
 							</div>
 						{:else}
 							<p class="whitespace-pre-line text-sm text-[var(--color-text-subtle)]">{String(fieldValues[field.key])}</p>
@@ -656,8 +748,8 @@
 				<div>
 					<label for="edit-color" class="block text-sm font-medium text-[var(--color-text)]">{t('tag.color', 'Color')}</label>
 					<div class="mt-1 flex items-center gap-2">
-						<input id="edit-color" type="color" bind:value={editColor} class="h-9 w-12 cursor-pointer rounded border border-[var(--color-border)] bg-[var(--color-surface)]" />
-						<input type="text" bind:value={editColor} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm font-mono text-[var(--color-text)]" placeholder="#3b82f6" />
+						<input id="edit-color" type="color" value={pickerHex(editColor)} oninput={(e) => (editColor = e.currentTarget.value)} class="h-9 w-12 cursor-pointer rounded border border-[var(--color-border)] bg-[var(--color-surface)]" />
+						<input type="text" bind:value={editColor} aria-label={t('tag.color_hex', 'Hex color')} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm font-mono text-[var(--color-text)]" placeholder="#3b82f6" />
 					</div>
 				</div>
 
@@ -716,7 +808,42 @@
 								<label for="edit-field-{field.key}" class="block text-xs font-medium text-[var(--color-muted)]">
 									{field.label}{#if field.is_required} <span style="color: var(--color-danger)">*</span>{/if}
 								</label>
-								{#if field.field_type === 'rich_text' || field.field_type === 'textarea'}
+								{#if field.key === 'related_tags'}
+									{@const selectedSlugs = parseTagSlugList(editFieldValues[field.key])}
+									<div class="mt-1">
+										<Autocomplete
+											id="edit-field-{field.key}"
+											placeholder={field.placeholder || t('tag.related_tags_placeholder', 'Search tags…')}
+											emptyMessage={t('common.no_results', 'No results found')}
+											fetcher={(q) => relatedTagFetcher(q, [...selectedSlugs, tag.slug])}
+											initialFetcher={() => relatedTagFetcher('', [...selectedSlugs, tag.slug])}
+											selectedId={null}
+											onSelect={(item) => {
+												editFieldValues[field.key] = [...selectedSlugs, item.id].join(',');
+											}}
+											ariaLabel={field.label}
+											clearLabel={t('common.clear', 'Clear')}
+											loadingLabel={t('common.loading', 'Loading...')}
+										/>
+										{#if selectedSlugs.length > 0}
+											<div class="mt-2 flex flex-wrap gap-1.5">
+												{#each selectedSlugs as slug (slug)}
+													<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">
+														#{slug}
+														<button
+															type="button"
+															onclick={() => (editFieldValues[field.key] = selectedSlugs.filter((s) => s !== slug).join(','))}
+															aria-label={t('common.remove', 'Remove')}
+															class="text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+														>
+															<X size={11} />
+														</button>
+													</span>
+												{/each}
+											</div>
+										{/if}
+									</div>
+								{:else if field.field_type === 'rich_text' || field.field_type === 'textarea'}
 									<textarea id="edit-field-{field.key}" rows="3" bind:value={editFieldValues[field.key]} class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm text-[var(--color-text)]" placeholder={field.placeholder ?? ''}></textarea>
 								{:else}
 									<input id="edit-field-{field.key}" type={field.field_type === 'url' ? 'url' : 'text'} bind:value={editFieldValues[field.key]} class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-sm text-[var(--color-text)]" placeholder={field.placeholder ?? ''} />

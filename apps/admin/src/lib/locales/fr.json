@@ -4572,5 +4572,16 @@
 	"moderation.type": "Type",
 	"moderation.type_source": "Source",
 	"moderation.type_forum_reply": "Réponse de forum",
-	"moderation.reported_content": "Contenu signalé"
+	"moderation.reported_content": "Contenu signalé",
+	"organisations": {
+		"field_description": "Description",
+		"slug_locked": "Le slug ne peut pas être modifié après création",
+		"verify_type_none": "Aucun type de badge",
+		"verify_confirm": "Accorder un badge de vérification à « {name} » ?",
+		"verification_type": "Type de vérification"
+	},
+	"common": {
+		"force_delete_selected": "Suppression forcée de la sélection",
+		"restore": "Restaurer"
+	}
 }

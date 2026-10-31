@@ -17,6 +17,7 @@ type stubDeps struct {
 	assessDone  bool
 	assessScore int
 	pushSub     bool
+	draftExists bool
 }
 
 func (s stubDeps) CountEvents(_ context.Context, _ *UserState, _ string, _ int, _ bool) (int64, error) {
@@ -36,6 +37,9 @@ func (s stubDeps) AssessmentDone(_ context.Context, _ pgtype.UUID) (bool, int, e
 }
 func (s stubDeps) HasPushSub(_ context.Context, _ pgtype.UUID) (bool, error) {
 	return s.pushSub, nil
+}
+func (s stubDeps) DraftExists(_ context.Context, _ pgtype.UUID, _ string) (bool, error) {
+	return s.draftExists, nil
 }
 
 func userState() *UserState {

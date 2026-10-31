@@ -30,15 +30,48 @@ export interface NextActionStat {
 	completed: number;
 }
 
-export const listRules = () => api<NextActionRule[]>('/admin/next-actions/rules');
+export interface NextActionRuleList {
+	data: NextActionRule[];
+	total: number;
+	page: number;
+	total_pages: number;
+}
+
+export interface ListRulesParams {
+	q?: string;
+	enabled?: '' | 'true' | 'false';
+	sort?: string;
+	sort_dir?: 'asc' | 'desc';
+	page_offset?: number;
+	page_size?: number;
+}
+
+export const listRules = (params: ListRulesParams = {}) => {
+	const sp = new URLSearchParams();
+	if (params.q) sp.set('q', params.q);
+	if (params.enabled) sp.set('enabled', params.enabled);
+	if (params.sort) sp.set('sort', params.sort);
+	if (params.sort_dir) sp.set('sort_dir', params.sort_dir);
+	if (params.page_offset != null) sp.set('page_offset', String(params.page_offset));
+	if (params.page_size != null) sp.set('page_size', String(params.page_size));
+	const qs = sp.toString();
+	return api<NextActionRuleList>(`/admin/next-actions/rules${qs ? `?${qs}` : ''}`);
+};
 export const getRule = (id: string) => api<NextActionRule>(`/admin/next-actions/rules/${id}`);
 export const createRule = (body: Partial<NextActionRule>) =>
-	api<NextActionRule>('/admin/next-actions/rules', { method: 'POST', body: JSON.stringify(body) });
+	api<NextActionRule>('/admin/next-actions/rules', { method: 'POST', body });
 export const updateRule = (id: string, body: Partial<NextActionRule>) =>
-	api<NextActionRule>(`/admin/next-actions/rules/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+	api<NextActionRule>(`/admin/next-actions/rules/${id}`, { method: 'PATCH', body });
 export const deleteRule = (id: string) =>
 	api<null>(`/admin/next-actions/rules/${id}`, { method: 'DELETE' });
 export const getStats = () => api<NextActionStat[]>('/admin/next-actions/stats');
+
+export interface NextActionVocab {
+	channels: string[];
+	user_classes: string[];
+	surfaces: string[];
+}
+export const getVocab = () => api<NextActionVocab>('/admin/next-actions/vocab');
 
 export interface PredicateSpec {
 	name: string;

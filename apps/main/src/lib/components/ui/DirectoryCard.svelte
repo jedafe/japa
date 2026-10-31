@@ -39,6 +39,9 @@
 		verified?: boolean;
 		/** Seed for the deterministic avatar tint — defaults to href. */
 		hueSeed?: string;
+		/** Explicit avatar tint (e.g. a tag's admin-set hex color). When set,
+		 * it overrides the hueSeed-derived gradient. */
+		tintColor?: string | null;
 		meta?: CardMetaItem[];
 		/** Optional leading content in the header row (e.g. a select checkbox). */
 		leading?: Snippet;
@@ -72,6 +75,7 @@
 		round = false,
 		verified = false,
 		hueSeed = '',
+		tintColor = null,
 		meta = [],
 		leading,
 		headerAction,
@@ -93,8 +97,15 @@
 		for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 360;
 		return h;
 	});
+	// Only apply tintColor when it is a valid hex value — it flows straight
+	// into a style attribute, so a malformed value must never reach it.
+	const safeTint = $derived(
+		tintColor && /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(tintColor.trim()) ? tintColor.trim() : null
+	);
 	const tintStyle = $derived(
-		`background-image: linear-gradient(135deg, hsl(${hue} 65% 55% / 0.3), hsl(${hue} 65% 45% / 0.15))`
+		safeTint
+			? `background-image: linear-gradient(135deg, color-mix(in srgb, ${safeTint} 30%, transparent), color-mix(in srgb, ${safeTint} 15%, transparent)); color: ${safeTint}`
+			: `background-image: linear-gradient(135deg, hsl(${hue} 65% 55% / 0.3), hsl(${hue} 65% 45% / 0.15))`
 	);
 	const FallbackIcon = $derived(icon);
 </script>

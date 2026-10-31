@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -22,12 +23,17 @@ import (
 type Handlers struct {
 	svc      *Service
 	settings *config.Settings
+	auditDB  gen.DBTX
 }
 
 // NewHandlers wires handlers to the engine.
 func NewHandlers(svc *Service, settings *config.Settings) *Handlers {
 	return &Handlers{svc: svc, settings: settings}
 }
+
+// SetAuditDB wires the writer pool used for audit_logs inserts. Optional —
+// without it rule mutations simply skip the audit row (tests).
+func (h *Handlers) SetAuditDB(db gen.DBTX) { h.auditDB = db }
 
 const maxSnoozeHours = 24 * 365 // 1 year clamp
 
@@ -200,13 +206,73 @@ func deref(s *string) string {
 	return *s
 }
 
-// ListRules handles GET /api/v1/admin/next-actions/rules.
+const (
+	defaultRulePageSize int32 = 20
+	maxRulePageSize     int32 = 100
+)
+
+// parseRulePageSize extracts and clamps ?page_size= (api-response-format.md).
+func parseRulePageSize(r *http.Request) int32 {
+	s := r.URL.Query().Get("page_size")
+	if s == "" {
+		return defaultRulePageSize
+	}
+	v, err := strconv.ParseInt(s, 10, 32)
+	if err != nil || v <= 0 || v > int64(maxRulePageSize) {
+		return defaultRulePageSize
+	}
+	return int32(v) // #nosec G115 // bounded above
+}
+
+// parseRulePageOffset extracts ?page_offset=, or 1-based ?page= → offset.
+func parseRulePageOffset(r *http.Request, limit int32) int32 {
+	if s := r.URL.Query().Get("page_offset"); s != "" {
+		if v, err := strconv.ParseInt(s, 10, 32); err == nil && v >= 0 {
+			return int32(v) // #nosec G115 // bounded above by clamp below
+		}
+		return 0
+	}
+	if s := r.URL.Query().Get("page"); s != "" {
+		if v, err := strconv.ParseInt(s, 10, 32); err == nil && v >= 1 {
+			return int32(v-1) * limit // #nosec
+		}
+	}
+	return 0
+}
+
+// ListRules handles GET /api/v1/admin/next-actions/rules — offset-paginated
+// per api-response-format.md: ?q (slug/name ilike), ?enabled, ?sort +
+// ?sort_dir (whitelisted column keys), ?page_size/&page_offset (or 1-based
+// ?page). Response rides the standard {data, total, page, total_pages}
+// envelope the control DataTable consumes server-side.
 func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.svc.read.ListNextActionRules(r.Context())
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	enabled := r.URL.Query().Get("enabled")
+	if enabled != "true" && enabled != "false" {
+		enabled = ""
+	}
+	sortParam := r.URL.Query().Get("sort")
+	sortDir := r.URL.Query().Get("sort_dir")
+	limit := parseRulePageSize(r)
+	offset := parseRulePageOffset(r, limit)
+
+	rows, err := h.svc.read.ListNextActionRules(r.Context(), gen.ListNextActionRulesParams{
+		Q: q, Enabled: enabled,
+		Sort: sortParam, SortDir: sortDir,
+		PageOffset: offset, PageLimit: limit,
+	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "rules_failed", "Failed to list rules")
 		return
 	}
+	count, err := h.svc.read.CountNextActionRules(r.Context(), gen.CountNextActionRulesParams{
+		Q: q, Enabled: enabled,
+	})
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "rules_failed", "Failed to count rules")
+		return
+	}
+
 	out := make([]Rule, 0, len(rows))
 	for i := range rows {
 		rule, err := decodeRule(rows[i])
@@ -225,7 +291,23 @@ func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, rule)
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
+
+	totalPages := int32(1)
+	if limit > 0 {
+		totalPages = (int32(count) + limit - 1) / limit // #nosec G115 // bounded by caller
+		if totalPages < 1 {
+			totalPages = 1
+		}
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"data":        out,
+			"total":       count,
+			"page":        offset / limit,
+			"per_page":    limit,
+			"total_pages": totalPages,
+		},
+	})
 }
 
 // GetRule handles GET /api/v1/admin/next-actions/rules/{id}.
@@ -289,6 +371,7 @@ func (h *Handlers) CreateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.svc.InvalidateRulesCache(r.Context())
+	h.audit(r, "nextactions.rule.create", rule.Slug, row.ID)
 	out, err := decodeRule(row)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "rule_decode_failed", "Rule saved but failed to decode")
@@ -333,10 +416,15 @@ func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		ValidFrom: rule.ValidFrom, ValidUntil: rule.ValidUntil,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "rule_not_found", "Rule not found")
+			return
+		}
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update rule")
 		return
 	}
 	h.svc.InvalidateRulesCache(r.Context())
+	h.audit(r, "nextactions.rule.update", rule.Slug, row.ID)
 	out, err := decodeRule(row)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "rule_decode_failed", "Rule saved but failed to decode")
@@ -351,11 +439,18 @@ func (h *Handlers) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Grab the slug for the audit row before the rule is gone — best-effort:
+	// a failed lookup must not block the delete.
+	var slug string
+	if existing, err := h.svc.read.GetNextActionRule(r.Context(), id); err == nil {
+		slug = existing.Slug
+	}
 	if err := h.svc.write.DeleteNextActionRule(r.Context(), id); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete rule")
 		return
 	}
 	h.svc.InvalidateRulesCache(r.Context())
+	h.audit(r, "nextactions.rule.delete", slug, id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -366,6 +461,18 @@ func (h *Handlers) Predicates(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": PredicateSpecs()})
 }
 
+// Vocab handles GET /api/v1/admin/next-actions/vocab — the bounded
+// vocabularies (channels, user classes, surfaces) the Control rule builder
+// renders, so the frontend shares the backend enums instead of hardcoding
+// them (Rule 16 — option lists must be API-driven).
+func (h *Handlers) Vocab(w http.ResponseWriter, r *http.Request) {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"channels":     VocabChannels(),
+		"user_classes": VocabUserClasses(),
+		"surfaces":     VocabSurfaces(),
+	}})
+}
+
 // Stats handles GET /api/v1/admin/next-actions/stats.
 func (h *Handlers) Stats(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.svc.read.NextActionStats(r.Context())
@@ -374,6 +481,31 @@ func (h *Handlers) Stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
+// audit writes a best-effort audit_logs row for a rule mutation — mirroring
+// the admin/settings.go convention: who changed what and when must be
+// traceable, but a failed insert never blocks the mutation itself.
+func (h *Handlers) audit(r *http.Request, actionType, slug string, id pgtype.UUID) {
+	if h.auditDB == nil {
+		return
+	}
+	var actorID pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		actorID = u.UserID
+	}
+	meta, _ := json.Marshal(map[string]any{"slug": slug})
+	ip := clientip.FromRequest(r)
+	var ipArg any
+	if ip != "" {
+		ipArg = ip
+	}
+	if _, err := h.auditDB.Exec(r.Context(), `
+		INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata, ip_address)
+		VALUES ($1, $2, 'next_action_rule', $3, $4::jsonb, $5::inet)
+	`, actorID, actionType, id, meta, ipArg); err != nil {
+		slog.Warn("nextactions: failed to write rule audit log", "action", actionType, "error", err)
+	}
 }
 
 // origins decodes the nextactions.allowed_cta_origins setting for validation.

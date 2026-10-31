@@ -28,6 +28,9 @@ type EvalDeps interface {
 	AssessmentDone(ctx context.Context, userID pgtype.UUID) (bool, int, error)
 	// HasPushSub reports an active §35 push subscription.
 	HasPushSub(ctx context.Context, userID pgtype.UUID) (bool, error)
+	// DraftExists reports whether the user has a form_drafts row of kind
+	// ("" = any) — feeds "resume your draft" reminder rules.
+	DraftExists(ctx context.Context, userID pgtype.UUID, kind string) (bool, error)
 }
 
 // EvalConditions evaluates a predicate group: every `all` clause must pass,
@@ -91,6 +94,19 @@ func evalPredicate(ctx context.Context, p Predicate, s *UserState, deps EvalDeps
 		return evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.GateHit(ctx, s, p.Feature, daysOr(p.WithinDays, 30)) })
 	case "event_count":
 		return evalEventCount(ctx, p, s, deps)
+	case "has_draft":
+		// eq:false → "no draft" nudges (e.g. after completion) still work.
+		if !s.UserID.Valid {
+			return eqBool(false, p.Eq)
+		}
+		if deps == nil {
+			return eqBool(false, p.Eq)
+		}
+		exists, err := deps.DraftExists(ctx, s.UserID, p.Slug)
+		if err != nil {
+			return eqBool(false, p.Eq)
+		}
+		return eqBool(exists, p.Eq)
 	case "has_push_subscription":
 		if !s.UserID.Valid {
 			// Guests have no user-scoped subscription; eq:false reads true.

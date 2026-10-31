@@ -1103,7 +1103,7 @@ const listCustomFieldsByGroup = `-- name: ListCustomFieldsByGroup :many
 
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, section, created_at
+ filterable, sortable, searchable, position, section, config, created_at
 FROM custom_fields
 WHERE group_id = $1
 ORDER BY position ASC, created_at ASC
@@ -1127,6 +1127,7 @@ type ListCustomFieldsByGroupRow struct {
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
 	Section        *string            `json:"section"`
+	Config         []byte             `json:"config"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -1160,6 +1161,7 @@ func (q *Queries) ListCustomFieldsByGroup(ctx context.Context, groupID pgtype.UU
 			&i.Searchable,
 			&i.Position,
 			&i.Section,
+			&i.Config,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

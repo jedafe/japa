@@ -47,6 +47,9 @@
 		placeholder?: string;
 		default_value?: string;
 		options: string[];
+		/** Assessment scoring bucket (custom_fields.config.dimension) — the
+		 * assessment UI groups fields into steps by this value. */
+		dimension?: string;
 	};
 
 	type FormStep = {
@@ -185,6 +188,99 @@
 	let submissionsLoaded = $state(false);
 	let triggersLoaded = $state(false);
 	let stepsLoaded = $state(false);
+
+	// Assessment forms derive their steps from field dimensions at render
+	// time (the backend rejects explicit form_steps for them — see
+	// assessment_derives_steps). Mirror the /tools/readiness grouping here:
+	// dimensions ordered by first appearance in the flat field list, fields
+	// without a dimension bucketed under 'general'.
+	type AssessmentStep = { name: string; fields: FieldDef[] };
+	const assessmentSteps = $derived.by((): AssessmentStep[] => {
+		if (form?.form_type !== 'assessment' || !form?.is_multi_step) return [];
+		const order: string[] = [];
+		const map = new Map<string, FieldDef[]>();
+		for (const f of form.fields ?? []) {
+			const dim = f.dimension || 'general';
+			if (!map.has(dim)) {
+				map.set(dim, []);
+				order.push(dim);
+			}
+			map.get(dim)!.push(f);
+		}
+		return order.map((name) => ({ name, fields: map.get(name)! }));
+	});
+
+	function dimensionLabel(name: string): string {
+		if (name === 'general') return t('forms.assessmentGeneralStep', 'General');
+		const pretty = name.replace(/_/g, ' ');
+		return pretty.charAt(0).toUpperCase() + pretty.slice(1);
+	}
+
+	// Reordering a derived step = rewriting the flat field order so the
+	// dimension's field block moves as a unit. No backend change needed —
+	// the next render re-derives steps from the new field order.
+	let movingStep = $state(false);
+	async function moveAssessmentStep(idx: number, direction: -1 | 1) {
+		if (!fieldGroupId || movingStep) return;
+		const dims = assessmentSteps.map((s) => s.name);
+		const newIdx = idx + direction;
+		if (newIdx < 0 || newIdx >= dims.length) return;
+		[dims[idx], dims[newIdx]] = [dims[newIdx], dims[idx]];
+		const byDim = new Map(assessmentSteps.map((s) => [s.name, s.fields]));
+		const fieldIds = dims.flatMap((d) => (byDim.get(d) ?? []).map((f) => f.id));
+		movingStep = true;
+		try {
+			await fieldGroupsAdminApiExtended.reorderFields(fieldGroupId, {
+				field_ids: fieldIds,
+			});
+			await loadForm();
+			if (form?.fields) {
+				fields = form.fields;
+			}
+		} catch {
+			// Reload to restore the pre-move order on failure
+			await loadForm();
+			if (form?.fields) {
+				fields = form.fields;
+			}
+		} finally {
+			movingStep = false;
+		}
+	}
+
+	// Per-field move inside an assessment step: swaps the field with its
+	// same-dimension neighbour in the flat order, so only intra-step order
+	// changes — the field never crosses into another step's block.
+	async function moveAssessmentField(field: FieldDef, direction: -1 | 1) {
+		if (!fieldGroupId || movingStep) return;
+		const dim = field.dimension || 'general';
+		const dimIds = fields
+			.filter((f) => (f.dimension || 'general') === dim)
+			.map((f) => f.id);
+		const i = dimIds.indexOf(field.id);
+		const j = i + direction;
+		if (i < 0 || j < 0 || j >= dimIds.length) return;
+		[dimIds[i], dimIds[j]] = [dimIds[j], dimIds[i]];
+		const queue = [...dimIds];
+		const field_ids = fields.map((f) =>
+			(f.dimension || 'general') === dim ? queue.shift()! : f.id
+		);
+		movingStep = true;
+		try {
+			await fieldGroupsAdminApiExtended.reorderFields(fieldGroupId, { field_ids });
+			await loadForm();
+			if (form?.fields) {
+				fields = form.fields;
+			}
+		} catch {
+			await loadForm();
+			if (form?.fields) {
+				fields = form.fields;
+			}
+		} finally {
+			movingStep = false;
+		}
+	}
 
 	// --- Delete ---
 
@@ -871,7 +967,8 @@
 
 		<!-- Steps (multi-step standard forms). Assessment forms derive their
 			 steps from field dimensions — the backend rejects explicit steps
-			 (assessment_derives_steps), so the editor is hidden for them. -->
+			 (assessment_derives_steps), so the editor is hidden for them and a
+			 derived-steps reorder panel is shown instead (below). -->
 		{#if form?.is_multi_step && form?.form_type !== 'assessment'}
 			<Card class="mt-4">
 				<CardContent class="p-6">
@@ -908,6 +1005,48 @@
 											</Button>
 											<Button variant="ghost" size="sm" style="color: var(--color-danger)" onclick={() => deleteStep(step.id)}>
 												<Trash2 class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</CardContent>
+			</Card>
+		{/if}
+
+		<!-- Derived steps (assessment forms). Steps come from each field's
+			 config.dimension — no add/rename/delete here (field edits change
+			 the derivation), only reorder, which rewrites the flat field
+			 order so the dimension blocks move as units. -->
+		{#if form?.form_type === 'assessment' && form?.is_multi_step}
+			<Card class="mt-4">
+				<CardContent class="p-6">
+					<div class="mb-1 flex items-center justify-between gap-2 flex-wrap">
+						<h3 class="text-sm font-semibold text-foreground">{t('forms.assessmentSteps', 'Assessment steps')}</h3>
+					</div>
+					<p class="mb-4 text-xs text-muted">
+						{t('forms.assessmentStepsHint', 'Steps are derived from each field\'s scoring dimension. Reordering a step reorders its field block in the Fields tab.')}
+					</p>
+					{#if assessmentSteps.length === 0}
+						<p class="py-4 text-center text-sm text-muted">{t('forms.noSteps', 'No steps configured')}</p>
+					{:else}
+						<div class="space-y-2">
+							{#each assessmentSteps as astep, idx (astep.name)}
+								<div class="flex items-center justify-between gap-2 flex-wrap rounded-md border border-border bg-surface px-4 py-3">
+									<div class="flex items-center gap-3">
+										<span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{idx + 1}</span>
+										<span class="text-sm font-medium">{dimensionLabel(astep.name)}</span>
+										<Badge variant="secondary">{t('forms.assessmentFieldCount', '{n} fields').replace('{n}', String(astep.fields.length))}</Badge>
+									</div>
+									{#if canManage}
+										<div class="flex items-center gap-1">
+											<Button variant="ghost" size="sm" disabled={idx === 0 || movingStep} onclick={() => moveAssessmentStep(idx, -1)}>
+												<ArrowUp class="h-3.5 w-3.5" />
+											</Button>
+											<Button variant="ghost" size="sm" disabled={idx === assessmentSteps.length - 1 || movingStep} onclick={() => moveAssessmentStep(idx, 1)}>
+												<ArrowDown class="h-3.5 w-3.5" />
 											</Button>
 										</div>
 									{/if}
@@ -1048,6 +1187,57 @@
 							{/if}
 						</CardContent>
 					</Card>
+			{/each}
+		{:else if form?.form_type === 'assessment' && assessmentSteps.length > 0}
+			<!-- Assessment: fields grouped by derived dimension step (mirrors the
+				 /tools/readiness grouping). All fields live on one flat group —
+				 per-field moves swap with the same-dimension neighbour so a field
+				 never crosses step boundaries. New fields have no dimension and
+				 land in the General step. -->
+			<div class="mt-4 flex justify-end">
+				<Button onclick={() => { selectedStepForField = null; (showAddFieldModal = true); }}>
+					<Plus class="me-1 h-4 w-4" /> {t('forms.addField', 'Add Field')}
+				</Button>
+			</div>
+			{#each assessmentSteps as astep, stepIdx (astep.name)}
+				<Card class="mt-4">
+					<CardContent class="p-4">
+						<div class="mb-4 flex items-center gap-2">
+							<span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{stepIdx + 1}</span>
+							<h4 class="text-sm font-semibold text-foreground">{dimensionLabel(astep.name)}</h4>
+							<Badge variant="secondary">{astep.name}</Badge>
+						</div>
+						<div class="space-y-2">
+							{#each astep.fields as field, idx (field.id)}
+								<div class="flex items-center justify-between gap-2 flex-wrap rounded-md border border-border bg-surface px-4 py-3">
+									<div class="flex items-center gap-3">
+										<span class="text-sm font-medium">{field.label}</span>
+										<Badge variant="secondary">{field.type}</Badge>
+										{#if field.required}
+											<Badge variant="destructive">{t('forms.required', 'Required')}</Badge>
+										{/if}
+									</div>
+									{#if canManage}
+										<div class="flex items-center gap-1">
+											<Button variant="ghost" size="sm" onclick={() => openEditField(field)}>
+												<Pencil class="h-3.5 w-3.5" />
+											</Button>
+											<Button variant="ghost" size="sm" disabled={idx === 0 || movingStep} onclick={() => moveAssessmentField(field, -1)}>
+												<ArrowUp class="h-3.5 w-3.5" />
+											</Button>
+											<Button variant="ghost" size="sm" disabled={idx === astep.fields.length - 1 || movingStep} onclick={() => moveAssessmentField(field, 1)}>
+												<ArrowDown class="h-3.5 w-3.5" />
+											</Button>
+											<Button variant="ghost" size="sm" style="color: var(--color-danger)" onclick={() => deleteField(field.id)}>
+												<Trash2 class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					</CardContent>
+				</Card>
 			{/each}
 		{:else}
 			<!-- Non-multi-step: flat field list -->

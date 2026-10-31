@@ -67,21 +67,21 @@ export const load: PageServerLoad = async (event) => {
 			: Promise.resolve([])
 	]);
 
-	// Managers = owner or admin members (Section 07: PATCH is owner/admin).
-	// They get the "Manage" button linking to the org admin dashboard.
-	const canManage =
-		!!event.locals.user &&
-		members.some((m) => m.user.id === event.locals.user!.id && (m.role === 'owner' || m.role === 'admin'));
-
-	// Section 63 — job editors (owner/admin/editor) get a Jobs tab listing
-	// the org's listings via GET /org/{id}/jobs. The caller's membership
-	// comes from /me/organizations (authoritative for member_role); the
-	// public members list is display-only and may not include the viewer.
+	// The caller's membership from /me/organizations is authoritative for
+	// member_role — the public members list is display-only and may not
+	// include the viewer (e.g. when their account isn't 'active').
 	const myMembership = event.locals.user
 		? await apiList<ComposerOrganization>(ctx, '/me/organizations')
 				.then((r) => r.items.find((o) => o.id === org.id) ?? null)
 				.catch(() => null)
 		: null;
+
+	// Managers = owner or admin members (Section 07: PATCH is owner/admin).
+	// They get the "Manage" button linking to the org admin dashboard.
+	const canManage = !!myMembership && (myMembership.member_role === 'owner' || myMembership.member_role === 'admin');
+
+	// Section 63 — job editors (owner/admin/editor) get a Jobs tab listing
+	// the org's listings via GET /org/{id}/jobs.
 	const canManageJobs = !!myMembership && JOB_EDITOR_ROLES.has(myMembership.member_role);
 	const isJobAdmin = !!myMembership && (myMembership.member_role === 'owner' || myMembership.member_role === 'admin');
 	const orgJobs = canManageJobs

@@ -53,6 +53,11 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	search := strings.TrimSpace(q.Get("q"))
 	geoCode := strings.TrimSpace(q.Get("geo"))
+	// ?within= is a primary-space slug (country/state/city) — the
+	// hierarchical closure matches spaces linked to it or its geo
+	// descendants via space_parent_spaces/parent_id (same semantics as
+	// /universities). Slugs are lowercase.
+	within := strings.ToLower(strings.TrimSpace(q.Get("within")))
 	sort := strings.TrimSpace(q.Get("sort"))
 	levelFilter := strings.TrimSpace(q.Get("level"))
 	region := strings.TrimSpace(q.Get("region"))
@@ -98,13 +103,13 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 			spaceTypeID = st.ID
 		}
 
-		rows, err := h.Service.ListSpacesPaginated(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, sort, spaceTypeID, joinedOnly, memberCreated, int32(limit), int32(offset))
+		rows, err := h.Service.ListSpacesPaginatedWithin(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, within, sort, spaceTypeID, joinedOnly, memberCreated, int32(limit), int32(offset))
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		count, err := h.Service.CountSpaces(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, spaceTypeID, joinedOnly, memberCreated)
+		count, err := h.Service.CountSpacesWithin(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, within, spaceTypeID, joinedOnly, memberCreated)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -139,13 +144,13 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	default:
 		// SPACES-009/011: SQL-level pagination, search, geo, level, region,
 		// subregion, and sort for the default branch.
-		rows, err := h.Service.ListSpacesPaginated(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, sort, pgtype.UUID{}, joinedOnly, memberCreated, int32(limit), int32(offset))
+		rows, err := h.Service.ListSpacesPaginatedWithin(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, within, sort, pgtype.UUID{}, joinedOnly, memberCreated, int32(limit), int32(offset))
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		count, err := h.Service.CountSpaces(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, pgtype.UUID{}, joinedOnly, memberCreated)
+		count, err := h.Service.CountSpacesWithin(r.Context(), viewerUserID, search, geoCode, levelFilter, region, subregion, within, pgtype.UUID{}, joinedOnly, memberCreated)
 		if err != nil {
 			handleServiceError(w, err)
 			return

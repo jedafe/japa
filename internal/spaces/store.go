@@ -218,6 +218,13 @@ func (s *Service) ListSpaces(ctx context.Context, viewerUserID pgtype.UUID) ([]g
 // Replaces the in-memory filter+paginate in the ListSpaces handler for the
 // default (no type/parent filter) branch.
 func (s *Service) ListSpacesPaginated(ctx context.Context, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion, sort string, spaceTypeID pgtype.UUID, joinedOnly, memberCreated bool, limit, offset int32) ([]gen.ListSpacesPaginatedRow, error) {
+	return s.ListSpacesPaginatedWithin(ctx, viewerUserID, search, geoCode, level, region, subregion, "", sort, spaceTypeID, joinedOnly, memberCreated, limit, offset)
+}
+
+// ListSpacesPaginatedWithin adds the optional @within closure (primary-space
+// slug — matches spaces linked to it or its geo descendants) for callers
+// that need the hierarchical country/state/city filter.
+func (s *Service) ListSpacesPaginatedWithin(ctx context.Context, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion, within, sort string, spaceTypeID pgtype.UUID, joinedOnly, memberCreated bool, limit, offset int32) ([]gen.ListSpacesPaginatedRow, error) {
 	spaces, err := s.read.ListSpacesPaginated(ctx, gen.ListSpacesPaginatedParams{
 		ViewerUserID:  viewerUserID,
 		Search:        search,
@@ -225,6 +232,7 @@ func (s *Service) ListSpacesPaginated(ctx context.Context, viewerUserID pgtype.U
 		Level:         level,
 		Region:        region,
 		Subregion:     subregion,
+		Within:        within,
 		Sort:          sort,
 		SpaceTypeID:   spaceTypeID,
 		JoinedOnly:    joinedOnly,
@@ -242,6 +250,13 @@ func (s *Service) ListSpacesPaginated(ctx context.Context, viewerUserID pgtype.U
 // CountSpaces returns the total count of spaces matching the paginated
 // discovery filters (SPACES-009).
 func (s *Service) CountSpaces(ctx context.Context, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion string, spaceTypeID pgtype.UUID, joinedOnly, memberCreated bool) (int64, error) {
+	return s.CountSpacesWithin(ctx, viewerUserID, search, geoCode, level, region, subregion, "", spaceTypeID, joinedOnly, memberCreated)
+}
+
+// CountSpacesWithin mirrors ListSpacesPaginatedWithin — the @within
+// primary-space-slug closure must apply to the count too or pagination
+// totals drift from the filtered rows.
+func (s *Service) CountSpacesWithin(ctx context.Context, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion, within string, spaceTypeID pgtype.UUID, joinedOnly, memberCreated bool) (int64, error) {
 	total, err := s.read.CountSpaces(ctx, gen.CountSpacesParams{
 		ViewerUserID:  viewerUserID,
 		Search:        search,
@@ -249,6 +264,7 @@ func (s *Service) CountSpaces(ctx context.Context, viewerUserID pgtype.UUID, sea
 		Level:         level,
 		Region:        region,
 		Subregion:     subregion,
+		Within:        within,
 		SpaceTypeID:   spaceTypeID,
 		JoinedOnly:    joinedOnly,
 		MemberCreated: memberCreated,

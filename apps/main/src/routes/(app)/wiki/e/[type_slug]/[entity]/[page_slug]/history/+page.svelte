@@ -1,12 +1,26 @@
 <script lang="ts">
 	import { t, siteName } from '$lib/i18n';
+	import { goto } from '$app/navigation';
 	import { ArrowLeft, Bot, ChevronRight } from 'lucide-svelte';
+	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
 	import { entityPageHref } from '$lib/utils/wikiEntityLinks';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 	const page = $derived(data.page);
 	const backHref = $derived(entityPageHref(page.type_slug, page.entity_slug, page.slug));
+
+	const total = $derived(data.meta?.total ?? data.revisions.length);
+	const currentPage = $derived(data.meta?.page ?? 1);
+	const limit = $derived(Math.max(1, data.meta?.limit ?? 25));
+	const totalPages = $derived(Math.max(1, Math.ceil(total / limit)));
+
+	function onPageChange(p: number) {
+		const usp = new URLSearchParams();
+		if (p > 1) usp.set('page', String(p));
+		const qs = usp.toString();
+		goto(qs ? `?${qs}` : '?');
+	}
 
 	function statusClass(status: string): string {
 		if (status === 'approved') return 'bg-green-500/10 text-green-600 dark:text-green-400';
@@ -16,7 +30,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('wiki.history', 'History')} — {page.title} | {siteName} Wiki</title>
+	<title>{t('wiki.history', 'History')} — {page.title} | {siteName()} Wiki</title>
 </svelte:head>
 
 <article class="mx-auto max-w-3xl space-y-4 px-4 py-6">
@@ -55,5 +69,10 @@
 				</li>
 			{/each}
 		</ul>
+		{#if totalPages > 1}
+			<div class="flex justify-center pt-2">
+				<PaginationControls page={currentPage} {totalPages} {onPageChange} />
+			</div>
+		{/if}
 	{/if}
 </article>

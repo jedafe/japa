@@ -1971,6 +1971,16 @@ type Form struct {
 	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
 }
 
+type FormDraft struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Kind      string             `json:"kind"`
+	DraftKey  string             `json:"draft_key"`
+	Data      []byte             `json:"data"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type FormStep struct {
 	ID       pgtype.UUID `json:"id"`
 	FormID   pgtype.UUID `json:"form_id"`

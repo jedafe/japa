@@ -61,12 +61,19 @@ func (s *Store) GetOrganizationBySlug(ctx context.Context, slug string) (gen.Org
 
 // ListOrganizations returns paginated organizations. deleted is ” (live
 // only), 'only' (soft-deleted), or 'all'.
-func (s *Store) ListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted string, limit, offset int32) ([]gen.ListOrganizationsRow, error) {
+func (s *Store) ListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted, sortKey, sortDir string, limit, offset int32) ([]gen.ListOrganizationsRow, error) {
 	return s.read.ListOrganizations(ctx, gen.ListOrganizationsParams{
 		Column1: orgType, Column2: countryCode, Column3: search, Column4: verified, Limit: clampLimit(limit),
 		Offset:  offset,
 		Column7: deleted,
+		Column8: sortKey, Column9: sortDir,
 	})
+}
+
+// RestoreOrganization reverses a soft delete (deleted_at → NULL). No-op on
+// live rows.
+func (s *Store) RestoreOrganization(ctx context.Context, id pgtype.UUID) error {
+	return s.write.RestoreOrganization(ctx, id)
 }
 
 // CountOrganizations returns the total count of matching organizations.

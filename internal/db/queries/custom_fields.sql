@@ -53,7 +53,7 @@ WHERE cf.group_id = @group_id;
 -- name: ListCustomFieldsByGroup :many
 SELECT id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, section, created_at
+ filterable, sortable, searchable, position, section, config, created_at
 FROM custom_fields
 WHERE group_id = @group_id
 ORDER BY position ASC, created_at ASC;

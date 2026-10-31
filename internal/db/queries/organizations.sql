@@ -38,7 +38,25 @@ WHERE ($1::text = '' OR o.org_type = $1)
        WHEN 'all'  THEN true
        ELSE o.deleted_at IS NULL
      END
-ORDER BY o.created_at DESC
+ORDER BY
+ -- Whitelisted sort keys ($8) + direction ($9) — unknown keys fall back to
+ -- the stable created_at DESC ordering. Same contract as ListUsers.
+ CASE WHEN $8::text = 'name' AND $9::text = 'asc' THEN o.name END ASC,
+ CASE WHEN $8::text = 'name' AND $9::text = 'desc' THEN o.name END DESC,
+ CASE WHEN $8::text = 'slug' AND $9::text = 'asc' THEN o.slug END ASC,
+ CASE WHEN $8::text = 'slug' AND $9::text = 'desc' THEN o.slug END DESC,
+ CASE WHEN $8::text = 'org_type' AND $9::text = 'asc' THEN o.org_type END ASC,
+ CASE WHEN $8::text = 'org_type' AND $9::text = 'desc' THEN o.org_type END DESC,
+ CASE WHEN $8::text = 'owner' AND $9::text = 'asc' THEN COALESCE(u.public_username, u.username, '') END ASC,
+ CASE WHEN $8::text = 'owner' AND $9::text = 'desc' THEN COALESCE(u.public_username, u.username, '') END DESC,
+ CASE WHEN $8::text = 'member_count' AND $9::text = 'asc' THEN o.member_count END ASC,
+ CASE WHEN $8::text = 'member_count' AND $9::text = 'desc' THEN o.member_count END DESC,
+ CASE WHEN $8::text = 'follower_count' AND $9::text = 'asc' THEN o.follower_count END ASC,
+ CASE WHEN $8::text = 'follower_count' AND $9::text = 'desc' THEN o.follower_count END DESC,
+ CASE WHEN $8::text = 'verified' AND $9::text = 'asc' THEN o.verified END ASC,
+ CASE WHEN $8::text = 'verified' AND $9::text = 'desc' THEN o.verified END DESC,
+ CASE WHEN $8::text = 'created_at' AND $9::text = 'asc' THEN o.created_at END ASC,
+ o.created_at DESC, o.id
 LIMIT $5 OFFSET $6;
 
 -- name: CountOrganizations :one
@@ -69,6 +87,13 @@ SET name = COALESCE(NULLIF(@name::text, ''), name),
  org_type = COALESCE(NULLIF(@org_type::text, ''), org_type),
  updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
+
+-- name: RestoreOrganization :exec
+-- Reverse a soft delete — only acts on already-deleted rows so a restore on a
+-- live org is a silent no-op (same contract as HardDeleteOrganization).
+UPDATE organizations
+SET deleted_at = NULL, updated_at = now()
+WHERE id = $1 AND deleted_at IS NOT NULL;
 
 -- name: SoftDeleteOrganization :exec
 UPDATE organizations
@@ -258,6 +283,42 @@ JOIN organizations o ON o.id = oc.organization_id
 LEFT JOIN users reviewer ON reviewer.id = oc.reviewed_by
 WHERE ($1::text = '' OR $1::text = 'all' OR oc.status = $1)
 ORDER BY oc.created_at DESC;
+
+-- name: ListOwnershipClaimsForAdminPaged :many
+-- Paginated + searchable variant used by GET /admin/organizations/pending-claims
+-- when page/limit/q params are supplied. $5 is sort direction (asc|desc) and $6
+-- the sort key, whitelisted to the frontend's sortable columns.
+SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at, oc.status,
+ oc.form_submission_id, oc.resolution_note, oc.reviewed_by, oc.reviewed_at,
+ u.username AS claimant_username, u.email AS claimant_email,
+ o.name AS org_name, o.slug AS org_slug,
+ reviewer.username AS reviewed_by_username
+FROM ownership_claims oc
+JOIN users u ON u.id = oc.claimant_user_id
+JOIN organizations o ON o.id = oc.organization_id
+LEFT JOIN users reviewer ON reviewer.id = oc.reviewed_by
+WHERE ($1::text = '' OR $1::text = 'all' OR oc.status = $1)
+  AND ($2::text = '' OR o.name ILIKE '%' || $2 || '%' OR u.username ILIKE '%' || $2 || '%' OR u.email ILIKE '%' || $2 || '%')
+ORDER BY
+  CASE WHEN $5 = 'asc' THEN CASE $6
+    WHEN 'org_name' THEN o.name WHEN 'claimant_username' THEN u.username
+    WHEN 'claimant_email' THEN u.email WHEN 'status' THEN oc.status END
+  END ASC NULLS LAST,
+  CASE WHEN $5 = 'desc' THEN CASE $6
+    WHEN 'org_name' THEN o.name WHEN 'claimant_username' THEN u.username
+    WHEN 'claimant_email' THEN u.email WHEN 'status' THEN oc.status END
+  END DESC NULLS LAST,
+  CASE WHEN $6 = 'created_at' AND $5 = 'asc' THEN oc.created_at END ASC NULLS LAST,
+  oc.created_at DESC
+LIMIT $3 OFFSET $4;
+
+-- name: CountOwnershipClaimsForAdmin :one
+SELECT COUNT(*)::bigint
+FROM ownership_claims oc
+JOIN users u ON u.id = oc.claimant_user_id
+JOIN organizations o ON o.id = oc.organization_id
+WHERE ($1::text = '' OR $1::text = 'all' OR oc.status = $1)
+  AND ($2::text = '' OR o.name ILIKE '%' || $2 || '%' OR u.username ILIKE '%' || $2 || '%' OR u.email ILIKE '%' || $2 || '%');
 
 -- name: ApproveOwnershipClaim :exec
 UPDATE ownership_claims

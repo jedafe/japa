@@ -1612,6 +1612,10 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		Required  bool     `json:"required"`
 		SortOrder int32    `json:"sort_order"`
 		Options   []string `json:"options"`
+		// Dimension is the assessment scoring bucket (custom_fields.config
+		// .dimension) — the admin form builder derives assessment steps
+		// from it for reordering.
+		Dimension string `json:"dimension,omitempty"`
 	}
 
 	fieldList := make([]fieldJSON, 0, len(fields))
@@ -1634,6 +1638,16 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		var dimension string
+		if len(f.Config) > 0 {
+			var cfg struct {
+				Dimension string `json:"dimension"`
+			}
+			if json.Unmarshal(f.Config, &cfg) == nil {
+				dimension = cfg.Dimension
+			}
+		}
+
 		fieldList = append(fieldList, fieldJSON{
 			ID:        f.ID.String(),
 			Label:     f.Label,
@@ -1641,6 +1655,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 			Required:  f.IsRequired,
 			SortOrder: f.Position,
 			Options:   options,
+			Dimension: dimension,
 		})
 	}
 

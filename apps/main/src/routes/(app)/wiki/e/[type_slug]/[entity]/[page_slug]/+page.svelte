@@ -11,6 +11,7 @@
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { entityPageHref } from '$lib/utils/wikiEntityLinks';
 	import type { PageData } from './$types';
+	import type { EntityWikiPage } from './+page.server';
 
 	let { data }: { data: PageData } = $props();
 	let page = $derived(data.page);
@@ -37,6 +38,19 @@
 	);
 
 	const authed = $derived(pageStore.data.user != null);
+	// §80 Super-Admin Direct Publish — `*` wildcard counts as wiki.edit and
+	// bypasses lock state, same contract as the space-bound page.
+	const isSuperAdmin = $derived(data.userPermissions?.includes('*') === true);
+	const canEdit = $derived(
+		authed && (isSuperAdmin || (!page.is_locked && data.userPermissions?.includes('wiki.edit') === true))
+	);
+	// Category label for the meta line — resolve through the page's tab
+	// strip (label is server-English + i18n-able), not the raw token.
+	const categoryLabel = $derived(
+		page?.categories?.find((c) => c.category === page.category)?.label ??
+			page?.category?.replaceAll('_', ' ') ??
+			''
+	);
 	const entityEndpoint = $derived(
 		`/wiki/e/${encodeURIComponent(page.type_slug)}/${encodeURIComponent(page.entity_slug)}/${encodeURIComponent(page.slug)}`
 	);
@@ -63,13 +77,18 @@
 	let autoApproved = $state(false);
 	let errorKey = $state('');
 
-	function startEdit() {
+	async function startEdit() {
 		submitted = false;
 		autoApproved = false;
 		errorKey = '';
 		editing = true;
 		editDirty = false;
-		const c = page?.content;
+		// Fetch the raw (unresolved) revision so authored {{...}} literals
+		// survive a re-save — the display payload has them resolved (same
+		// contract as the space-bound page's edit flow).
+		const res = await api.get<EntityWikiPage>(`${entityEndpoint}?raw=1`);
+		const c = res.data?.content ?? page?.content;
+		if (!editing) return;
 		if (typeof c === 'string') {
 			editBodyHtml = c;
 			editBodyJson = { type: 'doc', content: [] };
@@ -115,7 +134,7 @@
 </script>
 
 <svelte:head>
-	<title>{page.title} — {page.entity_name} | {siteName} Wiki</title>
+	<title>{page.title} — {page.entity_name} | {siteName()} Wiki</title>
 </svelte:head>
 
 <article class="mx-auto max-w-3xl space-y-4 px-4 py-6">
@@ -132,13 +151,13 @@
 				<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
 				<li class="truncate">{page.entity_name}</li>
 				<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
-				<li class="truncate capitalize text-[var(--color-text)]">{page.slug.replaceAll('-', ' ')}</li>
+				<li class="truncate text-[var(--color-text)]">{page.title}</li>
 			</ol>
 		</nav>
 		<h1 class="text-2xl font-bold text-[var(--color-text)]">{page.title}</h1>
 		<div class="flex flex-wrap items-center justify-between gap-2">
 			<p class="text-sm text-[var(--color-muted)]">
-				{page.entity_name} · <span class="capitalize">{page.category.replaceAll('_', ' ')}</span>
+				{page.entity_name} · <span>{categoryLabel}</span>
 				{#if page.is_locked}
 					<span class="ms-2 inline-flex items-center gap-1 rounded bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400"><Lock size={12} />{t('wiki.locked', 'Locked')}</span>
 				{/if}
@@ -234,7 +253,7 @@
 		{:else}
 			<p class="text-sm text-[var(--color-muted)]">{t('wiki.empty_content', 'This page has no content yet.')}</p>
 		{/if}
-		{#if !page.is_locked}
+		{#if canEdit}
 			<button
 				type="button"
 				onclick={startEdit}
@@ -243,6 +262,8 @@
 				<Pencil size={14} />
 				{t('wiki.edit_content', 'Edit content')}
 			</button>
+		{:else if page.is_locked}
+			<span class="text-xs text-[var(--color-muted)]">{t('wiki.locked_body', 'This page is locked and cannot be edited.')}</span>
 		{/if}
 	{/if}
 

@@ -129,6 +129,7 @@
 				case 'gdpr':
 					label = t('gdpr.title');
 					break;
+				case 'organizations':
 				case 'organisations':
 					label = t('organisations.title');
 					break;

@@ -29,6 +29,7 @@ var predicateRegistry = map[string]bool{
 	"feature_not_used":      true,
 	"event_count":           true,
 	"feature_gate_hit":      true,
+	"has_draft":             true,
 	"has_push_subscription": true,
 	"surface":               true,
 }
@@ -87,6 +88,9 @@ func PredicateSpecs() []PredicateSpec {
 		{Name: "feature_gate_hit", Args: []PredicateArg{{Key: "feature", Type: "string"}, {Key: "within_days", Type: "number"}}},
 		{Name: "event_count", Args: []PredicateArg{{Key: "type", Type: "string", Required: true}, {Key: "lt", Type: "number"}, {Key: "gt", Type: "number"}, {Key: "gte", Type: "number"}, {Key: "window", Type: "string", Options: "session or Nd (e.g. 7d)"}}},
 		{Name: "has_push_subscription", Args: []PredicateArg{{Key: "eq", Type: "bool"}}},
+		// "resume your draft" reminders — slug narrows to a draft kind
+		// (e.g. "readiness"); empty slug matches any draft.
+		{Name: "has_draft", Args: []PredicateArg{{Key: "eq", Type: "bool"}, {Key: "slug", Type: "string"}}},
 	}
 }
 
@@ -94,6 +98,36 @@ func PredicateSpecs() []PredicateSpec {
 // surface makes a rule silently never-match, so validate at write time.
 var userClassSet = map[string]bool{
 	ClassGuest: true, ClassRegular: true, ClassPro: true, ClassBusiness: true,
+}
+
+// VocabChannels/VocabUserClasses/VocabSurfaces return the bounded vocabularies
+// served to the Control rule builder — the frontend renders these instead of
+// hardcoding the backend enums, so a new channel/class/surface cannot drift.
+func VocabChannels() []string {
+	out := make([]string, 0, len(channelSet))
+	for k := range channelSet {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func VocabUserClasses() []string {
+	out := make([]string, 0, len(userClassSet))
+	for k := range userClassSet {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func VocabSurfaces() []string {
+	out := make([]string, 0, len(surfaceSet))
+	for k := range surfaceSet {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
 }
 
 var surfaceSet = map[string]bool{

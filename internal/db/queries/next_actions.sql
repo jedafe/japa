@@ -10,12 +10,39 @@ WHERE enabled = true
   AND (valid_until IS NULL OR valid_until > now())
 ORDER BY priority ASC;
 
+-- name: CountNextActionRules :one
+-- Total rules matching the admin list filters — feeds the pagination envelope
+-- (api-response-format.md offset convention: total/page/total_pages siblings).
+SELECT count(*) FROM next_action_rules
+WHERE (@q::text = '' OR slug ILIKE '%' || @q || '%' OR name ILIKE '%' || @q || '%')
+  AND (@enabled::text = '' OR enabled = (@enabled::text = 'true'));
+
 -- name: ListNextActionRules :many
+-- Admin list with offset pagination + search + whitelisted CASE sort keys —
+-- same pattern as AdminListTags: the Control DataTable sends column keys
+-- (slug, name, enabled, upsell, priority, created_at) plus sort_dir; unknown
+-- or empty sort falls back to priority/created_at, id as stable tiebreaker.
 SELECT id, slug, name, description, enabled, priority, audience, conditions,
        payload, channels, completion_signal, frequency, valid_from, valid_until,
        created_by, created_at, updated_at, upsell
 FROM next_action_rules
-ORDER BY priority ASC, created_at DESC;
+WHERE (@q::text = '' OR slug ILIKE '%' || @q || '%' OR name ILIKE '%' || @q || '%')
+  AND (@enabled::text = '' OR enabled = (@enabled::text = 'true'))
+ORDER BY
+ CASE WHEN @sort::text = 'slug' AND @sort_dir::text = 'desc' THEN slug END DESC,
+ CASE WHEN @sort::text = 'slug' AND @sort_dir::text <> 'desc' THEN slug END ASC,
+ CASE WHEN @sort::text = 'name' AND @sort_dir::text = 'desc' THEN name END DESC,
+ CASE WHEN @sort::text = 'name' AND @sort_dir::text <> 'desc' THEN name END ASC,
+ CASE WHEN @sort::text = 'enabled' AND @sort_dir::text = 'desc' THEN enabled END DESC,
+ CASE WHEN @sort::text = 'enabled' AND @sort_dir::text <> 'desc' THEN enabled END ASC,
+ CASE WHEN @sort::text = 'upsell' AND @sort_dir::text = 'desc' THEN upsell END DESC,
+ CASE WHEN @sort::text = 'upsell' AND @sort_dir::text <> 'desc' THEN upsell END ASC,
+ CASE WHEN @sort::text = 'priority' AND @sort_dir::text = 'desc' THEN priority END DESC,
+ CASE WHEN @sort::text = 'priority' AND @sort_dir::text <> 'desc' THEN priority END ASC,
+ CASE WHEN @sort::text = 'created_at' AND @sort_dir::text = 'asc' THEN created_at END ASC,
+ CASE WHEN @sort::text = 'created_at' AND @sort_dir::text <> 'asc' THEN created_at END DESC,
+ priority ASC, id ASC
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetNextActionRule :one
 SELECT id, slug, name, description, enabled, priority, audience, conditions,

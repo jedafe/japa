@@ -3,6 +3,7 @@
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { BadgeCheck, Globe, Users, Calendar } from 'lucide-svelte';
+	import { safeHref } from '$lib/utils/safeHtml';
 	import type { PublicOrganization } from '$lib/types';
 
 	interface Props {
@@ -60,8 +61,8 @@
 		<div class="mt-3 flex flex-wrap items-center gap-4 text-sm text-[var(--color-muted)]">
 			<span class="flex items-center gap-1"><Users size={14} /> {org.member_count === 1 ? t('profile.members_one', '1 member') : t('profile.members', '{n} members').replace('{n}', String(org.member_count))}</span>
 			<span>{org.follower_count === 1 ? t('profile.followers_one', '1 follower') : t('profile.followers', '{n} followers').replace('{n}', String(org.follower_count))}</span>
-			{#if org.website_url}
-				<a href={org.website_url} target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 text-[var(--color-primary)] hover:underline">
+			{#if safeHref(org.website_url)}
+				<a href={safeHref(org.website_url)} target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 text-[var(--color-primary)] hover:underline">
 					<Globe size={14} /> {t('profile.website', 'Website')}
 				</a>
 			{/if}

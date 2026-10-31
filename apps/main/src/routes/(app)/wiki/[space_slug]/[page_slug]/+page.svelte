@@ -32,6 +32,15 @@
 		data.page?.space_name ?? data.spaceDetail?.space?.name ?? data.spaceSlug
 	);
 	const spaceId = $derived(data.page?.space_id ?? data.spaceDetail?.space?.id ?? '');
+	// §80 directories: stub pages in empty directory categories (zero matching
+	// descendants) are excluded from related-articles — same rule as the tab
+	// strip and index cards, otherwise they link a "no content yet" page.
+	const sidebarPages = $derived.by(() => {
+		const hidden = new Set(
+			(data.apiCategories ?? []).filter((c) => c.directory && c.empty).map((c) => c.slug)
+		);
+		return (data.index ?? []).filter((p) => !hidden.has(p.category));
+	});
 	const spaceLevel = $derived(data.spaceDetail?.space?.level ?? '');
 	const crumbKind = $derived(
 		data.wikiScope === 'university'
@@ -369,7 +378,7 @@
 		{spaceName}
 		{spaceId}
 		{spaceLevel}
-		pages={data.index ?? []}
+		pages={sidebarPages}
 		currentPageSlug={data.pageSlug}
 		{toc}
 		wikiOnly={data.spaceDetail?.wiki_only ?? false}

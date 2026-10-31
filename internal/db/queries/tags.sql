@@ -75,6 +75,13 @@ WHERE tag_id = @tag_id;
 
 -- name: AdminListTags :many
 -- Admin list with offset pagination + search (Section 08: GET /admin/tags).
+-- Also serves GET /tags (public directory, ?sort=popular|followers|content).
+-- ORDER BY uses whitelisted CASE keys — the admin DataTable sends the
+-- column keys (name, slug, post_count, follower_count, created_at) plus
+-- sort_dir (asc|desc) per the sort+sort_dir catalog convention; the public
+-- aliases (popular, followers, content, newest) are always DESC. Unknown or
+-- empty sort falls back to newest-first; t.id is the tiebreaker so
+-- offset pagination is stable across rows sharing a timestamp.
 SELECT t.id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
  t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
  t.field_values, t.created_at, t.updated_at,
@@ -86,10 +93,20 @@ LEFT JOIN media cm ON cm.id = t.cover_media_id
 WHERE (@q::text = '' OR t.name ILIKE '%' || @q || '%' OR t.slug ILIKE '%' || @q || '%')
  AND (@min_content_count::int = 0 OR t.content_count >= @min_content_count)
 ORDER BY
- CASE WHEN @sort::text = 'popular' THEN t.follower_count END DESC,
- CASE WHEN @sort::text = 'followers' THEN t.follower_count END DESC,
+ CASE WHEN @sort::text = 'name' AND @sort_dir::text = 'desc' THEN t.name END DESC,
+ CASE WHEN @sort::text = 'name' AND @sort_dir::text <> 'desc' THEN t.name END ASC,
+ CASE WHEN @sort::text = 'slug' AND @sort_dir::text = 'desc' THEN t.slug END DESC,
+ CASE WHEN @sort::text = 'slug' AND @sort_dir::text <> 'desc' THEN t.slug END ASC,
+ CASE WHEN @sort::text IN ('post_count', 'content_count') AND @sort_dir::text = 'asc' THEN t.content_count END ASC,
+ CASE WHEN @sort::text IN ('post_count', 'content_count') AND @sort_dir::text <> 'asc' THEN t.content_count END DESC,
+ CASE WHEN @sort::text = 'follower_count' AND @sort_dir::text = 'asc' THEN t.follower_count END ASC,
+ CASE WHEN @sort::text = 'follower_count' AND @sort_dir::text <> 'asc' THEN t.follower_count END DESC,
+ CASE WHEN @sort::text IN ('popular', 'followers') THEN t.follower_count END DESC,
  CASE WHEN @sort::text = 'content' THEN t.content_count END DESC,
- CASE WHEN @sort::text != 'popular' AND @sort::text != 'followers' AND @sort::text != 'content' THEN t.created_at END DESC
+ CASE WHEN @sort::text = 'created_at' AND @sort_dir::text = 'asc' THEN t.created_at END ASC,
+ CASE WHEN @sort::text = 'created_at' AND @sort_dir::text <> 'asc' THEN t.created_at END DESC,
+ CASE WHEN @sort::text NOT IN ('name', 'slug', 'post_count', 'content_count', 'follower_count', 'popular', 'followers', 'content', 'created_at') THEN t.created_at END DESC,
+ t.id ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: AdminCountTags :one

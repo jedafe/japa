@@ -1724,7 +1724,10 @@ func isSpaceBackedEntityType(entityType string) bool {
 //   - organization/bank                   → ["organization"]
 //   - content, content:{slug}             → ["content_type[:{slug}]"]
 //   - guide_category:{slug}               → ["content_type:guide:{slug}"] (§06)
-//   - table-backed JCE types              → ["jce_entity:{type}"]
+//   - table-backed JCE types              → ["jce_entity:{type}", "{type}"] —
+//     the plain kind token covers the wiki-bound category groups
+//     (wiki_{type}_{category}), which seed onto entity_class='visa_route',
+//     'embassy', 'course', … — NOT the jce_entity: spelling.
 //
 // Classes are returned most-specific first; callers dedupe groups by id.
 func entityClassesFor(entityType string, spaceTypeID pgtype.UUID, spaceTypeSlug string) []string {
@@ -1751,7 +1754,7 @@ func entityClassesFor(entityType string, spaceTypeID pgtype.UUID, spaceTypeSlug 
 		// mapping (§06 EntityClassFromType).
 		return []string{customfields.EntityClassFromType(entityType)}
 	default:
-		return []string{"jce_entity:" + entityType}
+		return []string{"jce_entity:" + entityType, entityType}
 	}
 }
 

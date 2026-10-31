@@ -76,17 +76,28 @@ LEFT JOIN media cm ON cm.id = t.cover_media_id
 WHERE ($1::text = '' OR t.name ILIKE '%' || $1 || '%' OR t.slug ILIKE '%' || $1 || '%')
  AND ($2::int = 0 OR t.content_count >= $2)
 ORDER BY
- CASE WHEN $3::text = 'popular' THEN t.follower_count END DESC,
- CASE WHEN $3::text = 'followers' THEN t.follower_count END DESC,
+ CASE WHEN $3::text = 'name' AND $4::text = 'desc' THEN t.name END DESC,
+ CASE WHEN $3::text = 'name' AND $4::text <> 'desc' THEN t.name END ASC,
+ CASE WHEN $3::text = 'slug' AND $4::text = 'desc' THEN t.slug END DESC,
+ CASE WHEN $3::text = 'slug' AND $4::text <> 'desc' THEN t.slug END ASC,
+ CASE WHEN $3::text IN ('post_count', 'content_count') AND $4::text = 'asc' THEN t.content_count END ASC,
+ CASE WHEN $3::text IN ('post_count', 'content_count') AND $4::text <> 'asc' THEN t.content_count END DESC,
+ CASE WHEN $3::text = 'follower_count' AND $4::text = 'asc' THEN t.follower_count END ASC,
+ CASE WHEN $3::text = 'follower_count' AND $4::text <> 'asc' THEN t.follower_count END DESC,
+ CASE WHEN $3::text IN ('popular', 'followers') THEN t.follower_count END DESC,
  CASE WHEN $3::text = 'content' THEN t.content_count END DESC,
- CASE WHEN $3::text != 'popular' AND $3::text != 'followers' AND $3::text != 'content' THEN t.created_at END DESC
-LIMIT $5 OFFSET $4
+ CASE WHEN $3::text = 'created_at' AND $4::text = 'asc' THEN t.created_at END ASC,
+ CASE WHEN $3::text = 'created_at' AND $4::text <> 'asc' THEN t.created_at END DESC,
+ CASE WHEN $3::text NOT IN ('name', 'slug', 'post_count', 'content_count', 'follower_count', 'popular', 'followers', 'content', 'created_at') THEN t.created_at END DESC,
+ t.id ASC
+LIMIT $6 OFFSET $5
 `
 
 type AdminListTagsParams struct {
 	Q               string `json:"q"`
 	MinContentCount int32  `json:"min_content_count"`
 	Sort            string `json:"sort"`
+	SortDir         string `json:"sort_dir"`
 	PageOffset      int32  `json:"page_offset"`
 	PageLimit       int32  `json:"page_limit"`
 }
@@ -113,11 +124,19 @@ type AdminListTagsRow struct {
 }
 
 // Admin list with offset pagination + search (Section 08: GET /admin/tags).
+// Also serves GET /tags (public directory, ?sort=popular|followers|content).
+// ORDER BY uses whitelisted CASE keys — the admin DataTable sends the
+// column keys (name, slug, post_count, follower_count, created_at) plus
+// sort_dir (asc|desc) per the sort+sort_dir catalog convention; the public
+// aliases (popular, followers, content, newest) are always DESC. Unknown or
+// empty sort falls back to newest-first; t.id is the tiebreaker so
+// offset pagination is stable across rows sharing a timestamp.
 func (q *Queries) AdminListTags(ctx context.Context, arg AdminListTagsParams) ([]AdminListTagsRow, error) {
 	rows, err := q.db.Query(ctx, adminListTags,
 		arg.Q,
 		arg.MinContentCount,
 		arg.Sort,
+		arg.SortDir,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

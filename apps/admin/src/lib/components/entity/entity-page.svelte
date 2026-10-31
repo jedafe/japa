@@ -1008,7 +1008,7 @@
 			{t('common.cancel', 'Cancel')}
 		</Button>
 		<Button onclick={submitForm} disabled={saving}>
-			{t('common.save', 'Save Changes')}
+			{editing ? t('common.save', 'Save Changes') : t('common.create', 'Create')}
 		</Button>
 	{/snippet}
 </Modal>
@@ -1060,7 +1060,7 @@
 		</div>
 	{:else}
 		<p class="text-sm" style="color: var(--color-muted)">
-			{t('common.confirmDelete', 'Confirm Delete')}. {t('common.cannotUndo', 'This cannot be undone.')}.
+			{t('common.confirmDelete', 'Confirm Delete')}. {t('common.cannotUndo', 'This cannot be undone.')}
 		</p>
 		<div class="mt-6 flex justify-end gap-2">
 			<Button variant="outline" onclick={() => (confirmOpen = false)}>
@@ -1115,7 +1115,7 @@
 <!-- Hard-delete confirm modal (permanent erasure) -->
 <Modal bind:open={hardDeleteConfirmOpen} title={t('common.hardDelete', 'Hard Delete')}>
 	<p class="text-sm" style="color: var(--color-foreground)">
-		{t('common.hardDeleteWarning', 'This will permanently erase the record and all related data. This action cannot be undone.')}.
+		{t('common.hardDeleteWarning', 'This will permanently erase the record and all related data. This action cannot be undone.')}
 	</p>
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => (hardDeleteConfirmOpen = false)}>

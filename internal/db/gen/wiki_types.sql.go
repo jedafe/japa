@@ -537,6 +537,45 @@ func (q *Queries) GetWikiPageTemplateForSpace(ctx context.Context, arg GetWikiPa
 	return i, err
 }
 
+const getWikiSpaceRef = `-- name: GetWikiSpaceRef :one
+SELECT s.id, s.slug, s.name, s.level, s.space_type_id,
+       COALESCE(st.slug, '') AS space_type_slug,
+       COALESCE(wtc.label, st.name, '') AS space_type_label
+FROM spaces s
+LEFT JOIN space_types st ON st.id = s.space_type_id
+LEFT JOIN wiki_type_configs wtc ON wtc.space_type_id = s.space_type_id
+WHERE s.id = $1 AND s.deleted_at IS NULL
+`
+
+type GetWikiSpaceRefRow struct {
+	ID             pgtype.UUID `json:"id"`
+	Slug           string      `json:"slug"`
+	Name           string      `json:"name"`
+	Level          string      `json:"level"`
+	SpaceTypeID    pgtype.UUID `json:"space_type_id"`
+	SpaceTypeSlug  string      `json:"space_type_slug"`
+	SpaceTypeLabel string      `json:"space_type_label"`
+}
+
+// Single-space breadcrumb ref (slug/name/level + type identity and the
+// wiki-type display label) — the entity-page host crumb: an entity-bound
+// page's ancestor chain ends at its host space, which needs the same ref
+// shape ListWikiSpaceParentLinks produces for walked parents.
+func (q *Queries) GetWikiSpaceRef(ctx context.Context, spaceID pgtype.UUID) (GetWikiSpaceRefRow, error) {
+	row := q.db.QueryRow(ctx, getWikiSpaceRef, spaceID)
+	var i GetWikiSpaceRefRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Level,
+		&i.SpaceTypeID,
+		&i.SpaceTypeSlug,
+		&i.SpaceTypeLabel,
+	)
+	return i, err
+}
+
 const getWikiTypeCategory = `-- name: GetWikiTypeCategory :one
 SELECT id, space_type_id, slug, category, label, field_group_id,
        position, is_system, rollup, icon, created_at

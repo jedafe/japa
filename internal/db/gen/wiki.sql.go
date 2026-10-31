@@ -1685,6 +1685,59 @@ func (q *Queries) ListEmbassiesForWiki(ctx context.Context, spaceID pgtype.UUID)
 	return items, nil
 }
 
+const listEntityWikiPageSiblings = `-- name: ListEntityWikiPageSiblings :many
+SELECT wp.id, wp.slug, wp.title, wp.category, wp.position
+FROM wiki_pages wp
+WHERE wp.entity_type = $1 AND wp.entity_id = $2
+  AND wp.category = $3
+  AND wp.is_active = true AND wp.deleted_at IS NULL
+ORDER BY wp.position, wp.created_at, wp.slug
+`
+
+type ListEntityWikiPageSiblingsParams struct {
+	EntityType *string     `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	Category   string      `json:"category"`
+}
+
+type ListEntityWikiPageSiblingsRow struct {
+	ID       pgtype.UUID `json:"id"`
+	Slug     string      `json:"slug"`
+	Title    string      `json:"title"`
+	Category string      `json:"category"`
+	Position int32       `json:"position"`
+}
+
+// Same-category sibling pages on one entity — the entity-bound counterpart
+// of ListPageSiblings (§80 Hierarchical UX): ordered position, created_at,
+// slug and INCLUDING the current row so the service can flag it for
+// Prev/Next derivation.
+func (q *Queries) ListEntityWikiPageSiblings(ctx context.Context, arg ListEntityWikiPageSiblingsParams) ([]ListEntityWikiPageSiblingsRow, error) {
+	rows, err := q.db.Query(ctx, listEntityWikiPageSiblings, arg.EntityType, arg.EntityID, arg.Category)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityWikiPageSiblingsRow
+	for rows.Next() {
+		var i ListEntityWikiPageSiblingsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.Category,
+			&i.Position,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEntityWikiPages = `-- name: ListEntityWikiPages :many
 SELECT wp.id, wp.entity_type, wp.entity_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.position

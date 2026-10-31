@@ -4609,5 +4609,16 @@
 	"moderation.type": "Type",
 	"moderation.type_source": "Source",
 	"moderation.type_forum_reply": "Forum reply",
-	"moderation.reported_content": "Reported content"
+	"moderation.reported_content": "Reported content",
+	"organisations": {
+		"field_description": "Description",
+		"slug_locked": "Slug cannot be changed after creation",
+		"verify_type_none": "No badge type",
+		"verify_confirm": "Grant a verification badge to \"{name}\"?",
+		"verification_type": "Verification type"
+	},
+	"common": {
+		"force_delete_selected": "Force Delete Selected",
+		"restore": "Restore"
+	}
 }

@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { DataTable } from "$lib/components/ui/data-table";
+	// /organizations/claims — migrated to the EntityPage scaffold. Read-only
+	// review queue: the endpoint only supports ?status= (no pagination), so
+	// search/sort/page are applied client-side inside load().
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
+	import { Modal } from "$lib/components/ui/modal";
 	import { safeHref } from "$lib/utils/html";
 	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Check, X, Eye, RefreshCw } from "lucide-svelte";
+	import { Check, X, Eye } from "lucide-svelte";
 	import { organisationsAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import type { BulkAction } from "$lib/components/ui/data-table";
+	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
 
 	type PendingClaim = {
 		id: string;
@@ -39,20 +40,17 @@
 		claim_id: string;
 	};
 
-	let claims = $state<PendingClaim[]>([]);
-	let pageSize = $state(25);
-	let loading = $state(true);
-	let errorMessage = $state("");
+	const canReview = $derived(hasPermission("admin.moderation"));
+
+	let entityController = $state<EntityPageController | undefined>(undefined);
+	let pageError = $state("");
 	let successMessage = $state("");
-	let searchQuery = $state("");
-	// Default to "pending" — the actionable review queue. The status filter is
-	// server-side: selecting another value re-fetches from the API. "all" shows
-	// the full history (approved/rejected/withdrawn) for audit.
-	let filterValues = $state<Record<string, string>>({ status: "pending" });
 
 	// BUG-022/023: Claim status options fetched from the API (Rule 16).
 	let claimStatusOptions = $state<{ value: string; label: string }[]>([]);
 
+	// View modal — page-local because it lazy-loads the claimant's form
+	// submission and carries pending-only Approve/Reject footer actions.
 	let showViewModal = $state(false);
 	let showApproveModal = $state(false);
 	let showRejectModal = $state(false);
@@ -61,35 +59,37 @@
 	let submissionLoading = $state(false);
 	let actionLoading = $state(false);
 
-	// Bulk selection
-	let selectedIds = $state<Set<string>>(new Set());
 	let showBulkApproveModal = $state(false);
 	let showBulkRejectModal = $state(false);
 	let bulkActionLoading = $state(false);
 	let bulkTargets = $state<PendingClaim[]>([]);
+	const claimRowMap = new Map<string, PendingClaim>();
 
-	const canReview = $derived(hasPermission("admin.moderation"));
-
-	const statusFilters = $derived([
+	const filters = $derived<FilterDef[]>([
 		{
 			key: "status",
 			label: t("organisations.status", "Status"),
-			// BUG-022/023: Use API-driven claim status options with hardcoded fallback.
-			options: claimStatusOptions.length > 0
-				? [{ value: "all", label: t("organisations.all", "All") }, ...claimStatusOptions]
-				: [
-						{ value: "all", label: t("organisations.all", "All") },
-						{ value: "pending", label: t("organisations.pending", "Pending") },
-						{ value: "approved", label: t("organisations.approved", "Approved") },
-						{ value: "rejected", label: t("organisations.rejected", "Rejected") },
-						{ value: "withdrawn", label: t("organisations.withdrawn", "Withdrawn") }
-					]
+			// BUG-022/023: API-driven claim status options with fallback. Empty
+			// selection = pending (the actionable review queue).
+			placeholder: t("organisations.pending", "Pending"),
+			options: [
+				{ value: "all", label: t("organisations.all", "All") },
+				...(claimStatusOptions.length > 0
+					? claimStatusOptions
+					: [
+							{ value: "pending", label: t("organisations.pending", "Pending") },
+							{ value: "approved", label: t("organisations.approved", "Approved") },
+							{ value: "rejected", label: t("organisations.rejected", "Rejected") },
+							{ value: "withdrawn", label: t("organisations.withdrawn", "Withdrawn") }
+						])
+			]
 		}
 	]);
 
 	const columns = $derived([
 		{
 			key: "org_name",
+			sortable: true,
 			label: t("organisations.name", "Organization"),
 			render: (v: string, row: PendingClaim) =>
 				`<span class="text-sm font-medium">${v}</span>` +
@@ -99,49 +99,49 @@
 		},
 		{
 			key: "claimant_username",
+			sortable: true,
 			label: t("organisations.claimant", "Claimant"),
 			render: (v: string) => `<span class="text-sm font-medium">${v}</span>`
 		},
 		{
 			key: "claimant_email",
+			sortable: true,
 			label: t("organisations.claimant_email", "Email"),
 			render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${v}</span>`
 		},
 		{
 			key: "status",
 			label: t("organisations.status", "Status"),
+			sortable: true,
 			componentSnippet: ClaimStatusBadge
 		},
 		{
 			key: "created_at",
+			sortable: true,
 			label: t("organisations.submitted_at", "Submitted"),
 			render: (v: string) =>
 				`<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>`
-		},
-		{
-			key: "actions",
-			label: t("common.actions", "Actions"),
-			class: "w-40",
-			componentSnippet: ClaimActionsCell
 		}
 	]);
 
-	// Search is client-side; status is server-side (re-fetches on change).
-	const filtered = $derived.by(() => {
-		let out = claims;
-		const q = searchQuery.trim().toLowerCase();
-		if (q) {
-			out = out.filter(
-				(c) =>
-					c.org_name.toLowerCase().includes(q) ||
-					c.claimant_username.toLowerCase().includes(q) ||
-					c.claimant_email.toLowerCase().includes(q)
-			);
+	const rowActions = $derived<ActionItem[]>([
+		{ label: t("common.view", "View"), icon: Eye, onclick: (row: PendingClaim) => openView(row) },
+		{
+			label: t("organisations.approve", "Approve"),
+			icon: Check,
+			onclick: (row: PendingClaim) => { target = row; showApproveModal = true; },
+			show: (row: PendingClaim) => canReview && row.status === "pending"
+		},
+		{
+			label: t("organisations.reject", "Reject"),
+			icon: X,
+			variant: "destructive",
+			onclick: (row: PendingClaim) => { target = row; showRejectModal = true; },
+			show: (row: PendingClaim) => canReview && row.status === "pending"
 		}
-		return out;
-	});
+	]);
 
-	const bulkActionsList = $derived<BulkAction[]>(
+	const bulkActionsList = $derived(
 		canReview
 			? [
 					{
@@ -154,7 +154,7 @@
 					{
 						label: t("organisations.reject_selected", "Reject Selected"),
 						icon: X,
-						variant: "destructive",
+						variant: "destructive" as const,
 						onclick: (ids: Set<string>) => openBulk(ids, "reject"),
 						disabled: (_ids: Set<string>, rows?: any[]) =>
 							!rows?.some((r: PendingClaim) => r.status === "pending")
@@ -162,34 +162,6 @@
 				]
 			: []
 	);
-
-	async function load() {
-		loading = true;
-		errorMessage = "";
-		selectedIds = new Set();
-		try {
-			// filterValues.status is read here (before the first await) so the $effect
-			// below tracks it and re-fetches when the admin changes status.
-			// "all" is passed explicitly so the backend returns every claim
-			// (history view); an empty param would default to "pending".
-			const status = filterValues.status || "pending";
-			const params = `status=${status}`;
-			const result = await organisationsAdminApi.pendingClaims(params);
-			if (result.ok) {
-				claims = result.data as unknown as PendingClaim[];
-			} else {
-				errorMessage = result.error ?? t("organisations.claims_load_error", "Failed to load claims");
-			}
-		} catch {
-			errorMessage = t("organisations.claims_load_error", "Failed to load claims");
-		} finally {
-			loading = false;
-		}
-	}
-
-	function handleSearch(q: string) {
-		searchQuery = q;
-	}
 
 	function openView(c: PendingClaim) {
 		target = c;
@@ -209,26 +181,22 @@
 			});
 		}
 	}
-	function openApprove(c: PendingClaim) {
-		target = c;
-		showApproveModal = true;
-	}
-	function openReject(c: PendingClaim) {
-		target = c;
-		showRejectModal = true;
-	}
 
+	// PATCH /claim-ownership/{id} by claim id — deterministic (the org-scoped
+	// POST resolves the NEWEST pending claim, which misfires when several
+	// users hold pending claims on the same org) and transactional (approve
+	// transfers ownership + adds the claimant as owner member).
 	async function doApprove() {
 		if (!target) return;
 		actionLoading = true;
-		errorMessage = "";
-		const result = await organisationsAdminApi.claim(target.organization_id, { action: "approve" });
+		pageError = "";
+		const result = await organisationsAdminApi.reviewClaim(target.id, { status: "approved" });
 		if (result.ok) {
 			showApproveModal = false;
 			successMessage = t("organisations.claim_approved", "Claim approved");
-			load();
+			entityController?.reload();
 		} else {
-			errorMessage = result.error;
+			pageError = result.error ?? t("common.error", "Failed to approve claim");
 		}
 		actionLoading = false;
 	}
@@ -236,65 +204,49 @@
 	async function doReject() {
 		if (!target) return;
 		actionLoading = true;
-		errorMessage = "";
-		const result = await organisationsAdminApi.claim(target.organization_id, { action: "reject" });
+		pageError = "";
+		const result = await organisationsAdminApi.reviewClaim(target.id, { status: "rejected" });
 		if (result.ok) {
 			showRejectModal = false;
 			successMessage = t("organisations.claim_rejected", "Claim rejected");
-			load();
+			entityController?.reload();
 		} else {
-			errorMessage = result.error;
+			pageError = result.error ?? t("common.error", "Failed to reject claim");
 		}
 		actionLoading = false;
 	}
 
 	function openBulk(ids: Set<string>, action: "approve" | "reject") {
-		bulkTargets = claims.filter((c) => ids.has(c.id) && c.status === "pending");
+		bulkTargets = Array.from(ids)
+			.map((id) => claimRowMap.get(id))
+			.filter((c): c is PendingClaim => !!c && c.status === "pending");
 		if (bulkTargets.length === 0) return;
 		if (action === "approve") showBulkApproveModal = true;
 		else showBulkRejectModal = true;
 	}
 
-	async function doBulkApprove() {
+	async function doBulkReview(status: "approved" | "rejected") {
 		if (bulkTargets.length === 0) return;
 		bulkActionLoading = true;
-		errorMessage = "";
+		pageError = "";
 		let ok = 0;
 		let fail = 0;
 		for (const c of bulkTargets) {
-			const r = await organisationsAdminApi.claim(c.organization_id, { action: "approve" });
+			const r = await organisationsAdminApi.reviewClaim(c.id, { status });
 			if (r.ok) ok++;
 			else fail++;
 		}
 		bulkActionLoading = false;
 		showBulkApproveModal = false;
-		if (fail === 0) {
-			successMessage = t("organisations.bulk_approve_success", "{n} claim(s) approved").replace("{n}", String(ok));
-		} else {
-			errorMessage = t("organisations.bulk_partial", "{ok} approved, {fail} failed").replace("{ok}", String(ok)).replace("{fail}", String(fail));
-		}
-		load();
-	}
-
-	async function doBulkReject() {
-		if (bulkTargets.length === 0) return;
-		bulkActionLoading = true;
-		errorMessage = "";
-		let ok = 0;
-		let fail = 0;
-		for (const c of bulkTargets) {
-			const r = await organisationsAdminApi.claim(c.organization_id, { action: "reject" });
-			if (r.ok) ok++;
-			else fail++;
-		}
-		bulkActionLoading = false;
 		showBulkRejectModal = false;
+		const key = status === "approved" ? "organisations.bulk_approve_success" : "organisations.bulk_reject_success";
+		const fallback = status === "approved" ? "{n} claim(s) approved" : "{n} claim(s) rejected";
 		if (fail === 0) {
-			successMessage = t("organisations.bulk_reject_success", "{n} claim(s) rejected").replace("{n}", String(ok));
+			successMessage = t(key, fallback).replace("{n}", String(ok));
 		} else {
-			errorMessage = t("organisations.bulk_partial", "{ok} rejected, {fail} failed").replace("{ok}", String(ok)).replace("{fail}", String(fail));
+			pageError = t("organisations.bulk_partial", "{ok} approved, {fail} failed").replace("{ok}", String(ok)).replace("{fail}", String(fail));
 		}
-		load();
+		entityController?.reload();
 	}
 
 	// BUG-022/023: Fetch claim status options from the API on mount (Rule 16).
@@ -307,8 +259,45 @@
 		})();
 	});
 
-	$effect(() => {
-		load();
+	// `fields` is required by EntityPageConfig but unused on readonly pages.
+	const fields: FieldDef[] = [];
+
+	const config = $derived<EntityPageConfig>({
+		title: t("organisations.claims_title", "Organization Claims"),
+		description: t("organisations.claims_desc", "Review pending organization ownership claims"),
+		readonly: true,
+		pageSize: 25,
+		columns,
+		filters,
+		actions: rowActions,
+		bulkActions: bulkActionsList,
+		bulkDelete: false,
+		fields,
+		load: async ({ page, pageSize, q, sort, filter }) => {
+			// Server-side pagination/search/sort — the endpoint accepts
+			// page/limit/q/sort/dir and returns {data, meta}.
+			const params = new URLSearchParams();
+			params.set("status", filter.status || "pending");
+			params.set("page", String(page + 1));
+			params.set("limit", String(pageSize));
+			if (q) params.set("q", q);
+			if (sort) {
+				const [key, dir] = sort.split(":");
+				params.set("sort", key);
+				params.set("dir", dir === "asc" ? "asc" : "desc");
+			}
+			const result = await organisationsAdminApi.pendingClaimsMeta(params.toString());
+			if (!result.ok) {
+				throw new Error(result.error ?? t("organisations.claims_load_error", "Failed to load claims"));
+			}
+			const rows = (result.data?.data ?? []) as unknown as PendingClaim[];
+			for (const c of rows) claimRowMap.set(c.id, c);
+			return {
+				data: rows,
+				total: result.data?.meta?.total ?? rows.length,
+				totalPages: Math.max(1, result.data?.meta?.total_pages ?? 1)
+			};
+		}
 	});
 </script>
 
@@ -316,18 +305,13 @@
 	<title>{t("organisations.claims_title", "Organization Claims")} — {siteName()} Admin</title>
 </svelte:head>
 
-<PageHeader
-	title={t("organisations.claims_title", "Organization Claims")}
-	description={t("organisations.claims_desc", "Review pending organization ownership claims")}
-/>
-
-{#if errorMessage}
+{#if pageError}
 	<div
 		class="mb-4 flex items-center justify-between gap-2 flex-wrap rounded-md border px-4 py-3 text-sm"
 		style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)"
 	>
-		<span>{errorMessage}</span>
-		<Button variant="outline" size="sm" onclick={load}>{t("common.retry", "Retry")}</Button>
+		<span>{pageError}</span>
+		<Button variant="outline" size="sm" onclick={() => entityController?.reload()}>{t("common.retry", "Retry")}</Button>
 	</div>
 {/if}
 {#if successMessage}
@@ -339,31 +323,7 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex justify-end">
-	<Button variant="outline" size="sm" onclick={load}>
-		<RefreshCw class="h-3.5 w-3.5" />
-		{t("common.refresh", "Refresh")}
-	</Button>
-</div>
-
-{#if loading}
-	<TableSkeleton rows={5} />
-{:else}
-	<DataTable
-		{columns}
-		data={filtered}
-		bind:pageSize
-		pageSizeOptions={[10, 25, 50, 100]}
-		selectable={canReview}
-		bind:selectedIds
-		bulkActionsList={bulkActionsList}
-		emptyMessage={t("organisations.no_claims", "No claims found")}
-		searchable
-		onsearch={handleSearch}
-		filters={statusFilters}
-		bind:filterValue={filterValues}
-	/>
-{/if}
+<EntityPage {config} bind:controller={entityController} />
 
 <!-- View Modal -->
 <Modal
@@ -499,11 +459,11 @@
 	<div class="mt-6 flex justify-end gap-2">
 		{#if target && canReview && target.status === "pending"}
 			{@const claim = target}
-			<Button variant="destructive" onclick={() => { showViewModal = false; openReject(claim); }}>
+			<Button variant="destructive" onclick={() => { showViewModal = false; target = claim; showRejectModal = true; }}>
 				<X class="h-3.5 w-3.5" />
 				{t("organisations.reject", "Reject")}
 			</Button>
-			<Button onclick={() => { showViewModal = false; openApprove(claim); }}>
+			<Button onclick={() => { showViewModal = false; target = claim; showApproveModal = true; }}>
 				<Check class="h-3.5 w-3.5" />
 				{t("organisations.approve", "Approve")}
 			</Button>
@@ -587,7 +547,9 @@
 <!-- Bulk Approve Modal -->
 <Modal
 	open={showBulkApproveModal}
-	onclose={() => { showBulkApproveModal = false; }}
+	onclose={() => {
+		showBulkApproveModal = false;
+	}}
 	title={t("organisations.approve_claims", "Approve Selected Claims")}
 >
 	<p class="text-sm" style="color: var(--color-muted)">
@@ -603,7 +565,7 @@
 	</div>
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => { showBulkApproveModal = false; }}>{t("common.cancel", "Cancel")}</Button>
-		<Button onclick={doBulkApprove} disabled={bulkActionLoading}>
+		<Button onclick={() => doBulkReview("approved")} disabled={bulkActionLoading}>
 			<Check class="h-3.5 w-3.5" />
 			{bulkActionLoading ? t("common.processing", "Processing...") : t("organisations.approve", "Approve")}
 		</Button>
@@ -613,7 +575,9 @@
 <!-- Bulk Reject Modal -->
 <Modal
 	open={showBulkRejectModal}
-	onclose={() => { showBulkRejectModal = false; }}
+	onclose={() => {
+		showBulkRejectModal = false;
+	}}
 	title={t("organisations.reject_claims", "Reject Selected Claims")}
 >
 	<p class="text-sm" style="color: var(--color-muted)">
@@ -629,7 +593,7 @@
 	</div>
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => { showBulkRejectModal = false; }}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="destructive" onclick={doBulkReject} disabled={bulkActionLoading}>
+		<Button variant="destructive" onclick={() => doBulkReview("rejected")} disabled={bulkActionLoading}>
 			<X class="h-3.5 w-3.5" />
 			{bulkActionLoading ? t("common.processing", "Processing...") : t("organisations.reject", "Reject")}
 		</Button>
@@ -649,20 +613,4 @@
 	>
 		{value}
 	</span>
-{/snippet}
-
-{#snippet ClaimActionsCell({ row }: { value: any; row: PendingClaim })}
-	<div class="flex items-center gap-1">
-		<Button variant="ghost" size="sm" onclick={() => openView(row)} aria-label={t("common.view", "View")}>
-			<Eye class="h-3.5 w-3.5" />
-		</Button>
-		{#if canReview && row.status === "pending"}
-			<Button variant="ghost" size="sm" onclick={() => openApprove(row)} style="color: var(--color-success)" aria-label={t("organisations.approve", "Approve")}>
-				<Check class="h-3.5 w-3.5" />
-			</Button>
-			<Button variant="ghost" size="sm" onclick={() => openReject(row)} style="color: var(--color-danger)" aria-label={t("organisations.reject", "Reject")}>
-				<X class="h-3.5 w-3.5" />
-			</Button>
-		{/if}
-	</div>
 {/snippet}

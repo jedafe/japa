@@ -3,11 +3,13 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
+	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { Plus, RefreshCw } from 'lucide-svelte';
-	import { listRules, getStats, deleteRule, type NextActionRule, type NextActionStat } from '$lib/api/nextactions';
-	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
+	import { listRules, getStats, updateRule, deleteRule, type NextActionRule, type NextActionStat } from '$lib/api/nextactions';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { goto } from '$app/navigation';
 
 	let rules = $state<NextActionRule[]>([]);
@@ -15,65 +17,231 @@
 	let loading = $state(true);
 	let message = $state('');
 	let messageType = $state<'success' | 'error' | 'info'>('info');
+	let selectedIds = $state(new Set<string>());
+
+	// Server-side list state — the endpoint paginates/searches/sorts, so the
+	// DataTable runs in remote mode (rows render as-is, footer shows server
+	// total). searchApplied snapshots `search` after the debounce so the
+	// page/sort effect never tracks raw keystrokes.
+	let page = $state(0);
+	let pageSize = $state(10);
+	let sortKey = $state('');
+	let sortDirection = $state<'asc' | 'desc'>('asc');
+	let totalRows = $state(0);
 	let search = $state('');
+	let searchApplied = $state('');
+
+	// Single-state confirm modal: destructive bulk ops and deletes route here
+	// (ConfirmModal is the control-app convention — never native confirm()).
+	let confirmAction = $state<
+		| { kind: 'delete'; rule: NextActionRule }
+		| { kind: 'bulk_delete' | 'bulk_enable' | 'bulk_disable'; ids: string[] }
+		| null
+	>(null);
+	let confirmOpen = $state(false);
+
+	function openConfirm(action: NonNullable<typeof confirmAction>) {
+		confirmAction = action;
+		confirmOpen = true;
+	}
 
 	const columns = $derived.by<DataTableColumn[]>(() => {
 		translations();
 		return [
-			{ key: 'slug', label: 'Slug', sortable: true,
+			{ key: 'slug', label: t('nextactions.col_slug', 'Slug'), sortable: true,
 			  render: (v: unknown) => `<span class="font-mono text-xs">${escapeHtml(v)}</span>` },
-			{ key: 'name', label: 'Name', sortable: true,
+			{ key: 'name', label: t('nextactions.col_name', 'Name'), sortable: true,
 			  render: (v: unknown) => escapeHtml(v) },
-			{ key: 'enabled', label: 'Enabled', sortable: true,
-			  render: (v: unknown) => v ? '✓' : '—' },
-			{ key: 'priority', label: 'Priority', sortable: true },
-			{ key: 'channels', label: 'Channels',
-			  render: (v: unknown) => `<span class="text-muted-foreground text-xs">${escapeHtml(Array.isArray(v) ? v.join(', ') : '')}</span>` },
-			{ key: 'id', label: '',
-			  render: (v: unknown) => `<a href="/next-actions/${escapeHtml(v)}" class="text-primary text-xs underline">Edit</a>` }
+			{ key: 'enabled', label: t('nextactions.col_enabled', 'Enabled'), sortable: true,
+			  render: (v: unknown) => v
+				? `<span class="text-emerald-500">✓</span>`
+				: `<span class="text-muted-foreground">—</span>` },
+			{ key: 'upsell', label: t('nextactions.col_upsell', 'Upsell'), sortable: true,
+			  render: (v: unknown) => v
+				? `<span class="text-amber-500">✓</span>`
+				: `<span class="text-muted-foreground">—</span>` },
+			{ key: 'priority', label: t('nextactions.col_priority', 'Priority'), sortable: true },
+			{ key: 'channels', label: t('nextactions.col_channels', 'Channels'),
+			  render: (v: unknown) => `<span class="text-muted-foreground text-xs">${escapeHtml(Array.isArray(v) ? v.join(', ') : '')}</span>` }
 		];
 	});
 
-	async function remove(row: NextActionRule) {
-		if (!confirm(`Delete rule "${row.slug}"?`)) return;
-		const r = await deleteRule(row.id);
-		if (r.ok) await load();
-		else { message = r.error || 'Delete failed'; messageType = 'error'; }
+	function fail(msg: string | undefined, fallback: string) {
+		message = msg || fallback;
+		messageType = 'error';
 	}
 
-	const rowActions: DataTableRowAction[] = [
-		{
-			label: 'Edit',
-			onClick: (row) => goto(`/next-actions/${row.id}`)
-		},
-		{
-			label: 'Delete',
-			onClick: (row) => void remove(row as unknown as NextActionRule),
-			variant: 'destructive'
-		}
-	];
+	// PATCH requires the whole rule body (ruleRequest has no pointer fields),
+	// so a toggle resubmits the row with only `enabled` flipped.
+	async function setEnabled(row: NextActionRule, enabled: boolean) {
+		message = '';
+		const r = await updateRule(row.id, { ...row, enabled });
+		if (r.ok) await load(searchApplied);
+		else fail(r.error, t('nextactions.toggle_failed', 'Failed to update rule'));
+	}
 
-	async function load() {
+	async function applyBulk(action: 'bulk_delete' | 'bulk_enable' | 'bulk_disable', ids: string[]) {
+		let failed: number;
+		if (action === 'bulk_delete') {
+			const results = await Promise.all(ids.map((id) => deleteRule(id)));
+			failed = results.filter((r) => !r.ok).length;
+		} else {
+			const enabled = action === 'bulk_enable';
+			const results = await Promise.all(
+				ids.map((id) => {
+					const rule = rules.find((r) => r.id === id);
+					return rule ? updateRule(id, { ...rule, enabled }) : Promise.resolve({ ok: false as const, error: 'not found' });
+				})
+			);
+			failed = results.filter((r) => !r.ok).length;
+		}
+		await load(searchApplied);
+		if (failed > 0) {
+			fail('', t('nextactions.bulk_failed', '{n} rule(s) could not be updated.').replace('{n}', String(failed)));
+		} else {
+			message = t('nextactions.bulk_ok', '{n} rule(s) updated.').replace('{n}', String(ids.length));
+			messageType = 'success';
+		}
+	}
+
+	async function confirmCurrent() {
+		const action = confirmAction;
+		confirmAction = null;
+		if (!action) return;
+		message = '';
+		if (action.kind === 'delete') {
+			const r = await deleteRule(action.rule.id);
+			if (r.ok) {
+				await load(searchApplied);
+				message = t('nextactions.deleted', 'Rule deleted');
+				messageType = 'success';
+			} else {
+				fail(r.error, t('nextactions.delete_failed', 'Delete failed'));
+			}
+		} else {
+			await applyBulk(action.kind, action.ids);
+		}
+	}
+
+	const rowActions = $derived.by<DataTableRowAction[]>(() => {
+		translations();
+		return [
+			{
+				label: t('common.edit', 'Edit'),
+				onClick: (row) => goto(`/next-actions/${row.id}`)
+			},
+			{
+				label: t('nextactions.enable', 'Enable'),
+				onClick: (row) => void setEnabled(row as unknown as NextActionRule, true),
+				hidden: (row) => row.enabled === true
+			},
+			{
+				label: t('nextactions.disable', 'Disable'),
+				onClick: (row) => void setEnabled(row as unknown as NextActionRule, false),
+				hidden: (row) => row.enabled !== true
+			},
+			{
+				label: t('common.delete', 'Delete'),
+				onClick: (row) => openConfirm({ kind: 'delete', rule: row as unknown as NextActionRule }),
+				variant: 'destructive'
+			}
+		];
+	});
+
+	const bulkActions = $derived.by<DataTableBulkAction[]>(() => {
+		translations();
+		return [
+			{
+				label: t('nextactions.enable_selected', 'Enable selected'),
+				onClick: (ids: string[]) => openConfirm({ kind: 'bulk_enable', ids })
+			},
+			{
+				label: t('nextactions.disable_selected', 'Disable selected'),
+				onClick: (ids: string[]) => openConfirm({ kind: 'bulk_disable', ids })
+			},
+			{
+				label: t('nextactions.delete_selected', 'Delete selected'),
+				variant: 'destructive',
+				onClick: (ids: string[]) => openConfirm({ kind: 'bulk_delete', ids })
+			}
+		];
+	});
+
+	async function load(q: string) {
 		loading = true;
 		try {
-			const [r, s] = await Promise.all([listRules(), getStats()]);
-			if (r.ok) rules = r.data ?? [];
-			else { message = r.error || 'Failed to load rules'; messageType = 'error'; }
+			const [r, s] = await Promise.all([
+				listRules({ q, sort: sortKey, sort_dir: sortDirection, page_offset: page * pageSize, page_size: pageSize }),
+				getStats()
+			]);
+			if (!r.ok) {
+				fail(r.error, t('nextactions.load_failed', 'Failed to load rules'));
+			} else if (r.data) {
+				rules = r.data.data ?? [];
+				totalRows = r.data.total ?? rules.length;
+			}
 			if (s.ok) stats = s.data ?? [];
 		} catch {
-			message = 'Failed to load rules';
-			messageType = 'error';
+			fail('', t('nextactions.load_failed', 'Failed to load rules'));
 		} finally {
 			loading = false;
 		}
 	}
 
-	$effect(() => { load(); });
+	// Refetch on page/page-size/sort/searchApplied changes — the endpoint owns
+	// those semantics in remote mode (audit page convention).
+	$effect(() => {
+		void page;
+		void pageSize;
+		void sortKey;
+		void sortDirection;
+		void searchApplied;
+		void load(searchApplied);
+	});
 
-	let filtered = $derived.by(() => {
-		const q = search.trim().toLowerCase();
-		if (!q) return rules;
-		return rules.filter((r) => r.slug.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+	// Debounced search-as-you-type: snapshot `search` into `searchApplied`
+	// (which the load effect tracks), resetting to page 0 on new queries.
+	let searchSeq = 0;
+	$effect(() => {
+		const q = search;
+		const seq = ++searchSeq;
+		const t = setTimeout(() => {
+			if (seq !== searchSeq) return;
+			page = 0;
+			searchApplied = q;
+		}, 250);
+		return () => clearTimeout(t);
+	});
+
+	const statColumns = $derived.by<DataTableColumn[]>(() => {
+		translations();
+		return [
+			{ key: 'slug', label: t('nextactions.col_rule', 'Rule'), sortable: true,
+			  render: (v: unknown) => `<span class="font-mono text-xs">${escapeHtml(v)}</span>` },
+			{ key: 'shown', label: t('nextactions.col_served', 'Served'), sortable: true },
+			{ key: 'clicked', label: t('nextactions.col_clicked', 'Clicked'), sortable: true },
+			{ key: 'dismissed', label: t('nextactions.col_dismissed', 'Dismissed'), sortable: true },
+			{ key: 'completed', label: t('nextactions.col_completed', 'Completed'), sortable: true }
+		];
+	});
+
+	const confirmCopy = $derived.by(() => {
+		const a = confirmAction;
+		if (!a) return { title: '', consequence: '' };
+		if (a.kind === 'delete') {
+			return {
+				title: t('nextactions.delete_title', 'Delete rule'),
+				consequence: t('nextactions.delete_confirm', 'Permanently delete rule "{slug}"? Served/dismissed state for users is kept but the suggestion stops rendering.').replace('{slug}', a.rule.slug)
+			};
+		}
+		const n = String(a.ids.length);
+		if (a.kind === 'bulk_enable') {
+			return { title: t('nextactions.enable_selected', 'Enable selected'), consequence: t('nextactions.bulk_enable_confirm', 'Enable {n} selected rule(s)?').replace('{n}', n) };
+		}
+		if (a.kind === 'bulk_disable') {
+			return { title: t('nextactions.disable_selected', 'Disable selected'), consequence: t('nextactions.bulk_disable_confirm', 'Disable {n} selected rule(s)? They stop rendering for all users.').replace('{n}', n) };
+		}
+		return { title: t('nextactions.delete_selected', 'Delete selected'), consequence: t('nextactions.bulk_delete_confirm', 'Permanently delete {n} selected rule(s)? This cannot be undone.').replace('{n}', n) };
 	});
 </script>
 
@@ -81,7 +249,7 @@
 
 <div class="mb-3 flex items-center gap-2">
 	<button onclick={() => goto('/next-actions/new')} class="bg-primary text-primary-foreground inline-flex items-center gap-1 rounded-[var(--radius)] px-3 py-1.5 text-sm">
-		<Plus size={14} /> New rule
+		<Plus size={14} /> {t('nextactions.new_rule', 'New rule')}
 	</button>
 </div>
 
@@ -90,31 +258,24 @@
 {/if}
 
 <div class="mb-3 flex items-center gap-2">
-	<input bind:value={search} placeholder={t('nextactions.filter_ph', 'Filter rules…')} class="border-border bg-background w-64 rounded-[var(--radius)] border px-3 py-1.5 text-sm" />
-	<button onclick={load} class="text-muted-foreground hover:text-foreground p-1" aria-label={t('common.refresh', 'Refresh')}><RefreshCw size={14} /></button>
+	<SearchInput bind:value={search} placeholder={t('nextactions.filter_ph', 'Filter rules…')} class="w-64" />
+	<button onclick={() => load(searchApplied)} class="text-muted-foreground hover:text-foreground p-1" aria-label={t('common.refresh', 'Refresh')}><RefreshCw size={14} /></button>
 </div>
 
-<DataTable {columns} rows={filtered} {loading} {rowActions} />
+<DataTable {columns} rows={rules} {totalRows} {loading} {rowActions} {bulkActions} bind:selectedIds bind:page bind:pageSize bind:sortKey bind:sortDirection />
+
+{#if confirmAction}
+	<ConfirmModal
+		bind:open={confirmOpen}
+		title={confirmCopy.title}
+		consequence={confirmCopy.consequence}
+		onConfirm={confirmCurrent}
+		onCancel={() => (confirmAction = null)}
+	/>
+{/if}
 
 {#if stats.length > 0}
-	<h2 class="text-foreground mt-8 mb-2 text-sm font-medium">Funnel (lifetime)</h2>
-	<p class="text-muted-foreground mb-2 text-xs">Served = suggestions returned by the API (a suggestion may be served without rendering); Completed = real completions via completion_signal or an explicit complete call, not CTA clicks.</p>
-	<div class="border-border overflow-x-auto rounded-[var(--radius-card)] border">
-		<table class="w-full text-sm">
-			<thead><tr class="text-muted-foreground border-border border-b text-start">
-				<th class="px-3 py-2">{t('nextactions.col_rule', 'Rule')}</th><th class="px-3 py-2">{t('nextactions.col_served', 'Served')}</th><th class="px-3 py-2">{t('nextactions.col_clicked', 'Clicked')}</th><th class="px-3 py-2">{t('nextactions.col_dismissed', 'Dismissed')}</th><th class="px-3 py-2">{t('nextactions.col_completed', 'Completed')}</th>
-			</tr></thead>
-			<tbody>
-				{#each stats as s (s.slug)}
-					<tr class="border-border border-b last:border-0">
-						<td class="px-3 py-2 font-mono text-xs">{s.slug}</td>
-						<td class="px-3 py-2">{s.shown}</td>
-						<td class="px-3 py-2">{s.clicked}</td>
-						<td class="px-3 py-2">{s.dismissed}</td>
-						<td class="px-3 py-2">{s.completed}</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<h2 class="text-foreground mt-8 mb-2 text-sm font-medium">{t('nextactions.funnel_title', 'Funnel (lifetime)')}</h2>
+	<p class="text-muted-foreground mb-2 text-xs">{t('nextactions.funnel_caption', 'Served = suggestions returned by the API (a suggestion may be served without rendering); Completed = real completions via completion_signal or an explicit complete call, not CTA clicks.')}</p>
+	<DataTable columns={statColumns} rows={stats} totalRows={stats.length} selectable={false} pageSizeOptions={[10, 25, 50]} getRowId={(row) => (row as NextActionStat).slug} />
 {/if}

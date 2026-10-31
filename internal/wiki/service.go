@@ -1993,7 +1993,9 @@ func pageToDTO(p WikiPageWithSpace) WikiPageDTO {
 		ID:             p.ID.String(),
 		SpaceID:        p.SpaceID.String(),
 		Slug:           p.Slug,
-		Title:          p.Title,
+		// Seeded stubs store the category label verbatim — expand {name}
+		// so index/sidebar titles never leak the raw token.
+		Title:          substituteTemplateLabel(p.Title, p.SpaceName),
 		Category:       p.Category,
 		IsFeatured:     p.IsFeatured,
 		IsLocked:       p.IsLocked,

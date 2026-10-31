@@ -7,7 +7,8 @@
 	import { EmptyState, SpaceJoinButton, SearchInput, DirectoryCard, ListPageBar, FilterToggle, PageAction, SelectField, UrlTabs, type SearchSuggestion, type CardMetaItem, type UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
-	import SpaceCombobox from '$lib/components/spaces/SpaceCombobox.svelte';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import { flagUrl } from '$lib/utils/flags';
 	import type { Space } from '$lib/types';
@@ -34,15 +35,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	);
 
 	let query = $state(untrack(() => data.q));
-	let selectedType = $state(untrack(() => data.type));
-	let selectedLevel = $state(untrack(() => data.level));
 	let selectedSort = $state(untrack(() => data.sort));
-	let selectedGeo = $state(untrack(() => data.geo));
-	let selectedRegion = $state(untrack(() => data.region));
-	let selectedSubregion = $state(untrack(() => data.subregion));
-	let selectedParent = $state<{ id: string; name: string; slug: string } | null>(
-		untrack(() => data.parent ? { id: data.parent, name: data.parentName || data.parent, slug: '' } : null)
-	);
+	// Geo cascade (universities-style filter fields): country is a geo_code,
+	// state/city are primary-space slugs — the server maps them onto
+	// ?geo= / ?parent= respectively.
+	let selectedCountry = $state(untrack(() => data.country ?? ''));
+	let selectedState = $state(untrack(() => data.state ?? ''));
+	let selectedCity = $state(untrack(() => data.city ?? ''));
 	// "My spaces" is a server-side scope (?joined=1) — the API returns only
 	// spaces the viewer is an approved member of, with correct pagination
 	// (audit fix: the chip used to filter just the current page client-side).
@@ -53,23 +52,21 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	// (same pattern as /sources — keeps controls honest on back/forward nav).
 	$effect(() => {
 		query = data.q;
-		selectedType = data.type;
-		selectedLevel = data.level;
 		selectedSort = data.sort;
-		selectedGeo = data.geo;
-		selectedRegion = data.region;
-		selectedSubregion = data.subregion;
-		selectedParent = data.parent
-			? { id: data.parent, name: data.parentName || data.parent, slug: '' }
-			: null;
+		selectedCountry = data.country ?? '';
+		selectedState = data.state ?? '';
+		selectedCity = data.city ?? '';
 		joinedOnly = data.joined ?? false;
 	});
 
 	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /sources).
 	// `joined` is a scope tab now, not a filter, so it doesn't light the dot.
 	const hasActiveFilters = $derived(
-		!!selectedType || !!selectedLevel || !!selectedSort || !!selectedGeo.trim() ||
-		!!selectedRegion || !!selectedSubregion || !!selectedParent
+		!!selectedCountry || !!selectedState || !!selectedCity || !!selectedSort ||
+		// Legacy URL params still resolve server-side — light the dot so the
+		// clear control appears on hand-crafted links too.
+		!!data.type || !!data.level || !!data.geo || !!data.region ||
+		!!data.subregion || !!data.parent
 	);
 	let showFilters = $state(false);
 	$effect(() => {
@@ -89,64 +86,53 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{ value: 'activity', label: t('spaces.sort_activity', 'Most active') }
 	]);
 
-	// Rule 16: level list from system_settings; labels are i18n keys.
-	function humanizeLevel(level: string): string {
-		return level.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-	}
+	// Geo-cascade autocompletes — same fetch pattern as /universities:
+	// countries from the canonical /geo/countries list, states/cities
+	// preloaded server-side for the current selections.
+	const allLabel = t('universities.all_countries', 'All countries');
+	const allStatesLabel = t('universities.all_states', 'All states');
+	const allCitiesLabel = t('universities.all_cities', 'All cities');
 
-	// Type and level read as one axis to users: the geo types (Country/State/
-	// City) already express the geo levels, and member-created spaces are all
-	// level=custom (SpaceCreationModal hardcodes it). So a single "Type"
-	// picker lists every space type plus the levels no type covers — a
-	// `level:<l>` option still writes ?level=, keeping old URLs working.
-	const typeCoveredLevels = $derived(
-		new Set(data.spaceTypes.flatMap((st) => [st.slug, st.name.toLowerCase()]))
-	);
-	const kindOptions = $derived([
-		{ value: '', label: t('common.all_types', 'All types') },
-		// §80 — wiki-only types (attraction) live under /wiki, not /spaces;
-		// offering them here filters to an empty list. §05 amendment — the
-		// directory lists member-created spaces only, so types members can't
-		// create (geo types have no category) are hidden too: they always
-		// filter to an empty list. Education is a member-creatable type —
-		// universities (level='university') don't match member_created.
-		...data.spaceTypes
-			.filter((st) => !st.wiki_only && !!st.category)
-			.map((st) => ({ value: st.slug, label: st.name })),
-		...(data.levels ?? [])
-			.filter((l) => !typeCoveredLevels.has(l))
-			.map((l) => ({
-				value: `level:${l}`,
-				label:
-					l === 'custom'
-						? t('spaces.member_created', 'Member-created')
-						: t(`spaces.level_${l}`, humanizeLevel(l))
-			}))
-	]);
-	// The picker's value: the type slug, or `level:<l>` for a level-only
-	// option. A ?level= URL that a type already covers (e.g. level=country)
-	// displays as that type — equivalent filter, cleaner presentation.
-	const kindValue = $derived(
-		selectedType
-			? selectedType
-			: selectedLevel
-				? typeCoveredLevels.has(selectedLevel)
-					? (data.spaceTypes.find(
-							(st) => st.slug === selectedLevel || st.name.toLowerCase() === selectedLevel
-						)?.slug ?? `level:${selectedLevel}`)
-					: `level:${selectedLevel}`
-				: ''
-	);
-	function onKindChange(v: string) {
-		if (v.startsWith('level:')) {
-			selectedType = '';
-			selectedLevel = v.slice('level:'.length);
-		} else {
-			selectedType = v;
-			selectedLevel = '';
-		}
-		onFilterChange();
+	function fetchCountries(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allLabel };
+		const items = (data.countries ?? []).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }));
+		if (query === '') return Promise.resolve([allItem, ...items]);
+		const filtered = items.filter(
+			(c) => c.label.toLowerCase().includes(query) || c.id.toLowerCase().includes(query)
+		);
+		return Promise.resolve(allLabel.toLowerCase().includes(query) ? [allItem, ...filtered] : filtered);
 	}
+	const fetchCountriesInitial = () => fetchCountries('');
+	const selectedCountryLabel = $derived(
+		selectedCountry ? data.countries?.find((c) => c.geo_code === selectedCountry)?.name ?? selectedCountry : allLabel
+	);
+
+	function fetchStates(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allStatesLabel };
+		const items = (data.states ?? []).map((s) => ({ id: s.slug, label: s.name }));
+		if (query === '') return Promise.resolve([allItem, ...items]);
+		const filtered = items.filter((s) => s.label.toLowerCase().includes(query));
+		return Promise.resolve(allStatesLabel.toLowerCase().includes(query) ? [allItem, ...filtered] : filtered);
+	}
+	const fetchStatesInitial = () => fetchStates('');
+	const selectedStateLabel = $derived(
+		selectedState ? data.states?.find((s) => s.slug === selectedState)?.name ?? selectedState : allStatesLabel
+	);
+
+	function fetchCities(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase().trim();
+		const allItem: AutocompleteItem = { id: '', label: allCitiesLabel };
+		const items = (data.cities ?? []).map((c) => ({ id: c.slug, label: c.name }));
+		if (query === '') return Promise.resolve([allItem, ...items]);
+		const filtered = items.filter((c) => c.label.toLowerCase().includes(query));
+		return Promise.resolve(allCitiesLabel.toLowerCase().includes(query) ? [allItem, ...filtered] : filtered);
+	}
+	const fetchCitiesInitial = () => fetchCities('');
+	const selectedCityLabel = $derived(
+		selectedCity ? data.cities?.find((c) => c.slug === selectedCity)?.name ?? selectedCity : allCitiesLabel
+	);
 
 	// Scope tabs — ?joined=1 switches between the full directory and the
 	// viewer's memberships (guests only get the directory).
@@ -160,13 +146,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	function buildHref(pageNum: number): string {
 		const params = new URLSearchParams();
 		if (data.q) params.set('q', data.q);
-		if (data.type) params.set('type', data.type);
-		if (data.level) params.set('level', data.level);
+		if (data.country) params.set('country', data.country);
+		if (data.state) params.set('state', data.state);
+		if (data.city) params.set('city', data.city);
 		if (data.sort) params.set('sort', data.sort);
-		if (data.geo) params.set('geo', data.geo);
-		if (data.region) params.set('region', data.region);
-		if (data.subregion) params.set('subregion', data.subregion);
-		if (data.parent) params.set('parent', data.parent);
 		if (data.joined) params.set('joined', '1');
 		if (pageNum > 0) params.set('page', String(pageNum));
 		const qs = params.toString();
@@ -176,13 +159,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	function onFilterChange() {
 		const params = new URLSearchParams();
 		if (query.trim()) params.set('q', query.trim());
-		if (selectedType) params.set('type', selectedType);
-		if (selectedLevel) params.set('level', selectedLevel);
+		if (selectedCountry) params.set('country', selectedCountry);
+		if (selectedState) params.set('state', selectedState);
+		if (selectedCity) params.set('city', selectedCity);
 		if (selectedSort) params.set('sort', selectedSort);
-		if (selectedGeo.trim()) params.set('geo', selectedGeo.trim());
-		if (selectedRegion) params.set('region', selectedRegion);
-		if (selectedSubregion) params.set('subregion', selectedSubregion);
-		if (selectedParent) params.set('parent', selectedParent.id);
 		if (joinedOnly) params.set('joined', '1');
 		const qs = params.toString();
 		goto(qs ? `/spaces?${qs}` : '/spaces', { keepFocus: true });
@@ -190,13 +170,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	// Clear keeps the search query and scope tab — only the panel resets.
 	function clearFilters() {
-		selectedType = '';
-		selectedLevel = '';
+		selectedCountry = '';
+		selectedState = '';
+		selectedCity = '';
 		selectedSort = '';
-		selectedGeo = '';
-		selectedRegion = '';
-		selectedSubregion = '';
-		selectedParent = null;
 		onFilterChange();
 	}
 
@@ -220,17 +197,20 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		}
 	}
 
+	// Suggestions are scoped to member-created spaces — the same
+	// member_created=1 filter the directory list uses (§05 amendment):
+	// primary/geo spaces are reachable via /wiki and /universities, not here.
 	async function spaceSearchFetcher(q: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<{ results: { type: string; item: { id: string; name: string; excerpt?: string; url: string } }[] }>(
-			`/spaces/search?q=${encodeURIComponent(q)}&limit=8`
+		const res = await api.get<{ items: { id: string; name: string; slug: string; description?: string }[] }>(
+			`/spaces?q=${encodeURIComponent(q)}&member_created=1&page_size=8`
 		);
 		if (res.error || !res.data) return [];
-		return (res.data.results ?? []).map((r) => ({
-			id: r.item.id,
-			title: r.item.name,
-			url: r.item.url,
-			excerpt: r.item.excerpt,
-			type: r.type
+		return (res.data.items ?? []).map((s) => ({
+			id: s.id,
+			title: s.name,
+			url: `/spaces/${s.slug}`,
+			excerpt: s.description,
+			type: 'space'
 		}));
 	}
 </script>
@@ -282,26 +262,17 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				ariaLabel={t('spaces.heading', 'Spaces')}
 				fetcher={spaceSearchFetcher}
 			/>
-			{#if selectedType}
-				<input type="hidden" name="type" value={selectedType} />
+			{#if selectedCountry}
+				<input type="hidden" name="country" value={selectedCountry} />
 			{/if}
-			{#if selectedLevel}
-				<input type="hidden" name="level" value={selectedLevel} />
+			{#if selectedState}
+				<input type="hidden" name="state" value={selectedState} />
+			{/if}
+			{#if selectedCity}
+				<input type="hidden" name="city" value={selectedCity} />
 			{/if}
 			{#if selectedSort}
 				<input type="hidden" name="sort" value={selectedSort} />
-			{/if}
-			{#if selectedGeo}
-				<input type="hidden" name="geo" value={selectedGeo} />
-			{/if}
-			{#if selectedRegion}
-				<input type="hidden" name="region" value={selectedRegion} />
-			{/if}
-			{#if selectedSubregion}
-				<input type="hidden" name="subregion" value={selectedSubregion} />
-			{/if}
-			{#if selectedParent}
-				<input type="hidden" name="parent" value={selectedParent.id} />
 			{/if}
 			{#if joinedOnly}
 				<input type="hidden" name="joined" value="1" />
@@ -339,36 +310,53 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		     same pattern as /sources and /blog. Type+level are merged into a
 		     single picker; ?subregion= stays URL-only (no dedicated control). -->
 		<div id="spaces-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-				{#if kindOptions.length > 1}
-					<div>
-						<label for="spaces-filter-type" class="sr-only">{t('spaces.type_label', 'Type')}</label>
-						<SelectField
-							id="spaces-filter-type"
-							value={kindValue}
-							options={kindOptions}
-							placeholder={t('common.all_types', 'All types')}
-							onValueChange={onKindChange}
-							class="w-full"
-						/>
-					</div>
-				{/if}
-
-				<!-- §05 amendment — geo/region filters only match primary spaces
-				     (member spaces carry no geo_code/region); removed from the
-				     member-directory UI. The URL params still resolve server-side. -->
-
-				<div class="sm:col-span-2">
-					<SpaceCombobox
-						parentMode
-						placeholder={t('spaces.parent_placeholder', 'Filter by parent space…')}
-						selected={selectedParent}
-						onSelect={(space) => { selectedParent = space; onFilterChange(); }}
-						onRemove={() => { selectedParent = null; onFilterChange(); }}
+			<!-- Universities-style geo cascade (filter parity with /universities):
+			     country → ?geo=, state/city → ?parent= (deepest wins) + sort. -->
+			<div class="flex flex-wrap gap-2">
+				<div class="w-56">
+					<Autocomplete
+						placeholder={t('universities.all_countries', 'All countries')}
+						ariaLabel={t('universities.country_filter', 'Filter by country')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchCountries}
+						initialFetcher={fetchCountriesInitial}
+						selectedId={selectedCountry || null}
+						selectedLabel={selectedCountryLabel}
+						onSelect={(item) => { selectedCountry = item.id; selectedState = ''; selectedCity = ''; onFilterChange(); }}
+						onClear={() => { selectedCountry = ''; selectedState = ''; selectedCity = ''; onFilterChange(); }}
 					/>
 				</div>
-
-				<div>
+				<div class="w-56 {selectedCountry ? '' : 'pointer-events-none opacity-50'}">
+					<Autocomplete
+						placeholder={selectedCountry
+							? t('universities.all_states', 'All states')
+							: t('universities.select_country_first', 'Select a country first')}
+						ariaLabel={t('universities.state_filter', 'Filter by state')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchStates}
+						initialFetcher={fetchStatesInitial}
+						selectedId={selectedState || null}
+						selectedLabel={selectedStateLabel}
+						onSelect={(item) => { selectedState = item.id; selectedCity = ''; onFilterChange(); }}
+						onClear={() => { selectedState = ''; selectedCity = ''; onFilterChange(); }}
+					/>
+				</div>
+				<div class="w-56 {selectedState || selectedCity ? '' : 'pointer-events-none opacity-50'}">
+					<Autocomplete
+						placeholder={selectedState || selectedCity
+							? t('universities.all_cities', 'All cities')
+							: t('universities.select_state_first', 'Select a state first')}
+						ariaLabel={t('universities.city_filter', 'Filter by city')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchCities}
+						initialFetcher={fetchCitiesInitial}
+						selectedId={selectedCity || null}
+						selectedLabel={selectedCityLabel}
+						onSelect={(item) => { selectedCity = item.id; onFilterChange(); }}
+						onClear={() => { selectedCity = ''; onFilterChange(); }}
+					/>
+				</div>
+				<div class="w-44">
 					<label for="spaces-filter-sort" class="sr-only">{t('spaces.sort_label', 'Sort')}</label>
 					<SelectField
 						id="spaces-filter-sort"

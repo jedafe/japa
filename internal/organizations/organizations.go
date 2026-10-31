@@ -102,6 +102,12 @@ type sourceManager interface {
 	CreateSourceFromEntity(ctx context.Context, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (gen.IntelSource, error)
 }
 
+// superAdminChecker reports whether a user is a super_admin member — the
+// organizations.max_per_user quantity gate skips them entirely.
+type superAdminChecker interface {
+	IsSuperAdmin(ctx context.Context, userID pgtype.UUID) bool
+}
+
 // Service provides organization business logic.
 type Service struct {
 	store        *Store
@@ -113,6 +119,12 @@ type Service struct {
 	asynq        *asynq.Client
 	siteURL      string
 	sources      sourceManager
+	// customFieldLookup reads the org_type field's options for validateOrgType
+	// (same lookup the handlers use for /organizations/meta). nil falls back
+	// to the hardcoded validOrgTypes list.
+	customFieldLookup CustomFieldLookup
+	// superAdmin bypasses the max_per_user quantity gate for super_admin members.
+	superAdmin superAdminChecker
 }
 
 // NewService creates a Service backed by the given database.
@@ -161,6 +173,15 @@ func (s *Service) SetTierResolver(r TierResolver) { s.tierResolver = r }
 // SetSourceManager links the organization service to the canonical source
 // registry (v2 source directory, Task 5).
 func (s *Service) SetSourceManager(m sourceManager) { s.sources = m }
+
+// SetCustomFieldLookup injects the custom field lookup so validateOrgType can
+// read the org_type select field's options (Section 07 + 08). Optional — nil
+// keeps the hardcoded fallback allow-list.
+func (s *Service) SetCustomFieldLookup(l CustomFieldLookup) { s.customFieldLookup = l }
+
+// SetSuperAdminChecker injects the super_admin membership check used to
+// bypass the organizations.max_per_user quantity gate. nil means no bypass.
+func (s *Service) SetSuperAdminChecker(c superAdminChecker) { s.superAdmin = c }
 
 // emitWebhook fires an organization.* / claim.* event fire-and-forget
 // (Rule 8). Errors are logged but never returned to the caller — webhook

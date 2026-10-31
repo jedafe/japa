@@ -553,3 +553,16 @@ FROM wiki_type_configs wtc
 JOIN space_types st ON st.id = wtc.space_type_id
 WHERE wtc.space_type_id = ANY(@type_ids::uuid[])
   AND wtc.enabled = true AND wtc.entity_kind IS NOT NULL;
+
+-- name: GetWikiSpaceRef :one
+-- Single-space breadcrumb ref (slug/name/level + type identity and the
+-- wiki-type display label) — the entity-page host crumb: an entity-bound
+-- page's ancestor chain ends at its host space, which needs the same ref
+-- shape ListWikiSpaceParentLinks produces for walked parents.
+SELECT s.id, s.slug, s.name, s.level, s.space_type_id,
+       COALESCE(st.slug, '') AS space_type_slug,
+       COALESCE(wtc.label, st.name, '') AS space_type_label
+FROM spaces s
+LEFT JOIN space_types st ON st.id = s.space_type_id
+LEFT JOIN wiki_type_configs wtc ON wtc.space_type_id = s.space_type_id
+WHERE s.id = @space_id AND s.deleted_at IS NULL;

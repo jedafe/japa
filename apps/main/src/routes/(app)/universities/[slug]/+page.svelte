@@ -485,13 +485,22 @@
 								<dt class="text-xs text-[var(--color-muted)]">{field.label}</dt>
 								<dd class="truncate text-[var(--color-text)]">
 									{#if field.field_type === 'url' || field.field_type === 'email'}
-										<a
-											href={field.field_type === 'email' ? `mailto:${field.value}` : field.value}
-											{...field.field_type === 'email' ? {} : { target: '_blank', rel: 'noopener noreferrer' }}
-											class="text-[var(--color-primary)] hover:underline"
-										>
-											{field.value.replace(/^https?:\/\//, '').replace(/\/$/, '')}
-										</a>
+										{#if field.field_type === 'email'}
+											<a href={`mailto:${field.value}`} class="text-[var(--color-primary)] hover:underline">
+												{field.value.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+											</a>
+										{:else if /^https?:\/\//i.test(String(field.value ?? '').trim())}
+											<a
+												href={field.value}
+												target="_blank"
+												rel="noopener noreferrer"
+												class="text-[var(--color-primary)] hover:underline"
+											>
+												{field.value.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+											</a>
+										{:else}
+											{field.value}
+										{/if}
 									{:else}
 										{field.value}
 									{/if}
