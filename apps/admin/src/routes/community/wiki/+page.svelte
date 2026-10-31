@@ -13,7 +13,7 @@
 	import { initTabParam } from '$lib/utils/url-sync.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission, isPermissionsLoaded } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, XCircle, Sparkles, Lock, LockOpen, Star, StarOff, FileDiff, Trash2 } from 'lucide-svelte';
+	import { Eye, CheckCircle, XCircle, Sparkles, Lock, LockOpen, Star, StarOff, FileDiff, Trash2 , History } from 'lucide-svelte';
 	import type { ActionItem, BulkAction, FilterDef } from '$lib/components/ui/data-table';
 
 	// One row of GET /admin/wiki (AdminWikiPageDTO). status is the LATEST
@@ -347,6 +347,38 @@
 	function openForceDelete(row: WikiItem) {
 		forceTargets = [row];
 		showForceModal = true;
+	}
+
+	// §44 amendment 5 parity — wiki.manage can clear a page's resolved
+	// revision history; pending submissions resolve through review, not here.
+	let clearTarget = $state<WikiItem | null>(null);
+	let clearing = $state(false);
+	let showClearModal = $state(false);
+
+	function openClearHistory(row: WikiItem) {
+		clearTarget = row;
+		showClearModal = true;
+	}
+
+	async function clearHistory() {
+		if (!clearTarget) return;
+		clearing = true;
+		pageError = '';
+		try {
+			const res = await apiRaw(`/admin/wiki/${clearTarget.id}/revisions`, {
+				method: 'DELETE'
+			});
+			if (res.ok === false) {
+				pageError = res.error ?? t('app.wiki.clear_failed', 'Clear failed');
+				return;
+			}
+			showClearModal = false;
+			clearTarget = null;
+			entityController?.reload();
+			revisionsController?.reload();
+		} finally {
+			clearing = false;
+		}
 	}
 
 	function openBulkForceDelete(ids: Set<string>) {
@@ -716,6 +748,13 @@
 				label: t('app.wiki.toggle_active', 'Toggle Active'),
 				icon: CheckCircle,
 				onclick: toggleActive,
+				show: (row: WikiItem) => !row.deleted_at
+			});
+			acts.push({
+				label: t('app.wiki.clear_history', 'Clear history'),
+				icon: History,
+				variant: 'destructive',
+				onclick: openClearHistory,
 				show: (row: WikiItem) => !row.deleted_at
 			});
 		}
@@ -1304,6 +1343,28 @@
 </Modal>
 
 <!-- ── Force delete confirmation modal (wiki.delete) ─────────────────────── -->
+<Modal bind:open={showClearModal} title={t('app.wiki.clear_history', 'Clear history')}>
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('app.wiki.clear_history_confirm', 'Clear all resolved revisions for "{title}"? Pending submissions are kept; approved and rejected history is deleted.').replace('{title}', clearTarget?.title ?? '')}
+		</p>
+		{#if pageError}
+			<div
+				class="rounded-lg p-3 text-sm"
+				style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+			>
+				{pageError}
+			</div>
+		{/if}
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => { showClearModal = false; clearTarget = null; }}>{t('app.wiki.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={clearHistory} disabled={clearing}>
+			{clearing ? t('app.wiki.force_deleting', 'Deleting...') : t('app.wiki.clear_history', 'Clear history')}
+		</Button>
+	</div>
+</Modal>
+
 <Modal bind:open={showForceModal} title={t('app.wiki.force_delete', 'Force Delete')}>
 	<div class="space-y-4">
 		<p class="text-sm" style="color: var(--color-foreground)">
