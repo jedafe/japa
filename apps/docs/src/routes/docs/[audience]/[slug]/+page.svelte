@@ -132,6 +132,8 @@
 				return t('notice.saved_approved', 'Approved — ready to publish.');
 			case 'in_review':
 				return t('notice.saved_in_review', 'Submitted for review. Only editors can see this page.');
+			case 'restored':
+				return t('notice.saved_restored', 'Restored — the page now matches that revision.');
 			case 'draft':
 				return t('notice.saved_draft', 'Saved as draft. Only editors can see this page.');
 			default:

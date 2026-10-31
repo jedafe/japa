@@ -576,5 +576,6 @@
   "history.clear_confirm": "Clear the entire revision history for this page? Current content is unaffected but all history is permanently deleted.",
   "history.restored": "Restored.",
   "history.view": "View",
-  "page.feature_image_alt": "Feature image"
+  "page.feature_image_alt": "Feature image",
+  "notice.saved_restored": "Restored — the page now matches that revision."
 }

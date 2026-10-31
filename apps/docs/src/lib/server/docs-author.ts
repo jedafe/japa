@@ -211,7 +211,7 @@ export async function createDocPageAction(event: RequestEvent, audience: DocAudi
 	const featureImageId = String(form.get('feature_image_id') ?? '').trim();
 	const summary = String(form.get('summary') ?? '').trim();
 
-	const values = { title, slug, category, subcategory, parentId, reviewStatus, slugTouched, message: '' };
+	const values = { title, slug, category, subcategory, parentId, reviewStatus, slugTouched, featureImageId, summary, message: '' };
 
 	if (!title) {
 		return fail(400, { ...values, error: 'title_required' });

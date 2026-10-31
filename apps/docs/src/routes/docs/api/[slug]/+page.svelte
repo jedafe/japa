@@ -12,7 +12,7 @@
 	import { parseManagedCategories } from '$lib/docs/catalog';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { page } from '$app/state';
-	import { CalendarClock, ChevronRight, Clock, Eye, ListTree, Pencil } from 'lucide-svelte';
+	import { CalendarClock, ChevronRight, Clock, Eye, History, ListTree, Pencil } from 'lucide-svelte';
 	import { env } from '$env/dynamic/public';
 	import type { PageData, ActionData } from './$types';
 
@@ -75,6 +75,8 @@
 				return t('notice.saved_approved', 'Approved — ready to publish.');
 			case 'in_review':
 				return t('notice.saved_in_review', 'Submitted for review. Only editors can see this page.');
+			case 'restored':
+				return t('notice.saved_restored', 'Restored — the page now matches that revision.');
 			case 'draft':
 				return t('notice.saved_draft', 'Saved as draft. Only editors can see this page.');
 			default:
@@ -184,6 +186,9 @@
 				<ChevronRight size={12} class="crumb-sep rtl:-scale-x-100" />
 				<a href="/docs/api" class="crumb">{t('audience.api')}</a>
 			</nav>
+			{#if data.page.feature_image_url}
+				<img class="doc-hero" src={data.page.feature_image_url} alt={t('page.feature_image_alt', 'Feature image')} />
+			{/if}
 			<h1>{data.page.title}</h1>
 			{#if data.operation}
 				<div class="op-line">
@@ -203,6 +208,10 @@
 					<a href="?edit=1" class="meta-edit-link">
 						<Pencil size={13} />
 						{t('page.edit_this_page', 'Edit this page')}
+					</a>
+					<a href="/docs/api/{data.page.slug}/history" class="meta-edit-link">
+						<History size={13} />
+						{t('history.link', 'History')}
 					</a>
 				{/if}
 			</div>
@@ -290,6 +299,16 @@
 	}
 	.crumb:hover { color: var(--color-primary); }
 	.breadcrumb :global(.crumb-sep) { color: var(--color-muted); flex-shrink: 0; }
+	.doc-hero {
+		display: block;
+		width: 100%;
+		max-height: 320px;
+		aspect-ratio: 21 / 9;
+		object-fit: cover;
+		border-radius: var(--radius-card);
+		border: 1px solid var(--color-border);
+		margin: 0.75rem 0 1rem;
+	}
 	.doc-header h1 {
 		font-family: var(--font-heading, var(--font-sans));
 		font-size: 2rem;

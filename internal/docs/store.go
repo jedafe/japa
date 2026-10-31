@@ -18,8 +18,13 @@ import (
 // so handlers emit a 409 instead of a raw 500 (§44 amendment 2).
 func mapWriteErr(err error) error {
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return fmt.Errorf("%w: %s", errpkg.ErrDuplicate, pgErr.ConstraintName)
+	if errors.As(err, &pgErr) {
+		if pgErr.Code == "23505" {
+			return fmt.Errorf("%w: %s", errpkg.ErrDuplicate, pgErr.ConstraintName)
+		}
+		if pgErr.Code == "23503" {
+			return fmt.Errorf("%w: %s", errpkg.ErrInvalid, pgErr.ConstraintName)
+		}
 	}
 
 	return err

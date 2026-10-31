@@ -153,7 +153,11 @@
 					<div class="doc-grid">
 						{#each data.unpublishedPages as item (item.id)}
 							<a href={pageHref(item.slug)} class="doc-card doc-card-link doc-card-draft">
-								<FileText size={16} class="doc-link-icon" />
+								{#if item.feature_image_url}
+									<img class="doc-thumb" src={item.feature_image_url} alt="" loading="lazy" />
+								{:else}
+									<FileText size={16} class="doc-link-icon" />
+								{/if}
 								<span class="doc-card-title">{item.title}</span>
 								<span class="status-badge status-{item.review_status}">
 									{t(`new_page.status.${item.review_status}`, item.review_status ?? '')}

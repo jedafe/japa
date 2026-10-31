@@ -26,6 +26,8 @@
 		parentId?: string;
 		reviewStatus?: string;
 		slugTouched?: boolean;
+		featureImageId?: string;
+		summary?: string;
 		error?: string;
 		message?: string;
 	}
@@ -74,9 +76,9 @@
 	let reviewStatus = $state(untrack(() => form?.reviewStatus ?? 'draft'));
 	let position = $state(untrack(() => String(data.nextPosition)));
 	let contentJson = $state<unknown>(null);
-	let featureImageId = $state('');
+	let featureImageId = $state(untrack(() => form?.featureImageId ?? ''));
 	let featureImageUrl = $state('');
-	let summary = $state('');
+	let summary = $state(untrack(() => form?.summary ?? ''));
 	let submitting = $state(false);
 	let contentEdited = $state(false);
 

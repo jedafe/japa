@@ -576,5 +576,6 @@
   "history.clear_confirm": "Effacer tout l'historique de cette page ? Le contenu actuel est conservé mais l'historique est définitivement supprimé.",
   "history.restored": "Restauré.",
   "history.view": "Voir",
-  "page.feature_image_alt": "Image à la une"
+  "page.feature_image_alt": "Image à la une",
+  "notice.saved_restored": "Restauré — la page correspond à cette révision."
 }

@@ -114,6 +114,9 @@ export const load: PageServerLoad = async (event) => {
 		title,
 		description,
 		path: `/docs/api/${slug}`,
+		image: page.feature_image_url
+			? new URL(page.feature_image_url, DOCS_ORIGIN).toString()
+			: undefined,
 		jsonLd: preview
 			? undefined
 			: techArticleLd({

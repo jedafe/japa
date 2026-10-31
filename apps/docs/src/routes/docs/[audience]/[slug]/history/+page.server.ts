@@ -29,10 +29,18 @@ export const load: PageServerLoad = async (event) => {
 
 	// Any-status lookup — history covers drafts too (same admin endpoint the
 	// draft preview uses).
-	const page = await apiGet<DocPage>(
-		ctx,
-		`/admin/docs/page?audience=${encodeURIComponent(audience)}&slug=${encodeURIComponent(slug)}`
-	);
+	let page: DocPage;
+	try {
+		page = await apiGet<DocPage>(
+			ctx,
+			`/admin/docs/page?audience=${encodeURIComponent(audience)}&slug=${encodeURIComponent(slug)}`
+		);
+	} catch (err) {
+		if (err instanceof ApiError && err.status === 404) {
+			throw error(404, { code: 'not_found', message: 'Page not found' });
+		}
+		throw err;
+	}
 
 	const revPage = Math.max(1, Number(event.url.searchParams.get('page') ?? '1') || 1);
 	const rawLimit = Number(event.url.searchParams.get('limit') ?? '20');
