@@ -122,6 +122,9 @@ export interface DocPage {
 	/** Aggregate helpful votes (§44 amendment 2). */
 	helpful_yes?: number;
 	helpful_no?: number;
+	/** Media-library feature image (§44 amendment 5). */
+	feature_image_id?: string | null;
+	feature_image_url?: string;
 	/** Breadcrumb chain (audience → parents → current). Ref: §44. */
 	breadcrumb?: DocBreadcrumbItem[];
 	/** Previous page in the audience's nav order. Ref: §44. */
@@ -151,6 +154,9 @@ export interface DocPageSummary {
 	category?: string | null;
 	subcategory?: string | null;
 	created_at: string;
+	/** Feature image (§44 amendment 5) — card thumbnail. */
+	feature_image_id?: string | null;
+	feature_image_url?: string;
 	/** Plain-text preview derived server-side from the page content. */
 	excerpt?: string;
 }
@@ -166,6 +172,8 @@ export interface DocNavItem {
 	category?: string | null;
 	subcategory?: string | null;
 	children?: DocNavItem[];
+	/** Feature image URL — card thumbnail (§44 amendment 5). */
+	feature_image_url?: string;
 	/** Present on the editor-only unpublished merge (§44 amendment 2). */
 	review_status?: string;
 }
@@ -199,6 +207,8 @@ export interface DocPageCreateRequest {
 	position?: number;
 	category?: string | null;
 	subcategory?: string | null;
+	feature_image_id?: string | null;
+	summary?: string;
 }
 
 /** PATCH /api/v1/admin/docs/pages/{id} — update a doc page (docs.manage). */
@@ -215,6 +225,23 @@ export interface DocPageUpdateRequest {
 	subcategory?: string | null;
 	/** Optimistic-lock precondition — send back the loaded updated_at. */
 	expected_updated_at?: string;
+	feature_image_id?: string | null;
+	summary?: string;
+}
+
+/** One revision row in a doc page's history (§44 amendment 5). */
+export interface DocRevision {
+	id: string;
+	doc_page_id: string;
+	version: number;
+	title: string;
+	summary?: string | null;
+	feature_image_id?: string | null;
+	created_by?: string | null;
+	created_at: string;
+	excerpt: string;
+	is_latest: boolean;
+	content?: unknown;
 }
 
 /** GET/POST .../docs/{audience}/{slug}/feedback response (§44 amendment 2). */

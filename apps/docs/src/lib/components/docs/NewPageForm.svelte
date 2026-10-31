@@ -4,6 +4,7 @@
 	import { beforeNavigate } from '$app/navigation';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import DocEditor from '$lib/components/docs/DocEditor.svelte';
+	import FeatureImageField from '$lib/components/docs/FeatureImageField.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { parseManagedCategories } from '$lib/docs/catalog';
@@ -73,6 +74,9 @@
 	let reviewStatus = $state(untrack(() => form?.reviewStatus ?? 'draft'));
 	let position = $state(untrack(() => String(data.nextPosition)));
 	let contentJson = $state<unknown>(null);
+	let featureImageId = $state('');
+	let featureImageUrl = $state('');
+	let summary = $state('');
 	let submitting = $state(false);
 	let contentEdited = $state(false);
 
@@ -261,6 +265,8 @@
 				formData.set('category', category);
 				formData.set('subcategory', subcategory);
 				formData.set('parent_id', parentId);
+				formData.set('feature_image_id', featureImageId);
+				formData.set('summary', summary.trim());
 				submitting = true;
 				return async ({ update }) => {
 					// Keep submitting=true through update(): a redirect result runs
@@ -387,6 +393,18 @@
 			</div>
 
 			<div class="field field-wide">
+				<span class="field-label">{t('edit.feature_image', 'Feature image')}</span>
+				<FeatureImageField
+					value={featureImageId}
+					imageUrl={featureImageUrl}
+					onchange={(id, url) => {
+						featureImageId = id;
+						featureImageUrl = url;
+					}}
+				/>
+			</div>
+
+			<div class="field field-wide">
 				<span class="field-label">{t('new_page.field_content', 'Content')}</span>
 				<DocEditor
 					bind:value={contentJson}
@@ -394,6 +412,17 @@
 					placeholder={t('new_page.content_placeholder', 'Start writing the documentation…')}
 				/>
 			</div>
+
+			<label class="field field-wide">
+				<span class="field-label">{t('edit.summary_label', 'Edit summary (optional)')}</span>
+				<input
+					type="text"
+					class="field-input"
+					bind:value={summary}
+					maxlength="200"
+					placeholder={t('edit.summary_placeholder', 'Briefly describe your changes')}
+				/>
+			</label>
 
 			<div class="form-actions">
 				<button type="submit" class="submit-btn" disabled={submitting}>

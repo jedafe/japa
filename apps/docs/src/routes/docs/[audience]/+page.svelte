@@ -188,7 +188,11 @@
 		</div>
 	{:else}
 		<a href={pageHref(item.slug)} class="doc-card doc-card-link">
-			<FileText size={16} class="doc-link-icon" />
+			{#if item.feature_image_url}
+				<img class="doc-thumb" src={item.feature_image_url} alt="" loading="lazy" />
+			{:else}
+				<FileText size={16} class="doc-link-icon" />
+			{/if}
 			<span class="doc-card-title">{item.title}</span>
 			<ArrowRight size={15} class="doc-card-arrow rtl:-scale-x-100" />
 		</a>
@@ -395,6 +399,13 @@
 		border-radius: 999px;
 		padding: 0.0625rem 0.5rem;
 		font-variant-numeric: tabular-nums;
+	}
+	.doc-thumb {
+		width: 56px;
+		height: 40px;
+		object-fit: cover;
+		border-radius: calc(var(--radius) - 2px);
+		flex-shrink: 0;
 	}
 	.doc-card-draft { border-style: dashed; }
 	.status-badge {

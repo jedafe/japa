@@ -208,6 +208,8 @@ export async function createDocPageAction(event: RequestEvent, audience: DocAudi
 	const slugTouched = String(form.get('slug_touched') ?? '') === '1';
 	const positionRaw = Number(form.get('position') ?? 0);
 	const contentRaw = String(form.get('content') ?? '');
+	const featureImageId = String(form.get('feature_image_id') ?? '').trim();
+	const summary = String(form.get('summary') ?? '').trim();
 
 	const values = { title, slug, category, subcategory, parentId, reviewStatus, slugTouched, message: '' };
 
@@ -242,7 +244,9 @@ export async function createDocPageAction(event: RequestEvent, audience: DocAudi
 		position: Number.isFinite(positionRaw) ? Math.trunc(positionRaw) : 0,
 		category: category || null,
 		subcategory: subcategory || null,
-		parent_id: parentId || null
+		parent_id: parentId || null,
+		feature_image_id: featureImageId || null,
+		summary: summary || undefined
 	};
 
 	const ctx = apiContext(event);
@@ -297,6 +301,8 @@ export async function saveDocPageAction(event: RequestEvent, audience: string, s
 	const positionRaw = form.get('position');
 	const expectedUpdatedAt = String(form.get('expected_updated_at') ?? '').trim();
 	const contentRaw = String(form.get('content') ?? '');
+	const featureImageId = String(form.get('feature_image_id') ?? '').trim();
+	const summary = String(form.get('summary') ?? '').trim();
 
 	const values = { title, reviewStatus, category, subcategory, slug: newSlug, parentId, message: '' };
 
@@ -353,6 +359,8 @@ export async function saveDocPageAction(event: RequestEvent, audience: string, s
 		subcategory
 	};
 	if (content !== undefined) body.content = content;
+	if (form.has('feature_image_id')) body.feature_image_id = featureImageId || null;
+	if (summary) body.summary = summary;
 	if (newSlug && newSlug !== slug) body.slug = newSlug;
 	body.parent_id = parentId || null;
 	if (positionRaw !== null && positionRaw !== '') {

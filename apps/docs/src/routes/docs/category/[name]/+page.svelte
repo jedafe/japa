@@ -77,7 +77,11 @@
 					<div class="doc-grid">
 						{#each sub.items as item (`${item.audience}/${item.slug}`)}
 							<a href="/docs/{item.audience}/{item.slug}" class="doc-card">
-								<FileText size={16} class="doc-icon" />
+								{#if item.feature_image_url}
+									<img class="doc-thumb" src={item.feature_image_url} alt="" loading="lazy" />
+								{:else}
+									<FileText size={16} class="doc-icon" />
+								{/if}
 								<span class="doc-title">{item.title}</span>
 								<ArrowRight size={15} class="doc-arrow rtl:-scale-x-100" />
 							</a>
@@ -195,4 +199,11 @@
 	.doc-card:hover .doc-title { color: var(--color-primary); }
 	:global(.doc-arrow) { color: var(--color-muted); flex-shrink: 0; }
 	.doc-card:hover :global(.doc-arrow) { color: var(--color-primary); }
+	.doc-thumb {
+		width: 56px;
+		height: 40px;
+		object-fit: cover;
+		border-radius: calc(var(--radius) - 2px);
+		flex-shrink: 0;
+	}
 </style>

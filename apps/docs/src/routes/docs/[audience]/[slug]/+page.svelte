@@ -15,6 +15,7 @@
 		ChevronRight,
 		Clock,
 		Eye,
+		History,
 		ListTree,
 		Pencil
 	} from 'lucide-svelte';
@@ -175,6 +176,13 @@
 					<a href="/docs/{data.audience}/{crumb.slug}" class="crumb">{crumb.title}</a>
 				{/each}
 			</nav>
+			{#if data.page.feature_image_url}
+				<img
+					class="doc-hero"
+					src={data.page.feature_image_url}
+					alt={t('page.feature_image_alt', 'Feature image')}
+				/>
+			{/if}
 			<h1>{data.page.title}</h1>
 			<div class="doc-meta">
 				<span class="meta-item"><CalendarClock size={13} />{updatedLabel}</span>
@@ -191,6 +199,10 @@
 					<a href="?edit=1" class="meta-edit-link">
 						<Pencil size={13} />
 						{t('page.edit_this_page', 'Edit this page')}
+					</a>
+					<a href="/docs/{data.audience}/{data.page.slug}/history" class="meta-edit-link">
+						<History size={13} />
+						{t('history.link', 'History')}
 					</a>
 				{/if}
 			</div>
@@ -296,6 +308,16 @@
 		margin-bottom: 2rem;
 		padding-bottom: 1.5rem;
 		border-bottom: 1px solid var(--color-border);
+	}
+	.doc-hero {
+		display: block;
+		width: 100%;
+		max-height: 360px;
+		aspect-ratio: 21 / 9;
+		object-fit: cover;
+		border-radius: var(--radius-card);
+		border: 1px solid var(--color-border);
+		margin: 0.75rem 0 1rem;
 	}
 	.doc-header h1 {
 		font-family: var(--font-heading, var(--font-sans));

@@ -3,6 +3,7 @@
 	import { beforeNavigate } from '$app/navigation';
 	import { onMount, untrack } from 'svelte';
 	import DocEditor from '$lib/components/docs/DocEditor.svelte';
+	import FeatureImageField from '$lib/components/docs/FeatureImageField.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { ManagedCategory } from '$lib/docs/catalog';
@@ -54,6 +55,9 @@
 	let editStatus = $state(untrack(() => page.review_status));
 	let editParentId = $state(untrack(() => page.parent_id ?? ''));
 	let editPosition = $state(untrack(() => String(page.position)));
+	let editFeatureImageId = $state(untrack(() => page.feature_image_id ?? ''));
+	let editFeatureImageUrl = $state(untrack(() => page.feature_image_url ?? ''));
+	let editSummary = $state('');
 	let contentJson = $state<unknown>(null);
 	let contentEdited = $state(false);
 	let saving = $state(false);
@@ -71,6 +75,9 @@
 			editStatus = page.review_status;
 			editParentId = page.parent_id ?? '';
 			editPosition = String(page.position);
+			editFeatureImageId = page.feature_image_id ?? '';
+			editFeatureImageUrl = page.feature_image_url ?? '';
+			editSummary = '';
 			contentJson = null;
 			contentEdited = false;
 		}
@@ -126,6 +133,8 @@
 	);
 
 	const dirty = $derived(
+		editSummary.trim() !== '' ||
+		editFeatureImageId !== (page.feature_image_id ?? '') ||
 		contentEdited ||
 			editTitle !== page.title ||
 			editSlug !== page.slug ||
@@ -198,7 +207,10 @@
 			// Saved content is now canonical — a successful save (in-place or
 			// via slug-rename redirect on the same page id) must clear the flag
 			// or the dirty guard keeps prompting after the save landed.
-			if (result.type === 'success' || result.type === 'redirect') contentEdited = false;
+			if (result.type === 'success' || result.type === 'redirect') {
+				contentEdited = false;
+				editSummary = '';
+			}
 		};
 	}}
 >
@@ -295,12 +307,35 @@
 		</div>
 	</details>
 
+	<div class="ef-field">
+		<span class="ef-label">{t('edit.feature_image', 'Feature image')}</span>
+		<FeatureImageField
+			value={editFeatureImageId}
+			imageUrl={editFeatureImageUrl}
+			onchange={(id, url) => {
+				editFeatureImageId = id;
+				editFeatureImageUrl = url;
+			}}
+		/>
+	</div>
+
 	<DocEditor
 		initialContent={editSeed}
 		bind:value={contentJson}
 		onUpdate={() => (contentEdited = true)}
 		placeholder={t('new_page.content_placeholder', 'Start writing the documentation…')}
 	/>
+
+	<label class="ef-field">
+		<span class="ef-label">{t('edit.summary_label', 'Edit summary (optional)')}</span>
+		<input
+			type="text"
+			class="ef-input"
+			bind:value={editSummary}
+			maxlength="200"
+			placeholder={t('edit.summary_placeholder', 'Briefly describe your changes')}
+		/>
+	</label>
 
 	<div class="ef-actions">
 		<button type="submit" class="ef-save" disabled={saving || reviewing}>

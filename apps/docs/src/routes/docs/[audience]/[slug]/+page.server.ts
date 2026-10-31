@@ -46,6 +46,10 @@ export const load: PageServerLoad = async (event) => {
 		title,
 		description,
 		path: `/docs/${audience}/${slug}`,
+		// §44 amendment 5: page feature image wins over the branded OG fallback.
+		image: page.feature_image_url
+			? new URL(page.feature_image_url, DOCS_ORIGIN).toString()
+			: undefined,
 		jsonLd: preview
 			? undefined
 			: techArticleLd({

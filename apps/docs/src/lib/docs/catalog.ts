@@ -18,6 +18,7 @@ export interface DocsCategoryItem {
 	slug: string;
 	title: string;
 	subcategory?: string | null;
+	feature_image_url?: string;
 }
 
 export interface DocsCategory {
@@ -76,7 +77,8 @@ export function collectCategories(nav: DocNavTree[]): DocsCategory[] {
 				audience: tree.audience,
 				slug: item.slug,
 				title: item.title,
-				subcategory: item.subcategory ?? null
+				subcategory: item.subcategory ?? null,
+				feature_image_url: item.feature_image_url
 			});
 		}
 	}
