@@ -355,8 +355,10 @@ SELECT * FROM (
 
  UNION ALL
 
- -- 2. Report resolutions (actioned/dismissed) — actor is the reviewer.
- -- COALESCE covers legacy rows resolved before resolved_at was stamped.
+ -- 2. Report resolutions — actor is the reviewer. Keyed on resolved_at
+ -- (not status) so a resolution survives a resolved report being flipped
+ -- back to 'reviewing' by a later assignment; COALESCE covers legacy rows
+ -- resolved before resolved_at was stamped.
  SELECT 'report'::text,
         ('report_' || cr.status)::text,
         cr.status,
@@ -368,7 +370,7 @@ SELECT * FROM (
  LEFT JOIN users ru ON ru.id = cr.reviewed_by
  LEFT JOIN user_profiles rup ON rup.user_id = cr.reviewed_by
  WHERE cr.entity_type = 'content' AND cr.entity_id = @id
-   AND cr.status IN ('actioned', 'dismissed')
+   AND cr.resolved_at IS NOT NULL
 
  UNION ALL
 
@@ -386,6 +388,24 @@ SELECT * FROM (
  LEFT JOIN user_profiles iup ON iup.user_id = cr.reviewed_by
  WHERE cr.entity_type = 'content' AND cr.entity_id = @id
    AND cr.status = 'reviewing'
+
+ UNION ALL
+
+ -- 2c. Reopened reports — an appeal overturn flips a dismissed report back
+ -- to pending (ReopenContentReportOnAppeal clears resolution fields), so
+ -- updated_at > created_at is the only durable signal it happened.
+ SELECT 'report'::text,
+        'report_reopened'::text,
+        cr.status,
+        ''::text,
+        cr.reviewed_by,
+        COALESCE(iup.display_name, iu.username, ''),
+        cr.updated_at
+ FROM content_reports cr
+ LEFT JOIN users iu ON iu.id = cr.reviewed_by
+ LEFT JOIN user_profiles iup ON iup.user_id = cr.reviewed_by
+ WHERE cr.entity_type = 'content' AND cr.entity_id = @id
+   AND cr.status = 'pending' AND cr.updated_at > cr.created_at
 
  UNION ALL
 
@@ -497,7 +517,7 @@ SELECT * FROM (
  LEFT JOIN user_profiles eup ON eup.user_id = rv.edited_by
  WHERE rv.content_id = @id
 ) hist
-ORDER BY hist.created_at DESC
+ORDER BY hist.created_at DESC, hist.kind, hist.event
 LIMIT 200;
 
 -- =====================

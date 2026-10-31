@@ -2068,7 +2068,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		}
 		sort.Strings(fields)
 		if err := h.Service.WriteContentAudit(r.Context(), user.UserID, "admin.content.update", id,
-			map[string]any{"fields": fields}); err != nil {
+			map[string]any{"fields": fields, "note": "updated: " + strings.Join(fields, ", ")}); err != nil {
 			slog.Warn("admin content update: audit log failed", "content_id", id.String(), "error", err)
 		}
 	}

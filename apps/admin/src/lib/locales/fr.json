@@ -1888,6 +1888,7 @@
   "content.history.report_actioned": "Signalement traité",
   "content.history.report_dismissed": "Signalement rejeté",
   "content.history.report_filed": "Signalé",
+  "content.history.report_reopened": "Signalement rouvert",
   "content.history.report_reviewing": "Signalement en cours d'examen",
   "content.history.review_approved": "Révision approuvée",
   "content.history.review_changes_requested": "Modifications demandées",

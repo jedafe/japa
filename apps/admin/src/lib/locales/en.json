@@ -1888,6 +1888,7 @@
   "content.history.report_actioned": "Report actioned",
   "content.history.report_dismissed": "Report dismissed",
   "content.history.report_filed": "Reported",
+  "content.history.report_reopened": "Report reopened",
   "content.history.report_reviewing": "Report under review",
   "content.history.review_approved": "Review approved",
   "content.history.review_changes_requested": "Changes requested",
