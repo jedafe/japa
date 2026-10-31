@@ -581,7 +581,7 @@ func TestSubmitFieldOps_ManageTierAutoApproves(t *testing.T) {
 	fx := seedOpsFixture(t, ctx, database)
 	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeNumber)
 
-	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	spaceTypeID, _, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
 		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
@@ -772,7 +772,7 @@ func TestApproveRevisionByID_AppliesOpsAndEnqueues(t *testing.T) {
 	fx := seedOpsFixture(t, ctx, database)
 	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
 
-	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	spaceTypeID, _, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
 		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
@@ -834,7 +834,7 @@ func TestApproveRevisionByID_DirectBustFallback(t *testing.T) {
 	fx := seedOpsFixture(t, ctx, database)
 	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
 
-	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	spaceTypeID, _, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
 		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
@@ -963,7 +963,7 @@ func TestGetEntityFields(t *testing.T) {
 	fx := seedOpsFixture(t, ctx, database)
 	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
 
-	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	spaceTypeID, _, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
 		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
@@ -1035,7 +1035,7 @@ func TestGetEntityFields_BatchedFieldPerms(t *testing.T) {
 	ctx := t.Context()
 	fx := seedOpsFixture(t, ctx, database)
 
-	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	spaceTypeID, _, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
 		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
@@ -1106,7 +1106,7 @@ func TestGetEntityFields_PermLookupFailsClosed(t *testing.T) {
 	ctx := t.Context()
 	fx := seedOpsFixture(t, ctx, database)
 
-	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	spaceTypeID, _, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
 		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
@@ -1155,7 +1155,7 @@ func TestSubmitFieldOps_MixedRevision(t *testing.T) {
 	// Submit-time schema resolves through s.fields (the fake); approve-time
 	// schema re-resolves inside the transaction against the real DB — both
 	// need to see the field under the entity's assigned groups.
-	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	spaceTypeID, _, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
 		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
@@ -1241,7 +1241,7 @@ func TestApproveRevisionByID_ApplyFailureRecordsApplyError(t *testing.T) {
 	fx := seedOpsFixture(t, ctx, database)
 	ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeText)
 
-	spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+	spaceTypeID, _, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 	if err != nil {
 		t.Fatalf("GetSpaceTypeRef: %v", err)
 	}
@@ -1471,7 +1471,7 @@ func TestSubmitFieldOps_DeleteField_EndToEnd(t *testing.T) {
 		fx := seedOpsFixture(t, ctx, database)
 		ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeNumber)
 
-		spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+		spaceTypeID, _, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
 		if err != nil {
 			t.Fatalf("GetSpaceTypeRef: %v", err)
 		}
