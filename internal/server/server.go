@@ -4273,13 +4273,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/muted-spaces", interactionsHandlers.ListMutedSpaces)
 
 			// Form drafts — reusable save-progress API (readiness, tour, sop…)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts", draftsHandlers.ListDrafts)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts/{kind}", draftsHandlers.GetDraft)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/drafts/{kind}", draftsHandlers.PutDraft)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/drafts/{kind}", draftsHandlers.DeleteDraft)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts/{kind}/{key}", draftsHandlers.GetDraft)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/drafts/{kind}/{key}", draftsHandlers.PutDraft)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/drafts/{kind}/{key}", draftsHandlers.DeleteDraft)
+			// /me/form-drafts because /me/drafts + /me/drafts/{id} are the
+			// catalog's content-draft routes (composer autosave).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/form-drafts", draftsHandlers.ListDrafts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/form-drafts/{kind}", draftsHandlers.GetDraft)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/form-drafts/{kind}", draftsHandlers.PutDraft)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/form-drafts/{kind}", draftsHandlers.DeleteDraft)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/form-drafts/{kind}/{key}", draftsHandlers.GetDraft)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/form-drafts/{kind}/{key}", draftsHandlers.PutDraft)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/form-drafts/{kind}/{key}", draftsHandlers.DeleteDraft)
 
 			// Notification System routes (Section 35 — Notification System)
 			r.With(features.Gate(featureChecker, "feature.notifications")).Group(func(r chi.Router) {

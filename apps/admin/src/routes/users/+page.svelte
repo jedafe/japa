@@ -66,7 +66,7 @@
 					violationTypeOptions = cfg.violation_types.map((v) => ({ value: v.value, label: v.label }));
 				}
 				// §07 badge-type vocabulary for the verify picker (Rule 16).
-				verificationAdminApi.types().then((r) => { if (r.ok) verificationTypes = r.data.data.types; }).catch(() => {});
+				verificationAdminApi.types().then((r) => { if (r.ok) verificationTypes = r.data.types; }).catch(() => {});
 			}
 
 			let groupOptions: Array<{ value: string; label: string }> | undefined;

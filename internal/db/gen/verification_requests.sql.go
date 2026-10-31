@@ -13,17 +13,23 @@ import (
 
 const countVerificationRequests = `-- name: CountVerificationRequests :one
 SELECT count(*) FROM verification_requests vr
+JOIN users u ON u.id = vr.requester_user_id
+LEFT JOIN organizations o ON o.id = vr.organization_id
 WHERE ($1::text = '' OR vr.status = $1)
   AND ($2::text = '' OR vr.entity_type = $2)
+  AND ($3::text = '' OR u.username ILIKE '%' || $3 || '%'
+                    OR u.email ILIKE '%' || $3 || '%'
+                    OR o.name ILIKE '%' || $3 || '%')
 `
 
 type CountVerificationRequestsParams struct {
 	Column1 string `json:"column_1"`
 	Column2 string `json:"column_2"`
+	Column3 string `json:"column_3"`
 }
 
 func (q *Queries) CountVerificationRequests(ctx context.Context, arg CountVerificationRequestsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countVerificationRequests, arg.Column1, arg.Column2)
+	row := q.db.QueryRow(ctx, countVerificationRequests, arg.Column1, arg.Column2, arg.Column3)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -182,22 +188,39 @@ func (q *Queries) GetVerificationRequestSubmission(ctx context.Context, id pgtyp
 
 const listVerificationRequests = `-- name: ListVerificationRequests :many
 SELECT vr.id, vr.requester_user_id, vr.entity_type, vr.organization_id, vr.requested_type, vr.form_submission_id, vr.status, vr.reviewed_by, vr.resolution_note, vr.created_at, vr.reviewed_at, u.username AS requester_username, u.email AS requester_email,
-       o.name AS org_name, o.slug AS org_slug, rv.username AS reviewed_by_username
+       u.verified AS requester_verified,
+       o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified,
+       rv.username AS reviewed_by_username
 FROM verification_requests vr
 JOIN users u ON u.id = vr.requester_user_id
 LEFT JOIN organizations o ON o.id = vr.organization_id
 LEFT JOIN users rv ON rv.id = vr.reviewed_by
 WHERE ($1::text = '' OR vr.status = $1)
   AND ($2::text = '' OR vr.entity_type = $2)
-ORDER BY vr.created_at DESC
-LIMIT $3 OFFSET $4
+  AND ($3::text = '' OR u.username ILIKE '%' || $3 || '%'
+                    OR u.email ILIKE '%' || $3 || '%'
+                    OR o.name ILIKE '%' || $3 || '%')
+ORDER BY
+  CASE WHEN $6::text = 'requester' AND $7::text = 'desc' THEN u.username END DESC,
+  CASE WHEN $6::text = 'requester' AND $7::text <> 'desc' THEN u.username END ASC,
+  CASE WHEN $6::text = 'entity_type' AND $7::text = 'desc' THEN vr.entity_type END DESC,
+  CASE WHEN $6::text = 'entity_type' AND $7::text <> 'desc' THEN vr.entity_type END ASC,
+  CASE WHEN $6::text = 'status' AND $7::text = 'desc' THEN vr.status END DESC,
+  CASE WHEN $6::text = 'status' AND $7::text <> 'desc' THEN vr.status END ASC,
+  CASE WHEN $6::text = 'created_at' AND $7::text = 'asc' THEN vr.created_at END ASC,
+  CASE WHEN $6::text NOT IN ('requester', 'entity_type', 'status', 'created_at')
+        OR ($6::text = 'created_at' AND $7::text <> 'asc') THEN vr.created_at END DESC
+LIMIT $4 OFFSET $5
 `
 
 type ListVerificationRequestsParams struct {
 	Column1 string `json:"column_1"`
 	Column2 string `json:"column_2"`
+	Column3 string `json:"column_3"`
 	Limit   int32  `json:"limit"`
 	Offset  int32  `json:"offset"`
+	Sort    string `json:"sort"`
+	SortDir string `json:"sort_dir"`
 }
 
 type ListVerificationRequestsRow struct {
@@ -214,18 +237,26 @@ type ListVerificationRequestsRow struct {
 	ReviewedAt         pgtype.Timestamptz `json:"reviewed_at"`
 	RequesterUsername  string             `json:"requester_username"`
 	RequesterEmail     string             `json:"requester_email"`
+	RequesterVerified  bool               `json:"requester_verified"`
 	OrgName            *string            `json:"org_name"`
 	OrgSlug            *string            `json:"org_slug"`
+	OrgVerified        *bool              `json:"org_verified"`
 	ReviewedByUsername *string            `json:"reviewed_by_username"`
 }
 
-// Admin review queue — ?status= and ?entity_type= filters, paginated.
+// Admin review queue — ?status= and ?entity_type= filters, ?q= requester/org
+// search, whitelisted CASE sort (?sort=&sort_dir=), paginated. The entity's
+// current badge flag is joined so the admin page can hide "Grant badge" on
+// rows whose entity is already verified.
 func (q *Queries) ListVerificationRequests(ctx context.Context, arg ListVerificationRequestsParams) ([]ListVerificationRequestsRow, error) {
 	rows, err := q.db.Query(ctx, listVerificationRequests,
 		arg.Column1,
 		arg.Column2,
+		arg.Column3,
 		arg.Limit,
 		arg.Offset,
+		arg.Sort,
+		arg.SortDir,
 	)
 	if err != nil {
 		return nil, err
@@ -248,8 +279,10 @@ func (q *Queries) ListVerificationRequests(ctx context.Context, arg ListVerifica
 			&i.ReviewedAt,
 			&i.RequesterUsername,
 			&i.RequesterEmail,
+			&i.RequesterVerified,
 			&i.OrgName,
 			&i.OrgSlug,
+			&i.OrgVerified,
 			&i.ReviewedByUsername,
 		); err != nil {
 			return nil, err

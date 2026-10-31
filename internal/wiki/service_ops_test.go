@@ -454,8 +454,8 @@ func TestEntityClassesFor(t *testing.T) {
 		{"content", pgtype.UUID{}, "", []string{"content_type"}},
 		{"content:guide", pgtype.UUID{}, "", []string{"content_type:guide"}},
 		{"guide_category:visa", pgtype.UUID{}, "", []string{"content_type:guide:visa"}},
-		{"visa_route", pgtype.UUID{}, "", []string{"jce_entity:visa_route"}},
-		{"scholarship", pgtype.UUID{}, "", []string{"jce_entity:scholarship"}},
+		{"visa_route", pgtype.UUID{}, "", []string{"jce_entity:visa_route", "visa_route"}},
+		{"scholarship", pgtype.UUID{}, "", []string{"jce_entity:scholarship", "scholarship"}},
 	}
 
 	for _, tc := range cases {

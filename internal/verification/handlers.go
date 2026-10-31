@@ -187,7 +187,7 @@ func (h *Handlers) AdminListRequests(w http.ResponseWriter, r *http.Request) {
 	page := parseInt32(q.Get("page"))
 	pageSize := parseInt32(q.Get("page_size"))
 
-	rows, total, err := h.service.AdminList(r.Context(), q.Get("status"), q.Get("entity_type"), page, pageSize)
+	rows, total, err := h.service.AdminList(r.Context(), q.Get("status"), q.Get("entity_type"), q.Get("q"), q.Get("sort"), q.Get("sort_dir"), page, pageSize)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return

@@ -39,7 +39,8 @@ RUN VERSION="1.0.0"; \
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-migrate ./cmd/migrate/ && \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-seed ./cmd/seed/ && \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-seed-geo-cities ./cmd/seed-geo-cities/ && \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-requeue-universities ./cmd/requeue-universities/
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-requeue-universities ./cmd/requeue-universities/ && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-bulk-enqueue ./cmd/bulk-enqueue/
 
 # Stage 2: minimal runtime image
 FROM alpine:latest
@@ -60,6 +61,7 @@ COPY --from=builder /japa-migrate /app/japa-migrate
 COPY --from=builder /japa-seed /app/japa-seed
 COPY --from=builder /japa-seed-geo-cities /app/japa-seed-geo-cities
 COPY --from=builder /japa-requeue-universities /app/japa-requeue-universities
+COPY --from=builder /japa-bulk-enqueue /app/japa-bulk-enqueue
 
 # Migration files (FindMigrationsDir resolves ./migrations under WORKDIR)
 # and the geo/university seed data seed-geo-cities + wikifacts read via

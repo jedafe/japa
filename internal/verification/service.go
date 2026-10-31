@@ -292,7 +292,10 @@ func (s *Service) WithdrawRequest(ctx context.Context, id, requesterID pgtype.UU
 }
 
 // AdminList returns the review queue with total count for pagination.
-func (s *Service) AdminList(ctx context.Context, status, entityType string, page, pageSize int32) ([]gen.ListVerificationRequestsRow, int64, error) {
+// sort is a whitelisted column key (requester|entity_type|status|created_at)
+// paired with sortDir (asc|desc); unknown keys fall back to newest-first.
+// search (?q=) matches requester username/email and organization name.
+func (s *Service) AdminList(ctx context.Context, status, entityType, search, sort, sortDir string, page, pageSize int32) ([]gen.ListVerificationRequestsRow, int64, error) {
 	if pageSize <= 0 || pageSize > MaxPageSize {
 		pageSize = DefaultPageSize
 	}
@@ -305,7 +308,10 @@ func (s *Service) AdminList(ctx context.Context, status, entityType string, page
 	if entityType != "" && entityType != EntityTypeOrganization && entityType != EntityTypeUser {
 		return nil, 0, fmt.Errorf("%w: entity_type must be organization|user", errpkg.ErrInvalid)
 	}
-	return s.store.List(ctx, status, entityType, pageSize, (page-1)*pageSize)
+	if sortDir != "" && sortDir != "asc" && sortDir != "desc" {
+		sortDir = ""
+	}
+	return s.store.List(ctx, status, entityType, search, sort, sortDir, pageSize, (page-1)*pageSize)
 }
 
 // ReviewRequest approves or rejects a pending request (admin, two-step — the

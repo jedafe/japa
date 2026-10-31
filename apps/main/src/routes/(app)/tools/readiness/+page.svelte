@@ -92,7 +92,7 @@
 		if (destroyed || draftRestored) return;
 		draftRestored = true;
 		if (user) {
-			api.get<{ data: { answers?: typeof answers; step?: number } }>(`/me/drafts/${draftKind}`)
+			api.get<{ data: { answers?: typeof answers; step?: number } }>(`/me/form-drafts/${draftKind}`)
 				.then((res) => {
 					// Skip the restore if the user already typed — their fresh
 					// input beats a stale draft (and will overwrite it on save).
@@ -131,9 +131,9 @@
 		draftSaveTimer = setTimeout(() => {
 			if (user) {
 				if (Object.keys(snapshot.answers).length === 0) {
-					api.delete(`/me/drafts/${draftKind}`);
+					api.delete(`/me/form-drafts/${draftKind}`);
 				} else {
-					api.put(`/me/drafts/${draftKind}`, { data: snapshot });
+					api.put(`/me/form-drafts/${draftKind}`, { data: snapshot });
 				}
 			} else {
 				try {
@@ -145,7 +145,7 @@
 	});
 
 	function clearDraft() {
-		if (user) api.delete(`/me/drafts/${draftKind}`);
+		if (user) api.delete(`/me/form-drafts/${draftKind}`);
 		try { if (typeof localStorage !== 'undefined') localStorage.removeItem(localDraftKey); } catch {}
 	}
 

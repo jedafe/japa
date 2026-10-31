@@ -40,22 +40,44 @@ WHERE vr.requester_user_id = $1
 ORDER BY vr.created_at DESC;
 
 -- name: ListVerificationRequests :many
--- Admin review queue — ?status= and ?entity_type= filters, paginated.
+-- Admin review queue — ?status= and ?entity_type= filters, ?q= requester/org
+-- search, whitelisted CASE sort (?sort=&sort_dir=), paginated. The entity's
+-- current badge flag is joined so the admin page can hide "Grant badge" on
+-- rows whose entity is already verified.
 SELECT vr.*, u.username AS requester_username, u.email AS requester_email,
-       o.name AS org_name, o.slug AS org_slug, rv.username AS reviewed_by_username
+       u.verified AS requester_verified,
+       o.name AS org_name, o.slug AS org_slug, o.verified AS org_verified,
+       rv.username AS reviewed_by_username
 FROM verification_requests vr
 JOIN users u ON u.id = vr.requester_user_id
 LEFT JOIN organizations o ON o.id = vr.organization_id
 LEFT JOIN users rv ON rv.id = vr.reviewed_by
 WHERE ($1::text = '' OR vr.status = $1)
   AND ($2::text = '' OR vr.entity_type = $2)
-ORDER BY vr.created_at DESC
-LIMIT $3 OFFSET $4;
+  AND ($3::text = '' OR u.username ILIKE '%' || $3 || '%'
+                    OR u.email ILIKE '%' || $3 || '%'
+                    OR o.name ILIKE '%' || $3 || '%')
+ORDER BY
+  CASE WHEN sqlc.arg(sort)::text = 'requester' AND sqlc.arg(sort_dir)::text = 'desc' THEN u.username END DESC,
+  CASE WHEN sqlc.arg(sort)::text = 'requester' AND sqlc.arg(sort_dir)::text <> 'desc' THEN u.username END ASC,
+  CASE WHEN sqlc.arg(sort)::text = 'entity_type' AND sqlc.arg(sort_dir)::text = 'desc' THEN vr.entity_type END DESC,
+  CASE WHEN sqlc.arg(sort)::text = 'entity_type' AND sqlc.arg(sort_dir)::text <> 'desc' THEN vr.entity_type END ASC,
+  CASE WHEN sqlc.arg(sort)::text = 'status' AND sqlc.arg(sort_dir)::text = 'desc' THEN vr.status END DESC,
+  CASE WHEN sqlc.arg(sort)::text = 'status' AND sqlc.arg(sort_dir)::text <> 'desc' THEN vr.status END ASC,
+  CASE WHEN sqlc.arg(sort)::text = 'created_at' AND sqlc.arg(sort_dir)::text = 'asc' THEN vr.created_at END ASC,
+  CASE WHEN sqlc.arg(sort)::text NOT IN ('requester', 'entity_type', 'status', 'created_at')
+        OR (sqlc.arg(sort)::text = 'created_at' AND sqlc.arg(sort_dir)::text <> 'asc') THEN vr.created_at END DESC
+LIMIT $4 OFFSET $5;
 
 -- name: CountVerificationRequests :one
 SELECT count(*) FROM verification_requests vr
+JOIN users u ON u.id = vr.requester_user_id
+LEFT JOIN organizations o ON o.id = vr.organization_id
 WHERE ($1::text = '' OR vr.status = $1)
-  AND ($2::text = '' OR vr.entity_type = $2);
+  AND ($2::text = '' OR vr.entity_type = $2)
+  AND ($3::text = '' OR u.username ILIKE '%' || $3 || '%'
+                    OR u.email ILIKE '%' || $3 || '%'
+                    OR o.name ILIKE '%' || $3 || '%');
 
 -- name: ReviewVerificationRequest :execrows
 -- Only pending requests are reviewable; withdrawn/approved/rejected are

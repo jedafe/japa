@@ -2715,8 +2715,10 @@ export const roadmapCategoriesAdminApi = {
 
 // §07 Verification Requests — admin review queue + profile badge grant.
 export const verificationAdminApi = {
+	// apiRaw — the endpoint returns {data: rows, meta: {total,page_count,…}};
+	// callers need meta for server-side pagination.
 	list: (params?: string) =>
-		api<{
+		apiRaw<{
 			data: {
 				id: string;
 				requester_user_id: string;
@@ -2730,15 +2732,18 @@ export const verificationAdminApi = {
 				reviewed_at?: string | null;
 				requester_username?: string;
 				requester_email?: string;
+				requester_verified?: boolean;
 				org_name?: string | null;
 				org_slug?: string | null;
+				org_verified?: boolean | null;
 				reviewed_by_username?: string | null;
 			}[];
 			meta: { total: number; page: number; page_size: number; page_count: number };
 		}>(`/admin/verification-requests${params ? `?${params}` : ''}`),
 	review: (id: string, body: { status: 'approved' | 'rejected'; resolution_note?: string }) =>
 		api<unknown>(`/admin/verification-requests/${id}`, { method: 'PATCH', body }),
-	types: () => api<{ data: { types: string[] } }>('/verification-requests/types'),
+	// Backend returns {"data":{"types":[…]}}; api() unwraps body.data → {types}.
+	types: () => api<{ types: string[] }>('/verification-requests/types'),
 	verifyUser: (id: string, body: { verification_type?: string }) =>
 		api<unknown>(`/admin/users/${id}/verify`, { method: 'POST', body }),
 	unverifyUser: (id: string) =>

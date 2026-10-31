@@ -59,7 +59,7 @@ func userID(r *http.Request) (pgtype.UUID, bool) {
 	return u.UserID, true
 }
 
-// ListDrafts handles GET /me/drafts — all the caller's drafts, newest first.
+// ListDrafts handles GET /me/form-drafts — all the caller's drafts, newest first.
 func (h *Handlers) ListDrafts(w http.ResponseWriter, r *http.Request) {
 	uid, ok := userID(r)
 	if !ok {
@@ -78,7 +78,7 @@ func (h *Handlers) ListDrafts(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
-// GetDraft handles GET /me/drafts/{kind}/{key?} — 404 when none exists.
+// GetDraft handles GET /me/form-drafts/{kind}/{key?} — 404 when none exists.
 func (h *Handlers) GetDraft(w http.ResponseWriter, r *http.Request) {
 	uid, ok := userID(r)
 	if !ok {
@@ -101,7 +101,7 @@ func (h *Handlers) GetDraft(w http.ResponseWriter, r *http.Request) {
 
 var kindRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
-// PutDraft handles PUT /me/drafts/{kind}/{key?} — upsert. Body: {"data":{...}}.
+// PutDraft handles PUT /me/form-drafts/{kind}/{key?} — upsert. Body: {"data":{...}}.
 func (h *Handlers) PutDraft(w http.ResponseWriter, r *http.Request) {
 	uid, ok := userID(r)
 	if !ok {
@@ -130,7 +130,7 @@ func (h *Handlers) PutDraft(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toDTO(row)})
 }
 
-// DeleteDraft handles DELETE /me/drafts/{kind}/{key?} — idempotent.
+// DeleteDraft handles DELETE /me/form-drafts/{kind}/{key?} — idempotent.
 func (h *Handlers) DeleteDraft(w http.ResponseWriter, r *http.Request) {
 	uid, ok := userID(r)
 	if !ok {

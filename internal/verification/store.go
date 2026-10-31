@@ -44,16 +44,18 @@ func (s *Store) ListByRequester(ctx context.Context, userID pgtype.UUID) ([]gen.
 	return s.read.ListVerificationRequestsByRequester(ctx, userID)
 }
 
-// List returns the admin review queue filtered by status/entity_type.
-func (s *Store) List(ctx context.Context, status, entityType string, limit, offset int32) ([]gen.ListVerificationRequestsRow, int64, error) {
+// List returns the admin review queue filtered by status/entity_type, with
+// requester/org search (?q=) and whitelisted CASE sort (?sort=/&sort_dir=).
+func (s *Store) List(ctx context.Context, status, entityType, search, sort, sortDir string, limit, offset int32) ([]gen.ListVerificationRequestsRow, int64, error) {
 	rows, err := s.read.ListVerificationRequests(ctx, gen.ListVerificationRequestsParams{
-		Column1: status, Column2: entityType, Limit: limit, Offset: offset,
+		Column1: status, Column2: entityType, Column3: search,
+		Sort: sort, SortDir: sortDir, Limit: limit, Offset: offset,
 	})
 	if err != nil {
 		return nil, 0, err
 	}
 	total, err := s.read.CountVerificationRequests(ctx, gen.CountVerificationRequestsParams{
-		Column1: status, Column2: entityType,
+		Column1: status, Column2: entityType, Column3: search,
 	})
 	if err != nil {
 		return nil, 0, err
