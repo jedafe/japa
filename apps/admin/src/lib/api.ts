@@ -1155,6 +1155,8 @@ export const analyticsAdminApi = {
 	runSecurityScan: (body: Record<string, unknown>) => api<unknown>('/admin/analytics/security/scan', { method: 'POST', body }),
 	resolveSecurityItem: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/analytics/security/${id}/resolve`, { method: 'POST', body }),
+	deleteSecurityItem: (id: string) =>
+		api<unknown>(`/admin/analytics/security/${id}`, { method: 'DELETE' }),
 	// Section 66 — Advanced Analytics Dashboard (ADR-084)
 	getTopContent: (params?: string) => api<unknown>(`/admin/analytics/top-content${params ? `?${params}` : ''}`),
 	getRevenueStreams: (params?: string) => api<unknown>(`/admin/analytics/revenue-streams${params ? `?${params}` : ''}`),

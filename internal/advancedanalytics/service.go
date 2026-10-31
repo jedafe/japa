@@ -153,13 +153,13 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					contentType = *r.ContentType
 				}
 
-				if err := w.Write([]string{
+				if err := w.Write(csvSafeRow([]string{
 					r.ContentID.String(), title, slug, contentType,
 					strconv.FormatInt(r.TotalViews, 10),
 					strconv.FormatInt(r.TotalReactions, 10),
 					strconv.FormatInt(r.TotalComments, 10),
 					strconv.FormatInt(int64(r.EngagementScore), 10),
-				}); err != nil {
+				})); err != nil {
 					return err
 				}
 			}
@@ -187,13 +187,13 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					monthStr = r.Month.Time.Format("2006-01-02")
 				}
 
-				if err := w.Write([]string{
+				if err := w.Write(csvSafeRow([]string{
 					monthStr,
 					strconv.FormatInt(r.SubscriptionRevenue, 10),
 					strconv.FormatInt(r.CourseRevenue, 10),
 					strconv.FormatInt(r.AdRevenue, 10),
 					strconv.FormatInt(r.CreditRevenue, 10),
-				}); err != nil {
+				})); err != nil {
 					return err
 				}
 			}
@@ -216,13 +216,13 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 
 		csvStr, err := writeCSV(headers, func(w *csv.Writer) error {
 			for _, r := range rows {
-				if err := w.Write([]string{
+				if err := w.Write(csvSafeRow([]string{
 					r.CampaignID.String(), r.CampaignName, r.Status,
 					strconv.FormatInt(r.Impressions, 10),
 					strconv.FormatInt(r.Clicks, 10),
 					strconv.FormatInt(int64(r.Ctr), 10),
 					strconv.FormatInt(r.Spent, 10),
-				}); err != nil {
+				})); err != nil {
 					return err
 				}
 			}
@@ -250,14 +250,14 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					sentAt = r.SentAt.Time.Format(time.RFC3339)
 				}
 
-				if err := w.Write([]string{
+				if err := w.Write(csvSafeRow([]string{
 					r.CampaignID.String(), r.CampaignName, r.Subject, sentAt,
 					strconv.FormatInt(r.TotalSent, 10),
 					strconv.FormatInt(r.TotalOpened, 10),
 					strconv.FormatInt(r.TotalClicked, 10),
 					strconv.FormatInt(int64(r.OpenRate), 10),
 					strconv.FormatInt(int64(r.ClickRate), 10),
-				}); err != nil {
+				})); err != nil {
 					return err
 				}
 			}
@@ -285,7 +285,7 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					cohortDate = r.CohortDate.Time.Format("2006-01-02")
 				}
 
-				if err := w.Write([]string{
+				if err := w.Write(csvSafeRow([]string{
 					cohortDate,
 					strconv.FormatInt(r.CohortSize, 10),
 					strconv.FormatInt(r.RetainedD1, 10),
@@ -294,7 +294,7 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 					strconv.FormatInt(int64(r.D1Rate), 10),
 					strconv.FormatInt(int64(r.D7Rate), 10),
 					strconv.FormatInt(int64(r.D30Rate), 10),
-				}); err != nil {
+				})); err != nil {
 					return err
 				}
 			}
@@ -313,6 +313,29 @@ func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string,
 }
 
 // writeCSV builds a CSV string with proper escaping using encoding/csv.
+// csvSafeCell neutralizes spreadsheet formula injection (=, +, -, @, tab,
+// pipe, DDE) by prefixing a single quote. encoding/csv escapes quoting but
+// does NOT protect against formula payloads in user-controlled cells.
+func csvSafeCell(s string) string {
+	if s == "" {
+		return s
+	}
+	if strings.ContainsRune("=+-@	|", rune(s[0])) || strings.HasPrefix(strings.ToLower(s), "cmd|") {
+		return "'" + s
+	}
+
+	return s
+}
+
+// csvSafeRow sanitizes every cell in a CSV row.
+func csvSafeRow(row []string) []string {
+	for i, c := range row {
+		row[i] = csvSafeCell(c)
+	}
+
+	return row
+}
+
 func writeCSV(headers []string, writeRows func(w *csv.Writer) error) (string, error) {
 	var sb strings.Builder
 
@@ -368,7 +391,7 @@ func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"content": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]interface{}{"content": nonNil(rows)}})
 }
 
 // HandleRevenueStreams returns revenue breakdown.
@@ -392,7 +415,7 @@ func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"revenue": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]interface{}{"revenue": nonNil(rows)}})
 }
 
 // HandleAdPerformance returns ad campaign aggregate stats.
@@ -414,7 +437,7 @@ func (h *Handlers) HandleAdPerformance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"ads": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]interface{}{"ads": nonNil(rows)}})
 }
 
 // HandleNewsletterEngagement returns newsletter open/click rates.
@@ -443,10 +466,10 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"campaigns": campaigns,
-		"lists":     lists,
-	})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]interface{}{
+		"campaigns": nonNil(campaigns),
+		"lists":     nonNil(lists),
+	}})
 }
 
 // HandleRetention returns retention cohorts.
@@ -467,7 +490,7 @@ func (h *Handlers) HandleRetention(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"cohorts": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": map[string]interface{}{"cohorts": nonNil(rows)}})
 }
 
 // HandleExport exports analytics as CSV.
@@ -503,13 +526,23 @@ func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 
 // --- shared helpers ---
 
+// nonNil normalizes a nil result slice to an empty slice so list endpoints
+// serialize [] rather than null when there are no rows.
+func nonNil[T any](rows []T) []T {
+	if rows == nil {
+		return []T{}
+	}
+
+	return rows
+}
+
+
 // requireAuthUser extracts the authenticated user from the request context
 // using the auth middleware's context key. Returns the AuthenticatedUser and
 // writes a 401 error + false if no authenticated user is present.
 func requireAuthUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
-	if u == nil || !u.UserID.Valid || !(pgtype.UUID{}).
-		Valid {
+	if u == nil || !u.UserID.Valid {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}

@@ -186,14 +186,27 @@ LEFT JOIN comments_made cm ON cm.day = d.day
 LEFT JOIN views v ON v.day = d.day
 ORDER BY d.day DESC;
 
+-- REFRESH ... CONCURRENTLY fails on a view that has never been populated
+-- (fresh installs create these views WITH NO DATA), so each view also has a
+-- Blocking variant callers fall back to for the first refresh.
+-- Ref: sections/40-analytics-dashboard.md, sections/66-advanced-analytics.md
 -- name: RefreshDailyContentStatsView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_content_stats;
+
+-- name: RefreshDailyContentStatsViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_daily_content_stats;
 
 -- name: RefreshDailySpaceStatsView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_space_stats;
 
+-- name: RefreshDailySpaceStatsViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_daily_space_stats;
+
 -- name: RefreshUserEngagementStatsView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_user_engagement_stats;
+
+-- name: RefreshUserEngagementStatsViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_user_engagement_stats;
 
 -- Section 66 (ADR-084) — Advanced Analytics materialized views.
 -- All four are refreshed by the same analytics:refresh_views task (hourly)
@@ -202,14 +215,26 @@ REFRESH MATERIALIZED VIEW CONCURRENTLY mv_user_engagement_stats;
 -- name: RefreshTopContent7dView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_top_content_7d;
 
+-- name: RefreshTopContent7dViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_top_content_7d;
+
 -- name: RefreshTopContent30dView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_top_content_30d;
+
+-- name: RefreshTopContent30dViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_top_content_30d;
 
 -- name: RefreshTopContent90dView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_top_content_90d;
 
+-- name: RefreshTopContent90dViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_top_content_90d;
+
 -- name: RefreshRevenueStreamsView :exec
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_revenue_streams;
+
+-- name: RefreshRevenueStreamsViewBlocking :exec
+REFRESH MATERIALIZED VIEW mv_revenue_streams;
 
 -- =====================
 -- Dashboard Aggregates (from real tables)

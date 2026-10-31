@@ -8,7 +8,7 @@
 	import { DataTable } from "$lib/components/ui/data-table";
 	import { Button } from "$lib/components/ui/button";
 	import { Modal } from "$lib/components/ui/modal";
-	import { Badge } from "$lib/components/ui/badge";
+	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { 
 		BarChart3, Users, Eye, MessageSquare, TrendingUp, 
 		Download, RefreshCw, Shield, DollarSign, Search, UserPlus
@@ -51,6 +51,9 @@
 	let searchAnalytics = $state<Array<Record<string, unknown>> | null>(null);
 	let scanning = $state(false);
 	let loadAbortController: AbortController | null = null;
+	let deleteModalOpen = $state(false);
+	let pendingDeleteScan = $state<Record<string, unknown> | null>(null);
+	let deleting = $state(false);
 
 	// Section 66 — Advanced Analytics state (ADR-084)
 	let advancedPeriod = $state("7d");
@@ -61,6 +64,10 @@
 	let retentionCohorts = $state<Array<Record<string, unknown>> | null>(null);
 	let advancedLoading = $state(false);
 	let advancedError = $state("");
+	// Set once the advanced tab has attempted its first fetch — the lazy-load
+	// effect below must not refire on every state change (infinite loop when
+	// any request fails, since a failed call leaves its slice null).
+	let advancedFetched = $state(false);
 	
 	async function loadAnalytics(f = from, toVal = to) {
 		if (loadAbortController) loadAbortController.abort();
@@ -106,18 +113,24 @@
 		advancedError = "";
 		try {
 			const periodParam = `period=${period}`;
-			const [topRes, revRes, adsRes, newsRes, retRes] = await Promise.allSettled([
+			const results = await Promise.allSettled([
 				analyticsAdminApi.getTopContent(periodParam),
 				analyticsAdminApi.getRevenueStreams(periodParam),
 				analyticsAdminApi.getAdPerformance(),
 				analyticsAdminApi.getNewsletterEngagement(),
 				analyticsAdminApi.getRetention()
 			]);
+			const [topRes, revRes, adsRes, newsRes, retRes] = results;
 			topContent = topRes.status === 'fulfilled' && topRes.value.ok ? (topRes.value.data as { content?: Array<Record<string, unknown>> })?.content ?? null : null;
 			revenueStreams = revRes.status === 'fulfilled' && revRes.value.ok ? (revRes.value.data as { revenue?: Array<Record<string, unknown>> })?.revenue ?? null : null;
 			adPerformance = adsRes.status === 'fulfilled' && adsRes.value.ok ? (adsRes.value.data as { ads?: Array<Record<string, unknown>> })?.ads ?? null : null;
 			newsletterEngagement = newsRes.status === 'fulfilled' && newsRes.value.ok ? (newsRes.value.data as { campaigns?: Array<Record<string, unknown>>; lists?: Array<Record<string, unknown>> }) : null;
 			retentionCohorts = retRes.status === 'fulfilled' && retRes.value.ok ? (retRes.value.data as { cohorts?: Array<Record<string, unknown>> })?.cohorts ?? null : null;
+			// Surface a hard failure when every advanced request failed so the
+			// lazy-load effect stops retrying in a loop.
+			if (results.every((r) => r.status === 'rejected' || !r.value.ok)) {
+				advancedError = t('analytics.failed_to_load', 'Failed to load advanced analytics');
+			}
 		} catch (e) {
 			advancedError = e instanceof Error ? e.message : t('analytics.failed_to_load', 'Failed to load advanced analytics');
 		} finally {
@@ -162,7 +175,8 @@
 
 	async function resolveScan(id: string) {
 		try {
-			await analyticsAdminApi.resolveSecurityItem(id, {});
+			const res = await analyticsAdminApi.resolveSecurityItem(id, {});
+			if (!res.ok) throw new Error(res.error ?? 'Resolve failed');
 			security = (security ?? []).map((s) =>
 				s.id === id ? { ...s, resolved_at: new Date().toISOString() } : s
 			);
@@ -170,6 +184,43 @@
 			error = e instanceof Error ? e.message : t('analytics.resolve_failed', 'Failed to resolve');
 		}
 	}
+
+	async function deleteScan() {
+		const id = pendingDeleteScan?.id;
+		if (id == null) return;
+		deleting = true;
+		try {
+			const res = await analyticsAdminApi.deleteSecurityItem(String(id));
+			if (!res.ok) throw new Error(res.error ?? 'Delete failed');
+			deleteModalOpen = false;
+			pendingDeleteScan = null;
+			security = (security ?? []).filter((s) => s.id !== id);
+		} catch (e) {
+			error = e instanceof Error ? e.message : t('analytics.delete_failed', 'Delete failed');
+		} finally {
+			deleting = false;
+		}
+	}
+
+	// Row actions for the security findings table (resolve/delete are wired
+	// to POST .../security/{id}/resolve and DELETE .../security/{id}, both
+	// gated on the analytics.admin node — hide them without it).
+	const securityActions = $derived([
+		{
+			label: t('analytics.resolve', 'Resolve'),
+			onclick: (row: Record<string, unknown>) => resolveScan(String(row.id)),
+			show: (row: Record<string, unknown>) => hasPermission('analytics.admin') && !row.resolved_at
+		},
+		{
+			label: t('common.delete', 'Delete'),
+			variant: 'destructive' as const,
+			onclick: (row: Record<string, unknown>) => {
+				pendingDeleteScan = row;
+				deleteModalOpen = true;
+			},
+			show: () => hasPermission('analytics.admin')
+		}
+	]);
 
 	// Push the chosen date range to the URL (?from=&to=) to drive the reload
 	function applyRange() {
@@ -194,14 +245,17 @@
 		};
 	});
 
-	// Section 66 — Load advanced analytics when the Advanced tab is active.
+	// Section 66 — Load advanced analytics once when the Advanced tab is
+	// active. Retries go through the period selector or the error Retry
+	// button (both call loadAdvancedAnalytics directly).
 	$effect(() => {
-		if (activeTab === "advanced" && topContent === null && !advancedLoading) {
+		if (activeTab === "advanced" && !advancedFetched && !advancedLoading) {
+			advancedFetched = true;
 			loadAdvancedAnalytics();
 		}
 	});
 	
-	const tabs = [
+	const tabs = $derived([
 		{ value: "overview", label: t('analytics.tab_overview', 'Overview'), icon: TrendingUp },
 		{ value: "users", label: t('analytics.tab_users', 'Users'), icon: Users },
 		{ value: "content", label: t('analytics.tab_content', 'Content'), icon: MessageSquare },
@@ -210,8 +264,14 @@
 		{ value: "search", label: t('analytics.tab_search', 'Search'), icon: Search },
 		{ value: "security", label: t('analytics.tab_security', 'Security'), icon: Shield },
 		{ value: "advanced", label: t('analytics.tab_advanced', 'Advanced'), icon: BarChart3 }
-	];
+	]);
 	
+	// Analytics series arrive in mixed orders (DAU/content are newest-first,
+	// user growth is oldest-first) — normalize ascending before taking the
+	// "latest" element or feeding a chart, or cards show the oldest day.
+	const sortAsc = <T>(arr: T[] | null | undefined, key: keyof T): T[] =>
+		[...(arr ?? [])].sort((a, b) => String(a[key]).localeCompare(String(b[key])));
+
 	// pctChange computes the percentage change between the last and
 	// second-to-last values of a time series. Returns undefined when there
 	// is not enough data or the previous value is zero (avoid div-by-zero).
@@ -226,22 +286,22 @@
 	const overviewCards = $derived([
 		{
 			label: t('analytics.daily_active_users', 'Daily Active Users'),
-			value: overview?.daily_active_users?.[overview.daily_active_users.length - 1]?.dau ?? 0,
-			change: pctChange(overview?.daily_active_users, (d) => d.dau),
+			value: sortAsc(overview?.daily_active_users, 'day').at(-1)?.dau ?? 0,
+			change: pctChange(sortAsc(overview?.daily_active_users, 'day'), (d) => d.dau),
 			icon: Users,
 			color: "primary"
 		},
 		{
 			label: t('analytics.monthly_active_users', 'Monthly Active Users'),
-			value: overview?.monthly_active_users?.[overview.monthly_active_users.length - 1]?.mau ?? 0,
-			change: pctChange(overview?.monthly_active_users, (d) => d.mau),
+			value: sortAsc(overview?.monthly_active_users, 'month').at(-1)?.mau ?? 0,
+			change: pctChange(sortAsc(overview?.monthly_active_users, 'month'), (d) => d.mau),
 			icon: Users,
 			color: "success"
 		},
 		{
 			label: t('analytics.new_signups', 'New Signups (Latest)'),
-			value: overview?.user_growth?.[overview.user_growth.length - 1]?.new_users ?? 0,
-			change: pctChange(overview?.user_growth, (d) => d.new_users),
+			value: sortAsc(overview?.user_growth, 'day').at(-1)?.new_users ?? 0,
+			change: pctChange(sortAsc(overview?.user_growth, 'day'), (d) => d.new_users),
 			icon: UserPlus,
 			color: "info"
 		},
@@ -269,13 +329,13 @@
 	]);
 
 	// Top Content table columns for the Overview tab.
-	const topContentColumns = [
+	const topContentColumns = $derived([
 		{ key: "content_title", label: t('analytics.content_title', 'Content Title'), sortable: true, render: (v: string) => v ? `<span class="font-medium">${v}</span>` : '—' },
 		{ key: "total_views", label: t('analytics.views', 'Views'), sortable: true },
 		{ key: "total_reactions", label: t('analytics.reactions', 'Reactions'), sortable: true },
 		{ key: "total_comments", label: t('analytics.comments', 'Comments'), sortable: true },
 		{ key: "total_unique_viewers", label: t('analytics.unique_viewers', 'Unique Viewers'), sortable: true }
-	];
+	]);
 
 	// Map the user analytics summary object into metric/value rows for the
 	// Users tab DataTable (backend returns an object, not an array).
@@ -294,7 +354,14 @@
 				: Number(v).toLocaleString()
 	};
 
-	const securityColumns = [
+	// Axis config for band-scale (string) x-axes — chartAxisFormat coerces
+	// non-Date values through Number(), which renders NaN for string labels.
+	const barChartAxis: any = {
+		x: { format: (v: any) => String(v), ticks: { rotate: -30 } },
+		y: { format: (v: any) => Number(v).toLocaleString() }
+	};
+
+	const securityColumns = $derived([
 		{ key: "scan_type", label: t('analytics.type', 'Type'), sortable: true },
 		{
 			key: "severity",
@@ -318,14 +385,19 @@
 			sortable: true,
 			render: (value: string) => value ? new Date(value).toLocaleString() : `<span class="text-warning font-medium">${t('analytics.unresolved', 'Unresolved')}</span>`
 		}
-	];
-	
+	]);
+
 	async function handleFlushCache() {
 		flushing = true;
 		try {
-			await analyticsAdminApi.flushCache({ scope: "all" });
+			const res = await analyticsAdminApi.flushCache({ scope: "all" });
+			if (!res.ok) throw new Error(res.error ?? 'flush failed');
 			flushModalOpen = false;
-			await goto('/analytics', { invalidateAll: true });
+			// Refetch in place — a goto back to /analytics would drop the
+			// active ?tab and leave stale data (the load effect only fires
+			// when ?from/?to change).
+			await loadAnalytics();
+			if (advancedFetched) await loadAdvancedAnalytics();
 		} catch {
 			error = t('analytics.failed_to_flush_cache', 'Failed to flush cache');
 		} finally {
@@ -333,6 +405,15 @@
 		}
 	}
 	
+	// PageHeader actions — Flush Cache is gated on the analytics.cache.flush
+	// node (POST /admin/analytics/cache/flush requires it).
+	const pageActions = $derived([
+		{ label: t('analytics.export_report', 'Export Report'), icon: Download, onclick: handleExport, variant: "outline" as const },
+		...(hasPermission('analytics.cache.flush')
+			? [{ label: t('analytics.flush_cache', 'Flush Cache'), icon: RefreshCw, onclick: () => { flushModalOpen = true; }, variant: "ghost" as const }]
+			: [])
+	]);
+
 	function handleExport() {
 		// Build CSV from overview data. Values are neutralized against
 		// spreadsheet formula injection (=, +, -, @, tab, pipe, DDE).
@@ -376,10 +457,7 @@
 <PageHeader
 	title={t('analytics.page_title', 'Analytics')}
 	description={t('analytics.page_description', 'Monitor platform performance and user engagement')}
-	actions={[
-		{ label: t('analytics.export_report', 'Export Report'), icon: Download, onclick: handleExport, variant: "outline" },
-		{ label: t('analytics.flush_cache', 'Flush Cache'), icon: RefreshCw, onclick: () => flushModalOpen = true, variant: "ghost" }
-	]}
+	actions={pageActions}
 />
 
 <div class="space-y-6">
@@ -407,6 +485,10 @@
 		</div>
 		<Button variant="outline" size="sm" onclick={applyRange}>{t('common.apply', 'Apply')}</Button>
 	</div>
+
+	{#if error}
+		<div class="rounded-lg p-3 text-sm" style="background: var(--color-danger); color: var(--color-white)">{error}</div>
+	{/if}
 
 	<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={['from', 'to']} />
 	
@@ -448,7 +530,7 @@
 					{:else if ((overview?.user_growth) ?? []).length > 0}
 						<div class="h-64">
 							<LineChart
-								data={(overview?.user_growth ?? []).map((d) => ({ date: new Date(d.day), count: d.new_users }))}
+								data={sortAsc(overview?.user_growth, 'day').map((d) => ({ date: new Date(d.day), count: d.new_users }))}
 								x="date"
 								y="count"
 								cRange={['var(--chart-1)']}
@@ -476,7 +558,7 @@
 					{:else if ((overview?.content_over_time) ?? []).length > 0}
 						<div class="h-64">
 							<AreaChart
-								data={(overview?.content_over_time ?? []).map((d) => ({ date: new Date(d.day), count: d.content_count }))}
+								data={sortAsc(overview?.content_over_time, 'day').map((d) => ({ date: new Date(d.day), count: d.content_count }))}
 								x="date"
 								y="count"
 								cRange={['var(--chart-1)']}
@@ -512,7 +594,7 @@
 								y="visits"
 								xPadding={[0.1, 0.1]}
 								cRange={['var(--chart-2)']}
-								axis={chartAxisFormat}
+								axis={barChartAxis}
 							/>
 						</div>
 					{:else}
@@ -544,7 +626,7 @@
 			<CardHeader>
 				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.security_scans', 'Security Scans')}</h3>
-					<Button onclick={runSecurityScan} disabled={scanning}>
+					<Button onclick={runSecurityScan} disabled={scanning || !hasPermission('analytics.admin')}>
 						{#if scanning}
 							<RefreshCw class="me-2 h-4 w-4 animate-spin" />
 							{t('analytics.scanning', 'Scanning...')}
@@ -560,6 +642,7 @@
 					columns={securityColumns}
 					data={security ?? []}
 					pageSize={10}
+					actions={securityActions}
 					emptyMessage={t('analytics.no_security_scans', 'No security scans found. Click "Run Scan" to start a security scan.')}
 				/>
 			</CardContent>
@@ -696,7 +779,10 @@
 		</div>
 
 		{#if advancedError}
-			<div class="rounded-lg p-3 text-sm" style="background: var(--color-danger); color: var(--color-white)">{advancedError}</div>
+			<div class="flex items-center justify-between gap-2 rounded-lg p-3 text-sm" style="background: var(--color-danger); color: var(--color-white)">
+				<span>{advancedError}</span>
+				<Button variant="outline" size="sm" onclick={() => loadAdvancedAnalytics()}>{t('common.retry', 'Retry')}</Button>
+			</div>
 		{/if}
 
 		{#if advancedLoading}
@@ -835,6 +921,20 @@
 			{:else}
 				{t('analytics.flush_cache', 'Flush Cache')}
 			{/if}
+		</Button>
+	</div>
+</Modal>
+
+<Modal
+	bind:open={deleteModalOpen}
+	title={t('analytics.delete_finding', 'Delete Finding')}
+	description={t('analytics.delete_finding_description', 'This will permanently delete this security finding.')}
+	size="sm"
+>
+	<div class="flex justify-end gap-3">
+		<Button variant="outline" onclick={() => { deleteModalOpen = false; pendingDeleteScan = null; }}>{t('analytics.cancel', 'Cancel')}</Button>
+		<Button variant="destructive" onclick={deleteScan} disabled={deleting}>
+			{deleting ? t('analytics.deleting', 'Deleting...') : t('common.delete', 'Delete')}
 		</Button>
 	</div>
 </Modal>

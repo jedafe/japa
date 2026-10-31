@@ -28,7 +28,7 @@
 	async function loadStatus() {
 		try {
 			const result = await impersonationApi.status();
-			if (result.ok) {
+			if (result.ok && result.data != null) {
 				status = result.data;
 			}
 		} catch {

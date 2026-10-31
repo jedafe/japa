@@ -282,7 +282,7 @@
 
 	// ── Challenge EntityPage ───────────────────────────────────────────────
 
-	const challengeFields: FieldDef[] = [
+	const challengeFields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('gamification.name', 'Name'), type: 'text', required: true },
 		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text' },
 		{ key: 'description', label: t('gamification.description', 'Description'), type: 'textarea' },
@@ -293,7 +293,7 @@
 		{ key: 'starts_at', label: t('gamification.starts', 'Start Date'), type: 'date' },
 		{ key: 'ends_at', label: t('gamification.ends', 'End Date'), type: 'date' },
 		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox' }
-	];
+	]);
 
 	const challengeFilters = $derived<FilterDef[]>([
 		{

@@ -2,9 +2,11 @@ package analytics
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -112,39 +114,58 @@ func (s *Store) GetTrafficSources(ctx context.Context, startDate, endDate *pgtyp
 	return s.read.GetTrafficSources(ctx, gen.GetTrafficSourcesParams{Column1: nullableTimestamptzPtr(startDate), Column2: nullableTimestamptzPtr(endDate), Limit: limit})
 }
 
+// refreshMV runs the concurrent refresh for a materialized view and falls
+// back to the blocking variant only when CONCURRENTLY cannot run:
+// SQLSTATE 55000 — the view has never been populated (fresh installs create
+// the views WITH NO DATA, so the first refresh must be non-concurrent);
+// SQLSTATE 0A000 — no qualifying unique index exists for CONCURRENTLY.
+// Any other error is propagated unchanged.
+func (s *Store) refreshMV(ctx context.Context, concurrent, blocking func(context.Context) error) error {
+	if err := concurrent(ctx); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && (pgErr.Code == "55000" || pgErr.Code == "0A000") {
+			return blocking(ctx)
+		}
+
+		return err
+	}
+
+	return nil
+}
+
 // RefreshDailyContentStatsView refreshes the content stats materialized view.
 func (s *Store) RefreshDailyContentStatsView(ctx context.Context) error {
-	return s.write.RefreshDailyContentStatsView(ctx)
+	return s.refreshMV(ctx, s.write.RefreshDailyContentStatsView, s.write.RefreshDailyContentStatsViewBlocking)
 }
 
 // RefreshDailySpaceStatsView refreshes the space stats materialized view.
 func (s *Store) RefreshDailySpaceStatsView(ctx context.Context) error {
-	return s.write.RefreshDailySpaceStatsView(ctx)
+	return s.refreshMV(ctx, s.write.RefreshDailySpaceStatsView, s.write.RefreshDailySpaceStatsViewBlocking)
 }
 
 // RefreshUserEngagementStatsView refreshes the user engagement stats materialized view.
 func (s *Store) RefreshUserEngagementStatsView(ctx context.Context) error {
-	return s.write.RefreshUserEngagementStatsView(ctx)
+	return s.refreshMV(ctx, s.write.RefreshUserEngagementStatsView, s.write.RefreshUserEngagementStatsViewBlocking)
 }
 
 // RefreshTopContent7dView refreshes the §66 top-content (7d) materialized view.
 func (s *Store) RefreshTopContent7dView(ctx context.Context) error {
-	return s.write.RefreshTopContent7dView(ctx)
+	return s.refreshMV(ctx, s.write.RefreshTopContent7dView, s.write.RefreshTopContent7dViewBlocking)
 }
 
 // RefreshTopContent30dView refreshes the §66 top-content (30d) materialized view.
 func (s *Store) RefreshTopContent30dView(ctx context.Context) error {
-	return s.write.RefreshTopContent30dView(ctx)
+	return s.refreshMV(ctx, s.write.RefreshTopContent30dView, s.write.RefreshTopContent30dViewBlocking)
 }
 
 // RefreshTopContent90dView refreshes the §66 top-content (90d) materialized view.
 func (s *Store) RefreshTopContent90dView(ctx context.Context) error {
-	return s.write.RefreshTopContent90dView(ctx)
+	return s.refreshMV(ctx, s.write.RefreshTopContent90dView, s.write.RefreshTopContent90dViewBlocking)
 }
 
 // RefreshRevenueStreamsView refreshes the §66 revenue-streams materialized view.
 func (s *Store) RefreshRevenueStreamsView(ctx context.Context) error {
-	return s.write.RefreshRevenueStreamsView(ctx)
+	return s.refreshMV(ctx, s.write.RefreshRevenueStreamsView, s.write.RefreshRevenueStreamsViewBlocking)
 }
 
 // CreateSecurityScanResult records a new security scan finding, or refreshes
