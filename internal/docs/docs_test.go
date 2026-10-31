@@ -381,3 +381,14 @@ func TestRevisionRequired(t *testing.T) {
 		t.Fatal("feature_image change must version")
 	}
 }
+
+func TestHistorySlugReserved(t *testing.T) {
+	// §44 amendment 5: /docs/{audience}/{slug}/history is a real route —
+	// a page slugged "history" would be shadowed and unreachable.
+	if err := validateDocSlug("users", "history"); err == nil {
+		t.Fatal("history must be reserved in every audience")
+	}
+	if err := validateDocSlug("api", "history"); err == nil {
+		t.Fatal("history must be reserved in api audience")
+	}
+}

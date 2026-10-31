@@ -359,7 +359,7 @@ export async function saveDocPageAction(event: RequestEvent, audience: string, s
 		subcategory
 	};
 	if (content !== undefined) body.content = content;
-	if (form.has('feature_image_id')) body.feature_image_id = featureImageId || null;
+	if (form.has('feature_image_id')) body.feature_image_id = featureImageId; // "" clears
 	if (summary) body.summary = summary;
 	if (newSlug && newSlug !== slug) body.slug = newSlug;
 	body.parent_id = parentId || null;

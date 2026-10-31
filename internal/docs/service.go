@@ -598,10 +598,11 @@ var docSlugRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // reservedSlugs are docs-app route segments that can never be page slugs —
 // a page using one would be shadowed by a static route and unreachable.
 // `new` is reserved in every audience (the /{audience}/new create route);
-// the api audience additionally serves /docs/api/keys and
-// /docs/api/playground (§44 amendment 2).
+// `history` too — it is the revision-history route segment under {slug}
+// (§44 amendment 5). The api audience additionally serves /docs/api/keys
+// and /docs/api/playground (§44 amendment 2).
 var reservedSlugs = map[string]map[string]bool{
-	"*":   {"new": true},
+	"*":   {"new": true, "history": true},
 	"api": {"keys": true, "playground": true},
 }
 
