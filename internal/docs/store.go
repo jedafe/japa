@@ -220,27 +220,6 @@ func (s *Store) search(ctx context.Context, query string, audience *string, limi
 	return rows, nil
 }
 
-// create inserts a new doc page and returns its ID.
-func (s *Store) create(ctx context.Context, params gen.CreateDocPageParams) (pgtype.UUID, error) {
-	id, err := s.write.CreateDocPage(ctx, params)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("creating doc page: %w", mapWriteErr(err))
-	}
-
-	return id, nil
-}
-
-// update modifies an existing doc page. Returns the number of rows written —
-// 0 means the optimistic-lock guard or the id filter rejected the write.
-func (s *Store) update(ctx context.Context, params gen.UpdateDocPageParams) (int64, error) {
-	rows, err := s.write.UpdateDocPage(ctx, params)
-	if err != nil {
-		return 0, fmt.Errorf("updating doc page: %w", mapWriteErr(err))
-	}
-
-	return rows, nil
-}
-
 // updateStatus updates only the review status and reviewer of a doc page.
 func (s *Store) updateStatus(ctx context.Context, params gen.UpdateDocPageStatusParams) error {
 	if err := s.write.UpdateDocPageStatus(ctx, params); err != nil {
