@@ -1321,6 +1321,36 @@ func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"rejected": true}})
 }
 
+// HandleClearRevisions handles DELETE /admin/wiki/:page_id/revisions —
+// clears a page's resolved revision history (wiki.manage; §44 amendment 5
+// parity with doc pages). Pending submissions are never touched: they
+// resolve through review, not history clearing.
+func (h *Handlers) HandleClearRevisions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	pageID, ok := scanUUIDParam(w, r, "page_id")
+	if !ok {
+		return
+	}
+
+	n, err := h.service.ClearRevisions(r.Context(), pageID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Page not found")
+			return
+		}
+
+		slog.Error("wiki: clear revisions failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "clear_failed", "Failed to clear revisions")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"cleared": n}})
+}
+
 // HandleAdminListRevisions handles GET /admin/wiki/revisions — the review
 // queue filtered by ?kind= (content|fields|mixed) and ?status=
 // (pending|approved|rejected), paginated via ?page=&limit= (§80 community

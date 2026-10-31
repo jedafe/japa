@@ -7739,6 +7739,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Admin: manage pages (wiki.manage permission).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
 					Patch("/admin/wiki/{page_id}", wikiHandlers.HandleUpdatePage)
+				// §44 amendment 5 parity: clear a page's resolved revision
+				// history — pending submissions are never touched.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Delete("/admin/wiki/{page_id}/revisions", wikiHandlers.HandleClearRevisions)
 				// Admin: delete pages (wiki.delete permission) — soft delete;
 				// ?force=true permanently removes an already-soft-deleted page.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.delete"), rbac.RequireForceDelete(rbacResolver)).

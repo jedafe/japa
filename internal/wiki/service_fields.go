@@ -1107,6 +1107,18 @@ func (s *Service) RejectRevisionByID(ctx context.Context, revID, reviewerID pgty
 	return nil
 }
 
+// ClearRevisions soft-deletes a page's resolved revision history
+// (wiki.manage — §44 amendment 5 parity with doc pages). Returns the
+// cleared row count; pending submissions are never touched.
+func (s *Service) ClearRevisions(ctx context.Context, pageID pgtype.UUID) (int64, error) {
+	n, err := s.store.ClearRevisions(ctx, pageID)
+	if err != nil {
+		return 0, fmt.Errorf("wiki: clear revisions: %w", err)
+	}
+
+	return n, nil
+}
+
 // approveOpsRevision flips a revision to approved and applies its ops array
 // inside one writer transaction — no partial application (§6 step 3). After
 // commit it propagates JCE cache busts for the revision's target entity.

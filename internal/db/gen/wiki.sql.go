@@ -514,6 +514,25 @@ func (q *Queries) ApproveWikiRevisionByID(ctx context.Context, arg ApproveWikiRe
 	return i, err
 }
 
+const clearWikiRevisions = `-- name: ClearWikiRevisions :execrows
+UPDATE wiki_revisions
+SET deleted_at = now()
+WHERE wiki_page_id = $1
+  AND status != 'pending'
+  AND deleted_at IS NULL
+`
+
+// Clear a page's revision history (wiki.manage). Soft-deletes resolved
+// revisions only — pending submissions are never touched (Rule 11). Same
+// history-clearing parity as §44 amendment 5 doc pages.
+func (q *Queries) ClearWikiRevisions(ctx context.Context, pageID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, clearWikiRevisions, pageID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countPendingRevisionsByTarget = `-- name: CountPendingRevisionsByTarget :one
 SELECT COUNT(*) FROM wiki_revisions
 WHERE target_entity_type = $1

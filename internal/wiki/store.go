@@ -883,6 +883,28 @@ func (s *Store) RejectRevisionByID(ctx context.Context, revID, reviewerID pgtype
 	return s.RejectRevision(ctx, revID, reviewerID, reviewNotes)
 }
 
+// ClearRevisions soft-deletes a page's resolved revision history and
+// returns how many rows were cleared (wiki.manage; §44 amendment 5 parity
+// with doc pages). Pending submissions are never touched — they resolve
+// through review, not history clearing. pgx.ErrNoRows = page missing.
+func (s *Store) ClearRevisions(ctx context.Context, pageID pgtype.UUID) (int64, error) {
+	exists, err := s.read.WikiPageExists(ctx, pageID)
+	if err != nil {
+		return 0, fmt.Errorf("wiki: clear revisions: exists probe: %w", err)
+	}
+
+	if !exists {
+		return 0, pgx.ErrNoRows
+	}
+
+	n, err := s.write.ClearWikiRevisions(ctx, pageID)
+	if err != nil {
+		return 0, fmt.Errorf("wiki: clear revisions: %w", err)
+	}
+
+	return n, nil
+}
+
 // SetApplyError records an ops-application failure on a revision (§80). It
 // runs outside the failed approve transaction — the status flip and ops
 // mutations roll back, but the failure reason persists so the admin queue

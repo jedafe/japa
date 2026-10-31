@@ -864,3 +864,13 @@ WHERE wr.wiki_page_id = @page_id
     ORDER BY w2.created_at DESC
     LIMIT 5
   );
+
+-- name: ClearWikiRevisions :execrows
+-- Clear a page's revision history (wiki.manage). Soft-deletes resolved
+-- revisions only — pending submissions are never touched (Rule 11). Same
+-- history-clearing parity as §44 amendment 5 doc pages.
+UPDATE wiki_revisions
+SET deleted_at = now()
+WHERE wiki_page_id = @page_id
+  AND status != 'pending'
+  AND deleted_at IS NULL;
