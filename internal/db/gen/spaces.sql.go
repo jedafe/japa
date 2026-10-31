@@ -4178,6 +4178,7 @@ WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
 ORDER BY
  CASE WHEN $9::text = 'name' THEN s.name ELSE NULL END ASC,
  CASE WHEN $9::text = 'name_desc' THEN s.name ELSE NULL END DESC,
+ CASE WHEN $9::text = 'created' THEN s.created_at ELSE NULL END ASC,
  CASE
  WHEN $9::text = 'members' THEN s.member_count
  WHEN $9::text = 'followers' THEN s.follower_count
@@ -4230,8 +4231,9 @@ type ListSpacesByTypePaginatedRow struct {
 	Initials       *string            `json:"initials"`
 }
 
-// sort accepts: ” (default → newest), 'name' (A–Z), 'name_desc' (Z–A), 'members', 'followers',
-// 'posts' (all numeric DESC). Unknown values fall back to newest.
+// sort accepts: ” (default → newest), 'name' (A–Z), 'name_desc' (Z–A), 'created' (oldest
+// first), 'members', 'followers', 'posts' (all numeric DESC). Unknown values fall back
+// to newest.
 // The initials column comes from the university_fields custom field group
 // (key = 'initials', deterministic id 00000000-0000-0000-0000-000000000090)
 // and is left-joined so it is NULL for non-university space types.

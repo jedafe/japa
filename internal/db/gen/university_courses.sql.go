@@ -733,6 +733,8 @@ SELECT o.id, o.course_id, o.university_id, o.slug,
  o.entry_requirements, o.accreditation, o.is_published, o.created_at, o.updated_at,
  o.deleted_at,
  c.title AS course_title, c.slug AS course_slug, c.degree_type,
+ c.description AS course_description, c.department, c.field_of_study,
+ c.language, c.default_duration_years,
  s.name AS university_name, s.slug AS university_slug
 FROM university_course_offerings o
 JOIN university_course_catalog c ON c.id = o.course_id
@@ -766,26 +768,31 @@ type ListCourseOfferingsAdminParams struct {
 }
 
 type ListCourseOfferingsAdminRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	CourseID          pgtype.UUID        `json:"course_id"`
-	UniversityID      pgtype.UUID        `json:"university_id"`
-	Slug              string             `json:"slug"`
-	Tuition           pgtype.Numeric     `json:"tuition"`
-	Currency          *string            `json:"currency"`
-	DurationYears     pgtype.Numeric     `json:"duration_years"`
-	StudyMode         *string            `json:"study_mode"`
-	IntakeMonths      []string           `json:"intake_months"`
-	EntryRequirements *string            `json:"entry_requirements"`
-	Accreditation     *string            `json:"accreditation"`
-	IsPublished       bool               `json:"is_published"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	CourseTitle       string             `json:"course_title"`
-	CourseSlug        string             `json:"course_slug"`
-	DegreeType        *string            `json:"degree_type"`
-	UniversityName    string             `json:"university_name"`
-	UniversitySlug    string             `json:"university_slug"`
+	ID                   pgtype.UUID        `json:"id"`
+	CourseID             pgtype.UUID        `json:"course_id"`
+	UniversityID         pgtype.UUID        `json:"university_id"`
+	Slug                 string             `json:"slug"`
+	Tuition              pgtype.Numeric     `json:"tuition"`
+	Currency             *string            `json:"currency"`
+	DurationYears        pgtype.Numeric     `json:"duration_years"`
+	StudyMode            *string            `json:"study_mode"`
+	IntakeMonths         []string           `json:"intake_months"`
+	EntryRequirements    *string            `json:"entry_requirements"`
+	Accreditation        *string            `json:"accreditation"`
+	IsPublished          bool               `json:"is_published"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
+	CourseTitle          string             `json:"course_title"`
+	CourseSlug           string             `json:"course_slug"`
+	DegreeType           *string            `json:"degree_type"`
+	CourseDescription    *string            `json:"course_description"`
+	Department           *string            `json:"department"`
+	FieldOfStudy         *string            `json:"field_of_study"`
+	Language             string             `json:"language"`
+	DefaultDurationYears pgtype.Numeric     `json:"default_duration_years"`
+	UniversityName       string             `json:"university_name"`
+	UniversitySlug       string             `json:"university_slug"`
 }
 
 // Admin: course offerings CRUD (universities.course_offering.* RBAC nodes)
@@ -829,6 +836,11 @@ func (q *Queries) ListCourseOfferingsAdmin(ctx context.Context, arg ListCourseOf
 			&i.CourseTitle,
 			&i.CourseSlug,
 			&i.DegreeType,
+			&i.CourseDescription,
+			&i.Department,
+			&i.FieldOfStudy,
+			&i.Language,
+			&i.DefaultDurationYears,
 			&i.UniversityName,
 			&i.UniversitySlug,
 		); err != nil {

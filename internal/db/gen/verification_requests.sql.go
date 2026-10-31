@@ -209,7 +209,10 @@ ORDER BY
   CASE WHEN $6::text = 'status' AND $7::text <> 'desc' THEN vr.status END ASC,
   CASE WHEN $6::text = 'created_at' AND $7::text = 'asc' THEN vr.created_at END ASC,
   CASE WHEN $6::text NOT IN ('requester', 'entity_type', 'status', 'created_at')
-        OR ($6::text = 'created_at' AND $7::text <> 'asc') THEN vr.created_at END DESC
+        OR ($6::text = 'created_at' AND $7::text <> 'asc') THEN vr.created_at END DESC,
+  -- Unconditional tiebreaker: non-unique sort keys (status/entity_type) need a
+  -- stable order or rows drift between pages.
+  vr.created_at DESC, vr.id
 LIMIT $4 OFFSET $5
 `
 

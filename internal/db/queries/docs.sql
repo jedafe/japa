@@ -1,28 +1,36 @@
 -- name: GetDocPageBySlug :one
-SELECT id, title, slug, audience, content, ai_generated, review_status,
- last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,
- helpful_yes, helpful_no,
- created_at, updated_at
-FROM doc_pages
-WHERE audience = @audience AND slug = @slug AND review_status = 'published';
+SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
+ p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
+ p.helpful_yes, p.helpful_no, p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.updated_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.audience = @audience AND p.slug = @slug AND p.review_status = 'published';
 
 -- name: GetDocPageBySlugAnyStatus :one
 -- Editor draft preview (§44 amendment 2): like GetDocPageBySlug but status-
 -- agnostic. Callers MUST gate on docs.manage — never expose to public readers.
-SELECT id, title, slug, audience, content, ai_generated, review_status,
- last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,
- helpful_yes, helpful_no,
- created_at, updated_at
-FROM doc_pages
-WHERE audience = @audience AND slug = @slug;
+SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
+ p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
+ p.helpful_yes, p.helpful_no, p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.updated_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.audience = @audience AND p.slug = @slug;
 
 -- name: ListDocPagesByAudience :many
 -- content is selected so the service can derive a plain-text excerpt for
 -- summary consumers (changelog, portal listings) — it is never returned raw.
-SELECT id, title, slug, audience, review_status, parent_id, position, category, subcategory, created_at, content
-FROM doc_pages
-WHERE audience = @audience AND review_status = 'published'
-ORDER BY position ASC, title ASC;
+SELECT p.id, p.title, p.slug, p.audience, p.review_status, p.parent_id, p.position, p.category, p.subcategory,
+ p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.content
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.audience = @audience AND p.review_status = 'published'
+ORDER BY p.position ASC, p.title ASC;
 
 -- name: ListDocPagesTree :many
 SELECT id, title, slug, audience, parent_id, position, review_status, category, subcategory
@@ -31,31 +39,40 @@ WHERE audience = @audience AND review_status = 'published'
 ORDER BY position ASC;
 
 -- name: ListAllDocPagesByAudience :many
-SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
- last_reviewed_at, parent_id, position, category, subcategory, created_at, updated_at
-FROM doc_pages
-WHERE audience = @audience
-ORDER BY position ASC, title ASC
+SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.last_reviewed_by,
+ p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
+ p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.updated_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.audience = @audience
+ORDER BY p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
 -- name: ListAllDocPages :many
-SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
- last_reviewed_at, parent_id, position, category, subcategory, created_at, updated_at
-FROM doc_pages
-
-ORDER BY audience ASC, position ASC, title ASC
+SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.last_reviewed_by,
+ p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
+ p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.updated_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
 -- name: GetDocPageByID :one
-SELECT id, title, slug, audience, content, ai_generated, review_status,
- last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,
- helpful_yes, helpful_no,
- created_at, updated_at
-FROM doc_pages
-WHERE id = @id;
+SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
+ p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
+ p.helpful_yes, p.helpful_no, p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.updated_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.id = @id;
 
 -- name: CreateDocPage :one
-INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory, created_by) VALUES (@title, @slug, @audience, @content, @ai_generated, @review_status, @parent_id, @position, @category, @subcategory, sqlc.narg(created_by)::uuid)
+INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory, created_by, feature_image_id) VALUES (@title, @slug, @audience, @content, @ai_generated, @review_status, @parent_id, @position, @category, @subcategory, sqlc.narg(created_by)::uuid, sqlc.narg(feature_image_id)::uuid)
 
 RETURNING id;
 
@@ -68,6 +85,7 @@ UPDATE doc_pages
 SET title = @title, content = @content, review_status = @review_status,
  slug = @slug, parent_id = @parent_id, position = @position, audience = @audience,
  category = @category, subcategory = @subcategory,
+ feature_image_id = @feature_image_id,
  -- clear_review: content edits to an approved page demote it back to
  -- in_review and void the prior review stamp (§44 amendment 3).
  last_reviewed_by = CASE WHEN sqlc.narg(clear_review)::boolean THEN NULL ELSE last_reviewed_by END,
@@ -148,10 +166,14 @@ UPDATE doc_pages SET
 WHERE doc_pages.id = @page_id;
 
 -- name: ListPublishedDocPages :many
-SELECT id, title, slug, audience, parent_id, position, category, subcategory, created_at
-FROM doc_pages
-WHERE review_status = 'published'
-ORDER BY audience ASC, position ASC, title ASC
+SELECT p.id, p.title, p.slug, p.audience, p.parent_id, p.position, p.category, p.subcategory,
+ p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.review_status = 'published'
+ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
 -- name: SearchDocPages :many
@@ -176,3 +198,41 @@ WHERE review_status = 'published'
    OR regexp_replace(content::text, '"[^"]*"[[:space:]]*:', ' ', 'g') ILIKE '%' || @query::text || '%')
 ORDER BY array_position(@audiences::text[], audience), position ASC, title ASC
 LIMIT @result_limit;
+
+-- name: InsertDocPageRevision :one
+-- §44 amendment 5: snapshot of title/content/feature_image after a
+-- content-changing write; version is the per-page sequence (MAX+1) computed
+-- in the same statement so concurrent writers can't pick the same number.
+INSERT INTO doc_page_revisions (doc_page_id, version, title, content, feature_image_id, summary, created_by)
+SELECT @doc_page_id,
+       COALESCE(MAX(version), 0) + 1,
+       @title, @content, sqlc.narg(feature_image_id)::uuid, sqlc.narg(summary)::text, sqlc.narg(created_by)::uuid
+FROM doc_page_revisions
+WHERE doc_page_id = @doc_page_id
+RETURNING id, version;
+
+-- name: ListDocPageRevisions :many
+-- content is selected so the service derives the plain-text excerpt — same
+-- convention as ListDocPagesByAudience.
+SELECT id, doc_page_id, version, title, content, feature_image_id, summary, created_by, created_at
+FROM doc_page_revisions
+WHERE doc_page_id = @doc_page_id
+ORDER BY version DESC
+LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
+
+-- name: CountDocPageRevisions :one
+SELECT COUNT(*) FROM doc_page_revisions WHERE doc_page_id = @doc_page_id;
+
+-- name: GetDocPageRevision :one
+SELECT id, doc_page_id, version, title, content, feature_image_id, summary, created_by, created_at
+FROM doc_page_revisions
+WHERE id = @id;
+
+-- name: GetDocPageMaxRevisionVersion :one
+SELECT COALESCE(MAX(version), 0)::int FROM doc_page_revisions WHERE doc_page_id = @doc_page_id;
+
+-- name: DeleteDocPageRevision :execrows
+DELETE FROM doc_page_revisions WHERE id = @id;
+
+-- name: DeleteDocPageRevisions :exec
+DELETE FROM doc_page_revisions WHERE doc_page_id = @doc_page_id;

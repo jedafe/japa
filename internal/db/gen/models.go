@@ -1807,6 +1807,19 @@ type DocPage struct {
 	Category       *string            `json:"category"`
 	Subcategory    *string            `json:"subcategory"`
 	CreatedBy      pgtype.UUID        `json:"created_by"`
+	FeatureImageID pgtype.UUID        `json:"feature_image_id"`
+}
+
+type DocPageRevision struct {
+	ID             pgtype.UUID        `json:"id"`
+	DocPageID      pgtype.UUID        `json:"doc_page_id"`
+	Version        int32              `json:"version"`
+	Title          string             `json:"title"`
+	Content        []byte             `json:"content"`
+	FeatureImageID pgtype.UUID        `json:"feature_image_id"`
+	Summary        *string            `json:"summary"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
 type DocPageVote struct {

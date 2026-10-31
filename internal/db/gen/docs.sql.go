@@ -21,24 +21,36 @@ func (q *Queries) ClearDocPageParent(ctx context.Context, id pgtype.UUID) error 
 	return err
 }
 
+const countDocPageRevisions = `-- name: CountDocPageRevisions :one
+SELECT COUNT(*) FROM doc_page_revisions WHERE doc_page_id = $1
+`
+
+func (q *Queries) CountDocPageRevisions(ctx context.Context, docPageID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countDocPageRevisions, docPageID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createDocPage = `-- name: CreateDocPage :one
-INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::uuid)
+INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory, created_by, feature_image_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::uuid, $12::uuid)
 
 RETURNING id
 `
 
 type CreateDocPageParams struct {
-	Title        string      `json:"title"`
-	Slug         string      `json:"slug"`
-	Audience     string      `json:"audience"`
-	Content      []byte      `json:"content"`
-	AiGenerated  bool        `json:"ai_generated"`
-	ReviewStatus string      `json:"review_status"`
-	ParentID     pgtype.UUID `json:"parent_id"`
-	Position     int32       `json:"position"`
-	Category     *string     `json:"category"`
-	Subcategory  *string     `json:"subcategory"`
-	CreatedBy    pgtype.UUID `json:"created_by"`
+	Title          string      `json:"title"`
+	Slug           string      `json:"slug"`
+	Audience       string      `json:"audience"`
+	Content        []byte      `json:"content"`
+	AiGenerated    bool        `json:"ai_generated"`
+	ReviewStatus   string      `json:"review_status"`
+	ParentID       pgtype.UUID `json:"parent_id"`
+	Position       int32       `json:"position"`
+	Category       *string     `json:"category"`
+	Subcategory    *string     `json:"subcategory"`
+	CreatedBy      pgtype.UUID `json:"created_by"`
+	FeatureImageID pgtype.UUID `json:"feature_image_id"`
 }
 
 func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (pgtype.UUID, error) {
@@ -54,6 +66,7 @@ func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (p
 		arg.Category,
 		arg.Subcategory,
 		arg.CreatedBy,
+		arg.FeatureImageID,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
@@ -66,6 +79,27 @@ DELETE FROM doc_pages WHERE id = $1
 
 func (q *Queries) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteDocPage, id)
+	return err
+}
+
+const deleteDocPageRevision = `-- name: DeleteDocPageRevision :execrows
+DELETE FROM doc_page_revisions WHERE id = $1
+`
+
+func (q *Queries) DeleteDocPageRevision(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDocPageRevision, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteDocPageRevisions = `-- name: DeleteDocPageRevisions :exec
+DELETE FROM doc_page_revisions WHERE doc_page_id = $1
+`
+
+func (q *Queries) DeleteDocPageRevisions(ctx context.Context, docPageID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteDocPageRevisions, docPageID)
 	return err
 }
 
@@ -95,32 +129,37 @@ func (q *Queries) DeleteDocPageVote(ctx context.Context, arg DeleteDocPageVotePa
 }
 
 const getDocPageByID = `-- name: GetDocPageByID :one
-SELECT id, title, slug, audience, content, ai_generated, review_status,
- last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,
- helpful_yes, helpful_no,
- created_at, updated_at
-FROM doc_pages
-WHERE id = $1
+SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
+ p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
+ p.helpful_yes, p.helpful_no, p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.updated_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.id = $1
 `
 
 type GetDocPageByIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	Title          string             `json:"title"`
-	Slug           string             `json:"slug"`
-	Audience       string             `json:"audience"`
-	Content        []byte             `json:"content"`
-	AiGenerated    bool               `json:"ai_generated"`
-	ReviewStatus   string             `json:"review_status"`
-	LastReviewedBy pgtype.UUID        `json:"last_reviewed_by"`
-	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	Position       int32              `json:"position"`
-	Category       *string            `json:"category"`
-	Subcategory    *string            `json:"subcategory"`
-	HelpfulYes     int32              `json:"helpful_yes"`
-	HelpfulNo      int32              `json:"helpful_no"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Audience           string             `json:"audience"`
+	Content            []byte             `json:"content"`
+	AiGenerated        bool               `json:"ai_generated"`
+	ReviewStatus       string             `json:"review_status"`
+	LastReviewedBy     pgtype.UUID        `json:"last_reviewed_by"`
+	LastReviewedAt     pgtype.Timestamptz `json:"last_reviewed_at"`
+	ParentID           pgtype.UUID        `json:"parent_id"`
+	Position           int32              `json:"position"`
+	Category           *string            `json:"category"`
+	Subcategory        *string            `json:"subcategory"`
+	HelpfulYes         int32              `json:"helpful_yes"`
+	HelpfulNo          int32              `json:"helpful_no"`
+	FeatureImageID     pgtype.UUID        `json:"feature_image_id"`
+	FeatureImageBucket *string            `json:"feature_image_bucket"`
+	FeatureImagePath   *string            `json:"feature_image_path"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPageByIDRow, error) {
@@ -142,6 +181,9 @@ func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPag
 		&i.Subcategory,
 		&i.HelpfulYes,
 		&i.HelpfulNo,
+		&i.FeatureImageID,
+		&i.FeatureImageBucket,
+		&i.FeatureImagePath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -149,12 +191,14 @@ func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPag
 }
 
 const getDocPageBySlug = `-- name: GetDocPageBySlug :one
-SELECT id, title, slug, audience, content, ai_generated, review_status,
- last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,
- helpful_yes, helpful_no,
- created_at, updated_at
-FROM doc_pages
-WHERE audience = $1 AND slug = $2 AND review_status = 'published'
+SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
+ p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
+ p.helpful_yes, p.helpful_no, p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.updated_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.audience = $1 AND p.slug = $2 AND p.review_status = 'published'
 `
 
 type GetDocPageBySlugParams struct {
@@ -163,23 +207,26 @@ type GetDocPageBySlugParams struct {
 }
 
 type GetDocPageBySlugRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	Title          string             `json:"title"`
-	Slug           string             `json:"slug"`
-	Audience       string             `json:"audience"`
-	Content        []byte             `json:"content"`
-	AiGenerated    bool               `json:"ai_generated"`
-	ReviewStatus   string             `json:"review_status"`
-	LastReviewedBy pgtype.UUID        `json:"last_reviewed_by"`
-	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	Position       int32              `json:"position"`
-	Category       *string            `json:"category"`
-	Subcategory    *string            `json:"subcategory"`
-	HelpfulYes     int32              `json:"helpful_yes"`
-	HelpfulNo      int32              `json:"helpful_no"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Audience           string             `json:"audience"`
+	Content            []byte             `json:"content"`
+	AiGenerated        bool               `json:"ai_generated"`
+	ReviewStatus       string             `json:"review_status"`
+	LastReviewedBy     pgtype.UUID        `json:"last_reviewed_by"`
+	LastReviewedAt     pgtype.Timestamptz `json:"last_reviewed_at"`
+	ParentID           pgtype.UUID        `json:"parent_id"`
+	Position           int32              `json:"position"`
+	Category           *string            `json:"category"`
+	Subcategory        *string            `json:"subcategory"`
+	HelpfulYes         int32              `json:"helpful_yes"`
+	HelpfulNo          int32              `json:"helpful_no"`
+	FeatureImageID     pgtype.UUID        `json:"feature_image_id"`
+	FeatureImageBucket *string            `json:"feature_image_bucket"`
+	FeatureImagePath   *string            `json:"feature_image_path"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugParams) (GetDocPageBySlugRow, error) {
@@ -201,6 +248,9 @@ func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugPara
 		&i.Subcategory,
 		&i.HelpfulYes,
 		&i.HelpfulNo,
+		&i.FeatureImageID,
+		&i.FeatureImageBucket,
+		&i.FeatureImagePath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -208,12 +258,14 @@ func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugPara
 }
 
 const getDocPageBySlugAnyStatus = `-- name: GetDocPageBySlugAnyStatus :one
-SELECT id, title, slug, audience, content, ai_generated, review_status,
- last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,
- helpful_yes, helpful_no,
- created_at, updated_at
-FROM doc_pages
-WHERE audience = $1 AND slug = $2
+SELECT p.id, p.title, p.slug, p.audience, p.content, p.ai_generated, p.review_status,
+ p.last_reviewed_by, p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
+ p.helpful_yes, p.helpful_no, p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.updated_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.audience = $1 AND p.slug = $2
 `
 
 type GetDocPageBySlugAnyStatusParams struct {
@@ -222,23 +274,26 @@ type GetDocPageBySlugAnyStatusParams struct {
 }
 
 type GetDocPageBySlugAnyStatusRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	Title          string             `json:"title"`
-	Slug           string             `json:"slug"`
-	Audience       string             `json:"audience"`
-	Content        []byte             `json:"content"`
-	AiGenerated    bool               `json:"ai_generated"`
-	ReviewStatus   string             `json:"review_status"`
-	LastReviewedBy pgtype.UUID        `json:"last_reviewed_by"`
-	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	Position       int32              `json:"position"`
-	Category       *string            `json:"category"`
-	Subcategory    *string            `json:"subcategory"`
-	HelpfulYes     int32              `json:"helpful_yes"`
-	HelpfulNo      int32              `json:"helpful_no"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Audience           string             `json:"audience"`
+	Content            []byte             `json:"content"`
+	AiGenerated        bool               `json:"ai_generated"`
+	ReviewStatus       string             `json:"review_status"`
+	LastReviewedBy     pgtype.UUID        `json:"last_reviewed_by"`
+	LastReviewedAt     pgtype.Timestamptz `json:"last_reviewed_at"`
+	ParentID           pgtype.UUID        `json:"parent_id"`
+	Position           int32              `json:"position"`
+	Category           *string            `json:"category"`
+	Subcategory        *string            `json:"subcategory"`
+	HelpfulYes         int32              `json:"helpful_yes"`
+	HelpfulNo          int32              `json:"helpful_no"`
+	FeatureImageID     pgtype.UUID        `json:"feature_image_id"`
+	FeatureImageBucket *string            `json:"feature_image_bucket"`
+	FeatureImagePath   *string            `json:"feature_image_path"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Editor draft preview (§44 amendment 2): like GetDocPageBySlug but status-
@@ -262,6 +317,9 @@ func (q *Queries) GetDocPageBySlugAnyStatus(ctx context.Context, arg GetDocPageB
 		&i.Subcategory,
 		&i.HelpfulYes,
 		&i.HelpfulNo,
+		&i.FeatureImageID,
+		&i.FeatureImageBucket,
+		&i.FeatureImagePath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -301,6 +359,40 @@ func (q *Queries) GetDocPageFeedback(ctx context.Context, arg GetDocPageFeedback
 	return i, err
 }
 
+const getDocPageMaxRevisionVersion = `-- name: GetDocPageMaxRevisionVersion :one
+SELECT COALESCE(MAX(version), 0)::int FROM doc_page_revisions WHERE doc_page_id = $1
+`
+
+func (q *Queries) GetDocPageMaxRevisionVersion(ctx context.Context, docPageID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, getDocPageMaxRevisionVersion, docPageID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const getDocPageRevision = `-- name: GetDocPageRevision :one
+SELECT id, doc_page_id, version, title, content, feature_image_id, summary, created_by, created_at
+FROM doc_page_revisions
+WHERE id = $1
+`
+
+func (q *Queries) GetDocPageRevision(ctx context.Context, id pgtype.UUID) (DocPageRevision, error) {
+	row := q.db.QueryRow(ctx, getDocPageRevision, id)
+	var i DocPageRevision
+	err := row.Scan(
+		&i.ID,
+		&i.DocPageID,
+		&i.Version,
+		&i.Title,
+		&i.Content,
+		&i.FeatureImageID,
+		&i.Summary,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getDocPageStatus = `-- name: GetDocPageStatus :one
 SELECT review_status, created_by, ai_generated FROM doc_pages WHERE id = $1
 `
@@ -336,12 +428,56 @@ func (q *Queries) IncrementDocPageHelpful(ctx context.Context, arg IncrementDocP
 	return err
 }
 
-const listAllDocPages = `-- name: ListAllDocPages :many
-SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
- last_reviewed_at, parent_id, position, category, subcategory, created_at, updated_at
-FROM doc_pages
+const insertDocPageRevision = `-- name: InsertDocPageRevision :one
+INSERT INTO doc_page_revisions (doc_page_id, version, title, content, feature_image_id, summary, created_by)
+SELECT $1,
+       COALESCE(MAX(version), 0) + 1,
+       $2, $3, $4::uuid, $5::text, $6::uuid
+FROM doc_page_revisions
+WHERE doc_page_id = $1
+RETURNING id, version
+`
 
-ORDER BY audience ASC, position ASC, title ASC
+type InsertDocPageRevisionParams struct {
+	DocPageID      pgtype.UUID `json:"doc_page_id"`
+	Title          string      `json:"title"`
+	Content        []byte      `json:"content"`
+	FeatureImageID pgtype.UUID `json:"feature_image_id"`
+	Summary        *string     `json:"summary"`
+	CreatedBy      pgtype.UUID `json:"created_by"`
+}
+
+type InsertDocPageRevisionRow struct {
+	ID      pgtype.UUID `json:"id"`
+	Version int32       `json:"version"`
+}
+
+// §44 amendment 5: snapshot of title/content/feature_image after a
+// content-changing write; version is the per-page sequence (MAX+1) computed
+// in the same statement so concurrent writers can't pick the same number.
+func (q *Queries) InsertDocPageRevision(ctx context.Context, arg InsertDocPageRevisionParams) (InsertDocPageRevisionRow, error) {
+	row := q.db.QueryRow(ctx, insertDocPageRevision,
+		arg.DocPageID,
+		arg.Title,
+		arg.Content,
+		arg.FeatureImageID,
+		arg.Summary,
+		arg.CreatedBy,
+	)
+	var i InsertDocPageRevisionRow
+	err := row.Scan(&i.ID, &i.Version)
+	return i, err
+}
+
+const listAllDocPages = `-- name: ListAllDocPages :many
+SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.last_reviewed_by,
+ p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
+ p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.updated_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF($2::int, 0) OFFSET COALESCE($1::int, 0)
 `
 
@@ -351,20 +487,23 @@ type ListAllDocPagesParams struct {
 }
 
 type ListAllDocPagesRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	Title          string             `json:"title"`
-	Slug           string             `json:"slug"`
-	Audience       string             `json:"audience"`
-	AiGenerated    bool               `json:"ai_generated"`
-	ReviewStatus   string             `json:"review_status"`
-	LastReviewedBy pgtype.UUID        `json:"last_reviewed_by"`
-	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	Position       int32              `json:"position"`
-	Category       *string            `json:"category"`
-	Subcategory    *string            `json:"subcategory"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Audience           string             `json:"audience"`
+	AiGenerated        bool               `json:"ai_generated"`
+	ReviewStatus       string             `json:"review_status"`
+	LastReviewedBy     pgtype.UUID        `json:"last_reviewed_by"`
+	LastReviewedAt     pgtype.Timestamptz `json:"last_reviewed_at"`
+	ParentID           pgtype.UUID        `json:"parent_id"`
+	Position           int32              `json:"position"`
+	Category           *string            `json:"category"`
+	Subcategory        *string            `json:"subcategory"`
+	FeatureImageID     pgtype.UUID        `json:"feature_image_id"`
+	FeatureImageBucket *string            `json:"feature_image_bucket"`
+	FeatureImagePath   *string            `json:"feature_image_path"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) ListAllDocPages(ctx context.Context, arg ListAllDocPagesParams) ([]ListAllDocPagesRow, error) {
@@ -389,6 +528,9 @@ func (q *Queries) ListAllDocPages(ctx context.Context, arg ListAllDocPagesParams
 			&i.Position,
 			&i.Category,
 			&i.Subcategory,
+			&i.FeatureImageID,
+			&i.FeatureImageBucket,
+			&i.FeatureImagePath,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -403,11 +545,15 @@ func (q *Queries) ListAllDocPages(ctx context.Context, arg ListAllDocPagesParams
 }
 
 const listAllDocPagesByAudience = `-- name: ListAllDocPagesByAudience :many
-SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
- last_reviewed_at, parent_id, position, category, subcategory, created_at, updated_at
-FROM doc_pages
-WHERE audience = $1
-ORDER BY position ASC, title ASC
+SELECT p.id, p.title, p.slug, p.audience, p.ai_generated, p.review_status, p.last_reviewed_by,
+ p.last_reviewed_at, p.parent_id, p.position, p.category, p.subcategory,
+ p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.updated_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.audience = $1
+ORDER BY p.position ASC, p.title ASC
 LIMIT NULLIF($3::int, 0) OFFSET COALESCE($2::int, 0)
 `
 
@@ -418,20 +564,23 @@ type ListAllDocPagesByAudienceParams struct {
 }
 
 type ListAllDocPagesByAudienceRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	Title          string             `json:"title"`
-	Slug           string             `json:"slug"`
-	Audience       string             `json:"audience"`
-	AiGenerated    bool               `json:"ai_generated"`
-	ReviewStatus   string             `json:"review_status"`
-	LastReviewedBy pgtype.UUID        `json:"last_reviewed_by"`
-	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
-	ParentID       pgtype.UUID        `json:"parent_id"`
-	Position       int32              `json:"position"`
-	Category       *string            `json:"category"`
-	Subcategory    *string            `json:"subcategory"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Audience           string             `json:"audience"`
+	AiGenerated        bool               `json:"ai_generated"`
+	ReviewStatus       string             `json:"review_status"`
+	LastReviewedBy     pgtype.UUID        `json:"last_reviewed_by"`
+	LastReviewedAt     pgtype.Timestamptz `json:"last_reviewed_at"`
+	ParentID           pgtype.UUID        `json:"parent_id"`
+	Position           int32              `json:"position"`
+	Category           *string            `json:"category"`
+	Subcategory        *string            `json:"subcategory"`
+	FeatureImageID     pgtype.UUID        `json:"feature_image_id"`
+	FeatureImageBucket *string            `json:"feature_image_bucket"`
+	FeatureImagePath   *string            `json:"feature_image_path"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, arg ListAllDocPagesByAudienceParams) ([]ListAllDocPagesByAudienceRow, error) {
@@ -456,6 +605,9 @@ func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, arg ListAllDocP
 			&i.Position,
 			&i.Category,
 			&i.Subcategory,
+			&i.FeatureImageID,
+			&i.FeatureImageBucket,
+			&i.FeatureImagePath,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -469,25 +621,78 @@ func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, arg ListAllDocP
 	return items, nil
 }
 
+const listDocPageRevisions = `-- name: ListDocPageRevisions :many
+SELECT id, doc_page_id, version, title, content, feature_image_id, summary, created_by, created_at
+FROM doc_page_revisions
+WHERE doc_page_id = $1
+ORDER BY version DESC
+LIMIT NULLIF($3::int, 0) OFFSET COALESCE($2::int, 0)
+`
+
+type ListDocPageRevisionsParams struct {
+	DocPageID    pgtype.UUID `json:"doc_page_id"`
+	ResultOffset int32       `json:"result_offset"`
+	ResultLimit  int32       `json:"result_limit"`
+}
+
+// content is selected so the service derives the plain-text excerpt — same
+// convention as ListDocPagesByAudience.
+func (q *Queries) ListDocPageRevisions(ctx context.Context, arg ListDocPageRevisionsParams) ([]DocPageRevision, error) {
+	rows, err := q.db.Query(ctx, listDocPageRevisions, arg.DocPageID, arg.ResultOffset, arg.ResultLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DocPageRevision
+	for rows.Next() {
+		var i DocPageRevision
+		if err := rows.Scan(
+			&i.ID,
+			&i.DocPageID,
+			&i.Version,
+			&i.Title,
+			&i.Content,
+			&i.FeatureImageID,
+			&i.Summary,
+			&i.CreatedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDocPagesByAudience = `-- name: ListDocPagesByAudience :many
-SELECT id, title, slug, audience, review_status, parent_id, position, category, subcategory, created_at, content
-FROM doc_pages
-WHERE audience = $1 AND review_status = 'published'
-ORDER BY position ASC, title ASC
+SELECT p.id, p.title, p.slug, p.audience, p.review_status, p.parent_id, p.position, p.category, p.subcategory,
+ p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at, p.content
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.audience = $1 AND p.review_status = 'published'
+ORDER BY p.position ASC, p.title ASC
 `
 
 type ListDocPagesByAudienceRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Audience     string             `json:"audience"`
-	ReviewStatus string             `json:"review_status"`
-	ParentID     pgtype.UUID        `json:"parent_id"`
-	Position     int32              `json:"position"`
-	Category     *string            `json:"category"`
-	Subcategory  *string            `json:"subcategory"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	Content      []byte             `json:"content"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Audience           string             `json:"audience"`
+	ReviewStatus       string             `json:"review_status"`
+	ParentID           pgtype.UUID        `json:"parent_id"`
+	Position           int32              `json:"position"`
+	Category           *string            `json:"category"`
+	Subcategory        *string            `json:"subcategory"`
+	FeatureImageID     pgtype.UUID        `json:"feature_image_id"`
+	FeatureImageBucket *string            `json:"feature_image_bucket"`
+	FeatureImagePath   *string            `json:"feature_image_path"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	Content            []byte             `json:"content"`
 }
 
 // content is selected so the service can derive a plain-text excerpt for
@@ -511,6 +716,9 @@ func (q *Queries) ListDocPagesByAudience(ctx context.Context, audience string) (
 			&i.Position,
 			&i.Category,
 			&i.Subcategory,
+			&i.FeatureImageID,
+			&i.FeatureImageBucket,
+			&i.FeatureImagePath,
 			&i.CreatedAt,
 			&i.Content,
 		); err != nil {
@@ -574,10 +782,14 @@ func (q *Queries) ListDocPagesTree(ctx context.Context, audience string) ([]List
 }
 
 const listPublishedDocPages = `-- name: ListPublishedDocPages :many
-SELECT id, title, slug, audience, parent_id, position, category, subcategory, created_at
-FROM doc_pages
-WHERE review_status = 'published'
-ORDER BY audience ASC, position ASC, title ASC
+SELECT p.id, p.title, p.slug, p.audience, p.parent_id, p.position, p.category, p.subcategory,
+ p.feature_image_id,
+ m.storage_bucket AS feature_image_bucket, m.storage_path AS feature_image_path,
+ p.created_at
+FROM doc_pages p
+LEFT JOIN media m ON m.id = p.feature_image_id
+WHERE p.review_status = 'published'
+ORDER BY p.audience ASC, p.position ASC, p.title ASC
 LIMIT NULLIF($2::int, 0) OFFSET COALESCE($1::int, 0)
 `
 
@@ -587,15 +799,18 @@ type ListPublishedDocPagesParams struct {
 }
 
 type ListPublishedDocPagesRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Title       string             `json:"title"`
-	Slug        string             `json:"slug"`
-	Audience    string             `json:"audience"`
-	ParentID    pgtype.UUID        `json:"parent_id"`
-	Position    int32              `json:"position"`
-	Category    *string            `json:"category"`
-	Subcategory *string            `json:"subcategory"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	Audience           string             `json:"audience"`
+	ParentID           pgtype.UUID        `json:"parent_id"`
+	Position           int32              `json:"position"`
+	Category           *string            `json:"category"`
+	Subcategory        *string            `json:"subcategory"`
+	FeatureImageID     pgtype.UUID        `json:"feature_image_id"`
+	FeatureImageBucket *string            `json:"feature_image_bucket"`
+	FeatureImagePath   *string            `json:"feature_image_path"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) ListPublishedDocPages(ctx context.Context, arg ListPublishedDocPagesParams) ([]ListPublishedDocPagesRow, error) {
@@ -616,6 +831,9 @@ func (q *Queries) ListPublishedDocPages(ctx context.Context, arg ListPublishedDo
 			&i.Position,
 			&i.Category,
 			&i.Subcategory,
+			&i.FeatureImageID,
+			&i.FeatureImageBucket,
+			&i.FeatureImagePath,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -799,14 +1017,15 @@ UPDATE doc_pages
 SET title = $1, content = $2, review_status = $3,
  slug = $4, parent_id = $5, position = $6, audience = $7,
  category = $8, subcategory = $9,
+ feature_image_id = $10,
  -- clear_review: content edits to an approved page demote it back to
  -- in_review and void the prior review stamp (§44 amendment 3).
- last_reviewed_by = CASE WHEN $10::boolean THEN NULL ELSE last_reviewed_by END,
- last_reviewed_at = CASE WHEN $10::boolean THEN NULL ELSE last_reviewed_at END,
+ last_reviewed_by = CASE WHEN $11::boolean THEN NULL ELSE last_reviewed_by END,
+ last_reviewed_at = CASE WHEN $11::boolean THEN NULL ELSE last_reviewed_at END,
  updated_at = now()
-WHERE id = $11
-  AND ($12::timestamptz IS NULL
-       OR updated_at = $12::timestamptz)
+WHERE id = $12
+  AND ($13::timestamptz IS NULL
+       OR updated_at = $13::timestamptz)
 `
 
 type UpdateDocPageParams struct {
@@ -819,6 +1038,7 @@ type UpdateDocPageParams struct {
 	Audience          string             `json:"audience"`
 	Category          *string            `json:"category"`
 	Subcategory       *string            `json:"subcategory"`
+	FeatureImageID    pgtype.UUID        `json:"feature_image_id"`
 	ClearReview       *bool              `json:"clear_review"`
 	ID                pgtype.UUID        `json:"id"`
 	ExpectedUpdatedAt pgtype.Timestamptz `json:"expected_updated_at"`
@@ -839,6 +1059,7 @@ func (q *Queries) UpdateDocPage(ctx context.Context, arg UpdateDocPageParams) (i
 		arg.Audience,
 		arg.Category,
 		arg.Subcategory,
+		arg.FeatureImageID,
 		arg.ClearReview,
 		arg.ID,
 		arg.ExpectedUpdatedAt,

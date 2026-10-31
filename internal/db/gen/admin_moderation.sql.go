@@ -40,13 +40,17 @@ WHERE (
  AND ($2::text = '' OR c.content_type = $2)
  AND ($3::text = '' OR c.status = $3)
  AND ($4::text = '' OR c.title ILIKE '%' || $4 || '%' OR c.slug ILIKE '%' || $4 || '%' OR c.body ILIKE '%' || $4 || '%')
+ AND ($5::uuid IS NULL OR c.author_id = $5)
+ AND ($6::uuid IS NULL OR c.space_id = $6)
 `
 
 type AdminCountContentsParams struct {
-	Deleted     string `json:"deleted"`
-	ContentType string `json:"content_type"`
-	Status      string `json:"status"`
-	Q           string `json:"q"`
+	Deleted     string      `json:"deleted"`
+	ContentType string      `json:"content_type"`
+	Status      string      `json:"status"`
+	Q           string      `json:"q"`
+	AuthorID    pgtype.UUID `json:"author_id"`
+	SpaceID     pgtype.UUID `json:"space_id"`
 }
 
 func (q *Queries) AdminCountContents(ctx context.Context, arg AdminCountContentsParams) (int32, error) {
@@ -55,6 +59,8 @@ func (q *Queries) AdminCountContents(ctx context.Context, arg AdminCountContents
 		arg.ContentType,
 		arg.Status,
 		arg.Q,
+		arg.AuthorID,
+		arg.SpaceID,
 	)
 	var count int32
 	err := row.Scan(&count)
@@ -62,38 +68,63 @@ func (q *Queries) AdminCountContents(ctx context.Context, arg AdminCountContents
 }
 
 const adminListContents = `-- name: AdminListContents :many
-SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body,
- c.status, c.visibility, c.view_count, c.comment_count, c.published_at,
- c.created_at, c.updated_at, c.deleted_at,
- EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
- AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
- u.username AS author_username, up.display_name AS author_display_name,
- s.name AS space_name
-FROM contents c
-LEFT JOIN users u ON u.id = c.author_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id
-LEFT JOIN spaces s ON s.id = c.space_id
-WHERE (
- CASE $1::text
- WHEN 'only' THEN c.deleted_at IS NOT NULL
- WHEN 'all' THEN TRUE
- ELSE c.deleted_at IS NULL
- END
- )
- AND ($2::text = '' OR c.content_type = $2)
- AND ($3::text = '' OR c.status = $3)
- AND ($4::text = '' OR c.title ILIKE '%' || $4 || '%' OR c.slug ILIKE '%' || $4 || '%' OR c.body ILIKE '%' || $4 || '%')
-ORDER BY c.created_at DESC, c.id DESC
-LIMIT $6 OFFSET $5
+SELECT id, author_id, space_id, content_type, title, slug, body, status, visibility, view_count, comment_count, published_at, created_at, updated_at, deleted_at, is_featured, author_username, author_display_name, space_name, reports_count FROM (
+ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body,
+  c.status, c.visibility, c.view_count, c.comment_count, c.published_at,
+  c.created_at, c.updated_at, c.deleted_at,
+  EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
+  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
+  u.username AS author_username, up.display_name AS author_display_name,
+  s.name AS space_name,
+  (SELECT COUNT(*)::int FROM content_reports cr
+   WHERE cr.entity_type = 'content' AND cr.entity_id = c.id
+   AND cr.status IN ('pending', 'reviewing')) AS reports_count
+ FROM contents c
+ LEFT JOIN users u ON u.id = c.author_id
+ LEFT JOIN user_profiles up ON up.user_id = c.author_id
+ LEFT JOIN spaces s ON s.id = c.space_id
+ WHERE (
+  CASE $1::text
+  WHEN 'only' THEN c.deleted_at IS NOT NULL
+  WHEN 'all' THEN TRUE
+  ELSE c.deleted_at IS NULL
+  END
+  )
+  AND ($2::text = '' OR c.content_type = $2)
+  AND ($3::text = '' OR c.status = $3)
+  AND ($4::text = '' OR c.title ILIKE '%' || $4 || '%' OR c.slug ILIKE '%' || $4 || '%' OR c.body ILIKE '%' || $4 || '%')
+  AND ($5::uuid IS NULL OR c.author_id = $5)
+  AND ($6::uuid IS NULL OR c.space_id = $6)
+) sub
+ORDER BY
+ CASE WHEN $7::text = 'title' AND $8::text = 'desc' THEN sub.title END DESC,
+ CASE WHEN $7::text = 'title' AND $8::text <> 'desc' THEN sub.title END ASC,
+ CASE WHEN $7::text = 'author' AND $8::text = 'desc' THEN sub.author_display_name END DESC NULLS LAST,
+ CASE WHEN $7::text = 'author' AND $8::text <> 'desc' THEN sub.author_display_name END ASC NULLS LAST,
+ CASE WHEN $7::text = 'content_type' AND $8::text = 'desc' THEN sub.content_type END DESC,
+ CASE WHEN $7::text = 'content_type' AND $8::text <> 'desc' THEN sub.content_type END ASC,
+ CASE WHEN $7::text = 'status' AND $8::text = 'desc' THEN sub.status END DESC,
+ CASE WHEN $7::text = 'status' AND $8::text <> 'desc' THEN sub.status END ASC,
+ CASE WHEN $7::text = 'reports_count' AND $8::text = 'asc' THEN sub.reports_count END ASC,
+ CASE WHEN $7::text = 'reports_count' AND $8::text <> 'asc' THEN sub.reports_count END DESC,
+ CASE WHEN $7::text = 'created_at' AND $8::text = 'asc' THEN sub.created_at END ASC,
+ CASE WHEN $7::text NOT IN ('title', 'author', 'content_type', 'status', 'reports_count', 'created_at')
+  OR ($7::text = 'created_at' AND $8::text <> 'asc') THEN sub.created_at END DESC,
+ sub.id DESC
+LIMIT $10 OFFSET $9
 `
 
 type AdminListContentsParams struct {
-	Deleted     string `json:"deleted"`
-	ContentType string `json:"content_type"`
-	Status      string `json:"status"`
-	Q           string `json:"q"`
-	PageOffset  int32  `json:"page_offset"`
-	PageLimit   int32  `json:"page_limit"`
+	Deleted     string      `json:"deleted"`
+	ContentType string      `json:"content_type"`
+	Status      string      `json:"status"`
+	Q           string      `json:"q"`
+	AuthorID    pgtype.UUID `json:"author_id"`
+	SpaceID     pgtype.UUID `json:"space_id"`
+	Sort        string      `json:"sort"`
+	SortDir     string      `json:"sort_dir"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
 }
 
 type AdminListContentsRow struct {
@@ -116,18 +147,27 @@ type AdminListContentsRow struct {
 	AuthorUsername    *string            `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
 	SpaceName         *string            `json:"space_name"`
+	ReportsCount      int32              `json:"reports_count"`
 }
 
 // Admin list with soft-delete view selection: ” = live only (default),
 // 'only' = deleted only, 'all' = both. Powers the /admin/content page's
 // Deleted filter; kept separate from the public ListContents query so the
 // deleted view can never leak to unauthenticated callers.
+// §22 adds author_id/space_id filters, reports_count (open reports per
+// §51), and ?sort/?sort_dir ordering over a whitelisted column set
+// (EntityPage column keys). Unknown/empty sort falls back to newest-first;
+// sort_dir is 'asc'/'desc' (validated in the handler).
 func (q *Queries) AdminListContents(ctx context.Context, arg AdminListContentsParams) ([]AdminListContentsRow, error) {
 	rows, err := q.db.Query(ctx, adminListContents,
 		arg.Deleted,
 		arg.ContentType,
 		arg.Status,
 		arg.Q,
+		arg.AuthorID,
+		arg.SpaceID,
+		arg.Sort,
+		arg.SortDir,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -158,6 +198,7 @@ func (q *Queries) AdminListContents(ctx context.Context, arg AdminListContentsPa
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
 			&i.SpaceName,
+			&i.ReportsCount,
 		); err != nil {
 			return nil, err
 		}
