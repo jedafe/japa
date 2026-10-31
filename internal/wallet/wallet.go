@@ -7,14 +7,15 @@ package wallet
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/wallet/payout"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // Ledger types.
@@ -246,64 +247,46 @@ func (s *Service) Store() *Store {
 // AwardPoints credits reward_points to a user's wallet by inserting a
 // ledger entry of type "points" with operation "earn" (BUG-GAMMA-002).
 // Used by the gamification service when a challenge is completed.
-// // Follows the AUDIT-BE-005 pattern: acquires a per-user advisory lock,
-// reads the latest balance via the sqlc-generated query, and inserts the
-// ledger entry with a deterministic idempotency key so duplicate calls
-// (e.g. gamination retries) are safe (Rule 9).
+// Routes through creditWallet so the per-user advisory lock, balance read,
+// deterministic idempotency key, and the earn gate (killswitch + daily cap,
+// PTS-004) apply identically to every ledger mutation.
 func (s *Service) AwardPoints(ctx context.Context, userID pgtype.UUID, points int, reason string) error {
 	if points <= 0 {
 		return nil
 	}
 
-	tx, err := s.db.Writer.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("beginning transaction: %w", err)
-	}
-
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	qtx := s.store.write.WithTx(tx)
-
-	// Serialize concurrent balance mutations for this user (AUDIT-BE-005).
-	lockKey := "wallet:" + "" + ":" + userID.String()
-	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
-		return fmt.Errorf("acquiring wallet lock: %w", err)
-	}
-
-	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		UserID:     userID,
-		LedgerType: LedgerTypePoints,
-	})
-	if err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("reading current points balance: %w", err)
-		}
-
-		currentBalance = 0
-	}
-
-	newBalance := currentBalance + int64(points)
-	sourceStr := "gamification"
-	reasonStr := reason
 	idempotencyKey := fmt.Sprintf("gamification_award:%s:%s", userID.String(), reason)
 
-	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		UserID:           userID,
-		LedgerType:       LedgerTypePoints,
-		Operation:        OperationEarn,
-		Amount:           int64(points),
-		ResultingBalance: newBalance,
-		Source:           &sourceStr,
-		Reference:        &reasonStr,
-		IdempotencyKey:   &idempotencyKey,
-		Reason:           &reasonStr,
-	}); err != nil {
-		return fmt.Errorf("inserting points ledger entry: %w", err)
+	return s.creditWallet(ctx, userID, LedgerTypePoints, OperationEarn,
+		int64(points), "gamification", reason, idempotencyKey)
+}
+
+// EnqueuePointsAward records a points award via the retryable
+// wallet:award_points Asynq task (PTS-006) — durable against transient
+// failures unlike a synchronous insert. Falls back to synchronous
+// processing when the enqueuer is unavailable so an award can never strand.
+func (s *Service) EnqueuePointsAward(ctx context.Context, userID pgtype.UUID, points int, reason, referenceID string) error {
+	payload := AwardPointsPayload{
+		UserID:      userID.String(),
+		Points:      int64(points),
+		LedgerType:  LedgerTypePoints,
+		Reason:      reason,
+		ReferenceID: referenceID,
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing transaction: %w", err)
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshaling award points payload: %w", err)
 	}
 
-	return nil
+	if s.enqueuer != nil {
+		if err := s.enqueuer.Enqueue(worker.TypeWalletAwardPoints, b); err == nil {
+			return nil
+		} else {
+			slog.Warn("wallet: award points enqueue failed, processing inline",
+				"user_id", userID.String(), "reason", reason, "error", err)
+		}
+	}
+
+	return s.AwardPointsTask(ctx, b)
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/wallet"
 )
 
 // ---------------------------------------------------------------------------
@@ -197,7 +196,6 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
-	h.Service.emitActivity(r.Context(), targetUserID, wallet.ActivityKeySpaceJoined, "space:"+space.ID.String(), nil)
 	if h.follows != nil {
 		if _, ferr := h.follows.EnsureFollow(r.Context(), targetUserID, "space", space.ID); ferr != nil {
 			slog.Warn("invite: auto-follow failed", "space_id", space.ID, "error", ferr)

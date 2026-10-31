@@ -5,6 +5,7 @@ export 'job_application.dart';
 export 'forum_thread.dart';
 export 'course.dart';
 export 'badge.dart';
+export 'challenge.dart';
 export 'leaderboard.dart';
 export 'notification.dart';
 export 'conversation.dart';

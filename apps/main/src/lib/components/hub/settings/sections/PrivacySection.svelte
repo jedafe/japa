@@ -26,7 +26,7 @@
 				show_online_status: privacy.show_online_status ?? true,
 				show_activity: privacy.show_activity ?? false,
 				search_indexable: privacy.search_indexable ?? true,
-				show_points_publicly: privacy.show_points_publicly ?? false
+				show_points_publicly: privacy.show_points_publicly ?? true
 			}
 		})),
 		(v) =>
@@ -124,7 +124,12 @@
 		/>
 	</label>
 	<label class="flex items-center justify-between gap-3">
-		<span class="text-sm text-[var(--color-text)]">{t('settings.privacy.show_points_publicly')}</span>
+		<span class="block">
+			<span class="block text-sm text-[var(--color-text)]">{t('settings.privacy.show_points_publicly')}</span>
+			<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
+				{t('settings.privacy.show_points_publicly_hint', 'Your Points appear on your public profile and the community leaderboard. Turn off to hide them and leave the leaderboard.')}
+			</span>
+		</span>
 		<input
 			type="checkbox"
 			class="h-4 w-4 rounded border-[var(--color-border)]"

@@ -27,15 +27,19 @@
 		})
 	);
 
-	const allTabs: { key: Tab; labelKey: string; default: string; requiresWithdraw: boolean }[] = [
-		{ key: 'details', labelKey: 'settings.wallet.tab_details', default: 'Details', requiresWithdraw: false },
-		{ key: 'purchase', labelKey: 'settings.wallet.tab_purchase', default: 'Purchase', requiresWithdraw: false },
-		{ key: 'withdraw', labelKey: 'settings.wallet.tab_withdraw', default: 'Withdraw', requiresWithdraw: true },
-		{ key: 'history', labelKey: 'settings.wallet.tab_history', default: 'History', requiresWithdraw: false }
+	const allTabs: { key: Tab; labelKey: string; default: string; requiresWithdraw: boolean; requiresWallet: boolean }[] = [
+		{ key: 'details', labelKey: 'settings.wallet.tab_details', default: 'Details', requiresWithdraw: false, requiresWallet: false },
+		{ key: 'purchase', labelKey: 'settings.wallet.tab_purchase', default: 'Purchase', requiresWithdraw: false, requiresWallet: true },
+		{ key: 'withdraw', labelKey: 'settings.wallet.tab_withdraw', default: 'Withdraw', requiresWithdraw: true, requiresWallet: true },
+		{ key: 'history', labelKey: 'settings.wallet.tab_history', default: 'History', requiresWithdraw: false, requiresWallet: false }
 	];
 
 	const tabs = $derived(
-		allTabs.filter((t) => !t.requiresWithdraw || walletData?.withdrawEnabled === true)
+		allTabs.filter(
+			(t) =>
+				(!t.requiresWallet || walletData?.walletEnabled === true) &&
+				(!t.requiresWithdraw || walletData?.withdrawEnabled === true)
+		)
 	);
 
 	$effect(() => {

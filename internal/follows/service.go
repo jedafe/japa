@@ -297,7 +297,7 @@ func (s *Service) afterFollowChange(ctx context.Context, followerID pgtype.UUID,
 				// §64: auto-join via follow is a real membership — record
 				// space.joined so badge/challenge triggers (e.g.
 				// space_explorer) fire on this path too.
-				s.emitActivity(ctx, followerID, wallet.ActivityKeySpaceJoined, "space:"+entityId.String(), nil)
+				s.emitActivity(ctx, followerID, wallet.ActivityKeySpaceJoined, "space:"+entityId.String()+":"+followerID.String(), nil)
 			}
 		}
 	}
@@ -310,10 +310,13 @@ func (s *Service) afterFollowChange(ctx context.Context, followerID pgtype.UUID,
 
 	// §64: record the follow.created activity so badge/challenge triggers
 	// (e.g. super_connector) can fire. The reference is per (entity_type,
-	// entity_id) so unfollow/refollow cycles cannot farm the count.
+	// entity_id, follower) — activity_events dedupes globally on
+	// (activity_key, reference), so the follower must be embedded or only
+	// the first follower of each entity records the event. Unfollow/refollow
+	// cycles still dedupe per follower.
 	if followed {
 		s.emitActivity(ctx, followerID, wallet.ActivityKeyFollowCreated,
-			fmt.Sprintf("follow:%s:%s", entityType, entityId.String()),
+			fmt.Sprintf("follow:%s:%s:%s", entityType, entityId.String(), followerID.String()),
 			map[string]interface{}{"entity_type": entityType})
 	}
 }

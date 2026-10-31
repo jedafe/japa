@@ -75,6 +75,23 @@
 	let showDeleteConfirm = $state(false);
 	let deleteTarget = $state<{ kind: 'badge' | 'challenge'; id: string; name: string } | null>(null);
 
+	// The admin list endpoints paginate server-side (default limit 50) —
+	// page through until the full set is collected so nothing is silently
+	// dropped from the UI (PTS-005).
+	async function fetchAll<T>(base: string): Promise<T[]> {
+		const pageSize = 200;
+		const out: T[] = [];
+		for (let offset = 0; ; offset += pageSize) {
+			const res = await api<T[]>(`${base}?limit=${pageSize}&offset=${offset}`);
+			if (!res.ok) throw new Error(res.error ?? 'request failed');
+			const page = res.data ?? [];
+			out.push(...page);
+			const total = (res as { pagination?: { total?: number } }).pagination?.total;
+			if (page.length < pageSize || (total !== undefined && out.length >= total)) break;
+		}
+		return out;
+	}
+
 	// Aggregate all known activity keys from already-loaded badges and
 	// challenges so the autocomplete can suggest them without an extra API
 	// call. The ActivityKeyAutocomplete also fetches wallet rules internally.
@@ -83,26 +100,27 @@
 		(async () => {
 			try {
 				const [badgesRes, challengesRes] = await Promise.all([
-					api<Badge[]>('/admin/gamification/badges'),
-					api<Challenge[]>('/admin/gamification/challenges')
+					fetchAll<Badge>('/admin/gamification/badges'),
+					fetchAll<Challenge>('/admin/gamification/challenges')
 				]);
 				const set = new Set<string>();
-				if (badgesRes.ok) {
-					for (const b of badgesRes.data ?? []) {
-						if (b.trigger_activity_key) set.add(b.trigger_activity_key);
-					}
+				for (const b of badgesRes) {
+					if (b.trigger_activity_key) set.add(b.trigger_activity_key);
 				}
-				if (challengesRes.ok) {
-					for (const c of challengesRes.data ?? []) {
-						if (c.activity_key) set.add(c.activity_key);
-					}
+				for (const c of challengesRes) {
+					if (c.activity_key) set.add(c.activity_key);
 				}
 				knownActivityKeys = Array.from(set);
+				badgeOptions = badgesRes.map((b) => ({ value: b.id, label: b.name }));
 			} catch {
 				// non-fatal — autocomplete still has wallet-rule suggestions
 			}
 		})();
 	});
+
+	// Reward-badge options for the challenge form (reward_badge_id was
+	// previously unsettable from the UI — PTS-012).
+	let badgeOptions = $state<Array<{ value: string; label: string }>>([]);
 
 	// Trigger type options matching the backend CHECK constraint (§64 schema).
 	let triggerTypeOptions = $state<CatalogOption[]>([
@@ -220,11 +238,9 @@
 		actions: badgeActions,
 		fields: badgeFields,
 		load: async ({ page, pageSize, q, filter }) => {
-			const result = await api<Badge[]>('/admin/gamification/badges');
-			if (!result.ok) {
-				throw new Error(result.error ?? t('gamification.load_error', 'Failed to load gamification data'));
-			}
-			let data = result.data ?? [];
+			let data = await fetchAll<Badge>('/admin/gamification/badges').catch(() => {
+				throw new Error(t('gamification.load_error', 'Failed to load gamification data'));
+			});
 			// Client-side search
 			if (q) {
 				const query = q.toLowerCase();
@@ -273,6 +289,7 @@
 		{ key: 'activity_key', label: t('gamification.activity', 'Activity Key'), type: 'text' },
 		{ key: 'target_count', label: t('gamification.target', 'Target Count'), type: 'number' },
 		{ key: 'reward_points', label: t('gamification.reward', 'Reward Points'), type: 'number' },
+		{ key: 'reward_badge_id', label: t('gamification.reward_badge', 'Reward Badge'), type: 'select', options: badgeOptions },
 		{ key: 'starts_at', label: t('gamification.starts', 'Start Date'), type: 'date' },
 		{ key: 'ends_at', label: t('gamification.ends', 'End Date'), type: 'date' },
 		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox' }
@@ -362,11 +379,9 @@
 		actions: challengeActions,
 		fields: challengeFields,
 		load: async ({ page, pageSize, q, filter }) => {
-			const result = await api<Challenge[]>('/admin/gamification/challenges');
-			if (!result.ok) {
-				throw new Error(result.error ?? t('gamification.load_error', 'Failed to load gamification data'));
-			}
-			let data = result.data ?? [];
+			let data = await fetchAll<Challenge>('/admin/gamification/challenges').catch(() => {
+				throw new Error(t('gamification.load_error', 'Failed to load gamification data'));
+			});
 			// Client-side search
 			if (q) {
 				const query = q.toLowerCase();
@@ -712,6 +727,15 @@
 			<div>
 				<label for="challenge-reward" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.reward', 'Reward Points')}</label>
 				<input id="challenge-reward" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.reward_points} />
+			</div>
+			<div>
+				<label for="challenge-reward-badge" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.reward_badge', 'Reward Badge')}</label>
+				<AutocompleteSelect
+					id="challenge-reward-badge"
+					bind:value={value.reward_badge_id}
+					options={badgeOptions}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="challenge-starts" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.starts', 'Start Date')}</label>

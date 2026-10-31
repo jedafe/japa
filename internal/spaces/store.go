@@ -1405,9 +1405,11 @@ func (s *Service) Join(ctx context.Context, spaceID, userID pgtype.UUID) error {
 	}
 
 	// §64: record the space.joined activity so badge/challenge triggers
-	// (e.g. space_explorer) can fire. Reference is per space so leave/rejoin
-	// cycles cannot farm the count.
-	s.emitActivity(ctx, userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
+	// (e.g. space_explorer) can fire. Reference is per (space, joiner) —
+	// activity_events dedupes globally on (activity_key, reference), so the
+	// user must be embedded or only the first member of each space records
+	// the event. Leave/rejoin cycles still dedupe per user.
+	s.emitActivity(ctx, userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String()+":"+userID.String(), nil)
 
 	return nil
 }

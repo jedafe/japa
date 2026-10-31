@@ -56,8 +56,8 @@ export const routeFeatureFlags: Map<string, RouteFeatureFlag> = new Map<
 	['/stories', 'story.enabled'],
 	['/story', 'story.enabled'],
 	// Commerce features
-	['/dashboard/wallet', 'feature.wallet'],
-	['/settings/wallet', 'feature.wallet'],
+	['/dashboard/wallet', 'feature.points'],
+	['/settings/wallet', 'feature.points'],
 	['/dashboard/affiliate', 'feature.affiliate_program'],
 	['/dashboard/tickets', 'feature.tickets'],
 	['/jobs', 'jobs.enabled'],

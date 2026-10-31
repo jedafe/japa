@@ -1196,7 +1196,10 @@ func (s *Service) GetPrivacySettings(ctx context.Context, userID pgtype.UUID) (*
 				SearchIndexable:    true,
 				ShowOnlineStatus:   true,
 				ShowActivity:       true,
-				ShowPointsPublicly: false, // default false — user must opt in (Section 28)
+				// Opt-out model (PTS-002 + 000975): members show Points
+				// publicly unless they explicitly turn it off — an absent
+				// row means the default applies.
+				ShowPointsPublicly: true,
 			}, nil
 		}
 
@@ -1224,7 +1227,12 @@ func (s *Service) UpdatePrivacySettings(ctx context.Context, userID pgtype.UUID,
 		current, err := s.store.getUserPrivacySettingsForUpdateTx(ctx, q, userID)
 		dmPrivacy := "followers"
 		profileVisibility := "public"
-		var searchIndexable, showOnlineStatus, showActivity, showPointsPublicly bool
+		var searchIndexable, showOnlineStatus, showActivity bool
+		// Opt-out model: absent row = opted in, so the merge baseline for
+		// show_points_publicly must be true — otherwise a user with no
+		// privacy row would be silently opted out the first time they save
+		// any unrelated preference.
+		showPointsPublicly := true
 
 		if err == nil {
 			dmPrivacy = current.DmPrivacy

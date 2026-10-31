@@ -15,6 +15,12 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
+// ErrDuplicateActivity marks an activity event that was already recorded —
+// the (activity_key, reference) dedupe index rejected the insert. Emitters
+// should treat it as benign "already recorded", never an error. It wraps
+// pgx.ErrNoRows so existing errors.Is(err, pgx.ErrNoRows) checks keep working.
+var ErrDuplicateActivity = errors.New("wallet: duplicate activity event")
+
 // EmitActivityEventInput holds parameters for emitting an activity event.
 type EmitActivityEventInput struct {
 	ActivityKey string
@@ -53,6 +59,12 @@ func (s *Service) EmitActivityEvent(ctx context.Context, userID pgtype.UUID, inp
 		Payload:     payload,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// ON CONFLICT DO NOTHING + RETURNING yields no row on dedupe —
+			// a typed sentinel so callers need not decode a bare ErrNoRows.
+			return gen.ActivityEvent{}, fmt.Errorf("%w: %w", ErrDuplicateActivity, err)
+		}
+
 		return gen.ActivityEvent{}, err
 	}
 

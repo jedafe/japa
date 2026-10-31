@@ -96,4 +96,7 @@ export interface WalletData {
 	withdrawalMethods: WithdrawalMethod[];
 	withdrawalProviders: string[];
 	withdrawEnabled: boolean;
+	/** feature.wallet — commerce endpoints (purchase/withdraw). Off means
+	 *  the section shows only the points surfaces (Details/History). */
+	walletEnabled: boolean;
 }

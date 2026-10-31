@@ -59,8 +59,11 @@ type ValkeyCache interface {
 
 // PointsAwarder credits reward points to a user's wallet (BUG-GAMMA-002).
 // Implemented by *wallet.Service; nil-safe on the Service struct.
+// EnqueuePointsAward routes through the retryable wallet:award_points
+// Asynq task (PTS-006) so a transient failure cannot permanently lose a
+// challenge reward.
 type PointsAwarder interface {
-	AwardPoints(ctx context.Context, userID pgtype.UUID, points int, reason string) error
+	EnqueuePointsAward(ctx context.Context, userID pgtype.UUID, points int, reason, referenceID string) error
 }
 
 // Notifier sends user notifications for badge awards and challenge

@@ -30,7 +30,9 @@ export const load: PageServerLoad = async (event) => {
 		rawScope === 'global' || (rawScope.startsWith('space:') && UUID_RE.test(rawScope.slice(6)))
 			? rawScope
 			: 'global';
-	const period = event.url.searchParams.get('period') ?? 'all_time';
+	const rawPeriod = event.url.searchParams.get('period') ?? 'all_time';
+	// Whitelist like scope — a malformed period must fall back, not 400.
+	const period = ['all_time', 'monthly', 'weekly'].includes(rawPeriod) ? rawPeriod : 'all_time';
 
 	let entries: LeaderboardEntry[] = [];
 	let disabled = false;

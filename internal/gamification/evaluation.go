@@ -192,10 +192,11 @@ func (s *Service) grantChallengeReward(ctx context.Context, userID pgtype.UUID, 
 	}
 
 	if c.RewardPoints > 0 && s.pointsAwarder != nil {
-		// The ledger idempotency key (gamification_award:{user}:{reason})
-		// makes retried or concurrent completions safe.
+		// Enqueue the retryable wallet:award_points task — the deterministic
+		// idempotency key makes retried or concurrent completions safe and a
+		// transient failure retries instead of losing the reward (PTS-006).
 		reason := "challenge_completed:" + uuidStr(c.ID)
-		if err := s.pointsAwarder.AwardPoints(ctx, userID, int(c.RewardPoints), reason); err != nil {
+		if err := s.pointsAwarder.EnqueuePointsAward(ctx, userID, int(c.RewardPoints), reason, uuidStr(c.ID)); err != nil {
 			slog.Warn("gamification: award challenge reward points failed",
 				"challenge_id", uuidStr(c.ID), "error", err)
 		} else {

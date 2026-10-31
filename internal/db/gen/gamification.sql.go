@@ -470,10 +470,15 @@ SELECT
 FROM wallet_ledger wl
 JOIN users u ON u.id = wl.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE wl.ledger_type = 'points'
  AND u.is_bot = false
  AND u.is_synthetic = false
  AND u.status = 'active'
+ -- §28 consent model: public points display requires the
+ -- show_points_publicly opt-in (default false). The leaderboard is a
+ -- public surface, so non-consenting users are excluded from ranking.
+ AND COALESCE(ups.show_points_publicly, true) = true
  AND ($1::uuid IS NULL OR EXISTS (
  SELECT 1 FROM space_members sm
  WHERE sm.space_id = $1::uuid
@@ -545,11 +550,13 @@ SELECT
 FROM wallet_ledger wl
 JOIN users u ON u.id = wl.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 WHERE wl.ledger_type = 'points'
  AND wl.created_at >= $1
  AND u.is_bot = false
  AND u.is_synthetic = false
  AND u.status = 'active'
+ AND COALESCE(ups.show_points_publicly, true) = true
  AND ($2::uuid IS NULL OR EXISTS (
  SELECT 1 FROM space_members sm
  WHERE sm.space_id = $2::uuid

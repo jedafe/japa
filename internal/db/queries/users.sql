@@ -546,7 +546,7 @@ SELECT
  up.banner_media_id,
  pg.name AS public_role,
  COALESCE(up.created_at, u.created_at) AS created_at,
- COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
+ COALESCE(ups.show_points_publicly, true) AS show_points_publicly,
  -- §68 disclosure toggle: the persona's disclosure_mode (NULL for non-bot
  -- users). The service layer maps it to ai_disclosed — undisclosed personas
  -- keep the flag hidden publicly (internal is_bot flag unaffected).

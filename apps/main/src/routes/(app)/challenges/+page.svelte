@@ -36,6 +36,12 @@
 		if (!p || p.target_count === 0) return 0;
 		return Math.min(100, Math.round((p.current_count / p.target_count) * 100));
 	}
+
+	// Humanize the activity_key that drives progress (PTS-009) — users should
+	// see "post comments" not "comment.created". Falls back to the raw key.
+	function activityLabel(key: string): string {
+		return t(`challenges.activity.${key}`, key);
+	}
 </script>
 
 <svelte:head>
@@ -101,7 +107,7 @@
 									{#if ch.target_count}
 										<span class="flex items-center gap-1">
 											<Target size={12} />
-											{t('challenges.goal', 'Goal: {n}').replace('{n}', String(ch.target_count))}
+											{t('challenges.goal', 'Goal: {n} {activity}').replace('{n}', String(ch.target_count)).replace('{activity}', activityLabel(ch.activity_key ?? ''))}
 										</span>
 									{/if}
 								</div>

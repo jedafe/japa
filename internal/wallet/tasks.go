@@ -359,12 +359,6 @@ func (s *Service) DeductCreditsTask(ctx context.Context, payload []byte) error {
 		return fmt.Errorf("wallet:deduct_credits: unmarshaling payload: %w", err)
 	}
 
-	var ()
-
-	if err := (error)(nil); err != nil {
-		return fmt.Errorf("wallet:deduct_credits: invalid id: %w", err)
-	}
-
 	if p.Amount <= 0 {
 		return fmt.Errorf("wallet:deduct_credits: amount must be positive, got %d", p.Amount)
 	}
@@ -417,6 +411,52 @@ func (s *Service) DeductCreditsTask(ctx context.Context, payload []byte) error {
 	return s.creditWallet(ctx, userID, LedgerTypeCredits, operation, ledgerAmount, p.Reason, reference, idempotencyKey)
 }
 
+// earnAllowed reports whether a positive points earn of `amount` may be
+// credited to the user — the EnableEarning killswitch and the daily earn
+// cap (tier-scoped `wallet.max_daily_earn_points.{tier}`, then the global
+// key, then the wallet_settings.daily_earning_cap fallback; -1 = unlimited)
+// per ADR-136. Called inside the per-user advisory lock so the cap check
+// and the ledger insert are atomic with concurrent earns.
+func (s *Service) earnAllowed(ctx context.Context, tx pgx.Tx, userID pgtype.UUID, amount int64) (bool, error) {
+	// Killswitch — gates earnings only (penalties/compensation never reach
+	// this path).
+	if ws, werr := s.store.getWalletSettings(ctx); werr == nil && !ws.EnableEarning {
+		return false, nil
+	}
+
+	if s.settings == nil {
+		return true, nil
+	}
+
+	dailyCap := int64(s.settings.GetIntOr(ctx, "wallet.max_daily_earn_points", 0))
+	if s.tierResolver != nil {
+		if tier, terr := s.tierResolver.ResolveUserTier(ctx, userID); terr == nil && tier != "" {
+			dailyCap = int64(s.settings.GetIntOr(ctx, "wallet.max_daily_earn_points."+tier, int(dailyCap)))
+		}
+	}
+
+	if dailyCap == 0 {
+		if ws, werr := s.store.getWalletSettings(ctx); werr == nil && ws.DailyEarningCap > 0 {
+			dailyCap = int64(ws.DailyEarningCap)
+		}
+	}
+
+	if dailyCap <= 0 {
+		return true, nil
+	}
+
+	var earnedToday int64
+	row := tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount), 0) FROM wallet_ledger
+		WHERE user_id = $1 AND ledger_type = 'points' AND amount > 0
+		  AND operation = 'earn' AND created_at >= CURRENT_DATE`, userID)
+	if err := row.Scan(&earnedToday); err != nil {
+		return false, fmt.Errorf("checking daily earning cap: %w", err)
+	}
+
+	return earnedToday+amount <= dailyCap, nil
+}
+
 // creditWallet is the shared ledger insertion path for award_points and
 // deduct_credits. It acquires a per-user advisory lock, reads the current
 // balance, computes the new balance, and inserts the ledger entry — all
@@ -435,6 +475,24 @@ func (s *Service) creditWallet(ctx context.Context, userID pgtype.UUID, ledgerTy
 	lockKey := "wallet:" + "" + ":" + userID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return fmt.Errorf("wallet: acquiring lock: %w", err)
+	}
+
+	// PTS-004: the earn gate (EnableEarning killswitch + daily earn cap)
+	// applies to every positive points earn — not just the activity-event
+	// path. Credits, spends/refunds, and penalties are exempt per ADR-136
+	// (the gates guard earnings only). A gated award is a settled no-op,
+	// not a retryable failure.
+	if ledgerType == LedgerTypePoints && operation == OperationEarn && amount > 0 {
+		allowed, gerr := s.earnAllowed(ctx, tx, userID, amount)
+		if gerr != nil {
+			return fmt.Errorf("wallet: checking earn gate: %w", gerr)
+		}
+
+		if !allowed {
+			slog.Info("wallet: earn gated by killswitch/daily cap, skipping",
+				"user_id", userID.String(), "amount", amount, "source", source)
+			return nil
+		}
 	}
 
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{

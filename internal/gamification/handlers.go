@@ -405,7 +405,7 @@ func (h *Handlers) HandleAdminCreateBadge(w http.ResponseWriter, r *http.Request
 	badge, err := h.service.CreateBadge(r.Context(), in)
 	if err != nil {
 		slog.Error("gamification: admin create badge failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "badge_create_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "badge_create_failed", "Failed to create badge")
 
 		return
 	}
@@ -444,7 +444,7 @@ func (h *Handlers) HandleAdminUpdateBadge(w http.ResponseWriter, r *http.Request
 	badge, err := h.service.UpdateBadge(r.Context(), badgeID, in)
 	if err != nil {
 		slog.Error("gamification: admin update badge failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "badge_update_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "badge_update_failed", "Failed to update badge")
 
 		return
 	}
@@ -498,7 +498,12 @@ func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request)
 	badge, err := h.service.AwardBadge(r.Context(), badgeID, targetUserID, user.UserID)
 	if err != nil {
 		slog.Error("gamification: admin award badge failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "badge_award_failed", err.Error())
+		if errors.Is(err, ErrBadgeNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "badge_not_found", "Badge not found")
+			return
+		}
+
+		errpkg.WriteError(w, http.StatusBadRequest, "badge_award_failed", "Failed to award badge")
 
 		return
 	}
@@ -529,7 +534,7 @@ func (h *Handlers) HandleAdminDeleteBadge(w http.ResponseWriter, r *http.Request
 
 	if err := h.service.DeleteBadge(r.Context(), badgeID); err != nil {
 		slog.Error("gamification: admin delete badge failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "badge_delete_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "badge_delete_failed", "Failed to delete badge")
 
 		return
 	}
@@ -596,7 +601,7 @@ func (h *Handlers) HandleAdminCreateChallenge(w http.ResponseWriter, r *http.Req
 	challenge, err := h.service.CreateChallenge(r.Context(), in)
 	if err != nil {
 		slog.Error("gamification: admin create challenge failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "challenge_create_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "challenge_create_failed", "Failed to create challenge")
 
 		return
 	}
@@ -635,7 +640,7 @@ func (h *Handlers) HandleAdminUpdateChallenge(w http.ResponseWriter, r *http.Req
 	challenge, err := h.service.UpdateChallenge(r.Context(), challengeID, in)
 	if err != nil {
 		slog.Error("gamification: admin update challenge failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "challenge_update_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "challenge_update_failed", "Failed to update challenge")
 
 		return
 	}

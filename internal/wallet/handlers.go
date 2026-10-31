@@ -337,6 +337,13 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// -1 is the documented "unlimited" sentinel (ADR-136); anything below is
+	// meaningless and would silently disable the cap.
+	if input.DailyEarningCap < -1 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_daily_earning_cap", "daily_earning_cap must be -1 (unlimited), 0 (no cap), or a positive limit")
+		return
+	}
+
 	settings, err := h.Service.UpdateWalletSettings(r.Context(), UpdateWalletSettingsInput{
 		DailyEarningCap: input.DailyEarningCap,
 		EnableEarning:   input.EnableEarning,

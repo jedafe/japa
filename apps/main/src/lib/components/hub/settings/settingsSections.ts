@@ -63,7 +63,7 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'newsletter', labelKey: 'settings.nav.newsletter', icon: 'mail', group: 'notifications', backendReady: true, component: NewsletterSection, featureFlag: 'feature.newsletter' },
 	{ slug: 'api-keys', labelKey: 'settings.nav.api_keys', icon: 'key', group: 'developer', backendReady: true, component: ApiKeysSection },
 	{ slug: 'affiliate', labelKey: 'settings.nav.affiliate', icon: 'share-2', group: 'developer', backendReady: true, component: AffiliateSection, featureFlag: 'feature.affiliate_program' },
-	{ slug: 'wallet', labelKey: 'settings.nav.wallet', icon: 'wallet', group: 'wallet', backendReady: true, component: WalletSection, featureFlag: 'feature.wallet' },
+	{ slug: 'wallet', labelKey: 'settings.nav.wallet', icon: 'wallet', group: 'wallet', backendReady: true, component: WalletSection, featureFlag: 'feature.points' },
 	{ slug: 'tips', labelKey: 'settings.nav.tips', icon: 'gift', group: 'wallet', backendReady: true, component: TipsSection, featureFlag: 'tips.enabled' },
 	{ slug: 'subscription', labelKey: 'settings.nav.subscription', icon: 'credit-card', group: 'billing', backendReady: true, component: SubscriptionSection },
 	{ slug: 'payments', labelKey: 'settings.nav.payments', icon: 'receipt', group: 'billing', backendReady: true, component: PaymentsSection },

@@ -190,7 +190,11 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 			withdrawals: (await apiList<unknown>(ctx, '/me/wallet/withdrawals?page_size=20').catch(() => ({ items: [] }))).items,
 			withdrawalMethods: (await apiList<unknown>(ctx, '/me/wallet/withdrawal-methods').catch(() => ({ items: [] }))).items,
 			withdrawalProviders: await apiGet<string[]>(ctx, '/wallet/withdraw/providers').catch(() => []),
-			withdrawEnabled: flags['feature.withdraw'] === true
+			withdrawEnabled: flags['feature.withdraw'] === true,
+			// feature.wallet gates commerce endpoints (PTS-010); the section
+			// itself shows under feature.points, so purchase/withdraw tabs
+			// hide when commerce is off rather than rendering 404 states.
+			walletEnabled: flags['feature.wallet'] === true
 		};
 	},
 	subscription: async (ctx) => ({

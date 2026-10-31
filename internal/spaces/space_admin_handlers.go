@@ -100,7 +100,7 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 		// §64: approval is the moment a pending requester becomes a member —
 		// record space.joined so badge/challenge triggers fire for this
 		// path too (parity with AdminResolveJoinRequest).
-		h.Service.emitActivity(r.Context(), requestID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
+		h.Service.emitActivity(r.Context(), requestID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String()+":"+requestID.String(), nil)
 
 		// BUG-009: join approval auto-follows the space (§05/§31) — the
 		// POST approve path already did; the PATCH path must match.
@@ -340,7 +340,7 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 		// §64: approval is the moment a pending requester becomes a member —
 		// record space.joined so badge/challenge triggers (e.g.
 		// space_explorer) fire for the request-approval join path too.
-		h.Service.emitActivity(r.Context(), userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String(), nil)
+		h.Service.emitActivity(r.Context(), userID, wallet.ActivityKeySpaceJoined, "space:"+spaceID.String()+":"+userID.String(), nil)
 
 		// BUG-031 (follows audit): approval completes the join — the
 		// join→follow contract applies on this path too, not just the

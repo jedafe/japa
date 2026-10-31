@@ -20,11 +20,20 @@ class GamificationService {
     );
   }
 
-  Future<List<Badge>> listChallenges() async {
-    return _client.get<List<Badge>>(
+  Future<List<Challenge>> listChallenges() async {
+    return _client.get<List<Challenge>>(
       '/gamification/challenges',
       parse: (json) =>
-          (json as List).map((e) => Badge.fromJson(e as Map<String, dynamic>)).toList(),
+          (json as List).map((e) => Challenge.fromJson(e as Map<String, dynamic>)).toList(),
+    );
+  }
+
+  // PTS-007 — authenticated user's challenge progress.
+  Future<List<Challenge>> listMyChallenges() async {
+    return _client.get<List<Challenge>>(
+      '/me/challenges',
+      parse: (json) =>
+          (json as List).map((e) => Challenge.fromJson(e as Map<String, dynamic>)).toList(),
     );
   }
 

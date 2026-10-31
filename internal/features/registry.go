@@ -59,6 +59,11 @@ var Registry = []Feature{
 	{Key: "mentorship.comparison", Label: "Mentorship Comparison", Description: "Export selected mentors to a side-by-side JCE comparison", Default: false, Category: "Social"},
 	// Commerce features
 	{Key: "feature.wallet", Label: "Wallet & Credits", Description: "Member credit wallet, balances, and credit purchases", Default: false, Category: "Commerce"},
+	// feature.points gates the read-only points surfaces (own balance,
+	// points/credits ledger, wallet settings view). Engagement-side points
+	// earning works whether or not commerce is configured, so this defaults
+	// on — unlike feature.wallet, which needs payment-provider setup (PTS-010).
+	{Key: "feature.points", Label: "Points & Reputation", Description: "Member points balance, ledger history, and wallet settings view", Default: true, Category: "Engagement"},
 	{Key: "feature.withdraw", Label: "Credit Withdrawals", Description: "Enable user credit withdrawals and payouts", Default: true, Category: "Commerce"},
 	{Key: "feature.ads", Label: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Default: true, Category: "Commerce", SettingsCategory: "ads"},
 	{Key: "feature.referral", Label: "Referral Program", Description: "User referral program with credit rewards and attribution tracking", Default: false, Category: "Commerce", SettingsCategory: "referral"},

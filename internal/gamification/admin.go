@@ -15,6 +15,10 @@ import (
 // Admin operations
 // ---------------------------------------------------------------------------
 
+// ErrBadgeNotFound is returned when a badge definition does not exist —
+// handlers map it to 404 (PTS-012).
+var ErrBadgeNotFound = errors.New("gamification: badge not found")
+
 // CreateBadge creates a new badge definition (admin).
 func (s *Service) CreateBadge(ctx context.Context, in CreateBadgeInput) (BadgeInfo, error) {
 	if in.TriggerType != TriggerTypeLifetimePoints && in.TriggerType != TriggerTypeActivityCount && in.TriggerType != TriggerTypeManual {
@@ -120,7 +124,7 @@ func (s *Service) AwardBadge(ctx context.Context, badgeID, userID, awardedBy pgt
 	badge, err := s.store.GetBadgeDefinitionByID(ctx, badgeID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return BadgeWithDetails{}, errors.New("gamification: badge not found")
+			return BadgeWithDetails{}, ErrBadgeNotFound
 		}
 
 		return BadgeWithDetails{}, fmt.Errorf("gamification: get badge: %w", err)

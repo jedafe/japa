@@ -1450,6 +1450,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/64-gamification.md (ADR-082)
 	gamificationStore := gamification.NewStore(database)
 	gamificationService := gamification.NewService(gamificationStore, settingsService)
+	gamificationService.SetCache(vkClient.Redis()) // §64: jc:leaderboard:{scope}:{period} 1h cache
 	gamificationHandlers := gamification.NewHandlers(gamificationService, settingsService)
 	gamificationHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in gamification responses
 	// Wire the wallet service as the gamification PointsAwarder so challenge
@@ -5080,8 +5081,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public: list tracks included in a plan (catalog: /pricing/plans/{slug}/tracks).
 			r.Get("/pricing/plans/{slug}/tracks", paymentHandlers.PublicListPlanTracks)
 
-			// Wallet & Credits routes — gated by feature.wallet (Section 28)
-			r.With(features.Gate(featureChecker, "feature.wallet")).Group(func(r chi.Router) {
+			// Points (reputation) read routes — gated by feature.points
+			// (PTS-010). These are engagement surfaces, not commerce, so they
+			// work even when feature.wallet is off: users accrue points from
+			// activity and must be able to see their own balance/ledger.
+			r.With(features.Gate(featureChecker, "feature.points")).Group(func(r chi.Router) {
 				// Balance and ledger (catalog: /me/wallet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
 					Get("/me/wallet", walletHandlers.GetBalance)
@@ -5095,6 +5099,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Reuses wallet.points.balance — anyone who can view their balance can view them.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
 					Get("/me/wallet/settings", walletHandlers.GetMemberSettings)
+			})
+
+			// Wallet & Credits routes — gated by feature.wallet (Section 28)
+			r.With(features.Gate(featureChecker, "feature.wallet")).Group(func(r chi.Router) {
 				// Settings (admin)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.settings.manage")).
 					Get("/admin/wallet/settings", walletHandlers.GetSettings)
@@ -7432,9 +7440,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/gamification/badges", gamificationHandlers.HandleListBadges)
 				r.Get("/gamification/challenges", gamificationHandlers.HandleListChallenges)
 				r.Get("/gamification/leaderboard", gamificationHandlers.HandleGetLeaderboard)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.view")).
 					Get("/me/badges", gamificationHandlers.HandleMyBadges)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.view")).
 					Get("/me/challenges", gamificationHandlers.HandleMyChallenges)
 				r.Get("/users/{username}/badges", gamificationHandlers.HandleUserBadges)
 			})
