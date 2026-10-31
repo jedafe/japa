@@ -17,6 +17,22 @@ const SETTINGS_TTL_MS = 30_000;
 const settingsCache = new Map<string, { value: Record<string, unknown>; expiresAt: number }>();
 
 /**
+ * Parent domain shared by sibling surfaces — session cookies are minted on
+ * the main app with Domain=.{base}, so cookie cleanup here must target that
+ * same domain or the shared cookie survives. Derived from the public API
+ * URL (api.japa.to → .japa.to); falls back to '.japa.to' shape-less empty
+ * when unparseable (dev deletes stay host-only).
+ */
+function docsCookieDomain(): string {
+	try {
+		const apiHost = new URL(env.PUBLIC_JC_API_URL ?? '').hostname;
+		return apiHost.startsWith('api.') ? `.${apiHost.slice(4)}` : '';
+	} catch {
+		return '';
+	}
+}
+
+/**
  * The audience gate map and canonical audience order change only when the
  * backend ships new audiences/permissions — cache them briefly (60s) like
  * the public settings instead of paying two backend round-trips per page.
@@ -169,7 +185,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 			event.locals.user = await apiGet<SessionUser>(apiContext(event), '/me');
 		} catch (err) {
 			if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+				// Clear both variants: a host-only delete leaves the shared
+				// .{base}-domain cookie alive and the browser keeps
+				// presenting the stale token.
 				event.cookies.delete('jc_token', { path: '/' });
+				event.cookies.delete('jc_token', { path: '/', domain: docsCookieDomain() });
 				event.locals.token = null;
 			}
 			// Any other failure (backend unreachable) degrades to guest.

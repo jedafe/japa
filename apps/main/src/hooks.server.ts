@@ -241,6 +241,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.requestHost = event.url.hostname;
 	event.locals.token = event.cookies.get('jc_token') ?? null;
 
+	// Session-domain upgrade: cookies minted before Domain=.{base} was set
+	// are host-only — re-set with the shared domain so sibling surfaces
+	// (docs./academy.) see the session without forcing a re-login.
+	if (event.locals.token) {
+		setSessionCookie(event, event.locals.token);
+		const refresh = event.cookies.get('jc_refresh');
+		if (refresh) setRefreshCookie(event, refresh);
+	}
+
 	// Detect locale prefix in the URL path (e.g. /fr/blog → 'fr', /blog → null).
 	// Only 2-letter lowercase prefixes are candidates; the enabled-languages
 	// list from system_settings validates whether it's a real locale or part
