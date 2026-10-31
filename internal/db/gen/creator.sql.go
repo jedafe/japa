@@ -22,6 +22,7 @@ SET is_published_to_academy = true,
 WHERE id = $1
  AND instructor_id IS NOT NULL
  AND is_published_to_academy = false
+ AND academy_submission_status = 'pending'
 RETURNING id, title, slug, description, difficulty, cover_media_id,
  is_published, sort_order, instructor_id, price_kobo, currency,
  is_published_to_academy, category, language, geo_space_id, total_enrolled,
@@ -1317,6 +1318,7 @@ WHERE lt.is_published_to_academy = true
  AND ($5::text = '' OR lt.title ILIKE '%' || $5 || '%')
  AND ($6::uuid IS NULL OR lt.geo_space_id = $6)
 ORDER BY
+ lt.academy_featured DESC,
  CASE WHEN $7::text = 'newest' THEN lt.created_at END DESC,
  CASE WHEN $7::text = 'rating' THEN COALESCE(ra.average_rating, 0) END DESC,
  lt.total_enrolled DESC, lt.created_at DESC

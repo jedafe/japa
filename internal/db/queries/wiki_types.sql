@@ -224,8 +224,8 @@ SELECT id, space_type_id, slug, category, label, field_group_id,
        position, is_system, created_at, rollup, icon
 FROM wiki_type_categories
 WHERE space_type_id = @space_type_id
-  AND (lower(category) = lower(@token)
-       OR lower(replace(slug, '-', '_')) = lower(@token))
+  AND (lower(replace(category, '-', '_')) = lower(replace(@token, '-', '_'))
+       OR lower(replace(slug, '-', '_')) = lower(replace(@token, '-', '_')))
 ORDER BY position ASC
 LIMIT 1;
 

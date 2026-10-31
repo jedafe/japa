@@ -207,7 +207,7 @@
 	{:else if detail}
 		<dl class="space-y-2 text-sm">
 			{#each Object.entries(detail) as [k, v]}
-				<div class="flex justify-between gap-4 border-b border-border/50 pb-1">
+				<div class="flex justify-between flex-wrap gap-4 border-b border-border/50 pb-1">
 					<dt class="shrink-0 font-medium text-muted-foreground">{k}</dt>
 					<dd class="min-w-0 truncate text-right">{v === null || v === undefined || v === '' ? '—' : String(v)}</dd>
 				</div>

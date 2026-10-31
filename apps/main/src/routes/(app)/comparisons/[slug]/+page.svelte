@@ -320,6 +320,9 @@
 			commentCount={comparison.content.comment_count}
 			authed={data.authed}
 			bottom
+			authorUsername={comparison.content.author_username}
+			authorId={comparison.content.author_id}
+			authorName={comparison.content.author_display_name ?? comparison.content.author_name}
 		/>
 	</div>
 

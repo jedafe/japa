@@ -3,6 +3,7 @@ package academy
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -238,9 +239,10 @@ func (h *Handlers) enqueueTrackCompletionUpdate(userID, trackID pgtype.UUID) {
 // Public / authenticated user endpoints
 // ---------------------------------------------------------------------------
 
-// ListPublishedTracks returns all published tracks for the current platform.
+// ListPublishedTracks returns published tracks for the current platform,
+// paginated via page_size/page_offset like the rest of the catalog surface.
 func (h *Handlers) ListPublishedTracks(w http.ResponseWriter, r *http.Request) {
-	tracks, err := h.store.ListPublishedTracks(r.Context())
+	tracks, err := h.store.ListPublishedTracks(r.Context(), parsePageSize(r), parsePageSizeOffset(r))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
 		return
@@ -355,6 +357,14 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Draft lessons are never learner-visible — only the admin curriculum
+	// endpoints may serve them. The detail query already filters
+	// ll.is_published, this is defense-in-depth for cached/other paths.
+	if !lesson.IsPublished {
+		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		return
+	}
+
 	// Access control (Section 36 / ADR-060): preview lessons are public; every
 	// other lesson requires an authenticated enrollment in the parent track.
 	// The frontend redirects a 403 to the track's enroll page. Platform admins
@@ -433,6 +443,11 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	// Verify the lesson exists and belongs to this platform.
 	lesson, err := h.store.GetLessonByID(r.Context(), lessonID)
 	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		return
+	}
+
+	if !lesson.IsPublished {
 		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
 	}
@@ -882,7 +897,11 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !track.IsPublished {
+	// Marketplace gate (ADR-063): instructor-authored tracks must have cleared
+	// marketplace review before anyone may enroll — otherwise a creator could
+	// sell or grant access to a pending/rejected course. Platform-authored
+	// tracks (no instructor) stay enrollable whenever is_published.
+	if !track.IsPublished || (track.InstructorID != nil && !track.IsPublishedToAcademy) {
 		errpkg.WriteError(w, http.StatusNotFound, "track_not_found", "Track not found")
 		return
 	}
@@ -996,6 +1015,11 @@ func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !lesson.IsPublished {
+		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		return
+	}
+
 	// Same access control as GetLesson (Section 36): non-preview lessons
 	// require an enrollment in the parent track. Lesson UUIDs are exposed in
 	// the public track-detail payload, so authentication alone is not enough.
@@ -1051,6 +1075,11 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 
 	lesson, err := h.store.GetLessonByID(r.Context(), lessonID)
 	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		return
+	}
+
+	if !lesson.IsPublished {
 		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
 	}
@@ -1133,6 +1162,11 @@ func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
 	// Platform admins bypass the gate.
 	lesson, err := h.store.GetLessonByID(r.Context(), lessonID)
 	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		return
+	}
+
+	if !lesson.IsPublished {
 		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
 	}
@@ -1233,6 +1267,11 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !lesson.IsPublished {
+		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		return
+	}
+
 	mod, err := h.store.GetModuleByID(r.Context(), lesson.ModuleID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "module_not_found", "Module not found")
@@ -1240,6 +1279,16 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.requireEnrollmentOrAdmin(w, r, user.UserID, mod.TrackID) {
+		return
+	}
+
+	// Attempt cap: bump the counter atomically and reject once exceeded —
+	// unlimited blind retakes were a brute-force oracle for answer keys and
+	// certificates (migration 000977 academy_quiz_attempts). Only enrolled
+	// learners consume attempts. Fail-open on DB error so a hiccup can't
+	// lock out a legitimate user.
+	if attempts, err := h.store.IncrementQuizAttempts(r.Context(), user.UserID, lessonID); err == nil && attempts > quizMaxAttempts {
+		errpkg.WriteError(w, http.StatusTooManyRequests, "attempt_limit", "Maximum quiz attempts reached")
 		return
 	}
 
@@ -1259,7 +1308,14 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 		selected := answers[qID]
 		correctAnswers := parseCorrectAnswers(q.Answer)
 
-		matched := answersMatch(selected, correctAnswers)
+		// Free-text questions (no options) accept ANY stored alternative;
+		// optioned questions require the exact accepted set.
+		var matched bool
+		if len(parseQuizOptions(q.Options)) == 0 {
+			matched = anyAnswerMatches(selected, correctAnswers)
+		} else {
+			matched = answersMatch(selected, correctAnswers)
+		}
 		if matched {
 			correct++
 		}
@@ -1303,6 +1359,17 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 
 		h.enqueueTrackCompletionUpdate(user.UserID, mod.TrackID)
 		h.maybeIssueCertificate(r.Context(), user.UserID, lesson.ModuleID)
+	}
+
+	// Anti-harvesting: correct_answers and explanations are only returned on a
+	// pass. On a fail the learner still gets per-question ✓/✗ feedback
+	// (question_id, correct, selected) — useful UX — but never the answer key;
+	// combined with quizMaxAttempts, blind retakes can't crack the quiz.
+	if !passed {
+		for i := range results {
+			results[i].CorrectAnswers = nil
+			results[i].Explanation = nil
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -1392,6 +1459,23 @@ func answersMatch(selected, correct []string) bool {
 	}
 
 	return true
+}
+
+// anyAnswerMatches reports whether at least one submitted answer is in the
+// accepted-answer set — used for free-text questions with alternates.
+func anyAnswerMatches(selected, correct []string) bool {
+	accepted := make(map[string]struct{}, len(correct))
+	for _, c := range correct {
+		accepted[normalizeQuizAnswer(c)] = struct{}{}
+	}
+
+	for _, s := range selected {
+		if _, ok := accepted[normalizeQuizAnswer(s)]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 // parseQuizSubmission normalizes the answers payload into a question_id →
@@ -1587,10 +1671,16 @@ func (h *Handlers) maybeIssueCertificate(ctx context.Context, userID, moduleID p
 		return
 	}
 
-	// Generate a unique certificate number. Use the UUID's hex string
-	// representation (not raw bytes) — raw UUID bytes contain invalid UTF-8
-	// sequences that PostgreSQL's text column rejects (SQLSTATE 22021).
-	certNumber := fmt.Sprintf("JC-%d-%s", time.Now().Unix(), hex.EncodeToString(userID.Bytes[:8]))
+	// Generate a unique certificate number from a random suffix — embedding
+	// user-ID bytes in a public verification artifact leaked identifier data
+	// and made numbers guessable. crypto/rand hex is unguessable and
+	// collision-resistant (the unique constraint on certificate_number backs it).
+	var rb [8]byte
+	if _, err := rand.Read(rb[:]); err != nil {
+		slog.Error("issue certificate: random generation failed", "error", err)
+		return
+	}
+	certNumber := fmt.Sprintf("JC-%d-%s", time.Now().Unix(), hex.EncodeToString(rb[:]))
 
 	if _, err := h.store.IssueCertificate(ctx, userID, mod.TrackID, certNumber); err != nil {
 		slog.Error("issue certificate", "user_id", userID, "track_id", mod.TrackID, "error", err)

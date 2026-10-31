@@ -208,6 +208,15 @@
 							<SidebarWidgetRenderer {widget} {user} />
 						</div>
 					{/each}
+
+					<!-- docs_footer menu pinned to the bottom of the right rail
+					     (mt-auto → viewport bottom when content is short, scrolls
+					     below the widgets otherwise). -->
+					{#if footerMenu}
+						<div class="mt-auto shrink-0 border-t border-[var(--color-border)] pt-3">
+							<GuestFooter menu={footerMenu} {user} rail />
+						</div>
+					{/if}
 				</div>
 			</div>
 			{/if}
@@ -233,8 +242,6 @@
 			/>
 		</div>
 	{/if}
-
-	<GuestFooter menu={footerMenu} {user} />
 {/if}
 
 <AdConversionTracker />
@@ -295,6 +302,8 @@
 		min-height: 0;
 		overflow-y: auto;
 		padding: 1rem 0.75rem 2rem;
+		display: flex;
+		flex-direction: column;
 	}
 	.sidebar-empty {
 		height: 100%;

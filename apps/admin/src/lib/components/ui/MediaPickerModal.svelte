@@ -339,7 +339,7 @@
 		{/if}
 
 		<!-- Tab switcher -->
-		<div class="flex gap-2 border-b" style="border-color: var(--color-border)">
+		<div class="flex gap-2 overflow-x-auto border-b" style="border-color: var(--color-border)">
 			<button
 				type="button"
 				class="px-3 py-2 text-sm font-medium transition-colors"
@@ -399,7 +399,7 @@
 					{t('ads.media_empty', 'No images found')}
 				</p>
 			{:else}
-				<div class="grid max-h-80 grid-cols-4 gap-3 overflow-y-auto">
+				<div class="grid max-h-80 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-4">
 					{#each filteredItems as item (item.id)}
 						<button
 							type="button"
@@ -567,7 +567,7 @@
 						{stockQuery.trim() ? t('ads.media_stock_empty', 'No stock photos found') : t('ads.media_stock_hint', 'Type to search stock photo providers')}
 					</p>
 				{:else}
-					<div class="grid max-h-80 grid-cols-4 gap-3 overflow-y-auto">
+					<div class="grid max-h-80 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-4">
 						{#each stockResults as photo (photo.provider + ':' + photo.id)}
 							<div class="relative overflow-hidden rounded-lg border" style="border-color: var(--color-border)">
 								<img src={photo.thumbnail_url} alt={photo.description ?? ''} class="h-20 w-full object-cover" loading="lazy" />

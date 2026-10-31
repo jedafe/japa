@@ -1539,7 +1539,13 @@ SELECT
  (
  SELECT COUNT(*) FROM follows f
  WHERE f.entity_type = 'space' AND f.entity_id = s.id
- )::int AS follower_count
+ )::int AS follower_count,
+ (
+ SELECT COUNT(*) FROM contents c
+ JOIN forum_threads ft ON ft.content_id = c.id
+ WHERE c.space_id = s.id
+ AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'
+ )::int AS discussion_count
 FROM spaces s
 WHERE s.id = ANY(@space_ids::uuid[]);
 

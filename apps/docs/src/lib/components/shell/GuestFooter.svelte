@@ -14,9 +14,11 @@
 		menu: Menu | null;
 		/** Current user so visibility can be filtered correctly. */
 		user?: SessionUser | null;
+		/** Compact rendering for the right-rail bottom slot. */
+		rail?: boolean;
 	}
 
-	let { menu, user = null }: Props = $props();
+	let { menu, user = null, rail = false }: Props = $props();
 
 	// Root-relative URLs that aren't docs-local (/, /privacy, /signup, …) live
 	// on the main app — resolve them against the main origin (ADR-054).
@@ -31,7 +33,7 @@
 	);
 </script>
 
-<footer class="guest-footer">
+<footer class="guest-footer" class:rail>
 	<div class="guest-footer-inner">
 		<div class="footer-copy">
 			&copy; {new Date(page.data.serverNow ?? Date.now()).getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
@@ -109,5 +111,40 @@
 		.footer-list {
 			justify-content: flex-start;
 		}
+	}
+
+	/* Rail variant — footer pinned to the bottom of the right sidebar:
+	   compact, quiet, left-aligned instead of the full-width page footer. */
+	.guest-footer.rail {
+		border-top: none;
+		background: transparent;
+	}
+	.guest-footer.rail .guest-footer-inner {
+		max-width: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.375rem;
+	}
+	.guest-footer.rail .footer-copy {
+		font-size: 0.6875rem;
+		line-height: 1rem;
+		order: 2;
+	}
+	.guest-footer.rail .footer-nav {
+		justify-content: flex-start;
+		order: 1;
+	}
+	.guest-footer.rail .footer-list {
+		column-gap: 0.875rem;
+		row-gap: 0.375rem;
+		justify-content: flex-start;
+	}
+	.guest-footer.rail .footer-link {
+		font-size: 0.75rem;
+		line-height: 1.25rem;
+		color: var(--color-muted);
 	}
 </style>

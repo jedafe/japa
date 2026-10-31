@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE doc_pages DROP COLUMN IF EXISTS created_by;
+
+COMMIT;

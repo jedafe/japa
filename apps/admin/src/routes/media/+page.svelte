@@ -972,7 +972,7 @@
 {/if}
 
 <!-- Tab switcher: Media Library vs Stock Providers -->
-<div class="mb-4 inline-flex h-10 items-center justify-center rounded-lg p-1" style="background-color: var(--color-surface); color: var(--color-muted)">
+<div class="mb-4 inline-flex h-auto min-h-10 max-w-full flex-wrap items-center justify-center rounded-lg p-1" style="background-color: var(--color-surface); color: var(--color-muted)">
 	<button
 		type="button"
 		class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
@@ -1132,7 +1132,7 @@
 <!-- Upload Modal (page-local, preserved from legacy) -->
 <Modal bind:open={showUploadModal} title={t('app.media.modal_upload_title', 'Upload Media')}>
 	<!-- Sub-tab switcher: Upload files vs Stock photos -->
-	<div class="mb-4 inline-flex h-10 items-center justify-center rounded-lg p-1" style="background-color: var(--color-surface); color: var(--color-muted)">
+	<div class="mb-4 inline-flex h-auto min-h-10 max-w-full flex-wrap items-center justify-center rounded-lg p-1" style="background-color: var(--color-surface); color: var(--color-muted)">
 		<button
 			type="button"
 			class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
@@ -1176,7 +1176,7 @@
 			{#if uploadFiles.length > 0}
 				<div class="max-h-40 space-y-1 overflow-y-auto">
 					{#each uploadFiles as file, i (i)}
-						<div class="flex items-center justify-between rounded-lg bg-surface px-3 py-1.5 text-sm">
+						<div class="flex items-center justify-between gap-2 flex-wrap rounded-lg bg-surface px-3 py-1.5 text-sm">
 							<span class="truncate text-foreground">{file.name}</span>
 							<span class="ms-2 shrink-0 text-xs text-muted">{formatFileSize(file.size)}</span>
 							<button
@@ -1301,7 +1301,7 @@
 									<img src={photo.thumbnail_url} alt={photo.description ?? ''} loading="lazy" class="aspect-square w-full object-cover" />
 									<div class="absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/60 via-transparent to-transparent p-2">
 										<span class="truncate text-xs text-white/90">{photo.photographer}</span>
-										<div class="flex items-center justify-between">
+										<div class="flex items-center justify-between gap-2 flex-wrap">
 											{#if photo.license && (photo.license === 'cc-by' || photo.license === 'cc-by-sa' || photo.license === 'cc0')}
 												<span class="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-medium text-white">{photo.license.toUpperCase()}</span>
 											{:else}
@@ -1407,8 +1407,8 @@
 		onwheel={onViewerWheel}
 	>
 		<!-- Toolbar -->
-		<div class="absolute top-0 start-0 end-0 flex items-center justify-between p-4 text-white" onclick={(e) => e.stopPropagation()}>
-			<div class="flex items-center gap-2">
+		<div class="absolute top-0 start-0 end-0 flex items-center justify-between flex-wrap gap-2 p-4 text-white" onclick={(e) => e.stopPropagation()}>
+			<div class="flex min-w-0 items-center gap-2">
 				<Button variant="ghost" size="sm" class="text-white hover:bg-white/10" onclick={closeViewer}>
 					<X class="h-5 w-5" />
 				</Button>
@@ -1654,7 +1654,7 @@
 			{#if row.caption}
 				<p class="truncate text-xs text-muted">{row.filename}</p>
 			{/if}
-			<div class="mt-1 flex items-center justify-between">
+			<div class="mt-1 flex items-center justify-between gap-2 flex-wrap">
 				<p class="text-xs text-muted">{formatFileSize(row.file_size)}</p>
 				<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium {row.status === 'approved' ? 'bg-success/15 text-success' : row.status === 'pending' ? 'bg-warning/15 text-warning' : row.status === 'quarantined' ? 'bg-danger/15 text-danger' : 'bg-surface text-foreground-alt'}">
 					{row.status || 'pending'}

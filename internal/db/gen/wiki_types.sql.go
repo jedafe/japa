@@ -1506,8 +1506,8 @@ SELECT id, space_type_id, slug, category, label, field_group_id,
        position, is_system, created_at, rollup, icon
 FROM wiki_type_categories
 WHERE space_type_id = $1
-  AND (lower(category) = lower($2)
-       OR lower(replace(slug, '-', '_')) = lower($2))
+  AND (lower(replace(category, '-', '_')) = lower(replace($2, '-', '_'))
+       OR lower(replace(slug, '-', '_')) = lower(replace($2, '-', '_')))
 ORDER BY position ASC
 LIMIT 1
 `

@@ -164,7 +164,7 @@
 			{@const draft = drafts[p.name]}
 			<Card>
 				<CardHeader>
-					<div class="flex items-center justify-between">
+					<div class="flex items-center justify-between gap-2 flex-wrap">
 						<h3 class="text-lg font-medium" style="color: var(--color-foreground)">
 							{p.name}
 							{#if p.is_system}

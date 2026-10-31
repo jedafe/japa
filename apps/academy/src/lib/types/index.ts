@@ -338,8 +338,8 @@ export interface QuizResult {
 	passed: boolean;
 	earned_points: number;
 	total_points: number;
-	/** Per-question feedback. */
-	results: Array<{
+	/** Per-question feedback — only present on a passed attempt (H1). */
+	results?: Array<{
 		question_id: string;
 		correct: boolean;
 		selected: string[];

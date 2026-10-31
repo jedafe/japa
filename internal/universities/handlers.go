@@ -59,6 +59,7 @@ type SpacesService interface {
 	// for a page of space ids — used to stamp is_member/is_pending/is_following
 	// on university cards so follow/join toggles render the correct state.
 	ListViewerSpaceRelations(ctx context.Context, viewerUserID pgtype.UUID, spaceIDs []pgtype.UUID) (map[string]spaces.ViewerSpaceRelations, error)
+	CountSpaceStats(ctx context.Context, spaceIDs []pgtype.UUID) (map[string]spaces.SpaceStat, error)
 }
 
 // CustomFieldsService is the subset of customfields.Service the university
@@ -279,6 +280,7 @@ type universityDetail struct {
 	IsMember      bool                   `json:"is_member"`
 	IsPending     bool                   `json:"is_pending"`
 	IsFollowing   bool                   `json:"is_following"`
+	DiscussionCount int32                 `json:"discussion_count"`
 }
 
 // ListUniversities handles GET /api/v1/universities — every space of the
@@ -547,6 +549,11 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var discussionCount int32
+	if stats, serr := h.spaces.CountSpaceStats(r.Context(), []pgtype.UUID{space.ID}); serr == nil {
+		discussionCount = stats[space.ID.String()].DiscussionCount
+	}
+
 	h.resolveLiterals(r, &space)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": universityDetail{
@@ -558,6 +565,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		IsMember:          isMember,
 		IsPending:         isPending,
 		IsFollowing:       isFollowing,
+		DiscussionCount:   discussionCount,
 	}})
 }
 

@@ -90,7 +90,7 @@
 			<a href="/docs" class="back-link">← {t('page.back_to_docs')}</a>
 			<h1>{t('audience.api', 'API')}</h1>
 			<p class="audience-desc">
-				{t('api.landing_desc', 'REST API reference, authentication guides, and an interactive playground for testing endpoints.')}
+				{t('api.landing_desc', 'REST API reference, authentication guides, and an interactive playground for testing endpoints. Covers the public X-API-Key surface; session-authenticated endpoints are documented internally.')}
 			</p>
 			{#if data.canEditDocs}
 				<div class="audience-actions">

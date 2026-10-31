@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Bookmark, MessageCircle, Share2, Check, Heart, Copy, Flag } from 'lucide-svelte';
+	import { Bookmark, MessageCircle, Share2, Check, Heart, Flag, MoreVertical } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { getReactionTypes, type ReactionType } from '$lib/api/reactions';
@@ -9,6 +9,9 @@
 	import { page } from '$app/state';
 	import { shareContrastColor } from '$lib/utils/shareColor';
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
+	import TipButton from '$lib/components/tips/TipButton.svelte';
+	import { Menu, MenuItem } from '$lib/components/ui';
+	import type { SessionUser } from '$lib/types';
 
 	interface SharePlatform {
 		key: string;
@@ -38,6 +41,11 @@
 		horizontal?: boolean;
 		/** Fixed bottom bar for mobile (positions popovers above and adds safe-area padding). */
 		bottom?: boolean;
+		/** Content author — powers the tip affordance that replaced the old
+		 *  copy-link button on the horizontal rail (§125). */
+		authorUsername?: string | null;
+		authorId?: string | null;
+		authorName?: string | null;
 	}
 	let {
 		contentId,
@@ -46,7 +54,10 @@
 		bookmarked = false,
 		authed = false,
 		horizontal = false,
-		bottom = false
+		bottom = false,
+		authorUsername,
+		authorId,
+		authorName
 	}: Props = $props();
 
 	const features = $derived((page.data.features as Record<string, boolean> | undefined) ?? {});
@@ -82,6 +93,8 @@
 		}
 	}
 	const bookmarksEnabled = $derived(features['feature.bookmarks'] ?? true);
+	const tipsEnabled = $derived(features['tips.enabled'] ?? false);
+	const viewerId = $derived((page.data.user as SessionUser | null | undefined)?.id);
 
 	const isHorizontal = $derived(horizontal || bottom);
 	const reactionPopoverPosition = $derived(bottom ? 'start-0 bottom-[calc(100%+0.5rem)] sm:bottom-auto sm:start-1/2 sm:top-10 sm:-translate-x-1/2' : (isHorizontal ? 'start-1/2 top-10 -translate-x-1/2' : 'start-12 top-0'));
@@ -98,7 +111,6 @@
 	let reactionPending = $state<string | null>(null);
 	let bookmarkPending = $state(false);
 	let shared = $state(false);
-	let copied = $state(false);
 	let showShareMenu = $state(false);
 	let reportOpen = $state(false);
 	let showReactions = $state(false);
@@ -307,17 +319,6 @@
 		}
 		showShareMenu = false;
 		setTimeout(() => (shared = false), 2000);
-	}
-
-	async function copyOnly() {
-		const url = window.location.href;
-		try {
-			await navigator.clipboard.writeText(url);
-			copied = true;
-		} catch {
-			// Clipboard failed — silently ignore
-		}
-		setTimeout(() => (copied = false), 2000);
 	}
 
 	function toggleShareMenu() {
@@ -596,39 +597,54 @@
 		{/if}
 	</div>
 
+	<!-- Actions overflow (horizontal rail) — always the 5th slot, keeping the
+	     rail at exactly five evenly-spaced buttons like the discussion rail.
+	     Extras live inside: Tip (when the author is tippable) and Report. -->
 	{#if isHorizontal}
+		<Menu side="top" contentClass="min-w-40">
+			{#snippet trigger(props)}
+				<button
+					type="button"
+					{...props}
+					class="flex flex-1 items-center justify-center text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+					aria-label={t('comments.options', 'More options')}
+					title={t('comments.options', 'More options')}
+				>
+					<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+						<MoreVertical size={18} />
+					</span>
+				</button>
+			{/snippet}
+			{#if tipsEnabled && authorUsername && viewerId !== authorId}
+				<TipButton
+					recipientType="user"
+					recipientKey={authorUsername}
+					recipientId={authorId ?? ''}
+					recipientName={authorName ?? authorUsername}
+					{contentId}
+					menuItem
+				/>
+			{/if}
+			<MenuItem icon={Flag} onSelect={() => { if (requireAuth()) reportOpen = true; }}>{t('report.action', 'Report')}</MenuItem>
+		</Menu>
+	{:else}
+		<!-- Vertical rail — Report stays a visible stacked button (no overflow
+		     menu; the vertical strip has room). -->
 		<button
 			type="button"
-			onclick={copyOnly}
-			class="flex flex-1 items-center justify-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
-			aria-label={t('blog.copy_link', 'Copy link')}
+			onclick={() => {
+				if (!requireAuth()) return;
+				reportOpen = true;
+			}}
+			class="flex flex-col items-center gap-1 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+			aria-label={t('report.action', 'Report')}
+			title={t('report.action', 'Report')}
 		>
 			<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
-				{#if copied}
-					<Check size={18} class="text-[var(--color-success)]" />
-				{:else}
-					<Copy size={18} />
-				{/if}
+				<Flag size={18} />
 			</span>
 		</button>
 	{/if}
-
-	<!-- Report (Section 51) — guests are sent to /login, matching the rail's
-	     other authenticated actions. -->
-	<button
-		type="button"
-		onclick={() => {
-			if (!requireAuth()) return;
-			reportOpen = true;
-		}}
-		class="flex {isHorizontal ? 'flex-1 items-center justify-center' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
-		aria-label={t('report.action', 'Report')}
-		title={t('report.action', 'Report')}
-	>
-		<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
-			<Flag size={18} />
-		</span>
-	</button>
 </div>
 
 <ReportDialog bind:open={reportOpen} entityType="content" entityId={contentId} />

@@ -284,7 +284,7 @@
 <!-- Stats dashboard -->
 {#if canManage}
 	<div class="mb-6 space-y-4">
-		<div class="flex items-center justify-between">
+		<div class="flex items-center justify-between gap-2 flex-wrap">
 			<h2 class="flex items-center gap-2 text-sm font-semibold" style="color: var(--color-muted)">
 				<BarChart3 size={16} />
 				{t('app.tools.readiness_stats', 'Score Distribution & Completion')}
@@ -455,7 +455,7 @@
 			onclick={() => (showConfig = false)}
 		></button>
 		<div class="relative h-full w-full max-w-lg overflow-y-auto border-s p-6" style="border-color: var(--color-border); background: var(--color-surface)">
-			<div class="mb-4 flex items-center justify-between">
+			<div class="mb-4 flex items-center justify-between gap-2 flex-wrap">
 				<h2 class="text-base font-semibold" style="color: var(--color-foreground)">
 					{t('app.tools.readiness_form_config', 'Assessment Form Config')}
 				</h2>

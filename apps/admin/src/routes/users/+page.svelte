@@ -521,7 +521,7 @@
 <!-- Impersonation Banner -->
 {#if impersonating}
 	<div
-		class="mb-4 flex items-center justify-between rounded-lg p-3 text-sm"
+		class="mb-4 flex items-center justify-between gap-2 flex-wrap rounded-lg p-3 text-sm"
 		style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)"
 	>
 		<span>{t("users.impersonating", "Impersonating")} <strong>{impersonatingTargetId ?? ''}</strong></span>

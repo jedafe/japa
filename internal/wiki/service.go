@@ -737,7 +737,7 @@ func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) (*WikiInde
 	}
 
 	out := &WikiIndexDTO{Pages: dtos, Indexable: s.store.HasApprovedPage(ctx, spaceID, s.wikiMinWords(ctx))}
-	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+	if spaceTypeID, _, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 		out.EntityChildren = s.entityChildren(ctx, spaceID, spaceTypeID)
 	}
@@ -811,7 +811,7 @@ func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.
 	}
 
 	out := &WikiIndexDTO{Pages: dtos, Indexable: s.store.HasApprovedPage(ctx, spaceID, s.wikiMinWords(ctx))}
-	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+	if spaceTypeID, _, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 		out.EntityChildren = s.entityChildren(ctx, spaceID, spaceTypeID)
 	}
@@ -999,7 +999,7 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 		if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && page.Slug == cat.Slug {
 			if rcfg.Mode == rollupModePages {
 				dto.Rollup = s.computePageRollup(ctx, userID, spaceID, page.SpaceSlug, page.SpaceName, rcfg, cat, templates)
-			} else if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+			} else if spaceTypeID, _, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 				if rcfg.Mode == rollupModeDirectory {
 					dto.Directory = s.computeDirectory(ctx, spaceID, spaceTypeID, rcfg)
 				} else {
@@ -1031,7 +1031,7 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 	// §80 Hierarchical UX: ancestors (breadcrumb chain) + siblings
 	// (Prev/Next) accompany every page read — both degrade to empty on
 	// lookup failure rather than failing the page.
-	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+	if spaceTypeID, _, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 	}
 
@@ -1140,7 +1140,7 @@ func (s *Service) getLazyTemplatePage(ctx context.Context, userID, spaceID pgtyp
 		dto.Parents = s.pageParents(ctx, catPtr, &wt, spaceName)
 	}
 
-	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+	if spaceTypeID, _, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 	}
 
@@ -1230,7 +1230,7 @@ func (s *Service) lazyCategoryPage(ctx context.Context, userID, spaceID pgtype.U
 		dto.Rollup = s.computePageRollup(ctx, userID, spaceID, spaceSlug, spaceName, rcfg, cat, templates)
 	}
 
-	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
+	if spaceTypeID, _, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 
 		if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && rcfg.Mode != rollupModePages {
@@ -1533,7 +1533,7 @@ func canonicalizePageInput(input CreateWikiPageInput) (slug, category, title str
 // category); real DB errors propagate — writing the wrong bucket is worse
 // than failing.
 func (s *Service) canonicalCategory(ctx context.Context, spaceID pgtype.UUID, category string) (string, error) {
-	spaceTypeID, _, err := s.store.GetSpaceTypeRef(ctx, spaceID)
+	spaceTypeID, _, _, err := s.store.GetSpaceTypeRef(ctx, spaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return category, nil
@@ -2203,7 +2203,7 @@ func (s *Service) SeedStubPages(ctx context.Context, spaceID pgtype.UUID) error 
 		return errors.New("wiki: seed stub pages: space_id is required")
 	}
 
-	spaceTypeID, _, err := s.store.GetSpaceTypeRef(ctx, spaceID)
+	spaceTypeID, _, _, err := s.store.GetSpaceTypeRef(ctx, spaceID)
 	if err != nil {
 		return fmt.Errorf("wiki: seed stub pages: resolve space type: %w", err)
 	}

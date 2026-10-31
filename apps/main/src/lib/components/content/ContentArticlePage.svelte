@@ -8,7 +8,6 @@
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
-	import TipButton from '$lib/components/tips/TipButton.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
 	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
@@ -426,17 +425,10 @@
 					commentCount={article.comment_count}
 					authed={data.authed}
 					bottom
+					authorUsername={article.author_username}
+					authorId={article.author_id}
+					authorName={article.author_name}
 				/>
-				{#if page.data.features?.['tips.enabled'] && article.author_username && sidebarUser?.id !== article.author_id}
-					<TipButton
-						recipientType="user"
-						recipientKey={article.author_username}
-						recipientId={article.author_id ?? ''}
-						recipientName={article.author_name ?? article.author_username}
-						contentId={article.id}
-						compact
-					/>
-				{/if}
 			</div>
 		</div>
 

@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import type { WikiHelpful } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
 export interface EntityWikiPage {
@@ -31,6 +32,14 @@ export interface EntityWikiPage {
 		items: { slug: string; name: string; geo_code?: string; offering_slug?: string }[];
 		total: number;
 	};
+	/** Host-space breadcrumb chain (the entity's country/state/city) —
+	 *  same shape as the space-page ancestors. */
+	ancestors?: { slug: string; name: string; level?: string }[];
+	ancestors_alt?: { slug: string; name: string; level?: string }[];
+	siblings?: { slug: string; title: string; current?: boolean }[];
+	helpful?: WikiHelpful | null;
+	revision_summary?: string;
+	submitted_by?: string;
 }
 
 // Entity-bound wiki page: /wiki/e/{type_slug}/{entity}/{page_slug}

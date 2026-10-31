@@ -22,7 +22,7 @@ func (q *Queries) ClearDocPageParent(ctx context.Context, id pgtype.UUID) error 
 }
 
 const createDocPage = `-- name: CreateDocPage :one
-INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::uuid)
 
 RETURNING id
 `
@@ -38,6 +38,7 @@ type CreateDocPageParams struct {
 	Position     int32       `json:"position"`
 	Category     *string     `json:"category"`
 	Subcategory  *string     `json:"subcategory"`
+	CreatedBy    pgtype.UUID `json:"created_by"`
 }
 
 func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (pgtype.UUID, error) {
@@ -52,6 +53,7 @@ func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (p
 		arg.Position,
 		arg.Category,
 		arg.Subcategory,
+		arg.CreatedBy,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
@@ -300,14 +302,20 @@ func (q *Queries) GetDocPageFeedback(ctx context.Context, arg GetDocPageFeedback
 }
 
 const getDocPageStatus = `-- name: GetDocPageStatus :one
-SELECT review_status FROM doc_pages WHERE id = $1
+SELECT review_status, created_by, ai_generated FROM doc_pages WHERE id = $1
 `
 
-func (q *Queries) GetDocPageStatus(ctx context.Context, id pgtype.UUID) (string, error) {
+type GetDocPageStatusRow struct {
+	ReviewStatus string      `json:"review_status"`
+	CreatedBy    pgtype.UUID `json:"created_by"`
+	AiGenerated  bool        `json:"ai_generated"`
+}
+
+func (q *Queries) GetDocPageStatus(ctx context.Context, id pgtype.UUID) (GetDocPageStatusRow, error) {
 	row := q.db.QueryRow(ctx, getDocPageStatus, id)
-	var review_status string
-	err := row.Scan(&review_status)
-	return review_status, err
+	var i GetDocPageStatusRow
+	err := row.Scan(&i.ReviewStatus, &i.CreatedBy, &i.AiGenerated)
+	return i, err
 }
 
 const incrementDocPageHelpful = `-- name: IncrementDocPageHelpful :exec
@@ -334,7 +342,13 @@ SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
 FROM doc_pages
 
 ORDER BY audience ASC, position ASC, title ASC
+LIMIT NULLIF($2::int, 0) OFFSET COALESCE($1::int, 0)
 `
+
+type ListAllDocPagesParams struct {
+	ResultOffset int32 `json:"result_offset"`
+	ResultLimit  int32 `json:"result_limit"`
+}
 
 type ListAllDocPagesRow struct {
 	ID             pgtype.UUID        `json:"id"`
@@ -353,8 +367,8 @@ type ListAllDocPagesRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) ListAllDocPages(ctx context.Context) ([]ListAllDocPagesRow, error) {
-	rows, err := q.db.Query(ctx, listAllDocPages)
+func (q *Queries) ListAllDocPages(ctx context.Context, arg ListAllDocPagesParams) ([]ListAllDocPagesRow, error) {
+	rows, err := q.db.Query(ctx, listAllDocPages, arg.ResultOffset, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +408,14 @@ SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
 FROM doc_pages
 WHERE audience = $1
 ORDER BY position ASC, title ASC
+LIMIT NULLIF($3::int, 0) OFFSET COALESCE($2::int, 0)
 `
+
+type ListAllDocPagesByAudienceParams struct {
+	Audience     string `json:"audience"`
+	ResultOffset int32  `json:"result_offset"`
+	ResultLimit  int32  `json:"result_limit"`
+}
 
 type ListAllDocPagesByAudienceRow struct {
 	ID             pgtype.UUID        `json:"id"`
@@ -413,8 +434,8 @@ type ListAllDocPagesByAudienceRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, audience string) ([]ListAllDocPagesByAudienceRow, error) {
-	rows, err := q.db.Query(ctx, listAllDocPagesByAudience, audience)
+func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, arg ListAllDocPagesByAudienceParams) ([]ListAllDocPagesByAudienceRow, error) {
+	rows, err := q.db.Query(ctx, listAllDocPagesByAudience, arg.Audience, arg.ResultOffset, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -557,7 +578,13 @@ SELECT id, title, slug, audience, parent_id, position, category, subcategory, cr
 FROM doc_pages
 WHERE review_status = 'published'
 ORDER BY audience ASC, position ASC, title ASC
+LIMIT NULLIF($2::int, 0) OFFSET COALESCE($1::int, 0)
 `
+
+type ListPublishedDocPagesParams struct {
+	ResultOffset int32 `json:"result_offset"`
+	ResultLimit  int32 `json:"result_limit"`
+}
 
 type ListPublishedDocPagesRow struct {
 	ID          pgtype.UUID        `json:"id"`
@@ -571,8 +598,8 @@ type ListPublishedDocPagesRow struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) ListPublishedDocPages(ctx context.Context) ([]ListPublishedDocPagesRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedDocPages)
+func (q *Queries) ListPublishedDocPages(ctx context.Context, arg ListPublishedDocPagesParams) ([]ListPublishedDocPagesRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedDocPages, arg.ResultOffset, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}

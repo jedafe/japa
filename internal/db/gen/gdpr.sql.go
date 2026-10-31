@@ -1950,6 +1950,18 @@ func (q *Queries) GdprExportUserDocPageVotes(ctx context.Context, userID pgtype.
 	return data, err
 }
 
+const gdprExportUserEnrollments = `-- name: GdprExportUserEnrollments :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at, payment_id FROM academy_enrollments WHERE user_id = $1) t
+`
+
+func (q *Queries) GdprExportUserEnrollments(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserEnrollments, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserFollows = `-- name: GdprExportUserFollows :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, follower_id, entity_type, entity_id, created_at FROM follows WHERE follower_id = $1) t
@@ -2294,6 +2306,18 @@ FROM (SELECT id, user_id, display_name, avatar_url, bio, timezone, business_name
 // =====================
 func (q *Queries) GdprExportUserProfiles(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserProfiles, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserQuizAttempts = `-- name: GdprExportUserQuizAttempts :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT user_id, lesson_id, attempts, updated_at FROM academy_quiz_attempts WHERE user_id = $1) t
+`
+
+func (q *Queries) GdprExportUserQuizAttempts(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserQuizAttempts, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err

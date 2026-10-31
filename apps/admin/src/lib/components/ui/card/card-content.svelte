@@ -13,7 +13,7 @@
 </script>
 
 <div
-  class={clsx("p-6 pt-0", className)}
+  class={clsx("p-4 pt-0 sm:p-6 sm:pt-0", className)}
   {...restProps}
 >
   {@render children?.()}

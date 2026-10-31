@@ -107,7 +107,7 @@
 		<!-- Active session status -->
 		<Card>
 			<CardHeader>
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<h2 class="text-lg font-semibold">{t('impersonate.current_session', 'Current Session')}</h2>
 					<Button variant="outline" size="sm" onclick={loadStatus} disabled={loading}>
 						<RefreshCw class="me-1.5 h-3.5 w-3.5" />

@@ -258,6 +258,7 @@
 					lastReviewedAt={data.page.last_reviewed_at}
 					lastReviewedBy={data.page.last_reviewed_by}
 					published={data.page.review_status === 'published'}
+					feedback={data.feedback}
 				/>
 			</div>
 		{/if}

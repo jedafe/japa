@@ -36,9 +36,15 @@
 	);
 
 	// Expand/collapse state per audience section (keyed by audience slug).
-	// Default: the active audience is expanded, others collapsed.
+	// Default: all sections that have pages start expanded — a fully
+	// collapsed nav on the landing page hid the entire tree behind clicks.
 	let expanded = $state<Record<string, boolean>>({});
 	$effect(() => {
+		for (const tree of nav) {
+			if (!(tree.audience in expanded) && tree.items.length > 0) {
+				expanded[tree.audience] = true;
+			}
+		}
 		if (activeAudience) expanded[activeAudience] = true;
 	});
 

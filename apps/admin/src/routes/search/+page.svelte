@@ -355,7 +355,7 @@
 	{/if}
 
 	<!-- Tabs -->
-	<div class="mb-4 flex gap-1 border-b" style="border-color: var(--color-border)">
+	<div class="mb-4 flex gap-1 overflow-x-auto border-b" style="border-color: var(--color-border)">
 		{#each tabs as tab (tab)}
 			<button
 				class="relative px-4 py-2 text-sm font-medium transition-colors"

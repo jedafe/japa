@@ -408,16 +408,23 @@ SELECT
  (
  SELECT COUNT(*) FROM follows f
  WHERE f.entity_type = 'space' AND f.entity_id = s.id
- )::int AS follower_count
+ )::int AS follower_count,
+ (
+ SELECT COUNT(*) FROM contents c
+ JOIN forum_threads ft ON ft.content_id = c.id
+ WHERE c.space_id = s.id
+ AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'
+ )::int AS discussion_count
 FROM spaces s
 WHERE s.id = ANY($1::uuid[])
 `
 
 type CountSpaceStatsRow struct {
-	ID            pgtype.UUID `json:"id"`
-	MemberCount   int32       `json:"member_count"`
-	PostCount     int32       `json:"post_count"`
-	FollowerCount int32       `json:"follower_count"`
+	ID              pgtype.UUID `json:"id"`
+	MemberCount     int32       `json:"member_count"`
+	PostCount       int32       `json:"post_count"`
+	FollowerCount   int32       `json:"follower_count"`
+	DiscussionCount int32       `json:"discussion_count"`
 }
 
 // =====================
@@ -440,6 +447,7 @@ func (q *Queries) CountSpaceStats(ctx context.Context, spaceIds []pgtype.UUID) (
 			&i.MemberCount,
 			&i.PostCount,
 			&i.FollowerCount,
+			&i.DiscussionCount,
 		); err != nil {
 			return nil, err
 		}

@@ -169,7 +169,7 @@
 />
 
 {#if errorMessage}
-	<div class="mb-4 flex items-center justify-between rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+	<div class="mb-4 flex items-center justify-between gap-2 flex-wrap rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
 		<span>{errorMessage}</span>
 		<Button variant="outline" size="sm" onclick={load}>{t("common.retry", "Retry")}</Button>
 	</div>
@@ -183,7 +183,7 @@
 				class="group flex flex-col rounded-lg border p-5 transition-colors hover:border-primary/40"
 				style="border-color: var(--color-border); background-color: var(--color-surface)"
 			>
-				<div class="flex items-start justify-between">
+				<div class="flex items-start justify-between gap-2 flex-wrap">
 					<div class="flex h-11 w-11 items-center justify-center rounded-lg" style="background-color: color-mix(in srgb, var(--color-primary) 12%, transparent)">
 						<card.icon class="h-5 w-5" style="color: var(--color-primary)" />
 					</div>

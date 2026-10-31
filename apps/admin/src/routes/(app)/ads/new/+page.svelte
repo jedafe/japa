@@ -274,7 +274,7 @@
 
 			<!-- Body with mode tabs: Text / HTML / Image -->
 			<div>
-				<div class="mb-1 flex items-center justify-between">
+				<div class="mb-1 flex items-center justify-between gap-2 flex-wrap">
 					<label for="ad-body" class="block text-sm font-medium">{t('ads.body', 'Body')}</label>
 					<div class="flex gap-1">
 						<button

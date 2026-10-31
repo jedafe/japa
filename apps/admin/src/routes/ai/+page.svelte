@@ -588,7 +588,7 @@
 
 			{#if generateResult}
 				<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-background)">
-					<div class="mb-3 flex items-center justify-between">
+					<div class="mb-3 flex items-center justify-between gap-2 flex-wrap">
 						<h3 class="text-sm font-semibold">{t('ai.result')}</h3>
 						<button
 							class="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
@@ -690,7 +690,7 @@
 			/>
 
 			<!-- Pagination -->
-			<div class="mt-3 flex items-center justify-between">
+			<div class="mt-3 flex items-center justify-between gap-2 flex-wrap">
 				<p class="text-xs" style="color: var(--color-muted)">Page {page + 1} of {totalPages}</p>
 				<div class="flex gap-1">
 					<button class="rounded p-1 hover:bg-black/5 dark:hover:bg-surface/10 disabled:opacity-40" disabled={page === 0} onclick={() => changePage(-1)}>&larr;</button>

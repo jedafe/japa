@@ -326,6 +326,9 @@
 				commentCount={article.comment_count}
 				authed={data.authed}
 				bottom
+				authorUsername={article.author_username}
+				authorId={article.author_id}
+				authorName={article.author_name}
 			/>
 		</div>
 

@@ -397,7 +397,7 @@
 						{@const value = getField((result as unknown as Record<string, string>)[field.key])}
 						{@const present = value.length > 0}
 						<div class="rounded-lg border p-3" style="border-color: var(--color-border); background: var(--color-background)">
-							<div class="mb-1 flex items-center justify-between">
+							<div class="mb-1 flex items-center justify-between gap-2 flex-wrap">
 								<span class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{field.label}</span>
 								{#if present}
 									<CheckCircle2 class="h-3.5 w-3.5" style="color: var(--color-success)" />

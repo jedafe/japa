@@ -92,7 +92,7 @@
 					>{t('common.none', 'none')}</button>
 				</span>
 			</summary>
-			<div class="grid grid-cols-2 gap-1.5 border-t px-2 py-2" style="border-color: var(--color-border)">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 border-t px-2 py-2" style="border-color: var(--color-border)">
 				{#each keys as perm (perm)}
 					{@const locked = perm === '*' && !isOwner}
 					{@const hint = hintFor(perm)}

@@ -171,6 +171,8 @@
 			{/if}
 			<dt class="text-xs text-[var(--color-muted)]">{t('space.posts', 'Posts')}</dt>
 			<dd class="text-sm font-medium text-[var(--color-text)]">{space.post_count}</dd>
+			<dt class="text-xs text-[var(--color-muted)]">{t('space.discussions', 'Discussions')}</dt>
+			<dd class="text-sm font-medium text-[var(--color-text)]">{space.discussion_count ?? 0}</dd>
 			<dt class="text-xs text-[var(--color-muted)]">{t('space.followers', 'Followers')}</dt>
 			<dd class="text-sm font-medium text-[var(--color-text)]">
 				<!-- GET /spaces/{id}/followers is OptionalAuth — guests can open

@@ -14,10 +14,15 @@
 		pageSlug,
 		helpful,
 		authed,
+		endpoint = undefined,
 		children
 	}: {
 		spaceSlug: string;
 		pageSlug: string;
+		/** Entity-bound pages pass their own feedback path
+		 *  (/wiki/e/{type}/{entity}/{page}/feedback); defaults to the
+		 *  space-scoped route. */
+		endpoint?: string;
 		helpful: WikiHelpful | null | undefined;
 		authed: boolean;
 		/** Trailing slot (e.g. the SuggestEdit trigger) — right-aligned in
@@ -44,7 +49,7 @@
 		loading = true;
 		errorKey = '';
 		const res = await api.post<WikiHelpful>(
-			`/wiki/${encodeURIComponent(spaceSlug)}/${encodeURIComponent(pageSlug)}/feedback`,
+			endpoint ?? `/wiki/${encodeURIComponent(spaceSlug)}/${encodeURIComponent(pageSlug)}/feedback`,
 			{ vote: v }
 		);
 		loading = false;

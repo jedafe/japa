@@ -408,7 +408,7 @@
 				{:else}
 					<div class="divide-y divide-border">
 						{#each v2Flagged as row}
-							<div class="flex items-center justify-between gap-4 p-4">
+							<div class="flex items-center justify-between flex-wrap gap-4 p-4">
 								<div class="min-w-0 flex-1">
 									<p class="font-mono text-xs font-medium text-foreground">{row.referral_code}</p>
 									<p class="mt-1 text-xs text-danger">Flagged: {row.flagged_reason ?? 'unknown'}</p>

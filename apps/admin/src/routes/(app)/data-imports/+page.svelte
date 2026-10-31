@@ -299,7 +299,7 @@
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
 		<Card>
 			<CardContent class="p-6">
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<div>
 						<p class="text-sm font-medium text-muted">{t('app.data_imports.total_imports', 'Total Imports')}</p>
 						<p class="text-2xl font-bold text-foreground">{summaryData.length}</p>
@@ -312,7 +312,7 @@
 		</Card>
 		<Card>
 			<CardContent class="p-6">
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<div>
 						<p class="text-sm font-medium text-muted">{t('app.data_imports.in_progress', 'In Progress')}</p>
 						<p class="text-2xl font-bold text-warning-600">
@@ -327,7 +327,7 @@
 		</Card>
 		<Card>
 			<CardContent class="p-6">
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<div>
 						<p class="text-sm font-medium text-muted">{t('app.data_imports.completed', 'Completed')}</p>
 						<p class="text-2xl font-bold text-success-600">{summaryData.filter((i) => i.status === 'completed').length}</p>
@@ -340,7 +340,7 @@
 		</Card>
 		<Card>
 			<CardContent class="p-6">
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<div>
 						<p class="text-sm font-medium text-muted">{t('app.data_imports.failed', 'Failed / Partial')}</p>
 						<p class="text-2xl font-bold text-danger-600">

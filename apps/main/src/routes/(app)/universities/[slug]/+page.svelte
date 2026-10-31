@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
-	import { GraduationCap, MessageSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink, Pencil, Trash2, Heart } from 'lucide-svelte';
+	import { GraduationCap, MessageSquare, MessagesSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink, Pencil, Trash2, Heart } from 'lucide-svelte';
 	import { EmptyState, UrlTabs, type UrlTab, SpaceJoinButton } from '$lib/components/ui';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
@@ -227,6 +227,11 @@
 			icon: Heart,
 			label: t('university.followers', 'Followers'),
 			value: university.follower_count
+		},
+		{
+			icon: MessagesSquare,
+			label: t('university.discussions_stat', 'Discussions'),
+			value: university.discussion_count ?? 0
 		}
 	]);
 

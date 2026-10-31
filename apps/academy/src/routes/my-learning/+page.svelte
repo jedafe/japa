@@ -13,11 +13,14 @@
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import { LayoutDashboard, CheckCircle, AlertTriangle, RotateCw } from 'lucide-svelte';
 	import type { Enrollment } from '$lib/types';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
 
 	// Subscribe to the shared academy_enrollments store — avoids duplicate API calls
 	// and ensures mutations (enroll, mark-complete) propagate to all widgets.
 	$effect(() => {
-		enrollmentsStore.fetch();
+		enrollmentsStore.fetch(!!data.user);
 	});
 
 	const academy_enrollments = $derived(enrollmentsStore.academy_enrollments ?? []);

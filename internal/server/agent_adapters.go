@@ -32,6 +32,7 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/arrivalchecklist"
 	"github.com/jedafe/japa/internal/attestationguide"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/calendar"
 	"github.com/jedafe/japa/internal/campaign"
 	"github.com/jedafe/japa/internal/comments"
@@ -990,8 +991,19 @@ func (a *agentDocsAdapter) GetDocPageByID(ctx context.Context, id pgtype.UUID) (
 	return &aiP, nil
 }
 
-func (a *agentDocsAdapter) CreateDocPage(ctx context.Context, req ai.DocsCreatePageRequest) (pgtype.UUID, error) {
-	return a.svc.CreateDocPage(ctx, docs.CreateDocPageRequest{
+// withActor stamps the calling user into ctx when the executor's context
+// does not already carry one — created_by (and the §44 self-review check)
+// must reflect the human driving the agent, not a possibly-absent request
+// context.
+func withActor(ctx context.Context, userID pgtype.UUID) context.Context {
+	if auth.FromContext(ctx) != nil || !userID.Valid {
+		return ctx
+	}
+	return context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{UserID: userID})
+}
+
+func (a *agentDocsAdapter) CreateDocPage(ctx context.Context, req ai.DocsCreatePageRequest, userID pgtype.UUID) (pgtype.UUID, error) {
+	return a.svc.CreateDocPage(withActor(ctx, userID), docs.CreateDocPageRequest{
 		Title:        req.Title,
 		Slug:         req.Slug,
 		Audience:     req.Audience,
@@ -2016,7 +2028,9 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			return pgtype.UUID{}, "", false, nil
 		}
 
-		resp, err := a.docsSvc.GenerateDraft(ctx, docs.GenerateDraftRequest{
+		// The persona's backing user is the draft author (same convention as
+		// AuthorID on contents/stories) — stamp it so created_by is recorded.
+		resp, err := a.docsSvc.GenerateDraft(withActor(ctx, persona.UserID), docs.GenerateDraftRequest{
 			Title:  job.TopicPrompt,
 			Prompt: promptWithCtx,
 		})

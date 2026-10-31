@@ -144,11 +144,12 @@ func (s *Store) listByAudience(ctx context.Context, audience string) ([]gen.List
 }
 
 // listAllByAudience returns all doc pages (any status) for an audience.
-func (s *Store) listAllByAudience(ctx context.Context, audience string) ([]gen.ListAllDocPagesByAudienceRow, error) {
-	rows, err := s.read.ListAllDocPagesByAudience(ctx,
-
-		audience,
-	)
+func (s *Store) listAllByAudience(ctx context.Context, audience string, limit, offset int32) ([]gen.ListAllDocPagesByAudienceRow, error) {
+	rows, err := s.read.ListAllDocPagesByAudience(ctx, gen.ListAllDocPagesByAudienceParams{
+		Audience:     audience,
+		ResultLimit:  limit,
+		ResultOffset: offset,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing all doc pages by audience: %w", err)
 	}
@@ -157,8 +158,11 @@ func (s *Store) listAllByAudience(ctx context.Context, audience string) ([]gen.L
 }
 
 // listAll returns all doc pages (any status, any audience) for admin listing.
-func (s *Store) listAll(ctx context.Context) ([]gen.ListAllDocPagesRow, error) {
-	rows, err := s.read.ListAllDocPages(ctx)
+func (s *Store) listAll(ctx context.Context, limit, offset int32) ([]gen.ListAllDocPagesRow, error) {
+	rows, err := s.read.ListAllDocPages(ctx, gen.ListAllDocPagesParams{
+		ResultLimit:  limit,
+		ResultOffset: offset,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing all doc pages: %w", err)
 	}
@@ -168,7 +172,7 @@ func (s *Store) listAll(ctx context.Context) ([]gen.ListAllDocPagesRow, error) {
 
 // listPublished returns all published doc pages across audiences.
 func (s *Store) listPublished(ctx context.Context) ([]gen.ListPublishedDocPagesRow, error) {
-	rows, err := s.read.ListPublishedDocPages(ctx)
+	rows, err := s.read.ListPublishedDocPages(ctx, gen.ListPublishedDocPagesParams{ResultLimit: 0, ResultOffset: 0})
 	if err != nil {
 		return nil, fmt.Errorf("listing published doc pages: %w", err)
 	}
@@ -226,14 +230,15 @@ func (s *Store) updateStatus(ctx context.Context, params gen.UpdateDocPageStatus
 	return nil
 }
 
-// getStatus returns the current review_status of a doc page.
-func (s *Store) getStatus(ctx context.Context, id pgtype.UUID) (string, error) {
-	status, err := s.read.GetDocPageStatus(ctx, id)
+// getStatus returns the status row (review_status, created_by, ai_generated)
+// driving transition + self-review checks.
+func (s *Store) getStatus(ctx context.Context, id pgtype.UUID) (gen.GetDocPageStatusRow, error) {
+	row, err := s.read.GetDocPageStatus(ctx, id)
 	if err != nil {
-		return "", fmt.Errorf("getting doc page status: %w", err)
+		return gen.GetDocPageStatusRow{}, fmt.Errorf("getting doc page status: %w", err)
 	}
 
-	return status, nil
+	return row, nil
 }
 
 // delete removes a doc page and orphans its children. parent_id is an FK to

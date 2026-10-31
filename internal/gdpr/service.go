@@ -1636,8 +1636,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		// any admin who has approved/published doc pages. The doc pages themselves
 		// are retained (they are platform content, not user PII). Ref: §44; ADR-014.
 		if _, err := s.db.Writer.Exec(ctx, `
-			UPDATE doc_pages SET last_reviewed_by = NULL
-			WHERE last_reviewed_by = $1
+			UPDATE doc_pages SET last_reviewed_by = NULL, created_by = NULL
+			WHERE last_reviewed_by = $1 OR created_by = $1
 		`, userID); err != nil {
 			return fmt.Errorf("nullifying doc_pages last_reviewed_by: %w", err)
 		}
@@ -2414,6 +2414,8 @@ type UserDataExport struct {
 	TipsReceived                []map[string]interface{} `json:"tips_received"`
 	ActivityEvents              []map[string]interface{} `json:"activity_events"`
 	AcademyLessonProgress       []map[string]interface{} `json:"academy_lesson_progress"`
+	AcademyEnrollments          []map[string]interface{} `json:"academy_enrollments"`
+	AcademyQuizAttempts         []map[string]interface{} `json:"academy_quiz_attempts"`
 	AcademyCertificates         []map[string]interface{} `json:"academy_certificates"`
 	MentorshipMatches           []map[string]interface{} `json:"mentorship_matches"`
 	MentorshipConnections       []map[string]interface{} `json:"mentorship_connections"` // §102 ADR-110
@@ -2848,6 +2850,17 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		slog.Warn("failed to collect activity_events for export", "user_id", userID.String(), "error", err)
 	}
 
+	// Academy enrollments (access type, payment link, completion state).
+	if rows, err := s.store.gdprExportUserEnrollments(ctx, userID); err == nil {
+		export.AcademyEnrollments = rows
+	} else {
+		slog.Warn("failed to collect academy_enrollments for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportUserQuizAttempts(ctx, userID); err == nil {
+		export.AcademyQuizAttempts = rows
+	} else {
+		slog.Warn("failed to collect academy_quiz_attempts for export", "user_id", userID.String(), "error", err)
+	}
 	// Academy lesson progress.
 	if rows, err := s.store.gdprExportUserLessonProgress(ctx, userID); err == nil {
 		export.AcademyLessonProgress = rows

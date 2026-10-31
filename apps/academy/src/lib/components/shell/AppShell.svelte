@@ -4,7 +4,6 @@
 	import LeftNav from './LeftNav.svelte';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import RightSidebar from './RightSidebar.svelte';
-	import GuestFooter from './GuestFooter.svelte';
 	import LeftRail from './LeftRail.svelte';
 	import { routeSidebar } from './sidebar.svelte';
 	import { t } from '$lib/i18n';
@@ -12,7 +11,7 @@
 
 	interface Props {
 		menu: Menu | null;
-		/** Footer menu from GET /menus/academy_footer — ADR-054. */
+		/** academy_footer menu — rendered at the bottom of the right rail. */
 		footerMenu?: Menu | null;
 		user: SessionUser | null;
 		collapsed: boolean;
@@ -132,13 +131,11 @@
 				</a>
 			</div>
 			{@render children()}
-			<!-- ADR-054: guest footer from the admin-managed academy_footer menu. -->
-			<GuestFooter menu={footerMenu} />
 		</main>
 
 		{#if !hideRightSidebar}
 			<div class="shell-sidebar" data-tour="academy-sidebar">
-				<RightSidebar {user} {sidebar} rightSidebarWidgets={rightSidebarWidgets} suppressAds={lessonPlayer} />
+				<RightSidebar {user} {sidebar} rightSidebarWidgets={rightSidebarWidgets} suppressAds={lessonPlayer} {footerMenu} />
 			</div>
 		{/if}
 	</div>
@@ -196,7 +193,7 @@
 
 		{#if !hideRightSidebar}
 			<div class="shell-sidebar" data-tour="academy-sidebar">
-				<RightSidebar {user} {sidebar} {rightSidebarWidgets} suppressAds={lessonPlayer} />
+				<RightSidebar {user} {sidebar} {rightSidebarWidgets} suppressAds={lessonPlayer} {footerMenu} />
 			</div>
 		{/if}
 	</div>

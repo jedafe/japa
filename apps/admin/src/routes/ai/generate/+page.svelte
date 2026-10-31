@@ -272,7 +272,7 @@
 			<div class="space-y-4">
 				<!-- Prompt -->
 				<div>
-					<div class="mb-1 flex items-center justify-between">
+					<div class="mb-1 flex items-center justify-between gap-2 flex-wrap">
 						<label for="gen-prompt" class="text-sm font-medium">{t('ai.prompt')}</label>
 						<span class="text-xs" style="color: var(--color-muted)">{charCount} chars</span>
 					</div>
@@ -411,7 +411,7 @@
 				<!-- Result Card -->
 				{#if result}
 					<div class="animate-scale-in rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-background)">
-						<div class="mb-3 flex items-center justify-between">
+						<div class="mb-3 flex items-center justify-between gap-2 flex-wrap">
 							<h3 class="text-sm font-semibold">{t('ai.result')}</h3>
 							<button
 								class="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
@@ -466,7 +466,7 @@
 	<!-- ═══ History Sidebar ═══ -->
 	<div>
 		<div class="rounded-lg border p-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<div class="mb-3 flex items-center justify-between">
+			<div class="mb-3 flex items-center justify-between gap-2 flex-wrap">
 				<h3 class="text-sm font-semibold">{t('ai.history')}</h3>
 				{#if history.length > 0}
 					<button
@@ -491,7 +491,7 @@
 							onclick={() => loadFromHistory(entry)}
 						>
 							<p class="mb-1 truncate text-xs font-medium">{entry.prompt}</p>
-							<div class="flex items-center justify-between text-xs" style="color: var(--color-muted)">
+							<div class="flex items-center justify-between gap-2 flex-wrap text-xs" style="color: var(--color-muted)">
 								<span class="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-purple-700 dark:text-purple-400">
 									{entry.category}
 								</span>

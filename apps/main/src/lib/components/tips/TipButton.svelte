@@ -4,6 +4,7 @@
 	// open intent; renders nothing when tips are disabled for the recipient.
 	//
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
+	import { DropdownMenu } from 'bits-ui';
 	import { t } from '$lib/i18n';
 	import { getUserTipConfig, getOrgTipConfig, getSpaceTipConfig, type TipConfig } from '$lib/api/tips';
 	import TipDialog from './TipDialog.svelte';
@@ -16,9 +17,12 @@
 		recipientName: string;
 		contentId?: string;
 		compact?: boolean; // icon-only variant for feed/action rows
+		/** Renders a DropdownMenu.Item row — use inside <Menu> children so the
+		 *  tip affordance can live in an overflow/actions menu (reaction rail). */
+		menuItem?: boolean;
 		class?: string;
 	}
-	let { recipientType, recipientKey, recipientId, recipientName, contentId, compact = false, class: cls = '' }: Props = $props();
+	let { recipientType, recipientKey, recipientId, recipientName, contentId, compact = false, menuItem = false, class: cls = '' }: Props = $props();
 
 	let open = $state(false);
 	let loading = $state(false);
@@ -55,6 +59,16 @@
 	}
 </script>
 
+{#if menuItem}
+<DropdownMenu.Item
+	onSelect={() => click()}
+	disabled={loading}
+	class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text,var(--foreground))] transition data-[highlighted]:bg-[var(--color-surface-subtle,var(--muted))] disabled:opacity-50"
+>
+	<Gift class="h-4 w-4" />
+	{t('tips.title')}
+</DropdownMenu.Item>
+{:else}
 <span class="relative inline-flex">
 <button
 	type="button"
@@ -75,6 +89,7 @@
 	</span>
 {/if}
 </span>
+{/if}
 
 {#if config}
 	<TipDialog

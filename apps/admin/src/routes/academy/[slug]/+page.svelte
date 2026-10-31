@@ -272,7 +272,7 @@
 	/>
 
 	{#if errorMessage}
-		<div class="mb-4 flex items-center justify-between rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+		<div class="mb-4 flex items-center justify-between gap-2 flex-wrap rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
 			<span>{errorMessage}</span>
 			<Button variant="outline" size="sm" onclick={load}>{t("common.retry", "Retry")}</Button>
 		</div>
@@ -313,7 +313,7 @@
 	{#if canApproveInstructors}
 		<Card class="mb-6">
 			<CardHeader>
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<div class="flex items-center gap-2">
 						<Users class="h-4 w-4" style="color: var(--color-muted)" />
 						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("academy.instructors_title", "Instructors")}</h2>
@@ -336,7 +336,7 @@
 	{#if canApproveTracks}
 		<Card class="mb-6">
 			<CardHeader>
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<div class="flex items-center gap-2">
 						<BookOpen class="h-4 w-4" style="color: var(--color-muted)" />
 						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("academy.tracks_title", "Tracks")}</h2>
@@ -359,7 +359,7 @@
 	{#if canProcessPayouts}
 		<Card class="mb-6">
 			<CardHeader>
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<div class="flex items-center gap-2">
 						<DollarSign class="h-4 w-4" style="color: var(--color-muted)" />
 						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("academy.payouts_title", "Payouts")}</h2>
@@ -382,7 +382,7 @@
 	{#if canViewRevenue}
 		<Card class="mb-6">
 			<CardHeader>
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<div class="flex items-center gap-2">
 						<TrendingUp class="h-4 w-4" style="color: var(--color-muted)" />
 						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("academy.revenue_splits_title", "Revenue Splits")}</h2>

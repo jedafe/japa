@@ -875,7 +875,7 @@
 		{#if form?.is_multi_step && form?.form_type !== 'assessment'}
 			<Card class="mt-4">
 				<CardContent class="p-6">
-					<div class="mb-4 flex items-center justify-between">
+					<div class="mb-4 flex items-center justify-between gap-2 flex-wrap">
 						<h3 class="text-sm font-semibold text-foreground">{t('forms.steps', 'Form Steps')}</h3>
 						{#if canManage}
 							<Button onclick={() => { stepError = ''; newStepTitle = ''; showAddStepModal = true; }}>
@@ -890,7 +890,7 @@
 					{:else}
 						<div class="space-y-2">
 							{#each steps as step, idx (idx)}
-								<div class="flex items-center justify-between rounded-md border border-border bg-surface px-4 py-3">
+								<div class="flex items-center justify-between gap-2 flex-wrap rounded-md border border-border bg-surface px-4 py-3">
 									<div class="flex items-center gap-3">
 										<span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{idx + 1}</span>
 										<span class="text-sm font-medium">{step.title}</span>
@@ -971,7 +971,7 @@
 						<div>
 							<p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted">{t('forms.publicUrl', 'Public URL')}</p>
 							<div class="flex items-center gap-2">
-								<code class="flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm font-mono text-foreground">{PUBLIC_JC_SITE_URL}/forms/{form!.slug}</code>
+								<code class="flex-1 break-all rounded-md border border-border bg-surface px-3 py-2 text-sm font-mono text-foreground">{PUBLIC_JC_SITE_URL}/forms/{form!.slug}</code>
 								<Button variant="outline" size="sm" onclick={() => navigator.clipboard.writeText(`${PUBLIC_JC_SITE_URL}/forms/${form!.slug}`)}>
 									{t('common.copy', 'Copy')}
 								</Button>
@@ -1002,7 +1002,7 @@
 			{#each steps as step, stepIdx (stepIdx)}
 					<Card class="mt-4">
 						<CardContent class="p-4">
-							<div class="mb-4 flex items-center justify-between">
+							<div class="mb-4 flex items-center justify-between gap-2 flex-wrap">
 								<div class="flex items-center gap-2">
 									<span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{stepIdx + 1}</span>
 									<h4 class="text-sm font-semibold text-foreground">{step.title}</h4>
@@ -1018,7 +1018,7 @@
 							{:else}
 								<div class="space-y-2">
 									{#each step.fields as field, idx (idx)}
-										<div class="flex items-center justify-between rounded-md border border-border bg-surface px-4 py-3">
+										<div class="flex items-center justify-between gap-2 flex-wrap rounded-md border border-border bg-surface px-4 py-3">
 											<div class="flex items-center gap-3">
 												<span class="text-sm font-medium">{field.label}</span>
 												<Badge variant="secondary">{field.type}</Badge>
@@ -1063,7 +1063,7 @@
 					{:else}
 						<div class="space-y-2">
 							{#each fields as field, idx (idx)}
-								<div class="flex items-center justify-between rounded-md border border-border bg-surface px-4 py-3">
+								<div class="flex items-center justify-between gap-2 flex-wrap rounded-md border border-border bg-surface px-4 py-3">
 									<div class="flex items-center gap-3">
 										<span class="text-sm font-medium">{field.label}</span>
 										<Badge variant="secondary">{field.type}</Badge>
@@ -1229,7 +1229,7 @@
 		{:else}
 			<Card class="mt-4">
 				<CardContent class="p-6">
-					<div class="mb-4 flex items-center justify-between">
+					<div class="mb-4 flex items-center justify-between gap-2 flex-wrap">
 						<p class="text-sm text-muted">{t('forms.triggersDescription', 'Configure triggers that fire when this form is submitted.')}</p>
 						{#if canManage}
 							<Button onclick={() => { resetTriggerConfig(); showAddTriggerModal = true; }}>
@@ -1245,7 +1245,7 @@
 					{:else}
 						<div class="space-y-2">
 							{#each triggers as trigger, idx (idx)}
-								<div class="flex items-center justify-between rounded-md border border-border bg-surface px-4 py-3">
+								<div class="flex items-center justify-between gap-2 flex-wrap rounded-md border border-border bg-surface px-4 py-3">
 									<div class="flex items-center gap-3 min-w-0 flex-1">
 										<Badge variant="secondary">{trigger.trigger_type}</Badge>
 										<span class="text-sm text-muted truncate">{triggerConfigSummary(trigger)}</span>

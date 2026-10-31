@@ -7676,6 +7676,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/wiki/e/{type_slug}/{entity}", wikiHandlers.HandleCreateEntityPage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.edit")).
 					Post("/wiki/e/{type_slug}/{entity}/{page_slug}/revisions", wikiHandlers.HandleSubmitEntityRevision)
+				// §80 Reader UX: authenticated helpful-vote on an entity-bound
+				// page — any member may rate (no permission node required).
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Post("/wiki/e/{type_slug}/{entity}/{page_slug}/feedback", wikiHandlers.HandleSubmitEntityPageFeedback)
 				r.Get("/wiki/{space_slug}", wikiHandlers.HandleGetIndex)
 				r.Get("/wiki/{space_slug}/{page_slug}", wikiHandlers.HandleGetPage)
 				r.Get("/wiki/{space_slug}/{page_slug}/history", wikiHandlers.HandleGetHistory)

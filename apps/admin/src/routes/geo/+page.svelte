@@ -304,7 +304,7 @@
 		{/if}
 
 		<!-- Breadcrumb + create actions -->
-		<div class="flex items-center justify-between gap-2">
+		<div class="flex items-center justify-between flex-wrap gap-2">
 			<div class="flex items-center gap-1 text-sm" style="color: var(--color-muted)">
 				<button class="hover:text-foreground" onclick={() => { selectedCountry = null; selectedState = null; cities = []; stateSearch = ''; citySearch = ''; }}>
 					{t('geo.countries', 'Countries')}

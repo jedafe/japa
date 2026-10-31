@@ -1229,7 +1229,7 @@
 	{/if}
 
 	<DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-		<div class="relative flex min-h-0 flex-1">
+		<div class="relative flex min-h-0 flex-1 overflow-x-auto">
 			<!-- Floating restore tab for hidden left pane -->
 			{#if !showLeftPane}
 				<button
@@ -1263,7 +1263,7 @@
 
 			{#if showLeftPane}
 			<!-- Left pane: palette + sections list (resizable) -->
-			<aside class="flex shrink-0 flex-col" style="width: {leftPaneWidth}px; background: var(--color-background)">
+			<aside class="flex shrink-0 flex-col" style="width: min({leftPaneWidth}px, 85vw); background: var(--color-background)">
 				<!-- Palette (resizable height) -->
 				<div class="shrink-0 overflow-y-auto p-2" style="height: {paletteHeight}px">
 					<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('pageBuilder.blockTypes', 'Block Types')}</h2>
@@ -1360,7 +1360,7 @@
 			<ResizeHandle paneId="right" size={rightPaneWidth} direction="left" minSize={250} maxSize={700} onResize={handlePaneResize} />
 
 			<!-- Right pane: inspector (resizable) -->
-			<aside class="shrink-0 overflow-y-auto" style="width: {rightPaneWidth}px; border-inline-start: 1px solid var(--color-border); background: var(--color-background)">
+			<aside class="shrink-0 overflow-y-auto" style="width: min({rightPaneWidth}px, 85vw); border-inline-start: 1px solid var(--color-border); background: var(--color-background)">
 				{#if selectedBlock}
 					{@const meta = blockRegistry[selectedBlock.type]}
 					<div class="border-b p-3" style="border-color: var(--color-border)">
@@ -1389,7 +1389,7 @@
 						</Tabs.Content>
 						<Tabs.Content value="settings" class="flex-1 overflow-y-auto p-3">
 							<div class="space-y-4">
-								<label class="flex items-center justify-between text-sm">
+								<label class="flex items-center justify-between gap-2 flex-wrap text-sm">
 									<span style="color: var(--color-foreground)">{t('landing.visible', 'Visible')}</span>
 									<input type="checkbox" checked={selectedBlock.visible} onchange={() => toggleBlockVisibility(selectedBlock.id)} />
 								</label>
@@ -1429,7 +1429,7 @@
 								<!-- Conditional visibility rules -->
 								<div class="space-y-3 rounded border p-3" style="border-color: var(--color-border)">
 									<h4 class="text-xs font-semibold uppercase" style="color: var(--color-muted)">{t('landing.visibility_rules', 'Visibility rules')}</h4>
-									<label class="flex items-center justify-between text-sm">
+									<label class="flex items-center justify-between gap-2 flex-wrap text-sm">
 										<span style="color: var(--color-foreground)">{t('landing.hide_if_empty', 'Hide if empty')}</span>
 										<input
 											type="checkbox"
@@ -1522,11 +1522,11 @@
 											<label for="motion-threshold" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_threshold', 'Viewport threshold')}: {selectedBlock.motion?.threshold ?? 0.1}</label>
 											<input id="motion-threshold" type="range" min="0" max="1" step="0.05" class="w-full" value={selectedBlock.motion?.threshold ?? 0.1} oninput={(e) => updateBlockMotion(selectedBlock.id, { threshold: Number(e.currentTarget.value) })} />
 										</div>
-										<label class="flex items-center justify-between text-xs">
+										<label class="flex items-center justify-between gap-2 flex-wrap text-xs">
 											<span style="color: var(--color-foreground)">{t('landing.motion_once', 'Animate only once')}</span>
 											<input type="checkbox" checked={selectedBlock.motion?.once ?? true} onchange={(e) => updateBlockMotion(selectedBlock.id, { once: e.currentTarget.checked })} />
 										</label>
-										<label class="flex items-center justify-between text-xs">
+										<label class="flex items-center justify-between gap-2 flex-wrap text-xs">
 											<span style="color: var(--color-foreground)">{t('landing.motion_stagger', 'Stagger children')}</span>
 											<input type="checkbox" checked={selectedBlock.motion?.stagger_children ?? false} onchange={(e) => updateBlockMotion(selectedBlock.id, { stagger_children: e.currentTarget.checked })} />
 										</label>

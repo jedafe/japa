@@ -86,20 +86,23 @@ class _SpaceDetailScreenState extends ConsumerState<SpaceDetailScreen> {
         data: (space) => Column(
           children: [
             ListTile(title: Text(space.name ?? '')),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                JcButton(
-                  label: t('spaces.join'),
-                  onPressed: _loading ? null : _join,
-                ),
-                const SizedBox(width: 16),
-                JcButton(
-                  label: t('spaces.leave'),
-                  onPressed: _loading ? null : _leave,
-                ),
-              ],
-            ),
+            // §05 — primary spaces (geo levels + universities) are
+            // platform-owned and follow-only; hide join/leave controls.
+            if (space.isPrimary != true)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  JcButton(
+                    label: t('spaces.join'),
+                    onPressed: _loading ? null : _join,
+                  ),
+                  const SizedBox(width: 16),
+                  JcButton(
+                    label: t('spaces.leave'),
+                    onPressed: _loading ? null : _leave,
+                  ),
+                ],
+              ),
           ],
         ),
         loading: () => const LoadingShimmer(),

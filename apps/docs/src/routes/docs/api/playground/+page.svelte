@@ -51,11 +51,11 @@
 	let history = $state<HistoryEntry[]>([]);
 	let historyId = 0;
 
-	// When "Use my API Key" is toggled on, clear the manual key field — the
-	// authorization header will be injected from the selected key's prefix.
-	// Note: the backend only returns key_prefix for existing keys, so the
-	// user must copy a full key from /docs/api/keys to use it here. The
-	// selector helps them pick which app's key to use.
+	// When "Use my API Key" is toggled on, clear the manual key field.
+	// The backend only returns key_prefix for existing keys (the secret is
+	// shown once at creation), so the selector is identification-only: the
+	// user still pastes the full key, but can verify they're pasting the
+	// right one for the intended app.
 	let activeKeys = $derived((data.apiKeys ?? []).filter((k: { status: string }) => k.status === 'active'));
 
 	// Clear the manual key field when "Use my API Key" is toggled on.
@@ -296,7 +296,7 @@
 							{@const selectedKey = activeKeys.find((k) => k.id === selectedKeyId)}
 							<div class="pg-key-hint">
 								<p class="pg-help">
-									{t('api.key_selected_help', 'For security, the full key is only shown when you create it. Copy it from the API Keys page and paste below.')}
+									{t('api.key_selected_help', 'For security, the full key is only shown when you create it. The selector is for identification only — paste the full key below to authenticate.')}
 								</p>
 								{#if selectedKey}
 									<p class="pg-key-prefix">
@@ -308,15 +308,15 @@
 									{t('api.open_keys_page', 'Open API Keys page')}
 								</a>
 							</div>
-							<input
-								type="password"
-								bind:value={apiKey}
-								placeholder={t('api.api_key_placeholder')}
-								autocomplete="off"
-							/>
-						{:else}
-							<p class="pg-help">{t('api.select_key_help', 'Select a key above, then paste the full key value. The selector helps you identify which app it belongs to.')}</p>
 						{/if}
+						<input
+							type="password"
+							bind:value={apiKey}
+							placeholder={selectedKeyId
+								? `${t('api.paste_key_for', 'Paste key for')} ${activeKeys.find((k) => k.id === selectedKeyId)?.key_prefix ?? ''}…`
+								: t('api.api_key_placeholder')}
+							autocomplete="off"
+						/>
 					{/if}
 				{:else}
 					<input

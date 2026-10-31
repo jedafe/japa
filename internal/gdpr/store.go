@@ -330,6 +330,14 @@ func (s *Store) gdprExportUserLessonProgress(ctx context.Context, userID pgtype.
 	return exportJSONSlice(ctx, s.read.GdprExportUserLessonProgress, userID)
 }
 
+func (s *Store) gdprExportUserEnrollments(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserEnrollments, userID)
+}
+
+func (s *Store) gdprExportUserQuizAttempts(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserQuizAttempts, userID)
+}
+
 func (s *Store) gdprExportUserAcademyCertificates(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserAcademyCertificates, userID)
 }

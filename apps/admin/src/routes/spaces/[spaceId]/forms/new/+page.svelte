@@ -168,7 +168,7 @@
 
 	<!-- Fields -->
 	<div class="rounded-lg border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
-		<div class="mb-4 flex items-center justify-between">
+		<div class="mb-4 flex items-center justify-between gap-2 flex-wrap">
 			<h2 class="text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.fields')}</h2>
 			<button
 				class="rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 dark:hover:bg-surface/10"
@@ -182,7 +182,7 @@
 		<div class="space-y-4">
 			{#each fields as field, i (i)}
 				<div class="rounded-md border p-4" style="border-color: var(--color-border); background-color: var(--color-background)">
-					<div class="mb-3 flex items-center justify-between">
+					<div class="mb-3 flex items-center justify-between gap-2 flex-wrap">
 						<span class="text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_counter').replace('{i}', String(i + 1))}</span>
 						{#if fields.length > 1}
 							<button
@@ -231,7 +231,7 @@
 
 					{#if field.type === 'select'}
 						<div class="mt-3">
-							<div class="mb-2 flex items-center justify-between">
+							<div class="mb-2 flex items-center justify-between gap-2 flex-wrap">
 								<span class="text-xs font-medium" style="color: var(--color-muted)">{t('space_forms.field_options')}</span>
 								<button
 									class="text-xs hover:underline"

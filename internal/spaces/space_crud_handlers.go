@@ -341,6 +341,7 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UU
 			m["member_count"] = st.MemberCount
 			m["post_count"] = st.PostCount
 			m["follower_count"] = st.FollowerCount
+			m["discussion_count"] = st.DiscussionCount
 		} else {
 			// Best-effort clamp of any negative cached values when stats could
 			// not be loaded.
@@ -675,11 +676,13 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	headerURL := h.resolveHeaderURL(r.Context(), space.HeaderImageID)
 
 	// Replace drifted/negative denormalised counts with live computed values.
+	var discussionCount int32
 	if stats, err := h.Service.CountSpaceStats(r.Context(), []pgtype.UUID{space.ID}); err == nil {
 		if st, ok := stats[space.ID.String()]; ok {
 			space.MemberCount = st.MemberCount
 			space.PostCount = st.PostCount
 			space.FollowerCount = st.FollowerCount
+			discussionCount = st.DiscussionCount
 		}
 	} else {
 		slog.Warn("spaces: failed to load space stats", "space_id", space.ID.String(), "error", err)
@@ -786,6 +789,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 			"is_following":          isFollowing,
 			"country_currency_code": countryCurrency,
 			"wiki_only":             wikiOnly,
+			"discussion_count":      discussionCount,
 		},
 	})
 }

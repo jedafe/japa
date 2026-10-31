@@ -1390,6 +1390,7 @@ export interface Space {
 	member_count: number;
 	post_count: number;
 	follower_count: number;
+	discussion_count?: number;
 	visibility: string;
 	posting_perm: string;
 	replying_perm: string;

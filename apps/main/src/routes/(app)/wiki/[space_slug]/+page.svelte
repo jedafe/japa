@@ -23,13 +23,19 @@
 	import { flagUrl } from '$lib/utils/flags';
 	import { openLightbox } from '$lib/lightbox.svelte';
 	import {
+		ArrowRight,
 		BookOpen,
 		Bookmark,
 		BookmarkCheck,
+		Building2,
 		ChevronRight,
 		CircleHelp,
+		FileText,
+		GraduationCap,
+		Landmark,
 		Lock,
 		Maximize2,
+		Plane,
 		Plus,
 		Star,
 		Table2,
@@ -46,6 +52,24 @@
 	const entityChildGroups = $derived(
 		Object.entries(data.entityChildren ?? {}).filter(([, items]) => items.length > 0)
 	);
+
+	// Entity-type presentation for the Related entities cards — icon + label
+	// per bound kind (JCE ↔ wiki mapping); FileText is the fallback.
+	const ENTITY_TYPE_META: Record<string, { icon: typeof FileText; label: string }> = {
+		embassy: { icon: Landmark, label: 'Embassies' },
+		visa_route: { icon: Plane, label: 'Visa Routes' },
+		organization: { icon: Building2, label: 'Organizations' },
+		bank: { icon: Landmark, label: 'Banks' },
+		scholarship: { icon: GraduationCap, label: 'Scholarships' },
+		course: { icon: BookOpen, label: 'Courses' },
+		program: { icon: BookOpen, label: 'Programs' },
+		university: { icon: GraduationCap, label: 'Universities' }
+	};
+	const entityTypeMeta = (slug: string) =>
+		ENTITY_TYPE_META[slug] ?? {
+			icon: FileText,
+			label: slug.replaceAll('_', ' ').replace(/\b\w/g, (ch) => ch.toUpperCase())
+		};
 
 	// The canonical category list is scoped to the space type server-side:
 	// university spaces get the university set (§80 amendment). These must
@@ -652,16 +676,34 @@
 		{/if}
 	
 		{#if entityChildGroups.length > 0}
-			<section class="entity-children space-y-3">
+			<section class="mt-6 space-y-4">
 				<h2 class="text-sm font-semibold uppercase tracking-wide text-[var(--color-muted)]">{t('wiki.related_entities', 'Related entities')}</h2>
 				{#each entityChildGroups as [typeSlug, items] (typeSlug)}
-					<div>
-						<h3 class="text-xs font-medium capitalize text-[var(--color-muted)]">{typeSlug.replaceAll('_', ' ')}</h3>
-						<ul class="mt-1 space-y-1">
+					{@const meta = entityTypeMeta(typeSlug)}
+					<div class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+						<h3 class="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+							<meta.icon size={14} class="text-[var(--color-primary)]" />
+							{t(`wiki.related_${typeSlug}`, meta.label)}
+							<span class="rounded-full bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] font-medium normal-case text-[var(--color-muted)]">{items.length}</span>
+						</h3>
+						<ul class="grid gap-2 sm:grid-cols-2">
 							{#each items as child (child.id)}
 								<li>
-									<a class="text-sm text-[var(--color-primary)] hover:underline"
-									   href="/wiki/e/{typeSlug}/{child.slug}/overview">{child.name}</a>
+									<a
+										href="/wiki/e/{typeSlug}/{child.slug}/overview"
+										class="group flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2.5 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
+									>
+										<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+											<meta.icon size={15} />
+										</span>
+										<span class="min-w-0 flex-1">
+											<span class="block truncate text-sm font-medium text-[var(--color-text)]">{child.name}</span>
+											{#if child.discriminator}
+												<span class="block truncate text-xs capitalize text-[var(--color-muted)]">{child.discriminator.replaceAll('_', ' ')}</span>
+											{/if}
+										</span>
+										<ArrowRight size={14} class="shrink-0 text-[var(--color-muted)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--color-primary)] rtl:-scale-x-100 rtl:group-hover:-translate-x-0.5" />
+									</a>
 								</li>
 							{/each}
 						</ul>

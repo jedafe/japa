@@ -83,7 +83,8 @@ export const load: LayoutServerLoad = async (event) => {
 	}
 
 	// Footer menu — ADR-054 cross-app menu system. The Academy footer slug is
-	// `academy_footer`. Degrades to null if unseeded; GuestFooter renders nothing.
+	// `academy_footer`. Rendered at the bottom of the right rail (AppShell →
+	// RightSidebar); degrades to null if unseeded.
 	let footerMenu: Menu | null = null;
 	try {
 		footerMenu = await apiGet<Menu>(ctx, '/menus/academy_footer');
@@ -176,8 +177,8 @@ export const load: LayoutServerLoad = async (event) => {
 		siteSettings,
 		features,
 		menu,
-		bottomMenu,
 		footerMenu,
+		bottomMenu,
 		unreadNotifications,
 		currencies,
 		rightSidebarWidgets,

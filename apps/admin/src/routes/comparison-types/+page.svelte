@@ -554,7 +554,7 @@
 			</p>
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.description || '—'}</p>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">
 					{t('comparison_types.icon', 'Icon')}
@@ -636,7 +636,7 @@
 							bind:value={value.description}
 						></textarea>
 					</div>
-					<div class="grid grid-cols-2 gap-4">
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 						<div>
 							<label for="ct-icon" class="block text-sm font-medium" style="color: var(--color-foreground)">
 								{t('comparison_types.icon', 'Icon')}
@@ -725,7 +725,7 @@
 						{/if}
 					</div>
 					<div class="space-y-2">
-						<div class="flex items-center justify-between">
+						<div class="flex items-center justify-between gap-2 flex-wrap">
 							<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">
 								{t('comparison_types.page_size_options', 'Page size options')}
 							</h3>
@@ -766,7 +766,7 @@
 					</div>
 
 					<div class="space-y-2">
-						<div class="flex items-center justify-between">
+						<div class="flex items-center justify-between gap-2 flex-wrap">
 							<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">
 								{t('comparison_types.sort_options', 'Sort options')}
 							</h3>

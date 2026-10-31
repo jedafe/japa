@@ -835,7 +835,7 @@
 				<input id="batch-desc" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newBatch.description} placeholder={t('studio.batch_desc_ph', 'Optional description')} />
 			</div>
 			<div class="border-t pt-3" style="border-color: var(--color-border)">
-				<div class="mb-2 flex items-center justify-between">
+				<div class="mb-2 flex items-center justify-between gap-2 flex-wrap">
 					<span class="text-sm font-medium" style="color: var(--color-foreground)">{t('studio.batch_jobs', 'Jobs in batch')}</span>
 					<Button variant="outline" onclick={addBatchJobRow}>
 						<Plus class="h-4 w-4" />
@@ -847,7 +847,7 @@
 				{/if}
 				{#each newBatch.jobs as job, idx (idx)}
 					<div class="mb-3 rounded-md border p-3 space-y-2" style="border-color: var(--color-border)">
-						<div class="flex items-center justify-between">
+						<div class="flex items-center justify-between gap-2 flex-wrap">
 							<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.job_n', 'Job')} {idx + 1}</span>
 							<button onclick={() => removeBatchJobRow(idx)} class="text-xs" style="color: var(--color-danger)">
 								<X class="h-3 w-3" />
@@ -913,7 +913,7 @@
 			{/if}
 			<div class="border-t pt-2" style="border-color: var(--color-border)">
 				<span class="text-xs font-medium" style="color: var(--color-muted)">{t('studio.progress', 'Progress')}</span>
-				<div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+				<div class="mt-2 grid grid-cols-2 gap-2 text-xs">
 					<div>Total: <span class="font-bold" style="color: var(--color-foreground)">{viewingBatch.stats.total}</span></div>
 					<div>Queued: <span style="color: var(--color-muted)">{viewingBatch.stats.queued}</span></div>
 					<div>Generating: <span style="color: var(--color-warning)">{viewingBatch.stats.generating}</span></div>

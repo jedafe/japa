@@ -319,8 +319,8 @@
 			</CardContent>
 		</Card>
 
-		<div class="flex items-center justify-between">
-			<div class="flex gap-2">
+		<div class="flex flex-wrap items-center justify-between gap-2">
+			<div class="flex flex-wrap gap-2">
 				{#if originalStatus === 'draft' || originalStatus === 'in_review'}
 					<Button type="button" variant="outline" onclick={handlePublish} disabled={saving} style="color: var(--color-success)">
 						<CheckCircle class="me-2 h-4 w-4" />
@@ -360,7 +360,7 @@
 					</Button>
 				{/if}
 			</div>
-			<div class="flex gap-2">
+			<div class="flex flex-wrap gap-2">
 				<Button variant="ghost" onclick={() => goto('/blog')}>
 					{t('app.blog.cancel', 'Cancel')}
 				</Button>

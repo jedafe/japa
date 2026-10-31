@@ -1303,7 +1303,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 	}
 
 	// Doc pages — single query returns all for the platform.
-	docRows, err := ix.read.ListAllDocPages(ctx)
+	docRows, err := ix.read.ListAllDocPages(ctx, gen.ListAllDocPagesParams{ResultLimit: 0, ResultOffset: 0})
 	if err != nil {
 		slog.Warn("search:reindex: listing doc pages failed", "error", err)
 

@@ -1062,7 +1062,7 @@ func (q *Queries) GetScholarshipForWiki(ctx context.Context, slug string) (GetSc
 }
 
 const getSpaceTypeRef = `-- name: GetSpaceTypeRef :one
-SELECT sp.space_type_id, COALESCE(st.slug, '') AS space_type_slug
+SELECT sp.space_type_id, COALESCE(st.slug, '') AS space_type_slug, sp.level
 FROM spaces sp
 LEFT JOIN space_types st ON st.id = sp.space_type_id
 WHERE sp.id = $1
@@ -1071,12 +1071,13 @@ WHERE sp.id = $1
 type GetSpaceTypeRefRow struct {
 	SpaceTypeID   pgtype.UUID `json:"space_type_id"`
 	SpaceTypeSlug string      `json:"space_type_slug"`
+	Level         string      `json:"level"`
 }
 
 func (q *Queries) GetSpaceTypeRef(ctx context.Context, spaceID pgtype.UUID) (GetSpaceTypeRefRow, error) {
 	row := q.db.QueryRow(ctx, getSpaceTypeRef, spaceID)
 	var i GetSpaceTypeRefRow
-	err := row.Scan(&i.SpaceTypeID, &i.SpaceTypeSlug)
+	err := row.Scan(&i.SpaceTypeID, &i.SpaceTypeSlug, &i.Level)
 	return i, err
 }
 

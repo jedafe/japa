@@ -344,7 +344,7 @@
 		{#if distribution.length > 0}
 			<ul class="mt-3 space-y-2">
 				{#each distribution as d (d.status)}
-					<li class="flex items-center justify-between">
+					<li class="flex items-center justify-between gap-2 flex-wrap">
 						<span
 							class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium {statusBadgeClass(d.status)}"
 						>
@@ -375,7 +375,7 @@
 			<ul class="mt-3 space-y-2">
 				{#each deadlineEntries as d (d.id)}
 					<li>
-						<div class="flex items-center justify-between gap-2">
+						<div class="flex items-center justify-between flex-wrap gap-2">
 							<span class="truncate text-sm font-medium" style="color: var(--color-foreground)">
 								{d.title || '—'}
 							</span>
@@ -416,7 +416,7 @@
 			<ul class="mt-3 space-y-2">
 				{#each reminderLogEntries as r (r.id)}
 					<li>
-						<div class="flex items-center justify-between gap-2">
+						<div class="flex items-center justify-between flex-wrap gap-2">
 							<span class="truncate text-sm font-medium" style="color: var(--color-foreground)">
 								{r.guide_title || '—'}
 							</span>
@@ -450,7 +450,7 @@
 		{#if topSavedEntries.length > 0}
 			<ul class="mt-3 space-y-2">
 				{#each topSavedEntries as s (s.guide_id)}
-					<li class="flex items-center justify-between gap-2">
+					<li class="flex items-center justify-between flex-wrap gap-2">
 						<span class="truncate text-sm font-medium" style="color: var(--color-foreground)">
 							{s.guide_title || '—'}
 						</span>

@@ -207,7 +207,7 @@
 				bind:value={value.prompt}
 			></textarea>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<label class="block text-sm font-medium" for="campaign-count" style="color: var(--color-foreground)">
 					{t('campaigns.count', 'Count')}
@@ -248,7 +248,7 @@
 			/>
 			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('campaigns.persona_pool_hint', 'Hold Ctrl/Cmd to select multiple. Leave empty to use all active personas.')}</p>
 		</div>
-		<div class="grid grid-cols-2 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<label class="block text-sm font-medium" for="campaign-target-space" style="color: var(--color-foreground)">
 					{t('campaigns.target_space_id', 'Target Space ID')}
@@ -331,7 +331,7 @@
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('campaigns.prompt', 'Prompt')}</p>
 				<p class="mt-1 break-all text-sm" style="color: var(--color-foreground)">{campaign.prompt}</p>
 			</div>
-			<div class="grid grid-cols-2 gap-4">
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 				<div>
 					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('campaigns.status', 'Status')}</p>
 					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{campaign.status}</p>
@@ -342,7 +342,7 @@
 				</div>
 			</div>
 			{#if campaign.target_space_id || (campaign.target_tags && campaign.target_tags.length > 0)}
-				<div class="grid grid-cols-2 gap-4">
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 					{#if campaign.target_space_id}
 						<div>
 							<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('campaigns.target_space_id', 'Target Space')}</p>

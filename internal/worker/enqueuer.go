@@ -198,6 +198,7 @@ var taskTier = func() map[string]string {
 		TypeEmbassyDispatchAlerts,     // §91 — time-sensitive slot availability (ADR-099)
 		TypeIntelScheduleCrawls,       // §INTEL — cron entry point, must fire immediately (ADR-112)
 		TypeTipsSettleFiat,            // §125 — credit grant on donation payment success
+		TypePaymentSyncSettlement,     // money-moving fan-out for synchronous settlements
 		TypeIntelInboundEmail,         // §INTEL Phase 3 — provider push deliveries are time-sensitive
 		TypeServiceBookingFeeSettle,   // §111 — platform-fee recognize/refund is money-moving (ADR-123)
 	} {
@@ -461,6 +462,7 @@ var taskTypeCatalog = []struct {
 	{TypeServiceBookingExpirePending, "low", "Hourly sweep — expire pending bookings past their response SLA"},
 	// §125 Tips & Donations
 	{TypeTipsSettleFiat, "critical", "Credit recipient wallet when a donation payment succeeds"},
+	{TypePaymentSyncSettlement, "critical", "Replay payment-success fan-out for synchronous (credit/zero-amount) settlements"},
 	{TypeTipsNotifyReceived, "default", "Notify recipient that a tip was received"},
 	{TypeTipsOCSync, "low", "Scheduled poll — import new Open Collective contributions"},
 	{TypeTipsStaleSweep, "low", "Fail pending fiat tips past the checkout TTL"},

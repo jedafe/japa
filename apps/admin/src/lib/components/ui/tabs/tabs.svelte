@@ -79,7 +79,7 @@
 </script>
 
 <Tabs.Root bind:value {onValueChange} class={clsx("w-full", className)}>
-  <Tabs.List class="inline-flex h-11 items-center justify-center rounded-lg p-1" style="background-color: var(--color-surface); color: var(--color-muted)">
+  <Tabs.List class="inline-flex h-auto min-h-11 max-w-full flex-wrap items-center justify-center rounded-lg p-1" style="background-color: var(--color-surface); color: var(--color-muted)">
     {#each tabs as tab (tab)}
       <Tabs.Trigger
         value={tab.value}

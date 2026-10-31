@@ -611,6 +611,13 @@ func (s *Service) ProcessEnrollment(ctx context.Context, userID, trackID, paymen
 		payRef2 = paymentID
 	}
 
+	// Record the split in the track's own currency (B2) — a USD-priced course
+	// must not produce NGN-denominated ledger rows. The query COALESCEs to
+	// 'NGN' when nil.
+	var currency any
+	if track.Currency != "" {
+		currency = track.Currency
+	}
 	_, err = s.store.InsertRevenueSplit(ctx, gen.InsertRevenueSplitParams{
 		InstructorID: track.InstructorID,
 		TrackID:      trackID,
@@ -622,7 +629,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, userID, trackID, paymen
 		PlatformPct:  numericFromFloat(platformPct),
 		CreatorKobo:  creatorKobo,
 		PlatformKobo: platformKobo,
-		Currency:     "NGN",
+		Currency:     currency,
 	})
 	if err != nil {
 		return fmt.Errorf("creator: insert revenue split: %w", err)

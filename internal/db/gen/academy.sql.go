@@ -509,7 +509,7 @@ FROM academy_lessons ll
 JOIN academy_modules lm ON lm.id = ll.module_id
 JOIN academy_tracks lt ON lt.id = lm.track_id
 LEFT JOIN media vm ON vm.id = ll.media_id
-WHERE ll.module_id = $1 AND ll.slug = $2
+WHERE ll.module_id = $1 AND ll.slug = $2 AND ll.is_published = true
 `
 
 type GetAcademyLessonDetailBySlugParams struct {
@@ -685,6 +685,8 @@ SELECT id, title, slug, description, difficulty, cover_media_id,
  category, language, total_enrolled, subscription_eligible
 FROM academy_tracks
 WHERE slug = $1
+ AND is_published = true
+ AND (instructor_id IS NULL OR is_published_to_academy = true)
 `
 
 type GetAcademyTrackBySlugRow struct {
@@ -750,6 +752,8 @@ LEFT JOIN academy_instructor_profiles ip ON ip.id = lt.instructor_id
 LEFT JOIN users u ON u.id = ip.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE lt.slug = $1
+ AND lt.is_published = true
+ AND (lt.instructor_id IS NULL OR lt.is_published_to_academy = true)
 `
 
 type GetAcademyTrackDetailBySlugRow struct {
@@ -1126,7 +1130,6 @@ func (q *Queries) ListAcademyCertificatesByUser(ctx context.Context, userID pgty
 }
 
 const listAcademyLessonsByModule = `-- name: ListAcademyLessonsByModule :many
-
 SELECT id, module_id, title, slug, lesson_type, content, media_id,
  duration_minutes, sort_order, is_published, is_preview, created_at, updated_at
 FROM academy_lessons
@@ -1150,9 +1153,6 @@ type ListAcademyLessonsByModuleRow struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
-// =====================
-// Lesson Operations
-// =====================
 func (q *Queries) ListAcademyLessonsByModule(ctx context.Context, moduleID pgtype.UUID) ([]ListAcademyLessonsByModuleRow, error) {
 	rows, err := q.db.Query(ctx, listAcademyLessonsByModule, moduleID)
 	if err != nil {
@@ -1162,6 +1162,73 @@ func (q *Queries) ListAcademyLessonsByModule(ctx context.Context, moduleID pgtyp
 	var items []ListAcademyLessonsByModuleRow
 	for rows.Next() {
 		var i ListAcademyLessonsByModuleRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ModuleID,
+			&i.Title,
+			&i.Slug,
+			&i.LessonType,
+			&i.Content,
+			&i.MediaID,
+			&i.DurationMinutes,
+			&i.SortOrder,
+			&i.IsPublished,
+			&i.IsPreview,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAcademyLessonsByTrack = `-- name: ListAcademyLessonsByTrack :many
+
+SELECT ll.id, ll.module_id, ll.title, ll.slug, ll.lesson_type, ll.content, ll.media_id,
+ ll.duration_minutes, ll.sort_order, ll.is_published, ll.is_preview, ll.created_at, ll.updated_at
+FROM academy_lessons ll
+JOIN academy_modules lm ON lm.id = ll.module_id
+WHERE lm.track_id = $1
+ORDER BY lm.sort_order ASC, ll.sort_order ASC, ll.created_at DESC
+`
+
+type ListAcademyLessonsByTrackRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	ModuleID        pgtype.UUID        `json:"module_id"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	LessonType      string             `json:"lesson_type"`
+	Content         *string            `json:"content"`
+	MediaID         pgtype.UUID        `json:"media_id"`
+	DurationMinutes *int32             `json:"duration_minutes"`
+	SortOrder       int32              `json:"sort_order"`
+	IsPublished     bool               `json:"is_published"`
+	IsPreview       bool               `json:"is_preview"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+// =====================
+// Lesson Operations
+// =====================
+// All lessons of a track in one query (GetTrackDetail previously ran
+// ListAcademyLessonsByModule per module — N+1). Ordering groups lessons by
+// their module's sort_order, then matches ListAcademyLessonsByModule's order
+// within each module.
+func (q *Queries) ListAcademyLessonsByTrack(ctx context.Context, trackID pgtype.UUID) ([]ListAcademyLessonsByTrackRow, error) {
+	rows, err := q.db.Query(ctx, listAcademyLessonsByTrack, trackID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAcademyLessonsByTrackRow
+	for rows.Next() {
+		var i ListAcademyLessonsByTrackRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ModuleID,
@@ -1659,8 +1726,15 @@ SELECT id, title, slug, description, difficulty, cover_media_id,
  category, language, total_enrolled, subscription_eligible
 FROM academy_tracks
 WHERE is_published = true
+ AND (instructor_id IS NULL OR is_published_to_academy = true)
 ORDER BY sort_order ASC, created_at DESC
+LIMIT $2 OFFSET $1
 `
+
+type ListPublishedAcademyTracksParams struct {
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
+}
 
 type ListPublishedAcademyTracksRow struct {
 	ID                   pgtype.UUID        `json:"id"`
@@ -1683,8 +1757,12 @@ type ListPublishedAcademyTracksRow struct {
 	SubscriptionEligible bool               `json:"subscription_eligible"`
 }
 
-func (q *Queries) ListPublishedAcademyTracks(ctx context.Context) ([]ListPublishedAcademyTracksRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedAcademyTracks)
+// Marketplace gate (ADR-063): platform-authored tracks (instructor_id IS NULL)
+// are public when is_published; instructor-authored tracks must also have
+// cleared marketplace approval (is_published_to_academy), otherwise pending,
+// rejected, and draft creator courses would be listable/enrollable pre-review.
+func (q *Queries) ListPublishedAcademyTracks(ctx context.Context, arg ListPublishedAcademyTracksParams) ([]ListPublishedAcademyTracksRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedAcademyTracks, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1997,11 +2075,33 @@ func (q *Queries) UpdateEnrollmentProgress(ctx context.Context, arg UpdateEnroll
 	return err
 }
 
+const upsertAcademyQuizAttempt = `-- name: UpsertAcademyQuizAttempt :one
+INSERT INTO academy_quiz_attempts (user_id, lesson_id, attempts)
+VALUES ($1, $2, 1)
+ON CONFLICT (user_id, lesson_id) DO UPDATE
+SET attempts = academy_quiz_attempts.attempts + 1, updated_at = now()
+RETURNING attempts
+`
+
+type UpsertAcademyQuizAttemptParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	LessonID pgtype.UUID `json:"lesson_id"`
+}
+
+// Atomic attempt counter — a single upsert+increment avoids check-then-write
+// races; callers compare the returned count to the max-attempts cap.
+func (q *Queries) UpsertAcademyQuizAttempt(ctx context.Context, arg UpsertAcademyQuizAttemptParams) (int32, error) {
+	row := q.db.QueryRow(ctx, upsertAcademyQuizAttempt, arg.UserID, arg.LessonID)
+	var attempts int32
+	err := row.Scan(&attempts)
+	return attempts, err
+}
+
 const upsertLessonProgress = `-- name: UpsertLessonProgress :one
 INSERT INTO academy_lesson_progress (user_id, lesson_id, status, position_secs, completed_at) VALUES ($1, $2, $3, $4, $5)
 
 ON CONFLICT (user_id, lesson_id) DO UPDATE
-SET status = EXCLUDED.status,
+SET status = CASE WHEN academy_lesson_progress.status = 'completed' THEN 'completed' ELSE EXCLUDED.status END,
  position_secs = COALESCE(EXCLUDED.position_secs, academy_lesson_progress.position_secs),
  completed_at = COALESCE(EXCLUDED.completed_at, academy_lesson_progress.completed_at)
 RETURNING id, user_id, lesson_id, status, position_secs, completed_at, created_at

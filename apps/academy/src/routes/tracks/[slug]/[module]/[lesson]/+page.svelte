@@ -6,13 +6,13 @@
 	// guard, rollback, auto-next). No ads. Access verified server-side.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { loginUrl } from '$lib/appOrigins';
+	import { loginUrl, ACADEMY_ORIGIN } from '$lib/appOrigins';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import CurriculumRail from '$lib/components/academy/CurriculumRail.svelte';
 	import ProgressRing from '$lib/components/academy/ProgressRing.svelte';
-	import { CheckCircle, ArrowRight, ArrowLeft, NotebookPen, ExternalLink, Download, List } from 'lucide-svelte';
+	import { CheckCircle, ArrowRight, ArrowLeft, ExternalLink, Download, List } from 'lucide-svelte';
 	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
 	import type { Enrollment, Quiz, QuizQuestion, QuizResult, QuizSubmission } from '$lib/types';
@@ -31,6 +31,7 @@
 	// My Progress, My Learning) stay in sync after mark-complete.
 	let completedLessonIds = $state<Set<string>>(new Set());
 	let marking = $state(false);
+	let markError = $state<string | null>(null);
 	// Mobile curriculum drawer — reuses the CurriculumRail payload (no
 	// duplicate jump-list); hidden on lg where the rail is inline.
 	let curriculumOpen = $state(false);
@@ -45,7 +46,7 @@
 			return;
 		}
 		(async () => {
-			await enrollmentsStore.fetch();
+			await enrollmentsStore.fetch(!!data.user);
 			// Fetch the full set of completed lesson IDs for this track so the
 			// curriculum rail restores completion state on page refresh.
 			// The SSR lesson's is_completed flag only covers the current lesson.
@@ -101,10 +102,13 @@
 		const r = await api.post<{ ok: boolean }>(`/academy/lessons/${lesson.id}/complete`);
 		marking = false;
 		if (r.error) {
-			// Rollback on failure.
+			// Rollback on failure and surface the error instead of silently
+			// reverting the button (F6).
 			completedLessonIds = prev;
+			markError = r.error.message ?? t('common.error', 'Something went wrong');
 			return;
 		}
+		markError = null;
 		// Refresh the shared store so sidebar widgets reflect the new progress.
 		enrollmentsStore.refresh();
 		// Re-fetch the completed lesson IDs so the curriculum rail stays in
@@ -145,6 +149,19 @@
 			api.post(`/academy/lessons/${lesson.id}/progress`, { progress_secs: now });
 		}
 	}
+	// Flush the current position when the learner pauses or leaves — the
+	// 15s interval alone lost up to 15s of progress on every exit (F4).
+	function flushVideoProgress() {
+		if (!videoEl || !data.user) return;
+		const pos = Math.floor(videoEl.currentTime);
+		if (pos !== lastProgressSave) {
+			lastProgressSave = pos;
+			api.post(`/academy/lessons/${lesson.id}/progress`, { progress_secs: pos });
+		}
+	}
+	$effect(() => {
+		return () => flushVideoProgress();
+	});
 
 	// Quiz engine state — answers map, submission, results, retake.
 	let quizAnswers = $state<Record<string, string[]>>({});
@@ -152,6 +169,7 @@
 	let quizSubmitted = $state(false);
 	let quizResult = $state<QuizResult | null>(null);
 	let quizSubmitError = $state<string | null>(null);
+	let attemptsExhausted = $state(false);
 	let quizSubmitting = $state(false);
 
 	// Reset quiz state when the lesson changes.
@@ -216,6 +234,9 @@
 			quizSubmitError = null;
 		} else if (r.error) {
 			quizSubmitError = r.error.message;
+			// 429 attempt_limit — no more retakes; show the error and remove
+			// the retake button so the cap is legible to the learner.
+			if (r.error.status === 429) attemptsExhausted = true;
 		}
 	}
 
@@ -227,9 +248,29 @@
 		quizSubmitError = null;
 	}
 
+	// Checklist state persists per-lesson in localStorage (client-only) so a
+	// refresh doesn't silently wipe the learner's checks (F3).
+	let checklistDone = $state<Set<string>>(new Set());
+	$effect(() => {
+		const lessonId = lesson.id;
+		try {
+			checklistDone = new Set(JSON.parse(localStorage.getItem(`jc_checklist_${lessonId}`) ?? '[]'));
+		} catch {
+			checklistDone = new Set();
+		}
+	});
+	function toggleChecklist(id: string) {
+		const next = new Set(checklistDone);
+		if (next.has(id)) next.delete(id); else next.add(id);
+		checklistDone = next;
+		try {
+			localStorage.setItem(`jc_checklist_${lesson.id}`, JSON.stringify([...next]));
+		} catch { /* storage full/blocked — non-fatal */ }
+	}
+
 	// Look up per-question result after submission.
 	function questionResult(questionId: string) {
-		return quizResult?.results.find((r) => r.question_id === questionId) ?? null;
+		return quizResult?.results?.find((r) => r.question_id === questionId) ?? null;
 	}
 
 	// youtube/screencast lessons may carry a YouTube URL in external_url —
@@ -257,11 +298,11 @@
 	{:else}
 		<meta name="robots" content="noindex, nofollow" />
 	{/if}
-	<link rel="canonical" href={`https://academy.japa.to/tracks/${track.slug}/${page.params.module}/${lesson.slug}`} />
+	<link rel="canonical" href={`${ACADEMY_ORIGIN}/tracks/${track.slug}/${page.params.module}/${lesson.slug}`} />
 	<meta property="og:title" content={`${lesson.title} · ${track.title}`} />
 	<meta property="og:description" content={excerptFromHtml(lesson.content_html) ?? lesson.title} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={`https://academy.japa.to/tracks/${track.slug}/${page.params.module}/${lesson.slug}`} />
+	<meta property="og:url" content={`${ACADEMY_ORIGIN}/tracks/${track.slug}/${page.params.module}/${lesson.slug}`} />
 	{#if track.thumbnail_url}
 		<meta property="og:image" content={track.thumbnail_url} />
 	{/if}
@@ -276,7 +317,7 @@
 			'@type': 'LearningResource',
 			name: lesson.title,
 			description: excerptFromHtml(lesson.content_html) ?? undefined,
-			isPartOf: { '@type': 'Course', name: track.title, url: `https://academy.japa.to/tracks/${track.slug}` },
+			isPartOf: { '@type': 'Course', name: track.title, url: `${ACADEMY_ORIGIN}/tracks/${track.slug}` },
 			teaches: lesson.title
 		})}
 </svelte:head>
@@ -307,15 +348,6 @@
 		</a>
 	{/if}
 
-	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-			<NotebookPen size={14} /> {t('academy.notes')}
-		</h2>
-		<textarea
-			placeholder={t('academy.notes_placeholder', 'Write your notes…')}
-			class="h-24 w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-		></textarea>
-	</section>
 </SetSidebar>
 
 <!-- Three-zone layout: curriculum rail | lesson content. Right meta via sidebar. -->
@@ -371,6 +403,7 @@
 						class="w-full rounded-[var(--radius-card)] bg-black"
 						ontimeupdate={onVideoTimeUpdate}
 						onloadedmetadata={onVideoLoaded}
+						onpause={flushVideoProgress}
 					></video>
 				{:else if ytEmbed}
 					<div class="aspect-video w-full overflow-hidden rounded-[var(--radius-card)] bg-black">
@@ -391,6 +424,7 @@
 						class="w-full rounded-[var(--radius-card)] bg-black"
 						ontimeupdate={onVideoTimeUpdate}
 						onloadedmetadata={onVideoLoaded}
+						onpause={flushVideoProgress}
 					></video>
 				{:else if lesson.external_url}
 					<a href={lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
@@ -429,7 +463,7 @@
 										: t('academy.quiz_failed', 'Not passed')}
 								</p>
 								<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
-									{quizResult.earned_points}/{quizResult.total_points} {t('academy.points', 'points')}
+									{quizResult.earned_points}/{quizResult.total_points} {t('academy.questions', 'questions')}
 								</p>
 							</div>
 						{/if}
@@ -563,7 +597,7 @@
 										{t('academy.submit_quiz', 'Submit quiz')}
 									{/if}
 								</button>
-							{:else}
+							{:else if !attemptsExhausted}
 								<button
 									type="button"
 									onclick={retakeQuiz}
@@ -583,8 +617,8 @@
 					<ul class="space-y-2">
 						{#each lesson.checklist as item (item.id)}
 							<li class="flex items-start gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-								<input type="checkbox" id={item.id} class="mt-1" />
-								<label for={item.id} class="text-sm text-[var(--color-text-subtle)]">{item.label}</label>
+								<input type="checkbox" id={item.id} class="mt-1" checked={checklistDone.has(item.id)} onchange={() => toggleChecklist(item.id)} />
+								<label for={item.id} class="text-sm text-[var(--color-text-subtle)] {checklistDone.has(item.id) ? 'line-through opacity-70' : ''}">{item.label}</label>
 							</li>
 						{/each}
 					</ul>
@@ -621,6 +655,7 @@
 						class="w-full rounded-[var(--radius-card)] bg-black"
 						ontimeupdate={onVideoTimeUpdate}
 						onloadedmetadata={onVideoLoaded}
+						onpause={flushVideoProgress}
 					></video>
 				{:else if ytEmbed}
 					<div class="aspect-video w-full overflow-hidden rounded-[var(--radius-card)] bg-black">
@@ -719,6 +754,9 @@
 						{t('academy.mark_complete')}
 					{/if}
 				</button>
+			{/if}
+			{#if markError}
+				<p class="w-full text-sm text-[var(--color-destructive)]">{markError}</p>
 			{/if}
 
 			{#if lesson.next_lesson}

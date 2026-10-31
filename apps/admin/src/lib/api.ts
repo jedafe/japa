@@ -1521,17 +1521,6 @@ export const discountCodesAdminApi = {
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/discount-codes/${id}`, { method: 'DELETE' }),
 };
 
-export const docsAdminApiExtended = {
-	getByAudience: (audience: string) => api<unknown>(`/admin/docs/${audience}`),
-	getPage: (id: string) => api<unknown>(`/admin/docs/pages/${id}`),
-	updatePage: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/docs/pages/${id}`, { method: 'PATCH', body }),
-	deletePage: (id: string) => api<{ deleted: boolean }>(`/admin/docs/pages/${id}`, { method: 'DELETE' }),
-	aiGenerate: (body: Record<string, unknown>) => api<unknown>('/admin/docs/ai-generate', { method: 'POST', body }),
-	approvePage: (id: string) => api<unknown>(`/admin/docs/pages/${id}/approve`, { method: 'POST', body: {} }),
-	publishPage: (id: string) => api<unknown>(`/admin/docs/pages/${id}/publish`, { method: 'POST', body: {} }),
-};
-
 export const gdprAdminApiExtended = {
 	listDeletionRequests: (params?: string) =>
 		api<unknown>(`/admin/gdpr/deletion-requests${params ? `?${params}` : ''}`),

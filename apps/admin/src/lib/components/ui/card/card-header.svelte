@@ -13,7 +13,7 @@
 </script>
 
 <div
-  class={clsx("flex flex-col space-y-1.5 p-6", className)}
+  class={clsx("flex flex-col space-y-1.5 p-4 sm:p-6", className)}
   {...restProps}
 >
   {@render children?.()}

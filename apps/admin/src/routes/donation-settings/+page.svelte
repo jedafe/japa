@@ -113,7 +113,7 @@
 		{/if}
 
 		<div class="space-y-3">
-			<label class="flex items-center justify-between rounded-lg border border-border px-4 py-3">
+			<label class="flex items-center justify-between gap-2 flex-wrap rounded-lg border border-border px-4 py-3">
 				<span class="text-sm font-medium">{t('donation_settings.enabled', 'Accept platform donations')}</span>
 				<input bind:checked={settings.tips_enabled} type="checkbox" class="size-4" />
 			</label>
@@ -153,7 +153,7 @@
 			<div class="rounded-lg border border-border p-4">
 				<h3 class="mb-3 text-sm font-semibold">{t('tips.external', 'External donation links')}</h3>
 				{#each links as link (link.id)}
-					<div class="mb-2 flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
+					<div class="mb-2 flex items-center justify-between gap-2 flex-wrap rounded-md border border-border px-3 py-2 text-sm">
 						<span class="truncate">{link.label} — {link.url}</span>
 						<button type="button" onclick={() => removeLink(link.id!)} class="shrink-0 text-destructive hover:opacity-70">✕</button>
 					</div>

@@ -375,7 +375,7 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex gap-2">
+<div class="mb-4 flex flex-wrap gap-2">
 	{#each ['providers','guides','updates'] as tab}
 		<button class="rounded px-3 py-1 text-sm font-medium" style="background:{activeTab===tab?'var(--color-primary)':'var(--color-muted-bg)'};color:{activeTab===tab?'white':'var(--color-foreground)'}" onclick={() => activeTab=tab as any}>{tab}</button>
 	{/each}

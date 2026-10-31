@@ -323,7 +323,7 @@
 
 {#if errorMessage}
 	<div
-		class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm"
+		class="mb-4 flex items-center justify-between gap-2 flex-wrap rounded-md border px-4 py-3 text-sm"
 		style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)"
 	>
 		<span>{errorMessage}</span>
@@ -526,15 +526,15 @@
 				{t("organisations.approve_confirm", "Approve this ownership claim?")}
 			</p>
 			<div class="rounded-lg border p-4 space-y-2" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<div class="flex justify-between text-sm">
+				<div class="flex justify-between gap-2 flex-wrap text-sm">
 					<span style="color: var(--color-muted)">{t("organisations.name", "Organization")}</span>
 					<span class="font-medium">{target.org_name}</span>
 				</div>
-				<div class="flex justify-between text-sm">
+				<div class="flex justify-between gap-2 flex-wrap text-sm">
 					<span style="color: var(--color-muted)">{t("organisations.claimant", "Claimant")}</span>
 					<span class="font-medium">{target.claimant_username}</span>
 				</div>
-				<div class="flex justify-between text-sm">
+				<div class="flex justify-between gap-2 flex-wrap text-sm">
 					<span style="color: var(--color-muted)">{t("organisations.claimant_email", "Email")}</span>
 					<span>{target.claimant_email}</span>
 				</div>
@@ -564,11 +564,11 @@
 				{t("organisations.reject_confirm", "Reject this ownership claim?")}
 			</p>
 			<div class="rounded-lg border p-4 space-y-2" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<div class="flex justify-between text-sm">
+				<div class="flex justify-between gap-2 flex-wrap text-sm">
 					<span style="color: var(--color-muted)">{t("organisations.name", "Organization")}</span>
 					<span class="font-medium">{target.org_name}</span>
 				</div>
-				<div class="flex justify-between text-sm">
+				<div class="flex justify-between gap-2 flex-wrap text-sm">
 					<span style="color: var(--color-muted)">{t("organisations.claimant", "Claimant")}</span>
 					<span class="font-medium">{target.claimant_username}</span>
 				</div>
@@ -595,7 +595,7 @@
 	</p>
 	<div class="mt-4 max-h-48 overflow-y-auto rounded-lg border p-3 space-y-1" style="border-color: var(--color-border); background-color: var(--color-surface)">
 		{#each bulkTargets as c (c.id)}
-			<div class="flex justify-between text-sm">
+			<div class="flex justify-between gap-2 flex-wrap text-sm">
 				<span class="font-medium">{c.org_name}</span>
 				<span style="color: var(--color-muted)">{c.claimant_username}</span>
 			</div>
@@ -621,7 +621,7 @@
 	</p>
 	<div class="mt-4 max-h-48 overflow-y-auto rounded-lg border p-3 space-y-1" style="border-color: var(--color-border); background-color: var(--color-surface)">
 		{#each bulkTargets as c (c.id)}
-			<div class="flex justify-between text-sm">
+			<div class="flex justify-between gap-2 flex-wrap text-sm">
 				<span class="font-medium">{c.org_name}</span>
 				<span style="color: var(--color-muted)">{c.claimant_username}</span>
 			</div>

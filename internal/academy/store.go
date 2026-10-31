@@ -149,9 +149,13 @@ func trackFromFields(
 	}
 }
 
-// ListPublishedTracks lists all published tracks for a platform.
-func (s *Store) ListPublishedTracks(ctx context.Context) ([]Track, error) {
-	rows, err := s.read.ListPublishedAcademyTracks(ctx)
+// ListPublishedTracks lists published tracks for the current platform
+// (marketplace-gated: platform-authored, or instructor + academy-approved).
+func (s *Store) ListPublishedTracks(ctx context.Context, limit, offset int32) ([]Track, error) {
+	rows, err := s.read.ListPublishedAcademyTracks(ctx, gen.ListPublishedAcademyTracksParams{
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list published tracks: %w", err)
 	}
@@ -173,7 +177,9 @@ SELECT id, title, slug, description, difficulty, cover_media_id,
        instructor_id, price_kobo, currency, is_published_to_academy,
        category, language, total_enrolled, subscription_eligible
 FROM academy_tracks
-WHERE is_published = true AND (title ILIKE $1 OR slug ILIKE $1)
+WHERE is_published = true
+ AND (instructor_id IS NULL OR is_published_to_academy = true)
+ AND (title ILIKE $1 OR slug ILIKE $1)
 ORDER BY sort_order ASC, created_at DESC
 LIMIT $2
 `
@@ -533,20 +539,24 @@ func (s *Store) GetTrackDetail(ctx context.Context, slug string) (*TrackDetail, 
 		return nil, fmt.Errorf("list modules by track: %w", err)
 	}
 
+	// Single lessons query for the whole track (N+1 fix — was one
+	// ListAcademyLessonsByModule round-trip per module), bucketed by module.
+	lessonRows, err := s.read.ListAcademyLessonsByTrack(ctx, track.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list lessons by track: %w", err)
+	}
+	lessonsByModule := make(map[[16]byte][]gen.ListAcademyLessonsByTrackRow, len(modRows))
+	for _, l := range lessonRows {
+		lessonsByModule[l.ModuleID.Bytes] = append(lessonsByModule[l.ModuleID.Bytes], l)
+	}
+
 	modules := make([]ModuleWithLessons, 0, len(modRows))
 
 	for _, m := range modRows {
-		lessonRows, err := s.read.ListAcademyLessonsByModule(ctx,
+		rows := lessonsByModule[m.ID.Bytes]
+		lessons := make([]LessonSummary, 0, len(rows))
 
-			m.ID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("list lessons by module: %w", err)
-		}
-
-		lessons := make([]LessonSummary, 0, len(lessonRows))
-
-		for _, l := range lessonRows {
+		for _, l := range rows {
 			// Only include published lessons in the public track-detail view.
 			if !l.IsPublished {
 				continue
@@ -1693,6 +1703,15 @@ func (s *Store) ListEnrollmentsByUser(ctx context.Context, userID pgtype.UUID) (
 	return academy_enrollments, nil
 }
 
+// IncrementQuizAttempts atomically bumps and returns the user's submission
+// count for a quiz lesson — the single upsert avoids check-then-write races.
+func (s *Store) IncrementQuizAttempts(ctx context.Context, userID, lessonID pgtype.UUID) (int32, error) {
+	return s.write.UpsertAcademyQuizAttempt(ctx, gen.UpsertAcademyQuizAttemptParams{
+		UserID:   userID,
+		LessonID: lessonID,
+	})
+}
+
 // GetEnrollment retrieves a specific enrollment.
 func (s *Store) GetEnrollment(ctx context.Context, userID, trackID pgtype.UUID) (*Enrollment, error) {
 	r, err := s.read.GetEnrollmentByUserAndTrack(ctx, gen.GetEnrollmentByUserAndTrackParams{
@@ -1806,6 +1825,10 @@ type QuizQuestion struct {
 // quizPassScorePct is the pass threshold for lesson quizzes (§36 quiz engine).
 const quizPassScorePct = 70
 
+// quizMaxAttempts caps submissions per user per quiz lesson — a blind-retake
+// oracle needs many more attempts than a legitimate student (§36 review).
+const quizMaxAttempts = 10
+
 // QuizOption is one selectable answer in the frontend QuizOption contract.
 // The option's ID is its text — academy_quizzes stores the correct answer as
 // the option text (answer column), so the selected option's label is also
@@ -1910,11 +1933,22 @@ func (s *Store) GetQuiz(ctx context.Context, lessonID pgtype.UUID) (*Quiz, error
 	questions := make([]QuizDTOQuestion, 0, len(rows))
 
 	for _, r := range rows {
+		opts := parseQuizOptions(r.Options)
+		// Derive the widget type the player must render: no options → free
+		// text; a multi-value accepted-answer set with options → multi-select;
+		// otherwise single choice. (B1: 'multiple'/'text' were never surfaced,
+		// so multi-answer questions were unpassable.)
+		qType := "single"
+		if len(opts) == 0 {
+			qType = "text"
+		} else if len(parseCorrectAnswers(r.Answer)) > 1 {
+			qType = "multiple"
+		}
 		questions = append(questions, QuizDTOQuestion{
 			ID:       r.ID.String(),
-			Type:     "single",
+			Type:     qType,
 			Prompt:   r.Question,
-			Options:  parseQuizOptions(r.Options),
+			Options:  opts,
 			Points:   1,
 			Position: r.Position,
 		})

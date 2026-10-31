@@ -93,7 +93,7 @@
 		/>
 	</div>
 
-	<div class="grid grid-cols-2 gap-4">
+	<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 		<div>
 			<label for="ds-source-kind" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('data_sources.source_kind', 'Kind')}
@@ -137,7 +137,7 @@
 		/>
 	</div>
 
-	<div class="grid grid-cols-2 gap-4">
+	<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 		<div>
 			<label for="ds-entity-type" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('data_sources.entity_type', 'Entity type')}

@@ -1,4 +1,5 @@
 import { PUBLIC_MAIN_ORIGIN } from '$env/static/public';
+import { env } from '$env/dynamic/public';
 
 /**
  * Cross-app origin helpers.
@@ -35,13 +36,23 @@ export function loginUrl(redirectPath?: string): string {
 	} else if (typeof window !== 'undefined') {
 		abs = `${window.location.origin}${redirectPath}`;
 	} else {
-		// SSR without an absolute URL — fall back to the path relative to the
-		// Main app. This should not happen in practice; server-side callers
-		// should pass event.url.origin + path.
-		abs = `${MAIN_ORIGIN}${redirectPath}`;
+		// SSR without an absolute URL: the target is an Academy route the
+		// Main app doesn't host, so a Main-app-relative redirect would 404
+		// after login. Return bare login rather than a broken deep link (F9).
+		return base;
 	}
 	return `${base}?redirect=${encodeURIComponent(abs)}`;
 }
+
+/**
+ * Canonical Academy origin for SEO/OG URLs (S6). Reads the configured
+ * academy host (custom-domain aware via PUBLIC_JC_ACADEMY_ORIGIN); falls
+ * back to the default academy subdomain.
+ */
+export const ACADEMY_ORIGIN = (env.PUBLIC_JC_ACADEMY_ORIGIN || 'https://academy.japa.to').replace(
+	/\/$/,
+	''
+);
 
 /** Build a Main app user-profile URL. */
 export function profileUrl(username: string): string {

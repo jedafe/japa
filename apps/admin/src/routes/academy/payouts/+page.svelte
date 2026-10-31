@@ -182,7 +182,7 @@
 />
 
 {#if errorMessage}
-	<div class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
+	<div class="mb-4 flex items-center justify-between gap-2 flex-wrap rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">
 		<span>{errorMessage}</span>
 		<Button variant="outline" size="sm" onclick={load}>{t("common.retry", "Retry")}</Button>
 	</div>
@@ -219,10 +219,10 @@
 		<div class="space-y-3">
 			<p class="text-sm" style="color: var(--color-muted)">{t("academy.process_payout_confirm", "Process this payout transfer?")}</p>
 			<div class="rounded-lg border p-4 space-y-2" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("academy.period", "Period")}</span><span>{target.period_start} → {target.period_end}</span></div>
-				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("academy.gross", "Gross")}</span><span class="font-medium">{formatKobo(target.gross_kobo, target.currency)}</span></div>
-				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("academy.commission", "Platform Commission")}</span><span>{formatKobo(target.platform_commission_kobo, target.currency)}</span></div>
-				<div class="flex justify-between text-sm border-t pt-2" style="border-color: var(--color-border)"><span style="color: var(--color-muted)">{t("academy.net", "Net to Instructor")}</span><span class="font-semibold" style="color: var(--color-success)">{formatKobo(target.net_kobo, target.currency)}</span></div>
+				<div class="flex justify-between gap-2 flex-wrap text-sm"><span style="color: var(--color-muted)">{t("academy.period", "Period")}</span><span>{target.period_start} → {target.period_end}</span></div>
+				<div class="flex justify-between gap-2 flex-wrap text-sm"><span style="color: var(--color-muted)">{t("academy.gross", "Gross")}</span><span class="font-medium">{formatKobo(target.gross_kobo, target.currency)}</span></div>
+				<div class="flex justify-between gap-2 flex-wrap text-sm"><span style="color: var(--color-muted)">{t("academy.commission", "Platform Commission")}</span><span>{formatKobo(target.platform_commission_kobo, target.currency)}</span></div>
+				<div class="flex justify-between gap-2 flex-wrap text-sm border-t pt-2" style="border-color: var(--color-border)"><span style="color: var(--color-muted)">{t("academy.net", "Net to Instructor")}</span><span class="font-semibold" style="color: var(--color-success)">{formatKobo(target.net_kobo, target.currency)}</span></div>
 			</div>
 			{#if target.failure_reason}
 				<div class="rounded-md border px-3 py-2 text-xs" style="border-color: var(--color-danger); color: var(--color-danger)">
@@ -246,8 +246,8 @@
 		<div class="space-y-3">
 			<p class="text-sm" style="color: var(--color-muted)">{t("academy.mark_failed_confirm", "Mark this payout as failed?")}</p>
 			<div class="rounded-lg border p-3 space-y-1" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("academy.period", "Period")}</span><span>{target.period_start} → {target.period_end}</span></div>
-				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("academy.net", "Net")}</span><span class="font-medium">{formatKobo(target.net_kobo, target.currency)}</span></div>
+				<div class="flex justify-between gap-2 flex-wrap text-sm"><span style="color: var(--color-muted)">{t("academy.period", "Period")}</span><span>{target.period_start} → {target.period_end}</span></div>
+				<div class="flex justify-between gap-2 flex-wrap text-sm"><span style="color: var(--color-muted)">{t("academy.net", "Net")}</span><span class="font-medium">{formatKobo(target.net_kobo, target.currency)}</span></div>
 			</div>
 			<div>
 				<label for="fail-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("academy.failureReason", "Failure Reason")}</label>

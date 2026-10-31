@@ -12,12 +12,11 @@
 	import CheckoutModal from '$lib/components/academy/CheckoutModal.svelte';
 	import { LoadingSkeleton } from '$lib/components/ui';
 	import { formatDuration, formatCount, formatPriceKobo, isFreeForUser } from '$lib/format';
-	import { loginUrl } from '$lib/appOrigins';
+	import { loginUrl, ACADEMY_ORIGIN } from '$lib/appOrigins';
 	import { Star, Users, Clock, PlayCircle, CheckCircle, ChevronDown, Lock, Bookmark as BookmarkIcon, Loader2 } from 'lucide-svelte';
 	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
 	import type { Bookmark, Enrollment, TrackReview, ReviewAggregate } from '$lib/types';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { safeJsonLd } from '$lib/seo';
 
 	let { data }: { data: PageData } = $props();
@@ -78,7 +77,7 @@
 		}
 		// Trigger the shared fetch (deduplicated — if a sidebar widget already
 		// fetched, this is a no-op).
-		enrollmentsStore.fetch();
+		enrollmentsStore.fetch(!!data.user);
 	});
 
 	// Resolve whether this track is already bookmarked (authed users only).
@@ -278,13 +277,13 @@
 		<meta name="description" content={track.description.slice(0, 160)} />
 	{/if}
 	<meta name="robots" content="index, follow" />
-	<link rel="canonical" href={`https://academy.japa.to/tracks/${track.slug}`} />
+	<link rel="canonical" href={`${ACADEMY_ORIGIN}/tracks/${track.slug}`} />
 	<meta property="og:title" content={track.title} />
 	{#if track.description}
 		<meta property="og:description" content={track.description.slice(0, 160)} />
 	{/if}
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={`https://academy.japa.to/tracks/${track.slug}`} />
+	<meta property="og:url" content={`${ACADEMY_ORIGIN}/tracks/${track.slug}`} />
 	{#if track.thumbnail_url}
 		<meta property="og:image" content={track.thumbnail_url} />
 	{/if}
@@ -328,9 +327,6 @@
 				{/if}
 			</div>
 			<h1 class="text-2xl font-bold text-[var(--color-text)] md:text-3xl">{track.title}</h1>
-			{#if track.subtitle}
-				<p class="mt-1 text-base text-[var(--color-text-subtle)]">{track.subtitle}</p>
-			{/if}
 
 			<!-- Stats -->
 			<div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[var(--color-muted)]">
@@ -447,36 +443,8 @@
 		<!-- Overview -->
 		<Tabs.Content value="overview" class="pt-6">
 			<div class="max-w-3xl">
-				{#if track.overview_html}
-					<!-- Article content rendered server-side from TipTap JSON -->
-					<div class="prose">{@html sanitizeContentHtml(track.overview_html)}</div>
-				{:else if track.description}
+				{#if track.description}
 					<p class="text-base text-[var(--color-text-subtle)]">{track.description}</p>
-				{/if}
-
-				{#if track.objectives?.length}
-					<section class="mt-6">
-						<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">{t('academy.what_youll_learn')}</h2>
-						<ul class="space-y-2">
-							{#each track.objectives as obj}
-								<li class="flex items-start gap-2 text-sm text-[var(--color-text-subtle)]">
-									<CheckCircle size={16} class="mt-0.5 shrink-0 text-[var(--color-progress)]" />
-									<span>{obj}</span>
-								</li>
-							{/each}
-						</ul>
-					</section>
-				{/if}
-
-				{#if track.prerequisites?.length}
-					<section class="mt-6">
-						<h2 class="mb-3 text-lg font-semibold text-[var(--color-text)]">{t('academy.prerequisites')}</h2>
-						<ul class="space-y-1">
-							{#each track.prerequisites as pre}
-								<li class="text-sm text-[var(--color-text-subtle)]">• {pre}</li>
-							{/each}
-						</ul>
-					</section>
 				{/if}
 
 				<!-- Instructor card -->

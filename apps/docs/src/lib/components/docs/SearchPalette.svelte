@@ -204,6 +204,10 @@
 		font-size: 1rem;
 		color: var(--color-text);
 	}
+	/* Focus ring on the input row — the input itself has outline:none. */
+	.input-row:focus-within {
+		box-shadow: inset 0 -2px 0 var(--color-primary);
+	}
 	.close-btn {
 		display: grid;
 		place-items: center;

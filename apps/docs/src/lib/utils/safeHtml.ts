@@ -25,7 +25,9 @@ const ALLOWED_ATTRS = new Set([
 	'd', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'viewBox',
 	'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
 	'rx', 'ry', 'cx', 'cy', 'r', 'xmlns', 'xlink:href', 'points', 'src',
-	'alt', 'colspan', 'rowspan', 'id', 'data-*'
+	'alt', 'colspan', 'rowspan', 'id', 'data-*',
+	'aria-hidden', 'aria-label', 'aria-labelledby', 'aria-describedby',
+	'tabindex', 'role'
 ]);
 
 /**

@@ -374,9 +374,17 @@ func (s *Service) ListCategoriesForSpace(ctx context.Context, spaceSlug string) 
 		return nil, "", err
 	}
 
-	typeID, typeSlug, err := s.store.GetSpaceTypeRef(ctx, spaceID)
+	typeID, typeSlug, typeLevel, err := s.store.GetSpaceTypeRef(ctx, spaceID)
 	if err != nil {
 		return nil, "", err
+	}
+
+	// §05 amendment — universities live under the education type now; the
+	// scope the frontend checks ('university' → uni categories + uni search)
+	// comes from the space's level, not its type slug.
+	scope := typeSlug
+	if typeLevel == "university" {
+		scope = "university"
 	}
 
 	cats, err := s.store.ListCategoriesBySpaceSlug(ctx, spaceSlug)
@@ -445,7 +453,7 @@ func (s *Service) ListCategoriesForSpace(ctx context.Context, spaceSlug string) 
 		cats[i].Empty = !has
 	}
 
-	return cats, typeSlug, nil
+	return cats, scope, nil
 }
 
 // ListAllCategories returns the union of every enabled type's category
@@ -469,7 +477,7 @@ func (s *Service) ListPageTemplatesForSpace(ctx context.Context, spaceSlug strin
 		return nil, err
 	}
 
-	typeID, _, err := s.store.GetSpaceTypeRef(ctx, spaceID)
+	typeID, _, _, err := s.store.GetSpaceTypeRef(ctx, spaceID)
 	if err != nil {
 		return nil, err
 	}

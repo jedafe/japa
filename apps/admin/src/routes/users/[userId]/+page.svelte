@@ -555,7 +555,7 @@
 </svelte:head>
 
 {#if impersonating}
-  <div class="mb-4 flex items-center justify-between rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 10%, transparent)">
+  <div class="mb-4 flex items-center justify-between gap-2 flex-wrap rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 10%, transparent)">
     <span style="color: var(--color-warning)">{t('users.userId.impersonating')}<strong>{impersonatingTargetId ?? ''}</strong></span>
     <a href="/users" class="rounded-md border px-3 py-1 text-xs font-medium" style="border-color: var(--color-warning); color: var(--color-warning)">{t('users.userId.back_to_users')}</a>
   </div>
@@ -597,7 +597,7 @@
 
         <!-- User Info -->
         <div class="flex-1 min-w-0">
-          <div class="flex items-start justify-between gap-4">
+          <div class="flex items-start justify-between flex-wrap gap-4">
             <div class="min-w-0">
               <h1 class="text-2xl font-bold tracking-tight truncate">{user.username}</h1>
               <p class="mt-0.5 text-sm truncate" style="color: var(--color-muted)">{user.email}</p>

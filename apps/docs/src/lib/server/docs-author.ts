@@ -129,7 +129,11 @@ export async function loadDocPage(
 					throw error(500, { code: 'internal_error', message: 'Failed to load page' });
 				}
 			} else {
-				throw error(500, { code: 'internal_error', message: 'Failed to load page' });
+				// Other 4xx (e.g. 429 rate limit) should surface their real
+				// status, not collapse into a generic 500.
+				throw err.status >= 400 && err.status < 500
+					? error(err.status as 400, { code: err.code, message: err.message })
+					: error(500, { code: 'internal_error', message: 'Failed to load page' });
 			}
 		} else {
 			throw error(500, { code: 'internal_error', message: 'Failed to load page' });

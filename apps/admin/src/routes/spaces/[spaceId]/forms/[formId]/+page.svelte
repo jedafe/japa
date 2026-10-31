@@ -225,7 +225,7 @@
 	<title>{form?.name ?? t('space_forms.detail_title')} — {siteName()} Admin</title>
 </svelte:head>
 
-<div class="mb-4 flex items-center justify-between">
+<div class="mb-4 flex items-center justify-between gap-2 flex-wrap">
 	<div>
 		<h1 class="text-2xl font-bold tracking-tight">{form?.name ?? t('space_forms.detail_title')}</h1>
 		<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('space_forms.detail_description')}</p>
@@ -329,7 +329,7 @@
 		</div>
 
 		<div class="rounded-lg border p-5" style="border-color: var(--color-border); background-color: var(--color-surface)">
-			<div class="mb-4 flex items-center justify-between">
+			<div class="mb-4 flex items-center justify-between gap-2 flex-wrap">
 				<h2 class="text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('space_forms.sections.fields')}</h2>
 				<a
 					href="/forms/{formId}"
@@ -342,7 +342,7 @@
 			{#if form?.fields && form.fields.length > 0}
 				<div class="space-y-3">
 					{#each form.fields as field (field.id)}
-						<div class="flex items-center justify-between rounded-md border px-4 py-3" style="border-color: var(--color-border); background-color: var(--color-background)">
+						<div class="flex items-center justify-between gap-2 flex-wrap rounded-md border px-4 py-3" style="border-color: var(--color-border); background-color: var(--color-background)">
 							<div>
 								<span class="text-sm font-medium">{field.label}</span>
 								<span class="ms-2 inline-block rounded-full px-2 py-0.5 text-xs bg-black/5 dark:bg-surface/10">{field.type}</span>

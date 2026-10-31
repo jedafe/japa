@@ -458,7 +458,7 @@
 					class="rounded-lg border p-4"
 					style="border-color: var(--color-border); background: var(--color-surface)"
 				>
-					<div class="flex items-center justify-between">
+					<div class="flex items-center justify-between gap-2 flex-wrap">
 						<div>
 							<p class="text-sm font-medium" style="color: var(--color-foreground)">
 								{t('common.update', 'Update')} #{update.step_index ?? '—'}
@@ -495,7 +495,7 @@
 		{/if}
 		<!-- Pagination controls (BUG-005) -->
 		{#if updatesTotalPages > 1}
-			<div class="mt-4 flex items-center justify-between">
+			<div class="mt-4 flex items-center justify-between gap-2 flex-wrap">
 				<p class="text-xs" style="color: var(--color-muted)">
 					{t('common.page', 'Page')} {updatesPage} / {updatesTotalPages}
 				</p>

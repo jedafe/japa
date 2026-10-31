@@ -178,6 +178,13 @@ type AcademyQuiz struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type AcademyQuizAttempt struct {
+	UserID    pgtype.UUID        `json:"user_id"`
+	LessonID  pgtype.UUID        `json:"lesson_id"`
+	Attempts  int32              `json:"attempts"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AcademySubscriptionPlanTrack struct {
 	PlanID    pgtype.UUID        `json:"plan_id"`
 	TrackID   pgtype.UUID        `json:"track_id"`
@@ -1799,6 +1806,7 @@ type DocPage struct {
 	HelpfulNo      int32              `json:"helpful_no"`
 	Category       *string            `json:"category"`
 	Subcategory    *string            `json:"subcategory"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
 }
 
 type DocPageVote struct {

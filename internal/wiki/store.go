@@ -1015,17 +1015,17 @@ func (s *Store) FindHostPageID(ctx context.Context, spaceID pgtype.UUID, categor
 // resolve entity_class tokens for space-backed field group assignments
 // (§06/§80): seeded assignments use space_type:{slug} and the class-wide
 // space_type token, while ops-created rows may use space_type:{id}.
-func (s *Store) GetSpaceTypeRef(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, string, error) {
+func (s *Store) GetSpaceTypeRef(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, string, string, error) {
 	r, err := s.read.GetSpaceTypeRef(ctx, spaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return pgtype.UUID{}, "", pgx.ErrNoRows
+			return pgtype.UUID{}, "", "", pgx.ErrNoRows
 		}
 
-		return pgtype.UUID{}, "", fmt.Errorf("wiki: get space type ref: %w", err)
+		return pgtype.UUID{}, "", "", fmt.Errorf("wiki: get space type ref: %w", err)
 	}
 
-	return r.SpaceTypeID, r.SpaceTypeSlug, nil
+	return r.SpaceTypeID, r.SpaceTypeSlug, r.Level, nil
 }
 
 // UpdatePage updates wiki page admin-managed fields (lock, feature, active,

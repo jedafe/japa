@@ -439,7 +439,7 @@
 						{#if trafficSources.length > 0}
 							<div class="space-y-3">
 								{#each trafficSources as source, i (`${source.referrer ?? 'direct'}::${i}`)}
-									<div class="flex items-center justify-between rounded-lg px-3 py-2">
+									<div class="flex items-center justify-between gap-2 flex-wrap rounded-lg px-3 py-2">
 										<span class="text-sm" style="color: var(--color-foreground)">
 											{source.referrer ?? t('dashboard.direct', 'Direct')}
 										</span>
@@ -463,7 +463,7 @@
 			<!-- Top Content -->
 			<Card>
 				<CardHeader>
-					<div class="flex items-center justify-between">
+					<div class="flex items-center justify-between gap-2 flex-wrap">
 						<h3 class="text-sm font-medium" style="color: var(--color-muted)">
 							{t('dashboard.top_content', 'Top Content')}
 						</h3>
@@ -474,7 +474,7 @@
 					{#if topContent.length > 0}
 						<div class="space-y-3">
 							{#each topContent as item (item.content_id)}
-								<a href="/content?view={item.content_id}" class="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-[color-mix(in_srgb,var(--color-muted)_5%,transparent)]">
+								<a href="/content?view={item.content_id}" class="flex items-center justify-between gap-2 flex-wrap rounded-lg px-3 py-2 hover:bg-[color-mix(in_srgb,var(--color-muted)_5%,transparent)]">
 									<div class="min-w-0 flex-1">
 										<p class="truncate text-sm font-medium" style="color: var(--color-foreground)">
 											{item.content_title || item.content_id.slice(0, 8)}
@@ -508,7 +508,7 @@
 					</CardHeader>
 					<CardContent>
 						<div class="space-y-4">
-							<div class="flex items-center justify-between">
+							<div class="flex items-center justify-between gap-2 flex-wrap">
 								<span class="text-sm" style="color: var(--color-muted)"
 									>{t('dashboard.total_users', 'Total Users')}</span
 								>
@@ -516,7 +516,7 @@
 									>{(userStats.total_users ?? 0).toLocaleString()}</span
 								>
 							</div>
-							<div class="flex items-center justify-between">
+							<div class="flex items-center justify-between gap-2 flex-wrap">
 								<span class="text-sm" style="color: var(--color-muted)"
 									>{t('dashboard.new_today', 'New Today')}</span
 								>
@@ -524,7 +524,7 @@
 									>{(userStats.new_users_today ?? 0).toLocaleString()}</span
 								>
 							</div>
-							<div class="flex items-center justify-between">
+							<div class="flex items-center justify-between gap-2 flex-wrap">
 								<span class="text-sm" style="color: var(--color-muted)"
 									>{t('dashboard.active_users', 'Active Users')}</span
 								>
@@ -532,7 +532,7 @@
 									>{(userStats.active_users ?? 0).toLocaleString()}</span
 								>
 							</div>
-							<div class="flex items-center justify-between">
+							<div class="flex items-center justify-between gap-2 flex-wrap">
 								<span class="text-sm" style="color: var(--color-muted)"
 									>{t('dashboard.event_types', 'Event Types')}</span
 								>
@@ -554,7 +554,7 @@
 						{#if topSpaces.length > 0}
 							<div class="space-y-3">
 							{#each topSpaces as space, i (`${space.space_name ?? ''}::${i}`)}
-								<div class="flex items-center justify-between rounded-lg px-3 py-2">
+								<div class="flex items-center justify-between gap-2 flex-wrap rounded-lg px-3 py-2">
 									<span class="text-sm" style="color: var(--color-foreground)">{space.space_name ?? t('dashboard.space', 'Space')}</span>
 									{#if space.joins !== undefined}
 										<span class="text-xs" style="color: var(--color-muted)">{space.joins} {t('dashboard.members', 'members')}</span>

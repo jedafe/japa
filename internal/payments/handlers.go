@@ -416,6 +416,28 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// credit_purchase + pro_membership have dedicated server-priced flows
+	// (POST /wallet/credits/purchase, the subscription checkout) that own the
+	// amount AND the metadata. Via this endpoint a caller could supply
+	// metadata.credits_to_grant / currency_code verbatim — minting arbitrary
+	// wallet credits for a kobo — or attach a cheap self-made payment to a
+	// Pro activation. Reject them here; the service-level CreatePayment used
+	// by those flows is unaffected.
+	if input.PurposeType == PurposeCreditPurchase || input.PurposeType == PurposeProMembership {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_purpose_type",
+			input.PurposeType+" payments are created by their dedicated checkout")
+		return
+	}
+
+	// org_boost is likewise minted by the dedicated boost checkout — a
+	// self-made intent settles as a bare paid row that grants nothing, which
+	// only serves to pollute the ledger and webhook surface.
+	if input.PurposeType == PurposeOrgBoost {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_purpose_type",
+			"org_boost payments are created by the boost checkout")
+		return
+	}
+
 	if input.Amount <= 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "Amount must be positive")
 		return

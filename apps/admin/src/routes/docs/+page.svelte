@@ -15,7 +15,7 @@
 	import { goto } from '$app/navigation';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags } from 'lucide-svelte';
+	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	const canEdit = $derived(hasPermission('docs.manage'));
@@ -50,6 +50,13 @@
 	// True once openEdit's detail fetch populated the body — guards submit from
 	// writing an empty doc over stored content when the fetch failed.
 	let editContentReady = $state(false);
+	// Stored body shape: 'plain' TipTap paragraphs are editable in the
+	// textarea; 'markdown' string bodies round-trip verbatim; 'rich' docs
+	// (marks, tables, code blocks, embeds, non-paragraph nodes) cannot be
+	// flattened into text — the body field locks and content is omitted from
+	// the PATCH so a metadata edit never destroys the markup.
+	type BodyKind = 'plain' | 'markdown' | 'rich';
+	let editBodyKind = $state<BodyKind>('plain');
 	let saving = $state(false);
 	let form = $state({
 		title: '',
@@ -211,6 +218,21 @@
 			show: (row: DocPage) => canPublish && row.status === 'published'
 		},
 		{
+			label: t('docs.move_up', 'Move up'),
+			icon: ArrowUp,
+			onclick: (row) => movePage(row, -1),
+			show: (row: DocPage) => canEdit && siblingsOf(row).findIndex((d) => d.id === row.id) > 0
+		},
+		{
+			label: t('docs.move_down', 'Move down'),
+			icon: ArrowDown,
+			onclick: (row) => movePage(row, 1),
+			show: (row: DocPage) => {
+				const sibs = siblingsOf(row);
+				return canEdit && sibs.findIndex((d) => d.id === row.id) < sibs.length - 1;
+			}
+		},
+		{
 			label: t('common.delete', 'Delete'),
 			icon: Trash2,
 			variant: 'destructive',
@@ -290,32 +312,56 @@
 	function openCreate() {
 		editingId = null;
 		editingOriginalStatus = '';
+		editBodyKind = 'plain';
 		form = { title: '', slug: '', audience: 'users', status: 'draft', body: '', category: '', subcategory: '', parentId: '', position: 0 };
 		showFormModal = true;
 	}
 
 	// unwrapTipTap flattens stored TipTap JSON back to the plain-text lines the
-	// body textarea edits (the inverse of wrapAsTipTap).
-	function unwrapTipTap(content: unknown): string {
-		try {
-			const doc = typeof content === 'string' ? JSON.parse(content) : content;
-			if (!doc || typeof doc !== 'object' || !Array.isArray((doc as any).content)) return '';
-			return (doc as any).content
-				.map((node: any) =>
-					Array.isArray(node?.content)
-						? node.content.map((c: any) => c?.text ?? '').join('')
-						: ''
-				)
-				.join('\n');
-		} catch {
-			return '';
+	// body textarea edits (the inverse of wrapAsTipTap). Returns the body kind
+	// so submit can decide whether text editing is lossless — a rich doc or
+	// non-paragraph content must be left alone, not flattened.
+	function unwrapBody(content: unknown): { body: string; kind: BodyKind } {
+		// String bodies (legacy markdown/plain-text pages) are edited as
+		// raw text and re-stored verbatim — never re-wrapped. A string that
+		// happens to parse as JSON (e.g. '"# heading"') unwraps to itself.
+		if (typeof content === 'string') {
+			try {
+				const parsed: unknown = JSON.parse(content);
+				if (typeof parsed === 'string') return { body: parsed, kind: 'markdown' };
+				return classifyDoc(parsed);
+			} catch {
+				return { body: content, kind: 'markdown' };
+			}
 		}
+		return classifyDoc(content);
+	}
+
+	// classifyDoc: TipTap doc → 'plain' (all-paragraph/no-mark text, editable
+	// in the textarea) or 'rich' (anything else — body locks, content omitted
+	// from the PATCH so a metadata edit never destroys markup).
+	function classifyDoc(doc: unknown): { body: string; kind: BodyKind } {
+		if (!doc || typeof doc !== 'object' || !Array.isArray((doc as any).content)) {
+			return { body: '', kind: 'rich' };
+		}
+		const nodes = (doc as any).content as any[];
+		const rich = nodes.some(
+			(n) =>
+				n?.type !== 'paragraph' ||
+				(n?.content ?? []).some((c: any) => c?.type !== 'text' || (c?.marks?.length ?? 0) > 0)
+		);
+		if (rich) return { body: '', kind: 'rich' };
+		const body = nodes
+			.map((n) => (Array.isArray(n?.content) ? n.content.map((c: any) => c?.text ?? '').join('') : ''))
+			.join('\n');
+		return { body, kind: 'plain' };
 	}
 
 	async function openEdit(item: DocPage) {
 		editingId = item.id;
 		editingOriginalStatus = item.status;
 		editContentReady = false;
+		editBodyKind = 'plain';
 		form = {
 			title: item.title,
 			slug: item.slug,
@@ -333,7 +379,9 @@
 		const detail = await docsApi.get(item.id);
 		if (detail.ok && detail.data && editingId === item.id) {
 			const d = detail.data as any;
-			form.body = unwrapTipTap(d.content);
+			const unwrapped = unwrapBody(d.content);
+			editBodyKind = unwrapped.kind;
+			form.body = unwrapped.body;
 			form.category = d.category ?? form.category;
 			form.subcategory = d.subcategory ?? form.subcategory;
 			form.parentId = d.parent_id ?? '';
@@ -358,6 +406,16 @@
 		// the stored value (preserve-on-absent → send "" to clear).
 		const desired = form.status;
 		const writable = desired === 'approved' || desired === 'published' ? undefined : desired;
+		// Body kind decides what (if anything) is written to content:
+		// 'rich' docs omit it entirely (flattening would destroy markup),
+		// 'markdown' bodies round-trip as the same JSON string shape they
+		// were stored as, and 'plain' docs re-wrap into TipTap paragraphs.
+		const content =
+			editingId && (!editContentReady || editBodyKind === 'rich')
+				? undefined
+				: editBodyKind === 'markdown'
+					? form.body
+					: tiptapContent;
 		const payload = {
 			title: form.title.trim(),
 			slug,
@@ -365,7 +423,7 @@
 			// On update without a successful detail fetch, omit content so the
 			// stored document is preserved rather than overwritten with an
 			// empty doc.
-			content: editingId && !editContentReady ? undefined : tiptapContent,
+			content,
 			review_status: writable,
 			category: form.category.trim(),
 			subcategory: form.subcategory.trim(),
@@ -424,6 +482,40 @@
 			if (result.ok) loadDocs();
 			else errorMessage = result.error;
 		}
+	}
+
+	// Reorder — swap a page's position with its adjacent same-audience
+	// sibling (nav orders by position, then title). Equal positions get a
+	// synthesized ±1 offset so the move never silently no-ops.
+	function siblingsOf(item: DocPage): DocPage[] {
+		return docs
+			.filter((d) => d.audience === item.audience)
+			.sort((a, b) => (a.position ?? 0) - (b.position ?? 0) || a.title.localeCompare(b.title));
+	}
+
+	async function movePage(item: DocPage, dir: -1 | 1) {
+		const sibs = siblingsOf(item);
+		const idx = sibs.findIndex((d) => d.id === item.id);
+		const neighbor = sibs[idx + dir];
+		if (!neighbor) return;
+		errorMessage = '';
+		const a = item.position ?? idx;
+		const b = neighbor.position ?? idx + dir;
+		// Ties need a synthesized gap — but never write a negative position:
+		// a tied move-up at position 0 instead pushes the neighbor down.
+		let itemPos = a === b ? a + dir : b;
+		let neighborPos = a;
+		if (itemPos < 0) {
+			itemPos = a;
+			neighborPos = a + 1;
+		}
+		const [r1, r2] = await Promise.all([
+			docsApi.update(item.id, { position: itemPos }),
+			docsApi.update(neighbor.id, { position: neighborPos })
+		]);
+		if (!r1.ok) errorMessage = r1.error;
+		else if (!r2.ok) errorMessage = r2.error;
+		loadDocs();
 	}
 
 	function confirmDelete(id: string) {
@@ -630,7 +722,12 @@
 		</div>
 		<div>
 			<label for="doc-body" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('docs.body_markdown')}</label>
-			<textarea id="doc-body" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="12" bind:value={form.body}></textarea>
+			{#if editingId && editBodyKind === 'rich'}
+				<div class="mb-1 rounded-md border px-3 py-2 text-xs" style="border-color: var(--color-warning, #b45309); color: var(--color-warning, #b45309)">
+					{t('docs.rich_body_locked', 'This page contains rich formatting (links, tables, code blocks, or embeds). The body is read-only here — edit it on the Docs site to preserve the markup.')}
+				</div>
+			{/if}
+			<textarea id="doc-body" class="w-full rounded-md border px-3 py-2 text-sm font-mono" style="border-color: var(--color-border); background-color: var(--color-surface)" rows="12" bind:value={form.body} disabled={editingId !== null && editBodyKind === 'rich'} placeholder={editingId && editBodyKind === 'rich' ? t('docs.rich_body_locked_ph', 'Rich TipTap document — not editable as text') : ''}></textarea>
 		</div>
 	</div>
 	{#snippet footer()}

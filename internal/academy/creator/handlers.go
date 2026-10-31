@@ -523,6 +523,14 @@ func (h *Handlers) SubmitMyTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only approved instructors may submit — a suspended/rejected profile's
+	// submission would sit invisible in the pending queue forever
+	// (ListPendingAcademyTracks filters ip.status='approved').
+	if prof.Status != "approved" {
+		errpkg.WriteError(w, http.StatusForbidden, "not_approved_instructor", "Only approved instructors may submit tracks")
+		return
+	}
+
 	track, err := h.service.SubmitTrack(r.Context(), trackID, prof.ID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -561,10 +569,20 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	summary, err := h.service.store.EarningsSummary(r.Context(), prof.ID)
+	// Per-track revenue: read the instructor's track list (each row carries a
+	// revenue_splits subtotal) and pick this track — the instructor-wide
+	// EarningsSummary previously reported ALL-track earnings here (H3).
+	var totalRevenue int64
+	tracks, err := h.service.store.ListTracksByInstructor(r.Context(), prof.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	for _, t := range tracks {
+		if t.ID == trackID {
+			totalRevenue = t.TotalRevenueKobo
+			break
+		}
 	}
 
 	// Track-specific series + completion rate (BUG-007).
@@ -599,7 +617,6 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	totalRevenue := summary.OpenKobo + summary.PaidKobo
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"track_id":            trackID.String(),

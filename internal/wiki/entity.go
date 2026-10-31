@@ -8,6 +8,7 @@ package wiki
 // entity_discriminator declare the binding.
 
 import (
+	"strings"
 	"context"
 	"encoding/json"
 	"errors"
@@ -367,7 +368,7 @@ func (s *Service) attachEntityContext(ctx context.Context, userID, typeID pgtype
 	// Host-space ancestors — the entity sits under its host space in the
 	// tree (a visa route's breadcrumbs are its country's).
 	if ref.ParentSpaceID.Valid {
-		if hostTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, ref.ParentSpaceID); terr == nil {
+		if hostTypeID, _, _, terr := s.store.GetSpaceTypeRef(ctx, ref.ParentSpaceID); terr == nil {
 			dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, ref.ParentSpaceID, hostTypeID)
 		}
 	}
@@ -465,6 +466,47 @@ func (s *Service) entityLazyPage(ctx context.Context, userID, typeID pgtype.UUID
 		return base, nil
 	}
 	return EntityPageDTO{}, pgx.ErrNoRows
+}
+
+// SubmitEntityPageFeedback toggles a viewer's helpful vote on an entity
+// wiki page — the /wiki/e counterpart of SubmitPageFeedback (§80 Reader UX).
+// The page row is materialized on first vote, same as revision submission.
+func (s *Service) SubmitEntityPageFeedback(ctx context.Context, userID pgtype.UUID, typeSlug, entityRef, pageSlug, vote string) (*WikiHelpfulDTO, error) {
+	if !userID.Valid {
+		return nil, fmt.Errorf("%w: sign in to rate this page", ErrInvalidInput)
+	}
+	cfg, err := s.store.GetEntityKindConfig(ctx, typeSlug)
+	if err != nil {
+		return nil, ErrSpaceNotFound
+	}
+	if cfg.EntityKind == nil {
+		return nil, ErrSpaceNotFound
+	}
+	ref, err := s.store.ResolveEntityRef(ctx, *cfg.EntityKind, entityRef)
+	if err != nil {
+		return nil, pgx.ErrNoRows
+	}
+	page, err := s.ensureEntityPage(ctx, userID, cfg, ref, typeSlug, pageSlug)
+	if err != nil {
+		return nil, err
+	}
+	pageID := page.ID
+
+	current, _ := s.store.GetPageViewerVote(ctx, pageID, userID)
+	switch {
+	case vote == "" || (vote == current && vote != ""):
+		if err := s.store.DeletePageFeedback(ctx, pageID, userID); err != nil {
+			return nil, err
+		}
+	case vote == "up" || vote == "down":
+		if err := s.store.UpsertPageFeedback(ctx, pageID, userID, vote); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("%w: vote must be 'up' or 'down'", ErrInvalidInput)
+	}
+
+	return s.pageFeedbackDTO(ctx, pageID, userID), nil
 }
 
 // HandleGetEntityPage handles GET /wiki/e/{type_slug}/{entity}/{page_slug}
@@ -977,6 +1019,41 @@ func (s *Service) CreateEntityPageWithRevision(ctx context.Context, userID pgtyp
 		return pageID.String(), revID.String(), slug, false, fmt.Errorf("wiki: create entity page: auto-approve: %w", err)
 	}
 	return pageID.String(), revID.String(), slug, true, nil
+}
+
+// HandleSubmitEntityPageFeedback handles POST
+// /wiki/e/{type_slug}/{entity}/{page_slug}/feedback — the entity-bound
+// counterpart of HandlePageFeedback (§80 Reader UX).
+func (h *Handlers) HandleSubmitEntityPageFeedback(w http.ResponseWriter, r *http.Request) {
+	u, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Vote string `json:"vote"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
+		return
+	}
+	dto, err := h.service.SubmitEntityPageFeedback(r.Context(), u.UserID,
+		chi.URLParam(r, "type_slug"), chi.URLParam(r, "entity"),
+		chi.URLParam(r, "page_slug"), strings.TrimSpace(strings.ToLower(body.Vote)))
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrSpaceNotFound), errors.Is(err, pgx.ErrNoRows):
+			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+		case errors.Is(err, ErrPageDeleted):
+			errpkg.WriteError(w, http.StatusGone, "page_deleted", "Wiki page deleted")
+		case errors.Is(err, ErrInvalidInput):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+		default:
+			slog.Error("wiki: entity feedback failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "feedback_failed", "Failed to submit feedback")
+		}
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dto})
 }
 
 // HandleCreateEntityPage handles POST /wiki/e/{type_slug}/{entity} —

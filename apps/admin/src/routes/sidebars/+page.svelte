@@ -756,7 +756,7 @@
 				<div class="space-y-2">
 					{#each sortedWidgets as widget (widget.id)}
 						<div
-							class="flex items-center justify-between rounded-lg border p-3"
+							class="flex items-center justify-between gap-2 flex-wrap rounded-lg border p-3"
 							style="border-color: var(--color-border)"
 						>
 							<div class="min-w-0 flex-1">
@@ -1079,7 +1079,7 @@
 			{#if row.widgets && row.widgets.length > 0}
 				<div class="space-y-1">
 					{#each [...row.widgets].sort((a, b) => a.sort_order - b.sort_order) as widget (widget.id)}
-						<div class="flex items-center justify-between rounded border px-2 py-1.5" style="border-color: var(--color-border)">
+						<div class="flex items-center justify-between gap-2 flex-wrap rounded border px-2 py-1.5" style="border-color: var(--color-border)">
 							<span class="text-sm" style="color: var(--color-foreground)">{widget.label || "—"}</span>
 							<span class="text-xs" style="color: var(--color-muted)">
 								{widgetTypes.find((w) => w.type === widget.widget_type)?.name ?? widget.widget_type}

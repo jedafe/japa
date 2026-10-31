@@ -396,7 +396,7 @@
 {/if}
 
 <!-- Status tabs (manual, not using broken Tabs component for content panels) -->
-<div class="mb-4 flex gap-1 rounded-lg p-1" style="background: var(--color-surface)">
+<div class="mb-4 flex flex-wrap gap-1 rounded-lg p-1" style="background: var(--color-surface)">
 	{#each statusTabs as tab (tab)}
 		{@const Icon = tab.icon}
 		<button

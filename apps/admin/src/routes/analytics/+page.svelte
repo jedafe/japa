@@ -542,7 +542,7 @@
 	{#if activeTab === "security"}
 		<Card>
 			<CardHeader>
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between gap-2 flex-wrap">
 					<h3 class="text-lg font-semibold" style="color: var(--color-foreground)">{t('analytics.security_scans', 'Security Scans')}</h3>
 					<Button onclick={runSecurityScan} disabled={scanning}>
 						{#if scanning}

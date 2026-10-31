@@ -40,6 +40,10 @@ type PermissionChecker interface {
 var AudienceGates = map[string]string{
 	"admin":      "admin.panel.access",
 	"superadmin": "admin.panel.access", // super_admin group holds wildcard
+	// users/premium/organizations/moderators/api stay public per §44 —
+	// TestAudienceGatesOnlyInternal codifies this. If premium/moderator docs
+	// should ever be gated, it needs a dedicated permission node (no seeded
+	// node expresses "is premium" / "is moderator"), not a repurposed one.
 }
 
 // literalResolver resolves {{...}} template literals in user-facing text
@@ -444,6 +448,32 @@ func (h *Handlers) ListDocStatuses(w http.ResponseWriter, r *http.Request) {
 // Admin Handlers (write operations)
 // ---------------------------------------------------------------------------
 
+// adminListPaging parses ?limit=&offset= for the admin list endpoints.
+// A present-but-invalid value (non-integer or negative) is a 400, not a
+// silent clamp — limit clamps to [0,200] (0 = unlimited).
+func adminListPaging(w http.ResponseWriter, r *http.Request) (limit, offset int32, ok bool) {
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_limit", "limit must be a non-negative integer")
+			return 0, 0, false
+		}
+		if n > 200 {
+			n = 200
+		}
+		limit = int32(n)
+	}
+	if v := r.URL.Query().Get("offset"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_offset", "offset must be a non-negative integer")
+			return 0, 0, false
+		}
+		offset = int32(n)
+	}
+	return limit, offset, true
+}
+
 // ListAllDocPages handles GET /api/v1/admin/docs/pages.
 // Returns all pages (any status) for admin listing. Optionally filters by ?audience=.
 func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
@@ -458,7 +488,11 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		pages, err := h.Service.ListAllDocPagesByAudience(r.Context(), audience)
+		limit, offset, ok := adminListPaging(w, r)
+		if !ok {
+			return
+		}
+		pages, err := h.Service.ListAllDocPagesByAudiencePaged(r.Context(), audience, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -469,7 +503,11 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pages, err := h.Service.ListAllDocPages(r.Context())
+	limit, offset, ok := adminListPaging(w, r)
+	if !ok {
+		return
+	}
+	pages, err := h.Service.ListAllDocPagesPaged(r.Context(), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -544,13 +582,13 @@ func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.checkPageAudienceGate(w, r, id) {
-		return
-	}
-
 	page, err := h.Service.GetDocPageByID(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
+		return
+	}
+
+	if !h.checkAudienceGate(w, r, page.Audience) {
 		return
 	}
 

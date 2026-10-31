@@ -309,7 +309,7 @@
 		></button>
 		<!-- panel -->
 		<div class="relative flex h-full w-full max-w-md flex-col bg-[var(--color-background)] shadow-xl">
-			<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+			<div class="flex items-center justify-between gap-2 flex-wrap border-b border-[var(--color-border)] px-4 py-3">
 				<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">
 					{t('app.scam_alert.review_title', 'Review Scam Report')}
 				</h2>

@@ -300,7 +300,7 @@
 {:else}
 	<div class="space-y-4">
 		<!-- Header -->
-		<div class="flex items-center justify-between">
+		<div class="flex items-center justify-between gap-2 flex-wrap">
 			<div class="flex items-center gap-3">
 				<div class="flex h-10 w-10 items-center justify-center rounded-lg" style="background-color: var(--color-primary)">
 					<Sparkles class="h-5 w-5 text-white" />
@@ -412,7 +412,7 @@
 
 				<!-- Pagination -->
 				{#if totalPages > 1}
-					<div class="flex items-center justify-between text-xs" style="color: var(--color-muted)">
+					<div class="flex items-center justify-between gap-2 flex-wrap text-xs" style="color: var(--color-muted)">
 						<div class="flex items-center gap-3">
 							<span>{t('common.page', 'Page')} {sessionsPage} {t('common.of', 'of')} {totalPages}</span>
 							<AutocompleteSelect
@@ -594,7 +594,7 @@
 						</span>
 					</div>
 					<p class="text-sm font-medium" style="color: var(--color-foreground)">{detailSession.prompt}</p>
-					<div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs" style="color: var(--color-muted)">
+					<div class="mt-3 grid grid-cols-2 gap-2 text-xs" style="color: var(--color-muted)">
 						<div><Clock size={10} class="inline" /> {fmtDate(detailSession.started_at)}</div>
 						<div><Cpu size={10} class="inline" /> {detailSession.total_tokens.toLocaleString()} tokens</div>
 						<div><Database size={10} class="inline" /> {fmtCost(detailSession.estimated_cost)}</div>

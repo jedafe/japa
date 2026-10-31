@@ -395,7 +395,7 @@
 				<div class="space-y-2">
 					{#each tagModerators as mod (mod.user_id)}
 						<div
-							class="flex items-center justify-between rounded-lg border p-3"
+							class="flex items-center justify-between gap-2 flex-wrap rounded-lg border p-3"
 							style="border-color: var(--color-border)"
 						>
 							<span class="text-sm font-medium" style="color: var(--color-foreground)">

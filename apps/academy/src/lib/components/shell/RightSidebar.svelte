@@ -2,7 +2,8 @@
 	import type { Snippet } from 'svelte';
 	import ContinueAcademyCard from './ContinueAcademyCard.svelte';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
-	import type { SessionUser } from '$lib/types';
+	import GuestFooter from './GuestFooter.svelte';
+	import type { Menu, SessionUser } from '$lib/types';
 
 	interface SidebarWidget {
 		id: string;
@@ -24,9 +25,17 @@
 		rightSidebarWidgets?: unknown[];
 		/** Suppress ad slots — ADR-060: "No ads on the lesson player". */
 		suppressAds?: boolean;
+		/** academy_footer menu — rendered pinned to the bottom of the rail. */
+		footerMenu?: Menu | null;
 	}
 
-	let { user, sidebar, rightSidebarWidgets = [], suppressAds = false }: Props = $props();
+	let {
+		user,
+		sidebar,
+		rightSidebarWidgets = [],
+		suppressAds = false,
+		footerMenu = null
+	}: Props = $props();
 
 	// Normalize incoming widgets to the SidebarWidget shape. On the lesson
 	// player, ad_slot widgets are filtered out (ADR-060: no ads on the lesson
@@ -93,4 +102,13 @@
 	{#each contentWidgets as widget (widget.id)}
 		<SidebarWidgetRenderer {widget} {user} searchTourTarget={widget.id === searchTourWidgetId} />
 	{/each}
+
+	<!-- academy_footer menu pinned to the bottom of the rail (mt-auto pushes
+	     it to the viewport bottom when content is short; scrolls below the
+	     widgets otherwise). -->
+	{#if footerMenu}
+		<div class="mt-auto shrink-0 border-t border-[var(--color-border)] pt-3">
+			<GuestFooter menu={footerMenu} />
+		</div>
+	{/if}
 </aside>

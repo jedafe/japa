@@ -402,7 +402,7 @@ ORDER BY created_at ASC
 LIMIT 1;
 
 -- name: GetSpaceTypeRef :one
-SELECT sp.space_type_id, COALESCE(st.slug, '') AS space_type_slug
+SELECT sp.space_type_id, COALESCE(st.slug, '') AS space_type_slug, sp.level
 FROM spaces sp
 LEFT JOIN space_types st ON st.id = sp.space_type_id
 WHERE sp.id = @space_id;

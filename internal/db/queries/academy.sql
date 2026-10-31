@@ -1,11 +1,17 @@
 -- name: ListPublishedAcademyTracks :many
+-- Marketplace gate (ADR-063): platform-authored tracks (instructor_id IS NULL)
+-- are public when is_published; instructor-authored tracks must also have
+-- cleared marketplace approval (is_published_to_academy), otherwise pending,
+-- rejected, and draft creator courses would be listable/enrollable pre-review.
 SELECT id, title, slug, description, difficulty, cover_media_id,
  is_published, sort_order, created_at, updated_at,
  instructor_id, price_kobo, currency, is_published_to_academy,
  category, language, total_enrolled, subscription_eligible
 FROM academy_tracks
 WHERE is_published = true
-ORDER BY sort_order ASC, created_at DESC;
+ AND (instructor_id IS NULL OR is_published_to_academy = true)
+ORDER BY sort_order ASC, created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetAcademyTrackBySlug :one
 SELECT id, title, slug, description, difficulty, cover_media_id,
@@ -13,7 +19,9 @@ SELECT id, title, slug, description, difficulty, cover_media_id,
  instructor_id, price_kobo, currency, is_published_to_academy,
  category, language, total_enrolled, subscription_eligible
 FROM academy_tracks
-WHERE slug = @slug;
+WHERE slug = @slug
+ AND is_published = true
+ AND (instructor_id IS NULL OR is_published_to_academy = true);
 
 -- name: GetAcademyTrackByID :one
 SELECT id, title, slug, description, difficulty, cover_media_id,
@@ -44,7 +52,9 @@ LEFT JOIN media m ON m.id = lt.cover_media_id
 LEFT JOIN academy_instructor_profiles ip ON ip.id = lt.instructor_id
 LEFT JOIN users u ON u.id = ip.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE lt.slug = @slug;
+WHERE lt.slug = @slug
+ AND lt.is_published = true
+ AND (lt.instructor_id IS NULL OR lt.is_published_to_academy = true);
 
 -- name: CreateAcademyTrack :one
 INSERT INTO academy_tracks (title, slug, description, difficulty, cover_media_id, is_published, sort_order, category, subscription_eligible) VALUES (@title, @slug, sqlc.narg(description), @difficulty, sqlc.narg(cover_media_id), @is_published, @sort_order, sqlc.narg(category), @subscription_eligible)
@@ -120,6 +130,27 @@ DELETE FROM academy_modules WHERE id = @id;
 -- Lesson Operations
 -- =====================
 
+-- name: ListAcademyLessonsByTrack :many
+-- All lessons of a track in one query (GetTrackDetail previously ran
+-- ListAcademyLessonsByModule per module — N+1). Ordering groups lessons by
+-- their module's sort_order, then matches ListAcademyLessonsByModule's order
+-- within each module.
+SELECT ll.id, ll.module_id, ll.title, ll.slug, ll.lesson_type, ll.content, ll.media_id,
+ ll.duration_minutes, ll.sort_order, ll.is_published, ll.is_preview, ll.created_at, ll.updated_at
+FROM academy_lessons ll
+JOIN academy_modules lm ON lm.id = ll.module_id
+WHERE lm.track_id = @track_id
+ORDER BY lm.sort_order ASC, ll.sort_order ASC, ll.created_at DESC;
+
+-- name: UpsertAcademyQuizAttempt :one
+-- Atomic attempt counter — a single upsert+increment avoids check-then-write
+-- races; callers compare the returned count to the max-attempts cap.
+INSERT INTO academy_quiz_attempts (user_id, lesson_id, attempts)
+VALUES (@user_id, @lesson_id, 1)
+ON CONFLICT (user_id, lesson_id) DO UPDATE
+SET attempts = academy_quiz_attempts.attempts + 1, updated_at = now()
+RETURNING attempts;
+
 -- name: ListAcademyLessonsByModule :many
 SELECT id, module_id, title, slug, lesson_type, content, media_id,
  duration_minutes, sort_order, is_published, is_preview, created_at, updated_at
@@ -154,7 +185,7 @@ FROM academy_lessons ll
 JOIN academy_modules lm ON lm.id = ll.module_id
 JOIN academy_tracks lt ON lt.id = lm.track_id
 LEFT JOIN media vm ON vm.id = ll.media_id
-WHERE ll.module_id = @module_id AND ll.slug = @slug;
+WHERE ll.module_id = @module_id AND ll.slug = @slug AND ll.is_published = true;
 
 -- name: GetLessonCompletionStatus :one
 -- Checks whether a user has completed a specific lesson. Used by GetLessonDetail
@@ -218,7 +249,7 @@ WHERE user_id = @user_id AND lesson_id = @lesson_id;
 INSERT INTO academy_lesson_progress (user_id, lesson_id, status, position_secs, completed_at) VALUES (@user_id, @lesson_id, @status, sqlc.narg(position_secs), sqlc.narg(completed_at))
 
 ON CONFLICT (user_id, lesson_id) DO UPDATE
-SET status = EXCLUDED.status,
+SET status = CASE WHEN academy_lesson_progress.status = 'completed' THEN 'completed' ELSE EXCLUDED.status END,
  position_secs = COALESCE(EXCLUDED.position_secs, academy_lesson_progress.position_secs),
  completed_at = COALESCE(EXCLUDED.completed_at, academy_lesson_progress.completed_at)
 RETURNING id, user_id, lesson_id, status, position_secs, completed_at, created_at;

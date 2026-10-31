@@ -738,6 +738,61 @@ func onPaymentSucceeded(ctx context.Context, queries *gen.Queries, p gen.Payment
 	}
 }
 
+// HandlePaymentSyncSettlement replays the full onPaymentSucceeded fan-out
+// for a payment that settled synchronously — credit-wallet debits and
+// zero-amount payments never traverse a provider webhook, so without this
+// task a wallet-paid course access, credit purchase, donation, or paid form
+// submission would mark the payment succeeded but silently skip enrollment,
+// credit grants, referral conversion, and purpose-specific settlement (C2).
+// Enqueued by payments.Service at settle time; every downstream step is
+// idempotent (payment_id-keyed splits, deduped tasks) so it is safe even if
+// a provider webhook somehow fires later for the same payment.
+func HandlePaymentSyncSettlement(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:payment:sync_settlement")
+
+	queries, err := requireDB()
+	if err != nil {
+		slog.Warn("task:payment:sync_settlement: no database, skipping", "error", err)
+		return nil
+	}
+
+	var payload struct {
+		PaymentID string `json:"payment_id"`
+	}
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
+		slog.Error("task:payment:sync_settlement: invalid payload", "error", err)
+		return err
+	}
+
+	var paymentID pgtype.UUID
+	if err := paymentID.Scan(payload.PaymentID); err != nil {
+		slog.Warn("task:payment:sync_settlement: bad payment_id", "payment_id", payload.PaymentID)
+		return nil
+	}
+
+	p, err := queries.GetPaymentByID(ctx, paymentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("task:payment:sync_settlement: payment not found", "payment_id", payload.PaymentID)
+			return nil
+		}
+		return fmt.Errorf("task:payment:sync_settlement: load payment: %w", err)
+	}
+
+	// Only replay success fan-out for payments that actually settled —
+	// protects against a stale/duplicate task firing side effects on a
+	// pending, failed, or refunded payment.
+	if p.Status != paymentStatusSucceeded {
+		slog.Info("task:payment:sync_settlement: payment not succeeded, skipping",
+			"payment_id", p.ID, "status", p.Status)
+		return nil
+	}
+
+	onPaymentSucceeded(ctx, queries, p)
+
+	return nil
+}
+
 // resolveWebhookPayment locates the payment for a webhook event by its
 // provider_ref (BUG-002/BUG-019). The provider_ref is the transaction
 // reference stored on the payment row at intent time (Stripe pi_.../cs_...,

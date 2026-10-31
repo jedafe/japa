@@ -1494,6 +1494,9 @@ type SpaceStat struct {
 	MemberCount   int32
 	PostCount     int32
 	FollowerCount int32
+	// DiscussionCount counts published forum-thread contents in the space —
+	// shown as the "Discussions" stat on space/university detail pages.
+	DiscussionCount int32
 }
 
 // CountSpaceStats returns live member, post and follower counts for a set of
@@ -1518,6 +1521,7 @@ func (s *Service) CountSpaceStats(ctx context.Context, spaceIDs []pgtype.UUID) (
 			MemberCount:   r.MemberCount,
 			PostCount:     r.PostCount,
 			FollowerCount: r.FollowerCount,
+			DiscussionCount: r.DiscussionCount,
 		}
 	}
 

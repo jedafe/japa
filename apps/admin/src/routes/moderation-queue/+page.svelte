@@ -461,7 +461,7 @@
 	{/if}
 
 	<!-- Tabs -->
-	<div class="mb-6 flex gap-1 rounded-lg p-1" style="background: var(--color-surface)">
+	<div class="mb-6 flex flex-wrap gap-1 rounded-lg p-1" style="background: var(--color-surface)">
 		<button
 			class="inline-flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-all"
 			style={activeTab === 'queue'

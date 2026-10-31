@@ -158,7 +158,7 @@
 		{t('data_sources.back_to_list', 'Back to data sources')}
 	</a>
 
-	<div class="flex items-center justify-between">
+	<div class="flex items-center justify-between gap-2 flex-wrap">
 		<div>
 			<h1 class="text-2xl font-bold" style="color: var(--color-foreground)">
 				{source?.source_name ?? t('data_sources.title', 'Comparison data sources')}

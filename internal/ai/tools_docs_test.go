@@ -27,7 +27,7 @@ func (s *stubDocsService) GetDocPageByID(ctx context.Context, id pgtype.UUID) (*
 	return &DocsPage{ID: id.String()}, nil
 }
 
-func (s *stubDocsService) CreateDocPage(ctx context.Context, req DocsCreatePageRequest) (pgtype.UUID, error) {
+func (s *stubDocsService) CreateDocPage(ctx context.Context, req DocsCreatePageRequest, userID pgtype.UUID) (pgtype.UUID, error) {
 	s.createReq = &req
 
 	var id pgtype.UUID

@@ -408,6 +408,9 @@
 				commentCount={story.comment_count}
 				authed={data.authed}
 				bottom
+				authorUsername={story.author_username}
+				authorId={story.author_id}
+				authorName={story.author_display_name ?? story.author_name}
 			/>
 			</div>
 

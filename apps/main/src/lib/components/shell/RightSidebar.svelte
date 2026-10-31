@@ -2,8 +2,9 @@
 	import { type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
+	import GuestFooter from './GuestFooter.svelte';
 	import { routeSidebar } from './routeSidebar.svelte';
-	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
+	import type { Menu, SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
 
 	interface SidebarWidget {
 		id: string;
@@ -27,6 +28,10 @@
 		/** Sidebar widgets from the Sidebar Management System (Section 59, ADR-066).
 		 *  Resolved via /sidebars/resolve and rendered by SidebarWidgetRenderer. */
 		rightSidebarWidgets?: unknown[];
+		/** main_footer menu — rendered pinned to the bottom of the rail. */
+		footerMenu?: Menu | null;
+		/** Feature flags forwarded to the rail footer for flag-gated links. */
+		features?: Record<string, boolean>;
 	}
 
 	let {
@@ -35,7 +40,9 @@
 		suggestedSpaces = [],
 		enabledLanguages = 'en,fr',
 		sidebar: sidebarProp,
-		rightSidebarWidgets = []
+		rightSidebarWidgets = [],
+		footerMenu = null,
+		features = {}
 	}: Props = $props();
 
 	// Prefer the registered route snippet (set by SetSidebar) over the direct
@@ -140,5 +147,14 @@
 				searchTourTarget={widget.id === searchTourWidgetId}
 			/>
 		{/each}
+
+		<!-- main_footer menu pinned to the bottom of the rail (mt-auto pushes
+		     it to the viewport bottom when content is short; scrolls below
+		     the widgets otherwise). -->
+		{#if footerMenu}
+			<div class="mt-auto shrink-0 border-t border-[var(--color-border)] pt-3">
+				<GuestFooter menu={footerMenu} {features} rail />
+			</div>
+		{/if}
 	</div>
 </aside>

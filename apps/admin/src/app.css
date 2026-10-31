@@ -267,3 +267,13 @@
 		width: 100%;
 	}
 }
+
+/* Mobile: unbreakable tokens (UUIDs, slugs, URLs, inline code) wrap instead
+ * of overflowing narrow view/detail containers. `anywhere` only breaks when
+ * the token would not otherwise fit, unlike break-all. */
+@media (max-width: 639.98px) {
+	:is(dd, code),
+	:is(p, dd, td, span).font-mono {
+		overflow-wrap: anywhere;
+	}
+}

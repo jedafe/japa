@@ -550,7 +550,7 @@
 			</p>
 			{#each newPersonas as persona, idx (idx)}
 				<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
-					<div class="mb-2 flex items-center justify-between">
+					<div class="mb-2 flex items-center justify-between gap-2 flex-wrap">
 						<span class="text-sm font-medium" style="color: var(--color-foreground)">{t('personas.persona_n', 'Persona #{n}').replace('{n}', String(idx + 1))}</span>
 						{#if newPersonas.length > 1}
 							<button type="button" onclick={() => removePersonaRow(idx)} style="color: var(--color-danger)">
@@ -786,7 +786,7 @@
 			<div class="max-h-96 space-y-2 overflow-y-auto">
 				{#each activityLog as entry (entry.id)}
 					<div class="rounded-md border p-2 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
-						<div class="flex items-center justify-between gap-2">
+						<div class="flex items-center justify-between flex-wrap gap-2">
 							<span class="font-medium">{entry.event_type}</span>
 							<span style="color: var(--color-muted)">{entry.created_at ? new Date(entry.created_at).toLocaleString() : '—'}</span>
 						</div>
@@ -811,7 +811,7 @@
 				{/each}
 			</div>
 			{#if activityTotalPages() > 1}
-				<div class="mt-3 flex items-center justify-between">
+				<div class="mt-3 flex items-center justify-between gap-2 flex-wrap">
 					<span class="text-xs" style="color: var(--color-muted)">
 						{t('common.page', 'Page')} {activityPage + 1} / {activityTotalPages()} ({activityTotal} total)
 					</span>

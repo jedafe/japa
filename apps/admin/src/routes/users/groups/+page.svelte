@@ -386,7 +386,7 @@
 		{:else}
 			<div class="max-h-64 overflow-y-auto">
 				{#each members as m (m.id)}
-					<div class="flex items-center justify-between border-b py-1.5 text-xs" style="border-color: var(--color-border)">
+					<div class="flex items-center justify-between gap-2 flex-wrap border-b py-1.5 text-xs" style="border-color: var(--color-border)">
 						<span>
 							<span class="font-medium" style="color: var(--color-foreground)">{m.username}</span>
 							{#if m.display_name}<span style="color: var(--color-muted)"> — {m.display_name}</span>{/if}
@@ -402,7 +402,7 @@
 				{/each}
 			</div>
 			{#if membersTotal > membersPageSize}
-				<div class="flex items-center justify-between text-xs" style="color: var(--color-muted)">
+				<div class="flex items-center justify-between gap-2 flex-wrap text-xs" style="color: var(--color-muted)">
 					<Button variant="outline" size="sm" disabled={membersPage === 0} onclick={() => { membersPage -= 1; }}>{t('common.previous', 'Previous')}</Button>
 					<span>{membersPage + 1} / {Math.ceil(membersTotal / membersPageSize)}</span>
 					<Button variant="outline" size="sm" disabled={(membersPage + 1) * membersPageSize >= membersTotal} onclick={() => { membersPage += 1; }}>{t('common.next', 'Next')}</Button>

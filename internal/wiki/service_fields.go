@@ -504,7 +504,7 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	if isSpaceBackedEntityType(entityType) {
 		var err error
 
-		spaceTypeID, spaceTypeSlug, err = s.store.GetSpaceTypeRef(ctx, entityID)
+		spaceTypeID, spaceTypeSlug, _, err = s.store.GetSpaceTypeRef(ctx, entityID)
 		if err != nil {
 			return EntityFieldsDTO{}, fmt.Errorf("wiki: entity fields: resolve space type: %w", err)
 		}
@@ -2077,7 +2077,7 @@ func (s *Service) entitySchema(ctx context.Context, entityType string, entityID 
 	var spaceTypeSlug string
 
 	if isSpaceBackedEntityType(entityType) && s.store != nil {
-		id, slug, err := s.store.GetSpaceTypeRef(ctx, entityID)
+		id, slug, _, err := s.store.GetSpaceTypeRef(ctx, entityID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, nil

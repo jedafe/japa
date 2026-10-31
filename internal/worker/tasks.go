@@ -21,6 +21,7 @@ const (
 	TypeNotificationDispatchBatch  = "notification:dispatch_batch"
 	TypeWebhookDelivery            = "webhook:deliver"
 	TypePaymentWebhookProcess      = "payment:process_webhook"
+	TypePaymentSyncSettlement      = "payment:sync_settlement" // replay onPaymentSucceeded fan-out for synchronous (credit/zero-amount) settlements
 	TypeSubscriptionWebhookProcess = "subscription:webhook_process" // §17 recurring billing lifecycle
 	TypePaymentRefundProcess       = "payment:process_refund"       // §17 provider refund retry (kept pending until provider confirms)
 	TypeTicketSendConfirmation     = "ticket:send_confirmation"
@@ -349,6 +350,7 @@ var handlerRegistry = []struct {
 	{TypeReferralRecordClick, HandleReferralRecordClick},
 	{TypeReferralCheckConversion, HandleReferralCheckConversion},
 	{TypeReferralReviewFlagged, HandleReferralReviewFlagged},
+	{TypePaymentSyncSettlement, HandlePaymentSyncSettlement},
 	{TypeAdsRefundCampaignCredits, HandleAdsRefundCampaignCredits},
 	{TypeAdsNotifyCampaignStatus, HandleAdsNotifyCampaignStatus},
 	{TypeAdsAccrueSpend, HandleAdsAccrueSpendDaily},

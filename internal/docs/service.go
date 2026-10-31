@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/ai"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -158,7 +159,13 @@ func (s *Service) ListDocPagesByAudience(ctx context.Context, audience string) (
 
 // ListAllDocPagesByAudience returns all pages (any status) for admin listing.
 func (s *Service) ListAllDocPagesByAudience(ctx context.Context, audience string) ([]DocPage, error) {
-	rows, err := s.store.listAllByAudience(ctx, audience)
+	return s.ListAllDocPagesByAudiencePaged(ctx, audience, 0, 0)
+}
+
+// ListAllDocPagesByAudiencePaged is the limit/offset variant — a 0 limit
+// (LIMIT NULL) returns the full list.
+func (s *Service) ListAllDocPagesByAudiencePaged(ctx context.Context, audience string, limit, offset int32) ([]DocPage, error) {
+	rows, err := s.store.listAllByAudience(ctx, audience, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +195,12 @@ func (s *Service) ListAllDocPagesByAudience(ctx context.Context, audience string
 
 // ListAllDocPages returns all pages (any status, any audience) for admin listing.
 func (s *Service) ListAllDocPages(ctx context.Context) ([]DocPage, error) {
-	rows, err := s.store.listAll(ctx)
+	return s.ListAllDocPagesPaged(ctx, 0, 0)
+}
+
+// ListAllDocPagesPaged is the limit/offset variant of ListAllDocPages.
+func (s *Service) ListAllDocPagesPaged(ctx context.Context, limit, offset int32) ([]DocPage, error) {
+	rows, err := s.store.listAll(ctx, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -733,7 +745,13 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 		}
 	}
 
+	var createdBy pgtype.UUID
+	if u := auth.FromContext(ctx); u != nil {
+		createdBy = u.UserID
+	}
+
 	id, err := s.store.create(ctx, gen.CreateDocPageParams{
+		CreatedBy:    createdBy,
 		Title:        req.Title,
 		Slug:         req.Slug,
 		Audience:     req.Audience,
@@ -837,10 +855,16 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 			if err := parentID.Scan(*req.ParentID); err != nil {
 				return fmt.Errorf("%w: parent_id %q", errpkg.ErrInvalid, *req.ParentID)
 			}
+		}
+	}
 
-			if err := s.validateParent(ctx, id, parentID, audience); err != nil {
-				return err
-			}
+	// Same-audience-parent invariant: validate whenever an effective parent
+	// exists AND it was just supplied OR the audience moved — an audience
+	// change must not silently leave a cross-audience parent behind (the
+	// caller must clear parent_id or pick one in the new audience).
+	if parentID.Valid && (req.ParentID != nil || audience != existing.Audience) {
+		if err := s.validateParent(ctx, id, parentID, audience); err != nil {
+			return err
 		}
 	}
 
@@ -972,10 +996,19 @@ func (s *Service) getDocPageFeedback(ctx context.Context, audience, slug string,
 // approving a published page would silently demote it, so that is rejected
 // (§44 amendment 2).
 func (s *Service) ApproveDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error {
-	currentStatus, err := s.store.getStatus(ctx, id)
+	statusRow, err := s.store.getStatus(ctx, id)
 	if err != nil {
 		return fmt.Errorf("fetching current status: %w", err)
 	}
+
+	// §44 HITL: an ai_generated page may not be approved by the account that
+	// created it — the reviewer must differ from the generator. Legacy rows
+	// (created_by NULL) and human-authored pages stay unrestricted.
+	if statusRow.AiGenerated && statusRow.CreatedBy.Valid && statusRow.CreatedBy == reviewerID {
+		return fmt.Errorf("%w: ai-generated pages must be reviewed by a different user", errpkg.ErrInvalidStatusTransition)
+	}
+
+	currentStatus := statusRow.ReviewStatus
 
 	if currentStatus == "published" {
 		return fmt.Errorf("%w: page is already published — unpublish to draft first", errpkg.ErrInvalidStatusTransition)
@@ -1004,10 +1037,12 @@ func (s *Service) ApproveDocPage(ctx context.Context, id, reviewerID pgtype.UUID
 // PublishDocPage sets review_status to 'published'. Requires current status = 'approved' (§44).
 func (s *Service) PublishDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error {
 	// Validate status transition: must be 'approved' before publishing.
-	currentStatus, err := s.store.getStatus(ctx, id)
+	statusRow, err := s.store.getStatus(ctx, id)
 	if err != nil {
 		return fmt.Errorf("fetching current status: %w", err)
 	}
+
+	currentStatus := statusRow.ReviewStatus
 
 	if currentStatus != "approved" {
 		return fmt.Errorf("%w: cannot publish status %q, must be 'approved'", errpkg.ErrInvalidStatusTransition, currentStatus)

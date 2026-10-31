@@ -189,6 +189,14 @@
 	});
 </script>
 
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key !== 'Escape') return;
+		if (showCreate) showCreate = false;
+		else if (dialog) closeDialog();
+	}}
+/>
+
 <svelte:head>
 	<title>{data.meta.title}</title>
 	<meta name="description" content={data.meta.description} />
@@ -236,6 +244,14 @@
 						aria-label={t('a11y.copy_code')}
 					>
 						{#if copiedId === 'new'}<Check size={14} />{:else}<Copy size={14} />{/if}
+					</button>
+					<button
+						type="button"
+						class="copy-btn"
+						onclick={() => (newKey = '')}
+						aria-label={t('a11y.dismiss', 'Dismiss')}
+					>
+						<X size={14} />
 					</button>
 				</div>
 			</div>

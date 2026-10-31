@@ -19,6 +19,8 @@
 
 	interface Props {
 		menu: Menu | null;
+		/** main_footer menu — rendered at the bottom of the right rail. */
+		footerMenu?: Menu | null;
 		user: SessionUser | null;
 		collapsed: boolean;
 		onToggleCollapse: () => void;
@@ -52,6 +54,7 @@
 
 	let {
 		menu,
+		footerMenu = null,
 		user,
 		collapsed,
 		onToggleCollapse,
@@ -191,7 +194,7 @@
 	     destroy every widget's loaded state and replay fetch + empty-state
 	     flashes on the way back. -->
 	<div class="shell-sidebar" class:hidden={hideRightSidebar} data-tour="sidebar" aria-hidden={hideRightSidebar || undefined}>
-		<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {rightSidebarWidgets} />
+		<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {rightSidebarWidgets} {footerMenu} {features} />
 	</div>
 </div>
 

@@ -446,7 +446,7 @@
 {/if}
 {#if newSecret}
 	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)">
-		<div class="flex items-start justify-between gap-3">
+		<div class="flex items-start justify-between flex-wrap gap-3">
 			<div class="space-y-1">
 				<p class="font-medium">{t("webhooks.secret_generated", "Webhook secret generated")}</p>
 				<p class="font-mono break-all">{newSecret}</p>

@@ -30,10 +30,13 @@ class EnrollmentsStore {
 	 * so multiple widgets mounting at the same time share a single request.
 	 * Safe to call when not logged in — returns immediately with empty array.
 	 */
-	async fetch(): Promise<void> {
+	async fetch(authed?: boolean): Promise<void> {
 		// Guard: no session cookie means this is a guest — don't call the
-		// authenticated endpoint and risk 401 noise in the console.
-		if (!clientHasSession()) {
+		// authenticated endpoint and risk 401 noise in the console. Callers
+		// that already know the session state (e.g. page `data.user`) pass it
+		// explicitly — the csrf_token cookie is a fragile proxy (F7).
+		const has = authed ?? clientHasSession();
+		if (!has) {
 			this.academy_enrollments = [];
 			this.loading = false;
 			return;

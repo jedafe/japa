@@ -48,18 +48,17 @@
 </footer>
 
 <style>
+	/* Rail variant — the footer lives pinned to the bottom of the right
+	   sidebar, so it renders compact and quiet instead of a full-width
+	   page footer. */
 	.guest-footer {
-		border-top: 1px solid var(--color-border);
-		background: var(--color-surface);
+		background: transparent;
 	}
 	.guest-footer-inner {
-		max-width: 72rem;
-		margin: 0 auto;
-		padding: 3rem 1.5rem;
+		padding: 0;
 	}
 	.footer-nav {
-		display: flex;
-		justify-content: center;
+		display: block;
 	}
 	.footer-list {
 		list-style: none;
@@ -67,28 +66,22 @@
 		padding: 0;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 1.5rem;
-		justify-content: center;
+		column-gap: 0.875rem;
+		row-gap: 0.375rem;
 	}
 	.footer-link {
-		font-size: 0.875rem;
-		color: var(--color-text-subtle);
+		font-size: 0.75rem;
+		line-height: 1.25rem;
+		color: var(--color-muted);
 		transition: color 0.15s;
 	}
 	.footer-link:hover {
 		color: var(--color-text);
 	}
 	.footer-bottom {
-		margin-top: 2.5rem;
-		border-top: 1px solid var(--color-border);
-		padding-top: 1.5rem;
-		text-align: center;
-		font-size: 0.875rem;
+		margin-top: 0.375rem;
+		font-size: 0.6875rem;
+		line-height: 1rem;
 		color: var(--color-muted);
-	}
-	@media (min-width: 640px) {
-		.footer-list {
-			gap: 2rem;
-		}
 	}
 </style>

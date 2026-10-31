@@ -8,8 +8,9 @@ import type { DocFeedback } from '$lib/types';
  *
  * GET  /api/docs/feedback?audience=&slug=  → counts + caller's vote
  * POST /api/docs/feedback  body: { audience, slug, vote: 'up' | 'down' }
- *   → authoritative counters after the upsert (repeat vote = no-op, switching
- *   moves the count — §44 amendment 2, doc_page_votes)
+ *   → authoritative counters after the upsert (a changed vote switches the
+ *   counters; re-posting the same vote retracts it — §44 amendment 2,
+ *   doc_page_votes)
  *
  * The backend /api/v1/docs/{audience}/{slug}/feedback POST requires Bearer
  * auth. Client JS cannot read the HttpOnly jc_token cookie, so this server

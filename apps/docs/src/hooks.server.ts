@@ -15,6 +15,18 @@ import { isRtl } from '$lib/i18n/rtl';
  */
 const SETTINGS_TTL_MS = 30_000;
 const settingsCache = new Map<string, { value: Record<string, unknown>; expiresAt: number }>();
+
+/**
+ * The audience gate map and canonical audience order change only when the
+ * backend ships new audiences/permissions — cache them briefly (60s) like
+ * the public settings instead of paying two backend round-trips per page.
+ */
+const AUDIENCE_META_TTL_MS = 60_000;
+let audienceMetaCache: {
+	gates: Record<string, string>;
+	order: DocAudience[];
+	expiresAt: number;
+} | null = null;
 import type { SessionUser, DocAudience } from '$lib/types';
 import { AUDIENCE_ORDER } from '$lib/types';
 
@@ -182,25 +194,35 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	// DOC-007: fetch the RBAC -> audience gate map from the backend so the
 	// frontend never drifts from the source-of-truth in internal/docs.
-	event.locals.audienceGates = {};
-	if (!building) {
-		try {
-			const gates = await apiGet<Record<string, string>>(apiContext(event), '/docs/audience-gates');
-			event.locals.audienceGates = gates ?? {};
-		} catch {
-			event.locals.audienceGates = {};
-		}
-	}
-
 	// DOC-009: canonical audience order from GET /docs/audiences (Rule 16).
-	// Fallback to the compile-time constant only if the backend is unreachable.
+	// Both are near-static — fetched together, cached for 60s, and the
+	// compile-time constant is the fallback when the backend is unreachable.
+	event.locals.audienceGates = {};
 	event.locals.audienceOrder = AUDIENCE_ORDER;
 	if (!building) {
-		try {
-			const order = await apiGet<DocAudience[]>(apiContext(event), '/docs/audiences');
-			if (order && order.length > 0) event.locals.audienceOrder = order;
-		} catch {
-			// leave AUDIENCE_ORDER fallback
+		const now = Date.now();
+		if (audienceMetaCache && audienceMetaCache.expiresAt > now) {
+			event.locals.audienceGates = audienceMetaCache.gates;
+			event.locals.audienceOrder = audienceMetaCache.order;
+		} else {
+			const ctx = apiContext(event);
+			const [gatesRes, orderRes] = await Promise.allSettled([
+				apiGet<Record<string, string>>(ctx, '/docs/audience-gates'),
+				apiGet<DocAudience[]>(ctx, '/docs/audiences')
+			]);
+			const gates =
+				gatesRes.status === 'fulfilled' && gatesRes.value ? gatesRes.value : {};
+			const order =
+				orderRes.status === 'fulfilled' && orderRes.value?.length
+					? orderRes.value
+					: AUDIENCE_ORDER;
+			event.locals.audienceGates = gates;
+			event.locals.audienceOrder = order;
+			// Only cache a successful fetch — caching an empty/failed gates
+			// map would briefly treat every audience as ungated.
+			if (gatesRes.status === 'fulfilled' && Object.keys(gates).length > 0) {
+				audienceMetaCache = { gates, order, expiresAt: now + AUDIENCE_META_TTL_MS };
+			}
 		}
 	}
 

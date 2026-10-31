@@ -302,6 +302,7 @@
 	     the reading layout. -->
 	<AppShell
 		menu={data.menu}
+		footerMenu={data.footerMenu}
 		user={data.user}
 		collapsed={shownCollapsed}
 		onToggleCollapse={toggleCollapse}

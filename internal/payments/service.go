@@ -54,6 +54,16 @@ func (s *Service) CreatePayment(ctx context.Context, userID pgtype.UUID, input C
 		return CreatePaymentResult{}, errors.New("amount must be positive")
 	}
 
+	// C1: course purchases must not trust the client-supplied amount — resolve
+	// the price (and currency) from academy_tracks server-side, the same way
+	// service_booking_fee computes its amount. Also enforces the publish/
+	// marketplace gates so an unlisted course can't be bought.
+	if input.PurposeType == PurposeCourseAccess {
+		if err := s.applyCourseAccessPrice(ctx, &input); err != nil {
+			return CreatePaymentResult{}, err
+		}
+	}
+
 	currency := input.Currency
 	if currency == "" {
 		currency = "NGN"
@@ -84,8 +94,9 @@ func (s *Service) CreatePayment(ctx context.Context, userID pgtype.UUID, input C
 		}
 
 		// Zero-amount payments never traverse the provider webhook —
-		// dispatch §111 booking fan-out directly.
-		s.enqueueServiceBookingCreated(p)
+		// dispatch the synchronous-settlement fan-out (covers §111 booking
+		// fan-out too — the worker's dispatch enqueues it identically).
+		s.enqueueSyncSettlement(p)
 
 		return CreatePaymentResult{Payment: p}, nil
 	}
@@ -130,6 +141,58 @@ func (s *Service) CreatePayment(ctx context.Context, userID pgtype.UUID, input C
 	}
 
 	return CreatePaymentResult{Payment: p, CheckoutURL: checkoutURL}, nil
+}
+
+// applyCourseAccessPrice resolves the authoritative price for a
+// course_access payment from academy_tracks (C1 — the request body's amount
+// is ignored). The track must be published and, for instructor-authored
+// courses, marketplace-approved; a free/unpriced course has nothing to buy.
+func (s *Service) applyCourseAccessPrice(ctx context.Context, input *CreatePaymentInput) error {
+	var trackID pgtype.UUID
+	if err := trackID.Scan(input.PurposeID); err != nil {
+		return errors.New("course not found")
+	}
+
+	row, err := gen.New(s.db.Reader).GetAcademyTrackByID(ctx, trackID)
+	if err != nil {
+		return errors.New("course not found")
+	}
+
+	if !row.IsPublished || (row.InstructorID.Valid && !row.IsPublishedToAcademy) {
+		return errors.New("course not found")
+	}
+
+	if row.PriceKobo == nil || *row.PriceKobo <= 0 {
+		return errors.New("course is not purchasable")
+	}
+
+	input.Amount = *row.PriceKobo
+	if row.Currency != "" {
+		input.Currency = row.Currency
+	}
+
+	return nil
+}
+
+// enqueueSyncSettlement dispatches payment:sync_settlement for synchronous
+// settlements (credit debits, zero-amount payments) that never pass through
+// a provider webhook. The worker handler replays the full onPaymentSucceeded
+// fan-out — academy enrollment, credit-purchase grants, referral conversion,
+// donation tip settlement, paid form activation — so every purpose type
+// fulfills identically to the provider-webhook path (C2). All downstream
+// steps are idempotent on payment_id, so a duplicate is safe.
+func (s *Service) enqueueSyncSettlement(p gen.Payment) {
+	if s == nil || s.enqueuer == nil {
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"payment_id": p.ID.String(),
+	})
+	if err := s.enqueuer.Enqueue(worker.TypePaymentSyncSettlement, payload); err != nil {
+		slog.Error("payments: enqueue sync settlement failed",
+			"payment_id", p.ID, "purpose_type", p.PurposeType, "error", err)
+	}
 }
 
 // ErrPaymentNotPending — checkout resume only applies to a payment still
@@ -363,8 +426,10 @@ func (s *Service) payWithCreditInternal(ctx context.Context, userID pgtype.UUID,
 	} else {
 		s.emitPaymentStatusWebhook(ctx, succeeded)
 		// Credit debits settle synchronously — no provider webhook will
-		// arrive, so dispatch §111 booking fan-out directly.
-		s.enqueueServiceBookingCreated(succeeded)
+		// arrive, so dispatch the synchronous-settlement fan-out directly —
+		// enrollment, credit grants, referral conversion, donation/tip
+		// settle, form activation, and §111 booking fan-out.
+		s.enqueueSyncSettlement(succeeded)
 
 		return succeeded, nil
 	}

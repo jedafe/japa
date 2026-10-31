@@ -16,9 +16,11 @@
 		/** Feature flags from /feature-flags — items whose route maps to a
 		 *  disabled flag are hidden so gated features never leak to guests. */
 		features?: Record<string, boolean>;
+		/** Compact rendering for the right-rail bottom slot. */
+		rail?: boolean;
 	}
 
-	let { menu, features = {} }: Props = $props();
+	let { menu, features = {}, rail = false }: Props = $props();
 
 	// Filter to guest-visible items only (visibility === 'guest' or 'all'),
 	// then drop items whose route maps to a disabled feature flag.
@@ -32,7 +34,7 @@
 	);
 </script>
 
-<footer class="guest-footer">
+<footer class="guest-footer" class:rail>
 	<div class="guest-footer-inner">
 		{#if footerItems.length > 0}
 			<nav class="footer-nav" aria-label={t('landing.footer_nav', 'Footer navigation')}>
@@ -104,5 +106,38 @@
 		.footer-list {
 			gap: 2rem;
 		}
+	}
+
+	/* Rail variant — footer pinned to the bottom of the right sidebar:
+	   compact, quiet, left-aligned instead of the full-width page footer. */
+	.guest-footer.rail {
+		border-top: none;
+		background: transparent;
+	}
+	.guest-footer.rail .guest-footer-inner {
+		max-width: none;
+		margin: 0;
+		padding: 0;
+	}
+	.guest-footer.rail .footer-nav {
+		justify-content: flex-start;
+	}
+	.guest-footer.rail .footer-list {
+		column-gap: 0.875rem;
+		row-gap: 0.375rem;
+		justify-content: flex-start;
+	}
+	.guest-footer.rail .footer-link {
+		font-size: 0.75rem;
+		line-height: 1.25rem;
+		color: var(--color-muted);
+	}
+	.guest-footer.rail .footer-bottom {
+		margin-top: 0.375rem;
+		border-top: none;
+		padding-top: 0;
+		text-align: left;
+		font-size: 0.6875rem;
+		line-height: 1rem;
 	}
 </style>

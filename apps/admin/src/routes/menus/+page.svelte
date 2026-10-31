@@ -649,7 +649,7 @@ loadPermissionNodes();
 				<div class="space-y-2">
 					{#each sortedItems as item (item.id)}
 						<div
-							class="flex items-center justify-between rounded-lg border p-3"
+							class="flex items-center justify-between gap-2 flex-wrap rounded-lg border p-3"
 							style="border-color: var(--color-border)"
 						>
 							<div class="min-w-0 flex-1">

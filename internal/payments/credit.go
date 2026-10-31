@@ -116,7 +116,10 @@ func (s *Service) PayWithCredit(
 		slog.Error("payments: failed to mark credit payment as succeeded",
 			"payment_id", payment.ID, "error", err)
 	} else {
-		s.enqueueServiceBookingCreated(succeeded)
+		// Synchronous-settlement fan-out — covers enrollment, credit grants,
+		// referral conversion, donation/tip settle, form activation, and
+		// §111 booking fan-out (the worker dispatch enqueues it identically).
+		s.enqueueSyncSettlement(succeeded)
 	}
 
 	return newBalance, nil

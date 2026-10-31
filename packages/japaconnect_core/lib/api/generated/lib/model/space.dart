@@ -15,7 +15,10 @@ class Space {
   Space({
     this.createdAt,
     this.description,
+    this.followerCount,
     this.id,
+    this.isPrimary,
+    this.level,
     this.memberCount,
     this.name,
     this.slug,
@@ -45,6 +48,35 @@ class Space {
   /// Consider adding a "default:" property in the specification file to hide this note.
   ///
   String? id;
+
+  ///
+  /// Please note: This property should have been non-nullable! Since the specification file
+  /// does not include a default value (using the "default:" property), however, the generated
+  /// source code must fall back to having a nullable type.
+  /// Consider adding a "default:" property in the specification file to hide this note.
+  ///
+  /// Please note: This property should have been non-nullable! Since the specification file
+  /// does not include a default value (using the "default:" property), however, the generated
+  /// source code must fall back to having a nullable type.
+  /// Consider adding a "default:" property in the specification file to hide this note.
+  ///
+  int? followerCount;
+
+  ///
+  /// Please note: This property should have been non-nullable! Since the specification file
+  /// does not include a default value (using the "default:" property), however, the generated
+  /// source code must fall back to having a nullable type.
+  /// Consider adding a "default:" property in the specification file to hide this note.
+  ///
+  bool? isPrimary;
+
+  ///
+  /// Please note: This property should have been non-nullable! Since the specification file
+  /// does not include a default value (using the "default:" property), however, the generated
+  /// source code must fall back to having a nullable type.
+  /// Consider adding a "default:" property in the specification file to hide this note.
+  ///
+  String? level;
 
   ///
   /// Please note: This property should have been non-nullable! Since the specification file
@@ -85,6 +117,9 @@ class Space {
           other.createdAt == createdAt &&
           other.description == description &&
           other.id == id &&
+          other.followerCount == followerCount &&
+          other.isPrimary == isPrimary &&
+          other.level == level &&
           other.memberCount == memberCount &&
           other.name == name &&
           other.slug == slug &&
@@ -96,6 +131,9 @@ class Space {
       (createdAt == null ? 0 : createdAt!.hashCode) +
       (description == null ? 0 : description!.hashCode) +
       (id == null ? 0 : id!.hashCode) +
+      (followerCount == null ? 0 : followerCount!.hashCode) +
+      (isPrimary == null ? 0 : isPrimary!.hashCode) +
+      (level == null ? 0 : level!.hashCode) +
       (memberCount == null ? 0 : memberCount!.hashCode) +
       (name == null ? 0 : name!.hashCode) +
       (slug == null ? 0 : slug!.hashCode) +
@@ -103,7 +141,7 @@ class Space {
 
   @override
   String toString() =>
-      'Space[createdAt=$createdAt, description=$description, id=$id, memberCount=$memberCount, name=$name, slug=$slug, updatedAt=$updatedAt]';
+      'Space[createdAt=$createdAt, description=$description, followerCount=$followerCount, id=$id, isPrimary=$isPrimary, level=$level, memberCount=$memberCount, name=$name, slug=$slug, updatedAt=$updatedAt]';
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
@@ -121,6 +159,15 @@ class Space {
       json[r'id'] = this.id;
     } else {
       json[r'id'] = null;
+    }
+    if (this.followerCount != null) {
+      json[r'follower_count'] = this.followerCount;
+    }
+    if (this.isPrimary != null) {
+      json[r'is_primary'] = this.isPrimary;
+    }
+    if (this.level != null) {
+      json[r'level'] = this.level;
     }
     if (this.memberCount != null) {
       json[r'member_count'] = this.memberCount;
@@ -169,6 +216,9 @@ class Space {
         createdAt: mapDateTime(json, r'created_at', r''),
         description: mapValueOfType<String>(json, r'description'),
         id: mapValueOfType<String>(json, r'id'),
+        followerCount: mapValueOfType<int>(json, r'follower_count'),
+        isPrimary: mapValueOfType<bool>(json, r'is_primary'),
+        level: mapValueOfType<String>(json, r'level'),
         memberCount: mapValueOfType<int>(json, r'member_count'),
         name: mapValueOfType<String>(json, r'name'),
         slug: mapValueOfType<String>(json, r'slug'),

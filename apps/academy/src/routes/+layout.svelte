@@ -9,8 +9,9 @@
 	import { resolveAiPageContext } from '$lib/ai/pageContext';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import NextActions from '$lib/components/shell/NextActions.svelte';
-	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
 	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
+	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
+
 	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
 	import { api } from '$lib/api/client';
 	import { pwaInstall } from '@japaconnect/ui/pwa-install';

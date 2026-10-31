@@ -35,14 +35,16 @@ SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
  last_reviewed_at, parent_id, position, category, subcategory, created_at, updated_at
 FROM doc_pages
 WHERE audience = @audience
-ORDER BY position ASC, title ASC;
+ORDER BY position ASC, title ASC
+LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
 -- name: ListAllDocPages :many
 SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
  last_reviewed_at, parent_id, position, category, subcategory, created_at, updated_at
 FROM doc_pages
 
-ORDER BY audience ASC, position ASC, title ASC;
+ORDER BY audience ASC, position ASC, title ASC
+LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
 -- name: GetDocPageByID :one
 SELECT id, title, slug, audience, content, ai_generated, review_status,
@@ -53,7 +55,7 @@ FROM doc_pages
 WHERE id = @id;
 
 -- name: CreateDocPage :one
-INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory) VALUES (@title, @slug, @audience, @content, @ai_generated, @review_status, @parent_id, @position, @category, @subcategory)
+INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory, created_by) VALUES (@title, @slug, @audience, @content, @ai_generated, @review_status, @parent_id, @position, @category, @subcategory, sqlc.narg(created_by)::uuid)
 
 RETURNING id;
 
@@ -83,7 +85,7 @@ SET review_status = @review_status, last_reviewed_by = @last_reviewed_by,
 WHERE id = @id;
 
 -- name: GetDocPageStatus :one
-SELECT review_status FROM doc_pages WHERE id = @id;
+SELECT review_status, created_by, ai_generated FROM doc_pages WHERE id = @id;
 
 -- name: DeleteDocPage :exec
 DELETE FROM doc_pages WHERE id = @id;
@@ -149,7 +151,8 @@ WHERE doc_pages.id = @page_id;
 SELECT id, title, slug, audience, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE review_status = 'published'
-ORDER BY audience ASC, position ASC, title ASC;
+ORDER BY audience ASC, position ASC, title ASC
+LIMIT NULLIF(@result_limit::int, 0) OFFSET COALESCE(@result_offset::int, 0);
 
 -- name: SearchDocPages :many
 SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at

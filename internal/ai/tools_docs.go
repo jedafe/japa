@@ -176,7 +176,7 @@ func DocsCreateHandler(deps *ToolDeps) ToolHandler {
 			Position:     a.Position,
 			Category:     a.Category,
 			Subcategory:  a.Subcategory,
-		})
+		}, userID) // stamps created_by — §44 self-review (approver ≠ creator)
 		if err != nil {
 			return errorToolResult("docs_create_failed", err.Error()), nil
 		}

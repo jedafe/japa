@@ -31,10 +31,22 @@ export const GET: RequestHandler = async ({ fetch }) => {
 	}
 
 	const origin = DOCS_ORIGIN.replace(/\/$/, '');
+	// Site name comes from public settings (Rule 16) — never hardcode the brand.
+	let siteName = 'JapaConnect';
+	try {
+		const s = await fetch(`${API_V1}/site/settings/public`, { headers: { 'x-jc-surface': 'docs' } });
+		if (s.ok) {
+			const body = await s.json();
+			const name = (body?.data ?? body)?.['general.site_name'];
+			if (typeof name === 'string' && name.trim()) siteName = name.trim();
+		}
+	} catch {
+		// keep the fallback
+	}
 	const sections: string[] = [
-		'# JapaConnect Docs',
+		`# ${siteName} Docs`,
 		'',
-		'> Documentation for JapaConnect — guides, API reference, and surface manuals.',
+		`> Documentation for ${siteName} — guides, API reference, and surface manuals.`,
 		'',
 		'## Index',
 		'',

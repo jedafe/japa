@@ -455,7 +455,7 @@ type AcademyReorderEntry struct {
 type DocsService interface {
 	ListAllDocPages(ctx context.Context) ([]DocsPage, error)
 	GetDocPageByID(ctx context.Context, id pgtype.UUID) (*DocsPage, error)
-	CreateDocPage(ctx context.Context, req DocsCreatePageRequest) (pgtype.UUID, error)
+	CreateDocPage(ctx context.Context, req DocsCreatePageRequest, userID pgtype.UUID) (pgtype.UUID, error)
 	UpdateDocPage(ctx context.Context, id pgtype.UUID, req DocsUpdatePageRequest) error
 	ApproveDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error
 	PublishDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error
@@ -1748,10 +1748,10 @@ type RoadmapEntryPage struct {
 // RoadmapGitHubCommit mirrors roadmap.GitHubCommit — the GitHub
 // push-event commit object (id is the sha).
 type RoadmapGitHubCommit struct {
-	ID        string   `json:"id"`
-	Message   string   `json:"message"`
-	URL       string   `json:"url"`
-	Timestamp string   `json:"timestamp"`
+	ID        string `json:"id"`
+	Message   string `json:"message"`
+	URL       string `json:"url"`
+	Timestamp string `json:"timestamp"`
 	Author    struct {
 		Name string `json:"name"`
 	} `json:"author"`
