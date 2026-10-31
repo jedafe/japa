@@ -5,7 +5,7 @@
 
 import { env } from '$env/dynamic/public';
 import { buildApiUrl } from '@japaconnect/api-url';
-import { apiPost, getCookie } from './client';
+import { apiPost } from './client';
 import type {
 	MediaPickerItem,
 	StockApi,
@@ -16,23 +16,14 @@ import type {
 const API_BASE = (env.PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 const JC_SURFACE = 'docs';
 
-function authHeaders(): Record<string, string> {
-	const headers: Record<string, string> = {
-		Accept: 'application/json',
-		'X-JC-Surface': JC_SURFACE
-	};
-	const token = getCookie('jc_token');
-	if (token) headers['Authorization'] = `Bearer ${token}`;
-	return headers;
-}
-
 async function apiGetAuthed<T>(path: string): Promise<T> {
-	const res = await fetch(buildApiUrl(path, API_BASE), {
-		credentials: 'include',
-		headers: authHeaders()
+	// Same-origin authed proxy — the session Bearer cannot be attached from
+	// browser JS (HttpOnly cookie), so calls needing auth bounce through it.
+	const res = await fetch(`/api/authed${path}`, {
+		headers: { Accept: 'application/json', 'X-JC-Surface': JC_SURFACE }
 	});
 	const json = await res.json().catch(() => null);
-	if (!res.ok) throw new Error(json?.error?.message ?? res.statusText ?? 'Request failed');
+	if (!res.ok) throw new Error(json?.error?.message ?? json?.message ?? res.statusText ?? 'Request failed');
 	return (json?.data ?? json) as T;
 }
 
@@ -70,20 +61,19 @@ export async function uploadMediaImage(
 	});
 	if (!init.ok) throw new Error(init.error);
 
+	// The presigned URL is self-authorizing — no session headers (matches the
+	// main app's uploadToPresigned).
 	const put = await fetch(init.data.presigned_url, {
 		method: 'PUT',
-		body: file,
-		credentials: 'include',
-		headers: authHeaders()
+		body: file
 	});
 	if (!put.ok) throw new Error('File transfer failed');
 
 	const conf = await apiPost<{ confirmed: boolean }>(`/media/confirm/${init.data.media_id}`);
 	if (!conf.ok) throw new Error(conf.error);
 
-	const res = await fetch(buildApiUrl(`/media/${init.data.media_id}`, API_BASE), {
-		credentials: 'include',
-		headers: authHeaders()
+	const res = await fetch(`/api/authed/media/${init.data.media_id}`, {
+		headers: { Accept: 'application/json', 'X-JC-Surface': JC_SURFACE }
 	});
 	const json = await res.json().catch(() => null);
 	const asset = res.ok ? ((json?.data ?? json) as MediaPickerItem | null) : null;

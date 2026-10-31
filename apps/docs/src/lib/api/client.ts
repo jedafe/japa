@@ -61,7 +61,10 @@ export function getCookie(name: string): string | undefined {
 export async function apiPost<T = unknown>(path: string, body?: unknown): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
 	const token = getCookie('jc_token');
 	const csrf = getCookie('csrf_token');
-	const url = apiUrl(path);
+	// Client calls needing the session Bearer bounce through the same-origin
+	// /api/authed proxy — the backend authenticates Authorization only and
+	// jc_token is HttpOnly, so it cannot be attached here.
+	const url = `/api/authed${path}`;
 	const headers: Record<string, string> = {
 		Accept: 'application/json',
 		'Content-Type': 'application/json',
