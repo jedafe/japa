@@ -5110,6 +5110,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Put("/admin/wallet/settings", walletHandlers.UpdateSettings)
 				// Activity rules (admin)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
+					Get("/admin/wallet/activity-keys", walletHandlers.HandleListEmittedActivityKeys)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
 					Get("/admin/wallet/rules", walletHandlers.ListRules)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.rules.manage")).
 					Post("/admin/wallet/rules", walletHandlers.CreateOrUpdateRule)

@@ -23,6 +23,8 @@
 		description: string;
 		is_enabled: boolean;
 		one_time: boolean;
+		cap_per_day?: number | null;
+		cap_per_week?: number | null;
 	};
 
 	type WalletSettings = {
@@ -45,7 +47,7 @@
 	let bulkDeleting = $state(false);
 	let showRuleModal = $state(false);
 	let editingRule = $state<ActivityRule | null>(null);
-	let ruleForm = $state({ activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false });
+	let ruleForm = $state({ activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false, cap_per_day: null as number | null, cap_per_week: null as number | null });
 	let ruleSaving = $state(false);
 
 	let settings = $state<WalletSettings>({ daily_earning_cap: 1000, enable_earning: true });
@@ -78,10 +80,19 @@
 		{ value: 'credits', label: t('app.wallet.credits', 'Credits') }
 	];
 
-	// Activity key options derived from existing rules (Rule 16 — no hardcoded data).
+	// Activity key options: the canonical emitted-key catalog
+	// (/admin/wallet/activity-keys) merged with any custom keys already in
+	// the registry — every key a rule can target is selectable, and custom
+	// legacy keys aren't lost (Rule 16 — no hardcoded data).
+	let emittedKeys = $state<string[]>([]);
+	$effect(() => {
+		void walletApi.getActivityKeys().then((res) => {
+			if (res.ok && Array.isArray(res.data)) emittedKeys = res.data;
+		});
+	});
 	const activityKeyOptions = $derived([
-		...rules
-			.map((r) => r.activity_key)
+		...emittedKeys
+			.concat(rules.map((r) => r.activity_key))
 			.filter((k, i, arr) => k && arr.indexOf(k) === i)
 			.map((k) => ({ value: k, label: k })),
 		{ value: '_custom', label: '— Custom key —' }
@@ -163,7 +174,7 @@
 
 	function openAddRuleModal() {
 		editingRule = null;
-		ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false };
+		ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false, cap_per_day: null, cap_per_week: null };
 		activityKeyMode = 'select';
 		showRuleModal = true;
 	}
@@ -177,7 +188,9 @@
 			point_value: rule.point_value,
 			description: rule.description || '',
 			is_enabled: rule.is_enabled,
-			one_time: rule.one_time ?? false
+			one_time: rule.one_time ?? false,
+			cap_per_day: rule.cap_per_day ?? null,
+			cap_per_week: rule.cap_per_week ?? null
 		};
 		showRuleModal = true;
 	}
@@ -202,20 +215,24 @@
 				point_value: ruleForm.point_value,
 				description: ruleForm.description.trim(),
 				is_enabled: ruleForm.is_enabled,
-				one_time: ruleForm.one_time
+				one_time: ruleForm.one_time,
+				cap_per_day: ruleForm.cap_per_day,
+				cap_per_week: ruleForm.cap_per_week
 			})
 			: await walletApi.createRule({
 				activity_key: ruleForm.activity_key.trim(),
 				point_value: ruleForm.point_value,
 				description: ruleForm.description.trim(),
 				is_enabled: ruleForm.is_enabled,
-				one_time: ruleForm.one_time
+				one_time: ruleForm.one_time,
+				cap_per_day: ruleForm.cap_per_day,
+				cap_per_week: ruleForm.cap_per_week
 			});
 
 		if (result.ok) {
 			showRuleModal = false;
 			editingRule = null;
-			ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false };
+			ruleForm = { activity_key: '', point_value: 1, description: '', is_enabled: true, one_time: false, cap_per_day: null, cap_per_week: null };
 			loadRules();
 		} else {
 			errorMessage = result.error;
@@ -403,7 +420,7 @@
 	{#if activeTab === 'rules'}
 		<Card>
 			<CardContent class="p-6">
-				<div class="mb-4 flex items-center justify-between">
+				<div class="mb-4 flex items-center justify-between gap-2 flex-wrap">
 					<h3 class="text-lg font-semibold text-foreground">{t('app.wallet.activity_point_rules', 'Activity Point Rules')}</h3>
 					<Button onclick={openAddRuleModal}>
 						<Plus class="h-4 w-4 me-2" />
@@ -535,6 +552,16 @@
 		<div>
 			<label for="rule-points" class="mb-1 block text-sm font-medium">{t('app.wallet.points', 'Points')}</label>
 			<input id="rule-points" type="number" min="1" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={ruleForm.point_value} />
+		</div>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label for="rule-cap-day" class="mb-1 block text-sm font-medium">{t('app.wallet.cap_per_day', 'Daily cap')}</label>
+				<input id="rule-cap-day" type="number" min="0" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={ruleForm.cap_per_day} placeholder={t('app.wallet.cap_none', 'No cap')} />
+			</div>
+			<div>
+				<label for="rule-cap-week" class="mb-1 block text-sm font-medium">{t('app.wallet.cap_per_week', 'Weekly cap')}</label>
+				<input id="rule-cap-week" type="number" min="0" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={ruleForm.cap_per_week} placeholder={t('app.wallet.cap_none', 'No cap')} />
+			</div>
 		</div>
 		<div>
 			<label for="rule-desc" class="mb-1 block text-sm font-medium">{t('app.wallet.description', 'Description')}</label>

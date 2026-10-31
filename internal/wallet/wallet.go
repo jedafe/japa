@@ -18,6 +18,20 @@ import (
 	"github.com/jedafe/japa/internal/worker"
 )
 
+// EmittedActivityKeys is the canonical catalog of activity_keys the
+// platform emits — the admin rules registry validates against this list so
+// a rule for a key nothing emits is never silently inert.
+var EmittedActivityKeys = []string{
+	ActivityKeyUserRegistered, ActivityKeyDailyLogin, ActivityKeyProfileCompleted,
+	ActivityKeyReferralCompleted, ActivityKeyContentCreated, ActivityKeyCommentCreated,
+	ActivityKeyReactionAdded, ActivityKeyReactionNegative, ActivityKeyReactionReverted,
+	ActivityKeyReactionNegativeReverted, ActivityKeyFollowCreated, ActivityKeySpaceJoined,
+	ActivityKeyAssessmentCompleted, ActivityKeyAcademyLessonCompleted,
+	ActivityKeyAcademyTrackCompleted, ActivityKeyForumSolutionMarked, ActivityKeyTipSent,
+	ActivityKeySpamDetected, ActivityKeySpamFlagged, ActivityKeyContentFlagged,
+	ActivityKeyReportUpheld, ActivityKeyScamAlertConfirmed, ActivityKeyAchievementCreated,
+}
+
 // Ledger types.
 const (
 	LedgerTypePoints  = "points"

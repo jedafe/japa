@@ -204,9 +204,10 @@ export const pagesApi = {
 
 export const walletApi = {
 	getRules: (params?: string) => api<unknown>(`/admin/wallet/rules${params ? `?${params}` : ''}`),
-	createRule: (body: { activity_key: string; point_value: number; is_enabled: boolean; one_time: boolean; description?: string }) =>
+	getActivityKeys: () => api<string[]>('/admin/wallet/activity-keys'),
+	createRule: (body: { activity_key: string; point_value: number; is_enabled: boolean; one_time: boolean; description?: string; cap_per_day?: number | null; cap_per_week?: number | null }) =>
 		api('/admin/wallet/rules', { method: 'POST', body }),
-	updateRule: (id: string, body: { activity_key?: string; point_value?: number; is_enabled?: boolean; one_time?: boolean; description?: string }) =>
+	updateRule: (id: string, body: { activity_key?: string; point_value?: number; is_enabled?: boolean; one_time?: boolean; description?: string; cap_per_day?: number | null; cap_per_week?: number | null }) =>
 		api(`/admin/wallet/rules/${id}`, { method: 'PATCH', body }),
 	toggleRule: (id: string) =>
 		api(`/admin/wallet/rules/${id}/toggle`, { method: 'PATCH' }),

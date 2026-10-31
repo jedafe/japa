@@ -356,6 +356,14 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
 }
 
+// HandleListEmittedActivityKeys handles GET /api/v1/admin/wallet/activity-keys.
+// Returns the canonical emitted activity_key catalog so the admin UI can
+// offer every key a rule could target (the registry alone can't surface
+// keys that have no rule yet — a rule for an un-emitted key is inert).
+func (h *Handlers) HandleListEmittedActivityKeys(w http.ResponseWriter, r *http.Request) {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": EmittedActivityKeys})
+}
+
 // ListRules handles GET /api/v1/wallet/rules.
 func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
