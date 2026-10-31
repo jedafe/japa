@@ -236,3 +236,15 @@ DELETE FROM doc_page_revisions WHERE id = @id;
 
 -- name: DeleteDocPageRevisions :exec
 DELETE FROM doc_page_revisions WHERE doc_page_id = @doc_page_id;
+
+-- name: PruneDocPageRevisions :exec
+-- §44 amendment 5 retention: keep the 5 newest snapshots per page — the
+-- current edition plus the last 4 in history. Runs in the same tx as each
+-- revision insert so the window never grows.
+DELETE FROM doc_page_revisions dpr
+WHERE dpr.doc_page_id = @doc_page_id
+  AND dpr.version <= (
+    SELECT COALESCE(MAX(r.version), 0) - 5
+    FROM doc_page_revisions r
+    WHERE r.doc_page_id = @doc_page_id
+  );

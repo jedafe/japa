@@ -206,6 +206,176 @@ func (q *Queries) AdminGetContent(ctx context.Context, id pgtype.UUID) (AdminGet
 	return i, err
 }
 
+const adminListContentModerationHistory = `-- name: AdminListContentModerationHistory :many
+SELECT kind, event, status, note, actor_id, actor_name, created_at FROM (
+ -- 1. Reports filed against the content (§51).
+ SELECT 'report'::text AS kind,
+        'reported'::text AS event,
+        cr.status,
+        cr.reason AS note,
+        cr.reporter_user_id AS actor_id,
+        COALESCE(up.display_name, u.username, '') AS actor_name,
+        cr.created_at
+ FROM content_reports cr
+ LEFT JOIN users u ON u.id = cr.reporter_user_id
+ LEFT JOIN user_profiles up ON up.user_id = cr.reporter_user_id
+ WHERE cr.entity_type = 'content' AND cr.entity_id = $1
+
+ UNION ALL
+
+ -- 2. Report resolutions (actioned/dismissed) — actor is the reviewer.
+ SELECT 'report'::text,
+        cr.status::text,
+        cr.status,
+        COALESCE(cr.resolution_note, ''),
+        cr.reviewed_by,
+        COALESCE(rup.display_name, ru.username, ''),
+        cr.resolved_at
+ FROM content_reports cr
+ LEFT JOIN users ru ON ru.id = cr.reviewed_by
+ LEFT JOIN user_profiles rup ON rup.user_id = cr.reviewed_by
+ WHERE cr.entity_type = 'content' AND cr.entity_id = $1
+   AND cr.status IN ('actioned', 'dismissed') AND cr.resolved_at IS NOT NULL
+
+ UNION ALL
+
+ -- 3. Admin audit actions targeting the content (remove/restore/etc.).
+ SELECT 'audit'::text,
+        al.action_type,
+        ''::text,
+        COALESCE(al.metadata->>'reason', al.metadata->>'resolution_note', al.metadata->>'note', ''),
+        al.actor_user_id,
+        COALESCE(aup.display_name, au.username, ''),
+        al.created_at
+ FROM audit_logs al
+ LEFT JOIN users au ON au.id = al.actor_user_id
+ LEFT JOIN user_profiles aup ON aup.user_id = al.actor_user_id
+ WHERE al.target_type = 'content' AND al.target_id = $1
+
+ UNION ALL
+
+ -- 4. Appeals filed against moderation decisions on the content.
+ SELECT 'appeal'::text,
+        'filed'::text,
+        ma.status,
+        ma.reason,
+        ma.user_id,
+        COALESCE(pup.display_name, pu.username, ''),
+        ma.created_at
+ FROM moderation_appeals ma
+ LEFT JOIN users pu ON pu.id = ma.user_id
+ LEFT JOIN user_profiles pup ON pup.user_id = ma.user_id
+ WHERE ma.entity_type IN ('content', 'content_removal') AND ma.entity_id = $1
+
+ UNION ALL
+
+ -- 5. Appeal resolutions (approved/rejected) — actor is the reviewer.
+ SELECT 'appeal'::text,
+        ma.status::text,
+        ma.status,
+        COALESCE(ma.resolution_note, ''),
+        ma.reviewed_by,
+        COALESCE(mrup.display_name, mru.username, ''),
+        ma.resolved_at
+ FROM moderation_appeals ma
+ LEFT JOIN users mru ON mru.id = ma.reviewed_by
+ LEFT JOIN user_profiles mrup ON mrup.user_id = ma.reviewed_by
+ WHERE ma.entity_type IN ('content', 'content_removal') AND ma.entity_id = $1
+   AND ma.status IN ('approved', 'rejected') AND ma.resolved_at IS NOT NULL
+
+ UNION ALL
+
+ -- 6. Editorial / persona review decisions on the content.
+ SELECT 'review'::text,
+        ('review_' || crv.status)::text,
+        crv.status,
+        COALESCE(crv.feedback, ''),
+        crv.reviewer_user_id,
+        COALESCE(vup.display_name, vu.username, ''),
+        crv.updated_at
+ FROM content_reviews crv
+ LEFT JOIN users vu ON vu.id = crv.reviewer_user_id
+ LEFT JOIN user_profiles vup ON vup.user_id = crv.reviewer_user_id
+ WHERE crv.content_id = $1 AND crv.deleted_at IS NULL
+
+ UNION ALL
+
+ -- 7. AI HITL flags/reviews raised against the content.
+ SELECT 'ai_review'::text,
+        ('hitl_' || hr.status)::text,
+        hr.status,
+        COALESCE(hr.reason, ''),
+        hr.reviewer_id,
+        COALESCE(hup.display_name, hu.username, ''),
+        COALESCE(hr.reviewed_at, hr.created_at)
+ FROM ai_hitl_reviews hr
+ LEFT JOIN users hu ON hu.id = hr.reviewer_id
+ LEFT JOIN user_profiles hup ON hup.user_id = hr.reviewer_id
+ WHERE hr.content_id = $1 AND hr.target_table = 'contents'
+
+ UNION ALL
+
+ -- 8. System auto-hide event — the moderation:auto_hide worker flips
+ -- auto_hidden when open reports cross moderation.auto_hide_report_count;
+ -- contents.auto_hidden_at is the only record of when it fired.
+ SELECT 'system'::text,
+        'auto_hidden'::text,
+        ''::text,
+        ''::text,
+        NULL::uuid,
+        ''::text,
+        c.auto_hidden_at
+ FROM contents c
+ WHERE c.id = $1 AND c.auto_hidden AND c.auto_hidden_at IS NOT NULL
+) hist
+ORDER BY hist.created_at DESC
+LIMIT 200
+`
+
+type AdminListContentModerationHistoryRow struct {
+	Kind      string             `json:"kind"`
+	Event     string             `json:"event"`
+	Status    string             `json:"status"`
+	Note      string             `json:"note"`
+	ActorID   pgtype.UUID        `json:"actor_id"`
+	ActorName string             `json:"actor_name"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// §22 moderation-history projection for GET /admin/content/{id}: a unified,
+// newest-first timeline merging user reports and their resolutions (§51),
+// admin audit actions targeting the content, moderation appeals and their
+// resolutions, editorial/persona content reviews, AI HITL flags, and the
+// system auto-hide event. Each row is one event; actor_name resolves to the
+// actor's display name or username when the actor is a user.
+func (q *Queries) AdminListContentModerationHistory(ctx context.Context, id pgtype.UUID) ([]AdminListContentModerationHistoryRow, error) {
+	rows, err := q.db.Query(ctx, adminListContentModerationHistory, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminListContentModerationHistoryRow
+	for rows.Next() {
+		var i AdminListContentModerationHistoryRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Event,
+			&i.Status,
+			&i.Note,
+			&i.ActorID,
+			&i.ActorName,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const adminListContents = `-- name: AdminListContents :many
 SELECT id, author_id, space_id, content_type, title, slug, body, status, visibility, view_count, comment_count, published_at, created_at, updated_at, deleted_at, is_featured, author_username, author_display_name, space_name, reports_count FROM (
  SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body,

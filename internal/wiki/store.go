@@ -864,6 +864,13 @@ func (s *Store) ApproveRevisionTx(ctx context.Context, tx pgx.Tx, revID, reviewe
 		if err := q.UpdateWikiPageTouched(ctx, rev.WikiPageID); err != nil {
 			return WikiRevision{}, fmt.Errorf("wiki: approve: update page: %w", err)
 		}
+
+		// History retention: keep the 5 newest approved revisions (current
+		// edition + last 4 — same window as §44 amendment 5 for doc pages).
+		// Pending submissions are never pruned; soft-delete per Rule 11.
+		if err := q.PruneWikiRevisions(ctx, rev.WikiPageID); err != nil {
+			return WikiRevision{}, fmt.Errorf("wiki: approve: prune revisions: %w", err)
+		}
 	}
 
 	return rev, nil

@@ -845,3 +845,22 @@ WHERE wp.entity_type = @entity_type AND wp.entity_id = @entity_id
   AND wp.category = @category
   AND wp.is_active = true AND wp.deleted_at IS NULL
 ORDER BY wp.position, wp.created_at, wp.slug;
+
+-- name: PruneWikiRevisions :exec
+-- Retention: keep the 5 newest approved revisions per page — the current
+-- edition plus the last 4 in history (same window as §44 amendment 5 for
+-- doc pages). Only resolved rows prune — pending submissions are never
+-- touched. Soft-delete per Rule 11.
+UPDATE wiki_revisions wr
+SET deleted_at = now()
+WHERE wr.wiki_page_id = @page_id
+  AND wr.status = 'approved'
+  AND wr.deleted_at IS NULL
+  AND wr.id NOT IN (
+    SELECT w2.id FROM wiki_revisions w2
+    WHERE w2.wiki_page_id = @page_id
+      AND w2.status = 'approved'
+      AND w2.deleted_at IS NULL
+    ORDER BY w2.created_at DESC
+    LIMIT 5
+  );

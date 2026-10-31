@@ -846,6 +846,24 @@ func (q *Queries) ListPublishedDocPages(ctx context.Context, arg ListPublishedDo
 	return items, nil
 }
 
+const pruneDocPageRevisions = `-- name: PruneDocPageRevisions :exec
+DELETE FROM doc_page_revisions dpr
+WHERE dpr.doc_page_id = $1
+  AND dpr.version <= (
+    SELECT COALESCE(MAX(r.version), 0) - 5
+    FROM doc_page_revisions r
+    WHERE r.doc_page_id = $1
+  )
+`
+
+// §44 amendment 5 retention: keep the 5 newest snapshots per page — the
+// current edition plus the last 4 in history. Runs in the same tx as each
+// revision insert so the window never grows.
+func (q *Queries) PruneDocPageRevisions(ctx context.Context, docPageID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, pruneDocPageRevisions, docPageID)
+	return err
+}
+
 const searchDocPages = `-- name: SearchDocPages :many
 SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at
 FROM doc_pages

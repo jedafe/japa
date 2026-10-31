@@ -788,7 +788,7 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 			return fmt.Errorf("creating doc page: %w", mapWriteErr(cerr))
 		}
 
-		_, cerr = q.InsertDocPageRevision(ctx, gen.InsertDocPageRevisionParams{
+		return insertRevisionPruned(ctx, q, gen.InsertDocPageRevisionParams{
 			DocPageID:      id,
 			Title:          req.Title,
 			Content:        contentBytes,
@@ -796,8 +796,6 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 			Summary:        req.Summary,
 			CreatedBy:      createdBy,
 		})
-
-		return cerr
 	})
 	if err != nil {
 		return pgtype.UUID{}, err
@@ -996,7 +994,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 			createdBy = u.UserID
 		}
 
-		_, uerr = q.InsertDocPageRevision(ctx, gen.InsertDocPageRevisionParams{
+		return insertRevisionPruned(ctx, q, gen.InsertDocPageRevisionParams{
 			DocPageID:      id,
 			Title:          title,
 			Content:        contentBytes,
@@ -1004,8 +1002,6 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 			Summary:        req.Summary,
 			CreatedBy:      createdBy,
 		})
-
-		return uerr
 	})
 	if err != nil {
 		return err
@@ -1395,6 +1391,18 @@ func revisionRequired(existing gen.DocPage, title string, content []byte, featur
 	return featureImage != existing.FeatureImageID
 }
 
+
+// insertRevisionPruned writes a revision snapshot and prunes the page's
+// history to the retention window in the same tx (§44 amendment 5: keep
+// the 5 newest — current edition + last 4).
+func insertRevisionPruned(ctx context.Context, q *gen.Queries, p gen.InsertDocPageRevisionParams) error {
+	if _, err := q.InsertDocPageRevision(ctx, p); err != nil {
+		return err
+	}
+
+	return q.PruneDocPageRevisions(ctx, p.DocPageID)
+}
+
 // docRevisionFromRow maps a revision row to the API DTO; includeContent
 // controls whether the full content blob is returned (single-revision GET).
 func docRevisionFromRow(r gen.DocPageRevision, maxVersion int32, includeContent bool) DocRevision {
@@ -1522,7 +1530,7 @@ func (s *Service) RestoreDocPageRevision(ctx context.Context, pageID, revID pgty
 			return errpkg.ErrStaleWrite
 		}
 
-		_, uerr = q.InsertDocPageRevision(ctx, gen.InsertDocPageRevisionParams{
+		return insertRevisionPruned(ctx, q, gen.InsertDocPageRevisionParams{
 			DocPageID:      pageID,
 			Title:          rev.Title,
 			Content:        rev.Content,
@@ -1530,8 +1538,6 @@ func (s *Service) RestoreDocPageRevision(ctx context.Context, pageID, revID pgty
 			Summary:        &summary,
 			CreatedBy:      userID,
 		})
-
-		return uerr
 	})
 	if err != nil {
 		return err

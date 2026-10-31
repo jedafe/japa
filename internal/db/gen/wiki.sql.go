@@ -2581,6 +2581,31 @@ func (q *Queries) ListWikiSeedSpaceIDs(ctx context.Context) ([]pgtype.UUID, erro
 	return items, nil
 }
 
+const pruneWikiRevisions = `-- name: PruneWikiRevisions :exec
+UPDATE wiki_revisions wr
+SET deleted_at = now()
+WHERE wr.wiki_page_id = $1
+  AND wr.status = 'approved'
+  AND wr.deleted_at IS NULL
+  AND wr.id NOT IN (
+    SELECT w2.id FROM wiki_revisions w2
+    WHERE w2.wiki_page_id = $1
+      AND w2.status = 'approved'
+      AND w2.deleted_at IS NULL
+    ORDER BY w2.created_at DESC
+    LIMIT 5
+  )
+`
+
+// Retention: keep the 5 newest approved revisions per page — the current
+// edition plus the last 4 in history (same window as §44 amendment 5 for
+// doc pages). Only resolved rows prune — pending submissions are never
+// touched. Soft-delete per Rule 11.
+func (q *Queries) PruneWikiRevisions(ctx context.Context, pageID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, pruneWikiRevisions, pageID)
+	return err
+}
+
 const rejectWikiRevision = `-- name: RejectWikiRevision :execrows
 UPDATE wiki_revisions
 SET status = 'rejected', reviewed_by = $1, reviewed_at = now(),
