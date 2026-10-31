@@ -216,6 +216,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	}
 
 	switch {
+	case errors.Is(err, errRevisionIsLatest):
+		errpkg.WriteError(w, http.StatusConflict, "revision_is_latest", "The latest revision cannot be deleted")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -737,6 +739,157 @@ func (h *Handlers) DeleteDocPage(w http.ResponseWriter, r *http.Request) {
 	h.enqueueSearchIndex(id, "delete")
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// ---------------------------------------------------------------------------
+// Revision history (§44 amendment 5) — docs.manage via the route group;
+// each handler also enforces the page's audience gate.
+// ---------------------------------------------------------------------------
+
+// ListDocPageRevisions handles GET /api/v1/admin/docs/pages/{id}/revisions.
+func (h *Handlers) ListDocPageRevisions(w http.ResponseWriter, r *http.Request) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
+	}
+
+	if !h.checkPageAudienceGate(w, r, id) {
+		return
+	}
+
+	var page, limit int32 = 1, 20
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n) // #nosec
+		}
+	}
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = int32(n) // #nosec
+		}
+	}
+
+	items, total, err := h.Service.ListDocPageRevisions(r.Context(), id, page, limit)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": items,
+		"meta": map[string]any{"page": page, "limit": limit, "total": total},
+	})
+}
+
+// GetDocRevision handles GET /api/v1/admin/docs/revisions/{revId}.
+func (h *Handlers) GetDocRevision(w http.ResponseWriter, r *http.Request) {
+	var revID pgtype.UUID
+	if err := revID.Scan(chi.URLParam(r, "revId")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid revision ID")
+		return
+	}
+
+	rev, err := h.Service.GetDocPageRevision(r.Context(), revID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	var pageID pgtype.UUID
+	if err := pageID.Scan(rev.DocPageID); err == nil {
+		if !h.checkPageAudienceGate(w, r, pageID) {
+			return
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rev})
+}
+
+// RestoreDocRevision handles POST /api/v1/admin/docs/pages/{id}/revisions/{revId}/restore.
+func (h *Handlers) RestoreDocRevision(w http.ResponseWriter, r *http.Request) {
+	var id, revID pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
+	}
+	if err := revID.Scan(chi.URLParam(r, "revId")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid revision ID")
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	if !h.checkPageAudienceGate(w, r, id) {
+		return
+	}
+
+	var input struct {
+		Summary string `json:"summary"`
+	}
+	// Optional body — defaults to "Restored from v{N}".
+	_ = json.NewDecoder(r.Body).Decode(&input)
+
+	if err := h.Service.RestoreDocPageRevision(r.Context(), id, revID, strings.TrimSpace(input.Summary), user.UserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.enqueueSearchIndex(id, "index")
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "restored"}})
+}
+
+// DeleteDocRevision handles DELETE /api/v1/admin/docs/revisions/{revId}.
+func (h *Handlers) DeleteDocRevision(w http.ResponseWriter, r *http.Request) {
+	var revID pgtype.UUID
+	if err := revID.Scan(chi.URLParam(r, "revId")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid revision ID")
+		return
+	}
+
+	rev, err := h.Service.GetDocPageRevision(r.Context(), revID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	var pageID pgtype.UUID
+	if err := pageID.Scan(rev.DocPageID); err == nil {
+		if !h.checkPageAudienceGate(w, r, pageID) {
+			return
+		}
+	}
+
+	if err := h.Service.DeleteDocPageRevision(r.Context(), revID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ClearDocRevisions handles DELETE /api/v1/admin/docs/pages/{id}/revisions.
+func (h *Handlers) ClearDocRevisions(w http.ResponseWriter, r *http.Request) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid page ID")
+		return
+	}
+
+	if !h.checkPageAudienceGate(w, r, id) {
+		return
+	}
+
+	if err := h.Service.ClearDocPageRevisions(r.Context(), id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---------------------------------------------------------------------------

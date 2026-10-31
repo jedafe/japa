@@ -6607,6 +6607,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/docs/pages/{id}/approve", docsHandlers.ApproveDocPage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Post("/admin/docs/pages/{id}/publish", docsHandlers.PublishDocPage)
+			// Revision history (§44 amendment 5 — view/restore/delete/clear)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+				Get("/admin/docs/pages/{id}/revisions", docsHandlers.ListDocPageRevisions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+				Delete("/admin/docs/pages/{id}/revisions", docsHandlers.ClearDocRevisions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+				Post("/admin/docs/pages/{id}/revisions/{revId}/restore", docsHandlers.RestoreDocRevision)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+				Get("/admin/docs/revisions/{revId}", docsHandlers.GetDocRevision)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+				Delete("/admin/docs/revisions/{revId}", docsHandlers.DeleteDocRevision)
 			// AI doc generation (P5.6 — Task 3 — stub, delegates to ai/generate)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Post("/admin/docs/ai-generate", aiHandlers.HandleGenerate)

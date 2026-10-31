@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
@@ -27,6 +29,10 @@ func mapWriteErr(err error) error {
 type Store struct {
 	write *gen.Queries
 	read  *gen.Queries
+	// pool is kept for multi-statement writes (page write + revision
+	// snapshot commit together, §44 amendment 5). Nil in unit tests —
+	// callers then fall back to sequential writes.
+	pool *db.DB
 }
 
 // NewStore creates a Store backed by the given gen.Queries instances.
@@ -34,17 +40,31 @@ func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }
 
+// docPageRow is a doc page plus the media join columns the per-page
+// feature image resolves from (§44 amendment 5).
+type docPageRow struct {
+	gen.DocPage
+	FeatureImageBucket *string
+	FeatureImagePath   *string
+}
+
+// BeginTx opens a writer-pool transaction for the page write + revision
+// snapshot — they must commit or roll back together (§44 amendment 5).
+func (s *Store) BeginTx(ctx context.Context) (pgx.Tx, error) {
+	return s.pool.Writer.Begin(ctx)
+}
+
 // getBySlug returns a published doc page by audience and slug.
-func (s *Store) getBySlug(ctx context.Context, audience, slug string) (gen.DocPage, error) {
+func (s *Store) getBySlug(ctx context.Context, audience, slug string) (docPageRow, error) {
 	row, err := s.read.GetDocPageBySlug(ctx, gen.GetDocPageBySlugParams{
 		Audience: audience,
 		Slug:     slug,
 	})
 	if err != nil {
-		return gen.DocPage{}, fmt.Errorf("getting doc page by slug: %w", err)
+		return docPageRow{}, fmt.Errorf("getting doc page by slug: %w", err)
 	}
 
-	return gen.DocPage{
+	return docPageRow{DocPage: gen.DocPage{
 		ID: row.ID,
 
 		Title:          row.Title,
@@ -63,22 +83,22 @@ func (s *Store) getBySlug(ctx context.Context, audience, slug string) (gen.DocPa
 		HelpfulNo:      row.HelpfulNo,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
-	}, nil
+	}, FeatureImageBucket: row.FeatureImageBucket, FeatureImagePath: row.FeatureImagePath}, nil
 }
 
 // getBySlugAnyStatus returns a doc page by audience+slug regardless of
 // review status. Editor preview only — callers must gate on docs.manage
 // (§44 amendment 2).
-func (s *Store) getBySlugAnyStatus(ctx context.Context, audience, slug string) (gen.DocPage, error) {
+func (s *Store) getBySlugAnyStatus(ctx context.Context, audience, slug string) (docPageRow, error) {
 	row, err := s.read.GetDocPageBySlugAnyStatus(ctx, gen.GetDocPageBySlugAnyStatusParams{
 		Audience: audience,
 		Slug:     slug,
 	})
 	if err != nil {
-		return gen.DocPage{}, fmt.Errorf("getting doc page by slug (any status): %w", err)
+		return docPageRow{}, fmt.Errorf("getting doc page by slug (any status): %w", err)
 	}
 
-	return gen.DocPage{
+	return docPageRow{DocPage: gen.DocPage{
 		ID:             row.ID,
 		Title:          row.Title,
 		Slug:           row.Slug,
@@ -96,19 +116,19 @@ func (s *Store) getBySlugAnyStatus(ctx context.Context, audience, slug string) (
 		HelpfulNo:      row.HelpfulNo,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
-	}, nil
+	}, FeatureImageBucket: row.FeatureImageBucket, FeatureImagePath: row.FeatureImagePath}, nil
 }
 
 // getByID returns a doc page by ID.
-func (s *Store) getByID(ctx context.Context, id pgtype.UUID) (gen.DocPage, error) {
+func (s *Store) getByID(ctx context.Context, id pgtype.UUID) (docPageRow, error) {
 	row, err := s.read.GetDocPageByID(ctx,
 		id,
 	)
 	if err != nil {
-		return gen.DocPage{}, fmt.Errorf("getting doc page by ID: %w", err)
+		return docPageRow{}, fmt.Errorf("getting doc page by ID: %w", err)
 	}
 
-	return gen.DocPage{
+	return docPageRow{DocPage: gen.DocPage{
 		ID: row.ID,
 
 		Title:          row.Title,
@@ -127,7 +147,7 @@ func (s *Store) getByID(ctx context.Context, id pgtype.UUID) (gen.DocPage, error
 		HelpfulNo:      row.HelpfulNo,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
-	}, nil
+	}, FeatureImageBucket: row.FeatureImageBucket, FeatureImagePath: row.FeatureImagePath}, nil
 }
 
 // listByAudience returns published doc pages for an audience.

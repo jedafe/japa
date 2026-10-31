@@ -20,6 +20,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -66,6 +67,7 @@ func NewService(database *db.DB) *Service {
 		store: &Store{
 			read:  gen.New(database.Reader),
 			write: gen.New(database.Writer),
+			pool:  database,
 		},
 	}
 }
@@ -149,8 +151,10 @@ func (s *Service) ListDocPagesByAudience(ctx context.Context, audience string) (
 			Position:     r.Position,
 			Category:     r.Category,
 			Subcategory:  r.Subcategory,
-			CreatedAt:    r.CreatedAt.Time.Format(time.RFC3339Nano),
-			Excerpt:      extractExcerpt(r.Content, excerptMaxLen),
+			CreatedAt:       r.CreatedAt.Time.Format(time.RFC3339Nano),
+			FeatureImageID:  uuidPtr(r.FeatureImageID),
+			FeatureImageURL: docMediaURL(r.FeatureImageBucket, r.FeatureImagePath),
+			Excerpt:         extractExcerpt(r.Content, excerptMaxLen),
 		}
 	}
 
@@ -185,8 +189,10 @@ func (s *Service) ListAllDocPagesByAudiencePaged(ctx context.Context, audience s
 			Position:       r.Position,
 			Category:       r.Category,
 			Subcategory:    r.Subcategory,
-			CreatedAt:      r.CreatedAt.Time.Format(time.RFC3339Nano),
-			UpdatedAt:      r.UpdatedAt.Time.Format(time.RFC3339Nano),
+			FeatureImageID:  uuidPtr(r.FeatureImageID),
+			FeatureImageURL: docMediaURL(r.FeatureImageBucket, r.FeatureImagePath),
+			CreatedAt:       r.CreatedAt.Time.Format(time.RFC3339Nano),
+			UpdatedAt:       r.UpdatedAt.Time.Format(time.RFC3339Nano),
 		}
 	}
 
@@ -220,8 +226,10 @@ func (s *Service) ListAllDocPagesPaged(ctx context.Context, limit, offset int32)
 			Position:       r.Position,
 			Category:       r.Category,
 			Subcategory:    r.Subcategory,
-			CreatedAt:      r.CreatedAt.Time.Format(time.RFC3339Nano),
-			UpdatedAt:      r.UpdatedAt.Time.Format(time.RFC3339Nano),
+			FeatureImageID:  uuidPtr(r.FeatureImageID),
+			FeatureImageURL: docMediaURL(r.FeatureImageBucket, r.FeatureImagePath),
+			CreatedAt:       r.CreatedAt.Time.Format(time.RFC3339Nano),
+			UpdatedAt:       r.UpdatedAt.Time.Format(time.RFC3339Nano),
 		}
 	}
 
@@ -474,8 +482,9 @@ func navItemFromRow(r gen.ListPublishedDocPagesRow) DocNavItem {
 		Audience:    r.Audience,
 		ParentID:    uuidPtr(r.ParentID),
 		Position:    r.Position,
-		Category:    r.Category,
-		Subcategory: r.Subcategory,
+		Category:        r.Category,
+		Subcategory:     r.Subcategory,
+		FeatureImageURL: docMediaURL(r.FeatureImageBucket, r.FeatureImagePath),
 	}
 }
 
@@ -745,23 +754,49 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 		}
 	}
 
+	featureImage, err := s.resolveFeatureImage(ctx, req.FeatureImageID, pgtype.UUID{})
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+
 	var createdBy pgtype.UUID
 	if u := auth.FromContext(ctx); u != nil {
 		createdBy = u.UserID
 	}
 
-	id, err := s.store.create(ctx, gen.CreateDocPageParams{
-		CreatedBy:    createdBy,
-		Title:        req.Title,
-		Slug:         req.Slug,
-		Audience:     req.Audience,
-		Content:      contentBytes,
-		AiGenerated:  req.AIGenerated,
-		ReviewStatus: status,
-		ParentID:     parentID,
-		Position:     req.Position,
-		Category:     category,
-		Subcategory:  subcategory,
+	// Page insert + the v1 revision snapshot share one transaction (§44
+	// amendment 5) — a revision must never exist without its page write.
+	var id pgtype.UUID
+	err = s.withWriteTx(ctx, func(q *gen.Queries) error {
+		var cerr error
+		id, cerr = q.CreateDocPage(ctx, gen.CreateDocPageParams{
+			CreatedBy:      createdBy,
+			Title:          req.Title,
+			Slug:           req.Slug,
+			Audience:       req.Audience,
+			Content:        contentBytes,
+			AiGenerated:    req.AIGenerated,
+			ReviewStatus:   status,
+			ParentID:       parentID,
+			Position:       req.Position,
+			Category:       category,
+			Subcategory:    subcategory,
+			FeatureImageID: featureImage,
+		})
+		if cerr != nil {
+			return fmt.Errorf("creating doc page: %w", mapWriteErr(cerr))
+		}
+
+		_, cerr = q.InsertDocPageRevision(ctx, gen.InsertDocPageRevisionParams{
+			DocPageID:      id,
+			Title:          req.Title,
+			Content:        contentBytes,
+			FeatureImageID: featureImage,
+			Summary:        req.Summary,
+			CreatedBy:      createdBy,
+		})
+
+		return cerr
 	})
 	if err != nil {
 		return pgtype.UUID{}, err
@@ -916,20 +951,60 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 		}
 	}
 
-	rows, err := s.store.update(ctx, gen.UpdateDocPageParams{
-		ID: id,
+	featureImage, err := s.resolveFeatureImage(ctx, req.FeatureImageID, existing.FeatureImageID)
+	if err != nil {
+		return err
+	}
 
-		Title:             title,
-		Content:           contentBytes,
-		ReviewStatus:      status,
-		Slug:              slug,
-		ParentID:          parentID,
-		Position:          position,
-		Audience:          audience,
-		Category:          category,
-		Subcategory:       subcategory,
-		ExpectedUpdatedAt: expectedUpdatedAt,
-		ClearReview:       &clearReview,
+	// §44 amendment 5: snapshot the write as a revision only when the
+	// history-captured fields actually changed — organizational moves
+	// (slug/category/parent/position/audience) never version.
+	writeRevision := revisionRequired(existing.DocPage, title, contentBytes, featureImage)
+
+	var rows int64
+	err = s.withWriteTx(ctx, func(q *gen.Queries) error {
+		var uerr error
+		rows, uerr = q.UpdateDocPage(ctx, gen.UpdateDocPageParams{
+			ID: id,
+
+			Title:             title,
+			Content:           contentBytes,
+			ReviewStatus:      status,
+			Slug:              slug,
+			ParentID:          parentID,
+			Position:          position,
+			Audience:          audience,
+			Category:          category,
+			Subcategory:       subcategory,
+			FeatureImageID:    featureImage,
+			ExpectedUpdatedAt: expectedUpdatedAt,
+			ClearReview:       &clearReview,
+		})
+		if uerr != nil {
+			return fmt.Errorf("updating doc page: %w", mapWriteErr(uerr))
+		}
+		if rows == 0 {
+			return nil // stale-write guard handled by the caller
+		}
+		if !writeRevision {
+			return nil
+		}
+
+		var createdBy pgtype.UUID
+		if u := auth.FromContext(ctx); u != nil {
+			createdBy = u.UserID
+		}
+
+		_, uerr = q.InsertDocPageRevision(ctx, gen.InsertDocPageRevisionParams{
+			DocPageID:      id,
+			Title:          title,
+			Content:        contentBytes,
+			FeatureImageID: featureImage,
+			Summary:        req.Summary,
+			CreatedBy:      createdBy,
+		})
+
+		return uerr
 	})
 	if err != nil {
 		return err
@@ -1085,8 +1160,10 @@ func (s *Service) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// toDocPage converts a gen.DocPage to our API type.
-func toDocPage(p gen.DocPage) *DocPage {
+// toDocPage converts a docPageRow to our API type, resolving the media
+// join columns to a served feature image URL (§44 amendment 5).
+func toDocPage(r docPageRow) *DocPage {
+	p := r.DocPage
 	var content json.RawMessage
 	if len(p.Content) > 0 {
 		content = p.Content
@@ -1108,6 +1185,8 @@ func toDocPage(p gen.DocPage) *DocPage {
 		Subcategory:    p.Subcategory,
 		HelpfulYes:     p.HelpfulYes,
 		HelpfulNo:      p.HelpfulNo,
+		FeatureImageID:  uuidPtr(p.FeatureImageID),
+		FeatureImageURL: docMediaURL(r.FeatureImageBucket, r.FeatureImagePath),
 		// Phase 8 (i18n) will persist translated variants. Until then the API
 		// always reports the source language as English, including when a
 		// ?lang query parameter is supplied.
@@ -1238,4 +1317,264 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 		Message: "Content Agent draft created in 'draft' status. Review and approve to publish.",
 		PageID:  id.String(),
 	}, nil
+}
+
+// ---------------------------------------------------------------------------
+// §44 amendment 5 — feature image + revision history
+// ---------------------------------------------------------------------------
+
+// docMediaURL builds the served image URL for a media row's storage coords —
+// same mediaURL helper pattern as blog's cover_image_url.
+func docMediaURL(bucket, path *string) string {
+	if bucket == nil || path == nil || *bucket == "" || *path == "" {
+		return ""
+	}
+
+	return media.MediaURL(*bucket, *path, media.ImageProxyOpts{})
+}
+
+// resolveFeatureImage validates a request's feature_image_id: nil preserves
+// the fallback, "" clears (NULL), a uuid must reference a live media row.
+func (s *Service) resolveFeatureImage(ctx context.Context, raw *string, fallback pgtype.UUID) (pgtype.UUID, error) {
+	if raw == nil {
+		return fallback, nil
+	}
+
+	if *raw == "" {
+		return pgtype.UUID{}, nil
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(*raw); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("%w: feature_image_id %q", errpkg.ErrInvalid, *raw)
+	}
+
+	if _, err := s.store.read.GetMediaByID(ctx, id); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("%w: feature_image_id %q", errpkg.ErrInvalid, *raw)
+	}
+
+	return id, nil
+}
+
+// withWriteTx runs fn inside a writer-pool transaction so the page write and
+// its revision snapshot commit or roll back together. When the store has no
+// pool (unit tests), fn runs directly on the write queries.
+func (s *Service) withWriteTx(ctx context.Context, fn func(q *gen.Queries) error) error {
+	if s.store.pool == nil {
+		return fn(s.store.write)
+	}
+
+	tx, err := s.store.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := fn(s.store.write.WithTx(tx)); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+// revisionRequired reports whether a write changed the fields history
+// captures — title, content, or feature image. Organizational moves
+// (slug/category/parent/position/audience) never version; content compares
+// semantically (§44 amendment 3) so a re-sent unchanged doc doesn't count.
+func revisionRequired(existing gen.DocPage, title string, content []byte, featureImage pgtype.UUID) bool {
+	if title != existing.Title {
+		return true
+	}
+
+	if !docContentEqual(content, existing.Content) {
+		return true
+	}
+
+	return featureImage != existing.FeatureImageID
+}
+
+// docRevisionFromRow maps a revision row to the API DTO; includeContent
+// controls whether the full content blob is returned (single-revision GET).
+func docRevisionFromRow(r gen.DocPageRevision, maxVersion int32, includeContent bool) DocRevision {
+	rev := DocRevision{
+		ID:             r.ID.String(),
+		DocPageID:      r.DocPageID.String(),
+		Version:        r.Version,
+		Title:          r.Title,
+		Summary:        r.Summary,
+		FeatureImageID: uuidPtr(r.FeatureImageID),
+		CreatedBy:      uuidPtr(r.CreatedBy),
+		CreatedAt:      r.CreatedAt.Time.Format(time.RFC3339Nano),
+		Excerpt:        extractExcerpt(r.Content, excerptMaxLen),
+		IsLatest:       r.Version == maxVersion,
+	}
+	if includeContent {
+		rev.Content = r.Content
+	}
+	return rev
+}
+
+// ListDocPageRevisions returns a page's history newest-first (§44 amendment
+// 5). items carry excerpt + is_latest; content stays on the single-get.
+func (s *Service) ListDocPageRevisions(ctx context.Context, pageID pgtype.UUID, page, limit int32) ([]DocRevision, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+
+	total, err := s.store.read.CountDocPageRevisions(ctx, pageID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting revisions: %w", err)
+	}
+
+	maxV, err := s.store.read.GetDocPageMaxRevisionVersion(ctx, pageID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("getting max revision version: %w", err)
+	}
+
+	rows, err := s.store.read.ListDocPageRevisions(ctx, gen.ListDocPageRevisionsParams{
+		DocPageID:    pageID,
+		ResultLimit:  limit,
+		ResultOffset: (page - 1) * limit,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing revisions: %w", err)
+	}
+
+	items := make([]DocRevision, len(rows))
+	for i, r := range rows {
+		items[i] = docRevisionFromRow(r, maxV, false)
+	}
+
+	return items, total, nil
+}
+
+// GetDocPageRevision returns a single revision with its full content.
+func (s *Service) GetDocPageRevision(ctx context.Context, revID pgtype.UUID) (*DocRevision, error) {
+	r, err := s.store.read.GetDocPageRevision(ctx, revID)
+	if err != nil {
+		return nil, errpkg.ErrNotFound
+	}
+
+	rev := docRevisionFromRow(r, 0, true)
+
+	return &rev, nil
+}
+
+// RestoreDocPageRevision copies a revision's title/content/feature_image
+// back onto the page and snapshots the restore itself as a new revision —
+// history is append-only, so the restore is auditable (§44 amendment 5).
+// The amendment-3 demotion applies: restoring over an approved page voids
+// the approval.
+func (s *Service) RestoreDocPageRevision(ctx context.Context, pageID, revID pgtype.UUID, summary string, userID pgtype.UUID) error {
+	existing, err := s.store.getByID(ctx, pageID)
+	if err != nil {
+		return fmt.Errorf("fetching existing page: %w", err)
+	}
+
+	rev, err := s.store.read.GetDocPageRevision(ctx, revID)
+	if err != nil || rev.DocPageID != pageID {
+		return errpkg.ErrNotFound
+	}
+
+	if summary == "" {
+		summary = fmt.Sprintf("Restored from v%d", rev.Version)
+	}
+
+	status := existing.ReviewStatus
+	clearReview := false
+
+	if existing.ReviewStatus == "approved" &&
+		(rev.Title != existing.Title || !docContentEqual(rev.Content, existing.Content)) {
+		status = "in_review"
+		clearReview = true
+	}
+
+	err = s.withWriteTx(ctx, func(q *gen.Queries) error {
+		rows, uerr := q.UpdateDocPage(ctx, gen.UpdateDocPageParams{
+			ID:             pageID,
+			Title:          rev.Title,
+			Content:        rev.Content,
+			ReviewStatus:   status,
+			Slug:           existing.Slug,
+			ParentID:       existing.ParentID,
+			Position:       existing.Position,
+			Audience:       existing.Audience,
+			Category:       existing.Category,
+			Subcategory:    existing.Subcategory,
+			FeatureImageID: rev.FeatureImageID,
+			ClearReview:    &clearReview,
+		})
+		if uerr != nil {
+			return fmt.Errorf("restoring doc page: %w", mapWriteErr(uerr))
+		}
+
+		if rows == 0 {
+			return errpkg.ErrStaleWrite
+		}
+
+		_, uerr = q.InsertDocPageRevision(ctx, gen.InsertDocPageRevisionParams{
+			DocPageID:      pageID,
+			Title:          rev.Title,
+			Content:        rev.Content,
+			FeatureImageID: rev.FeatureImageID,
+			Summary:        &summary,
+			CreatedBy:      userID,
+		})
+
+		return uerr
+	})
+	if err != nil {
+		return err
+	}
+
+	s.invalidateCache(ctx, existing.Audience, existing.Slug)
+
+	return nil
+}
+
+// errRevisionIsLatest is returned when deleting a page's newest revision —
+// the latest anchors history to the live page and is undeletable. The
+// handler maps it to 409 revision_is_latest.
+var errRevisionIsLatest = errors.New("latest revision cannot be deleted")
+
+// DeleteDocPageRevision removes a non-latest revision (§44 amendment 5).
+func (s *Service) DeleteDocPageRevision(ctx context.Context, revID pgtype.UUID) error {
+	rev, err := s.store.read.GetDocPageRevision(ctx, revID)
+	if err != nil {
+		return errpkg.ErrNotFound
+	}
+
+	maxV, err := s.store.read.GetDocPageMaxRevisionVersion(ctx, rev.DocPageID)
+	if err != nil {
+		return fmt.Errorf("getting max revision version: %w", err)
+	}
+
+	if rev.Version >= maxV {
+		return errRevisionIsLatest
+	}
+
+	rows, err := s.store.write.DeleteDocPageRevision(ctx, revID)
+	if err != nil {
+		return fmt.Errorf("deleting revision: %w", err)
+	}
+
+	if rows == 0 {
+		return errpkg.ErrNotFound
+	}
+
+	return nil
+}
+
+// ClearDocPageRevisions wipes a page's entire history (§44 amendment 5).
+// The next content-changing write restarts versioning at v1.
+func (s *Service) ClearDocPageRevisions(ctx context.Context, pageID pgtype.UUID) error {
+	if err := s.store.write.DeleteDocPageRevisions(ctx, pageID); err != nil {
+		return fmt.Errorf("clearing revisions: %w", err)
+	}
+
+	return nil
 }

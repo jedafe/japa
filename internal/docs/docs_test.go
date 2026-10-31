@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 func TestValidAudiences(t *testing.T) {
@@ -319,5 +322,62 @@ func TestOpenAPIHandler(t *testing.T) {
 
 	if decoded["info"] == nil {
 		t.Error("expected info field in response")
+	}
+}
+
+func TestToDocPageFeatureImage(t *testing.T) {
+	imgID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	bucket, path := "media", "docs/hero.webp"
+	p := docPageRow{
+		DocPage: gen.DocPage{
+			ID:             pgtype.UUID{Bytes: [16]byte{2}, Valid: true},
+			Title:          "T",
+			Slug:           "t",
+			Audience:       "users",
+			FeatureImageID: imgID,
+		},
+		FeatureImageBucket: &bucket,
+		FeatureImagePath:   &path,
+	}
+	got := toDocPage(p)
+	if got.FeatureImageID == nil || *got.FeatureImageID != imgID.String() {
+		t.Fatalf("feature_image_id = %v", got.FeatureImageID)
+	}
+	if got.FeatureImageURL == "" {
+		t.Fatal("feature_image_url empty")
+	}
+}
+
+func TestUpdateDocPageRequestFeatureImageJSON(t *testing.T) {
+	body := `{"title":"T","feature_image_id":"","summary":"typo fix"}`
+	var req UpdateDocPageRequest
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.FeatureImageID == nil || *req.FeatureImageID != "" {
+		t.Fatalf("feature_image_id = %v", req.FeatureImageID)
+	}
+	if req.Summary == nil || *req.Summary != "typo fix" {
+		t.Fatalf("summary = %v", req.Summary)
+	}
+}
+
+func TestRevisionRequired(t *testing.T) {
+	base := gen.DocPage{
+		Title:   "T",
+		Content: []byte(`{"type":"doc","content":[{"type":"paragraph"}]}`),
+	}
+	same := []byte(`{"content":[{"type":"paragraph"}],"type":"doc"}`)
+	if revisionRequired(base, "T", same, pgtype.UUID{}) {
+		t.Fatal("unchanged title/content/image must not version")
+	}
+	if !revisionRequired(base, "T2", same, pgtype.UUID{}) {
+		t.Fatal("title change must version")
+	}
+	if !revisionRequired(base, "T", []byte(`{"type":"doc","content":[]}`), pgtype.UUID{}) {
+		t.Fatal("content change must version")
+	}
+	if !revisionRequired(base, "T", same, pgtype.UUID{Bytes: [16]byte{9}, Valid: true}) {
+		t.Fatal("feature_image change must version")
 	}
 }
