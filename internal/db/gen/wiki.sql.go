@@ -2611,7 +2611,7 @@ WHERE wr.wiki_page_id = $1
     WHERE w2.wiki_page_id = $1
       AND w2.status = 'approved'
       AND w2.deleted_at IS NULL
-    ORDER BY w2.created_at DESC
+    ORDER BY w2.created_at DESC, w2.id DESC
     LIMIT 5
   )
 `
