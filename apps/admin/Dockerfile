@@ -38,9 +38,26 @@ RUN bun run build
 
 FROM oven/bun:1.4-slim AS runtime
 WORKDIR /repo
+# $env/dynamic/public resolves from the SSR server's process.env at runtime,
+# so the PUBLIC_* args must reach the runtime image too — without them every
+# dynamic public read falls back to the dev defaults (e.g. disabled umami).
+ARG PUBLIC_JC_API_URL
+ARG PUBLIC_JC_WS_URL
+ARG PUBLIC_JC_ENV
+ARG PUBLIC_JC_SITE_URL
+ARG PUBLIC_JC_GLITCHTIP_DSN
+ARG PUBLIC_JC_UMAMI_URL
+ARG PUBLIC_JC_UMAMI_SITE_ID_ADMIN
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    PORT=3001
+    PORT=3001 \
+    PUBLIC_JC_API_URL=${PUBLIC_JC_API_URL} \
+    PUBLIC_JC_WS_URL=${PUBLIC_JC_WS_URL} \
+    PUBLIC_JC_ENV=${PUBLIC_JC_ENV} \
+    PUBLIC_JC_SITE_URL=${PUBLIC_JC_SITE_URL} \
+    PUBLIC_JC_GLITCHTIP_DSN=${PUBLIC_JC_GLITCHTIP_DSN} \
+    PUBLIC_JC_UMAMI_URL=${PUBLIC_JC_UMAMI_URL} \
+    PUBLIC_JC_UMAMI_SITE_ID_ADMIN=${PUBLIC_JC_UMAMI_SITE_ID_ADMIN}
 
 # Production-only deps — the build stage's node_modules carries vite,
 # typescript, eslint, etc. Reinstall from manifests with --production;
