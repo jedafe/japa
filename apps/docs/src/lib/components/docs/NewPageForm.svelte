@@ -277,7 +277,7 @@
 					// goto() → beforeNavigate while awaiting, and the dirty guard
 					// must let the post-submit redirect through.
 					try {
-						await update();
+						await update({ reset: false });
 					} finally {
 						submitting = false;
 					}

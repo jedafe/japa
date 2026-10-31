@@ -86,6 +86,7 @@ func (s *Store) getBySlug(ctx context.Context, audience, slug string) (docPageRo
 		Subcategory:    row.Subcategory,
 		HelpfulYes:     row.HelpfulYes,
 		HelpfulNo:      row.HelpfulNo,
+		FeatureImageID: row.FeatureImageID,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, FeatureImageBucket: row.FeatureImageBucket, FeatureImagePath: row.FeatureImagePath}, nil
@@ -119,6 +120,7 @@ func (s *Store) getBySlugAnyStatus(ctx context.Context, audience, slug string) (
 		Subcategory:    row.Subcategory,
 		HelpfulYes:     row.HelpfulYes,
 		HelpfulNo:      row.HelpfulNo,
+		FeatureImageID: row.FeatureImageID,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, FeatureImageBucket: row.FeatureImageBucket, FeatureImagePath: row.FeatureImagePath}, nil
@@ -150,6 +152,7 @@ func (s *Store) getByID(ctx context.Context, id pgtype.UUID) (docPageRow, error)
 		Subcategory:    row.Subcategory,
 		HelpfulYes:     row.HelpfulYes,
 		HelpfulNo:      row.HelpfulNo,
+		FeatureImageID: row.FeatureImageID,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, FeatureImageBucket: row.FeatureImageBucket, FeatureImagePath: row.FeatureImagePath}, nil

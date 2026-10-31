@@ -364,7 +364,7 @@ export async function saveDocPageAction(event: RequestEvent, audience: string, s
 	if (form.has('feature_image_id')) body.feature_image_id = featureImageId; // "" clears
 	if (summary) body.summary = summary;
 	if (newSlug && newSlug !== slug) body.slug = newSlug;
-	body.parent_id = parentId || null;
+	body.parent_id = parentId; // "" is the clear sentinel
 	if (positionRaw !== null && positionRaw !== '') {
 		const pos = Number(positionRaw);
 		if (Number.isFinite(pos)) body.position = Math.trunc(pos);

@@ -197,13 +197,16 @@
 		formData.set('category', editCategory);
 		formData.set('subcategory', editSubcategory);
 		formData.set('parent_id', editParentId);
+		formData.set('feature_image_id', editFeatureImageId);
+		formData.set('feature_image_url', editFeatureImageUrl);
+		formData.set('summary', editSummary.trim());
 		saving = true;
 		return async ({ update, result }) => {
 			// Keep saving=true through update(): a redirect result runs goto()
 			// → beforeNavigate while awaiting, and the dirty guard must let
 			// the post-submit redirect through.
 			try {
-				await update();
+				await update({ reset: false });
 			} finally {
 				saving = false;
 			}
