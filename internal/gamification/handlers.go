@@ -707,7 +707,7 @@ func (h *Handlers) HandleAdminDeleteChallenge(w http.ResponseWriter, r *http.Req
 
 	if err := h.service.DeleteChallenge(r.Context(), challengeID); err != nil {
 		slog.Error("gamification: admin delete challenge failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "challenge_delete_failed", err.Error())
+		errpkg.WriteError(w, http.StatusBadRequest, "challenge_delete_failed", "Failed to delete challenge")
 
 		return
 	}

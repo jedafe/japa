@@ -4,7 +4,7 @@ import { api } from './client';
 
 export interface TipExternalLink {
 	id?: string;
-	kind: 'paypal' | 'kofi' | 'buymeacoffee' | 'opencollective' | 'other' | 'affiliate';
+	kind: 'paypal' | 'kofi' | 'buymeacoffee' | 'opencollective' | 'other' | 'product';
 	label: string;
 	url: string;
 	position?: number;
@@ -135,3 +135,14 @@ export const fiatDisplay = (minor: number, currency: string) => {
 /* ---- Wallet balance for the tip dialog's "you have X" hint ---- */
 export const getWalletBalance = () =>
 	api.get<{ points_balance?: number; credits_balance?: number }>('/me/wallet');
+
+export interface TipProductDomain {
+	name: string;
+	domain: string;
+}
+
+// listTipProductDomains — monetizable platforms for 'product' links (§125).
+export async function listTipProductDomains(): Promise<TipProductDomain[]> {
+	const res = await api.get<{ data: TipProductDomain[] }>('/api/v1/tips/product-domains');
+	return res.data?.data ?? [];
+}

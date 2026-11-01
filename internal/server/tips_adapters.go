@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -261,6 +262,25 @@ func (a tipsAffAdapter) ResolveAffiliateLinkByURL(ctx context.Context, rawURL st
 		return "", false, err
 	}
 	return r.ResolvedURL, true, nil
+}
+
+// SupportedDomains maps active providers to name+host for the product-link UI.
+func (a tipsAffAdapter) SupportedDomains(ctx context.Context) ([]tips.ProviderDomain, error) {
+	active := true
+	providers, err := a.svc.ListProviders(ctx, &active, 1, 100)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tips.ProviderDomain, 0, len(providers))
+	for _, p := range providers {
+		if p.BaseUrl == nil || *p.BaseUrl == "" {
+			continue
+		}
+		if u, perr := url.Parse(*p.BaseUrl); perr == nil && u.Hostname() != "" {
+			out = append(out, tips.ProviderDomain{Name: p.Name, Domain: u.Hostname()})
+		}
+	}
+	return out, nil
 }
 
 // tipsRefundAdapter adapts *payments.Service to tips.PaymentRefunder — admin

@@ -27,6 +27,10 @@ func (f *fakeAffResolver) ResolveAffiliateLinkByURL(_ context.Context, _ string)
 	return f.resolved, f.matched, f.err
 }
 
+func (f *fakeAffResolver) SupportedDomains(context.Context) ([]ProviderDomain, error) {
+	return nil, nil
+}
+
 type fakeFeatures struct{ on map[string]bool }
 
 func (f fakeFeatures) IsEnabled(_ context.Context, key string) bool { return f.on[key] }

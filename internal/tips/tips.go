@@ -383,6 +383,31 @@ func (s *Service) SetBMCClient(c BMCClient) { s.bmc = c }
 type AffiliateURLResolver interface {
 	// Returns (resolvedURL, matched, err). matched=false → keep original URL.
 	ResolveAffiliateLinkByURL(ctx context.Context, rawURL string) (resolved string, matched bool, err error)
+	// SupportedDomains lists active providers a 'product' link may target —
+	// surfaced to the settings UI so members link monetizable platforms only.
+	SupportedDomains(ctx context.Context) ([]ProviderDomain, error)
+}
+
+// ProviderDomain is a monetizable platform (name + link host).
+type ProviderDomain struct {
+	Name   string `json:"name"`
+	Domain string `json:"domain"`
+}
+
+// SupportedProductDomains returns the active provider list for the settings
+// UI — nil resolver or disabled affiliate flag yields an empty list.
+func (s *Service) SupportedProductDomains(ctx context.Context) []ProviderDomain {
+	if s.affResolver == nil {
+		return nil
+	}
+	if s.features != nil && !s.features.IsEnabled(ctx, "feature.affiliate_program") {
+		return nil
+	}
+	doms, err := s.affResolver.SupportedDomains(ctx)
+	if err != nil {
+		return nil
+	}
+	return doms
 }
 
 // SetAffiliateResolver injects the §55 affiliate matcher used by the

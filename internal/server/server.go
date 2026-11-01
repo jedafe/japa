@@ -5306,6 +5306,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// dedup (jc:tip_link_dedup) + async tips:record_link_click +
 				// §55 tracking injection on provider host match.
 				r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/tips/links/{id}/out", tipsHandlers.RedirectExternalLink)
+				r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/tips/product-domains", tipsHandlers.ProductDomains)
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/tips", tipsHandlers.AdminListTips)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/tips/stats", tipsHandlers.AdminTipStats)

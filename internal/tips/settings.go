@@ -298,12 +298,12 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 // --- External links ---------------------------------------------------------
 
 var validLinkKinds = map[string]bool{
-	"paypal": true, "kofi": true, "buymeacoffee": true, "opencollective": true, "affiliate": true,
+	"paypal": true, "kofi": true, "buymeacoffee": true, "opencollective": true, "product": true,
 }
 
 // linkKindDomains constrains branded kinds to their real domains — a "PayPal"
 // badge pointing at an arbitrary host is a phishing vector on the public
-// tip dialog. 'affiliate' is validated against active §55 provider hosts in
+// tip dialog. 'product' is validated against active §55 provider hosts in
 // service code — an unmatched domain can never be monetized, so it rejects.
 var linkKindDomains = map[string][]string{
 	"paypal":         {"paypal.com", "paypal.me"},
@@ -398,7 +398,7 @@ func (s *Service) CreateLink(ctx context.Context, owner Owner, actorID pgtype.UU
 	if err := validateLinkInput(in); err != nil {
 		return ExternalLink{}, err
 	}
-	if in.Kind == "affiliate" {
+	if in.Kind == "product" {
 		if _, matched, err := s.ResolveAffiliateURL(ctx, in.URL); err != nil || !matched {
 			return ExternalLink{}, ErrInvalidLink
 		}
@@ -448,7 +448,7 @@ func (s *Service) UpdateLink(ctx context.Context, owner Owner, actorID, linkID p
 	if err := validateLinkInput(in); err != nil {
 		return ExternalLink{}, err
 	}
-	if in.Kind == "affiliate" {
+	if in.Kind == "product" {
 		if _, matched, err := s.ResolveAffiliateURL(ctx, in.URL); err != nil || !matched {
 			return ExternalLink{}, ErrInvalidLink
 		}

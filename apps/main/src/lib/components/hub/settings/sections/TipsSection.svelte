@@ -9,7 +9,8 @@
 		connectOC, disconnectOC,
 		getOrgTipSettings, updateOrgTipSettings, createOrgTipLink, deleteOrgTipLink,
 		connectOrgOC, disconnectOrgOC,
-		type TipSettings, type TipExternalLink
+		listTipProductDomains,
+		type TipSettings, type TipExternalLink, type TipProductDomain
 	} from '$lib/api/tips';
 	import { CheckCircle2, ExternalLink, Loader2, Plus, Trash2 } from 'lucide-svelte';
 	import { SelectField } from '$lib/components/ui';
@@ -32,6 +33,7 @@
 	let ocToken = $state('');
 	let ocBusy = $state(false);
 	let eligible = $state(true);
+	let productDomains = $state<TipProductDomain[]>([]);
 
 	onMount(async () => {
 		const res = orgId ? await getOrgTipSettings(orgId) : await getMyTipSettings();
@@ -44,6 +46,7 @@
 		links = res.data.external_links ?? [];
 		ocSlug = settings?.oc_collective_slug ?? '';
 		eligible = (res.data as { eligible?: boolean }).eligible !== false;
+		productDomains = await listTipProductDomains();
 	});
 
 	async function save() {
@@ -214,7 +217,7 @@
 						{ value: 'kofi', label: 'Ko-fi' },
 						{ value: 'buymeacoffee', label: 'Buy Me a Coffee' },
 						{ value: 'opencollective', label: 'Open Collective' },
-						{ value: 'affiliate', label: 'Affiliate link' }
+						{ value: 'product', label: 'Product' }
 					]}
 					class="sm:w-44"
 				/>
@@ -222,6 +225,14 @@
 				<input bind:value={linkUrl} placeholder="https://" class="flex-1 rounded-md border border-border bg-background px-2 py-2 text-sm" />
 				<button type="button" onclick={addLink} class="rounded-md bg-primary px-3 py-2 text-primary-foreground"><Plus class="size-4" /></button>
 			</div>
+			{#if linkKind === 'product'}
+				<p class="mt-2 text-xs text-muted-foreground">
+					{t('tips.product_hint', 'Paste a link to your product on a supported platform — e.g. an Amazon book/product page, a Udemy course, a Booking listing. Purchases made through your link help support you.')}
+					{#if productDomains.length}
+						{t('tips.product_supported', 'Supported platforms:')} {productDomains.map((d) => d.name).join(', ')}.
+					{/if}
+				</p>
+			{/if}
 		</div>
 
 		<div class="rounded-lg border border-border p-4">

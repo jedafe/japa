@@ -1275,3 +1275,9 @@ func (h *Handlers) HandleKofiWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 }
+
+// ProductDomains handles GET /api/v1/tips/product-domains — public list of
+// monetizable platforms for the 'product' link kind (§125).
+func (h *Handlers) ProductDomains(w http.ResponseWriter, r *http.Request) {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": h.service.SupportedProductDomains(r.Context())})
+}
