@@ -630,6 +630,31 @@ func (q *Queries) InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryPa
 	return i, err
 }
 
+const insertWalletAuditLog = `-- name: InsertWalletAuditLog :exec
+INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata)
+VALUES ($1, $2, $3, $4, $5::jsonb)
+`
+
+type InsertWalletAuditLogParams struct {
+	ActorUserID pgtype.UUID `json:"actor_user_id"`
+	ActionType  string      `json:"action_type"`
+	TargetType  *string     `json:"target_type"`
+	TargetID    pgtype.UUID `json:"target_id"`
+	Metadata    []byte      `json:"metadata"`
+}
+
+// Canonical admin-action trail for monetary wallet mutations.
+func (q *Queries) InsertWalletAuditLog(ctx context.Context, arg InsertWalletAuditLogParams) error {
+	_, err := q.db.Exec(ctx, insertWalletAuditLog,
+		arg.ActorUserID,
+		arg.ActionType,
+		arg.TargetType,
+		arg.TargetID,
+		arg.Metadata,
+	)
+	return err
+}
+
 const listActivityEventsUndoing = `-- name: ListActivityEventsUndoing :many
 SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
 WHERE payload->>'undoes' = $1::text AND payload->>'undoes_key' = $2::text

@@ -64,6 +64,7 @@ type UniversityStore interface {
 	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
 	GetUniversitySpaceBySlug(ctx context.Context, slug string) (gen.GetUniversitySpaceBySlugRow, error)
 	GetUniversityIntelLinkByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.UniversityIntelLink, error)
+	GetUniversityIntelLinkBySpace(ctx context.Context, spaceID pgtype.UUID) (gen.UniversityIntelLink, error)
 	GetSpaceTypeBySlug(ctx context.Context, slug string) (gen.SpaceType, error)
 	GetSpaceByID(ctx context.Context, id pgtype.UUID) (gen.GetSpaceByIDRow, error)
 	GetCountrySpace(ctx context.Context, countryCode string) (pgtype.UUID, error)
@@ -180,7 +181,7 @@ type universityFieldDef struct {
 // resolves the field definition for every extracted CFV-mapped key.
 // Missing definitions (field removed by an admin) are skipped with a log
 // line, never an error — extraction still lands on the record.
-func (p *UniversityPromoter) resolveUniversityFieldDefs(ctx context.Context, ext extractor.Extraction) map[string]universityFieldDef {
+func (p *UniversityPromoter) resolveUniversityFieldDefs(ctx context.Context) map[string]universityFieldDef {
 	defs := map[string]universityFieldDef{}
 
 	group, err := p.store.GetCustomFieldGroupBySlug(ctx, universityFieldGroupSlug)
@@ -389,7 +390,7 @@ func (p *UniversityPromoter) universityCreatePath(ctx context.Context, record ge
 		parentID = id
 	}
 
-	defs := p.resolveUniversityFieldDefs(ctx, ext)
+	defs := p.resolveUniversityFieldDefs(ctx)
 
 	// Adopt: a university space already carries the slug (admin-seeded or
 	// created by a different source's record). Link it and run the update
@@ -474,8 +475,21 @@ func (p *UniversityPromoter) universityCreatePath(ctx context.Context, record ge
 }
 
 // universityAdoptPath links an existing unlinked university space to the
-// record and applies the update diff against it.
+// record and applies the update diff against it. A space already linked to
+// a DIFFERENT intel record routes to review — repointing the link (the
+// space_id PK conflict) would silently unbind the other record and the two
+// would ping-pong the link on every crawl.
 func (p *UniversityPromoter) universityAdoptPath(ctx context.Context, record gen.IntelRecord, space gen.GetUniversitySpaceBySlugRow, defs map[string]universityFieldDef, ext extractor.Extraction) (PromoteResult, error) {
+	link, err := p.store.GetUniversityIntelLinkBySpace(ctx, space.ID)
+	switch {
+	case err == nil && link.IntelRecordID != record.ID:
+		return PromoteResult{}, fmt.Errorf(
+			"promoter: university space %q already linked to intel record %s (claimed by %s): %w",
+			space.Slug, link.IntelRecordID.String(), record.ID.String(), ErrRouteToReview)
+	case err != nil && !isNotFound(err):
+		return PromoteResult{}, fmt.Errorf("promoter: check university intel link: %w", err)
+	}
+
 	spaceRow, err := p.store.GetSpaceByID(ctx, space.ID)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load adopted university space: %w", err)
@@ -551,7 +565,7 @@ func (p *UniversityPromoter) universityUpdatePath(ctx context.Context, record ge
 		return PromoteResult{}, fmt.Errorf("promoter: load linked university space: %w", err)
 	}
 
-	defs := p.resolveUniversityFieldDefs(ctx, ext)
+	defs := p.resolveUniversityFieldDefs(ctx)
 
 	writes, changed, suppressed, err := p.planUniversityWrites(ctx, space, defs, ext, overrides)
 	if err != nil {

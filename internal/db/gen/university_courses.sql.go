@@ -700,6 +700,57 @@ func (q *Queries) GetCourseOfferingBySlug(ctx context.Context, slug string) (Get
 	return i, err
 }
 
+const getCourseOfferingIntelByID = `-- name: GetCourseOfferingIntelByID :one
+SELECT o.id, o.slug, o.intel_record_id, o.university_id, o.tuition, o.currency,
+       o.study_mode, o.intake_months, o.created_at,
+       c.title AS course_title, s.name AS university_name, s.geo_code,
+       cs.name AS country_name
+FROM university_course_offerings o
+JOIN university_course_catalog c ON c.id = o.course_id
+JOIN spaces s ON s.id = o.university_id
+LEFT JOIN spaces cs ON cs.geo_code = s.geo_code AND cs.level = 'country' AND cs.deleted_at IS NULL
+WHERE o.id = $1 AND o.deleted_at IS NULL AND o.is_published = true
+`
+
+type GetCourseOfferingIntelByIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Slug           string             `json:"slug"`
+	IntelRecordID  pgtype.UUID        `json:"intel_record_id"`
+	UniversityID   pgtype.UUID        `json:"university_id"`
+	Tuition        pgtype.Numeric     `json:"tuition"`
+	Currency       *string            `json:"currency"`
+	StudyMode      *string            `json:"study_mode"`
+	IntakeMonths   []string           `json:"intake_months"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	CourseTitle    string             `json:"course_title"`
+	UniversityName string             `json:"university_name"`
+	GeoCode        *string            `json:"geo_code"`
+	CountryName    *string            `json:"country_name"`
+}
+
+// Single promoted offering for the radar item-detail endpoint — same
+// join shape as the keyset queries.
+func (q *Queries) GetCourseOfferingIntelByID(ctx context.Context, id pgtype.UUID) (GetCourseOfferingIntelByIDRow, error) {
+	row := q.db.QueryRow(ctx, getCourseOfferingIntelByID, id)
+	var i GetCourseOfferingIntelByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.IntelRecordID,
+		&i.UniversityID,
+		&i.Tuition,
+		&i.Currency,
+		&i.StudyMode,
+		&i.IntakeMonths,
+		&i.CreatedAt,
+		&i.CourseTitle,
+		&i.UniversityName,
+		&i.GeoCode,
+		&i.CountryName,
+	)
+	return i, err
+}
+
 const getPublishedCourseOfferingBySlugs = `-- name: GetPublishedCourseOfferingBySlugs :one
 SELECT o.id, o.course_id, o.university_id, o.slug,
  o.tuition, o.currency, o.duration_years, o.study_mode, o.intake_months,
@@ -1150,10 +1201,12 @@ func (q *Queries) ListCourseOfferingsByUniversity(ctx context.Context, arg ListC
 const listCourseOfferingsIntelBySpaces = `-- name: ListCourseOfferingsIntelBySpaces :many
 SELECT o.id, o.slug, o.intel_record_id, o.university_id, o.tuition, o.currency,
        o.study_mode, o.intake_months, o.created_at,
-       c.title AS course_title, s.name AS university_name, s.geo_code
+       c.title AS course_title, s.name AS university_name, s.geo_code,
+       cs.name AS country_name
 FROM university_course_offerings o
 JOIN university_course_catalog c ON c.id = o.course_id
 JOIN spaces s ON s.id = o.university_id
+LEFT JOIN spaces cs ON cs.geo_code = s.geo_code AND cs.level = 'country' AND cs.deleted_at IS NULL
 WHERE o.deleted_at IS NULL AND o.is_published = true
  AND o.university_id = ANY($1::uuid[])
  AND ($2::timestamptz IS NULL
@@ -1185,6 +1238,7 @@ type ListCourseOfferingsIntelBySpacesRow struct {
 	CourseTitle    string             `json:"course_title"`
 	UniversityName string             `json:"university_name"`
 	GeoCode        *string            `json:"geo_code"`
+	CountryName    *string            `json:"country_name"`
 }
 
 func (q *Queries) ListCourseOfferingsIntelBySpaces(ctx context.Context, arg ListCourseOfferingsIntelBySpacesParams) ([]ListCourseOfferingsIntelBySpacesRow, error) {
@@ -1215,6 +1269,7 @@ func (q *Queries) ListCourseOfferingsIntelBySpaces(ctx context.Context, arg List
 			&i.CourseTitle,
 			&i.UniversityName,
 			&i.GeoCode,
+			&i.CountryName,
 		); err != nil {
 			return nil, err
 		}
@@ -1229,10 +1284,12 @@ func (q *Queries) ListCourseOfferingsIntelBySpaces(ctx context.Context, arg List
 const listCourseOfferingsIntelKeyset = `-- name: ListCourseOfferingsIntelKeyset :many
 SELECT o.id, o.slug, o.intel_record_id, o.university_id, o.tuition, o.currency,
        o.study_mode, o.intake_months, o.created_at,
-       c.title AS course_title, s.name AS university_name, s.geo_code
+       c.title AS course_title, s.name AS university_name, s.geo_code,
+       cs.name AS country_name
 FROM university_course_offerings o
 JOIN university_course_catalog c ON c.id = o.course_id
 JOIN spaces s ON s.id = o.university_id
+LEFT JOIN spaces cs ON cs.geo_code = s.geo_code AND cs.level = 'country' AND cs.deleted_at IS NULL
 WHERE o.deleted_at IS NULL AND o.is_published = true
  AND ($1::timestamptz IS NULL
  OR o.created_at < $1
@@ -1266,6 +1323,7 @@ type ListCourseOfferingsIntelKeysetRow struct {
 	CourseTitle    string             `json:"course_title"`
 	UniversityName string             `json:"university_name"`
 	GeoCode        *string            `json:"geo_code"`
+	CountryName    *string            `json:"country_name"`
 }
 
 // Radar keyset over promoted course offerings: (created_at,id) cursor,
@@ -1299,6 +1357,7 @@ func (q *Queries) ListCourseOfferingsIntelKeyset(ctx context.Context, arg ListCo
 			&i.CourseTitle,
 			&i.UniversityName,
 			&i.GeoCode,
+			&i.CountryName,
 		); err != nil {
 			return nil, err
 		}

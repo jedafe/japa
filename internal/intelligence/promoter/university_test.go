@@ -114,6 +114,14 @@ func (m *mockUniversityStore) GetUniversityIntelLinkByIntelRecord(_ context.Cont
 	return gen.UniversityIntelLink{}, errNoRows
 }
 
+func (m *mockUniversityStore) GetUniversityIntelLinkBySpace(_ context.Context, id pgtype.UUID) (gen.UniversityIntelLink, error) {
+	if l, ok := m.linkBySpace[id.String()]; ok {
+		return *l, nil
+	}
+
+	return gen.UniversityIntelLink{}, errNoRows
+}
+
 func (m *mockUniversityStore) GetSpaceTypeBySlug(_ context.Context, slug string) (gen.SpaceType, error) {
 	if slug != "education" {
 		return gen.SpaceType{}, errNoRows

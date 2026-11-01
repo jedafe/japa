@@ -1944,3 +1944,13 @@ func (s *Store) RemoveCourseOfferingIntelOverrides(ctx context.Context, arg gen.
 
 	return nil
 }
+
+// GetCourseOfferingIntelByID loads one promoted offering for radar detail.
+func (s *Store) GetCourseOfferingIntelByID(ctx context.Context, id pgtype.UUID) (gen.GetCourseOfferingIntelByIDRow, error) {
+	row, err := s.queries.GetCourseOfferingIntelByID(ctx, id)
+	if err != nil {
+		return gen.GetCourseOfferingIntelByIDRow{}, fmt.Errorf("stores: get course offering: %w", err)
+	}
+
+	return row, nil
+}

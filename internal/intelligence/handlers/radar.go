@@ -319,10 +319,14 @@ func courseOfferingToRadarItem(o gen.ListCourseOfferingsIntelKeysetRow) radarIte
 		Type:          "course_offering",
 		Title:         o.CourseTitle + " — " + o.UniversityName,
 		SpaceID:       o.UniversityID,
+		University:    &o.UniversityName,
 		Description:   &desc,
 		SourceURL:     "",
 		CreatedAt:     o.CreatedAt,
 		FieldValues:   map[string]string{},
+	}
+	if o.CountryName != nil {
+		item.Country = *o.CountryName
 	}
 	if o.Tuition.Valid {
 		v, _ := o.Tuition.Value()
@@ -348,6 +352,7 @@ func courseOfferingSpaceToRadarItem(o gen.ListCourseOfferingsIntelBySpacesRow) r
 		Tuition: o.Tuition, Currency: o.Currency, StudyMode: o.StudyMode,
 		IntakeMonths: o.IntakeMonths, CreatedAt: o.CreatedAt,
 		CourseTitle: o.CourseTitle, UniversityName: o.UniversityName, GeoCode: o.GeoCode,
+		CountryName: o.CountryName,
 	})
 }
 
@@ -462,6 +467,7 @@ func parseRadarCursor(raw string) map[string]radarCursorCheckpoint {
 	return map[string]radarCursorCheckpoint{
 		"scholarship": cp, "job": cp, "visa": cp,
 		"housing": cp, "remittance": cp, "cost_of_living": cp,
+		"course_offering": cp,
 	}
 }
 
@@ -515,6 +521,12 @@ func (h *Handlers) resolveRadarCountryNames(ctx context.Context, items []radarIt
 	seen := map[pgtype.UUID]bool{}
 	var ids []pgtype.UUID
 	for _, it := range items {
+		// course_offering's SpaceID is the university space, not a geo
+		// space — its Country is already resolved via the join.
+		if it.Type == "course_offering" {
+			continue
+		}
+
 		if it.SpaceID.Valid && !seen[it.SpaceID] {
 			seen[it.SpaceID] = true
 			ids = append(ids, it.SpaceID)
@@ -534,6 +546,10 @@ func (h *Handlers) resolveRadarCountryNames(ctx context.Context, items []radarIt
 		names[r.ID] = r.Name
 	}
 	for i := range items {
+		if items[i].Type == "course_offering" {
+			continue
+		}
+
 		if n, ok := names[items[i].SpaceID]; ok && n != "" {
 			items[i].Country = n
 		}
@@ -1346,6 +1362,23 @@ func (h *Handlers) resolveRadarItem(ctx context.Context, itemID pgtype.UUID, ite
 		c, err := h.intelStores.GetIntelComparisonItemByID(ctx, itemID)
 		if err == nil {
 			return comparisonItemToRadarItem(c), pgtype.UUID{}, nil
+		}
+
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return radarItem{}, pgtype.UUID{}, err
+		}
+	}
+
+	if itemType == "" || itemType == "course_offering" {
+		o, err := h.intelStores.GetCourseOfferingIntelByID(ctx, itemID)
+		if err == nil {
+			return courseOfferingToRadarItem(gen.ListCourseOfferingsIntelKeysetRow{
+				ID: o.ID, Slug: o.Slug, IntelRecordID: o.IntelRecordID, UniversityID: o.UniversityID,
+				Tuition: o.Tuition, Currency: o.Currency, StudyMode: o.StudyMode,
+				IntakeMonths: o.IntakeMonths, CreatedAt: o.CreatedAt,
+				CourseTitle: o.CourseTitle, UniversityName: o.UniversityName, GeoCode: o.GeoCode,
+				CountryName: o.CountryName,
+			}), pgtype.UUID{}, nil
 		}
 
 		if !errors.Is(err, pgx.ErrNoRows) {

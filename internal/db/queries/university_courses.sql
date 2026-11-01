@@ -324,10 +324,12 @@ RETURNING id;
 -- university-space + country-geo filters in the shared radar shape.
 SELECT o.id, o.slug, o.intel_record_id, o.university_id, o.tuition, o.currency,
        o.study_mode, o.intake_months, o.created_at,
-       c.title AS course_title, s.name AS university_name, s.geo_code
+       c.title AS course_title, s.name AS university_name, s.geo_code,
+       cs.name AS country_name
 FROM university_course_offerings o
 JOIN university_course_catalog c ON c.id = o.course_id
 JOIN spaces s ON s.id = o.university_id
+LEFT JOIN spaces cs ON cs.geo_code = s.geo_code AND cs.level = 'country' AND cs.deleted_at IS NULL
 WHERE o.deleted_at IS NULL AND o.is_published = true
  AND ($1::timestamptz IS NULL
  OR o.created_at < $1
@@ -341,10 +343,12 @@ LIMIT $6;
 -- name: ListCourseOfferingsIntelBySpaces :many
 SELECT o.id, o.slug, o.intel_record_id, o.university_id, o.tuition, o.currency,
        o.study_mode, o.intake_months, o.created_at,
-       c.title AS course_title, s.name AS university_name, s.geo_code
+       c.title AS course_title, s.name AS university_name, s.geo_code,
+       cs.name AS country_name
 FROM university_course_offerings o
 JOIN university_course_catalog c ON c.id = o.course_id
 JOIN spaces s ON s.id = o.university_id
+LEFT JOIN spaces cs ON cs.geo_code = s.geo_code AND cs.level = 'country' AND cs.deleted_at IS NULL
 WHERE o.deleted_at IS NULL AND o.is_published = true
  AND o.university_id = ANY($1::uuid[])
  AND ($2::timestamptz IS NULL
@@ -359,3 +363,16 @@ LIMIT $5;
 UPDATE university_course_offerings
 SET editorial_overrides = editorial_overrides - $2::text[], updated_at = now()
 WHERE id = $1;
+
+-- name: GetCourseOfferingIntelByID :one
+-- Single promoted offering for the radar item-detail endpoint — same
+-- join shape as the keyset queries.
+SELECT o.id, o.slug, o.intel_record_id, o.university_id, o.tuition, o.currency,
+       o.study_mode, o.intake_months, o.created_at,
+       c.title AS course_title, s.name AS university_name, s.geo_code,
+       cs.name AS country_name
+FROM university_course_offerings o
+JOIN university_course_catalog c ON c.id = o.course_id
+JOIN spaces s ON s.id = o.university_id
+LEFT JOIN spaces cs ON cs.geo_code = s.geo_code AND cs.level = 'country' AND cs.deleted_at IS NULL
+WHERE o.id = $1 AND o.deleted_at IS NULL AND o.is_published = true;
