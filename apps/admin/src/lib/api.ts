@@ -554,6 +554,21 @@ export const permissionsApi = {
 	list: () => api<string[]>('/admin/permissions'),
 };
 
+/** Row from wallet_ledger (Section 28). */
+export interface WalletLedgerEntry {
+	id: string;
+	user_id: string;
+	ledger_type: 'points' | 'credits';
+	operation: string;
+	amount: number;
+	resulting_balance: number;
+	source: string | null;
+	actor_user_id: string | null;
+	reference: string | null;
+	reason: string | null;
+	created_at: string;
+}
+
 export const userManagementApi = {
 	list: (params?: string) =>
 		api<{ items: UserDetail[]; total: number; page: number; total_pages: number }>(`/admin/users${params ? `?${params}` : ''}`),
@@ -571,6 +586,11 @@ export const userManagementApi = {
 
 	issueWarning: (userId: string, body: { reason: string }) =>
 		api(`/admin/users/${userId}/warn`, { method: 'POST', body }),
+	// Points/credits history + compensating reversals (ADR-136 spam penalties).
+	getUserLedger: (userId: string, params?: string) =>
+		api<WalletLedgerEntry[]>(`/admin/wallet/user/${userId}/ledger${params ? `?${params}` : ''}`),
+	reverseLedgerEntry: (entryId: string, body: { reason?: string }) =>
+		api<{ balance: number }>(`/admin/wallet/entries/${entryId}/reverse`, { method: 'POST', body }),
 	banUser: (userId: string) =>
 		api(`/admin/users/${userId}/ban`, { method: 'POST', body: {} }),
 	unbanUser: (userId: string) =>
@@ -1584,19 +1604,6 @@ export const academyCurriculumAdminApi = {
 };
 
 export const mentorshipAdminApiExtended = {
-	listPrograms: (params?: string) =>
-		api<unknown>(`/admin/mentorship/programs${params ? `?${params}` : ''}`),
-	getProgram: (id: string) => api<unknown>(`/admin/mentorship/programs/${id}`),
-	listMatches: (params?: string) =>
-		api<unknown>(`/admin/mentorship/matches${params ? `?${params}` : ''}`),
-	createProgram: (body: Record<string, unknown>) =>
-		api<unknown>('/admin/mentorship/programs', { method: 'POST', body }),
-	updateProgram: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/mentorship/programs/${id}`, { method: 'PATCH', body }),
-	deleteProgram: (id: string) =>
-		api<unknown>(`/admin/mentorship/programs/${id}`, { method: 'DELETE' }),
-	updateMatch: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/mentorship/matches/${id}`, { method: 'PATCH', body }),
 	// §102 Mentorship Matching (ADR-110) — connections management.
 	// apiRaw: the endpoint returns meta.total alongside data for
 	// server-side pagination.

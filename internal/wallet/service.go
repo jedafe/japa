@@ -720,6 +720,89 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 	return newBalance, nil
 }
 
+// AdminReverseLedgerEntry posts a compensating entry that undoes an existing
+// ledger row — e.g. a spam.detected penalty issued in error (ADR-136). The
+// reversal is idempotent on the source entry (idempotency_key
+// "reverse:{entryID}") so repeat calls return ErrDuplicate rather than
+// double-crediting. The negative-balance lock still applies: reversing an
+// *earning* the user has already spent returns ErrInsufficientBalance.
+func (s *Service) AdminReverseLedgerEntry(ctx context.Context, actorUserID, entryID pgtype.UUID, reason string) (int64, error) {
+	original, err := s.store.read.GetLedgerEntryByID(ctx, entryID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("%w: ledger entry %s", errpkg.ErrNotFound, entryID.String())
+		}
+		return 0, fmt.Errorf("loading ledger entry: %w", err)
+	}
+	if original.Amount == 0 {
+		return 0, fmt.Errorf("%w: zero-amount entry", errpkg.ErrInvalid)
+	}
+	if reason == "" {
+		src := "entry"
+		if original.Source != nil {
+			src = *original.Source
+		}
+		reason = fmt.Sprintf("Reversal of %s entry %s", src, entryID.String())
+	}
+
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	// Same per-user lock as AdminAdjustBalance (AUDIT-BE-005).
+	lockKey := "wallet::" + original.UserID.String()
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return 0, fmt.Errorf("acquiring wallet lock: %w", err)
+	}
+
+	// Inside the lock, refuse a second reversal of the same entry.
+	idempotencyKey := "reverse:" + entryID.String()
+	if exists, err := qtx.CheckIdempotencyKey(ctx, &idempotencyKey); err == nil && exists {
+		return 0, fmt.Errorf("%w: entry %s already reversed", errpkg.ErrDuplicate, entryID.String())
+	}
+
+	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+		UserID:     original.UserID,
+		LedgerType: original.LedgerType,
+	})
+	if err != nil {
+		currentBalance = 0
+	}
+
+	reversal := -original.Amount
+	newBalance := currentBalance + reversal
+	if newBalance < 0 {
+		return 0, fmt.Errorf("%w: current=%d, reversal=%d", errpkg.ErrInsufficientBalance, currentBalance, reversal)
+	}
+
+	reference := "reverse:" + entryID.String()
+	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+		UserID:           original.UserID,
+		LedgerType:       original.LedgerType,
+		Operation:        OperationAdminAdjust,
+		Amount:           reversal,
+		ResultingBalance: newBalance,
+		Source:           strPtr("admin_reversal"),
+		ActorUserID:      actorUserID,
+		Reference:        &reference,
+		IdempotencyKey:   &idempotencyKey,
+		Reason:           &reason,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("inserting reversal entry: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("committing transaction: %w", err)
+	}
+
+	return newBalance, nil
+}
+
 // GetWalletSettings returns wallet settings. When no wallet_settings row
 // exists yet, compiled-in defaults are synthesized (ADR-136 — conversion
 // settings removed; only earning cap + killswitch remain).

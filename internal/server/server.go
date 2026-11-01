@@ -3965,7 +3965,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/spaces/{slug}/tip-settings", tipsHandlers.GetSpaceTipSettings)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Patch("/spaces/{slug}/tip-settings", tipsHandlers.UpdateSpaceTipSettings)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).
 				Get("/spaces/{slug}/tips", tipsHandlers.ListSpaceTips)
 
 			// Space follow/unfollow (Section 31) — M5: rate-limited
@@ -5148,6 +5148,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/admin/wallet/adjust", walletHandlers.AdminAdjust)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
 					Get("/admin/wallet/user/{userId}/balance", walletHandlers.AdminGetUserBalance)
+				// Per-user ledger + compensating reversals (e.g. undoing an
+				// erroneous spam.detected penalty — ADR-136). Reversal is
+				// idempotent per entry via reverse:{entryId}.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust")).
+					Get("/admin/wallet/user/{userId}/ledger", walletHandlers.AdminGetUserLedger)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					Post("/admin/wallet/entries/{entryId}/reverse", walletHandlers.AdminReverseEntry)
 
 				// Credit Currency System (Section 58, ADR-065)
 				// Public: currencies + credit packs + purchase
@@ -6507,20 +6515,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Mentorship admin routes (Section 35 — Mentorship)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
-				Get("/admin/mentorship/programs", mentorshipHandlers.ListPrograms)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
-				Get("/admin/mentorship/programs/{id}", mentorshipHandlers.GetProgram)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
-				Post("/admin/mentorship/programs", mentorshipHandlers.CreateProgram)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
-				Patch("/admin/mentorship/programs/{id}", mentorshipHandlers.UpdateProgram)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
-				Delete("/admin/mentorship/programs/{id}", mentorshipHandlers.DeleteProgram)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
-				Get("/admin/mentorship/matches", mentorshipHandlers.ListMatches)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.admin")).
-				Patch("/admin/mentorship/matches/{id}", mentorshipHandlers.UpdateMatch)
 
 			// §102 Mentorship Matching routes (ADR-110).
 			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
@@ -8370,9 +8364,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Post("/intel/inbound/email", intelHandlers.HandleInboundEmail)
 			r.Get("/intel/inbound/websub/{channel_id}", intelHandlers.HandleWebSubVerify)
 			r.Post("/intel/inbound/websub/{channel_id}", intelHandlers.HandleWebSubPush)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Delete("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).
 				Post("/sources/{slug}/report", intelHandlers.HandleReportSource)

@@ -580,6 +580,66 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// AdminGetUserLedger handles GET /api/v1/admin/wallet/user/{userId}/ledger.
+func (h *Handlers) AdminGetUserLedger(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	userID, err := parseUUIDParam(r, "userId")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID")
+		return
+	}
+
+	var ledgerType *string
+	if lt := r.URL.Query().Get("ledger_type"); lt != "" {
+		ledgerType = &lt
+	}
+
+	entries, err := h.Service.ListLedgerEntries(r.Context(), userID, ledgerType, parsePageSize(r), parsePageSizeOffset(r))
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(entries)})
+}
+
+// AdminReverseEntry handles POST /api/v1/admin/wallet/entries/{entryId}/reverse.
+func (h *Handlers) AdminReverseEntry(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	entryID, err := parseUUIDParam(r, "entryId")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entry_id", "Invalid ledger entry ID")
+		return
+	}
+
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	// Optional body — a malformed/absent body still allows the default reason.
+	_ = json.NewDecoder(r.Body).Decode(&input)
+
+	balance, err := h.Service.AdminReverseLedgerEntry(r.Context(), user.UserID, entryID, input.Reason)
+	if err != nil {
+		slog.Error("admin ledger reversal failed", "entry_id", entryID, "error", err)
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]int64{
+			"balance": balance,
+		},
+	})
+}
+
 // AdminGetUserBalance handles GET /api/v1/wallet/admin/user/{userId}/balance.
 func (h *Handlers) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)

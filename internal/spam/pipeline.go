@@ -2,6 +2,7 @@ package spam
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -120,6 +121,7 @@ type SpamPipeline struct { //nolint:revive // stuttering type name preserved for
 type spamSettingsReader interface {
 	GetIntOr(ctx context.Context, key string, fallback int) int
 	GetFloatOr(ctx context.Context, key string, fallback float64) float64
+	GetStringOr(ctx context.Context, key string, fallback string) string
 }
 
 // SetSettings injects the hot-reloadable settings reader for spam thresholds.
@@ -390,7 +392,7 @@ func (p *SpamPipeline) checkLinkAnalysis(ctx context.Context, req SpamCheckReque
 		maxLinks = p.settings.GetIntOr(ctx, "moderation.max_links_per_post", maxLinksPerPost)
 	}
 
-	linkCount := countLinks(req.Content)
+	linkCount := countUntrustedLinks(req.Content, p.linkDomainWhitelist(ctx))
 	wordCount := len(strings.Fields(req.Content))
 
 	switch {
@@ -403,8 +405,42 @@ func (p *SpamPipeline) checkLinkAnalysis(ctx context.Context, req SpamCheckReque
 	}
 }
 
+// linkDomainWhitelist returns the trusted-domain list from the
+// moderation.link_domain_whitelist system setting (json array; §41).
+// A URL whose hostname equals an entry or ends with ".{entry}" is
+// exempt from the link-analysis and new-user-links layers — used for
+// official sources (jamb.gov.ng, japa.to, …) so legitimate outbound
+// links don't penalize genuine posts.
+func (p *SpamPipeline) linkDomainWhitelist(ctx context.Context) []string {
+	if p.settings == nil {
+		return nil
+	}
+	raw := p.settings.GetStringOr(ctx, "moderation.link_domain_whitelist", "")
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var domains []string
+	if err := json.Unmarshal([]byte(raw), &domains); err != nil {
+		slog.Warn("moderation.link_domain_whitelist: invalid JSON value", "error", err)
+		return nil
+	}
+	out := make([]string, 0, len(domains))
+	for _, d := range domains {
+		if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 // countLinks extracts and counts HTTP(S) URLs from text.
 func countLinks(text string) int {
+	return countUntrustedLinks(text, nil)
+}
+
+// countUntrustedLinks counts HTTP(S) URLs whose hostname is not covered by
+// the whitelist (exact host or subdomain match).
+func countUntrustedLinks(text string, whitelist []string) int {
 	count := 0
 
 	for _, word := range strings.Fields(text) {
@@ -414,7 +450,18 @@ func countLinks(text string) int {
 		}
 
 		scheme := strings.ToLower(u.Scheme)
-		if scheme == "http" || scheme == "https" {
+		if scheme != "http" && scheme != "https" {
+			continue
+		}
+		host := strings.ToLower(u.Hostname())
+		trusted := false
+		for _, d := range whitelist {
+			if host == d || strings.HasSuffix(host, "."+d) {
+				trusted = true
+				break
+			}
+		}
+		if !trusted {
 			count++
 		}
 	}
@@ -494,8 +541,8 @@ func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, req SpamCheckReque
 		return name, 0.0, nil
 	}
 
-	// No external links → no restriction applies.
-	if countLinks(req.Content) == 0 {
+	// No untrusted external links → no restriction applies.
+	if countUntrustedLinks(req.Content, p.linkDomainWhitelist(ctx)) == 0 {
 		return name, 0.0, nil
 	}
 

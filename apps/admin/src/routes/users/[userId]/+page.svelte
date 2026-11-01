@@ -14,8 +14,8 @@
   import Pagination from "$lib/components/ui/Pagination.svelte";
   import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
   import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
-  import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play, RotateCcw } from "lucide-svelte";
-   import { userManagementApi, impersonationApi, usersWarningsAdminApi, type UserSession, type ModerationConfigOption } from "$lib/api";
+  import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play, RotateCcw, Coins } from "lucide-svelte";
+   import { userManagementApi, impersonationApi, usersWarningsAdminApi, type UserSession, type WalletLedgerEntry, type ModerationConfigOption } from "$lib/api";
   import { hasPermission } from "$lib/stores/permissions.svelte";
 
   type UserDetail = {
@@ -68,6 +68,14 @@
    let sessions = $state<UserSession[]>([]);
    let warnings = $state<Warning[]>([]);
    let restrictions = $state<Restriction[]>([]);
+   let ledger = $state<WalletLedgerEntry[]>([]);
+   let ledgerSearch = $state("");
+   let ledgerPage = $state(0);
+   let ledgerPageSize = $state(10);
+   let showReverseModal = $state(false);
+   let reverseTarget = $state<WalletLedgerEntry | null>(null);
+   let reverseReason = $state("");
+   let reverseBusy = $state(false);
    let loading = $state(true);
    let activeTab = $state("overview");
 
@@ -165,7 +173,8 @@
      { value: "activity", label: "Activity", icon: Users },
      { value: "ai", label: "AI Context", icon: Users },
      { value: "sessions", label: "Sessions", icon: Users },
-     { value: "warnings", label: "Warnings", icon: AlertTriangle }
+     { value: "warnings", label: "Warnings", icon: AlertTriangle },
+     { value: "wallet", label: "Points", icon: Coins }
    ];
 
   const activityColumns = [
@@ -202,6 +211,18 @@
     { key: 'created_at', label: t('users.userId.issued'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` }
   ];
 
+  const filteredLedger = $derived(
+    ledgerSearch
+      ? ledger.filter(e =>
+          (e.source ?? '').toLowerCase().includes(ledgerSearch.toLowerCase()) ||
+          (e.reason ?? '').toLowerCase().includes(ledgerSearch.toLowerCase()) ||
+          e.operation.toLowerCase().includes(ledgerSearch.toLowerCase())
+        )
+      : ledger
+  );
+  const ledgerTotalPages = $derived(Math.max(1, Math.ceil(filteredLedger.length / ledgerPageSize)));
+  const pagedLedger = $derived(filteredLedger.slice(ledgerPage * ledgerPageSize, (ledgerPage + 1) * ledgerPageSize));
+
   const warningActions: ActionItem[] = [
     {
       label: t('common.delete', 'Delete'),
@@ -209,6 +230,30 @@
       variant: 'destructive',
       onclick: (row: Warning) => deleteWarning(row.id),
       show: () => canManageUsers
+    }
+  ];
+
+  const ledgerColumns = [
+    { key: 'created_at', label: t('users.userId.issued', 'Date'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>` },
+    { key: 'ledger_type', label: t('users.userId.type'), sortable: false, render: (v: string) => `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-secondary) 15%, transparent); color: var(--color-foreground)">${v}</span>` },
+    { key: 'source', label: t('users.userId.source', 'Source'), sortable: false, class: 'text-xs', render: (v: string | null) => `<span style="color: var(--color-muted)">${v ?? '—'}</span>` },
+    { key: 'amount', label: t('users.userId.amount', 'Amount'), sortable: true, render: (v: number) => `<span class="font-mono ${v < 0 ? 'text-destructive' : ''}">${v > 0 ? '+' : ''}${v}</span>` },
+    { key: 'resulting_balance', label: t('users.userId.balance', 'Balance'), sortable: false, class: 'font-mono text-xs' },
+    { key: 'reason', label: t('users.userId.reason'), sortable: false, class: 'text-xs', render: (v: string | null) => `<span style="color: var(--color-muted)">${v ?? '—'}</span>` }
+  ];
+
+  const canAdjustWallet = $derived(hasPermission('wallet.admin.adjust'));
+
+  const ledgerActions: ActionItem[] = [
+    {
+      label: t('users.userId.reverse_entry', 'Reverse'),
+      icon: RotateCcw,
+      onclick: (row: WalletLedgerEntry) => {
+        reverseTarget = row;
+        reverseReason = '';
+        showReverseModal = true;
+      },
+      show: (row) => canAdjustWallet && row.amount !== 0
     }
   ];
 
@@ -271,6 +316,31 @@
     }
   }
 
+  async function loadLedger() {
+    try {
+      const result = await userManagementApi.getUserLedger(userId, "page_size=100");
+      if (result.ok) {
+        const d = result.data as any;
+        ledger = Array.isArray(d) ? d : (d?.data ?? []);
+      }
+    } catch {
+    }
+  }
+
+  async function reverseEntry() {
+    if (!reverseTarget || reverseBusy) return;
+    reverseBusy = true;
+    const result = await userManagementApi.reverseLedgerEntry(reverseTarget.id, { reason: reverseReason || undefined });
+    reverseBusy = false;
+    showReverseModal = false;
+    if (result.ok) {
+      flash(t('users.userId.reverse_success', 'Ledger entry reversed'));
+      loadLedger();
+    } else {
+      flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
+    }
+  }
+
   async function loadRestrictions() {
     try {
       const result = await userManagementApi.listRestrictions(userId);
@@ -291,6 +361,7 @@
     else if (tab === "ai") void loadAiContext();
     else if (tab === "sessions") void loadSessions();
     else if (tab === "warnings") void loadWarnings();
+    else if (tab === "wallet") void loadLedger();
   }
   $effect(() => {
     if (!userId) return;
@@ -786,6 +857,10 @@
       {:else if activeTab === "warnings"}
         <DataTable columns={warningColumns} data={pagedWarnings} searchable={true} urlSync={false} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { warningSearch = q; warningPage = 0; }} actions={warningActions} emptyMessage={t('users.userId.no_warnings_yet')} />
         <Pagination bind:page={warningPage} totalPages={warningTotalPages} totalItems={filteredWarnings.length} bind:pageSize={warningPageSize} />
+
+      {:else if activeTab === "wallet"}
+        <DataTable columns={ledgerColumns} data={pagedLedger} searchable={true} urlSync={false} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { ledgerSearch = q; ledgerPage = 0; }} actions={ledgerActions} emptyMessage={t('users.userId.no_ledger_entries', 'No ledger entries yet')} />
+        <Pagination bind:page={ledgerPage} totalPages={ledgerTotalPages} totalItems={filteredLedger.length} bind:pageSize={ledgerPageSize} />
       {/if}
     </CardContent>
   </Card>
@@ -892,6 +967,26 @@
   <div class="mt-6 flex justify-end gap-3">
     <Button variant="outline" onclick={() => (showUnbanConfirm = false)}>{t('users.userId.cancel')}</Button>
     <Button variant="default" onclick={handleUnban}>{t('users.detail.unban', 'Unban')}</Button>
+  </div>
+</Modal>
+
+<!-- Reverse Ledger Entry -->
+<Modal bind:open={showReverseModal} title={t('users.userId.reverse_entry', 'Reverse Ledger Entry')} size="sm">
+  <p class="text-sm" style="color: var(--color-foreground)">
+    {t('users.userId.reverse_confirm', 'Post a compensating entry that undoes this ledger row?')}
+  </p>
+  {#if reverseTarget}
+    <p class="mt-2 font-mono text-xs" style="color: var(--color-muted)">
+      {reverseTarget.ledger_type} · {reverseTarget.source ?? 'entry'} · {reverseTarget.amount > 0 ? '+' : ''}{reverseTarget.amount}
+    </p>
+  {/if}
+  <div class="mt-4">
+    <label for="reverse-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('common.reason', 'Reason (optional)')}</label>
+    <textarea id="reverse-reason" rows="2" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder={t('users.userId.reverse_reason_ph', 'e.g. False-positive spam flag')} bind:value={reverseReason}></textarea>
+  </div>
+  <div class="mt-6 flex justify-end gap-3">
+    <Button variant="outline" onclick={() => (showReverseModal = false)}>{t('users.userId.cancel')}</Button>
+    <Button variant="default" disabled={reverseBusy} onclick={reverseEntry}>{t('users.userId.reverse_entry', 'Reverse')}</Button>
   </div>
 </Modal>
 
