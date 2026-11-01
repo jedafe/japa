@@ -3,23 +3,9 @@ import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { tryRefreshSession, clearSessionCookies } from '$lib/server/auth';
 import { buildThemeOverrides } from '@japaconnect/ui/theme';
 import { isRtl } from '$lib/i18n/rtl';
-
-/**
- * Parent domain shared by sibling surfaces — the session cookie is minted on
- * the main app with Domain=.{base}, so cookie cleanup here must target that
- * same domain or the shared cookie survives. Derived from the public API URL
- * (api.japa.to → .japa.to); empty when unparseable (dev stays host-only).
- */
-function academyCookieDomain(): string {
-	try {
-		const apiHost = new URL(publicEnv.PUBLIC_JC_API_URL ?? '').hostname;
-		return apiHost.startsWith('api.') ? `.${apiHost.slice(4)}` : '';
-	} catch {
-		return '';
-	}
-}
 
 /**
  * In-process cache for GET /site/settings/public (same pattern as the main
@@ -133,20 +119,30 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Resolve the session. The app is public: an absent or invalid token
 	// simply means "guest" — never a redirect to login. Enrollment and progress
 	// are CSR-only (ADR-060 SSR/CSR boundary).
+	//
+	// Silent refresh: jc_token's 15min TTL expires mid-session constantly.
+	// When the access cookie is gone or stale, exchange the 30d jc_refresh for
+	// a fresh pair server-side instead of forcing a login bounce (§02).
+	if (!event.locals.token && !building) {
+		await tryRefreshSession(event);
+	}
 	if (event.locals.token && !building) {
 		try {
 			event.locals.user = await apiGet<SessionUser>(apiContext(event), '/me');
 		} catch (err) {
 			if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-				// Stale credential — drop both cookie variants: a host-only
-				// delete leaves the shared .{base}-domain cookie alive and the
-				// browser keeps presenting the stale token.
-				event.cookies.delete('jc_token', { path: '/' });
-				const sessionDomain = academyCookieDomain();
-				if (sessionDomain) {
-					event.cookies.delete('jc_token', { path: '/', domain: sessionDomain });
+				if (await tryRefreshSession(event)) {
+					try {
+						event.locals.user = await apiGet<SessionUser>(apiContext(event), '/me');
+					} catch {
+						event.locals.user = null;
+					}
+				} else {
+					// Stale credential with no valid refresh — drop both cookie
+					// variants (host-only + shared domain) and continue as guest.
+					clearSessionCookies(event);
+					event.locals.token = null;
 				}
-				event.locals.token = null;
 			}
 			// Any other failure (backend unreachable) also degrades to guest.
 		}
