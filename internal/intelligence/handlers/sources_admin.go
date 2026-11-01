@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/hibiken/asynq"
@@ -17,8 +18,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/follows"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/worker"
@@ -172,8 +173,10 @@ func buildCreateSourceParams(w http.ResponseWriter, body handleSourceCreateBody)
 		return gen.CreateIntelSourceParams{}, false
 	}
 
-	if body.TrustLevel < 1 || body.TrustLevel > 4 {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_trust_level", "trust_level must be 1-4")
+	// 1-5: proposed sources land at 5 (unverified) and the approve flow
+	// accepts the same range — admin create must be able to express it too.
+	if body.TrustLevel < 1 || body.TrustLevel > 5 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_trust_level", "trust_level must be 1-5")
 		return gen.CreateIntelSourceParams{}, false
 	}
 
@@ -336,6 +339,15 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 
 		if u, err := url.Parse(body.SourceURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_url", "source_url must be a valid http(s) URL")
+			return
+		}
+	}
+
+	// trust_level is presence-detected: an explicit value outside 1-5 is a
+	// 400, not a silent no-op (previously >4 was dropped by the merge).
+	if _, present := presence["trust_level"]; present {
+		if body.TrustLevel < 1 || body.TrustLevel > 5 {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_trust_level", "trust_level must be 1-5")
 			return
 		}
 	}
@@ -509,7 +521,7 @@ func mergeSourcePatch(params *gen.UpdateIntelSourceParams, body *handleSourceCre
 		params.LogoUrl = body.LogoURL
 	}
 
-	if body.TrustLevel >= 1 && body.TrustLevel <= 4 {
+	if body.TrustLevel >= 1 && body.TrustLevel <= 5 {
 		params.TrustLevel = body.TrustLevel
 	}
 
@@ -1062,34 +1074,9 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 				return
 			}
 			if tl != src.TrustLevel {
-				params := gen.UpdateIntelSourceParams{
-					ID:                  src.ID,
-					Name:                src.Name,
-					Domain:              src.Domain,
-					SourceUrl:           src.SourceUrl,
-					Category:            src.Category,
-					SourceType:          src.SourceType,
-					TrustLevel:          tl,
-					CrawlMethod:         src.CrawlMethod,
-					CrawlFrequency:      src.CrawlFrequency,
-					CrawlFrequencyMins:  src.CrawlFrequencyMins,
-					SourceLicense:       src.SourceLicense,
-					AttributionRequired: src.AttributionRequired,
-					UsageRestriction:    src.UsageRestriction,
-					Enabled:             src.Enabled,
-					Slug:                src.Slug,
-					Description:         src.Description,
-					SourceKind:          &src.SourceKind,
-					LogoUrl:             src.LogoUrl,
-					Keywords:            src.Keywords,
-					Status:              &src.Status,
-					ProposedBy:          src.ProposedBy,
-					ProposedAt:          src.ProposedAt,
-					ApprovedBy:          src.ApprovedBy,
-					ApprovedAt:          src.ApprovedAt,
-					PersonaID:           src.PersonaID,
-				}
-				if updated, uerr := h.intelSources.Update(r.Context(), params); uerr != nil {
+				// Narrow update — a full UpdateIntelSourceParams write here
+				// would clobber any concurrent PATCH (read-modify-write race).
+				if updated, uerr := h.intelSources.UpdateTrustLevel(r.Context(), src.ID, tl); uerr != nil {
 					slog.Warn("intel: approve proposed trust update failed", "source_id", sourceID.String(), "error", uerr)
 				} else {
 					src = updated
@@ -1409,8 +1396,21 @@ func (h *Handlers) HandleAdminListSourceChannels(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Optional filters — ?enabled=true|false and ?pipeline=extract|curate|hybrid.
+	// ?enabled=false&pipeline=extract on the shared user-submissions source is
+	// the pending-oneshot review queue: staff approves by PATCHing the channel
+	// enabled then POSTing a crawl.
+	wantEnabled, hasEnabled := r.URL.Query()["enabled"]
+	wantPipeline := r.URL.Query().Get("pipeline")
+
 	entries := make([]map[string]interface{}, 0, len(channels))
 	for _, ch := range channels {
+		if hasEnabled && ch.Enabled != (wantEnabled[0] == "true") {
+			continue
+		}
+		if wantPipeline != "" && ch.Pipeline != wantPipeline {
+			continue
+		}
 		entries = append(entries, channelToAdminEntry(ch))
 	}
 
@@ -1620,7 +1620,8 @@ func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if _, ok := requireUser(w, r); !ok {
+	userID, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -1799,6 +1800,19 @@ func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Reque
 		h.enqueueWebSubSubscribe(r.Context(), updated.ID.String())
 	}
 
+	// Audit: channel mutations are privileged — an enabled extract channel
+	// is the LLM-cost gate release for public submissions.
+	fields := make([]string, 0, len(presence))
+	for k := range presence {
+		fields = append(fields, k)
+	}
+	sort.Strings(fields)
+
+	if aerr := h.intelSources.WriteChannelAudit(r.Context(), userID, "intel.channel.update", channelID,
+		map[string]any{"fields": fields}); aerr != nil {
+		slog.Warn("intel: channel update audit failed", "channel_id", channelID.String(), "error", aerr)
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": channelToAdminEntry(updated),
 	})
@@ -1815,7 +1829,8 @@ func (h *Handlers) HandleAdminDeleteChannel(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if _, ok := requireUser(w, r); !ok {
+	userID, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -1826,7 +1841,8 @@ func (h *Handlers) HandleAdminDeleteChannel(w http.ResponseWriter, r *http.Reque
 
 	// Verify the channel exists so a typo'd id reports 404 (the DELETE
 	// statement itself is a no-op on missing rows).
-	if _, err := h.intelSources.GetChannel(r.Context(), channelID); err != nil {
+	existing, err := h.intelSources.GetChannel(r.Context(), channelID)
+	if err != nil {
 		writeChannelServiceErr(w, err, "intel: delete channel lookup failed", "lookup_failed", "Channel not found")
 		return
 	}
@@ -1836,6 +1852,11 @@ func (h *Handlers) HandleAdminDeleteChannel(w http.ResponseWriter, r *http.Reque
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete channel")
 
 		return
+	}
+
+	if aerr := h.intelSources.WriteChannelAudit(r.Context(), userID, "intel.channel.delete", channelID,
+		map[string]any{"entry_url": existing.EntryUrl, "pipeline": existing.Pipeline}); aerr != nil {
+		slog.Warn("intel: channel delete audit failed", "channel_id", channelID.String(), "error", aerr)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -1857,7 +1878,8 @@ func (h *Handlers) HandleAdminCrawlChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if _, ok := requireUser(w, r); !ok {
+	userID, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -1904,6 +1926,11 @@ func (h *Handlers) HandleAdminCrawlChannel(w http.ResponseWriter, r *http.Reques
 		errpkg.WriteError(w, http.StatusInternalServerError, "enqueue_failed", "Failed to enqueue crawl task")
 
 		return
+	}
+
+	if aerr := h.intelSources.WriteChannelAudit(r.Context(), userID, "intel.channel.crawl", channelID,
+		map[string]any{"entry_url": ch.EntryUrl, "pipeline": ch.Pipeline}); aerr != nil {
+		slog.Warn("intel: channel crawl audit failed", "channel_id", channelID.String(), "error", aerr)
 	}
 
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{

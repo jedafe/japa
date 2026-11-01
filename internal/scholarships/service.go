@@ -583,7 +583,8 @@ func findScholarshipsQuery(filters ScholarshipFilters, now time.Time) (string, [
 	}
 
 	if filters.Renewable != nil {
-		renewableValue := "COALESCE(s.funding->>'is_renewable', c.field_values->>'is_renewable', '')"
+		// s.renewable column (extraction) → funding jsonb → legacy field_values.
+		renewableValue := "COALESCE(s.renewable::text, s.funding->>'is_renewable', c.field_values->>'is_renewable', '')"
 		if *filters.Renewable {
 			conditions = append(conditions, fmt.Sprintf("(LOWER(%s) = 'true' OR %s = '1')", renewableValue, renewableValue))
 		} else {

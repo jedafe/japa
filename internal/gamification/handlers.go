@@ -29,6 +29,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -97,6 +98,12 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 	}
 
 	return id, true
+}
+
+// validationMessage strips the ErrInvalidInput sentinel prefix so the
+// error envelope carries only the human-readable detail.
+func validationMessage(err error) string {
+	return strings.TrimPrefix(err.Error(), ErrInvalidInput.Error()+": ")
 }
 
 // parsePageParams extracts limit and offset from query string, with defaults.
@@ -404,8 +411,15 @@ func (h *Handlers) HandleAdminCreateBadge(w http.ResponseWriter, r *http.Request
 
 	badge, err := h.service.CreateBadge(r.Context(), in)
 	if err != nil {
-		slog.Error("gamification: admin create badge failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "badge_create_failed", "Failed to create badge")
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", validationMessage(err))
+		case errors.Is(err, ErrSlugExists):
+			errpkg.WriteError(w, http.StatusConflict, "slug_exists", "A badge with this slug already exists")
+		default:
+			slog.Error("gamification: admin create badge failed", "error", err)
+			errpkg.WriteError(w, http.StatusBadRequest, "badge_create_failed", "Failed to create badge")
+		}
 
 		return
 	}
@@ -443,8 +457,15 @@ func (h *Handlers) HandleAdminUpdateBadge(w http.ResponseWriter, r *http.Request
 
 	badge, err := h.service.UpdateBadge(r.Context(), badgeID, in)
 	if err != nil {
-		slog.Error("gamification: admin update badge failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "badge_update_failed", "Failed to update badge")
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", validationMessage(err))
+		case errors.Is(err, ErrBadgeNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "badge_not_found", "Badge not found")
+		default:
+			slog.Error("gamification: admin update badge failed", "error", err)
+			errpkg.WriteError(w, http.StatusBadRequest, "badge_update_failed", "Failed to update badge")
+		}
 
 		return
 	}
@@ -600,8 +621,15 @@ func (h *Handlers) HandleAdminCreateChallenge(w http.ResponseWriter, r *http.Req
 
 	challenge, err := h.service.CreateChallenge(r.Context(), in)
 	if err != nil {
-		slog.Error("gamification: admin create challenge failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "challenge_create_failed", "Failed to create challenge")
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", validationMessage(err))
+		case errors.Is(err, ErrSlugExists):
+			errpkg.WriteError(w, http.StatusConflict, "slug_exists", "A challenge with this slug already exists")
+		default:
+			slog.Error("gamification: admin create challenge failed", "error", err)
+			errpkg.WriteError(w, http.StatusBadRequest, "challenge_create_failed", "Failed to create challenge")
+		}
 
 		return
 	}
@@ -639,8 +667,15 @@ func (h *Handlers) HandleAdminUpdateChallenge(w http.ResponseWriter, r *http.Req
 
 	challenge, err := h.service.UpdateChallenge(r.Context(), challengeID, in)
 	if err != nil {
-		slog.Error("gamification: admin update challenge failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "challenge_update_failed", "Failed to update challenge")
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", validationMessage(err))
+		case errors.Is(err, ErrChallengeNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "challenge_not_found", "Challenge not found")
+		default:
+			slog.Error("gamification: admin update challenge failed", "error", err)
+			errpkg.WriteError(w, http.StatusBadRequest, "challenge_update_failed", "Failed to update challenge")
+		}
 
 		return
 	}

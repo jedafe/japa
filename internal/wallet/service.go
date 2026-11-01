@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/ledger"
 )
 
 // ErrDuplicateActivity marks an activity event that was already recorded —
@@ -207,10 +208,10 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.store.write.WithTx(tx)
+	qtx := ledger.New(s.store.write.WithTx(tx))
 
 	// Serialize concurrent balance mutations for this user.
-	lockKey := "wallet:" + "" + ":" + event.UserID.String()
+	lockKey := "wallet::" + event.UserID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return fmt.Errorf("acquiring wallet lock: %w", err)
 	}
@@ -324,7 +325,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		count, err := qtx.CountUserLedgerBySource(ctx, gen.CountUserLedgerBySourceParams{
 			UserID: event.UserID,
 			Source: &event.ActivityKey,
-		})
+		}, LedgerTypePoints)
 		if err != nil {
 			return fmt.Errorf("checking one-time rule ledger: %w", err)
 		}
@@ -571,10 +572,10 @@ func (s *Service) SpendCredits(ctx context.Context, userID pgtype.UUID, input Sp
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.store.write.WithTx(tx)
+	qtx := ledger.New(s.store.write.WithTx(tx))
 
 	// Serialize concurrent balance mutations for this user. See AUDIT-BE-005.
-	lockKey := "wallet:" + "" + ":" + userID.String()
+	lockKey := "wallet::" + userID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return 0, fmt.Errorf("acquiring wallet lock: %w", err)
 	}
@@ -665,10 +666,10 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.store.write.WithTx(tx)
+	qtx := ledger.New(s.store.write.WithTx(tx))
 
 	// Serialize concurrent balance mutations for the target user. See AUDIT-BE-005.
-	lockKey := "wallet:" + "" + ":" + targetUserID.String()
+	lockKey := "wallet::" + targetUserID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return 0, fmt.Errorf("acquiring wallet lock: %w", err)
 	}
@@ -679,6 +680,9 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 		LedgerType: input.LedgerType,
 	})
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("getting current balance: %w", err)
+		}
 		currentBalance = 0
 	}
 
@@ -720,14 +724,26 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 	return newBalance, nil
 }
 
+// AdminReverseInput holds the body for POST /admin/wallet/entries/{id}/reverse.
+type AdminReverseInput struct {
+	Reason string
+	// Amount is the refund magnitude for credits entries. Nil means the full
+	// remaining unrefunded amount. Points entries accept full reversal only.
+	Amount *int64
+	// RefundID scopes the idempotency key for credits refunds so a series of
+	// partial refunds against one entry is retry-safe
+	// ("refund:{entryID}:{refundID}"). Optional; generated when empty.
+	RefundID string
+}
+
 // AdminReverseLedgerEntry posts a compensating entry that undoes an existing
-// ledger row — e.g. a spam.detected penalty issued in error (ADR-136). The
-// reversal is idempotent on the source entry (idempotency_key
-// "reverse:{entryID}") so repeat calls return ErrDuplicate rather than
-// double-crediting. The negative-balance lock still applies: reversing an
-// *earning* the user has already spent returns ErrInsufficientBalance.
-func (s *Service) AdminReverseLedgerEntry(ctx context.Context, actorUserID, entryID pgtype.UUID, reason string) (int64, error) {
-	original, err := s.store.read.GetLedgerEntryByID(ctx, entryID)
+// ledger row. Points entries get a full negating reversal (idempotent on
+// "reverse:{entryID}"). Credits entries get a refund (ADR-136, split plan):
+// partial amounts supported, the total refunded never exceeds the original
+// magnitude, reverses_id links every refund to its original, and purchase
+// linkage is carried through payment_id.
+func (s *Service) AdminReverseLedgerEntry(ctx context.Context, actorUserID, entryID pgtype.UUID, input AdminReverseInput) (int64, error) {
+	original, err := ledger.New(s.store.write).GetLedgerEntryByID(ctx, entryID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, fmt.Errorf("%w: ledger entry %s", errpkg.ErrNotFound, entryID.String())
@@ -737,27 +753,36 @@ func (s *Service) AdminReverseLedgerEntry(ctx context.Context, actorUserID, entr
 	if original.Amount == 0 {
 		return 0, fmt.Errorf("%w: zero-amount entry", errpkg.ErrInvalid)
 	}
-	// Points-only for now (§28/ADR-136): credits reversals are refunds and
-	// need a deliberate design (partial reversals, purchase linkage) rather
-	// than an ad-hoc negate — hard-fail until that exists.
-	if original.LedgerType != LedgerTypePoints {
-		return 0, fmt.Errorf("%w: only points entries can be reversed", errpkg.ErrInvalid)
-	}
-	if reason == "" {
+	if input.Reason == "" {
 		src := "entry"
 		if original.Source != nil {
 			src = *original.Source
 		}
-		reason = fmt.Sprintf("Reversal of %s entry %s", src, entryID.String())
+		input.Reason = fmt.Sprintf("Reversal of %s entry %s", src, entryID.String())
 	}
 
+	if original.LedgerType == LedgerTypeCredits {
+		return 0, fmt.Errorf("%w: credits entries are refunded via POST /admin/wallet/credits/{id}/refund", errpkg.ErrInvalid)
+	}
+
+	if input.Amount != nil {
+		return 0, fmt.Errorf("%w: points entries support full reversal only", errpkg.ErrInvalid)
+	}
+	return s.adminReversePointsEntry(ctx, actorUserID, entryID, original, input.Reason)
+}
+
+// adminReversePointsEntry negates a points entry in full — e.g. a
+// spam.detected penalty issued in error. Idempotent on "reverse:{entryID}".
+// The negative-balance guard only blocks downward moves past zero — undoing
+// a penalty on an already-negative balance must always succeed.
+func (s *Service) adminReversePointsEntry(ctx context.Context, actorUserID, entryID pgtype.UUID, original gen.WalletLedger, reason string) (int64, error) {
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.store.write.WithTx(tx)
+	qtx := ledger.New(s.store.write.WithTx(tx))
 
 	// Same per-user lock as AdminAdjustBalance (AUDIT-BE-005).
 	lockKey := "wallet::" + original.UserID.String()
@@ -776,15 +801,14 @@ func (s *Service) AdminReverseLedgerEntry(ctx context.Context, actorUserID, entr
 		LedgerType: original.LedgerType,
 	})
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("getting current balance: %w", err)
+		}
 		currentBalance = 0
 	}
 
 	reversal := -original.Amount
 	newBalance := currentBalance + reversal
-	// The non-negative lock only blocks reversals that drive the balance
-	// DOWN past zero — undoing a penalty on an already-negative balance is
-	// an upward move and must always succeed (§28 balance lock is a
-	// spending guard, not a floor).
 	if reversal < 0 && newBalance < 0 {
 		return 0, fmt.Errorf("%w: current=%d, reversal=%d", errpkg.ErrInsufficientBalance, currentBalance, reversal)
 	}
@@ -808,6 +832,158 @@ func (s *Service) AdminReverseLedgerEntry(ctx context.Context, actorUserID, entr
 
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("committing transaction: %w", err)
+	}
+
+	return newBalance, nil
+}
+
+// AdminRefundCreditEntry posts a refund entry linked to the original
+// credits row via reverses_id — the monetary counterpart of the points
+// reversal. Unlike the points path, reason is REQUIRED (§28: no silent
+// balance changes) and every refund writes an audit_logs row in the same
+// transaction. Gated at the route by wallet.admin.credits_refund.
+func (s *Service) AdminRefundCreditEntry(ctx context.Context, actorUserID, entryID pgtype.UUID, input AdminReverseInput) (int64, error) {
+	if input.Reason == "" {
+		return 0, fmt.Errorf("%w: reason is required for credits refunds", errpkg.ErrInvalid)
+	}
+	merged, err := ledger.New(s.store.write).GetLedgerEntryByID(ctx, entryID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("%w: ledger entry %s", errpkg.ErrNotFound, entryID.String())
+		}
+		return 0, fmt.Errorf("loading ledger entry: %w", err)
+	}
+	if merged.LedgerType != LedgerTypeCredits {
+		return 0, fmt.Errorf("%w: only credits entries can be refunded", errpkg.ErrInvalid)
+	}
+	return s.adminRefundCreditEntry(ctx, actorUserID, entryID, merged, input)
+}
+
+// adminRefundCreditEntry posts a refund entry linked to the original
+// credits row via reverses_id (ADR-136, split plan refund design). The
+// refund magnitude defaults to the unrefunded remainder of the original;
+// the sum of linked refunds may never exceed |original.amount|, enforced
+// inside the per-user advisory lock. Downward refunds (undoing a
+// purchase/earn) are additionally bounded by the credits floor. The
+// original's payment_id is carried onto the refund for purchase linkage.
+func (s *Service) adminRefundCreditEntry(ctx context.Context, actorUserID, entryID pgtype.UUID, merged gen.WalletLedger, input AdminReverseInput) (int64, error) {
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := ledger.New(s.store.write.WithTx(tx))
+
+	lockKey := "wallet::" + merged.UserID.String()
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return 0, fmt.Errorf("acquiring wallet lock: %w", err)
+	}
+
+	// Full credits row — payment_id/reverses_id aren't on the merged shape.
+	original, err := qtx.GetCreditLedgerEntryByID(ctx, entryID)
+	if err != nil {
+		return 0, fmt.Errorf("loading credits entry: %w", err)
+	}
+
+	magnitude := original.Amount
+	if magnitude < 0 {
+		magnitude = -magnitude
+	}
+
+	refunded, err := qtx.GetCreditRefundedTotal(ctx, entryID)
+	if err != nil {
+		return 0, fmt.Errorf("reading refunded total: %w", err)
+	}
+
+	remaining := magnitude - refunded
+
+	var amount int64
+	if input.Amount == nil {
+		amount = remaining
+	} else {
+		amount = *input.Amount
+	}
+	if amount <= 0 {
+		return 0, fmt.Errorf("%w: refund amount must be positive", errpkg.ErrInvalid)
+	}
+	if amount > remaining {
+		return 0, fmt.Errorf("%w: refund %d exceeds unrefunded remainder %d of entry %s", errpkg.ErrInvalid, amount, remaining, entryID.String())
+	}
+
+	// Refund direction mirrors the original: a positive entry (earn/
+	// purchase) refunds downward, a negative entry (spend/withdraw/
+	// clawback) refunds upward.
+	delta := amount
+	if original.Amount > 0 {
+		delta = -amount
+	}
+
+	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+		UserID:     merged.UserID,
+		LedgerType: LedgerTypeCredits,
+	})
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("getting credits balance: %w", err)
+		}
+		currentBalance = 0
+	}
+
+	newBalance := currentBalance + delta
+	if delta < 0 && newBalance < 0 {
+		return 0, fmt.Errorf("%w: refunding a purchase the user has already spent (current=%d, refund=%d)", errpkg.ErrInsufficientBalance, currentBalance, amount)
+	}
+
+	// Purchase linkage: refunds of a purchase entry must carry a payment_id —
+	// inherited from the original.
+	if original.Operation == OperationPurchase && !original.PaymentID.Valid {
+		return 0, fmt.Errorf("%w: purchase entry %s has no payment linkage", errpkg.ErrInvalid, entryID.String())
+	}
+
+	idempotencyKey := "refund:" + entryID.String() + ":" + input.RefundID
+	if input.RefundID == "" {
+		idempotencyKey = "refund:" + entryID.String() + ":" + uuid.NewString()
+	}
+
+	source := "admin_refund"
+	reference := "refund:" + entryID.String()
+	if _, err = qtx.InsertCreditLedgerEntry(ctx, gen.InsertCreditLedgerEntryParams{
+		UserID:           merged.UserID,
+		Operation:        OperationRefund,
+		Amount:           delta,
+		ResultingBalance: newBalance,
+		Source:           &source,
+		ActorUserID:      actorUserID,
+		Reference:        &reference,
+		IdempotencyKey:   &idempotencyKey,
+		Reason:           &input.Reason,
+		PaymentID:        original.PaymentID,
+		ReversesID:       original.ID,
+	}); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return 0, fmt.Errorf("%w: refund %s already recorded", errpkg.ErrDuplicate, idempotencyKey)
+		}
+		return 0, fmt.Errorf("inserting refund entry: %w", err)
+	}
+
+	meta, _ := json.Marshal(map[string]any{
+		"entry_id": entryID.String(), "amount": delta, "balance_after": newBalance,
+		"reason": input.Reason, "refund_id": input.RefundID, "reverses_id": original.ID.String(),
+	})
+	if err := qtx.InsertWalletAuditLog(ctx, gen.InsertWalletAuditLogParams{
+		ActorUserID: actorUserID,
+		ActionType:  "wallet.credits_refund",
+		TargetType:  strPtr("credits_ledger"),
+		TargetID:    original.ID,
+		Metadata:    meta,
+	}); err != nil {
+		return 0, fmt.Errorf("writing refund audit log: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("committing refund: %w", err)
 	}
 
 	return newBalance, nil

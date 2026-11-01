@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"regexp"
 	"slices"
@@ -447,6 +448,13 @@ func (s *Service) ApproveProposed(ctx context.Context, id, approvedBy pgtype.UUI
 	return src, nil
 }
 
+// UpdateTrustLevel replaces only the trust_level column — the approve flow
+// uses it so a concurrent PATCH of other fields is never clobbered by a
+// full-row read-modify-write.
+func (s *Service) UpdateTrustLevel(ctx context.Context, id SourceID, trustLevel int16) (Source, error) {
+	return s.store.UpdateTrustLevel(ctx, id, trustLevel)
+}
+
 // CrawlNow is a no-op service method retained for API surface compatibility.
 // The actual crawl-now trigger is handled by the HTTP handler which enqueues
 // the intel:fetch_source Asynq task directly (INTEL-011 fix). This method
@@ -634,6 +642,37 @@ func buildProposeParams(input ProposeInput) (gen.CreateIntelSourceParams, error)
 	return arg, nil
 }
 
+// rejectPrivateURLHost mirrors the probe-target SSRF guard for the stored
+// source_url: an IP-literal host is checked directly; a named host is
+// resolved best-effort and any private address among the answers rejects the
+// proposal. Resolution failures fail open — the probe and the fetcher's
+// safetransport still cover the target at fetch time.
+func rejectPrivateURLHost(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("sources: propose: %w: invalid source_url", errpkg.ErrInvalid)
+	}
+
+	host := u.Hostname()
+	if IsPrivateIPLiteral(host) {
+		return fmt.Errorf("sources: propose: %w: source_url targets a private/reserved address", errpkg.ErrInvalid)
+	}
+
+	if net.ParseIP(host) != nil {
+		return nil
+	}
+
+	if addrs, lookupErr := net.LookupIP(host); lookupErr == nil {
+		for _, a := range addrs {
+			if IsPrivateIP(a) {
+				return fmt.Errorf("sources: propose: %w: source_url targets a private/reserved address", errpkg.ErrInvalid)
+			}
+		}
+	}
+
+	return nil
+}
+
 // canonicalizeSourceURL normalizes a validated http(s) URL for storage and
 // dedupe: lowercase scheme and host, default ports removed, and a lone root
 // "/" path collapses to empty so "https://x.com/" and "https://x.com" dedupe
@@ -726,6 +765,14 @@ func (s *Service) Propose(ctx context.Context, userID pgtype.UUID, input Propose
 		return Source{}, err
 	}
 
+	// Private/reserved targets are rejected at intake — the same class of
+	// check the probe endpoint and channel entry-URL validation enforce, so
+	// an internal URL never reaches the review queue (fetch-time SSRF guards
+	// would still catch it, but the row would sit there as reviewer noise).
+	if err := rejectPrivateURLHost(arg.SourceUrl); err != nil {
+		return Source{}, err
+	}
+
 	// Public URLs must be unique per platform.
 	if _, err := s.store.GetByURL(ctx, arg.SourceUrl); err == nil {
 		return Source{}, errpkg.ErrAlreadyExists
@@ -753,6 +800,13 @@ const (
 	oneshotDomain     = "japa.to"
 )
 
+// WriteChannelAudit appends an audit_logs row for a privileged channel
+// mutation. Channel enable+crawl is the LLM-cost gate release for public
+// submissions — the actor trail is required, not optional.
+func (s *Service) WriteChannelAudit(ctx context.Context, actor pgtype.UUID, actionType string, channelID pgtype.UUID, metadata map[string]any) error {
+	return s.store.WriteChannelAudit(ctx, actor, actionType, channelID, metadata)
+}
+
 // SubmitOneshot records a user-submitted URL as a oneshot channel on the
 // shared system source (created lazily) and returns the channel. The
 // UNIQUE(source_id, entry_url, entity_types) constraint dedupes repeats —
@@ -762,13 +816,27 @@ const (
 // The channel's entity_types come from the caller-supplied categories via
 // the category map plus an optional registered entity_hint (prepended —
 // a caller-asserted type outranks category inference). Empty entity types
-// are allowed — pipeline 'hybrid' tolerates it and extract falls back to
-// the source category, landing unresolvable docs in the review queue.
+// are allowed — pipeline 'curate' tolerates them, landing unresolvable docs
+// in the review queue with no LLM call.
 // Callers must pre-validate entityHint against schemas.ForEntityType.
-func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories []string, entityHint string) (Channel, bool, error) {
+//
+// Pipeline routing is the LLM cost gate: channels are created 'curate'
+// (enabled, fires immediately — deterministic parse only, never LLM) unless
+// a category or the entity_hint asserts structured content, in which case
+// the channel is created 'extract' + disabled (pending) and only fires on
+// staff approval. Returns pending=true for the extract case.
+//
+// curateOneshotEntityTypes are the entity types that parse deterministically
+// (no LLM). An entity_hint naming anything else asserts structured content,
+// which routes the oneshot to pending review like an extract category.
+var curateOneshotEntityTypes = map[string]bool{
+	"article": true, "news": true, "dataset": true, "event": true, "video": true,
+}
+
+func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories []string, entityHint string) (Channel, bool, bool, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
-		return Channel{}, false, fmt.Errorf("sources: oneshot: %w: url", errpkg.ErrRequired)
+		return Channel{}, false, false, fmt.Errorf("sources: oneshot: %w: url", errpkg.ErrRequired)
 	}
 
 	if !strings.Contains(rawURL, "://") {
@@ -776,25 +844,45 @@ func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories [
 	}
 
 	if err := validateChannelEntryURL(rawURL, CrawlMethodOneshot, ""); err != nil {
-		return Channel{}, false, fmt.Errorf("sources: oneshot: %w", err)
+		return Channel{}, false, false, fmt.Errorf("sources: oneshot: %w", err)
 	}
 
 	src, err := s.oneshotSource(ctx)
 	if err != nil {
-		return Channel{}, false, err
+		return Channel{}, false, false, err
 	}
 
 	cats := NormalizeCategories(categories)
 
+	// Pipeline routing (cost gate): LLM extraction only runs for
+	// extract-category submissions — they land disabled pending staff
+	// approval. Editorial categories (and uncategorized share-URLs) take the
+	// deterministic curate path — never LLM, never pending.
 	var entityTypes []string
+	pipeline := PipelineCurate
 
 	if len(cats) > 0 {
-		entityTypes = ResolveCategoryMap(nil, cats).EntityTypes
+		res := ResolveCategoryMap(nil, cats)
+		entityTypes = res.EntityTypes
+		// Pin to extract only — a public oneshot channel may never carry
+		// 'hybrid' (curate-with-LLM-fallback). Anything that doesn't resolve
+		// to extract stays curate, so enabled oneshot channels are
+		// structurally incapable of reaching the LLM.
+		if res.Pipeline == PipelineExtract {
+			pipeline = PipelineExtract
+		}
 	}
 
-	if entityHint != "" && !slices.Contains(entityTypes, entityHint) {
-		entityTypes = append([]string{entityHint}, entityTypes...)
+	if entityHint != "" {
+		if !slices.Contains(entityTypes, entityHint) {
+			entityTypes = append([]string{entityHint}, entityTypes...)
+		}
+		if !curateOneshotEntityTypes[entityHint] {
+			pipeline = PipelineExtract
+		}
 	}
+
+	pending := pipeline == PipelineExtract
 
 	ch, err := s.CreateChannel(ctx, gen.CreateIntelSourceChannelParams{
 		SourceID:    src.ID,
@@ -802,42 +890,45 @@ func (s *Service) SubmitOneshot(ctx context.Context, rawURL string, categories [
 		EntryUrl:    rawURL,
 		CrawlMethod: string(CrawlMethodOneshot),
 		EntityTypes: entityTypes,
-		Pipeline:    string(PipelineHybrid),
-		Enabled:     true,
+		Pipeline:    string(pipeline),
+		Enabled:     !pending,
 		Origin:      string(ChannelOriginUser),
 	})
 	if err == nil {
-		return ch, true, nil
+		return ch, true, pending, nil
 	}
 
 	if !errors.Is(err, errpkg.ErrAlreadyExists) {
-		return Channel{}, false, fmt.Errorf("sources: oneshot: create channel: %w", err)
+		return Channel{}, false, false, fmt.Errorf("sources: oneshot: create channel: %w", err)
 	}
 
 	// Dedupe hit — find the existing row for re-fire. An explicit
 	// resubmission re-arms a channel the consecutive-failures breaker
 	// auto-disabled — otherwise the queued fetch_channel would skip
 	// silently on !ch.Enabled while the API caller sees 202 "queued".
+	// Pending extract channels are NOT re-armed — staff approval is the
+	// only enable path for LLM-bound submissions.
 	channels, lerr := s.store.ListChannels(ctx, src.ID)
 	if lerr != nil {
-		return Channel{}, false, fmt.Errorf("sources: oneshot: list channels: %w", lerr)
+		return Channel{}, false, false, fmt.Errorf("sources: oneshot: list channels: %w", lerr)
 	}
 
 	for _, c := range channels {
 		if c.EntryUrl == rawURL && c.CrawlMethod == string(CrawlMethodOneshot) {
-			if !c.Enabled {
+			cPending := c.Pipeline == string(PipelineExtract) && !c.Enabled
+			if !c.Enabled && !cPending {
 				if uerr := s.store.UpdateChannelEnabled(ctx, c.ID, true); uerr != nil {
-					return Channel{}, false, fmt.Errorf("sources: oneshot: re-enable channel: %w", uerr)
+					return Channel{}, false, false, fmt.Errorf("sources: oneshot: re-enable channel: %w", uerr)
 				}
 
 				c.Enabled = true
 			}
 
-			return c, false, nil
+			return c, false, cPending, nil
 		}
 	}
 
-	return Channel{}, false, errors.New("sources: oneshot: channel exists but could not be loaded")
+	return Channel{}, false, false, errors.New("sources: oneshot: channel exists but could not be loaded")
 }
 
 // oneshotSource returns the shared system source, creating it on first

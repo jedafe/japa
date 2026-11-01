@@ -4,7 +4,7 @@ import { api } from './client';
 
 export interface TipExternalLink {
 	id?: string;
-	kind: 'paypal' | 'kofi' | 'buymeacoffee' | 'opencollective' | 'other';
+	kind: 'paypal' | 'kofi' | 'buymeacoffee' | 'opencollective' | 'other' | 'affiliate';
 	label: string;
 	url: string;
 	position?: number;
@@ -45,6 +45,7 @@ export interface Tip {
 	content_id?: string | null;
 	method: string;
 	credits_amount?: number;
+	points_amount?: number;
 	fiat_amount?: number | null;
 	fiat_currency?: string | null;
 	fee_amount?: number;

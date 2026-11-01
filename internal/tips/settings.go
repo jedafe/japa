@@ -261,11 +261,27 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 		}
 	}
 	cfg.ThankYouMessage = st.ThankYouMessage
-	if st.AcceptExternal && st.hasRow {
+	// External links are a paying-tier surface — a user whose tips.receive
+	// grant lapsed (downgrade) stops advertising them even while the rows
+	// remain stored. The implicit mentor grant does not qualify here either.
+	externalOK := st.AcceptExternal && st.hasRow
+	if externalOK && owner.Type == RecipientUser {
+		externalOK = s.perms != nil && s.perms.Can(ctx, owner.ID, "tips.receive")
+	}
+	if externalOK {
 		links, err := s.listLinks(ctx, st.ID)
 		if err != nil {
 			return PublicConfig{}, err
 		}
+		// Legacy 'other' rows predate its removal — hidden publicly but kept
+		// in the owner list so the owner can still delete them.
+		filtered := links[:0]
+		for _, l := range links {
+			if l.Kind != "other" {
+				filtered = append(filtered, l)
+			}
+		}
+		links = filtered
 		// Public surfaces get the click-tracked redirect URL — the stored
 		// URL stays raw for owner editing (§125 external links).
 		if s.siteURL != "" {
@@ -282,12 +298,13 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 // --- External links ---------------------------------------------------------
 
 var validLinkKinds = map[string]bool{
-	"paypal": true, "kofi": true, "buymeacoffee": true, "opencollective": true, "other": true,
+	"paypal": true, "kofi": true, "buymeacoffee": true, "opencollective": true, "affiliate": true,
 }
 
 // linkKindDomains constrains branded kinds to their real domains — a "PayPal"
 // badge pointing at an arbitrary host is a phishing vector on the public
-// tip dialog. 'other' stays unrestricted.
+// tip dialog. 'affiliate' is validated against active §55 provider hosts in
+// service code — an unmatched domain can never be monetized, so it rejects.
 var linkKindDomains = map[string][]string{
 	"paypal":         {"paypal.com", "paypal.me"},
 	"kofi":           {"ko-fi.com"},
@@ -359,13 +376,32 @@ func (s *Service) ListLinks(ctx context.Context, owner Owner) ([]ExternalLink, e
 	return s.listLinks(ctx, st.ID)
 }
 
+// ensureExternalEligible gates external donation sources — external link
+// writes and OC/Ko-fi/BMC connects — to paying tiers. Unlike CanReceive the
+// implicit mentor tips.receive grant does not qualify: external methods are
+// a subscription perk, not a mentor perk.
+func (s *Service) ensureExternalEligible(ctx context.Context, actorID pgtype.UUID) error {
+	if s.perms == nil || !s.perms.Can(ctx, actorID, "tips.receive") {
+		return ErrNotEligible
+	}
+	return nil
+}
+
 // CreateLink authorizes + validates + appends a link.
 func (s *Service) CreateLink(ctx context.Context, owner Owner, actorID pgtype.UUID, in LinkInput) (ExternalLink, error) {
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
 		return ExternalLink{}, err
 	}
+	if err := s.ensureExternalEligible(ctx, actorID); err != nil {
+		return ExternalLink{}, err
+	}
 	if err := validateLinkInput(in); err != nil {
 		return ExternalLink{}, err
+	}
+	if in.Kind == "affiliate" {
+		if _, matched, err := s.ResolveAffiliateURL(ctx, in.URL); err != nil || !matched {
+			return ExternalLink{}, ErrInvalidLink
+		}
 	}
 	st, err := s.GetSettings(ctx, owner)
 	if err != nil {
@@ -406,8 +442,16 @@ func (s *Service) UpdateLink(ctx context.Context, owner Owner, actorID, linkID p
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
 		return ExternalLink{}, err
 	}
+	if err := s.ensureExternalEligible(ctx, actorID); err != nil {
+		return ExternalLink{}, err
+	}
 	if err := validateLinkInput(in); err != nil {
 		return ExternalLink{}, err
+	}
+	if in.Kind == "affiliate" {
+		if _, matched, err := s.ResolveAffiliateURL(ctx, in.URL); err != nil || !matched {
+			return ExternalLink{}, ErrInvalidLink
+		}
 	}
 	st, err := s.GetSettings(ctx, owner)
 	if err != nil {

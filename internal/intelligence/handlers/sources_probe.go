@@ -140,6 +140,7 @@ func (h *Handlers) HandleProbeSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req probeSourceRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB — probe payloads are small
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return

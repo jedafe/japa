@@ -342,10 +342,6 @@ func (s *Store) gdprExportUserAcademyCertificates(ctx context.Context, userID pg
 	return exportJSONSlice(ctx, s.read.GdprExportUserAcademyCertificates, userID)
 }
 
-func (s *Store) gdprExportUserMentorshipMatches(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserMentorshipMatches, userID)
-}
-
 // gdprExportUserMentorshipConnections exports §102 mentorship connections
 // where the user is mentor or mentee (ADR-110). Post-000824 the query reads
 // service_bookings (listing_kind='mentorship') and maps the booking columns

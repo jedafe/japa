@@ -290,7 +290,7 @@ func TestPublicConfigMethods(t *testing.T) {
 	}
 	fs.links[settingID] = []gen.TipExternalLink{{Kind: "paypal", Label: "PayPal", Url: "https://paypal.me/x"}}
 
-	svc := &Service{store: fs}
+	svc := &Service{store: fs, perms: fakePerms{map[string]bool{"tips.receive": true}}}
 	cfg, err := svc.PublicConfig(context.Background(), owner)
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)

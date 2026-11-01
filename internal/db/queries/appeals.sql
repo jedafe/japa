@@ -571,9 +571,10 @@ WHERE id = @id AND status = 'rejected';
 -- name: GetAdCampaignRefundAmount :one
 -- The reject-time refund writes a credits ledger row keyed
 -- 'deduct:{owner}:ad_campaign_refund:{campaign}'. Recovers the refunded
--- amount so an appeal overturn can re-escrow it.
+-- amount so an appeal overturn can re-escrow it. Credits rows live in
+-- credits_ledger post-split (ADR-136).
 SELECT amount
-FROM wallet_ledger
+FROM credits_ledger
 WHERE idempotency_key = @idempotency_key;
 
 -- name: ListAppealableAdCampaigns :many

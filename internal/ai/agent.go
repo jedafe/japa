@@ -1507,7 +1507,7 @@ BEHAVIOR RULES:
     - Both bulk tools are HITL-queued and return per-item success/failure, so partial success is fine. Report the created and failed counts to the user.
 
 12. Author assignment rules:
-    - For content.create and content.bulk_create, the default author is the calling user. To set author_id to another user or to an AI persona's backing user, the caller must have content.assign_author.
+    - For content.create, content.update, and content.bulk_create, the default author is the calling user. To set author_id, the target must be an AI persona's backing bot user and the caller must have content.assign_author — never set author_id to a real human user.
     - For content.create_draft, author_id should be the AI persona's backing user resolved by the agent. Do not override it with an arbitrary user.
 
 13. Documentation authoring (docs.* tools):

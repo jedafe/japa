@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/ledger"
 	"github.com/jedafe/japa/internal/wallet/payout"
 )
 
@@ -203,7 +204,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, userID pgtype.UUID, inpu
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.store.write.WithTx(tx)
+	qtx := ledger.New(s.store.write.WithTx(tx))
 
 	// Serialize concurrent balance mutations for this user.
 	lockKey := "wallet:" + "" + ":" + userID.String()
@@ -717,7 +718,7 @@ func (s *Service) refundWithdrawalCredits(ctx context.Context, userID pgtype.UUI
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.store.write.WithTx(tx)
+	qtx := ledger.New(s.store.write.WithTx(tx))
 
 	lockKey := "wallet::" + userID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
@@ -770,7 +771,7 @@ func (s *Service) ReopenWithdrawalOnAppeal(ctx context.Context, withdrawalID pgt
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.store.write.WithTx(tx)
+	qtx := ledger.New(s.store.write.WithTx(tx))
 
 	withdrawal, err := qtx.GetWithdrawalByID(ctx, withdrawalID)
 	if err != nil {
@@ -927,7 +928,7 @@ func (s *Service) CreateWithdrawalMethod(ctx context.Context, userID pgtype.UUID
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.store.write.WithTx(tx)
+	qtx := ledger.New(s.store.write.WithTx(tx))
 
 	// If this is the new default, clear any existing default.
 	if input.IsDefault {

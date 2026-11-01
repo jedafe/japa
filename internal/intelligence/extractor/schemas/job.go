@@ -22,5 +22,16 @@ var Job = EntitySchema{
 		{Name: "application_url", Type: "string", Required: false},
 		{Name: "deadline", Type: "date", Required: false},
 		{Name: "remote", Type: "string", Required: false, EnumValues: []string{"true", "false", "hybrid"}}, // bool-as-enum for LLM stability
+		// Extended capture — no dedicated intel_jobs column yet, so these
+		// persist on intel_records.extracted for review + future mapping.
+		// visa_sponsorship/relocation_assistance are first-class for the
+		// japa audience (moving for work is the whole point).
+		{Name: "visa_sponsorship", Type: "string", Required: false, EnumValues: []string{"true", "false"}},
+		{Name: "relocation_assistance", Type: "string", Required: false, EnumValues: []string{"true", "false"}},
+		{Name: "benefits", Type: "text_array", Required: false},
+		{Name: "education_required", Type: "string", Required: false},
+		{Name: "languages_required", Type: "text_array", Required: false},
+		{Name: "posted_date", Type: "date", Required: false},
+		{Name: "work_schedule", Type: "string", Required: false},
 	},
 }

@@ -99,15 +99,20 @@ type CreateBadgeInput struct {
 }
 
 // UpdateBadgeInput is the admin request body for updating a badge.
+// The clear_* flags set nullable columns back to NULL — COALESCE-style
+// updates cannot distinguish "leave unchanged" from "set to null".
 type UpdateBadgeInput struct {
-	Name               *string `json:"name,omitempty"`
-	Description        *string `json:"description,omitempty"`
-	IconMediaID        *string `json:"icon_media_id,omitempty"`
-	TriggerType        *string `json:"trigger_type,omitempty"`
-	TriggerValue       *int32  `json:"trigger_value,omitempty"`
-	TriggerActivityKey *string `json:"trigger_activity_key,omitempty"`
-	IsActive           *bool   `json:"is_active,omitempty"`
-	DisplayOrder       *int32  `json:"display_order,omitempty"`
+	Name                    *string `json:"name,omitempty"`
+	Description             *string `json:"description,omitempty"`
+	IconMediaID             *string `json:"icon_media_id,omitempty"`
+	ClearIconMediaID        bool    `json:"clear_icon_media_id,omitempty"`
+	TriggerType             *string `json:"trigger_type,omitempty"`
+	TriggerValue            *int32  `json:"trigger_value,omitempty"`
+	ClearTriggerValue       bool    `json:"clear_trigger_value,omitempty"`
+	TriggerActivityKey      *string `json:"trigger_activity_key,omitempty"`
+	ClearTriggerActivityKey bool    `json:"clear_trigger_activity_key,omitempty"`
+	IsActive                *bool   `json:"is_active,omitempty"`
+	DisplayOrder            *int32  `json:"display_order,omitempty"`
 }
 
 // CreateChallengeInput is the admin request body for creating a challenge.
@@ -126,15 +131,20 @@ type CreateChallengeInput struct {
 }
 
 // UpdateChallengeInput is the admin request body for updating a challenge.
+// The clear_* flags set nullable columns back to NULL — COALESCE-style
+// updates cannot distinguish "leave unchanged" from "set to null".
 type UpdateChallengeInput struct {
-	Name          *string `json:"name,omitempty"`
-	Description   *string `json:"description,omitempty"`
-	ImageMediaID  *string `json:"image_media_id,omitempty"`
-	ActivityKey   *string `json:"activity_key,omitempty"`
-	TargetCount   *int32  `json:"target_count,omitempty"`
-	RewardPoints  *int32  `json:"reward_points,omitempty"`
-	RewardBadgeID *string `json:"reward_badge_id,omitempty"`
-	StartsAt      *string `json:"starts_at,omitempty"`
-	EndsAt        *string `json:"ends_at,omitempty"`
-	IsActive      *bool   `json:"is_active,omitempty"`
+	Name               *string `json:"name,omitempty"`
+	Description        *string `json:"description,omitempty"`
+	ImageMediaID       *string `json:"image_media_id,omitempty"`
+	ClearImageMediaID  bool    `json:"clear_image_media_id,omitempty"`
+	ActivityKey        *string `json:"activity_key,omitempty"`
+	TargetCount        *int32  `json:"target_count,omitempty"`
+	RewardPoints       *int32  `json:"reward_points,omitempty"`
+	RewardBadgeID      *string `json:"reward_badge_id,omitempty"`
+	ClearRewardBadgeID bool    `json:"clear_reward_badge_id,omitempty"`
+	StartsAt           *string `json:"starts_at,omitempty"`
+	EndsAt             *string `json:"ends_at,omitempty"`
+	ClearEndsAt        bool    `json:"clear_ends_at,omitempty"`
+	IsActive           *bool   `json:"is_active,omitempty"`
 }

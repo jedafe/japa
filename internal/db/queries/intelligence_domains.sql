@@ -18,7 +18,7 @@
 -- ===========================================================================
 
 -- name: CreateIntelJob :one
-INSERT INTO intel_jobs (intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING *;
+INSERT INTO intel_jobs (intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, visa_sponsorship, relocation_assistance, benefits, education_required, languages_required, posted_date, work_schedule) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32) RETURNING *;
 
 -- name: GetIntelJob :one
 SELECT * FROM intel_jobs WHERE id = $1;
@@ -36,7 +36,11 @@ SET title = $2, description = $3, country = $4, country_space_id = $5, city = $6
  salary_max = $11, currency = $12, skills = $13, application_url = $14,
  deadline = $15, remote = $16, confidence_overall = $17,
  verification_status = $18, freshness_score = $19, override_source = $20,
- editorial_overrides = $21, last_verified_at = now(), updated_at = now()
+ editorial_overrides = $21,
+ visa_sponsorship = $22, relocation_assistance = $23, benefits = $24,
+ education_required = $25, languages_required = $26, posted_date = $27,
+ work_schedule = $28,
+ last_verified_at = now(), updated_at = now()
 WHERE id = $1;
 
 -- name: ListIntelJobsKeyset :many

@@ -51,10 +51,10 @@ func TestPublicConfigLinkURLRewrite(t *testing.T) {
 		AcceptCredits: false, AcceptFiat: false, AcceptExternal: true,
 	}
 	fs.links[settingID] = []gen.TipExternalLink{
-		{ID: linkID, Kind: "other", Label: "x", Url: "https://example.com/pay"},
+		{ID: linkID, Kind: "paypal", Label: "x", Url: "https://example.com/pay"},
 	}
 
-	svc := &Service{store: fs, siteURL: "https://japa.to"}
+	svc := &Service{store: fs, siteURL: "https://japa.to", perms: fakePerms{map[string]bool{"tips.receive": true}}}
 	cfg, err := svc.PublicConfig(context.Background(), owner)
 	if err != nil {
 		t.Fatalf("PublicConfig: %v", err)

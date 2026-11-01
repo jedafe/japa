@@ -21,6 +21,12 @@ var Internship = EntitySchema{
 		{Name: "application_deadline", Type: "date", Required: false},
 		{Name: "application_link", Type: "string", Required: false},
 		{Name: "required_documents", Type: "text_array", Required: false},
+		{Name: "city", Type: "string", Required: false},
+		{Name: "fields_of_study", Type: "text_array", Required: false},
+		{Name: "academic_level", Type: "string", Required: false, EnumValues: []string{"undergraduate", "graduate", "postgraduate", "recent_graduate", "any"}},
+		{Name: "open_to_international_students", Type: "string", Required: false, EnumValues: []string{"true", "false"}},
+		{Name: "housing_provided", Type: "string", Required: false, EnumValues: []string{"true", "false"}},
+		{Name: "start_date", Type: "date", Required: false},
 		{Name: "source_url", Type: "string", Required: true},
 	},
 }

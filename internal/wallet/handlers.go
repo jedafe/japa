@@ -607,6 +607,48 @@ func (h *Handlers) AdminGetUserLedger(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(entries)})
 }
 
+// AdminRefundCreditEntry handles POST /api/v1/admin/wallet/credits/{entryId}/refund.
+func (h *Handlers) AdminRefundCreditEntry(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	entryID, err := parseUUIDParam(r, "entryId")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entry_id", "Invalid ledger entry ID")
+		return
+	}
+
+	var input struct {
+		Reason   string `json:"reason"`
+		Amount   *int64 `json:"amount"`
+		RefundID string `json:"refund_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	if input.Reason == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_reason", "reason is required for credits refunds")
+		return
+	}
+
+	balance, err := h.Service.AdminRefundCreditEntry(r.Context(), user.UserID, entryID, AdminReverseInput{
+		Reason:   input.Reason,
+		Amount:   input.Amount,
+		RefundID: input.RefundID,
+	})
+	if err != nil {
+		slog.Error("admin credits refund failed", "entry_id", entryID, "error", err)
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]int64{
+			"balance": balance,
+		},
+	})
+}
+
 // AdminReverseEntry handles POST /api/v1/admin/wallet/entries/{entryId}/reverse.
 func (h *Handlers) AdminReverseEntry(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -621,12 +663,18 @@ func (h *Handlers) AdminReverseEntry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Reason string `json:"reason"`
+		Reason   string `json:"reason"`
+		Amount   *int64 `json:"amount"`
+		RefundID string `json:"refund_id"`
 	}
 	// Optional body — a malformed/absent body still allows the default reason.
 	_ = json.NewDecoder(r.Body).Decode(&input)
 
-	balance, err := h.Service.AdminReverseLedgerEntry(r.Context(), user.UserID, entryID, input.Reason)
+	balance, err := h.Service.AdminReverseLedgerEntry(r.Context(), user.UserID, entryID, AdminReverseInput{
+		Reason:   input.Reason,
+		Amount:   input.Amount,
+		RefundID: input.RefundID,
+	})
 	if err != nil {
 		slog.Error("admin ledger reversal failed", "entry_id", entryID, "error", err)
 		handleServiceError(w, err)

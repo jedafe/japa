@@ -22,6 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/httpx"
+	"github.com/jedafe/japa/internal/ledger"
 )
 
 // Status constants for ad campaign lifecycle.
@@ -553,7 +554,7 @@ func (s *Service) ReopenCampaignOnAppeal(ctx context.Context, campaignID pgtype.
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.store.writeQueries.WithTx(tx)
+	qtx := ledger.New(s.store.writeQueries.WithTx(tx))
 
 	campaign, err := qtx.GetAdCampaignByID(ctx, campaignID)
 	if err != nil {

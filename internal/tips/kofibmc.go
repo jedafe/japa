@@ -37,6 +37,9 @@ func (s *Service) ConnectKofi(ctx context.Context, owner Owner, actorID pgtype.U
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
 		return nil, err
 	}
+	if err := s.ensureExternalEligible(ctx, actorID); err != nil {
+		return nil, err
+	}
 	st, err := s.GetSettings(ctx, owner)
 	if err != nil {
 		return nil, err
@@ -80,6 +83,9 @@ func (s *Service) DisconnectKofi(ctx context.Context, owner Owner, actorID pgtyp
 // AES-256-GCM encrypted, and saves the optional page slug.
 func (s *Service) ConnectBMC(ctx context.Context, owner Owner, actorID pgtype.UUID, token, slug string) (*Settings, error) {
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
+		return nil, err
+	}
+	if err := s.ensureExternalEligible(ctx, actorID); err != nil {
 		return nil, err
 	}
 	if s.bmc == nil {

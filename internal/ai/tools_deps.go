@@ -687,17 +687,21 @@ type ToolDeps struct {
 	Content        ContentService
 	ContentCreator ContentCreator
 	ContentUpdater ContentUpdater
-	CustomFields   CustomFieldsService
-	RAG            RAGService
-	Comparison     ComparisonService
-	JCE            JCEService // nil → JCE advisor/refresh tools return "not configured"
-	Privacy        PrivacyExemptionChecker
-	Permission     PermissionChecker // nil skips permission checks in tool handlers
-	Settings       SettingsReader
-	Cache          CacheClient     // nil disables external-search caching
-	HTTPClient     *http.Client    // nil → http.DefaultClient is used
-	Persona        PersonaResolver // nil disables content.create_draft (Phase 8)
-	HITL           HITLStore       // nil → executor's generic createHITL is used
+	// IsBotUser reports whether a users.id is a bot backing account
+	// (users.is_bot). Author overrides through the agent are bots-only —
+	// nil skips the check (graceful degradation in tests).
+	IsBotUser    IsBotUserChecker
+	CustomFields CustomFieldsService
+	RAG          RAGService
+	Comparison   ComparisonService
+	JCE          JCEService // nil → JCE advisor/refresh tools return "not configured"
+	Privacy      PrivacyExemptionChecker
+	Permission   PermissionChecker // nil skips permission checks in tool handlers
+	Settings     SettingsReader
+	Cache        CacheClient     // nil disables external-search caching
+	HTTPClient   *http.Client    // nil → http.DefaultClient is used
+	Persona      PersonaResolver // nil disables content.create_draft (Phase 8)
+	HITL         HITLStore       // nil → executor's generic createHITL is used
 
 	// Phase 9 extended catalog (Section 103).
 	Spaces           SpacesService           // nil → space tools return "not configured"

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/ledger"
 )
 
 // Store provides low-level database access for wallet operations. The Service
@@ -29,7 +30,7 @@ func NewStore(read, write *gen.Queries) *Store {
 
 //nolint:unused // reserved for future features
 func (s *Store) insertLedgerEntry(ctx context.Context, p gen.InsertLedgerEntryParams) (gen.WalletLedger, error) {
-	row, err := s.write.InsertLedgerEntry(ctx, p)
+	row, err := ledger.New(s.write).InsertLedgerEntry(ctx, p)
 	if err != nil {
 		return gen.WalletLedger{}, fmt.Errorf("inserting ledger entry: %w", err)
 	}
@@ -42,7 +43,7 @@ func (s *Store) listLedgerEntriesByUser(ctx context.Context, userID pgtype.UUID,
 		limit = DefaultPageSize
 	}
 
-	rows, err := s.read.ListLedgerEntriesByUser(ctx, gen.ListLedgerEntriesByUserParams{
+	rows, err := ledger.New(s.read).ListLedgerEntriesByUser(ctx, gen.ListMergedLedgerEntriesByUserParams{
 		UserID:     userID,
 		LedgerType: derefString(ledgerType),
 		PageLimit:  limit,
@@ -56,7 +57,7 @@ func (s *Store) listLedgerEntriesByUser(ctx context.Context, userID pgtype.UUID,
 }
 
 func (s *Store) getLatestBalance(ctx context.Context, userID pgtype.UUID, ledgerType string) (int64, error) {
-	balance, err := s.read.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+	balance, err := ledger.New(s.read).GetLatestBalance(ctx, gen.GetLatestBalanceParams{
 		UserID:     userID,
 		LedgerType: ledgerType,
 	})
@@ -69,7 +70,7 @@ func (s *Store) getLatestBalance(ctx context.Context, userID pgtype.UUID, ledger
 
 //nolint:unused // reserved for future features
 func (s *Store) checkIdempotencyKey(ctx context.Context, idempotencyKey *string) (bool, error) {
-	exists, err := s.read.CheckIdempotencyKey(ctx, idempotencyKey)
+	exists, err := ledger.New(s.read).CheckIdempotencyKey(ctx, idempotencyKey)
 	if err != nil {
 		return false, fmt.Errorf("checking idempotency key: %w", err)
 	}
@@ -78,7 +79,7 @@ func (s *Store) checkIdempotencyKey(ctx context.Context, idempotencyKey *string)
 }
 
 func (s *Store) getLedgerEntryByID(ctx context.Context, id pgtype.UUID) (gen.WalletLedger, error) {
-	row, err := s.read.GetLedgerEntryByID(ctx,
+	row, err := ledger.New(s.read).GetLedgerEntryByID(ctx,
 		id,
 	)
 	if err != nil {
@@ -113,13 +114,14 @@ func (s *Store) getActivityRuleByKey(ctx context.Context, activityKey string) (g
 	return row, nil
 }
 
-// countUserLedgerBySource counts how many wallet_ledger rows exist for a user
-// with a given source. Used to enforce one-time activity point rules.
-func (s *Store) countUserLedgerBySource(ctx context.Context, userID pgtype.UUID, source string) (int64, error) {
-	count, err := s.read.CountUserLedgerBySource(ctx, gen.CountUserLedgerBySourceParams{
+// countUserLedgerBySource counts how many ledger rows exist for a user
+// with a given source on the given stream. Used to enforce one-time
+// activity point rules.
+func (s *Store) countUserLedgerBySource(ctx context.Context, userID pgtype.UUID, source, ledgerType string) (int64, error) {
+	count, err := ledger.New(s.read).CountUserLedgerBySource(ctx, gen.CountUserLedgerBySourceParams{
 		UserID: userID,
 		Source: &source,
-	})
+	}, ledgerType)
 	if err != nil {
 		return 0, fmt.Errorf("counting user ledger by source: %w", err)
 	}

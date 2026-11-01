@@ -576,7 +576,7 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateContent :one
 UPDATE contents
-SET title = @title, slug = @slug, body = @body, body_html = @body_html,
+SET author_id = @author_id, title = @title, slug = @slug, body = @body, body_html = @body_html,
  field_values = @field_values, content_hash = COALESCE(sqlc.narg(content_hash), content_hash),
  geo_space_id = sqlc.narg(geo_space_id), canonical_url = sqlc.narg(canonical_url),
  header_image_id = sqlc.narg(header_image_id),

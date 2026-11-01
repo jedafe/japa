@@ -375,16 +375,17 @@ func (d *captureUpdateDBTX) CopyFrom(context.Context, pgx.Identifier, []string, 
 }
 
 // Arg positions mirror the UpdateContentParams field order in the generated
-// QueryRow call (internal/db/gen/contents.sql.go).
+// QueryRow call (internal/db/gen/contents.sql.go) — author_id is arg 0.
 const (
-	argCanonicalUrl    = 7 //nolint:revive // matches sqlc-generated field name
-	argHeaderImageID   = 8
-	argFeaturedImageID = 9
-	argMetaTitle       = 10
-	argMetaDescription = 11
-	argOgImageUrl      = 12 //nolint:revive // matches sqlc-generated field name
-	argPublishAt       = 17
-	argOrganizationID  = 21
+	argAuthorID        = 0
+	argCanonicalUrl    = 8 //nolint:revive // matches sqlc-generated field name
+	argHeaderImageID   = 9
+	argFeaturedImageID = 10
+	argMetaTitle       = 11
+	argMetaDescription = 12
+	argOgImageUrl      = 13 //nolint:revive // matches sqlc-generated field name
+	argPublishAt       = 18
+	argOrganizationID  = 22
 )
 
 func argStringPtr(t *testing.T, args []any, i int) *string {
@@ -586,6 +587,242 @@ func TestUpdateContentExplicitNullClears(t *testing.T) {
 		// only a literal null produces NULL).
 		if v := argStringPtr(t, write.updateArgs, argCanonicalUrl); v == nil || *v != "" {
 			t.Errorf("canonical_url arg = %v, want non-nil empty string", v)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Author override (content.assign_author) — bots-only re-attribution
+// ---------------------------------------------------------------------------
+
+// authorAwareReadDBTX serves the read side of the PATCH author-override path:
+// every query gets the canned struct row except the is_bot probe, which
+// returns the configured flag (or botErr for a missing user).
+type authorAwareReadDBTX struct {
+	src    any
+	isBot  bool
+	botErr error
+}
+
+func (d authorAwareReadDBTX) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, errors.New("unexpected Exec in test")
+}
+
+func (d authorAwareReadDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+	return nil, errors.New("unexpected Query in test")
+}
+
+func (d authorAwareReadDBTX) QueryRow(_ context.Context, query string, _ ...interface{}) pgx.Row {
+	if strings.Contains(query, "is_bot") {
+		if d.botErr != nil {
+			return errRow{err: d.botErr}
+		}
+		return boolRow(d.isBot)
+	}
+	return structRow{src: d.src}
+}
+
+func (d authorAwareReadDBTX) CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
+	return 0, errors.New("unexpected CopyFrom in test")
+}
+
+type boolRow bool
+
+func (r boolRow) Scan(dest ...any) error {
+	b, ok := dest[0].(*bool)
+	if !ok {
+		return fmt.Errorf("boolRow dest is %T, want *bool", dest[0])
+	}
+	*b = bool(r)
+	return nil
+}
+
+// PATCH /content/{id} {author_id} — the override requires
+// content.assign_author and a bot persona target (users.is_bot). Absent or
+// equal-to-stored values are no-ops; real users are rejected outright.
+func TestUpdateContentAuthorOverride(t *testing.T) {
+	userID := newUUID(t)
+	botID := newUUID(t)
+	otherID := newUUID(t)
+	contentID := newUUID(t)
+
+	prev := gen.GetContentByIDRow{
+		ID:          contentID,
+		AuthorID:    userID,
+		ContentType: TypeDiscussion,
+		Title:       "Stored title",
+		Slug:        "stored-slug",
+		Status:      StatusDraft,
+		Visibility:  VisibilityPublic,
+	}
+	updated := &gen.UpdateContentRow{
+		ID:          contentID,
+		AuthorID:    botID,
+		ContentType: TypeDiscussion,
+		Title:       "Stored title",
+		Slug:        "stored-slug",
+		Status:      StatusDraft,
+		Visibility:  VisibilityPublic,
+	}
+
+	patch := func(t *testing.T, read authorAwareReadDBTX, write *captureUpdateDBTX, body string, resolver *rbac.RBAC) *httptest.ResponseRecorder {
+		t.Helper()
+
+		h := &Handlers{Service: &Service{
+			read:  gen.New(read),
+			write: gen.New(write),
+		}}
+		rr := httptest.NewRecorder()
+		req := listRequest(t, http.MethodPatch, "/api/v1/content/"+contentID.String(), body, userID, resolver,
+			map[string]string{"id": contentID.String()})
+		h.UpdateContent(rr, req)
+
+		return rr
+	}
+
+	t.Run("malformed author_id rejected", func(t *testing.T) {
+		write := &captureUpdateDBTX{updateRow: updated}
+		rr := patch(t, authorAwareReadDBTX{src: &prev, isBot: true}, write,
+			`{"author_id":"not-a-uuid"}`, newListTestResolver(t, userID, map[string]bool{"content.assign_author": true}))
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body=%s)", rr.Code, rr.Body.String())
+		}
+		if code := responseErrorCode(t, rr); code != "invalid_author_id" {
+			t.Fatalf("error code = %q, want invalid_author_id", code)
+		}
+	})
+
+	t.Run("override without assign_author denied", func(t *testing.T) {
+		write := &captureUpdateDBTX{updateRow: updated}
+		rr := patch(t, authorAwareReadDBTX{src: &prev, isBot: true}, write,
+			`{"author_id":"`+botID.String()+`"}`, newListTestResolver(t, userID, nil))
+
+		if rr.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403 (body=%s)", rr.Code, rr.Body.String())
+		}
+		if code := responseErrorCode(t, rr); code != "author_assign_forbidden" {
+			t.Fatalf("error code = %q, want author_assign_forbidden", code)
+		}
+	})
+
+	t.Run("non-bot target rejected", func(t *testing.T) {
+		write := &captureUpdateDBTX{updateRow: updated}
+		rr := patch(t, authorAwareReadDBTX{src: &prev, isBot: false}, write,
+			`{"author_id":"`+otherID.String()+`"}`, newListTestResolver(t, userID, map[string]bool{"content.assign_author": true}))
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body=%s)", rr.Code, rr.Body.String())
+		}
+		if code := responseErrorCode(t, rr); code != "author_not_bot" {
+			t.Fatalf("error code = %q, want author_not_bot", code)
+		}
+	})
+
+	t.Run("unknown target rejected", func(t *testing.T) {
+		write := &captureUpdateDBTX{updateRow: updated}
+		rr := patch(t, authorAwareReadDBTX{src: &prev, botErr: pgx.ErrNoRows}, write,
+			`{"author_id":"`+otherID.String()+`"}`, newListTestResolver(t, userID, map[string]bool{"content.assign_author": true}))
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body=%s)", rr.Code, rr.Body.String())
+		}
+		if code := responseErrorCode(t, rr); code != "invalid_author_id" {
+			t.Fatalf("error code = %q, want invalid_author_id", code)
+		}
+	})
+
+	t.Run("bot author reassigned", func(t *testing.T) {
+		write := &captureUpdateDBTX{updateRow: updated}
+		rr := patch(t, authorAwareReadDBTX{src: &prev, isBot: true}, write,
+			`{"author_id":"`+botID.String()+`"}`, newListTestResolver(t, userID, map[string]bool{"content.assign_author": true}))
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+		}
+		if len(write.updateArgs) == 0 {
+			t.Fatal("UpdateContent write was not reached")
+		}
+		if v := argUUID(t, write.updateArgs, argAuthorID); v != botID {
+			t.Errorf("author_id arg = %v, want %v", v, botID)
+		}
+	})
+
+	t.Run("stored author is a no-op", func(t *testing.T) {
+		write := &captureUpdateDBTX{updateRow: updated}
+		// No assign_author grant — an author_id equal to the stored author
+		// must not reach the permission gate at all.
+		rr := patch(t, authorAwareReadDBTX{src: &prev, isBot: false}, write,
+			`{"author_id":"`+userID.String()+`"}`, newListTestResolver(t, userID, nil))
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+		}
+	})
+}
+
+// Bot-authored content bypasses the in_review queue — a story publish by a
+// persona stays 'published' while the same write on a human-authored row
+// clamps to 'in_review' (§79). Status is arg 15 in UpdateContentParams.
+func TestUpdateContentBotAuthorSkipsReviewQueue(t *testing.T) {
+	editorID := newUUID(t)
+	botID := newUUID(t)
+	contentID := newUUID(t)
+	const argStatus = 15
+
+	prev := func(author pgtype.UUID) *gen.GetContentByIDRow {
+		return &gen.GetContentByIDRow{
+			ID:          contentID,
+			AuthorID:    author,
+			ContentType: TypeStory,
+			Title:       "Stored story",
+			Slug:        "stored-story",
+			Status:      StatusDraft,
+			Visibility:  VisibilityPublic,
+			// Publishing requires a primary space — a stored one skips the
+			// content_spaces membership probe in the stubbed read layer.
+			SpaceID: newUUID(t),
+		}
+	}
+	updated := &gen.UpdateContentRow{ID: contentID, ContentType: TypeStory, Title: "x", Slug: "s"}
+
+	patch := func(t *testing.T, read authorAwareReadDBTX, write *captureUpdateDBTX, callerID pgtype.UUID) *httptest.ResponseRecorder {
+		t.Helper()
+
+		h := &Handlers{Service: &Service{read: gen.New(read), write: gen.New(write)}}
+		rr := httptest.NewRecorder()
+		// The caller IS the author (ownership edit) — no elevated permissions,
+		// so isStoryModerator is false and only the bot-author bypass can
+		// skip the §79 clamp.
+		req := listRequest(t, http.MethodPatch, "/api/v1/content/"+contentID.String(), `{"status":"published"}`, callerID,
+			newListTestResolver(t, callerID, nil),
+			map[string]string{"id": contentID.String()})
+		h.UpdateContent(rr, req)
+
+		return rr
+	}
+
+	t.Run("bot author publishes directly", func(t *testing.T) {
+		write := &captureUpdateDBTX{updateRow: updated}
+		rr := patch(t, authorAwareReadDBTX{src: prev(botID), isBot: true}, write, botID)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+		}
+		if v, ok := write.updateArgs[argStatus].(string); !ok || v != StatusPublished {
+			t.Errorf("status arg = %v, want %q (bot-authored story must not clamp)", write.updateArgs[argStatus], StatusPublished)
+		}
+	})
+
+	t.Run("human author clamps to in_review", func(t *testing.T) {
+		write := &captureUpdateDBTX{updateRow: updated}
+		rr := patch(t, authorAwareReadDBTX{src: prev(editorID), isBot: false}, write, editorID)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+		}
+		if v, ok := write.updateArgs[argStatus].(string); !ok || v != StatusInReview {
+			t.Errorf("status arg = %v, want %q (human-authored story must clamp)", write.updateArgs[argStatus], StatusInReview)
 		}
 	})
 }

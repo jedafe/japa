@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
@@ -125,6 +127,7 @@ type PersonaListItem struct {
 	UpdatedAt           string          `json:"updated_at"`
 	BackingUsername     string          `json:"backing_username"`
 	ProfileName         string          `json:"profile_name"`
+	ProfileTagline      *string         `json:"profile_tagline,omitempty"`
 	TotalActions        int64           `json:"total_actions"`
 	LastActionAt        *string         `json:"last_action_at,omitempty"`
 }
@@ -286,10 +289,12 @@ func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID
 	results := make([]ProvisionResult, len(inputs))
 
 	for i, in := range inputs {
-		// Apply defaults for empty modes.
+		// Apply defaults for empty modes. Personas are staff-curated bot
+		// accounts — disclosure defaults OFF (undisclosed); opt back into a
+		// visible AI label with disclosure_mode='disclosed'.
 		disclosure := in.DisclosureMode
 		if disclosure == "" {
-			disclosure = DisclosureModeDisclosed
+			disclosure = DisclosureModeUndisclosed
 		}
 
 		autonomy := in.AutonomyMode
@@ -561,6 +566,14 @@ type UpdatePersonaInput struct {
 	VoicePrompt    *string
 	ActivityPolicy *ActivityPolicy
 	Status         *string
+	// Identity fields — land on the backing bot account, not ai_personas:
+	// Name/Tagline write user_profiles.display_name/bio (the public byline);
+	// Username renames users.username (the handle intel-* bots and
+	// provisioned persona+ slugs derive from). Empty-string Name/Tagline
+	// clears the field (display_name NULL → byline falls back to username).
+	Name     *string
+	Tagline  *string
+	Username *string
 }
 
 // UpdatePersona updates a persona's config (activity_policy, modes, status,
@@ -570,7 +583,30 @@ type UpdatePersonaInput struct {
 // // Returns a PersonaDetail (with joined user + profile names) so the response
 // shape matches HandleGet (BUG-004: previously returned the raw
 // gen.AiPersona row, inconsistent with the rest of the API).
-func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePersonaInput) (PersonaDetail, error) {
+func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePersonaInput, actors ...pgtype.UUID) (PersonaDetail, error) {
+	// Audit trail — provisioning writes persona.provision; updates deserve
+	// the same posture (renames are privileged identity changes). Records
+	// the field names touched, not their values.
+	changed := make([]string, 0, 9)
+	for field, set := range map[string]bool{
+		"disclosure_mode": in.DisclosureMode != nil,
+		"autonomy_mode":   in.AutonomyMode != nil,
+		"voice_id":        in.VoiceID != nil,
+		"voice_prompt":    in.VoicePrompt != nil,
+		"activity_policy": in.ActivityPolicy != nil,
+		"status":          in.Status != nil,
+		"name":            in.Name != nil,
+		"tagline":         in.Tagline != nil,
+		"username":        in.Username != nil,
+	} {
+		if set {
+			changed = append(changed, field)
+		}
+	}
+	if len(actors) > 0 {
+		defer s.writeAudit(ctx, actors[0], "persona.update", id.String(), map[string]any{"fields": changed})
+	}
+
 	if in.DisclosureMode != nil {
 		if err := validateMode(*in.DisclosureMode, "disclosure_mode",
 			DisclosureModeDisclosed, DisclosureModeUndisclosed); err != nil {
@@ -640,13 +676,136 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 		params.ActivityPolicy = b
 	}
 
-	if _, err := s.store.UpdateAIPersona(ctx, params); err != nil {
+	// Identity edits (byline + handle) ride one tx with the config update so
+	// a persona can never end up half-renamed — mirrors the provisioning
+	// transaction boundary (ADR-068 §7).
+	identityTouched := in.Name != nil || in.Tagline != nil || in.Username != nil
+	if !identityTouched {
+		if _, err := s.store.UpdateAIPersona(ctx, params); err != nil {
+			return PersonaDetail{}, err
+		}
+
+		return s.GetPersona(ctx, id)
+	}
+
+	// Resolve the backing user — the detail fetch doubles as the not-found
+	// check and supplies the current handle for the rename comparison.
+	detail, err := s.store.GetAIPersonaByID(ctx, id)
+	if err != nil {
 		return PersonaDetail{}, err
 	}
+
+	newUsername := ""
+	if in.Username != nil {
+		if un := strings.TrimSpace(*in.Username); un != "" && un != detail.BackingUsername {
+			if !personaUsernamePattern.MatchString(un) {
+				return PersonaDetail{}, fmt.Errorf("personas: username must be 3-30 characters of letters, numbers, and underscores: %w", errpkg.ErrInvalid)
+			}
+			newUsername = un
+		}
+	}
+
+	tx, err := s.store.DB().Writer.Begin(ctx)
+	if err != nil {
+		return PersonaDetail{}, fmt.Errorf("personas: begin update tx: %w", err)
+	}
+	defer tx.Rollback(ctx) // safe to call after Commit (no-op)
+
+	q := gen.New(tx)
+
+	if _, err := q.UpdateAIPersona(ctx, params); err != nil {
+		return PersonaDetail{}, fmt.Errorf("personas: update ai persona: %w", err)
+	}
+
+	if newUsername != "" {
+		taken, err := q.UsernameExists(ctx, gen.UsernameExistsParams{Username: newUsername, ID: detail.UserID})
+		if err != nil {
+			return PersonaDetail{}, fmt.Errorf("personas: username availability check: %w", err)
+		}
+		if taken > 0 {
+			return PersonaDetail{}, fmt.Errorf("personas: username %q is taken: %w", newUsername, errpkg.ErrDuplicate)
+		}
+		if err := q.UpdateUserUsername(ctx, gen.UpdateUserUsernameParams{ID: detail.UserID, Username: newUsername}); err != nil {
+			// The UsernameExists check above is advisory — the UNIQUE index is
+			// the real guard. Map a raced/case-collided 23505 to the same 409
+			// so callers get a clean already_exists instead of a 500.
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return PersonaDetail{}, fmt.Errorf("personas: username %q is taken: %w", newUsername, errpkg.ErrDuplicate)
+			}
+			return PersonaDetail{}, fmt.Errorf("personas: rename backing user: %w", err)
+		}
+
+		// Email follows the handle — the persona+<slug>+@bot.internal
+		// convention would otherwise diverge on every rename (legacy intel-*
+		// emails migrate to the convention on first rename).
+		newEmail := personaEmail(newUsername)
+		if newEmail != detail.BackingEmail {
+			etaken, err := q.EmailExists(ctx, gen.EmailExistsParams{Email: newEmail, ID: detail.UserID})
+			if err != nil {
+				return PersonaDetail{}, fmt.Errorf("personas: email availability check: %w", err)
+			}
+			if etaken > 0 {
+				return PersonaDetail{}, fmt.Errorf("personas: backing email %q is taken: %w", newEmail, errpkg.ErrDuplicate)
+			}
+			if err := q.UpdateUserEmail(ctx, gen.UpdateUserEmailParams{ID: detail.UserID, Email: newEmail}); err != nil {
+				var pgErr *pgconn.PgError
+				if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+					return PersonaDetail{}, fmt.Errorf("personas: backing email %q is taken: %w", newEmail, errpkg.ErrDuplicate)
+				}
+				return PersonaDetail{}, fmt.Errorf("personas: rename backing email: %w", err)
+			}
+		}
+	}
+
+	if in.Name != nil || in.Tagline != nil {
+		// Read-merge-write against the row-locked profile — ErrNoRows means
+		// the bot predates the byline write (legacy intel_* seeds) and the
+		// upsert mints the row.
+		var displayName, bio *string
+		profile, err := q.GetUserProfileForUpdate(ctx, detail.UserID)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+		case err != nil:
+			return PersonaDetail{}, fmt.Errorf("personas: lock byline profile: %w", err)
+		default:
+			displayName, bio = profile.DisplayName, profile.Bio
+		}
+
+		if in.Name != nil {
+			displayName = nil
+			if v := strings.TrimSpace(*in.Name); v != "" {
+				displayName = &v
+			}
+		}
+		if in.Tagline != nil {
+			bio = nil
+			if v := strings.TrimSpace(*in.Tagline); v != "" {
+				bio = &v
+			}
+		}
+
+		if err := q.UpsertPersonaByline(ctx, gen.UpsertPersonaBylineParams{
+			UserID: detail.UserID, DisplayName: displayName, Bio: bio,
+		}); err != nil {
+			return PersonaDetail{}, fmt.Errorf("personas: upsert byline: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return PersonaDetail{}, fmt.Errorf("personas: commit update tx: %w", err)
+	}
+
 	// Re-fetch the joined row so the response includes user + profile names
 	// (BUG-004: consistent with HandleGet's PersonaDetail shape).
 	return s.GetPersona(ctx, id)
 }
+
+// personaUsernamePattern extends auth.ValidateUsername with hyphens — the
+// seeded bot conventions (intel-visa, ci-changelog, persona+ slugs) are
+// hyphenated, so the admin rename rule must accept them (members still
+// can't pick hyphens via the stricter signup validator).
+var personaUsernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,30}$`)
 
 // GetPersonaActivity returns a paginated activity log (platform_events) for a
 // persona's backing user.
@@ -842,6 +1001,7 @@ func personaListItemFromRow(r gen.ListAIPersonasRow) PersonaListItem {
 		UpdatedAt:           r.UpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
 		BackingUsername:     r.BackingUsername,
 		ProfileName:         r.ProfileName,
+		ProfileTagline:      r.ProfileTagline,
 		TotalActions:        r.TotalActions,
 	}
 	// LastActionAt is interface{} from sqlc (MAX(timestamptz) is nullable).

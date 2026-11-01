@@ -94,7 +94,7 @@ var validModerationEntityTypes = map[string]bool{
 // per the CHECK constraint in migration 000023.
 var validWalletOperations = map[string]bool{
 	"earn": true, "spend": true, "purchase": true, "convert": true,
-	"refund": true, "clawback": true, "admin_adjust": true,
+	"refund": true, "clawback": true, "admin_adjust": true, "withdraw": true,
 }
 
 // validLedgerTypes are the allowed ledger_type values for wallet_ledger
@@ -494,11 +494,15 @@ func (s *Service) insertRow(ctx context.Context, importType, mode string, row ma
 	return nil
 }
 
-// insertLedgerRow inserts one wallet_ledger row with the resulting_balance
-// recomputed server-side in a row-locked transaction. Any client-supplied
-// balance column is ignored (stripBlockedImportColumns removes it before
-// this point; this ignores it again by construction — the value is never
-// read from the row map).
+// insertLedgerRow inserts one ledger row with the resulting_balance
+// recomputed server-side. Like every other ledger writer it serializes on
+// the per-user "wallet::{user_id}" advisory lock (AUDIT-BE-005) — the old
+// FOR UPDATE tail lock did not interact with the advisory lock and could
+// fork resulting_balance against a concurrent live write. Rows route to
+// the stream's own table: points to wallet_ledger, credits to
+// credits_ledger (conventions/wallet-ledger-split-plan.md). Any
+// client-supplied balance column is ignored (stripBlockedImportColumns
+// removes it before this point; the value is never read from the row map).
 func (s *Service) insertLedgerRow(ctx context.Context, mode string, row map[string]string) error {
 	_ = mode // ledger imports are insert-only; mode selects conflict handling below.
 
@@ -525,33 +529,35 @@ func (s *Service) insertLedgerRow(ctx context.Context, mode string, row map[stri
 	if source == "" {
 		source = "import"
 	}
-	// Lock the user's ledger tail so the balance recompute is serialized:
-	// read the latest row FOR UPDATE (row-level lock held to commit).
-	// When the user has no ledger rows yet, fall back to locking the
-	// users row so two concurrent first-imports cannot both start at 0.
+
+	var userID pgtype.UUID
+	if err := tx.QueryRow(ctx, `SELECT id FROM users WHERE username = $1`, username).Scan(&userID); err != nil {
+		return fmt.Errorf("transactions: resolving user %q: %w", username, err)
+	}
+
+	lockKey := "wallet::" + userID.String()
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return fmt.Errorf("acquiring wallet lock: %w", err)
+	}
+
+	// Tail read on the stream's own table, ordered by the monotonic seq.
+	tailQuery := `SELECT resulting_balance FROM wallet_ledger WHERE user_id = $1 AND ledger_type = 'points' ORDER BY seq DESC LIMIT 1`
+	if ledgerType == "credits" {
+		tailQuery = `SELECT resulting_balance FROM credits_ledger WHERE user_id = $1 ORDER BY seq DESC LIMIT 1`
+	}
+
 	var current int64
 
-	err = tx.QueryRow(ctx, `
-		SELECT w.resulting_balance
-		FROM wallet_ledger w JOIN users u ON u.id = w.user_id
-		WHERE u.username = $1 AND w.ledger_type = $2
-		ORDER BY w.created_at DESC, w.id DESC
-		LIMIT 1 FOR UPDATE OF w
-	`, username, ledgerType).Scan(&current)
+	err = tx.QueryRow(ctx, tailQuery, userID).Scan(&current)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			current = 0
-
-			var locked pgtype.UUID
-			if lerr := tx.QueryRow(ctx, `SELECT id FROM users WHERE username = $1 FOR UPDATE`, username).Scan(&locked); lerr != nil && !errors.Is(lerr, pgx.ErrNoRows) {
-				return fmt.Errorf("locking user row for ledger import: %w", lerr)
-			}
 		} else {
 			return fmt.Errorf("reading current ledger balance: %w", err)
 		}
 	}
 
-	query, args, err := buildLedgerInsertQuery(row, ledgerType, operation, source, current)
+	query, args, err := buildLedgerInsertQuery(row, userID, ledgerType, operation, source, current)
 	if err != nil {
 		return err
 	}
@@ -568,8 +574,9 @@ func (s *Service) insertLedgerRow(ctx context.Context, mode string, row map[stri
 }
 
 // buildLedgerInsertQuery validates one ledger row and returns the INSERT
-// with the server-recomputed resulting balance (current + amount).
-func buildLedgerInsertQuery(row map[string]string, ledgerType, operation, source string, current int64) (string, []any, error) {
+// with the server-recomputed resulting balance (current + amount) into
+// the stream's table (points -> wallet_ledger, credits -> credits_ledger).
+func buildLedgerInsertQuery(row map[string]string, userID pgtype.UUID, ledgerType, operation, source string, current int64) (string, []any, error) {
 	amount, err := parseInt64(row["amount"])
 	if err != nil {
 		return "", nil, fmt.Errorf("transactions: %w", err)
@@ -580,17 +587,25 @@ func buildLedgerInsertQuery(row map[string]string, ledgerType, operation, source
 	}
 
 	if !validWalletOperations[operation] {
-		return "", nil, fmt.Errorf("transactions: invalid operation %q (must be one of: earn, spend, purchase, convert, refund, clawback, admin_adjust)", operation)
+		return "", nil, fmt.Errorf("transactions: invalid operation %q (must be one of: earn, spend, purchase, convert, refund, clawback, admin_adjust, withdraw)", operation)
 	}
 
 	resultingBalance := current + amount
 
+	if ledgerType == "credits" {
+		return `
+			INSERT INTO credits_ledger (user_id, operation, amount, resulting_balance, source, reason)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT DO NOTHING`,
+			[]any{userID, operation, amount, resultingBalance, source, row["reason"]},
+			nil
+	}
+
 	return `
 		INSERT INTO wallet_ledger (user_id, ledger_type, operation, amount, resulting_balance, source, reason)
-		SELECT u.id, $2, $3, $4, $5, $6, $7
-		FROM users u WHERE u.username = $1
+		VALUES ($1, 'points', $2, $3, $4, $5, $6)
 		ON CONFLICT DO NOTHING`,
-		[]any{strings.TrimSpace(row["user"]), ledgerType, operation, amount, resultingBalance, source, row["reason"]},
+		[]any{userID, operation, amount, resultingBalance, source, row["reason"]},
 		nil
 }
 

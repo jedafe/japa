@@ -516,20 +516,26 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		input.Status = StatusDraft
 	}
 
+	// Moderation-queue bypass: moderator callers (SkipStoryModeration) and
+	// bot persona authors publish/schedule directly — persona posts are
+	// staff-curated, not member submissions. The is_bot read only runs when
+	// a publish/schedule status would otherwise be clamped.
+	skipModeration := input.SkipStoryModeration
+	if !skipModeration && (input.Status == StatusPublished || input.Status == StatusScheduled) {
+		skipModeration = s.botAuthored(ctx, input.AuthorID)
+	}
+
 	// §79: story submissions always enter the moderation queue. Publish and
 	// schedule requests through the generic contents pipeline clamp to
-	// in_review — moderator approval paths (SkipStoryModeration) publish
-	// directly.
-	if input.ContentType == TypeStory && !input.SkipStoryModeration &&
+	// in_review — moderator approval paths publish directly.
+	if input.ContentType == TypeStory && !skipModeration &&
 		(input.Status == StatusPublished || input.Status == StatusScheduled) {
 		input.Status = StatusInReview
 	}
 
 	// content.require_content_review gates every content type behind the
-	// in_review moderation queue when enabled (Rule 3). Moderator/admin
-	// callers bypass via input.SkipStoryModeration — the HTTP handler sets
-	// it on every create, not just stories.
-	if !input.SkipStoryModeration &&
+	// in_review moderation queue when enabled (Rule 3).
+	if !skipModeration &&
 		(input.Status == StatusPublished || input.Status == StatusScheduled) &&
 		s.requireContentReview(ctx) {
 		input.Status = StatusInReview
@@ -789,6 +795,26 @@ func (s *Service) GetAdminContent(ctx context.Context, id pgtype.UUID) (AdminCon
 	}
 
 	return AdminContentDetail{AdminGetContentRow: content, ModerationHistory: history}, nil
+}
+
+// botAuthored reports whether the effective author is a bot persona account
+// (users.is_bot). Persona-authored content is staff-curated and bypasses the
+// member-facing review queue — posts publish/schedule directly instead of
+// being clamped to in_review.
+func (s *Service) botAuthored(ctx context.Context, authorID pgtype.UUID) bool {
+	if !authorID.Valid {
+		return false
+	}
+	bot, err := s.read.GetUserIsBot(ctx, authorID)
+	return err == nil && bot
+}
+
+// IsBotUser reports whether the given user is a bot backing account
+// (users.is_bot = true). The author-override paths use it to restrict
+// content.assign_author to bot personas — authorship as a real user goes
+// through admin impersonation instead (SEC-002).
+func (s *Service) IsBotUser(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	return s.read.GetUserIsBot(ctx, userID)
 }
 
 // WriteContentAudit records an admin audit_logs entry for a moderation
@@ -1086,6 +1112,10 @@ func (s *Service) SearchContentsByTypeAndSpace(ctx context.Context, spaceID pgty
 
 // UpdateContentInput holds the parameters for updating an existing content row.
 type UpdateContentInput struct {
+	// AuthorID reassigns contents.author_id (content.assign_author paths —
+	// the caller validates permission and that the target is a bot persona).
+	// An invalid UUID preserves the stored author.
+	AuthorID        pgtype.UUID
 	Title           string
 	Slug            string
 	Body            string
@@ -1251,17 +1281,30 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		input.Status = existing.Status
 	}
 
+	// Moderation-queue bypass (same rule as create): moderator callers and
+	// bot persona authors publish/schedule directly. The effective author is
+	// the override when set, else the stored author — a human editing a
+	// bot-authored post keeps the bot's queue exemption, and a human-authored
+	// post re-attributed to a bot gains it.
+	skipModeration := input.SkipStoryModeration
+	if !skipModeration && (input.Status == StatusPublished || input.Status == StatusScheduled) {
+		effectiveAuthor := input.AuthorID
+		if !effectiveAuthor.Valid {
+			effectiveAuthor = existing.AuthorID
+		}
+		skipModeration = s.botAuthored(ctx, effectiveAuthor)
+	}
+
 	// §79: stories always re-enter the moderation queue on publish/schedule —
-	// author-facing status writes clamp to in_review (same as create);
-	// moderator callers set SkipStoryModeration to publish directly.
-	if existing.ContentType == TypeStory && !input.SkipStoryModeration &&
+	// author-facing status writes clamp to in_review (same as create).
+	if existing.ContentType == TypeStory && !skipModeration &&
 		(input.Status == StatusPublished || input.Status == StatusScheduled) {
 		input.Status = StatusInReview
 	}
 
 	// content.require_content_review gates every content type behind the
 	// in_review moderation queue when enabled (Rule 3), same as create.
-	if !input.SkipStoryModeration &&
+	if !skipModeration &&
 		(input.Status == StatusPublished || input.Status == StatusScheduled) &&
 		s.requireContentReview(ctx) {
 		input.Status = StatusInReview
@@ -1484,6 +1527,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 func buildUpdateContentParams(id pgtype.UUID, input UpdateContentInput, existing gen.GetContentByIDRow, newSlug string, primarySpaceID pgtype.UUID) gen.UpdateContentParams {
 	params := gen.UpdateContentParams{
 		ID:              id,
+		AuthorID:        input.AuthorID,
 		Title:           input.Title,
 		Slug:            newSlug,
 		Body:            input.Body,
@@ -1522,6 +1566,12 @@ func buildUpdateContentParams(id pgtype.UUID, input UpdateContentInput, existing
 
 	if params.FieldValues == nil {
 		params.FieldValues = existing.FieldValues
+	}
+
+	// Preserve-on-omit: an invalid author_id keeps the stored attribution;
+	// the author-override path always supplies a valid bot user ID.
+	if !input.AuthorID.Valid {
+		params.AuthorID = existing.AuthorID
 	}
 
 	if !input.OrganizationID.Valid {

@@ -60,6 +60,35 @@ func permissionCanAssignAuthor(ctx context.Context, deps *ToolDeps, userID pgtyp
 	return deps.Permission.HasPermission(ctx, userID, "content.assign_author")
 }
 
+// validateAuthorOverride enforces the agent's author-assignment rules:
+// overriding author_id to a user other than the caller requires
+// content.assign_author AND the target must be a bot persona account
+// (users.is_bot) — authorship as a real human user goes through admin
+// impersonation instead (SEC-002). A nil IsBotUser dep skips the bot check
+// (graceful degradation in tests). Returns an error code + message when
+// the override is rejected.
+func validateAuthorOverride(ctx context.Context, deps *ToolDeps, userID, authorID pgtype.UUID) (code, message string, failed bool) {
+	if !authorID.Valid || authorID == userID {
+		return "", "", false
+	}
+
+	if !permissionCanAssignAuthor(ctx, deps, userID) {
+		return "unauthorized_author", "setting author_id to another user requires content.assign_author permission", true
+	}
+
+	if deps.IsBotUser != nil {
+		isBot, err := deps.IsBotUser(ctx, authorID)
+		if err != nil {
+			return "invalid_author_id", "author_id does not identify a user", true
+		}
+		if !isBot {
+			return "author_not_bot", "author_id must identify a bot persona account — real-user authorship requires impersonation", true
+		}
+	}
+
+	return "", "", false
+}
+
 // agentContentTypePermission returns the RBAC node for agent creation of the
 // given content type.
 //
@@ -459,8 +488,8 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 			authorID = userID
 		}
 
-		if authorID.Valid && authorID != userID && !permissionCanAssignAuthor(ctx, deps, userID) {
-			return errorToolResult("unauthorized_author", "setting author_id to another user requires content.assign_author permission"), nil
+		if code, msg, failed := validateAuthorOverride(ctx, deps, userID, authorID); failed {
+			return errorToolResult(code, msg), nil
 		}
 
 		permittedTypes, err := allowedContentTypes(ctx, deps, userID)
@@ -614,6 +643,11 @@ type ContentCreateRow struct {
 // ContentCreator is the function type the wiring layer provides to bridge
 // content.Service.CreateContent into the agent without an import cycle.
 type ContentCreator func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error)
+
+// IsBotUserChecker reports whether a users.id is a bot backing account
+// (users.is_bot = true). Bridged from content.Service.IsBotUser — used to
+// keep agent author overrides bots-only (SEC-002 parity with the REST path).
+type IsBotUserChecker func(ctx context.Context, userID pgtype.UUID) (bool, error)
 
 // buildProvenance constructs the _ai_provenance metadata block. The
 // prompted_by_user_id is always the calling user (the agent acts on their
@@ -983,6 +1017,7 @@ type contentUpdateArgs struct {
 	Body        *string        `json:"body,omitempty"`
 	Slug        *string        `json:"slug,omitempty"`
 	Status      *string        `json:"status,omitempty"`
+	AuthorID    *string        `json:"author_id,omitempty"`
 	GeoSpaceID  *string        `json:"geo_space_id,omitempty"`
 	FieldValues map[string]any `json:"field_values,omitempty"`
 }
@@ -1039,6 +1074,20 @@ func ContentUpdateHandler(deps *ToolDeps) ToolHandler {
 			geoSpaceID = &id
 		}
 
+		// author_id override (content.assign_author, bots-only) — same rules
+		// as content.create: permission-gated and restricted to bot personas.
+		var authorID *pgtype.UUID
+		if a.AuthorID != nil && *a.AuthorID != "" {
+			id, err := scanUUID(*a.AuthorID)
+			if err != nil || !id.Valid {
+				return errorToolResult("invalid_author_id", "author_id is not a valid UUID"), nil
+			}
+			if code, msg, failed := validateAuthorOverride(ctx, deps, userID, id); failed {
+				return errorToolResult(code, msg), nil
+			}
+			authorID = &id
+		}
+
 		var fvJSON []byte
 		if a.FieldValues != nil {
 			fvJSON, err = json.Marshal(a.FieldValues)
@@ -1052,6 +1101,7 @@ func ContentUpdateHandler(deps *ToolDeps) ToolHandler {
 			Body:        a.Body,
 			Slug:        a.Slug,
 			Status:      a.Status,
+			AuthorID:    authorID,
 			GeoSpaceID:  geoSpaceID,
 			FieldValues: fvJSON,
 		})
@@ -1076,6 +1126,7 @@ type ContentUpdateInput struct {
 	Body        *string
 	Slug        *string
 	Status      *string
+	AuthorID    *pgtype.UUID
 	GeoSpaceID  *pgtype.UUID
 	FieldValues []byte
 }

@@ -38,10 +38,10 @@ UPDATE badge_definitions
 SET
  name = COALESCE(sqlc.narg(name), name),
  description = COALESCE(sqlc.narg(description), description),
- icon_media_id = COALESCE(sqlc.narg(icon_media_id), icon_media_id),
+ icon_media_id = CASE WHEN sqlc.narg(clear_icon_media_id)::boolean THEN NULL ELSE COALESCE(sqlc.narg(icon_media_id), icon_media_id) END,
  trigger_type = COALESCE(sqlc.narg(trigger_type), trigger_type),
- trigger_value = COALESCE(sqlc.narg(trigger_value), trigger_value),
- trigger_activity_key = COALESCE(sqlc.narg(trigger_activity_key), trigger_activity_key),
+ trigger_value = CASE WHEN sqlc.narg(clear_trigger_value)::boolean THEN NULL ELSE COALESCE(sqlc.narg(trigger_value), trigger_value) END,
+ trigger_activity_key = CASE WHEN sqlc.narg(clear_trigger_activity_key)::boolean THEN NULL ELSE COALESCE(sqlc.narg(trigger_activity_key), trigger_activity_key) END,
  is_active = COALESCE(sqlc.narg(is_active), is_active),
  display_order = COALESCE(sqlc.narg(display_order), display_order)
 WHERE id = @id
@@ -125,13 +125,13 @@ UPDATE challenge_definitions
 SET
  name = COALESCE(sqlc.narg(name), name),
  description = COALESCE(sqlc.narg(description), description),
- image_media_id = COALESCE(sqlc.narg(image_media_id), image_media_id),
+ image_media_id = CASE WHEN sqlc.narg(clear_image_media_id)::boolean THEN NULL ELSE COALESCE(sqlc.narg(image_media_id), image_media_id) END,
  activity_key = COALESCE(sqlc.narg(activity_key), activity_key),
  target_count = COALESCE(sqlc.narg(target_count), target_count),
  reward_points = COALESCE(sqlc.narg(reward_points), reward_points),
- reward_badge_id = COALESCE(sqlc.narg(reward_badge_id), reward_badge_id),
+ reward_badge_id = CASE WHEN sqlc.narg(clear_reward_badge_id)::boolean THEN NULL ELSE COALESCE(sqlc.narg(reward_badge_id), reward_badge_id) END,
  starts_at = COALESCE(sqlc.narg(starts_at), starts_at),
- ends_at = COALESCE(sqlc.narg(ends_at), ends_at),
+ ends_at = CASE WHEN sqlc.narg(clear_ends_at)::boolean THEN NULL ELSE COALESCE(sqlc.narg(ends_at), ends_at) END,
  is_active = COALESCE(sqlc.narg(is_active), is_active)
 WHERE id = @id
 RETURNING *;

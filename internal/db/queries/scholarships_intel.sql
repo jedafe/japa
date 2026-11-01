@@ -6,7 +6,7 @@
 -- by the id to guarantee data isolation across platforms.
 
 -- name: CreateScholarship :one
-INSERT INTO scholarships (intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING *;
+INSERT INTO scholarships (intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33) RETURNING *;
 
 -- name: GetScholarship :one
 SELECT * FROM scholarships WHERE id = $1;
@@ -29,6 +29,9 @@ SET title = $2, description = $3, country = $4, country_space_id = $5, universit
  freshness_score = $18, override_source = $19, editorial_overrides = $20,
  source_url = $21, source_type = $22, trust_level = $23,
  guide_id = COALESCE($24, guide_id),
+ scholarship_type = $25, study_mode = $26, number_of_awards = $27,
+ application_fee = $28, renewable = $29, duration_years = $30,
+ start_date = $31, open_to_international_students = $32, contact_email = $33,
  last_verified_at = now(), updated_at = now()
 WHERE id = $1;
 

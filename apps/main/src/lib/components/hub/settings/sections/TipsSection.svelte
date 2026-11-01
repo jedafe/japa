@@ -214,7 +214,7 @@
 						{ value: 'kofi', label: 'Ko-fi' },
 						{ value: 'buymeacoffee', label: 'Buy Me a Coffee' },
 						{ value: 'opencollective', label: 'Open Collective' },
-						{ value: 'other', label: 'Other' }
+						{ value: 'affiliate', label: 'Affiliate link' }
 					]}
 					class="sm:w-44"
 				/>

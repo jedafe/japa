@@ -40,5 +40,16 @@ var Scholarship = EntitySchema{
 		{Name: "required_documents", Type: "text_array", Required: false},
 		{Name: "minimum_gpa", Type: "numeric", Required: false},
 		{Name: "language_requirements", Type: "jsonb_object", Required: false},
+		// Extended capture — no dedicated scholarships column yet, so these
+		// persist on intel_records.extracted for review + future mapping.
+		{Name: "scholarship_type", Type: "string", Required: false, EnumValues: []string{"merit_based", "need_based", "athletic", "government", "university", "research", "minority", "other"}},
+		{Name: "study_mode", Type: "string", Required: false, EnumValues: []string{"full_time", "part_time", "online", "hybrid"}},
+		{Name: "number_of_awards", Type: "numeric", Required: false},
+		{Name: "application_fee", Type: "string", Required: false, EnumValues: []string{"free", "paid", "unknown"}},
+		{Name: "renewable", Type: "string", Required: false, EnumValues: []string{"true", "false"}},
+		{Name: "duration_years", Type: "numeric", Required: false},
+		{Name: "start_date", Type: "date", Required: false},
+		{Name: "open_to_international_students", Type: "string", Required: false, EnumValues: []string{"true", "false"}},
+		{Name: "contact_email", Type: "string", Required: false},
 	},
 }

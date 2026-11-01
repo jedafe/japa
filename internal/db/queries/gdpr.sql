@@ -857,8 +857,21 @@ SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM consent_records WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserWalletLedger :one
+-- Post-split ledger export unions both tables (points in wallet_ledger,
+-- credits in credits_ledger); mirrored historical credits rows are
+-- deduplicated by id.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM wallet_ledger WHERE user_id = @user_id) t;
+FROM (
+ SELECT w.id, w.user_id, w.ledger_type, w.operation, w.amount, w.resulting_balance, w.source, w.actor_user_id, w.reference, w.idempotency_key, w.reason, w.created_at
+ FROM wallet_ledger w
+ WHERE w.user_id = @user_id
+   AND (w.ledger_type = 'points'
+        OR NOT EXISTS (SELECT 1 FROM credits_ledger m WHERE m.id = w.id))
+ UNION ALL
+ SELECT c.id, c.user_id, 'credits'::text, c.operation, c.amount, c.resulting_balance, c.source, c.actor_user_id, c.reference, c.idempotency_key, c.reason, c.created_at
+ FROM credits_ledger c
+ WHERE c.user_id = @user_id
+) t;
 
 -- name: GdprExportUserActivityEvents :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
@@ -879,10 +892,6 @@ FROM (SELECT * FROM academy_quiz_attempts WHERE user_id = @user_id) t;
 -- name: GdprExportUserAcademyCertificates :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM academy_certificates WHERE user_id = @user_id) t;
-
--- name: GdprExportUserMentorshipMatches :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM mentorship_matches WHERE (mentor_id = @user_id OR mentee_id = @user_id)) t;
 
 -- name: GdprExportUserMentorshipConnections :one
 -- 000824: mentorship_connections is dropped — connection state now lives in
@@ -1574,3 +1583,13 @@ WHERE deleted_at IS NULL
           AND o.status = 'approved' AND o.user_id != @user_id
       )
   );
+
+-- name: ReassignMutualAidPostsToPlaceholder :exec
+-- BUG-005 (§85, ADR-093): posts survive erasure under the placeholder.
+UPDATE mutual_aid_posts SET user_id = @placeholder, updated_at = now()
+WHERE user_id = @user_id AND deleted_at IS NULL;
+
+-- name: ReassignLanguageScoreStoriesToPlaceholder :exec
+-- §99 (ADR-107): score stories survive erasure under the placeholder.
+UPDATE language_score_stories SET user_id = @placeholder
+WHERE user_id = @user_id AND deleted_at IS NULL;

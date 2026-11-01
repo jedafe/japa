@@ -83,6 +83,7 @@ SELECT
  ap.updated_at,
  u.username AS backing_username,
  COALESCE(up.display_name, u.username) AS profile_name,
+ up.bio AS profile_tagline,
  pv.name AS voice_name,
  stats.total_actions AS total_actions,
  stats.last_action_at AS last_action_at
@@ -127,9 +128,9 @@ SET
  disclosure_mode = COALESCE(sqlc.narg(disclosure_mode), disclosure_mode),
  autonomy_mode = COALESCE(sqlc.narg(autonomy_mode), autonomy_mode),
  voice_id = CASE
- WHEN sqlc.narg(voice_id) IS NULL THEN voice_id
- WHEN sqlc.narg(voice_id) = '00000000-0000-0000-0000-000000000000'::uuid THEN NULL
- ELSE sqlc.narg(voice_id)
+ WHEN sqlc.narg(voice_id)::uuid IS NULL THEN voice_id
+ WHEN sqlc.narg(voice_id)::uuid = '00000000-0000-0000-0000-000000000000'::uuid THEN NULL
+ ELSE sqlc.narg(voice_id)::uuid
  END,
  voice_prompt = COALESCE(sqlc.narg(voice_prompt), voice_prompt),
  activity_policy = COALESCE(sqlc.narg(activity_policy), activity_policy),
@@ -239,3 +240,20 @@ RETURNING *;
 -- name: DeletePersonaVoice :exec
 DELETE FROM persona_voices
 WHERE id = @id;
+
+-- =====================================================================
+-- Persona byline upsert — display_name + bio only. Unlike the full
+-- UpsertUserProfile (whose unconditional EXCLUDED writes would NULL every
+-- unmanaged column), this touches just the two byline fields so persona
+-- edits never clobber profile data written elsewhere. The caller merges
+-- request fields against the row-locked profile first (same
+-- read-merge-write pattern as UpdateProfile), then writes the resolved
+-- values unconditionally.
+-- =====================================================================
+-- name: UpsertPersonaByline :exec
+INSERT INTO user_profiles (user_id, display_name, bio)
+VALUES (@user_id, @display_name, @bio)
+ON CONFLICT (user_id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    bio = EXCLUDED.bio,
+    updated_at = now();

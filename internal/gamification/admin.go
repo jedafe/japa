@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -19,14 +20,63 @@ import (
 // handlers map it to 404 (PTS-012).
 var ErrBadgeNotFound = errors.New("gamification: badge not found")
 
+// ErrChallengeNotFound is returned when a challenge definition does not
+// exist — handlers map it to 404.
+var ErrChallengeNotFound = errors.New("gamification: challenge not found")
+
+// ErrInvalidInput marks admin create/update validation failures so handlers
+// can surface the specific message in the error envelope instead of a
+// generic "failed" string.
+var ErrInvalidInput = errors.New("gamification: invalid input")
+
+// ErrSlugExists marks a unique-slug violation on create — handlers map it
+// to 409.
+var ErrSlugExists = errors.New("gamification: slug already exists")
+
+// invalidInput wraps a validation detail as ErrInvalidInput.
+func invalidInput(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrInvalidInput, fmt.Sprintf(format, args...))
+}
+
+// isUniqueViolation reports whether err wraps a Postgres 23505 unique
+// constraint violation.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+// validateBadgeTrigger checks the trigger_type → trigger_value /
+// trigger_activity_key combination required by §64 (lifetime_points and
+// activity_count need a threshold; activity_count also needs the key).
+func validateBadgeTrigger(triggerType string, value *int32, activityKey *string) error {
+	switch triggerType {
+	case TriggerTypeLifetimePoints:
+		if value == nil || *value <= 0 {
+			return invalidInput("trigger_value must be a positive point threshold for lifetime_points badges")
+		}
+	case TriggerTypeActivityCount:
+		if value == nil || *value <= 0 {
+			return invalidInput("trigger_value must be a positive count for activity_count badges")
+		}
+		if activityKey == nil || *activityKey == "" {
+			return invalidInput("trigger_activity_key is required for activity_count badges")
+		}
+	case TriggerTypeManual:
+		// Manual badges carry no trigger requirements.
+	default:
+		return invalidInput("invalid trigger_type %q", triggerType)
+	}
+	return nil
+}
+
 // CreateBadge creates a new badge definition (admin).
 func (s *Service) CreateBadge(ctx context.Context, in CreateBadgeInput) (BadgeInfo, error) {
-	if in.TriggerType != TriggerTypeLifetimePoints && in.TriggerType != TriggerTypeActivityCount && in.TriggerType != TriggerTypeManual {
-		return BadgeInfo{}, fmt.Errorf("gamification: invalid trigger_type %q", in.TriggerType)
+	if in.Slug == "" || in.Name == "" {
+		return BadgeInfo{}, invalidInput("slug and name are required")
 	}
 
-	if in.Slug == "" || in.Name == "" {
-		return BadgeInfo{}, errors.New("gamification: slug and name are required")
+	if err := validateBadgeTrigger(in.TriggerType, in.TriggerValue, in.TriggerActivityKey); err != nil {
+		return BadgeInfo{}, err
 	}
 
 	arg := gen.CreateBadgeDefinitionParams{
@@ -60,6 +110,9 @@ func (s *Service) CreateBadge(ctx context.Context, in CreateBadgeInput) (BadgeIn
 
 	badge, err := s.store.CreateBadgeDefinition(ctx, arg)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return BadgeInfo{}, ErrSlugExists
+		}
 		return BadgeInfo{}, fmt.Errorf("gamification: create badge: %w", err)
 	}
 
@@ -67,7 +120,8 @@ func (s *Service) CreateBadge(ctx context.Context, in CreateBadgeInput) (BadgeIn
 }
 
 // UpdateBadge updates a badge definition's mutable fields (admin). Only
-// non-nil fields in the input are updated.
+// non-nil fields in the input are updated; the clear_* flags NULL out the
+// matching nullable column.
 func (s *Service) UpdateBadge(ctx context.Context, badgeID pgtype.UUID, in UpdateBadgeInput) (BadgeInfo, error) {
 	arg := gen.UpdateBadgeDefinitionParams{
 		ID: badgeID,
@@ -83,11 +137,12 @@ func (s *Service) UpdateBadge(ctx context.Context, badgeID pgtype.UUID, in Updat
 	if in.IconMediaID != nil {
 		id, err := scanUUID(*in.IconMediaID)
 		if err != nil {
-			return BadgeInfo{}, fmt.Errorf("gamification: invalid icon_media_id: %w", err)
+			return BadgeInfo{}, invalidInput("invalid icon_media_id")
 		}
 
 		arg.IconMediaID = id
 	}
+	arg.ClearIconMediaID = &in.ClearIconMediaID
 
 	if in.TriggerType != nil {
 		arg.TriggerType = in.TriggerType
@@ -96,10 +151,12 @@ func (s *Service) UpdateBadge(ctx context.Context, badgeID pgtype.UUID, in Updat
 	if in.TriggerValue != nil {
 		arg.TriggerValue = in.TriggerValue
 	}
+	arg.ClearTriggerValue = &in.ClearTriggerValue
 
 	if in.TriggerActivityKey != nil {
 		arg.TriggerActivityKey = in.TriggerActivityKey
 	}
+	arg.ClearTriggerActivityKey = &in.ClearTriggerActivityKey
 
 	if in.IsActive != nil {
 		arg.IsActive = in.IsActive
@@ -107,6 +164,37 @@ func (s *Service) UpdateBadge(ctx context.Context, badgeID pgtype.UUID, in Updat
 
 	if in.DisplayOrder != nil {
 		arg.DisplayOrder = in.DisplayOrder
+	}
+
+	// Validate the effective trigger combination — a partial update may
+	// change trigger_type while leaving the old value/key in place, or
+	// clear a field the new trigger still requires.
+	current, err := s.store.GetBadgeDefinitionByID(ctx, badgeID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return BadgeInfo{}, ErrBadgeNotFound
+		}
+		return BadgeInfo{}, fmt.Errorf("gamification: get badge: %w", err)
+	}
+
+	effectiveType := current.TriggerType
+	if in.TriggerType != nil {
+		effectiveType = *in.TriggerType
+	}
+	effectiveValue := current.TriggerValue
+	if in.ClearTriggerValue {
+		effectiveValue = nil
+	} else if in.TriggerValue != nil {
+		effectiveValue = in.TriggerValue
+	}
+	effectiveKey := current.TriggerActivityKey
+	if in.ClearTriggerActivityKey {
+		effectiveKey = nil
+	} else if in.TriggerActivityKey != nil {
+		effectiveKey = in.TriggerActivityKey
+	}
+	if err := validateBadgeTrigger(effectiveType, effectiveValue, effectiveKey); err != nil {
+		return BadgeInfo{}, err
 	}
 
 	badge, err := s.store.UpdateBadgeDefinition(ctx, arg)
@@ -216,20 +304,20 @@ func (s *Service) ListAllChallenges(ctx context.Context, limit, offset int32) ([
 // CreateChallenge creates a new challenge definition (admin).
 func (s *Service) CreateChallenge(ctx context.Context, in CreateChallengeInput) (ChallengeInfo, error) {
 	if in.Slug == "" || in.Name == "" || in.ActivityKey == "" {
-		return ChallengeInfo{}, errors.New("gamification: slug, name, and activity_key are required")
+		return ChallengeInfo{}, invalidInput("slug, name, and activity_key are required")
 	}
 
 	if in.TargetCount <= 0 {
-		return ChallengeInfo{}, errors.New("gamification: target_count must be positive")
+		return ChallengeInfo{}, invalidInput("target_count must be positive")
 	}
 
 	startsAt, err := scanTimestamp(in.StartsAt)
 	if err != nil {
-		return ChallengeInfo{}, err
+		return ChallengeInfo{}, invalidInput("invalid starts_at: expected RFC 3339 timestamp")
 	}
 
 	if !startsAt.Valid {
-		return ChallengeInfo{}, errors.New("gamification: starts_at is required")
+		return ChallengeInfo{}, invalidInput("starts_at is required")
 	}
 
 	arg := gen.CreateChallengeParams{
@@ -246,7 +334,7 @@ func (s *Service) CreateChallenge(ctx context.Context, in CreateChallengeInput) 
 	if in.ImageMediaID != nil {
 		id, err := scanUUID(*in.ImageMediaID)
 		if err != nil {
-			return ChallengeInfo{}, fmt.Errorf("gamification: invalid image_media_id: %w", err)
+			return ChallengeInfo{}, invalidInput("invalid image_media_id")
 		}
 
 		arg.ImageMediaID = id
@@ -255,7 +343,7 @@ func (s *Service) CreateChallenge(ctx context.Context, in CreateChallengeInput) 
 	if in.RewardBadgeID != nil {
 		id, err := scanUUID(*in.RewardBadgeID)
 		if err != nil {
-			return ChallengeInfo{}, fmt.Errorf("gamification: invalid reward_badge_id: %w", err)
+			return ChallengeInfo{}, invalidInput("invalid reward_badge_id")
 		}
 
 		arg.RewardBadgeID = id
@@ -264,7 +352,11 @@ func (s *Service) CreateChallenge(ctx context.Context, in CreateChallengeInput) 
 	if in.EndsAt != nil {
 		endsAt, err := scanTimestamp(*in.EndsAt)
 		if err != nil {
-			return ChallengeInfo{}, err
+			return ChallengeInfo{}, invalidInput("invalid ends_at: expected RFC 3339 timestamp")
+		}
+
+		if endsAt.Valid && endsAt.Time.Before(startsAt.Time) {
+			return ChallengeInfo{}, invalidInput("ends_at must be after starts_at")
 		}
 
 		arg.EndsAt = endsAt
@@ -276,6 +368,9 @@ func (s *Service) CreateChallenge(ctx context.Context, in CreateChallengeInput) 
 
 	challenge, err := s.store.CreateChallenge(ctx, arg)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return ChallengeInfo{}, ErrSlugExists
+		}
 		return ChallengeInfo{}, fmt.Errorf("gamification: create challenge: %w", err)
 	}
 
@@ -283,6 +378,8 @@ func (s *Service) CreateChallenge(ctx context.Context, in CreateChallengeInput) 
 }
 
 // UpdateChallenge updates a challenge definition's mutable fields (admin).
+// Only non-nil fields are updated; the clear_* flags NULL out the matching
+// nullable column.
 func (s *Service) UpdateChallenge(ctx context.Context, challengeID pgtype.UUID, in UpdateChallengeInput) (ChallengeInfo, error) {
 	arg := gen.UpdateChallengeParams{
 		ID: challengeID,
@@ -298,17 +395,24 @@ func (s *Service) UpdateChallenge(ctx context.Context, challengeID pgtype.UUID, 
 	if in.ImageMediaID != nil {
 		id, err := scanUUID(*in.ImageMediaID)
 		if err != nil {
-			return ChallengeInfo{}, fmt.Errorf("gamification: invalid image_media_id: %w", err)
+			return ChallengeInfo{}, invalidInput("invalid image_media_id")
 		}
 
 		arg.ImageMediaID = id
 	}
+	arg.ClearImageMediaID = &in.ClearImageMediaID
 
 	if in.ActivityKey != nil {
+		if *in.ActivityKey == "" {
+			return ChallengeInfo{}, invalidInput("activity_key cannot be empty")
+		}
 		arg.ActivityKey = in.ActivityKey
 	}
 
 	if in.TargetCount != nil {
+		if *in.TargetCount <= 0 {
+			return ChallengeInfo{}, invalidInput("target_count must be positive")
+		}
 		arg.TargetCount = in.TargetCount
 	}
 
@@ -319,16 +423,17 @@ func (s *Service) UpdateChallenge(ctx context.Context, challengeID pgtype.UUID, 
 	if in.RewardBadgeID != nil {
 		id, err := scanUUID(*in.RewardBadgeID)
 		if err != nil {
-			return ChallengeInfo{}, fmt.Errorf("gamification: invalid reward_badge_id: %w", err)
+			return ChallengeInfo{}, invalidInput("invalid reward_badge_id")
 		}
 
 		arg.RewardBadgeID = id
 	}
+	arg.ClearRewardBadgeID = &in.ClearRewardBadgeID
 
 	if in.StartsAt != nil {
 		startsAt, err := scanTimestamp(*in.StartsAt)
 		if err != nil {
-			return ChallengeInfo{}, err
+			return ChallengeInfo{}, invalidInput("invalid starts_at: expected RFC 3339 timestamp")
 		}
 
 		arg.StartsAt = startsAt
@@ -337,14 +442,39 @@ func (s *Service) UpdateChallenge(ctx context.Context, challengeID pgtype.UUID, 
 	if in.EndsAt != nil {
 		endsAt, err := scanTimestamp(*in.EndsAt)
 		if err != nil {
-			return ChallengeInfo{}, err
+			return ChallengeInfo{}, invalidInput("invalid ends_at: expected RFC 3339 timestamp")
 		}
 
 		arg.EndsAt = endsAt
 	}
+	arg.ClearEndsAt = &in.ClearEndsAt
 
 	if in.IsActive != nil {
 		arg.IsActive = in.IsActive
+	}
+
+	// Validate the effective start/end ordering — a partial update may move
+	// ends_at before starts_at.
+	if !in.ClearEndsAt && (in.StartsAt != nil || in.EndsAt != nil) {
+		current, err := s.store.GetChallengeByID(ctx, challengeID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ChallengeInfo{}, ErrChallengeNotFound
+			}
+			return ChallengeInfo{}, fmt.Errorf("gamification: get challenge: %w", err)
+		}
+
+		effectiveStart := current.StartsAt
+		if arg.StartsAt.Valid {
+			effectiveStart = arg.StartsAt
+		}
+		effectiveEnd := current.EndsAt
+		if in.EndsAt != nil {
+			effectiveEnd = arg.EndsAt
+		}
+		if effectiveEnd.Valid && effectiveStart.Valid && effectiveEnd.Time.Before(effectiveStart.Time) {
+			return ChallengeInfo{}, invalidInput("ends_at must be after starts_at")
+		}
 	}
 
 	challenge, err := s.store.UpdateChallenge(ctx, arg)

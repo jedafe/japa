@@ -44,6 +44,7 @@ func (h *Handlers) HandleOneshotSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req oneshotRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB — oneshot payloads are small
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
@@ -76,9 +77,25 @@ func (h *Handlers) HandleOneshotSource(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ch, created, err := h.intelSources.SubmitOneshot(r.Context(), req.URL, req.Categories, req.EntityHint)
+	ch, created, pending, err := h.intelSources.SubmitOneshot(r.Context(), req.URL, req.Categories, req.EntityHint)
 	if err != nil {
 		writeChannelServiceErr(w, err, "intel: oneshot submit failed", "submit_failed", "Could not submit the URL")
+		return
+	}
+
+	// Extract-pipeline submissions (structured categories — scholarship, job,
+	// visa, ...) are LLM-bound: the channel lands disabled and waits for
+	// staff approval (PATCH channel enabled=true, then POST channel crawl)
+	// instead of burning model calls on an unvetted public URL.
+	if pending {
+		errpkg.WriteJSON(w, http.StatusAccepted, map[string]interface{}{
+			"data": map[string]interface{}{
+				"channel_id": ch.ID.String(),
+				"source_id":  ch.SourceID.String(),
+				"status":     "pending_review",
+				"created":    created,
+			},
+		})
 		return
 	}
 

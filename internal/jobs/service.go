@@ -722,6 +722,10 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 		} else {
 			slog.Warn("jobs: failed to load source attribution", "error", err)
 		}
+
+		// Intel-backed listings — batch-fill field_values gaps from
+		// intel_jobs (visa_sponsorship, benefits, …) in one query.
+		s.mergeIntelJobFieldsBatch(ctx, results, recordIDs)
 	}
 
 	return results, total, nil
@@ -865,6 +869,13 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 		_ = json.Unmarshal(fieldValues, &fvMap)
 	}
 
+	// Intel-backed listings: the intel_jobs projection carries structured
+	// fields (visa_sponsorship, relocation_assistance, benefits, …) the EAV
+	// bag may lack — fill gaps without overwriting authored values.
+	if intelRecordID.Valid {
+		s.mergeIntelJobFields(ctx, fvMap, intelRecordID)
+	}
+
 	bodyStr := ""
 	if body != nil {
 		bodyStr = *body
@@ -913,6 +924,156 @@ func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, err
 	}
 
 	return detail, nil
+}
+
+const intelJobFieldsCols = `city, employer, job_type, experience_level, remote,
+	       visa_sponsorship, relocation_assistance, benefits,
+	       education_required, languages_required, posted_date,
+	       work_schedule, salary_min, salary_max, currency,
+	       application_url, deadline`
+
+const intelJobFieldsSQL = `SELECT ` + intelJobFieldsCols + ` FROM intel_jobs`
+
+// intelJobExtras holds the intel_jobs projection fields flattened into a
+// listing's field_values bag.
+type intelJobExtras struct {
+	city, employer, jobType, expLevel, remote *string
+	visaSponsor, relocation                     *bool
+	benefits, languages                         []string
+	eduRequired, workSchedule                   *string
+	postedDate                                  pgtype.Date
+	salaryMin, salaryMax                        pgtype.Numeric
+	currency                                    *string
+	appURL                                      *string
+	deadline                                    pgtype.Date
+}
+
+func (x *intelJobExtras) scan(r interface {
+	Scan(dest ...interface{}) error
+}) error {
+	return r.Scan(
+		&x.city, &x.employer, &x.jobType, &x.expLevel, &x.remote,
+		&x.visaSponsor, &x.relocation, &x.benefits,
+		&x.eduRequired, &x.languages, &x.postedDate,
+		&x.workSchedule, &x.salaryMin, &x.salaryMax, &x.currency,
+		&x.appURL, &x.deadline,
+	)
+}
+
+func (x *intelJobExtras) toFV() map[string]string {
+	fv := map[string]string{}
+	strp := func(v *string) string {
+		if v == nil {
+			return ""
+		}
+		return *v
+	}
+	numStr := func(n pgtype.Numeric) string {
+		f, err := n.Float64Value()
+		if err != nil || !f.Valid {
+			return ""
+		}
+		return strconv.FormatFloat(f.Float64, 'f', -1, 64)
+	}
+	set := func(k, v string) {
+		if v != "" {
+			fv[k] = v
+		}
+	}
+
+	set("city", strp(x.city))
+	set("employer", strp(x.employer))
+	set("job_type", strp(x.jobType))
+	set("experience_level", strp(x.expLevel))
+	// "false" values are noise on cards — only true flags and non-default
+	// remote modes are emitted.
+	if strp(x.remote) != "" && strp(x.remote) != "false" {
+		set("remote", strp(x.remote))
+	}
+	if x.visaSponsor != nil && *x.visaSponsor {
+		set("visa_sponsorship", "true")
+	}
+	if x.relocation != nil && *x.relocation {
+		set("relocation_assistance", "true")
+	}
+	if len(x.benefits) > 0 {
+		set("benefits", strings.Join(x.benefits, ", "))
+	}
+	set("education_required", strp(x.eduRequired))
+	if len(x.languages) > 0 {
+		set("languages_required", strings.Join(x.languages, ", "))
+	}
+	if x.postedDate.Valid {
+		set("posted_date", x.postedDate.Time.Format("2006-01-02"))
+	}
+	set("work_schedule", strp(x.workSchedule))
+	if mn, mx, cur := numStr(x.salaryMin), numStr(x.salaryMax), strp(x.currency); mn != "" || mx != "" {
+		set("salary_min", strings.TrimSpace(mn+" "+cur))
+		set("salary_max", strings.TrimSpace(mx+" "+cur))
+	}
+	set("application_url", strp(x.appURL))
+	if x.deadline.Valid {
+		set("application_deadline", x.deadline.Time.Format("2006-01-02"))
+	}
+	return fv
+}
+
+// mergeFV fills gaps in dst from src — authored values are authoritative
+// and never overwritten.
+func mergeFV(dst, src map[string]string) {
+	for k, v := range src {
+		if cur, ok := dst[k]; !ok || cur == "" {
+			dst[k] = v
+		}
+	}
+}
+
+// mergeIntelJobFields fills gaps in fvMap from the intel_jobs projection
+// row for the listing's intel_record. Keys the job_listing_fields EAV bag
+// already carries are authoritative and never overwritten.
+func (s *Service) mergeIntelJobFields(ctx context.Context, fvMap map[string]string, intelRecordID pgtype.UUID) {
+	var x intelJobExtras
+	if err := x.scan(s.store.pool.Reader.QueryRow(ctx, intelJobFieldsSQL+" WHERE intel_record_id = $1", intelRecordID)); err != nil {
+		return // no projection row — field_values stays as-is
+	}
+	mergeFV(fvMap, x.toFV())
+}
+
+// mergeIntelJobFieldsBatch fills gaps in each result's FieldValues from
+// the intel_jobs projection rows keyed by intel_record_id — one query for
+// the whole page, avoiding an N+1 on the list path.
+func (s *Service) mergeIntelJobFieldsBatch(ctx context.Context, results []JobResult, recordIDs []pgtype.UUID) {
+	rows, err := s.store.pool.Reader.Query(ctx, `SELECT intel_record_id, `+intelJobFieldsCols+` FROM intel_jobs WHERE intel_record_id = ANY($1)`, recordIDs)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	byRec := map[string]map[string]string{}
+	for rows.Next() {
+		var (
+			recID pgtype.UUID
+			x     intelJobExtras
+		)
+		if err := rows.Scan(&recID,
+			&x.city, &x.employer, &x.jobType, &x.expLevel, &x.remote,
+			&x.visaSponsor, &x.relocation, &x.benefits,
+			&x.eduRequired, &x.languages, &x.postedDate,
+			&x.workSchedule, &x.salaryMin, &x.salaryMax, &x.currency,
+			&x.appURL, &x.deadline,
+		); err == nil {
+			byRec[recID.String()] = x.toFV()
+		}
+	}
+
+	for i := range results {
+		if !results[i].intelRecordID.Valid {
+			continue
+		}
+		if src, ok := byRec[results[i].intelRecordID.String()]; ok {
+			mergeFV(results[i].FieldValues, src)
+		}
+	}
 }
 
 // ListOrgJobs returns published job_listing contents for a specific org,

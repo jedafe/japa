@@ -1363,23 +1363,63 @@ const (
 // the 7-step flow is hardcoded in GetState/the frontend. Template-driven
 // onboarding is a future enhancement (§21); the CRUD surface is preserved
 // so admins can pre-configure templates ahead of the consumer-side wiring.
-func (s *Service) ListTemplates(ctx context.Context) ([]gen.OnboardingTemplate, error) {
-	return s.store.listTemplates(ctx)
+func (s *Service) ListTemplates(ctx context.Context) ([]TemplateResponse, error) {
+	rows, err := s.store.listTemplates(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]TemplateResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toTemplateResponse(row))
+	}
+
+	return out, nil
 }
 
 // GetTemplate retrieves a single onboarding template by ID.
-func (s *Service) GetTemplate(ctx context.Context, id pgtype.UUID) (gen.OnboardingTemplate, error) {
-	return s.store.getTemplate(ctx, id)
+func (s *Service) GetTemplate(ctx context.Context, id pgtype.UUID) (TemplateResponse, error) {
+	row, err := s.store.getTemplate(ctx, id)
+	if err != nil {
+		return TemplateResponse{}, err
+	}
+
+	return toTemplateResponse(row), nil
 }
 
 // CreateTemplate creates a new onboarding template.
-func (s *Service) CreateTemplate(ctx context.Context, req *CreateTemplateRequest) (gen.OnboardingTemplate, error) {
+func (s *Service) CreateTemplate(ctx context.Context, req *CreateTemplateRequest) (TemplateResponse, error) {
 	steps, err := json.Marshal(req.Steps)
 	if err != nil {
-		return gen.OnboardingTemplate{}, fmt.Errorf("marshaling steps: %w", err)
+		return TemplateResponse{}, fmt.Errorf("marshaling steps: %w", err)
 	}
 
-	return s.store.createTemplate(ctx, req.Name, req.Description, steps, req.IsActive, false)
+	row, err := s.store.createTemplate(ctx, req.Name, req.Description, steps, req.IsActive, false)
+	if err != nil {
+		return TemplateResponse{}, err
+	}
+
+	return toTemplateResponse(row), nil
+}
+
+// toTemplateResponse maps the sqlc row to the API DTO — Steps goes out as
+// raw JSON, never base64.
+func toTemplateResponse(row gen.OnboardingTemplate) TemplateResponse {
+	steps := json.RawMessage(row.Steps)
+	if len(steps) == 0 {
+		steps = json.RawMessage("[]")
+	}
+
+	return TemplateResponse{
+		ID:          row.ID,
+		Name:        row.Name,
+		Description: row.Description,
+		Steps:       steps,
+		IsActive:    row.IsActive,
+		IsSystem:    row.IsSystem,
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
+	}
 }
 
 // UpdateTemplate updates an existing onboarding template.

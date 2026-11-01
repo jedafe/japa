@@ -2,6 +2,9 @@ package sources
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -40,6 +43,14 @@ func (s *Store) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceChan
 		arg.RelevanceUrlPatterns = []string{}
 	}
 
+	// Webhook (WebSub) channels always carry a signing secret — without one
+	// the push endpoint accepts unsigned deliveries from anyone who learns
+	// the channel UUID. Provision at create so every path (admin form, probe
+	// materialization) lands a signed channel.
+	if arg.CrawlMethod == string(CrawlMethodWebhook) {
+		arg.ProviderConfig = ensureWebhookSecret(arg.ProviderConfig)
+	}
+
 	row, err := s.queries.CreateIntelSourceChannel(ctx, arg)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -51,6 +62,30 @@ func (s *Store) CreateChannel(ctx context.Context, arg gen.CreateIntelSourceChan
 	}
 
 	return row, nil
+}
+
+// ensureWebhookSecret returns provider_config with a "secret" key set —
+// generating a 256-bit random secret when absent. A corrupt document is
+// reset to {"secret": ...} rather than failing the create.
+func ensureWebhookSecret(providerConfig []byte) []byte {
+	cfg := map[string]any{}
+	_ = json.Unmarshal(providerConfig, &cfg)
+
+	if s, ok := cfg["secret"].(string); ok && s != "" {
+		return providerConfig
+	}
+
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err == nil {
+		cfg["secret"] = hex.EncodeToString(b[:])
+	}
+
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return providerConfig
+	}
+
+	return out
 }
 
 // GetChannel fetches a single channel by its primary key.

@@ -84,6 +84,9 @@ UPDATE intel_sources SET provider_config = $2, updated_at = now() WHERE id = $1;
 -- name: ClearIntelSourcePersona :exec
 UPDATE intel_sources SET persona_id = NULL, updated_at = now() WHERE id = $1;
 
+-- name: UpdateIntelSourceTrustLevel :one
+UPDATE intel_sources SET trust_level = $2, updated_at = now() WHERE id = $1 RETURNING *;
+
 -- name: DeleteIntelSource :exec
 DELETE FROM intel_sources WHERE id = $1;
 
@@ -485,7 +488,7 @@ WHERE ir.source_id = $1
    (ir.entity_type = 'scholarship' AND EXISTS (SELECT 1 FROM scholarships sch WHERE sch.intel_record_id = ir.id))
    OR (ir.entity_type = 'job' AND EXISTS (SELECT 1 FROM intel_jobs j WHERE j.intel_record_id = ir.id))
    OR (ir.entity_type = 'remittance' AND EXISTS (SELECT 1 FROM remittance_rates rr WHERE rr.intel_record_id = ir.id))
-   OR (ir.entity_type IN ('news','culture_lifestyle','guide','blog','article') AND EXISTS (SELECT 1 FROM contents bc WHERE bc.intel_record_id = ir.id AND bc.deleted_at IS NULL))
+   OR (ir.entity_type IN ('news','culture_lifestyle','guide','blog','article','grants') AND EXISTS (SELECT 1 FROM contents bc WHERE bc.intel_record_id = ir.id AND bc.deleted_at IS NULL))
    OR (ir.entity_type = 'wiki_page' AND EXISTS (SELECT 1 FROM wiki_pages wp2 WHERE wp2.intel_record_id = ir.id))
  )
 ORDER BY
@@ -508,7 +511,7 @@ WHERE ir.source_id = $1
    (ir.entity_type = 'scholarship' AND EXISTS (SELECT 1 FROM scholarships sch WHERE sch.intel_record_id = ir.id))
    OR (ir.entity_type = 'job' AND EXISTS (SELECT 1 FROM intel_jobs j WHERE j.intel_record_id = ir.id))
    OR (ir.entity_type = 'remittance' AND EXISTS (SELECT 1 FROM remittance_rates rr WHERE rr.intel_record_id = ir.id))
-   OR (ir.entity_type IN ('news','culture_lifestyle','guide','blog','article') AND EXISTS (SELECT 1 FROM contents bc WHERE bc.intel_record_id = ir.id AND bc.deleted_at IS NULL))
+   OR (ir.entity_type IN ('news','culture_lifestyle','guide','blog','article','grants') AND EXISTS (SELECT 1 FROM contents bc WHERE bc.intel_record_id = ir.id AND bc.deleted_at IS NULL))
    OR (ir.entity_type = 'wiki_page' AND EXISTS (SELECT 1 FROM wiki_pages wp2 WHERE wp2.intel_record_id = ir.id))
  );
 

@@ -256,7 +256,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // HandleUpdate handles PATCH /admin/personas/{id} — update activity_policy,
 // modes, status, voice_prompt. Gated by persona.manage permission.
 func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -277,6 +278,9 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		VoicePrompt    *string         `json:"voice_prompt"`
 		ActivityPolicy *ActivityPolicy `json:"activity_policy"`
 		Status         *string         `json:"status"`
+		Name           *string         `json:"name"`
+		Tagline        *string         `json:"tagline"`
+		Username       *string         `json:"username"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -291,9 +295,12 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		VoicePrompt:    body.VoicePrompt,
 		ActivityPolicy: body.ActivityPolicy,
 		Status:         body.Status,
+		Name:           body.Name,
+		Tagline:        body.Tagline,
+		Username:       body.Username,
 	}
 
-	persona, err := h.service.UpdatePersona(r.Context(), id, in)
+	persona, err := h.service.UpdatePersona(r.Context(), id, in, user.UserID)
 	if err != nil {
 		slog.Error("personas: update failed", "error", err, "id", id.String())
 		handleServiceError(w, err)

@@ -2,7 +2,11 @@
 // and recommendation engine for new users.
 package onboarding
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 // OnboardingStatusResponse is the API response for GET /api/v1/onboarding/status.
 type OnboardingStatusResponse struct { //nolint:revive // stuttering type name preserved for API compatibility
@@ -70,6 +74,21 @@ type UpdateOnboardingSettingsRequest struct {
 	PromotedSpaces *[]string `json:"promoted_spaces,omitempty"`
 	PromotedUsers  *[]string `json:"promoted_users,omitempty"`
 	PromotedTags   *[]string `json:"promoted_tags,omitempty"`
+}
+
+// TemplateResponse is the API representation of an onboarding template.
+// Steps is emitted as raw JSON — the generated model stores the jsonb
+// column as []byte, which encoding/json would otherwise serialize as
+// base64 (e.g. "W10=" for []), breaking JSON.parse on every client.
+type TemplateResponse struct {
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Description *string            `json:"description"`
+	Steps       json.RawMessage    `json:"steps"`
+	IsActive    bool               `json:"is_active"`
+	IsSystem    bool               `json:"is_system"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 // CreateTemplateRequest is the JSON body for POST /admin/onboarding/templates.

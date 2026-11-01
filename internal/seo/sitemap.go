@@ -943,6 +943,8 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	// is documented in internal/db/queries/seo.sql (GetContentSEOByID).
 	const q = `
 		SELECT c.id, c.title, c.slug, c.content_type, c.body, c.visibility, c.seo_indexable,
+		       c.status, c.comment_count, c.share_count,
+		       (SELECT COUNT(*)::int FROM reactions WHERE entity_type = 'content' AND entity_id = c.id) AS reaction_count,
 		       COALESCE(c.meta_title, '') AS meta_title,
 		       COALESCE(c.meta_description, '') AS meta_description,
 		       COALESCE(c.og_image_url, '') AS og_image_url,
@@ -964,6 +966,10 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 		body           string
 		visibility     string
 		seoIndexable   bool
+		status         string
+		commentCount   int
+		shareCount     int
+		reactionCount  int
 		metaTitle      string
 		metaDesc       string
 		ogImageURL     string
@@ -975,6 +981,7 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 
 	err := h.reader.QueryRow(r.Context(), q, id).Scan(
 		&contentID, &title, &slug, &contentType, &body, &visibility, &seoIndexable,
+		&status, &commentCount, &shareCount, &reactionCount,
 		&metaTitle, &metaDesc, &ogImageURL, &canonicalURL, &ogTitle, &ogDescription, &jsonldTemplate,
 	)
 	if err != nil {
@@ -1004,13 +1011,32 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// robots_meta per Section 26: private -> noindex,nofollow;
-	// seo_indexable false -> noindex,follow; otherwise index,follow.
+	// anything the §43 sitemap quality gate rejects -> noindex,follow
+	// (the gate itself denies when seo_indexable=false, unpublished,
+	// non-public, or below the per-type word/engagement floor). This mirrors
+	// the derived `indexable` flag the public detail pages already honor, so
+	// the preview no longer disagrees with the live robots meta.
+	indexable := bots.IsContentIndexableByType(bots.ContentIndexableInput{
+		ContentType:   contentType,
+		Status:        status,
+		Visibility:    visibility,
+		WordCount:     len(strings.Fields(body)),
+		CommentCount:  commentCount,
+		ShareCount:    shareCount,
+		ReactionCount: reactionCount,
+		// ReplyCount/IsQuestion/Solved use comment_count as the forum proxy —
+		// the preview doesn't query the forum tables; close enough for a
+		// diagnostics view.
+		ReplyCount:   commentCount,
+		SeoIndexable: seoIndexable,
+	}, h.sitemapQualityConfig(r.Context()))
+
 	var robotsMeta string
 
 	switch {
 	case visibility == "private":
 		robotsMeta = "noindex,nofollow"
-	case !seoIndexable:
+	case !indexable:
 		robotsMeta = "noindex,follow"
 	default:
 		robotsMeta = "index,follow"

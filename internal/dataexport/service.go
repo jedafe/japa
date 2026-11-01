@@ -447,8 +447,11 @@ func buildExportQuery(exportType string, includeMetadata bool) (string, []any) {
 			ORDER BY p.created_at DESC`, nil
 
 	case TypeTransactions:
-		// The wallet transactions table is `wallet_ledger`. It has no
-		// updated_at column, so only id and created_at are appended.
+		// Wallet transactions span the split ledgers — wallet_ledger for
+		// points, credits_ledger for credits (ADR-136, split plan).
+		// Historical credits rows mirrored in wallet_ledger are excluded
+		// via NOT EXISTS. Neither table has updated_at, so only id and
+		// created_at are appended as metadata.
 		meta := ""
 		if includeMetadata {
 			meta = ", w.id, w.created_at"
@@ -456,9 +459,17 @@ func buildExportQuery(exportType string, includeMetadata bool) (string, []any) {
 
 		return `SELECT w.ledger_type, w.operation, w.amount, w.source, w.reason` + meta + `,
 			u.username AS user
-			FROM wallet_ledger w
+			FROM (
+				SELECT wl.id, wl.user_id, wl.ledger_type, wl.operation, wl.amount, wl.source, wl.reason, wl.created_at
+				FROM wallet_ledger wl
+				WHERE wl.ledger_type = 'points'
+				   OR NOT EXISTS (SELECT 1 FROM credits_ledger m WHERE m.id = wl.id)
+				UNION ALL
+				SELECT c.id, c.user_id, 'credits'::text, c.operation, c.amount, c.source, c.reason, c.created_at
+				FROM credits_ledger c
+			) w
 			JOIN users u ON u.id = w.user_id
-			
+
 			ORDER BY w.created_at DESC`, nil
 
 	case TypeAnalytics:

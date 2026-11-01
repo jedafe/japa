@@ -48,7 +48,7 @@ SET alt_text = COALESCE(@alt_text, alt_text),
  width_px = COALESCE(@width_px, width_px),
  height_px = COALESCE(@height_px, height_px),
  duration_secs = COALESCE(@duration_secs, duration_secs),
- user_group_id = @user_group_id
+ user_group_id = COALESCE(@user_group_id, user_group_id)
 WHERE id = @id;
 
 -- name: UpdateMediaMetadataOwn :exec
@@ -59,7 +59,7 @@ SET alt_text = COALESCE(@alt_text, alt_text),
  width_px = COALESCE(@width_px, width_px),
  height_px = COALESCE(@height_px, height_px),
  duration_secs = COALESCE(@duration_secs, duration_secs),
- user_group_id = @user_group_id
+ user_group_id = COALESCE(@user_group_id, user_group_id)
 WHERE id = @id
  AND uploader_user_id = @uploader_user_id
  AND deleted_at IS NULL;

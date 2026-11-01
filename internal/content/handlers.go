@@ -258,6 +258,57 @@ func canModifyContent(r *http.Request, userID, authorID pgtype.UUID, anyPerm str
 	return false
 }
 
+// canAssignAuthor reports whether the caller may reassign contents.author_id
+// to another user — super-admins and holders of content.assign_author
+// (the same node that gates the agent's content.create author_id override).
+func canAssignAuthor(r *http.Request, userID pgtype.UUID) bool {
+	resolver := rbac.FromContext(r.Context())
+	if resolver == nil {
+		return false
+	}
+
+	return resolver.IsSuperAdmin(r.Context(), userID) ||
+		resolver.HasPermission(r.Context(), userID, "content.assign_author")
+}
+
+// resolveBotAuthor validates an author_id override supplied on create/update
+// requests. Returns the resolved bot user ID, or writes the error response
+// and returns ok=false. The override is bots-only: authorship as a real
+// human user goes through admin impersonation instead (SEC-002), so a
+// valid-but-non-bot target is rejected with author_not_bot.
+func (h *Handlers) resolveBotAuthor(w http.ResponseWriter, r *http.Request, actorID pgtype.UUID, raw string) (pgtype.UUID, bool) {
+	var authorID pgtype.UUID
+	if err := authorID.Scan(raw); err != nil || !authorID.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_author_id", "author_id is not a valid UUID")
+		return pgtype.UUID{}, false
+	}
+
+	if !canAssignAuthor(r, actorID) {
+		errpkg.WriteError(w, http.StatusForbidden, "author_assign_forbidden",
+			"Setting author_id to another user requires the content.assign_author permission")
+		return pgtype.UUID{}, false
+	}
+
+	isBot, err := h.Service.IsBotUser(r.Context(), authorID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_author_id", "author_id does not identify a user")
+			return pgtype.UUID{}, false
+		}
+		slog.Error("content: bot author check failed", "error", err, "author_id", authorID.String())
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to validate author_id")
+		return pgtype.UUID{}, false
+	}
+
+	if !isBot {
+		errpkg.WriteError(w, http.StatusBadRequest, "author_not_bot",
+			"author_id must identify a bot persona account — real-user authorship requires impersonation")
+		return pgtype.UUID{}, false
+	}
+
+	return authorID, true
+}
+
 // isStoryModerator reports whether the caller may publish/schedule stories
 // directly, bypassing the §79 in_review queue: super-admins and holders of
 // story.verify or content.edit_any.
@@ -887,6 +938,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		Slug            string          `json:"slug"`
 		Body            string          `json:"body"`
 		BodyHtml        string          `json:"body_html"` //nolint:revive // matches sqlc-generated field name
+		AuthorID        *string         `json:"author_id"`
 		FieldValues     json.RawMessage `json:"field_values"`
 		CanonicalUrl    *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
 		HeaderImageID   *string         `json:"header_image_id"`
@@ -1053,6 +1105,20 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		SourceCountry:   input.SourceCountry,
 		TargetCountry:   input.TargetCountry,
 	}
+
+	// author_id override (content.assign_author): attribute the new content
+	// to a bot persona account. Absent/empty = the authenticated caller;
+	// an explicit self-reference is a no-op. Audited below once the
+	// content row exists.
+	authorAssigned := false
+	if input.AuthorID != nil && *input.AuthorID != "" && *input.AuthorID != user.UserID.String() {
+		authorID, ok := h.resolveBotAuthor(w, r, user.UserID, *input.AuthorID)
+		if !ok {
+			return
+		}
+		authorAssigned = true
+		createInput.AuthorID = authorID
+	}
 	if input.SeoIndexable != nil {
 		createInput.SeoIndexable = *input.SeoIndexable
 	}
@@ -1175,6 +1241,16 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 
 		return
+	}
+
+	// §22 audit trail: an author override is a privileged attribution change —
+	// record it (best-effort) so it surfaces in the content's moderation
+	// history alongside admin impersonation records.
+	if authorAssigned {
+		if err := h.Service.WriteContentAudit(r.Context(), user.UserID, "content.assign_author", content.ID,
+			map[string]any{"author_id": createInput.AuthorID.String()}); err != nil {
+			slog.Warn("content: assign-author audit failed", "content_id", content.ID.String(), "error", err)
+		}
 	}
 
 	// Record the creation for the spam rate-limit layer (BUG-004). Without
@@ -1686,6 +1762,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		Slug            string          `json:"slug"`
 		Body            string          `json:"body"`
 		BodyHtml        string          `json:"body_html"` //nolint:revive // matches sqlc-generated field name
+		AuthorID        *string         `json:"author_id"`
 		FieldValues     json.RawMessage `json:"field_values"`
 		CanonicalUrl    *string         `json:"canonical_url"` //nolint:revive // matches sqlc-generated field name
 		HeaderImageID   *string         `json:"header_image_id"`
@@ -1977,6 +2054,28 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// clamped to in_review by the service.
 	updateInput.SkipStoryModeration = isStoryModerator(r, user.UserID)
 
+	// author_id override (content.assign_author): re-attribute the content to
+	// a bot persona account. Absent = keep the stored author; a value equal
+	// to the stored author is a no-op. Audited below on success.
+	authorAssigned := false
+	if input.AuthorID != nil && *input.AuthorID != "" && *input.AuthorID != prevContent.AuthorID.String() {
+		if *input.AuthorID == user.UserID.String() {
+			// Self-assignment: reverting authorship to the caller is not a
+			// privileged override — SEC-002's bot-persona restriction covers
+			// attributing to OTHER users, not reclaiming a bot-authored piece.
+			// The caller still needs the edit rights enforced above; the
+			// change is audited below like any other author reassignment.
+			updateInput.AuthorID = user.UserID
+		} else {
+			authorID, ok := h.resolveBotAuthor(w, r, user.UserID, *input.AuthorID)
+			if !ok {
+				return
+			}
+			updateInput.AuthorID = authorID
+		}
+		authorAssigned = true
+	}
+
 	content, err := h.Service.UpdateContent(r.Context(), id, user.UserID, updateInput, bypassEditWindow)
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
@@ -2053,6 +2152,18 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
 	// (Section 15 — external links get async OG/oEmbed scrape, BUG-003).
 	h.enqueueLinkPreviewsForBody(input.BodyHtml, id)
+
+	// §22 audit trail: an author reassignment is a privileged attribution
+	// change — record it (best-effort) with the previous and new author.
+	if authorAssigned {
+		if err := h.Service.WriteContentAudit(r.Context(), user.UserID, "content.assign_author", content.ID,
+			map[string]any{
+				"author_id":          updateInput.AuthorID.String(),
+				"previous_author_id": prevContent.AuthorID.String(),
+			}); err != nil {
+			slog.Warn("content: assign-author audit failed", "content_id", content.ID.String(), "error", err)
+		}
+	}
 
 	// §22 audit trail: edits that arrive through the /admin mount are admin
 	// moderation actions — log them (best-effort) so they surface in the

@@ -1050,6 +1050,15 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 	// All four steps run in one transaction so a failure cannot leave the user
 	// half-erased (e.g. authorship reassigned but the user row still present).
 	if err := db.WithTxHandle(ctx, s.db.Writer, func(tx pgx.Tx, q *gen.Queries) error {
+		// Bypass the ledger-immutability trigger for this transaction only:
+		// DELETE FROM users cascades into wallet_ledger/credits_ledger rows
+		// (ON DELETE CASCADE) and SET NULLs actor_user_id, both of which the
+		// 000996 trigger would otherwise reject. Erasure is the one
+		// legitimate mutation path (migration 000997).
+		if _, err := tx.Exec(ctx, "SET LOCAL wallet.allow_ledger_mutation = 'on'"); err != nil {
+			return fmt.Errorf("enabling ledger erasure bypass: %w", err)
+		}
+
 		// 0. Retire + scrub the mentor's shadow service listing (000824)
 		//    BEFORE authorship moves to the placeholder. The admin
 		//    hard-delete path (DELETE /admin/users/{id}/hard) reaches this
@@ -1714,7 +1723,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		// user is no longer attributable.
 		// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-		if _, err := s.db.Writer.Exec(ctx, `UPDATE mutual_aid_posts SET user_id = $2, updated_at = now() WHERE user_id = $1 AND deleted_at IS NULL`, userID, deletedUserPlaceholder); err != nil {
+		if err := gen.New(s.db.Writer).ReassignMutualAidPostsToPlaceholder(ctx, gen.ReassignMutualAidPostsToPlaceholderParams{UserID: userID, Placeholder: deletedUserPlaceholder}); err != nil {
 			return fmt.Errorf("reassigning mutual_aid_posts user_id: %w", err)
 		}
 
@@ -1727,7 +1736,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		// alone — they are already anonymised by the soft-delete pathway.
 		// Ref: japaconnect-engineering/sections/99-language-test-hub.md
 		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-		if _, err := s.db.Writer.Exec(ctx, `UPDATE language_score_stories SET user_id = $2 WHERE user_id = $1 AND deleted_at IS NULL`, userID, deletedUserPlaceholder); err != nil {
+		if err := gen.New(s.db.Writer).ReassignLanguageScoreStoriesToPlaceholder(ctx, gen.ReassignLanguageScoreStoriesToPlaceholderParams{UserID: userID, Placeholder: deletedUserPlaceholder}); err != nil {
 			return fmt.Errorf("reassigning language_score_stories user_id: %w", err)
 		}
 
@@ -2417,7 +2426,6 @@ type UserDataExport struct {
 	AcademyEnrollments          []map[string]interface{} `json:"academy_enrollments"`
 	AcademyQuizAttempts         []map[string]interface{} `json:"academy_quiz_attempts"`
 	AcademyCertificates         []map[string]interface{} `json:"academy_certificates"`
-	MentorshipMatches           []map[string]interface{} `json:"mentorship_matches"`
 	MentorshipConnections       []map[string]interface{} `json:"mentorship_connections"` // §102 ADR-110
 	MentorProfiles              []map[string]interface{} `json:"mentor_profiles"`        // §102 ADR-110
 	MentorSessions              []map[string]interface{} `json:"mentor_sessions"`        // §102 ADR-110
@@ -2873,13 +2881,6 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		export.AcademyCertificates = rows
 	} else {
 		slog.Warn("failed to collect academy_certificates for export", "user_id", userID.String(), "error", err)
-	}
-
-	// Mentorship matches where the user is mentor or mentee.
-	if rows, err := s.store.gdprExportUserMentorshipMatches(ctx, userID); err == nil {
-		export.MentorshipMatches = rows
-	} else {
-		slog.Warn("failed to collect mentorship_matches for export", "user_id", userID.String(), "error", err)
 	}
 
 	// §102 Mentorship connections where the user is mentor or mentee (ADR-110).

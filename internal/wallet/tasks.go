@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/ledger"
 	"github.com/jedafe/japa/internal/wallet/payout"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -104,10 +105,10 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, userID pgtype.UU
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.store.write.WithTx(tx)
+	qtx := ledger.New(s.store.write.WithTx(tx))
 
 	// Serialize concurrent balance mutations for this user.
-	lockKey := "wallet:" + "" + ":" + userID.String()
+	lockKey := "wallet::" + userID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return fmt.Errorf("acquiring wallet lock: %w", err)
 	}
@@ -118,6 +119,9 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, userID pgtype.UU
 		LedgerType: LedgerTypeCredits,
 	})
 	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("getting credits balance: %w", err)
+		}
 		currentBalance = 0
 	}
 
@@ -133,7 +137,14 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, userID pgtype.UU
 		reference = fmt.Sprintf("Credit purchase %s — %d credits (%s)", p.PaymentID, p.CreditsToGrant, p.CurrencyCode)
 	}
 
-	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+	var paymentID pgtype.UUID
+	if p.PaymentID != "" {
+		if err := paymentID.Scan(p.PaymentID); err != nil {
+			return fmt.Errorf("invalid payment_id: %w", err)
+		}
+	}
+
+	if _, err = qtx.InsertCreditPurchaseEntry(ctx, gen.InsertLedgerEntryParams{
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationPurchase,
@@ -143,7 +154,16 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, userID pgtype.UU
 		Reference:        &reference,
 		IdempotencyKey:   &idempotencyKey,
 		Reason:           nil,
-	}); err != nil {
+	}, paymentID); err != nil {
+		// A unique-violation on the credit_purchase:{payment_id} key means a
+		// prior delivery already credited — a successful no-op, not a
+		// retryable failure (the old code dead-lettered on every replay).
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			slog.Info("wallet: credit purchase already credited (idempotent)", "payment_id", p.PaymentID)
+
+			return nil
+		}
 		return fmt.Errorf("inserting credit purchase ledger entry: %w", err)
 	}
 
@@ -223,7 +243,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 	// only award the first matching credit per user (Section 28).
 	rule, err := s.store.getActivityRuleByKey(ctx, p.Reason)
 	if err == nil && rule.OneTime {
-		count, err := s.store.countUserLedgerBySource(ctx, userID, p.Reason)
+		count, err := s.store.countUserLedgerBySource(ctx, userID, p.Reason, ledgerType)
 		if err != nil {
 			return fmt.Errorf("wallet:award_points: checking one-time rule: %w", err)
 		}
@@ -469,10 +489,10 @@ func (s *Service) creditWallet(ctx context.Context, userID pgtype.UUID, ledgerTy
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.store.write.WithTx(tx)
+	qtx := ledger.New(s.store.write.WithTx(tx))
 
 	// Serialize concurrent balance mutations for this user.
-	lockKey := "wallet:" + "" + ":" + userID.String()
+	lockKey := "wallet::" + userID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return fmt.Errorf("wallet: acquiring lock: %w", err)
 	}

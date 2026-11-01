@@ -38,7 +38,7 @@ func TestSubmitOneshot(t *testing.T) {
 
 	entryURL := "https://example.com/oneshot-dedupe-test"
 
-	ch1, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "")
+	ch1, created, pending, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "")
 	if err != nil {
 		t.Fatalf("SubmitOneshot: %v", err)
 	}
@@ -47,9 +47,17 @@ func TestSubmitOneshot(t *testing.T) {
 		t.Fatal("first submission: created = false, want true")
 	}
 
+	if pending {
+		t.Error("news submission: pending = true, want false (curate path fires immediately)")
+	}
+
 	if ch1.CrawlMethod != string(CrawlMethodOneshot) || ch1.Origin != string(ChannelOriginUser) || !ch1.Enabled {
 		t.Errorf("channel = method %q origin %q enabled %v, want oneshot/user/enabled",
 			ch1.CrawlMethod, ch1.Origin, ch1.Enabled)
+	}
+
+	if ch1.Pipeline != string(PipelineCurate) {
+		t.Errorf("news channel pipeline = %q, want %q (deterministic, never LLM)", ch1.Pipeline, PipelineCurate)
 	}
 
 	src, err := store.GetBySlug(ctx, oneshotSourceSlug)
@@ -68,7 +76,7 @@ func TestSubmitOneshot(t *testing.T) {
 	}
 
 	// Identical resubmission dedupes — same row, created=false.
-	ch2, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "")
+	ch2, created, _, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "")
 	if err != nil {
 		t.Fatalf("SubmitOneshot resubmit: %v", err)
 	}
@@ -78,7 +86,7 @@ func TestSubmitOneshot(t *testing.T) {
 	}
 
 	// Scheme-less input normalizes to https and dedupes to the same row.
-	ch3, created, err := svc.SubmitOneshot(ctx, "example.com/oneshot-dedupe-test", []string{"news"}, "")
+	ch3, created, _, err := svc.SubmitOneshot(ctx, "example.com/oneshot-dedupe-test", []string{"news"}, "")
 	if err != nil {
 		t.Fatalf("SubmitOneshot scheme-less: %v", err)
 	}
@@ -94,7 +102,7 @@ func TestSubmitOneshot(t *testing.T) {
 		t.Fatalf("disable channel: %v", err)
 	}
 
-	ch4, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "")
+	ch4, created, _, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "")
 	if err != nil {
 		t.Fatalf("SubmitOneshot after disable: %v", err)
 	}
@@ -107,7 +115,7 @@ func TestSubmitOneshot(t *testing.T) {
 	// entity_hint prepends the caller-asserted entity type — and because
 	// entity_types participates in the dedupe constraint, a hinted
 	// submission is a distinct channel from the unhinted one.
-	ch5, created, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "article")
+	ch5, created, hintPending, err := svc.SubmitOneshot(ctx, entryURL, []string{"news"}, "article")
 	if err != nil {
 		t.Fatalf("SubmitOneshot entity_hint: %v", err)
 	}
@@ -120,9 +128,47 @@ func TestSubmitOneshot(t *testing.T) {
 		t.Errorf("entity_types = %v, want article first", ch5.EntityTypes)
 	}
 
+	if hintPending {
+		t.Error("article hint: pending = true, want false (curate entity type)")
+	}
+
+	// Extract-category submissions are LLM-bound — they land disabled and
+	// pending staff approval instead of firing fetch→extract on an unvetted
+	// public URL. Resubmitting must NOT re-arm the pending channel.
+	extCh, extCreated, extPending, err := svc.SubmitOneshot(ctx, "https://example.com/oneshot-extract-test", []string{"scholarship"}, "")
+	if err != nil {
+		t.Fatalf("SubmitOneshot extract-category: %v", err)
+	}
+
+	if !extCreated || !extPending || extCh.Enabled || extCh.Pipeline != string(PipelineExtract) {
+		t.Fatalf("extract submission = created %v pending %v enabled %v pipeline %q, want created/pending/disabled/extract",
+			extCreated, extPending, extCh.Enabled, extCh.Pipeline)
+	}
+
+	extCh2, extCreated2, extPending2, err := svc.SubmitOneshot(ctx, "https://example.com/oneshot-extract-test", []string{"scholarship"}, "")
+	if err != nil {
+		t.Fatalf("SubmitOneshot extract resubmit: %v", err)
+	}
+
+	if extCreated2 || !extPending2 || extCh2.Enabled || extCh2.ID != extCh.ID {
+		t.Fatalf("extract resubmit = created %v pending %v enabled %v id %s, want dedupe to still-pending %s",
+			extCreated2, extPending2, extCh2.Enabled, extCh2.ID, extCh.ID)
+	}
+
+	// A structured entity_hint on an editorial category also routes pending —
+	// the caller is asserting content that needs LLM extraction.
+	hintCh, _, hintChPending, err := svc.SubmitOneshot(ctx, "https://example.com/oneshot-hint-test", []string{"news"}, "scholarship")
+	if err != nil {
+		t.Fatalf("SubmitOneshot structured hint: %v", err)
+	}
+
+	if !hintChPending || hintCh.Enabled {
+		t.Errorf("structured hint = pending %v enabled %v, want pending/disabled", hintChPending, hintCh.Enabled)
+	}
+
 	// Invalid inputs are rejected before any row is created.
 	for _, bad := range []string{"", "ftp://x", "http://127.0.0.1/internal"} {
-		if _, _, err := svc.SubmitOneshot(ctx, bad, nil, ""); err == nil {
+		if _, _, _, err := svc.SubmitOneshot(ctx, bad, nil, ""); err == nil {
 			t.Errorf("SubmitOneshot(%q): expected error", bad)
 		}
 	}

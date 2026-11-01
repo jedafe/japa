@@ -2,6 +2,7 @@ package sources
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -73,6 +74,24 @@ func (s *Store) Get(ctx context.Context, id SourceID) (Source, error) {
 	}
 
 	return row, nil
+}
+
+// WriteChannelAudit appends an audit_logs row for a privileged channel
+// mutation (edit, enable/disable, delete, manual crawl). Best-effort —
+// callers log and continue on failure.
+func (s *Store) WriteChannelAudit(ctx context.Context, actor pgtype.UUID, actionType string, channelID pgtype.UUID, metadata map[string]any) error {
+	targetType := "intel_source_channel"
+	meta, _ := json.Marshal(metadata)
+
+	_, err := s.queries.CreateAuditLog(ctx, gen.CreateAuditLogParams{
+		ActorUserID: actor,
+		ActionType:  actionType,
+		TargetType:  &targetType,
+		TargetID:    channelID,
+		Metadata:    meta,
+	})
+
+	return err
 }
 
 // GetBySlug fetches a single source by its public slug.
@@ -220,6 +239,21 @@ func (s *Store) UpdateProviderConfig(ctx context.Context, arg gen.UpdateIntelSou
 	}
 
 	return nil
+}
+
+// UpdateTrustLevel replaces only the trust_level column. Used by the
+// proposed-source approve flow so a concurrent PATCH is never clobbered by a
+// full-row read-modify-write.
+func (s *Store) UpdateTrustLevel(ctx context.Context, id SourceID, trustLevel int16) (Source, error) {
+	row, err := s.queries.UpdateIntelSourceTrustLevel(ctx, gen.UpdateIntelSourceTrustLevelParams{
+		ID:         id,
+		TrustLevel: trustLevel,
+	})
+	if err != nil {
+		return Source{}, fmt.Errorf("sources: update trust level: %w", err)
+	}
+
+	return row, nil
 }
 
 // UpdateCategories replaces a source's categories array. Direct assignment

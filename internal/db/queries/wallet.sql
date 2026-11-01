@@ -9,18 +9,87 @@
 INSERT INTO wallet_ledger (user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason) VALUES (@user_id, @ledger_type, @operation, @amount, @resulting_balance, sqlc.narg(source), sqlc.narg(actor_user_id), sqlc.narg(reference), sqlc.narg(idempotency_key), sqlc.narg(reason))
 RETURNING *;
 
--- name: ListLedgerEntriesByUser :many
-SELECT * FROM wallet_ledger
-WHERE user_id = @user_id
- AND (@ledger_type::text IS NULL OR ledger_type = @ledger_type)
-ORDER BY created_at DESC
-LIMIT @page_limit OFFSET @page_offset;
-
 -- name: GetLatestBalance :one
 SELECT resulting_balance FROM wallet_ledger
 WHERE user_id = @user_id AND ledger_type = @ledger_type
-ORDER BY created_at DESC, id DESC
+ORDER BY seq DESC
 LIMIT 1;
+
+-- name: GetLatestCreditBalance :one
+SELECT resulting_balance FROM credits_ledger
+WHERE user_id = @user_id
+ORDER BY seq DESC
+LIMIT 1;
+
+-- name: InsertCreditLedgerEntry :one
+INSERT INTO credits_ledger (user_id, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, payment_id, reverses_id) VALUES (@user_id, @operation, @amount, @resulting_balance, sqlc.narg(source), sqlc.narg(actor_user_id), sqlc.narg(reference), sqlc.narg(idempotency_key), sqlc.narg(reason), sqlc.narg(payment_id), sqlc.narg(reverses_id))
+RETURNING *;
+
+-- name: ListMergedLedgerEntriesByUser :many
+-- Unified ledger listing for /me/wallet/ledger and the admin user ledger —
+-- the response shape matches the old shared-table contract (split plan
+-- step 6). Historical credits rows still mirrored in wallet_ledger are
+-- excluded once their copy exists in credits_ledger (id match), while
+-- unreconciled stragglers from a stale binary still surface.
+SELECT w.id, w.user_id, w.ledger_type, w.operation, w.amount, w.resulting_balance, w.source, w.actor_user_id, w.reference, w.idempotency_key, w.reason, w.created_at
+FROM wallet_ledger w
+WHERE w.user_id = @user_id
+ AND (w.ledger_type = 'points'
+      OR NOT EXISTS (SELECT 1 FROM credits_ledger m WHERE m.id = w.id))
+ AND (@ledger_type = '' OR w.ledger_type = @ledger_type)
+UNION ALL
+SELECT c.id, c.user_id, 'credits'::text AS ledger_type, c.operation, c.amount, c.resulting_balance, c.source, c.actor_user_id, c.reference, c.idempotency_key, c.reason, c.created_at
+FROM credits_ledger c
+WHERE c.user_id = @user_id
+ AND (@ledger_type = '' OR 'credits' = @ledger_type)
+ORDER BY created_at DESC, id DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: GetMergedLedgerEntryByID :one
+-- Finds a ledger row across both streams (admin tooling / error
+-- semantics). Mirrored wallet_ledger credits rows are hidden once their
+-- credits_ledger copy exists, so ids never resolve twice.
+SELECT w.id, w.user_id, w.ledger_type, w.operation, w.amount, w.resulting_balance, w.source, w.actor_user_id, w.reference, w.idempotency_key, w.reason, w.created_at
+FROM wallet_ledger w
+WHERE w.id = @id
+ AND (w.ledger_type = 'points'
+      OR NOT EXISTS (SELECT 1 FROM credits_ledger m WHERE m.id = w.id))
+UNION ALL
+SELECT c.id, c.user_id, 'credits'::text AS ledger_type, c.operation, c.amount, c.resulting_balance, c.source, c.actor_user_id, c.reference, c.idempotency_key, c.reason, c.created_at
+FROM credits_ledger c
+WHERE c.id = @id
+LIMIT 1;
+
+-- name: CheckAnyLedgerIdempotencyKey :one
+-- Post-split the unique key scope is per-table; this preserves the old
+-- global-uniqueness check across both streams.
+SELECT EXISTS(
+ SELECT 1 FROM wallet_ledger w WHERE w.idempotency_key = @idempotency_key
+ UNION ALL
+ SELECT 1 FROM credits_ledger c WHERE c.idempotency_key = @idempotency_key
+);
+
+-- name: CountUserCreditLedgerBySource :one
+SELECT COUNT(*) FROM credits_ledger
+WHERE user_id = @user_id
+ AND source = @source;
+
+-- name: GetCreditLedgerEntryByReference :one
+SELECT * FROM credits_ledger
+WHERE user_id = @user_id AND reference = @reference
+ORDER BY seq DESC LIMIT 1;
+
+-- name: GetCreditLedgerEntryByID :one
+-- Full credits_ledger row including payment_id/reverses_id — needed by the
+-- refund path (split plan: credits reversal design).
+SELECT * FROM credits_ledger
+WHERE id = @id;
+
+-- name: GetCreditRefundedTotal :one
+-- Total already refunded against an original credits entry (refund linkage
+-- enforcement: partial refunds may not exceed the original magnitude).
+SELECT COALESCE(SUM(ABS(amount)), 0)::bigint FROM credits_ledger
+WHERE reverses_id = @reverses_id;
 
 -- name: GetLifetimePoints :one
 -- Sum of all positive points earns (never decreases; used for badges/tiers,
@@ -28,16 +97,6 @@ LIMIT 1;
 SELECT COALESCE(SUM(amount), 0)::bigint FROM wallet_ledger
 WHERE user_id = @user_id
  AND ledger_type = 'points' AND operation = 'earn' AND amount > 0;
-
--- name: CheckIdempotencyKey :one
-SELECT EXISTS(
- SELECT 1 FROM wallet_ledger
- WHERE idempotency_key = @idempotency_key
-);
-
--- name: GetLedgerEntryByID :one
-SELECT * FROM wallet_ledger
-WHERE id = @id;
 
 -- =====================
 -- Activity Point Rules
@@ -183,3 +242,7 @@ WHERE user_id = $1
  AND amount > 0
  AND ($2::timestamptz IS NULL OR created_at >= $2)
  AND ($3::timestamptz IS NULL OR created_at <= $3);
+-- name: InsertWalletAuditLog :exec
+-- Canonical admin-action trail for monetary wallet mutations.
+INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata)
+VALUES (@actor_user_id, @action_type, @target_type, @target_id, @metadata::jsonb);

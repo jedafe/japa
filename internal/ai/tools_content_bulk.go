@@ -154,9 +154,9 @@ func createOneBulkItem(ctx context.Context, deps *ToolDeps, userID pgtype.UUID, 
 		authorID = userID
 	}
 
-	if authorID.Valid && authorID != userID && !permissionCanAssignAuthor(ctx, deps, userID) {
-		res.ErrorCode = "unauthorized_author"
-		res.Error = "setting author_id to another user requires content.assign_author permission"
+	if code, msg, failed := validateAuthorOverride(ctx, deps, userID, authorID); failed {
+		res.ErrorCode = code
+		res.Error = msg
 
 		return res, false
 	}

@@ -79,6 +79,14 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	q := r.URL.Query()
 	entityType := q.Get("entity_type")
 
+	// entity_type is whitelisted to the canonical feed types — anything else
+	// is a client bug (the detail page only offers types the source actually
+	// publishes) and would silently return an empty or records-only feed.
+	if entityType != "" && !isSourceItemEntityType(entityType) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_type is not a supported feed type")
+		return
+	}
+
 	sortMode := q.Get("sort")
 	if sortMode == "" {
 		sortMode = "latest"
@@ -242,6 +250,18 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// isSourceItemEntityType reports whether value is a canonical feed entity
+// type (sourceItemEntityTypes in sources_public.go).
+func isSourceItemEntityType(v string) bool {
+	for _, opt := range sourceItemEntityTypes {
+		if opt.Value == v {
+			return true
+		}
+	}
+
+	return false
+}
+
 // recordToSourceItem resolves a published intel_record to a UI-ready item.
 // Returns the item, a boolean indicating success, and an error if resolution
 // failed in an unexpected way.
@@ -256,7 +276,7 @@ func (h *Handlers) recordToSourceItem(ctx context.Context, rec gen.IntelRecord) 
 	case "remittance":
 		item, ok, err := h.remittanceRecordToSourceItem(ctx, rec)
 		return item, ok, err
-	case "news", "culture_lifestyle", "guide", "blog", "article":
+	case "news", "culture_lifestyle", "guide", "blog", "article", "grants":
 		item, ok, err := h.contentRecordToSourceItem(ctx, rec)
 		return item, ok, err
 	case "wiki_page":
@@ -319,6 +339,41 @@ func (h *Handlers) jobRecordToSourceItem(ctx context.Context, rec gen.IntelRecor
 	excerpt := ""
 	if job.Employer != nil {
 		excerpt = *job.Employer
+	}
+
+	// Surface the extended intel fields as compact chips — visa sponsorship
+	// and relocation assistance are the highest-signal facts for this
+	// audience (§63 jobs board spec lists them as badges).
+	var chips []string
+	if job.City != nil && *job.City != "" {
+		chips = append(chips, *job.City)
+	}
+	if job.Remote != nil {
+		switch *job.Remote {
+		case "true":
+			chips = append(chips, "Remote")
+		case "hybrid":
+			chips = append(chips, "Hybrid")
+		}
+	}
+	if job.VisaSponsorship != nil && *job.VisaSponsorship {
+		chips = append(chips, "Visa Sponsorship")
+	}
+	if job.RelocationAssistance != nil && *job.RelocationAssistance {
+		chips = append(chips, "Relocation")
+	}
+	if job.EducationRequired != nil && *job.EducationRequired != "" {
+		chips = append(chips, *job.EducationRequired)
+	}
+	if job.WorkSchedule != nil && *job.WorkSchedule != "" {
+		chips = append(chips, *job.WorkSchedule)
+	}
+
+	if len(chips) > 0 {
+		if excerpt != "" {
+			excerpt += " · "
+		}
+		excerpt += strings.Join(chips, " · ")
 	}
 
 	if job.Description != nil {

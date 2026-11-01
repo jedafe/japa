@@ -41,6 +41,7 @@ var sourceItemEntityTypes = []sourceOption{
 	{Value: "news", Label: "News"},
 	{Value: "culture_lifestyle", Label: "Culture & Lifestyle"},
 	{Value: "guide", Label: "Guide"},
+	{Value: "grants", Label: "Grants"},
 	{Value: "blog", Label: "Blog"},
 	{Value: "article", Label: "Article"},
 	{Value: "wiki_page", Label: "Wiki"},
@@ -944,6 +945,9 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req proposeSourceRequest
+	// probe_snapshot rides this body — cap at 4 MiB (probe maxBodyBytes) so a
+	// bloated snapshot cannot exhaust request memory.
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
