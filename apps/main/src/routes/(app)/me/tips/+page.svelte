@@ -32,6 +32,9 @@
 
 	function amount(tip: Tip): string {
 		if (tip.method === 'credits') return `${tip.credits_amount ?? 0} cr`;
+		// ADR-136: historical points tips carry their amount in
+		// tips_points_legacy — surfaced as points_amount by the API.
+		if (tip.method === 'points') return tip.points_amount != null ? `${tip.points_amount} pts` : '—';
 		if (tip.fiat_amount != null) return fiatDisplay(tip.fiat_amount, tip.fiat_currency ?? '');
 		return '—';
 	}

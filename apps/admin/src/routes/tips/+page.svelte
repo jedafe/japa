@@ -12,10 +12,12 @@
 	type TipRow = {
 		id: string;
 		sender_name?: string;
+		external_sender_name?: string | null;
 		recipient_type: string;
 		recipient_name?: string;
 		method: string;
 		credits_amount?: number;
+		points_amount?: number;
 		fiat_amount?: number | null;
 		fiat_currency?: string | null;
 		net_credits?: number;
@@ -24,12 +26,14 @@
 		created_at: string;
 	};
 
+	type TipDetail = TipRow & Record<string, unknown>;
+
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let stats = $state<{ total?: number; credits_settled?: number; fiat_minor_settled?: number; oc_count?: number; fiat_by_currency?: Record<string, number> } | null>(null);
 	let refunding = $state<string | null>(null);
 	let pageError = $state('');
 	let detailOpen = $state(false);
-	let detail = $state<Record<string, unknown> | null>(null);
+	let detail = $state<TipDetail | null>(null);
 	let detailLoading = $state(false);
 
 	onMount(async () => {
@@ -37,16 +41,24 @@
 		if (res.ok && res.data) stats = res.data as typeof stats;
 	});
 
-	function amount(r: TipRow): string {
+	// ISO-4217 minor-unit exponent — mirrors internal/tips currencyExponent.
+	function fiatExponent(currency: string | null | undefined): number {
+		if (['JPY', 'KRW', 'VND', 'XOF', 'XAF'].includes(currency ?? '')) return 0;
+		if (['BHD', 'JOD', 'KWD', 'OMR'].includes(currency ?? '')) return 3;
+		return 2;
+	}
+
+	function fiatDisplay(minor: number, currency: string | null | undefined): string {
+		const exp = fiatExponent(currency);
+		return `${(minor / Math.pow(10, exp)).toFixed(exp)} ${currency ?? ''}`.trim();
+	}
+
+	function amount(r: Pick<TipRow, 'method' | 'credits_amount' | 'points_amount' | 'fiat_amount' | 'fiat_currency'>): string {
 		if (r.method === 'credits') return `${r.credits_amount ?? 0} cr`;
-		if (r.fiat_amount != null) {
-			const exp = ['JPY', 'KRW', 'VND', 'XOF', 'XAF'].includes(r.fiat_currency ?? '')
-				? 0
-				: ['BHD', 'JOD', 'KWD', 'OMR'].includes(r.fiat_currency ?? '')
-					? 3
-					: 2;
-			return `${(r.fiat_amount / Math.pow(10, exp)).toFixed(exp)} ${r.fiat_currency ?? ''}`;
-		}
+		// ADR-136: historical points tips carry their amount in
+		// tips_points_legacy — surfaced as points_amount by the API.
+		if (r.method === 'points') return r.points_amount != null ? `${r.points_amount} pts` : '—';
+		if (r.fiat_amount != null) return fiatDisplay(r.fiat_amount, r.fiat_currency);
 		return '—';
 	}
 
@@ -79,8 +91,51 @@
 			detailOpen = false;
 			return;
 		}
-		const env = res.data as { data?: Record<string, unknown> };
-		detail = env?.data ?? (res.data as Record<string, unknown>);
+		const env = res.data as { data?: TipDetail };
+		detail = (env?.data ?? (res.data as TipDetail)) ?? null;
+	}
+
+	// Curated detail rows — sender/recipient resolve to usernames (and org or
+	// space names), never raw UUIDs. IDs of related objects stay visible for
+	// audit tracing.
+	function detailFields(d: TipDetail): { label: string; value: string }[] {
+		const str = (k: string) => {
+			const v = d[k];
+			return v === null || v === undefined || v === '' ? '' : String(v);
+		};
+		const sender = str('sender_name') || str('external_sender_name');
+		return [
+			{ label: t('tips.field.id', 'Tip ID'), value: str('id') },
+			{
+				label: t('tips.sender', 'Sender'),
+				value:
+					(sender || '—') +
+					(d.is_anonymous ? ` (${t('tips.anon_flag', 'anonymous')})` : '')
+			},
+			{ label: t('tips.recipient', 'Recipient'), value: str('recipient_name') || str('recipient_type') || '—' },
+			{ label: t('tips.recipient_type', 'Recipient type'), value: str('recipient_type') || '—' },
+			{ label: t('tips.method', 'Method'), value: str('method') || '—' },
+			{ label: t('tips.amount', 'Amount'), value: amount(d) },
+			{ label: t('tips.field.fee', 'Fee (credits)'), value: str('fee_amount') || '0' },
+			{ label: t('tips.field.net', 'Net credits'), value: str('net_credits') || '0' },
+			{ label: t('tips.status', 'Status'), value: str('status') || '—' },
+			{
+				label: t('tips.field.anonymous', 'Anonymous'),
+				value: d.is_anonymous ? t('common.yes', 'Yes') : t('common.no', 'No')
+			},
+			{ label: t('tips.field.message', 'Message'), value: str('message') || '—' },
+			{ label: t('tips.field.content', 'Content'), value: str('content_id') || '—' },
+			{ label: t('tips.field.payment', 'Payment'), value: str('payment_id') || '—' },
+			{ label: t('tips.field.oc', 'Open Collective contribution'), value: str('oc_contribution_id') || '—' },
+			{
+				label: t('tips.field.created', 'Created'),
+				value: str('created_at') ? new Date(str('created_at')).toLocaleString() : '—'
+			},
+			{
+				label: t('tips.field.updated', 'Updated'),
+				value: str('updated_at') ? new Date(str('updated_at')).toLocaleString() : '—'
+			}
+		];
 	}
 
 	const config: EntityPageConfig = {
@@ -100,7 +155,7 @@
 				// §125: admins always see the real sender — anonymity only
 				// masks public surfaces. The flag is shown as a marker.
 				render: (v: string, row: TipRow) =>
-					(v || '—') + (row.is_anonymous ? ` <em class="text-muted-foreground">(${t('tips.anon_flag', 'anonymous')})</em>` : '')
+					(v || row.external_sender_name || '—') + (row.is_anonymous ? ` <em class="text-muted-foreground">(${t('tips.anon_flag', 'anonymous')})</em>` : '')
 			},
 			{ key: 'recipient_name', label: t('tips.recipient', 'Recipient'), render: (v: string, row: TipRow) => v || row.recipient_type },
 			{
@@ -122,10 +177,10 @@
 				label: t('tips.status', 'Status'),
 				type: 'select',
 				options: [
-					{ value: 'pending', label: 'Pending' },
-					{ value: 'completed', label: 'Completed' },
-					{ value: 'failed', label: 'Failed' },
-					{ value: 'refunded', label: 'Refunded' }
+					{ value: 'pending', label: t('tips.status.pending', 'Pending') },
+					{ value: 'completed', label: t('tips.status.completed', 'Completed') },
+					{ value: 'failed', label: t('tips.status.failed', 'Failed') },
+					{ value: 'refunded', label: t('tips.status.refunded', 'Refunded') }
 				]
 			},
 			{
@@ -133,9 +188,10 @@
 				label: t('tips.recipient_type', 'Recipient type'),
 				type: 'select',
 				options: [
-					{ value: 'platform', label: 'Platform' },
-					{ value: 'user', label: 'User' },
-					{ value: 'organization', label: 'Organization' }
+					{ value: 'platform', label: t('tips.recipient.platform', 'Platform') },
+					{ value: 'user', label: t('tips.recipient.user', 'User') },
+					{ value: 'organization', label: t('tips.recipient.organization', 'Organization') },
+					{ value: 'space', label: t('tips.recipient.space', 'Space') }
 				]
 			},
 			{
@@ -143,12 +199,12 @@
 				label: t('tips.method', 'Method'),
 				type: 'select',
 				options: [
-					{ value: 'points', label: 'Points' },
-					{ value: 'credits', label: 'Credits' },
+					{ value: 'points', label: t('tips.method.points', 'Points') },
+					{ value: 'credits', label: t('tips.method.credits', 'Credits') },
 					{ value: 'stripe', label: 'Stripe' },
 					{ value: 'paystack', label: 'Paystack' },
 					{ value: 'nowpayments', label: 'NOWPayments' },
-					{ value: 'manual_transfer', label: 'Manual transfer' },
+					{ value: 'manual_transfer', label: t('tips.method.manual_transfer', 'Manual transfer') },
 					{ value: 'opencollective', label: 'Open Collective' }
 				]
 			}
@@ -188,12 +244,13 @@
 {/if}
 
 {#if stats}
-	<div class="mb-4 flex gap-6 rounded-lg border border-border px-4 py-3 text-sm">
+	<div class="mb-4 flex flex-wrap gap-6 rounded-lg border border-border px-4 py-3 text-sm">
 		<span><strong>{stats.total ?? 0}</strong> {t('tips.stats_30d', 'tips (30d)')}</span>
 		<span><strong>{stats.credits_settled ?? 0}</strong> {t('tips.stats_credits', 'credits settled')}</span>
-		<span><strong>{stats.fiat_minor_settled ?? 0}</strong> {t('tips.stats_fiat', 'fiat settled (minor)')}</span>
+		<!-- Fiat minors can't be summed across currencies — show each
+		     currency formatted at its own exponent. -->
 		{#each Object.entries(stats.fiat_by_currency ?? {}) as [cur, minor]}
-			<span class="text-muted-foreground">{cur}: <strong>{minor}</strong></span>
+			<span><strong>{fiatDisplay(minor, cur)}</strong> {t('tips.stats_fiat', 'fiat settled')}</span>
 		{/each}
 		<span><strong>{stats.oc_count ?? 0}</strong> {t('tips.stats_oc', 'via Open Collective')}</span>
 	</div>
@@ -206,10 +263,10 @@
 		<p class="text-sm text-muted-foreground">{t('common.loading', 'Loading…')}</p>
 	{:else if detail}
 		<dl class="space-y-2 text-sm">
-			{#each Object.entries(detail) as [k, v]}
+			{#each detailFields(detail) as f}
 				<div class="flex justify-between flex-wrap gap-4 border-b border-border/50 pb-1">
-					<dt class="shrink-0 font-medium text-muted-foreground">{k}</dt>
-					<dd class="min-w-0 truncate text-right">{v === null || v === undefined || v === '' ? '—' : String(v)}</dd>
+					<dt class="shrink-0 font-medium text-muted-foreground">{f.label}</dt>
+					<dd class="min-w-0 break-all text-right">{f.value}</dd>
 				</div>
 			{/each}
 		</dl>

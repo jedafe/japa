@@ -1,6 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, apiList } from '$lib/server/api';
+import type { RadarItem } from '$lib/types';
 import type {
 	SpaceDetail,
 	Space,
@@ -237,8 +238,22 @@ export const load: PageServerLoad = async (event) => {
 		]);
 	}
 
+	// Opportunities tab — geo-filtered intel radar feed for this space.
+	// Public for guests (same ?space_id= endpoint the /radar geo view uses);
+	// degrades to an empty list when the intel service is unavailable.
+	const opportunities =
+		event.url.searchParams.get('tab') === 'opportunities'
+			? (
+					await apiGet<{ items?: RadarItem[] }>(
+						ctx,
+						`/intel/radar?space_id=${space.id}&page_size=24`
+					).catch(() => null)
+				)?.items ?? []
+			: [];
+
 	return {
 		space,
+		opportunities,
 		seoIndexable: detail.seo_indexable ?? true,
 		rules: detail.rules,
 		keywords: detail.keywords ?? [],

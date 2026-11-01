@@ -65,10 +65,18 @@
 	// Entity-type filter pills (v2 design: "the detail page groups or filters
 	// by entity_type"). Options come from /sources/meta (Rule 16); labels fall
 	// back to the backend-provided label when no i18n key covers the type.
+	// Legacy i18n keys are plural/short forms of the entity type. Try the
+	// exact type key first so new types localize without touching this map.
+	const entityTypeAliases: Record<string, string> = {
+		job: 'jobs',
+		scholarship: 'scholarships',
+		wiki_page: 'wiki'
+	};
+
 	function entityTypePillLabel(value: string): string {
-		const key = `sources.items.${value === 'wiki_page' ? 'wiki' : value === 'scholarship' ? 'scholarships' : value === 'job' ? 'jobs' : value}`;
 		const backend = data.entityTypes?.find((e) => e.value === value)?.label ?? value.replace(/_/g, ' ');
-		return t(key, backend);
+		const alias = entityTypeAliases[value] ?? value;
+		return t(`sources.items.${value}`, t(`sources.items.${alias}`, backend));
 	}
 
 	const title = $derived(source.name);

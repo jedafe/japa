@@ -10,7 +10,8 @@
 		initiateUpload,
 		uploadToPresigned,
 		confirmMedia,
-		getMedia
+		getMedia,
+		updateMedia
 	} from '$lib/api/create';
 	import { listStockProviders, searchStock, importStockPhoto } from '$lib/api/stock';
 	import type { MediaAsset } from '$lib/types';
@@ -83,6 +84,12 @@
 			if (res.error || !res.data) throw new Error(res.error?.message ?? 'Import failed');
 			return res.data;
 		}
+	}}
+	onUpdate={async (id, updates) => {
+		// PATCH /media/{id} (media.edit_own) — enables the picker's
+		// alt-text/title editor on the selected library item.
+		const res = await updateMedia(id, updates);
+		if (res.error) throw new Error(res.error?.message ?? 'Update failed');
 	}}
 	onSelect={(item: MediaPickerItem) => onSelect(item as MediaAsset)}
 	{onClose}

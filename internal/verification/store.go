@@ -116,3 +116,44 @@ func (s *Store) Reopen(ctx context.Context, id pgtype.UUID) error {
 func (s *Store) GetFormBySlug(ctx context.Context, slug string) (gen.GetFormBySlugRow, error) {
 	return s.read.GetFormBySlug(ctx, slug)
 }
+
+// ---- verification_types taxonomy (001013) ----
+
+// ListTypes returns taxonomy rows; empty scope lists all scopes.
+func (s *Store) ListTypes(ctx context.Context, scope string) ([]gen.VerificationType, error) {
+	var sc *string
+	if scope != "" {
+		sc = &scope
+	}
+	return s.read.ListVerificationTypes(ctx, sc)
+}
+
+// ListActiveTypeValues returns the active value set for a scope.
+func (s *Store) ListActiveTypeValues(ctx context.Context, scope string) ([]string, error) {
+	return s.read.ListActiveVerificationTypeValues(ctx, scope)
+}
+
+// TypeExists reports whether value is an active type in scope.
+func (s *Store) TypeExists(ctx context.Context, scope, value string) (bool, error) {
+	return s.read.VerificationTypeExists(ctx, gen.VerificationTypeExistsParams{Scope: scope, Value: value})
+}
+
+// GetTypeByID returns one taxonomy row.
+func (s *Store) GetTypeByID(ctx context.Context, id pgtype.UUID) (gen.VerificationType, error) {
+	return s.read.GetVerificationTypeByID(ctx, id)
+}
+
+// CreateType inserts a taxonomy row.
+func (s *Store) CreateType(ctx context.Context, params gen.CreateVerificationTypeParams) (gen.VerificationType, error) {
+	return s.write.CreateVerificationType(ctx, params)
+}
+
+// UpdateType patches a taxonomy row.
+func (s *Store) UpdateType(ctx context.Context, params gen.UpdateVerificationTypeParams) (gen.VerificationType, error) {
+	return s.write.UpdateVerificationType(ctx, params)
+}
+
+// DeleteType removes a taxonomy row. Returns rows affected.
+func (s *Store) DeleteType(ctx context.Context, id pgtype.UUID) (int64, error) {
+	return s.write.DeleteVerificationType(ctx, id)
+}

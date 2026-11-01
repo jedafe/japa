@@ -6,12 +6,11 @@
 	// (RBAC: admin.settings for mutations, admin.settings.view for reads).
 	// This page uses the EntityPage scaffold with a formSnippet for the steps
 	// jsonb editor (a JsonValueEditor editing a JSON array as a repeater).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
 	import { api, onboardingAdminApi } from '$lib/api';
 	import { JsonValueEditor } from '@japaconnect/ui';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Trash2 } from 'lucide-svelte';
 
 	type OnboardingTemplate = {
 		id: string;
@@ -36,27 +35,6 @@
 		{ key: 'is_active', label: t('onboarding.templates.active', 'Active'), type: 'checkbox' }
 	];
 
-	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a
-	// bulk action handler completes.
-	let entityController = $state<EntityPageController | undefined>(undefined);
-	let pageError = $state('');
-	let bulkDeleting = $state(false);
-
-	async function bulkDelete(ids: Set<string>) {
-		const idArr = Array.from(ids);
-		if (idArr.length === 0) return;
-		if (bulkDeleting) return; // in-flight guard
-		bulkDeleting = true;
-		pageError = '';
-		try {
-			await Promise.all(idArr.map((id) => onboardingAdminApi.deleteTemplate(id)));
-		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('onboarding.templates.delete_error', 'Failed to delete templates');
-		} finally {
-			bulkDeleting = false;
-		}
-	}
-
 	// Serialize steps (array | string | null) into a pretty-printed JSON string
 	// for the JSON editor. Falls back to '[]' when empty.
 	function stepsToText(v: unknown): string {
@@ -76,16 +54,22 @@
 		}
 	}
 
-	// Parse the editor's JSON string back into an array for the API.
-	function parseSteps(text: string): unknown {
-		try {
-			const parsed = JSON.parse(text);
-			return Array.isArray(parsed) ? parsed : parsed;
-		} catch {
-			// If the user typed invalid JSON, send the raw string — the backend
-			// will marshal it again and surface a clear error if it's invalid.
-			return text;
+	// Normalize the steps field into an array for the API. The seeded edit
+	// value may already be an array (jsonb row untouched in the editor); the
+	// editor itself emits a JSON string. Throws on anything else —
+	// create/update catch this and surface a validation error instead of
+	// persisting malformed steps (a raw string would be stored as a JSON
+	// string, not an array).
+	function parseSteps(raw: unknown): unknown {
+		if (raw == null) return [];
+		if (Array.isArray(raw)) return raw;
+		if (typeof raw === 'string') {
+			const trimmed = raw.trim();
+			if (trimmed === '') return [];
+			const parsed: unknown = JSON.parse(trimmed);
+			if (Array.isArray(parsed)) return parsed;
 		}
+		throw new Error('steps_not_array');
 	}
 
 	const baseConfig: EntityPageConfig = {
@@ -112,17 +96,9 @@
 				]
 			}
 		],
-		bulkActions: [
-			{
-				label: t('common.deleteSelected', 'Delete Selected'),
-				icon: Trash2,
-				variant: 'destructive',
-				onclick: bulkDelete
-			}
-		],
 		fields,
-		load: async ({ page, pageSize, q, filter }) => {
-			const result = await api<OnboardingTemplate[]>('/admin/onboarding/templates?page_size=1000');
+		load: async ({ page, pageSize, q, sort, filter }) => {
+			const result = await api<OnboardingTemplate[]>('/admin/onboarding/templates');
 			if (result.ok) {
 				let data = (result.data as OnboardingTemplate[]) ?? [];
 				const query = (q ?? '').toLowerCase();
@@ -135,6 +111,23 @@
 				}
 				if (filter?.is_active) {
 					data = data.filter((row) => String(row.is_active) === filter.is_active);
+				}
+				// The list endpoint returns the full set unpaginated — sort
+				// client-side (sort arrives as "key:dir").
+				if (sort) {
+					const [key, dir] = sort.split(':');
+					const mul = dir === 'desc' ? -1 : 1;
+					data = [...data].sort((a, b) => {
+						const av = a[key as keyof OnboardingTemplate];
+						const bv = b[key as keyof OnboardingTemplate];
+						if (av == null && bv == null) return 0;
+						if (av == null) return 1;
+						if (bv == null) return -1;
+						if (typeof av === 'boolean' || typeof bv === 'boolean') {
+							return mul * (Number(av) - Number(bv));
+						}
+						return mul * String(av).localeCompare(String(bv));
+					});
 				}
 				const size = pageSize || 25;
 				const offset = (page || 0) * size;
@@ -149,19 +142,31 @@
 			throw new Error(result.error ?? t('onboarding.templates.load_error', 'Failed to load templates'));
 		},
 		create: async (body) => {
+			let steps: unknown;
+			try {
+				steps = parseSteps(body.steps);
+			} catch {
+				return { ok: false, error: t('onboarding.templates.steps_invalid', 'Steps must be a valid JSON array') };
+			}
 			const res = await onboardingAdminApi.createTemplate({
 				name: String(body.name ?? '').trim(),
 				description: String(body.description ?? '').trim() || '',
-				steps: parseSteps(String(body.steps ?? '[]')),
+				steps,
 				is_active: body.is_active === undefined ? true : !!body.is_active
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		update: async (id, body) => {
+			let steps: unknown;
+			try {
+				steps = parseSteps(body.steps);
+			} catch {
+				return { ok: false, error: t('onboarding.templates.steps_invalid', 'Steps must be a valid JSON array') };
+			}
 			const res = await onboardingAdminApi.updateTemplate(id, {
 				name: String(body.name ?? '').trim(),
 				description: String(body.description ?? '').trim() || '',
-				steps: parseSteps(String(body.steps ?? '[]')),
+				steps,
 				is_active: !!body.is_active
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -203,16 +208,7 @@
 	<title>{t('onboarding.templates.title', 'Onboarding Templates')} — {siteName()} Admin</title>
 </svelte:head>
 
-{#if pageError}
-	<div
-		class="mb-4 rounded-lg p-3 text-sm"
-		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
-	>
-		{pageError}
-	</div>
-{/if}
-
-<EntityPage {config} bind:controller={entityController} />
+<EntityPage {config} />
 
 <!-- ── Snippets ─────────────────────────────────────────────────────────── -->
 
@@ -281,7 +277,8 @@
 				id="tpl-active"
 				type="checkbox"
 				class="rounded"
-				bind:checked={value.is_active}
+				checked={value.is_active ?? !editing}
+				onchange={(e) => (value.is_active = e.currentTarget.checked)}
 			/>
 			<label for="tpl-active" class="text-sm" style="color: var(--color-foreground)">
 				{t('onboarding.templates.active', 'Active')}

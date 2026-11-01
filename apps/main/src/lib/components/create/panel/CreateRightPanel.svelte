@@ -144,7 +144,6 @@
 	<Tabs.Content value="guide" class="pt-2">
 		<CreateGuidePanel
 			{focusedField}
-			panelTitle={typeLabel}
 			{supportsSeries}
 			bind:series
 			{seriesId}

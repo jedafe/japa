@@ -1185,6 +1185,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Region:    cfg.S3Region,
 		Bucket:    cfg.S3Bucket,
 	})
+	verificationService.SetMediaResolver(&mediaURLResolver{media: mediaService}) // badge artwork URLs
 	// Pin the local-storage root (JC_MEDIA_ROOT) before any upload, scan, or
 	// transcode path resolves mediaRoot — an unset env keeps the default.
 	media.SetMediaRoot(cfg.MediaRoot)
@@ -5068,6 +5069,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Get("/admin/verification-requests", verificationHandlers.AdminListRequests)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Get("/admin/verification-requests/{id}/submission", adminHandlers.GetVerificationRequestSubmission)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).Patch("/admin/verification-requests/{id}", verificationHandlers.ReviewRequest)
+
+			// verification_types taxonomy CRUD (001013) — managed badge types
+			// + custom badge artwork per scope.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.types.manage")).Get("/admin/verification-types", verificationHandlers.AdminListTypes)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.types.manage")).Post("/admin/verification-types", verificationHandlers.AdminCreateType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.types.manage")).Patch("/admin/verification-types/{id}", verificationHandlers.AdminUpdateType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "verification.types.manage")).Delete("/admin/verification-types/{id}", verificationHandlers.AdminDeleteType)
 
 			// Payment Core routes (Section 17 — Payment Core)
 			// Payment initiation — idempotency middleware prevents duplicate charges

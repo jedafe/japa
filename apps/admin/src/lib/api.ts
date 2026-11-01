@@ -875,11 +875,10 @@ export const organisationsAdminApi = {
 	// owner-member insert).
 	reviewClaim: (claimId: string, body: { status: 'approved' | 'rejected'; resolution_note?: string }) =>
 		api(`/claim-ownership/${claimId}`, { method: 'PATCH', body }),
-	// §07 badge-type vocabulary (business|embassy|notable|immigration_lawyer|
-	// professional_body) — public route; the admin Verify modal consumes it
-	// (Rule 16).
-	verificationTypes: () =>
-		api<{ types: string[] }>('/verification-requests/types'),
+	// §07 badge-type vocabulary from the managed verification_types
+	// taxonomy (001013) — public route; ?scope= filters (Rule 16).
+	verificationTypes: (scope = 'organization') =>
+		api<{ types: VerificationTypeItem[] }>(`/verification-requests/types?scope=${scope}`),
 	// Paginated claims list — passes page/limit/q/sort/dir through; the
 	// backend returns {data, meta:{total,total_pages}} on this path.
 	pendingClaimsMeta: (params = "") =>
@@ -2369,6 +2368,10 @@ export const scholarshipAdminApi = {
 
 export const jobsAdminApi = {
 	list: (params?: string) => apiRaw<{ data: unknown[]; meta: { page: number; limit: number; total: number }; status_distribution: Record<string, number> }>(`/admin/jobs${params ? `?${params}` : ''}`),
+	// Canonical select options for job_listing_fields (job_type, location_type,
+	// salary_period, experience_level, job_function) — public seeded options
+	// shared with the finder filter UI (GET /jobs/field-options).
+	fieldOptions: () => api<Record<string, { value: string; label: string }[]>>('/jobs/field-options'),
 	update: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/jobs/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api<unknown>(`/admin/jobs/${id}`, { method: 'DELETE' }),
 	toggleFeature: (id: string) => api<unknown>(`/admin/jobs/${id}/feature`, { method: 'PATCH', body: {} }),
@@ -2736,6 +2739,32 @@ export const roadmapCategoriesAdminApi = {
 };
 
 // §07 Verification Requests — admin review queue + profile badge grant.
+export type VerificationTypeItem = {
+	id: string;
+	scope: 'organization' | 'user' | 'service_listing';
+	value: string;
+	label: string;
+	description?: string;
+	badge_media_id?: string;
+	badge_url?: string;
+	position: number;
+	is_active: boolean;
+	is_protected: boolean;
+};
+
+// Managed badge-type taxonomy CRUD (001013) — /admin/verification-types,
+// gated by verification.types.manage.
+export const verificationTypesAdminApi = {
+	list: (params = '') =>
+		api<VerificationTypeItem[]>(`/admin/verification-types${params ? `?${params}` : ''}`),
+	create: (body: { scope: string; value: string; label: string; description?: string; badge_media_id?: string; position?: number; is_active?: boolean }) =>
+		api<VerificationTypeItem>('/admin/verification-types', { method: 'POST', body }),
+	update: (id: string, body: { label?: string; description?: string; badge_media_id?: string | null; position?: number; is_active?: boolean }) =>
+		api<VerificationTypeItem>(`/admin/verification-types/${id}`, { method: 'PATCH', body }),
+	remove: (id: string) =>
+		api(`/admin/verification-types/${id}`, { method: 'DELETE' }),
+};
+
 export const verificationAdminApi = {
 	// apiRaw — the endpoint returns {data: rows, meta: {total,page_count,…}};
 	// callers need meta for server-side pagination.
@@ -2765,7 +2794,7 @@ export const verificationAdminApi = {
 	review: (id: string, body: { status: 'approved' | 'rejected'; resolution_note?: string }) =>
 		api<unknown>(`/admin/verification-requests/${id}`, { method: 'PATCH', body }),
 	// Backend returns {"data":{"types":[…]}}; api() unwraps body.data → {types}.
-	types: () => api<{ types: string[] }>('/verification-requests/types'),
+	types: (scope = '') => api<{ types: VerificationTypeItem[] }>(`/verification-requests/types${scope ? `?scope=${scope}` : ''}`),
 	verifyUser: (id: string, body: { verification_type?: string }) =>
 		api<unknown>(`/admin/users/${id}/verify`, { method: 'POST', body }),
 	unverifyUser: (id: string) =>

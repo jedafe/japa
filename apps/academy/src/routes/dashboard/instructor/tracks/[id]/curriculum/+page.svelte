@@ -5,7 +5,7 @@
 	// CSR ONLY: /academy/my/* endpoints.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { uploadLessonFile, listMyMedia, uploadMediaImage, stockApi } from '$lib/api/media';
+	import { uploadLessonFile, listMyMedia, uploadMediaImage, updateMediaImage, stockApi } from '$lib/api/media';
 	import { page } from '$app/state';
 	import { beforeNavigate } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -859,6 +859,7 @@
 		allowedType="image"
 		fetchItems={listMyMedia}
 		onUpload={uploadMediaImage}
+		onUpdate={updateMediaImage}
 		stock={stockApi}
 		onSelect={(item) => {
 			pendingImageInsert?.(item.url, item.alt_text ?? item.filename);

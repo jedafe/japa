@@ -109,6 +109,26 @@
 						{t('radar.deadline', 'Deadline')}: {deadlineLabel}
 					</span>
 				{/if}
+				<!-- Extended intel fields — backend sends field_values for
+				     job/scholarship items; render the high-signal ones as chips. -->
+				{#if item.field_values?.visa_sponsorship === 'true'}
+					<span class="rounded-full bg-[var(--color-success)]/15 px-2 py-0.5 text-[var(--color-success)]">{t('radar.visa_sponsorship', 'Visa sponsorship')}</span>
+				{/if}
+				{#if item.field_values?.relocation_assistance === 'true'}
+					<span class="rounded-full bg-[var(--color-success)]/15 px-2 py-0.5 text-[var(--color-success)]">{t('radar.relocation', 'Relocation')}</span>
+				{/if}
+				{#if item.field_values?.remote === 'true' || item.field_values?.remote === 'hybrid'}
+					<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{item.field_values.remote === 'hybrid' ? t('radar.hybrid', 'Hybrid') : t('radar.remote', 'Remote')}</span>
+				{/if}
+				{#if item.field_values?.renewable === 'true'}
+					<span class="rounded-full bg-[var(--color-success)]/15 px-2 py-0.5 text-[var(--color-success)]">{t('radar.renewable', 'Renewable')}</span>
+				{/if}
+				{#if item.field_values?.open_to_international_students === 'true'}
+					<span class="rounded-full bg-[var(--color-success)]/15 px-2 py-0.5 text-[var(--color-success)]">{t('radar.intl_students', 'Intl students')}</span>
+				{/if}
+				{#if item.field_values?.scholarship_type}
+					<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 capitalize">{item.field_values.scholarship_type.replace(/_/g, ' ')}</span>
+				{/if}
 			</div>
 		</div>
 

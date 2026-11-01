@@ -4893,6 +4893,20 @@ type VerificationRequest struct {
 	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
 }
 
+type VerificationType struct {
+	ID           pgtype.UUID        `json:"id"`
+	Scope        string             `json:"scope"`
+	Value        string             `json:"value"`
+	Label        string             `json:"label"`
+	Description  *string            `json:"description"`
+	BadgeMediaID pgtype.UUID        `json:"badge_media_id"`
+	Position     int32              `json:"position"`
+	IsActive     bool               `json:"is_active"`
+	IsProtected  bool               `json:"is_protected"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 type VideoChannelClaim struct {
 	ID                pgtype.UUID        `json:"id"`
 	ClaimantUserID    pgtype.UUID        `json:"claimant_user_id"`

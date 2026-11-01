@@ -121,11 +121,11 @@
 	let verificationTypeOptions = $state<{ value: string; label: string }[]>([]);
 	$effect(() => {
 		(async () => {
-			const res = await organisationsAdminApi.verificationTypes();
+			const res = await organisationsAdminApi.verificationTypes("organization");
 			if (res.ok && res.data?.types) {
 				verificationTypeOptions = [
 					{ value: "", label: t("organisations.verify_type_none", "No badge type") },
-					...res.data.types.map((ty: string) => ({ value: ty, label: ty.replace(/_/g, " ") }))
+					...res.data.types.map((ty: { value: string; label: string }) => ({ value: ty.value, label: ty.label }))
 				];
 			}
 		})();

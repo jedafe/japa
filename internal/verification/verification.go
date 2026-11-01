@@ -30,14 +30,41 @@ const (
 	MaxPageSize     int32 = 100
 )
 
+// Scopes on verification_types.scope (migration 001013). entity_type on a
+// request maps 1:1 to the scope of the same name; service listings are
+// verified out-of-band (no request flow) but share the taxonomy.
+const (
+	ScopeOrganization   = "organization"
+	ScopeUser           = "user"
+	ScopeServiceListing = "service_listing"
+)
+
 // VerificationTypes is the §07 badge-type vocabulary shared by organizations
-// and profiles. The requester may suggest one; the admin assigns the final
-// type at grant time.
+// and profiles. It seeds the verification_types table and is the compiled-in
+// fallback when the table is unavailable — the managed taxonomy is the
+// source of truth at runtime.
 var VerificationTypes = []string{
 	"business", "embassy", "notable", "immigration_lawyer", "professional_body",
 }
 
-// IsValidType reports whether s is a known verification badge type.
+// ServiceListingTypes is the §98 listing-verification vocabulary — same
+// fallback role for scope 'service_listing'.
+var ServiceListingTypes = []string{
+	"self", "community", "admin", "professional_body",
+}
+
+// FallbackTypeValues returns the compiled-in type vocabulary for a scope,
+// used when verification_types cannot be read.
+func FallbackTypeValues(scope string) []string {
+	if scope == ScopeServiceListing {
+		return ServiceListingTypes
+	}
+	return VerificationTypes
+}
+
+// IsValidType reports whether s is a known verification badge type
+// (compiled §07 vocabulary — static callers/tests only; runtime validation
+// goes through Service.IsValidTypeValue).
 func IsValidType(s string) bool {
 	for _, t := range VerificationTypes {
 		if s == t {

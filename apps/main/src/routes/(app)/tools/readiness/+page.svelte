@@ -1447,7 +1447,7 @@
 		border: 1px solid var(--r-line);
 		border-radius: 10px;
 		background: var(--r-card);
-		color: var(--r-ink);
+		color: #a1a1aa;
 		padding: 0.55rem 0.9rem;
 		font-size: 0.875rem;
 		font-weight: 500;

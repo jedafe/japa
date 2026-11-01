@@ -66,7 +66,7 @@
 					violationTypeOptions = cfg.violation_types.map((v) => ({ value: v.value, label: v.label }));
 				}
 				// §07 badge-type vocabulary for the verify picker (Rule 16).
-				verificationAdminApi.types().then((r) => { if (r.ok) verificationTypes = r.data.types ?? []; }).catch(() => {});
+				verificationAdminApi.types("user").then((r) => { if (r.ok) verificationTypes = r.data.types ?? []; }).catch(() => {});
 			}
 
 			let groupOptions: Array<{ value: string; label: string }> | undefined;
@@ -155,7 +155,7 @@
 	// §07 Verification Requests — badge grant with type picker.
 	let showVerifyModal = $state(false);
 	let verifyType = $state("");
-	let verificationTypes = $state<string[]>([]);
+	let verificationTypes = $state<import("$lib/api").VerificationTypeItem[]>([]);
 	let showHardDeleteConfirm = $state(false);
 	let showRestoreConfirm = $state(false);
 	let showDeleteConfirm = $state(false);
@@ -672,7 +672,7 @@
 			class="mt-1"
 			options={[
 				{ value: '', label: t("users.verify_type_none", "— none —") },
-				...verificationTypes.map((ty) => ({ value: ty, label: ty.replaceAll("_", " ") }))
+				...verificationTypes.map((ty) => ({ value: ty.value, label: ty.label }))
 			]}
 		/>
 	</label>

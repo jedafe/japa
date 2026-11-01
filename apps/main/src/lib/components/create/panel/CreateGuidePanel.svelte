@@ -27,9 +27,6 @@
 		oncoveruploaded: (asset: MediaAsset) => void;
 		oncoverremove: () => void;
 		onedit: () => void;
-		/** Active content type's label — the panel title reflects what is
-		 *  being composed ("Story", "Blog Post") instead of always "Guide". */
-		panelTitle?: string;
 		/** TypeEntry.supportsSeries — false hides the series selector (lists,
 		 *  stories, videos, comparisons, news don't join blog series). */
 		supportsSeries?: boolean;
@@ -54,7 +51,6 @@
 		oncoveruploaded,
 		oncoverremove,
 		onedit,
-		panelTitle,
 		supportsSeries = true
 	}: Props = $props();
 
@@ -65,7 +61,6 @@
 
 <div class="guide-panel">
 	<div class="guide-help">
-		<h3 class="guide-title">{panelTitle ?? t('create.guide.title')}</h3>
 		<p class="guide-text">{t(helpKey)}</p>
 	</div>
 
@@ -123,13 +118,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-	}
-
-	.guide-title {
-		margin: 0;
-		font-size: 0.875rem;
-		font-weight: 600;
-		color: var(--color-text);
 	}
 
 	.guide-text {

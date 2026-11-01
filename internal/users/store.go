@@ -925,3 +925,9 @@ func (s *Store) VerifyUser(ctx context.Context, id pgtype.UUID, vtype *string) e
 func (s *Store) UnverifyUser(ctx context.Context, id pgtype.UUID) error {
 	return s.write.UnverifyUser(ctx, id)
 }
+
+// VerificationTypeExists checks the managed verification_types taxonomy
+// (migration 001013) for an active (scope, value) pair.
+func (s *Store) VerificationTypeExists(ctx context.Context, scope, value string) (bool, error) {
+	return s.read.VerificationTypeExists(ctx, gen.VerificationTypeExistsParams{Scope: scope, Value: value})
+}

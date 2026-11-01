@@ -204,12 +204,15 @@ type UpdateJobListingInput struct {
 
 // AdminJobListing is a job listing row in the admin list view. It extends
 // JobResult with the content status, featured flag, org/author IDs, and
-// created_at — the fields an admin needs to moderate listings.
+// created_at — the fields an admin needs to moderate listings. Body is
+// included so the admin edit form seeds the existing text instead of
+// overwriting it with an empty value on save.
 type AdminJobListing struct {
 	ID             string            `json:"id"`
 	Title          string            `json:"title"`
 	Slug           string            `json:"slug"`
 	Summary        string            `json:"summary"`
+	Body           string            `json:"body"`
 	Status         string            `json:"status"`
 	IsFeatured     bool              `json:"is_featured"`
 	OrganizationID string            `json:"organization_id,omitempty"`
@@ -2123,7 +2126,7 @@ func (s *Service) AdminListApplications(ctx context.Context, status string, page
 // AdminListJobs returns all job_listing contents for a platform, with
 // pagination and optional status/q filters. This is the admin "all listings"
 // view per Section 63: GET /admin/jobs — all listings (admin).
-func (s *Service) AdminListJobs(ctx context.Context, status, q string, page, limit int) ([]AdminJobListing, int64, error) {
+func (s *Service) AdminListJobs(ctx context.Context, status, q, sort, sortDir string, page, limit int) ([]AdminJobListing, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -2169,12 +2172,28 @@ func (s *Service) AdminListJobs(ctx context.Context, status, q string, page, lim
 		return []AdminJobListing{}, 0, nil
 	}
 
+	// Sortable columns are allowlisted — never interpolate the raw sort
+	// param into SQL. Unknown sorts fall back to newest-first so an out-
+	// of-contract value degrades gracefully instead of 500ing.
+	orderClause := " ORDER BY c.created_at DESC"
+	if col, ok := map[string]string{
+		"title":      "c.title",
+		"status":     "c.status",
+		"created_at": "c.created_at",
+	}[sort]; ok {
+		dir := "ASC"
+		if sortDir == "desc" {
+			dir = "DESC"
+		}
+		orderClause = fmt.Sprintf(" ORDER BY %s %s, c.created_at DESC", col, dir)
+	}
+
 	// Data query — extract field values via JSON aggregation, joining
 	// custom_field_values → custom_fields to resolve the field key. The
 	// is_featured flag is read from the same join.
 	dataSQL := fmt.Sprintf(`
 		SELECT
-			c.id, c.title, c.slug, c.status,
+			c.id, c.title, c.slug, c.body, c.status,
 			COALESCE(
 				(SELECT cfv.value_bool
 				 FROM custom_field_values cfv
@@ -2203,9 +2222,9 @@ func (s *Service) AdminListJobs(ctx context.Context, status, q string, page, lim
 			c.published_at, c.created_at
 		FROM contents c
 		WHERE %s
-		ORDER BY c.created_at DESC
+		%s
 		LIMIT $%d OFFSET $%d`,
-		whereClause, argIdx, argIdx+1)
+		whereClause, orderClause, argIdx, argIdx+1)
 
 	args = append(args, limit, offset)
 
@@ -2222,6 +2241,7 @@ func (s *Service) AdminListJobs(ctx context.Context, status, q string, page, lim
 			id            pgtype.UUID
 			title         string
 			slug          string
+			bodyStr       string
 			contentStatus string
 			isFeatured    bool
 			orgID         pgtype.UUID
@@ -2231,7 +2251,7 @@ func (s *Service) AdminListJobs(ctx context.Context, status, q string, page, lim
 			createdAt     pgtype.Timestamptz
 		)
 
-		if err := rows.Scan(&id, &title, &slug, &contentStatus,
+		if err := rows.Scan(&id, &title, &slug, &bodyStr, &contentStatus,
 			&isFeatured, &orgID, &authorID, &fieldValues,
 			&publishedAt, &createdAt); err != nil {
 			return nil, 0, fmt.Errorf("jobs: admin list jobs: scan: %w", err)
@@ -2256,7 +2276,8 @@ func (s *Service) AdminListJobs(ctx context.Context, status, q string, page, lim
 			ID:          id.String(),
 			Title:       title,
 			Slug:        slug,
-			Summary:     "",
+			Summary:     deriveSummary(bodyStr),
+			Body:        bodyStr,
 			Status:      contentStatus,
 			IsFeatured:  isFeatured,
 			FieldValues: fvMap,
@@ -2282,12 +2303,14 @@ func (s *Service) AdminListJobs(ctx context.Context, status, q string, page, lim
 }
 
 // AdminJobStatusDistribution returns the count of job_listing contents grouped
-// by content status (published, archived, draft) for a platform.
+// by content status (published, archived, draft) for a platform. Soft-deleted
+// rows are excluded so the counts match the admin list's deleted_at filter.
 func (s *Service) AdminJobStatusDistribution(ctx context.Context) (map[string]int64, error) {
 	query := `
 		SELECT status, COUNT(*) AS count
 		FROM contents
 		WHERE content_type = 'job_listing'
+		  AND deleted_at IS NULL
 		GROUP BY status
 		ORDER BY count DESC`
 

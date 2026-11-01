@@ -2,8 +2,9 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Compass, Users, Building2, Hash, GraduationCap, FileText, Globe, BadgeCheck } from 'lucide-svelte';
+	import { Compass, Users, Building2, Hash, GraduationCap, FileText, Globe, BadgeCheck, Radar } from 'lucide-svelte';
 	import { EmptyState, UrlTabs, FollowButton, SpaceJoinButton, DirectoryCard, type UrlTab, type CardMetaItem } from '$lib/components/ui';
+	import RadarItemRow from '$lib/components/RadarItemRow.svelte';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 	import type { PublicOrgListItem, University } from '$lib/types';
@@ -21,7 +22,8 @@
 		{ value: 'tags', label: t('discover.tab.tags', 'tags') },
 		{ value: 'content', label: t('discover.tab.content', 'Content') },
 		{ value: 'universities', label: t('discover.tab.universities', 'universities') },
-		{ value: 'sources', label: t('discover.tab.sources', 'Sources') }
+		{ value: 'sources', label: t('discover.tab.sources', 'Sources') },
+		{ value: 'opportunities', label: t('discover.tab.opportunities', 'Opportunities') }
 	]);
 
 	const title = $derived(t('discover.title', 'Discover — {site}'));
@@ -317,6 +319,21 @@
 							{/snippet}
 						</DirectoryCard>
 					{/each}
+				</div>
+			{/if}
+		{:else if tab === 'opportunities'}
+			{#if data.opportunities.length === 0}
+				<EmptyState icon={Radar} title={t('discover.opportunities_empty', 'No opportunities yet')} />
+			{:else}
+				<div class="space-y-2">
+					{#each data.opportunities as item (item.id)}
+						<RadarItemRow {item} />
+					{/each}
+				</div>
+				<div class="mt-4 flex justify-center">
+					<a href="/radar" class="text-sm font-medium text-[var(--color-primary)] hover:underline">
+						{t('discover.opportunities_view_all', 'View all in Japa Opportunities')} →
+					</a>
 				</div>
 			{/if}
 		{/if}

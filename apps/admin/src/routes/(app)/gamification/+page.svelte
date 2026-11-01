@@ -13,17 +13,19 @@
 	import UserAutocomplete from '$lib/components/ui/UserAutocomplete.svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { Trophy, Target, Pencil, Award, Trash2, Eye } from 'lucide-svelte';
-	import { api, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
 
 	type Badge = {
 		id: string;
 		slug: string;
 		name: string;
 		description: string;
+		icon_media_id?: string;
 		trigger_type: string;
-		trigger_value: number;
-		trigger_activity_key: string;
+		trigger_value: number | null;
+		trigger_activity_key: string | null;
 		is_active: boolean;
 		is_system: boolean;
 		display_order: number;
@@ -35,10 +37,11 @@
 		slug: string;
 		name: string;
 		description: string;
+		image_media_id?: string;
 		activity_key: string;
 		target_count: number;
 		reward_points: number;
-		reward_badge_id: string;
+		reward_badge_id: string | null;
 		starts_at: string;
 		ends_at: string | null;
 		is_active: boolean;
@@ -61,8 +64,9 @@
 	let challengeController = $state<EntityPageController | undefined>(undefined);
 
 	// ── Page-local state for sub-flows ─────────────────────────────────────
-	let pageError = $state('');
+	let pageSuccess = $state('');
 	let acting = $state(false);
+	let successTimer: ReturnType<typeof setTimeout> | undefined;
 
 	// Award badge modal
 	let awardModalOpen = $state(false);
@@ -70,6 +74,27 @@
 	let awardBadgeName = $state('');
 	let awardUsername = $state('');
 	let awardTargetUserId = $state('');
+	let awardSelectedUsername = $state('');
+	let awardError = $state('');
+
+	// Delete confirmation error (shown inside the modal, not at page top).
+	let deleteError = $state('');
+
+	// Media pickers — badge icon (icon_media_id) and challenge image
+	// (image_media_id). The API stores only the media id; this map keeps the
+	// selected URL so the form can render a thumbnail.
+	let badgeIconPickerOpen = $state(false);
+	let challengeImagePickerOpen = $state(false);
+	let mediaUrlById = $state<Record<string, string>>({});
+	// Set by the form's "Choose" button so the picker writes the selected
+	// media into the correct form field.
+	let pendingMediaSelect = $state<((m: { id: string; url: string; filename: string }) => void) | undefined>(undefined);
+
+	function flashSuccess(msg: string) {
+		pageSuccess = msg;
+		if (successTimer) clearTimeout(successTimer);
+		successTimer = setTimeout(() => (pageSuccess = ''), 5000);
+	}
 
 	// Delete confirmation (shared for badges + challenges)
 	let showDeleteConfirm = $state(false);
@@ -77,50 +102,183 @@
 
 	// The admin list endpoints paginate server-side (default limit 50) —
 	// page through until the full set is collected so nothing is silently
-	// dropped from the UI (PTS-005).
+	// dropped from the UI (PTS-005). `apiRaw` keeps the top-level
+	// `pagination` block that `api()` strips from the envelope.
 	async function fetchAll<T>(base: string): Promise<T[]> {
 		const pageSize = 200;
 		const out: T[] = [];
 		for (let offset = 0; ; offset += pageSize) {
-			const res = await api<T[]>(`${base}?limit=${pageSize}&offset=${offset}`);
+			const res = await apiRaw<{ data?: T[]; pagination?: { total?: number } }>(
+				`${base}?limit=${pageSize}&offset=${offset}`
+			);
 			if (!res.ok) throw new Error(res.error ?? 'request failed');
-			const page = res.data ?? [];
+			const page = res.data?.data ?? [];
 			out.push(...page);
-			const total = (res as { pagination?: { total?: number } }).pagination?.total;
+			const total = res.data?.pagination?.total;
 			if (page.length < pageSize || (total !== undefined && out.length >= total)) break;
 		}
 		return out;
 	}
 
+	// ── Payload helpers ──────────────────────────────────────────────────
+
+	// toRFC3339 converts a native date-input value ('YYYY-MM-DD') into the
+	// RFC 3339 timestamp the backend expects; values already in RFC 3339
+	// form (an untouched seeded field) pass through. `endOfDay` maps to
+	// 23:59:59Z so an end date is inclusive.
+	function toRFC3339(v: unknown, endOfDay = false): string | undefined {
+		if (typeof v !== 'string' || !v) return undefined;
+		if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return `${v}T${endOfDay ? '23:59:59' : '00:00:00'}Z`;
+		return v;
+	}
+
+	// toDateInput renders a stored RFC 3339 value as 'YYYY-MM-DD' for a
+	// native <input type="date">.
+	function toDateInput(v: unknown): string {
+		return typeof v === 'string' && v.length >= 10 ? v.slice(0, 10) : '';
+	}
+
+	// intOr normalizes a form value to an integer — empty inputs are
+	// dropped so the backend treats them as unset rather than failing to
+	// decode a "" into *int32.
+	function intOr(v: unknown): number | undefined {
+		if (v === '' || v === null || v === undefined) return undefined;
+		const n = Number(v);
+		return Number.isFinite(n) ? Math.trunc(n) : undefined;
+	}
+
+	// applySort orders a client-side page set by the DataTable sort param
+	// ('key:dir'). Unknown keys and equal values fall back to the default
+	// comparator so ordering stays stable.
+	function applySort<T>(
+		rows: T[],
+		sort: string,
+		accessors: Record<string, (r: T) => string | number | null | undefined>,
+		fallback: (a: T, b: T) => number
+	) {
+		const [key, dir] = (sort || '').split(':');
+		const get = key ? accessors[key] : undefined;
+		const mul = dir === 'desc' ? -1 : 1;
+		rows.sort((a, b) => {
+			if (get) {
+				const av = get(a);
+				const bv = get(b);
+				if (av == null && bv == null) return fallback(a, b);
+				if (av == null) return 1;
+				if (bv == null) return -1;
+				const cmp =
+					typeof av === 'number' && typeof bv === 'number'
+						? av - bv
+						: String(av).localeCompare(String(bv));
+				if (cmp !== 0) return cmp * mul;
+			}
+			return fallback(a, b);
+		});
+	}
+
+	// ── Client-side validation (mirrors §64 service constraints) ─────────
+
+	function validateBadgeTrigger(
+		triggerType: string | undefined,
+		triggerValue: number | undefined,
+		activityKey: string | undefined
+	): string | null {
+		if (!triggerType) return t('gamification.err_trigger_required', 'Trigger type is required');
+		if (triggerType === 'lifetime_points' || triggerType === 'activity_count') {
+			if (!triggerValue || triggerValue <= 0)
+				return t('gamification.err_trigger_value', 'A positive trigger value is required for this trigger type');
+		}
+		if (triggerType === 'activity_count' && !activityKey?.trim())
+			return t('gamification.err_activity_key', 'An activity key is required for activity_count badges');
+		return null;
+	}
+
+	function validateBadgeBody(body: Record<string, any>): string | null {
+		if (!body.name?.trim()) return t('gamification.err_name_required', 'Name is required');
+		if (!body.slug?.trim()) return t('gamification.err_slug_required', 'Slug is required');
+		return validateBadgeTrigger(body.trigger_type, intOr(body.trigger_value), body.trigger_activity_key);
+	}
+
+	function validateChallengeBody(body: Record<string, any>): string | null {
+		if (!body.name?.trim()) return t('gamification.err_name_required', 'Name is required');
+		if (!body.slug?.trim()) return t('gamification.err_slug_required', 'Slug is required');
+		if (!body.activity_key?.trim())
+			return t('gamification.err_activity_key_required', 'Activity key is required');
+		const target = intOr(body.target_count);
+		if (!target || target <= 0)
+			return t('gamification.err_target', 'Target count must be a positive number');
+		if (!toRFC3339(body.starts_at))
+			return t('gamification.err_starts', 'Start date is required');
+		const startsAt = toRFC3339(body.starts_at);
+		const endsAt = toRFC3339(body.ends_at, true);
+		if (startsAt && endsAt && endsAt < startsAt)
+			return t('gamification.err_ends_before_starts', 'End date must be after the start date');
+		return null;
+	}
+
+	// Shared single-flight list fetchers — the activity-key aggregation
+	// effect and both EntityPage `load` callbacks share the same cached
+	// promise instead of issuing duplicate requests. Mutations call
+	// invalidateLists() so the next reload refetches.
+	let badgesCache: Promise<Badge[]> | null = null;
+	let challengesCache: Promise<Challenge[]> | null = null;
+	const badgesList = () =>
+		(badgesCache ??= fetchAll<Badge>('/admin/gamification/badges').catch((e) => {
+			badgesCache = null;
+			throw e;
+		}));
+	const challengesList = () =>
+		(challengesCache ??= fetchAll<Challenge>('/admin/gamification/challenges').catch((e) => {
+			challengesCache = null;
+			throw e;
+		}));
+
 	// Aggregate all known activity keys from already-loaded badges and
 	// challenges so the autocomplete can suggest them without an extra API
 	// call. The ActivityKeyAutocomplete also fetches wallet rules internally.
 	let knownActivityKeys = $state<string[]>([]);
-	$effect(() => {
-		(async () => {
-			try {
-				const [badgesRes, challengesRes] = await Promise.all([
-					fetchAll<Badge>('/admin/gamification/badges'),
-					fetchAll<Challenge>('/admin/gamification/challenges')
-				]);
-				const set = new Set<string>();
-				for (const b of badgesRes) {
-					if (b.trigger_activity_key) set.add(b.trigger_activity_key);
-				}
-				for (const c of challengesRes) {
-					if (c.activity_key) set.add(c.activity_key);
-				}
-				knownActivityKeys = Array.from(set);
-				badgeOptions = badgesRes.map((b) => ({ value: b.id, label: b.name }));
-			} catch {
-				// non-fatal — autocomplete still has wallet-rule suggestions
-			}
-		})();
-	});
 
 	// Reward-badge options for the challenge form (reward_badge_id was
 	// previously unsettable from the UI — PTS-012).
 	let badgeOptions = $state<Array<{ value: string; label: string }>>([]);
+
+	async function refreshMeta() {
+		try {
+			const [badgesRes, challengesRes] = await Promise.all([badgesList(), challengesList()]);
+			const set = new Set<string>();
+			for (const b of badgesRes) {
+				if (b.trigger_activity_key) set.add(b.trigger_activity_key);
+			}
+			for (const c of challengesRes) {
+				if (c.activity_key) set.add(c.activity_key);
+			}
+			knownActivityKeys = Array.from(set);
+			badgeOptions = badgesRes.map((b) => ({ value: b.id, label: b.name }));
+		} catch {
+			// non-fatal — autocomplete still has wallet-rule suggestions
+		}
+	}
+
+	function invalidateLists() {
+		badgesCache = null;
+		challengesCache = null;
+		void refreshMeta();
+	}
+
+	$effect(() => {
+		void refreshMeta();
+	});
+
+	// primeMediaUrl resolves an existing media id to its file URL so the
+	// icon/image thumbnail shows on edit (GET /media/{id}).
+	async function primeMediaUrl(id?: string) {
+		if (!id || mediaUrlById[id]) return;
+		const res = await apiRaw<{ data?: { url?: string; file_url?: string; cdn_url?: string } }>(`/media/${id}`);
+		if (!res.ok) return;
+		const m = res.data?.data;
+		const url = m?.url ?? m?.file_url ?? m?.cdn_url;
+		if (url) mediaUrlById = { ...mediaUrlById, [id]: url };
+	}
 
 	// Trigger type options matching the backend CHECK constraint (§64 schema).
 	let triggerTypeOptions = $state<CatalogOption[]>([
@@ -140,12 +298,13 @@
 
 	const badgeFields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('gamification.name', 'Name'), type: 'text', required: true },
-		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text' },
+		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text', required: true, readonlyInEdit: true },
 		{ key: 'description', label: t('gamification.description', 'Description'), type: 'textarea' },
-		{ key: 'trigger_type', label: t('gamification.trigger', 'Trigger Type'), type: 'select', options: triggerTypeOptions },
+		{ key: 'icon_media_id', label: t('gamification.icon', 'Icon'), type: 'text' },
+		{ key: 'trigger_type', label: t('gamification.trigger', 'Trigger Type'), type: 'select', options: triggerTypeOptions, required: true },
 		{ key: 'trigger_value', label: t('gamification.trigger_value', 'Trigger Value'), type: 'number' },
 		{ key: 'trigger_activity_key', label: t('gamification.activity_key', 'Activity Key'), type: 'text' },
-		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox' },
+		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox', defaultValue: true },
 		{ key: 'display_order', label: t('gamification.display_order', 'Display Order'), type: 'number' }
 	]);
 
@@ -154,8 +313,8 @@
 			key: 'is_active',
 			label: t('gamification.active', 'Active'),
 			options: [
-				{ value: 'true', label: 'Active' },
-				{ value: 'false', label: 'Inactive' }
+				{ value: 'true', label: t('common.active', 'Active') },
+				{ value: 'false', label: t('common.inactive', 'Inactive') }
 			]
 		},
 		{
@@ -180,7 +339,10 @@
 		{
 			label: t('common.edit', 'Edit'),
 			icon: Pencil,
-			onclick: (row: Badge, ctx) => ctx?.openEdit(row),
+			onclick: (row: Badge, ctx) => {
+				void primeMediaUrl(row.icon_media_id);
+				ctx?.openEdit(row);
+			},
 			show: (row: Badge) => canManageBadges && !row.is_system
 		},
 		{
@@ -237,8 +399,8 @@
 		filters: badgeFilters,
 		actions: badgeActions,
 		fields: badgeFields,
-		load: async ({ page, pageSize, q, filter }) => {
-			let data = await fetchAll<Badge>('/admin/gamification/badges').catch(() => {
+		load: async ({ page, pageSize, q, filter, sort }) => {
+			let data = await badgesList().catch(() => {
 				throw new Error(t('gamification.load_error', 'Failed to load gamification data'));
 			});
 			// Client-side search
@@ -257,23 +419,63 @@
 			if (filter.trigger_type) {
 				data = data.filter((b) => b.trigger_type === filter.trigger_type);
 			}
-			// Client-side sort
-			data.sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name));
+			// Client-side sort — honours the column the admin clicked.
+			applySort(data, sort, {
+				name: (b) => b.name,
+				slug: (b) => b.slug,
+				trigger_type: (b) => b.trigger_type,
+				is_active: (b) => (b.is_active ? 1 : 0),
+				is_system: (b) => (b.is_system ? 1 : 0)
+			}, (a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name));
 			const total = data.length;
 			const totalPages = Math.max(1, Math.ceil(total / pageSize));
 			const start = page * pageSize;
 			return { data: data.slice(start, start + pageSize), total, totalPages };
 		},
 		create: async (body) => {
-			const res = await api('/admin/gamification/badges', { method: 'POST', body });
+			const err = validateBadgeBody(body);
+			if (err) return { ok: false, error: err };
+			const res = await api('/admin/gamification/badges', {
+				method: 'POST',
+				body: {
+					name: body.name.trim(),
+					slug: body.slug.trim(),
+					description: body.description ?? '',
+					icon_media_id: body.icon_media_id || undefined,
+					trigger_type: body.trigger_type,
+					trigger_value: intOr(body.trigger_value),
+					trigger_activity_key: body.trigger_activity_key?.trim() || undefined,
+					is_active: typeof body.is_active === 'boolean' ? body.is_active : undefined,
+					display_order: intOr(body.display_order)
+				}
+			});
+			if (res.ok) invalidateLists();
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
-		update: async (id, body) => {
-			const res = await api(`/admin/gamification/badges/${id}`, { method: 'PATCH', body });
+		update: async (id, body, row) => {
+			if (!body.name?.trim()) return { ok: false, error: t('gamification.err_name_required', 'Name is required') };
+			const err = validateBadgeTrigger(body.trigger_type, intOr(body.trigger_value), body.trigger_activity_key);
+			if (err) return { ok: false, error: err };
+			const payload: Record<string, unknown> = {
+				name: body.name.trim(),
+				description: body.description ?? '',
+				trigger_type: body.trigger_type || undefined,
+				trigger_value: intOr(body.trigger_value),
+				trigger_activity_key: body.trigger_activity_key?.trim() || undefined,
+				is_active: typeof body.is_active === 'boolean' ? body.is_active : undefined,
+				display_order: intOr(body.display_order)
+			};
+			if (body.icon_media_id) payload.icon_media_id = body.icon_media_id;
+			else if (row?.icon_media_id) payload.clear_icon_media_id = true;
+			if (payload.trigger_value === undefined && row?.trigger_value != null) payload.clear_trigger_value = true;
+			if (payload.trigger_activity_key === undefined && row?.trigger_activity_key) payload.clear_trigger_activity_key = true;
+			const res = await api(`/admin/gamification/badges/${id}`, { method: 'PATCH', body: payload });
+			if (res.ok) invalidateLists();
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		remove: async (id) => {
 			const res = await api(`/admin/gamification/badges/${id}`, { method: 'DELETE' });
+			if (res.ok) invalidateLists();
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		viewSnippet: BadgeView,
@@ -284,15 +486,16 @@
 
 	const challengeFields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('gamification.name', 'Name'), type: 'text', required: true },
-		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text' },
+		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text', required: true, readonlyInEdit: true },
 		{ key: 'description', label: t('gamification.description', 'Description'), type: 'textarea' },
-		{ key: 'activity_key', label: t('gamification.activity', 'Activity Key'), type: 'text' },
-		{ key: 'target_count', label: t('gamification.target', 'Target Count'), type: 'number' },
+		{ key: 'image_media_id', label: t('gamification.image', 'Image'), type: 'text' },
+		{ key: 'activity_key', label: t('gamification.activity', 'Activity Key'), type: 'text', required: true },
+		{ key: 'target_count', label: t('gamification.target', 'Target Count'), type: 'number', required: true },
 		{ key: 'reward_points', label: t('gamification.reward', 'Reward Points'), type: 'number' },
 		{ key: 'reward_badge_id', label: t('gamification.reward_badge', 'Reward Badge'), type: 'select', options: badgeOptions },
-		{ key: 'starts_at', label: t('gamification.starts', 'Start Date'), type: 'date' },
+		{ key: 'starts_at', label: t('gamification.starts', 'Start Date'), type: 'date', required: true },
 		{ key: 'ends_at', label: t('gamification.ends', 'End Date'), type: 'date' },
-		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox' }
+		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox', defaultValue: true }
 	]);
 
 	const challengeFilters = $derived<FilterDef[]>([
@@ -300,8 +503,8 @@
 			key: 'is_active',
 			label: t('gamification.active', 'Active'),
 			options: [
-				{ value: 'true', label: 'Active' },
-				{ value: 'false', label: 'Inactive' }
+				{ value: 'true', label: t('common.active', 'Active') },
+				{ value: 'false', label: t('common.inactive', 'Inactive') }
 			]
 		}
 	]);
@@ -315,7 +518,10 @@
 		{
 			label: t('common.edit', 'Edit'),
 			icon: Pencil,
-			onclick: (row: Challenge, ctx) => ctx?.openEdit(row),
+			onclick: (row: Challenge, ctx) => {
+				void primeMediaUrl(row.image_media_id);
+				ctx?.openEdit(row);
+			},
 			show: () => canManageChallenges
 		},
 		{
@@ -372,14 +578,14 @@
 				key: 'ends_at',
 				label: t('gamification.ends', 'Ends'),
 				sortable: true,
-				render: (value: string | null) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString() : '—'}</span>`
+				render: (value: string | null) => `<span class="text-muted-foreground text-xs">${value ? new Date(value).toLocaleDateString(undefined, { timeZone: 'UTC' }) : '—'}</span>`
 			}
 		],
 		filters: challengeFilters,
 		actions: challengeActions,
 		fields: challengeFields,
-		load: async ({ page, pageSize, q, filter }) => {
-			let data = await fetchAll<Challenge>('/admin/gamification/challenges').catch(() => {
+		load: async ({ page, pageSize, q, filter, sort }) => {
+			let data = await challengesList().catch(() => {
 				throw new Error(t('gamification.load_error', 'Failed to load gamification data'));
 			});
 			// Client-side search
@@ -396,25 +602,73 @@
 				const active = filter.is_active === 'true';
 				data = data.filter((c) => c.is_active === active);
 			}
-			// Client-side sort
-			data.sort((a, b) => a.name.localeCompare(b.name));
+			// Client-side sort — honours the column the admin clicked.
+			applySort(data, sort, {
+				name: (c) => c.name,
+				activity_key: (c) => c.activity_key,
+				target_count: (c) => c.target_count,
+				reward_points: (c) => c.reward_points,
+				is_active: (c) => (c.is_active ? 1 : 0),
+				ends_at: (c) => c.ends_at
+			}, (a, b) => a.name.localeCompare(b.name));
 			const total = data.length;
 			const totalPages = Math.max(1, Math.ceil(total / pageSize));
 			const start = page * pageSize;
 			return { data: data.slice(start, start + pageSize), total, totalPages };
 		},
 		create: async (body) => {
-			const payload = { ...body, ends_at: body.ends_at || undefined };
-			const res = await api('/admin/gamification/challenges', { method: 'POST', body: payload });
+			const err = validateChallengeBody(body);
+			if (err) return { ok: false, error: err };
+			const res = await api('/admin/gamification/challenges', {
+				method: 'POST',
+				body: {
+					name: body.name.trim(),
+					slug: body.slug.trim(),
+					description: body.description ?? '',
+					image_media_id: body.image_media_id || undefined,
+					activity_key: body.activity_key.trim(),
+					target_count: intOr(body.target_count),
+					reward_points: intOr(body.reward_points) ?? 0,
+					reward_badge_id: body.reward_badge_id || undefined,
+					starts_at: toRFC3339(body.starts_at),
+					ends_at: toRFC3339(body.ends_at, true),
+					is_active: typeof body.is_active === 'boolean' ? body.is_active : undefined
+				}
+			});
+			if (res.ok) invalidateLists();
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
-		update: async (id, body) => {
-			const payload = { ...body, ends_at: body.ends_at || undefined };
+		update: async (id, body, row) => {
+			if (!body.name?.trim()) return { ok: false, error: t('gamification.err_name_required', 'Name is required') };
+			const target = intOr(body.target_count);
+			if (target !== undefined && target <= 0)
+				return { ok: false, error: t('gamification.err_target', 'Target count must be a positive number') };
+			const startsAt = toRFC3339(body.starts_at);
+			const endsAt = toRFC3339(body.ends_at, true);
+			if (startsAt && endsAt && endsAt < startsAt)
+				return { ok: false, error: t('gamification.err_ends_before_starts', 'End date must be after the start date') };
+			const payload: Record<string, unknown> = {
+				name: body.name.trim(),
+				description: body.description ?? '',
+				activity_key: body.activity_key?.trim() || undefined,
+				target_count: target,
+				reward_points: intOr(body.reward_points),
+				reward_badge_id: body.reward_badge_id || undefined,
+				starts_at: startsAt,
+				ends_at: endsAt,
+				is_active: typeof body.is_active === 'boolean' ? body.is_active : undefined
+			};
+			if (body.image_media_id) payload.image_media_id = body.image_media_id;
+			else if (row?.image_media_id) payload.clear_image_media_id = true;
+			if (!payload.reward_badge_id && row?.reward_badge_id) payload.clear_reward_badge_id = true;
+			if (!payload.ends_at && row?.ends_at) payload.clear_ends_at = true;
 			const res = await api(`/admin/gamification/challenges/${id}`, { method: 'PATCH', body: payload });
+			if (res.ok) invalidateLists();
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		remove: async (id) => {
 			const res = await api(`/admin/gamification/challenges/${id}`, { method: 'DELETE' });
+			if (res.ok) invalidateLists();
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		viewSnippet: ChallengeView,
@@ -428,27 +682,33 @@
 		awardBadgeName = badge.name;
 		awardUsername = '';
 		awardTargetUserId = '';
+		awardSelectedUsername = '';
+		awardError = '';
 		awardModalOpen = true;
 	}
 
 	async function awardBadge() {
-		if (!awardTargetUserId) {
-			pageError = t('gamification.select_user', 'Please select a user from the search results.');
+		awardError = '';
+		// The text must still match the selected suggestion — typing a new
+		// name after picking one must not award the stale id.
+		if (!awardTargetUserId || awardUsername !== awardSelectedUsername) {
+			awardError = t('gamification.select_user', 'Please select a user from the search results.');
 			return;
 		}
 		acting = true;
-		pageError = '';
 		try {
 			const result = await api(`/admin/gamification/badges/${awardBadgeId}/award`, { method: 'POST', body: { user_id: awardTargetUserId } });
 			if (result.ok) {
 				awardModalOpen = false;
 				awardUsername = '';
 				awardTargetUserId = '';
+				awardSelectedUsername = '';
+				flashSuccess(t('gamification.award_success', 'Badge awarded'));
 			} else {
-				pageError = result.error;
+				awardError = result.error ?? t('gamification.award_error', 'Failed to award badge');
 			}
 		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('gamification.award_error', 'Failed to award badge');
+			awardError = e instanceof Error ? e.message : t('gamification.award_error', 'Failed to award badge');
 		} finally {
 			acting = false;
 		}
@@ -456,13 +716,14 @@
 
 	function promptDelete(kind: 'badge' | 'challenge', id: string, name: string) {
 		deleteTarget = { kind, id, name };
+		deleteError = '';
 		showDeleteConfirm = true;
 	}
 
 	async function confirmDelete() {
 		if (!deleteTarget) return;
 		acting = true;
-		pageError = '';
+		deleteError = '';
 		const kind = deleteTarget.kind;
 		try {
 			const endpoint = kind === 'badge'
@@ -472,6 +733,8 @@
 			if (result.ok) {
 				showDeleteConfirm = false;
 				deleteTarget = null;
+				invalidateLists();
+				flashSuccess(t('gamification.delete_success', 'Deleted'));
 				// Reload the appropriate tab's EntityPage
 				if (kind === 'badge') {
 					badgeController?.reload();
@@ -479,10 +742,10 @@
 					challengeController?.reload();
 				}
 			} else {
-				pageError = result.error;
+				deleteError = result.error ?? t('common.error', 'Failed to delete');
 			}
 		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete');
+			deleteError = e instanceof Error ? e.message : t('common.error', 'Failed to delete');
 		} finally {
 			acting = false;
 		}
@@ -493,12 +756,12 @@
 	<title>{t('gamification.title', 'Gamification')} — {siteName()} Admin</title>
 </svelte:head>
 
-{#if pageError}
+{#if pageSuccess}
 	<div
 		class="mb-4 rounded-lg border p-3 text-sm"
-		style="border-color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+		style="border-color: var(--color-success); background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)"
 	>
-		{pageError}
+		{pageSuccess}
 	</div>
 {/if}
 
@@ -521,10 +784,16 @@
 			id="award-username"
 			bind:value={awardUsername}
 			placeholder={t('gamification.search_user', 'Search by username...')}
-			onSelectUser={(u) => (awardTargetUserId = u.id)}
+			onSelectUser={(u) => {
+				awardTargetUserId = u.id;
+				awardSelectedUsername = u.username;
+			}}
 		/>
-		{#if awardTargetUserId}
+		{#if awardTargetUserId && awardUsername === awardSelectedUsername}
 			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('gamification.selected_user', 'Selected')}: {awardUsername} ({awardTargetUserId.slice(0, 8)}...)</p>
+		{/if}
+		{#if awardError}
+			<p class="mt-2 text-sm" style="color: var(--color-danger)">{awardError}</p>
 		{/if}
 	</div>
 	<div class="mt-6 flex justify-end gap-2">
@@ -543,6 +812,9 @@
 			<strong>{deleteTarget.name}</strong>?
 			{t('common.cannot_undo', 'This action cannot be undone.')}
 		</p>
+	{/if}
+	{#if deleteError}
+		<p class="mt-2 text-sm" style="color: var(--color-danger)">{deleteError}</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => (showDeleteConfirm = false)} disabled={acting}>
@@ -590,11 +862,11 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.system', 'System')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.is_system ? 'System' : 'Custom'}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.is_system ? t('common.system', 'System') : t('common.custom', 'Custom')}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.active', 'Active')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.is_active ? 'Active' : 'Inactive'}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.is_active ? t('common.active', 'Active') : t('common.inactive', 'Inactive')}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.created', 'Created')}</p>
@@ -632,16 +904,20 @@
 				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.reward_points}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.starts', 'Starts')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.starts_at ? new Date(row.starts_at).toLocaleDateString() : '—'}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.reward_badge', 'Reward Badge')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.reward_badge_id ? (badgeOptions.find((o) => o.value === row.reward_badge_id)?.label ?? row.reward_badge_id) : '—'}</p>
 			</div>
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.ends', 'Ends')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.ends_at ? new Date(row.ends_at).toLocaleDateString() : '—'}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.starts', 'Start Date')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.starts_at ? new Date(row.starts_at).toLocaleDateString(undefined, { timeZone: 'UTC' }) : '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.ends', 'End Date')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.ends_at ? new Date(row.ends_at).toLocaleDateString(undefined, { timeZone: 'UTC' }) : '—'}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.active', 'Active')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.is_active ? 'Active' : 'Inactive'}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.is_active ? t('common.active', 'Active') : t('common.inactive', 'Inactive')}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.created', 'Created')}</p>
@@ -661,11 +937,34 @@
 		</div>
 		<div>
 			<label for="badge-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.slug', 'Slug')}</label>
-			<input id="badge-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.slug} placeholder="top-contributor" />
+			<input id="badge-slug" type="text" required class="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.slug} disabled={editing !== null} placeholder="top-contributor" />
+			{#if editing}
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('gamification.slug_locked', 'Slug cannot be changed after creation')}</p>
+			{/if}
 		</div>
 		<div>
 			<label for="badge-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.description', 'Description')}</label>
 			<textarea id="badge-desc" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="2" bind:value={value.description}></textarea>
+		</div>
+		<div>
+			<span class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.icon', 'Icon')}</span>
+			<div class="flex items-center gap-2">
+				{#if value.icon_media_id}
+					{#if mediaUrlById[value.icon_media_id]}
+						<img src={mediaUrlById[value.icon_media_id]} alt="" class="h-8 w-8 rounded object-cover" />
+					{/if}
+					<span class="font-mono text-xs" style="color: var(--color-muted)">{value.icon_media_id.slice(0, 8)}…</span>
+					<Button variant="ghost" size="sm" onclick={() => (value.icon_media_id = '')}>{t('gamification.remove', 'Remove')}</Button>
+				{:else}
+					<Button variant="outline" size="sm" onclick={() => {
+						pendingMediaSelect = (m) => {
+							value.icon_media_id = m.id;
+							mediaUrlById = { ...mediaUrlById, [m.id]: m.url };
+						};
+						badgeIconPickerOpen = true;
+					}}>{t('gamification.choose_icon', 'Choose icon')}</Button>
+				{/if}
+			</div>
 		</div>
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<div>
@@ -707,11 +1006,34 @@
 		</div>
 		<div>
 			<label for="challenge-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.slug', 'Slug')}</label>
-			<input id="challenge-slug" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.slug} placeholder="30-day-streak" />
+			<input id="challenge-slug" type="text" required class="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.slug} disabled={editing !== null} placeholder="30-day-streak" />
+			{#if editing}
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('gamification.slug_locked', 'Slug cannot be changed after creation')}</p>
+			{/if}
 		</div>
 		<div>
 			<label for="challenge-desc" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.description', 'Description')}</label>
 			<textarea id="challenge-desc" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" rows="2" bind:value={value.description}></textarea>
+		</div>
+		<div>
+			<span class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.image', 'Image')}</span>
+			<div class="flex items-center gap-2">
+				{#if value.image_media_id}
+					{#if mediaUrlById[value.image_media_id]}
+						<img src={mediaUrlById[value.image_media_id]} alt="" class="h-8 w-8 rounded object-cover" />
+					{/if}
+					<span class="font-mono text-xs" style="color: var(--color-muted)">{value.image_media_id.slice(0, 8)}…</span>
+					<Button variant="ghost" size="sm" onclick={() => (value.image_media_id = '')}>{t('gamification.remove', 'Remove')}</Button>
+				{:else}
+					<Button variant="outline" size="sm" onclick={() => {
+						pendingMediaSelect = (m) => {
+							value.image_media_id = m.id;
+							mediaUrlById = { ...mediaUrlById, [m.id]: m.url };
+						};
+						challengeImagePickerOpen = true;
+					}}>{t('gamification.choose_image', 'Choose image')}</Button>
+				{/if}
+			</div>
 		</div>
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<div>
@@ -739,13 +1061,13 @@
 			</div>
 			<div>
 				<label for="challenge-starts" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.starts', 'Start Date')}</label>
-				<input id="challenge-starts" type="date" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.starts_at} />
+				<input id="challenge-starts" type="date" required class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" value={toDateInput(value.starts_at)} oninput={(e) => (value.starts_at = e.currentTarget.value)} />
 			</div>
 		</div>
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<div>
 				<label for="challenge-ends" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.ends', 'End Date')}</label>
-				<input id="challenge-ends" type="date" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.ends_at} />
+				<input id="challenge-ends" type="date" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" value={toDateInput(value.ends_at)} oninput={(e) => (value.ends_at = e.currentTarget.value)} />
 			</div>
 			<div class="flex items-center gap-2 pt-6">
 				<input type="checkbox" id="challenge-active" bind:checked={value.is_active} />
@@ -754,3 +1076,21 @@
 		</div>
 	</div>
 {/snippet}
+
+<!-- Media pickers for badge icon / challenge image (§64 media columns) -->
+<MediaPickerModal
+	bind:open={badgeIconPickerOpen}
+	onselect={(m) => {
+		badgeIconPickerOpen = false;
+		// The pickers write into whichever form is open — resolved via the
+		// active tab at pick time.
+		pendingMediaSelect?.(m);
+	}}
+/>
+<MediaPickerModal
+	bind:open={challengeImagePickerOpen}
+	onselect={(m) => {
+		challengeImagePickerOpen = false;
+		pendingMediaSelect?.(m);
+	}}
+/>

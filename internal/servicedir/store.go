@@ -1147,3 +1147,9 @@ func (s *Store) countCouponRedemptionsByUser(ctx context.Context, couponID, user
 // Store.createBookingWithRedemption (store_packages.go): redemptions are
 // only ever written atomically with their booking, so there is no
 // non-transactional wrapper.
+
+// listActiveVerificationTypeValues returns the active 'service_listing'
+// scope values from the managed verification_types taxonomy (001013).
+func (s *Store) listActiveVerificationTypeValues(ctx context.Context) ([]string, error) {
+	return s.read.ListActiveVerificationTypeValues(ctx, "service_listing")
+}

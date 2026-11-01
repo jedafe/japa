@@ -43,9 +43,11 @@
 /*
  * JapaConnect Main App — design tokens (ADR-058 / ADR-059).
  * Dark mode is driven by [data-theme="dark"] on <html>, set server-side from the
- * jc_theme cookie (never Tailwind `dark:`). Components read these via CSS custom
- * properties so they switch automatically with the attribute.
+ * jc_theme cookie. The `dark:` variant below maps to that attribute so utility
+ * classes work; components that need richer theming read the CSS custom
+ * properties directly so they switch automatically with the attribute.
  */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 :root {
 	/* Semantic surface + text tokens */

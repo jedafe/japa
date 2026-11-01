@@ -2329,9 +2329,23 @@ func stringOrNil(s string) *string {
 // type (business|embassy|notable|immigration_lawyer|professional_body); nil
 // preserves any existing value.
 // Ref: sections/07-organization-profiles-claim-ownership.md (Verification Requests)
+// isValidVerificationType validates a badge type against the managed
+// verification_types taxonomy (migration 001013); falls back to the compiled
+// §07 vocabulary when the table read fails — the same fallback contract as
+// servicedir's categorySet.
+func (s *Service) isValidVerificationType(ctx context.Context, scope, value string) bool {
+	ok, err := s.store.VerificationTypeExists(ctx, scope, value)
+	if err != nil {
+		return verification.IsValidType(value)
+	}
+	return ok
+}
+
 func (s *Service) VerifyUser(ctx context.Context, id, adminID pgtype.UUID, vtype *string) error {
-	if vtype != nil && *vtype != "" && !verification.IsValidType(*vtype) {
-		return fmt.Errorf("%w: verification_type must be one of business|embassy|notable|immigration_lawyer|professional_body", errpkg.ErrInvalid)
+	// vtype is validated against the managed verification_types taxonomy
+	// (scope 'user', 001013) with the compiled §07 vocabulary as fallback.
+	if vtype != nil && *vtype != "" && !s.isValidVerificationType(ctx, verification.ScopeUser, *vtype) {
+		return fmt.Errorf("%w: verification_type must be an active user verification type", errpkg.ErrInvalid)
 	}
 
 	if err := s.store.VerifyUser(ctx, id, vtype); err != nil {

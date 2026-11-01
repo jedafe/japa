@@ -8,7 +8,7 @@
 	import type { JsonEditorLabels } from './types';
 
 	let {
-		value = $bindable(''),
+		value = $bindable(),
 		disabled = false,
 		id,
 		placeholder = '{}',
@@ -98,7 +98,12 @@
 	function enterRaw() {
 		// Serialize non-string binds (hosts may store parsed objects) so the
 		// raw textarea never shows "[object Object]".
-		rawText = typeof value === 'string' ? value : JSON.stringify(value ?? null, null, 2);
+		rawText =
+			value === undefined || value === null
+				? ''
+				: typeof value === 'string'
+					? value
+					: JSON.stringify(value, null, 2);
 		rawError = '';
 		mode = 'raw';
 	}

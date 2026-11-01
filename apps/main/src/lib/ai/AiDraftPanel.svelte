@@ -523,14 +523,14 @@
 
 {#if open}
 	<div
-		class="fixed inset-0 z-40 bg-black/20"
+		class="fixed inset-0 z-[205] bg-black/20"
 		onclick={onClose}
 		role="presentation"
 		aria-hidden="true"
 	></div>
 	<div
 		bind:this={panelEl}
-		class="fixed end-0 top-0 z-50 h-full w-full max-w-md border-s border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl"
+		class="fixed end-0 top-0 z-[210] h-full w-full max-w-md border-s border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl"
 		role="dialog"
 		tabindex="-1"
 		aria-modal="true"

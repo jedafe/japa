@@ -27,6 +27,10 @@ export type FieldDef =
 			help?: string;
 			class?: string;
 			readonlyInEdit?: boolean;
+			/** Initial value seeded into the create form (e.g. `true` for an
+			 *  is_active checkbox that defaults on in the backend). Edit
+			 *  seeding always comes from the row. */
+			defaultValue?: any;
 			/** Omit the field from the edit form (still seeded into the update
 			 *  body and rendered on create). For columns the update endpoint
 			 *  cannot change — e.g. coupon_type is absent from UpdateCoupon's
@@ -43,6 +47,7 @@ export type FieldDef =
 			help?: string;
 			class?: string;
 			readonlyInEdit?: boolean;
+			defaultValue?: any;
 			hideInEdit?: boolean;
 	  } & RowLockProps)
 	| ({
@@ -70,6 +75,7 @@ export type FieldDef =
 			help?: string;
 			class?: string;
 			readonlyInEdit?: boolean;
+			defaultValue?: any;
 			hideInEdit?: boolean;
 	  } & RowLockProps)
 	| ({
@@ -85,6 +91,7 @@ export type FieldDef =
 			help?: string;
 			class?: string;
 			readonlyInEdit?: boolean;
+			defaultValue?: any;
 			hideInEdit?: boolean;
 	  } & RowLockProps)
 	| ({
@@ -100,5 +107,6 @@ export type FieldDef =
 			help?: string;
 			class?: string;
 			readonlyInEdit?: boolean;
+			defaultValue?: any;
 			hideInEdit?: boolean;
 	  } & RowLockProps);

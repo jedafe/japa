@@ -7,13 +7,14 @@
 		Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3,
 		UserPlus, UserCheck, Loader2, BellOff, Bell, Flag, Pin, PinOff,
 		Check, X, Inbox, ChevronUp, ChevronDown, BookOpen, Star
-	, TriangleAlert } from 'lucide-svelte';
+	, TriangleAlert, Radar } from 'lucide-svelte';
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import SpaceSidebar from '$lib/components/spaces/SpaceSidebar.svelte';
 	import SpaceSettings from '$lib/components/spaces/SpaceSettings.svelte';
 	import ForumList from '$lib/components/forum/ForumList.svelte';
 	import { EmptyState, UrlTabs } from '$lib/components/ui';
+	import RadarItemRow from '$lib/components/RadarItemRow.svelte';
 	import type { UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { imgLightbox } from '$lib/lightbox.svelte';
@@ -233,6 +234,7 @@ import { flagUrl } from '$lib/utils/flags';
 
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'feed', label: t('space.tab.feed', 'Feed') },
+		...(space.level === 'country' ? [{ value: 'opportunities', label: t('space.tab.opportunities', 'Opportunities') }] : []),
 		...(pinnedItems.length > 0 ? [{ value: 'pinned', label: t('space.tab.pinned', 'Pinned') }] : []),
 		{ value: 'forum', label: t('space.tab.forum', 'Forum') },
 		{ value: 'search', label: t('space.tab.search', 'Search') },
@@ -621,8 +623,10 @@ import { flagUrl } from '$lib/utils/flags';
 			{/if}
 
 			<div class="flex-1 pb-1">
-				<h1 class="text-xl font-semibold text-[var(--color-text)]">{space.name}</h1>
-				<p class="text-sm capitalize text-[var(--color-muted)]">{space.level} · {space.visibility}</p>
+				<div class="-translate-y-2">
+					<h1 class="text-xl font-bold text-white">{space.name}</h1>
+					<p class="text-sm font-medium capitalize text-white/80 dark:text-[var(--color-primary)]">{space.level} · {space.visibility}</p>
+				</div>
 				{#if space.description}
 					<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{space.description}</p>
 				{/if}
@@ -907,6 +911,30 @@ import { flagUrl } from '$lib/utils/flags';
 					</button>
 				{/if}
 			{/if}
+		{:else if activeTab === 'opportunities'}
+			<div class="p-4">
+				{#if data.opportunities.length === 0}
+					<EmptyState
+						icon={Radar}
+						title={t('space.opportunities_empty', 'No opportunities for this destination yet')}
+						body={t('space.opportunities_empty_body', 'New scholarships, jobs, and alerts will appear here as sources publish them.')}
+					/>
+				{:else}
+					<div class="space-y-2">
+						{#each data.opportunities as item (item.id)}
+							<RadarItemRow {item} />
+						{/each}
+					</div>
+					<div class="mt-4 flex justify-center">
+						<a
+							href={`/radar?space_id=${space.id}`}
+							class="text-sm font-medium text-[var(--color-primary)] hover:underline"
+						>
+							{t('space.opportunities_view_all', 'View all in Japa Opportunities')} →
+						</a>
+					</div>
+				{/if}
+			</div>
 		{:else if activeTab === 'about'}
 			<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				{#if space.description}

@@ -142,6 +142,16 @@ export async function uploadMediaImage(
 	};
 }
 
+/** PATCH /media/{id} — update the caller's own media metadata (media.edit_own).
+ *  '' clears a field; omit a key to leave it unchanged. */
+export async function updateMediaImage(
+	id: string,
+	updates: { alt_text?: string | null; caption?: string | null }
+): Promise<void> {
+	const res = await api.patch<{ updated: boolean }>(`/media/${id}`, updates);
+	if (res.error) throw new Error(res.error?.message ?? 'Update failed');
+}
+
 /** Stock photo providers (Unsplash/Pexels et al.) — Stock tab of the picker. */
 export const stockApi: StockApi = {
 	listProviders: async () => {

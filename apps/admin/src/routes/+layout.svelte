@@ -105,7 +105,7 @@
 		return () => setGlobalErrorHandler(null);
 	});
 
-	const PAGE_PERMISSIONS: Record<string, string> = {
+	const PAGE_PERMISSIONS: Record<string, string | string[]> = {
 		// More-specific user-management sub-routes gate on the RBAC manage
 		// node (their APIs require it) — the matcher sorts keys longest-first
 		// so these win over the bare '/users' → admin.users.view entry.
@@ -165,7 +165,7 @@
 		'/coupon-feeds': 'coupons.manage',
 		'/discount-codes': 'payments.discount_codes.manage',
 		'/referral': 'referral.manage',
-		'/mentorship': 'mentorship.admin',
+		'/mentorship': 'mentorship.manage',
 		'/academy': 'academy.admin.manage',
 		'/academy/curriculum': 'academy.admin.manage',
 		'/reviews': 'reviews.moderate',
@@ -204,7 +204,7 @@
 		'/personas': 'persona.view',
 		'/studio': 'studio.view',
 		'/rag': 'ai.rag.manage',
-		'/gamification': 'gamification.view',
+		'/gamification': ['gamification.manage_badges', 'gamification.manage_challenges', 'gamification.award_badge'],
 		'/jobs': 'jobs.admin',
 		'/moderation-queue': 'admin.moderation',
 		'/moderation/content': 'admin.moderation',
@@ -259,11 +259,12 @@
 	// Read permissions directly so the gate re-evaluates when permissions load —
 	// a plain hasPermission() call inside $derived is not tracked and would only
 	// recompute on navigation.
-	let hasAccess = $derived(
-		!requiredPermission ||
-			getPermissions().includes(requiredPermission) ||
-			getPermissions().includes('*')
-	);
+	let hasAccess = $derived.by(() => {
+		if (!requiredPermission) return true;
+		const needed = Array.isArray(requiredPermission) ? requiredPermission : [requiredPermission];
+		const perms = getPermissions();
+		return perms.includes('*') || needed.some((p) => perms.includes(p));
+	});
 
 	// Umami analytics — Admin surface (§40).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md

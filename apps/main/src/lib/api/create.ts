@@ -8,6 +8,9 @@ import { searchPath, mapUserHits, mapContentHits, mapTagHits, mapCouponHits, map
 export interface CreateContentInput {
 	content_type: string;
 	title: string;
+	/** author_id override (content.assign_author): attribute to a bot persona
+	 *  account. null/omitted = caller on create, unchanged on edit. */
+	author_id?: string | null;
 	slug?: string;
 	body?: string;
 	body_html?: string;
@@ -187,8 +190,10 @@ export const listMyMedia = (params: ListMyMediaParams = {}) => {
 
 export const getMedia = (id: string) => api.get<MediaAsset>(`/media/${id}`);
 
-/* ---- media metadata + delete (PATCH/DELETE /media/{id} — §34) ---- */
-export const updateMedia = (id: string, body: { alt_text?: string; caption?: string }) =>
+/* ---- media metadata + delete (PATCH/DELETE /media/{id} — §34) ----
+ * alt_text/caption accept '' to clear and null to leave unchanged (the
+ * backend COALESCEs each field — null keeps the stored value). */
+export const updateMedia = (id: string, body: { alt_text?: string | null; caption?: string | null }) =>
 	api.patch<{ updated: boolean }>(`/media/${id}`, body);
 
 export const deleteMedia = (id: string) => api.delete<{ deleted: boolean }>(`/media/${id}`);

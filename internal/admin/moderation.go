@@ -23,6 +23,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/rbac"
+	"github.com/jedafe/japa/internal/verification"
 )
 
 // ModerationItem represents a moderation queue item.
@@ -1327,19 +1328,14 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 
 // ─── Organization Verify ─────────────────────────────────────────────────
 
-// validOrgVerificationTypes is the §7 verification badge enum for
-// organizations, extended with professional_body for the §111
-// package-publishing trust gate.
-var validOrgVerificationTypes = map[string]struct{}{
-	"business":           {},
-	"embassy":            {},
-	"notable":            {},
-	"immigration_lawyer": {},
-	"professional_body":  {},
-}
-
-func isValidOrgVerificationType(s string) bool {
-	_, ok := validOrgVerificationTypes[s]
+// isValidOrgVerificationType validates a badge type against the managed
+// verification_types taxonomy (migration 001013); falls back to the compiled
+// §07 vocabulary when the table read fails.
+func (h *Handlers) isValidOrgVerificationType(ctx context.Context, scope, value string) bool {
+	ok, err := h.Queries.VerificationTypeExists(ctx, gen.VerificationTypeExistsParams{Scope: scope, Value: value})
+	if err != nil {
+		return verification.IsValidType(value)
+	}
 	return ok
 }
 
@@ -1372,9 +1368,9 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if body.VerificationType != nil && !isValidOrgVerificationType(*body.VerificationType) {
+	if body.VerificationType != nil && !h.isValidOrgVerificationType(r.Context(), verification.ScopeOrganization, *body.VerificationType) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_verification_type",
-			"verification_type must be one of business|embassy|notable|immigration_lawyer|professional_body")
+			"verification_type must be an active verification type for this entity")
 		return
 	}
 
@@ -1467,9 +1463,9 @@ func (h *Handlers) VerifyUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if body.VerificationType != nil && !isValidOrgVerificationType(*body.VerificationType) {
+	if body.VerificationType != nil && !h.isValidOrgVerificationType(r.Context(), verification.ScopeUser, *body.VerificationType) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_verification_type",
-			"verification_type must be one of business|embassy|notable|immigration_lawyer|professional_body")
+			"verification_type must be an active verification type for this entity")
 		return
 	}
 

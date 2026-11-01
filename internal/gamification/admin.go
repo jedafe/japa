@@ -24,6 +24,10 @@ var ErrBadgeNotFound = errors.New("gamification: badge not found")
 // exist — handlers map it to 404.
 var ErrChallengeNotFound = errors.New("gamification: challenge not found")
 
+// ErrUserNotFound is returned when an award targets a user id that does
+// not exist — handlers map it to 404.
+var ErrUserNotFound = errors.New("gamification: user not found")
+
 // ErrInvalidInput marks admin create/update validation failures so handlers
 // can surface the specific message in the error envelope instead of a
 // generic "failed" string.
@@ -127,6 +131,9 @@ func (s *Service) UpdateBadge(ctx context.Context, badgeID pgtype.UUID, in Updat
 		ID: badgeID,
 	}
 	if in.Name != nil {
+		if *in.Name == "" {
+			return BadgeInfo{}, invalidInput("name cannot be empty")
+		}
 		arg.Name = in.Name
 	}
 
@@ -224,6 +231,10 @@ func (s *Service) AwardBadge(ctx context.Context, badgeID, userID, awardedBy pgt
 		AwardedBy: awardedBy,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return BadgeWithDetails{}, ErrUserNotFound
+		}
 		// ON CONFLICT DO NOTHING returns no rows if duplicate — check existing.
 		_, getErr := s.store.GetUserBadge(ctx, userID, badgeID)
 		if getErr != nil {
@@ -385,6 +396,9 @@ func (s *Service) UpdateChallenge(ctx context.Context, challengeID pgtype.UUID, 
 		ID: challengeID,
 	}
 	if in.Name != nil {
+		if *in.Name == "" {
+			return ChallengeInfo{}, invalidInput("name cannot be empty")
+		}
 		arg.Name = in.Name
 	}
 

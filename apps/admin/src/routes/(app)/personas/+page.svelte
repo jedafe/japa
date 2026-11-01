@@ -29,6 +29,7 @@
 		updated_at: string;
 		backing_username?: string;
 		profile_name?: string;
+		profile_tagline?: string | null;
 		total_actions?: number;
 	};
 
@@ -79,7 +80,8 @@
 	};
 
 	// UpdateInput matches the backend UpdatePersonaInput. Status is included
-	// so admins can pause/retire personas from the UI.
+	// so admins can pause/retire personas from the UI; name/tagline/username
+	// edit the backing bot's byline and handle (§68 identity fields).
 	type UpdateInput = {
 		disclosure_mode?: string;
 		autonomy_mode?: string;
@@ -87,6 +89,9 @@
 		voice_prompt?: string;
 		status?: string;
 		activity_policy?: ActivityPolicy;
+		name?: string;
+		tagline?: string;
+		username?: string;
 	};
 
 	const canManage = $derived(hasPermission('persona.manage'));
@@ -137,7 +142,7 @@
 			tagline: '',
 			voice_id: '',
 			voice_prompt: '',
-			disclosure_mode: 'disclosed',
+			disclosure_mode: 'undisclosed',
 			autonomy_mode: 'queued',
 			activity_policy: defaultPolicy()
 		};
@@ -252,6 +257,9 @@
 		// form always has the required fields (e.g. active_hours_utc[0]).
 		const policy = persona.activity_policy as Partial<ActivityPolicy> | undefined;
 		editForm = {
+			name: persona.profile_name ?? '',
+			username: persona.backing_username ?? '',
+			tagline: persona.profile_tagline ?? '',
 			disclosure_mode: persona.disclosure_mode,
 			autonomy_mode: persona.autonomy_mode,
 			voice_id: persona.voice_id ?? '',
@@ -271,6 +279,9 @@
 		// always has the required fields (e.g. active_hours_utc[0]).
 		const policy = persona.activity_policy as Partial<ActivityPolicy> | undefined;
 		editForm = {
+			name: persona.profile_name ?? '',
+			username: persona.backing_username ?? '',
+			tagline: persona.profile_tagline ?? '',
 			disclosure_mode: persona.disclosure_mode,
 			autonomy_mode: persona.autonomy_mode,
 			voice_id: persona.voice_id ?? '',
@@ -361,6 +372,13 @@
 		message = '';
 		try {
 			const body: UpdateInput = { ...editForm };
+			// Send identity fields only when they actually changed — an
+			// untouched name would otherwise pin display_name to the
+			// username fallback and defeat the COALESCE fallback on later
+			// renames (profile_name reads COALESCE(display_name, username)).
+			if (body.name === (editingPersona.profile_name ?? '')) delete body.name;
+			if (body.tagline === (editingPersona.profile_tagline ?? '')) delete body.tagline;
+			if (body.username === (editingPersona.backing_username ?? '')) delete body.username;
 			// voice_prompt is always sent as a string (bound to a textarea).
 			// An empty string clears it on the backend because the PATCH
 			// handler decodes VoicePrompt as *string — empty is non-nil, so
@@ -841,6 +859,42 @@
 			<div>
 				<label for="edit-persona-id" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">ID</label>
 				<p class="font-mono text-xs" style="color: var(--color-foreground)">{editingPersona?.id}</p>
+			</div>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div>
+					<label for="edit-persona-name" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.name_label', 'Name')}</label>
+					<input
+						id="edit-persona-name"
+						type="text"
+						class="w-full rounded-md border px-3 py-1.5 text-sm"
+						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						bind:value={editForm.name}
+						placeholder={t('personas.name_placeholder', 'e.g. Adaora Okafor')}
+					/>
+				</div>
+				<div>
+					<label for="edit-persona-username" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.username', 'Username')}</label>
+					<input
+						id="edit-persona-username"
+						type="text"
+						class="w-full rounded-md border px-3 py-1.5 text-sm font-mono"
+						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+						bind:value={editForm.username}
+						placeholder={t('personas.slug_placeholder', 'e.g. adaora-okafor')}
+					/>
+					<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{t('personas.username_hint', 'Renames the backing bot handle — e.g. intel-visa → a custom slug.')}</p>
+				</div>
+			</div>
+			<div>
+				<label for="edit-persona-tagline" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.tagline', 'Tagline')}</label>
+				<input
+					id="edit-persona-tagline"
+					type="text"
+					class="w-full rounded-md border px-3 py-1.5 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={editForm.tagline}
+					placeholder={t('personas.tagline_placeholder', 'Short bio / expertise summary')}
+				/>
 			</div>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div>

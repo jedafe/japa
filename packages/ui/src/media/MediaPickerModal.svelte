@@ -79,6 +79,7 @@
 	let editCaption = $state('');
 	let editSaving = $state(false);
 	let editError = $state<string | null>(null);
+	let editSaved = $state(false);
 	let selectedItem = $derived(items.find((i) => i.id === selectedId) ?? null);
 
 	// --- Stock tab state ---
@@ -132,11 +133,22 @@
 		searchTimer = setTimeout(() => loadLibrary(v), 350);
 	}
 
+	// Fallback label derived from the filename — strips the extension and
+	// normalises separators so "japa-guide_hero.webp" → "japa guide hero".
+	// Used to pre-fill the alt/title fields when the image has none stored,
+	// giving the user a starting point instead of a blank field.
+	function filenameLabel(filename?: string): string {
+		const base = (filename ?? '').replace(/\.[^.]+$/, '');
+		return base.replace(/[-_]+/g, ' ').trim();
+	}
+
 	function selectItem(item: MediaPickerItem) {
 		selectedId = item.id ?? null;
-		editAlt = item.alt_text ?? '';
-		editCaption = item.caption ?? '';
+		const fallback = filenameLabel(item.filename);
+		editAlt = item.alt_text?.trim() || fallback;
+		editCaption = item.caption?.trim() || fallback;
 		editError = null;
+		editSaved = false;
 	}
 
 	async function saveEdit() {
@@ -144,9 +156,13 @@
 		editSaving = true;
 		editError = null;
 		try {
-			const updates = { alt_text: editAlt.trim() || null, caption: editCaption.trim() || null };
+			// Send '' (not null) for cleared fields — the backend PATCH uses
+			// COALESCE(@field, field) so a JSON null means "keep existing" and
+			// would silently discard the user's attempt to clear the value.
+			const updates = { alt_text: editAlt.trim(), caption: editCaption.trim() };
 			await onUpdate(selectedId, updates);
 			items = items.map((i) => (i.id === selectedId ? { ...i, ...updates } : i));
+			editSaved = true;
 		} catch (err) {
 			editError = err instanceof Error ? err.message : t('media.picker.edit_failed', 'Could not save changes');
 		} finally {
@@ -362,8 +378,10 @@
 									onclick={() => selectItem(item)}
 								>
 									<img src={item.url} alt={item.alt_text ?? item.filename ?? ''} loading="lazy" />
-									{#if item.filename}
-										<span class="media-thumb-name">{item.filename}</span>
+									<!-- Saved title (caption) overrides the filename as the
+									     thumbnail label once set. -->
+									{#if item.caption || item.filename}
+										<span class="media-thumb-name">{item.caption || item.filename}</span>
 									{/if}
 									{#if item.source_photographer}
 										<span class="stock-attribution">
@@ -393,16 +411,18 @@
 									type="text"
 									class="media-edit-input"
 									bind:value={editAlt}
+									oninput={() => (editSaved = false)}
 									placeholder={t('media.picker.alt_placeholder', 'Describe the image for screen readers')}
 								/>
 							</label>
 							<label class="media-edit-label">
-								<span>{t('media.picker.title', 'Title')}</span>
+								<span>{t('media.picker.caption', 'Title')}</span>
 								<input
 									type="text"
 									class="media-edit-input"
 									bind:value={editCaption}
-									placeholder={t('media.picker.title_placeholder', 'Optional caption/title')}
+									oninput={() => (editSaved = false)}
+									placeholder={t('media.picker.caption_placeholder', 'Optional caption/title')}
 								/>
 							</label>
 							<button
@@ -415,7 +435,11 @@
 								{t('media.picker.save', 'Save')}
 							</button>
 						</div>
-						{#if editError}<div class="media-edit-error">{editError}</div>{/if}
+						{#if editError}
+							<div class="media-edit-error">{editError}</div>
+						{:else if editSaved}
+							<div class="media-edit-saved">{t('media.picker.saved', 'Saved')}</div>
+						{/if}
 					</div>
 				{/if}
 
@@ -820,6 +844,11 @@
 	}
 	.media-edit-error {
 		color: #e57373;
+		font-size: 12px;
+		margin-top: 8px;
+	}
+	.media-edit-saved {
+		color: var(--media-accent, #4fae9b);
 		font-size: 12px;
 		margin-top: 8px;
 	}

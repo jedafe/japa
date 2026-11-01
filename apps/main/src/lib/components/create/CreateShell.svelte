@@ -52,6 +52,10 @@
 		fieldGroups: CustomFieldGroup[];
 		series: BlogSeries[];
 		organizations: ComposerOrganization[];
+		/** Bot persona accounts the caller may attribute content to
+		 *  (content.assign_author holders only — loaded from GET /admin/personas).
+		 *  Empty = no author override picker. */
+		botAuthors?: { id: string; label: string; sublabel?: string }[];
 		draft: ContentRecord | null;
 		/** Tag slugs restored from GET /content/{id}/tags so the tag chips
 		 *  reappear when editing existing content. Empty for new content.
@@ -99,7 +103,7 @@
 		assessmentDimensions: string[];
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], videoSource = null, initialType = null, initialSpaceId = null, initialTitle = null, initialBody = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {}, assessmentDimensions }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, botAuthors = [], draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], videoSource = null, initialType = null, initialSpaceId = null, initialTitle = null, initialBody = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {}, assessmentDimensions }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
@@ -139,6 +143,26 @@
 	// Post-as-org (ADR-062): null = personal post; an org id = post on behalf of
 	// that org. Restored from draft so edit-as-org round-trips the assignment.
 	let organizationId = $state<string | null>(untrack(() => draft?.organization_id ?? null));
+	// author_id override (content.assign_author): null = no override (self on
+	// create, keep stored author on edit). Seeded from the draft only when the
+	// stored author is a selectable bot — a human/unknown author isn't shown
+	// as an option and is preserved by sending no override.
+	let authorId = $state<string | null>(
+		untrack(() =>
+			draft?.author_id && botAuthors.some((b) => b.id === draft.author_id)
+				? draft.author_id
+				: null
+		)
+	);
+	// Post-as-persona mode — the SaveBar's persona picker only renders while
+	// this is true. Seeded whenever the draft's stored author isn't the
+	// caller: content reaching this composer under another user id is always
+	// bot-authored (the author_id override is bots-only, SEC-002), so a
+	// stored bot that isn't a selectable option still restores in persona
+	// mode and "Keep current author" remains the honest selection.
+	let postAsPersona = $state<boolean>(
+		untrack(() => authorId != null || (!!draft?.author_id && draft.author_id !== user?.id))
+	);
 	let visibility = $state<Visibility>(untrack(() => (draft?.visibility as Visibility) ?? 'public'));
 	let canonicalUrl = $state(untrack(() => draft?.canonical_url ?? ''));
 	// draft.publish_at is a zoned ISO instant (timestamptz) — convert to the
@@ -292,7 +316,21 @@
 		meta_description: metaDescription,
 		og_image_url: ogImageUrl,
 		seo_indexable: seoIndexable,
-		organization_id: organizationId,
+		// '' (not null) when no org is selected — the backend PATCH treats
+		// null as "keep" and "" as ClearOrganizationID, so switching a
+		// draft's post-as to "yourself" actually detaches the org.
+		// Create ignores "" (empty = no org) — same effect as null there.
+		organization_id: organizationId ?? '',
+		// personaMode on: the picked bot id (null = self on create, keep the
+		// stored author on edit). personaMode off with a stored bot author:
+		// send the caller's id — the backend's self-assignment path actively
+		// reverts the bot attribution instead of silently keeping it.
+		// Self-authored drafts keep null (no-op: self on create, stored on edit).
+		author_id: postAsPersona
+			? authorId
+			: draft?.author_id && draft.author_id !== user?.id
+				? (user?.id ?? null)
+				: authorId,
 		visibility,
 		// Preserve the existing status so PATCH doesn't overwrite it with
 		// an empty string (which clears the published/scheduled state).
@@ -330,7 +368,10 @@
 			requiredFieldsFilled,
 			formKind: selectedType.formKind,
 			itemCount: isList ? listItemCount : items.length,
-			dimensionCount: dimensions.length
+			dimensionCount: dimensions.length,
+			// Create-only: persona mode without a picked persona must not
+			// silently publish as self. On edit null = "keep current author".
+			personaIncomplete: !draft?.id && postAsPersona && !authorId
 		})
 	);
 
@@ -668,6 +709,15 @@
 			orgs={organizations}
 			selectedOrgId={organizationId}
 			onSelectOrg={(id) => { organizationId = id; markDirty(); }}
+			{botAuthors}
+			selectedAuthorId={authorId}
+			authorNoneLabel={draft?.id
+				? t('create.author_keep_current', 'Keep current author')
+				: t('create.post_as_yourself', 'Post as yourself')}
+			onSelectAuthor={(id) => { authorId = id; markDirty(); }}
+			personaMode={postAsPersona}
+			onPersonaMode={(v) => { postAsPersona = v; markDirty(); }}
+			noneExitsPersona={!draft?.id}
 			onSaveDraft={saveDraft}
 			onPublish={publish}
 			isPublished={draft?.status === 'published'}

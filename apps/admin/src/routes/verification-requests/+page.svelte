@@ -7,7 +7,9 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
-	import { verificationAdminApi, organisationsAdminApi } from "$lib/api";
+	import { verificationAdminApi, organisationsAdminApi, type VerificationTypeItem } from "$lib/api";
+	import { Tabs, TabsContent } from "$lib/components/ui/tabs";
+	import BadgeTypesPanel from "./BadgeTypesPanel.svelte";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { Eye, Check, X, BadgeCheck } from "lucide-svelte";
@@ -52,13 +54,22 @@
 	let grantTarget = $state<VRequest | null>(null);
 	let showGrantModal = $state(false);
 	let grantType = $state("");
-	let types = $state<string[]>([]);
+	let types = $state<VerificationTypeItem[]>([]);
+	let activeTab = $state("requests");
 
 	$effect(() => {
 		verificationAdminApi.types().then((res) => {
 			if (res.ok) types = res.data.types ?? [];
 		}).catch(() => {});
 	});
+
+	// Grant modal options — scoped to the target request's entity_type
+	// (organization rows see organization types, users see user types).
+	const grantTypeOptions = $derived(
+		types
+			.filter((ty) => ty.scope === (grantTarget?.entity_type === "organization" ? "organization" : "user"))
+			.map((ty) => ({ value: ty.value, label: ty.label }))
+	);
 
 	// Only http(s)/relative URLs may render as links — field_values are
 	// requester-controlled, so anything else renders as plain text (XSS).
@@ -270,7 +281,22 @@
 	<div class="mb-4 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)" role="status">{successMessage}</div>
 {/if}
 
-<EntityPage {config} bind:controller={entityController} />
+<Tabs
+	tabs={[
+		{ value: "requests", label: t("vreq.tab_requests", "Requests") },
+		{ value: "types", label: t("vreq.tab_types", "Badge types") }
+	]}
+	bind:value={activeTab}
+	tabParam="tab"
+	tabPreserve={[]}
+>
+	<TabsContent value="requests">
+		<div class="mt-4"><EntityPage {config} bind:controller={entityController} /></div>
+	</TabsContent>
+	<TabsContent value="types">
+		<div class="mt-4"><BadgeTypesPanel /></div>
+	</TabsContent>
+</Tabs>
 
 {#snippet RequestView({ row }: { row: VRequest })}
 	<dl class="space-y-2 text-sm">
@@ -339,7 +365,7 @@
 			class="mt-1"
 			options={[
 				{ value: '', label: t("vreq.grant_type_none", "— none —") },
-				...types.map((ty) => ({ value: ty, label: ty.replaceAll("_", " ") }))
+				...grantTypeOptions
 			]}
 		/>
 	</label>

@@ -46,7 +46,9 @@
 		Rows3,
 		Columns3,
 		Trash2,
-		MessageCircleQuestion
+		MessageCircleQuestion,
+		Maximize2,
+		Minimize2
 	} from 'lucide-svelte';
 
 	const ICONS: Record<string, typeof Heading2> = {
@@ -114,6 +116,9 @@
 		aiTrigger?: import('svelte').Snippet;
 		/** Minimum height of the editable region. */
 		minHeight?: number;
+		/** Maximum height of the editable region — the content area scrolls
+		 *  vertically past this instead of growing the page. */
+		maxHeight?: number;
 		/** aria-label for the editable region. */
 		ariaLabel?: string;
 		/** Title of the document being edited — read live when the FAQ
@@ -139,6 +144,7 @@
 		features,
 		aiTrigger,
 		minHeight = 355,
+		maxHeight = 450,
 		ariaLabel,
 		postTitle
 	}: Props = $props();
@@ -164,6 +170,59 @@
 	let postEditorEl = $state<HTMLDivElement>(null!);
 	// $state.raw — the Editor instance must not be deep-proxied.
 	let editor = $state.raw<Editor | null>(null);
+
+	// ---- Distraction-free (zen) mode ----
+	// The editor detaches into a fixed full-viewport overlay. The z-index
+	// stays below modal layers (the shared MediaPickerModal sits at 200+)
+	// so pickers and dialogs still open on top of the overlay.
+	let distractionFree = $state(false);
+
+	function toggleDistractionFree() {
+		distractionFree = !distractionFree;
+		if (distractionFree) void svelteTick().then(() => editor?.commands.focus('end'));
+	}
+
+	// Portal-lite: the editor node is reparented under a body-level overlay
+	// rather than relying on position:fixed inside .post-editor — a fixed
+	// element under a transformed/filtered ancestor would be trapped by it.
+	// Moving the DOM node is safe: ProseMirror keeps working on the same
+	// contenteditable; Svelte still owns the node wherever it lives.
+	let dfOverlay: HTMLDivElement | null = null;
+	let dfAnchor: { parent: Node; next: ChildNode | null } | null = null;
+
+	// While active: lock page scroll behind the overlay and let Escape exit.
+	$effect(() => {
+		if (!distractionFree) return;
+		const prevOverflow = document.body.style.overflow;
+		document.body.style.overflow = 'hidden';
+		const parent = postEditorEl.parentNode;
+		dfAnchor = parent ? { parent, next: postEditorEl.nextSibling } : null;
+		dfOverlay = document.createElement('div');
+		dfOverlay.className = 'rte-df-overlay';
+		dfOverlay.appendChild(postEditorEl);
+		document.body.appendChild(dfOverlay);
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') distractionFree = false;
+		};
+		window.addEventListener('keydown', onKey);
+		return () => {
+			document.body.style.overflow = prevOverflow;
+			window.removeEventListener('keydown', onKey);
+			if (dfAnchor) {
+				// The captured sibling may have unmounted while the editor was
+				// reparented — insertBefore with a detached ref child throws
+				// and would strand the overlay, so fall back to appendChild.
+				if (dfAnchor.next && dfAnchor.next.parentNode === dfAnchor.parent) {
+					dfAnchor.parent.insertBefore(postEditorEl, dfAnchor.next);
+				} else {
+					dfAnchor.parent.appendChild(postEditorEl);
+				}
+			}
+			dfOverlay?.remove();
+			dfOverlay = null;
+			dfAnchor = null;
+		};
+	});
 	// Bumped on every transaction so toolbar isActive states re-render.
 	let txTick = $state(0);
 	let slashOpen = $state(false);
@@ -764,7 +823,12 @@
 	}
 </script>
 
-<div class="post-editor" bind:this={postEditorEl}>
+<div
+	class="post-editor"
+	class:distraction-free={distractionFree}
+	bind:this={postEditorEl}
+	style="--rte-min-height: {minHeight}px; --rte-max-height: {maxHeight}px"
+>
 	{#if mode === 'markdown' && feat.markdown}
 		<textarea
 			bind:this={markdownTextarea}
@@ -831,7 +895,6 @@
 		<div
 			bind:this={element}
 			class="prose-content"
-			style="--rte-min-height: {minHeight}px"
 			onkeydown={slashKeyDown}
 			role="textbox"
 			aria-label={ariaLabel ?? placeholder ?? t('create.editor.content_label', 'Content')}
@@ -846,26 +909,42 @@
 		</div>
 	{/if}
 
-	<!-- Mode switcher — floated at bottom-right of the editing surface -->
-	{#if modeTabs.length > 1}
-		<div class="mode-switcher" role="tablist" aria-label={t('create.editor.mode.label', 'Editor mode')}>
-			{#each modeTabs as m (m)}
-				{@const def = MODE_DEFS[m]}
-				<button
-					type="button"
-					role="tab"
-					aria-selected={mode === m}
-					class="mode-tab"
-					class:active={mode === m}
-					title={t(def.descKey, def.descFallback)}
-					aria-label={t(def.labelKey, def.fallback)}
-					onclick={() => switchMode(m)}
-				>
-					<def.icon size={16} />
-				</button>
-			{/each}
-		</div>
-	{/if}
+	<!-- Bottom-right floats — distraction-free toggle + mode switcher -->
+	<div class="editor-floats">
+		<button
+			type="button"
+			class="df-toggle"
+			onclick={toggleDistractionFree}
+			title={distractionFree
+				? t('create.editor.exit_distraction_free', 'Exit distraction-free (Esc)')
+				: t('create.editor.distraction_free', 'Distraction-free mode')}
+			aria-label={distractionFree
+				? t('create.editor.exit_distraction_free', 'Exit distraction-free (Esc)')
+				: t('create.editor.distraction_free', 'Distraction-free mode')}
+			aria-pressed={distractionFree}
+		>
+			{#if distractionFree}<Minimize2 size={16} />{:else}<Maximize2 size={16} />{/if}
+		</button>
+		{#if modeTabs.length > 1}
+			<div class="mode-switcher" role="tablist" aria-label={t('create.editor.mode.label', 'Editor mode')}>
+				{#each modeTabs as m (m)}
+					{@const def = MODE_DEFS[m]}
+					<button
+						type="button"
+						role="tab"
+						aria-selected={mode === m}
+						class="mode-tab"
+						class:active={mode === m}
+						title={t(def.descKey, def.descFallback)}
+						aria-label={t(def.labelKey, def.fallback)}
+						onclick={() => switchMode(m)}
+					>
+						<def.icon size={16} />
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</div>
 
 	{#if mode === 'block' && slashOpen && filteredBlocks.length > 0}
 		<div class="slash-menu" style="top: {slashTop}px; inset-inline-start: {slashLeft}px">
@@ -915,18 +994,43 @@
 		z-index: 20;
 	}
 
-	/* ---- Mode switcher — floated at bottom-right of the editing surface ---- */
-	.mode-switcher {
+	/* ---- Bottom-right floats — distraction-free toggle + mode switcher ---- */
+	.editor-floats {
 		position: absolute;
 		bottom: 20px;
 		inset-inline-end: 8px;
 		z-index: 20;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.mode-switcher {
 		display: inline-flex;
 		gap: 2px;
 		padding: 2px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface-subtle);
+	}
+	.df-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		padding: 0;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface-subtle);
+		color: var(--color-text-subtle);
+		cursor: pointer;
+		transition: color 0.12s;
+	}
+	.df-toggle:hover {
+		color: var(--color-text);
+	}
+	.df-toggle[aria-pressed='true'] {
+		color: var(--color-primary);
 	}
 	.mode-tab {
 		display: inline-flex;
@@ -1031,10 +1135,46 @@
 		}
 	}
 
+	/* ---- Distraction-free overlay — the editor takes over the viewport.
+	 * .rte-df-overlay is created at runtime on document.body (global scope)
+	 * so transformed ancestors can't trap it; .post-editor becomes the
+	 * centered column inside it. z-index sits below modal layers (pickers
+	 * render at 200+) so dialogs opened from the editor stack on top. ---- */
+	:global(.rte-df-overlay) {
+		position: fixed;
+		inset: 0;
+		z-index: 150;
+		display: flex;
+		flex-direction: column;
+		padding: 4vh 4vw;
+		background: var(--color-background, var(--color-surface));
+	}
+	.post-editor.distraction-free {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		width: min(880px, 100%);
+		margin-inline: auto;
+	}
+	.post-editor.distraction-free .editor-surface,
+	.post-editor.distraction-free .markdown-source {
+		flex: 1;
+		min-height: 0;
+	}
+	.post-editor.distraction-free .markdown-source {
+		max-height: none;
+		resize: none;
+	}
+	.post-editor.distraction-free .prose-content {
+		max-height: none;
+	}
+
 	/* ---- Markdown source textarea ---- */
 	.markdown-source {
 		width: 100%;
 		min-height: var(--rte-min-height, 355px);
+		max-height: var(--rte-max-height, 450px);
 		padding: 10px 14px;
 		border-radius: var(--radius);
 		background: var(--color-surface);
@@ -1066,6 +1206,8 @@
 	.prose-content {
 		flex: 1 1 auto;
 		min-height: var(--rte-min-height, 355px);
+		max-height: var(--rte-max-height, 450px);
+		overflow-y: auto;
 		padding: 10px 14px;
 		outline: none;
 		font-size: 1rem;

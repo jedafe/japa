@@ -523,6 +523,10 @@ func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request)
 			errpkg.WriteError(w, http.StatusNotFound, "badge_not_found", "Badge not found")
 			return
 		}
+		if errors.Is(err, ErrUserNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
+			return
+		}
 
 		errpkg.WriteError(w, http.StatusBadRequest, "badge_award_failed", "Failed to award badge")
 

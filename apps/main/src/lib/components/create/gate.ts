@@ -8,6 +8,10 @@ export interface PublishInput {
 	formKind: FormKind;
 	itemCount: number;
 	dimensionCount: number;
+	/** Post-as-persona selected but no persona chosen — publishing must not
+	 *  silently fall back to self-attribution. Only enforced on create; on
+	 *  edit an unpicked persona means "keep current author". */
+	personaIncomplete?: boolean;
 }
 
 export function evaluatePublish(i: PublishInput): { ok: boolean; reason: string | null } {
@@ -21,6 +25,7 @@ export function evaluatePublish(i: PublishInput): { ok: boolean; reason: string 
 		if (i.itemCount < 1) return { ok: false, reason: 'create.gate.list_items' };
 	}
 	if (!i.requiredFieldsFilled) return { ok: false, reason: 'create.gate.fields' };
+	if (i.personaIncomplete) return { ok: false, reason: 'create.gate.persona' };
 	return { ok: true, reason: null };
 }
 

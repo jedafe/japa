@@ -10,6 +10,7 @@ import type {
 	University
 } from '$lib/types';
 import type { Source } from '$lib/types/sources';
+import type { RadarItem } from '$lib/types';
 
 /**
  * Discover at /discover — auth-gated frontend route (ADR-058). Consumes the
@@ -22,7 +23,7 @@ import type { Source } from '$lib/types/sources';
  * to an empty list on failure (a failing endpoint must never blank Discover).
  */
 const PAGE_SIZE = 24;
-const VALID_TABS = new Set(['spaces', 'people', 'organizations', 'tags', 'content', 'universities', 'sources']);
+const VALID_TABS = new Set(['spaces', 'people', 'organizations', 'tags', 'content', 'universities', 'sources', 'opportunities']);
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -45,6 +46,7 @@ export const load: PageServerLoad = async (event) => {
 	let followedSpaceIds: string[] = [];
 	let followedOrgIds: string[] = [];
 	let followedSourceIds: string[] = [];
+	let opportunities: RadarItem[] = [];
 
 	// Follow endpoints are toggles, so the follow/join buttons need the
 	// caller's current follow state — a wrong initial state would turn a
@@ -96,6 +98,10 @@ export const load: PageServerLoad = async (event) => {
 				followedSourceIds = followed.items.map((f) => f.entity_id);
 				break;
 			}
+			case 'opportunities': {
+				opportunities = (await apiList<RadarItem>(ctx, `/intel/radar?page_size=${PAGE_SIZE}`)).items;
+				break;
+			}
 			default: {
 				const [res, followed] = await Promise.all([
 					apiList<SuggestedSpace>(ctx, `/suggestions/spaces?limit=${PAGE_SIZE}`),
@@ -119,6 +125,7 @@ export const load: PageServerLoad = async (event) => {
 		content,
 		universities,
 		sources,
+		opportunities,
 		orgsTotal,
 		unisTotal,
 		followedSpaceIds,

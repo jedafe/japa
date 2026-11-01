@@ -434,11 +434,11 @@
 		if (!body.source_kind) {
 			delete body.source_kind;
 		}
-		// Dual-write categories: the admin create/update handlers still read
-		// the single `category` field (already set to categories[0] by the
-		// form), while `categories` carries the full multi-select for the
-		// intel-channels schema — the backend ignores it until the handlers
-		// accept the column.
+		// Dual-write categories: the admin create/update handlers read the
+		// single `category` field (already set to categories[0] by the form),
+		// while `categories` carries the full multi-select — the backend
+		// dual-writes both (category follows categories[0] unless explicitly
+		// patched).
 		const result = await api<IntelSource>(path, {
 			method,
 			body

@@ -63,13 +63,15 @@ export const load: PageServerLoad = async (event) => {
 					})
 					.catch(() => null)
 			: Promise.resolve(null);
-	// Badge-type vocabulary for the suggested-type select (Rule 16).
+	// Badge-type vocabulary for the suggested-type select (Rule 16) —
+	// managed taxonomy (001013), scoped to the request's entity type.
+	const typeScope = slug ? 'organization' : 'user';
 	const typesPromise =
 		slug || self
-			? apiGet<{ types: string[] }>(ctx, '/verification-requests/types')
+			? apiGet<{ types: { value: string; label: string }[] }>(ctx, `/verification-requests/types?scope=${typeScope}`)
 					.then((r) => r?.types ?? [])
-					.catch(() => [] as string[])
-			: Promise.resolve([] as string[]);
+					.catch(() => [] as { value: string; label: string }[])
+			: Promise.resolve([] as { value: string; label: string }[]);
 	// Credit balance for the paid-form "pay with credits" option — lets the
 	// UI disable it before submit rather than failing with
 	// insufficient_credits after the user has filled the whole form.

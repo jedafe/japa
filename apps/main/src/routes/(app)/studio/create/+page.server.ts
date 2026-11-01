@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { hasPerm } from '$lib/server/auth';
 import { createAvailableTypes, CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
 import { contentHref } from '$lib/utils/contentLink';
 import type { MatrixItem } from '$lib/types/jce';
@@ -321,12 +322,39 @@ export const load: PageServerLoad = async (event) => {
 		)
 	};
 
+	// author_id override (content.assign_author): the author picker is fed by
+	// GET /admin/personas — the cheap existing source, already exposing the
+	// backing bot's user_id + byline. Only fetched for callers who can
+	// actually assign authors; persona.view misses degrade to an empty list
+	// and the picker simply doesn't render.
+	let botAuthors: { id: string; label: string; sublabel?: string }[] = [];
+	if (hasPerm(event.locals.user?.permissions, 'content.assign_author')) {
+		try {
+			const personasRes = await apiList<{
+				user_id: string;
+				profile_name?: string | null;
+				backing_username?: string | null;
+				status?: string;
+			}>(ctx, '/admin/personas?page_size=100');
+			botAuthors = personasRes.items
+				.filter((p) => p.user_id && p.status !== 'retired')
+				.map((p) => ({
+					id: p.user_id,
+					label: p.profile_name || p.backing_username || p.user_id,
+					sublabel: p.backing_username ? `@${p.backing_username}` : undefined
+				}));
+		} catch {
+			botAuthors = [];
+		}
+	}
+
 	return {
 		types: createAvailableTypes(rawTypes, flags, siteSettings, callerPerms),
 		spaces,
 		fieldGroups,
 		series,
 		organizations,
+		botAuthors,
 		draft,
 		draftTags,
 		videoSource,

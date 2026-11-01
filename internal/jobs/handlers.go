@@ -758,7 +758,15 @@ func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	q := r.URL.Query().Get("q")
 
-	results, total, err := h.service.AdminListJobs(r.Context(), status, q, page, limit)
+	// ?sort=&sort_dir= follow the admin list convention (see
+	// internal/admin/moderation.go) — the service allowlists columns.
+	sortDir := r.URL.Query().Get("sort_dir")
+	if sortDir != "" && sortDir != "asc" && sortDir != "desc" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "sort_dir must be 'asc' or 'desc'")
+		return
+	}
+
+	results, total, err := h.service.AdminListJobs(r.Context(), status, q, r.URL.Query().Get("sort"), sortDir, page, limit)
 	if err != nil {
 		slog.Error("jobs: admin list jobs failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list job listings")

@@ -215,10 +215,21 @@
 		return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 	}
 
+	// Enum/boolean-ish extraction values arrive snake_cased — humanize them
+	// too (e.g. "merit_based" → "Merit Based", "true" → "Yes"). Free-form
+	// values (emails, names, urls) pass through untouched.
+	function humanizeValue(v: string): string {
+		const l = v.toLowerCase();
+		if (l === 'true' || l === 'yes') return 'Yes';
+		if (l === 'false' || l === 'no') return 'No';
+		if (!/^[a-z0-9_(),\s-]+$/.test(l)) return v;
+		return humanize(v);
+	}
+
 	const extraFields = $derived(
 		Object.entries(scholarship.field_values ?? {})
 			.filter(([k, v]) => v !== '' && !PROJECTED_KEYS.has(k))
-			.map(([k, v]) => ({ label: humanize(k), value: v }))
+			.map(([k, v]) => ({ label: humanize(k), value: humanizeValue(v) }))
 	);
 </script>
 

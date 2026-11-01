@@ -51,16 +51,17 @@
 	let searchQuery = $state("");
 	
 	// Use permissions prop for reactivity
-	function canSeeItem(permission?: string): boolean {
+	function canSeeItem(permission?: string | string[]): boolean {
 		if (!permission) return true;
-		return permissions.includes(permission) || permissions.includes('*');
+		const needed = Array.isArray(permission) ? permission : [permission];
+		return needed.some((p) => permissions.includes(p)) || permissions.includes('*');
 	}
 
 	interface NavItem {
 		path: string;
 		label: string;
 		icon: any;
-		permission?: string;
+		permission?: string | string[];
 	}
 
 	interface NavSection {
@@ -161,7 +162,7 @@
 		{ path: "/academy/revenue-splits", label: t("nav.academy_revenue_splits", "Revenue Splits"), icon: DollarSign, permission: "academy.revenue.list" },
 		{ path: "/mentorship", label: t("nav.mentorship", "Mentorship"), icon: Users2, permission: "mentorship.admin" },
 		{ path: "/onboarding/templates", label: t("nav.onboarding_templates", "Onboarding Templates"), icon: FileText, permission: "admin.settings.view" },
-		{ path: "/gamification", label: t("nav.gamification", "Gamification"), icon: Trophy, permission: "gamification.view" },
+		{ path: "/gamification", label: t("nav.gamification", "Gamification"), icon: Trophy, permission: ["gamification.manage_badges", "gamification.manage_challenges", "gamification.award_badge"] },
 		{ path: "/jobs", label: t("nav.jobs", "Jobs Board"), icon: Briefcase, permission: "jobs.admin" }
 		]
 	},
@@ -210,7 +211,8 @@
 		id: "intelligence",
 		label: t("nav.section.intelligence", "Intelligence"),
 		items: [
-			{ path: "/intelligence/review", label: t("nav.intel_review", "Review Queue"), icon: ScanSearch, permission: "intel.review.view" }
+			{ path: "/intelligence/review", label: t("nav.intel_review", "Review Queue"), icon: ScanSearch, permission: "intel.review.view" },
+			{ path: "/intelligence/oneshots", label: t("nav.intel_oneshots", "Source Submissions"), icon: Inbox, permission: "intel.channels.list" }
 		]
 	},
 	{

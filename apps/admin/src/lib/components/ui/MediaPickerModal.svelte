@@ -12,6 +12,7 @@
 	import { buildApiUrl } from '@japaconnect/api-url';
 	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Upload, Search, Image as ImageIcon, X, Loader2, Download, Check, ChevronLeft, ChevronRight } from 'lucide-svelte';
@@ -23,6 +24,7 @@
 		mime_type: string;
 		file_size: number;
 		alt_text?: string | null;
+		caption?: string | null;
 		status: string;
 		created_at: string;
 		url?: string;
@@ -71,6 +73,17 @@
 	let stockTimer: ReturnType<typeof setTimeout> | undefined;
 
 	let errorMessage = $state('');
+
+	// --- Selected item metadata editor (alt text + title) ---
+	let editAlt = $state('');
+	let editCaption = $state('');
+	let editSaving = $state(false);
+	let editError = $state('');
+	let editSaved = $state(false);
+	let selectedItem = $derived(items.find((i) => i.id === selectedId) ?? null);
+	// The metadata editor only renders for callers who can actually save —
+	// PATCH /admin/media/{id} is gated by media.edit_any.
+	let canEditMedia = $derived(hasPermission('media.edit_any'));
 
 	// Clear any pending debounce timers when the modal unmounts.
 	$effect(() => {
@@ -216,8 +229,44 @@
 		}
 	}
 
+	// Fallback label derived from the filename — strips the extension and
+	// normalises separators so "japa-guide_hero.webp" → "japa guide hero".
+	// Pre-fills the alt/title fields when the image has none stored.
+	function filenameLabel(filename?: string): string {
+		const base = (filename ?? '').replace(/\.[^.]+$/, '');
+		return base.replace(/[-_]+/g, ' ').trim();
+	}
+
 	function handleSelect(item: MediaItem) {
 		selectedId = item.id;
+		const fallback = filenameLabel(item.filename);
+		editAlt = item.alt_text?.trim() || fallback;
+		editCaption = item.caption?.trim() || fallback;
+		editError = '';
+		editSaved = false;
+	}
+
+	// PATCH /admin/media/{id} (media.edit_any) — '' clears a field; the
+	// backend COALESCEs each column so a JSON null would mean "keep".
+	async function saveMetadata() {
+		if (!selectedId) return;
+		editSaving = true;
+		editError = '';
+		editSaved = false;
+		const updates = { alt_text: editAlt.trim(), caption: editCaption.trim() };
+		try {
+			const result = await mediaAdminApi.update(selectedId, updates);
+			if (result.ok) {
+				items = items.map((i) => (i.id === selectedId ? { ...i, ...updates } : i));
+				editSaved = true;
+			} else {
+				editError = result.error || t('media.picker.edit_failed', 'Could not save changes');
+			}
+		} catch {
+			editError = t('media.picker.edit_failed', 'Could not save changes');
+		} finally {
+			editSaving = false;
+		}
 	}
 
 	function handleConfirm() {
@@ -315,6 +364,10 @@
 		currentPage = 0;
 		totalPages = 1;
 		totalItems = 0;
+		editAlt = '';
+		editCaption = '';
+		editError = '';
+		editSaved = false;
 	}
 
 	// Cleanup timers on destroy.
@@ -416,8 +469,10 @@
 									<ImageIcon class="h-8 w-8" style="color: var(--color-muted)" />
 								</div>
 							{/if}
-							<p class="truncate px-1 py-1 text-xs" style="color: var(--color-muted)" title={item.filename}>
-								{item.filename}
+							<!-- Saved title (caption) overrides the filename as the
+							     thumbnail label once set. -->
+							<p class="truncate px-1 py-1 text-xs" style="color: var(--color-muted)" title={item.caption || item.filename}>
+								{item.caption || item.filename}
 							</p>
 						</button>
 					{/each}
@@ -452,6 +507,47 @@
 						</div>
 					</div>
 				{/if}
+			{/if}
+
+			<!-- Selected item metadata editor — PATCH /admin/media/{id}. -->
+			{#if selectedItem && canEditMedia}
+				<div class="rounded-lg border p-3" style="border-color: var(--color-border); background-color: var(--color-surface)">
+					<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+						<label class="flex-1 text-xs font-medium" style="color: var(--color-muted)">
+							{t('media.picker.alt_text', 'Alt text')}
+							<input
+								type="text"
+								bind:value={editAlt}
+								oninput={() => (editSaved = false)}
+								placeholder={t('media.picker.alt_placeholder', 'Describe the image for screen readers')}
+								class="mt-1 w-full rounded-md border px-2 py-1.5 text-sm font-normal"
+								style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+							/>
+						</label>
+						<label class="flex-1 text-xs font-medium" style="color: var(--color-muted)">
+							{t('media.picker.caption', 'Title')}
+							<input
+								type="text"
+								bind:value={editCaption}
+								oninput={() => (editSaved = false)}
+								placeholder={t('media.picker.caption_placeholder', 'Optional caption/title')}
+								class="mt-1 w-full rounded-md border px-2 py-1.5 text-sm font-normal"
+								style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+							/>
+						</label>
+						<Button onclick={saveMetadata} disabled={editSaving} size="sm">
+							{#if editSaving}
+								<Loader2 class="me-1 h-3.5 w-3.5 animate-spin" />
+							{/if}
+							{t('media.picker.save', 'Save')}
+						</Button>
+					</div>
+					{#if editError}
+						<p class="mt-2 text-xs text-danger">{editError}</p>
+					{:else if editSaved}
+						<p class="mt-2 text-xs" style="color: var(--color-success, var(--color-muted))">{t('media.picker.saved', 'Saved')}</p>
+					{/if}
+				</div>
 			{/if}
 
 			<!-- Confirm button -->

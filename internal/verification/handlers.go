@@ -2,6 +2,7 @@ package verification
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -171,10 +172,121 @@ func (h *Handlers) GetOrgPendingRequest(w http.ResponseWriter, r *http.Request) 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": row.String()}})
 }
 
-// ListTypes handles GET /verification-requests/types — the allowed badge-type
-// vocabulary (public; Rule 16 so frontends never hardcode the enum).
-func (h *Handlers) ListTypes(w http.ResponseWriter, _ *http.Request) {
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"types": VerificationTypes}})
+// ListTypes handles GET /verification-requests/types — the active badge-type
+// vocabulary from verification_types (001013). ?scope=organization|user|
+// service_listing filters; absent returns all scopes' active rows. Response:
+// {data:{types:[{id,scope,value,label,description?,badge_media_id?,
+// badge_url?,position,is_active,is_protected}]}}.
+func (h *Handlers) ListTypes(w http.ResponseWriter, r *http.Request) {
+	types, err := h.service.ListTypes(r.Context(), r.URL.Query().Get("scope"))
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to load verification types")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"types": types}})
+}
+
+// ---- /admin/verification-types (verification.types.manage, 001013) ----
+
+// AdminListTypes handles GET /admin/verification-types?scope= — all rows,
+// active and inactive, for the taxonomy manager.
+func (h *Handlers) AdminListTypes(w http.ResponseWriter, r *http.Request) {
+	types, err := h.service.AdminListTypes(r.Context(), r.URL.Query().Get("scope"))
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to load verification types")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
+}
+
+// AdminCreateType handles POST /admin/verification-types.
+func (h *Handlers) AdminCreateType(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Scope        string  `json:"scope"`
+		Value        string  `json:"value"`
+		Label        string  `json:"label"`
+		Description  *string `json:"description"`
+		BadgeMediaID *string `json:"badge_media_id"`
+		Position     *int32  `json:"position"`
+		IsActive     *bool   `json:"is_active"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	dto, err := h.service.AdminCreateType(r.Context(), TypeInput{
+		Scope: body.Scope, Value: body.Value, Label: body.Label,
+		Description: body.Description, BadgeMediaID: body.BadgeMediaID,
+		Position: body.Position, IsActive: body.IsActive,
+	})
+	if err != nil {
+		writeTypeError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": dto})
+}
+
+// AdminUpdateType handles PATCH /admin/verification-types/{id}. scope+value
+// are immutable — entity rows store the value verbatim.
+func (h *Handlers) AdminUpdateType(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid verification type ID")
+		return
+	}
+	var body struct {
+		Label        string  `json:"label"`
+		Description  *string `json:"description"`
+		BadgeMediaID *string `json:"badge_media_id"`
+		Position     *int32  `json:"position"`
+		IsActive     *bool   `json:"is_active"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	dto, err := h.service.AdminUpdateType(r.Context(), id, TypeInput{
+		Label: body.Label, Description: body.Description,
+		BadgeMediaID: body.BadgeMediaID, Position: body.Position, IsActive: body.IsActive,
+	})
+	if err != nil {
+		writeTypeError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dto})
+}
+
+// AdminDeleteType handles DELETE /admin/verification-types/{id}.
+func (h *Handlers) AdminDeleteType(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid verification type ID")
+		return
+	}
+	if err := h.service.AdminDeleteType(r.Context(), id); err != nil {
+		writeTypeError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+}
+
+// writeTypeError maps taxonomy errors to the standard error contract.
+func writeTypeError(w http.ResponseWriter, err error) {
+	var inputErr *TypeInputError
+	switch {
+	case errors.As(err, &inputErr):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", inputErr.Msg)
+	case errors.Is(err, ErrTypeExists):
+		errpkg.WriteError(w, http.StatusConflict, "verification_type_exists", "A type with this value already exists for the scope")
+	case errors.Is(err, ErrTypeProtected):
+		errpkg.WriteError(w, http.StatusConflict, "verification_type_protected", "Seeded types cannot be deleted — deactivate instead")
+	case errors.Is(err, ErrTypeNotFound):
+		errpkg.WriteError(w, http.StatusNotFound, "verification_type_not_found", "Verification type not found")
+	case errors.Is(err, ErrInvalidTypeScope):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_scope", "scope must be one of organization|user|service_listing")
+	default:
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Verification type operation failed")
+	}
 }
 
 // AdminListRequests handles GET /admin/verification-requests.

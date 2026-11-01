@@ -16,6 +16,28 @@
 		selectedOrgId: string | null;
 		/** Callback when the author/org selection changes. */
 		onSelectOrg: (id: string | null) => void;
+		/** Bot personas the caller may attribute content to
+		 *  (content.assign_author). Empty = no persona option in the
+		 *  post-as selector. */
+		botAuthors?: { id: string; label: string; sublabel?: string }[];
+		/** Selected bot author id, or null for "no override". */
+		selectedAuthorId?: string | null;
+		/** Label for the null option — "Post as yourself" on create,
+		 *  "Keep current author" when editing existing content. */
+		authorNoneLabel?: string;
+		/** Callback when the bot-author selection changes. */
+		onSelectAuthor?: (id: string | null) => void;
+		/** True while the post-as selector is in "Post as a persona" mode —
+		 *  the persona picker only renders in that mode. */
+		personaMode?: boolean;
+		/** Called when the post-as selector enters/leaves persona mode. */
+		onPersonaMode?: (v: boolean) => void;
+		/** When true, the persona picker's "no override" option exits
+		 *  persona mode entirely (create: "Post as yourself" means leave
+		 *  persona mode — staying in it would leave publishing gated).
+		 *  When false (edit), the none option stays: it means "keep the
+		 *  stored author". */
+		noneExitsPersona?: boolean;
 		onSaveDraft: () => void;
 		onPublish: () => void;
 		/** When true, the content is already published — the primary action
@@ -25,9 +47,11 @@
 		isPublished?: boolean;
 	}
 
-	let { status, savedAt, canPublish, publishReason, orgs, selectedOrgId, onSelectOrg, onSaveDraft, onPublish, isPublished = false }: Props = $props();
+	let { status, savedAt, canPublish, publishReason, orgs, selectedOrgId, onSelectOrg, botAuthors = [], selectedAuthorId = null, authorNoneLabel, onSelectAuthor, personaMode = false, onPersonaMode, noneExitsPersona = false, onSaveDraft, onPublish, isPublished = false }: Props = $props();
 
 	const selectedOrg = $derived(orgs.find((o) => o.id === selectedOrgId) ?? null);
+	const selectedBot = $derived(botAuthors.find((b) => b.id === selectedAuthorId) ?? null);
+	const noneLabel = $derived(authorNoneLabel ?? t('create.post_as_yourself', 'Post as yourself'));
 
 	function formatSavedAt(ts: number | null): string {
 		if (!ts) return '';
@@ -35,58 +59,144 @@
 		return d.toLocaleTimeString(i18n.locale, { hour: '2-digit', minute: '2-digit' });
 	}
 
-	// "Post as yourself" is a special item with a sentinel id. It is
-	// included in the Autocomplete item list so the user can search for it.
+	// "Post as yourself" and "Post as a persona" are special items with
+	// sentinel ids, included in the Autocomplete item list so the user can
+	// search for them. Persona is a mode, not a value — selecting it swaps
+	// the org list for the persona picker instead of resolving to an id.
 	const SELF_ID = '__self__';
+	const PERSONA_ID = '__persona__';
+
+	const personaLabel = $derived(t('create.post_as_persona', 'Post as a persona'));
 
 	// Autocomplete fetchers — filter the already-loaded orgs client-side.
+	// The persona option is appended only when the caller can assign a bot
+	// author (botAuthors non-empty).
 	function fetchOrgs(q: string): Promise<AutocompleteItem[]> {
 		const selfLabel = t('create.post_as_yourself', 'Post as yourself');
 		const query = q.toLowerCase();
 		const selfItem: AutocompleteItem = { id: SELF_ID, label: selfLabel };
+		const personaItem: AutocompleteItem | null =
+			botAuthors.length > 0 ? { id: PERSONA_ID, label: personaLabel } : null;
 		if (query === '') {
 			return Promise.resolve([
 				selfItem,
-				...orgs.map((o) => ({ id: o.id, label: o.name, sublabel: o.member_role }))
+				...orgs.map((o) => ({ id: o.id, label: o.name, sublabel: o.member_role })),
+				...(personaItem ? [personaItem] : [])
 			]);
 		}
 		const matchesSelf = selfLabel.toLowerCase().includes(query);
+		const matchesPersona = personaLabel.toLowerCase().includes(query);
 		const filtered = orgs.filter((o) => o.name.toLowerCase().includes(query));
 		const items = filtered.map((o) => ({ id: o.id, label: o.name, sublabel: o.member_role }));
-		return Promise.resolve(matchesSelf ? [selfItem, ...items] : items);
+		return Promise.resolve([
+			...(matchesSelf ? [selfItem] : []),
+			...items,
+			...(matchesPersona && personaItem ? [personaItem] : [])
+		]);
 	}
 	function fetchOrgsInitial(): Promise<AutocompleteItem[]> {
 		return fetchOrgs('');
 	}
 
 	const selectedLabel = $derived(
-		selectedOrg
-			? selectedOrg.name
-			: t('create.post_as_yourself', 'Post as yourself')
+		personaMode
+			? personaLabel
+			: selectedOrg
+				? selectedOrg.name
+				: t('create.post_as_yourself', 'Post as yourself')
 	);
 	function handleSelect(item: AutocompleteItem) {
+		if (item.id === PERSONA_ID) {
+			// Persona mode replaces org attribution — the unified post-as
+			// selector shows one attribution at a time.
+			onPersonaMode?.(true);
+			onSelectOrg(null);
+			return;
+		}
+		onPersonaMode?.(false);
+		onSelectAuthor?.(null);
 		onSelectOrg(item.id === SELF_ID ? null : item.id);
+	}
+	function handleClearPostAs() {
+		onPersonaMode?.(false);
+		onSelectAuthor?.(null);
+		onSelectOrg(null);
+	}
+
+	// "No override" is a special item with a sentinel id, included so the
+	// caller can revert to the default author (self on create, stored on edit).
+	const NONE_ID = '__no_override__';
+	function fetchBots(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const noneItem: AutocompleteItem = { id: NONE_ID, label: noneLabel };
+		if (query === '') {
+			return Promise.resolve([
+				noneItem,
+				...botAuthors.map((b) => ({ id: b.id, label: b.label, sublabel: b.sublabel }))
+			]);
+		}
+		const items = botAuthors
+			.filter(
+				(b) =>
+					b.label.toLowerCase().includes(query) ||
+					(b.sublabel ?? '').toLowerCase().includes(query)
+			)
+			.map((b) => ({ id: b.id, label: b.label, sublabel: b.sublabel }));
+		return Promise.resolve(noneLabel.toLowerCase().includes(query) ? [noneItem, ...items] : items);
+	}
+	function fetchBotsInitial(): Promise<AutocompleteItem[]> {
+		return fetchBots('');
+	}
+	const selectedBotLabel = $derived(selectedBot ? selectedBot.label : noneLabel);
+	function handleSelectAuthor(item: AutocompleteItem) {
+		if (item.id === NONE_ID && noneExitsPersona) {
+			onPersonaMode?.(false);
+			onSelectAuthor?.(null);
+			return;
+		}
+		onSelectAuthor?.(item.id === NONE_ID ? null : item.id);
+	}
+	function handleClearAuthor() {
+		if (noneExitsPersona) onPersonaMode?.(false);
+		onSelectAuthor?.(null);
 	}
 </script>
 
 <div class="save-bar">
-	<!-- Left: author selector (replaces old "Draft" status text).
-	     Ghost-style trigger — no border, subtle hover, blends into the bar. -->
-	{#if orgs.length > 0}
+	<!-- Left: attribution selectors (replaces old "Draft" status text).
+	     Ghost-style triggers — no border, subtle hover, blend into the bar. -->
+	<div class="bar-left">
+	{#if orgs.length > 0 || botAuthors.length > 0}
 		<div class="author-autocomplete">
 			<Autocomplete
 				placeholder={t('create.post_as_yourself', 'Post as yourself')}
 				emptyMessage={t('common.no_results', 'No results found')}
 				fetcher={fetchOrgs}
 				initialFetcher={fetchOrgsInitial}
-				selectedId={selectedOrg ? selectedOrgId : SELF_ID}
+				selectedId={personaMode ? PERSONA_ID : (selectedOrg ? selectedOrgId : SELF_ID)}
 				selectedLabel={selectedLabel}
 				onSelect={handleSelect}
-				onClear={() => onSelectOrg(null)}
+				onClear={handleClearPostAs}
 				openUp
 			/>
 		</div>
-	{:else}
+	{/if}
+	{#if personaMode && botAuthors.length > 0}
+		<div class="author-autocomplete">
+			<Autocomplete
+				placeholder={t('create.author_label', 'Author')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchBots}
+				initialFetcher={fetchBotsInitial}
+				selectedId={selectedBot ? selectedAuthorId : NONE_ID}
+				selectedLabel={selectedBotLabel}
+				onSelect={handleSelectAuthor}
+				onClear={handleClearAuthor}
+				openUp
+			/>
+		</div>
+	{/if}
+	{#if orgs.length === 0 && botAuthors.length === 0}
 		<span class="status-text">
 			{t(statusLabel(status))}
 			{#if status === 'saved' && savedAt}
@@ -94,6 +204,7 @@
 			{/if}
 		</span>
 	{/if}
+	</div>
 
 	<!-- Right: publish gate reason + action buttons -->
 	<div class="actions">
@@ -151,7 +262,13 @@
 		padding: 10px 16px;
 	}
 
-	/* ---- Author autocomplete wrapper ---- */
+	/* ---- Attribution selectors (post-as-org + author override) ---- */
+	.bar-left {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
 	.author-autocomplete {
 		min-width: 200px;
 		max-width: 260px;
@@ -221,6 +338,11 @@
 			align-items: stretch;
 			gap: 8px;
 			padding: 10px 12px;
+		}
+		.bar-left {
+			flex-direction: column;
+			align-items: stretch;
+			width: 100%;
 		}
 		.author-autocomplete,
 		.status-text {

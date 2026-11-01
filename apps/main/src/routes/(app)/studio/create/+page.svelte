@@ -48,6 +48,7 @@
 		fieldGroups={data.fieldGroups}
 		series={data.series}
 		organizations={data.organizations}
+		botAuthors={data.botAuthors ?? []}
 		draft={data.draft}
 		draftTags={data.draftTags}
 		videoSource={data.videoSource}

@@ -360,6 +360,9 @@ export interface ContentRecord {
 	slug: string;
 	content_type: string;
 	title: string;
+	/** Authoring users.id — a bot persona's backing user when authored via
+	 *  the content.assign_author override. */
+	author_id?: string;
 	body?: string;
 	body_html?: string;
 	field_values?: Record<string, unknown>;
@@ -5078,6 +5081,9 @@ export interface RadarItem {
 	freshness_score: number;
 	source_url: string;
 	created_at?: string | null;
+	/** Extended intel columns (visa_sponsorship, benefits, scholarship_type,
+	 *  …) the card renders as chips. Populated for job/scholarship items. */
+	field_values?: Record<string, string> | null;
 	/** Only populated by the detail endpoint (GET /intel/radar/feed/:id). */
 	saved?: boolean | null;
 }

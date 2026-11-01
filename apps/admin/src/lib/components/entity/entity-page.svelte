@@ -143,7 +143,13 @@
 	let currentPage = $state(
 		initialParams.get('page') ? Math.max(0, Number(initialParams.get('page')) - 1) : 0
 	);
-	let pageSize = $state(pageSizeSeededFromUrl ? initialPageSize : DEFAULT_PAGE_SIZE);
+	// Seed from config.pageSize (not DEFAULT_PAGE_SIZE) when the URL did not
+	// restore one — otherwise the first load fires with the default and the
+	// config-size effect immediately re-fires a second fetch (e.g. a 15-row
+	// page first requests page_size=25, then 15).
+	let pageSize = $state(
+		pageSizeSeededFromUrl ? initialPageSize : (untrack(() => config.pageSize) ?? DEFAULT_PAGE_SIZE)
+	);
 	let searchQuery = $state(initialParams.get('q') ?? '');
 	let filterValue = $state<Record<string, string>>(initialFilters);
 	let sortKey = $state(initialParams.get('sort') ?? '');
@@ -465,7 +471,18 @@
 
 	function openCreate() {
 		editing = null;
-		formValue = {};
+		// Seed every field key (like openEdit does) so component-level
+		// `bind:value` props never receive `undefined` — that throws
+		// props_invalid_value and kills the whole modal. Fields may
+		// declare `defaultValue` for a non-empty create seed.
+		const seeded: Record<string, any> = {};
+		for (const field of config.fields) {
+			// multiselect binds string[] — an empty string would be an
+			// invalid value; seed the empty array instead.
+			seeded[field.key] =
+				field.defaultValue ?? (field.type === 'multiselect' ? [] : '');
+		}
+		formValue = seeded;
 		formErrors = {};
 		formOpen = true;
 	}

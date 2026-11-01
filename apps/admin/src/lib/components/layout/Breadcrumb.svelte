@@ -8,6 +8,10 @@
 		href: string;
 	};
 
+	// Group-only path segments that have no page of their own — linking them
+	// would 404. Their crumbs render as plain text for orientation.
+	const NON_NAVIGABLE_PATHS = new Set(['/onboarding', '/community', '/tools', '/intelligence']);
+
 	let items = $derived.by(() => {
 		const path = page.url.pathname;
 		const segments = path.split('/').filter(Boolean);
@@ -193,6 +197,8 @@
 			{/if}
 			{#if i === items.length - 1}
 				<span class="font-medium" style="color: var(--color-text)">{item.label}</span>
+			{:else if NON_NAVIGABLE_PATHS.has(item.href)}
+				<span style="color: var(--color-muted)">{item.label}</span>
 			{:else}
 				<a
 					href={item.href}

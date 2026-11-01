@@ -709,7 +709,7 @@
 								<AutocompleteSelect
 									id="requested-type"
 									value={requestedType}
-									options={[{ value: '', label: t('verification_request.type_placeholder', 'Let reviewers decide') }, ...types.map((v) => ({ value: v, label: v.replaceAll('_', ' ') }))]}
+									options={[{ value: '', label: t('verification_request.type_placeholder', 'Let reviewers decide') }, ...types.map((v) => ({ value: v.value, label: v.label }))]}
 									onValueChange={(v) => (requestedType = v)}
 								/>
 							</div>

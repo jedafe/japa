@@ -25,11 +25,12 @@ type settingsReader interface {
 
 // Service implements the verification-request business logic.
 type Service struct {
-	store    *Store
-	webhooks WebhookEmitter
-	asynq    *asynq.Client
-	siteURL  string
-	settings settingsReader
+	store         *Store
+	webhooks      WebhookEmitter
+	asynq         *asynq.Client
+	siteURL       string
+	settings      settingsReader
+	mediaResolver MediaResolver
 }
 
 // NewService creates a Service backed by the given database pools.
@@ -80,8 +81,11 @@ func (s *Service) SubmitRequest(ctx context.Context, requesterID pgtype.UUID, in
 		return gen.VerificationRequest{}, fmt.Errorf("%w: entity_type must be 'organization' or 'user'", errpkg.ErrInvalid)
 	}
 
-	if input.RequestedType != nil && *input.RequestedType != "" && !IsValidType(*input.RequestedType) {
-		return gen.VerificationRequest{}, fmt.Errorf("%w: requested_type must be one of %s", errpkg.ErrInvalid, strings.Join(VerificationTypes, "|"))
+	// requested_type is validated against the managed taxonomy for the
+	// request's scope (001013) — org requests see organization types, profile
+	// requests see user types.
+	if input.RequestedType != nil && *input.RequestedType != "" && !s.IsValidTypeValue(ctx, input.EntityType, *input.RequestedType) {
+		return gen.VerificationRequest{}, fmt.Errorf("%w: requested_type must be an active %s verification type", errpkg.ErrInvalid, input.EntityType)
 	}
 
 	var orgID pgtype.UUID

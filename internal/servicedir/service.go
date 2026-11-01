@@ -658,6 +658,23 @@ func (s *Service) categorySet(ctx context.Context) map[string]struct{} {
 	return validCategories
 }
 
+// isValidVerificationTypeDB resolves the managed verification_types
+// taxonomy for scope 'service_listing' (migration 001013) with the compiled
+// §98 enum as fallback — same contract as categorySet.
+func (s *Service) isValidVerificationTypeDB(ctx context.Context, value string) bool {
+	if s.store != nil {
+		if values, err := s.store.listActiveVerificationTypeValues(ctx); err == nil && len(values) > 0 {
+			for _, v := range values {
+				if v == value {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	return IsValidVerificationType(value)
+}
+
 // IsValidCategoryDB reports whether slug is a valid service_category in
 // the dynamic taxonomy. Shares categorySet's fallback to the §98 static
 // enum when the store is unwired or the query errors — the slug check is
@@ -3095,7 +3112,7 @@ func (s *Service) AdminVerify(ctx context.Context, contentID, verifiedBy pgtype.
 		verificationType = VerificationTypeAdmin
 	}
 
-	if !IsValidVerificationType(verificationType) {
+	if !s.isValidVerificationTypeDB(ctx, verificationType) {
 		return ErrInvalidVerificationType
 	}
 
