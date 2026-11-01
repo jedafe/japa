@@ -1924,3 +1924,23 @@ func (s *Store) ListCourseOfferingsIntelBySpaces(ctx context.Context, arg gen.Li
 
 	return rows, nil
 }
+
+// RemoveUniversityIntelOverrides releases field keys from a university
+// space's editorial-overrides set.
+func (s *Store) RemoveUniversityIntelOverrides(ctx context.Context, arg gen.RemoveUniversityIntelOverridesParams) error {
+	if err := s.queries.RemoveUniversityIntelOverrides(ctx, arg); err != nil {
+		return fmt.Errorf("stores: remove university overrides: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveCourseOfferingIntelOverrides releases field keys from a course
+// offering's editorial-overrides set.
+func (s *Store) RemoveCourseOfferingIntelOverrides(ctx context.Context, arg gen.RemoveCourseOfferingIntelOverridesParams) error {
+	if err := s.queries.RemoveCourseOfferingIntelOverrides(ctx, arg); err != nil {
+		return fmt.Errorf("stores: remove offering overrides: %w", err)
+	}
+
+	return nil
+}

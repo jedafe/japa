@@ -77,6 +77,49 @@ func (h *Handlers) resolveUniversitySpace(w http.ResponseWriter, r *http.Request
 type Handlers struct {
 	svc    *Service
 	spaces SpacesResolver
+	// intelOverrideReleaser releases offering editorial_overrides keys;
+	// nil disables the release route.
+	intelOverrideReleaser IntelOverrideReleaser
+}
+
+// IntelOverrideReleaser removes field keys from a course offering's
+// editorial_overrides set — the "release the override" admin path
+// (mirrors universities.IntelOverrideReleaser).
+type IntelOverrideReleaser interface {
+	ReleaseIntelOverrides(ctx context.Context, entityType string, entityID pgtype.UUID, keys []string)
+}
+
+// SetIntelOverrideReleaser wires the releaser used by
+// ReleaseOfferingIntelOverrides. Optional; nil disables.
+func (h *Handlers) SetIntelOverrideReleaser(m IntelOverrideReleaser) { h.intelOverrideReleaser = m }
+
+// ReleaseOfferingIntelOverrides handles DELETE
+// /admin/course-offerings/:id/intel-overrides — removes the given field
+// keys from the offering's editorial_overrides set so the next re-crawl
+// may refresh them.
+func (h *Handlers) ReleaseOfferingIntelOverrides(w http.ResponseWriter, r *http.Request) {
+	if h.intelOverrideReleaser == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "unavailable", "Intel pipeline not enabled")
+		return
+	}
+
+	var offeringID pgtype.UUID
+	if err := offeringID.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid offering ID")
+		return
+	}
+
+	var req struct {
+		Keys []string `json:"keys"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Keys) == 0 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body must contain a non-empty keys array")
+		return
+	}
+
+	h.intelOverrideReleaser.ReleaseIntelOverrides(r.Context(), "course_offering", offeringID, req.Keys)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"released": req.Keys}})
 }
 
 // NewHandlers creates the university_courses handlers. spaces may be nil in

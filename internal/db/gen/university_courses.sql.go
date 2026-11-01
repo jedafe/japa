@@ -1310,6 +1310,23 @@ func (q *Queries) ListCourseOfferingsIntelKeyset(ctx context.Context, arg ListCo
 	return items, nil
 }
 
+const removeCourseOfferingIntelOverrides = `-- name: RemoveCourseOfferingIntelOverrides :exec
+UPDATE university_course_offerings
+SET editorial_overrides = editorial_overrides - $2::text[], updated_at = now()
+WHERE id = $1
+`
+
+type RemoveCourseOfferingIntelOverridesParams struct {
+	ID      pgtype.UUID `json:"id"`
+	Column2 []string    `json:"column_2"`
+}
+
+// Releases field keys from a course offering's editorial-overrides set.
+func (q *Queries) RemoveCourseOfferingIntelOverrides(ctx context.Context, arg RemoveCourseOfferingIntelOverridesParams) error {
+	_, err := q.db.Exec(ctx, removeCourseOfferingIntelOverrides, arg.ID, arg.Column2)
+	return err
+}
+
 const softDeleteCourseCatalog = `-- name: SoftDeleteCourseCatalog :exec
 UPDATE university_course_catalog
 SET deleted_at = now(), updated_at = now()

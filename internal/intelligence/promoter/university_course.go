@@ -282,15 +282,13 @@ func (p *UniversityCoursePromoter) courseUpdatePath(ctx context.Context, record 
 		return PromoteResult{}, fmt.Errorf("promoter: parse editorial overrides: %w", err)
 	}
 
-	params, changed := buildCourseOfferingUpdateParams(existing, ext, overrides)
+	params, changeEntries, suppressed := buildCourseOfferingUpdateParams(existing, ext, overrides)
 	params.IntelRecordID = record.ID
 
+	changes := append(changeEntries, suppressed...)
+
 	var changesJSON []byte
-	if len(changed) > 0 {
-		changes := make([]fieldChange, 0, len(changed))
-		for _, c := range changed {
-			changes = append(changes, fieldChange{Field: c})
-		}
+	if len(changes) > 0 {
 		changesJSON, _ = json.Marshal(changes)
 	}
 
@@ -301,7 +299,7 @@ func (p *UniversityCoursePromoter) courseUpdatePath(ctx context.Context, record 
 			return fmt.Errorf("promoter: update course offering: %w", err)
 		}
 
-		if len(changed) > 0 {
+		if len(changes) > 0 {
 			note := noteAutoRecrawl
 			if err := tx.CreateIntelReviewLog(ctx, gen.CreateIntelReviewLogParams{
 				IntelRecordID: record.ID,
@@ -313,12 +311,16 @@ func (p *UniversityCoursePromoter) courseUpdatePath(ctx context.Context, record 
 			}
 		}
 
+		var applied []string
+		for _, ch := range changeEntries {
+			applied = append(applied, ch.Field)
+		}
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
 			Action:        ActionVerified,
-			ChangedFields: changed,
+			ChangedFields: applied,
 		}
-		if len(changed) > 0 {
+		if len(applied) > 0 {
 			result.Action = ActionUpdated
 		}
 
@@ -331,7 +333,7 @@ func (p *UniversityCoursePromoter) courseUpdatePath(ctx context.Context, record 
 // buildCourseOfferingUpdateParams seeds the update from the existing row —
 // preserving is_published (a curated draft stays a draft) — then applies
 // each extracted field not in overrides that actually changed.
-func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUniversityRow, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateCourseOfferingIntelParams, []string) {
+func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUniversityRow, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateCourseOfferingIntelParams, []fieldChange, []fieldChange) {
 	params := gen.UpdateCourseOfferingIntelParams{
 		ID:                existing.ID,
 		Tuition:           existing.Tuition,
@@ -345,42 +347,100 @@ func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUnive
 		IntelRecordID:     existing.IntelRecordID,
 	}
 
-	var changed []string
+	var (
+		changed    []string
+		suppressed []fieldChange
+	)
 	skip := func(key string) bool {
 		_, ok := overrides[key]
 		return ok
 	}
 
-	if n := numericField(ext, "tuition"); n.Valid && !numericEquals(existing.Tuition, n) && !skip("tuition") {
-		params.Tuition = n
-		changed = append(changed, "tuition")
+	if n := numericField(ext, "tuition"); n.Valid && !numericEquals(existing.Tuition, n) {
+		if skip("tuition") {
+			v, _ := n.Value()
+			ev, _ := existing.Tuition.Value()
+			suppressed = append(suppressed, fieldChange{Field: "tuition", From: ev, To: v, Suppressed: true})
+		} else {
+			params.Tuition = n
+			changed = append(changed, "tuition")
+		}
 	}
-	if c := normalizedCurrency(ext); c != nil && (existing.Currency == nil || *c != *existing.Currency) && !skip("currency") {
-		params.Currency = c
-		changed = append(changed, "currency")
+	if cur := normalizedCurrency(ext); cur != nil && (existing.Currency == nil || *cur != *existing.Currency) {
+		if skip("currency") {
+			var from any
+			if existing.Currency != nil {
+				from = *existing.Currency
+			}
+			suppressed = append(suppressed, fieldChange{Field: "currency", From: from, To: *cur, Suppressed: true})
+		} else {
+			params.Currency = cur
+			changed = append(changed, "currency")
+		}
 	}
-	if n := numericField(ext, "duration_years"); n.Valid && !numericEquals(existing.DurationYears, n) && !skip("duration_years") {
-		params.DurationYears = n
-		changed = append(changed, "duration_years")
+	if n := numericField(ext, "duration_years"); n.Valid && !numericEquals(existing.DurationYears, n) {
+		if skip("duration_years") {
+			v, _ := n.Value()
+			ev, _ := existing.DurationYears.Value()
+			suppressed = append(suppressed, fieldChange{Field: "duration_years", From: ev, To: v, Suppressed: true})
+		} else {
+			params.DurationYears = n
+			changed = append(changed, "duration_years")
+		}
 	}
-	if s := stringPtrField(ext, "study_mode"); s != nil && (existing.StudyMode == nil || *s != *existing.StudyMode) && !skip("study_mode") {
-		params.StudyMode = s
-		changed = append(changed, "study_mode")
+	if s := stringPtrField(ext, "study_mode"); s != nil && (existing.StudyMode == nil || *s != *existing.StudyMode) {
+		if skip("study_mode") {
+			var from any
+			if existing.StudyMode != nil {
+				from = *existing.StudyMode
+			}
+			suppressed = append(suppressed, fieldChange{Field: "study_mode", From: from, To: *s, Suppressed: true})
+		} else {
+			params.StudyMode = s
+			changed = append(changed, "study_mode")
+		}
 	}
-	if v := normalizedIntakes(ext); v != nil && !stringSetEquals(v, existing.IntakeMonths) && !skip("intake_months") {
-		params.IntakeMonths = v
-		changed = append(changed, "intake_months")
+	if v := normalizedIntakes(ext); v != nil && !stringSetEquals(v, existing.IntakeMonths) {
+		if skip("intake_months") {
+			suppressed = append(suppressed, fieldChange{Field: "intake_months", From: existing.IntakeMonths, To: v, Suppressed: true})
+		} else {
+			params.IntakeMonths = v
+			changed = append(changed, "intake_months")
+		}
 	}
-	if s := stringPtrField(ext, "entry_requirements"); s != nil && (existing.EntryRequirements == nil || *s != *existing.EntryRequirements) && !skip("entry_requirements") {
-		params.EntryRequirements = s
-		changed = append(changed, "entry_requirements")
+	if s := stringPtrField(ext, "entry_requirements"); s != nil && (existing.EntryRequirements == nil || *s != *existing.EntryRequirements) {
+		if skip("entry_requirements") {
+			var from any
+			if existing.EntryRequirements != nil {
+				from = *existing.EntryRequirements
+			}
+			suppressed = append(suppressed, fieldChange{Field: "entry_requirements", From: from, To: *s, Suppressed: true})
+		} else {
+			params.EntryRequirements = s
+			changed = append(changed, "entry_requirements")
+		}
 	}
-	if s := stringPtrField(ext, "accreditation"); s != nil && (existing.Accreditation == nil || *s != *existing.Accreditation) && !skip("accreditation") {
-		params.Accreditation = s
-		changed = append(changed, "accreditation")
+	if s := stringPtrField(ext, "accreditation"); s != nil && (existing.Accreditation == nil || *s != *existing.Accreditation) {
+		if skip("accreditation") {
+			var from any
+			if existing.Accreditation != nil {
+				from = *existing.Accreditation
+			}
+			suppressed = append(suppressed, fieldChange{Field: "accreditation", From: from, To: *s, Suppressed: true})
+		} else {
+			params.Accreditation = s
+			changed = append(changed, "accreditation")
+		}
 	}
 
-	return params, changed
+	// `changed` carries the applied field names; the caller merges suppressed
+	// entries for the review log.
+	changes := make([]fieldChange, 0, len(changed))
+	for _, c := range changed {
+		changes = append(changes, fieldChange{Field: c})
+	}
+
+	return params, changes, suppressed
 }
 
 // normalizedCurrency returns the extraction's currency uppercased when it

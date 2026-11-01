@@ -320,6 +320,22 @@ func TestUniversityPromote_UpdateRespectsEditorialOverrides(t *testing.T) {
 	if !sawURL {
 		t.Error("non-overridden official_website_url not updated")
 	}
+	if len(store.reviewLogCalls) != 1 {
+		t.Fatalf("review log calls = %d", len(store.reviewLogCalls))
+	}
+	var suppressed []map[string]any
+	if err := json.Unmarshal(store.reviewLogCalls[0].FieldChanges, &suppressed); err != nil {
+		t.Fatalf("unmarshal field changes: %v", err)
+	}
+	var sawSuppressed bool
+	for _, ch := range suppressed {
+		if ch["field"] == "world_ranking" && ch["suppressed"] == true {
+			sawSuppressed = true
+		}
+	}
+	if !sawSuppressed {
+		t.Errorf("expected suppressed world_ranking entry in review log: %s", store.reviewLogCalls[0].FieldChanges)
+	}
 }
 
 func TestUniversityPromote_AdoptsUnlinkedSpaceBySlug(t *testing.T) {

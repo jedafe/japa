@@ -19,6 +19,27 @@ import (
 // use content package to avoid unused import in the create path.
 var _ = content.Slugify
 
+// extractedFieldValues flattens a validated extraction to a {name: value}
+// map for contents.field_values — the structured-data column guide types
+// render from (spec: "all structured data in custom_field_values"). Null
+// fields are omitted so only evidence-backed values persist. Prior code
+// wrote '{}' — every extracted schema field was lost on promote.
+func extractedFieldValues(ext extractor.Extraction) []byte {
+	out := make(map[string]any, len(ext))
+	for name, fe := range ext {
+		if fe.Value != nil {
+			out[name] = fe.Value
+		}
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil || len(out) == 0 {
+		return []byte(`{}`)
+	}
+
+	return b
+}
+
 // GuideContentStore is the persistence surface for the GuideContentPromoter,
 // which handles the pure guide content type domains (travel_routes,
 // grants, admission, banking, work_career, health_insurance,
@@ -170,7 +191,7 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 
 	contentParams := gen.CreateContentParams{
 		AuthorID:        resolveAuthorID(ctx, p.store, source, p.authorID),
-		FieldValues:     []byte(`{}`),
+		FieldValues:     extractedFieldValues(ext),
 		ContentType:     p.contentType,
 		Title:           title,
 		Slug:            slug,

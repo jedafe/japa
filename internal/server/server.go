@@ -512,6 +512,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Intel editorial-override marking for space-column edits (name,
 	// country, initials) on intel-linked universities.
 	universitiesHandlers.SetIntelOverrideMarker(&intelOverrideMarker{store: intelStores})
+	universitiesHandlers.SetIntelOverrideReleaser(&intelOverrideMarker{store: intelStores})
 	universitiesHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in universities responses
 
 	// Create Asynq client for enqueuing background tasks (push delivery, etc.)
@@ -1420,6 +1421,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	universityCourseStore := university_courses.NewStore(database)
 	universityCourseService := university_courses.NewService(universityCourseStore)
 	universityCourseHandlers := university_courses.NewHandlers(universityCourseService, spaceService)
+	// Intel editorial-override release for course offerings
+	// (DELETE /admin/course-offerings/{id}/intel-overrides).
+	universityCourseHandlers.SetIntelOverrideReleaser(&intelOverrideMarker{store: intelStores})
 
 	creatorService.SetMediaUploader(mediaService)
 	creatorService.SetSpaceLogoUpdater(spaceService)
@@ -4423,6 +4427,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/universities/{id}/status", universitiesHandlers.UpdateUniversityStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
 				Post("/admin/universities/bulk-import", universitiesHandlers.BulkImportUniversities)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.settings")).
+				Delete("/admin/universities/{id}/intel-overrides", universitiesHandlers.ReleaseIntelOverrides)
 
 			// University course catalog + offerings admin CRUD (Section 39).
 			// Distinct from /admin/academy/* (Japa Academy creator tracks,
@@ -4448,6 +4454,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/course-offerings/{id}", universityCourseHandlers.AdminGetOffering)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.update")).
 				Patch("/admin/course-offerings/{id}", universityCourseHandlers.AdminUpdateOffering)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.update")).
+				Delete("/admin/course-offerings/{id}/intel-overrides", universityCourseHandlers.ReleaseOfferingIntelOverrides)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_offering.delete"), rbac.RequireForceDelete(rbacResolver)).
 				Delete("/admin/course-offerings/{id}", universityCourseHandlers.AdminDeleteOffering)
 

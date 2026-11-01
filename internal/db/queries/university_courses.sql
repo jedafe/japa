@@ -353,3 +353,9 @@ WHERE o.deleted_at IS NULL AND o.is_published = true
  AND ($4::timestamptz IS NULL OR o.created_at >= $4)
 ORDER BY o.created_at DESC, o.id DESC
 LIMIT $5;
+
+-- name: RemoveCourseOfferingIntelOverrides :exec
+-- Releases field keys from a course offering's editorial-overrides set.
+UPDATE university_course_offerings
+SET editorial_overrides = editorial_overrides - $2::text[], updated_at = now()
+WHERE id = $1;

@@ -263,6 +263,16 @@ func TestCoursePromote_OverrideSkipsField(t *testing.T) {
 	if store.updateCalls[0].Tuition != store.offerings[key].Tuition {
 		t.Error("overridden tuition was rewritten")
 	}
+	if len(store.reviewLogCalls) != 1 {
+		t.Fatalf("review log calls = %d, want suppressed-diff entry", len(store.reviewLogCalls))
+	}
+	var entries []map[string]any
+	if err := json.Unmarshal(store.reviewLogCalls[0].FieldChanges, &entries); err != nil {
+		t.Fatalf("unmarshal field changes: %v", err)
+	}
+	if len(entries) != 1 || entries[0]["field"] != "tuition" || entries[0]["suppressed"] != true {
+		t.Errorf("expected single suppressed tuition entry, got %s", store.reviewLogCalls[0].FieldChanges)
+	}
 }
 
 func TestCoursePromote_UnknownUniversityRoutesToReview(t *testing.T) {

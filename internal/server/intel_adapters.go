@@ -798,3 +798,27 @@ func (m *intelOverrideMarker) MarkIntelOverride(ctx context.Context, entityType 
 		slog.Warn("intel: mark university override failed", "space_id", entityID.String(), "field", fieldKey, "error", err)
 	}
 }
+
+// ReleaseIntelOverrides removes field keys from an intel-linked entity's
+// editorial_overrides set — the admin path for "a re-crawl may write this
+// field again". entityType "space" targets university_intel_links;
+// "course_offering" targets university_course_offerings.
+func (m *intelOverrideMarker) ReleaseIntelOverrides(ctx context.Context, entityType string, entityID pgtype.UUID, keys []string) {
+	if !entityID.Valid || len(keys) == 0 {
+		return
+	}
+
+	var err error
+	switch entityType {
+	case "space":
+		err = m.store.RemoveUniversityIntelOverrides(ctx, gen.RemoveUniversityIntelOverridesParams{SpaceID: entityID, Column2: keys})
+	case "course_offering":
+		err = m.store.RemoveCourseOfferingIntelOverrides(ctx, gen.RemoveCourseOfferingIntelOverridesParams{ID: entityID, Column2: keys})
+	default:
+		return
+	}
+
+	if err != nil {
+		slog.Warn("intel: release overrides failed", "entity_type", entityType, "entity_id", entityID.String(), "keys", keys, "error", err)
+	}
+}

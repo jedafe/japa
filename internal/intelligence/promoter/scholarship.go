@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"math"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
@@ -319,7 +321,7 @@ func (p *ScholarshipPromoter) createScholarshipGuide(ctx context.Context, tx TxS
 		Slug:            slug,
 		Body:            bodyText,
 		BodyHtml:        bodyHTML(bodyText),
-		FieldValues:     []byte(`{}`),
+		FieldValues:     extractedFieldValues(ext),
 		ContentHash:     &hash,
 		GeoSpaceID:      countrySpaceID,
 		CanonicalUrl:    &canonicalURL,
@@ -525,7 +527,7 @@ func (p *ScholarshipPromoter) createGuideOnApprove(ctx context.Context, tx TxSto
 		Slug:            slug,
 		Body:            bodyText,
 		BodyHtml:        bodyHTML(bodyText),
-		FieldValues:     []byte(`{}`),
+		FieldValues:     extractedFieldValues(ext),
 		ContentHash:     &hash,
 		GeoSpaceID:      params.CountrySpaceID,
 		CanonicalUrl:    &canonicalURL,
@@ -592,26 +594,35 @@ func (p *ScholarshipPromoter) syncGuideContent(ctx context.Context, tx TxStore, 
 // review-required records).
 func buildCreateParams(record gen.IntelRecord, source gen.IntelSource, guideID pgtype.UUID, ext extractor.Extraction, verificationStatus, overrideSource string) gen.CreateScholarshipParams {
 	return gen.CreateScholarshipParams{
-		IntelRecordID:        record.ID,
-		GuideID:              guideID,
-		SourceUrl:            source.SourceUrl,
-		SourceType:           source.SourceType,
-		TrustLevel:           source.TrustLevel,
-		Title:                stringField(ext, fieldTitle),
-		Description:          descriptionField(ext),
-		Country:              firstCountry(ext, "country"),
-		CountrySpaceID:       pgtype.UUID{}, // caller resolves and overrides
-		University:           stringPtrField(ext, "university"),
-		DegreeLevel:          stringPtrField(ext, "degree_level"),
-		FieldsOfStudy:        orEmptySlice(stringSliceField(ext, "fields_of_study")),
-		EligibleCountries:    orEmptySlice(stringSliceField(ext, "eligible_countries")),
-		Funding:              orEmptyJSON(jsonbField(ext, "funding")),
-		Deadline:             dateField(ext, "deadline"),
-		ApplicationUrl:       stringPtrField(ext, "application_url"),
-		RequiredDocuments:    orEmptySlice(stringSliceField(ext, "required_documents")),
-		MinimumGpa:           numericField(ext, "minimum_gpa"),
-		LanguageRequirements: orEmptyJSON(jsonbField(ext, "language_requirements")),
-		ConfidenceOverall:    record.ConfidenceOverall,
+		IntelRecordID:               record.ID,
+		GuideID:                     guideID,
+		SourceUrl:                   source.SourceUrl,
+		SourceType:                  source.SourceType,
+		TrustLevel:                  source.TrustLevel,
+		Title:                       stringField(ext, fieldTitle),
+		Description:                 descriptionField(ext),
+		Country:                     firstCountry(ext, "country"),
+		CountrySpaceID:              pgtype.UUID{}, // caller resolves and overrides
+		University:                  stringPtrField(ext, "university"),
+		DegreeLevel:                 stringPtrField(ext, "degree_level"),
+		FieldsOfStudy:               orEmptySlice(stringSliceField(ext, "fields_of_study")),
+		EligibleCountries:           orEmptySlice(stringSliceField(ext, "eligible_countries")),
+		Funding:                     orEmptyJSON(jsonbField(ext, "funding")),
+		Deadline:                    dateField(ext, "deadline"),
+		ApplicationUrl:              stringPtrField(ext, "application_url"),
+		RequiredDocuments:           orEmptySlice(stringSliceField(ext, "required_documents")),
+		MinimumGpa:                  numericField(ext, "minimum_gpa"),
+		LanguageRequirements:        orEmptyJSON(jsonbField(ext, "language_requirements")),
+		ConfidenceOverall:           record.ConfidenceOverall,
+		ScholarshipType:             stringPtrField(ext, "scholarship_type"),
+		StudyMode:                   stringPtrField(ext, "study_mode"),
+		NumberOfAwards:              intPtrField(ext, "number_of_awards"),
+		ApplicationFee:              stringPtrField(ext, "application_fee"),
+		Renewable:                   boolField(ext, "renewable"),
+		DurationYears:               numericField(ext, "duration_years"),
+		StartDate:                   dateField(ext, "start_date"),
+		OpenToInternationalStudents: boolField(ext, "open_to_international_students"),
+		ContactEmail:                stringPtrField(ext, "contact_email"),
 		// The scholarships CHECK constraint (migration 000429) only allows
 		// verification_status IN ('verified','needs_review','conflict','stale')
 		// and override_source IN ('ingestion','editorial','mixed'); the prior
@@ -630,30 +641,39 @@ func buildCreateParams(record gen.IntelRecord, source gen.IntelSource, guideID p
 // (human edit wins).
 func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateScholarshipParams, []string) {
 	params := gen.UpdateScholarshipParams{
-		ID:                   existing.ID,
-		Title:                existing.Title,
-		Description:          existing.Description,
-		Country:              existing.Country,
-		CountrySpaceID:       existing.CountrySpaceID,
-		University:           existing.University,
-		DegreeLevel:          existing.DegreeLevel,
-		FieldsOfStudy:        existing.FieldsOfStudy,
-		EligibleCountries:    existing.EligibleCountries,
-		Funding:              existing.Funding,
-		Deadline:             existing.Deadline,
-		ApplicationUrl:       existing.ApplicationUrl,
-		RequiredDocuments:    existing.RequiredDocuments,
-		MinimumGpa:           existing.MinimumGpa,
-		LanguageRequirements: existing.LanguageRequirements,
-		ConfidenceOverall:    existing.ConfidenceOverall,
-		VerificationStatus:   existing.VerificationStatus,
-		FreshnessScore:       existing.FreshnessScore,
-		OverrideSource:       existing.OverrideSource,
-		EditorialOverrides:   existing.EditorialOverrides,
-		SourceUrl:            existing.SourceUrl,
-		SourceType:           existing.SourceType,
-		TrustLevel:           existing.TrustLevel,
-		GuideID:              existing.GuideID,
+		ID:                          existing.ID,
+		Title:                       existing.Title,
+		Description:                 existing.Description,
+		Country:                     existing.Country,
+		CountrySpaceID:              existing.CountrySpaceID,
+		University:                  existing.University,
+		DegreeLevel:                 existing.DegreeLevel,
+		FieldsOfStudy:               existing.FieldsOfStudy,
+		EligibleCountries:           existing.EligibleCountries,
+		Funding:                     existing.Funding,
+		Deadline:                    existing.Deadline,
+		ApplicationUrl:              existing.ApplicationUrl,
+		RequiredDocuments:           existing.RequiredDocuments,
+		MinimumGpa:                  existing.MinimumGpa,
+		LanguageRequirements:        existing.LanguageRequirements,
+		ConfidenceOverall:           existing.ConfidenceOverall,
+		VerificationStatus:          existing.VerificationStatus,
+		FreshnessScore:              existing.FreshnessScore,
+		OverrideSource:              existing.OverrideSource,
+		EditorialOverrides:          existing.EditorialOverrides,
+		SourceUrl:                   existing.SourceUrl,
+		SourceType:                  existing.SourceType,
+		TrustLevel:                  existing.TrustLevel,
+		GuideID:                     existing.GuideID,
+		ScholarshipType:             existing.ScholarshipType,
+		StudyMode:                   existing.StudyMode,
+		NumberOfAwards:              existing.NumberOfAwards,
+		ApplicationFee:              existing.ApplicationFee,
+		Renewable:                   existing.Renewable,
+		DurationYears:               existing.DurationYears,
+		StartDate:                   existing.StartDate,
+		OpenToInternationalStudents: existing.OpenToInternationalStudents,
+		ContactEmail:                existing.ContactEmail,
 	}
 
 	var changed []string
@@ -672,6 +692,15 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 	applyStrSliceField(overrides, ext, "required_documents", &params.RequiredDocuments, existing.RequiredDocuments, &changed)
 	applyNumericField(overrides, ext, "minimum_gpa", &params.MinimumGpa, existing.MinimumGpa, &changed)
 	applyJSONField(overrides, ext, "language_requirements", &params.LanguageRequirements, existing.LanguageRequirements, &changed)
+	applyStrPtrField(overrides, ext, "scholarship_type", &params.ScholarshipType, existing.ScholarshipType, &changed)
+	applyStrPtrField(overrides, ext, "study_mode", &params.StudyMode, existing.StudyMode, &changed)
+	applyIntPtrField(overrides, ext, "number_of_awards", &params.NumberOfAwards, existing.NumberOfAwards, &changed)
+	applyStrPtrField(overrides, ext, "application_fee", &params.ApplicationFee, existing.ApplicationFee, &changed)
+	applyBoolPtrField(overrides, "renewable", func() *bool { return boolField(ext, "renewable") }, &params.Renewable, existing.Renewable, &changed)
+	applyNumericField(overrides, ext, "duration_years", &params.DurationYears, existing.DurationYears, &changed)
+	applyDateField(overrides, ext, "start_date", &params.StartDate, existing.StartDate, &changed)
+	applyBoolPtrField(overrides, "open_to_international_students", func() *bool { return boolField(ext, "open_to_international_students") }, &params.OpenToInternationalStudents, existing.OpenToInternationalStudents, &changed)
+	applyStrPtrField(overrides, ext, "contact_email", &params.ContactEmail, existing.ContactEmail, &changed)
 
 	return params, changed
 }
@@ -788,6 +817,25 @@ func applyNumericFieldFn(overrides map[string]struct{}, key string, get func() p
 	}
 
 	if v := get(); v.Valid && !numericEqual(v, current) {
+		*dst = v
+
+		*changed = append(*changed, key)
+	}
+}
+
+// applyIntPtrField applies an integer extraction field to a nullable
+// integer column via intPtrField.
+func applyIntPtrField(overrides map[string]struct{}, ext extractor.Extraction, key string, dst **int32, current *int32, changed *[]string) {
+	applyIntPtrFieldFn(overrides, key, func() *int32 { return intPtrField(ext, key) }, dst, current, changed)
+}
+
+// applyIntPtrFieldFn applies a *int32 extraction via a custom getter.
+func applyIntPtrFieldFn(overrides map[string]struct{}, key string, get func() *int32, dst **int32, current *int32, changed *[]string) {
+	if _, ov := overrides[key]; ov {
+		return
+	}
+
+	if v := get(); v != nil && !intPtrEqual(v, current) {
 		*dst = v
 
 		*changed = append(*changed, key)
@@ -1395,6 +1443,41 @@ func numericField(ext extractor.Extraction, key string) pgtype.Numeric {
 	return pgtype.Numeric{Int: num, Exp: exp, Valid: true}
 }
 
+// intPtrField returns a nullable int32 for numeric extraction fields bound
+// to integer columns (e.g. number_of_awards).
+func intPtrField(ext extractor.Extraction, key string) *int32 {
+	f, ok := ext[key]
+	if !ok || f.Value == nil {
+		return nil
+	}
+
+	var v float64
+
+	switch n := f.Value.(type) {
+	case float64:
+		v = n
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err != nil {
+			return nil
+		}
+		v = parsed
+	default:
+		return nil
+	}
+
+	i := int32(math.Round(v))
+	return &i
+}
+
+func intPtrEqual(a, b *int32) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+
+	return *a == *b
+}
+
 func jsonbField(ext extractor.Extraction, key string) []byte {
 	f, ok := ext[key]
 	if !ok || f.Value == nil {
@@ -1535,6 +1618,10 @@ type fieldChange struct {
 	Field string `json:"field"`
 	From  any    `json:"from"`
 	To    any    `json:"to"`
+	// Suppressed marks a change the re-crawl computed but did not write
+	// because the field is editorially overridden — the review-log signal
+	// that a human-edited value has gone stale against the source.
+	Suppressed bool `json:"suppressed,omitempty"`
 }
 
 func marshalFieldChanges(existing gen.Scholarship, params gen.UpdateScholarshipParams, changed []string) ([]byte, error) {
@@ -1588,6 +1675,33 @@ var scholarshipFieldAccessors = map[string]func(e gen.Scholarship, p gen.UpdateS
 	"language_requirements": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
 		return jsonOrNull(e.LanguageRequirements), jsonOrNull(p.LanguageRequirements)
 	},
+	"scholarship_type": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return derefStr(e.ScholarshipType), derefStr(p.ScholarshipType)
+	},
+	"study_mode": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return derefStr(e.StudyMode), derefStr(p.StudyMode)
+	},
+	"number_of_awards": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return derefInt(e.NumberOfAwards), derefInt(p.NumberOfAwards)
+	},
+	"application_fee": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return derefStr(e.ApplicationFee), derefStr(p.ApplicationFee)
+	},
+	"renewable": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return derefBool(e.Renewable), derefBool(p.Renewable)
+	},
+	"duration_years": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return numericStr(e.DurationYears), numericStr(p.DurationYears)
+	},
+	"start_date": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return dateStr(e.StartDate), dateStr(p.StartDate)
+	},
+	"open_to_international_students": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return derefBool(e.OpenToInternationalStudents), derefBool(p.OpenToInternationalStudents)
+	},
+	"contact_email": func(e gen.Scholarship, p gen.UpdateScholarshipParams) (any, any) {
+		return derefStr(e.ContactEmail), derefStr(p.ContactEmail)
+	},
 }
 
 // snapshotField returns (before, after) values for a changed column name.
@@ -1605,6 +1719,15 @@ func derefStr(s *string) any {
 	}
 
 	return *s
+}
+
+// derefInt renders a nullable int column for review-log diffs.
+func derefInt(v *int32) any {
+	if v == nil {
+		return nil
+	}
+
+	return *v
 }
 
 func dateStr(d pgtype.Date) any {

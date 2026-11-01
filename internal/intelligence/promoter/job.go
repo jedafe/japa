@@ -187,6 +187,13 @@ func buildJobCreateParams(record gen.IntelRecord, source gen.IntelSource, guideI
 		Deadline:           dateField(ext, "deadline"),
 		Remote:             stringPtrField(ext, "remote"),
 		ConfidenceOverall:  record.ConfidenceOverall,
+		VisaSponsorship:       boolField(ext, "visa_sponsorship"),
+		RelocationAssistance:  boolField(ext, "relocation_assistance"),
+		Benefits:              orEmptySlice(stringSliceField(ext, "benefits")),
+		EducationRequired:     stringPtrField(ext, "education_required"),
+		LanguagesRequired:     orEmptySlice(stringSliceField(ext, "languages_required")),
+		PostedDate:            dateField(ext, "posted_date"),
+		WorkSchedule:          stringPtrField(ext, "work_schedule"),
 		VerificationStatus: "verified",
 		FreshnessScore:     freshScore,
 		OverrideSource:     "ingestion",
@@ -205,6 +212,10 @@ func buildJobUpdateParams(existing gen.IntelJob, ext extractor.Extraction, overr
 		ConfidenceOverall: existing.ConfidenceOverall, VerificationStatus: existing.VerificationStatus,
 		FreshnessScore: existing.FreshnessScore, OverrideSource: existing.OverrideSource,
 		EditorialOverrides: existing.EditorialOverrides,
+		VisaSponsorship: existing.VisaSponsorship, RelocationAssistance: existing.RelocationAssistance,
+		Benefits: existing.Benefits, EducationRequired: existing.EducationRequired,
+		LanguagesRequired: existing.LanguagesRequired, PostedDate: existing.PostedDate,
+		WorkSchedule: existing.WorkSchedule,
 	}
 
 	var changed []string
@@ -237,6 +248,20 @@ func buildJobUpdateParams(existing gen.IntelJob, ext extractor.Extraction, overr
 
 	applyStrPtrField(overrides, ext, "remote", &params.Remote, existing.Remote, &changed)
 
+	applyBoolPtrField(overrides, "visa_sponsorship", func() *bool { return boolField(ext, "visa_sponsorship") }, &params.VisaSponsorship, existing.VisaSponsorship, &changed)
+
+	applyBoolPtrField(overrides, "relocation_assistance", func() *bool { return boolField(ext, "relocation_assistance") }, &params.RelocationAssistance, existing.RelocationAssistance, &changed)
+
+	applyStrSliceField(overrides, ext, "benefits", &params.Benefits, existing.Benefits, &changed)
+
+	applyStrPtrField(overrides, ext, "education_required", &params.EducationRequired, existing.EducationRequired, &changed)
+
+	applyStrSliceField(overrides, ext, "languages_required", &params.LanguagesRequired, existing.LanguagesRequired, &changed)
+
+	applyDateField(overrides, ext, "posted_date", &params.PostedDate, existing.PostedDate, &changed)
+
+	applyStrPtrField(overrides, ext, "work_schedule", &params.WorkSchedule, existing.WorkSchedule, &changed)
+
 	return params, changed
 }
 
@@ -257,6 +282,25 @@ var jobFieldAccessors = map[string]func(e gen.IntelJob, p gen.UpdateIntelJobPara
 	},
 	"experience_level": func(e gen.IntelJob, p gen.UpdateIntelJobParams) (any, any) {
 		return derefStr(e.ExperienceLevel), derefStr(p.ExperienceLevel)
+	},
+	"visa_sponsorship": func(e gen.IntelJob, p gen.UpdateIntelJobParams) (any, any) {
+		return derefBool(e.VisaSponsorship), derefBool(p.VisaSponsorship)
+	},
+	"relocation_assistance": func(e gen.IntelJob, p gen.UpdateIntelJobParams) (any, any) {
+		return derefBool(e.RelocationAssistance), derefBool(p.RelocationAssistance)
+	},
+	"benefits": func(e gen.IntelJob, p gen.UpdateIntelJobParams) (any, any) { return e.Benefits, p.Benefits },
+	"education_required": func(e gen.IntelJob, p gen.UpdateIntelJobParams) (any, any) {
+		return derefStr(e.EducationRequired), derefStr(p.EducationRequired)
+	},
+	"languages_required": func(e gen.IntelJob, p gen.UpdateIntelJobParams) (any, any) {
+		return e.LanguagesRequired, p.LanguagesRequired
+	},
+	"posted_date": func(e gen.IntelJob, p gen.UpdateIntelJobParams) (any, any) {
+		return dateStr(e.PostedDate), dateStr(p.PostedDate)
+	},
+	"work_schedule": func(e gen.IntelJob, p gen.UpdateIntelJobParams) (any, any) {
+		return derefStr(e.WorkSchedule), derefStr(p.WorkSchedule)
 	},
 	"salary_min": func(e gen.IntelJob, p gen.UpdateIntelJobParams) (any, any) {
 		return numericStr(e.SalaryMin), numericStr(p.SalaryMin)

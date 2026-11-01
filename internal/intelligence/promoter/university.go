@@ -481,12 +481,12 @@ func (p *UniversityPromoter) universityAdoptPath(ctx context.Context, record gen
 		return PromoteResult{}, fmt.Errorf("promoter: load adopted university space: %w", err)
 	}
 
-	writes, changed, err := p.planUniversityWrites(ctx, spaceRow, defs, ext, nil)
+	writes, changed, suppressed, err := p.planUniversityWrites(ctx, spaceRow, defs, ext, nil)
 	if err != nil {
 		return PromoteResult{}, err
 	}
 
-	changesJSON := marshalUniversityChanges(changed, writes)
+	changesJSON := marshalUniversityChanges(changed, writes, suppressed)
 
 	err = p.store.WithTx(ctx, func(tx UniversityTxStore) error {
 		if err := applyUniversityWrites(ctx, tx, writes); err != nil {
@@ -507,7 +507,7 @@ func (p *UniversityPromoter) universityAdoptPath(ctx context.Context, record gen
 			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}
 
-		if len(changed) > 0 {
+		if len(changed)+len(suppressed) > 0 {
 			note := noteAutoRecrawl
 			if err := tx.CreateIntelReviewLog(ctx, gen.CreateIntelReviewLogParams{
 				IntelRecordID: record.ID,
@@ -553,12 +553,12 @@ func (p *UniversityPromoter) universityUpdatePath(ctx context.Context, record ge
 
 	defs := p.resolveUniversityFieldDefs(ctx, ext)
 
-	writes, changed, err := p.planUniversityWrites(ctx, space, defs, ext, overrides)
+	writes, changed, suppressed, err := p.planUniversityWrites(ctx, space, defs, ext, overrides)
 	if err != nil {
 		return PromoteResult{}, err
 	}
 
-	changesJSON := marshalUniversityChanges(changed, writes)
+	changesJSON := marshalUniversityChanges(changed, writes, suppressed)
 
 	err = p.store.WithTx(ctx, func(tx UniversityTxStore) error {
 		if err := applyUniversityWrites(ctx, tx, writes); err != nil {
@@ -572,7 +572,7 @@ func (p *UniversityPromoter) universityUpdatePath(ctx context.Context, record ge
 			return fmt.Errorf("promoter: relink university intel record: %w", err)
 		}
 
-		if len(changed) > 0 {
+		if len(changed)+len(suppressed) > 0 {
 			note := noteAutoRecrawl
 			if err := tx.CreateIntelReviewLog(ctx, gen.CreateIntelReviewLogParams{
 				IntelRecordID: record.ID,
@@ -610,7 +610,7 @@ type universityWrite struct {
 // planUniversityWrites compares extraction values against stored state and
 // returns the writes to apply — the reads run outside the tx, the writes
 // inside it via applyUniversityWrites (§6.2 atomicity).
-func (p *UniversityPromoter) planUniversityWrites(ctx context.Context, space gen.GetSpaceByIDRow, defs map[string]universityFieldDef, ext extractor.Extraction, overrides map[string]struct{}) ([]universityWrite, []string, error) {
+func (p *UniversityPromoter) planUniversityWrites(ctx context.Context, space gen.GetSpaceByIDRow, defs map[string]universityFieldDef, ext extractor.Extraction, overrides map[string]struct{}) ([]universityWrite, []string, []fieldChange, error) {
 	skip := func(key string) bool {
 		if overrides == nil {
 			return false
@@ -620,8 +620,9 @@ func (p *UniversityPromoter) planUniversityWrites(ctx context.Context, space gen
 	}
 
 	var (
-		writes  []universityWrite
-		changed []string
+		writes     []universityWrite
+		changed    []string
+		suppressed []fieldChange
 	)
 
 	// ---- Space columns ----
@@ -640,34 +641,46 @@ func (p *UniversityPromoter) planUniversityWrites(ctx context.Context, space gen
 	}
 	spaceDirty := false
 
-	if name := stringField(ext, "name"); name != "" && name != space.Name && !skip("name") {
-		writes = append(writes, universityWrite{field: "name", from: space.Name, to: name})
-		spaceParams.Name = name
-		spaceDirty = true
-		changed = append(changed, "name")
+	if name := stringField(ext, "name"); name != "" && name != space.Name {
+		if skip("name") {
+			suppressed = append(suppressed, fieldChange{Field: "name", From: space.Name, To: name, Suppressed: true})
+		} else {
+			writes = append(writes, universityWrite{field: "name", from: space.Name, to: name})
+			spaceParams.Name = name
+			spaceDirty = true
+			changed = append(changed, "name")
+		}
 	}
 
-	if desc := stringPtrField(ext, "description"); desc != nil && (space.Description == nil || *desc != *space.Description) && !skip("description") {
+	if desc := stringPtrField(ext, "description"); desc != nil && (space.Description == nil || *desc != *space.Description) {
 		var from any
 		if space.Description != nil {
 			from = *space.Description
 		}
-		writes = append(writes, universityWrite{field: "description", from: from, to: *desc})
-		spaceParams.Description = desc
-		spaceDirty = true
-		changed = append(changed, "description")
+		if skip("description") {
+			suppressed = append(suppressed, fieldChange{Field: "description", From: from, To: *desc, Suppressed: true})
+		} else {
+			writes = append(writes, universityWrite{field: "description", from: from, to: *desc})
+			spaceParams.Description = desc
+			spaceDirty = true
+			changed = append(changed, "description")
+		}
 	}
 
-	if alpha2 := stores.CountryCodeAlpha2(firstCountry(ext, "country")); alpha2 != "" && !skip("country") {
+	if alpha2 := stores.CountryCodeAlpha2(firstCountry(ext, "country")); alpha2 != "" {
 		existing := ""
 		if space.GeoCode != nil {
 			existing = *space.GeoCode
 		}
 		if alpha2 != existing {
-			writes = append(writes, universityWrite{field: "country", from: existing, to: alpha2})
-			spaceParams.GeoCode = &alpha2
-			spaceDirty = true
-			changed = append(changed, "country")
+			if skip("country") {
+				suppressed = append(suppressed, fieldChange{Field: "country", From: existing, To: alpha2, Suppressed: true})
+			} else {
+				writes = append(writes, universityWrite{field: "country", from: existing, to: alpha2})
+				spaceParams.GeoCode = &alpha2
+				spaceDirty = true
+				changed = append(changed, "country")
+			}
 		}
 	}
 
@@ -682,7 +695,7 @@ func (p *UniversityPromoter) planUniversityWrites(ctx context.Context, space gen
 		EntityID:   space.ID,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("promoter: list university cfvs: %w", err)
+		return nil, nil, nil, fmt.Errorf("promoter: list university cfvs: %w", err)
 	}
 
 	storedByFieldID := make(map[string]gen.CustomFieldValue, len(stored))
@@ -691,10 +704,6 @@ func (p *UniversityPromoter) planUniversityWrites(ctx context.Context, space gen
 	}
 
 	for key, def := range defs {
-		if skip(key) {
-			continue
-		}
-
 		want, ok := cfvWriteFor(def, ext, space.ID)
 		if !ok {
 			continue
@@ -704,12 +713,17 @@ func (p *UniversityPromoter) planUniversityWrites(ctx context.Context, space gen
 			continue
 		}
 
+		if skip(key) {
+			suppressed = append(suppressed, fieldChange{Field: key, From: cfvStoredDisplay(def, storedByFieldID[def.id.String()]), To: cfvDisplayValue(def, want), Suppressed: true})
+			continue
+		}
+
 		params := want
 		writes = append(writes, universityWrite{field: key, to: cfvDisplayValue(def, params), params: &params})
 		changed = append(changed, key)
 	}
 
-	return writes, changed, nil
+	return writes, changed, suppressed, nil
 }
 
 // applyUniversityWrites executes the planned writes inside the transaction.
@@ -724,6 +738,31 @@ func applyUniversityWrites(ctx context.Context, tx UniversityTxStore, writes []u
 			if _, err := tx.UpsertCustomFieldValue(ctx, *w.params); err != nil {
 				return fmt.Errorf("promoter: upsert cfv %q: %w", w.field, err)
 			}
+		}
+	}
+
+	return nil
+}
+
+// cfvStoredDisplay renders a stored CFV's current value for the review log.
+func cfvStoredDisplay(def universityFieldDef, stored gen.CustomFieldValue) any {
+	switch def.fieldType {
+	case "number":
+		if stored.ValueNumber.Valid {
+			v, _ := stored.ValueNumber.Value()
+			return v
+		}
+	case "boolean":
+		if stored.ValueBool != nil {
+			return *stored.ValueBool
+		}
+	case "select":
+		return selectValueOf(stored.ValueJson)
+	case "multiselect":
+		return multiselectValues(stored.ValueJson)
+	default:
+		if stored.ValueText != nil {
+			return *stored.ValueText
 		}
 	}
 
@@ -749,18 +788,20 @@ func cfvDisplayValue(def universityFieldDef, params gen.UpsertCustomFieldValuePa
 	return nil
 }
 
-// marshalUniversityChanges renders fieldChange entries for the review log.
-func marshalUniversityChanges(changed []string, writes []universityWrite) []byte {
+// marshalUniversityChanges renders applied + suppressed fieldChange entries
+// for the review log.
+func marshalUniversityChanges(changed []string, writes []universityWrite, suppressed []fieldChange) []byte {
 	byField := make(map[string]universityWrite, len(writes))
 	for _, w := range writes {
 		byField[w.field] = w
 	}
 
-	changes := make([]fieldChange, 0, len(changed))
+	changes := make([]fieldChange, 0, len(changed)+len(suppressed))
 	for _, c := range changed {
 		w := byField[c]
 		changes = append(changes, fieldChange{Field: c, From: w.from, To: w.to})
 	}
+	changes = append(changes, suppressed...)
 
 	out, _ := json.Marshal(changes)
 

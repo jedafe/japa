@@ -166,6 +166,25 @@ func (q *Queries) GetUniversitySpaceBySlug(ctx context.Context, slug string) (Ge
 	return i, err
 }
 
+const removeUniversityIntelOverrides = `-- name: RemoveUniversityIntelOverrides :exec
+UPDATE university_intel_links
+SET editorial_overrides = editorial_overrides - $2::text[]
+WHERE space_id = $1
+`
+
+type RemoveUniversityIntelOverridesParams struct {
+	SpaceID pgtype.UUID `json:"space_id"`
+	Column2 []string    `json:"column_2"`
+}
+
+// Releases field keys from a university's editorial-overrides set — the
+// admin "re-crawl may write this field again" path. jsonb '-' removes the
+// listed keys in place; other keys are untouched.
+func (q *Queries) RemoveUniversityIntelOverrides(ctx context.Context, arg RemoveUniversityIntelOverridesParams) error {
+	_, err := q.db.Exec(ctx, removeUniversityIntelOverrides, arg.SpaceID, arg.Column2)
+	return err
+}
+
 const upsertUniversityIntelLink = `-- name: UpsertUniversityIntelLink :one
 INSERT INTO university_intel_links (space_id, intel_record_id)
 VALUES ($1, $2)

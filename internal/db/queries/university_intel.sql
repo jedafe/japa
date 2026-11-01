@@ -46,3 +46,11 @@ JOIN space_types st ON st.id = s.space_type_id
 WHERE st.slug = 'education' AND s.level = 'university'
   AND s.deleted_at IS NULL
   AND lower(s.name) = lower(@name);
+
+-- name: RemoveUniversityIntelOverrides :exec
+-- Releases field keys from a university's editorial-overrides set — the
+-- admin "re-crawl may write this field again" path. jsonb '-' removes the
+-- listed keys in place; other keys are untouched.
+UPDATE university_intel_links
+SET editorial_overrides = editorial_overrides - $2::text[]
+WHERE space_id = $1;

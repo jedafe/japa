@@ -101,6 +101,8 @@ type Handlers struct {
 	// intelOverrideMarker marks admin edits as intel editorial overrides
 	// on linked university spaces; nil disables (wired by the server).
 	intelOverrideMarker IntelOverrideMarker
+	// intelOverrideReleaser removes override keys on request; nil disables.
+	intelOverrideReleaser IntelOverrideReleaser
 }
 
 // literalResolver resolves {{...}} template literals in user-facing text
@@ -1403,4 +1405,44 @@ func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
 
 	target := "/compare?type=universities&source=university&preselect=" + url.QueryEscape(slug)
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// IntelOverrideReleaser removes field keys from a university's
+// university_intel_links editorial_overrides set — the "release the
+// override, let the source refresh this field again" path (mirrors
+// IntelOverrideMarker).
+type IntelOverrideReleaser interface {
+	ReleaseIntelOverrides(ctx context.Context, entityType string, entityID pgtype.UUID, keys []string)
+}
+
+// SetIntelOverrideReleaser wires the releaser used by
+// ReleaseIntelOverrides. Optional; nil returns 404 for the route body.
+func (h *Handlers) SetIntelOverrideReleaser(m IntelOverrideReleaser) { h.intelOverrideReleaser = m }
+
+// ReleaseIntelOverrides handles DELETE /admin/universities/:id/intel-overrides
+// — removes the given field keys from the university's editorial-overrides
+// set so the next re-crawl may refresh them.
+func (h *Handlers) ReleaseIntelOverrides(w http.ResponseWriter, r *http.Request) {
+	if h.intelOverrideReleaser == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "unavailable", "Intel pipeline not enabled")
+		return
+	}
+
+	var spaceID pgtype.UUID
+	if err := spaceID.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid university ID")
+		return
+	}
+
+	var req struct {
+		Keys []string `json:"keys"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Keys) == 0 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body must contain a non-empty keys array")
+		return
+	}
+
+	h.intelOverrideReleaser.ReleaseIntelOverrides(r.Context(), "space", spaceID, req.Keys)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"released": req.Keys}})
 }
