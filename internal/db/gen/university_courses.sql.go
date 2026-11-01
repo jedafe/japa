@@ -1208,7 +1208,7 @@ JOIN university_course_catalog c ON c.id = o.course_id
 JOIN spaces s ON s.id = o.university_id
 LEFT JOIN spaces cs ON cs.geo_code = s.geo_code AND cs.level = 'country' AND cs.deleted_at IS NULL
 WHERE o.deleted_at IS NULL AND o.is_published = true
- AND o.university_id = ANY($1::uuid[])
+ AND (o.university_id = ANY($1::uuid[]) OR cs.id = ANY($1::uuid[]))
  AND ($2::timestamptz IS NULL
  OR o.created_at < $2
  OR (o.created_at = $2 AND o.id < $3))

@@ -3452,6 +3452,22 @@ func (q *Queries) ReassignDataExportRequestUser(ctx context.Context, arg Reassig
 	return err
 }
 
+const reassignLanguageScoreStoriesToPlaceholder = `-- name: ReassignLanguageScoreStoriesToPlaceholder :exec
+UPDATE language_score_stories SET user_id = $1
+WHERE user_id = $2 AND deleted_at IS NULL
+`
+
+type ReassignLanguageScoreStoriesToPlaceholderParams struct {
+	Placeholder pgtype.UUID `json:"placeholder"`
+	UserID      pgtype.UUID `json:"user_id"`
+}
+
+// §99 (ADR-107): score stories survive erasure under the placeholder.
+func (q *Queries) ReassignLanguageScoreStoriesToPlaceholder(ctx context.Context, arg ReassignLanguageScoreStoriesToPlaceholderParams) error {
+	_, err := q.db.Exec(ctx, reassignLanguageScoreStoriesToPlaceholder, arg.Placeholder, arg.UserID)
+	return err
+}
+
 const reassignMediaUploader = `-- name: ReassignMediaUploader :exec
 UPDATE media SET uploader_user_id = $1
 WHERE uploader_user_id = $2
@@ -3472,6 +3488,22 @@ type ReassignMediaUploaderParams struct {
 // Ref: japaconnect-engineering/sections/34-media-system.md, ADR-014.
 func (q *Queries) ReassignMediaUploader(ctx context.Context, arg ReassignMediaUploaderParams) error {
 	_, err := q.db.Exec(ctx, reassignMediaUploader, arg.TargetUserID, arg.UserID)
+	return err
+}
+
+const reassignMutualAidPostsToPlaceholder = `-- name: ReassignMutualAidPostsToPlaceholder :exec
+UPDATE mutual_aid_posts SET user_id = $1, updated_at = now()
+WHERE user_id = $2 AND deleted_at IS NULL
+`
+
+type ReassignMutualAidPostsToPlaceholderParams struct {
+	Placeholder pgtype.UUID `json:"placeholder"`
+	UserID      pgtype.UUID `json:"user_id"`
+}
+
+// BUG-005 (§85, ADR-093): posts survive erasure under the placeholder.
+func (q *Queries) ReassignMutualAidPostsToPlaceholder(ctx context.Context, arg ReassignMutualAidPostsToPlaceholderParams) error {
+	_, err := q.db.Exec(ctx, reassignMutualAidPostsToPlaceholder, arg.Placeholder, arg.UserID)
 	return err
 }
 

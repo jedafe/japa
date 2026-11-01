@@ -1686,9 +1686,11 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 
 		// Deterministic extractor (provider_config.deterministic): maps the
 		// raw body to extraction triples in Go — no LLM call, no token cost.
-		// Unknown name/type pairs fall through to the LLM path.
-		if det, derr := intelDeterministicExtract(src.ProviderConfig, entityType, sourceText); derr == nil {
-			results = det
+		// Once declared, it OWNS the extraction: a declared mapper that
+		// fails propagates the error — silently falling through to the LLM
+		// path would burn the tokens the source was configured to avoid.
+		if detName := sources.DeterministicFromProviderConfig(src.ProviderConfig); detName != "" {
+			results, extErr = intelDeterministicExtract(detName, entityType, sourceText)
 		} else {
 			results, extErr = intelExtractor.Extract(ctx, entityType, src.SourceUrl, src.SourceType, sourceText)
 		}
@@ -1868,10 +1870,9 @@ func resolveSourceEntityTypes(src gen.IntelSource) []string {
 // intelDeterministicExtract runs a provider_config-declared deterministic
 // extractor over the raw body, bypassing the LLM entirely. Returns an error
 // when no deterministic extractor is declared or it can't handle the type.
-func intelDeterministicExtract(providerConfig []byte, entityType, body string) ([]IntelExtractResult, error) {
-	name := sources.DeterministicFromProviderConfig(providerConfig)
+func intelDeterministicExtract(name, entityType, body string) ([]IntelExtractResult, error) {
 	if name != schemas.DeterministicExtractorHipolabs || entityType != schemas.EntityTypeUniversity {
-		return nil, fmt.Errorf("intel: no deterministic extractor %q for entity %q", name, entityType)
+		return nil, fmt.Errorf("intel: deterministic extractor %q cannot handle entity %q", name, entityType)
 	}
 
 	exs, err := schemas.ExtractHipolabs(body)
