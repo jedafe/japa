@@ -429,3 +429,32 @@ func mustNum(t *testing.T, s string) pgtype.Numeric {
 	}
 	return n
 }
+
+func TestUniversityPromote_AdoptIdentityConflictRoutesToReview(t *testing.T) {
+	store := newMockUniversityStore()
+	p := NewUniversityPromoter(store, uuidToPg(uuid.New()))
+
+	// Slug matches the extraction's derived slug but the space's NAME
+	// does not (a manually-renamed space keeps its original slug) — the
+	// adopt guard must route to review rather than merge a different
+	// institution into this space.
+	spaceID := uuidToPg(uuid.New())
+	store.spaces["university-of-lagos"] = &gen.GetUniversitySpaceBySlugRow{
+		ID: spaceID, Name: "Renamed College", Slug: "university-of-lagos",
+	}
+	store.spaceByID[spaceID.String()] = &gen.GetSpaceByIDRow{
+		ID: spaceID, Name: "Renamed College", Slug: "university-of-lagos",
+	}
+	rec := store.seedUniversityRecord(t, map[string]any{
+		"name": "University of Lagos", "country": []any{"NGA"},
+		"source_url": "https://unilag.ng",
+	})
+
+	_, err := p.Promote(context.Background(), uuid.UUID(rec.ID.Bytes))
+	if !errors.Is(err, ErrRouteToReview) {
+		t.Fatalf("err = %v, want ErrRouteToReview on identity conflict", err)
+	}
+	if len(store.createdSpaces) != 0 {
+		t.Fatal("identity conflict still created/merged a space")
+	}
+}

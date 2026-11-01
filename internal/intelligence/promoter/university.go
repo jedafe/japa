@@ -563,8 +563,18 @@ func (p *UniversityPromoter) universityAdoptPath(ctx context.Context, record gen
 			space.Slug, space.Name, stringField(ext, "name"), ErrRouteToReview)
 	}
 
-	if _, err := p.store.GetUniversityIntelLinkBySpace(ctx, space.ID); err != nil && !isNotFound(err) {
+	// A space already linked to a DIFFERENT record routes to review —
+	// repointing the link would silently unbind the other record and the
+	// two would ping-pong the link on every crawl. Same-record re-promotion
+	// (link.IntelRecordID == record.ID) is the designed repoint case.
+	link, err := p.store.GetUniversityIntelLinkBySpace(ctx, space.ID)
+	switch {
+	case err != nil && !isNotFound(err):
 		return PromoteResult{}, fmt.Errorf("promoter: check university intel link: %w", err)
+	case err == nil && link.IntelRecordID != record.ID:
+		return PromoteResult{}, fmt.Errorf(
+			"promoter: slug %q space is already linked to a different intel record: %w",
+			space.Slug, ErrRouteToReview)
 	}
 
 	spaceRow, err := p.store.GetSpaceByID(ctx, space.ID)
@@ -602,7 +612,11 @@ func (p *UniversityPromoter) universityAdoptPath(ctx context.Context, record gen
 		}
 
 		if len(protected) > 0 {
-			raw, merr := json.Marshal(protected)
+			overrides := make(map[string]bool, len(protected))
+			for k := range protected {
+				overrides[k] = true
+			}
+			raw, merr := json.Marshal(overrides)
 			if merr == nil {
 				if err := tx.AddUniversityIntelOverrides(ctx, gen.AddUniversityIntelOverridesParams{
 					SpaceID:   space.ID,
