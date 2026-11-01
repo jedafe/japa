@@ -82,6 +82,7 @@ type UniversityTxStore interface {
 	UpdateSpace(ctx context.Context, arg gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error)
 	UpsertCustomFieldValue(ctx context.Context, arg gen.UpsertCustomFieldValueParams) (gen.CustomFieldValue, error)
 	UpsertUniversityIntelLink(ctx context.Context, arg gen.UpsertUniversityIntelLinkParams) (gen.UniversityIntelLink, error)
+	AddUniversityIntelOverrides(ctx context.Context, arg gen.AddUniversityIntelOverridesParams) error
 	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
 	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
@@ -481,6 +482,44 @@ func (p *UniversityPromoter) universityCreatePath(ctx context.Context, record ge
 	return result, nil
 }
 
+// adoptProtections returns the override set for first-link adoption: every
+// CFV-mapped field that already holds a value, plus any populated space
+// columns (name, description, geo_code→"country"). The extraction then
+// only fills fields the humans never provided.
+func (p *UniversityPromoter) adoptProtections(ctx context.Context, space gen.GetSpaceByIDRow, defs map[string]universityFieldDef) (map[string]struct{}, error) {
+	protected := map[string]struct{}{}
+
+	if space.Name != "" {
+		protected["name"] = struct{}{}
+	}
+	if space.Description != nil && *space.Description != "" {
+		protected["description"] = struct{}{}
+	}
+	if space.GeoCode != nil && *space.GeoCode != "" {
+		protected["country"] = struct{}{}
+	}
+
+	stored, err := p.store.ListCustomFieldValuesByEntity(ctx, gen.ListCustomFieldValuesByEntityParams{
+		EntityType: cfvEntityType,
+		EntityID:   space.ID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("promoter: list adopt cfvs: %w", err)
+	}
+
+	keyByFieldID := make(map[string]string, len(defs))
+	for key, def := range defs {
+		keyByFieldID[def.id.String()] = key
+	}
+	for _, v := range stored {
+		if key, ok := keyByFieldID[v.FieldID.String()]; ok {
+			protected[key] = struct{}{}
+		}
+	}
+
+	return protected, nil
+}
+
 // universityAdoptPath links an existing unlinked university space to the
 // record and applies the update diff against it. A space already linked to
 // a DIFFERENT intel record routes to review — repointing the link (the
@@ -502,7 +541,17 @@ func (p *UniversityPromoter) universityAdoptPath(ctx context.Context, record gen
 		return PromoteResult{}, fmt.Errorf("promoter: load adopted university space: %w", err)
 	}
 
-	writes, changed, suppressed, err := p.planUniversityWrites(ctx, spaceRow, defs, ext, nil)
+	// Conservative adopt: every field the space already carries a value for
+	// is treated as human-curated and seeded into the link's overrides set —
+	// first-link adoption fills gaps only, never clobbers existing data.
+	// Divergences surface as suppressed entries in the review log and stay
+	// protected until an admin releases the key.
+	protected, err := p.adoptProtections(ctx, spaceRow, defs)
+	if err != nil {
+		return PromoteResult{}, err
+	}
+
+	writes, changed, suppressed, err := p.planUniversityWrites(ctx, spaceRow, defs, ext, protected)
 	if err != nil {
 		return PromoteResult{}, err
 	}
@@ -519,6 +568,18 @@ func (p *UniversityPromoter) universityAdoptPath(ctx context.Context, record gen
 			IntelRecordID: record.ID,
 		}); err != nil {
 			return fmt.Errorf("promoter: link university intel record: %w", err)
+		}
+
+		if len(protected) > 0 {
+			raw, merr := json.Marshal(protected)
+			if merr == nil {
+				if err := tx.AddUniversityIntelOverrides(ctx, gen.AddUniversityIntelOverridesParams{
+					SpaceID:   space.ID,
+					Overrides: raw,
+				}); err != nil {
+					return fmt.Errorf("promoter: seed adopt overrides: %w", err)
+				}
+			}
 		}
 
 		if err := tx.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{

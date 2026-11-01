@@ -45,8 +45,10 @@ type UniversityCourseStore interface {
 }
 
 // UniversityCourseTxStore is the write-side subset used inside the promote
-// transaction (§6.2).
+// transaction (§6.2). Catalog resolution lives inside the tx so a failed
+// offering insert can't orphan a catalog row.
 type UniversityCourseTxStore interface {
+	GetCourseCatalogBySlug(ctx context.Context, slug string) (gen.GetCourseCatalogBySlugRow, error)
 	CreateCourseCatalogIntel(ctx context.Context, arg gen.CreateCourseCatalogIntelParams) (pgtype.UUID, error)
 	CreateCourseOfferingIntel(ctx context.Context, arg gen.CreateCourseOfferingIntelParams) (pgtype.UUID, error)
 	UpdateCourseOfferingIntel(ctx context.Context, arg gen.UpdateCourseOfferingIntelParams) error
@@ -120,23 +122,42 @@ func (p *UniversityCoursePromoter) Promote(ctx context.Context, recordID uuid.UU
 		return PromoteResult{}, err
 	}
 
-	courseID, courseSlug, err := p.resolveCatalog(ctx, ext)
-	if err != nil {
-		return PromoteResult{}, err
+	title := stringField(ext, "course_title")
+	if title == "" {
+		return PromoteResult{}, fmt.Errorf(
+			"promoter: course offering requires course_title: %w", ErrRouteToReview)
 	}
 
-	existing, err := p.store.GetCourseOfferingByCourseUniversity(ctx, gen.GetCourseOfferingByCourseUniversityParams{
-		CourseID:     courseID,
-		UniversityID: uniID,
-	})
-	switch {
-	case err == nil:
-		return p.courseUpdatePath(ctx, record, existing, ext)
-	case isNotFound(err):
-		return p.courseCreatePath(ctx, record, courseID, courseSlug, uniID, uniSlug, ext)
-	default:
-		return PromoteResult{}, fmt.Errorf("promoter: load existing offering: %w", err)
+	courseSlug := content.Slugify(title)
+	if courseSlug == "" {
+		courseSlug = slugify(title)
 	}
+
+	course, catErr := p.store.GetCourseCatalogBySlug(ctx, courseSlug)
+	if catErr != nil && !isNotFound(catErr) {
+		return PromoteResult{}, fmt.Errorf("promoter: catalog lookup: %w", catErr)
+	}
+
+	var courseID pgtype.UUID
+	if catErr == nil {
+		courseID = course.ID
+		existing, err := p.store.GetCourseOfferingByCourseUniversity(ctx, gen.GetCourseOfferingByCourseUniversityParams{
+			CourseID:     courseID,
+			UniversityID: uniID,
+		})
+		switch {
+		case err == nil:
+			return p.courseUpdatePath(ctx, record, existing, ext)
+		case isNotFound(err):
+			return p.courseCreatePath(ctx, record, title, courseSlug, courseID, uniID, uniSlug, ext)
+		default:
+			return PromoteResult{}, fmt.Errorf("promoter: load existing offering: %w", err)
+		}
+	}
+
+	// Catalog row missing: the offering can't exist without it — straight to
+	// the atomic create path.
+	return p.courseCreatePath(ctx, record, title, courseSlug, courseID, uniID, uniSlug, ext)
 }
 
 // resolveUniversity maps the extracted university_slug/university_name (+
@@ -180,69 +201,40 @@ func (p *UniversityCoursePromoter) resolveUniversity(ctx context.Context, ext ex
 	return match.ID, match.Slug, nil
 }
 
-// resolveCatalog returns the canonical catalog row for the extracted
-// course_title, creating a minimal row when the pipeline has never seen
-// the course.
-func (p *UniversityCoursePromoter) resolveCatalog(ctx context.Context, ext extractor.Extraction) (pgtype.UUID, string, error) {
-	title := stringField(ext, "course_title")
-	if title == "" {
-		return pgtype.UUID{}, "", fmt.Errorf(
-			"promoter: course offering requires course_title: %w", ErrRouteToReview)
-	}
-
-	slug := content.Slugify(title)
-	if slug == "" {
-		slug = slugify(title)
-	}
-
-	row, err := p.store.GetCourseCatalogBySlug(ctx, slug)
-	if err == nil {
-		return row.ID, row.Slug, nil
-	}
-	if !isNotFound(err) {
-		return pgtype.UUID{}, "", fmt.Errorf("promoter: catalog lookup: %w", err)
-	}
-
-	var createdID pgtype.UUID
-	err = p.store.WithTx(ctx, func(tx UniversityCourseTxStore) error {
-		lang := stringField(ext, "language")
-		if lang == "" {
-			lang = "English"
-		}
-
-		id, err := tx.CreateCourseCatalogIntel(ctx, gen.CreateCourseCatalogIntelParams{
-			Title:                title,
-			Slug:                 slug,
-			DegreeType:           stringPtrField(ext, "degree_type"),
-			FieldOfStudy:         stringPtrField(ext, "field_of_study"),
-			Language:             lang,
-			DefaultDurationYears: numericField(ext, "duration_years"),
-		})
-		if err != nil {
-			return fmt.Errorf("promoter: create catalog course: %w", err)
-		}
-
-		createdID = id
-
-		return nil
-	})
-	if err != nil {
-		return pgtype.UUID{}, "", err
-	}
-
-	return createdID, slug, nil
-}
-
 // courseCreatePath inserts the offering row (slug = "{catalog}-{university}")
-// and flips the record to 'extracted'.
-func (p *UniversityCoursePromoter) courseCreatePath(ctx context.Context, record gen.IntelRecord, courseID pgtype.UUID, courseSlug string, uniID pgtype.UUID, uniSlug string, ext extractor.Extraction) (PromoteResult, error) {
+// and flips the record to 'extracted'. Catalog resolution happens inside
+// the same transaction so a failed offering insert can't leave an orphan
+// catalog row.
+func (p *UniversityCoursePromoter) courseCreatePath(ctx context.Context, record gen.IntelRecord, title string, courseSlug string, courseID pgtype.UUID, uniID pgtype.UUID, uniSlug string, ext extractor.Extraction) (PromoteResult, error) {
 	currency := normalizedCurrency(ext)
 
 	var result PromoteResult
 
 	err := p.store.WithTx(ctx, func(tx UniversityCourseTxStore) error {
+		cid := courseID
+		if !cid.Valid {
+			lang := stringField(ext, "language")
+			if lang == "" {
+				lang = "English"
+			}
+
+			id, err := tx.CreateCourseCatalogIntel(ctx, gen.CreateCourseCatalogIntelParams{
+				Title:                title,
+				Slug:                 courseSlug,
+				DegreeType:           stringPtrField(ext, "degree_type"),
+				FieldOfStudy:         stringPtrField(ext, "field_of_study"),
+				Language:             lang,
+				DefaultDurationYears: numericField(ext, "duration_years"),
+			})
+			if err != nil {
+				return fmt.Errorf("promoter: create catalog course: %w", err)
+			}
+
+			cid = id
+		}
+
 		id, err := tx.CreateCourseOfferingIntel(ctx, gen.CreateCourseOfferingIntelParams{
-			CourseID:          courseID,
+			CourseID:          cid,
 			UniversityID:      uniID,
 			Slug:              courseSlug + "-" + uniSlug,
 			Tuition:           numericField(ext, "tuition"),

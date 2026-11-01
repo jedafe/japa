@@ -1695,6 +1695,14 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 			results, extErr = intelExtractor.Extract(ctx, entityType, src.SourceUrl, src.SourceType, sourceText)
 		}
 
+		if errors.Is(extErr, errDeterministicUnsupported) {
+			slog.Warn("task:intel:extract: deterministic extractor cannot handle entity type, skipping", "raw_doc_id", p.RawDocID, "entity_type", entityType)
+
+			curateOnly = true
+
+			continue
+		}
+
 		if extErr != nil {
 			if errors.Is(extErr, ErrIntelExtractionRetriesExhausted) {
 				// Per-type tolerance: a mixed source loses only this type's
@@ -1867,12 +1875,19 @@ func resolveSourceEntityTypes(src gen.IntelSource) []string {
 // fallback — results matching a URL the doc's curate pass already
 // persisted are skipped BEFORE insert, since extractor keys never collide
 // with curator keys and would otherwise double-persist the same item.
+// errDeterministicUnsupported marks a deterministic extractor that cannot
+// handle the entity type — the extract loop skips the type like a
+// curate-only dispatch rather than aborting the whole task (a mixed source
+// keeps its other types).
+var errDeterministicUnsupported = errors.New("intel: deterministic extractor does not handle entity type")
+
 // intelDeterministicExtract runs a provider_config-declared deterministic
-// extractor over the raw body, bypassing the LLM entirely. Returns an error
-// when no deterministic extractor is declared or it can't handle the type.
+// extractor over the raw body, bypassing the LLM entirely. Returns
+// errDeterministicUnsupported for name/type pairs it can't map, and a real
+// error when the mapper itself fails.
 func intelDeterministicExtract(name, entityType, body string) ([]IntelExtractResult, error) {
 	if name != schemas.DeterministicExtractorHipolabs || entityType != schemas.EntityTypeUniversity {
-		return nil, fmt.Errorf("intel: deterministic extractor %q cannot handle entity %q", name, entityType)
+		return nil, fmt.Errorf("%w: %q for entity %q", errDeterministicUnsupported, name, entityType)
 	}
 
 	exs, err := schemas.ExtractHipolabs(body)

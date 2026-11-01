@@ -33,6 +33,7 @@ type mockUniversityStore struct {
 	updatedSpaces  []gen.UpdateSpaceParams
 	cfvCalls       []gen.UpsertCustomFieldValueParams
 	linkCalls      []gen.UpsertUniversityIntelLinkParams
+	overrideCalls  []map[string]bool
 	reviewLogCalls []gen.CreateIntelReviewLogParams
 	statusCalls    []gen.UpdateIntelRecordStatusParams
 }
@@ -225,6 +226,28 @@ func (m *mockUniversityStore) UpsertUniversityIntelLink(_ context.Context, arg g
 	return *l, nil
 }
 
+func (m *mockUniversityStore) AddUniversityIntelOverrides(_ context.Context, arg gen.AddUniversityIntelOverridesParams) error {
+	var merged map[string]bool
+	if l, ok := m.linkBySpace[arg.SpaceID.String()]; ok && l != nil {
+		_ = json.Unmarshal(l.EditorialOverrides, &merged)
+	}
+	if merged == nil {
+		merged = map[string]bool{}
+	}
+	var add map[string]bool
+	_ = json.Unmarshal(arg.Overrides, &add)
+	for k := range add {
+		merged[k] = true
+	}
+	raw, _ := json.Marshal(merged)
+	if l, ok := m.linkBySpace[arg.SpaceID.String()]; ok && l != nil {
+		l.EditorialOverrides = raw
+	}
+	m.overrideCalls = append(m.overrideCalls, merged)
+
+	return nil
+}
+
 func (m *mockUniversityStore) CreateIntelReviewLog(_ context.Context, arg gen.CreateIntelReviewLogParams) error {
 	m.reviewLogCalls = append(m.reviewLogCalls, arg)
 	return nil
@@ -377,6 +400,10 @@ func TestUniversityPromote_AdoptsUnlinkedSpaceBySlug(t *testing.T) {
 	}
 	if res.DomainID != uuid.UUID(spaceID.Bytes) {
 		t.Fatalf("DomainID = %v, want adopted space", res.DomainID)
+	}
+	// Conservative adopt: populated fields are seeded as overrides.
+	if len(store.overrideCalls) != 1 || !store.overrideCalls[0]["name"] {
+		t.Fatalf("expected name seeded into adopt overrides, got %+v", store.overrideCalls)
 	}
 }
 
