@@ -1604,6 +1604,19 @@ export const academyCurriculumAdminApi = {
 };
 
 export const mentorshipAdminApiExtended = {
+	listPrograms: (params?: string) =>
+		api<unknown>(`/admin/mentorship/programs${params ? `?${params}` : ''}`),
+	getProgram: (id: string) => api<unknown>(`/admin/mentorship/programs/${id}`),
+	listMatches: (params?: string) =>
+		api<unknown>(`/admin/mentorship/matches${params ? `?${params}` : ''}`),
+	createProgram: (body: Record<string, unknown>) =>
+		api<unknown>('/admin/mentorship/programs', { method: 'POST', body }),
+	updateProgram: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/mentorship/programs/${id}`, { method: 'PATCH', body }),
+	deleteProgram: (id: string) =>
+		api<unknown>(`/admin/mentorship/programs/${id}`, { method: 'DELETE' }),
+	updateMatch: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/mentorship/matches/${id}`, { method: 'PATCH', body }),
 	// §102 Mentorship Matching (ADR-110) — connections management.
 	// apiRaw: the endpoint returns meta.total alongside data for
 	// server-side pagination.
