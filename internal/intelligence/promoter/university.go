@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"math/big"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -520,19 +521,49 @@ func (p *UniversityPromoter) adoptProtections(ctx context.Context, space gen.Get
 	return protected, nil
 }
 
+// universityIdentityMatches reports whether an extraction plausibly
+// describes the same university as the space: names must agree
+// (case-insensitive exact or equal slugs, so "St. John's" ≈ "st-johns")
+// and the country must not conflict (either side unknown counts as
+// agreement — a missing signal is not a contradiction).
+func universityIdentityMatches(spaceName string, spaceGeo *string, ext extractor.Extraction) bool {
+	extName := stringField(ext, "name")
+	if extName == "" {
+		return false
+	}
+
+	sameName := strings.EqualFold(strings.TrimSpace(spaceName), strings.TrimSpace(extName)) ||
+		content.Slugify(spaceName) == content.Slugify(extName)
+	if !sameName {
+		return false
+	}
+
+	alpha2 := stores.CountryCodeAlpha2(firstCountry(ext, "country"))
+	if alpha2 == "" || spaceGeo == nil || *spaceGeo == "" {
+		return true
+	}
+
+	return alpha2 == *spaceGeo
+}
+
 // universityAdoptPath links an existing unlinked university space to the
 // record and applies the update diff against it. A space already linked to
 // a DIFFERENT intel record routes to review — repointing the link (the
 // space_id PK conflict) would silently unbind the other record and the two
 // would ping-pong the link on every crawl.
 func (p *UniversityPromoter) universityAdoptPath(ctx context.Context, record gen.IntelRecord, space gen.GetUniversitySpaceBySlugRow, defs map[string]universityFieldDef, ext extractor.Extraction) (PromoteResult, error) {
-	link, err := p.store.GetUniversityIntelLinkBySpace(ctx, space.ID)
-	switch {
-	case err == nil && link.IntelRecordID != record.ID:
+	// Identity check covers both adopt cases: a slug collision with a
+	// differently-identified space (manual rename, slugify collision) and a
+	// space already linked to another intel record. Same entity = repoint
+	// is the designed behavior (link tracks the newest promoted record);
+	// conflicting identity = a human must untangle it.
+	if !universityIdentityMatches(space.Name, space.GeoCode, ext) {
 		return PromoteResult{}, fmt.Errorf(
-			"promoter: university space %q already linked to intel record %s (claimed by %s): %w",
-			space.Slug, link.IntelRecordID.String(), record.ID.String(), ErrRouteToReview)
-	case err != nil && !isNotFound(err):
+			"promoter: slug %q collides with a differently-identified university space (%q vs %q): %w",
+			space.Slug, space.Name, stringField(ext, "name"), ErrRouteToReview)
+	}
+
+	if _, err := p.store.GetUniversityIntelLinkBySpace(ctx, space.ID); err != nil && !isNotFound(err) {
 		return PromoteResult{}, fmt.Errorf("promoter: check university intel link: %w", err)
 	}
 

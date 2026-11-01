@@ -1294,7 +1294,7 @@ WHERE o.deleted_at IS NULL AND o.is_published = true
  AND ($1::timestamptz IS NULL
  OR o.created_at < $1
  OR (o.created_at = $1 AND o.id < $2))
- AND ($3::uuid IS NULL OR o.university_id = $3)
+ AND ($3::uuid IS NULL OR o.university_id = $3 OR cs.id = $3)
  AND (NULLIF($4::text, '') IS NULL OR s.geo_code = $4)
  AND ($5::timestamptz IS NULL OR o.created_at >= $5)
 ORDER BY o.created_at DESC, o.id DESC
