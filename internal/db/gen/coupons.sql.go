@@ -1212,6 +1212,46 @@ func (q *Queries) InvalidateCouponCache(ctx context.Context) error {
 	return err
 }
 
+const listActiveAffiliateProvidersForMatch = `-- name: ListActiveAffiliateProvidersForMatch :many
+SELECT id, base_url, tracking_param, tracking_value
+FROM affiliate_providers
+WHERE is_active = true AND base_url IS NOT NULL AND base_url != ''
+`
+
+type ListActiveAffiliateProvidersForMatchRow struct {
+	ID            pgtype.UUID `json:"id"`
+	BaseUrl       *string     `json:"base_url"`
+	TrackingParam *string     `json:"tracking_param"`
+	TrackingValue *string     `json:"tracking_value"`
+}
+
+// §125: host-match candidates for outbound affiliate tracking injection
+// (tip external link redirect). Small table — scanned at click time.
+func (q *Queries) ListActiveAffiliateProvidersForMatch(ctx context.Context) ([]ListActiveAffiliateProvidersForMatchRow, error) {
+	rows, err := q.db.Query(ctx, listActiveAffiliateProvidersForMatch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveAffiliateProvidersForMatchRow
+	for rows.Next() {
+		var i ListActiveAffiliateProvidersForMatchRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.BaseUrl,
+			&i.TrackingParam,
+			&i.TrackingValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listActiveCoupons = `-- name: ListActiveCoupons :many
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,

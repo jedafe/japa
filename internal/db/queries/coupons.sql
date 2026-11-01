@@ -506,3 +506,10 @@ RETURNING *;
 
 -- name: DeleteOrgCoupon :execrows
 DELETE FROM coupons WHERE id = @id AND organization_id = @organization_id;
+
+-- name: ListActiveAffiliateProvidersForMatch :many
+-- §125: host-match candidates for outbound affiliate tracking injection
+-- (tip external link redirect). Small table — scanned at click time.
+SELECT id, base_url, tracking_param, tracking_value
+FROM affiliate_providers
+WHERE is_active = true AND base_url IS NOT NULL AND base_url != '';

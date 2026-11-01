@@ -243,7 +243,7 @@ func (q *Queries) CountTipsReceived(ctx context.Context, recipientUserID pgtype.
 
 const createTipExternalLink = `-- name: CreateTipExternalLink :one
 INSERT INTO tip_external_links (tip_settings_id, kind, label, url, position)
-VALUES ($1, $2, $3, $4, $5) RETURNING id, tip_settings_id, kind, label, url, position, created_at
+VALUES ($1, $2, $3, $4, $5) RETURNING id, tip_settings_id, kind, label, url, position, created_at, click_count
 `
 
 type CreateTipExternalLinkParams struct {
@@ -271,6 +271,7 @@ func (q *Queries) CreateTipExternalLink(ctx context.Context, arg CreateTipExtern
 		&i.Url,
 		&i.Position,
 		&i.CreatedAt,
+		&i.ClickCount,
 	)
 	return i, err
 }
@@ -570,6 +571,26 @@ func (q *Queries) GetTipByPaymentID(ctx context.Context, paymentID pgtype.UUID) 
 	return i, err
 }
 
+const getTipExternalLinkByID = `-- name: GetTipExternalLinkByID :one
+SELECT id, tip_settings_id, kind, label, url, position, created_at, click_count FROM tip_external_links WHERE id = $1
+`
+
+func (q *Queries) GetTipExternalLinkByID(ctx context.Context, id pgtype.UUID) (TipExternalLink, error) {
+	row := q.db.QueryRow(ctx, getTipExternalLinkByID, id)
+	var i TipExternalLink
+	err := row.Scan(
+		&i.ID,
+		&i.TipSettingsID,
+		&i.Kind,
+		&i.Label,
+		&i.Url,
+		&i.Position,
+		&i.CreatedAt,
+		&i.ClickCount,
+	)
+	return i, err
+}
+
 const getTipSettings = `-- name: GetTipSettings :one
 SELECT id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at FROM tip_settings WHERE owner_type = $1 AND owner_id = $2
 `
@@ -659,6 +680,15 @@ func (q *Queries) GetUserDisplayNames(ctx context.Context, ids []pgtype.UUID) ([
 	return items, nil
 }
 
+const incrementTipLinkClickCount = `-- name: IncrementTipLinkClickCount :exec
+UPDATE tip_external_links SET click_count = click_count + 1 WHERE id = $1
+`
+
+func (q *Queries) IncrementTipLinkClickCount(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, incrementTipLinkClickCount, id)
+	return err
+}
+
 const insertTip = `-- name: InsertTip :one
 INSERT INTO tips (sender_user_id, external_sender_name, recipient_type, recipient_user_id,
     recipient_organization_id, recipient_space_id, content_id, method, credits_amount,
@@ -744,6 +774,30 @@ func (q *Queries) InsertTip(ctx context.Context, arg InsertTipParams) (Tip, erro
 	return i, err
 }
 
+const insertTipLinkClick = `-- name: InsertTipLinkClick :exec
+INSERT INTO tip_external_link_clicks (link_id, ip_hash, user_agent_hash, referrer_url)
+VALUES ($1, $2, $3, $4)
+`
+
+type InsertTipLinkClickParams struct {
+	LinkID        pgtype.UUID `json:"link_id"`
+	IpHash        *string     `json:"ip_hash"`
+	UserAgentHash *string     `json:"user_agent_hash"`
+	ReferrerUrl   *string     `json:"referrer_url"`
+}
+
+// §125 click tracking — pre-hashed ip/ua only (no raw PII), recorded async
+// by the tips:record_link_click task.
+func (q *Queries) InsertTipLinkClick(ctx context.Context, arg InsertTipLinkClickParams) error {
+	_, err := q.db.Exec(ctx, insertTipLinkClick,
+		arg.LinkID,
+		arg.IpHash,
+		arg.UserAgentHash,
+		arg.ReferrerUrl,
+	)
+	return err
+}
+
 const isMentorProfile = `-- name: IsMentorProfile :one
 SELECT COALESCE(is_mentor, false) FROM user_profiles WHERE user_id = $1
 `
@@ -792,7 +846,7 @@ func (q *Queries) ListStalePendingTips(ctx context.Context, arg ListStalePending
 }
 
 const listTipExternalLinks = `-- name: ListTipExternalLinks :many
-SELECT id, tip_settings_id, kind, label, url, position, created_at FROM tip_external_links WHERE tip_settings_id = $1 ORDER BY position, created_at
+SELECT id, tip_settings_id, kind, label, url, position, created_at, click_count FROM tip_external_links WHERE tip_settings_id = $1 ORDER BY position, created_at
 `
 
 func (q *Queries) ListTipExternalLinks(ctx context.Context, tipSettingsID pgtype.UUID) ([]TipExternalLink, error) {
@@ -812,6 +866,7 @@ func (q *Queries) ListTipExternalLinks(ctx context.Context, tipSettingsID pgtype
 			&i.Url,
 			&i.Position,
 			&i.CreatedAt,
+			&i.ClickCount,
 		); err != nil {
 			return nil, err
 		}
@@ -1073,7 +1128,7 @@ func (q *Queries) SettleTip(ctx context.Context, arg SettleTipParams) error {
 
 const updateTipExternalLink = `-- name: UpdateTipExternalLink :one
 UPDATE tip_external_links SET kind = $1, label = $2, url = $3, position = $4
-WHERE id = $5 AND tip_settings_id = $6 RETURNING id, tip_settings_id, kind, label, url, position, created_at
+WHERE id = $5 AND tip_settings_id = $6 RETURNING id, tip_settings_id, kind, label, url, position, created_at, click_count
 `
 
 type UpdateTipExternalLinkParams struct {
@@ -1103,6 +1158,7 @@ func (q *Queries) UpdateTipExternalLink(ctx context.Context, arg UpdateTipExtern
 		&i.Url,
 		&i.Position,
 		&i.CreatedAt,
+		&i.ClickCount,
 	)
 	return i, err
 }

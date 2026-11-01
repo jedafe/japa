@@ -1461,7 +1461,7 @@ SET alt_text = COALESCE($1, alt_text),
  width_px = COALESCE($3, width_px),
  height_px = COALESCE($4, height_px),
  duration_secs = COALESCE($5, duration_secs),
- user_group_id = $6
+ user_group_id = COALESCE($6, user_group_id)
 WHERE id = $7
 `
 
@@ -1496,7 +1496,7 @@ SET alt_text = COALESCE($1, alt_text),
  width_px = COALESCE($3, width_px),
  height_px = COALESCE($4, height_px),
  duration_secs = COALESCE($5, duration_secs),
- user_group_id = $6
+ user_group_id = COALESCE($6, user_group_id)
 WHERE id = $7
  AND uploader_user_id = $8
  AND deleted_at IS NULL

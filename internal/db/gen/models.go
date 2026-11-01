@@ -4362,6 +4362,16 @@ type TipExternalLink struct {
 	Url           string             `json:"url"`
 	Position      int32              `json:"position"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	ClickCount    int64              `json:"click_count"`
+}
+
+type TipExternalLinkClick struct {
+	ID            pgtype.UUID        `json:"id"`
+	LinkID        pgtype.UUID        `json:"link_id"`
+	IpHash        *string            `json:"ip_hash"`
+	UserAgentHash *string            `json:"user_agent_hash"`
+	ReferrerUrl   *string            `json:"referrer_url"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type TipSetting struct {

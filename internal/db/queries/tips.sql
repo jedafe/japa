@@ -52,6 +52,18 @@ DELETE FROM tip_external_links WHERE id = @id AND tip_settings_id = @tip_setting
 -- name: ListTipExternalLinks :many
 SELECT * FROM tip_external_links WHERE tip_settings_id = @tip_settings_id ORDER BY position, created_at;
 
+-- name: GetTipExternalLinkByID :one
+SELECT * FROM tip_external_links WHERE id = @id;
+
+-- name: InsertTipLinkClick :exec
+-- §125 click tracking — pre-hashed ip/ua only (no raw PII), recorded async
+-- by the tips:record_link_click task.
+INSERT INTO tip_external_link_clicks (link_id, ip_hash, user_agent_hash, referrer_url)
+VALUES (@link_id, @ip_hash, @user_agent_hash, @referrer_url);
+
+-- name: IncrementTipLinkClickCount :exec
+UPDATE tip_external_links SET click_count = click_count + 1 WHERE id = @id;
+
 -- name: InsertTip :one
 INSERT INTO tips (sender_user_id, external_sender_name, recipient_type, recipient_user_id,
     recipient_organization_id, recipient_space_id, content_id, method, credits_amount,
@@ -111,7 +123,8 @@ WHERE (@status::text = '' OR t.status = @status)
   AND (@method::text = '' OR t.method = @method)
   AND (@recipient_type::text = '' OR t.recipient_type = @recipient_type)
   AND (@q::text = '' OR t.external_sender_name ILIKE '%' || @q || '%'
-       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || @q || '%'))
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || @q || '%')
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.recipient_user_id AND u.username ILIKE '%' || @q || '%'))
 ORDER BY t.created_at DESC LIMIT @page_limit OFFSET @page_offset;
 
 -- name: AdminCountTips :one
@@ -120,7 +133,12 @@ WHERE (@status::text = '' OR t.status = @status)
   AND (@method::text = '' OR t.method = @method)
   AND (@recipient_type::text = '' OR t.recipient_type = @recipient_type)
   AND (@q::text = '' OR t.external_sender_name ILIKE '%' || @q || '%'
-       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || @q || '%'));
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || @q || '%')
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.recipient_user_id AND u.username ILIKE '%' || @q || '%'));
+
+-- name: GetLegacyTipPoints :many
+-- ADR-136: historical point-tip amounts live in tips_points_legacy for audit.
+SELECT id, points_amount FROM tips_points_legacy WHERE id = ANY(@ids::uuid[]);
 
 -- name: AdminTipStats :one
 SELECT count(*)::int AS total,
