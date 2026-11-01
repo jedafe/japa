@@ -173,7 +173,7 @@ func (s *Service) importContribution(ctx context.Context, owner Owner, method st
 
 	tip, err := s.store.insertTip(ctx, params)
 	if err != nil {
-		return false, fmt.Errorf("importing OC contribution: %w", err)
+		return false, fmt.Errorf("importing external contribution: %w", err)
 	}
 	// ADR-136: a member-matched OC donation earns the sender tip.sent
 	// points (senderID is NULL for unmatched contributors — nil-safe).

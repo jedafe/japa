@@ -170,3 +170,37 @@ func TestSanitizeOutURL(t *testing.T) {
 		t.Fatalf("unparseable must fall back to /, got %q", got)
 	}
 }
+
+func TestImportKofiWebhook(t *testing.T) {
+	ownerID := uid(t, "11111111-1111-1111-1111-111111111111")
+	fs := newFakeStore()
+	fs.kofiSecret = "sekret"
+	fs.kofiOwner = UserOwner(ownerID)
+	svc := &Service{
+		store:    fs,
+		features: fakeFeatures{on: map[string]bool{"tips.kofi": true}},
+	}
+	c := OCContribution{ID: "kofi:msg1", AmountCents: 500, Currency: "USD", FromName: "Donor"}
+
+	// Wrong verification token → rejected, nothing inserted.
+	if err := svc.ImportKofiWebhook(context.Background(), "sekret", "wrong", c); err == nil {
+		t.Fatal("bad token should be rejected")
+	}
+	if len(fs.inserted) != 0 {
+		t.Fatalf("rejected import inserted a tip: %+v", fs.inserted)
+	}
+
+	if err := svc.ImportKofiWebhook(context.Background(), "sekret", "sekret", c); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if len(fs.inserted) != 1 || fs.inserted[0].Method != MethodKofi ||
+		*fs.inserted[0].OcContributionID != "kofi:msg1" || *fs.inserted[0].FiatAmount != 500 {
+		t.Fatalf("tip row wrong: %+v", fs.inserted[0])
+	}
+
+	// Feature flag off → import refused.
+	svcOff := &Service{store: newFakeStore(), features: fakeFeatures{on: map[string]bool{}}}
+	if err := svcOff.ImportKofiWebhook(context.Background(), "x", "x", c); err == nil {
+		t.Fatal("flag-off import should be refused")
+	}
+}

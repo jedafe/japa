@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -1255,9 +1256,13 @@ func (h *Handlers) HandleKofiWebhook(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid Ko-fi payload")
 		return
 	}
+	if d.MessageID == "" {
+		w.WriteHeader(http.StatusNoContent) // non-donation event — nothing to import
+		return
+	}
 	var cents int64
 	if f, ferr := strconv.ParseFloat(d.Amount, 64); ferr == nil {
-		cents = int64(f * 100)
+		cents = int64(math.Round(f * 100))
 	}
 	if err := h.service.ImportKofiWebhook(r.Context(), secret, d.VerificationToken, OCContribution{
 		ID:          "kofi:" + d.MessageID,

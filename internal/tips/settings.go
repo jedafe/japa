@@ -268,6 +268,18 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 	if externalOK && owner.Type == RecipientUser {
 		externalOK = s.perms != nil && s.perms.Can(ctx, owner.ID, "tips.receive")
 	}
+	if !externalOK {
+		// OC is an external source — the same gate strips its method and
+		// collective link, not just tip_external_links rows.
+		cfg.OCCollectiveSlug = nil
+		methods := cfg.Methods[:0]
+		for _, m := range cfg.Methods {
+			if m != MethodOpenCollective {
+				methods = append(methods, m)
+			}
+		}
+		cfg.Methods = methods
+	}
 	if externalOK {
 		links, err := s.listLinks(ctx, st.ID)
 		if err != nil {

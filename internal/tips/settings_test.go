@@ -29,6 +29,8 @@ type fakeStore struct {
 	mentorErr      error
 	orgOwner       pgtype.UUID
 	spaceRecipient pgtype.UUID
+	kofiSecret     string
+	kofiOwner      Owner
 	getCalls       int
 	upsertParams   gen.UpsertTipSettingsParams
 }
@@ -412,7 +414,10 @@ func (f *fakeStore) insertAuditLog(context.Context, pgtype.UUID, string, string,
 	return nil
 }
 
-func (f *fakeStore) getSettingsByKofiWebhookSecret(context.Context, string) (gen.TipSetting, error) {
+func (f *fakeStore) getSettingsByKofiWebhookSecret(_ context.Context, secret string) (gen.TipSetting, error) {
+	if f.kofiSecret != "" && secret == f.kofiSecret {
+		return gen.TipSetting{OwnerType: f.kofiOwner.Type, OwnerID: f.kofiOwner.ID, KofiWebhookSecret: &f.kofiSecret}, nil
+	}
 	return gen.TipSetting{}, ErrNotFound
 }
 func (f *fakeStore) setKofiSecret(context.Context, string, pgtype.UUID, string) error { return nil }
