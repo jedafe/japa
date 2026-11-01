@@ -37,7 +37,7 @@ func (s *Service) ConnectKofi(ctx context.Context, owner Owner, actorID pgtype.U
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
 		return nil, err
 	}
-	if err := s.ensureExternalEligible(ctx, actorID); err != nil {
+	if err := s.ensureExternalEligible(ctx, owner, actorID); err != nil {
 		return nil, err
 	}
 	st, err := s.GetSettings(ctx, owner)
@@ -85,7 +85,7 @@ func (s *Service) ConnectBMC(ctx context.Context, owner Owner, actorID pgtype.UU
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
 		return nil, err
 	}
-	if err := s.ensureExternalEligible(ctx, actorID); err != nil {
+	if err := s.ensureExternalEligible(ctx, owner, actorID); err != nil {
 		return nil, err
 	}
 	if s.bmc == nil {

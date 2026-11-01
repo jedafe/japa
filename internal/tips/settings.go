@@ -265,8 +265,18 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 	// grant lapsed (downgrade) stops advertising them even while the rows
 	// remain stored. The implicit mentor grant does not qualify here either.
 	externalOK := st.AcceptExternal && st.hasRow
-	if externalOK && owner.Type == RecipientUser {
-		externalOK = s.perms != nil && s.perms.Can(ctx, owner.ID, "tips.receive")
+	if externalOK {
+		switch owner.Type {
+		case RecipientUser:
+			externalOK = s.perms != nil && s.perms.Can(ctx, owner.ID, "tips.receive")
+		case RecipientOrganization:
+			// The org's owner account carries the paying tier.
+			if id, oerr := s.store.getOrgOwnerID(ctx, owner.ID); oerr == nil && id.Valid {
+				externalOK = s.perms != nil && s.perms.Can(ctx, id, "tips.receive")
+			} else {
+				externalOK = false
+			}
+		}
 	}
 	if !externalOK {
 		// OC is an external source — the same gate strips its method and
@@ -391,9 +401,20 @@ func (s *Service) ListLinks(ctx context.Context, owner Owner) ([]ExternalLink, e
 // ensureExternalEligible gates external donation sources — external link
 // writes and OC/Ko-fi/BMC connects — to paying tiers. Unlike CanReceive the
 // implicit mentor tips.receive grant does not qualify: external methods are
-// a subscription perk, not a mentor perk.
-func (s *Service) ensureExternalEligible(ctx context.Context, actorID pgtype.UUID) error {
-	if s.perms == nil || !s.perms.Can(ctx, actorID, "tips.receive") {
+// a subscription perk, not a mentor perk. For organization owners the paying
+// entity is the org's owner account, not the acting admin — a non-paying
+// admin may still manage settings on behalf of a paying org.
+func (s *Service) ensureExternalEligible(ctx context.Context, owner Owner, actorID pgtype.UUID) error {
+	if owner.Type == RecipientPlatform {
+		return nil // platform row is tips.moderate-administered — always eligible
+	}
+	subject := actorID
+	if owner.Type == RecipientOrganization {
+		if id, err := s.store.getOrgOwnerID(ctx, owner.ID); err == nil && id.Valid {
+			subject = id
+		}
+	}
+	if s.perms == nil || !s.perms.Can(ctx, subject, "tips.receive") {
 		return ErrNotEligible
 	}
 	return nil
@@ -404,7 +425,7 @@ func (s *Service) CreateLink(ctx context.Context, owner Owner, actorID pgtype.UU
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
 		return ExternalLink{}, err
 	}
-	if err := s.ensureExternalEligible(ctx, actorID); err != nil {
+	if err := s.ensureExternalEligible(ctx, owner, actorID); err != nil {
 		return ExternalLink{}, err
 	}
 	if err := validateLinkInput(in); err != nil {
@@ -454,7 +475,7 @@ func (s *Service) UpdateLink(ctx context.Context, owner Owner, actorID, linkID p
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
 		return ExternalLink{}, err
 	}
-	if err := s.ensureExternalEligible(ctx, actorID); err != nil {
+	if err := s.ensureExternalEligible(ctx, owner, actorID); err != nil {
 		return ExternalLink{}, err
 	}
 	if err := validateLinkInput(in); err != nil {

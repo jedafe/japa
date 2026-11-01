@@ -1,6 +1,6 @@
 // linkout_test.go — §125 external link redirect coverage: public-config URL
 // rewrite, affiliate seam behavior, dedup-free click path, open-redirect
-// guard. Valkey dedup is exercised e2e (valkeycompat.BoolCmd can't be faked
+// guard. Dedup is exercised through the handler's Dedup function seam.
 // — same constraint as the §56 affiliate redirect).
 package tips
 
@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
@@ -156,6 +157,18 @@ func TestRedirectExternalLink(t *testing.T) {
 	h.RedirectExternalLink(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx3)))
 	if w.Result().Header.Get("Location") != "https://example.com/pay?tag=jc" {
 		t.Fatalf("expected injected destination, got %q", w.Result().Header.Get("Location"))
+	}
+
+	// Dedup claim returns false → still redirects, but no click task.
+	h.Dedup = func(context.Context, string, time.Duration) (bool, error) { return false, nil }
+	tasksBefore := len(aq.tasks)
+	w = httptest.NewRecorder()
+	h.RedirectExternalLink(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx3)))
+	if w.Result().Header.Get("Location") != "https://example.com/pay?tag=jc" {
+		t.Fatalf("deduped click should still redirect, got %q", w.Result().Header.Get("Location"))
+	}
+	if len(aq.tasks) != tasksBefore {
+		t.Fatalf("deduped click should not enqueue, got %d tasks", len(aq.tasks))
 	}
 }
 

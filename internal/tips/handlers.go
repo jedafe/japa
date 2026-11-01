@@ -26,7 +26,6 @@ import (
 	"github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
-	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // TaskEnqueueClient is the interface for enqueueing background tasks —
@@ -35,17 +34,13 @@ type TaskEnqueueClient interface {
 	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
 }
 
-// CacheClient is the Valkey subset used by the /out redirect for click dedup
-// (jc:tip_link_dedup). valkeycompat.Cmdable satisfies this.
-type CacheClient interface {
-	SetNX(ctx context.Context, key string, value any, expiration time.Duration) *valkeycompat.BoolCmd
-}
-
 // Handlers exposes the tips HTTP surface.
 type Handlers struct {
 	service     *Service
 	AsynqClient TaskEnqueueClient
-	Cache       CacheClient // jc:tip_link_dedup (§125 external links)
+	// Dedup claims one event per key+ttl (Valkey SET NX in prod; function
+	// seam keeps click-dedup unit-testable). Nil → every click is fresh.
+	Dedup func(ctx context.Context, key string, ttl time.Duration) (bool, error)
 }
 
 // NewHandlers creates Handlers bound to the service.
@@ -1035,8 +1030,8 @@ func (h *Handlers) RedirectExternalLink(w http.ResponseWriter, r *http.Request) 
 	dedupKey := valkey.MustKey("tip_link_dedup:%s:%s:%s",
 		linkID.String(), ipHash, time.Now().Format("2006-01-02-15"))
 	fresh := true
-	if h.Cache != nil {
-		if set, derr := h.Cache.SetNX(r.Context(), dedupKey, "1", time.Hour).Result(); derr == nil && !set {
+	if h.Dedup != nil {
+		if ok, derr := h.Dedup(r.Context(), dedupKey, time.Hour); derr == nil && !ok {
 			fresh = false
 		}
 	}

@@ -1025,16 +1025,16 @@ func appendTrackingParam(originalURL, param, value string) string {
 	if param == "" || value == "" {
 		return originalURL
 	}
-
-	separator := "?"
-	for i := len(originalURL) - 1; i >= 0; i-- {
-		if originalURL[i] == '?' {
-			separator = "&"
-			break
-		}
+	u, err := url.Parse(originalURL)
+	if err != nil {
+		return originalURL
 	}
-
-	return originalURL + separator + param + "=" + value
+	// The platform's value wins — a link already carrying a foreign tag
+	// gets it replaced, not appended as a duplicate param.
+	q := u.Query()
+	q.Set(param, value)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────

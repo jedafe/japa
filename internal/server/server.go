@@ -1088,7 +1088,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tipsService.SetAffiliateResolver(tipsAffAdapter{svc: couponService})
 	tipsService.SetBMCClient(tipsBMCAdapter{client: buymeacoffee.New()})
 	tipsHandlers.AsynqClient = asynqClient
-	tipsHandlers.Cache = vkClient.Redis() // jc:tip_link_dedup (Section 125)
+	tipsHandlers.Dedup = func(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+		set, err := vkClient.Redis().SetNX(ctx, key, "1", ttl).Result()
+		return set && err == nil, err
+	}
 
 	// User Affiliate Program subsystem (Section 56).
 	affiliateService := affiliate.NewServiceWithEnqueuer(database, taskEnqueuer)

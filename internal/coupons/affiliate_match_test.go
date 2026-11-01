@@ -11,6 +11,7 @@ func TestAppendTrackingParam(t *testing.T) {
 	}{
 		{"fresh query", "https://amazon.com/dp/x", "tag", "jc-20", "https://amazon.com/dp/x?tag=jc-20"},
 		{"existing query", "https://amazon.com/dp/x?a=1", "tag", "jc-20", "https://amazon.com/dp/x?a=1&tag=jc-20"},
+		{"foreign tag replaced", "https://amazon.com/dp/x?tag=other-1", "tag", "jc-20", "https://amazon.com/dp/x?tag=jc-20"},
 		{"empty param", "https://amazon.com/dp/x", "", "jc-20", "https://amazon.com/dp/x"},
 		{"empty value", "https://amazon.com/dp/x", "tag", "", "https://amazon.com/dp/x"},
 	}

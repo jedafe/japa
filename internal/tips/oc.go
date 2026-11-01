@@ -30,7 +30,7 @@ func (s *Service) ConnectOC(ctx context.Context, owner Owner, actorID pgtype.UUI
 	if err := s.ensureWritable(ctx, owner, actorID); err != nil {
 		return nil, err
 	}
-	if err := s.ensureExternalEligible(ctx, actorID); err != nil {
+	if err := s.ensureExternalEligible(ctx, owner, actorID); err != nil {
 		return nil, err
 	}
 	if !ocSlugPattern.MatchString(slug) {
