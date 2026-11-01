@@ -3,6 +3,7 @@ import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { tryRefreshSession, clearSessionCookies } from '$lib/server/auth';
 import { buildThemeOverrides } from '@japaconnect/ui/theme';
 import { isRtl } from '$lib/i18n/rtl';
 
@@ -17,21 +18,7 @@ import { isRtl } from '$lib/i18n/rtl';
 const SETTINGS_TTL_MS = 30_000;
 const settingsCache = new Map<string, { value: Record<string, unknown>; expiresAt: number }>();
 
-/**
- * Parent domain shared by sibling surfaces — session cookies are minted on
- * the main app with Domain=.{base}, so cookie cleanup here must target that
- * same domain or the shared cookie survives. Derived from the public API
- * URL (api.japa.to → .japa.to); falls back to '.japa.to' shape-less empty
- * when unparseable (dev deletes stay host-only).
- */
-function docsCookieDomain(): string {
-	try {
-		const apiHost = new URL(publicEnv.PUBLIC_JC_API_URL ?? '').hostname;
-		return apiHost.startsWith('api.') ? `.${apiHost.slice(4)}` : '';
-	} catch {
-		return '';
-	}
-}
+
 
 /**
  * The audience gate map and canonical audience order change only when the
@@ -85,6 +72,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Hostname excludes the port; forwarded to the backend for host-based routing.
 	event.locals.requestHost = event.url.hostname;
 	event.locals.token = event.cookies.get('jc_token') ?? null;
+
+	// Silent refresh: jc_token's 15min TTL expires mid-session constantly.
+	// When the access cookie is gone or stale, exchange the 30d jc_refresh
+	// for a fresh pair server-side instead of forcing a login bounce (§02).
+	if (!event.locals.token && !building) {
+		await tryRefreshSession(event);
+	}
 
 	// Detect locale prefix in the URL path (e.g. /fr/docs → 'fr').
 	// Ref: §18 (i18n language packs), ADR-013.
@@ -186,12 +180,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 			event.locals.user = await apiGet<SessionUser>(apiContext(event), '/me');
 		} catch (err) {
 			if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-				// Clear both variants: a host-only delete leaves the shared
-				// .{base}-domain cookie alive and the browser keeps
-				// presenting the stale token.
-				event.cookies.delete('jc_token', { path: '/' });
-				event.cookies.delete('jc_token', { path: '/', domain: docsCookieDomain() });
-				event.locals.token = null;
+				if (await tryRefreshSession(event)) {
+					try {
+						event.locals.user = await apiGet<SessionUser>(apiContext(event), '/me');
+					} catch {
+						event.locals.user = null;
+					}
+				} else {
+					// Stale credential with no valid refresh — clear both cookie
+					// variants (host-only + shared domain) and degrade to guest.
+					clearSessionCookies(event);
+					event.locals.token = null;
+				}
 			}
 			// Any other failure (backend unreachable) degrades to guest.
 		}
