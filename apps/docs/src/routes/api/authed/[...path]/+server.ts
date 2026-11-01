@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { apiContext, apiGet, apiPost, apiPatch, apiDelete, ApiError, API_V1 } from '$lib/server/api';
+import { apiContext, apiGet, apiPost, apiPatch, apiDelete, ApiError, API_BASE, API_V1 } from '$lib/server/api';
 import type { RequestHandler } from './$types';
 
 /**
@@ -67,7 +67,10 @@ export const PUT: RequestHandler = async (event) => {
 		throw error(401, { code: 'unauthorized', message: 'Sign in to upload' });
 	}
 	const body = await event.request.arrayBuffer();
-	const res = await ctx.fetch(`${API_V1}/${path}${event.url.search}`, {
+	// /seaweedfs/upload/* is mounted at the API root, not under /api/v1 —
+	// every other proxied path lives under API_V1.
+	const base = path.startsWith('seaweedfs/') ? API_BASE : API_V1;
+	const res = await ctx.fetch(`${base}/${path}${event.url.search}`, {
 		method: 'PUT',
 		body,
 		headers: {
