@@ -22,7 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/dedup"
 	"github.com/jedafe/japa/internal/intelligence/events"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
-		"github.com/jedafe/japa/internal/intelligence/fetcher"
+	"github.com/jedafe/japa/internal/intelligence/fetcher"
 	"github.com/jedafe/japa/internal/intelligence/probe"
 	"github.com/jedafe/japa/internal/intelligence/relevance"
 	"github.com/jedafe/japa/internal/intelligence/reviewerctx"

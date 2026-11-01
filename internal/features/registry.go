@@ -69,6 +69,8 @@ var Registry = []Feature{
 	{Key: "feature.referral", Label: "Referral Program", Description: "User referral program with credit rewards and attribution tracking", Default: false, Category: "Commerce", SettingsCategory: "referral"},
 	{Key: "tips.enabled", Label: "Tips & Donations", Description: "Creator/org/platform tipping — points, credits, fiat, and Open Collective (§125)", Default: false, Category: "Commerce", SettingsCategory: "tips"},
 	{Key: "tips.opencollective", Label: "Open Collective Tips", Description: "Open Collective collective linking and contribution sync (§125)", Default: false, Category: "Commerce"},
+	{Key: "tips.kofi", Label: "Ko-fi Tips", Description: "Ko-fi webhook donation imports (§125)", Default: false, Category: "Commerce"},
+	{Key: "tips.buymeacoffee", Label: "Buy Me a Coffee Tips", Description: "Buy Me a Coffee supporters sync (§125)", Default: false, Category: "Commerce"},
 	{Key: "feature.affiliate_program", Label: "Affiliate Program", Description: "Affiliate tracking and commission management", Default: false, Category: "Commerce"},
 	{Key: "jobs.enabled", Label: "Jobs Board", Description: "Job listings board with featured placement and credit-based promotion", Default: true, Category: "Commerce", SettingsCategory: "jobs"},
 	// Tools

@@ -219,10 +219,16 @@ func (b *agentContentUpdaterBridge) update(ctx context.Context, contentID, edite
 		geoSpaceID = *input.GeoSpaceID
 	}
 
+	var authorID pgtype.UUID
+	if input.AuthorID != nil {
+		authorID = *input.AuthorID
+	}
+
 	row, err := b.svc.UpdateContent(ctx, contentID, editedBy, content.UpdateContentInput{
 		Title:       derefStr(input.Title),
 		Slug:        derefStr(input.Slug),
 		Body:        derefStr(input.Body),
+		AuthorID:    authorID,
 		FieldValues: fieldValues,
 		GeoSpaceID:  geoSpaceID,
 		Status:      derefStr(input.Status),

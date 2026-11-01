@@ -139,6 +139,7 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// §125 Open Collective contribution poll — every 10 minutes
 	// (overridable via SchedulerCronSpecs["tips:oc_sync"]).
 	schedule("*/10 * * * *", TypeTipsOCSync, 10*time.Minute)
+	schedule("*/10 * * * *", TypeTipsBMCSync, 10*time.Minute)
 
 	// Honcho memory retention sweep — daily (JC_HONCHO_RETENTION_DAYS).
 	schedule("40 4 * * *", TypeHonchoRetentionSweep, 24*time.Hour)

@@ -986,35 +986,41 @@ UPDATE badge_definitions
 SET
  name = COALESCE($1, name),
  description = COALESCE($2, description),
- icon_media_id = COALESCE($3, icon_media_id),
- trigger_type = COALESCE($4, trigger_type),
- trigger_value = COALESCE($5, trigger_value),
- trigger_activity_key = COALESCE($6, trigger_activity_key),
- is_active = COALESCE($7, is_active),
- display_order = COALESCE($8, display_order)
-WHERE id = $9
+ icon_media_id = CASE WHEN $3::boolean THEN NULL ELSE COALESCE($4, icon_media_id) END,
+ trigger_type = COALESCE($5, trigger_type),
+ trigger_value = CASE WHEN $6::boolean THEN NULL ELSE COALESCE($7, trigger_value) END,
+ trigger_activity_key = CASE WHEN $8::boolean THEN NULL ELSE COALESCE($9, trigger_activity_key) END,
+ is_active = COALESCE($10, is_active),
+ display_order = COALESCE($11, display_order)
+WHERE id = $12
 RETURNING id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at
 `
 
 type UpdateBadgeDefinitionParams struct {
-	Name               *string     `json:"name"`
-	Description        *string     `json:"description"`
-	IconMediaID        pgtype.UUID `json:"icon_media_id"`
-	TriggerType        *string     `json:"trigger_type"`
-	TriggerValue       *int32      `json:"trigger_value"`
-	TriggerActivityKey *string     `json:"trigger_activity_key"`
-	IsActive           *bool       `json:"is_active"`
-	DisplayOrder       *int32      `json:"display_order"`
-	ID                 pgtype.UUID `json:"id"`
+	Name                    *string     `json:"name"`
+	Description             *string     `json:"description"`
+	ClearIconMediaID        *bool       `json:"clear_icon_media_id"`
+	IconMediaID             pgtype.UUID `json:"icon_media_id"`
+	TriggerType             *string     `json:"trigger_type"`
+	ClearTriggerValue       *bool       `json:"clear_trigger_value"`
+	TriggerValue            *int32      `json:"trigger_value"`
+	ClearTriggerActivityKey *bool       `json:"clear_trigger_activity_key"`
+	TriggerActivityKey      *string     `json:"trigger_activity_key"`
+	IsActive                *bool       `json:"is_active"`
+	DisplayOrder            *int32      `json:"display_order"`
+	ID                      pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateBadgeDefinition(ctx context.Context, arg UpdateBadgeDefinitionParams) (BadgeDefinition, error) {
 	row := q.db.QueryRow(ctx, updateBadgeDefinition,
 		arg.Name,
 		arg.Description,
+		arg.ClearIconMediaID,
 		arg.IconMediaID,
 		arg.TriggerType,
+		arg.ClearTriggerValue,
 		arg.TriggerValue,
+		arg.ClearTriggerActivityKey,
 		arg.TriggerActivityKey,
 		arg.IsActive,
 		arg.DisplayOrder,
@@ -1043,42 +1049,48 @@ UPDATE challenge_definitions
 SET
  name = COALESCE($1, name),
  description = COALESCE($2, description),
- image_media_id = COALESCE($3, image_media_id),
- activity_key = COALESCE($4, activity_key),
- target_count = COALESCE($5, target_count),
- reward_points = COALESCE($6, reward_points),
- reward_badge_id = COALESCE($7, reward_badge_id),
- starts_at = COALESCE($8, starts_at),
- ends_at = COALESCE($9, ends_at),
- is_active = COALESCE($10, is_active)
-WHERE id = $11
+ image_media_id = CASE WHEN $3::boolean THEN NULL ELSE COALESCE($4, image_media_id) END,
+ activity_key = COALESCE($5, activity_key),
+ target_count = COALESCE($6, target_count),
+ reward_points = COALESCE($7, reward_points),
+ reward_badge_id = CASE WHEN $8::boolean THEN NULL ELSE COALESCE($9, reward_badge_id) END,
+ starts_at = COALESCE($10, starts_at),
+ ends_at = CASE WHEN $11::boolean THEN NULL ELSE COALESCE($12, ends_at) END,
+ is_active = COALESCE($13, is_active)
+WHERE id = $14
 RETURNING id, slug, name, description, image_media_id, activity_key, target_count, reward_points, reward_badge_id, starts_at, ends_at, is_active, created_at
 `
 
 type UpdateChallengeParams struct {
-	Name          *string            `json:"name"`
-	Description   *string            `json:"description"`
-	ImageMediaID  pgtype.UUID        `json:"image_media_id"`
-	ActivityKey   *string            `json:"activity_key"`
-	TargetCount   *int32             `json:"target_count"`
-	RewardPoints  *int32             `json:"reward_points"`
-	RewardBadgeID pgtype.UUID        `json:"reward_badge_id"`
-	StartsAt      pgtype.Timestamptz `json:"starts_at"`
-	EndsAt        pgtype.Timestamptz `json:"ends_at"`
-	IsActive      *bool              `json:"is_active"`
-	ID            pgtype.UUID        `json:"id"`
+	Name               *string            `json:"name"`
+	Description        *string            `json:"description"`
+	ClearImageMediaID  *bool              `json:"clear_image_media_id"`
+	ImageMediaID       pgtype.UUID        `json:"image_media_id"`
+	ActivityKey        *string            `json:"activity_key"`
+	TargetCount        *int32             `json:"target_count"`
+	RewardPoints       *int32             `json:"reward_points"`
+	ClearRewardBadgeID *bool              `json:"clear_reward_badge_id"`
+	RewardBadgeID      pgtype.UUID        `json:"reward_badge_id"`
+	StartsAt           pgtype.Timestamptz `json:"starts_at"`
+	ClearEndsAt        *bool              `json:"clear_ends_at"`
+	EndsAt             pgtype.Timestamptz `json:"ends_at"`
+	IsActive           *bool              `json:"is_active"`
+	ID                 pgtype.UUID        `json:"id"`
 }
 
 func (q *Queries) UpdateChallenge(ctx context.Context, arg UpdateChallengeParams) (ChallengeDefinition, error) {
 	row := q.db.QueryRow(ctx, updateChallenge,
 		arg.Name,
 		arg.Description,
+		arg.ClearImageMediaID,
 		arg.ImageMediaID,
 		arg.ActivityKey,
 		arg.TargetCount,
 		arg.RewardPoints,
+		arg.ClearRewardBadgeID,
 		arg.RewardBadgeID,
 		arg.StartsAt,
+		arg.ClearEndsAt,
 		arg.EndsAt,
 		arg.IsActive,
 		arg.ID,

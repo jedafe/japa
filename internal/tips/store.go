@@ -21,6 +21,12 @@ type tipStore interface {
 	setOCCredentials(ctx context.Context, p gen.SetOCCredentialsParams) error
 	clearOCCredentials(ctx context.Context, ownerType string, ownerID pgtype.UUID) error
 	listSettingsWithOCToken(ctx context.Context) ([]gen.TipSetting, error)
+	getSettingsByKofiWebhookSecret(ctx context.Context, secret string) (gen.TipSetting, error)
+	setKofiSecret(ctx context.Context, ownerType string, ownerID pgtype.UUID, secret string) error
+	clearKofiSecret(ctx context.Context, ownerType string, ownerID pgtype.UUID) error
+	setBMCCredentials(ctx context.Context, ownerType string, ownerID pgtype.UUID, slug, token *string) error
+	clearBMCCredentials(ctx context.Context, ownerType string, ownerID pgtype.UUID) error
+	listSettingsWithBMCToken(ctx context.Context) ([]gen.TipSetting, error)
 
 	createLink(ctx context.Context, p gen.CreateTipExternalLinkParams) (gen.TipExternalLink, error)
 	updateLink(ctx context.Context, p gen.UpdateTipExternalLinkParams) (gen.TipExternalLink, error)
@@ -139,6 +145,34 @@ func (s *Store) clearOCCredentials(ctx context.Context, ownerType string, ownerI
 
 func (s *Store) listSettingsWithOCToken(ctx context.Context) ([]gen.TipSetting, error) {
 	return s.read.ListTipSettingsWithOCToken(ctx)
+}
+
+func (s *Store) getSettingsByKofiWebhookSecret(ctx context.Context, secret string) (gen.TipSetting, error) {
+	row, err := s.read.GetTipSettingsByKofiWebhookSecret(ctx, &secret)
+	if err != nil {
+		return gen.TipSetting{}, mapNotFound(err, ErrNotFound)
+	}
+	return row, nil
+}
+
+func (s *Store) setKofiSecret(ctx context.Context, ownerType string, ownerID pgtype.UUID, secret string) error {
+	return s.write.SetKofiCredentials(ctx, gen.SetKofiCredentialsParams{OwnerType: ownerType, OwnerID: ownerID, KofiWebhookSecret: &secret})
+}
+
+func (s *Store) clearKofiSecret(ctx context.Context, ownerType string, ownerID pgtype.UUID) error {
+	return s.write.ClearKofiCredentials(ctx, gen.ClearKofiCredentialsParams{OwnerType: ownerType, OwnerID: ownerID})
+}
+
+func (s *Store) setBMCCredentials(ctx context.Context, ownerType string, ownerID pgtype.UUID, slug, token *string) error {
+	return s.write.SetBMCCredentials(ctx, gen.SetBMCCredentialsParams{OwnerType: ownerType, OwnerID: ownerID, BmcPageSlug: slug, BmcApiTokenEncrypted: token})
+}
+
+func (s *Store) clearBMCCredentials(ctx context.Context, ownerType string, ownerID pgtype.UUID) error {
+	return s.write.ClearBMCCredentials(ctx, gen.ClearBMCCredentialsParams{OwnerType: ownerType, OwnerID: ownerID})
+}
+
+func (s *Store) listSettingsWithBMCToken(ctx context.Context) ([]gen.TipSetting, error) {
+	return s.read.ListTipSettingsWithBMCToken(ctx)
 }
 
 func (s *Store) createLink(ctx context.Context, p gen.CreateTipExternalLinkParams) (gen.TipExternalLink, error) {

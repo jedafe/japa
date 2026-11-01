@@ -4375,20 +4375,23 @@ type TipExternalLinkClick struct {
 }
 
 type TipSetting struct {
-	ID                  pgtype.UUID        `json:"id"`
-	OwnerType           string             `json:"owner_type"`
-	OwnerID             pgtype.UUID        `json:"owner_id"`
-	TipsEnabled         bool               `json:"tips_enabled"`
-	AcceptCredits       bool               `json:"accept_credits"`
-	AcceptFiat          bool               `json:"accept_fiat"`
-	AcceptExternal      bool               `json:"accept_external"`
-	OcCollectiveSlug    *string            `json:"oc_collective_slug"`
-	OcApiTokenEncrypted *string            `json:"oc_api_token_encrypted"`
-	OcWebhookSecret     *string            `json:"oc_webhook_secret"`
-	MinTipAmount        int64              `json:"min_tip_amount"`
-	ThankYouMessage     *string            `json:"thank_you_message"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	OwnerType            string             `json:"owner_type"`
+	OwnerID              pgtype.UUID        `json:"owner_id"`
+	TipsEnabled          bool               `json:"tips_enabled"`
+	AcceptCredits        bool               `json:"accept_credits"`
+	AcceptFiat           bool               `json:"accept_fiat"`
+	AcceptExternal       bool               `json:"accept_external"`
+	OcCollectiveSlug     *string            `json:"oc_collective_slug"`
+	OcApiTokenEncrypted  *string            `json:"oc_api_token_encrypted"`
+	OcWebhookSecret      *string            `json:"oc_webhook_secret"`
+	MinTipAmount         int64              `json:"min_tip_amount"`
+	ThankYouMessage      *string            `json:"thank_you_message"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	KofiWebhookSecret    *string            `json:"kofi_webhook_secret"`
+	BmcPageSlug          *string            `json:"bmc_page_slug"`
+	BmcApiTokenEncrypted *string            `json:"bmc_api_token_encrypted"`
 }
 
 type TipsPointsLegacy struct {

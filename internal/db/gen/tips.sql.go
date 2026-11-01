@@ -185,6 +185,36 @@ func (q *Queries) AttachTipPayment(ctx context.Context, arg AttachTipPaymentPara
 	return err
 }
 
+const clearBMCCredentials = `-- name: ClearBMCCredentials :exec
+UPDATE tip_settings SET bmc_page_slug = NULL, bmc_api_token_encrypted = NULL, updated_at = now()
+WHERE owner_type = $1 AND owner_id = $2
+`
+
+type ClearBMCCredentialsParams struct {
+	OwnerType string      `json:"owner_type"`
+	OwnerID   pgtype.UUID `json:"owner_id"`
+}
+
+func (q *Queries) ClearBMCCredentials(ctx context.Context, arg ClearBMCCredentialsParams) error {
+	_, err := q.db.Exec(ctx, clearBMCCredentials, arg.OwnerType, arg.OwnerID)
+	return err
+}
+
+const clearKofiCredentials = `-- name: ClearKofiCredentials :exec
+UPDATE tip_settings SET kofi_webhook_secret = NULL, updated_at = now()
+WHERE owner_type = $1 AND owner_id = $2
+`
+
+type ClearKofiCredentialsParams struct {
+	OwnerType string      `json:"owner_type"`
+	OwnerID   pgtype.UUID `json:"owner_id"`
+}
+
+func (q *Queries) ClearKofiCredentials(ctx context.Context, arg ClearKofiCredentialsParams) error {
+	_, err := q.db.Exec(ctx, clearKofiCredentials, arg.OwnerType, arg.OwnerID)
+	return err
+}
+
 const clearOCCredentials = `-- name: ClearOCCredentials :exec
 UPDATE tip_settings SET oc_collective_slug = NULL, oc_api_token_encrypted = NULL,
     oc_webhook_secret = NULL, updated_at = now()
@@ -592,7 +622,7 @@ func (q *Queries) GetTipExternalLinkByID(ctx context.Context, id pgtype.UUID) (T
 }
 
 const getTipSettings = `-- name: GetTipSettings :one
-SELECT id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at FROM tip_settings WHERE owner_type = $1 AND owner_id = $2
+SELECT id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at, kofi_webhook_secret, bmc_page_slug, bmc_api_token_encrypted FROM tip_settings WHERE owner_type = $1 AND owner_id = $2
 `
 
 type GetTipSettingsParams struct {
@@ -618,12 +648,44 @@ func (q *Queries) GetTipSettings(ctx context.Context, arg GetTipSettingsParams) 
 		&i.ThankYouMessage,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.KofiWebhookSecret,
+		&i.BmcPageSlug,
+		&i.BmcApiTokenEncrypted,
+	)
+	return i, err
+}
+
+const getTipSettingsByKofiWebhookSecret = `-- name: GetTipSettingsByKofiWebhookSecret :one
+SELECT id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at, kofi_webhook_secret, bmc_page_slug, bmc_api_token_encrypted FROM tip_settings WHERE kofi_webhook_secret = $1
+`
+
+func (q *Queries) GetTipSettingsByKofiWebhookSecret(ctx context.Context, kofiWebhookSecret *string) (TipSetting, error) {
+	row := q.db.QueryRow(ctx, getTipSettingsByKofiWebhookSecret, kofiWebhookSecret)
+	var i TipSetting
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerType,
+		&i.OwnerID,
+		&i.TipsEnabled,
+		&i.AcceptCredits,
+		&i.AcceptFiat,
+		&i.AcceptExternal,
+		&i.OcCollectiveSlug,
+		&i.OcApiTokenEncrypted,
+		&i.OcWebhookSecret,
+		&i.MinTipAmount,
+		&i.ThankYouMessage,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.KofiWebhookSecret,
+		&i.BmcPageSlug,
+		&i.BmcApiTokenEncrypted,
 	)
 	return i, err
 }
 
 const getTipSettingsByOCWebhookSecret = `-- name: GetTipSettingsByOCWebhookSecret :one
-SELECT id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at FROM tip_settings WHERE oc_webhook_secret = $1
+SELECT id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at, kofi_webhook_secret, bmc_page_slug, bmc_api_token_encrypted FROM tip_settings WHERE oc_webhook_secret = $1
 `
 
 func (q *Queries) GetTipSettingsByOCWebhookSecret(ctx context.Context, ocWebhookSecret *string) (TipSetting, error) {
@@ -644,6 +706,9 @@ func (q *Queries) GetTipSettingsByOCWebhookSecret(ctx context.Context, ocWebhook
 		&i.ThankYouMessage,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.KofiWebhookSecret,
+		&i.BmcPageSlug,
+		&i.BmcApiTokenEncrypted,
 	)
 	return i, err
 }
@@ -878,8 +943,50 @@ func (q *Queries) ListTipExternalLinks(ctx context.Context, tipSettingsID pgtype
 	return items, nil
 }
 
+const listTipSettingsWithBMCToken = `-- name: ListTipSettingsWithBMCToken :many
+SELECT id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at, kofi_webhook_secret, bmc_page_slug, bmc_api_token_encrypted FROM tip_settings WHERE bmc_api_token_encrypted IS NOT NULL
+`
+
+func (q *Queries) ListTipSettingsWithBMCToken(ctx context.Context) ([]TipSetting, error) {
+	rows, err := q.db.Query(ctx, listTipSettingsWithBMCToken)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TipSetting
+	for rows.Next() {
+		var i TipSetting
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerType,
+			&i.OwnerID,
+			&i.TipsEnabled,
+			&i.AcceptCredits,
+			&i.AcceptFiat,
+			&i.AcceptExternal,
+			&i.OcCollectiveSlug,
+			&i.OcApiTokenEncrypted,
+			&i.OcWebhookSecret,
+			&i.MinTipAmount,
+			&i.ThankYouMessage,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.KofiWebhookSecret,
+			&i.BmcPageSlug,
+			&i.BmcApiTokenEncrypted,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTipSettingsWithOCToken = `-- name: ListTipSettingsWithOCToken :many
-SELECT id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at FROM tip_settings WHERE oc_collective_slug IS NOT NULL AND oc_api_token_encrypted IS NOT NULL
+SELECT id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at, kofi_webhook_secret, bmc_page_slug, bmc_api_token_encrypted FROM tip_settings WHERE oc_collective_slug IS NOT NULL AND oc_api_token_encrypted IS NOT NULL
 `
 
 func (q *Queries) ListTipSettingsWithOCToken(ctx context.Context) ([]TipSetting, error) {
@@ -906,6 +1013,9 @@ func (q *Queries) ListTipSettingsWithOCToken(ctx context.Context) ([]TipSetting,
 			&i.ThankYouMessage,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.KofiWebhookSecret,
+			&i.BmcPageSlug,
+			&i.BmcApiTokenEncrypted,
 		); err != nil {
 			return nil, err
 		}
@@ -1084,6 +1194,45 @@ func (q *Queries) ListTipsSent(ctx context.Context, arg ListTipsSentParams) ([]T
 	return items, nil
 }
 
+const setBMCCredentials = `-- name: SetBMCCredentials :exec
+UPDATE tip_settings SET bmc_page_slug = $1,
+    bmc_api_token_encrypted = $2, updated_at = now()
+WHERE owner_type = $3 AND owner_id = $4
+`
+
+type SetBMCCredentialsParams struct {
+	BmcPageSlug          *string     `json:"bmc_page_slug"`
+	BmcApiTokenEncrypted *string     `json:"bmc_api_token_encrypted"`
+	OwnerType            string      `json:"owner_type"`
+	OwnerID              pgtype.UUID `json:"owner_id"`
+}
+
+func (q *Queries) SetBMCCredentials(ctx context.Context, arg SetBMCCredentialsParams) error {
+	_, err := q.db.Exec(ctx, setBMCCredentials,
+		arg.BmcPageSlug,
+		arg.BmcApiTokenEncrypted,
+		arg.OwnerType,
+		arg.OwnerID,
+	)
+	return err
+}
+
+const setKofiCredentials = `-- name: SetKofiCredentials :exec
+UPDATE tip_settings SET kofi_webhook_secret = $1, updated_at = now()
+WHERE owner_type = $2 AND owner_id = $3
+`
+
+type SetKofiCredentialsParams struct {
+	KofiWebhookSecret *string     `json:"kofi_webhook_secret"`
+	OwnerType         string      `json:"owner_type"`
+	OwnerID           pgtype.UUID `json:"owner_id"`
+}
+
+func (q *Queries) SetKofiCredentials(ctx context.Context, arg SetKofiCredentialsParams) error {
+	_, err := q.db.Exec(ctx, setKofiCredentials, arg.KofiWebhookSecret, arg.OwnerType, arg.OwnerID)
+	return err
+}
+
 const setOCCredentials = `-- name: SetOCCredentials :exec
 UPDATE tip_settings SET oc_collective_slug = $1,
     oc_api_token_encrypted = $2, oc_webhook_secret = $3,
@@ -1194,7 +1343,7 @@ ON CONFLICT (owner_type, owner_id) DO UPDATE SET
     oc_api_token_encrypted = COALESCE($8, tip_settings.oc_api_token_encrypted),
     min_tip_amount = $9, thank_you_message = $10,
     updated_at = now()
-RETURNING id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at
+RETURNING id, owner_type, owner_id, tips_enabled, accept_credits, accept_fiat, accept_external, oc_collective_slug, oc_api_token_encrypted, oc_webhook_secret, min_tip_amount, thank_you_message, created_at, updated_at, kofi_webhook_secret, bmc_page_slug, bmc_api_token_encrypted
 `
 
 type UpsertTipSettingsParams struct {
@@ -1241,6 +1390,9 @@ func (q *Queries) UpsertTipSettings(ctx context.Context, arg UpsertTipSettingsPa
 		&i.ThankYouMessage,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.KofiWebhookSecret,
+		&i.BmcPageSlug,
+		&i.BmcApiTokenEncrypted,
 	)
 	return i, err
 }

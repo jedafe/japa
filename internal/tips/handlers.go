@@ -1094,3 +1094,184 @@ func sha256Hex(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
 }
+
+// ── Ko-fi + Buy Me a Coffee connect/disconnect + inbound webhook (§125) ──
+
+func (h *Handlers) connectKofi(w http.ResponseWriter, r *http.Request, owner Owner, actor pgtype.UUID) {
+	var in struct {
+		RotateSecret bool `json:"rotate_secret"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&in)
+	st, err := h.service.ConnectKofi(r.Context(), owner, actor, in.RotateSecret)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
+}
+
+func (h *Handlers) ConnectMyKofi(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	h.connectKofi(w, r, UserOwner(user.UserID), user.UserID)
+}
+
+func (h *Handlers) DisconnectMyKofi(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	if err := h.service.DisconnectKofi(r.Context(), UserOwner(user.UserID), user.UserID); err != nil {
+		writeTipError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handlers) ConnectOrgKofi(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var orgID pgtype.UUID
+	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization id")
+		return
+	}
+	h.connectKofi(w, r, OrgOwner(orgID), user.UserID)
+}
+
+func (h *Handlers) DisconnectOrgKofi(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var orgID pgtype.UUID
+	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization id")
+		return
+	}
+	if err := h.service.DisconnectKofi(r.Context(), OrgOwner(orgID), user.UserID); err != nil {
+		writeTipError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handlers) connectBMC(w http.ResponseWriter, r *http.Request, owner Owner, actor pgtype.UUID) {
+	var in struct {
+		APIToken string `json:"api_token"`
+		PageSlug string `json:"page_slug"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.APIToken == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "api_token is required")
+		return
+	}
+	st, err := h.service.ConnectBMC(r.Context(), owner, actor, in.APIToken, in.PageSlug)
+	if err != nil {
+		writeTipError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": st})
+}
+
+func (h *Handlers) ConnectMyBMC(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	h.connectBMC(w, r, UserOwner(user.UserID), user.UserID)
+}
+
+func (h *Handlers) DisconnectMyBMC(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	if err := h.service.DisconnectBMC(r.Context(), UserOwner(user.UserID), user.UserID); err != nil {
+		writeTipError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handlers) ConnectOrgBMC(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var orgID pgtype.UUID
+	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization id")
+		return
+	}
+	h.connectBMC(w, r, OrgOwner(orgID), user.UserID)
+}
+
+func (h *Handlers) DisconnectOrgBMC(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	var orgID pgtype.UUID
+	if err := orgID.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization id")
+		return
+	}
+	if err := h.service.DisconnectBMC(r.Context(), OrgOwner(orgID), user.UserID); err != nil {
+		writeTipError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// kofiData is the JSON object inside Ko-fi's `data` form field.
+type kofiData struct {
+	VerificationToken string `json:"verification_token"`
+	MessageID         string `json:"message_id"`
+	Type              string `json:"type"`
+	FromName          string `json:"from_name"`
+	Email             string `json:"email"`
+	Amount            string `json:"amount"`
+	Currency          string `json:"currency"`
+}
+
+// HandleKofiWebhook handles POST /api/v1/tips/webhook/kofi/{secret} — the
+// path secret must equal both the stored secret and data.verification_token.
+func (h *Handlers) HandleKofiWebhook(w http.ResponseWriter, r *http.Request) {
+	secret := chi.URLParam(r, "secret")
+	if secret == "" {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Missing webhook secret")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid form body")
+		return
+	}
+	var d kofiData
+	if err := json.Unmarshal([]byte(r.FormValue("data")), &d); err != nil || d.VerificationToken == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid Ko-fi payload")
+		return
+	}
+	var cents int64
+	if f, ferr := strconv.ParseFloat(d.Amount, 64); ferr == nil {
+		cents = int64(f * 100)
+	}
+	if err := h.service.ImportKofiWebhook(r.Context(), secret, d.VerificationToken, OCContribution{
+		ID:          "kofi:" + d.MessageID,
+		AmountCents: cents,
+		Currency:    d.Currency,
+		FromName:    d.FromName,
+		FromEmail:   d.Email,
+	}); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Invalid webhook secret")
+			return
+		}
+		writeTipError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}

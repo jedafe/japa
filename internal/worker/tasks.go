@@ -87,6 +87,7 @@ const (
 	TypeTipsOCSync          = "tips:oc_sync"           // poll Open Collective collectives for new contributions
 	TypeTipsStaleSweep      = "tips:stale_sweep"       // fail stale pending fiat tips past the checkout TTL
 	TypeTipsRecordLinkClick = "tips:record_link_click" // persist external link click + increment click_count
+	TypeTipsBMCSync         = "tips:bmc_sync"          // poll Buy Me a Coffee supporters and import donations
 
 	TypeServiceBookingCreated       = "service:booking_created"
 	TypeServiceBookingStatusChanged = "service:booking_status_changed"
@@ -271,6 +272,7 @@ var handlerRegistry = []struct {
 	{TypeTipsOCSync, HandleTipsOCSync},
 	{TypeTipsStaleSweep, HandleTipsStaleSweep},
 	{TypeTipsRecordLinkClick, HandleTipsRecordLinkClick},
+	{TypeTipsBMCSync, HandleTipsBMCSync},
 	// Japa Academy creator economy (ADR-063)
 	{TypeAcademyProcessEnrollment, HandleAcademyProcessEnrollment},
 	{TypeAcademyNotifyInstructorApproved, HandleAcademyNotifyInstructorApproved},

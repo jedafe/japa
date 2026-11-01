@@ -20,6 +20,7 @@ type TipSettlement interface {
 	FailTip(ctx context.Context, tipID pgtype.UUID) error
 	NotifyTipReceived(ctx context.Context, tipID pgtype.UUID) error
 	SyncOC(ctx context.Context) error
+	SyncBMC(ctx context.Context) error
 	SweepStalePending(ctx context.Context) error
 }
 
@@ -83,6 +84,15 @@ func HandleTipsOCSync(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 	return tipSettlement.SyncOC(ctx)
+}
+
+// HandleTipsBMCSync processes tips:bmc_sync — sweeps settings rows with a
+// stored BMC token under a per-owner Valkey lock.
+func HandleTipsBMCSync(ctx context.Context, t *asynq.Task) error {
+	if tipSettlement == nil {
+		return nil
+	}
+	return tipSettlement.SyncBMC(ctx)
 }
 
 // enqueueTipsSettleFiat fires the fiat settlement task from the payment

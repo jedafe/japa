@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/ledger"
 )
 
 // Wallet ledger constants — inlined from internal/wallet to avoid an import
@@ -101,7 +102,7 @@ func creditAuthorCommissionTx(ctx context.Context, row gen.GetAffiliateContentCo
 
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := gen.New(tx)
+	qtx := ledger.New(gen.New(tx))
 
 	// Lock key MUST match the wallet package's "wallet::<user>" form (double
 	// colon) — a single-colon key hashes to a different advisory lock and the

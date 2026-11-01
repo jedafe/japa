@@ -2,6 +2,8 @@ package worker
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +18,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/intelligence/fetcher"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 )
@@ -127,6 +130,31 @@ func intelWebSubSubscribe(ctx context.Context, raw []byte) error {
 	if cfg.Hub == "" || cfg.Topic == "" {
 		slog.Info("task:intel:websub: channel missing hub/topic, skipping", "channel_id", ch.ID.String())
 		return nil
+	}
+
+	// Legacy webhook channels may predate secret provisioning — generate and
+	// persist one now so the hub can sign deliveries (unsigned pushes rely on
+	// the channel UUID being unguessable, which is not a real control).
+	if cfg.Secret == "" {
+		var b [32]byte
+		if _, rerr := rand.Read(b[:]); rerr == nil {
+			cfg.Secret = hex.EncodeToString(b[:])
+
+			merged := map[string]any{}
+			_ = json.Unmarshal(ch.ProviderConfig, &merged)
+			merged["secret"] = cfg.Secret
+
+			if raw, merr := json.Marshal(merged); merr == nil {
+				if updated, uerr := intelSourcesStore.UpdateChannel(ctx, gen.UpdateIntelSourceChannelParams{
+					ID:             ch.ID,
+					ProviderConfig: raw,
+				}); uerr == nil {
+					ch.ProviderConfig = updated.ProviderConfig
+				} else {
+					slog.Warn("task:intel:websub: secret persist failed", "channel_id", ch.ID.String(), "error", uerr)
+				}
+			}
+		}
 	}
 
 	if u, perr := url.Parse(cfg.Hub); perr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {

@@ -33,6 +33,8 @@ const (
 	MethodPoints         = "points" // retired — historical rows only
 	MethodCredits        = "credits"
 	MethodOpenCollective = "opencollective"
+	MethodKofi           = "kofi"
+	MethodBuyMeACoffee   = "buymeacoffee"
 )
 
 // Tip statuses.
@@ -122,20 +124,24 @@ func SpaceOwner(id pgtype.UUID) Owner { return Owner{Type: RecipientSpace, ID: i
 // Settings is the service-level view of a tip_settings row. The OC token
 // ciphertext never leaves the service — HasOCToken derives presence.
 type Settings struct {
-	ID               pgtype.UUID `json:"id"`
-	OwnerType        string      `json:"owner_type"`
-	OwnerID          pgtype.UUID `json:"owner_id"`
-	TipsEnabled      bool        `json:"tips_enabled"`
-	AcceptCredits    bool        `json:"accept_credits"`
-	AcceptFiat       bool        `json:"accept_fiat"`
-	AcceptExternal   bool        `json:"accept_external"`
-	OCCollectiveSlug *string     `json:"oc_collective_slug,omitempty"`
-	HasOCToken       bool        `json:"has_oc_token"`
-	OCWebhookURL     *string     `json:"oc_webhook_url,omitempty"`
-	MinTipAmount     int64       `json:"min_tip_amount"`
-	ThankYouMessage  *string     `json:"thank_you_message,omitempty"`
-	row              gen.TipSetting
-	hasRow           bool
+	ID                    pgtype.UUID `json:"id"`
+	OwnerType             string      `json:"owner_type"`
+	OwnerID               pgtype.UUID `json:"owner_id"`
+	TipsEnabled           bool        `json:"tips_enabled"`
+	AcceptCredits         bool        `json:"accept_credits"`
+	AcceptFiat            bool        `json:"accept_fiat"`
+	AcceptExternal        bool        `json:"accept_external"`
+	OCCollectiveSlug      *string     `json:"oc_collective_slug,omitempty"`
+	HasOCToken            bool        `json:"has_oc_token"`
+	OCWebhookURL          *string     `json:"oc_webhook_url,omitempty"`
+	KofiWebhookURL        *string     `json:"kofi_webhook_url,omitempty"`
+	KofiVerificationToken *string     `json:"kofi_verification_token,omitempty"`
+	HasBMCToken           bool        `json:"has_bmc_token"`
+	BMCPageSlug           *string     `json:"bmc_page_slug,omitempty"`
+	MinTipAmount          int64       `json:"min_tip_amount"`
+	ThankYouMessage       *string     `json:"thank_you_message,omitempty"`
+	row                   gen.TipSetting
+	hasRow                bool
 }
 
 // UpdateSettingsInput is the owner-editable settings patch. Nil fields keep
@@ -350,8 +356,27 @@ type Service struct {
 	// the sender (ADR-136). Optional — nil-safe.
 	activity    wallet.ActivityEmitter
 	affResolver AffiliateURLResolver
+	bmc         BMCClient
 	siteURL     string
 }
+
+// BMCSupporter is one imported Buy Me a Coffee donation.
+type BMCSupporter struct {
+	ID          string
+	AmountCents int64
+	Currency    string
+	Name        string
+	Email       string
+}
+
+// BMCClient lists Buy Me a Coffee supporters for a personal access token.
+// Nil seam → tips:bmc_sync is a no-op.
+type BMCClient interface {
+	ListSupporters(ctx context.Context, token string, page int) ([]BMCSupporter, bool, error)
+}
+
+// SetBMCClient injects the Buy Me a Coffee API client (§125).
+func (s *Service) SetBMCClient(c BMCClient) { s.bmc = c }
 
 // AffiliateURLResolver injects platform affiliate tracking into an outbound
 // URL when its host matches an active §55 provider. Nil seam → no injection.

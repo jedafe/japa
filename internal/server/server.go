@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jedafe/japa/internal/brand"
+	"github.com/jedafe/japa/internal/buymeacoffee"
 	"log/slog"
 	"net/http"
 	"os"
@@ -1085,6 +1086,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// injects provider tracking params via the same §55 matcher, and
 	// dedup/record rides Valkey + Asynq like the §56 affiliate redirect.
 	tipsService.SetAffiliateResolver(tipsAffAdapter{svc: couponService})
+	tipsService.SetBMCClient(tipsBMCAdapter{client: buymeacoffee.New()})
 	tipsHandlers.AsynqClient = asynqClient
 	tipsHandlers.Cache = vkClient.Redis() // jc:tip_link_dedup (Section 125)
 
@@ -5277,6 +5279,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Put("/organizations/{id}/tip-settings/opencollective", tipsHandlers.ConnectOrgOC)
 					r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Delete("/organizations/{id}/tip-settings/opencollective", tipsHandlers.DisconnectOrgOC)
 				})
+				r.With(features.Gate(featureChecker, "tips.kofi")).Group(func(r chi.Router) {
+					r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/tip-settings/kofi", tipsHandlers.ConnectMyKofi)
+					r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/tip-settings/kofi", tipsHandlers.DisconnectMyKofi)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Put("/organizations/{id}/tip-settings/kofi", tipsHandlers.ConnectOrgKofi)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Delete("/organizations/{id}/tip-settings/kofi", tipsHandlers.DisconnectOrgKofi)
+				})
+				r.With(features.Gate(featureChecker, "tips.buymeacoffee")).Group(func(r chi.Router) {
+					r.With(auth.RequireAuth(kr, vkClient.Redis())).Put("/me/tip-settings/buymeacoffee", tipsHandlers.ConnectMyBMC)
+					r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/tip-settings/buymeacoffee", tipsHandlers.DisconnectMyBMC)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Put("/organizations/{id}/tip-settings/buymeacoffee", tipsHandlers.ConnectOrgBMC)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Delete("/organizations/{id}/tip-settings/buymeacoffee", tipsHandlers.DisconnectOrgBMC)
+				})
 
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Get("/users/{username}/tip-config", tipsHandlers.PublicUserTipConfig)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService), mw.RateLimit(vkClient.Redis(), "loose")).Get("/organizations/{id}/donation-config", tipsHandlers.PublicOrgTipConfig)
@@ -5314,6 +5328,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// query-string access logs (same handler, same auth).
 				r.With(features.Gate(featureChecker, "tips.opencollective"), mw.RateLimit(vkClient.Redis(), "webhook")).
 					Post("/tips/webhook/opencollective/{secret}", tipsHandlers.HandleOCWebhook)
+				r.With(features.Gate(featureChecker, "tips.kofi"), mw.RateLimit(vkClient.Redis(), "webhook")).
+					Post("/tips/webhook/kofi/{secret}", tipsHandlers.HandleKofiWebhook)
 			})
 
 			// Advertising routes (Section 25 — Ad Placement)

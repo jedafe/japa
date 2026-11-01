@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/buymeacoffee"
 	"github.com/jedafe/japa/internal/coupons"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/notifications"
@@ -202,6 +203,29 @@ func (a tipsSettlementAdapter) NotifyTipReceived(ctx context.Context, tipID pgty
 // SyncOC delegates to SyncAll.
 func (a tipsSettlementAdapter) SyncOC(ctx context.Context) error {
 	return a.svc.SyncAll(ctx)
+}
+
+// SyncBMC delegates to the BMC supporters sweep.
+func (a tipsSettlementAdapter) SyncBMC(ctx context.Context) error {
+	return a.svc.SyncBMC(ctx)
+}
+
+// tipsBMCAdapter adapts *buymeacoffee.Client to tips.BMCClient.
+type tipsBMCAdapter struct {
+	client *buymeacoffee.Client
+}
+
+// ListSupporters maps BMC supporters onto the tips-side type.
+func (a tipsBMCAdapter) ListSupporters(ctx context.Context, token string, page int) ([]tips.BMCSupporter, bool, error) {
+	rows, more, err := a.client.ListSupporters(ctx, token, page)
+	if err != nil {
+		return nil, false, err
+	}
+	out := make([]tips.BMCSupporter, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, tips.BMCSupporter{ID: r.ID, AmountCents: r.AmountCents, Currency: r.Currency, Name: r.Name, Email: r.Email})
+	}
+	return out, more, nil
 }
 
 // SweepStalePending delegates.

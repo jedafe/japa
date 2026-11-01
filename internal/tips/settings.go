@@ -33,6 +33,13 @@ func (s *Service) toSettings(row gen.TipSetting) Settings {
 		u := strings.TrimRight(s.siteURL, "/") + "/api/v1/tips/webhook/opencollective/" + *row.OcWebhookSecret
 		out.OCWebhookURL = &u
 	}
+	if row.KofiWebhookSecret != nil && *row.KofiWebhookSecret != "" && s.siteURL != "" {
+		u := strings.TrimRight(s.siteURL, "/") + "/api/v1/tips/webhook/kofi/" + *row.KofiWebhookSecret
+		out.KofiWebhookURL = &u
+		out.KofiVerificationToken = row.KofiWebhookSecret
+	}
+	out.HasBMCToken = row.BmcApiTokenEncrypted != nil && *row.BmcApiTokenEncrypted != ""
+	out.BMCPageSlug = row.BmcPageSlug
 	return out
 }
 

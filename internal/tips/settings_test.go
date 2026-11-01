@@ -411,3 +411,16 @@ func (f *fakeStore) getContentTitle(context.Context, pgtype.UUID) (string, error
 func (f *fakeStore) insertAuditLog(context.Context, pgtype.UUID, string, string, string, string) error {
 	return nil
 }
+
+func (f *fakeStore) getSettingsByKofiWebhookSecret(context.Context, string) (gen.TipSetting, error) {
+	return gen.TipSetting{}, ErrNotFound
+}
+func (f *fakeStore) setKofiSecret(context.Context, string, pgtype.UUID, string) error { return nil }
+func (f *fakeStore) clearKofiSecret(context.Context, string, pgtype.UUID) error       { return nil }
+func (f *fakeStore) setBMCCredentials(context.Context, string, pgtype.UUID, *string, *string) error {
+	return nil
+}
+func (f *fakeStore) clearBMCCredentials(context.Context, string, pgtype.UUID) error { return nil }
+func (f *fakeStore) listSettingsWithBMCToken(context.Context) ([]gen.TipSetting, error) {
+	return nil, nil
+}

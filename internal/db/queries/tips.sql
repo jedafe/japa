@@ -207,3 +207,26 @@ SELECT s.id, s.level, s.status, s.creator_user_id, s.deleted_at, s.visibility, s
 FROM spaces s
 JOIN space_types st ON st.id = s.space_type_id
 WHERE s.id = @id;
+
+-- name: GetTipSettingsByKofiWebhookSecret :one
+SELECT * FROM tip_settings WHERE kofi_webhook_secret = @kofi_webhook_secret;
+
+-- name: SetKofiCredentials :exec
+UPDATE tip_settings SET kofi_webhook_secret = @kofi_webhook_secret, updated_at = now()
+WHERE owner_type = @owner_type AND owner_id = @owner_id;
+
+-- name: ClearKofiCredentials :exec
+UPDATE tip_settings SET kofi_webhook_secret = NULL, updated_at = now()
+WHERE owner_type = @owner_type AND owner_id = @owner_id;
+
+-- name: SetBMCCredentials :exec
+UPDATE tip_settings SET bmc_page_slug = @bmc_page_slug,
+    bmc_api_token_encrypted = @bmc_api_token_encrypted, updated_at = now()
+WHERE owner_type = @owner_type AND owner_id = @owner_id;
+
+-- name: ClearBMCCredentials :exec
+UPDATE tip_settings SET bmc_page_slug = NULL, bmc_api_token_encrypted = NULL, updated_at = now()
+WHERE owner_type = @owner_type AND owner_id = @owner_id;
+
+-- name: ListTipSettingsWithBMCToken :many
+SELECT * FROM tip_settings WHERE bmc_api_token_encrypted IS NOT NULL;

@@ -123,6 +123,12 @@ func (s *Service) DisconnectOC(ctx context.Context, owner Owner, actorID pgtype.
 // Idempotent on oc_contribution_id; sender_user_id stays NULL when no
 // platform account matches the OC contributor email.
 func (s *Service) ImportContribution(ctx context.Context, owner Owner, c OCContribution) (bool, error) {
+	return s.importContribution(ctx, owner, MethodOpenCollective, c)
+}
+
+// importContribution is the shared external-donation insert path (OC sync +
+// webhook, Ko-fi webhook, BMC poll). c.ID is the namespaced external id.
+func (s *Service) importContribution(ctx context.Context, owner Owner, method string, c OCContribution) (bool, error) {
 	if _, err := s.store.getTipByOCContributionID(ctx, c.ID); err == nil {
 		return false, nil // already imported
 	} else if !errors.Is(err, ErrNotFound) {
@@ -142,7 +148,7 @@ func (s *Service) ImportContribution(ctx context.Context, owner Owner, c OCContr
 	params := gen.InsertTipParams{
 		SenderUserID:       senderID,
 		RecipientType:      owner.Type,
-		Method:             MethodOpenCollective,
+		Method:             method,
 		FiatAmount:         &c.AmountCents,
 		FiatCurrency:       &c.Currency,
 		OcContributionID:   &c.ID,
