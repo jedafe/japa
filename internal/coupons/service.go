@@ -971,20 +971,7 @@ func (s *Service) ResolveAffiliateLinkForRender(ctx context.Context, providerID 
 		return nil, fmt.Errorf("resolving affiliate link: %w", err)
 	}
 
-	resolvedURL := originalURL
-
-	if r.TrackingParam != nil && r.TrackingValue != nil && *r.TrackingParam != "" && *r.TrackingValue != "" {
-		separator := "?"
-
-		for i := len(originalURL) - 1; i >= 0; i-- {
-			if originalURL[i] == '?' {
-				separator = "&"
-				break
-			}
-		}
-
-		resolvedURL = originalURL + separator + *r.TrackingParam + "=" + *r.TrackingValue
-	}
+	resolvedURL := appendTrackingParam(originalURL, derefStr(r.TrackingParam), derefStr(r.TrackingValue))
 
 	return &RenderedAffiliateLink{
 		BaseURL:       derefStr(r.BaseUrl),
@@ -992,6 +979,62 @@ func (s *Service) ResolveAffiliateLinkForRender(ctx context.Context, providerID 
 		TrackingValue: derefStr(r.TrackingValue),
 		ResolvedURL:   resolvedURL,
 	}, nil
+}
+
+// ResolveAffiliateLinkByURL matches rawURL's host against active providers'
+// base_url hosts (exact or subdomain suffix) and returns the tracking-injected
+// URL — §125 external tip link monetization. Returns (nil, nil) when no
+// provider matches so callers can fall back to the original URL.
+func (s *Service) ResolveAffiliateLinkByURL(ctx context.Context, rawURL string) (*RenderedAffiliateLink, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return nil, nil
+	}
+	host := strings.ToLower(u.Hostname())
+
+	providers, err := s.store.listActiveProvidersForMatch(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing providers for match: %w", err)
+	}
+
+	for _, p := range providers {
+		pu, perr := url.Parse(derefStr(p.BaseUrl))
+		if perr != nil {
+			continue
+		}
+		ph := strings.ToLower(pu.Hostname())
+		if ph == "" || (host != ph && !strings.HasSuffix(host, "."+ph)) {
+			continue
+		}
+
+		return &RenderedAffiliateLink{
+			BaseURL:       derefStr(p.BaseUrl),
+			TrackingParam: derefStr(p.TrackingParam),
+			TrackingValue: derefStr(p.TrackingValue),
+			ResolvedURL:   appendTrackingParam(rawURL, derefStr(p.TrackingParam), derefStr(p.TrackingValue)),
+		}, nil
+	}
+
+	return nil, nil
+}
+
+// appendTrackingParam appends ?param=value (& when the URL already carries a
+// query). Empty param/value leaves the URL unchanged — shared by the §55
+// render-time resolver and the §125 click-time matcher.
+func appendTrackingParam(originalURL, param, value string) string {
+	if param == "" || value == "" {
+		return originalURL
+	}
+
+	separator := "?"
+	for i := len(originalURL) - 1; i >= 0; i-- {
+		if originalURL[i] == '?' {
+			separator = "&"
+			break
+		}
+	}
+
+	return originalURL + separator + param + "=" + value
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────

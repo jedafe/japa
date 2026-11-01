@@ -153,6 +153,13 @@ func (s *Service) ImportContribution(ctx context.Context, owner Owner, c OCContr
 		params.RecipientUserID = owner.ID
 	} else if owner.Type == RecipientOrganization {
 		params.RecipientOrganizationID = owner.ID
+	} else if owner.Type == RecipientSpace {
+		// Space recipients need recipient_space_id AND a recipient_user_id
+		// snapshot of the wallet owner (tips_recipient_check).
+		params.RecipientSpaceID = owner.ID
+		if w, err := s.store.getSpaceTipRecipient(ctx, owner.ID); err == nil {
+			params.RecipientUserID = w
+		}
 	}
 
 	tip, err := s.store.insertTip(ctx, params)

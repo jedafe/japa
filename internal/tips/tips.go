@@ -152,13 +152,15 @@ type UpdateSettingsInput struct {
 	OCCollectiveSlug *string `json:"oc_collective_slug,omitempty"`
 }
 
-// ExternalLink is a display-only outbound tip option.
+// ExternalLink is an outbound tip option. Public configs carry the click-
+// tracked /tips/links/{id}/out redirect URL; owner lists carry the raw URL.
 type ExternalLink struct {
-	ID       pgtype.UUID `json:"id"`
-	Kind     string      `json:"kind"`
-	Label    string      `json:"label"`
-	URL      string      `json:"url"`
-	Position int32       `json:"position"`
+	ID         pgtype.UUID `json:"id"`
+	Kind       string      `json:"kind"`
+	Label      string      `json:"label"`
+	URL        string      `json:"url"`
+	Position   int32       `json:"position"`
+	ClickCount int64       `json:"click_count"`
 }
 
 // LinkInput is the create/update payload for an external link.
@@ -182,25 +184,30 @@ type PublicConfig struct {
 
 // Tip is the service-level tip record.
 type Tip struct {
-	ID              pgtype.UUID        `json:"id"`
-	SenderUserID    pgtype.UUID        `json:"sender_user_id,omitempty"`
-	SenderName      string             `json:"sender_name"`
-	RecipientType   string             `json:"recipient_type"`
-	RecipientUserID pgtype.UUID        `json:"recipient_user_id,omitempty"`
-	RecipientOrgID  pgtype.UUID        `json:"recipient_organization_id,omitempty"`
-	RecipientName   string             `json:"recipient_name,omitempty"`
-	ContentID       pgtype.UUID        `json:"content_id,omitempty"`
-	Method          string             `json:"method"`
-	CreditsAmount   int64              `json:"credits_amount"`
-	FiatAmount      *int64             `json:"fiat_amount,omitempty"`
-	FiatCurrency    *string            `json:"fiat_currency,omitempty"`
-	FeeAmount       int64              `json:"fee_amount"`
-	NetCredits      int64              `json:"net_credits"`
-	PaymentID       pgtype.UUID        `json:"payment_id,omitempty"`
-	Message         *string            `json:"message,omitempty"`
-	IsAnonymous     bool               `json:"is_anonymous"`
-	Status          string             `json:"status"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	SenderUserID       pgtype.UUID        `json:"sender_user_id,omitempty"`
+	SenderName         string             `json:"sender_name"`
+	ExternalSenderName *string            `json:"external_sender_name,omitempty"`
+	RecipientType      string             `json:"recipient_type"`
+	RecipientUserID    pgtype.UUID        `json:"recipient_user_id,omitempty"`
+	RecipientOrgID     pgtype.UUID        `json:"recipient_organization_id,omitempty"`
+	RecipientSpaceID   pgtype.UUID        `json:"recipient_space_id,omitempty"`
+	RecipientName      string             `json:"recipient_name,omitempty"`
+	ContentID          pgtype.UUID        `json:"content_id,omitempty"`
+	Method             string             `json:"method"`
+	CreditsAmount      int64              `json:"credits_amount"`
+	PointsAmount       int64              `json:"points_amount,omitempty"`
+	FiatAmount         *int64             `json:"fiat_amount,omitempty"`
+	FiatCurrency       *string            `json:"fiat_currency,omitempty"`
+	FeeAmount          int64              `json:"fee_amount"`
+	NetCredits         int64              `json:"net_credits"`
+	PaymentID          pgtype.UUID        `json:"payment_id,omitempty"`
+	OcContributionID   *string            `json:"oc_contribution_id,omitempty"`
+	Message            *string            `json:"message,omitempty"`
+	IsAnonymous        bool               `json:"is_anonymous"`
+	Status             string             `json:"status"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at,omitempty"`
 }
 
 // CreateTipInput is the POST /tips payload.
@@ -341,8 +348,36 @@ type Service struct {
 	clawNotifier NotificationCreator
 	// activity emits wallet activity events — the tip.sent points award for
 	// the sender (ADR-136). Optional — nil-safe.
-	activity wallet.ActivityEmitter
-	siteURL  string
+	activity    wallet.ActivityEmitter
+	affResolver AffiliateURLResolver
+	siteURL     string
+}
+
+// AffiliateURLResolver injects platform affiliate tracking into an outbound
+// URL when its host matches an active §55 provider. Nil seam → no injection.
+type AffiliateURLResolver interface {
+	// Returns (resolvedURL, matched, err). matched=false → keep original URL.
+	ResolveAffiliateLinkByURL(ctx context.Context, rawURL string) (resolved string, matched bool, err error)
+}
+
+// SetAffiliateResolver injects the §55 affiliate matcher used by the
+// /tips/links/{id}/out redirect (§125 external link monetization).
+func (s *Service) SetAffiliateResolver(r AffiliateURLResolver) { s.affResolver = r }
+
+// ResolveAffiliateURL returns the tracking-injected URL when the affiliate
+// program is enabled and rawURL's host matches a provider; (rawURL, false,
+// nil) otherwise. Resolver errors degrade to a plain redirect — a broken
+// provider lookup must never strand a donor.
+func (s *Service) ResolveAffiliateURL(ctx context.Context, rawURL string) (string, bool, error) {
+	if s.affResolver == nil || (s.features != nil && !s.features.IsEnabled(ctx, "feature.affiliate_program")) {
+		return rawURL, false, nil
+	}
+	resolved, matched, err := s.affResolver.ResolveAffiliateLinkByURL(ctx, rawURL)
+	if err != nil {
+		slog.Warn("tips: affiliate resolution failed, redirecting untracked", "error", err)
+		return rawURL, false, nil
+	}
+	return resolved, matched, nil
 }
 
 // SetSettings injects the global system_settings reader.

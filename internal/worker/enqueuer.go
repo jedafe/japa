@@ -466,6 +466,7 @@ var taskTypeCatalog = []struct {
 	{TypeTipsNotifyReceived, "default", "Notify recipient that a tip was received"},
 	{TypeTipsOCSync, "low", "Scheduled poll — import new Open Collective contributions"},
 	{TypeTipsStaleSweep, "low", "Fail pending fiat tips past the checkout TTL"},
+	{TypeTipsRecordLinkClick, "default", "Persist external tip link click event + increment click_count"},
 	// §113 Public Product Roadmap (ADR-127)
 	{TypeRoadmapShipNotify, "default", "Notify roadmap voters + submitter that an item shipped"},
 	{TypeAssessmentScoreSubmission, "default", "Score a completed readiness assessment, generate roadmap, notify (§71, ADR-071)"},

@@ -178,7 +178,7 @@ func (s *Service) createWalletTip(ctx context.Context, senderID pgtype.UUID, own
 	tip, err := s.store.settleWalletTip(ctx, settleWalletParams{
 		senderID:         senderID,
 		walletOwnerID:    walletOwner,
-		recipientUserID:  nullableOwnerUser(owner),
+		recipientUserID:  recipientUserSnapshot(owner, walletOwner),
 		recipientOrgID:   nullableOwnerOrg(owner),
 		recipientSpaceID: nullableOwnerSpace(owner),
 		ledgerType:       "credits",
@@ -218,6 +218,16 @@ func nullableOwnerUser(o Owner) pgtype.UUID {
 	return pgtype.UUID{}
 }
 
+// recipientUserSnapshot resolves the tips.recipient_user_id column. For
+// space tips the CHECK requires it NOT NULL alongside recipient_space_id —
+// it snapshots the wallet owner who receives the credits (not the space id).
+func recipientUserSnapshot(o Owner, walletOwner pgtype.UUID) pgtype.UUID {
+	if o.Type == RecipientSpace {
+		return walletOwner
+	}
+	return nullableOwnerUser(o)
+}
+
 func nullableOwnerOrg(o Owner) pgtype.UUID {
 	if o.Type == RecipientOrganization {
 		return o.ID
@@ -242,24 +252,28 @@ func (s *Service) notifyReceived(ctx context.Context, tipID pgtype.UUID) {
 // tipFromRow maps a gen.Tip row onto the service DTO.
 func tipFromRow(t gen.Tip) Tip {
 	return Tip{
-		ID:              t.ID,
-		SenderUserID:    t.SenderUserID,
-		SenderName:      senderName(t),
-		RecipientType:   t.RecipientType,
-		RecipientUserID: t.RecipientUserID,
-		RecipientOrgID:  t.RecipientOrganizationID,
-		ContentID:       t.ContentID,
-		Method:          t.Method,
-		CreditsAmount:   t.CreditsAmount,
-		FiatAmount:      t.FiatAmount,
-		FiatCurrency:    t.FiatCurrency,
-		FeeAmount:       t.FeeAmount,
-		NetCredits:      t.NetCredits,
-		PaymentID:       t.PaymentID,
-		Message:         t.Message,
-		IsAnonymous:     t.IsAnonymous,
-		Status:          t.Status,
-		CreatedAt:       t.CreatedAt,
+		ID:                 t.ID,
+		SenderUserID:       t.SenderUserID,
+		SenderName:         senderName(t),
+		ExternalSenderName: t.ExternalSenderName,
+		RecipientType:      t.RecipientType,
+		RecipientUserID:    t.RecipientUserID,
+		RecipientOrgID:     t.RecipientOrganizationID,
+		RecipientSpaceID:   t.RecipientSpaceID,
+		ContentID:          t.ContentID,
+		Method:             t.Method,
+		CreditsAmount:      t.CreditsAmount,
+		FiatAmount:         t.FiatAmount,
+		FiatCurrency:       t.FiatCurrency,
+		FeeAmount:          t.FeeAmount,
+		NetCredits:         t.NetCredits,
+		PaymentID:          t.PaymentID,
+		OcContributionID:   t.OcContributionID,
+		Message:            t.Message,
+		IsAnonymous:        t.IsAnonymous,
+		Status:             t.Status,
+		CreatedAt:          t.CreatedAt,
+		UpdatedAt:          t.UpdatedAt,
 	}
 }
 

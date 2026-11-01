@@ -56,10 +56,22 @@ func newUser(t *testing.T, ctx context.Context, d *db.DB, role string) pgtype.UU
 func grantCredits(t *testing.T, ctx context.Context, d *db.DB, userID pgtype.UUID, ledger string, amount int64) {
 	t.Helper()
 	src := "tip_test"
+	// Post-split: credits rows live in credits_ledger (no ledger_type
+	// column), points in wallet_ledger.
+	if ledger == "credits" {
+		if _, err := d.Writer.Exec(ctx,
+			`INSERT INTO credits_ledger (user_id, operation, amount, resulting_balance, source)
+			 SELECT $1, 'earn', $2, COALESCE(
+			   (SELECT resulting_balance FROM credits_ledger WHERE user_id=$1 ORDER BY seq DESC LIMIT 1), 0) + $2, $3`,
+			userID, amount, src); err != nil {
+			t.Fatalf("granting %s: %v", ledger, err)
+		}
+		return
+	}
 	if _, err := d.Writer.Exec(ctx,
 		`INSERT INTO wallet_ledger (user_id, ledger_type, operation, amount, resulting_balance, source)
 		 SELECT $1, $2, 'earn', $3, COALESCE(
-		   (SELECT resulting_balance FROM wallet_ledger WHERE user_id=$1 AND ledger_type=$2 ORDER BY created_at DESC LIMIT 1), 0) + $3, $4`,
+		   (SELECT resulting_balance FROM wallet_ledger WHERE user_id=$1 AND ledger_type=$2 ORDER BY seq DESC LIMIT 1), 0) + $3, $4`,
 		userID, ledger, amount, src); err != nil {
 		t.Fatalf("granting %s: %v", ledger, err)
 	}
@@ -68,9 +80,16 @@ func grantCredits(t *testing.T, ctx context.Context, d *db.DB, userID pgtype.UUI
 func balance(t *testing.T, ctx context.Context, d *db.DB, userID pgtype.UUID, ledger string) int64 {
 	t.Helper()
 	var bal *int64
-	err := d.Reader.QueryRow(ctx,
-		`SELECT resulting_balance FROM wallet_ledger WHERE user_id=$1 AND ledger_type=$2 ORDER BY created_at DESC LIMIT 1`,
-		userID, ledger).Scan(&bal)
+	var err error
+	if ledger == "credits" {
+		err = d.Reader.QueryRow(ctx,
+			`SELECT resulting_balance FROM credits_ledger WHERE user_id=$1 ORDER BY seq DESC LIMIT 1`,
+			userID).Scan(&bal)
+	} else {
+		err = d.Reader.QueryRow(ctx,
+			`SELECT resulting_balance FROM wallet_ledger WHERE user_id=$1 AND ledger_type=$2 ORDER BY seq DESC LIMIT 1`,
+			userID, ledger).Scan(&bal)
+	}
 	if err != nil || bal == nil {
 		return 0
 	}

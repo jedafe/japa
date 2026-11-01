@@ -26,6 +26,7 @@ type tipStore interface {
 	updateLink(ctx context.Context, p gen.UpdateTipExternalLinkParams) (gen.TipExternalLink, error)
 	deleteLink(ctx context.Context, id, settingsID pgtype.UUID) error
 	listLinks(ctx context.Context, settingsID pgtype.UUID) ([]gen.TipExternalLink, error)
+	getLinkByID(ctx context.Context, id pgtype.UUID) (gen.TipExternalLink, error)
 
 	getTip(ctx context.Context, id pgtype.UUID) (gen.Tip, error)
 	getTipByIdempotencyKey(ctx context.Context, senderID pgtype.UUID, key string) (gen.Tip, error)
@@ -52,6 +53,8 @@ type tipStore interface {
 	listStalePendingTips(ctx context.Context, hours, lim int32) ([]pgtype.UUID, error)
 	getUserDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetUserDisplayNamesRow, error)
 	getOrgDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetOrgDisplayNamesRow, error)
+	getSpaceNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetSpacesByIDsRow, error)
+	getLegacyTipPoints(ctx context.Context, ids []pgtype.UUID) ([]gen.GetLegacyTipPointsRow, error)
 	isMentor(ctx context.Context, userID pgtype.UUID) (bool, error)
 	getCurrencyByCode(ctx context.Context, code string) (gen.Currency, error)
 	getSpaceTipRecipient(ctx context.Context, spaceID pgtype.UUID) (pgtype.UUID, error)
@@ -156,6 +159,14 @@ func (s *Store) deleteLink(ctx context.Context, id, settingsID pgtype.UUID) erro
 
 func (s *Store) listLinks(ctx context.Context, settingsID pgtype.UUID) ([]gen.TipExternalLink, error) {
 	return s.read.ListTipExternalLinks(ctx, settingsID)
+}
+
+func (s *Store) getLinkByID(ctx context.Context, id pgtype.UUID) (gen.TipExternalLink, error) {
+	row, err := s.read.GetTipExternalLinkByID(ctx, id)
+	if err != nil {
+		return gen.TipExternalLink{}, mapNotFound(err, ErrNotFound)
+	}
+	return row, nil
 }
 
 func (s *Store) getTip(ctx context.Context, id pgtype.UUID) (gen.Tip, error) {
@@ -278,6 +289,14 @@ func (s *Store) getUserDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]g
 
 func (s *Store) getOrgDisplayNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetOrgDisplayNamesRow, error) {
 	return s.read.GetOrgDisplayNames(ctx, ids)
+}
+
+func (s *Store) getSpaceNames(ctx context.Context, ids []pgtype.UUID) ([]gen.GetSpacesByIDsRow, error) {
+	return s.read.GetSpacesByIDs(ctx, ids)
+}
+
+func (s *Store) getLegacyTipPoints(ctx context.Context, ids []pgtype.UUID) ([]gen.GetLegacyTipPointsRow, error) {
+	return s.read.GetLegacyTipPoints(ctx, ids)
 }
 
 func (s *Store) isMentor(ctx context.Context, userID pgtype.UUID) (bool, error) {

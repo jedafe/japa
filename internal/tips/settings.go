@@ -259,6 +259,14 @@ func (s *Service) PublicConfig(ctx context.Context, owner Owner) (PublicConfig, 
 		if err != nil {
 			return PublicConfig{}, err
 		}
+		// Public surfaces get the click-tracked redirect URL — the stored
+		// URL stays raw for owner editing (§125 external links).
+		if s.siteURL != "" {
+			base := strings.TrimRight(s.siteURL, "/")
+			for i := range links {
+				links[i].URL = base + "/api/v1/tips/links/" + links[i].ID.String() + "/out"
+			}
+		}
 		cfg.ExternalLinks = links
 	}
 	return cfg, nil
@@ -316,9 +324,20 @@ func (s *Service) listLinks(ctx context.Context, settingsID pgtype.UUID) ([]Exte
 	}
 	out := make([]ExternalLink, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, ExternalLink{ID: r.ID, Kind: r.Kind, Label: r.Label, URL: r.Url, Position: r.Position})
+		out = append(out, ExternalLink{ID: r.ID, Kind: r.Kind, Label: r.Label, URL: r.Url, Position: r.Position, ClickCount: r.ClickCount})
 	}
 	return out, nil
+}
+
+// GetLinkByID resolves an external link for the public /out redirect —
+// unauthenticated by design (the link id is the capability; destinations are
+// already public via tip-configs).
+func (s *Service) GetLinkByID(ctx context.Context, id pgtype.UUID) (ExternalLink, error) {
+	row, err := s.store.getLinkByID(ctx, id)
+	if err != nil {
+		return ExternalLink{}, err
+	}
+	return ExternalLink{ID: row.ID, Kind: row.Kind, Label: row.Label, URL: row.Url, Position: row.Position, ClickCount: row.ClickCount}, nil
 }
 
 // ListLinks returns the owner's external links (dashboard view).

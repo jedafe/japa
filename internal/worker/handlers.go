@@ -34,6 +34,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/ledger"
 	rssmodel "github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/valkey"
@@ -5954,6 +5955,66 @@ func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// HandleTipsRecordLinkClick persists a click event to
+// tip_external_link_clicks and increments the denormalized click_count on
+// tip_external_links (§125 external link tracking). The payload carries
+// pre-hashed ip_hash/ua_hash (SHA-256 hex) from the /out redirect handler —
+// raw PII never transits Asynq/Valkey (§56 pattern).
+func HandleTipsRecordLinkClick(ctx context.Context, t *asynq.Task) error {
+	var payload struct {
+		LinkID      string `json:"link_id"`
+		IPHash      string `json:"ip_hash"`
+		UAHash      string `json:"ua_hash"`
+		ReferrerURL string `json:"referrer_url"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("tips:record_link_click: invalid payload", "error", err)
+		return err
+	}
+
+	if _, err := requireDB(); err != nil {
+		return err
+	}
+
+	linkID, err := scanUUID(payload.LinkID)
+	if err != nil {
+		return fmt.Errorf("tips:record_link_click: %w", err)
+	}
+
+	// Link may have been deleted between redirect and task run — clicks on
+	// dead links are dropped, not retried.
+	if _, err := gen.New(dbPool.Reader).GetTipExternalLinkByID(ctx, linkID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("tips:record_link_click: %w", err)
+	}
+
+	ipHashStr := payload.IPHash
+	uaHashStr := payload.UAHash
+	var referrerURL *string
+	if payload.ReferrerURL != "" {
+		referrerURL = &payload.ReferrerURL
+	}
+
+	if err := gen.New(dbPool.Writer).InsertTipLinkClick(ctx, gen.InsertTipLinkClickParams{
+		LinkID:        linkID,
+		IpHash:        &ipHashStr,
+		UserAgentHash: &uaHashStr,
+		ReferrerUrl:   referrerURL,
+	}); err != nil {
+		slog.Error("tips:record_link_click failed", "error", err)
+		return err
+	}
+
+	if err := gen.New(dbPool.Writer).IncrementTipLinkClickCount(ctx, linkID); err != nil {
+		slog.Error("tips:record_link_click: failed to increment click_count", "link_id", payload.LinkID, "error", err)
+	}
+
+	return nil
+}
+
 // HandleRedirectRecordHit increments hit_count/last_hit_at for a redirect rule.
 // Moved off the request path (was a per-request goroutine in redirects.Service).
 func HandleRedirectRecordHit(ctx context.Context, t *asynq.Task) error {
@@ -6090,7 +6151,7 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 // done=true when the commission was already credited (idempotent) so the
 // caller can return early without committing.
 func creditCommissionTx(ctx context.Context, tx pgx.Tx, memberUserID, linkID, paymentID pgtype.UUID, commission int64, paymentIDStr string) (bool, error) {
-	qtx := gen.New(tx)
+	qtx := ledger.New(gen.New(tx))
 
 	// Lock key MUST match the wallet package's "wallet::<user>" form (double
 	// colon) — a single-colon key hashes to a different advisory lock and the
@@ -6124,7 +6185,7 @@ func creditCommissionTx(ctx context.Context, tx pgx.Tx, memberUserID, linkID, pa
 	if _, err := qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 		UserID:           memberUserID,
 		LedgerType:       "credits",
-		Operation:        "credit",
+		Operation:        "earn",
 		Amount:           commission,
 		ResultingBalance: newBalance,
 		Source:           &source,

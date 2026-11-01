@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/coupons"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/opencollective"
@@ -220,6 +221,22 @@ func (a tipsFeatureAdapter) IsEnabled(ctx context.Context, key string) bool {
 		return false
 	}
 	return a.checker.IsEnabled(ctx, key)
+}
+
+// tipsAffAdapter adapts *coupons.Service to tips.AffiliateURLResolver —
+// §55 provider host-match → §125 external link tracking injection.
+type tipsAffAdapter struct {
+	svc *coupons.Service
+}
+
+// ResolveAffiliateLinkByURL maps the coupons result onto the tips seam:
+// nil result → unmatched, non-nil → resolved tracking URL.
+func (a tipsAffAdapter) ResolveAffiliateLinkByURL(ctx context.Context, rawURL string) (string, bool, error) {
+	r, err := a.svc.ResolveAffiliateLinkByURL(ctx, rawURL)
+	if err != nil || r == nil {
+		return "", false, err
+	}
+	return r.ResolvedURL, true, nil
 }
 
 // tipsRefundAdapter adapts *payments.Service to tips.PaymentRefunder — admin

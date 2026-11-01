@@ -209,3 +209,27 @@ func TestCreateTipIdempotentReplay(t *testing.T) {
 		t.Fatalf("replay should short-circuit, got %+v settled %d", res, len(fs.settled))
 	}
 }
+
+// Space tips must store recipient_space_id AND a recipient_user_id snapshot
+// of the wallet owner — tips_recipient_check rejects inserts missing either.
+func TestCreateTipSpaceRecipientSnapshot(t *testing.T) {
+	fs := newFakeStore()
+	spaceID := mustUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
+	ownerID := mustUID("99999999-9999-9999-9999-999999999999")
+	fs.spaceRecipient = ownerID
+	enabledRecipient(fs, SpaceOwner(spaceID))
+	svc := baseSvc(fs)
+
+	in := CreateTipInput{RecipientType: RecipientSpace, RecipientSpaceID: spaceID, Method: MethodCredits, CreditsAmount: 50}
+	if _, err := svc.CreateTip(context.Background(), senderID, in, "k-space"); err != nil {
+		t.Fatalf("CreateTip: %v", err)
+	}
+	if len(fs.settled) != 1 {
+		t.Fatalf("expected 1 settlement, got %d", len(fs.settled))
+	}
+	p := fs.settled[0]
+	if p.recipientType != RecipientSpace || p.recipientSpaceID != spaceID ||
+		p.recipientUserID != ownerID || p.walletOwnerID != ownerID {
+		t.Fatalf("space settlement wrong: %+v", p)
+	}
+}

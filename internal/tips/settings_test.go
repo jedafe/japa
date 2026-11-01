@@ -17,6 +17,7 @@ import (
 type fakeStore struct {
 	settings      map[string]gen.TipSetting
 	links         map[pgtype.UUID][]gen.TipExternalLink
+	linkByID      map[pgtype.UUID]gen.TipExternalLink
 	ocTips        map[string]gen.Tip
 	inserted      []gen.InsertTipParams
 	settled       []settleWalletParams
@@ -27,6 +28,7 @@ type fakeStore struct {
 	mentor        bool
 	mentorErr     error
 	orgOwner      pgtype.UUID
+	spaceRecipient pgtype.UUID
 	getCalls      int
 	upsertParams  gen.UpsertTipSettingsParams
 }
@@ -35,6 +37,7 @@ func newFakeStore() *fakeStore {
 	return &fakeStore{
 		settings:    map[string]gen.TipSetting{},
 		links:       map[pgtype.UUID][]gen.TipExternalLink{},
+		linkByID:    map[pgtype.UUID]gen.TipExternalLink{},
 		ocTips:      map[string]gen.Tip{},
 		emailToUser: map[string]pgtype.UUID{},
 	}
@@ -55,6 +58,9 @@ func (f *fakeStore) getSpaceTipOwner(_ context.Context, _ pgtype.UUID) (pgtype.U
 	return pgtype.UUID{}, ErrNotFound
 }
 func (f *fakeStore) getSpaceTipRecipient(_ context.Context, _ pgtype.UUID) (pgtype.UUID, error) {
+	if f.spaceRecipient.Valid {
+		return f.spaceRecipient, nil
+	}
 	return pgtype.UUID{}, ErrNotFound
 }
 func (f *fakeStore) getSpaceBySlug(_ context.Context, _ string) (gen.GetSpaceBySlugRow, error) {
@@ -109,6 +115,12 @@ func (f *fakeStore) deleteLink(context.Context, pgtype.UUID, pgtype.UUID) error 
 func (f *fakeStore) listLinks(_ context.Context, id pgtype.UUID) ([]gen.TipExternalLink, error) {
 	return f.links[id], nil
 }
+func (f *fakeStore) getLinkByID(_ context.Context, id pgtype.UUID) (gen.TipExternalLink, error) {
+	if l, ok := f.linkByID[id]; ok {
+		return l, nil
+	}
+	return gen.TipExternalLink{}, ErrNotFound
+}
 
 func (f *fakeStore) getTip(context.Context, pgtype.UUID) (gen.Tip, error) {
 	return gen.Tip{}, ErrNotFound
@@ -161,6 +173,12 @@ func (f *fakeStore) getOrgDisplayNames(context.Context, []pgtype.UUID) ([]gen.Ge
 	return nil, nil
 }
 func (f *fakeStore) getUserDisplayNames(context.Context, []pgtype.UUID) ([]gen.GetUserDisplayNamesRow, error) {
+	return nil, nil
+}
+func (f *fakeStore) getSpaceNames(context.Context, []pgtype.UUID) ([]gen.GetSpacesByIDsRow, error) {
+	return nil, nil
+}
+func (f *fakeStore) getLegacyTipPoints(context.Context, []pgtype.UUID) ([]gen.GetLegacyTipPointsRow, error) {
 	return nil, nil
 }
 func (f *fakeStore) isMentor(context.Context, pgtype.UUID) (bool, error) {

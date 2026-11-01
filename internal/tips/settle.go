@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/ledger"
 )
 
 // settleWalletParams describes a completed credits tip for the atomic
@@ -52,7 +53,7 @@ func lockWalletUsers(ctx context.Context, tx pgx.Tx, ids ...pgtype.UUID) error {
 }
 
 // latestBalance reads the current ledger balance inside a transaction.
-func latestBalance(ctx context.Context, qtx *gen.Queries, userID pgtype.UUID, ledgerType string) (int64, error) {
+func latestBalance(ctx context.Context, qtx *ledger.Ledger, userID pgtype.UUID, ledgerType string) (int64, error) {
 	bal, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{UserID: userID, LedgerType: ledgerType})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -72,7 +73,7 @@ func (s *Store) settleWalletTip(ctx context.Context, p settleWalletParams) (gen.
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.write.WithTx(tx)
+	qtx := ledger.New(s.write.WithTx(tx))
 
 	if err := lockWalletUsers(ctx, tx, p.senderID, p.walletOwnerID); err != nil {
 		return gen.Tip{}, err
@@ -184,7 +185,7 @@ func (s *Store) settleFiatTip(ctx context.Context, tipID pgtype.UUID, netCredits
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.write.WithTx(tx)
+	qtx := ledger.New(s.write.WithTx(tx))
 
 	tip, err := qtx.GetTip(ctx, tipID)
 	if err != nil {
@@ -238,7 +239,7 @@ func (s *Store) clawbackTip(ctx context.Context, tipID pgtype.UUID, walletOwnerI
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	qtx := s.write.WithTx(tx)
+	qtx := ledger.New(s.write.WithTx(tx))
 
 	tip, err := qtx.GetTip(ctx, tipID)
 	if err != nil {

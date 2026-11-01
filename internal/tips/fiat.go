@@ -71,8 +71,9 @@ func (s *Service) createFiatTip(ctx context.Context, senderID pgtype.UUID, owner
 	tip, err := s.store.insertTip(ctx, gen.InsertTipParams{
 		SenderUserID:            senderID,
 		RecipientType:           owner.Type,
-		RecipientUserID:         nullableOwnerUser(owner),
+		RecipientUserID:         recipientUserSnapshot(owner, walletOwner),
 		RecipientOrganizationID: nullableOwnerOrg(owner),
+		RecipientSpaceID:        nullableOwnerSpace(owner),
 		ContentID:               in.ContentID,
 		Method:                  in.Method,
 		FiatAmount:              &amount,

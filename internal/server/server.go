@@ -1081,6 +1081,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		rendererInstance.SetAffiliateLinkResolver(&affiliateLinkRenderAdapter{svc: couponService})
 	}
 
+	// §125 external tip link monetization — the /tips/links/{id}/out redirect
+	// injects provider tracking params via the same §55 matcher, and
+	// dedup/record rides Valkey + Asynq like the §56 affiliate redirect.
+	tipsService.SetAffiliateResolver(tipsAffAdapter{svc: couponService})
+	tipsHandlers.AsynqClient = asynqClient
+	tipsHandlers.Cache = vkClient.Redis() // jc:tip_link_dedup (Section 125)
+
 	// User Affiliate Program subsystem (Section 56).
 	affiliateService := affiliate.NewServiceWithEnqueuer(database, taskEnqueuer)
 	affiliateService.SetSettings(settingsService) // SETTING-002/003: configurable commission/limits
@@ -5181,6 +5188,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.adjust"),
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/admin/wallet/entries/{entryId}/reverse", walletHandlers.AdminReverseEntry)
+				// Credits refunds are monetary writes — dedicated
+				// permission node so reputation corrections and money
+				// movement can be scoped independently (audit-logged).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.admin.credits_refund"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					Post("/admin/wallet/credits/{entryId}/refund", walletHandlers.AdminRefundCreditEntry)
 
 				// Credit Currency System (Section 58, ADR-065)
 				// Public: currencies + credit packs + purchase
@@ -5275,6 +5288,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/tips/sent", tipsHandlers.ListMyTipsSent)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/tips/received", tipsHandlers.ListMyTipsReceived)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Get("/content/{id}/tip-summary", tipsHandlers.ContentTipSummary)
+				// §125 external link click-tracked outbound redirect —
+				// dedup (jc:tip_link_dedup) + async tips:record_link_click +
+				// §55 tracking injection on provider host match.
+				r.With(mw.RateLimit(vkClient.Redis(), "loose")).Get("/tips/links/{id}/out", tipsHandlers.RedirectExternalLink)
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/tips", tipsHandlers.AdminListTips)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tips.moderate")).Get("/admin/tips/stats", tipsHandlers.AdminTipStats)

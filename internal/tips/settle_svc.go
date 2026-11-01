@@ -186,6 +186,14 @@ func (s *Service) walletOwnerFor(ctx context.Context, tip gen.Tip) (pgtype.UUID,
 		return tip.RecipientUserID, nil
 	case RecipientOrganization:
 		return s.store.getOrgOwnerID(ctx, tip.RecipientOrganizationID)
+	case RecipientSpace:
+		// recipient_user_id snapshots the space owner who received the
+		// credits — clawback must debit the same wallet, not whoever owns
+		// the space now. Fall back to live resolution for robustness.
+		if tip.RecipientUserID.Valid {
+			return tip.RecipientUserID, nil
+		}
+		return s.store.getSpaceTipOwner(ctx, tip.RecipientSpaceID)
 	case RecipientPlatform:
 		return pgtype.UUID{}, nil
 	default:

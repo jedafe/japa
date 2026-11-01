@@ -272,6 +272,12 @@ func (s *Store) getAffiliateProviderForRender(ctx context.Context, id pgtype.UUI
 	return s.read.GetAffiliateProviderForRender(ctx, id)
 }
 
+// listActiveProvidersForMatch returns host-match candidates for outbound
+// affiliate injection (§125 external tip links). Small table — click-time scan.
+func (s *Store) listActiveProvidersForMatch(ctx context.Context) ([]gen.ListActiveAffiliateProvidersForMatchRow, error) {
+	return s.read.ListActiveAffiliateProvidersForMatch(ctx)
+}
+
 // ── Count ───────────────────────────────────────────────────────────
 
 func (s *Store) countCouponsByPlatform(ctx context.Context) (int64, error) {

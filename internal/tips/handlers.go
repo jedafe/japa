@@ -4,23 +4,47 @@
 package tips
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/middleware"
+	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/worker"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
+
+// TaskEnqueueClient is the interface for enqueueing background tasks —
+// same seam affiliate.Handlers uses for click recording (§56).
+type TaskEnqueueClient interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+}
+
+// CacheClient is the Valkey subset used by the /out redirect for click dedup
+// (jc:tip_link_dedup). valkeycompat.Cmdable satisfies this.
+type CacheClient interface {
+	SetNX(ctx context.Context, key string, value any, expiration time.Duration) *valkeycompat.BoolCmd
+}
 
 // Handlers exposes the tips HTTP surface.
 type Handlers struct {
-	service *Service
+	service     *Service
+	AsynqClient TaskEnqueueClient
+	Cache       CacheClient // jc:tip_link_dedup (§125 external links)
 }
 
 // NewHandlers creates Handlers bound to the service.
@@ -953,9 +977,9 @@ func (h *Handlers) ListSpaceTips(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := parsePageSize(r)
-	offset := parsePage(r, limit)
+	page := parsePage(r, limit)
 	rows, err := h.service.store.listTipsBySpace(r.Context(), gen.ListTipsBySpaceParams{
-		SpaceID: space.ID, PageLimit: limit, PageOffset: offset,
+		SpaceID: space.ID, PageLimit: limit, PageOffset: (page - 1) * limit,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tips")
@@ -966,7 +990,9 @@ func (h *Handlers) ListSpaceTips(w http.ResponseWriter, r *http.Request) {
 	// owner and tips moderators — same masking as the other tip lists.
 	mask := true
 	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
-		if ownerID, oerr := h.service.store.getSpaceTipRecipient(r.Context(), space.ID); oerr == nil && ownerID == user.UserID {
+		// getSpaceTipOwner performs no eligibility checks — owners keep
+		// read access to real senders even on suspended/ineligible spaces.
+		if ownerID, oerr := h.service.store.getSpaceTipOwner(r.Context(), space.ID); oerr == nil && ownerID == user.UserID {
 			mask = false
 		}
 		if mask && h.service.perms != nil && h.service.perms.Can(r.Context(), user.UserID, "tips.moderate") {
@@ -980,4 +1006,91 @@ func (h *Handlers) ListSpaceTips(w http.ResponseWriter, r *http.Request) {
 		"data": items,
 		"meta": map[string]any{"total": total},
 	})
+}
+
+// ── External link redirect (§125 click tracking + affiliate injection) ──
+
+// RedirectExternalLink handles GET /tips/links/{id}/out — public, no auth.
+// Mirrors the §56 affiliate Redirect: Valkey SET NX dedup
+// (jc:tip_link_dedup), click recording fire-and-forget via
+// tips:record_link_click (Rule 8 — never inline), §55 tracking-param
+// injection when the destination host matches an active provider.
+func (h *Handlers) RedirectExternalLink(w http.ResponseWriter, r *http.Request) {
+	var linkID pgtype.UUID
+	if err := linkID.Scan(chi.URLParam(r, "id")); err != nil {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	link, err := h.service.GetLinkByID(r.Context(), linkID)
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	// Deduplicate clicks: same IP within 1 hour = same click (SET NX, not
+	// GET-then-SET). Duplicate → still redirect, just don't re-record.
+	ipHash := sha256Hex(clientip.FromRequest(r))
+	dedupKey := valkey.MustKey("tip_link_dedup:%s:%s:%s",
+		linkID.String(), ipHash, time.Now().Format("2006-01-02-15"))
+	fresh := true
+	if h.Cache != nil {
+		if set, derr := h.Cache.SetNX(r.Context(), dedupKey, "1", time.Hour).Result(); derr == nil && !set {
+			fresh = false
+		}
+	}
+	if fresh {
+		h.enqueueLinkClick(linkID, ipHash, sha256Hex(r.Header.Get("User-Agent")), r.Referer())
+	}
+
+	// §55 monetization — provider-matched destinations carry the platform's
+	// tracking params. Errors/no-match degrade to the raw destination.
+	dest := link.URL
+	if resolved, matched, rerr := h.service.ResolveAffiliateURL(r.Context(), dest); rerr == nil && matched {
+		dest = resolved
+	}
+
+	http.Redirect(w, r, sanitizeOutURL(dest), http.StatusFound)
+}
+
+// enqueueLinkClick enqueues tips:record_link_click. Fire-and-forget: errors
+// are logged, never propagated — a lost counter increment must not strand
+// the donor's redirect.
+func (h *Handlers) enqueueLinkClick(linkID pgtype.UUID, ipHash, uaHash, referrerURL string) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"link_id":      linkID.String(),
+		"ip_hash":      ipHash,
+		"ua_hash":      uaHash,
+		"referrer_url": referrerURL,
+	})
+	if err != nil {
+		slog.Warn("tips: failed to marshal link click payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeTipsRecordLinkClick, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeTipsRecordLinkClick)),
+	); err != nil {
+		slog.Warn("tips: failed to enqueue link click task", "link_id", linkID.String(), "error", err)
+	}
+}
+
+// sanitizeOutURL validates the destination scheme before redirecting to
+// block javascript:/data: open-redirect vectors. Stored links are https-
+// validated at write time — this is defense-in-depth. Falls back to "/".
+func sanitizeOutURL(dest string) string {
+	if u, err := url.Parse(dest); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return "/"
+	}
+	return dest
+}
+
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }

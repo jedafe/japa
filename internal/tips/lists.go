@@ -101,8 +101,11 @@ func (s *Service) hydrateTips(ctx context.Context, rows []gen.Tip, maskAnonymous
 	// Batch-resolve sender names and recipient names.
 	seen := map[string]bool{}
 	orgSeen := map[string]bool{}
+	spaceSeen := map[string]bool{}
 	var ids []pgtype.UUID
 	var orgIDs []pgtype.UUID
+	var spaceIDs []pgtype.UUID
+	var pointsTipIDs []pgtype.UUID
 	for _, r := range rows {
 		k := r.SenderUserID.String()
 		if r.SenderUserID.Valid && !seen[k] {
@@ -123,17 +126,27 @@ func (s *Service) hydrateTips(ctx context.Context, rows []gen.Tip, maskAnonymous
 				orgIDs = append(orgIDs, r.RecipientOrganizationID)
 			}
 		}
+		if r.RecipientSpaceID.Valid {
+			sk := r.RecipientSpaceID.String()
+			if !spaceSeen[sk] {
+				spaceSeen[sk] = true
+				spaceIDs = append(spaceIDs, r.RecipientSpaceID)
+			}
+		}
+		if r.Method == MethodPoints {
+			pointsTipIDs = append(pointsTipIDs, r.ID)
+		}
 	}
 	names := map[string]string{}
 	orgNames := map[string]string{}
+	spaceNames := map[string]string{}
+	legacyPoints := map[string]int64{}
 	if len(ids) > 0 {
 		if rows2, err := s.store.getUserDisplayNames(ctx, ids); err == nil {
 			for _, n := range rows2 {
-				if n.DisplayName != nil && *n.DisplayName != "" {
-					names[n.ID.String()] = *n.DisplayName
-				} else {
-					names[n.ID.String()] = n.Username
-				}
+				// Ledger surfaces show the account username — display names
+				// are non-unique free text and admins audit by username.
+				names[n.ID.String()] = n.Username
 			}
 		}
 	}
@@ -144,11 +157,28 @@ func (s *Service) hydrateTips(ctx context.Context, rows []gen.Tip, maskAnonymous
 			}
 		}
 	}
+	if len(spaceIDs) > 0 {
+		if rows2, err := s.store.getSpaceNames(ctx, spaceIDs); err == nil {
+			for _, n := range rows2 {
+				spaceNames[n.ID.String()] = n.Name
+			}
+		}
+	}
+	if len(pointsTipIDs) > 0 {
+		if rows2, err := s.store.getLegacyTipPoints(ctx, pointsTipIDs); err == nil {
+			for _, n := range rows2 {
+				legacyPoints[n.ID.String()] = n.PointsAmount
+			}
+		}
+	}
 
 	for _, r := range rows {
 		t := tipFromRow(r)
 		if name, ok := names[r.SenderUserID.String()]; ok {
 			t.SenderName = name
+		}
+		if pts, ok := legacyPoints[r.ID.String()]; ok {
+			t.PointsAmount = pts
 		}
 		switch r.RecipientType {
 		case RecipientUser:
@@ -159,12 +189,23 @@ func (s *Service) hydrateTips(ctx context.Context, rows []gen.Tip, maskAnonymous
 			if name, ok := orgNames[r.RecipientOrganizationID.String()]; ok {
 				t.RecipientName = name
 			}
+		case RecipientSpace:
+			if name, ok := spaceNames[r.RecipientSpaceID.String()]; ok {
+				t.RecipientName = name
+			}
 		case RecipientPlatform:
-			t.RecipientName = "JapaConnect"
+			siteName := "JapaConnect"
+			if s.settings != nil {
+				siteName = s.settings.GetStringOr(ctx, "general.site_name", siteName)
+			}
+			t.RecipientName = siteName
 		}
 		if t.IsAnonymous && maskAnonymous {
 			t.SenderName = "Someone"
 			t.SenderUserID = pgtype.UUID{}
+			// External donor names leak through this field even when the
+			// resolved SenderName is masked — clear it too.
+			t.ExternalSenderName = nil
 		}
 		out = append(out, t)
 	}
