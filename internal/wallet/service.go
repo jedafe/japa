@@ -737,6 +737,12 @@ func (s *Service) AdminReverseLedgerEntry(ctx context.Context, actorUserID, entr
 	if original.Amount == 0 {
 		return 0, fmt.Errorf("%w: zero-amount entry", errpkg.ErrInvalid)
 	}
+	// Points-only for now (§28/ADR-136): credits reversals are refunds and
+	// need a deliberate design (partial reversals, purchase linkage) rather
+	// than an ad-hoc negate — hard-fail until that exists.
+	if original.LedgerType != LedgerTypePoints {
+		return 0, fmt.Errorf("%w: only points entries can be reversed", errpkg.ErrInvalid)
+	}
 	if reason == "" {
 		src := "entry"
 		if original.Source != nil {
