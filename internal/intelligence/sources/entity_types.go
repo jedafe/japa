@@ -75,3 +75,27 @@ func SetEntityTypesInProviderConfig(raw []byte, types []string) ([]byte, error) 
 
 	return out, nil
 }
+
+// deterministicKey is the provider_config key naming a deterministic
+// extractor — the worker runs it instead of the LLM pass (zero token cost).
+const deterministicKey = "deterministic"
+
+// DeterministicFromProviderConfig reads the deterministic extractor name
+// out of a source's provider_config (e.g. "hipolabs"). "" when unset.
+func DeterministicFromProviderConfig(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return ""
+	}
+
+	var name string
+	if v, ok := doc[deterministicKey]; ok {
+		_ = json.Unmarshal(v, &name)
+	}
+
+	return name
+}

@@ -22,7 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/dedup"
 	"github.com/jedafe/japa/internal/intelligence/events"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
-	"github.com/jedafe/japa/internal/intelligence/fetcher"
+		"github.com/jedafe/japa/internal/intelligence/fetcher"
 	"github.com/jedafe/japa/internal/intelligence/probe"
 	"github.com/jedafe/japa/internal/intelligence/relevance"
 	"github.com/jedafe/japa/internal/intelligence/reviewerctx"
@@ -1680,7 +1680,19 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 			continue
 		}
 
-		results, extErr := intelExtractor.Extract(ctx, entityType, src.SourceUrl, src.SourceType, sourceText)
+		var results []IntelExtractResult
+
+		var extErr error
+
+		// Deterministic extractor (provider_config.deterministic): maps the
+		// raw body to extraction triples in Go — no LLM call, no token cost.
+		// Unknown name/type pairs fall through to the LLM path.
+		if det, derr := intelDeterministicExtract(src.ProviderConfig, entityType, sourceText); derr == nil {
+			results = det
+		} else {
+			results, extErr = intelExtractor.Extract(ctx, entityType, src.SourceUrl, src.SourceType, sourceText)
+		}
+
 		if extErr != nil {
 			if errors.Is(extErr, ErrIntelExtractionRetriesExhausted) {
 				// Per-type tolerance: a mixed source loses only this type's
@@ -1853,6 +1865,28 @@ func resolveSourceEntityTypes(src gen.IntelSource) []string {
 // fallback — results matching a URL the doc's curate pass already
 // persisted are skipped BEFORE insert, since extractor keys never collide
 // with curator keys and would otherwise double-persist the same item.
+// intelDeterministicExtract runs a provider_config-declared deterministic
+// extractor over the raw body, bypassing the LLM entirely. Returns an error
+// when no deterministic extractor is declared or it can't handle the type.
+func intelDeterministicExtract(providerConfig []byte, entityType, body string) ([]IntelExtractResult, error) {
+	name := sources.DeterministicFromProviderConfig(providerConfig)
+	if name != schemas.DeterministicExtractorHipolabs || entityType != schemas.EntityTypeUniversity {
+		return nil, fmt.Errorf("intel: no deterministic extractor %q for entity %q", name, entityType)
+	}
+
+	exs, err := schemas.ExtractHipolabs(body)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]IntelExtractResult, 0, len(exs))
+	for _, ex := range exs {
+		results = append(results, IntelExtractResult{RawExtraction: ex.Extracted, ConfidenceOverall: 1, ExternalKey: ex.ExternalKey})
+	}
+
+	return results, nil
+}
+
 func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, channelID pgtype.UUID, entityType, platformStr string, results []IntelExtractResult, rel *intelRelevanceCall, skipItems map[string]struct{}) (int, error) {
 	persisted := 0
 
