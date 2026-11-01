@@ -775,7 +775,11 @@ func (s *Service) AdminReverseLedgerEntry(ctx context.Context, actorUserID, entr
 
 	reversal := -original.Amount
 	newBalance := currentBalance + reversal
-	if newBalance < 0 {
+	// The non-negative lock only blocks reversals that drive the balance
+	// DOWN past zero — undoing a penalty on an already-negative balance is
+	// an upward move and must always succeed (§28 balance lock is a
+	// spending guard, not a floor).
+	if reversal < 0 && newBalance < 0 {
 		return 0, fmt.Errorf("%w: current=%d, reversal=%d", errpkg.ErrInsufficientBalance, currentBalance, reversal)
 	}
 
