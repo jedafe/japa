@@ -21,7 +21,7 @@ const (
 	TypeNotificationDispatchBatch  = "notification:dispatch_batch"
 	TypeWebhookDelivery            = "webhook:deliver"
 	TypePaymentWebhookProcess      = "payment:process_webhook"
-	TypePaymentSyncSettlement      = "payment:sync_settlement" // replay onPaymentSucceeded fan-out for synchronous (credit/zero-amount) settlements
+	TypePaymentSyncSettlement      = "payment:sync_settlement"      // replay onPaymentSucceeded fan-out for synchronous (credit/zero-amount) settlements
 	TypeSubscriptionWebhookProcess = "subscription:webhook_process" // §17 recurring billing lifecycle
 	TypePaymentRefundProcess       = "payment:process_refund"       // §17 provider refund retry (kept pending until provider confirms)
 	TypeTicketSendConfirmation     = "ticket:send_confirmation"
@@ -82,10 +82,10 @@ const (
 	// default tier; fee_settle is a financial side effect → critical;
 	// expire_pending is the hourly pending-SLA sweep → low tier.
 	// §125 Tips & Donations
-	TypeTipsSettleFiat     = "tips:settle_fiat"     // credit recipient after donation payment success
-	TypeTipsNotifyReceived = "tips:notify_received" // fan-out tip.received notification
-	TypeTipsOCSync         = "tips:oc_sync"         // poll Open Collective collectives for new contributions
-	TypeTipsStaleSweep     = "tips:stale_sweep"     // fail stale pending fiat tips past the checkout TTL
+	TypeTipsSettleFiat      = "tips:settle_fiat"       // credit recipient after donation payment success
+	TypeTipsNotifyReceived  = "tips:notify_received"   // fan-out tip.received notification
+	TypeTipsOCSync          = "tips:oc_sync"           // poll Open Collective collectives for new contributions
+	TypeTipsStaleSweep      = "tips:stale_sweep"       // fail stale pending fiat tips past the checkout TTL
 	TypeTipsRecordLinkClick = "tips:record_link_click" // persist external link click + increment click_count
 
 	TypeServiceBookingCreated       = "service:booking_created"

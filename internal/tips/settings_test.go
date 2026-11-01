@@ -15,22 +15,22 @@ import (
 
 // fakeStore records calls and replays scripted settings/links state.
 type fakeStore struct {
-	settings      map[string]gen.TipSetting
-	links         map[pgtype.UUID][]gen.TipExternalLink
-	linkByID      map[pgtype.UUID]gen.TipExternalLink
-	ocTips        map[string]gen.Tip
-	inserted      []gen.InsertTipParams
-	settled       []settleWalletParams
-	emailToUser   map[string]pgtype.UUID
-	idemTip       gen.Tip
-	hasIdemTip    bool
-	contentAuthor pgtype.UUID
-	mentor        bool
-	mentorErr     error
-	orgOwner      pgtype.UUID
+	settings       map[string]gen.TipSetting
+	links          map[pgtype.UUID][]gen.TipExternalLink
+	linkByID       map[pgtype.UUID]gen.TipExternalLink
+	ocTips         map[string]gen.Tip
+	inserted       []gen.InsertTipParams
+	settled        []settleWalletParams
+	emailToUser    map[string]pgtype.UUID
+	idemTip        gen.Tip
+	hasIdemTip     bool
+	contentAuthor  pgtype.UUID
+	mentor         bool
+	mentorErr      error
+	orgOwner       pgtype.UUID
 	spaceRecipient pgtype.UUID
-	getCalls      int
-	upsertParams  gen.UpsertTipSettingsParams
+	getCalls       int
+	upsertParams   gen.UpsertTipSettingsParams
 }
 
 func newFakeStore() *fakeStore {
