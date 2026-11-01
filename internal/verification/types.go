@@ -62,18 +62,18 @@ type TypeInput struct {
 // TypeDTO is the admin/public representation — includes the resolved badge
 // artwork URL alongside the media id.
 type TypeDTO struct {
-	ID          string      `json:"id"`
-	Scope       string      `json:"scope"`
-	Value       string      `json:"value"`
-	Label       string      `json:"label"`
-	Description string      `json:"description,omitempty"`
-	BadgeMediaID *string    `json:"badge_media_id,omitempty"`
-	BadgeURL    string      `json:"badge_url,omitempty"`
-	Position    int32       `json:"position"`
-	IsActive    bool        `json:"is_active"`
-	IsProtected bool        `json:"is_protected"`
-	CreatedAt   interface{} `json:"created_at"`
-	UpdatedAt   interface{} `json:"updated_at"`
+	ID           string      `json:"id"`
+	Scope        string      `json:"scope"`
+	Value        string      `json:"value"`
+	Label        string      `json:"label"`
+	Description  string      `json:"description,omitempty"`
+	BadgeMediaID *string     `json:"badge_media_id,omitempty"`
+	BadgeURL     string      `json:"badge_url,omitempty"`
+	Position     int32       `json:"position"`
+	IsActive     bool        `json:"is_active"`
+	IsProtected  bool        `json:"is_protected"`
+	CreatedAt    interface{} `json:"created_at"`
+	UpdatedAt    interface{} `json:"updated_at"`
 }
 
 // MediaResolver resolves a media id to a displayable URL — the same
@@ -135,26 +135,65 @@ func (s *Service) IsValidTypeValue(ctx context.Context, scope, value string) boo
 	return ok
 }
 
-// ListTypes returns active types for a scope ('' = all scopes) with badge
+// seedTypeRows mirrors migration 001013's seed data — served by the public
+// types endpoint when verification_types can't be read (same fallback
+// contract as typeSet / servicedir categorySet).
+var seedTypeRows = []TypeDTO{
+	{Scope: ScopeOrganization, Value: "business", Label: "Business", Position: 10, IsActive: true, IsProtected: true},
+	{Scope: ScopeOrganization, Value: "embassy", Label: "Embassy", Position: 20, IsActive: true, IsProtected: true},
+	{Scope: ScopeOrganization, Value: "notable", Label: "Notable", Position: 30, IsActive: true, IsProtected: true},
+	{Scope: ScopeOrganization, Value: "immigration_lawyer", Label: "Immigration Lawyer", Position: 40, IsActive: true, IsProtected: true},
+	{Scope: ScopeOrganization, Value: "professional_body", Label: "Professional Body", Position: 50, IsActive: true, IsProtected: true},
+	{Scope: ScopeUser, Value: "business", Label: "Business", Position: 10, IsActive: true, IsProtected: true},
+	{Scope: ScopeUser, Value: "embassy", Label: "Embassy", Position: 20, IsActive: true, IsProtected: true},
+	{Scope: ScopeUser, Value: "notable", Label: "Notable", Position: 30, IsActive: true, IsProtected: true},
+	{Scope: ScopeUser, Value: "immigration_lawyer", Label: "Immigration Lawyer", Position: 40, IsActive: true, IsProtected: true},
+	{Scope: ScopeUser, Value: "professional_body", Label: "Professional Body", Position: 50, IsActive: true, IsProtected: true},
+	{Scope: ScopeServiceListing, Value: "self", Label: "Self-verified", Position: 10, IsActive: true, IsProtected: true},
+	{Scope: ScopeServiceListing, Value: "community", Label: "Community-verified", Position: 20, IsActive: true, IsProtected: true},
+	{Scope: ScopeServiceListing, Value: "admin", Label: "Admin-verified", Position: 30, IsActive: true, IsProtected: true},
+	{Scope: ScopeServiceListing, Value: "professional_body", Label: "Professional Body-verified", Position: 40, IsActive: true, IsProtected: true},
+}
+
+// ListTypes returns active types for a scope (” = all scopes) with badge
 // artwork resolved — backs the public /verification-requests/types route.
+// Falls back to the compiled seed vocabulary when the store is unwired, the
+// read fails, or no active rows exist — the public endpoint never 500s on a
+// missing taxonomy table.
 func (s *Service) ListTypes(ctx context.Context, scope string) ([]TypeDTO, error) {
-	rows, err := s.store.ListTypes(ctx, scope)
-	if err != nil {
-		return nil, fmt.Errorf("listing verification types: %w", err)
-	}
-	out := make([]TypeDTO, 0, len(rows))
-	for _, r := range rows {
-		if !r.IsActive {
-			continue
+	if s.store != nil {
+		if rows, err := s.store.ListTypes(ctx, scope); err == nil {
+			out := make([]TypeDTO, 0, len(rows))
+			for _, r := range rows {
+				if r.IsActive {
+					out = append(out, s.typeDTO(ctx, r))
+				}
+			}
+			if len(out) > 0 {
+				return out, nil
+			}
 		}
-		out = append(out, s.typeDTO(ctx, r))
+	}
+	out := make([]TypeDTO, 0, len(seedTypeRows))
+	for _, r := range seedTypeRows {
+		if scope == "" || r.Scope == scope {
+			out = append(out, r)
+		}
 	}
 	return out, nil
 }
 
+// errTypeStoreUnavailable guards admin taxonomy ops when the store is
+// unwired — unlike the public list, silently serving seed rows would let an
+// admin edit "types" that don't exist.
+var errTypeStoreUnavailable = errors.New("verification types store unavailable")
+
 // AdminListTypes returns every row — active and inactive — for the taxonomy
 // manager.
 func (s *Service) AdminListTypes(ctx context.Context, scope string) ([]TypeDTO, error) {
+	if s.store == nil {
+		return nil, errTypeStoreUnavailable
+	}
 	rows, err := s.store.ListTypes(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("listing verification types: %w", err)
@@ -214,6 +253,9 @@ func scanBadgeMediaID(raw *string) (pgtype.UUID, error) {
 // AdminCreateType inserts a taxonomy row. A (scope, value) unique-violation
 // maps to ErrTypeExists (409).
 func (s *Service) AdminCreateType(ctx context.Context, in TypeInput) (TypeDTO, error) {
+	if s.store == nil {
+		return TypeDTO{}, errTypeStoreUnavailable
+	}
 	if err := validateTypeInput(in, true); err != nil {
 		return TypeDTO{}, err
 	}
@@ -252,6 +294,9 @@ func (s *Service) AdminCreateType(ctx context.Context, in TypeInput) (TypeDTO, e
 // AdminUpdateType patches label/description/badge/position/is_active.
 // scope+value are immutable — entity rows store the value verbatim.
 func (s *Service) AdminUpdateType(ctx context.Context, id pgtype.UUID, in TypeInput) (TypeDTO, error) {
+	if s.store == nil {
+		return TypeDTO{}, errTypeStoreUnavailable
+	}
 	if err := validateTypeInput(in, false); err != nil {
 		return TypeDTO{}, err
 	}
@@ -280,6 +325,9 @@ func (s *Service) AdminUpdateType(ctx context.Context, id pgtype.UUID, in TypeIn
 // verification_type values on entities are historical facts — they survive
 // the delete like removed service_categories values do.
 func (s *Service) AdminDeleteType(ctx context.Context, id pgtype.UUID) error {
+	if s.store == nil {
+		return errTypeStoreUnavailable
+	}
 	row, err := s.store.GetTypeByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -299,5 +347,3 @@ func (s *Service) AdminDeleteType(ctx context.Context, id pgtype.UUID) error {
 	}
 	return nil
 }
-
-

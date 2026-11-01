@@ -200,14 +200,46 @@ func TestListTypes(t *testing.T) {
 
 	var body struct {
 		Data struct {
-			Types []string `json:"types"`
+			Types []TypeDTO `json:"types"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(body.Data.Types) != 5 {
-		t.Errorf("types len = %d, want 5", len(body.Data.Types))
+	// Nil store → compiled seed fallback mirrors migration 001013's rows.
+	if len(body.Data.Types) != len(seedTypeRows) {
+		t.Errorf("types len = %d, want %d", len(body.Data.Types), len(seedTypeRows))
+	}
+}
+
+func TestListTypes_Scoped(t *testing.T) {
+	t.Parallel()
+
+	h := testHandlers()
+	req := httptest.NewRequest(http.MethodGet, "/verification-requests/types?scope="+ScopeServiceListing, nil)
+
+	rr := httptest.NewRecorder()
+	h.ListTypes(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+
+	var body struct {
+		Data struct {
+			Types []TypeDTO `json:"types"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data.Types) != len(ServiceListingTypes) {
+		t.Fatalf("types len = %d, want %d", len(body.Data.Types), len(ServiceListingTypes))
+	}
+	for _, ty := range body.Data.Types {
+		if ty.Scope != ScopeServiceListing {
+			t.Errorf("type %q scope = %q, want %q", ty.Value, ty.Scope, ScopeServiceListing)
+		}
 	}
 }
 
