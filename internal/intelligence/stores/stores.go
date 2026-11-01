@@ -1954,3 +1954,14 @@ func (s *Store) GetCourseOfferingIntelByID(ctx context.Context, id pgtype.UUID) 
 
 	return row, nil
 }
+
+// ListCustomFieldsByGroup returns all field definitions in a group — the
+// university promoter resolves its field set in one query per promote.
+func (s *Store) ListCustomFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
+	rows, err := s.queries.ListCustomFieldsByGroup(ctx, groupID)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list fields by group: %w", err)
+	}
+
+	return rows, nil
+}

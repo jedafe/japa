@@ -40,12 +40,20 @@ LIMIT 1;
 -- name: GetUniversitySpaceByName :many
 -- Name-based university candidates for a course-offering university_name that
 -- did not resolve by slug — the promoter narrows these by country match.
+-- Exact match first, then containment (extracted text often carries the
+-- "…(MIT)" suffix the space name lacks), then pg_trgm similarity for
+-- spelling variants; genuinely ambiguous strings like bare "MIT" still
+-- produce multiple candidates and route to review.
 SELECT s.id, s.name, s.slug, s.geo_code
 FROM spaces s
 JOIN space_types st ON st.id = s.space_type_id
 WHERE st.slug = 'education' AND s.level = 'university'
   AND s.deleted_at IS NULL
-  AND lower(s.name) = lower(@name);
+  AND (lower(s.name) = lower(@name)
+       OR position(lower(s.name) in lower(@name)) > 0
+       OR similarity(s.name, @name) > 0.4)
+ORDER BY (lower(s.name) = lower(@name)) DESC, similarity(s.name, @name) DESC
+LIMIT 5;
 
 -- name: RemoveUniversityIntelOverrides :exec
 -- Releases field keys from a university's editorial-overrides set — the

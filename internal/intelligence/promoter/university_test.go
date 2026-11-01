@@ -146,12 +146,15 @@ func (m *mockUniversityStore) GetCustomFieldGroupBySlug(_ context.Context, slug 
 	return gen.CustomFieldGroup{ID: m.groupID, Slug: slug}, nil
 }
 
-func (m *mockUniversityStore) GetCustomFieldByGroupAndKey(_ context.Context, arg gen.GetCustomFieldByGroupAndKeyParams) (gen.GetCustomFieldByGroupAndKeyRow, error) {
-	if d, ok := m.fieldDefs[arg.Key]; ok {
-		return d, nil
+func (m *mockUniversityStore) ListCustomFieldsByGroup(_ context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
+	out := make([]gen.ListCustomFieldsByGroupRow, 0, len(m.fieldDefs))
+	for k, d := range m.fieldDefs {
+		out = append(out, gen.ListCustomFieldsByGroupRow{
+			ID: d.ID, GroupID: groupID, Key: k, FieldType: d.FieldType, Options: d.Options,
+		})
 	}
 
-	return gen.GetCustomFieldByGroupAndKeyRow{}, errNoRows
+	return out, nil
 }
 
 func (m *mockUniversityStore) ListCustomFieldValuesByEntity(_ context.Context, arg gen.ListCustomFieldValuesByEntityParams) ([]gen.CustomFieldValue, error) {

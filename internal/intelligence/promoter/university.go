@@ -69,7 +69,7 @@ type UniversityStore interface {
 	GetSpaceByID(ctx context.Context, id pgtype.UUID) (gen.GetSpaceByIDRow, error)
 	GetCountrySpace(ctx context.Context, countryCode string) (pgtype.UUID, error)
 	GetCustomFieldGroupBySlug(ctx context.Context, slug string) (gen.CustomFieldGroup, error)
-	GetCustomFieldByGroupAndKey(ctx context.Context, arg gen.GetCustomFieldByGroupAndKeyParams) (gen.GetCustomFieldByGroupAndKeyRow, error)
+	ListCustomFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
 	ListCustomFieldValuesByEntity(ctx context.Context, arg gen.ListCustomFieldValuesByEntityParams) ([]gen.CustomFieldValue, error)
 	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
 	WithTx(ctx context.Context, fn func(UniversityTxStore) error) error
@@ -178,9 +178,10 @@ type universityFieldDef struct {
 }
 
 // resolveUniversityFieldDefs loads the university_fields group once and
-// resolves the field definition for every extracted CFV-mapped key.
-// Missing definitions (field removed by an admin) are skipped with a log
-// line, never an error — extraction still lands on the record.
+// resolves every CFV-mapped field definition in a single query — admins
+// can mutate defs, so this intentionally runs per-promote rather than
+// being cached. Missing keys (field removed by an admin) are absent from
+// the map, never an error — extraction still lands on the record.
 func (p *UniversityPromoter) resolveUniversityFieldDefs(ctx context.Context) map[string]universityFieldDef {
 	defs := map[string]universityFieldDef{}
 
@@ -190,17 +191,23 @@ func (p *UniversityPromoter) resolveUniversityFieldDefs(ctx context.Context) map
 		return defs
 	}
 
-	for _, key := range universityCFVKeys {
-		row, err := p.store.GetCustomFieldByGroupAndKey(ctx, gen.GetCustomFieldByGroupAndKeyParams{
-			GroupID: group.ID,
-			Key:     key,
-		})
-		if err != nil {
-			slog.Warn("promoter: university field not resolvable, skipping", "key", key, "error", err)
+	rows, err := p.store.ListCustomFieldsByGroup(ctx, group.ID)
+	if err != nil {
+		slog.Warn("promoter: university fields not listable, skipping CFV writes", "error", err)
+		return defs
+	}
+
+	keys := make(map[string]struct{}, len(universityCFVKeys))
+	for _, k := range universityCFVKeys {
+		keys[k] = struct{}{}
+	}
+
+	for _, row := range rows {
+		if _, ok := keys[row.Key]; !ok {
 			continue
 		}
 
-		defs[key] = universityFieldDef{id: row.ID, key: key, fieldType: row.FieldType, options: row.Options}
+		defs[row.Key] = universityFieldDef{id: row.ID, key: row.Key, fieldType: row.FieldType, options: row.Options}
 	}
 
 	return defs

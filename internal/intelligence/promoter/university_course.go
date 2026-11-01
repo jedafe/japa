@@ -311,16 +311,16 @@ func (p *UniversityCoursePromoter) courseUpdatePath(ctx context.Context, record 
 			}
 		}
 
-		var applied []string
+		var names []string
 		for _, ch := range changeEntries {
-			applied = append(applied, ch.Field)
+			names = append(names, ch.Field)
 		}
 		result = PromoteResult{
 			DomainID:      pgToUUID(existing.ID),
 			Action:        ActionVerified,
-			ChangedFields: applied,
+			ChangedFields: names,
 		}
-		if len(applied) > 0 {
+		if len(names) > 0 {
 			result.Action = ActionUpdated
 		}
 
@@ -334,6 +334,8 @@ func (p *UniversityCoursePromoter) courseUpdatePath(ctx context.Context, record 
 // preserving is_published (a curated draft stays a draft) — then applies
 // each extracted field not in overrides that actually changed.
 func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUniversityRow, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateCourseOfferingIntelParams, []fieldChange, []fieldChange) {
+	// changed carries applied field names; applied carries full From/To
+	// entries for the review log (suppressed already carries them).
 	params := gen.UpdateCourseOfferingIntelParams{
 		ID:                existing.ID,
 		Tuition:           existing.Tuition,
@@ -349,6 +351,7 @@ func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUnive
 
 	var (
 		changed    []string
+		applied    []fieldChange
 		suppressed []fieldChange
 	)
 	skip := func(key string) bool {
@@ -363,6 +366,9 @@ func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUnive
 			suppressed = append(suppressed, fieldChange{Field: "tuition", From: ev, To: v, Suppressed: true})
 		} else {
 			params.Tuition = n
+			v, _ := n.Value()
+			ev, _ := existing.Tuition.Value()
+			applied = append(applied, fieldChange{Field: "tuition", From: ev, To: v})
 			changed = append(changed, "tuition")
 		}
 	}
@@ -375,6 +381,11 @@ func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUnive
 			suppressed = append(suppressed, fieldChange{Field: "currency", From: from, To: *cur, Suppressed: true})
 		} else {
 			params.Currency = cur
+			var from any
+			if existing.Currency != nil {
+				from = *existing.Currency
+			}
+			applied = append(applied, fieldChange{Field: "currency", From: from, To: *cur})
 			changed = append(changed, "currency")
 		}
 	}
@@ -385,6 +396,9 @@ func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUnive
 			suppressed = append(suppressed, fieldChange{Field: "duration_years", From: ev, To: v, Suppressed: true})
 		} else {
 			params.DurationYears = n
+			v, _ := n.Value()
+			ev, _ := existing.DurationYears.Value()
+			applied = append(applied, fieldChange{Field: "duration_years", From: ev, To: v})
 			changed = append(changed, "duration_years")
 		}
 	}
@@ -397,6 +411,11 @@ func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUnive
 			suppressed = append(suppressed, fieldChange{Field: "study_mode", From: from, To: *s, Suppressed: true})
 		} else {
 			params.StudyMode = s
+			var from any
+			if existing.StudyMode != nil {
+				from = *existing.StudyMode
+			}
+			applied = append(applied, fieldChange{Field: "study_mode", From: from, To: *s})
 			changed = append(changed, "study_mode")
 		}
 	}
@@ -405,6 +424,7 @@ func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUnive
 			suppressed = append(suppressed, fieldChange{Field: "intake_months", From: existing.IntakeMonths, To: v, Suppressed: true})
 		} else {
 			params.IntakeMonths = v
+			applied = append(applied, fieldChange{Field: "intake_months", From: existing.IntakeMonths, To: v})
 			changed = append(changed, "intake_months")
 		}
 	}
@@ -417,6 +437,11 @@ func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUnive
 			suppressed = append(suppressed, fieldChange{Field: "entry_requirements", From: from, To: *s, Suppressed: true})
 		} else {
 			params.EntryRequirements = s
+			var from any
+			if existing.EntryRequirements != nil {
+				from = *existing.EntryRequirements
+			}
+			applied = append(applied, fieldChange{Field: "entry_requirements", From: from, To: *s})
 			changed = append(changed, "entry_requirements")
 		}
 	}
@@ -429,18 +454,16 @@ func buildCourseOfferingUpdateParams(existing gen.GetCourseOfferingByCourseUnive
 			suppressed = append(suppressed, fieldChange{Field: "accreditation", From: from, To: *s, Suppressed: true})
 		} else {
 			params.Accreditation = s
+			var from any
+			if existing.Accreditation != nil {
+				from = *existing.Accreditation
+			}
+			applied = append(applied, fieldChange{Field: "accreditation", From: from, To: *s})
 			changed = append(changed, "accreditation")
 		}
 	}
 
-	// `changed` carries the applied field names; the caller merges suppressed
-	// entries for the review log.
-	changes := make([]fieldChange, 0, len(changed))
-	for _, c := range changed {
-		changes = append(changes, fieldChange{Field: c})
-	}
-
-	return params, changes, suppressed
+	return params, applied, suppressed
 }
 
 // normalizedCurrency returns the extraction's currency uppercased when it

@@ -73,7 +73,11 @@ FROM spaces s
 JOIN space_types st ON st.id = s.space_type_id
 WHERE st.slug = 'education' AND s.level = 'university'
   AND s.deleted_at IS NULL
-  AND lower(s.name) = lower($1)
+  AND (lower(s.name) = lower($1)
+       OR position(lower(s.name) in lower($1)) > 0
+       OR similarity(s.name, $1) > 0.4)
+ORDER BY (lower(s.name) = lower($1)) DESC, similarity(s.name, $1) DESC
+LIMIT 5
 `
 
 type GetUniversitySpaceByNameRow struct {
@@ -85,6 +89,10 @@ type GetUniversitySpaceByNameRow struct {
 
 // Name-based university candidates for a course-offering university_name that
 // did not resolve by slug — the promoter narrows these by country match.
+// Exact match first, then containment (extracted text often carries the
+// "…(MIT)" suffix the space name lacks), then pg_trgm similarity for
+// spelling variants; genuinely ambiguous strings like bare "MIT" still
+// produce multiple candidates and route to review.
 func (q *Queries) GetUniversitySpaceByName(ctx context.Context, name string) ([]GetUniversitySpaceByNameRow, error) {
 	rows, err := q.db.Query(ctx, getUniversitySpaceByName, name)
 	if err != nil {
