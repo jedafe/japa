@@ -401,6 +401,12 @@ var importExportPrompt string
 //go:embed prompts/news.txt
 var newsPrompt string
 
+//go:embed prompts/university.txt
+var universityPrompt string
+
+//go:embed prompts/university_course.txt
+var universityCoursePrompt string
+
 // promptTemplates maps entity_type → embedded prompt template. Adding a
 // domain = add a //go:embed line + an entry here. No buildPrompt code
 // change.
@@ -422,6 +428,8 @@ var promptTemplates = map[string]string{
 	schemas.EntityTypeImportExport:      importExportPrompt,
 	schemas.EntityTypeCredentialPathway: credentialPathwayPrompt,
 	schemas.EntityTypeNews:              newsPrompt,
+	schemas.EntityTypeUniversity:        universityPrompt,
+	schemas.EntityTypeUniversityCourse:  universityCoursePrompt,
 }
 
 // buildPrompt loads the prompt template for the given entity schema and

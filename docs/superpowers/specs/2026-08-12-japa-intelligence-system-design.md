@@ -414,6 +414,8 @@ type EntitySchema struct {
 
 v1 ships one schema: `scholarship`. Fields match the `scholarships` table columns (title, deadline, country, university, degree_level, fields_of_study, eligible_countries, funding, application_url, required_documents, minimum_gpa, language_requirements). New domains later = new schema files, no extractor code change.
 
+> **Since added:** `university` and `university_course` (§39) project onto `spaces`+`custom_field_values` and `university_course_offerings` respectively — `university_intel_links` carries the link + editorial_overrides for the space-backed projection.
+
 ### Prompt construction (per extraction run)
 
 ```text

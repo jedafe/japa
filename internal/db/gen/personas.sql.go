@@ -436,6 +436,7 @@ SELECT
  ap.updated_at,
  u.username AS backing_username,
  COALESCE(up.display_name, u.username) AS profile_name,
+ up.bio AS profile_tagline,
  pv.name AS voice_name,
  stats.total_actions AS total_actions,
  stats.last_action_at AS last_action_at
@@ -487,6 +488,7 @@ type ListAIPersonasRow struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 	BackingUsername     string             `json:"backing_username"`
 	ProfileName         string             `json:"profile_name"`
+	ProfileTagline      *string            `json:"profile_tagline"`
 	VoiceName           *string            `json:"voice_name"`
 	TotalActions        int64              `json:"total_actions"`
 	LastActionAt        interface{}        `json:"last_action_at"`
@@ -527,6 +529,7 @@ func (q *Queries) ListAIPersonas(ctx context.Context, arg ListAIPersonasParams) 
 			&i.UpdatedAt,
 			&i.BackingUsername,
 			&i.ProfileName,
+			&i.ProfileTagline,
 			&i.VoiceName,
 			&i.TotalActions,
 			&i.LastActionAt,
@@ -693,9 +696,9 @@ SET
  disclosure_mode = COALESCE($1, disclosure_mode),
  autonomy_mode = COALESCE($2, autonomy_mode),
  voice_id = CASE
- WHEN $3 IS NULL THEN voice_id
- WHEN $3 = '00000000-0000-0000-0000-000000000000'::uuid THEN NULL
- ELSE $3
+ WHEN $3::uuid IS NULL THEN voice_id
+ WHEN $3::uuid = '00000000-0000-0000-0000-000000000000'::uuid THEN NULL
+ ELSE $3::uuid
  END,
  voice_prompt = COALESCE($4, voice_prompt),
  activity_policy = COALESCE($5, activity_policy),
@@ -790,4 +793,33 @@ func (q *Queries) UpdatePersonaVoice(ctx context.Context, arg UpdatePersonaVoice
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const upsertPersonaByline = `-- name: UpsertPersonaByline :exec
+INSERT INTO user_profiles (user_id, display_name, bio)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    bio = EXCLUDED.bio,
+    updated_at = now()
+`
+
+type UpsertPersonaBylineParams struct {
+	UserID      pgtype.UUID `json:"user_id"`
+	DisplayName *string     `json:"display_name"`
+	Bio         *string     `json:"bio"`
+}
+
+// =====================================================================
+// Persona byline upsert — display_name + bio only. Unlike the full
+// UpsertUserProfile (whose unconditional EXCLUDED writes would NULL every
+// unmanaged column), this touches just the two byline fields so persona
+// edits never clobber profile data written elsewhere. The caller merges
+// request fields against the row-locked profile first (same
+// read-merge-write pattern as UpdateProfile), then writes the resolved
+// values unconditionally.
+// =====================================================================
+func (q *Queries) UpsertPersonaByline(ctx context.Context, arg UpsertPersonaBylineParams) error {
+	_, err := q.db.Exec(ctx, upsertPersonaByline, arg.UserID, arg.DisplayName, arg.Bio)
+	return err
 }

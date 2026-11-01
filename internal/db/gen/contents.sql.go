@@ -5338,30 +5338,30 @@ func (q *Queries) UnpinContentFromSpace(ctx context.Context, arg UnpinContentFro
 
 const updateContent = `-- name: UpdateContent :one
 UPDATE contents
-SET title = $1, slug = $2, body = $3, body_html = $4,
- field_values = $5, content_hash = COALESCE($6, content_hash),
- geo_space_id = $7, canonical_url = $8,
- header_image_id = $9,
- featured_image_id = $10,
- meta_title = $11,
- meta_description = $12,
- og_image_url = $13,
- seo_indexable = COALESCE($14, seo_indexable),
- status = $15, visibility = $16, read_time_minutes = $17,
- publish_at = $18, published_at = $19,
- is_locked = $20, is_pinned = $21,
- organization_id = $22, guide_category = COALESCE($23, guide_category),
- ai_generated_at = COALESCE($24, ai_generated_at),
- ai_model = COALESCE($25, ai_model),
- journey_stage = COALESCE($26, journey_stage),
- visa_route = COALESCE($27, visa_route),
- source_country = COALESCE($28, source_country),
- target_country = COALESCE($29, target_country),
- video_source_id = COALESCE($30, video_source_id),
- intel_source_id = COALESCE($31, intel_source_id),
- intel_record_id = COALESCE($32, intel_record_id),
+SET author_id = $1, title = $2, slug = $3, body = $4, body_html = $5,
+ field_values = $6, content_hash = COALESCE($7, content_hash),
+ geo_space_id = $8, canonical_url = $9,
+ header_image_id = $10,
+ featured_image_id = $11,
+ meta_title = $12,
+ meta_description = $13,
+ og_image_url = $14,
+ seo_indexable = COALESCE($15, seo_indexable),
+ status = $16, visibility = $17, read_time_minutes = $18,
+ publish_at = $19, published_at = $20,
+ is_locked = $21, is_pinned = $22,
+ organization_id = $23, guide_category = COALESCE($24, guide_category),
+ ai_generated_at = COALESCE($25, ai_generated_at),
+ ai_model = COALESCE($26, ai_model),
+ journey_stage = COALESCE($27, journey_stage),
+ visa_route = COALESCE($28, visa_route),
+ source_country = COALESCE($29, source_country),
+ target_country = COALESCE($30, target_country),
+ video_source_id = COALESCE($31, video_source_id),
+ intel_source_id = COALESCE($32, intel_source_id),
+ intel_record_id = COALESCE($33, intel_record_id),
  updated_at = now()
-WHERE id = $33 AND deleted_at IS NULL
+WHERE id = $34 AND deleted_at IS NULL
 RETURNING id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
  field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
  canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
@@ -5373,6 +5373,7 @@ RETURNING id, author_id, organization_id, space_id, content_type, title, slug, b
 `
 
 type UpdateContentParams struct {
+	AuthorID        pgtype.UUID        `json:"author_id"`
 	Title           string             `json:"title"`
 	Slug            string             `json:"slug"`
 	Body            string             `json:"body"`
@@ -5453,6 +5454,7 @@ type UpdateContentRow struct {
 
 func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (UpdateContentRow, error) {
 	row := q.db.QueryRow(ctx, updateContent,
+		arg.AuthorID,
 		arg.Title,
 		arg.Slug,
 		arg.Body,

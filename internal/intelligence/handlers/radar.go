@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
@@ -45,6 +46,10 @@ type radarItem struct {
 	FreshnessScore    int32              `json:"freshness_score"`
 	SourceURL         string             `json:"source_url"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	// FieldValues carries domain extras not covered by the fixed shape —
+	// the radar card renders them as chips (visa sponsorship, benefits,
+	// scholarship_type, …). Omitted when empty.
+	FieldValues map[string]string `json:"field_values,omitempty"`
 	// Saved is only populated in the detail handler (HandleRadarItemDetail)
 	// so the save button can seed its initial state. It is nil/omitted in
 	// list responses to avoid an N+1 saved-status check per item.
@@ -74,7 +79,56 @@ func scholarshipToRadarItem(s gen.Scholarship) radarItem {
 		FreshnessScore:    s.FreshnessScore,
 		SourceURL:         s.SourceUrl,
 		CreatedAt:         s.CreatedAt,
+		FieldValues:       scholarshipFieldValues(s),
 	}
+}
+
+// scholarshipFieldValues flattens the extended scholarships columns into
+// the string map the radar card renders as chips.
+func scholarshipFieldValues(s gen.Scholarship) map[string]string {
+	fv := map[string]string{}
+
+	if s.ScholarshipType != nil && *s.ScholarshipType != "" {
+		fv["scholarship_type"] = *s.ScholarshipType
+	}
+	if s.StudyMode != nil && *s.StudyMode != "" {
+		fv["study_mode"] = *s.StudyMode
+	}
+	if s.NumberOfAwards != nil {
+		fv["number_of_awards"] = strconv.Itoa(int(*s.NumberOfAwards))
+	}
+	if s.ApplicationFee != nil && *s.ApplicationFee != "" {
+		fv["application_fee"] = *s.ApplicationFee
+	}
+	if s.Renewable != nil && *s.Renewable {
+		fv["renewable"] = "true"
+	}
+	if s.DurationYears.Valid {
+		fv["duration_years"] = numericText(s.DurationYears)
+	}
+	if s.StartDate.Valid {
+		fv["start_date"] = s.StartDate.Time.Format("2006-01-02")
+	}
+	if s.OpenToInternationalStudents != nil && *s.OpenToInternationalStudents {
+		fv["open_to_international_students"] = "true"
+	}
+	if s.MinimumGpa.Valid {
+		fv["minimum_gpa"] = numericText(s.MinimumGpa)
+	}
+	if len(s.FieldsOfStudy) > 0 {
+		fv["fields_of_study"] = strings.Join(s.FieldsOfStudy, ", ")
+	}
+	if len(s.EligibleCountries) > 0 {
+		fv["eligible_countries"] = strings.Join(s.EligibleCountries, ", ")
+	}
+	if s.ContactEmail != nil && *s.ContactEmail != "" {
+		fv["contact_email"] = *s.ContactEmail
+	}
+
+	if len(fv) == 0 {
+		return nil
+	}
+	return fv
 }
 
 // jobToRadarItem converts an intel_jobs row to a radarItem.
@@ -94,7 +148,75 @@ func jobToRadarItem(j gen.IntelJob) radarItem {
 		FreshnessScore:    j.FreshnessScore,
 		SourceURL:         j.SourceUrl,
 		CreatedAt:         j.CreatedAt,
+		FieldValues:       jobFieldValues(j),
 	}
+}
+
+// jobFieldValues flattens the extended intel_jobs columns into the
+// string map the radar card renders as chips.
+func jobFieldValues(j gen.IntelJob) map[string]string {
+	fv := map[string]string{}
+
+	if j.City != nil && *j.City != "" {
+		fv["city"] = *j.City
+	}
+	if j.Employer != nil && *j.Employer != "" {
+		fv["employer"] = *j.Employer
+	}
+	if j.JobType != nil && *j.JobType != "" {
+		fv["job_type"] = *j.JobType
+	}
+	if j.ExperienceLevel != nil && *j.ExperienceLevel != "" {
+		fv["experience_level"] = *j.ExperienceLevel
+	}
+	if j.Remote != nil && *j.Remote != "" && *j.Remote != "false" {
+		fv["remote"] = *j.Remote
+	}
+	if j.VisaSponsorship != nil && *j.VisaSponsorship {
+		fv["visa_sponsorship"] = "true"
+	}
+	if j.RelocationAssistance != nil && *j.RelocationAssistance {
+		fv["relocation_assistance"] = "true"
+	}
+	if len(j.Benefits) > 0 {
+		fv["benefits"] = strings.Join(j.Benefits, ", ")
+	}
+	if j.EducationRequired != nil && *j.EducationRequired != "" {
+		fv["education_required"] = *j.EducationRequired
+	}
+	if len(j.LanguagesRequired) > 0 {
+		fv["languages_required"] = strings.Join(j.LanguagesRequired, ", ")
+	}
+	if j.WorkSchedule != nil && *j.WorkSchedule != "" {
+		fv["work_schedule"] = *j.WorkSchedule
+	}
+	if j.PostedDate.Valid {
+		fv["posted_date"] = j.PostedDate.Time.Format("2006-01-02")
+	}
+	currency := ""
+	if j.Currency != nil {
+		currency = " " + *j.Currency
+	}
+	if j.SalaryMin.Valid {
+		fv["salary_min"] = numericText(j.SalaryMin) + currency
+	}
+	if j.SalaryMax.Valid {
+		fv["salary_max"] = numericText(j.SalaryMax) + currency
+	}
+
+	if len(fv) == 0 {
+		return nil
+	}
+	return fv
+}
+
+// numericText renders a pgtype.Numeric as a plain decimal string.
+func numericText(n pgtype.Numeric) string {
+	f, err := n.Float64Value()
+	if err != nil || !f.Valid {
+		return ""
+	}
+	return strconv.FormatFloat(f.Float64, 'f', -1, 64)
 }
 
 // visaRouteToRadarItem converts a visa_routes row (with intel columns) to
@@ -189,6 +311,46 @@ func comparisonItemToRadarItem(c gen.ComparisonItem) radarItem {
 	}
 }
 
+func courseOfferingToRadarItem(o gen.ListCourseOfferingsIntelKeysetRow) radarItem {
+	desc := o.UniversityName
+	item := radarItem{
+		ID:            o.ID,
+		IntelRecordID: o.IntelRecordID,
+		Type:          "course_offering",
+		Title:         o.CourseTitle + " — " + o.UniversityName,
+		SpaceID:       o.UniversityID,
+		Description:   &desc,
+		SourceURL:     "",
+		CreatedAt:     o.CreatedAt,
+		FieldValues:   map[string]string{},
+	}
+	if o.Tuition.Valid {
+		v, _ := o.Tuition.Value()
+		cur := ""
+		if o.Currency != nil {
+			cur = *o.Currency + " "
+		}
+		item.FieldValues["tuition"] = cur + fmt.Sprintf("%v", v)
+	}
+	if o.StudyMode != nil {
+		item.FieldValues["study_mode"] = *o.StudyMode
+	}
+	if len(o.IntakeMonths) > 0 {
+		item.FieldValues["intake_months"] = strings.Join(o.IntakeMonths, ", ")
+	}
+
+	return item
+}
+
+func courseOfferingSpaceToRadarItem(o gen.ListCourseOfferingsIntelBySpacesRow) radarItem {
+	return courseOfferingToRadarItem(gen.ListCourseOfferingsIntelKeysetRow{
+		ID: o.ID, Slug: o.Slug, IntelRecordID: o.IntelRecordID, UniversityID: o.UniversityID,
+		Tuition: o.Tuition, Currency: o.Currency, StudyMode: o.StudyMode,
+		IntakeMonths: o.IntakeMonths, CreatedAt: o.CreatedAt,
+		CourseTitle: o.CourseTitle, UniversityName: o.UniversityName, GeoCode: o.GeoCode,
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Radar pagination
 // ---------------------------------------------------------------------------
@@ -196,12 +358,13 @@ func comparisonItemToRadarItem(c gen.ComparisonItem) radarItem {
 // radarDomainOrder defines the deterministic merge order for
 // same-timestamp items across domains. Domains not in the map sort last.
 var radarDomainOrder = map[string]int{
-	"scholarship":    0,
-	"job":            1,
-	"visa":           2,
-	"housing":        3,
-	"remittance":     4,
-	"cost_of_living": 5,
+	"scholarship":     0,
+	"job":             1,
+	"visa":            2,
+	"housing":         3,
+	"remittance":      4,
+	"cost_of_living":  5,
+	"course_offering": 6,
 }
 
 func radarTypeRank(t string) int {
@@ -328,6 +491,8 @@ func normalizeRadarItemType(v string) string {
 		return "housing"
 	case "cost_of_living", "col":
 		return "cost_of_living"
+	case "course_offering", "course", "courses":
+		return "course_offering"
 	case "announcement":
 		// Spec'd item_type with no backing domain yet — filters to an
 		// empty feed rather than returning an error for a catalog value.
@@ -541,6 +706,17 @@ func (h *Handlers) radarFeedDomains(domainFilter string, spaceID pgtype.UUID, co
 		})
 	}
 
+	add("course_offering", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		rows, err := h.intelStores.ListCourseOfferingsIntelKeyset(ctx, gen.ListCourseOfferingsIntelKeysetParams{
+			Column1: ts, ID: id, Column3: spaceID, Column4: country, Column5: since, Limit: lim,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return convertRadarRows(rows, courseOfferingToRadarItem), nil
+	})
+
 	add("cost_of_living", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 		rows, err := h.intelStores.ListComparisonItemsIntelKeyset(ctx, gen.ListComparisonItemsIntelKeysetParams{
 			Column1: ts, ID: id, Column3: spaceID, Column4: country, Column5: since, Limit: lim,
@@ -608,6 +784,17 @@ func (h *Handlers) radarFollowedDomains(spaceIDs []pgtype.UUID, since pgtype.Tim
 
 		return convertRadarRows(rows, housingGuideToRadarItem), nil
 	})
+	add("course_offering", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
+		rows, err := h.intelStores.ListCourseOfferingsIntelBySpaces(ctx, gen.ListCourseOfferingsIntelBySpacesParams{
+			Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return convertRadarRows(rows, courseOfferingSpaceToRadarItem), nil
+	})
+
 	add("cost_of_living", func(ctx context.Context, ts pgtype.Timestamptz, id pgtype.UUID, lim int32) ([]radarItem, error) {
 		rows, err := h.intelStores.ListComparisonItemsBySpaces(ctx, gen.ListComparisonItemsBySpacesParams{
 			Column1: spaceIDs, Column2: ts, ID: id, Column4: since, Limit: lim,

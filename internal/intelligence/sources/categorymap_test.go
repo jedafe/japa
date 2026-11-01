@@ -321,7 +321,7 @@ func TestDefaultCategoryMap(t *testing.T) {
 	// internship/work_career are job-family aliases: they share the job
 	// method set so JobPosting JSON-LD (which emits entity_type "job") and
 	// category-typed extract records both pass the channel contract.
-	want := []string{"job", "internship", "work_career", "news", "blog", "event", "scholarship", "visa", "dataset", "video"}
+	want := []string{"job", "internship", "work_career", "news", "blog", "event", "scholarship", "grants", "visa", "dataset", "video", "university", "university_course"}
 	for _, cat := range want {
 		if _, ok := catMap[cat]; !ok {
 			t.Errorf("embedded map missing category %q", cat)

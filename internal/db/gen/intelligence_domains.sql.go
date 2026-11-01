@@ -471,35 +471,42 @@ func (q *Queries) CreateHousingGuideIntel(ctx context.Context, arg CreateHousing
 const createIntelJob = `-- name: CreateIntelJob :one
 
 
-INSERT INTO intel_jobs (intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at
+INSERT INTO intel_jobs (intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, visa_sponsorship, relocation_assistance, benefits, education_required, languages_required, posted_date, work_schedule) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32) RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, visa_sponsorship, relocation_assistance, benefits, education_required, languages_required, posted_date, work_schedule
 `
 
 type CreateIntelJobParams struct {
-	IntelRecordID      pgtype.UUID    `json:"intel_record_id"`
-	GuideID            pgtype.UUID    `json:"guide_id"`
-	SourceUrl          string         `json:"source_url"`
-	SourceType         string         `json:"source_type"`
-	TrustLevel         int16          `json:"trust_level"`
-	Title              string         `json:"title"`
-	Description        *string        `json:"description"`
-	Country            string         `json:"country"`
-	CountrySpaceID     pgtype.UUID    `json:"country_space_id"`
-	City               *string        `json:"city"`
-	Employer           *string        `json:"employer"`
-	JobType            *string        `json:"job_type"`
-	ExperienceLevel    *string        `json:"experience_level"`
-	SalaryMin          pgtype.Numeric `json:"salary_min"`
-	SalaryMax          pgtype.Numeric `json:"salary_max"`
-	Currency           *string        `json:"currency"`
-	Skills             []string       `json:"skills"`
-	ApplicationUrl     *string        `json:"application_url"`
-	Deadline           pgtype.Date    `json:"deadline"`
-	Remote             *string        `json:"remote"`
-	ConfidenceOverall  float32        `json:"confidence_overall"`
-	VerificationStatus string         `json:"verification_status"`
-	FreshnessScore     int32          `json:"freshness_score"`
-	OverrideSource     string         `json:"override_source"`
-	EditorialOverrides []byte         `json:"editorial_overrides"`
+	IntelRecordID        pgtype.UUID    `json:"intel_record_id"`
+	GuideID              pgtype.UUID    `json:"guide_id"`
+	SourceUrl            string         `json:"source_url"`
+	SourceType           string         `json:"source_type"`
+	TrustLevel           int16          `json:"trust_level"`
+	Title                string         `json:"title"`
+	Description          *string        `json:"description"`
+	Country              string         `json:"country"`
+	CountrySpaceID       pgtype.UUID    `json:"country_space_id"`
+	City                 *string        `json:"city"`
+	Employer             *string        `json:"employer"`
+	JobType              *string        `json:"job_type"`
+	ExperienceLevel      *string        `json:"experience_level"`
+	SalaryMin            pgtype.Numeric `json:"salary_min"`
+	SalaryMax            pgtype.Numeric `json:"salary_max"`
+	Currency             *string        `json:"currency"`
+	Skills               []string       `json:"skills"`
+	ApplicationUrl       *string        `json:"application_url"`
+	Deadline             pgtype.Date    `json:"deadline"`
+	Remote               *string        `json:"remote"`
+	ConfidenceOverall    float32        `json:"confidence_overall"`
+	VerificationStatus   string         `json:"verification_status"`
+	FreshnessScore       int32          `json:"freshness_score"`
+	OverrideSource       string         `json:"override_source"`
+	EditorialOverrides   []byte         `json:"editorial_overrides"`
+	VisaSponsorship      *bool          `json:"visa_sponsorship"`
+	RelocationAssistance *bool          `json:"relocation_assistance"`
+	Benefits             []string       `json:"benefits"`
+	EducationRequired    *string        `json:"education_required"`
+	LanguagesRequired    []string       `json:"languages_required"`
+	PostedDate           pgtype.Date    `json:"posted_date"`
+	WorkSchedule         *string        `json:"work_schedule"`
 }
 
 // internal/db/queries/intelligence_domains.sql
@@ -546,6 +553,13 @@ func (q *Queries) CreateIntelJob(ctx context.Context, arg CreateIntelJobParams) 
 		arg.FreshnessScore,
 		arg.OverrideSource,
 		arg.EditorialOverrides,
+		arg.VisaSponsorship,
+		arg.RelocationAssistance,
+		arg.Benefits,
+		arg.EducationRequired,
+		arg.LanguagesRequired,
+		arg.PostedDate,
+		arg.WorkSchedule,
 	)
 	var i IntelJob
 	err := row.Scan(
@@ -578,6 +592,13 @@ func (q *Queries) CreateIntelJob(ctx context.Context, arg CreateIntelJobParams) 
 		&i.LastVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.VisaSponsorship,
+		&i.RelocationAssistance,
+		&i.Benefits,
+		&i.EducationRequired,
+		&i.LanguagesRequired,
+		&i.PostedDate,
+		&i.WorkSchedule,
 	)
 	return i, err
 }
@@ -1246,7 +1267,7 @@ func (q *Queries) GetIntelHousingGuideByID(ctx context.Context, id pgtype.UUID) 
 }
 
 const getIntelJob = `-- name: GetIntelJob :one
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs WHERE id = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, visa_sponsorship, relocation_assistance, benefits, education_required, languages_required, posted_date, work_schedule FROM intel_jobs WHERE id = $1
 `
 
 func (q *Queries) GetIntelJob(ctx context.Context, id pgtype.UUID) (IntelJob, error) {
@@ -1282,12 +1303,19 @@ func (q *Queries) GetIntelJob(ctx context.Context, id pgtype.UUID) (IntelJob, er
 		&i.LastVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.VisaSponsorship,
+		&i.RelocationAssistance,
+		&i.Benefits,
+		&i.EducationRequired,
+		&i.LanguagesRequired,
+		&i.PostedDate,
+		&i.WorkSchedule,
 	)
 	return i, err
 }
 
 const getIntelJobByIntelRecord = `-- name: GetIntelJobByIntelRecord :one
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs WHERE intel_record_id = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, visa_sponsorship, relocation_assistance, benefits, education_required, languages_required, posted_date, work_schedule FROM intel_jobs WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetIntelJobByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (IntelJob, error) {
@@ -1323,12 +1351,19 @@ func (q *Queries) GetIntelJobByIntelRecord(ctx context.Context, intelRecordID pg
 		&i.LastVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.VisaSponsorship,
+		&i.RelocationAssistance,
+		&i.Benefits,
+		&i.EducationRequired,
+		&i.LanguagesRequired,
+		&i.PostedDate,
+		&i.WorkSchedule,
 	)
 	return i, err
 }
 
 const getIntelJobBySourceURL = `-- name: GetIntelJobBySourceURL :one
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs WHERE source_url = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, visa_sponsorship, relocation_assistance, benefits, education_required, languages_required, posted_date, work_schedule FROM intel_jobs WHERE source_url = $1
 `
 
 func (q *Queries) GetIntelJobBySourceURL(ctx context.Context, sourceUrl string) (IntelJob, error) {
@@ -1364,6 +1399,13 @@ func (q *Queries) GetIntelJobBySourceURL(ctx context.Context, sourceUrl string) 
 		&i.LastVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.VisaSponsorship,
+		&i.RelocationAssistance,
+		&i.Benefits,
+		&i.EducationRequired,
+		&i.LanguagesRequired,
+		&i.PostedDate,
+		&i.WorkSchedule,
 	)
 	return i, err
 }
@@ -2162,7 +2204,7 @@ func (q *Queries) ListHousingGuidesIntelKeyset(ctx context.Context, arg ListHous
 }
 
 const listIntelJobsBySpaces = `-- name: ListIntelJobsBySpaces :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, visa_sponsorship, relocation_assistance, benefits, education_required, languages_required, posted_date, work_schedule FROM intel_jobs
 WHERE country_space_id = ANY($1::uuid[])
  AND ($2::timestamptz IS NULL
  OR created_at < $2
@@ -2225,6 +2267,13 @@ func (q *Queries) ListIntelJobsBySpaces(ctx context.Context, arg ListIntelJobsBy
 			&i.LastVerifiedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.VisaSponsorship,
+			&i.RelocationAssistance,
+			&i.Benefits,
+			&i.EducationRequired,
+			&i.LanguagesRequired,
+			&i.PostedDate,
+			&i.WorkSchedule,
 		); err != nil {
 			return nil, err
 		}
@@ -2237,7 +2286,7 @@ func (q *Queries) ListIntelJobsBySpaces(ctx context.Context, arg ListIntelJobsBy
 }
 
 const listIntelJobsKeyset = `-- name: ListIntelJobsKeyset :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, visa_sponsorship, relocation_assistance, benefits, education_required, languages_required, posted_date, work_schedule FROM intel_jobs
 WHERE ($1::timestamptz IS NULL
  OR intel_jobs.created_at < $1
  OR (intel_jobs.created_at = $1 AND intel_jobs.id < $2))
@@ -2306,6 +2355,13 @@ func (q *Queries) ListIntelJobsKeyset(ctx context.Context, arg ListIntelJobsKeys
 			&i.LastVerifiedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.VisaSponsorship,
+			&i.RelocationAssistance,
+			&i.Benefits,
+			&i.EducationRequired,
+			&i.LanguagesRequired,
+			&i.PostedDate,
+			&i.WorkSchedule,
 		); err != nil {
 			return nil, err
 		}
@@ -2941,32 +2997,43 @@ SET title = $2, description = $3, country = $4, country_space_id = $5, city = $6
  salary_max = $11, currency = $12, skills = $13, application_url = $14,
  deadline = $15, remote = $16, confidence_overall = $17,
  verification_status = $18, freshness_score = $19, override_source = $20,
- editorial_overrides = $21, last_verified_at = now(), updated_at = now()
+ editorial_overrides = $21,
+ visa_sponsorship = $22, relocation_assistance = $23, benefits = $24,
+ education_required = $25, languages_required = $26, posted_date = $27,
+ work_schedule = $28,
+ last_verified_at = now(), updated_at = now()
 WHERE id = $1
 `
 
 type UpdateIntelJobParams struct {
-	ID                 pgtype.UUID    `json:"id"`
-	Title              string         `json:"title"`
-	Description        *string        `json:"description"`
-	Country            string         `json:"country"`
-	CountrySpaceID     pgtype.UUID    `json:"country_space_id"`
-	City               *string        `json:"city"`
-	Employer           *string        `json:"employer"`
-	JobType            *string        `json:"job_type"`
-	ExperienceLevel    *string        `json:"experience_level"`
-	SalaryMin          pgtype.Numeric `json:"salary_min"`
-	SalaryMax          pgtype.Numeric `json:"salary_max"`
-	Currency           *string        `json:"currency"`
-	Skills             []string       `json:"skills"`
-	ApplicationUrl     *string        `json:"application_url"`
-	Deadline           pgtype.Date    `json:"deadline"`
-	Remote             *string        `json:"remote"`
-	ConfidenceOverall  float32        `json:"confidence_overall"`
-	VerificationStatus string         `json:"verification_status"`
-	FreshnessScore     int32          `json:"freshness_score"`
-	OverrideSource     string         `json:"override_source"`
-	EditorialOverrides []byte         `json:"editorial_overrides"`
+	ID                   pgtype.UUID    `json:"id"`
+	Title                string         `json:"title"`
+	Description          *string        `json:"description"`
+	Country              string         `json:"country"`
+	CountrySpaceID       pgtype.UUID    `json:"country_space_id"`
+	City                 *string        `json:"city"`
+	Employer             *string        `json:"employer"`
+	JobType              *string        `json:"job_type"`
+	ExperienceLevel      *string        `json:"experience_level"`
+	SalaryMin            pgtype.Numeric `json:"salary_min"`
+	SalaryMax            pgtype.Numeric `json:"salary_max"`
+	Currency             *string        `json:"currency"`
+	Skills               []string       `json:"skills"`
+	ApplicationUrl       *string        `json:"application_url"`
+	Deadline             pgtype.Date    `json:"deadline"`
+	Remote               *string        `json:"remote"`
+	ConfidenceOverall    float32        `json:"confidence_overall"`
+	VerificationStatus   string         `json:"verification_status"`
+	FreshnessScore       int32          `json:"freshness_score"`
+	OverrideSource       string         `json:"override_source"`
+	EditorialOverrides   []byte         `json:"editorial_overrides"`
+	VisaSponsorship      *bool          `json:"visa_sponsorship"`
+	RelocationAssistance *bool          `json:"relocation_assistance"`
+	Benefits             []string       `json:"benefits"`
+	EducationRequired    *string        `json:"education_required"`
+	LanguagesRequired    []string       `json:"languages_required"`
+	PostedDate           pgtype.Date    `json:"posted_date"`
+	WorkSchedule         *string        `json:"work_schedule"`
 }
 
 func (q *Queries) UpdateIntelJob(ctx context.Context, arg UpdateIntelJobParams) error {
@@ -2992,6 +3059,13 @@ func (q *Queries) UpdateIntelJob(ctx context.Context, arg UpdateIntelJobParams) 
 		arg.FreshnessScore,
 		arg.OverrideSource,
 		arg.EditorialOverrides,
+		arg.VisaSponsorship,
+		arg.RelocationAssistance,
+		arg.Benefits,
+		arg.EducationRequired,
+		arg.LanguagesRequired,
+		arg.PostedDate,
+		arg.WorkSchedule,
 	)
 	return err
 }

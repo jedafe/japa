@@ -365,3 +365,14 @@ func countryNameCandidate(raw string) string {
 	}
 	return trimmed
 }
+
+// CountryCodeAlpha2 normalizes an extracted country value (alpha-3, alpha-2,
+// or a common alias like "UK") to its ISO 3166-1 alpha-2 code — the format
+// spaces.geo_code stores. Returns "" when no candidate resolves.
+func CountryCodeAlpha2(raw string) string {
+	if c := countryCodeCandidates(raw); len(c) > 0 {
+		return c[0]
+	}
+
+	return ""
+}

@@ -1693,3 +1693,234 @@ func (s *Store) ListSourceCollectionItems(ctx context.Context, collectionID pgty
 
 	return sources, nil
 }
+
+// ---------------------------------------------------------------------------
+// University domain (spaces + university_intel_links + custom_field_values)
+// ---------------------------------------------------------------------------
+
+// GetUniversitySpaceBySlug returns the university space (education type,
+// level='university') with the given slug. pgx.ErrNoRows propagates so the
+// promoter can distinguish "create" from "adopt".
+func (s *Store) GetUniversitySpaceBySlug(ctx context.Context, slug string) (gen.GetUniversitySpaceBySlugRow, error) {
+	row, err := s.queries.GetUniversitySpaceBySlug(ctx, slug)
+	if err != nil {
+		return gen.GetUniversitySpaceBySlugRow{}, err
+	}
+
+	return row, nil
+}
+
+// GetUniversitySpaceByName returns university spaces whose name matches
+// (case-insensitive) — the course promoter's university_name fallback.
+func (s *Store) GetUniversitySpaceByName(ctx context.Context, name string) ([]gen.GetUniversitySpaceByNameRow, error) {
+	rows, err := s.queries.GetUniversitySpaceByName(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("stores: university space by name: %w", err)
+	}
+
+	return rows, nil
+}
+
+// GetUniversityIntelLinkBySpace returns the intel link row for a university
+// space.
+func (s *Store) GetUniversityIntelLinkBySpace(ctx context.Context, spaceID pgtype.UUID) (gen.UniversityIntelLink, error) {
+	row, err := s.queries.GetUniversityIntelLinkBySpace(ctx, spaceID)
+	if err != nil {
+		return gen.UniversityIntelLink{}, err
+	}
+
+	return row, nil
+}
+
+// GetUniversityIntelLinkByIntelRecord returns the intel link row created for
+// a given intel record — the university promoter's getExisting probe.
+func (s *Store) GetUniversityIntelLinkByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.UniversityIntelLink, error) {
+	row, err := s.queries.GetUniversityIntelLinkByIntelRecord(ctx, intelRecordID)
+	if err != nil {
+		return gen.UniversityIntelLink{}, err
+	}
+
+	return row, nil
+}
+
+// UpsertUniversityIntelLink creates the space↔record link or repoints it at
+// the newest promoted record, preserving editorial overrides.
+func (s *Store) UpsertUniversityIntelLink(ctx context.Context, arg gen.UpsertUniversityIntelLinkParams) (gen.UniversityIntelLink, error) {
+	row, err := s.queries.UpsertUniversityIntelLink(ctx, arg)
+	if err != nil {
+		return gen.UniversityIntelLink{}, fmt.Errorf("stores: upsert university intel link: %w", err)
+	}
+
+	return row, nil
+}
+
+// AddUniversityIntelOverrides merges field keys into a university link's
+// editorial_overrides set — called when a human edits the field.
+func (s *Store) AddUniversityIntelOverrides(ctx context.Context, arg gen.AddUniversityIntelOverridesParams) error {
+	if err := s.queries.AddUniversityIntelOverrides(ctx, arg); err != nil {
+		return fmt.Errorf("stores: add university intel overrides: %w", err)
+	}
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// University course offerings (catalog + offerings)
+// ---------------------------------------------------------------------------
+
+// GetCourseOfferingByCourseUniversity returns the offering row for the
+// (course_id, university_id) pair — the course promoter's dedupe probe.
+// pgx.ErrNoRows propagates.
+func (s *Store) GetCourseOfferingByCourseUniversity(ctx context.Context, arg gen.GetCourseOfferingByCourseUniversityParams) (gen.GetCourseOfferingByCourseUniversityRow, error) {
+	row, err := s.queries.GetCourseOfferingByCourseUniversity(ctx, arg)
+	if err != nil {
+		return gen.GetCourseOfferingByCourseUniversityRow{}, err
+	}
+
+	return row, nil
+}
+
+// GetCourseCatalogBySlug returns the canonical catalog course by slug.
+// pgx.ErrNoRows propagates.
+func (s *Store) GetCourseCatalogBySlug(ctx context.Context, slug string) (gen.GetCourseCatalogBySlugRow, error) {
+	row, err := s.queries.GetCourseCatalogBySlug(ctx, slug)
+	if err != nil {
+		return gen.GetCourseCatalogBySlugRow{}, err
+	}
+
+	return row, nil
+}
+
+// CreateCourseCatalogIntel inserts a minimal catalog row for a course the
+// pipeline has not seen before and returns its id.
+func (s *Store) CreateCourseCatalogIntel(ctx context.Context, arg gen.CreateCourseCatalogIntelParams) (pgtype.UUID, error) {
+	id, err := s.queries.CreateCourseCatalogIntel(ctx, arg)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("stores: create course catalog intel: %w", err)
+	}
+
+	return id, nil
+}
+
+// CreateCourseOfferingIntel inserts a course offering promoted from an intel
+// record and returns its id.
+func (s *Store) CreateCourseOfferingIntel(ctx context.Context, arg gen.CreateCourseOfferingIntelParams) (pgtype.UUID, error) {
+	id, err := s.queries.CreateCourseOfferingIntel(ctx, arg)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("stores: create course offering intel: %w", err)
+	}
+
+	return id, nil
+}
+
+// UpdateCourseOfferingIntel applies a re-crawl refresh to an offering row;
+// the promoter pre-resolves editorial overrides into the params.
+func (s *Store) UpdateCourseOfferingIntel(ctx context.Context, arg gen.UpdateCourseOfferingIntelParams) error {
+	if err := s.queries.UpdateCourseOfferingIntel(ctx, arg); err != nil {
+		return fmt.Errorf("stores: update course offering intel: %w", err)
+	}
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Spaces + custom fields passthroughs used by the university promoters
+// ---------------------------------------------------------------------------
+
+// GetSpaceTypeBySlug returns a space_types row by slug ("education" for
+// universities).
+func (s *Store) GetSpaceTypeBySlug(ctx context.Context, slug string) (gen.SpaceType, error) {
+	row, err := s.queries.GetSpaceTypeBySlug(ctx, slug)
+	if err != nil {
+		return gen.SpaceType{}, err
+	}
+
+	return row, nil
+}
+
+// CreateSpace inserts a spaces row (university projection create path).
+func (s *Store) CreateSpace(ctx context.Context, arg gen.CreateSpaceParams) (gen.CreateSpaceRow, error) {
+	row, err := s.queries.CreateSpace(ctx, arg)
+	if err != nil {
+		return gen.CreateSpaceRow{}, fmt.Errorf("stores: create space: %w", err)
+	}
+
+	return row, nil
+}
+
+// UpdateSpace applies the space-column half of a university re-crawl update.
+func (s *Store) UpdateSpace(ctx context.Context, arg gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error) {
+	row, err := s.queries.UpdateSpace(ctx, arg)
+	if err != nil {
+		return gen.UpdateSpaceRow{}, fmt.Errorf("stores: update space: %w", err)
+	}
+
+	return row, nil
+}
+
+// GetCustomFieldGroupBySlug resolves a custom_field_groups row by slug
+// ("university_fields" for university CFVs).
+func (s *Store) GetCustomFieldGroupBySlug(ctx context.Context, slug string) (gen.CustomFieldGroup, error) {
+	row, err := s.queries.GetCustomFieldGroupBySlug(ctx, slug)
+	if err != nil {
+		return gen.CustomFieldGroup{}, err
+	}
+
+	return row, nil
+}
+
+// GetCustomFieldByGroupAndKey resolves a field definition inside a group —
+// keys are only unique per group (§80).
+func (s *Store) GetCustomFieldByGroupAndKey(ctx context.Context, arg gen.GetCustomFieldByGroupAndKeyParams) (gen.GetCustomFieldByGroupAndKeyRow, error) {
+	row, err := s.queries.GetCustomFieldByGroupAndKey(ctx, arg)
+	if err != nil {
+		return gen.GetCustomFieldByGroupAndKeyRow{}, err
+	}
+
+	return row, nil
+}
+
+// ListCustomFieldValuesByEntity returns every stored field value on an
+// entity — including fields hidden from the frontend — for the university
+// promoter's re-crawl differ (the WithDefs variant filters show_in_frontend
+// which would hide admin-only fields from the diff).
+func (s *Store) ListCustomFieldValuesByEntity(ctx context.Context, arg gen.ListCustomFieldValuesByEntityParams) ([]gen.CustomFieldValue, error) {
+	rows, err := s.queries.ListCustomFieldValuesByEntity(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list cfvs: %w", err)
+	}
+
+	return rows, nil
+}
+
+// UpsertCustomFieldValue creates or replaces one field value on an entity.
+func (s *Store) UpsertCustomFieldValue(ctx context.Context, arg gen.UpsertCustomFieldValueParams) (gen.CustomFieldValue, error) {
+	row, err := s.queries.UpsertCustomFieldValue(ctx, arg)
+	if err != nil {
+		return gen.CustomFieldValue{}, fmt.Errorf("stores: upsert cfv: %w", err)
+	}
+
+	return row, nil
+}
+
+// ListCourseOfferingsIntelKeyset pages promoted course offerings for the
+// merged radar feed.
+func (s *Store) ListCourseOfferingsIntelKeyset(ctx context.Context, arg gen.ListCourseOfferingsIntelKeysetParams) ([]gen.ListCourseOfferingsIntelKeysetRow, error) {
+	rows, err := s.queries.ListCourseOfferingsIntelKeyset(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list course offerings keyset: %w", err)
+	}
+
+	return rows, nil
+}
+
+// ListCourseOfferingsIntelBySpaces pages promoted course offerings scoped
+// to followed university spaces for the followed radar feed.
+func (s *Store) ListCourseOfferingsIntelBySpaces(ctx context.Context, arg gen.ListCourseOfferingsIntelBySpacesParams) ([]gen.ListCourseOfferingsIntelBySpacesRow, error) {
+	rows, err := s.queries.ListCourseOfferingsIntelBySpaces(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list course offerings by spaces: %w", err)
+	}
+
+	return rows, nil
+}

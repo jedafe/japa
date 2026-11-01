@@ -48,6 +48,8 @@ const (
 	// #nosec G101 -- "credential_pathway" is an entity-type label, not a secret.
 	EntityTypeCredentialPathway = "credential_pathway"
 	EntityTypeNews              = "news"
+	EntityTypeUniversity        = "university"
+	EntityTypeUniversityCourse  = "university_course"
 	// Curate-only entity types (intel-channels Phase 1): populated by the
 	// deterministic curator package from structured channel bodies (RSS
 	// items, ld+json nodes, iCal VEVENTs, tabular rows). They have schemas
@@ -83,6 +85,8 @@ var registry = map[string]EntitySchema{
 	EntityTypeCommunityOrganisation: CommunityOrganisation,
 	EntityTypeCredentialPathway:     CredentialPathway,
 	EntityTypeNews:                  News,
+	EntityTypeUniversity:            University,
+	EntityTypeUniversityCourse:      UniversityCourse,
 	EntityTypeArticle:               Article,
 	EntityTypeEvent:                 Event,
 	EntityTypeDataset:               Dataset,
@@ -152,6 +156,11 @@ var categoryEntityTypes = map[string]string{
 	"credential_pathway":        EntityTypeCredentialPathway,
 	"professional_credential":   EntityTypeCredentialPathway,
 	"news":                      EntityTypeNews,
+	"university":                EntityTypeUniversity,
+	"education":                 EntityTypeUniversity,
+	"university_course":         EntityTypeUniversityCourse,
+	"course_offering":           EntityTypeUniversityCourse,
+	"program":                   EntityTypeUniversityCourse,
 	// intel-channels Phase 1 curate-only categories. blog/event/dataset map
 	// to the curator-produced schemas; announcement reuses the news schema
 	// (curated RSS bulletins). scam_alert intentionally has no entity type
@@ -206,6 +215,8 @@ func RegisteredCategories() []string {
 		"tax_obligation",
 		"travel_alert",
 		"travel_routes",
+		"university",
+		"university_course",
 		"visa",
 		"wiki_page",
 		"work_career",

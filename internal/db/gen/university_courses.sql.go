@@ -244,6 +244,42 @@ func (q *Queries) CreateCourseCatalog(ctx context.Context, arg CreateCourseCatal
 	return i, err
 }
 
+const createCourseCatalogIntel = `-- name: CreateCourseCatalogIntel :one
+INSERT INTO university_course_catalog (
+    title, slug, degree_type, field_of_study, language, default_duration_years,
+    is_published
+) VALUES (
+    $1, $2, $3, $4, $5, $6,
+    true
+)
+RETURNING id
+`
+
+type CreateCourseCatalogIntelParams struct {
+	Title                string         `json:"title"`
+	Slug                 string         `json:"slug"`
+	DegreeType           *string        `json:"degree_type"`
+	FieldOfStudy         *string        `json:"field_of_study"`
+	Language             string         `json:"language"`
+	DefaultDurationYears pgtype.Numeric `json:"default_duration_years"`
+}
+
+// Minimal catalog row for a course the pipeline has never seen; curated
+// fields (description, department) stay NULL for editorial fill-in.
+func (q *Queries) CreateCourseCatalogIntel(ctx context.Context, arg CreateCourseCatalogIntelParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createCourseCatalogIntel,
+		arg.Title,
+		arg.Slug,
+		arg.DegreeType,
+		arg.FieldOfStudy,
+		arg.Language,
+		arg.DefaultDurationYears,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createCourseOffering = `-- name: CreateCourseOffering :one
 INSERT INTO university_course_offerings (course_id, university_id, slug,
  tuition, currency, duration_years, study_mode, intake_months,
@@ -322,6 +358,54 @@ func (q *Queries) CreateCourseOffering(ctx context.Context, arg CreateCourseOffe
 	return i, err
 }
 
+const createCourseOfferingIntel = `-- name: CreateCourseOfferingIntel :one
+INSERT INTO university_course_offerings (
+    course_id, university_id, slug, tuition, currency, duration_years,
+    study_mode, intake_months, entry_requirements, accreditation,
+    is_published, intel_record_id
+) VALUES (
+    $1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10,
+    $11, $12
+)
+RETURNING id
+`
+
+type CreateCourseOfferingIntelParams struct {
+	CourseID          pgtype.UUID    `json:"course_id"`
+	UniversityID      pgtype.UUID    `json:"university_id"`
+	Slug              string         `json:"slug"`
+	Tuition           pgtype.Numeric `json:"tuition"`
+	Currency          *string        `json:"currency"`
+	DurationYears     pgtype.Numeric `json:"duration_years"`
+	StudyMode         *string        `json:"study_mode"`
+	IntakeMonths      []string       `json:"intake_months"`
+	EntryRequirements *string        `json:"entry_requirements"`
+	Accreditation     *string        `json:"accreditation"`
+	IsPublished       bool           `json:"is_published"`
+	IntelRecordID     pgtype.UUID    `json:"intel_record_id"`
+}
+
+func (q *Queries) CreateCourseOfferingIntel(ctx context.Context, arg CreateCourseOfferingIntelParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createCourseOfferingIntel,
+		arg.CourseID,
+		arg.UniversityID,
+		arg.Slug,
+		arg.Tuition,
+		arg.Currency,
+		arg.DurationYears,
+		arg.StudyMode,
+		arg.IntakeMonths,
+		arg.EntryRequirements,
+		arg.Accreditation,
+		arg.IsPublished,
+		arg.IntelRecordID,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getCourseCatalogByID = `-- name: GetCourseCatalogByID :one
 SELECT c.id, c.title, c.slug, c.description, c.degree_type, c.department,
  c.field_of_study, c.language, c.default_duration_years, c.is_published,
@@ -365,6 +449,107 @@ func (q *Queries) GetCourseCatalogByID(ctx context.Context, id pgtype.UUID) (Get
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OfferingCount,
+	)
+	return i, err
+}
+
+const getCourseCatalogBySlug = `-- name: GetCourseCatalogBySlug :one
+SELECT id, title, slug, description, degree_type, department, field_of_study,
+       language, default_duration_years, is_published, created_at, updated_at
+FROM university_course_catalog
+WHERE slug = $1 AND deleted_at IS NULL
+LIMIT 1
+`
+
+type GetCourseCatalogBySlugRow struct {
+	ID                   pgtype.UUID        `json:"id"`
+	Title                string             `json:"title"`
+	Slug                 string             `json:"slug"`
+	Description          *string            `json:"description"`
+	DegreeType           *string            `json:"degree_type"`
+	Department           *string            `json:"department"`
+	FieldOfStudy         *string            `json:"field_of_study"`
+	Language             string             `json:"language"`
+	DefaultDurationYears pgtype.Numeric     `json:"default_duration_years"`
+	IsPublished          bool               `json:"is_published"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetCourseCatalogBySlug(ctx context.Context, slug string) (GetCourseCatalogBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getCourseCatalogBySlug, slug)
+	var i GetCourseCatalogBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.Description,
+		&i.DegreeType,
+		&i.Department,
+		&i.FieldOfStudy,
+		&i.Language,
+		&i.DefaultDurationYears,
+		&i.IsPublished,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getCourseOfferingByCourseUniversity = `-- name: GetCourseOfferingByCourseUniversity :one
+SELECT id, course_id, university_id, slug, tuition, currency, duration_years,
+       study_mode, intake_months, entry_requirements, accreditation,
+       is_published, intel_record_id, editorial_overrides, created_at, updated_at
+FROM university_course_offerings
+WHERE course_id = $1 AND university_id = $2
+  AND deleted_at IS NULL
+LIMIT 1
+`
+
+type GetCourseOfferingByCourseUniversityParams struct {
+	CourseID     pgtype.UUID `json:"course_id"`
+	UniversityID pgtype.UUID `json:"university_id"`
+}
+
+type GetCourseOfferingByCourseUniversityRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	CourseID           pgtype.UUID        `json:"course_id"`
+	UniversityID       pgtype.UUID        `json:"university_id"`
+	Slug               string             `json:"slug"`
+	Tuition            pgtype.Numeric     `json:"tuition"`
+	Currency           *string            `json:"currency"`
+	DurationYears      pgtype.Numeric     `json:"duration_years"`
+	StudyMode          *string            `json:"study_mode"`
+	IntakeMonths       []string           `json:"intake_months"`
+	EntryRequirements  *string            `json:"entry_requirements"`
+	Accreditation      *string            `json:"accreditation"`
+	IsPublished        bool               `json:"is_published"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetCourseOfferingByCourseUniversity(ctx context.Context, arg GetCourseOfferingByCourseUniversityParams) (GetCourseOfferingByCourseUniversityRow, error) {
+	row := q.db.QueryRow(ctx, getCourseOfferingByCourseUniversity, arg.CourseID, arg.UniversityID)
+	var i GetCourseOfferingByCourseUniversityRow
+	err := row.Scan(
+		&i.ID,
+		&i.CourseID,
+		&i.UniversityID,
+		&i.Slug,
+		&i.Tuition,
+		&i.Currency,
+		&i.DurationYears,
+		&i.StudyMode,
+		&i.IntakeMonths,
+		&i.EntryRequirements,
+		&i.Accreditation,
+		&i.IsPublished,
+		&i.IntelRecordID,
+		&i.EditorialOverrides,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -962,6 +1147,169 @@ func (q *Queries) ListCourseOfferingsByUniversity(ctx context.Context, arg ListC
 	return items, nil
 }
 
+const listCourseOfferingsIntelBySpaces = `-- name: ListCourseOfferingsIntelBySpaces :many
+SELECT o.id, o.slug, o.intel_record_id, o.university_id, o.tuition, o.currency,
+       o.study_mode, o.intake_months, o.created_at,
+       c.title AS course_title, s.name AS university_name, s.geo_code
+FROM university_course_offerings o
+JOIN university_course_catalog c ON c.id = o.course_id
+JOIN spaces s ON s.id = o.university_id
+WHERE o.deleted_at IS NULL AND o.is_published = true
+ AND o.university_id = ANY($1::uuid[])
+ AND ($2::timestamptz IS NULL
+ OR o.created_at < $2
+ OR (o.created_at = $2 AND o.id < $3))
+ AND ($4::timestamptz IS NULL OR o.created_at >= $4)
+ORDER BY o.created_at DESC, o.id DESC
+LIMIT $5
+`
+
+type ListCourseOfferingsIntelBySpacesParams struct {
+	Column1 []pgtype.UUID      `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	ID      pgtype.UUID        `json:"id"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
+	Limit   int32              `json:"limit"`
+}
+
+type ListCourseOfferingsIntelBySpacesRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Slug           string             `json:"slug"`
+	IntelRecordID  pgtype.UUID        `json:"intel_record_id"`
+	UniversityID   pgtype.UUID        `json:"university_id"`
+	Tuition        pgtype.Numeric     `json:"tuition"`
+	Currency       *string            `json:"currency"`
+	StudyMode      *string            `json:"study_mode"`
+	IntakeMonths   []string           `json:"intake_months"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	CourseTitle    string             `json:"course_title"`
+	UniversityName string             `json:"university_name"`
+	GeoCode        *string            `json:"geo_code"`
+}
+
+func (q *Queries) ListCourseOfferingsIntelBySpaces(ctx context.Context, arg ListCourseOfferingsIntelBySpacesParams) ([]ListCourseOfferingsIntelBySpacesRow, error) {
+	rows, err := q.db.Query(ctx, listCourseOfferingsIntelBySpaces,
+		arg.Column1,
+		arg.Column2,
+		arg.ID,
+		arg.Column4,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCourseOfferingsIntelBySpacesRow
+	for rows.Next() {
+		var i ListCourseOfferingsIntelBySpacesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.IntelRecordID,
+			&i.UniversityID,
+			&i.Tuition,
+			&i.Currency,
+			&i.StudyMode,
+			&i.IntakeMonths,
+			&i.CreatedAt,
+			&i.CourseTitle,
+			&i.UniversityName,
+			&i.GeoCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCourseOfferingsIntelKeyset = `-- name: ListCourseOfferingsIntelKeyset :many
+SELECT o.id, o.slug, o.intel_record_id, o.university_id, o.tuition, o.currency,
+       o.study_mode, o.intake_months, o.created_at,
+       c.title AS course_title, s.name AS university_name, s.geo_code
+FROM university_course_offerings o
+JOIN university_course_catalog c ON c.id = o.course_id
+JOIN spaces s ON s.id = o.university_id
+WHERE o.deleted_at IS NULL AND o.is_published = true
+ AND ($1::timestamptz IS NULL
+ OR o.created_at < $1
+ OR (o.created_at = $1 AND o.id < $2))
+ AND ($3::uuid IS NULL OR o.university_id = $3)
+ AND (NULLIF($4::text, '') IS NULL OR s.geo_code = $4)
+ AND ($5::timestamptz IS NULL OR o.created_at >= $5)
+ORDER BY o.created_at DESC, o.id DESC
+LIMIT $6
+`
+
+type ListCourseOfferingsIntelKeysetParams struct {
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	ID      pgtype.UUID        `json:"id"`
+	Column3 pgtype.UUID        `json:"column_3"`
+	Column4 string             `json:"column_4"`
+	Column5 pgtype.Timestamptz `json:"column_5"`
+	Limit   int32              `json:"limit"`
+}
+
+type ListCourseOfferingsIntelKeysetRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Slug           string             `json:"slug"`
+	IntelRecordID  pgtype.UUID        `json:"intel_record_id"`
+	UniversityID   pgtype.UUID        `json:"university_id"`
+	Tuition        pgtype.Numeric     `json:"tuition"`
+	Currency       *string            `json:"currency"`
+	StudyMode      *string            `json:"study_mode"`
+	IntakeMonths   []string           `json:"intake_months"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	CourseTitle    string             `json:"course_title"`
+	UniversityName string             `json:"university_name"`
+	GeoCode        *string            `json:"geo_code"`
+}
+
+// Radar keyset over promoted course offerings: (created_at,id) cursor,
+// university-space + country-geo filters in the shared radar shape.
+func (q *Queries) ListCourseOfferingsIntelKeyset(ctx context.Context, arg ListCourseOfferingsIntelKeysetParams) ([]ListCourseOfferingsIntelKeysetRow, error) {
+	rows, err := q.db.Query(ctx, listCourseOfferingsIntelKeyset,
+		arg.Column1,
+		arg.ID,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCourseOfferingsIntelKeysetRow
+	for rows.Next() {
+		var i ListCourseOfferingsIntelKeysetRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.IntelRecordID,
+			&i.UniversityID,
+			&i.Tuition,
+			&i.Currency,
+			&i.StudyMode,
+			&i.IntakeMonths,
+			&i.CreatedAt,
+			&i.CourseTitle,
+			&i.UniversityName,
+			&i.GeoCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const softDeleteCourseCatalog = `-- name: SoftDeleteCourseCatalog :exec
 UPDATE university_course_catalog
 SET deleted_at = now(), updated_at = now()
@@ -1135,4 +1483,50 @@ func (q *Queries) UpdateCourseOffering(ctx context.Context, arg UpdateCourseOffe
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateCourseOfferingIntel = `-- name: UpdateCourseOfferingIntel :exec
+UPDATE university_course_offerings
+SET tuition = $1,
+    currency = $2,
+    duration_years = $3,
+    study_mode = $4,
+    intake_months = $5,
+    entry_requirements = $6,
+    accreditation = $7,
+    is_published = $8,
+    intel_record_id = $9,
+    updated_at = now()
+WHERE id = $10
+`
+
+type UpdateCourseOfferingIntelParams struct {
+	Tuition           pgtype.Numeric `json:"tuition"`
+	Currency          *string        `json:"currency"`
+	DurationYears     pgtype.Numeric `json:"duration_years"`
+	StudyMode         *string        `json:"study_mode"`
+	IntakeMonths      []string       `json:"intake_months"`
+	EntryRequirements *string        `json:"entry_requirements"`
+	Accreditation     *string        `json:"accreditation"`
+	IsPublished       bool           `json:"is_published"`
+	IntelRecordID     pgtype.UUID    `json:"intel_record_id"`
+	ID                pgtype.UUID    `json:"id"`
+}
+
+// The promoter pre-resolves overrides so protected fields keep existing
+// values in the params it passes.
+func (q *Queries) UpdateCourseOfferingIntel(ctx context.Context, arg UpdateCourseOfferingIntelParams) error {
+	_, err := q.db.Exec(ctx, updateCourseOfferingIntel,
+		arg.Tuition,
+		arg.Currency,
+		arg.DurationYears,
+		arg.StudyMode,
+		arg.IntakeMonths,
+		arg.EntryRequirements,
+		arg.Accreditation,
+		arg.IsPublished,
+		arg.IntelRecordID,
+		arg.ID,
+	)
+	return err
 }

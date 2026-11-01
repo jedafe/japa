@@ -1487,6 +1487,23 @@ type CreditPack struct {
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
+type CreditsLedger struct {
+	ID               pgtype.UUID        `json:"id"`
+	Seq              int64              `json:"seq"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	Operation        string             `json:"operation"`
+	Amount           int64              `json:"amount"`
+	ResultingBalance int64              `json:"resulting_balance"`
+	Source           *string            `json:"source"`
+	ActorUserID      pgtype.UUID        `json:"actor_user_id"`
+	Reference        *string            `json:"reference"`
+	IdempotencyKey   *string            `json:"idempotency_key"`
+	Reason           *string            `json:"reason"`
+	PaymentID        pgtype.UUID        `json:"payment_id"`
+	ReversesID       pgtype.UUID        `json:"reverses_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
 type CrsDraw struct {
 	ID                pgtype.UUID        `json:"id"`
 	DrawNumber        *int32             `json:"draw_number"`
@@ -2194,35 +2211,42 @@ type IntelInboundEvent struct {
 }
 
 type IntelJob struct {
-	ID                 pgtype.UUID        `json:"id"`
-	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
-	GuideID            pgtype.UUID        `json:"guide_id"`
-	SourceUrl          string             `json:"source_url"`
-	SourceType         string             `json:"source_type"`
-	TrustLevel         int16              `json:"trust_level"`
-	Title              string             `json:"title"`
-	Description        *string            `json:"description"`
-	Country            string             `json:"country"`
-	CountrySpaceID     pgtype.UUID        `json:"country_space_id"`
-	City               *string            `json:"city"`
-	Employer           *string            `json:"employer"`
-	JobType            *string            `json:"job_type"`
-	ExperienceLevel    *string            `json:"experience_level"`
-	SalaryMin          pgtype.Numeric     `json:"salary_min"`
-	SalaryMax          pgtype.Numeric     `json:"salary_max"`
-	Currency           *string            `json:"currency"`
-	Skills             []string           `json:"skills"`
-	ApplicationUrl     *string            `json:"application_url"`
-	Deadline           pgtype.Date        `json:"deadline"`
-	Remote             *string            `json:"remote"`
-	ConfidenceOverall  float32            `json:"confidence_overall"`
-	VerificationStatus string             `json:"verification_status"`
-	FreshnessScore     int32              `json:"freshness_score"`
-	OverrideSource     string             `json:"override_source"`
-	EditorialOverrides []byte             `json:"editorial_overrides"`
-	LastVerifiedAt     pgtype.Timestamptz `json:"last_verified_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ID                   pgtype.UUID        `json:"id"`
+	IntelRecordID        pgtype.UUID        `json:"intel_record_id"`
+	GuideID              pgtype.UUID        `json:"guide_id"`
+	SourceUrl            string             `json:"source_url"`
+	SourceType           string             `json:"source_type"`
+	TrustLevel           int16              `json:"trust_level"`
+	Title                string             `json:"title"`
+	Description          *string            `json:"description"`
+	Country              string             `json:"country"`
+	CountrySpaceID       pgtype.UUID        `json:"country_space_id"`
+	City                 *string            `json:"city"`
+	Employer             *string            `json:"employer"`
+	JobType              *string            `json:"job_type"`
+	ExperienceLevel      *string            `json:"experience_level"`
+	SalaryMin            pgtype.Numeric     `json:"salary_min"`
+	SalaryMax            pgtype.Numeric     `json:"salary_max"`
+	Currency             *string            `json:"currency"`
+	Skills               []string           `json:"skills"`
+	ApplicationUrl       *string            `json:"application_url"`
+	Deadline             pgtype.Date        `json:"deadline"`
+	Remote               *string            `json:"remote"`
+	ConfidenceOverall    float32            `json:"confidence_overall"`
+	VerificationStatus   string             `json:"verification_status"`
+	FreshnessScore       int32              `json:"freshness_score"`
+	OverrideSource       string             `json:"override_source"`
+	EditorialOverrides   []byte             `json:"editorial_overrides"`
+	LastVerifiedAt       pgtype.Timestamptz `json:"last_verified_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	VisaSponsorship      *bool              `json:"visa_sponsorship"`
+	RelocationAssistance *bool              `json:"relocation_assistance"`
+	Benefits             []string           `json:"benefits"`
+	EducationRequired    *string            `json:"education_required"`
+	LanguagesRequired    []string           `json:"languages_required"`
+	PostedDate           pgtype.Date        `json:"posted_date"`
+	WorkSchedule         *string            `json:"work_schedule"`
 }
 
 type IntelRawDocument struct {
@@ -2510,16 +2534,6 @@ type MentorShadow struct {
 	Listed    bool        `json:"listed"`
 }
 
-type MentorshipMatch struct {
-	ID        pgtype.UUID        `json:"id"`
-	ProgramID pgtype.UUID        `json:"program_id"`
-	MentorID  pgtype.UUID        `json:"mentor_id"`
-	MenteeID  pgtype.UUID        `json:"mentee_id"`
-	Status    string             `json:"status"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
 type MentorshipProfile struct {
 	ID           pgtype.UUID        `json:"id"`
 	UserID       pgtype.UUID        `json:"user_id"`
@@ -2532,15 +2546,6 @@ type MentorshipProfile struct {
 	SessionCount int32              `json:"session_count"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-}
-
-type MentorshipProgram struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	IsActive    bool               `json:"is_active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Menu struct {
@@ -3622,35 +3627,44 @@ type ScamReport struct {
 }
 
 type Scholarship struct {
-	ID                   pgtype.UUID        `json:"id"`
-	IntelRecordID        pgtype.UUID        `json:"intel_record_id"`
-	GuideID              pgtype.UUID        `json:"guide_id"`
-	SourceUrl            string             `json:"source_url"`
-	SourceType           string             `json:"source_type"`
-	TrustLevel           int16              `json:"trust_level"`
-	Title                string             `json:"title"`
-	Description          *string            `json:"description"`
-	Country              string             `json:"country"`
-	CountrySpaceID       pgtype.UUID        `json:"country_space_id"`
-	University           *string            `json:"university"`
-	DegreeLevel          *string            `json:"degree_level"`
-	FieldsOfStudy        []string           `json:"fields_of_study"`
-	EligibleCountries    []string           `json:"eligible_countries"`
-	Funding              []byte             `json:"funding"`
-	Deadline             pgtype.Date        `json:"deadline"`
-	ApplicationUrl       *string            `json:"application_url"`
-	RequiredDocuments    []string           `json:"required_documents"`
-	MinimumGpa           pgtype.Numeric     `json:"minimum_gpa"`
-	LanguageRequirements []byte             `json:"language_requirements"`
-	ConfidenceOverall    float32            `json:"confidence_overall"`
-	VerificationStatus   string             `json:"verification_status"`
-	FreshnessScore       int32              `json:"freshness_score"`
-	OverrideSource       string             `json:"override_source"`
-	EditorialOverrides   []byte             `json:"editorial_overrides"`
-	LastVerifiedAt       pgtype.Timestamptz `json:"last_verified_at"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	Slug                 string             `json:"slug"`
+	ID                          pgtype.UUID        `json:"id"`
+	IntelRecordID               pgtype.UUID        `json:"intel_record_id"`
+	GuideID                     pgtype.UUID        `json:"guide_id"`
+	SourceUrl                   string             `json:"source_url"`
+	SourceType                  string             `json:"source_type"`
+	TrustLevel                  int16              `json:"trust_level"`
+	Title                       string             `json:"title"`
+	Description                 *string            `json:"description"`
+	Country                     string             `json:"country"`
+	CountrySpaceID              pgtype.UUID        `json:"country_space_id"`
+	University                  *string            `json:"university"`
+	DegreeLevel                 *string            `json:"degree_level"`
+	FieldsOfStudy               []string           `json:"fields_of_study"`
+	EligibleCountries           []string           `json:"eligible_countries"`
+	Funding                     []byte             `json:"funding"`
+	Deadline                    pgtype.Date        `json:"deadline"`
+	ApplicationUrl              *string            `json:"application_url"`
+	RequiredDocuments           []string           `json:"required_documents"`
+	MinimumGpa                  pgtype.Numeric     `json:"minimum_gpa"`
+	LanguageRequirements        []byte             `json:"language_requirements"`
+	ConfidenceOverall           float32            `json:"confidence_overall"`
+	VerificationStatus          string             `json:"verification_status"`
+	FreshnessScore              int32              `json:"freshness_score"`
+	OverrideSource              string             `json:"override_source"`
+	EditorialOverrides          []byte             `json:"editorial_overrides"`
+	LastVerifiedAt              pgtype.Timestamptz `json:"last_verified_at"`
+	CreatedAt                   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                   pgtype.Timestamptz `json:"updated_at"`
+	Slug                        string             `json:"slug"`
+	ScholarshipType             *string            `json:"scholarship_type"`
+	StudyMode                   *string            `json:"study_mode"`
+	NumberOfAwards              *int32             `json:"number_of_awards"`
+	ApplicationFee              *string            `json:"application_fee"`
+	Renewable                   *bool              `json:"renewable"`
+	DurationYears               pgtype.Numeric     `json:"duration_years"`
+	StartDate                   pgtype.Date        `json:"start_date"`
+	OpenToInternationalStudents *bool              `json:"open_to_international_students"`
+	ContactEmail                *string            `json:"contact_email"`
 }
 
 type SearchAnalytic struct {
@@ -4547,21 +4561,31 @@ type UniversityCourseCatalog struct {
 }
 
 type UniversityCourseOffering struct {
-	ID                pgtype.UUID        `json:"id"`
-	CourseID          pgtype.UUID        `json:"course_id"`
-	UniversityID      pgtype.UUID        `json:"university_id"`
-	Slug              string             `json:"slug"`
-	Tuition           pgtype.Numeric     `json:"tuition"`
-	Currency          *string            `json:"currency"`
-	DurationYears     pgtype.Numeric     `json:"duration_years"`
-	StudyMode         *string            `json:"study_mode"`
-	IntakeMonths      []string           `json:"intake_months"`
-	EntryRequirements *string            `json:"entry_requirements"`
-	Accreditation     *string            `json:"accreditation"`
-	IsPublished       bool               `json:"is_published"`
-	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	CourseID           pgtype.UUID        `json:"course_id"`
+	UniversityID       pgtype.UUID        `json:"university_id"`
+	Slug               string             `json:"slug"`
+	Tuition            pgtype.Numeric     `json:"tuition"`
+	Currency           *string            `json:"currency"`
+	DurationYears      pgtype.Numeric     `json:"duration_years"`
+	StudyMode          *string            `json:"study_mode"`
+	IntakeMonths       []string           `json:"intake_months"`
+	EntryRequirements  *string            `json:"entry_requirements"`
+	Accreditation      *string            `json:"accreditation"`
+	IsPublished        bool               `json:"is_published"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
+}
+
+type UniversityIntelLink struct {
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
 type User struct {
@@ -4996,6 +5020,7 @@ type WalletLedger struct {
 	IdempotencyKey   *string            `json:"idempotency_key"`
 	Reason           *string            `json:"reason"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	Seq              int64              `json:"seq"`
 }
 
 type WalletSetting struct {

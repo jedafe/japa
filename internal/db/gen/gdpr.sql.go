@@ -2155,18 +2155,6 @@ func (q *Queries) GdprExportUserMentorshipConnections(ctx context.Context, userI
 	return data, err
 }
 
-const gdprExportUserMentorshipMatches = `-- name: GdprExportUserMentorshipMatches :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, program_id, mentor_id, mentee_id, status, created_at, updated_at FROM mentorship_matches WHERE (mentor_id = $1 OR mentee_id = $1)) t
-`
-
-func (q *Queries) GdprExportUserMentorshipMatches(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserMentorshipMatches, userID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
 const gdprExportUserMutes = `-- name: GdprExportUserMutes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, user_id, muted_user_id, created_at FROM user_mutes WHERE (user_id = $1 OR muted_user_id = $1)) t
@@ -2543,9 +2531,22 @@ func (q *Queries) GdprExportUserTicketComments(ctx context.Context, userID pgtyp
 
 const gdprExportUserWalletLedger = `-- name: GdprExportUserWalletLedger :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger WHERE user_id = $1) t
+FROM (
+ SELECT w.id, w.user_id, w.ledger_type, w.operation, w.amount, w.resulting_balance, w.source, w.actor_user_id, w.reference, w.idempotency_key, w.reason, w.created_at
+ FROM wallet_ledger w
+ WHERE w.user_id = $1
+   AND (w.ledger_type = 'points'
+        OR NOT EXISTS (SELECT 1 FROM credits_ledger m WHERE m.id = w.id))
+ UNION ALL
+ SELECT c.id, c.user_id, 'credits'::text, c.operation, c.amount, c.resulting_balance, c.source, c.actor_user_id, c.reference, c.idempotency_key, c.reason, c.created_at
+ FROM credits_ledger c
+ WHERE c.user_id = $1
+) t
 `
 
+// Post-split ledger export unions both tables (points in wallet_ledger,
+// credits in credits_ledger); mirrored historical credits rows are
+// deduplicated by id.
 func (q *Queries) GdprExportUserWalletLedger(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserWalletLedger, userID)
 	var data interface{}

@@ -17,7 +17,8 @@ WHERE ($1::text = '' OR t.status = $1)
   AND ($2::text = '' OR t.method = $2)
   AND ($3::text = '' OR t.recipient_type = $3)
   AND ($4::text = '' OR t.external_sender_name ILIKE '%' || $4 || '%'
-       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || $4 || '%'))
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || $4 || '%')
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.recipient_user_id AND u.username ILIKE '%' || $4 || '%'))
 `
 
 type AdminCountTipsParams struct {
@@ -45,7 +46,8 @@ WHERE ($1::text = '' OR t.status = $1)
   AND ($2::text = '' OR t.method = $2)
   AND ($3::text = '' OR t.recipient_type = $3)
   AND ($4::text = '' OR t.external_sender_name ILIKE '%' || $4 || '%'
-       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || $4 || '%'))
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.sender_user_id AND u.username ILIKE '%' || $4 || '%')
+       OR EXISTS (SELECT 1 FROM users u WHERE u.id = t.recipient_user_id AND u.username ILIKE '%' || $4 || '%'))
 ORDER BY t.created_at DESC LIMIT $6 OFFSET $5
 `
 
@@ -310,6 +312,36 @@ func (q *Queries) GetContentTitle(ctx context.Context, id pgtype.UUID) (string, 
 	var title string
 	err := row.Scan(&title)
 	return title, err
+}
+
+const getLegacyTipPoints = `-- name: GetLegacyTipPoints :many
+SELECT id, points_amount FROM tips_points_legacy WHERE id = ANY($1::uuid[])
+`
+
+type GetLegacyTipPointsRow struct {
+	ID           pgtype.UUID `json:"id"`
+	PointsAmount int64       `json:"points_amount"`
+}
+
+// ADR-136: historical point-tip amounts live in tips_points_legacy for audit.
+func (q *Queries) GetLegacyTipPoints(ctx context.Context, ids []pgtype.UUID) ([]GetLegacyTipPointsRow, error) {
+	rows, err := q.db.Query(ctx, getLegacyTipPoints, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetLegacyTipPointsRow
+	for rows.Next() {
+		var i GetLegacyTipPointsRow
+		if err := rows.Scan(&i.ID, &i.PointsAmount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getOrgDisplayNames = `-- name: GetOrgDisplayNames :many

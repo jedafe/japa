@@ -97,7 +97,7 @@ WHERE ir.source_id = $1
    (ir.entity_type = 'scholarship' AND EXISTS (SELECT 1 FROM scholarships sch WHERE sch.intel_record_id = ir.id))
    OR (ir.entity_type = 'job' AND EXISTS (SELECT 1 FROM intel_jobs j WHERE j.intel_record_id = ir.id))
    OR (ir.entity_type = 'remittance' AND EXISTS (SELECT 1 FROM remittance_rates rr WHERE rr.intel_record_id = ir.id))
-   OR (ir.entity_type IN ('news','culture_lifestyle','guide','blog','article') AND EXISTS (SELECT 1 FROM contents bc WHERE bc.intel_record_id = ir.id AND bc.deleted_at IS NULL))
+   OR (ir.entity_type IN ('news','culture_lifestyle','guide','blog','article','grants') AND EXISTS (SELECT 1 FROM contents bc WHERE bc.intel_record_id = ir.id AND bc.deleted_at IS NULL))
    OR (ir.entity_type = 'wiki_page' AND EXISTS (SELECT 1 FROM wiki_pages wp2 WHERE wp2.intel_record_id = ir.id))
  )
 `
@@ -1318,7 +1318,7 @@ WHERE ir.source_id = $1
    (ir.entity_type = 'scholarship' AND EXISTS (SELECT 1 FROM scholarships sch WHERE sch.intel_record_id = ir.id))
    OR (ir.entity_type = 'job' AND EXISTS (SELECT 1 FROM intel_jobs j WHERE j.intel_record_id = ir.id))
    OR (ir.entity_type = 'remittance' AND EXISTS (SELECT 1 FROM remittance_rates rr WHERE rr.intel_record_id = ir.id))
-   OR (ir.entity_type IN ('news','culture_lifestyle','guide','blog','article') AND EXISTS (SELECT 1 FROM contents bc WHERE bc.intel_record_id = ir.id AND bc.deleted_at IS NULL))
+   OR (ir.entity_type IN ('news','culture_lifestyle','guide','blog','article','grants') AND EXISTS (SELECT 1 FROM contents bc WHERE bc.intel_record_id = ir.id AND bc.deleted_at IS NULL))
    OR (ir.entity_type = 'wiki_page' AND EXISTS (SELECT 1 FROM wiki_pages wp2 WHERE wp2.intel_record_id = ir.id))
  )
 ORDER BY
@@ -3247,4 +3247,64 @@ type UpdateIntelSourceRobotsPolicyParams struct {
 func (q *Queries) UpdateIntelSourceRobotsPolicy(ctx context.Context, arg UpdateIntelSourceRobotsPolicyParams) error {
 	_, err := q.db.Exec(ctx, updateIntelSourceRobotsPolicy, arg.ID, arg.RobotsPolicy)
 	return err
+}
+
+const updateIntelSourceTrustLevel = `-- name: UpdateIntelSourceTrustLevel :one
+UPDATE intel_sources SET trust_level = $2, updated_at = now() WHERE id = $1 RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at
+`
+
+type UpdateIntelSourceTrustLevelParams struct {
+	ID         pgtype.UUID `json:"id"`
+	TrustLevel int16       `json:"trust_level"`
+}
+
+func (q *Queries) UpdateIntelSourceTrustLevel(ctx context.Context, arg UpdateIntelSourceTrustLevelParams) (IntelSource, error) {
+	row := q.db.QueryRow(ctx, updateIntelSourceTrustLevel, arg.ID, arg.TrustLevel)
+	var i IntelSource
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Domain,
+		&i.SourceUrl,
+		&i.Category,
+		&i.SourceType,
+		&i.TrustLevel,
+		&i.CrawlMethod,
+		&i.CrawlFrequency,
+		&i.CrawlFrequencyMins,
+		&i.RobotsPolicy,
+		&i.SourceLicense,
+		&i.AttributionRequired,
+		&i.UsageRestriction,
+		&i.ProviderConfig,
+		&i.Enabled,
+		&i.LastCrawledAt,
+		&i.LastSuccessAt,
+		&i.LastErrorAt,
+		&i.LastErrorMessage,
+		&i.LastChangedAt,
+		&i.ConsecutiveFailures,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PersonaID,
+		&i.Status,
+		&i.ProposedBy,
+		&i.ProposedAt,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.Slug,
+		&i.Description,
+		&i.LogoUrl,
+		&i.FollowerCount,
+		&i.PostCount,
+		&i.SourceKind,
+		&i.Keywords,
+		&i.Categories,
+		&i.ProbeReport,
+		&i.DetectedMethods,
+		&i.LastProbedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
+	)
+	return i, err
 }

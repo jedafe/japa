@@ -18,7 +18,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('radar.title', 'Japa Radar — {site}'));
+	const title = $derived(t('radar.title', 'Japa Opportunities — {site}'));
 	const description = $derived(
 		t('radar.description', 'Track scholarships and opportunities across the countries you follow.')
 	);
@@ -66,7 +66,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	// Domain filter (?item_type=) — URL-driven so deep links work and the
 	// SSR feed stays the source of truth.
 	const selectedItemType = $derived(data.itemType ?? '');
-	const radarTypeOptions = ['', 'scholarship', 'job', 'visa', 'housing', 'remittance', 'cost_of_living'] as const;
+	const radarTypeOptions = ['', 'scholarship', 'job', 'visa', 'housing', 'remittance', 'cost_of_living', 'course_offering'] as const;
 	function typeUrl(t: string): string {
 		const p = new URLSearchParams();
 		if (selectedSpaceId) p.set('space_id', selectedSpaceId);
@@ -375,7 +375,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	<!-- Header -->
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Radar size={20} /> {t('radar.heading', 'Japa Radar')}
+			<Radar size={20} /> {t('radar.heading', 'Japa Opportunities')}
 		</h1>
 		<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{description}</p>
 	</div>
@@ -479,7 +479,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{/if}
 			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 				<Globe size={16} class="text-[var(--color-primary)]" />
-				{selectedCountryName}
+				{#if selectedSpace?.slug}
+					<a href={`/spaces/${selectedSpace.slug}?tab=opportunities`} class="hover:text-[var(--color-primary)] hover:underline">{selectedCountryName}</a>
+				{:else}
+					{selectedCountryName}
+				{/if}
 				{#if allGeoItems.length > 0}
 					<span class="text-xs font-normal text-[var(--color-muted)]">({allGeoItems.length})</span>
 				{/if}
@@ -488,18 +492,18 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						{typeBreakdown(data.geoCountsByType)}
 					</span>
 				{/if}
-				{#if authed && selectedSpace}
+				{#if selectedSpace}
 					<button
 						type="button"
 						onclick={() => toggleFollow(selectedSpace!)}
 						disabled={pendingSpaceId === selectedSpace!.id}
 						aria-busy={pendingSpaceId === selectedSpace!.id}
-						class="ms-auto shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 {followedSpaceIds.has(selectedSpace!.id)
+						class="ms-auto shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 {followedSpaceIds.has(selectedSpace!.id)
 							? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
 							: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
 					>
 						{#if pendingSpaceId === selectedSpace!.id}
-							<Loader2 size={12} class="inline animate-spin" />
+							<Loader2 size={14} class="inline animate-spin" />
 						{:else}
 							{followedSpaceIds.has(selectedSpace!.id) ? t('radar.unfollow', 'Unfollow') : t('radar.follow', 'Follow')}
 						{/if}
@@ -675,7 +679,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 {/snippet}
 
 {#snippet countryGallery(items: GeoCountry[])}
-	<div class="grid grid-cols-3 gap-2">
+	<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 		{#each items as space (space.id)}
 			{@render countryCard(space)}
 		{/each}
@@ -707,7 +711,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			</div>
 		{/if}
 		<a
-			href={`/spaces/${space.slug}`}
+			href={`/spaces/${space.slug}?tab=opportunities`}
 			class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/25 to-transparent p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]"
 		>
 			<span class="flex items-center gap-1 text-xs font-semibold leading-tight text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.6)]">
@@ -718,22 +722,20 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{/if}
 			</span>
 		</a>
-		{#if authed}
-			<button
-				type="button"
-				onclick={() => toggleFollow(space)}
-				disabled={pendingSpaceId === space.id}
-				aria-busy={pendingSpaceId === space.id}
-				class="absolute end-1.5 top-1.5 z-10 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] disabled:opacity-60 {following
-					? 'bg-black/50 text-white backdrop-blur hover:bg-black/70'
-					: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
-			>
-				{#if pendingSpaceId === space.id}
-					<Loader2 size={10} class="animate-spin" />
-				{:else}
-					{following ? t('radar.unfollow', 'Unfollow') : t('radar.follow', 'Follow')}
-				{/if}
-			</button>
-		{/if}
+		<button
+			type="button"
+			onclick={() => toggleFollow(space)}
+			disabled={pendingSpaceId === space.id}
+			aria-busy={pendingSpaceId === space.id}
+			class="absolute end-1.5 top-1.5 z-10 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] disabled:opacity-60 {following
+				? 'bg-black/50 text-white backdrop-blur hover:bg-black/70'
+				: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
+		>
+			{#if pendingSpaceId === space.id}
+				<Loader2 size={12} class="animate-spin" />
+			{:else}
+				{following ? t('radar.unfollow', 'Unfollow') : t('radar.follow', 'Follow')}
+			{/if}
+		</button>
 	</div>
 {/snippet}

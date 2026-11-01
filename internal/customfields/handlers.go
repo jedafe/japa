@@ -69,6 +69,12 @@ type Handlers struct {
 	// form submissions (Section 06). Nil in tests.
 	payments PaymentCreator
 
+	// intelOverrideMarker marks human CFV edits as editorial overrides on
+	// intel-linked entities (university_intel_links) so a re-crawl never
+	// reverts them. Nil disables marking — wired by the server when the
+	// intelligence pipeline is enabled.
+	intelOverrideMarker IntelOverrideMarker
+
 	// Settings is used to read system_settings for form fee overrides.
 	// Nil in tests — the form's submission_fee_credits column is used directly.
 	settings SettingsReader
@@ -105,6 +111,16 @@ type SettingsReader interface {
 func NewHandlers(service *Service, embed *EmbedResolver) *Handlers {
 	return &Handlers{Service: service, Embed: embed}
 }
+
+// IntelOverrideMarker is implemented server-side to merge a human-edited
+// field key into the entity's intel editorial_overrides set.
+type IntelOverrideMarker interface {
+	MarkIntelOverride(ctx context.Context, entityType string, entityID pgtype.UUID, fieldKey string)
+}
+
+// SetIntelOverrideMarker wires the intel editorial-override marker used by
+// SetFieldValue after a successful human edit. Optional; nil disables.
+func (h *Handlers) SetIntelOverrideMarker(m IntelOverrideMarker) { h.intelOverrideMarker = m }
 
 // SetRBAC wires the RBAC resolver used for field-level visibility/editability
 // checks (Section 06). Required in production; tests may omit it.
@@ -1414,6 +1430,13 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Human edit on an intel-linked entity: mark the field as editorially
+	// overridden so the next re-crawl leaves it alone (no-op when the
+	// entity has no intel link row).
+	if h.intelOverrideMarker != nil {
+		h.intelOverrideMarker.MarkIntelOverride(r.Context(), req.EntityType, entityID, field.Key)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": value})

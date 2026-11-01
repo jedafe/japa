@@ -11,15 +11,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const checkIdempotencyKey = `-- name: CheckIdempotencyKey :one
+const checkAnyLedgerIdempotencyKey = `-- name: CheckAnyLedgerIdempotencyKey :one
 SELECT EXISTS(
- SELECT 1 FROM wallet_ledger
- WHERE idempotency_key = $1
+ SELECT 1 FROM wallet_ledger w WHERE w.idempotency_key = $1
+ UNION ALL
+ SELECT 1 FROM credits_ledger c WHERE c.idempotency_key = $1
 )
 `
 
-func (q *Queries) CheckIdempotencyKey(ctx context.Context, idempotencyKey *string) (bool, error) {
-	row := q.db.QueryRow(ctx, checkIdempotencyKey, idempotencyKey)
+// Post-split the unique key scope is per-table; this preserves the old
+// global-uniqueness check across both streams.
+func (q *Queries) CheckAnyLedgerIdempotencyKey(ctx context.Context, idempotencyKey *string) (bool, error) {
+	row := q.db.QueryRow(ctx, checkAnyLedgerIdempotencyKey, idempotencyKey)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -56,6 +59,24 @@ type CountUserActivityTodayParams struct {
 
 func (q *Queries) CountUserActivityToday(ctx context.Context, arg CountUserActivityTodayParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countUserActivityToday, arg.UserID, arg.ActivityKey)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUserCreditLedgerBySource = `-- name: CountUserCreditLedgerBySource :one
+SELECT COUNT(*) FROM credits_ledger
+WHERE user_id = $1
+ AND source = $2
+`
+
+type CountUserCreditLedgerBySourceParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Source *string     `json:"source"`
+}
+
+func (q *Queries) CountUserCreditLedgerBySource(ctx context.Context, arg CountUserCreditLedgerBySourceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserCreditLedgerBySource, arg.UserID, arg.Source)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -211,6 +232,82 @@ func (q *Queries) GetActivityRuleByKey(ctx context.Context, activityKey string) 
 	return i, err
 }
 
+const getCreditLedgerEntryByID = `-- name: GetCreditLedgerEntryByID :one
+SELECT id, seq, user_id, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, payment_id, reverses_id, created_at FROM credits_ledger
+WHERE id = $1
+`
+
+// Full credits_ledger row including payment_id/reverses_id — needed by the
+// refund path (split plan: credits reversal design).
+func (q *Queries) GetCreditLedgerEntryByID(ctx context.Context, id pgtype.UUID) (CreditsLedger, error) {
+	row := q.db.QueryRow(ctx, getCreditLedgerEntryByID, id)
+	var i CreditsLedger
+	err := row.Scan(
+		&i.ID,
+		&i.Seq,
+		&i.UserID,
+		&i.Operation,
+		&i.Amount,
+		&i.ResultingBalance,
+		&i.Source,
+		&i.ActorUserID,
+		&i.Reference,
+		&i.IdempotencyKey,
+		&i.Reason,
+		&i.PaymentID,
+		&i.ReversesID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getCreditLedgerEntryByReference = `-- name: GetCreditLedgerEntryByReference :one
+SELECT id, seq, user_id, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, payment_id, reverses_id, created_at FROM credits_ledger
+WHERE user_id = $1 AND reference = $2
+ORDER BY seq DESC LIMIT 1
+`
+
+type GetCreditLedgerEntryByReferenceParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	Reference *string     `json:"reference"`
+}
+
+func (q *Queries) GetCreditLedgerEntryByReference(ctx context.Context, arg GetCreditLedgerEntryByReferenceParams) (CreditsLedger, error) {
+	row := q.db.QueryRow(ctx, getCreditLedgerEntryByReference, arg.UserID, arg.Reference)
+	var i CreditsLedger
+	err := row.Scan(
+		&i.ID,
+		&i.Seq,
+		&i.UserID,
+		&i.Operation,
+		&i.Amount,
+		&i.ResultingBalance,
+		&i.Source,
+		&i.ActorUserID,
+		&i.Reference,
+		&i.IdempotencyKey,
+		&i.Reason,
+		&i.PaymentID,
+		&i.ReversesID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getCreditRefundedTotal = `-- name: GetCreditRefundedTotal :one
+SELECT COALESCE(SUM(ABS(amount)), 0)::bigint FROM credits_ledger
+WHERE reverses_id = $1
+`
+
+// Total already refunded against an original credits entry (refund linkage
+// enforcement: partial refunds may not exceed the original magnitude).
+func (q *Queries) GetCreditRefundedTotal(ctx context.Context, reversesID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getCreditRefundedTotal, reversesID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getLatestActivityEventReferenceByPrefixAndKey = `-- name: GetLatestActivityEventReferenceByPrefixAndKey :one
 SELECT reference FROM activity_events
 WHERE activity_key = $1 AND reference LIKE $2
@@ -234,7 +331,7 @@ func (q *Queries) GetLatestActivityEventReferenceByPrefixAndKey(ctx context.Cont
 const getLatestBalance = `-- name: GetLatestBalance :one
 SELECT resulting_balance FROM wallet_ledger
 WHERE user_id = $1 AND ledger_type = $2
-ORDER BY created_at DESC, id DESC
+ORDER BY seq DESC
 LIMIT 1
 `
 
@@ -250,33 +347,22 @@ func (q *Queries) GetLatestBalance(ctx context.Context, arg GetLatestBalancePara
 	return resulting_balance, err
 }
 
-const getLedgerEntryByID = `-- name: GetLedgerEntryByID :one
-SELECT id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger
-WHERE id = $1
+const getLatestCreditBalance = `-- name: GetLatestCreditBalance :one
+SELECT resulting_balance FROM credits_ledger
+WHERE user_id = $1
+ORDER BY seq DESC
+LIMIT 1
 `
 
-func (q *Queries) GetLedgerEntryByID(ctx context.Context, id pgtype.UUID) (WalletLedger, error) {
-	row := q.db.QueryRow(ctx, getLedgerEntryByID, id)
-	var i WalletLedger
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.LedgerType,
-		&i.Operation,
-		&i.Amount,
-		&i.ResultingBalance,
-		&i.Source,
-		&i.ActorUserID,
-		&i.Reference,
-		&i.IdempotencyKey,
-		&i.Reason,
-		&i.CreatedAt,
-	)
-	return i, err
+func (q *Queries) GetLatestCreditBalance(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getLatestCreditBalance, userID)
+	var resulting_balance int64
+	err := row.Scan(&resulting_balance)
+	return resulting_balance, err
 }
 
 const getLedgerEntryByReference = `-- name: GetLedgerEntryByReference :one
-SELECT id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger
+SELECT id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at, seq FROM wallet_ledger
 WHERE user_id = $1 AND ledger_type = $2 AND reference = $3
 ORDER BY created_at DESC LIMIT 1
 `
@@ -304,6 +390,7 @@ func (q *Queries) GetLedgerEntryByReference(ctx context.Context, arg GetLedgerEn
 		&i.IdempotencyKey,
 		&i.Reason,
 		&i.CreatedAt,
+		&i.Seq,
 	)
 	return i, err
 }
@@ -321,6 +408,57 @@ func (q *Queries) GetLifetimePoints(ctx context.Context, userID pgtype.UUID) (in
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const getMergedLedgerEntryByID = `-- name: GetMergedLedgerEntryByID :one
+SELECT w.id, w.user_id, w.ledger_type, w.operation, w.amount, w.resulting_balance, w.source, w.actor_user_id, w.reference, w.idempotency_key, w.reason, w.created_at
+FROM wallet_ledger w
+WHERE w.id = $1
+ AND (w.ledger_type = 'points'
+      OR NOT EXISTS (SELECT 1 FROM credits_ledger m WHERE m.id = w.id))
+UNION ALL
+SELECT c.id, c.user_id, 'credits'::text AS ledger_type, c.operation, c.amount, c.resulting_balance, c.source, c.actor_user_id, c.reference, c.idempotency_key, c.reason, c.created_at
+FROM credits_ledger c
+WHERE c.id = $1
+LIMIT 1
+`
+
+type GetMergedLedgerEntryByIDRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	LedgerType       string             `json:"ledger_type"`
+	Operation        string             `json:"operation"`
+	Amount           int64              `json:"amount"`
+	ResultingBalance int64              `json:"resulting_balance"`
+	Source           *string            `json:"source"`
+	ActorUserID      pgtype.UUID        `json:"actor_user_id"`
+	Reference        *string            `json:"reference"`
+	IdempotencyKey   *string            `json:"idempotency_key"`
+	Reason           *string            `json:"reason"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+// Finds a ledger row across both streams (admin tooling / error
+// semantics). Mirrored wallet_ledger credits rows are hidden once their
+// credits_ledger copy exists, so ids never resolve twice.
+func (q *Queries) GetMergedLedgerEntryByID(ctx context.Context, id pgtype.UUID) (GetMergedLedgerEntryByIDRow, error) {
+	row := q.db.QueryRow(ctx, getMergedLedgerEntryByID, id)
+	var i GetMergedLedgerEntryByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.LedgerType,
+		&i.Operation,
+		&i.Amount,
+		&i.ResultingBalance,
+		&i.Source,
+		&i.ActorUserID,
+		&i.Reference,
+		&i.IdempotencyKey,
+		&i.Reason,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getWalletSettings = `-- name: GetWalletSettings :one
@@ -382,11 +520,64 @@ func (q *Queries) InsertActivityEvent(ctx context.Context, arg InsertActivityEve
 	return i, err
 }
 
+const insertCreditLedgerEntry = `-- name: InsertCreditLedgerEntry :one
+INSERT INTO credits_ledger (user_id, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, payment_id, reverses_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, seq, user_id, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, payment_id, reverses_id, created_at
+`
+
+type InsertCreditLedgerEntryParams struct {
+	UserID           pgtype.UUID `json:"user_id"`
+	Operation        string      `json:"operation"`
+	Amount           int64       `json:"amount"`
+	ResultingBalance int64       `json:"resulting_balance"`
+	Source           *string     `json:"source"`
+	ActorUserID      pgtype.UUID `json:"actor_user_id"`
+	Reference        *string     `json:"reference"`
+	IdempotencyKey   *string     `json:"idempotency_key"`
+	Reason           *string     `json:"reason"`
+	PaymentID        pgtype.UUID `json:"payment_id"`
+	ReversesID       pgtype.UUID `json:"reverses_id"`
+}
+
+func (q *Queries) InsertCreditLedgerEntry(ctx context.Context, arg InsertCreditLedgerEntryParams) (CreditsLedger, error) {
+	row := q.db.QueryRow(ctx, insertCreditLedgerEntry,
+		arg.UserID,
+		arg.Operation,
+		arg.Amount,
+		arg.ResultingBalance,
+		arg.Source,
+		arg.ActorUserID,
+		arg.Reference,
+		arg.IdempotencyKey,
+		arg.Reason,
+		arg.PaymentID,
+		arg.ReversesID,
+	)
+	var i CreditsLedger
+	err := row.Scan(
+		&i.ID,
+		&i.Seq,
+		&i.UserID,
+		&i.Operation,
+		&i.Amount,
+		&i.ResultingBalance,
+		&i.Source,
+		&i.ActorUserID,
+		&i.Reference,
+		&i.IdempotencyKey,
+		&i.Reason,
+		&i.PaymentID,
+		&i.ReversesID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertLedgerEntry = `-- name: InsertLedgerEntry :one
 
 
 INSERT INTO wallet_ledger (user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at
+RETURNING id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at, seq
 `
 
 type InsertLedgerEntryParams struct {
@@ -434,6 +625,7 @@ func (q *Queries) InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryPa
 		&i.IdempotencyKey,
 		&i.Reason,
 		&i.CreatedAt,
+		&i.Seq,
 	)
 	return i, err
 }
@@ -523,35 +715,63 @@ func (q *Queries) ListActivityRules(ctx context.Context, arg ListActivityRulesPa
 	return items, nil
 }
 
-const listLedgerEntriesByUser = `-- name: ListLedgerEntriesByUser :many
-SELECT id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger
-WHERE user_id = $1
- AND ($2::text IS NULL OR ledger_type = $2)
-ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+const listMergedLedgerEntriesByUser = `-- name: ListMergedLedgerEntriesByUser :many
+SELECT w.id, w.user_id, w.ledger_type, w.operation, w.amount, w.resulting_balance, w.source, w.actor_user_id, w.reference, w.idempotency_key, w.reason, w.created_at
+FROM wallet_ledger w
+WHERE w.user_id = $3
+ AND (w.ledger_type = 'points'
+      OR NOT EXISTS (SELECT 1 FROM credits_ledger m WHERE m.id = w.id))
+ AND ($4 = '' OR w.ledger_type = $4)
+UNION ALL
+SELECT c.id, c.user_id, 'credits'::text AS ledger_type, c.operation, c.amount, c.resulting_balance, c.source, c.actor_user_id, c.reference, c.idempotency_key, c.reason, c.created_at
+FROM credits_ledger c
+WHERE c.user_id = $3
+ AND ($4 = '' OR 'credits' = $4)
+ORDER BY created_at DESC, id DESC
+LIMIT $2 OFFSET $1
 `
 
-type ListLedgerEntriesByUserParams struct {
-	UserID     pgtype.UUID `json:"user_id"`
-	LedgerType string      `json:"ledger_type"`
+type ListMergedLedgerEntriesByUserParams struct {
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
+	UserID     pgtype.UUID `json:"user_id"`
+	LedgerType interface{} `json:"ledger_type"`
 }
 
-func (q *Queries) ListLedgerEntriesByUser(ctx context.Context, arg ListLedgerEntriesByUserParams) ([]WalletLedger, error) {
-	rows, err := q.db.Query(ctx, listLedgerEntriesByUser,
-		arg.UserID,
-		arg.LedgerType,
+type ListMergedLedgerEntriesByUserRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	LedgerType       string             `json:"ledger_type"`
+	Operation        string             `json:"operation"`
+	Amount           int64              `json:"amount"`
+	ResultingBalance int64              `json:"resulting_balance"`
+	Source           *string            `json:"source"`
+	ActorUserID      pgtype.UUID        `json:"actor_user_id"`
+	Reference        *string            `json:"reference"`
+	IdempotencyKey   *string            `json:"idempotency_key"`
+	Reason           *string            `json:"reason"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+// Unified ledger listing for /me/wallet/ledger and the admin user ledger —
+// the response shape matches the old shared-table contract (split plan
+// step 6). Historical credits rows still mirrored in wallet_ledger are
+// excluded once their copy exists in credits_ledger (id match), while
+// unreconciled stragglers from a stale binary still surface.
+func (q *Queries) ListMergedLedgerEntriesByUser(ctx context.Context, arg ListMergedLedgerEntriesByUserParams) ([]ListMergedLedgerEntriesByUserRow, error) {
+	rows, err := q.db.Query(ctx, listMergedLedgerEntriesByUser,
 		arg.PageOffset,
 		arg.PageLimit,
+		arg.UserID,
+		arg.LedgerType,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []WalletLedger
+	var items []ListMergedLedgerEntriesByUserRow
 	for rows.Next() {
-		var i WalletLedger
+		var i ListMergedLedgerEntriesByUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,

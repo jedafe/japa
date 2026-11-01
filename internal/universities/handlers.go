@@ -98,6 +98,9 @@ type Handlers struct {
 	media        MediaResolver   // nil = logo_url omitted from responses
 	enqueuer     TaskEnqueuer    // nil = logo_url fetch is skipped on create/update
 	lit          literalResolver // nil disables literal resolution (§14)
+	// intelOverrideMarker marks admin edits as intel editorial overrides
+	// on linked university spaces; nil disables (wired by the server).
+	intelOverrideMarker IntelOverrideMarker
 }
 
 // literalResolver resolves {{...}} template literals in user-facing text
@@ -109,6 +112,17 @@ type literalResolver interface {
 // SetLiteralResolver injects the template-literal catalog so user-facing
 // titles/descriptions render {{...}} placeholders (§14).
 func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// IntelOverrideMarker merges a human-edited field key into the
+// university_intel_links editorial_overrides set so a re-crawl never
+// reverts it (mirrors customfields.IntelOverrideMarker).
+type IntelOverrideMarker interface {
+	MarkIntelOverride(ctx context.Context, entityType string, entityID pgtype.UUID, fieldKey string)
+}
+
+// SetIntelOverrideMarker wires the intel editorial-override marker used by
+// UpdateUniversity for space-column edits. Optional; nil disables.
+func (h *Handlers) SetIntelOverrideMarker(m IntelOverrideMarker) { h.intelOverrideMarker = m }
 
 // resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
 // Best-effort — failures are logged inside the resolver.
@@ -1020,6 +1034,21 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.enqueueFetchLogo(r.Context(), space.ID, actorID, *input.LogoURL)
+	}
+
+	// Human edit on an intel-linked university: mark touched fields as
+	// editorially overridden so the next re-crawl leaves them alone
+	// (no-op when the space has no intel link row).
+	if h.intelOverrideMarker != nil {
+		if input.Name != nil {
+			h.intelOverrideMarker.MarkIntelOverride(r.Context(), "space", space.ID, "name")
+		}
+		if input.Country != nil {
+			h.intelOverrideMarker.MarkIntelOverride(r.Context(), "space", space.ID, "country")
+		}
+		if input.Initials != nil {
+			h.intelOverrideMarker.MarkIntelOverride(r.Context(), "space", space.ID, "initials")
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": space})

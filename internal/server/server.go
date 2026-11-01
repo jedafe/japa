@@ -46,7 +46,6 @@ import (
 	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/checklist"
 	"github.com/jedafe/japa/internal/comments"
-	"github.com/jedafe/japa/internal/drafts"
 	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/comparison/resolver"
@@ -69,6 +68,7 @@ import (
 	"github.com/jedafe/japa/internal/devices"
 	"github.com/jedafe/japa/internal/digest"
 	"github.com/jedafe/japa/internal/docs"
+	"github.com/jedafe/japa/internal/drafts"
 	"github.com/jedafe/japa/internal/ecaguide"
 	"github.com/jedafe/japa/internal/email"
 	emailtemplates "github.com/jedafe/japa/internal/email/templates"
@@ -447,6 +447,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// The runtime bootstrap path was removed per AUDIT-BE-039 to avoid
 	// maintaining two independent permission seeds.
 
+	// Intelligence store — created early so the custom-field and university
+	// handlers can mark human edits as intel editorial overrides.
+	intelStores := intel_stores.NewStore(database)
+
 	// Custom field and form subsystem (Section 06).
 	cfService := customfields.NewService(database)
 	cfService.SetCache(vkClient.Redis()) // BUG-016: cache field-level RBAC checks
@@ -458,6 +462,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	embedResolver := customfields.NewEmbedResolver()
 	cfHandlers := customfields.NewHandlers(cfService, embedResolver)
 	cfHandlers.SetRBAC(rbacResolver) // SEC-005: field-level RBAC enforcement
+	// Intel editorial-override marking: human CFV edits on an intel-linked
+	// entity (university spaces) join its overrides set so a re-crawl
+	// never reverts them.
+	cfHandlers.SetIntelOverrideMarker(&intelOverrideMarker{store: intelStores})
 
 	// Template literal catalog — shared by admin, content, and pagebuilder.
 	literalsCatalog := literals.NewCatalog(gen.New(database.Reader), vkClient.Redis())
@@ -501,6 +509,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Universities subsystem (Section 39) — read-view over spaces of the
 	// University space-type + their custom field values, no dedicated table.
 	universitiesHandlers := universities.NewHandlers(spaceService, cfService)
+	// Intel editorial-override marking for space-column edits (name,
+	// country, initials) on intel-linked universities.
+	universitiesHandlers.SetIntelOverrideMarker(&intelOverrideMarker{store: intelStores})
 	universitiesHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in universities responses
 
 	// Create Asynq client for enqueuing background tasks (push delivery, etc.)
@@ -993,9 +1004,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	commentsService.SetActivityEmitter(walletService)
 	followService.SetActivityEmitter(walletService)
 	spaceService.SetActivityEmitter(walletService)
-	authHandlers.SetActivityEmitter(&authActivityEmitter{svc: walletService})   // ADR-136: user.registered / daily.login
-	oauthHandlers.SetActivityEmitter(&authActivityEmitter{svc: walletService})  // ADR-136: OAuth signup + login
-	reportsService.SetActivityEmitter(walletService)                          // ADR-136: report.upheld / content.flagged_removed
+	authHandlers.SetActivityEmitter(&authActivityEmitter{svc: walletService})  // ADR-136: user.registered / daily.login
+	oauthHandlers.SetActivityEmitter(&authActivityEmitter{svc: walletService}) // ADR-136: OAuth signup + login
+	reportsService.SetActivityEmitter(walletService)                           // ADR-136: report.upheld / content.flagged_removed
 
 	// Register payment providers so InitiatePayment can call real provider APIs.
 	paymentService.SetProvider(payments.NewPaystackProvider(cfg.PaystackSecretKey))
@@ -2166,7 +2177,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spamPipeline.SetClassifier(spam.NewAIClassifier(aiDispatcher))
 
 	aiStore := ai.NewStore(database.Reader, database.Writer)
-	intelStores := intel_stores.NewStore(database)
 
 	// Register the full §75 generation pipeline adapter (persona voice →
 	// AI gateway → draft content → HITL review / auto-publish) as the
@@ -2397,6 +2407,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		WithScholarshipSearcher(newAgentScholarshipAdapter(scholarshipsService))
 	agentDeps.ContentCreator = contentCreatorBridge.create
 	agentDeps.ContentUpdater = contentUpdaterBridge.update
+	agentDeps.IsBotUser = contentService.IsBotUser
 	// Phase 8: persona resolver + HITL store for content.create_draft.
 	agentDeps.Persona = &agentPersonaAdapter{store: personasStore}
 	agentDeps.HITL = aiStore
@@ -2850,6 +2861,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		},
 		schemas.EntityTypeCredentialPathway: &intelPromoterPortAdapter{
 			prom: promoter.NewCredentialPromoter(&intelCredentialPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithCredentialAIModel(intelExtractionModel)),
+		},
+		schemas.EntityTypeUniversity: &intelPromoterPortAdapter{
+			prom: promoter.NewUniversityPromoter(&intelUniversityPromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithUniversityAIModel(intelExtractionModel), promoter.WithUniversityEnqueuer(taskEnqueuer)),
+		},
+		schemas.EntityTypeUniversityCourse: &intelPromoterPortAdapter{
+			prom: promoter.NewUniversityCoursePromoter(&intelUniversityCoursePromoterStoreAdapter{Store: intelStores}, intelDefaultAuthorID, promoter.WithUniversityCourseAIModel(intelExtractionModel)),
 		},
 		// News promotes into contents rows (content_type='news', no
 		// guide_category) so extracted articles surface on the source feed

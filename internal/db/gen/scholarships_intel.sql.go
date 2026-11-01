@@ -32,7 +32,7 @@ func (q *Queries) AdminCountScholarships(ctx context.Context, arg AdminCountScho
 }
 
 const adminListScholarships = `-- name: AdminListScholarships :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug FROM scholarships
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email FROM scholarships
 WHERE ($1::text IS NULL OR $1 = '' OR title ILIKE '%' || $1 || '%' OR university ILIKE '%' || $1 || '%' OR country ILIKE '%' || $1 || '%')
  AND ($2::text IS NULL OR $2 = '' OR verification_status = $2)
 ORDER BY created_at DESC
@@ -93,6 +93,15 @@ func (q *Queries) AdminListScholarships(ctx context.Context, arg AdminListSchola
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Slug,
+			&i.ScholarshipType,
+			&i.StudyMode,
+			&i.NumberOfAwards,
+			&i.ApplicationFee,
+			&i.Renewable,
+			&i.DurationYears,
+			&i.StartDate,
+			&i.OpenToInternationalStudents,
+			&i.ContactEmail,
 		); err != nil {
 			return nil, err
 		}
@@ -135,34 +144,43 @@ func (q *Queries) CountScholarshipsByCountry(ctx context.Context) ([]CountSchola
 
 const createScholarship = `-- name: CreateScholarship :one
 
-INSERT INTO scholarships (intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug
+INSERT INTO scholarships (intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33) RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email
 `
 
 type CreateScholarshipParams struct {
-	IntelRecordID        pgtype.UUID    `json:"intel_record_id"`
-	GuideID              pgtype.UUID    `json:"guide_id"`
-	SourceUrl            string         `json:"source_url"`
-	SourceType           string         `json:"source_type"`
-	TrustLevel           int16          `json:"trust_level"`
-	Title                string         `json:"title"`
-	Description          *string        `json:"description"`
-	Country              string         `json:"country"`
-	CountrySpaceID       pgtype.UUID    `json:"country_space_id"`
-	University           *string        `json:"university"`
-	DegreeLevel          *string        `json:"degree_level"`
-	FieldsOfStudy        []string       `json:"fields_of_study"`
-	EligibleCountries    []string       `json:"eligible_countries"`
-	Funding              []byte         `json:"funding"`
-	Deadline             pgtype.Date    `json:"deadline"`
-	ApplicationUrl       *string        `json:"application_url"`
-	RequiredDocuments    []string       `json:"required_documents"`
-	MinimumGpa           pgtype.Numeric `json:"minimum_gpa"`
-	LanguageRequirements []byte         `json:"language_requirements"`
-	ConfidenceOverall    float32        `json:"confidence_overall"`
-	VerificationStatus   string         `json:"verification_status"`
-	FreshnessScore       int32          `json:"freshness_score"`
-	OverrideSource       string         `json:"override_source"`
-	EditorialOverrides   []byte         `json:"editorial_overrides"`
+	IntelRecordID               pgtype.UUID    `json:"intel_record_id"`
+	GuideID                     pgtype.UUID    `json:"guide_id"`
+	SourceUrl                   string         `json:"source_url"`
+	SourceType                  string         `json:"source_type"`
+	TrustLevel                  int16          `json:"trust_level"`
+	Title                       string         `json:"title"`
+	Description                 *string        `json:"description"`
+	Country                     string         `json:"country"`
+	CountrySpaceID              pgtype.UUID    `json:"country_space_id"`
+	University                  *string        `json:"university"`
+	DegreeLevel                 *string        `json:"degree_level"`
+	FieldsOfStudy               []string       `json:"fields_of_study"`
+	EligibleCountries           []string       `json:"eligible_countries"`
+	Funding                     []byte         `json:"funding"`
+	Deadline                    pgtype.Date    `json:"deadline"`
+	ApplicationUrl              *string        `json:"application_url"`
+	RequiredDocuments           []string       `json:"required_documents"`
+	MinimumGpa                  pgtype.Numeric `json:"minimum_gpa"`
+	LanguageRequirements        []byte         `json:"language_requirements"`
+	ConfidenceOverall           float32        `json:"confidence_overall"`
+	VerificationStatus          string         `json:"verification_status"`
+	FreshnessScore              int32          `json:"freshness_score"`
+	OverrideSource              string         `json:"override_source"`
+	EditorialOverrides          []byte         `json:"editorial_overrides"`
+	ScholarshipType             *string        `json:"scholarship_type"`
+	StudyMode                   *string        `json:"study_mode"`
+	NumberOfAwards              *int32         `json:"number_of_awards"`
+	ApplicationFee              *string        `json:"application_fee"`
+	Renewable                   *bool          `json:"renewable"`
+	DurationYears               pgtype.Numeric `json:"duration_years"`
+	StartDate                   pgtype.Date    `json:"start_date"`
+	OpenToInternationalStudents *bool          `json:"open_to_international_students"`
+	ContactEmail                *string        `json:"contact_email"`
 }
 
 // internal/db/queries/scholarships_intel.sql
@@ -197,6 +215,15 @@ func (q *Queries) CreateScholarship(ctx context.Context, arg CreateScholarshipPa
 		arg.FreshnessScore,
 		arg.OverrideSource,
 		arg.EditorialOverrides,
+		arg.ScholarshipType,
+		arg.StudyMode,
+		arg.NumberOfAwards,
+		arg.ApplicationFee,
+		arg.Renewable,
+		arg.DurationYears,
+		arg.StartDate,
+		arg.OpenToInternationalStudents,
+		arg.ContactEmail,
 	)
 	var i Scholarship
 	err := row.Scan(
@@ -229,6 +256,15 @@ func (q *Queries) CreateScholarship(ctx context.Context, arg CreateScholarshipPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Slug,
+		&i.ScholarshipType,
+		&i.StudyMode,
+		&i.NumberOfAwards,
+		&i.ApplicationFee,
+		&i.Renewable,
+		&i.DurationYears,
+		&i.StartDate,
+		&i.OpenToInternationalStudents,
+		&i.ContactEmail,
 	)
 	return i, err
 }
@@ -243,7 +279,7 @@ func (q *Queries) DeleteScholarship(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getScholarship = `-- name: GetScholarship :one
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug FROM scholarships WHERE id = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email FROM scholarships WHERE id = $1
 `
 
 func (q *Queries) GetScholarship(ctx context.Context, id pgtype.UUID) (Scholarship, error) {
@@ -279,12 +315,21 @@ func (q *Queries) GetScholarship(ctx context.Context, id pgtype.UUID) (Scholarsh
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Slug,
+		&i.ScholarshipType,
+		&i.StudyMode,
+		&i.NumberOfAwards,
+		&i.ApplicationFee,
+		&i.Renewable,
+		&i.DurationYears,
+		&i.StartDate,
+		&i.OpenToInternationalStudents,
+		&i.ContactEmail,
 	)
 	return i, err
 }
 
 const getScholarshipByGuide = `-- name: GetScholarshipByGuide :one
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug FROM scholarships WHERE guide_id = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email FROM scholarships WHERE guide_id = $1
 `
 
 func (q *Queries) GetScholarshipByGuide(ctx context.Context, guideID pgtype.UUID) (Scholarship, error) {
@@ -320,12 +365,21 @@ func (q *Queries) GetScholarshipByGuide(ctx context.Context, guideID pgtype.UUID
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Slug,
+		&i.ScholarshipType,
+		&i.StudyMode,
+		&i.NumberOfAwards,
+		&i.ApplicationFee,
+		&i.Renewable,
+		&i.DurationYears,
+		&i.StartDate,
+		&i.OpenToInternationalStudents,
+		&i.ContactEmail,
 	)
 	return i, err
 }
 
 const getScholarshipByIntelRecord = `-- name: GetScholarshipByIntelRecord :one
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug FROM scholarships WHERE intel_record_id = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email FROM scholarships WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetScholarshipByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (Scholarship, error) {
@@ -361,12 +415,21 @@ func (q *Queries) GetScholarshipByIntelRecord(ctx context.Context, intelRecordID
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Slug,
+		&i.ScholarshipType,
+		&i.StudyMode,
+		&i.NumberOfAwards,
+		&i.ApplicationFee,
+		&i.Renewable,
+		&i.DurationYears,
+		&i.StartDate,
+		&i.OpenToInternationalStudents,
+		&i.ContactEmail,
 	)
 	return i, err
 }
 
 const getScholarshipBySourceURL = `-- name: GetScholarshipBySourceURL :one
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug FROM scholarships WHERE source_url = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email FROM scholarships WHERE source_url = $1
 `
 
 func (q *Queries) GetScholarshipBySourceURL(ctx context.Context, sourceUrl string) (Scholarship, error) {
@@ -402,12 +465,21 @@ func (q *Queries) GetScholarshipBySourceURL(ctx context.Context, sourceUrl strin
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Slug,
+		&i.ScholarshipType,
+		&i.StudyMode,
+		&i.NumberOfAwards,
+		&i.ApplicationFee,
+		&i.Renewable,
+		&i.DurationYears,
+		&i.StartDate,
+		&i.OpenToInternationalStudents,
+		&i.ContactEmail,
 	)
 	return i, err
 }
 
 const listScholarships = `-- name: ListScholarships :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug FROM scholarships WHERE true ORDER BY created_at DESC LIMIT $1 OFFSET $2
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email FROM scholarships WHERE true ORDER BY created_at DESC LIMIT $1 OFFSET $2
 `
 
 type ListScholarshipsParams struct {
@@ -454,6 +526,15 @@ func (q *Queries) ListScholarships(ctx context.Context, arg ListScholarshipsPara
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Slug,
+			&i.ScholarshipType,
+			&i.StudyMode,
+			&i.NumberOfAwards,
+			&i.ApplicationFee,
+			&i.Renewable,
+			&i.DurationYears,
+			&i.StartDate,
+			&i.OpenToInternationalStudents,
+			&i.ContactEmail,
 		); err != nil {
 			return nil, err
 		}
@@ -466,7 +547,7 @@ func (q *Queries) ListScholarships(ctx context.Context, arg ListScholarshipsPara
 }
 
 const listScholarshipsByCountry = `-- name: ListScholarshipsByCountry :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug FROM scholarships WHERE country = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email FROM scholarships WHERE country = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
 type ListScholarshipsByCountryParams struct {
@@ -514,6 +595,15 @@ func (q *Queries) ListScholarshipsByCountry(ctx context.Context, arg ListScholar
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Slug,
+			&i.ScholarshipType,
+			&i.StudyMode,
+			&i.NumberOfAwards,
+			&i.ApplicationFee,
+			&i.Renewable,
+			&i.DurationYears,
+			&i.StartDate,
+			&i.OpenToInternationalStudents,
+			&i.ContactEmail,
 		); err != nil {
 			return nil, err
 		}
@@ -526,7 +616,7 @@ func (q *Queries) ListScholarshipsByCountry(ctx context.Context, arg ListScholar
 }
 
 const listScholarshipsBySpace = `-- name: ListScholarshipsBySpace :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug FROM scholarships WHERE country_space_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email FROM scholarships WHERE country_space_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
 type ListScholarshipsBySpaceParams struct {
@@ -574,6 +664,15 @@ func (q *Queries) ListScholarshipsBySpace(ctx context.Context, arg ListScholarsh
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Slug,
+			&i.ScholarshipType,
+			&i.StudyMode,
+			&i.NumberOfAwards,
+			&i.ApplicationFee,
+			&i.Renewable,
+			&i.DurationYears,
+			&i.StartDate,
+			&i.OpenToInternationalStudents,
+			&i.ContactEmail,
 		); err != nil {
 			return nil, err
 		}
@@ -586,7 +685,7 @@ func (q *Queries) ListScholarshipsBySpace(ctx context.Context, arg ListScholarsh
 }
 
 const listScholarshipsBySpaces = `-- name: ListScholarshipsBySpaces :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug FROM scholarships
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email FROM scholarships
 WHERE country_space_id = ANY($1::uuid[])
  AND ($2::timestamptz IS NULL
  OR created_at < $2
@@ -655,6 +754,15 @@ func (q *Queries) ListScholarshipsBySpaces(ctx context.Context, arg ListScholars
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Slug,
+			&i.ScholarshipType,
+			&i.StudyMode,
+			&i.NumberOfAwards,
+			&i.ApplicationFee,
+			&i.Renewable,
+			&i.DurationYears,
+			&i.StartDate,
+			&i.OpenToInternationalStudents,
+			&i.ContactEmail,
 		); err != nil {
 			return nil, err
 		}
@@ -667,7 +775,7 @@ func (q *Queries) ListScholarshipsBySpaces(ctx context.Context, arg ListScholars
 }
 
 const listScholarshipsKeyset = `-- name: ListScholarshipsKeyset :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug FROM scholarships
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email FROM scholarships
 WHERE ($1::timestamptz IS NULL
  OR scholarships.created_at < $1
  OR (scholarships.created_at = $1 AND scholarships.id < $2))
@@ -744,6 +852,15 @@ func (q *Queries) ListScholarshipsKeyset(ctx context.Context, arg ListScholarshi
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Slug,
+			&i.ScholarshipType,
+			&i.StudyMode,
+			&i.NumberOfAwards,
+			&i.ApplicationFee,
+			&i.Renewable,
+			&i.DurationYears,
+			&i.StartDate,
+			&i.OpenToInternationalStudents,
+			&i.ContactEmail,
 		); err != nil {
 			return nil, err
 		}
@@ -756,7 +873,7 @@ func (q *Queries) ListScholarshipsKeyset(ctx context.Context, arg ListScholarshi
 }
 
 const searchScholarships = `-- name: SearchScholarships :many
-SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug FROM scholarships
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email FROM scholarships
 WHERE (NULLIF($1::text, '') IS NULL OR country = $1)
  AND (NULLIF($2::text, '') IS NULL OR $2 = ANY(eligible_countries))
  AND (NULLIF($3::text, '') IS NULL OR degree_level = $3)
@@ -846,6 +963,15 @@ func (q *Queries) SearchScholarships(ctx context.Context, arg SearchScholarships
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Slug,
+			&i.ScholarshipType,
+			&i.StudyMode,
+			&i.NumberOfAwards,
+			&i.ApplicationFee,
+			&i.Renewable,
+			&i.DurationYears,
+			&i.StartDate,
+			&i.OpenToInternationalStudents,
+			&i.ContactEmail,
 		); err != nil {
 			return nil, err
 		}
@@ -866,35 +992,47 @@ SET title = $2, description = $3, country = $4, country_space_id = $5, universit
  freshness_score = $18, override_source = $19, editorial_overrides = $20,
  source_url = $21, source_type = $22, trust_level = $23,
  guide_id = COALESCE($24, guide_id),
+ scholarship_type = $25, study_mode = $26, number_of_awards = $27,
+ application_fee = $28, renewable = $29, duration_years = $30,
+ start_date = $31, open_to_international_students = $32, contact_email = $33,
  last_verified_at = now(), updated_at = now()
 WHERE id = $1
 `
 
 type UpdateScholarshipParams struct {
-	ID                   pgtype.UUID    `json:"id"`
-	Title                string         `json:"title"`
-	Description          *string        `json:"description"`
-	Country              string         `json:"country"`
-	CountrySpaceID       pgtype.UUID    `json:"country_space_id"`
-	University           *string        `json:"university"`
-	DegreeLevel          *string        `json:"degree_level"`
-	FieldsOfStudy        []string       `json:"fields_of_study"`
-	EligibleCountries    []string       `json:"eligible_countries"`
-	Funding              []byte         `json:"funding"`
-	Deadline             pgtype.Date    `json:"deadline"`
-	ApplicationUrl       *string        `json:"application_url"`
-	RequiredDocuments    []string       `json:"required_documents"`
-	MinimumGpa           pgtype.Numeric `json:"minimum_gpa"`
-	LanguageRequirements []byte         `json:"language_requirements"`
-	ConfidenceOverall    float32        `json:"confidence_overall"`
-	VerificationStatus   string         `json:"verification_status"`
-	FreshnessScore       int32          `json:"freshness_score"`
-	OverrideSource       string         `json:"override_source"`
-	EditorialOverrides   []byte         `json:"editorial_overrides"`
-	SourceUrl            string         `json:"source_url"`
-	SourceType           string         `json:"source_type"`
-	TrustLevel           int16          `json:"trust_level"`
-	GuideID              pgtype.UUID    `json:"guide_id"`
+	ID                          pgtype.UUID    `json:"id"`
+	Title                       string         `json:"title"`
+	Description                 *string        `json:"description"`
+	Country                     string         `json:"country"`
+	CountrySpaceID              pgtype.UUID    `json:"country_space_id"`
+	University                  *string        `json:"university"`
+	DegreeLevel                 *string        `json:"degree_level"`
+	FieldsOfStudy               []string       `json:"fields_of_study"`
+	EligibleCountries           []string       `json:"eligible_countries"`
+	Funding                     []byte         `json:"funding"`
+	Deadline                    pgtype.Date    `json:"deadline"`
+	ApplicationUrl              *string        `json:"application_url"`
+	RequiredDocuments           []string       `json:"required_documents"`
+	MinimumGpa                  pgtype.Numeric `json:"minimum_gpa"`
+	LanguageRequirements        []byte         `json:"language_requirements"`
+	ConfidenceOverall           float32        `json:"confidence_overall"`
+	VerificationStatus          string         `json:"verification_status"`
+	FreshnessScore              int32          `json:"freshness_score"`
+	OverrideSource              string         `json:"override_source"`
+	EditorialOverrides          []byte         `json:"editorial_overrides"`
+	SourceUrl                   string         `json:"source_url"`
+	SourceType                  string         `json:"source_type"`
+	TrustLevel                  int16          `json:"trust_level"`
+	GuideID                     pgtype.UUID    `json:"guide_id"`
+	ScholarshipType             *string        `json:"scholarship_type"`
+	StudyMode                   *string        `json:"study_mode"`
+	NumberOfAwards              *int32         `json:"number_of_awards"`
+	ApplicationFee              *string        `json:"application_fee"`
+	Renewable                   *bool          `json:"renewable"`
+	DurationYears               pgtype.Numeric `json:"duration_years"`
+	StartDate                   pgtype.Date    `json:"start_date"`
+	OpenToInternationalStudents *bool          `json:"open_to_international_students"`
+	ContactEmail                *string        `json:"contact_email"`
 }
 
 func (q *Queries) UpdateScholarship(ctx context.Context, arg UpdateScholarshipParams) error {
@@ -923,6 +1061,15 @@ func (q *Queries) UpdateScholarship(ctx context.Context, arg UpdateScholarshipPa
 		arg.SourceType,
 		arg.TrustLevel,
 		arg.GuideID,
+		arg.ScholarshipType,
+		arg.StudyMode,
+		arg.NumberOfAwards,
+		arg.ApplicationFee,
+		arg.Renewable,
+		arg.DurationYears,
+		arg.StartDate,
+		arg.OpenToInternationalStudents,
+		arg.ContactEmail,
 	)
 	return err
 }

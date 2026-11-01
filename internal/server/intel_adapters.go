@@ -743,3 +743,58 @@ func deriveTopicFromExtraction(extractedJSON []byte) string {
 
 	return ""
 }
+
+// intelUniversityPromoterStoreAdapter wraps *stores.Store for the
+// UniversityPromoter's UniversityStore interface.
+type intelUniversityPromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelUniversityPromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.UniversityTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}
+
+// intelUniversityCoursePromoterStoreAdapter wraps *stores.Store for the
+// UniversityCoursePromoter's UniversityCourseStore interface.
+type intelUniversityCoursePromoterStoreAdapter struct {
+	*intel_stores.Store
+}
+
+func (a *intelUniversityCoursePromoterStoreAdapter) WithTx(ctx context.Context, fn func(promoter.UniversityCourseTxStore) error) error {
+	return a.Store.WithTx(ctx, func(s *intel_stores.Store) error {
+		return fn(s)
+	})
+}
+
+// intelOverrideMarker implements customfields.IntelOverrideMarker over the
+// intel store: when a university space's CFV is edited by a human, the
+// field key is merged into the space's university_intel_links
+// editorial_overrides set so the next crawl leaves it alone.
+type intelOverrideMarker struct {
+	store *intel_stores.Store
+}
+
+func (m *intelOverrideMarker) MarkIntelOverride(ctx context.Context, entityType string, entityID pgtype.UUID, fieldKey string) {
+	if entityType != "space" || !entityID.Valid || fieldKey == "" {
+		return
+	}
+
+	link, err := m.store.GetUniversityIntelLinkBySpace(ctx, entityID)
+	if err != nil || !link.SpaceID.Valid {
+		return // not an intel-managed university — nothing to mark
+	}
+
+	overrides, err := json.Marshal(map[string]bool{fieldKey: true})
+	if err != nil {
+		return
+	}
+
+	if err := m.store.AddUniversityIntelOverrides(ctx, gen.AddUniversityIntelOverridesParams{
+		SpaceID:   entityID,
+		Overrides: overrides,
+	}); err != nil {
+		slog.Warn("intel: mark university override failed", "space_id", entityID.String(), "field", fieldKey, "error", err)
+	}
+}

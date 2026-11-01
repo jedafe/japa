@@ -262,3 +262,94 @@ WHERE id = ANY(@ids::uuid[]) AND deleted_at IS NULL;
 UPDATE university_course_offerings
 SET deleted_at = now(), updated_at = now()
 WHERE id = ANY(@ids::uuid[]) AND deleted_at IS NULL;
+
+-- name: GetCourseOfferingByCourseUniversity :one
+SELECT id, course_id, university_id, slug, tuition, currency, duration_years,
+       study_mode, intake_months, entry_requirements, accreditation,
+       is_published, intel_record_id, editorial_overrides, created_at, updated_at
+FROM university_course_offerings
+WHERE course_id = @course_id AND university_id = @university_id
+  AND deleted_at IS NULL
+LIMIT 1;
+
+-- name: GetCourseCatalogBySlug :one
+SELECT id, title, slug, description, degree_type, department, field_of_study,
+       language, default_duration_years, is_published, created_at, updated_at
+FROM university_course_catalog
+WHERE slug = @slug AND deleted_at IS NULL
+LIMIT 1;
+
+-- name: CreateCourseOfferingIntel :one
+INSERT INTO university_course_offerings (
+    course_id, university_id, slug, tuition, currency, duration_years,
+    study_mode, intake_months, entry_requirements, accreditation,
+    is_published, intel_record_id
+) VALUES (
+    @course_id, @university_id, @slug, @tuition, @currency, @duration_years,
+    @study_mode, @intake_months, @entry_requirements, @accreditation,
+    @is_published, @intel_record_id
+)
+RETURNING id;
+
+-- name: UpdateCourseOfferingIntel :exec
+-- The promoter pre-resolves overrides so protected fields keep existing
+-- values in the params it passes.
+UPDATE university_course_offerings
+SET tuition = @tuition,
+    currency = @currency,
+    duration_years = @duration_years,
+    study_mode = @study_mode,
+    intake_months = @intake_months,
+    entry_requirements = @entry_requirements,
+    accreditation = @accreditation,
+    is_published = @is_published,
+    intel_record_id = @intel_record_id,
+    updated_at = now()
+WHERE id = @id;
+
+-- name: CreateCourseCatalogIntel :one
+-- Minimal catalog row for a course the pipeline has never seen; curated
+-- fields (description, department) stay NULL for editorial fill-in.
+INSERT INTO university_course_catalog (
+    title, slug, degree_type, field_of_study, language, default_duration_years,
+    is_published
+) VALUES (
+    @title, @slug, @degree_type, @field_of_study, @language, @default_duration_years,
+    true
+)
+RETURNING id;
+
+-- name: ListCourseOfferingsIntelKeyset :many
+-- Radar keyset over promoted course offerings: (created_at,id) cursor,
+-- university-space + country-geo filters in the shared radar shape.
+SELECT o.id, o.slug, o.intel_record_id, o.university_id, o.tuition, o.currency,
+       o.study_mode, o.intake_months, o.created_at,
+       c.title AS course_title, s.name AS university_name, s.geo_code
+FROM university_course_offerings o
+JOIN university_course_catalog c ON c.id = o.course_id
+JOIN spaces s ON s.id = o.university_id
+WHERE o.deleted_at IS NULL AND o.is_published = true
+ AND ($1::timestamptz IS NULL
+ OR o.created_at < $1
+ OR (o.created_at = $1 AND o.id < $2))
+ AND ($3::uuid IS NULL OR o.university_id = $3)
+ AND (NULLIF($4::text, '') IS NULL OR s.geo_code = $4)
+ AND ($5::timestamptz IS NULL OR o.created_at >= $5)
+ORDER BY o.created_at DESC, o.id DESC
+LIMIT $6;
+
+-- name: ListCourseOfferingsIntelBySpaces :many
+SELECT o.id, o.slug, o.intel_record_id, o.university_id, o.tuition, o.currency,
+       o.study_mode, o.intake_months, o.created_at,
+       c.title AS course_title, s.name AS university_name, s.geo_code
+FROM university_course_offerings o
+JOIN university_course_catalog c ON c.id = o.course_id
+JOIN spaces s ON s.id = o.university_id
+WHERE o.deleted_at IS NULL AND o.is_published = true
+ AND o.university_id = ANY($1::uuid[])
+ AND ($2::timestamptz IS NULL
+ OR o.created_at < $2
+ OR (o.created_at = $2 AND o.id < $3))
+ AND ($4::timestamptz IS NULL OR o.created_at >= $4)
+ORDER BY o.created_at DESC, o.id DESC
+LIMIT $5;

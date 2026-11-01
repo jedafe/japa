@@ -1,22 +1,257 @@
 {
-  "job":        {"entity_types": ["job"],          "methods": ["jsonld","api","tabular","render","static"], "pipeline": "extract",
-                 "topics": ["job","hiring","vacancy","career","remote work","recruitment"]},
-  "internship": {"entity_types": ["job","internship"],       "methods": ["jsonld","api","tabular","render","static"], "pipeline": "extract",
-                 "topics": ["internship","placement","co-op","graduate program","industrial attachment","trainee"]},
-  "work_career":{"entity_types": ["job","work_career"],      "methods": ["jsonld","api","tabular","render","static"], "pipeline": "extract",
-                 "topics": ["career","employment","work abroad","skilled worker","job seeker","labour market"]},
-  "news":       {"entity_types": ["news"],          "methods": ["rss","jsonld","render","static"],         "pipeline": "curate",
-                 "topics": ["migration","immigration","japa","diaspora","visa","relocation","travel"]},
-  "blog":       {"entity_types": ["article"],       "methods": ["rss","render","static"],                  "pipeline": "curate",
-                 "topics": ["japa","relocation","study abroad","settlement","expat","diaspora"]},
-  "event":      {"entity_types": ["event"],         "methods": ["ical","jsonld"],                          "pipeline": "curate",
-                 "topics": ["webinar","fair","embassy","orientation","deadline"]},
-  "scholarship":{"entity_types": ["scholarship"],   "methods": ["rss","jsonld","render","static"],         "pipeline": "extract",
-                 "topics": ["scholarship","grant","fellowship","funding","tuition waiver","bursary"]},
-  "visa":       {"entity_types": ["visa"],          "methods": ["static","pdf","render"],                  "pipeline": "extract",
-                 "topics": ["visa","immigration","embassy","residence permit","asylum","border"]},
-  "dataset":    {"entity_types": ["dataset"],       "methods": ["tabular","git","api"],                    "pipeline": "curate",
-                 "topics": ["exchange rate","processing time","visa fee","tuition"]},
-  "video":      {"entity_types": [],                "methods": ["channel_sync"],                           "pipeline": "curate",
-                 "topics": ["japa","relocation","study abroad","visa"]}
+  "blog": {
+    "entity_types": [
+      "article"
+    ],
+    "methods": [
+      "rss",
+      "render",
+      "static"
+    ],
+    "pipeline": "curate",
+    "topics": [
+      "japa",
+      "relocation",
+      "study abroad",
+      "settlement",
+      "expat",
+      "diaspora"
+    ]
+  },
+  "dataset": {
+    "entity_types": [
+      "dataset"
+    ],
+    "methods": [
+      "tabular",
+      "git",
+      "api"
+    ],
+    "pipeline": "curate",
+    "topics": [
+      "exchange rate",
+      "processing time",
+      "visa fee",
+      "tuition"
+    ]
+  },
+  "event": {
+    "entity_types": [
+      "event"
+    ],
+    "methods": [
+      "ical",
+      "jsonld"
+    ],
+    "pipeline": "curate",
+    "topics": [
+      "webinar",
+      "fair",
+      "embassy",
+      "orientation",
+      "deadline"
+    ]
+  },
+  "grants": {
+    "entity_types": [
+      "grants"
+    ],
+    "methods": [
+      "rss",
+      "jsonld",
+      "render",
+      "static"
+    ],
+    "pipeline": "extract",
+    "topics": [
+      "grant",
+      "funding",
+      "fellowship",
+      "foundation",
+      "financial aid",
+      "sponsorship",
+      "award"
+    ]
+  },
+  "internship": {
+    "entity_types": [
+      "job",
+      "internship"
+    ],
+    "methods": [
+      "jsonld",
+      "api",
+      "tabular",
+      "render",
+      "static"
+    ],
+    "pipeline": "extract",
+    "topics": [
+      "internship",
+      "placement",
+      "co-op",
+      "graduate program",
+      "industrial attachment",
+      "trainee"
+    ]
+  },
+  "job": {
+    "entity_types": [
+      "job"
+    ],
+    "methods": [
+      "jsonld",
+      "api",
+      "tabular",
+      "render",
+      "static"
+    ],
+    "pipeline": "extract",
+    "topics": [
+      "job",
+      "hiring",
+      "vacancy",
+      "career",
+      "remote work",
+      "recruitment"
+    ]
+  },
+  "news": {
+    "entity_types": [
+      "news"
+    ],
+    "methods": [
+      "rss",
+      "jsonld",
+      "render",
+      "static"
+    ],
+    "pipeline": "curate",
+    "topics": [
+      "migration",
+      "immigration",
+      "japa",
+      "diaspora",
+      "visa",
+      "relocation",
+      "travel"
+    ]
+  },
+  "scholarship": {
+    "entity_types": [
+      "scholarship"
+    ],
+    "methods": [
+      "rss",
+      "jsonld",
+      "render",
+      "static"
+    ],
+    "pipeline": "extract",
+    "topics": [
+      "scholarship",
+      "grant",
+      "fellowship",
+      "funding",
+      "tuition waiver",
+      "bursary"
+    ]
+  },
+  "university": {
+    "entity_types": [
+      "university"
+    ],
+    "methods": [
+      "static",
+      "jsonld",
+      "render",
+      "sitemap",
+      "spider"
+    ],
+    "pipeline": "extract",
+    "topics": [
+      "university",
+      "admissions",
+      "ranking",
+      "tuition",
+      "programs",
+      "faculties"
+    ]
+  },
+  "university_course": {
+    "entity_types": [
+      "university_course"
+    ],
+    "methods": [
+      "static",
+      "jsonld",
+      "render",
+      "sitemap",
+      "spider"
+    ],
+    "pipeline": "extract",
+    "topics": [
+      "course",
+      "program",
+      "degree",
+      "masters",
+      "bachelors",
+      "tuition",
+      "intake"
+    ]
+  },
+  "video": {
+    "entity_types": [],
+    "methods": [
+      "channel_sync"
+    ],
+    "pipeline": "curate",
+    "topics": [
+      "japa",
+      "relocation",
+      "study abroad",
+      "visa"
+    ]
+  },
+  "visa": {
+    "entity_types": [
+      "visa"
+    ],
+    "methods": [
+      "static",
+      "pdf",
+      "render"
+    ],
+    "pipeline": "extract",
+    "topics": [
+      "visa",
+      "immigration",
+      "embassy",
+      "residence permit",
+      "asylum",
+      "border"
+    ]
+  },
+  "work_career": {
+    "entity_types": [
+      "job",
+      "work_career"
+    ],
+    "methods": [
+      "jsonld",
+      "api",
+      "tabular",
+      "render",
+      "static"
+    ],
+    "pipeline": "extract",
+    "topics": [
+      "career",
+      "employment",
+      "work abroad",
+      "skilled worker",
+      "job seeker",
+      "labour market"
+    ]
+  }
 }

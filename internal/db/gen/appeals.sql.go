@@ -219,13 +219,14 @@ func (q *Queries) GetAdCampaignForAppeal(ctx context.Context, id pgtype.UUID) (G
 
 const getAdCampaignRefundAmount = `-- name: GetAdCampaignRefundAmount :one
 SELECT amount
-FROM wallet_ledger
+FROM credits_ledger
 WHERE idempotency_key = $1
 `
 
 // The reject-time refund writes a credits ledger row keyed
 // 'deduct:{owner}:ad_campaign_refund:{campaign}'. Recovers the refunded
-// amount so an appeal overturn can re-escrow it.
+// amount so an appeal overturn can re-escrow it. Credits rows live in
+// credits_ledger post-split (ADR-136).
 func (q *Queries) GetAdCampaignRefundAmount(ctx context.Context, idempotencyKey *string) (int64, error) {
 	row := q.db.QueryRow(ctx, getAdCampaignRefundAmount, idempotencyKey)
 	var amount int64

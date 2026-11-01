@@ -162,22 +162,33 @@ const (
 	CategoryWorkCareer  Category = "work_career"
 	CategoryBlog        Category = "blog"
 	CategoryVideo       Category = "video"
+	// CategoryGrants is an exported constant.
+	CategoryGrants Category = "grants"
+	// CategoryUniversity and CategoryUniversityCourse are the extraction-
+	// backed university domains (§39): institution entity pages and
+	// course/program offerings respectively.
+	CategoryUniversity       Category = "university"
+	CategoryUniversityCourse Category = "university_course"
 )
 
 // submittableCategories is the propose-form subset of the category
-// taxonomy: domains whose channels reach content end-to-end without an AI
-// provider — job-family pages via JSON-LD/static curation (job, internship,
-// work_career), news/article feeds via the RSS curator (news, blog), and
-// video via the channel_profile sync path. Every other valid category
-// waits on AI extraction and is excluded from public proposals until it is
-// configured.
+// taxonomy: domains whose channels reach content end-to-end — job-family
+// pages via JSON-LD/static curation (job, internship, work_career),
+// news/article feeds via the RSS curator (news, blog), video via the
+// channel_profile sync path, and the extraction-backed scholarship/grants
+// domains whose schemas, prompts, and promoters are all wired (extract
+// pipeline; records land in review if no AI provider is configured).
 var submittableCategories = map[Category]struct{}{
-	CategoryJob:        {},
-	CategoryInternship: {},
-	CategoryWorkCareer: {},
-	CategoryNews:       {},
-	CategoryBlog:       {},
-	CategoryVideo:      {},
+	CategoryJob:              {},
+	CategoryInternship:       {},
+	CategoryWorkCareer:       {},
+	CategoryNews:             {},
+	CategoryBlog:             {},
+	CategoryVideo:            {},
+	CategoryScholarship:      {},
+	CategoryGrants:           {},
+	CategoryUniversity:       {},
+	CategoryUniversityCourse: {},
 }
 
 // IsSubmittable reports whether c may be chosen on a public source
