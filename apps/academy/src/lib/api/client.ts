@@ -1,6 +1,4 @@
-import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
-import { buildApiUrl } from '@japaconnect/api-url';
 import { loginUrl } from '$lib/appOrigins';
 
 /**
@@ -24,7 +22,6 @@ export interface ClientResult<T> {
 	status: number;
 }
 
-const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
 /**
  * Surface identifier sent on every backend call (X-JC-Surface). The backend
@@ -74,7 +71,11 @@ async function clientFetch<T>(
 	};
 
 	async function doFetch(): Promise<Response> {
-		return fetch(buildApiUrl(path, API_BASE), {
+		// Same-origin session proxy: the backend authenticates Authorization:
+		// Bearer only and jc_token is HttpOnly — the proxy attaches the session
+		// server-side. Direct api.<domain> calls always 401'd for authed paths.
+		const proxyPath = path.startsWith('http') ? path : `/api/authed${path.replace(/^\/api\/v1/, '')}`;
+		return fetch(proxyPath, {
 			...init,
 			credentials: 'include',
 			headers: withCsrfHeader(method, baseHeaders)

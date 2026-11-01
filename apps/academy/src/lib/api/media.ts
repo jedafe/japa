@@ -44,25 +44,19 @@ export const initiateUpload = (input: InitiateUploadInput) =>
 export const confirmMedia = (id: string) =>
 	api.post<{ confirmed: boolean }>(`/media/confirm/${id}`);
 
-/** Bearer headers for the cross-origin upload PUT — the API-side upload
- * endpoint is auth-gated; in dev the vite proxy injects this from the
- * jc_token cookie, in production the in-memory cookie value must attach. */
-function bearerHeaders(): Record<string, string> {
-	if (typeof document === 'undefined') return {};
-	const match = document.cookie
-		.split(';')
-		.map((c) => c.trim())
-		.find((c) => c.startsWith('jc_token='));
-	return match ? { authorization: `Bearer ${match.slice('jc_token='.length)}` } : {};
-}
-
-/** PUT the raw file bytes to the presigned URL (outside the api client). */
+/** PUT the raw file bytes through the same-origin session proxy. The
+ * presigned URL targets the API's /seaweedfs/upload/{bucket}/{path} route —
+ * RequireAuth + owner-bound — and browser JS cannot attach the HttpOnly
+ * session cookie as a Bearer header, so the bytes bounce through
+ * /api/authed which adds it server-side. */
 async function uploadToPresigned(presignedUrl: string, file: File): Promise<boolean> {
 	try {
-		const res = await fetch(presignedUrl, {
+		const u = new URL(presignedUrl);
+		const putPath = u.pathname.replace(/^\/api\/v1/, '');
+		const res = await fetch(`/api/authed${putPath}${u.search}`, {
 			method: 'PUT',
 			body: file,
-			headers: bearerHeaders()
+			headers: { 'content-type': file.type || 'application/octet-stream' }
 		});
 		return res.ok;
 	} catch {

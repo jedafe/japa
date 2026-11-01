@@ -1,9 +1,25 @@
 import type { Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { env } from '$env/dynamic/private';
+import { env as publicEnv } from '$env/dynamic/public';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import { buildThemeOverrides } from '@japaconnect/ui/theme';
 import { isRtl } from '$lib/i18n/rtl';
+
+/**
+ * Parent domain shared by sibling surfaces — the session cookie is minted on
+ * the main app with Domain=.{base}, so cookie cleanup here must target that
+ * same domain or the shared cookie survives. Derived from the public API URL
+ * (api.japa.to → .japa.to); empty when unparseable (dev stays host-only).
+ */
+function academyCookieDomain(): string {
+	try {
+		const apiHost = new URL(publicEnv.PUBLIC_JC_API_URL ?? '').hostname;
+		return apiHost.startsWith('api.') ? `.${apiHost.slice(4)}` : '';
+	} catch {
+		return '';
+	}
+}
 
 /**
  * In-process cache for GET /site/settings/public (same pattern as the main
@@ -122,8 +138,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 			event.locals.user = await apiGet<SessionUser>(apiContext(event), '/me');
 		} catch (err) {
 			if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-				// Stale credential — drop it and continue as a guest.
+				// Stale credential — drop both cookie variants: a host-only
+				// delete leaves the shared .{base}-domain cookie alive and the
+				// browser keeps presenting the stale token.
 				event.cookies.delete('jc_token', { path: '/' });
+				const sessionDomain = academyCookieDomain();
+				if (sessionDomain) {
+					event.cookies.delete('jc_token', { path: '/', domain: sessionDomain });
+				}
 				event.locals.token = null;
 			}
 			// Any other failure (backend unreachable) also degrades to guest.
@@ -197,7 +219,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
-	if (BLOCKS_INDEXING.has((env.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase())) {
+	if (BLOCKS_INDEXING.has((publicEnv.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase())) {
 		response.headers.set('X-Robots-Tag', 'noindex');
 	}
 	if (response.headers.get('content-type')?.startsWith('text/html')) {
