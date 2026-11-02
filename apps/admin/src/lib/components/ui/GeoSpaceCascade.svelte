@@ -54,6 +54,9 @@
 			return;
 		}
 		const res = await geoApi.listStates(geoCodeOf(idVal));
+		// Stale-response guard — a fast second country pick must not be
+		// overwritten by the first pick's states resolving late.
+		if (countryId !== idVal) return;
 		if (res.ok) {
 			const data = res.data as GeoSpace[] | { data?: GeoSpace[] };
 			states = Array.isArray(data) ? data : (data.data ?? []);
@@ -69,6 +72,7 @@
 			return;
 		}
 		const res = await geoApi.listCities(idVal);
+		if (stateId !== idVal) return;
 		if (res.ok) {
 			const data = res.data as GeoSpace[] | { data?: GeoSpace[] };
 			cities = Array.isArray(data) ? data : (data.data ?? []);

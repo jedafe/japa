@@ -167,6 +167,7 @@
 	// Geo space for the edit cascade — the new selection diff-sends as
 	// geo_space on save (mirrors the name/tagline/username pattern).
 	let editGeoSpace = $state('');
+	let editGeoCleared = $state(false);
 
 	async function loadPersonaVoices() {
 		voicesLoading = true;
@@ -265,6 +266,7 @@
 		editingPersona = persona;
 		editViewOnly = true;
 		editGeoSpace = '';
+		editGeoCleared = false;
 		// Merge a partial backend policy over the canonical default so the edit
 		// form always has the required fields (e.g. active_hours_utc[0]).
 		const policy = persona.activity_policy as Partial<ActivityPolicy> | undefined;
@@ -286,6 +288,7 @@
 		editingPersona = persona;
 		editViewOnly = false;
 		editGeoSpace = '';
+		editGeoCleared = false;
 		// BUG-005: include activity_policy in the edit form so it is editable
 		// after creation (spec §68 PATCH updates activity_policy).
 		// Merge a partial backend policy over the canonical default so the form
@@ -392,9 +395,11 @@
 			if (body.name === (editingPersona.profile_name ?? '')) delete body.name;
 			if (body.tagline === (editingPersona.profile_tagline ?? '')) delete body.tagline;
 			if (body.username === (editingPersona.backing_username ?? '')) delete body.username;
-			// Send geo_space only when the admin picked a new chain — the
-			// cascade can't pre-seed ancestors, so untouched stays omitted.
-			if (editGeoSpace !== '') body.geo_space = editGeoSpace;
+			// Send geo_space only when the admin picked a new chain or hit
+			// Clear — the cascade can't pre-seed ancestors, so untouched
+			// stays omitted. "" clears the geo assignment (§68).
+			if (editGeoCleared) body.geo_space = '';
+			else if (editGeoSpace !== '') body.geo_space = editGeoSpace;
 			// voice_prompt is always sent as a string (bound to a textarea).
 			// An empty string clears it on the backend because the PATCH
 			// handler decodes VoicePrompt as *string — empty is non-nil, so
@@ -588,7 +593,7 @@
 			<p class="text-sm" style="color: var(--color-muted)">
 				{t('personas.create_hint', 'Provision one or more AI personas. All personas in a batch are created in a single transaction.')}
 			</p>
-			{#each newPersonas as persona, idx (idx)}
+			{#each newPersonas as persona, idx (persona)}
 				<div class="rounded-lg border p-3" style="border-color: var(--color-border)">
 					<div class="mb-2 flex items-center justify-between gap-2 flex-wrap">
 						<span class="text-sm font-medium" style="color: var(--color-foreground)">{t('personas.persona_n', 'Persona #{n}').replace('{n}', String(idx + 1))}</span>
@@ -634,7 +639,7 @@
 						/>
 					</div>
 					<div class="mt-2">
-						<label for={`persona-geo-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.geo_space', 'Geo Space')}</label>
+						<label for={`persona-geo-${idx}-country`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.geo_space', 'Geo Space')}</label>
 						<GeoSpaceCascade id={`persona-geo-${idx}`} bind:value={persona.geo_space} />
 					</div>
 					<div class="mt-2 grid gap-3 sm:grid-cols-2">
@@ -952,13 +957,25 @@
 				/>
 			</div>
 			<div>
-				<label for="edit-persona-geo" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.geo_space', 'Geo Space')}</label>
-				{#if editingPersona?.geo_space_name}
+				<label for="edit-persona-geo-country" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.geo_space', 'Geo Space')}</label>
+				{#if editingPersona?.geo_space_name && !editGeoCleared}
 					<p class="mb-1 text-[10px]" style="color: var(--color-muted)">
 						{t('personas.geo_current', 'Current')}: {editingPersona.geo_space_name}{editingPersona.geo_space_level ? ` · ${editingPersona.geo_space_level}` : ''}
+						<button type="button" class="underline" style="color: var(--color-danger)" onclick={() => { editGeoCleared = true; editGeoSpace = ''; }}>
+							{t('personas.geo_clear', 'Clear')}
+						</button>
+					</p>
+				{:else if editGeoCleared}
+					<p class="mb-1 text-[10px]" style="color: var(--color-danger)">
+						{t('personas.geo_will_clear', 'Geo space will be cleared on save.')}
+						<button type="button" class="underline" style="color: var(--color-muted)" onclick={() => (editGeoCleared = false)}>
+							{t('common.undo', 'Undo')}
+						</button>
 					</p>
 				{/if}
-				<GeoSpaceCascade id="edit-persona-geo" bind:value={editGeoSpace} />
+				{#if !editGeoCleared}
+					<GeoSpaceCascade id="edit-persona-geo" bind:value={editGeoSpace} />
+				{/if}
 			</div>
 			<div>
 				<label for="edit-persona-voice" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.voice', 'Voice / Tone')}</label>
