@@ -7,9 +7,10 @@
 ## Problem
 
 A real user's profile carries geo identity: `space_members` rows for the
-country → state → city chain (surfaced in the profile's "Spaces" sidebar) and
-`users.current_geo_space_id` (the `is_primary` badge plus ADR-064a geo
-personalization). Onboarding's `autoJoinGeoSpaces` produces both in one
+country → state → city chain (member-facing space lists; the public Spaces
+tab excludes geo-level spaces by design — attached, not chosen) and
+`users.current_geo_space_id` (the location/is_primary badge plus ADR-064a
+geo personalization). Onboarding's `autoJoinGeoSpaces` produces both in one
 transaction.
 
 A persona's backing bot account gets neither — persona profiles render
