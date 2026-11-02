@@ -71,23 +71,22 @@ export const load: PageServerLoad = async (event) => {
 	// Profile header — 404 propagates as a SvelteKit error (banned/suspended/deleted).
 	let user: PublicUser;
 	let jsonLd: unknown = null;
+	// Relationship bundle (follow + block + mute in one sidecar) — the
+	// backend emits it for authenticated non-owner viewers, replacing the
+	// three separate status calls this load used to fan out to.
+	type ProfileRelationship = {
+		following?: boolean;
+		followed_by?: boolean;
+		blocked?: boolean;
+		blocked_by?: boolean;
+		muted?: boolean;
+	};
+	let relationship: ProfileRelationship | null = null;
 	try {
 		const envelope = await apiGetEnvelope<PublicUser>(ctx, `/users/${username}`);
 		user = envelope.data;
-		// Relationship bundle (follow + block + mute in one sidecar) — the
-		// backend emits it for authenticated non-owner viewers, replacing the
-		// three separate status calls this load used to fan out to.
-		const relationship = (
-			envelope as unknown as {
-				relationship?: {
-					following?: boolean;
-					followed_by?: boolean;
-					blocked?: boolean;
-					blocked_by?: boolean;
-					muted?: boolean;
-				};
-			}
-		).relationship ?? null;
+		relationship =
+			(envelope as unknown as { relationship?: ProfileRelationship }).relationship ?? null;
 		jsonLd = envelope.json_ld ?? null;
 	} catch (e) {
 		const status = e instanceof Error && 'status' in e ? (e as { status: number }).status : 500;
