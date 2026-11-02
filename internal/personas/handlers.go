@@ -281,6 +281,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		Name           *string         `json:"name"`
 		Tagline        *string         `json:"tagline"`
 		Username       *string         `json:"username"`
+		GeoSpace       *string         `json:"geo_space"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -298,6 +299,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		Name:           body.Name,
 		Tagline:        body.Tagline,
 		Username:       body.Username,
+		GeoSpace:       body.GeoSpace,
 	}
 
 	persona, err := h.service.UpdatePersona(r.Context(), id, in, user.UserID)

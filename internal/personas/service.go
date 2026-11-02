@@ -616,6 +616,9 @@ type UpdatePersonaInput struct {
 	Name     *string
 	Tagline  *string
 	Username *string
+	// GeoSpace replaces the backing user's geo membership chain (§68 Geo
+	// Space Assignment). Nil = unchanged, "" = clear, value = set/replace.
+	GeoSpace *string
 }
 
 // UpdatePersona updates a persona's config (activity_policy, modes, status,
@@ -640,6 +643,7 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 		"name":            in.Name != nil,
 		"tagline":         in.Tagline != nil,
 		"username":        in.Username != nil,
+		"geo_space":       in.GeoSpace != nil,
 	} {
 		if set {
 			changed = append(changed, field)
@@ -721,7 +725,7 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 	// Identity edits (byline + handle) ride one tx with the config update so
 	// a persona can never end up half-renamed — mirrors the provisioning
 	// transaction boundary (ADR-068 §7).
-	identityTouched := in.Name != nil || in.Tagline != nil || in.Username != nil
+	identityTouched := in.Name != nil || in.Tagline != nil || in.Username != nil || in.GeoSpace != nil
 	if !identityTouched {
 		if _, err := s.store.UpdateAIPersona(ctx, params); err != nil {
 			return PersonaDetail{}, err
@@ -831,6 +835,12 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 			UserID: detail.UserID, DisplayName: displayName, Bio: bio,
 		}); err != nil {
 			return PersonaDetail{}, fmt.Errorf("personas: upsert byline: %w", err)
+		}
+	}
+
+	if in.GeoSpace != nil {
+		if err := s.replaceGeoSpace(ctx, q, detail.UserID, *in.GeoSpace); err != nil {
+			return PersonaDetail{}, fmt.Errorf("personas: replace geo space: %w", err)
 		}
 	}
 
