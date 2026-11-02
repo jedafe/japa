@@ -9,6 +9,7 @@
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
 	import FollowButton from '$lib/components/ui/FollowButton.svelte';
+	import { api } from '$lib/api/client';
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
 	import MessageUserDialog from '$lib/components/profile/MessageUserDialog.svelte';
@@ -84,6 +85,26 @@
 	// profile Videos tab alongside imported/uploaded video_sources.
 	const videoPosts = $derived(data.posts.filter((p) => p.content_type === 'video'));
 	const initiallyFollowing = $derived(data.initiallyFollowing);
+
+	// Media tab is lazy-loaded on first activation — the SSR load returns
+	// null for media so the navigation doesn't pay for a list most viewers
+	// never open. Fetching pages 1–2 here mirrors the server-side cap.
+	let mediaItems = $state<PageData['media']>(untrack(() => data.media));
+
+	async function loadMediaTab() {
+		const all: NonNullable<PageData['media']> = [];
+		for (let p = 0; p < 2; p++) {
+			const res = await api.get<unknown>(`/users/${user.id}/media?page_size=100&page_offset=${p * 100}`);
+			const items = (Array.isArray(res) ? res : ((res as { data?: unknown[] })?.data ?? [])) as NonNullable<PageData['media']>;
+			all.push(...items);
+			if (items.length < 100) break;
+		}
+		mediaItems = all;
+	}
+
+	$effect(() => {
+		if (activeTab === 'media' && mediaItems === null) void loadMediaTab();
+	});
 	const followedBy = $derived(data.initiallyFollowedBy ?? false);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'overview'));
 	let reportOpen = $state(false);
@@ -709,7 +730,7 @@
 	);
 
 	const mediaView = $derived(
-		view(data.media, {
+		view(mediaItems ?? [], {
 			searchFields: ['alt_text', 'filename'],
 			filter: (i, fv) => {
 				const mt = i.mime_type ?? '';
@@ -757,9 +778,9 @@
 		mediaDeleteOpen = false;
 		mediaDeleteTarget = null;
 		mediaDeletePending = false;
-		// data.media is SSR-loaded — re-run the load so the deleted item drops
-		// out of mediaView instead of relying on local filtering.
-		await invalidateAll();
+		// mediaItems is lazy-loaded — clearing it triggers the tab's $effect
+		// refetch so the deleted item drops out of mediaView.
+		mediaItems = null;
 	}
 
 	const likesView = $derived(
@@ -1344,8 +1365,10 @@ profile is private, or no stage is set. -->
 				{@render pager(repliesView)}
 			{/if}
 		{:else if activeTab === 'media'}
-			{@render toolbar(mediaFilterOptions, data.media.length, true)}
-			{#if data.media.length === 0}
+			{@render toolbar(mediaFilterOptions, (mediaItems ?? []).length, true)}
+			{#if mediaItems === null}
+				<p class="px-4 py-8 text-center text-sm text-[var(--color-muted)]">{t('common.loading', 'Loading…')}</p>
+			{:else if mediaItems.length === 0}
 				<EmptyState icon={Image} title={t('profile.media_empty', 'No media yet')} />
 			{:else if mediaView.total === 0}
 				<EmptyState icon={Image} title={t('profile.empty.no_results', 'No results')} />

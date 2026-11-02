@@ -29,6 +29,29 @@ type JSONLDResolver interface {
 	ResolveJSONLD(ctx context.Context, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
+// ProfileRelations is the viewer↔profile relationship bundle emitted as a
+// `relationship` sidecar on GET /users/{username} for authenticated viewers.
+// One response replaces the three per-status calls (follow-status,
+// block-status, mute-status) the SSR profile page used to fan out to.
+type ProfileRelations struct {
+	Following  bool `json:"following"`
+	FollowedBy bool `json:"followed_by"`
+	Blocked    bool `json:"blocked"`
+	BlockedBy  bool `json:"blocked_by"`
+	Muted      bool `json:"muted"`
+}
+
+// ProfileRelationsFunc resolves the relationship bundle for a
+// (viewer, profile owner) pair. Wired in server.go over the follows and
+// interactions services.
+type ProfileRelationsFunc func(ctx context.Context, viewerID, targetID pgtype.UUID) ProfileRelations
+
+// SetProfileRelations injects the relationship-bundle resolver. Optional —
+// when nil the `relationship` sidecar is omitted from the response.
+func (h *Handlers) SetProfileRelations(f ProfileRelationsFunc) {
+	h.profileRelations = f
+}
+
 // PermissionResolver checks RBAC permissions and super-admin status. The
 // /me/content/{id} handler uses it to decide whether a non-owner viewer
 // (super-admin or a user with the `content.edit` permission node) may
@@ -62,6 +85,11 @@ type Handlers struct {
 	// expire the stale entry).
 	Redis          valkeycompat.Cmdable
 	jsonldResolver JSONLDResolver
+
+	// profileRelations resolves the viewer↔owner relationship bundle for the
+	// public-profile `relationship` sidecar — wired in server.go over the
+	// follows and interactions services. Nil-safe (omitted when unset).
+	profileRelations ProfileRelationsFunc
 	// permResolver is an optional RBAC resolver used by GetMyContent to
 	// allow super-admins and `content.edit` permission holders to fetch
 	// content they don't own for editing. When nil, only the author can
@@ -292,6 +320,20 @@ func (h *Handlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
 	// values. Best-effort: a missing template or resolution error degrades
 	// to no json_ld field. Emitted as a sibling of `data`.
 	resp := map[string]any{"data": profile}
+
+	// Relationship bundle (Section 31/41/52): one sidecar carrying every
+	// viewer↔owner flag the profile page needs — replaces separate
+	// follow-status/block-status/mute-status calls. Auth'd viewers only;
+	// own profile has no meaningful relationship (the self-follow/mute
+	// checks elsewhere already guard it).
+	if h.profileRelations != nil {
+		if viewer := auth.FromContext(r.Context()); viewer != nil && viewer.UserID.String() != profile.ID {
+			var targetID pgtype.UUID
+			if err := targetID.Scan(profile.ID); err == nil {
+				resp["relationship"] = h.profileRelations(r.Context(), viewer.UserID, targetID)
+			}
+		}
+	}
 
 	if h.jsonldResolver != nil {
 		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), "Person", h.profileJSONLDFields(profile)); jErr == nil && len(jsonLd) > 0 {

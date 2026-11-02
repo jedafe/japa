@@ -74,6 +74,20 @@ export const load: PageServerLoad = async (event) => {
 	try {
 		const envelope = await apiGetEnvelope<PublicUser>(ctx, `/users/${username}`);
 		user = envelope.data;
+		// Relationship bundle (follow + block + mute in one sidecar) — the
+		// backend emits it for authenticated non-owner viewers, replacing the
+		// three separate status calls this load used to fan out to.
+		const relationship = (
+			envelope as unknown as {
+				relationship?: {
+					following?: boolean;
+					followed_by?: boolean;
+					blocked?: boolean;
+					blocked_by?: boolean;
+					muted?: boolean;
+				};
+			}
+		).relationship ?? null;
 		jsonLd = envelope.json_ld ?? null;
 	} catch (e) {
 		const status = e instanceof Error && 'status' in e ? (e as { status: number }).status : 500;
@@ -128,13 +142,8 @@ export const load: PageServerLoad = async (event) => {
 	// BUG-026 (follows audit): single follow-status call feeds both the
 	// follow button state (following) and the "Follows you" badge
 	// (followed_by) already returned by the endpoint contract.
-	const followStatus =
-		!isOwnProfile && event.locals.user
-			? apiGet<{ following: boolean; followed_by: boolean }>(ctx, `/users/${userId}/follow-status`).catch(() => null)
-			: Promise.resolve(null);
-
-	const initiallyFollowing = followStatus.then((r) => r?.following ?? false);
-	const initiallyFollowedBy = followStatus.then((r) => r?.followed_by ?? false);
+	const initiallyFollowing = Promise.resolve(relationship?.following ?? false);
+	const initiallyFollowedBy = Promise.resolve(relationship?.followed_by ?? false);
 
 	// BUG-007: hydrate the block button's initial state on SSR via the
 	// directional block-status endpoint (BLK-005). Previously this fetched
@@ -143,22 +152,16 @@ export const load: PageServerLoad = async (event) => {
 	// blocked_by additionally tells the page the target has blocked the
 	// viewer (interaction gating). Best-effort: a failure degrades to
 	// {blocked:false, blocked_by:false}.
-	const blockStatus: Promise<{ blocked: boolean; blocked_by: boolean } | null> =
-		!isOwnProfile && event.locals.user
-			? apiGet<{ blocked: boolean; blocked_by: boolean }>(ctx, `/users/${userId}/block-status`)
-					.catch(catchNull('block-status'))
-			: Promise.resolve({ blocked: false, blocked_by: false });
+	const blockStatus = Promise.resolve({
+		blocked: relationship?.blocked ?? false,
+		blocked_by: relationship?.blocked_by ?? false
+	});
 
 	// FE-1: hydrate the mute button's initial state on SSR. Fetches the
 	// per-user mute-status endpoint. Only fetch when the viewer is
 	// authenticated and viewing someone else's profile. Best-effort: a
 	// failure degrades to `false` (not muted). Ref: Section 52.
-	const initiallyMuted =
-		!isOwnProfile && event.locals.user
-			? apiGet<{ muted: boolean }>(ctx, `/users/${userId}/mute-status`)
-				.then((r) => r.muted)
-				.catch(catchFalse('mute-status'))
-			: Promise.resolve(false);
+	const initiallyMuted = Promise.resolve(relationship?.muted ?? false);
 
 	// Tab data — each degrades to an empty list on failure (a missing tab must
 	// never blank the whole profile). Each tab fetches its dedicated
@@ -172,7 +175,7 @@ export const load: PageServerLoad = async (event) => {
 	// not just the first page. Loop pages (page_size=100 is the backend cap)
 	// until a short page or the reported total is reached. Max 5 pages
 	// (500 items) bounds worst-case load time for prolific users.
-	const MAX_LIST_PAGES = 5;
+	const MAX_LIST_PAGES = 2;
 
 	async function listAllPages<T>(
 		path: string,
@@ -224,20 +227,16 @@ export const load: PageServerLoad = async (event) => {
 			return null;
 		};
 	}
-	function catchFalse(label: string) {
-		return (err: unknown): boolean => {
-			logLoadError(label)(err);
-			return false;
-		};
-	}
-
 	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, followedBy, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage, followers, following, videos, bookmarks] = await Promise.all([
 		// Tabs paginate client-side over the loaded list — fetch every page so
 		// totals, search, and paging reflect the whole dataset (capped at
 		// MAX_LIST_PAGES × 100).
 		listAllPages<ProfilePost>(`/users/${userId}/content`).catch(catchEmpty<ProfilePost>('posts')),
 		listAllPages<ProfileReply>(`/users/${userId}/replies`).catch(catchEmpty<ProfileReply>('replies')),
-		listAllPages<ProfileMedia>(`/users/${userId}/media`).catch(catchEmpty<ProfileMedia>('media')),
+		// Media tab is lazy-loaded client-side on first activation — it is the
+		// only list rendered exclusively inside its own tab, so SSR skips the
+		// fetch entirely (fewer API calls per navigation).
+		Promise.resolve(null as ProfileMedia[] | null),
 		listAllPages<ProfileSpace>(`/users/${userId}/spaces`).catch(catchEmpty<ProfileSpace>('spaces')),
 		listAllPages<ProfileCertificate>(`/users/${userId}/certificates`).catch(catchEmpty<ProfileCertificate>('certificates')),
 		listAllPages<ProfileLike>(`/users/${userId}/likes`).catch(catchEmpty<ProfileLike>('likes')),

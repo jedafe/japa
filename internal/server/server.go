@@ -3120,6 +3120,26 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	})
 
 	usersHandlers := users.NewHandlers(usersService, contentService)
+	// Relationship bundle on GET /users/{username} — folds follow-status,
+	// block-status and mute-status into one sidecar so the SSR profile page
+	// makes ~3 fewer API calls per navigation. Best-effort per flag: a
+	// failed lookup degrades to false rather than failing the profile read.
+	usersHandlers.SetProfileRelations(func(ctx context.Context, viewerID, targetID pgtype.UUID) users.ProfileRelations {
+		var rel users.ProfileRelations
+		if b, err := interactionsService.GetBlockStatus(ctx, viewerID, targetID); err == nil {
+			rel.Blocked, rel.BlockedBy = b.Blocked, b.BlockedBy
+		}
+		if m, err := interactionsService.IsUserMuted(ctx, viewerID, targetID); err == nil {
+			rel.Muted = m
+		}
+		if f, err := followService.IsFollowing(ctx, viewerID, follows.EntityTypeUser, targetID); err == nil {
+			rel.Following = f
+		}
+		if fb, err := followService.IsFollowing(ctx, targetID, follows.EntityTypeUser, viewerID); err == nil {
+			rel.FollowedBy = fb
+		}
+		return rel
+	})
 	// Wire the RBAC resolver so GetMyContent can fall back to a
 	// platform-scoped (non-author-scoped) fetch for super-admins and users
 	// with the `content.edit` permission node.
