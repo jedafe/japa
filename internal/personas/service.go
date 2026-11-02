@@ -68,6 +68,7 @@ type PersonaInput struct {
 	AutonomyMode   string         `json:"autonomy_mode"`
 	ActivityPolicy ActivityPolicy `json:"activity_policy"`
 	TypeID         string         `json:"type_id"` // optional; defaults to "contributor"/"columnist" lookup
+	GeoSpace       string         `json:"geo_space"` // optional space UUID or slug (§68 Geo Space Assignment)
 }
 
 // personaEmail builds a deterministic internal email for a persona backing
@@ -103,6 +104,10 @@ type PersonaDetail struct {
 	ProfileName         string          `json:"profile_name"`
 	ProfileSlug         string          `json:"profile_slug"`
 	ProfileTagline      *string         `json:"profile_tagline,omitempty"`
+	GeoSpaceID          string          `json:"geo_space_id"`
+	GeoSpaceName        *string         `json:"geo_space_name,omitempty"`
+	GeoSpaceSlug        *string         `json:"geo_space_slug,omitempty"`
+	GeoSpaceLevel       *string         `json:"geo_space_level,omitempty"`
 	RecentActivity      []ActivityEntry `json:"recent_activity"`
 }
 
@@ -128,6 +133,10 @@ type PersonaListItem struct {
 	BackingUsername     string          `json:"backing_username"`
 	ProfileName         string          `json:"profile_name"`
 	ProfileTagline      *string         `json:"profile_tagline,omitempty"`
+	GeoSpaceID          string          `json:"geo_space_id"`
+	GeoSpaceName        *string         `json:"geo_space_name,omitempty"`
+	GeoSpaceSlug        *string         `json:"geo_space_slug,omitempty"`
+	GeoSpaceLevel       *string         `json:"geo_space_level,omitempty"`
 	TotalActions        int64           `json:"total_actions"`
 	LastActionAt        *string         `json:"last_action_at,omitempty"`
 }
@@ -275,6 +284,23 @@ func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID
 		return nil, fmt.Errorf("personas: slug(s) already in use: %s: %w", strings.Join(taken, ", "), errpkg.ErrInvalid)
 	}
 
+	// Resolve geo_space refs up front so an unknown slug / non-geo space
+	// fails fast as validation_error instead of a mid-tx
+	// provisioning_failed (mirrors the slug pre-check above).
+	resolvedGeo := make([]pgtype.UUID, len(inputs))
+	for i, in := range inputs {
+		if in.GeoSpace == "" {
+			continue
+		}
+
+		spaceID, err := s.resolveGeoSpace(ctx, gen.New(s.store.DB().Reader), in.GeoSpace)
+		if err != nil {
+			return nil, fmt.Errorf("personas: input %d: %w", i, err)
+		}
+
+		resolvedGeo[i] = spaceID
+	}
+
 	pool := s.store.DB().Writer
 
 	tx, err := pool.Begin(ctx)
@@ -329,6 +355,22 @@ func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID
 		}); err != nil {
 			results[i] = ProvisionResult{Input: in, Error: err.Error()}
 			return results, fmt.Errorf("personas: input %d: create user profile: %w", i, err)
+		}
+
+		// 2b. Geo space assignment (§68): join the backing user to the geo
+		// chain and set current_geo_space_id so the persona profile shows
+		// Spaces + the primary badge like a real profile.
+		if resolvedGeo[i].Valid {
+			chain, err := geoChain(ctx, q, resolvedGeo[i])
+			if err != nil {
+				results[i] = ProvisionResult{Input: in, Error: err.Error()}
+				return results, fmt.Errorf("personas: input %d: geo chain: %w", i, err)
+			}
+
+			if err := s.applyGeoSpace(ctx, q, user.ID, chain); err != nil {
+				results[i] = ProvisionResult{Input: in, Error: err.Error()}
+				return results, fmt.Errorf("personas: input %d: apply geo space: %w", i, err)
+			}
 		}
 
 		// 3. Resolve voice: if a voice_id is supplied it is a shared voice; otherwise
@@ -977,6 +1019,10 @@ func personaDetailFromRow(r gen.GetAIPersonaByIDRow) PersonaDetail {
 		ProfileName:         r.ProfileName,
 		ProfileSlug:         r.ProfileSlug,
 		ProfileTagline:      r.ProfileTagline,
+		GeoSpaceID:          uuidOrEmpty(r.GeoSpaceID),
+		GeoSpaceName:        r.GeoSpaceName,
+		GeoSpaceSlug:        r.GeoSpaceSlug,
+		GeoSpaceLevel:       r.GeoSpaceLevel,
 	}
 
 	return d
@@ -1002,6 +1048,10 @@ func personaListItemFromRow(r gen.ListAIPersonasRow) PersonaListItem {
 		BackingUsername:     r.BackingUsername,
 		ProfileName:         r.ProfileName,
 		ProfileTagline:      r.ProfileTagline,
+		GeoSpaceID:          uuidOrEmpty(r.GeoSpaceID),
+		GeoSpaceName:        r.GeoSpaceName,
+		GeoSpaceSlug:        r.GeoSpaceSlug,
+		GeoSpaceLevel:       r.GeoSpaceLevel,
 		TotalActions:        r.TotalActions,
 	}
 	// LastActionAt is interface{} from sqlc (MAX(timestamptz) is nullable).
