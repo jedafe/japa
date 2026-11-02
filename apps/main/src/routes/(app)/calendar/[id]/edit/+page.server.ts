@@ -31,9 +31,11 @@ export const load: PageServerLoad = async (event) => {
 		throw error(500, { code: 'load_failed', message: 'Failed to load calendar entry' });
 	}
 
+	// calendar.edit_own is granted to every member — it must not pass for
+	// non-owners or anyone could open another user's edit form. Ownership is
+	// covered by the submitted_by check; only edit_any counts for others.
 	const canEdit =
 		entry.submitted_by === event.locals.user.id ||
-		event.locals.user.permissions?.includes('calendar.edit_own') ||
 		event.locals.user.permissions?.includes('calendar.edit_any');
 	if (!canEdit) {
 		throw error(403, { code: 'not_owner', message: 'You can only edit your own calendar entries' });

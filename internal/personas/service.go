@@ -968,11 +968,19 @@ type UpdatePersonaVoiceInput struct {
 	IsSystem    *bool   `json:"is_system,omitempty"`
 }
 
+// voiceSlugPattern mirrors the space-slug convention — lowercase letters,
+// digits, and hyphens, 2–64 chars.
+var voiceSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,63}$`)
+
 // CreatePersonaVoice creates a new shared persona voice after validating
 // required fields and slug length.
 func (s *Service) CreatePersonaVoice(ctx context.Context, createdBy pgtype.UUID, in CreatePersonaVoiceInput) (PersonaVoice, error) {
 	if in.Name == "" || in.Slug == "" {
 		return PersonaVoice{}, fmt.Errorf("personas: %w: name and slug are required", errpkg.ErrInvalid)
+	}
+
+	if !voiceSlugPattern.MatchString(in.Slug) {
+		return PersonaVoice{}, fmt.Errorf("personas: %w: slug must be 2-64 characters of lowercase letters, numbers, and hyphens", errpkg.ErrInvalid)
 	}
 
 	if in.VoicePrompt == "" {
@@ -999,6 +1007,10 @@ func (s *Service) CreatePersonaVoice(ctx context.Context, createdBy pgtype.UUID,
 		CreatedBy:   createdBy,
 	})
 	if err != nil {
+		if errpkg.IsUniqueViolation(err) {
+			return PersonaVoice{}, fmt.Errorf("personas: %w: a voice with slug %q already exists", errpkg.ErrDuplicate, in.Slug)
+		}
+
 		return PersonaVoice{}, err
 	}
 
@@ -1233,6 +1245,28 @@ func (s *Service) ListPersonaVoices(ctx context.Context, limit, offset int32) ([
 	return items, total, nil
 }
 
+// SearchPersonaVoices returns a paginated admin list of shared voices with an
+// optional ILIKE search (name/slug/description) and a whitelisted sort key.
+// Used by GET /admin/persona-voices; sort/dir are pre-validated in the handler.
+func (s *Service) SearchPersonaVoices(ctx context.Context, q, sort, dir string, limit, offset int32) ([]PersonaVoice, int64, error) {
+	rows, err := s.store.SearchPersonaVoices(ctx, q, sort, dir, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	total, err := s.store.CountPersonaVoicesMatching(ctx, q)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]PersonaVoice, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, personaVoiceFromRow(r))
+	}
+
+	return items, total, nil
+}
+
 // UpdatePersonaVoice updates a shared voice and returns the updated record.
 func (s *Service) UpdatePersonaVoice(ctx context.Context, id pgtype.UUID, in UpdatePersonaVoiceInput, actors ...pgtype.UUID) (PersonaVoice, error) {
 	if in.VoicePrompt != nil {
@@ -1251,6 +1285,10 @@ func (s *Service) UpdatePersonaVoice(ctx context.Context, id pgtype.UUID, in Upd
 		}
 	}
 
+	if in.Slug != nil && !voiceSlugPattern.MatchString(*in.Slug) {
+		return PersonaVoice{}, fmt.Errorf("personas: %w: slug must be 2-64 characters of lowercase letters, numbers, and hyphens", errpkg.ErrInvalid)
+	}
+
 	params := gen.UpdatePersonaVoiceParams{
 		ID:          id,
 		Name:        in.Name,
@@ -1262,6 +1300,10 @@ func (s *Service) UpdatePersonaVoice(ctx context.Context, id pgtype.UUID, in Upd
 
 	row, err := s.store.UpdatePersonaVoice(ctx, params)
 	if err != nil {
+		if errpkg.IsUniqueViolation(err) {
+			return PersonaVoice{}, fmt.Errorf("personas: %w: a voice with slug %q already exists", errpkg.ErrDuplicate, *in.Slug)
+		}
+
 		return PersonaVoice{}, err
 	}
 

@@ -200,6 +200,23 @@ func (s *Store) CountPersonaVoices(ctx context.Context) (int64, error) {
 	return s.read.CountPersonaVoices(ctx)
 }
 
+// SearchPersonaVoices lists shared voices with an optional ILIKE search and a
+// whitelisted sort key (admin list endpoint).
+func (s *Store) SearchPersonaVoices(ctx context.Context, q, sort, dir string, limit, offset int32) ([]gen.PersonaVoice, error) {
+	return s.read.SearchPersonaVoices(ctx, gen.SearchPersonaVoicesParams{
+		Q:          q,
+		Sort:       sort,
+		Dir:        dir,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+}
+
+// CountPersonaVoicesMatching counts shared voices matching the ILIKE search.
+func (s *Store) CountPersonaVoicesMatching(ctx context.Context, q string) (int64, error) {
+	return s.read.CountPersonaVoicesMatching(ctx, q)
+}
+
 // UpdatePersonaVoice updates a shared voice's fields.
 func (s *Store) UpdatePersonaVoice(ctx context.Context, params gen.UpdatePersonaVoiceParams) (gen.PersonaVoice, error) {
 	row, err := s.write.UpdatePersonaVoice(ctx, params)

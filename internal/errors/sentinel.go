@@ -60,9 +60,6 @@ var (
 	// implemented (e.g. a provider integration that is still pending).
 	ErrNotImplemented = errors.New("not implemented")
 
-	// ErrScoringDisabled indicates that scoring is disabled for the comparison type.
-	ErrScoringDisabled = errors.New("scoring_disabled")
-
 	// ErrRateLimited indicates the caller exceeded a rate or quota limit.
 	ErrRateLimited = errors.New("rate_limited")
 
@@ -97,4 +94,12 @@ func WrapDuplicate(err error) error {
 func IsFKViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23503"
+}
+
+// IsUniqueViolation reports whether err is a Postgres unique-constraint
+// violation (SQLSTATE 23505). Services use it to map duplicate slugs/names
+// to ErrDuplicate (409 already_exists) instead of a raw 500.
+func IsUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

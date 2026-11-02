@@ -12,7 +12,7 @@
 	import ActivityKeyAutocomplete from '$lib/components/gamification/ActivityKeyAutocomplete.svelte';
 	import UserAutocomplete from '$lib/components/ui/UserAutocomplete.svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { Trophy, Target, Pencil, Award, Trash2, Eye } from 'lucide-svelte';
+	import { Trophy, Target, Pencil, Award, Trash2, Eye, CalendarDays, Layers, ScrollText } from 'lucide-svelte';
 	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
@@ -29,6 +29,16 @@
 		is_active: boolean;
 		is_system: boolean;
 		display_order: number;
+		category?: string;
+		rarity?: string;
+		tier?: string;
+		badge_group?: string;
+		is_secret?: boolean;
+		is_limited?: boolean;
+		is_featured?: boolean;
+		points_reward?: number;
+		available_from?: string;
+		available_until?: string;
 		created_at: string;
 	};
 
@@ -56,7 +66,10 @@
 	let activeTab = $state('badges');
 	const tabs = $derived([
 		{ value: 'badges', label: t('gamification.badges', 'Badges'), icon: Trophy },
-		{ value: 'challenges', label: t('gamification.challenges', 'Challenges'), icon: Target }
+		{ value: 'challenges', label: t('gamification.challenges', 'Challenges'), icon: Target },
+		{ value: 'seasons', label: t('gamification.seasons', 'Seasons'), icon: CalendarDays },
+		{ value: 'tiers', label: t('gamification.tiers', 'Tiers'), icon: Layers },
+		{ value: 'awards', label: t('gamification.awards', 'Award Events'), icon: ScrollText }
 	]);
 
 	// ── Controllers ────────────────────────────────────────────────────────
@@ -184,12 +197,12 @@
 		activityKey: string | undefined
 	): string | null {
 		if (!triggerType) return t('gamification.err_trigger_required', 'Trigger type is required');
-		if (triggerType === 'lifetime_points' || triggerType === 'activity_count') {
+		if (triggerType === 'lifetime_points' || triggerType === 'activity_count' || triggerType === 'streak_days') {
 			if (!triggerValue || triggerValue <= 0)
 				return t('gamification.err_trigger_value', 'A positive trigger value is required for this trigger type');
 		}
-		if (triggerType === 'activity_count' && !activityKey?.trim())
-			return t('gamification.err_activity_key', 'An activity key is required for activity_count badges');
+		if ((triggerType === 'activity_count' || triggerType === 'streak_days') && !activityKey?.trim())
+			return t('gamification.err_activity_key', 'An activity key is required for this trigger type');
 		return null;
 	}
 
@@ -284,6 +297,7 @@
 	let triggerTypeOptions = $state<CatalogOption[]>([
 		{ value: 'lifetime_points', label: t('gamification.trigger_lifetime_points', 'Lifetime Points') },
 		{ value: 'activity_count', label: t('gamification.trigger_activity_count', 'Activity Count') },
+		{ value: 'streak_days', label: t('gamification.trigger_streak_days', 'Streak Days') },
 		{ value: 'manual', label: t('gamification.trigger_manual', 'Manual') }
 	]);
 
@@ -296,6 +310,42 @@
 
 	// ── Badge EntityPage ───────────────────────────────────────────────────
 
+	// Category/rarity/tier options come from the §64 admin catalogs
+	// (gamification.badge_category / .badge_rarity / .badge_tier). The
+	// seed-value defaults keep the form usable if the catalog call fails.
+	let badgeCategories = $state<CatalogOption[]>(
+		['getting_started', 'readiness', 'journey', 'countries', 'education',
+			'career', 'community', 'content', 'forum', 'mentorship', 'services',
+			'financial', 'travel', 'trust', 'consistency', 'special', 'comparison',
+			'academy', 'housing', 'documents', 'ai', 'growth'
+		].map((v) => ({ value: v, label: v.replace(/_/g, ' ') }))
+	);
+
+	let rarityOptions = $state<CatalogOption[]>(
+		['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'].map((v) => ({
+			value: v, label: v[0].toUpperCase() + v.slice(1)
+		}))
+	);
+
+	let tierOptions = $state<CatalogOption[]>(
+		['bronze', 'silver', 'gold', 'platinum', 'diamond'].map((v) => ({
+			value: v, label: v[0].toUpperCase() + v.slice(1)
+		}))
+	);
+
+	$effect(() => {
+		void (async () => {
+			const [catRes, rarityRes, tierRes] = await Promise.all([
+				adminCatalogApi.get('gamification.badge_category'),
+				adminCatalogApi.get('gamification.badge_rarity'),
+				adminCatalogApi.get('gamification.badge_tier')
+			]);
+			if (catRes.ok && catRes.data?.length) badgeCategories = catRes.data;
+			if (rarityRes.ok && rarityRes.data?.length) rarityOptions = rarityRes.data;
+			if (tierRes.ok && tierRes.data?.length) tierOptions = tierRes.data;
+		})();
+	});
+
 	const badgeFields = $derived<FieldDef[]>([
 		{ key: 'name', label: t('gamification.name', 'Name'), type: 'text', required: true },
 		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text', required: true, readonlyInEdit: true },
@@ -304,6 +354,16 @@
 		{ key: 'trigger_type', label: t('gamification.trigger', 'Trigger Type'), type: 'select', options: triggerTypeOptions, required: true },
 		{ key: 'trigger_value', label: t('gamification.trigger_value', 'Trigger Value'), type: 'number' },
 		{ key: 'trigger_activity_key', label: t('gamification.activity_key', 'Activity Key'), type: 'text' },
+		{ key: 'category', label: t('gamification.category', 'Category'), type: 'select', options: badgeCategories },
+		{ key: 'rarity', label: t('gamification.rarity', 'Rarity'), type: 'select', options: rarityOptions },
+		{ key: 'tier', label: t('gamification.tier', 'Tier'), type: 'select', options: tierOptions },
+		{ key: 'badge_group', label: t('gamification.badge_group', 'Badge Group'), type: 'text' },
+		{ key: 'points_reward', label: t('gamification.points_reward', 'Points Reward'), type: 'number' },
+		{ key: 'is_secret', label: t('gamification.secret', 'Secret'), type: 'checkbox' },
+		{ key: 'is_limited', label: t('gamification.limited', 'Limited'), type: 'checkbox' },
+		{ key: 'is_featured', label: t('gamification.featured', 'Featured'), type: 'checkbox' },
+		{ key: 'available_from', label: t('gamification.available_from', 'Available From'), type: 'datetime-local' },
+		{ key: 'available_until', label: t('gamification.available_until', 'Available Until'), type: 'datetime-local' },
 		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox', defaultValue: true },
 		{ key: 'display_order', label: t('gamification.display_order', 'Display Order'), type: 'number' }
 	]);
@@ -343,7 +403,10 @@
 				void primeMediaUrl(row.icon_media_id);
 				ctx?.openEdit(row);
 			},
-			show: (row: Badge) => canManageBadges && !row.is_system
+			// §64: only DELETE is restricted to non-system badges — seeded
+			// (is_system) badges must stay editable so admins can activate
+			// them as the phased catalogue rolls out (is_active toggle).
+			show: () => canManageBadges
 		},
 		{
 			label: t('common.delete', 'Delete'),
@@ -445,6 +508,16 @@
 					trigger_type: body.trigger_type,
 					trigger_value: intOr(body.trigger_value),
 					trigger_activity_key: body.trigger_activity_key?.trim() || undefined,
+					category: body.category || undefined,
+					rarity: body.rarity || undefined,
+					tier: body.tier || undefined,
+					badge_group: body.badge_group?.trim() || undefined,
+					points_reward: intOr(body.points_reward),
+					is_secret: typeof body.is_secret === 'boolean' ? body.is_secret : undefined,
+					is_limited: typeof body.is_limited === 'boolean' ? body.is_limited : undefined,
+					is_featured: typeof body.is_featured === 'boolean' ? body.is_featured : undefined,
+					available_from: toISO(body.available_from),
+					available_until: toISO(body.available_until),
 					is_active: typeof body.is_active === 'boolean' ? body.is_active : undefined,
 					display_order: intOr(body.display_order)
 				}
@@ -462,6 +535,16 @@
 				trigger_type: body.trigger_type || undefined,
 				trigger_value: intOr(body.trigger_value),
 				trigger_activity_key: body.trigger_activity_key?.trim() || undefined,
+				category: body.category || undefined,
+				rarity: body.rarity || undefined,
+				tier: body.tier || undefined,
+				badge_group: body.badge_group?.trim() || undefined,
+				points_reward: intOr(body.points_reward),
+				is_secret: typeof body.is_secret === 'boolean' ? body.is_secret : undefined,
+				is_limited: typeof body.is_limited === 'boolean' ? body.is_limited : undefined,
+				is_featured: typeof body.is_featured === 'boolean' ? body.is_featured : undefined,
+				available_from: toISO(body.available_from),
+				available_until: toISO(body.available_until),
 				is_active: typeof body.is_active === 'boolean' ? body.is_active : undefined,
 				display_order: intOr(body.display_order)
 			};
@@ -469,6 +552,11 @@
 			else if (row?.icon_media_id) payload.clear_icon_media_id = true;
 			if (payload.trigger_value === undefined && row?.trigger_value != null) payload.clear_trigger_value = true;
 			if (payload.trigger_activity_key === undefined && row?.trigger_activity_key) payload.clear_trigger_activity_key = true;
+			if (payload.category === undefined && row?.category) payload.clear_category = true;
+			if (payload.tier === undefined && row?.tier) payload.clear_tier = true;
+			if (payload.badge_group === undefined && row?.badge_group) payload.clear_badge_group = true;
+			if (payload.available_from === undefined && row?.available_from) payload.clear_available_from = true;
+			if (payload.available_until === undefined && row?.available_until) payload.clear_available_until = true;
 			const res = await api(`/admin/gamification/badges/${id}`, { method: 'PATCH', body: payload });
 			if (res.ok) invalidateLists();
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -750,6 +838,199 @@
 			acting = false;
 		}
 	}
+	// ── Seasons / Tiers / Award Events (gamification v2) ────────────────────
+
+	const toLocalDT = (v: string | null | undefined) => {
+		if (!v) return '';
+		const d = new Date(v);
+		return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 16);
+	};
+	// toISO normalises a datetime-local ('YYYY-MM-DDTHH:MM'), date
+	// ('YYYY-MM-DD'), or RFC 3339 value into the strict RFC 3339 timestamp
+	// the backend requires (§64 parseTimestamp uses time.RFC3339). Invalid
+	// input returns undefined instead of throwing RangeError.
+	const toISO = (v: unknown) => {
+		const s = String(v ?? '').trim();
+		if (!s) return undefined;
+		const d = new Date(s);
+		return isNaN(d.getTime()) ? undefined : d.toISOString();
+	};
+
+	const seasonFields = $derived<FieldDef[]>([
+		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text', required: true, readonlyInEdit: true },
+		{ key: 'name', label: t('gamification.name', 'Name'), type: 'text', required: true },
+		{ key: 'description', label: t('gamification.description', 'Description'), type: 'textarea' },
+		{ key: 'starts_at', label: t('gamification.starts', 'Starts'), type: 'datetime-local', required: true },
+		{ key: 'ends_at', label: t('gamification.ends', 'Ends'), type: 'datetime-local' },
+		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox', defaultValue: true }
+	]);
+
+	const seasonConfig = $derived<EntityPageConfig>({
+		title: t('gamification.seasons', 'Seasons'),
+		description: t('gamification.seasons_description', 'Limited-edition badge collection windows'),
+		createLabel: t('gamification.create_season', 'Create Season'),
+		createPermission: 'gamification.manage_badges',
+		editPermission: 'gamification.manage_badges',
+		deletePermission: 'gamification.manage_badges',
+		fields: seasonFields,
+		columns: [
+			{ key: 'name', label: t('gamification.name', 'Name'), sortable: true, render: (v: string) => `<span class="font-medium text-foreground">${v}</span>` },
+			{ key: 'slug', label: t('gamification.slug', 'Slug'), sortable: true, render: (v: string) => `<span class="font-mono text-xs text-muted-foreground">${v}</span>` },
+			{ key: 'starts_at', label: t('gamification.starts', 'Starts'), sortable: true, render: (v: string) => `<span class="text-xs text-muted-foreground">${new Date(v).toLocaleDateString(undefined, { timeZone: 'UTC' })}</span>` },
+			{ key: 'ends_at', label: t('gamification.ends', 'Ends'), sortable: true, render: (v: string | null) => `<span class="text-xs text-muted-foreground">${v ? new Date(v).toLocaleDateString(undefined, { timeZone: 'UTC' }) : '—'}</span>` },
+			{
+				key: 'is_active', label: t('gamification.active', 'Active'), sortable: true,
+				render: (v: boolean) => v
+					? `<span class="inline-flex items-center rounded-md border border-success bg-success/15 px-2 py-0.5 text-xs font-medium text-success">${t('common.active', 'Active')}</span>`
+					: `<span class="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">${t('common.inactive', 'Inactive')}</span>`
+			}
+		],
+		load: async ({ page, pageSize, q, sort }) => {
+			const res = await api<any[]>('/admin/gamification/seasons');
+			if (!res.ok) throw new Error(res.error || t('gamification.load_error', 'Failed to load'));
+			let rows = (res.data ?? []).map((r) => ({ ...r, starts_at: toLocalDT(r.starts_at), ends_at: toLocalDT(r.ends_at) }));
+			if (q) {
+				const query = q.toLowerCase();
+				rows = rows.filter((r) => r.name?.toLowerCase().includes(query) || r.slug?.toLowerCase().includes(query));
+			}
+			applySort(rows, sort, {
+				name: (r) => r.name,
+				slug: (r) => r.slug,
+				starts_at: (r) => r.starts_at,
+				ends_at: (r) => r.ends_at,
+				is_active: (r) => (r.is_active ? 1 : 0)
+			}, (a, b) => (a.starts_at < b.starts_at ? 1 : -1));
+			const total = rows.length;
+			return {
+				data: rows.slice(page * pageSize, page * pageSize + pageSize),
+				total,
+				totalPages: Math.max(1, Math.ceil(total / pageSize))
+			};
+		},
+		create: async (body) => {
+			const res = await api('/admin/gamification/seasons', {
+				method: 'POST',
+				body: { slug: body.slug.trim(), name: body.name.trim(), description: body.description || undefined, starts_at: toISO(body.starts_at), ends_at: toISO(body.ends_at), is_active: !!body.is_active }
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body) => {
+			const res = await api(`/admin/gamification/seasons/${id}`, {
+				method: 'PATCH',
+				body: { name: body.name?.trim() || undefined, description: body.description ?? '', starts_at: toISO(body.starts_at), ends_at: toISO(body.ends_at), is_active: typeof body.is_active === 'boolean' ? body.is_active : undefined }
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await api(`/admin/gamification/seasons/${id}`, { method: 'DELETE' });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		}
+	});
+
+	const tierFields = $derived<FieldDef[]>([
+		{ key: 'badge_group', label: t('gamification.badge_group', 'Badge Group'), type: 'text', required: true },
+		{ key: 'tier', label: t('gamification.tier', 'Tier'), type: 'select', required: true, options: tierOptions },
+		{ key: 'name', label: t('gamification.name', 'Name'), type: 'text', required: true },
+		{ key: 'threshold', label: t('gamification.threshold', 'Threshold'), type: 'number', required: true },
+		{ key: 'badge_id', label: t('gamification.badge', 'Badge'), type: 'select', options: badgeOptions }
+	]);
+
+	const tierConfig = $derived<EntityPageConfig>({
+		title: t('gamification.tiers', 'Tiers'),
+		description: t('gamification.tiers_description', 'Progression metadata for tiered badge collections'),
+		createLabel: t('gamification.create_tier', 'Create Tier'),
+		createPermission: 'gamification.manage_badges',
+		editPermission: 'gamification.manage_badges',
+		deletePermission: 'gamification.manage_badges',
+		fields: tierFields,
+		columns: [
+			{ key: 'badge_group', label: t('gamification.badge_group', 'Group'), sortable: true, render: (v: string) => `<span class="font-mono text-xs text-muted-foreground">${v}</span>` },
+			{ key: 'tier', label: t('gamification.tier', 'Tier'), sortable: true, render: (v: string) => `<span class="capitalize text-foreground">${v}</span>` },
+			{ key: 'name', label: t('gamification.name', 'Name'), sortable: true, render: (v: string) => `<span class="font-medium text-foreground">${v}</span>` },
+			{ key: 'threshold', label: t('gamification.threshold', 'Threshold'), sortable: true, render: (v: number) => `<span class="font-mono text-foreground">${v}</span>` }
+		],
+		load: async ({ page, pageSize, q, sort }) => {
+			const res = await api<any[]>('/admin/gamification/tiers');
+			if (!res.ok) throw new Error(res.error || t('gamification.load_error', 'Failed to load'));
+			let rows = res.data ?? [];
+			if (q) {
+				const query = q.toLowerCase();
+				rows = rows.filter((r: any) => r.name?.toLowerCase().includes(query) || r.badge_group?.toLowerCase().includes(query));
+			}
+			applySort(rows, sort, {
+				badge_group: (r: any) => r.badge_group,
+				tier: (r: any) => r.tier,
+				name: (r: any) => r.name,
+				threshold: (r: any) => r.threshold
+			}, (a: any, b: any) => String(a.badge_group).localeCompare(String(b.badge_group)) || a.threshold - b.threshold);
+			const total = rows.length;
+			return {
+				data: rows.slice(page * pageSize, page * pageSize + pageSize),
+				total,
+				totalPages: Math.max(1, Math.ceil(total / pageSize))
+			};
+		},
+		create: async (body) => {
+			const res = await api('/admin/gamification/tiers', {
+				method: 'POST',
+				body: { badge_group: body.badge_group.trim(), tier: body.tier, name: body.name.trim(), threshold: intOr(body.threshold) ?? 0, badge_id: body.badge_id?.trim() || undefined }
+			});
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		update: async (id, body, row) => {
+			const payload: Record<string, unknown> = { badge_group: body.badge_group?.trim() || undefined, tier: body.tier || undefined, name: body.name?.trim() || undefined, threshold: intOr(body.threshold), badge_id: body.badge_id?.trim() || undefined };
+			if (!payload.badge_id && row?.badge_id) payload.clear_badge_id = true;
+			const res = await api(`/admin/gamification/tiers/${id}`, { method: 'PATCH', body: payload });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		},
+		remove: async (id) => {
+			const res = await api(`/admin/gamification/tiers/${id}`, { method: 'DELETE' });
+			return res.ok ? { ok: true } : { ok: false, error: res.error };
+		}
+	});
+
+	// Award events — read-only audit trail, server-paginated. q, sort and the
+	// badge_id filter are forwarded to the backend (§64 award-events route).
+	const awardEventFilters = $derived<FilterDef[]>([
+		{
+			key: 'badge_id',
+			label: t('gamification.badge', 'Badge'),
+			options: badgeOptions
+		}
+	]);
+
+	const awardEventConfig = $derived<EntityPageConfig>({
+		title: t('gamification.awards', 'Award Events'),
+		description: t('gamification.awards_description', 'Audit trail of every badge award'),
+		readonly: true,
+		pageSize: 25,
+		fields: [],
+		filters: awardEventFilters,
+		columns: [
+			{ key: 'username', label: t('gamification.username', 'Username'), sortable: true, render: (v: string) => `<span class="font-medium text-foreground">${v || '—'}</span>` },
+			{ key: 'badge_name', label: t('gamification.badge', 'Badge'), sortable: true, render: (v: string) => `<span class="text-foreground">${v}</span>` },
+			{ key: 'source', label: t('gamification.source', 'Source'), sortable: true, render: (v: string) => `<span class="font-mono text-xs text-muted-foreground">${v}</span>` },
+			{ key: 'awarded_by_username', label: t('gamification.awarded_by', 'Awarded By'), render: (v: string) => `<span class="text-xs text-muted-foreground">${v || '—'}</span>` },
+			{ key: 'created_at', label: t('gamification.awarded_at', 'Awarded'), sortable: true, render: (v: string) => `<span class="text-xs text-muted-foreground">${new Date(v).toLocaleString()}</span>` }
+		],
+		load: async ({ page, pageSize, q, sort, filter }) => {
+			const params = new URLSearchParams();
+			params.set('page_size', String(pageSize));
+			params.set('page_offset', String(page * pageSize));
+			if (q) params.set('q', q);
+			if (filter.badge_id) params.set('badge_id', filter.badge_id);
+			if (sort) {
+				const [sortBy, sortDir] = sort.split(':');
+				params.set('sort_by', sortBy);
+				params.set('sort_dir', sortDir === 'asc' ? 'asc' : 'desc');
+			}
+			const res = await apiRaw<{ data?: any[]; pagination?: { total?: number } }>(`/admin/gamification/award-events?${params}`);
+			if (!res.ok) throw new Error(res.error || t('gamification.load_error', 'Failed to load'));
+			const rows = res.data?.data ?? [];
+			const total = res.data?.pagination?.total ?? rows.length;
+			return { data: rows, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
+		}
+	});
 </script>
 
 <svelte:head>
@@ -769,8 +1050,14 @@
 
 {#if activeTab === 'badges'}
 	<EntityPage config={badgeConfig} bind:controller={badgeController} />
-{:else}
+{:else if activeTab === 'challenges'}
 	<EntityPage config={challengeConfig} bind:controller={challengeController} />
+{:else if activeTab === 'seasons'}
+	<EntityPage config={seasonConfig} />
+{:else if activeTab === 'tiers'}
+	<EntityPage config={tierConfig} />
+{:else}
+	<EntityPage config={awardEventConfig} />
 {/if}
 
 <!-- Award Badge Modal -->
@@ -799,7 +1086,7 @@
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => (awardModalOpen = false)} disabled={acting}>{t('common.cancel', 'Cancel')}</Button>
 		<Button onclick={awardBadge} disabled={acting || !awardTargetUserId}>
-			{acting ? t('common.saving', 'Saving...') : t('gamification.award', 'Award Badge')}
+			{acting ? t('common.saving', 'Saving...') : t('gamification.award_badge', 'Award Badge')}
 		</Button>
 	</div>
 </Modal>
@@ -810,7 +1097,7 @@
 		<p class="text-sm" style="color: var(--color-foreground)">
 			{t('gamification.delete_confirm', 'Delete')}
 			<strong>{deleteTarget.name}</strong>?
-			{t('common.cannot_undo', 'This action cannot be undone.')}
+			{t('common.cannotUndo', 'This action cannot be undone.')}
 		</p>
 	{/if}
 	{#if deleteError}
@@ -857,8 +1144,40 @@
 				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.trigger_activity_key || '—'}</p>
 			</div>
 			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.category', 'Category')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.category || '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.rarity', 'Rarity')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.rarity || '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.tier', 'Tier')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.tier || '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.badge_group', 'Badge Group')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.badge_group || '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.points_reward', 'Points Reward')}</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.points_reward ?? '—'}</p>
+			</div>
+			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.display_order', 'Display Order')}</p>
 				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.display_order}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.flags', 'Flags')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{[row.is_secret && t('gamification.secret', 'Secret'), row.is_limited && t('gamification.limited', 'Limited'), row.is_featured && t('gamification.featured', 'Featured')].filter(Boolean).join(', ') || '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.available_from', 'Available From')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.available_from ? new Date(row.available_from).toLocaleDateString(undefined, { timeZone: 'UTC' }) : '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.available_until', 'Available Until')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.available_until ? new Date(row.available_until).toLocaleDateString(undefined, { timeZone: 'UTC' }) : '—'}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.system', 'System')}</p>
@@ -984,6 +1303,54 @@
 		<div>
 			<label for="badge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity_key', 'Activity Key')}</label>
 			<ActivityKeyAutocomplete id="badge-activity" bind:value={value.trigger_activity_key} placeholder="post.create" extraKeys={knownActivityKeys} />
+		</div>
+		<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+			<div>
+				<label for="badge-category" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.category', 'Category')}</label>
+				<AutocompleteSelect id="badge-category" bind:value={value.category} options={badgeCategories} class="w-full" />
+			</div>
+			<div>
+				<label for="badge-rarity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.rarity', 'Rarity')}</label>
+				<AutocompleteSelect id="badge-rarity" bind:value={value.rarity} options={rarityOptions} class="w-full" />
+			</div>
+			<div>
+				<label for="badge-tier" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.tier', 'Tier')}</label>
+				<AutocompleteSelect id="badge-tier" bind:value={value.tier} options={tierOptions} class="w-full" />
+			</div>
+		</div>
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+			<div>
+				<label for="badge-group" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.badge_group', 'Badge Group')}</label>
+				<input id="badge-group" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.badge_group} />
+			</div>
+			<div>
+				<label for="badge-points" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.points_reward', 'Points Reward')}</label>
+				<input id="badge-points" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.points_reward} />
+			</div>
+		</div>
+		<div class="flex flex-wrap items-center gap-4">
+			<div class="flex items-center gap-2">
+				<input type="checkbox" id="badge-secret" bind:checked={value.is_secret} />
+				<label for="badge-secret" class="text-sm" style="color: var(--color-foreground)">{t('gamification.secret', 'Secret')}</label>
+			</div>
+			<div class="flex items-center gap-2">
+				<input type="checkbox" id="badge-limited" bind:checked={value.is_limited} />
+				<label for="badge-limited" class="text-sm" style="color: var(--color-foreground)">{t('gamification.limited', 'Limited')}</label>
+			</div>
+			<div class="flex items-center gap-2">
+				<input type="checkbox" id="badge-featured" bind:checked={value.is_featured} />
+				<label for="badge-featured" class="text-sm" style="color: var(--color-foreground)">{t('gamification.featured', 'Featured')}</label>
+			</div>
+		</div>
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+			<div>
+				<label for="badge-available-from" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.available_from', 'Available From')}</label>
+				<input id="badge-available-from" type="datetime-local" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" value={toLocalDT(value.available_from)} oninput={(e) => (value.available_from = e.currentTarget.value)} />
+			</div>
+			<div>
+				<label for="badge-available-until" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.available_until', 'Available Until')}</label>
+				<input id="badge-available-until" type="datetime-local" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" value={toLocalDT(value.available_until)} oninput={(e) => (value.available_until = e.currentTarget.value)} />
+			</div>
 		</div>
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<div>

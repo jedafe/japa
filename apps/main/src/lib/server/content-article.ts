@@ -48,7 +48,10 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 	// a super-admin, or hold an RBAC edit node. §03 RBAC: the seeded/enforced
 	// nodes are `content.edit_own` / `content.edit_any` — `content.edit` is
 	// not a seeded node, so checking it hid the Edit action from every
-	// moderator holding content.edit_any. The backend enforces the actual
+	// moderator holding content.edit_any. `content.edit_own` is granted to
+	// every member, so it must NOT count for non-owners — that showed the
+	// Edit button on every post to every signed-in member. Ownership is
+	// already covered by isOwner. The backend enforces the actual
 	// permission on PATCH /content/{id}; this flag only gates the UI button.
 	const isOwner = !!article.author_id && currentUserId === article.author_id;
 	const isSuperAdmin = userGroups.some((g) => g === 'super_admin' || g === 'Super Admin');
@@ -59,8 +62,7 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 		try {
 			const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
 			const perms = permRes?.permissions ?? [];
-			hasContentEditPermission =
-				hasPerm(perms, 'content.edit_own') || hasPerm(perms, 'content.edit_any');
+			hasContentEditPermission = hasPerm(perms, 'content.edit_any');
 			hasCommentsPinPermission = hasPerm(perms, 'comments.pin');
 		} catch {
 			hasContentEditPermission = false;

@@ -925,6 +925,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Wallet & Credits subsystem (Section 28 — Wallet & Credits).
 	walletService := wallet.NewService(database)
+	// Gamification v2 — approved member verifications emit identity.verified.
+	verificationService.SetActivityEmitter(walletService)
 	walletService.SetSettings(settingsService) // SETTING-007/008: global earn cap + currency settings
 	walletHandlers := wallet.NewHandlers(walletService)
 	walletService.SetEnqueuer(taskEnqueuer)
@@ -1096,6 +1098,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// User Affiliate Program subsystem (Section 56).
 	affiliateService := affiliate.NewServiceWithEnqueuer(database, taskEnqueuer)
 	affiliateService.SetSettings(settingsService) // SETTING-002/003: configurable commission/limits
+	affiliateService.SetFeatureChecker(featureChecker)
 	affiliateHandlers := affiliate.NewHandlers(affiliateService)
 	affiliateHandlers.AsynqClient = asynqClient
 	affiliateHandlers.Cache = vkClient.Redis() // jc:aff_dedup + jc:aff_click (Section 56)
@@ -1499,6 +1502,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// lifetime_points badges, and challenge progress after each successful
 	// ledger earn (BUG-GAMMA-001, ADR-082 §2).
 	walletService.SetGamificationEvaluator(gamificationService)
+	// Wire the wallet service back into gamification as the activity emitter
+	// so challenge completions can emit challenge.completed events (feeding
+	// the challenge-count badge track, gamification v2).
+	gamificationService.SetActivityEmitter(gamificationActivityEmitter{svc: walletService})
 
 	// Ref: japaconnect-engineering/sections/65-content-import.md (ADR-083)
 	contentImportStore := contentimport.NewStore(database)
@@ -2016,6 +2023,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// (services bookings) emits the §102 events there.
 	serviceDirService.SetEventTracker(analyticsEventTrackerAdapter{analyticsService})
 	mentorshipService.SetBookingBackend(serviceDirService)
+	// Gamification v2 — role-aware mentorship activity emissions.
+	mentorshipService.SetActivityEmitter(walletService)
 	mentorshipHandlers := mentorship.NewHandlers(mentorshipService)
 	mentorshipHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in mentorship responses
 
@@ -3552,9 +3561,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// 401 on protected endpoints.
 			r.Use(auth.OptionalAuth(kr, vkClient.Redis()))
 
-			// Baseline rate limit for all API routes (ADR-022).
+			// Baseline rate limit for all API routes (ADR-022) — method-aware:
+			// reads get the baseline_read bucket (SSR page loads fan out to
+			// dozens of API calls), writes stay on the "loose" ceiling.
 			// Tighter tiers are applied to specific subgroups below.
-			r.Use(mw.RateLimit(vkClient.Redis(), "loose"))
+			r.Use(mw.BaselineRateLimit(vkClient.Redis()))
 
 			// Literal safety net (§14): resolves any {{...}} still present in
 			// JSON response bodies so endpoints that don't call a resolver
@@ -3607,6 +3618,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// nextactions.ToolUsageRoutes). Must run AFTER OptionalAuth so
 			// member events carry user_id; guests key on the jc_guest cookie.
 			r.Use(nextactions.TrackToolUsage(analyticsService, vkClient.Redis()))
+			// Gamification v2: emit activity_events for route-derivable badge
+			// triggers (tool.*.used, wiki/content views, journey actions).
+			r.Use(nextactions.TrackActivityUsage(func(ctx context.Context, userID pgtype.UUID, key, reference string) {
+				event, err := walletService.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{
+					ActivityKey: key,
+					Reference:   reference,
+				})
+				if err != nil {
+					return
+				}
+				_ = walletService.EnqueueProcessActivityEvent(ctx, event.ID)
+			}))
 
 			// Identity-dependent enforcement middleware — MUST run after
 			// OptionalAuth + impersonation so auth.FromContext is populated.
@@ -6065,7 +6088,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Get("/admin/users/{id}/sessions", usersHandlers.ListUserSessions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Get("/admin/users/{id}/activity", usersHandlers.ListUserActivity)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.delete")).Delete("/admin/users/{id}", usersHandlers.DeleteUser)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.delete")).Delete("/admin/users/{id}/hard", adminHandlers.HardDeleteUser)
+			// Hard delete is permanent erasure — Rule 11 requires the dedicated
+			// admin.hard_delete node (migration 000746), not just user.delete.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.hard_delete")).Delete("/admin/users/{id}/hard", adminHandlers.HardDeleteUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Patch("/admin/users/{id}/profile-type", usersHandlers.UpdateProfileType)
 
 			// Onboarding routes (Section 09)
@@ -7525,6 +7550,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
 				Get("/admin/jobs", jobsHandlers.HandleAdminListJobs)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
+				Get("/admin/jobs/applications", jobsHandlers.HandleAdminListApplications)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
 				Patch("/admin/jobs/{id}/feature", jobsHandlers.HandleAdminToggleFeature)
 			// Admin CRUD for job listings — jobs.manage
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.manage")).
@@ -7546,6 +7573,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/badges", gamificationHandlers.HandleMyBadges)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.view")).
 					Get("/me/challenges", gamificationHandlers.HandleMyChallenges)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.view")).
+					Get("/me/badge-collection", gamificationHandlers.HandleMyBadgeCollection)
 				r.Get("/users/{username}/badges", gamificationHandlers.HandleUserBadges)
 			})
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
@@ -7566,6 +7595,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/gamification/challenges/{id}", gamificationHandlers.HandleAdminUpdateChallenge)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_challenges")).
 				Delete("/admin/gamification/challenges/{id}", gamificationHandlers.HandleAdminDeleteChallenge)
+			// Gamification v2 — award audit trail, seasons, tier metadata.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Get("/admin/gamification/award-events", gamificationHandlers.HandleAdminListAwardEvents)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Get("/admin/gamification/badge-groups", gamificationHandlers.HandleAdminListBadgeGroups)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Get("/admin/gamification/seasons", gamificationHandlers.HandleAdminListSeasons)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Post("/admin/gamification/seasons", gamificationHandlers.HandleAdminCreateSeason)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Patch("/admin/gamification/seasons/{id}", gamificationHandlers.HandleAdminUpdateSeason)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Delete("/admin/gamification/seasons/{id}", gamificationHandlers.HandleAdminDeleteSeason)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Get("/admin/gamification/tiers", gamificationHandlers.HandleAdminListTiers)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Post("/admin/gamification/tiers", gamificationHandlers.HandleAdminCreateTier)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Patch("/admin/gamification/tiers/{id}", gamificationHandlers.HandleAdminUpdateTier)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gamification.manage_badges")).
+				Delete("/admin/gamification/tiers/{id}", gamificationHandlers.HandleAdminDeleteTier)
 
 			// Section 65 — Content Import & Migration (ADR-083)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "import.use")).
@@ -9429,6 +9479,29 @@ type commentNotificationAdapter struct {
 // Badge-award and challenge-completion notifications are fire-and-forget
 // per Rule 8. The actor is the system (zero UUID) and the subject is the
 // badge/challenge itself.
+// gamificationActivityEmitter adapts *wallet.Service to the
+// gamification.ActivityEmitter interface (mirrors the package-local
+// EmitActivityInput/EmitActivityEvent types).
+type gamificationActivityEmitter struct {
+	svc *wallet.Service
+}
+
+func (a gamificationActivityEmitter) EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input gamification.EmitActivityInput) (gamification.EmitActivityEvent, error) {
+	event, err := a.svc.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{
+		ActivityKey: input.ActivityKey,
+		Reference:   input.Reference,
+		Payload:     input.Payload,
+	})
+	if err != nil {
+		return gamification.EmitActivityEvent{}, err
+	}
+	return gamification.EmitActivityEvent{ID: event.ID}, nil
+}
+
+func (a gamificationActivityEmitter) EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error {
+	return a.svc.EnqueueProcessActivityEvent(ctx, eventID)
+}
+
 type gamificationNotifierAdapter struct {
 	svc *notifications.Service
 }

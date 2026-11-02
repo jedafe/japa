@@ -134,14 +134,29 @@ WHERE ($1::text IS NULL OR sb.status = $1::text)
 ORDER BY
   CASE WHEN $8::text = 'oldest' THEN sb.created_at END ASC NULLS LAST,
   CASE WHEN $8::text = 'status' THEN sb.status END ASC NULLS LAST,
+  CASE WHEN $8::text = 'status_desc' THEN sb.status END DESC NULLS LAST,
   -- mentor/mentee name sorts — the mentorship connections admin list
   -- (§102 compat) exposes provider/booker columns as sortable.
   CASE WHEN $8::text = 'mentor_asc'  THEN pu.username END ASC NULLS LAST,
   CASE WHEN $8::text = 'mentor_desc' THEN pu.username END DESC NULLS LAST,
   CASE WHEN $8::text = 'mentee_asc'  THEN u.username END ASC NULLS LAST,
   CASE WHEN $8::text = 'mentee_desc' THEN u.username END DESC NULLS LAST,
+  -- §111 admin queue column sorts — listing title / intent / listing
+  -- kind / org name, matching the admin list contract (filter + sort +
+  -- paginate) the bookings inbox shares with the connections list.
+  CASE WHEN $8::text = 'title_asc'  THEN c.title END ASC NULLS LAST,
+  CASE WHEN $8::text = 'title_desc' THEN c.title END DESC NULLS LAST,
+  CASE WHEN $8::text = 'intent_asc'  THEN sb.intent END ASC NULLS LAST,
+  CASE WHEN $8::text = 'intent_desc' THEN sb.intent END DESC NULLS LAST,
+  CASE WHEN $8::text = 'kind_asc'  THEN sm.listing_kind END ASC NULLS LAST,
+  CASE WHEN $8::text = 'kind_desc' THEN sm.listing_kind END DESC NULLS LAST,
+  CASE WHEN $8::text = 'org_asc'  THEN o.name END ASC NULLS LAST,
+  CASE WHEN $8::text = 'org_desc' THEN o.name END DESC NULLS LAST,
   CASE WHEN COALESCE($8::text, 'latest') = 'latest' THEN sb.created_at END DESC NULLS LAST,
-  sb.created_at DESC
+  sb.created_at DESC,
+  -- Deterministic tiebreaker — LIMIT/OFFSET pagination must not let
+  -- equal-keyed rows (same created_at / same status) drift across pages.
+  sb.id ASC
 LIMIT $10 OFFSET $9
 `
 

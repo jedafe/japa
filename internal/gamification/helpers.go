@@ -108,6 +108,11 @@ func badgeToInfo(b gen.BadgeDefinition) BadgeInfo {
 		IsActive:     b.IsActive,
 		IsSystem:     b.IsSystem,
 		DisplayOrder: int(b.DisplayOrder),
+		Rarity:       b.Rarity,
+		IsSecret:     b.IsSecret,
+		IsLimited:    b.IsLimited,
+		IsFeatured:   b.IsFeatured,
+		PointsReward: int(b.PointsReward),
 		CreatedAt:    rfc3339(b.CreatedAt),
 	}
 	if b.TriggerValue != nil {
@@ -118,7 +123,53 @@ func badgeToInfo(b gen.BadgeDefinition) BadgeInfo {
 		info.TriggerActivityKey = *b.TriggerActivityKey
 	}
 
+	if b.Category != nil {
+		info.Category = *b.Category
+	}
+
+	if b.Tier != nil {
+		info.Tier = *b.Tier
+	}
+
+	if b.BadgeGroup != nil {
+		info.BadgeGroup = *b.BadgeGroup
+	}
+
+	if b.AvailableFrom.Valid {
+		s := rfc3339(b.AvailableFrom)
+		info.AvailableFrom = &s
+	}
+
+	if b.AvailableUntil.Valid {
+		s := rfc3339(b.AvailableUntil)
+		info.AvailableUntil = &s
+	}
+
 	return info
+}
+
+// badgeWithDetails builds the earned-badge DTO shared by the evaluator,
+// the user-badge list, and the admin award path.
+func badgeWithDetails(b gen.BadgeDefinition, awardedAt pgtype.Timestamptz) BadgeWithDetails {
+	var iconID *string
+
+	if b.IconMediaID.Valid {
+		s := b.IconMediaID.String()
+		iconID = &s
+	}
+
+	return BadgeWithDetails{
+		ID:          uuidStr(b.ID),
+		Slug:        b.Slug,
+		Name:        b.Name,
+		Description: ptrStr(b.Description),
+		IconMediaID: iconID,
+		Category:    ptrStr(b.Category),
+		Rarity:      b.Rarity,
+		Tier:        ptrStr(b.Tier),
+		BadgeGroup:  ptrStr(b.BadgeGroup),
+		AwardedAt:   rfc3339(awardedAt),
+	}
 }
 
 // challengeToInfo converts a gen.ChallengeDefinition to a ChallengeInfo DTO.
@@ -148,4 +199,19 @@ func challengeToInfo(c gen.ChallengeDefinition) ChallengeInfo {
 	}
 
 	return info
+}
+
+// parseTimestamp parses an RFC3339 timestamp into a pgtype.Timestamptz.
+func parseTimestamp(s string) (pgtype.Timestamptz, error) {
+	var ts pgtype.Timestamptz
+	if s == "" {
+		return ts, nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return ts, err
+	}
+	ts.Time = t.UTC()
+	ts.Valid = true
+	return ts, nil
 }

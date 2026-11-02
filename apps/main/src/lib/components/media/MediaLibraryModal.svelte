@@ -11,7 +11,8 @@
 		uploadToPresigned,
 		confirmMedia,
 		getMedia,
-		updateMedia
+		updateMedia,
+		deleteMedia
 	} from '$lib/api/create';
 	import { listStockProviders, searchStock, importStockPhoto } from '$lib/api/stock';
 	import type { MediaAsset } from '$lib/types';
@@ -90,6 +91,12 @@
 		// alt-text/title editor on the selected library item.
 		const res = await updateMedia(id, updates);
 		if (res.error) throw new Error(res.error?.message ?? 'Update failed');
+	}}
+	onDelete={async (id) => {
+		// DELETE /media/{id} (media.delete_own) — ownership-scoped on the
+		// backend, enables the picker's Delete button on the selected item.
+		const res = await deleteMedia(id);
+		if (res.error) throw new Error(res.error?.message ?? 'Delete failed');
 	}}
 	onSelect={(item: MediaPickerItem) => onSelect(item as MediaAsset)}
 	{onClose}

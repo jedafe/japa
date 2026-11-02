@@ -21,18 +21,28 @@ const (
 
 // BadgeInfo is the JSON-serialisable representation of a badge definition.
 type BadgeInfo struct {
-	ID                 string `json:"id"`
-	Slug               string `json:"slug"`
-	Name               string `json:"name"`
-	Description        string `json:"description,omitempty"`
-	IconMediaID        string `json:"icon_media_id,omitempty"`
-	TriggerType        string `json:"trigger_type"`
-	TriggerValue       int    `json:"trigger_value,omitempty"`
-	TriggerActivityKey string `json:"trigger_activity_key,omitempty"`
-	IsActive           bool   `json:"is_active"`
-	IsSystem           bool   `json:"is_system"`
-	DisplayOrder       int    `json:"display_order"`
-	CreatedAt          string `json:"created_at"`
+	ID                 string  `json:"id"`
+	Slug               string  `json:"slug"`
+	Name               string  `json:"name"`
+	Description        string  `json:"description,omitempty"`
+	IconMediaID        string  `json:"icon_media_id,omitempty"`
+	TriggerType        string  `json:"trigger_type"`
+	TriggerValue       int     `json:"trigger_value,omitempty"`
+	TriggerActivityKey string  `json:"trigger_activity_key,omitempty"`
+	IsActive           bool    `json:"is_active"`
+	IsSystem           bool    `json:"is_system"`
+	DisplayOrder       int     `json:"display_order"`
+	Category           string  `json:"category,omitempty"`
+	Rarity             string  `json:"rarity"`
+	Tier               string  `json:"tier,omitempty"`
+	BadgeGroup         string  `json:"badge_group,omitempty"`
+	IsSecret           bool    `json:"is_secret"`
+	IsLimited          bool    `json:"is_limited"`
+	IsFeatured         bool    `json:"is_featured"`
+	PointsReward       int     `json:"points_reward"`
+	AvailableFrom      *string `json:"available_from,omitempty"`
+	AvailableUntil     *string `json:"available_until,omitempty"`
+	CreatedAt          string  `json:"created_at"`
 }
 
 // BadgeWithDetails is a user's earned badge with the badge definition details.
@@ -42,7 +52,57 @@ type BadgeWithDetails struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description,omitempty"`
 	IconMediaID *string `json:"icon_media_id,omitempty"`
+	Category    string  `json:"category,omitempty"`
+	Rarity      string  `json:"rarity,omitempty"`
+	Tier        string  `json:"tier,omitempty"`
+	BadgeGroup  string  `json:"badge_group,omitempty"`
 	AwardedAt   string  `json:"awarded_at"`
+}
+
+// CollectionBadge is a single catalogue entry in the achievement-centre
+// collection view: the badge definition plus the caller's earned state and
+// progress. Secret badges are masked when unearned (Name/Description and
+// trigger fields are replaced by placeholders).
+type CollectionBadge struct {
+	ID           string  `json:"id"`
+	Slug         string  `json:"slug"`
+	Name         string  `json:"name"`
+	Description  string  `json:"description,omitempty"`
+	IconMediaID  string  `json:"icon_media_id,omitempty"`
+	Category     string  `json:"category,omitempty"`
+	Rarity       string  `json:"rarity"`
+	Tier         string  `json:"tier,omitempty"`
+	BadgeGroup   string  `json:"badge_group,omitempty"`
+	IsSecret     bool    `json:"is_secret"`
+	IsLimited    bool    `json:"is_limited"`
+	IsFeatured   bool    `json:"is_featured"`
+	PointsReward int     `json:"points_reward"`
+	Earned       bool    `json:"earned"`
+	AwardedAt    *string `json:"awarded_at,omitempty"`
+	Progress     int     `json:"progress"`
+	Goal         int     `json:"goal,omitempty"`
+}
+
+// BadgeCollectionStats summarises the user's collection progress.
+type BadgeCollectionStats struct {
+	Earned    int `json:"earned"`
+	Total     int `json:"total"`
+	Remaining int `json:"remaining"`
+	Percent   int `json:"percent"`
+}
+
+// BadgeCollectionCategory groups collection badges under a category.
+type BadgeCollectionCategory struct {
+	Category string            `json:"category"`
+	Earned   int               `json:"earned"`
+	Total    int               `json:"total"`
+	Badges   []CollectionBadge `json:"badges"`
+}
+
+// BadgeCollection is the achievement-centre payload.
+type BadgeCollection struct {
+	Stats      BadgeCollectionStats      `json:"stats"`
+	Categories []BadgeCollectionCategory `json:"categories"`
 }
 
 // ChallengeInfo is the JSON-serialisable representation of a challenge.
@@ -96,6 +156,16 @@ type CreateBadgeInput struct {
 	TriggerActivityKey *string `json:"trigger_activity_key,omitempty"`
 	IsActive           *bool   `json:"is_active,omitempty"`
 	DisplayOrder       *int32  `json:"display_order,omitempty"`
+	Category           *string `json:"category,omitempty"`
+	Rarity             *string `json:"rarity,omitempty"`
+	Tier               *string `json:"tier,omitempty"`
+	BadgeGroup         *string `json:"badge_group,omitempty"`
+	IsSecret           *bool   `json:"is_secret,omitempty"`
+	IsLimited          *bool   `json:"is_limited,omitempty"`
+	IsFeatured         *bool   `json:"is_featured,omitempty"`
+	PointsReward       *int32  `json:"points_reward,omitempty"`
+	AvailableFrom      *string `json:"available_from,omitempty"`
+	AvailableUntil     *string `json:"available_until,omitempty"`
 }
 
 // UpdateBadgeInput is the admin request body for updating a badge.
@@ -113,6 +183,21 @@ type UpdateBadgeInput struct {
 	ClearTriggerActivityKey bool    `json:"clear_trigger_activity_key,omitempty"`
 	IsActive                *bool   `json:"is_active,omitempty"`
 	DisplayOrder            *int32  `json:"display_order,omitempty"`
+	Category                *string `json:"category,omitempty"`
+	ClearCategory           bool    `json:"clear_category,omitempty"`
+	Rarity                  *string `json:"rarity,omitempty"`
+	Tier                    *string `json:"tier,omitempty"`
+	ClearTier               bool    `json:"clear_tier,omitempty"`
+	BadgeGroup              *string `json:"badge_group,omitempty"`
+	ClearBadgeGroup         bool    `json:"clear_badge_group,omitempty"`
+	IsSecret                *bool   `json:"is_secret,omitempty"`
+	IsLimited               *bool   `json:"is_limited,omitempty"`
+	IsFeatured              *bool   `json:"is_featured,omitempty"`
+	PointsReward            *int32  `json:"points_reward,omitempty"`
+	AvailableFrom           *string `json:"available_from,omitempty"`
+	ClearAvailableFrom      bool    `json:"clear_available_from,omitempty"`
+	AvailableUntil          *string `json:"available_until,omitempty"`
+	ClearAvailableUntil     bool    `json:"clear_available_until,omitempty"`
 }
 
 // CreateChallengeInput is the admin request body for creating a challenge.
@@ -147,4 +232,80 @@ type UpdateChallengeInput struct {
 	EndsAt             *string `json:"ends_at,omitempty"`
 	ClearEndsAt        bool    `json:"clear_ends_at,omitempty"`
 	IsActive           *bool   `json:"is_active,omitempty"`
+}
+
+// --- Admin management surfaces (v2): award events, seasons, tiers ---
+
+// AwardEventInfo is one row of the badge-award audit trail.
+// AwardedByUsername resolves the admin who granted a manual award.
+type AwardEventInfo struct {
+	ID        string  `json:"id"`
+	UserID    string  `json:"user_id"`
+	Username  string  `json:"username,omitempty"`
+	BadgeID   string  `json:"badge_id"`
+	BadgeName string  `json:"badge_name"`
+	BadgeSlug string  `json:"badge_slug"`
+	Source    string  `json:"source"`
+	AwardedBy         *string `json:"awarded_by,omitempty"`
+	AwardedByUsername *string `json:"awarded_by_username,omitempty"`
+	CreatedAt         string  `json:"created_at"`
+}
+
+// SeasonInfo is a limited-edition collection window.
+type SeasonInfo struct {
+	ID        string  `json:"id"`
+	Slug      string  `json:"slug"`
+	Name      string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	StartsAt  string  `json:"starts_at"`
+	EndsAt    *string `json:"ends_at,omitempty"`
+	IsActive  bool    `json:"is_active"`
+	CreatedAt string  `json:"created_at"`
+}
+
+// TierInfo is progression metadata for a tiered badge collection.
+type TierInfo struct {
+	ID         string  `json:"id"`
+	BadgeGroup string  `json:"badge_group"`
+	Tier       string  `json:"tier"`
+	Name       string  `json:"name"`
+	Threshold  int     `json:"threshold"`
+	BadgeID    *string `json:"badge_id,omitempty"`
+	CreatedAt  string  `json:"created_at"`
+}
+
+// CreateSeasonInput / UpdateSeasonInput / CreateTierInput / UpdateTierInput
+// are the admin write payloads.
+type CreateSeasonInput struct {
+	Slug      string  `json:"slug"`
+	Name      string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	StartsAt  string  `json:"starts_at"`
+	EndsAt    *string `json:"ends_at,omitempty"`
+	IsActive  bool    `json:"is_active"`
+}
+
+type UpdateSeasonInput struct {
+	Name      *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+	StartsAt  *string `json:"starts_at,omitempty"`
+	EndsAt    *string `json:"ends_at,omitempty"`
+	IsActive  *bool   `json:"is_active,omitempty"`
+}
+
+type CreateTierInput struct {
+	BadgeGroup string `json:"badge_group"`
+	Tier       string `json:"tier"`
+	Name       string `json:"name"`
+	Threshold  int    `json:"threshold"`
+	BadgeID    string `json:"badge_id,omitempty"`
+}
+
+type UpdateTierInput struct {
+	BadgeGroup   *string `json:"badge_group,omitempty"`
+	Tier         *string `json:"tier,omitempty"`
+	Name         *string `json:"name,omitempty"`
+	Threshold    *int    `json:"threshold,omitempty"`
+	BadgeID      *string `json:"badge_id,omitempty"`
+	ClearBadgeID bool    `json:"clear_badge_id,omitempty"`
 }

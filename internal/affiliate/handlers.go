@@ -127,7 +127,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrTooManyLinks):
 		errpkg.WriteError(w, http.StatusConflict, "too_many_links", err.Error())
 	case errors.Is(err, ErrFeatureDisabled):
-		errpkg.WriteError(w, http.StatusForbidden, "feature_disabled", err.Error())
+		errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", err.Error())
 	case errors.Is(err, ErrAccountTooNew):
 		errpkg.WriteError(w, http.StatusForbidden, "account_too_new", err.Error())
 	case errors.Is(err, ErrLinkNotActive):

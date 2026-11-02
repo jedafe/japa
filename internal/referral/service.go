@@ -24,8 +24,8 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -456,9 +456,14 @@ func (s *Service) CaptureSignupReferral(ctx context.Context, refereeUserID pgtyp
 		return nil
 	}
 
-	if _, err := s.CreateReferral(ctx, refCodeRow.UserID, refereeUserID, refCode); err != nil {
+	referral, err := s.CreateReferral(ctx, refCodeRow.UserID, refereeUserID, refCode)
+	if err != nil {
 		return fmt.Errorf("referral: capture signup: %w", err)
 	}
+
+	// Gamification v2 — the referrer earns referral.created (Recruiter
+	// track). Dedupe ref is the referral row.
+	s.emitActivity(ctx, refCodeRow.UserID, "referral.created", "referral:"+referral.ID.String())
 
 	return nil
 }

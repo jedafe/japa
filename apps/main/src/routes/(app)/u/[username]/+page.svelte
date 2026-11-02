@@ -2,8 +2,8 @@
 	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { afterNavigate, goto, invalidate } from '$app/navigation';
-	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark, Globe, TriangleAlert } from 'lucide-svelte';
+	import { afterNavigate, goto, invalidate, invalidateAll } from '$app/navigation';
+	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark, Globe, TriangleAlert, Trash2, Loader2 } from 'lucide-svelte';
 	import { MenuItem, Modal } from '$lib/components/ui';
 	import { Chart, Bars, LineChart, Tooltip } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -19,11 +19,12 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { UrlTab } from '$lib/components/ui';
-	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem } from '$lib/types';
+	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem, Badge, EarnedBadge, ProfileMedia } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import { formatMetric } from '$lib/components/hub/charts/format';
 	import { tiptapExcerpt, decodeTipTapDoc, tiptapToText } from '$lib/tiptap/serialize';
 	import { blockUser, unblockUser, muteUser, unmuteUser } from '$lib/api/hub';
+	import { deleteMedia } from '$lib/api/create';
 	import type { FollowableType } from '$lib/api/hub';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -223,11 +224,45 @@
 	// the full catalog (data.allBadges); unearned badges surface a "how to earn"
 	// hint via their description. Earned badges are always shown (public route).
 	const earnedSlugs = $derived(new Set((data.badges ?? []).map((b) => b.slug)));
+
+	// Gamification v2 — rarity accent colors for earned badge chips.
+	const rarityColors: Record<string, string> = {
+		common: 'var(--chart-2)',
+		uncommon: 'var(--chart-4)',
+		rare: 'var(--chart-1)',
+		epic: 'var(--chart-5)',
+		legendary: '#d97706',
+		mythic: '#7c3aed'
+	};
+	function rarityColor(r?: string): string {
+		return rarityColors[r ?? ''] ?? 'var(--color-primary)';
+	}
 	const unearnedBadges = $derived(
 		isOwnProfile
 			? (data.allBadges ?? []).filter((b) => b.is_active && !earnedSlugs.has(b.slug))
 			: []
 	);
+
+	// Gamification v2 — locked badges grouped by category (matching the
+	// /badges achievement centre); earned badges stay in a flat card on top.
+	const badgeGroups = $derived.by(() => {
+		const order: string[] = [];
+		const groups = new Map<string, Badge[]>();
+		const ensure = (c?: string) => {
+			const k = c || 'general';
+			if (!groups.has(k)) {
+				groups.set(k, []);
+				order.push(k);
+			}
+			return groups.get(k)!;
+		};
+		for (const b of unearnedBadges) ensure(b.category).push(b);
+		return order.map((category) => ({ category, locked: groups.get(category)! }));
+	});
+
+	function badgeCategoryLabel(slug: string): string {
+		return t('badges.category.' + slug, slug.replace(/_/g, ' '));
+	}
 
 	// Sidebar data — connections are the union of followers + following
 	// limited to user entities, deduped by id (a mutual appears once).
@@ -427,11 +462,10 @@
 		// boolean for the caller so the FollowButton can be hydrated.
 		{ value: 'followers', label: t('profile.tab.followers', 'Followers') },
 		{ value: 'following', label: t('profile.tab.following', 'Following') },
-		// Phase 34.03 — Badges tab (Section 64, ADR-080). Shown when the user
-		// has earned badges (public) or when viewing own profile (unearned
-		// badges from the full catalog are also surfaced with "how to earn"
-		// hints).
-		...((data.badges && data.badges.length > 0) || unearnedBadges.length > 0
+		// Phase 34.03 — Badges tab (Section 64, ADR-080). Always visible on the
+		// own profile — it's the entry point to the achievement centre —
+		// and on public profiles when the member holds earned badges.
+		...(isOwnProfile || (data.badges && data.badges.length > 0) || unearnedBadges.length > 0
 			? [{ value: 'badges', label: t('profile.tab.badges', 'Badges') }]
 			: []),
 		// Analytics is a self-dashboard — owner-only per JEOS §342 [auth, self].
@@ -695,6 +729,39 @@
 		})
 	);
 
+	// Media tab — ownership-scoped delete (DELETE /media/{id}, media.delete_own).
+	// The trash affordance only renders on the owner's profile; the backend
+	// re-checks uploader scope so the id can never target another user's row.
+	let mediaDeleteTarget = $state<ProfileMedia | null>(null);
+	let mediaDeleteOpen = $state(false);
+	let mediaDeletePending = $state(false);
+	let mediaDeleteError = $state('');
+
+	function requestMediaDelete(item: ProfileMedia) {
+		mediaDeleteTarget = item;
+		mediaDeleteError = '';
+		mediaDeletePending = false;
+		mediaDeleteOpen = true;
+	}
+
+	async function confirmMediaDelete() {
+		if (!mediaDeleteTarget || mediaDeletePending) return;
+		mediaDeletePending = true;
+		mediaDeleteError = '';
+		const res = await deleteMedia(mediaDeleteTarget.id);
+		if (res.error) {
+			mediaDeleteError = res.error.message ?? t('media.library.delete_error', 'Failed to delete media');
+			mediaDeletePending = false;
+			return;
+		}
+		mediaDeleteOpen = false;
+		mediaDeleteTarget = null;
+		mediaDeletePending = false;
+		// data.media is SSR-loaded — re-run the load so the deleted item drops
+		// out of mediaView instead of relying on local filtering.
+		await invalidateAll();
+	}
+
 	const likesView = $derived(
 		view(data.likes, {
 			searchFields: ['title', 'excerpt', 'author_name', 'content_type'],
@@ -914,6 +981,38 @@
 
 <ReportDialog bind:open={reportOpen} entityType="user" entityId={user.id} entityName={user.display_name ?? user.username} />
 <MessageUserDialog bind:open={messageOpen} recipientId={messageRecipient.id} recipientName={messageRecipient.name} authed={isAuthenticated} />
+
+<!-- Media tab delete confirmation — DELETE /media/{id} is soft-delete and
+     ownership-scoped; only reachable on the owner's own profile. -->
+<Modal
+	bind:open={mediaDeleteOpen}
+	icon={Trash2}
+	title={t('media.library.delete_title', 'Delete media')}
+	description={t('media.library.delete_confirm', 'Delete this media file? This cannot be undone.')}
+	size="sm"
+>
+	{#snippet children(close)}
+		{#if mediaDeleteError}
+			<p class="mb-3 text-xs text-[var(--color-danger)]">{mediaDeleteError}</p>
+		{/if}
+		<div class="flex justify-end gap-2">
+			<button
+				type="button"
+				class="rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				onclick={close}
+			>{t('common.cancel', 'Cancel')}</button>
+			<button
+				type="button"
+				class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-danger)] px-4 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+				disabled={mediaDeletePending}
+				onclick={confirmMediaDelete}
+			>
+				{#if mediaDeletePending}<Loader2 size={14} class="animate-spin" />{/if}
+				{t('media.library.delete', 'Delete')}
+			</button>
+		</div>
+	{/snippet}
+</Modal>
 
 
 <!-- §87 — Japa Stage badge. Shown when the profile user has a public stage
@@ -1157,6 +1256,43 @@ profile is private, or no stage is set. -->
 					</section>
 				{/if}
 
+				<!-- Earned Badges (gamification v2) — rarity-accented chips linking
+				     to the badges tab (or /badges on own profile). -->
+				{#if data.badges && data.badges.length > 0}
+					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+						<div class="mb-3 flex items-center justify-between gap-2">
+							<h2 class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
+								<Award size={15} class="text-[var(--color-primary)]" />
+								{t('profile.earned_badges', 'Earned Badges')}
+							</h2>
+							<button
+								onclick={() => (activeTab = 'badges')}
+								class="text-xs font-semibold text-[var(--color-primary)] hover:underline"
+							>
+								{t('profile.view_all', 'View all')} ({data.badges.length})
+							</button>
+						</div>
+						<div class="flex flex-wrap gap-2">
+							{#each data.badges.slice(0, 8) as badge (badge.id)}
+								{@const c = rarityColor(badge.rarity)}
+								<span
+									class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
+									style="border-color: color-mix(in srgb, {c} 40%, var(--color-border)); color: {c}; background: color-mix(in srgb, {c} 8%, transparent)"
+									title={badge.description}
+								>
+									<Award size={11} />
+									{badge.name}
+								</span>
+							{/each}
+							{#if data.badges.length > 8}
+								<button onclick={() => (activeTab = 'badges')} class="inline-flex items-center rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]">
+									+{data.badges.length - 8}
+								</button>
+							{/if}
+						</div>
+					</section>
+				{/if}
+
 				<!-- Recent Activity — merged posts/replies/likes (+ owner Saved) -->
 				<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 					<div class="mb-3 flex items-center justify-between gap-2">
@@ -1216,13 +1352,25 @@ profile is private, or no stage is set. -->
 			{:else}
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 					{#each mediaView.items as item (item.id)}
-						<button
-							type="button"
-							class="block aspect-square cursor-zoom-in overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]"
-							onclick={() => openLightbox(mediaView.filtered, mediaView.filtered.indexOf(item))}
-						>
-							<img src={item.url} alt={item.alt_text ?? ''} class="h-full w-full object-cover" loading="lazy" />
-						</button>
+						<div class="group relative aspect-square overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]">
+							<button
+								type="button"
+								class="block h-full w-full cursor-zoom-in"
+								onclick={() => openLightbox(mediaView.filtered, mediaView.filtered.indexOf(item))}
+							>
+								<img src={item.url} alt={item.alt_text ?? ''} class="h-full w-full object-cover" loading="lazy" />
+							</button>
+							{#if isOwnProfile}
+								<button
+									type="button"
+									class="absolute end-1.5 top-1.5 z-10 grid h-7 w-7 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity hover:bg-[var(--color-danger)] focus-visible:opacity-100 group-hover:opacity-100"
+									onclick={() => requestMediaDelete(item)}
+									aria-label={t('media.library.delete', 'Delete')}
+								>
+									<Trash2 size={13} />
+								</button>
+							{/if}
+						</div>
 					{/each}
 				</div>
 				{@render pager(mediaView)}
@@ -1399,6 +1547,16 @@ profile is private, or no stage is set. -->
 			<!-- Phase 34.03 — Badges tab (Section 64, ADR-080). Earned badges
 			are public; unearned badges with "how to earn" hints are shown only
 			on the own profile (data.allBadges is owner-only). -->
+			{#if isOwnProfile}
+				<div class="mb-3 flex justify-end">
+					<a
+						href="/badges"
+						class="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-primary)] hover:underline"
+					>
+						<Award size={12} /> {t('profile.view_badge_collection', 'View badge collection')}
+					</a>
+				</div>
+			{/if}
 			{#if (data.badges && data.badges.length > 0) || unearnedBadges.length > 0}
 				<div class="space-y-4">
 					{#if data.badges && data.badges.length > 0}
@@ -1412,11 +1570,14 @@ profile is private, or no stage is set. -->
 										class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2"
 										title={badge.description}
 									>
-										<span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-primary)]">
+										<span
+											class="grid h-7 w-7 shrink-0 place-items-center rounded-full"
+											style="background: color-mix(in srgb, {rarityColor(badge.rarity)} 14%, transparent); color: {rarityColor(badge.rarity)}"
+										>
 											<Award size={14} />
 										</span>
 										<span class="min-w-0 flex-1">
-											<span class="block truncate text-xs font-medium text-[var(--color-text)]">{badge.name}</span>
+											<span class="block truncate text-xs font-medium" style="color: {rarityColor(badge.rarity)}">{badge.name}</span>
 											<span class="block text-[10px] text-[var(--color-muted)]">
 												{t('profile.earned', 'Earned')} {new Date(badge.awarded_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short' })}
 											</span>
@@ -1426,13 +1587,16 @@ profile is private, or no stage is set. -->
 							</div>
 						</div>
 					{/if}
-					{#if unearnedBadges.length > 0}
+					{#each badgeGroups as cat (cat.category)}
 						<div>
-							<h3 class="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
-								<Award size={12} /> {t('profile.locked', 'Locked')}
+							<h3 class="mb-2 flex items-center justify-between text-xs font-medium tracking-wide uppercase text-[var(--color-muted)]">
+								<span class="flex items-center gap-1.5">
+									<Award size={12} /> {badgeCategoryLabel(cat.category)}
+								</span>
+								<span class="normal-case">{cat.locked.length}</span>
 							</h3>
 							<div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-								{#each unearnedBadges as badge (badge.id)}
+								{#each cat.locked as badge (badge.id)}
 									<div
 										class="flex items-center gap-2 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-2 opacity-70"
 										title={t('profile.how_to_earn', 'How to earn') + ': ' + badge.description}
@@ -1448,13 +1612,14 @@ profile is private, or no stage is set. -->
 								{/each}
 							</div>
 						</div>
-					{/if}
+					{/each}
 				</div>
 			{:else}
 				<EmptyState
 					icon={Award}
 					title={t('profile.badges', 'Badges')}
-					body={t('profile.no_badges', 'No badges yet')}
+					body={isOwnProfile ? t('profile.no_badges_own', 'Start engaging to earn your first badge — explore, learn, and connect.') : t('profile.no_badges', 'No badges yet')}
+					action={isOwnProfile ? { label: t('profile.view_badge_collection', 'View badge collection'), href: '/badges' } : undefined}
 				/>
 			{/if}
 		{:else if activeTab === 'analytics'}

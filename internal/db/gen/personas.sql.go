@@ -59,6 +59,19 @@ func (q *Queries) CountPersonaVoices(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countPersonaVoicesMatching = `-- name: CountPersonaVoicesMatching :one
+SELECT COUNT(*) AS count
+FROM persona_voices
+WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%' OR COALESCE(description, '') ILIKE '%' || $1 || '%')
+`
+
+func (q *Queries) CountPersonaVoicesMatching(ctx context.Context, q_ string) (int64, error) {
+	row := q.db.QueryRow(ctx, countPersonaVoicesMatching, q_)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAIPersona = `-- name: CreateAIPersona :one
 
 INSERT INTO ai_personas (user_id, profile_id, disclosure_mode, autonomy_mode, voice_id, voice_prompt, activity_policy, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -739,6 +752,68 @@ type RemoveUserGeoMembershipsExceptParams struct {
 func (q *Queries) RemoveUserGeoMembershipsExcept(ctx context.Context, arg RemoveUserGeoMembershipsExceptParams) error {
 	_, err := q.db.Exec(ctx, removeUserGeoMembershipsExcept, arg.UserID, arg.KeepIds)
 	return err
+}
+
+const searchPersonaVoices = `-- name: SearchPersonaVoices :many
+SELECT id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
+WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%' OR COALESCE(description, '') ILIKE '%' || $1 || '%')
+ORDER BY
+ CASE WHEN $2::text = 'name' AND $3::text = 'asc' THEN name END ASC,
+ CASE WHEN $2::text = 'name' AND $3::text = 'desc' THEN name END DESC,
+ CASE WHEN $2::text = 'slug' AND $3::text = 'asc' THEN slug END ASC,
+ CASE WHEN $2::text = 'slug' AND $3::text = 'desc' THEN slug END DESC,
+ CASE WHEN $2::text = 'created_at' AND $3::text = 'asc' THEN created_at END ASC,
+ CASE WHEN $2::text = 'created_at' AND $3::text = 'desc' THEN created_at END DESC,
+ CASE WHEN $2::text = 'updated_at' AND $3::text = 'asc' THEN updated_at END ASC,
+ CASE WHEN $2::text = 'updated_at' AND $3::text = 'desc' THEN updated_at END DESC,
+ name ASC
+LIMIT $5 OFFSET $4
+`
+
+type SearchPersonaVoicesParams struct {
+	Q          string `json:"q"`
+	Sort       string `json:"sort"`
+	Dir        string `json:"dir"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
+}
+
+// Admin list with search + whitelisted sort keys (GET /admin/persona-voices).
+// Sort keys are whitelisted by CASE so no user input reaches the ORDER BY.
+func (q *Queries) SearchPersonaVoices(ctx context.Context, arg SearchPersonaVoicesParams) ([]PersonaVoice, error) {
+	rows, err := q.db.Query(ctx, searchPersonaVoices,
+		arg.Q,
+		arg.Sort,
+		arg.Dir,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PersonaVoice
+	for rows.Next() {
+		var i PersonaVoice
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.VoicePrompt,
+			&i.IsSystem,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateAIPersona = `-- name: UpdateAIPersona :one

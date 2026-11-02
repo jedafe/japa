@@ -145,6 +145,11 @@ func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
 
 	rates, err := h.service.GetRates(r.Context(), send, receive)
 	if err != nil {
+		if errors.Is(err, ErrTrackerDisabled) {
+			errpkg.WriteError(w, http.StatusNotFound, "remittance_disabled", "Remittance rate tracker is not available")
+			return
+		}
+
 		slog.Error("remittance: get rates failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "rates_failed", "Failed to get rates")
 
@@ -181,6 +186,11 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.Calculate(r.Context(), sendAmount, send, receive)
 	if err != nil {
+		if errors.Is(err, ErrTrackerDisabled) {
+			errpkg.WriteError(w, http.StatusNotFound, "remittance_disabled", "Remittance rate tracker is not available")
+			return
+		}
+
 		slog.Error("remittance: calculate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "calculate_failed", "Failed to calculate")
 
@@ -218,6 +228,11 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 
 	points, err := h.service.GetHistory(r.Context(), send, receive, days)
 	if err != nil {
+		if errors.Is(err, ErrTrackerDisabled) {
+			errpkg.WriteError(w, http.StatusNotFound, "remittance_disabled", "Remittance rate tracker is not available")
+			return
+		}
+
 		slog.Error("remittance: get history failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "history_failed", "Failed to get history")
 

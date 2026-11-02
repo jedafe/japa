@@ -160,7 +160,7 @@ func (p *Preflight) CheckAdmission(ctx context.Context, userID pgtype.UUID, gate
 	}
 
 	if !p.gateEnabled(ctx, gate) {
-		return &PreflightError{Status: http.StatusServiceUnavailable, Code: gate.DisabledCode, Message: gate.DisabledMsg}
+		return &PreflightError{Status: http.StatusNotFound, Code: gate.DisabledCode, Message: gate.DisabledMsg}
 	}
 
 	return p.CheckConsent(ctx, userID)

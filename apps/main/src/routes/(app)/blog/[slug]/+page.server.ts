@@ -146,10 +146,12 @@ export const load: PageServerLoad = async (event) => {
 			analyticsPromise
 		]);
 
-	const hasContentEditOwn = perms.includes('content.edit_own');
+	// content.edit_own is granted to every member, so it must NOT count for
+	// non-owners — including it showed the Edit button on every post to every
+	// signed-in member. Own-content editing is already covered by isOwner.
 	const hasContentEditAny = perms.includes('content.edit_any');
 	const hasCommentsPinPermission = perms.includes('comments.pin');
-	const canEdit = isSuperAdmin || isOwner || hasContentEditOwn || hasContentEditAny;
+	const canEdit = isSuperAdmin || isOwner || hasContentEditAny;
 	const canDelete = isSuperAdmin || isOwner;
 
 	// Pin affordance: content author or moderator (comments.pin). The backend

@@ -2647,24 +2647,24 @@ func (s *Service) CountContentShares(ctx context.Context, contentID pgtype.UUID)
 // zero pgtype.UUID for "unfiled". When folder is empty, the default folder
 // is resolved from the entity/content type and created lazily.
 func (s *Service) CreateBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string, folderID pgtype.UUID) (gen.CreateBookmarkRow, error) {
-	if folder == "" {
-		contentType := ""
+	contentType := ""
 
-		if entityType == EntityContent || entityType == TypeBlogPost {
-			c, err := s.read.GetContentByID(ctx,
-				entityID,
-			)
+	if entityType == EntityContent || entityType == TypeBlogPost {
+		c, err := s.read.GetContentByID(ctx,
+			entityID,
+		)
 
-			switch {
-			case err == nil:
-				contentType = c.ContentType
-			case errors.Is(err, pgx.ErrNoRows):
-				// nothing to do; contentType stays empty
-			default:
-				slog.Warn("content: failed to look up content type for bookmark folder", "error", err)
-			}
+		switch {
+		case err == nil:
+			contentType = c.ContentType
+		case errors.Is(err, pgx.ErrNoRows):
+			// nothing to do; contentType stays empty
+		default:
+			slog.Warn("content: failed to look up content type for bookmark folder", "error", err)
 		}
+	}
 
+	if folder == "" {
 		if s.folderResolver != nil {
 			f, err := s.folderResolver.Resolve(ctx, userID, entityType, contentType)
 			if err == nil && f.ID != "" {
@@ -2693,6 +2693,15 @@ func (s *Service) CreateBookmark(ctx context.Context, userID pgtype.UUID, entity
 	})
 	if err != nil {
 		return gen.CreateBookmarkRow{}, fmt.Errorf("creating bookmark: %w", err)
+	}
+
+	// Gamification v2 — typed-save activity keys feed save badges
+	// (Opportunity Hunter, Service Seeker). Deduped per entity.
+	switch contentType {
+	case TypeJobListing:
+		s.emitActivity(ctx, userID, "job.saved", "job.saved:"+entityID.String(), nil)
+	case TypeServiceListing:
+		s.emitActivity(ctx, userID, "service.saved", "service.saved:"+entityID.String(), nil)
 	}
 
 	return bm, nil

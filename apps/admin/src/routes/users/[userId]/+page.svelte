@@ -14,8 +14,8 @@
   import Pagination from "$lib/components/ui/Pagination.svelte";
   import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
   import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
-  import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play, RotateCcw, Coins } from "lucide-svelte";
-   import { userManagementApi, impersonationApi, usersWarningsAdminApi, type UserSession, type WalletLedgerEntry, type ModerationConfigOption } from "$lib/api";
+  import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play, RotateCcw, Coins, BadgeCheck } from "lucide-svelte";
+   import { userManagementApi, impersonationApi, usersWarningsAdminApi, verificationAdminApi, type UserSession, type WalletLedgerEntry, type ModerationConfigOption, type VerificationTypeItem } from "$lib/api";
   import { hasPermission } from "$lib/stores/permissions.svelte";
 
   type UserDetail = {
@@ -27,6 +27,7 @@
     // duplicates, so the group editor diffs on ids via group_refs.
     group_refs?: Array<{ id: string; name: string; slug: string }>;
     status: string;
+    verified?: boolean;
     profile_type: 'regular' | 'pro' | 'business';
     created_at: string;
     avatar_url?: string;
@@ -138,6 +139,11 @@
 
   let showBanConfirm = $state(false);
   let showUnbanConfirm = $state(false);
+  let showVerifyModal = $state(false);
+  let verifyType = $state("");
+  let verificationTypes = $state<VerificationTypeItem[]>([]);
+  let banReason = $state("");
+  let banDays = $state(0);
   let showDeleteConfirm = $state(false);
   let showWarningModal = $state(false);
   let showGroupModal = $state(false);
@@ -147,7 +153,7 @@
   let warningReason = $state("");
   let warningViolationType = $state("");
   let selectedGroups = $state<string[]>([]);
-  let selectedProfileType = $state("personal");
+  let selectedProfileType = $state("regular");
   // Restrict modal state
   let restrictOperations = $state<string[]>([]);
   let restrictDuration = $state("7d");
@@ -161,32 +167,45 @@
 
   let impersonating = $state(false);
   let impersonatingTargetId = $state<string | null>(null);
+  let impersonatingTargetName = $state<string | null>(null);
 
   const userId = $derived(page.params.userId ?? "");
   
+  // Per-node gates — the backend enforces different nodes per action:
+  // admin.users.list (profile read), admin.users.manage (sessions/activity/
+  // profile-type), admin.moderation (ban/warn/suspend/restrict/status/
+  // warnings), admin.rbac.manage (group membership), user.delete (soft
+  // delete), admin.impersonate (§46), ai.context.admin_view /
+  // ai.context.admin_delete_entry (AI Context tab), wallet.admin.adjust
+  // (Points tab).
   const canManageUsers = $derived(hasPermission('admin.users.manage'));
+  const canModerate = $derived(hasPermission('admin.moderation'));
+  const canManageRbac = $derived(hasPermission('admin.rbac.manage'));
+  const canDeleteUsers = $derived(hasPermission('user.delete'));
   const canImpersonate = $derived(hasPermission('admin.impersonate'));
+  const canViewAiContext = $derived(hasPermission('ai.context.admin_view'));
   const canDeleteAiContext = $derived(hasPermission('ai.context.admin_delete_entry'));
+  const canViewWallet = $derived(hasPermission('wallet.admin.adjust'));
 
-   const tabs = [
-     { value: "overview", label: "Overview", icon: Users },
-     { value: "activity", label: "Activity", icon: Users },
-     { value: "ai", label: "AI Context", icon: Users },
-     { value: "sessions", label: "Sessions", icon: Users },
-     { value: "warnings", label: "Warnings", icon: AlertTriangle },
-     { value: "wallet", label: "Points", icon: Coins }
-   ];
+   const tabs = $derived([
+     { value: "overview", label: "Overview", icon: Users, show: true },
+     { value: "activity", label: "Activity", icon: Users, show: canManageUsers },
+     { value: "ai", label: "AI Context", icon: Users, show: canViewAiContext },
+     { value: "sessions", label: "Sessions", icon: Users, show: canManageUsers },
+     { value: "warnings", label: "Warnings", icon: AlertTriangle, show: canModerate },
+     { value: "wallet", label: "Points", icon: Coins, show: canViewWallet }
+   ].filter((tab) => tab.show));
 
   const activityColumns = [
     { key: 'type', label: t('users.userId.type'), sortable: true, render: (v: string) => `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-secondary) 15%, transparent); color: var(--color-foreground)">${v}</span>` },
     { key: 'content', label: t('users.userId.content'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
-    { key: 'created_at', label: t('users.userId.date'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` }
+    { key: 'created_at', label: t('users.userId.date'), sortable: true, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>` }
   ];
 
   const aiColumns = [
     { key: 'entry_type', label: t('users.userId.type'), sortable: false, render: (v: string) => `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-secondary) 15%, transparent); color: var(--color-foreground)">${v}</span>` },
     { key: 'content', label: t('users.userId.content'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` },
-    { key: 'created_at', label: t('users.userId.created'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` }
+    { key: 'created_at', label: t('users.userId.created'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>` }
   ];
 
   const aiActions: ActionItem[] = [
@@ -208,7 +227,7 @@
   const warningColumns = [
     { key: 'violation_type', label: t('users.userId.violation_type', 'Violation'), sortable: false, render: (v: string) => `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-warning) 15%, transparent); color: var(--color-foreground)">${v || '—'}</span>` },
     { key: 'reason', label: t('users.userId.reason'), sortable: false },
-    { key: 'created_at', label: t('users.userId.issued'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${v}</span>` }
+    { key: 'created_at', label: t('users.userId.issued'), sortable: false, class: 'text-xs', render: (v: string) => `<span style="color: var(--color-muted)">${new Date(v).toLocaleString()}</span>` }
   ];
 
   const filteredLedger = $derived(
@@ -229,7 +248,7 @@
       icon: Trash2,
       variant: 'destructive',
       onclick: (row: Warning) => deleteWarning(row.id),
-      show: () => canManageUsers
+      show: () => canModerate
     }
   ];
 
@@ -270,8 +289,12 @@
         user = d;
         selectedGroups = d.group_refs.map((g: any) => g.id);
         loadRestrictions();
+      } else {
+        user = null;
+        actionError = result.error ?? t('users.detail.load_error', 'Failed to load user details');
       }
     } catch {
+      user = null;
       actionError = t('users.detail.load_error', 'Failed to load user details');
     } finally {
       loading = false;
@@ -342,6 +365,9 @@
   }
 
   async function loadRestrictions() {
+    // GET /admin/users/{id}/restrictions requires admin.moderation — skip
+    // entirely for viewers without the node instead of firing a 403.
+    if (!canModerate) { restrictions = []; return; }
     try {
       const result = await userManagementApi.listRestrictions(userId);
       if (result.ok) {
@@ -379,9 +405,33 @@
 
   async function handleBan() {
     showBanConfirm = false;
-    const result = await userManagementApi.banUser(userId);
+    const result = await userManagementApi.banUser(userId, {
+      reason: banReason.trim() || undefined,
+      days: banDays > 0 ? banDays : undefined,
+    });
     if (result.ok) {
       flash(t('users.detail.ban_success', 'User banned'));
+      banReason = "";
+      banDays = 0;
+      loadUser();
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
+  }
+
+  // §07 Verification Requests — profile badge grant/revoke on the detail
+  // surface for parity with the /users row menu (admin.moderation-gated).
+  async function handleVerify() {
+    showVerifyModal = false;
+    const result = await verificationAdminApi.verifyUser(userId, { verification_type: verifyType || undefined });
+    if (result.ok) {
+      flash(t('users.detail.verify_success', 'User verified'));
+      loadUser();
+    } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
+  }
+
+  async function handleUnverify() {
+    const result = await verificationAdminApi.unverifyUser(userId);
+    if (result.ok) {
+      flash(t('users.detail.unverify_success', 'Verification removed'));
       loadUser();
     } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
@@ -441,6 +491,7 @@
       warningReason = "";
       loadWarnings();
       loadRestrictions();
+      if (d.auto_restricted) loadUser(); // status may have flipped to 'restricted'
     } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
@@ -498,7 +549,11 @@
     } else flash(result.error ?? t('users.detail.action_error', 'Action failed'), true);
   }
 
+  let groupSaving = $state(false);
+
   async function handleGroupChange() {
+    if (groupSaving) return; // in-flight guard — duplicate submit fires dup API calls
+    groupSaving = true;
     showGroupModal = false;
     // Membership diff is keyed on group ids via group_refs — name-keyed
     // lookups silently collapse duplicate display names.
@@ -520,8 +575,13 @@
 
     if (allOk) {
       flash(t('users.detail.group_changed', 'Group updated'));
-      loadUser();
-    } else flash(lastError ?? t('users.detail.action_error', 'Action failed'), true);
+    } else {
+      flash(lastError ?? t('users.detail.action_error', 'Action failed'), true);
+    }
+    // Always re-fetch — a partial failure may still have applied some
+    // membership changes, so the UI must reflect the real server state.
+    groupSaving = false;
+    loadUser();
   }
 
   // Moderation config options — fetched from the backend only (Rule 16).
@@ -572,6 +632,7 @@
       if (result.ok) {
         impersonating = result.data.active;
         impersonatingTargetId = result.data.target_user_id;
+        impersonatingTargetName = result.data.target?.username ?? null;
       }
     } catch {
       // banner simply stays hidden
@@ -594,6 +655,9 @@
     if (!groupsLoaded) {
       groupsLoaded = true;
       const loadGroups = async () => {
+        // GET /admin/user-groups requires admin.rbac.manage — skip the call
+        // entirely for viewers without the node instead of firing a 403.
+        if (!canManageRbac) return;
         try {
           const groupsResult = await userManagementApi.listGroups();
           if (groupsResult.ok) {
@@ -618,6 +682,10 @@
   $effect(() => {
     loadModerationConfig();
     checkImpersonation();
+    // §07 badge-type vocabulary for the verify picker (Rule 16).
+    if (canModerate) {
+      verificationAdminApi.types("user").then((r) => { if (r.ok) verificationTypes = r.data.types ?? []; }).catch(() => {});
+    }
   });
 </script>
 
@@ -627,7 +695,7 @@
 
 {#if impersonating}
   <div class="mb-4 flex items-center justify-between gap-2 flex-wrap rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-warning); background-color: color-mix(in srgb, var(--color-warning) 10%, transparent)">
-    <span style="color: var(--color-warning)">{t('users.userId.impersonating')}<strong>{impersonatingTargetId ?? ''}</strong></span>
+    <span style="color: var(--color-warning)">{t('users.userId.impersonating')} <strong>{impersonatingTargetName ?? impersonatingTargetId ?? ''}</strong></span>
     <a href="/users" class="rounded-md border px-3 py-1 text-xs font-medium" style="border-color: var(--color-warning); color: var(--color-warning)">{t('users.userId.back_to_users')}</a>
   </div>
 {/if}
@@ -677,7 +745,7 @@
               <Badge variant={user.status === "active" ? "success" : user.status === "banned" ? "destructive" : user.status === "deleted" ? "destructive" : "warning"}>
                 {user.status}
               </Badge>
-              {#each user.groups as g (g)}
+              {#each user.groups as g, gi (`${g}::${gi}`)}
                 <Badge variant="secondary">{g}</Badge>
               {/each}
             </div>
@@ -700,7 +768,7 @@
             <div>
               <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.userId.groups', 'Groups')}</p>
               <div class="mt-0.5 flex flex-wrap gap-1">
-                {#each user.groups as g (g)}
+                {#each user.groups as g, gi (`${g}::${gi}`)}
                   <Badge variant="secondary" class="text-xs">{g}</Badge>
                 {:else}
                   <span class="text-sm" style="color: var(--color-muted)">—</span>
@@ -711,7 +779,7 @@
 
           <!-- Action Buttons -->
           <div class="mt-4 flex flex-wrap gap-2">
-            {#if canManageUsers}
+            {#if canModerate}
               <Button variant="outline" size="sm" onclick={() => { warningReason = ""; warningViolationType = violationTypes[0]?.value ?? ''; showWarningModal = true; }}>
                 <AlertTriangle class="h-4 w-4 me-2" />
                 {t('users.detail.warning', 'Warn')}
@@ -722,10 +790,23 @@
                   {t('users.detail.unban', 'Unban')}
                 </Button>
               {:else if user.status !== "deleted"}
-                <Button variant="destructive" size="sm" onclick={() => (showBanConfirm = true)}>
+                <Button variant="destructive" size="sm" onclick={() => { banReason = ""; banDays = 0; showBanConfirm = true; }}>
                   <Ban class="h-4 w-4 me-2" />
                   {t('users.detail.ban', 'Ban')}
                 </Button>
+              {/if}
+              {#if user.status !== "deleted"}
+                {#if user.verified}
+                  <Button variant="outline" size="sm" onclick={handleUnverify}>
+                    <BadgeCheck class="h-4 w-4 me-2" />
+                    {t('users.unverify', 'Unverify')}
+                  </Button>
+                {:else}
+                  <Button variant="outline" size="sm" onclick={() => { verifyType = ""; showVerifyModal = true; }}>
+                    <BadgeCheck class="h-4 w-4 me-2" />
+                    {t('users.verify', 'Verify')}
+                  </Button>
+                {/if}
               {/if}
               {#if user.status === "active" || user.status === "restricted"}
                 <Button variant="destructive" size="sm" onclick={() => { restrictOperations = []; restrictDuration = "7d"; restrictReason = ""; showRestrictModal = true; }}>
@@ -753,20 +834,24 @@
                   {t('users.restore', 'Restore')}
                 </Button>
               {/if}
-              <Button variant="outline" size="sm" onclick={() => { selectedGroups = [...(user!.groups ?? [])]; showGroupModal = true; }}>
+            {/if}
+            {#if canManageRbac}
+              <Button variant="outline" size="sm" onclick={() => { selectedGroups = (user?.group_refs ?? []).map((g) => g.id); showGroupModal = true; }}>
                 <Users class="h-4 w-4 me-2" />
                 {t('users.detail.change_group', 'Change Group')}
               </Button>
+            {/if}
+            {#if canManageUsers}
               <Button variant="outline" size="sm" onclick={() => { selectedProfileType = user!.profile_type || 'regular'; showProfileTypeModal = true; }}>
                 <Users class="h-4 w-4 me-2" />
                 {t('users.detail.change_profile_type', 'Change Profile Type')}
               </Button>
-              {#if user.status !== "deleted"}
-                <Button variant="destructive" size="sm" onclick={() => (showDeleteConfirm = true)}>
-                  <Trash2 class="h-4 w-4 me-2" />
-                  {t('users.detail.delete', 'Delete')}
-                </Button>
-              {/if}
+            {/if}
+            {#if canDeleteUsers && user.status !== "deleted"}
+              <Button variant="destructive" size="sm" onclick={() => (showDeleteConfirm = true)}>
+                <Trash2 class="h-4 w-4 me-2" />
+                {t('users.detail.delete', 'Delete')}
+              </Button>
             {/if}
             {#if canImpersonate && user.status !== "deleted"}
               <Button variant="outline" size="sm" onclick={startImpersonate}>
@@ -827,9 +912,11 @@
                         <td class="px-4 py-2 text-xs" style="color: var(--color-muted)">{r.reason ?? '—'}</td>
                         <td class="px-4 py-2 text-xs" style="color: var(--color-muted)">{r.expires_at ? new Date(r.expires_at).toLocaleString() : t('common.permanent', 'Permanent')}</td>
                         <td class="px-4 py-2 text-end">
-                          <Button variant="ghost" size="sm" onclick={() => liftRestriction(r.operation)}>
-                            <RotateCcw class="h-3 w-3 me-1" /> Lift
-                          </Button>
+                          {#if canModerate}
+                            <Button variant="ghost" size="sm" onclick={() => liftRestriction(r.operation)}>
+                              <RotateCcw class="h-3 w-3 me-1" /> Lift
+                            </Button>
+                          {/if}
                         </td>
                       </tr>
                     {/each}
@@ -862,6 +949,21 @@
         <DataTable columns={ledgerColumns} data={pagedLedger} searchable={true} urlSync={false} searchPlaceholder={t('common.search', 'Search')} onsearch={(q) => { ledgerSearch = q; ledgerPage = 0; }} actions={ledgerActions} emptyMessage={t('users.userId.no_ledger_entries', 'No ledger entries yet')} />
         <Pagination bind:page={ledgerPage} totalPages={ledgerTotalPages} totalItems={filteredLedger.length} bind:pageSize={ledgerPageSize} />
       {/if}
+    </CardContent>
+  </Card>
+{:else}
+  <!-- Failed to load (404/403/network) — never render a silent blank page. -->
+  <Card class="mb-6">
+    <CardContent class="p-8 text-center">
+      <p class="text-sm font-medium" style="color: var(--color-foreground)">
+        {t('users.detail.not_found', 'User not found')}
+      </p>
+      {#if actionError}
+        <p class="mt-1 text-xs" style="color: var(--color-muted)">{actionError}</p>
+      {/if}
+      <Button variant="outline" size="sm" class="mt-4" onclick={() => goto('/users')}>
+        {t('users.userId.back_to_users', 'Back to Users')}
+      </Button>
     </CardContent>
   </Card>
 {/if}
@@ -953,9 +1055,41 @@
   <p class="mt-2 text-sm" style="color: var(--color-danger)">
     {t('users.detail.ban_notice', 'The user will lose access to the platform until the ban is lifted.')}
   </p>
+  <div class="mt-3">
+    <label for="ban-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.ban_reason', 'Reason (optional)')}</label>
+    <textarea id="ban-reason" rows="2" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder={t('users.ban_reason_ph', 'Reason for ban...')} bind:value={banReason}></textarea>
+  </div>
+  <div class="mt-3">
+    <label for="ban-days" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('users.ban_days', 'Duration in days (0 = permanent)')}</label>
+    <input id="ban-days" type="number" min="0" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={banDays} />
+  </div>
   <div class="mt-6 flex justify-end gap-3">
     <Button variant="outline" onclick={() => (showBanConfirm = false)}>{t('users.userId.cancel')}</Button>
     <Button variant="destructive" onclick={handleBan}>{t('users.detail.ban', 'Ban')}</Button>
+  </div>
+</Modal>
+
+<!-- Verify (§07 — grant badge with optional type) -->
+<Modal bind:open={showVerifyModal} title={t('users.verify_user', 'Verify User')} size="sm">
+  <p class="text-sm" style="color: var(--color-foreground)">
+    {t('users.verify_confirm', 'Grant a verification badge to')} <strong>{user?.username}</strong>?
+  </p>
+  <label class="mt-3 block text-sm" style="color: var(--color-foreground)">
+    {t('users.verify_type', 'Badge type')}
+    <select
+      class="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+      style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+      bind:value={verifyType}
+    >
+      <option value="">{t('users.verify_type_none', '— none —')}</option>
+      {#each verificationTypes as ty (ty.value)}
+        <option value={ty.value}>{ty.label}</option>
+      {/each}
+    </select>
+  </label>
+  <div class="mt-6 flex justify-end gap-3">
+    <Button variant="outline" onclick={() => (showVerifyModal = false)}>{t('users.userId.cancel')}</Button>
+    <Button variant="default" onclick={handleVerify}>{t('users.verify', 'Verify')}</Button>
   </div>
 </Modal>
 

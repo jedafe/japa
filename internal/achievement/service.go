@@ -314,6 +314,19 @@ func (s *Service) Submit(ctx context.Context, authorID pgtype.UUID, input Submit
 			Reference:   contentRow.ID.String(),
 			Payload:     map[string]interface{}{"milestone_type": input.MilestoneType},
 		})
+		// Gamification v2 — milestone-specific journey keys feed journey
+		// badges (Approval Alert, The Big Move, Offer Received, ...).
+		if input.MilestoneType != "" {
+			if mev, mErr := s.emitter.EmitActivityEvent(ctx, authorID, ActivityEventInput{
+				ActivityKey: "journey.milestone." + input.MilestoneType,
+				Reference:   contentRow.ID.String(),
+				Payload:     map[string]interface{}{"source": "achievement"},
+			}); mErr != nil {
+				slog.Warn("achievement: emit journey milestone failed", "content_id", contentRow.ID, "error", mErr)
+			} else if err := s.emitter.EnqueueProcessActivityEvent(ctx, mev.ID); err != nil {
+				slog.Warn("achievement: enqueue journey milestone failed", "content_id", contentRow.ID, "error", err)
+			}
+		}
 		if err != nil {
 			slog.Warn("achievement: emit activity event failed", "content_id", contentRow.ID, "error", err)
 		} else if err := s.emitter.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {

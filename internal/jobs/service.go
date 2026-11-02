@@ -2092,8 +2092,9 @@ func (s *Service) ListJobApplications(ctx context.Context, jobID pgtype.UUID, st
 }
 
 // AdminListApplications returns all applications across all jobs for a platform,
-// with pagination and optional status filter.
-func (s *Service) AdminListApplications(ctx context.Context, status string, page, limit int) ([]ApplicationResult, int64, error) {
+// with pagination and optional status and/or job listing filters (jobID.Valid
+// scopes the result to a single listing — used by the admin per-job view).
+func (s *Service) AdminListApplications(ctx context.Context, status string, jobID pgtype.UUID, page, limit int) ([]ApplicationResult, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -2105,12 +2106,12 @@ func (s *Service) AdminListApplications(ctx context.Context, status string, page
 	// #nosec G115 // value bounded by caller
 	offset := int32((page - 1) * limit)
 
-	total, err := s.store.AdminCountJobApplications(ctx, status)
+	total, err := s.store.AdminCountJobApplications(ctx, status, jobID)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	rows, err := s.store.AdminListJobApplications(ctx, status, offset, int32(limit)) //nolint:gosec // G115: bounded
+	rows, err := s.store.AdminListJobApplications(ctx, status, jobID, offset, int32(limit)) //nolint:gosec // G115: bounded
 	if err != nil {
 		return nil, 0, err
 	}
@@ -2374,6 +2375,22 @@ func (s *Service) ExpireListingsPastDeadline(ctx context.Context) (int64, error)
 // Used by the admin feature route. Platform-scoped and content-type-checked for
 // security (prevents cross-platform toggle and toggling non-job content).
 func (s *Service) ToggleFeature(ctx context.Context, jobID pgtype.UUID) (bool, error) {
+	// The upsert's WHERE EXISTS guard silently no-ops on missing ids and
+	// ON CONFLICT ignores it anyway — check existence + liveness up front so
+	// a missing/deleted listing gets a real 404 and cannot be featured.
+	var exists bool
+	if err := s.store.pool.Reader.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM contents
+			WHERE id = $1 AND content_type = 'job_listing' AND deleted_at IS NULL
+		)`, jobID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("jobs: toggle feature: exists: %w", err)
+	}
+
+	if !exists {
+		return false, ErrJobNotFound
+	}
+
 	// Read the current value — verify platform + content_type = job_listing.
 	// Join custom_field_values → custom_fields to resolve the field key.
 	var current bool
@@ -2437,6 +2454,16 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 		return err
 	}
 
+	// Reject non-§14 statuses up front — otherwise the contents.status CHECK
+	// constraint turns them into an opaque 500 instead of a clean 400.
+	if status != nil {
+		switch *status {
+		case "draft", "in_review", "scheduled", "published", "archived":
+		default:
+			return fmt.Errorf("%w: status must be one of draft, in_review, scheduled, published, archived", ErrInvalidFieldValue)
+		}
+	}
+
 	// Fetch the slug before update so the edge purge can target the
 	// canonical detail URL (ADR-134) — this path writes contents directly.
 	var jobSlug string
@@ -2487,7 +2514,7 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 		WHERE id = $1 AND content_type = 'job_listing'`,
 		strings.Join(setParts, ", "))
 
-	_, err := s.store.pool.Writer.Exec(ctx, query, args...)
+	tag, err := s.store.pool.Writer.Exec(ctx, query, args...)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -2495,6 +2522,12 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 		}
 
 		return fmt.Errorf("jobs: admin update: update content: %w", err)
+	}
+
+	// UPDATE on a missing or non-job_listing id matched nothing — surface a
+	// real 404 instead of reporting success.
+	if tag.RowsAffected() == 0 {
+		return ErrJobNotFound
 	}
 
 	// Update custom field values via the typed upsert helper (correct
@@ -2526,12 +2559,17 @@ func (s *Service) AdminDeleteJob(ctx context.Context, jobID pgtype.UUID) error {
 			"job_id", jobID.String(), "error", err)
 	}
 
-	_, err := s.store.pool.Writer.Exec(ctx, `
+	tag, err := s.store.pool.Writer.Exec(ctx, `
 		UPDATE contents SET deleted_at = now(), updated_at = now()
-		WHERE id = $1 AND content_type = 'job_listing'`,
+		WHERE id = $1 AND content_type = 'job_listing' AND deleted_at IS NULL`,
 		jobID)
 	if err != nil {
 		return fmt.Errorf("jobs: admin delete: %w", err)
+	}
+
+	// Missing, wrong content_type, or already soft-deleted — nothing matched.
+	if tag.RowsAffected() == 0 {
+		return ErrJobNotFound
 	}
 
 	cdn.PurgeContentDetail(ctx, jobID.String(), "job_listing", jobSlug)

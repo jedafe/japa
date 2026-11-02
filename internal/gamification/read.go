@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -30,7 +31,20 @@ func (s *Service) ListBadges(ctx context.Context) ([]BadgeInfo, error) {
 
 	results := make([]BadgeInfo, 0, len(badges))
 	for _, b := range badges {
-		results = append(results, badgeToInfo(b))
+		info := badgeToInfo(b)
+		// Public catalogue — unearned secret badges are masked the same way
+		// the collection endpoint masks them (name/icon hidden, ??? slot).
+		if b.IsSecret {
+			info.Name = "???"
+			info.Description = ""
+			info.IconMediaID = ""
+			// Trigger fields would reveal the unlock criteria — mask them.
+			// Slug stays so clients can dedupe against the earned list.
+			info.TriggerType = ""
+			info.TriggerValue = 0
+			info.TriggerActivityKey = ""
+		}
+		results = append(results, info)
 	}
 
 	return results, nil
@@ -236,6 +250,10 @@ func (s *Service) ListUserBadges(ctx context.Context, userID pgtype.UUID) ([]Bad
 			Name:        r.BadgeName,
 			Description: ptrStr(r.BadgeDescription),
 			IconMediaID: iconID,
+			Category:    ptrStr(r.BadgeCategory),
+			Rarity:      r.BadgeRarity,
+			Tier:        ptrStr(r.BadgeTier),
+			BadgeGroup:  ptrStr(r.BadgeGroup),
 			AwardedAt:   rfc3339(r.AwardedAt),
 		})
 	}
@@ -263,11 +281,172 @@ func (s *Service) ListUserBadgesByUsername(ctx context.Context, username string)
 			Slug:        r.BadgeSlug,
 			Name:        r.BadgeName,
 			Description: ptrStr(r.BadgeDescription),
+			Category:    ptrStr(r.BadgeCategory),
+			Rarity:      r.BadgeRarity,
+			Tier:        ptrStr(r.BadgeTier),
+			BadgeGroup:  ptrStr(r.BadgeGroup),
 			AwardedAt:   rfc3339(r.AwardedAt),
 		})
 	}
 
 	return results, nil
+}
+
+// GetBadgeCollection returns the achievement-centre collection for the
+// authenticated user: the active catalogue grouped by category, each badge
+// carrying earned state and progress toward its goal. Unearned secret
+// badges are masked — name/description and progress are hidden so the
+// member knows a slot exists without revealing what unlocks it.
+// Returns ErrGamificationDisabled when gamification.badges_enabled is off.
+func (s *Service) GetBadgeCollection(ctx context.Context, userID pgtype.UUID) (BadgeCollection, error) {
+	if !s.badgesEnabled(ctx) {
+		return BadgeCollection{}, ErrGamificationDisabled
+	}
+
+	rows, err := s.store.ListBadgeCollectionForUser(ctx, userID)
+	if err != nil {
+		return BadgeCollection{}, fmt.Errorf("gamification: list badge collection: %w", err)
+	}
+
+	collection := BadgeCollection{
+		Categories: make([]BadgeCollectionCategory, 0),
+	}
+	byCategory := make(map[string]int) // category slug → index in Categories
+
+	// Live-progress caches — one query per distinct counter across all
+	// locked badges in the collection.
+	liveCounts := make(map[string]int64)
+	lifetimePts := int64(-1)
+
+	for _, r := range rows {
+		category := ptrStr(r.Category)
+		if category == "" {
+			category = "general"
+		}
+
+		cb := CollectionBadge{
+			ID:           uuidStr(r.ID),
+			Slug:         r.Slug,
+			Name:         r.Name,
+			Description:  ptrStr(r.Description),
+			IconMediaID:  uuidStr(r.IconMediaID),
+			Category:     category,
+			Rarity:       r.Rarity,
+			Tier:         ptrStr(r.Tier),
+			BadgeGroup:   ptrStr(r.BadgeGroup),
+			IsSecret:     r.IsSecret,
+			IsLimited:    r.IsLimited,
+			IsFeatured:   r.IsFeatured,
+			PointsReward: int(r.PointsReward),
+			Earned:       r.UserBadgeID.Valid,
+		}
+
+		if r.UserAwardedAt.Valid {
+			ts := rfc3339(r.UserAwardedAt)
+			cb.AwardedAt = &ts
+		}
+
+		if r.TriggerValue != nil {
+			cb.Goal = int(*r.TriggerValue)
+		}
+
+		if r.ProgressCount != nil {
+			cb.Progress = int(*r.ProgressCount)
+		} else if !r.UserBadgeID.Valid && !r.IsSecret && r.TriggerValue != nil {
+			// No badge_progress row yet — the triggering event simply hasn't
+			// fired since v2 shipped. Compute the live counter so locked
+			// lifetime_points/streak_days/activity_count badges still show a
+			// progress bar (display-only; nothing is written).
+			cb.Progress = s.liveBadgeProgress(ctx, userID, r, liveCounts, &lifetimePts)
+		}
+
+		// Secret badges stay masked until earned — the catalogue lists the
+		// slot without revealing what unlocks it.
+		if r.IsSecret && !r.UserBadgeID.Valid {
+			cb.Name = "???"
+			cb.Description = ""
+			cb.IconMediaID = ""
+			cb.Progress = 0
+			cb.Goal = 0
+		}
+
+		idx, ok := byCategory[category]
+		if !ok {
+			collection.Categories = append(collection.Categories, BadgeCollectionCategory{
+				Category: category,
+				Badges:   make([]CollectionBadge, 0),
+			})
+			idx = len(collection.Categories) - 1
+			byCategory[category] = idx
+		}
+
+		cat := &collection.Categories[idx]
+		cat.Total++
+		collection.Stats.Total++
+
+		if r.UserBadgeID.Valid {
+			cat.Earned++
+			collection.Stats.Earned++
+		}
+
+		cat.Badges = append(cat.Badges, cb)
+	}
+
+	collection.Stats.Remaining = collection.Stats.Total - collection.Stats.Earned
+	if collection.Stats.Total > 0 {
+		collection.Stats.Percent = collection.Stats.Earned * 100 / collection.Stats.Total
+	}
+
+	return collection, nil
+}
+
+// liveBadgeProgress computes an on-the-fly counter for a locked badge that
+// has no badge_progress row — lifetime_points reads the wallet ledger once,
+// streak_days and activity_count read one counter per distinct activity key
+// (both memoised in `counts`). Returns the counter capped at the goal.
+func (s *Service) liveBadgeProgress(ctx context.Context, userID pgtype.UUID, r gen.ListBadgeCollectionForUserRow, counts map[string]int64, lifetime *int64) int {
+	goal := int64(*r.TriggerValue)
+	var v int64
+	switch r.TriggerType {
+	case TriggerTypeLifetimePoints:
+		if *lifetime < 0 {
+			pts, err := s.store.GetUserLifetimePoints(ctx, userID)
+			if err != nil {
+				slog.Warn("gamification: lifetime points for collection failed", "error", err)
+				pts = 0
+			}
+			*lifetime = pts
+		}
+		v = *lifetime
+	case TriggerTypeStreakDays, TriggerTypeActivityCount:
+		actKey := ptrStr(r.TriggerActivityKey)
+		key := r.TriggerType + ":" + actKey
+		cached, ok := counts[key]
+		if !ok {
+			if r.TriggerType == TriggerTypeStreakDays {
+				days, err := s.store.GetActivityDayStreak(ctx, userID, actKey)
+				if err == nil {
+					cached = int64(days)
+				}
+			} else {
+				n, err := s.store.CountUserActivityByKey(ctx, userID, actKey)
+				if err == nil {
+					cached = n
+				}
+			}
+			counts[key] = cached
+		}
+		v = cached
+	default:
+		return 0 // manual / unknown triggers carry no computable progress
+	}
+	if v > goal {
+		v = goal
+	}
+	if v < 0 {
+		v = 0
+	}
+	return int(v)
 }
 
 // ListUserChallengeProgress returns a user's challenge progress with

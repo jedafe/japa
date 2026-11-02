@@ -232,10 +232,56 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "hotel", Label: "Hotels"},
 		{Value: "both", Label: "Flights & Hotels"},
 	},
+	// Ref: §64 + migration 001016 — streak_days was added to the trigger_type
+	// CHECK constraint by gamification v2; the catalog must list it.
 	"gamification.trigger_type": {
 		{Value: "lifetime_points", Label: "Lifetime Points"},
 		{Value: "activity_count", Label: "Activity Count"},
+		{Value: "streak_days", Label: "Streak Days"},
 		{Value: "manual", Label: "Manual"},
+	},
+	// Ref: §64 badge catalogue metadata — mirrors the seeded badge category
+	// set so the admin badge form does not hardcode it.
+	"gamification.badge_category": {
+		{Value: "getting_started", Label: "Getting Started"},
+		{Value: "readiness", Label: "Readiness"},
+		{Value: "journey", Label: "Journey"},
+		{Value: "countries", Label: "Countries"},
+		{Value: "education", Label: "Education"},
+		{Value: "career", Label: "Career"},
+		{Value: "community", Label: "Community"},
+		{Value: "content", Label: "Content"},
+		{Value: "forum", Label: "Forum"},
+		{Value: "mentorship", Label: "Mentorship"},
+		{Value: "services", Label: "Services"},
+		{Value: "financial", Label: "Financial"},
+		{Value: "travel", Label: "Travel"},
+		{Value: "trust", Label: "Trust"},
+		{Value: "consistency", Label: "Consistency"},
+		{Value: "special", Label: "Special"},
+		{Value: "comparison", Label: "Comparison"},
+		{Value: "academy", Label: "Academy"},
+		{Value: "housing", Label: "Housing"},
+		{Value: "documents", Label: "Documents"},
+		{Value: "ai", Label: "AI"},
+		{Value: "growth", Label: "Growth"},
+	},
+	// Ref: §64 — mirrors gamification.validRarity.
+	"gamification.badge_rarity": {
+		{Value: "common", Label: "Common"},
+		{Value: "uncommon", Label: "Uncommon"},
+		{Value: "rare", Label: "Rare"},
+		{Value: "epic", Label: "Epic"},
+		{Value: "legendary", Label: "Legendary"},
+		{Value: "mythic", Label: "Mythic"},
+	},
+	// Ref: §64 — mirrors gamification.validTier.
+	"gamification.badge_tier": {
+		{Value: "bronze", Label: "Bronze"},
+		{Value: "silver", Label: "Silver"},
+		{Value: "gold", Label: "Gold"},
+		{Value: "platinum", Label: "Platinum"},
+		{Value: "diamond", Label: "Diamond"},
 	},
 	"data_exports.status": {
 		{Value: "pending", Label: "Pending"},

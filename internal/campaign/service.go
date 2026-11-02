@@ -27,6 +27,10 @@ import (
 // the caller lacks permission.
 var ErrPersonaPoolTooSmall = errors.New("persona_pool_too_small")
 
+// ErrDisabled is returned when the campaign.enabled feature flag is off →
+// 404 campaign_disabled (ADR-042).
+var ErrDisabled = errors.New("campaign: feature is disabled")
+
 // storer is the storage interface required by the service. The concrete
 // *Store satisfies it; tests can provide a fake implementation.
 type storer interface {
@@ -105,7 +109,7 @@ func NewService(store storer, planner Planner, personas personaProvisioner, stud
 // optionally runs it immediately.
 func (s *Service) CreateCampaign(ctx context.Context, userID pgtype.UUID, in CreateCampaignInput) (Campaign, []CampaignItem, error) {
 	if !s.isEnabled(ctx) {
-		return Campaign{}, nil, errors.New("campaign: feature is disabled")
+		return Campaign{}, nil, ErrDisabled
 	}
 
 	if err := s.validateCount(ctx, in.Count); err != nil {
@@ -160,7 +164,7 @@ func (s *Service) PlanCampaign(ctx context.Context, userID, campaignID pgtype.UU
 	}
 
 	if !s.isEnabled(ctx) {
-		return Campaign{}, nil, errors.New("campaign: feature is disabled")
+		return Campaign{}, nil, ErrDisabled
 	}
 
 	// Build the target persona pool.

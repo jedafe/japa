@@ -15,10 +15,16 @@ const adminCountJobApplications = `-- name: AdminCountJobApplications :one
 SELECT COUNT(*) AS count
 FROM job_applications
 WHERE ($1::text = '' OR status = $1)
+  AND ($2::uuid IS NULL OR job_id = $2)
 `
 
-func (q *Queries) AdminCountJobApplications(ctx context.Context, status string) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountJobApplications, status)
+type AdminCountJobApplicationsParams struct {
+	Status string      `json:"status"`
+	JobID  pgtype.UUID `json:"job_id"`
+}
+
+func (q *Queries) AdminCountJobApplications(ctx context.Context, arg AdminCountJobApplicationsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountJobApplications, arg.Status, arg.JobID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -73,14 +79,16 @@ FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
 JOIN contents c ON c.id = ja.job_id
 WHERE ($1::text = '' OR ja.status = $1)
+  AND ($2::uuid IS NULL OR ja.job_id = $2)
 ORDER BY ja.applied_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type AdminListJobApplicationsParams struct {
-	Status     string `json:"status"`
-	PageOffset int32  `json:"page_offset"`
-	PageLimit  int32  `json:"page_limit"`
+	Status     string      `json:"status"`
+	JobID      pgtype.UUID `json:"job_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
 }
 
 type AdminListJobApplicationsRow struct {
@@ -100,7 +108,12 @@ type AdminListJobApplicationsRow struct {
 // Admin: list all applications across all jobs.
 // =====================================================================
 func (q *Queries) AdminListJobApplications(ctx context.Context, arg AdminListJobApplicationsParams) ([]AdminListJobApplicationsRow, error) {
-	rows, err := q.db.Query(ctx, adminListJobApplications, arg.Status, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, adminListJobApplications,
+		arg.Status,
+		arg.JobID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

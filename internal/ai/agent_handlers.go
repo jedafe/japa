@@ -181,7 +181,7 @@ func writeAgentError(w http.ResponseWriter, err error) {
 	case errors.Is(err, errProjectNotFound):
 		errpkg.WriteError(w, http.StatusNotFound, "project_not_found", "Project not found")
 	case errors.Is(err, errAgentDisabled):
-		errpkg.WriteError(w, http.StatusForbidden, "agent_disabled", "The AI agent is currently disabled")
+		errpkg.WriteError(w, http.StatusNotFound, "agent_disabled", "The AI agent is currently disabled")
 	case errors.Is(err, errAgentNoPermission):
 		errpkg.WriteError(w, http.StatusForbidden, "agent_permission_required", "You do not have permission to use the AI agent")
 	case errors.Is(err, errAgentRateLimited):

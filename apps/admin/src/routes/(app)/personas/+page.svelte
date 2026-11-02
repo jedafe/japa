@@ -52,13 +52,11 @@
 		geo_space?: string;
 	};
 
-	type PersonaVoice = {
+	// PersonaVoiceOption matches the backend slim picker projection
+	// (GET /admin/persona-voices?slim=1 → {id, name}). Ref: ADR-114.
+	type PersonaVoiceOption = {
 		id: string;
 		name: string;
-		slug: string;
-		description?: string;
-		voice_prompt: string;
-		is_system: boolean;
 	};
 
 	// ActivityEntry matches the backend ActivityEntry struct
@@ -111,6 +109,7 @@
 	let activityModalOpen = $state(false);
 	let activityLog = $state<ActivityEntry[]>([]);
 	let activityLoading = $state(false);
+	let activityError = $state('');
 	let activityTotal = $state(0);
 	let activityPage = $state(0);
 	let activityPageSize = $state(10);
@@ -121,7 +120,7 @@
 
 	// Shared persona voices for the create/edit selectors (ADR-114).
 	// Loaded from /admin/persona-voices per Rule 16.
-	let voiceOptions = $state<PersonaVoice[]>([]);
+	let voiceOptions = $state<PersonaVoiceOption[]>([]);
 	let voicesLoading = $state(false);
 	let voicesError = $state('');
 
@@ -173,7 +172,10 @@
 		voicesLoading = true;
 		voicesError = '';
 		try {
-			const result = await api<PersonaVoice[]>('/admin/persona-voices?limit=100');
+			// slim=1 → {id, name} picker rows; page_size=5000 covers the full
+			// shared voice catalog (ORDER BY name ASC — a bare limit=100 only
+			// returns the "Academic …" prefix of the alphabetical list).
+			const result = await api<PersonaVoiceOption[]>('/admin/persona-voices?slim=1&page_size=5000');
 			if (result.ok) {
 				voiceOptions = result.data ?? [];
 			} else {
@@ -198,6 +200,7 @@
 	// supports pagination.
 	async function loadActivity() {
 		activityLoading = true;
+		activityError = '';
 		try {
 			const params = new URLSearchParams();
 			params.set('page_size', String(activityPageSize));
@@ -211,10 +214,12 @@
 			} else {
 				activityLog = [];
 				activityTotal = 0;
+				activityError = result.error ?? t('personas.activity_error', 'Failed to load activity');
 			}
-		} catch {
+		} catch (e) {
 			activityLog = [];
 			activityTotal = 0;
+			activityError = e instanceof Error ? e.message : t('personas.activity_error', 'Failed to load activity');
 		} finally {
 			activityLoading = false;
 		}
@@ -277,7 +282,12 @@
 			disclosure_mode: persona.disclosure_mode,
 			autonomy_mode: persona.autonomy_mode,
 			voice_id: persona.voice_id ?? '',
-			voice_prompt: persona.voice_prompt_override ?? persona.voice_prompt ?? '',
+			// Seed ONLY the per-persona override — not the resolved prompt.
+			// voice_prompt on the row is COALESCE(override, shared prompt), so
+			// seeding it would freeze a copy of the shared voice as an override
+			// on the next save, cutting the persona off from shared-voice
+			// updates (ADR-114 resolution order).
+			voice_prompt: persona.voice_prompt_override ?? '',
 			status: persona.status,
 			activity_policy: policy ? { ...defaultPolicy(), ...policy } as ActivityPolicy : defaultPolicy()
 		};
@@ -301,14 +311,18 @@
 			disclosure_mode: persona.disclosure_mode,
 			autonomy_mode: persona.autonomy_mode,
 			voice_id: persona.voice_id ?? '',
-			voice_prompt: persona.voice_prompt_override ?? persona.voice_prompt ?? '',
+			voice_prompt: persona.voice_prompt_override ?? '',
 			status: persona.status,
 			activity_policy: policy ? { ...defaultPolicy(), ...policy } as ActivityPolicy : defaultPolicy()
 		};
 		editModalOpen = true;
 	}
 
+	let statusUpdating = $state(false);
+
 	async function updatePersonaStatus(persona: Persona, status: string) {
+		if (statusUpdating) return;
+		statusUpdating = true;
 		message = '';
 		try {
 			const result = await api(`/admin/personas/${persona.id}`, { method: 'PATCH', body: { status } });
@@ -323,7 +337,28 @@
 		} catch (e) {
 			messageType = 'error';
 			message = e instanceof Error ? e.message : t('personas.update_error', 'Failed to update persona');
+		} finally {
+			statusUpdating = false;
 		}
+	}
+
+	// Retire is a destructive lifecycle transition — the DataTable spec puts
+	// destructive actions behind a confirmation dialog, so the row action and
+	// the bulk action both funnel through this modal.
+	let retireConfirmOpen = $state(false);
+	let retireIds = $state<Set<string>>(new Set());
+
+	function requestRetire(ids: Iterable<string>) {
+		retireIds = new Set(ids);
+		retireConfirmOpen = true;
+	}
+
+	async function confirmRetire() {
+		retireConfirmOpen = false;
+		await bulkUpdateStatus(retireIds, 'retired');
+		// EntityPage's post-bulk reload fires when the handler returns — the
+		// confirm modal defers the PATCHes past that point, so reload here.
+		entityController?.reload();
 	}
 
 	// BUG-007: bulk actions per DataTable spec. Pause/retire let admins
@@ -373,7 +408,7 @@
 		},
 		{
 			label: t('personas.bulk_retire', 'Retire'),
-			onclick: (ids: Set<string>) => bulkUpdateStatus(ids, 'retired'),
+			onclick: (ids: Set<string>) => requestRetire(ids),
 			variant: 'destructive',
 			disabled: (_ids: Set<string>, rows?: any[]) => {
 				// Only allow retiring when at least one selected persona is not retired.
@@ -503,7 +538,7 @@
 		{
 			label: t('personas.bulk_retire', 'Retire'),
 			icon: Trash2,
-			onclick: (row: Persona) => updatePersonaStatus(row, 'retired'),
+			onclick: (row: Persona) => requestRetire([row.id]),
 			variant: 'destructive',
 			show: (row: any) => canManage && row.status !== 'retired'
 		}
@@ -590,6 +625,14 @@
 		title={t('personas.create_title', 'Create AI Personas')}
 	>
 		<div class="space-y-4">
+			{#if message && messageType === 'error'}
+				<div
+					class="rounded-lg border p-3 text-sm"
+					style="border-color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+				>
+					{message}
+				</div>
+			{/if}
 			<p class="text-sm" style="color: var(--color-muted)">
 				{t('personas.create_hint', 'Provision one or more AI personas. All personas in a batch are created in a single transaction.')}
 			</p>
@@ -829,6 +872,8 @@
 				<Activity class="mx-auto mb-2 h-6 w-6 animate-pulse" />
 				{t('personas.loading_activity', 'Loading activity...')}
 			</div>
+		{:else if activityError}
+			<p class="p-4 text-center text-sm" style="color: var(--color-danger)">{activityError}</p>
 		{:else if activityLog.length === 0}
 			<p class="p-4 text-center text-sm" style="color: var(--color-muted)">{t('personas.no_activity', 'No activity recorded.')}</p>
 		{:else}
@@ -880,12 +925,39 @@
 	</Modal>
 {/if}
 
+{#if retireConfirmOpen}
+	<Modal
+		bind:open={retireConfirmOpen}
+		title={t('personas.retire_title', 'Retire Persona')}
+	>
+		<p class="text-sm" style="color: var(--color-foreground)">
+			{t('personas.retire_confirm', 'Retire {count} persona(s)? Retired personas stop all autonomous and queued activity. This can be reversed by editing the persona later.').replace('{count}', String(retireIds.size))}
+		</p>
+		{#snippet footer()}
+			<div class="flex justify-end gap-2">
+				<Button variant="outline" onclick={() => (retireConfirmOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+				<Button variant="destructive" onclick={confirmRetire} disabled={bulkProcessing}>
+					{bulkProcessing ? t('common.saving', 'Saving...') : t('personas.bulk_retire', 'Retire')}
+				</Button>
+			</div>
+		{/snippet}
+	</Modal>
+{/if}
+
 {#if editModalOpen}
 	<Modal
 		bind:open={editModalOpen}
 		title={editViewOnly ? t('personas.view_title', 'View Persona') : t('personas.edit_title', 'Edit Persona')}
 		onclose={() => { editingPersona = null; editViewOnly = false; }}
 	>
+		{#if message && messageType === 'error'}
+			<div
+				class="mb-3 rounded-lg border p-3 text-sm"
+				style="border-color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+			>
+				{message}
+			</div>
+		{/if}
 		<fieldset class="space-y-4 border-0 p-0 m-0" disabled={editViewOnly}>
 			<div>
 				<label for="edit-persona-id" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">ID</label>

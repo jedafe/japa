@@ -3138,6 +3138,14 @@ export interface Badge {
 	is_active: boolean;
 	is_system: boolean;
 	display_order: number;
+	category?: string;
+	rarity?: string;
+	tier?: string;
+	badge_group?: string;
+	is_secret?: boolean;
+	is_limited?: boolean;
+	is_featured?: boolean;
+	points_reward?: number;
 	created_at: string;
 }
 
@@ -3147,7 +3155,51 @@ export interface EarnedBadge {
 	name: string;
 	description: string;
 	icon_media_id: string | null;
+	category?: string;
+	rarity?: string;
+	tier?: string;
+	badge_group?: string;
 	awarded_at: string;
+}
+
+// --- Gamification v2: achievement-centre collection (GET /me/badge-collection) ---
+export interface CollectionBadge {
+	id: string;
+	slug: string;
+	name: string;
+	description?: string;
+	icon_media_id?: string;
+	category?: string;
+	rarity: string;
+	tier?: string;
+	badge_group?: string;
+	is_secret: boolean;
+	is_limited: boolean;
+	is_featured: boolean;
+	points_reward: number;
+	earned: boolean;
+	awarded_at?: string;
+	progress: number;
+	goal?: number;
+}
+
+export interface BadgeCollectionStats {
+	earned: number;
+	total: number;
+	remaining: number;
+	percent: number;
+}
+
+export interface BadgeCollectionCategory {
+	category: string;
+	earned: number;
+	total: number;
+	badges: CollectionBadge[];
+}
+
+export interface BadgeCollection {
+	stats: BadgeCollectionStats;
+	categories: BadgeCollectionCategory[];
 }
 
 export interface Challenge {

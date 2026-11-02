@@ -148,13 +148,6 @@
 			dropdownOpen = false;
 		}, 200);
 	}
-
-	// Cleanup the debounce timer on destroy.
-	$effect(() => {
-		return () => {
-			if (debounceTimer) clearTimeout(debounceTimer);
-		};
-	});
 </script>
 
 <div class="relative">

@@ -235,7 +235,7 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.service.SearchFlights(r.Context(), params, opts)
 	if err != nil {
 		if errors.Is(err, ErrTravelDisabled) {
-			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
+			errpkg.WriteError(w, http.StatusNotFound, "travel_disabled", "Travel search is disabled")
 			return
 		}
 
@@ -315,7 +315,7 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.service.SearchHotels(r.Context(), params, opts)
 	if err != nil {
 		if errors.Is(err, ErrTravelDisabled) {
-			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
+			errpkg.WriteError(w, http.StatusNotFound, "travel_disabled", "Travel search is disabled")
 			return
 		}
 
@@ -353,7 +353,7 @@ func (h *Handlers) requireTravelEnabled(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if !h.service.IsEnabled(r.Context()) {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
+		errpkg.WriteError(w, http.StatusNotFound, "travel_disabled", "Travel search is disabled")
 		return false
 	}
 

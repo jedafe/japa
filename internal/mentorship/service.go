@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/servicedir"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -36,6 +37,37 @@ type Service struct {
 	// bookings/listings behind the scenes. Nil keeps program/match/
 	// discovery paths working while connection calls fail fast.
 	bookings BookingBackend
+	activity ActivityEmitter // nil = gamification activity emissions skipped
+}
+
+// ActivityEmitter records wallet activity events for gamification v2 —
+// satisfied by *wallet.Service. Mentorship emits for BOTH parties (the
+// route actor and the counterpart), which route-level middleware can't do.
+type ActivityEmitter interface {
+	EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input wallet.EmitActivityEventInput) (gen.ActivityEvent, error)
+	EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error
+}
+
+// SetActivityEmitter injects the wallet activity emitter (gamification v2).
+func (s *Service) SetActivityEmitter(a ActivityEmitter) { s.activity = a }
+
+// emitActivity records an activity event — fire-and-forget (Rule 8).
+// Dedupes on (activity_key, reference) so retries are safe.
+func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string) {
+	if s.activity == nil || !userID.Valid {
+		return
+	}
+	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{
+		ActivityKey: key,
+		Reference:   reference,
+	})
+	if err != nil {
+		slog.Warn("mentorship: emit activity failed", "key", key, "error", err)
+		return
+	}
+	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
+		slog.Warn("mentorship: enqueue activity failed", "key", key, "error", err)
+	}
 }
 
 // BookingBackend is the narrow servicedir seam mentorship delegates to
@@ -231,10 +263,10 @@ type MentorSummary struct {
 	// MenteesHelped is nil unless populated — discovery queries
 	// (ListMentors/ListMentorsByMatch) don't run the count subquery, so a
 	// nil means "not loaded" rather than a real zero.
-	MenteesHelped   *int32   `json:"mentees_helped,omitempty"`
-	PackagePrice    *int64   `json:"package_price,omitempty"`
-	PackageCurrency *string  `json:"package_currency,omitempty"`
-	PackagePer      *string  `json:"package_per,omitempty"`
+	MenteesHelped   *int32  `json:"mentees_helped,omitempty"`
+	PackagePrice    *int64  `json:"package_price,omitempty"`
+	PackageCurrency *string `json:"package_currency,omitempty"`
+	PackagePer      *string `json:"package_per,omitempty"`
 }
 
 // Connection is a mentorship connection with resolved user names.
@@ -1076,6 +1108,12 @@ func (s *Service) AcceptConnection(ctx context.Context, mentorID, connID pgtype.
 	s.trackEvent(ctx, mentorID, "mentorship_accepted", "mentorship_connection", row.ID,
 		map[string]any{"mentee_id": updated.BookerUserID.String()})
 
+	// Gamification v2 — both parties earn "connected" (Match Made,
+	// Guidance Found, mentor tracks). Dedupe ref: the connection.
+	ref := "mentorship_conn:" + row.ID.String()
+	s.emitActivity(ctx, updated.ProviderUserID, "mentorship.connected", ref)
+	s.emitActivity(ctx, updated.BookerUserID, "mentorship.connected", ref)
+
 	return result, nil
 }
 
@@ -1151,6 +1189,13 @@ func (s *Service) CompleteConnection(ctx context.Context, userID, connID pgtype.
 
 	// §102 analytics: mentorship_completed { connection_id }
 	s.trackEvent(ctx, userID, "mentorship_completed", "mentorship_connection", row.ID, nil)
+
+	// Gamification v2 — role-aware emissions: the mentee earns
+	// mentorship.completed (Guided Journey), the mentor earns
+	// mentorship.mentor_completed (First-Time Mentor track).
+	ref := "mentorship_conn:" + row.ID.String()
+	s.emitActivity(ctx, row.BookerUserID, "mentorship.completed", ref)
+	s.emitActivity(ctx, row.ProviderUserID, "mentorship.mentor_completed", ref)
 
 	updated, err := s.bookingRow(ctx, row.ID)
 	if err != nil {
@@ -1371,7 +1416,7 @@ func (s *Service) UpdateMenteeGoalEmbedding(ctx context.Context, userID pgtype.U
 	vec := pgvector.NewVector(embedding)
 
 	return s.write.UpdateMenteeGoalEmbedding(ctx, gen.UpdateMenteeGoalEmbeddingParams{
-		UserID:               userID,
+		UserID:              userID,
 		MenteeGoalEmbedding: &vec,
 	})
 }
@@ -1487,7 +1532,7 @@ func connectionFromBookingRow(r servicedir.BookingRow) Connection {
 		MenteeUsername:     r.BookerUsername,
 		MentorDisplayName:  r.ProviderDisplayName,
 		MenteeDisplayName:  r.BookerDisplayName,
-		ListingContentID:  r.ListingContentID,
+		ListingContentID:   r.ListingContentID,
 	}
 
 	// goals: meta->>'goals' wins; the note column is the fallback for

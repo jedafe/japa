@@ -20,6 +20,11 @@ vi.mock('$lib/api', () => ({
 		start: vi.fn(),
 		end: vi.fn(),
 	},
+	verificationAdminApi: {
+		types: vi.fn().mockResolvedValue({ ok: true, data: { types: [] } }),
+		verifyUser: vi.fn(),
+		unverifyUser: vi.fn(),
+	},
 }));
 
 vi.mock('$app/navigation', () => ({

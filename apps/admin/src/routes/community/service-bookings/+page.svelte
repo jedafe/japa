@@ -27,8 +27,15 @@
 		departure_starts_on?: string;
 		departure_ends_on?: string;
 		booker_username?: string;
+		booker_display_name?: string;
+		provider_username?: string;
+		provider_display_name?: string;
 		org_name?: string;
 		org_slug?: string;
+		destination_space_name?: string;
+		tier_name?: string;
+		coupon_code?: string;
+		discount_amount?: number | null;
 		purchase_mode?: string;
 		payment_id?: string;
 		payment_status?: string;
@@ -63,24 +70,25 @@
 	const ALL_STATUSES = ['pending', 'confirmed', 'declined', 'fulfilled', 'cancelled', 'disputed', 'refunded'];
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
-	let pageError = $state('');
 	let acting = $state(false);
 
 	// Transition modal state — target status + resolution note.
 	let transitionTarget = $state<BookingItem | null>(null);
 	let transitionStatus = $state('');
 	let resolutionNote = $state('');
+	let transitionError = $state('');
 
 	function openTransition(row: BookingItem) {
 		transitionTarget = row;
 		transitionStatus = '';
 		resolutionNote = '';
+		transitionError = '';
 	}
 
 	async function submitTransition() {
 		if (!transitionTarget || !transitionStatus) return;
 		acting = true;
-		pageError = '';
+		transitionError = '';
 		try {
 			const result = await serviceBookingsAdminApi.transition(transitionTarget.id, {
 				status: transitionStatus,
@@ -90,10 +98,10 @@
 				transitionTarget = null;
 				entityController?.reload();
 			} else {
-				pageError = result.error ?? t('common.error', 'An error occurred');
+				transitionError = result.error ?? t('common.error', 'An error occurred');
 			}
 		} catch {
-			pageError = t('common.error', 'An error occurred');
+			transitionError = t('common.error', 'An error occurred');
 		} finally {
 			acting = false;
 		}
@@ -140,6 +148,7 @@
 			label: t('app.service_bookings.col_kind', 'Kind'),
 			options: [
 				{ value: 'service', label: t('app.service_bookings.kind_service', 'Service') },
+				{ value: 'package', label: t('app.service_bookings.kind_package', 'Package') },
 				{ value: 'mentorship', label: t('app.service_bookings.kind_mentorship', 'Mentorship') }
 			]
 		}
@@ -156,9 +165,17 @@
 			{
 				key: 'booker_username',
 				label: t('app.service_bookings.col_booker', 'Booker'),
-				render: (v: string) => (v ? `@${v}` : '—')
+				sortable: true,
+				render: (_v: string, row: BookingItem) =>
+					row.booker_username
+						? `@${row.booker_username}${row.booker_display_name ? ` · ${row.booker_display_name}` : ''}`
+						: '—'
 			},
-			{ key: 'org_name', label: t('app.service_bookings.col_org', 'Organization') },
+			{
+				key: 'org_name',
+				label: t('app.service_bookings.col_org', 'Organization'),
+				sortable: true
+			},
 			{
 				key: 'intent',
 				label: t('app.service_bookings.col_intent', 'Type'),
@@ -194,20 +211,37 @@
 		fields,
 		load: async (params) => {
 			const qs = new URLSearchParams();
-			qs.set('page', String(params.page + 1));
+			qs.set('page', String((params.page ?? 0) + 1));
 			if (params.pageSize) qs.set('limit', String(params.pageSize));
 			if (params.filter?.status) qs.set('status', params.filter.status);
 			if (params.filter?.intent) qs.set('intent', params.filter.intent);
 			if (params.filter?.kind) qs.set('kind', params.filter.kind);
+			if (params.q) qs.set('q', params.q);
+			if (params.sort) {
+				// EntityPage passes sort as "key:dir" (e.g. "status:asc") —
+				// map onto the backend sort vocabulary (latest|oldest|
+				// status(_desc)|title|intent|kind|org|mentee_asc|mentee_desc).
+				const [key, dir] = params.sort.split(':');
+				const d = dir === 'asc' ? 'asc' : 'desc';
+				const token = {
+					listing_title: `title_${d}`,
+					booker_username: `mentee_${d}`,
+					org_name: `org_${d}`,
+					intent: `intent_${d}`,
+					status: d === 'asc' ? 'status' : 'status_desc',
+					listing_kind: `kind_${d}`,
+					created_at: d === 'asc' ? 'oldest' : 'latest'
+				}[key];
+				if (token) qs.set('sort', token);
+			}
 			const result = await serviceBookingsAdminApi.list(qs.toString());
-			if (result.ok && result.data) {
-				const envelope = result.data;
-				const data = (envelope.data as BookingItem[]) ?? [];
-				const total = envelope.meta?.total ?? data.length;
+			if (result.ok) {
+				const data = (result.data?.data as BookingItem[]) ?? [];
+				const total = result.data?.meta?.total ?? data.length;
 				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize || 25)));
 				return { data, total, totalPages };
 			}
-			throw new Error(result.ok ? '' : result.error ?? t('common.error', 'An error occurred'));
+			throw new Error(result.error ?? t('common.error', 'An error occurred'));
 		},
 		viewSnippet: BookingView
 	});
@@ -220,15 +254,6 @@
 <svelte:head>
 	<title>{t('app.service_bookings.page_title', 'Service Bookings — {site} Admin')}</title>
 </svelte:head>
-
-{#if pageError}
-	<div
-		class="mb-4 rounded-lg p-3 text-sm"
-		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
-	>
-		{pageError}
-	</div>
-{/if}
 
 <EntityPage {config} bind:controller={entityController} />
 
@@ -247,6 +272,14 @@
 		{#if transitionTarget.status === 'disputed' && transitionTarget.dispute_reason}
 			<p class="mt-2 rounded-lg p-2 text-xs" style="background: color-mix(in srgb, var(--color-warning, #f59e0b) 10%, transparent); color: var(--color-foreground)">
 				{transitionTarget.dispute_reason}
+			</p>
+		{/if}
+		{#if transitionError}
+			<p
+				class="mt-2 rounded-lg p-2 text-xs"
+				style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+			>
+				{transitionError}
 			</p>
 		{/if}
 		<div class="mt-3">
@@ -304,11 +337,23 @@
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_booker', 'Booker')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.booker_username ? `@${row.booker_username}` : '—'}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">
+					{row.booker_username
+						? `@${row.booker_username}${row.booker_display_name ? ` · ${row.booker_display_name}` : ''}`
+						: '—'}
+				</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_org', 'Organization')}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.org_name || '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_provider', 'Provider')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">
+					{row.provider_username
+						? `@${row.provider_username}${row.provider_display_name ? ` · ${row.provider_display_name}` : ''}`
+						: '—'}
+				</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_intent', 'Type')}</p>
@@ -324,8 +369,26 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_purchase_mode', 'Purchase mode')}</p>
-				<p class="mt-1 text-sm capitalize" style="color: var(--color-foreground)">{row.purchase_mode || '—'}</p>
+				<p class="mt-1 text-sm capitalize" style="color: var(--color-foreground)">{row.purchase_mode ? t(`app.service_bookings.pmode_${row.purchase_mode}`, row.purchase_mode) : '—'}</p>
 			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_kind', 'Kind')}</p>
+				<p class="mt-1 text-sm capitalize" style="color: var(--color-foreground)">
+					{row.listing_kind ? t(`app.service_bookings.kind_${row.listing_kind}`, row.listing_kind) : '—'}
+				</p>
+			</div>
+			{#if row.destination_space_name}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_destination', 'Destination')}</p>
+					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.destination_space_name}</p>
+				</div>
+			{/if}
+			{#if row.tier_name}
+				<div>
+					<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_tier', 'Tier')}</p>
+					<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.tier_name}</p>
+				</div>
+			{/if}
 		</div>
 		{#if row.departure_starts_on}
 			<div>
@@ -339,7 +402,7 @@
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_pref_dates', 'Preferred dates')}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">
-					{row.preferred_dates.start_on || '—'} → {row.preferred_dates.end_on || '—'}{row.preferred_dates.flexible ? ` (${t('app.service_bookings.flexible', 'flexible')})` : ''}
+					{row.preferred_dates.start_on ? new Date(row.preferred_dates.start_on).toLocaleDateString() : '—'} → {row.preferred_dates.end_on ? new Date(row.preferred_dates.end_on).toLocaleDateString() : '—'}{row.preferred_dates.flexible ? ` (${t('app.service_bookings.flexible', 'flexible')})` : ''}
 				</p>
 			</div>
 		{/if}
@@ -356,7 +419,21 @@
 				{#if row.payment_status}
 					<div>
 						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_payment', 'Payment')}</p>
-						<p class="mt-1 text-sm capitalize" style="color: var(--color-foreground)">{row.payment_status}{#if row.payment_provider} · {row.payment_provider}{/if}</p>
+						<p class="mt-1 text-sm capitalize" style="color: var(--color-foreground)">{t(`app.service_bookings.pstatus_${row.payment_status}`, row.payment_status)}{#if row.payment_provider} · {row.payment_provider}{/if}</p>
+					</div>
+				{/if}
+				{#if row.coupon_code}
+					<div>
+						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_coupon', 'Coupon')}</p>
+						<p class="mt-1 text-sm" style="color: var(--color-foreground)">
+							{row.coupon_code}{#if row.discount_amount != null} · −{formatMoney(row.discount_amount, row.fee_currency, null, { minor: true })}{/if}
+						</p>
+					</div>
+				{/if}
+				{#if row.agent_balance_due != null}
+					<div>
+						<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.service_bookings.col_balance_due', 'Org balance due')}</p>
+						<p class="mt-1 text-sm" style="color: var(--color-foreground)">{formatMoney(row.agent_balance_due, row.fee_currency, null, { minor: true })}</p>
 					</div>
 				{/if}
 			</div>

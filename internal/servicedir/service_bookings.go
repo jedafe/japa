@@ -1643,7 +1643,10 @@ func (s *Service) DisputeMyBooking(ctx context.Context, bookingID, userID pgtype
 }
 
 // AdminListBookings returns all bookings for the admin view.
-func (s *Service) AdminListBookings(ctx context.Context, status, intent, orgIDStr, kind, providerIDStr, bookerIDStr string, page, limit int32) ([]BookingDTO, int64, error) {
+// q/sort feed the admin list contract (filter + sort + paginate): q is a
+// username/display-name search across booker + provider, sort is one of
+// latest|oldest|status(_desc)|title|intent|kind|org|mentor|mentee(_asc|_desc).
+func (s *Service) AdminListBookings(ctx context.Context, status, intent, orgIDStr, kind, providerIDStr, bookerIDStr, q, sort string, page, limit int32) ([]BookingDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -1682,6 +1685,7 @@ func (s *Service) AdminListBookings(ctx context.Context, status, intent, orgIDSt
 	rows, total, err := s.store.AdminListBookings(ctx, BookingsAdminFilter{
 		Status: status, Intent: intent, OrgID: orgID,
 		Kind: kind, ProviderUserID: providerID, BookerUserID: bookerID,
+		Q: q, Sort: sort,
 		Limit: limit, Offset: (page - 1) * limit,
 	})
 	if err != nil {

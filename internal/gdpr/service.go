@@ -2418,6 +2418,10 @@ type UserDataExport struct {
 	SpaceRules                  []map[string]interface{} `json:"space_rules"`         // BUG-004
 	TagModerators               []map[string]interface{} `json:"tag_moderators"`
 	ConsentRecords              []map[string]interface{} `json:"consent_records"`
+	UserBadges                  []map[string]interface{} `json:"user_badges"`                  // §64
+	UserChallengeProgress       []map[string]interface{} `json:"user_challenge_progress"`      // §64
+	BadgeProgress               []map[string]interface{} `json:"badge_progress"`               // §64 v2
+	BadgeAwardEvents            []map[string]interface{} `json:"badge_award_events"`           // §64 v2
 	WalletLedger                []map[string]interface{} `json:"wallet_ledger"`
 	TipsSent                    []map[string]interface{} `json:"tips_sent"`
 	TipsReceived                []map[string]interface{} `json:"tips_received"`
@@ -2687,6 +2691,28 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		export.BookmarkFolders = rows
 	} else {
 		slog.Warn("failed to collect bookmark_folders for export", "user_id", userID.String(), "error", err)
+	}
+
+	// §64 gamification rows keyed on the user.
+	if rows, err := s.store.gdprExportUserBadges(ctx, userID); err == nil {
+		export.UserBadges = rows
+	} else {
+		slog.Warn("failed to collect user_badges for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportUserChallengeProgress(ctx, userID); err == nil {
+		export.UserChallengeProgress = rows
+	} else {
+		slog.Warn("failed to collect user_challenge_progress for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportBadgeProgress(ctx, userID); err == nil {
+		export.BadgeProgress = rows
+	} else {
+		slog.Warn("failed to collect badge_progress for export", "user_id", userID.String(), "error", err)
+	}
+	if rows, err := s.store.gdprExportBadgeAwardEvents(ctx, userID); err == nil {
+		export.BadgeAwardEvents = rows
+	} else {
+		slog.Warn("failed to collect badge_award_events for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Content shares the user created.

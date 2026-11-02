@@ -84,8 +84,8 @@ func TestPreflight_CheckAdmission_FlagDisabled(t *testing.T) {
 		t.Fatal("expected disabled error, got nil")
 	}
 
-	if err.Status != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d", err.Status, http.StatusServiceUnavailable)
+	if err.Status != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", err.Status, http.StatusNotFound)
 	}
 
 	if err.Code != "ai_assist_disabled" {

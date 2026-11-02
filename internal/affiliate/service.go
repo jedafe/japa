@@ -28,8 +28,15 @@ type SettingsProvider interface {
 	// SetSetting upserts a setting (system_settings is the single source of
 	// truth for affiliate.commission.* per Section 56).
 	SetSetting(ctx context.Context, key, value string) error
-	// GetSettingBool reads a boolean setting (feature.affiliate_program flag).
+	// GetSettingBool reads a boolean setting — the legacy
+	// feature.affiliate_program fallback when no FeatureChecker is wired.
 	GetSettingBool(ctx context.Context, key string) (bool, error)
+}
+
+// FeatureChecker is the subset of features.Checker the service needs to read
+// the feature.affiliate_program reachability flag from feature_flags.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
 }
 
 // Service is an exported type.
@@ -38,6 +45,7 @@ type Service struct {
 	db       *db.DB
 	enqueuer Enqueuer
 	settings SettingsProvider
+	checker  FeatureChecker
 }
 
 // NewService is an exported function.
@@ -61,6 +69,11 @@ func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 // (SETTING-002/003). When wired, commission rates and link limits are read
 // from system_settings; otherwise compiled-in defaults are used.
 func (s *Service) SetSettings(sp SettingsProvider) { s.settings = sp }
+
+// SetFeatureChecker injects the feature flag checker so FeatureEnabled reads
+// feature_flags (the single source of truth for reachability toggles);
+// system_settings remains the fallback when no checker is wired.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 
 type noopEnqueuer struct{}
 
@@ -141,11 +154,16 @@ func (s *Service) lookupUsername(ctx context.Context, userID pgtype.UUID) (*stri
 }
 
 // FeatureEnabled reports whether the affiliate program feature flag is on.
-// Reads feature.affiliate_program from system_settings (default false in V1,
-// per Section 56). When settings are unwired, the program is treated as
-// enabled to preserve existing behavior for deployments that opt in by
-// configuring the flag.
+// Reads feature.affiliate_program from feature_flags when a checker is wired
+// (default false in V1, per Section 56); the legacy system_settings key is
+// the fallback. When neither is wired, the program is treated as enabled to
+// preserve existing behavior for deployments that opt in by configuring the
+// flag.
 func (s *Service) FeatureEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "feature.affiliate_program")
+	}
+
 	if s.settings == nil {
 		return true
 	}

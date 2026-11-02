@@ -743,6 +743,16 @@ type AuditLog struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 }
 
+type BadgeAwardEvent struct {
+	ID              pgtype.UUID        `json:"id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	BadgeID         pgtype.UUID        `json:"badge_id"`
+	Source          string             `json:"source"`
+	ActivityEventID pgtype.UUID        `json:"activity_event_id"`
+	AwardedBy       pgtype.UUID        `json:"awarded_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
 type BadgeDefinition struct {
 	ID                 pgtype.UUID        `json:"id"`
 	Slug               string             `json:"slug"`
@@ -756,6 +766,46 @@ type BadgeDefinition struct {
 	IsSystem           bool               `json:"is_system"`
 	DisplayOrder       int32              `json:"display_order"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	Category           *string            `json:"category"`
+	Rarity             string             `json:"rarity"`
+	Tier               *string            `json:"tier"`
+	BadgeGroup         *string            `json:"badge_group"`
+	IsSecret           bool               `json:"is_secret"`
+	IsLimited          bool               `json:"is_limited"`
+	IsFeatured         bool               `json:"is_featured"`
+	PointsReward       int32              `json:"points_reward"`
+	AvailableFrom      pgtype.Timestamptz `json:"available_from"`
+	AvailableUntil     pgtype.Timestamptz `json:"available_until"`
+	SeasonID           pgtype.UUID        `json:"season_id"`
+}
+
+type BadgeProgress struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	BadgeID      pgtype.UUID        `json:"badge_id"`
+	CurrentCount int32              `json:"current_count"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type BadgeSeason struct {
+	ID          pgtype.UUID        `json:"id"`
+	Slug        string             `json:"slug"`
+	Name        string             `json:"name"`
+	Description *string            `json:"description"`
+	StartsAt    pgtype.Timestamptz `json:"starts_at"`
+	EndsAt      pgtype.Timestamptz `json:"ends_at"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type BadgeTier struct {
+	ID         pgtype.UUID        `json:"id"`
+	BadgeGroup string             `json:"badge_group"`
+	Tier       string             `json:"tier"`
+	Name       string             `json:"name"`
+	Threshold  int32              `json:"threshold"`
+	BadgeID    pgtype.UUID        `json:"badge_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
 type BlogSeries struct {

@@ -57,7 +57,7 @@ export function setToken(token: string | null): void {
 }
 
 export async function api<T>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
-	const headers: Record<string, string> = {};
+	const headers: Record<string, string> = { ...(opts.headers ?? {}) };
 
 	const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
 	const result = await _apiFetch<T>(path, {
@@ -77,7 +77,7 @@ export async function api<T>(path: string, opts: FetchOptions = {}): Promise<Api
 // access top-level pagination metadata like { total, total_pages } that some
 // backends put alongside `data` instead of nesting it inside `data`.
 export async function apiRaw<T = any>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
-	const headers: Record<string, string> = {};
+	const headers: Record<string, string> = { ...(opts.headers ?? {}) };
 
 	const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
 	const result = await _apiFetch<any>(path, {
@@ -591,8 +591,8 @@ export const userManagementApi = {
 		api<WalletLedgerEntry[]>(`/admin/wallet/user/${userId}/ledger${params ? `?${params}` : ''}`),
 	reverseLedgerEntry: (entryId: string, body: { reason?: string }) =>
 		api<{ balance: number }>(`/admin/wallet/entries/${entryId}/reverse`, { method: 'POST', body }),
-	banUser: (userId: string) =>
-		api(`/admin/users/${userId}/ban`, { method: 'POST', body: {} }),
+	banUser: (userId: string, body: { reason?: string; days?: number } = {}) =>
+		api(`/admin/users/${userId}/ban`, { method: 'POST', body }),
 	unbanUser: (userId: string) =>
 		api(`/admin/users/${userId}/ban`, { method: 'DELETE' }),
 	suspendUser: (userId: string, body: { status: string; reason?: string }) =>
@@ -2301,7 +2301,11 @@ export const serviceBookingsAdminApi = {
 		),
 	get: (id: string) => api<unknown>(`/admin/service-bookings/${id}`),
 	transition: (id: string, body: { status: string; resolution_note?: string }) =>
-		api<unknown>(`/admin/service-bookings/${id}`, { method: 'PATCH', body }),
+		api<unknown>(`/admin/service-bookings/${id}`, {
+			method: 'PATCH',
+			body,
+			headers: { 'idempotency-key': crypto.randomUUID() }
+		}),
 };
 
 // ── V2 Functional Tools (§§90–97, §§99–101) — admin HITL review queues ───
@@ -2372,6 +2376,9 @@ export const jobsAdminApi = {
 	// salary_period, experience_level, job_function) — public seeded options
 	// shared with the finder filter UI (GET /jobs/field-options).
 	fieldOptions: () => api<Record<string, { value: string; label: string }[]>>('/jobs/field-options'),
+	// §63 — admin view of applications across all listings; ?job_id= scopes to
+	// one listing, ?status= filters by application status.
+	listApplications: (params?: string) => apiRaw<{ data: unknown[]; meta: { page: number; limit: number; total: number } }>(`/admin/jobs/applications${params ? `?${params}` : ''}`),
 	update: (id: string, body: Record<string, unknown>) => api<unknown>(`/admin/jobs/${id}`, { method: 'PATCH', body }),
 	delete: (id: string) => api<unknown>(`/admin/jobs/${id}`, { method: 'DELETE' }),
 	toggleFeature: (id: string) => api<unknown>(`/admin/jobs/${id}/feature`, { method: 'PATCH', body: {} }),

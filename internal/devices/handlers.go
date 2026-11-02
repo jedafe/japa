@@ -147,7 +147,7 @@ func writeDeviceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrDeviceNotFound):
 		errpkg.WriteError(w, http.StatusNotFound, "device_not_found", "Device not found")
 	case errors.Is(err, ErrPushDisabled):
-		errpkg.WriteError(w, http.StatusForbidden, "push_disabled", "Push notifications are disabled")
+		errpkg.WriteError(w, http.StatusNotFound, "push_disabled", "Push notifications are disabled")
 	case errors.Is(err, ErrNoDispatcher):
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "push_unavailable", "Push delivery is not configured")
 	case errors.Is(err, ErrNoActiveTokens):

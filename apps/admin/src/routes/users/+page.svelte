@@ -29,7 +29,15 @@
 		updated_at: string;
 	};
 
+	// Per-node gates — the backend enforces different nodes per action:
+	// admin.users.manage (sessions/activity/profile-type/create),
+	// admin.moderation (ban/warn/suspend/restrict/status/verify),
+	// user.delete (soft delete), admin.hard_delete (permanent erase, Rule 11),
+	// admin.rbac.manage (group membership), admin.impersonate (§46).
 	const canManageUsers = $derived(hasPermission("admin.users.manage"));
+	const canModerate = $derived(hasPermission("admin.moderation"));
+	const canDeleteUsers = $derived(hasPermission("user.delete"));
+	const canHardDelete = $derived(hasPermission("admin.hard_delete"));
 	const canImpersonate = $derived(hasPermission("admin.impersonate"));
 
 	// ── Filter options ──────────────────────────────────────────────────────
@@ -51,9 +59,12 @@
 
 	async function loadFilterOptions() {
 		try {
+			// listGroups requires admin.rbac.manage — skip the call entirely for
+			// viewers without the node instead of firing a guaranteed 403.
+			const canListGroups = hasPermission("admin.rbac.manage");
 			const [configResult, groupsResult] = await Promise.all([
 				userManagementApi.getModerationConfig(),
-				userManagementApi.listGroups()
+				canListGroups ? userManagementApi.listGroups() : Promise.resolve({ ok: false as const })
 			]);
 
 			let statusOptions: Array<{ value: string; label: string }> | undefined;
@@ -65,8 +76,6 @@
 				if (cfg?.violation_types?.length) {
 					violationTypeOptions = cfg.violation_types.map((v) => ({ value: v.value, label: v.label }));
 				}
-				// §07 badge-type vocabulary for the verify picker (Rule 16).
-				verificationAdminApi.types("user").then((r) => { if (r.ok) verificationTypes = r.data.types ?? []; }).catch(() => {});
 			}
 
 			let groupOptions: Array<{ value: string; label: string }> | undefined;
@@ -93,23 +102,34 @@
 
 	$effect(() => {
 		loadFilterOptions();
+		// §07 badge-type vocabulary for the verify picker (Rule 16). Loaded
+		// independently of the moderation config so a config failure does not
+		// leave the picker empty.
+		verificationAdminApi.types("user").then((r) => { if (r.ok) verificationTypes = r.data.types ?? []; }).catch(() => {});
 	});
 
 	// ── Impersonation banner ────────────────────────────────────────────────
 	let impersonating = $state(false);
 	let impersonatingTargetId = $state<string | null>(null);
+	let impersonatingTargetName = $state<string | null>(null);
 
 	async function checkImpersonation() {
 		const result = await impersonationApi.status();
 		if (result.ok) {
 			impersonating = result.data.active;
 			impersonatingTargetId = result.data.target_user_id;
+			impersonatingTargetName = result.data.target?.username ?? null;
 		}
 	}
 
 	async function endImpersonation() {
 		const result = await impersonationApi.end();
-		if (result.ok) await invalidateAll();
+		if (result.ok) {
+			impersonating = false;
+			impersonatingTargetId = null;
+			impersonatingTargetName = null;
+			await invalidateAll();
+		}
 	}
 
 	$effect(() => {
@@ -162,6 +182,8 @@
 	let warnReason = $state("");
 	let warnViolationType = $state("");
 	let suspendReason = $state("");
+	let banReason = $state("");
+	let banDays = $state(0);
 	// Violation-type options for the warn modal — from /admin/users/config
 	// (populated by loadFilterOptions, which already fetches the config).
 	let violationTypeOptions = $state<Array<{ value: string; label: string }>>([]);
@@ -169,16 +191,21 @@
 	const isBanned = $derived(actionTarget?.status === "banned");
 	const isSuspended = $derived(actionTarget?.status === "suspended");
 
-	function openBan(user: User) { actionTarget = user; showBanConfirm = true; }
+	function openBan(user: User) { actionTarget = user; banReason = ""; banDays = 0; showBanConfirm = true; }
 	function openSuspend(user: User) { actionTarget = user; suspendReason = ""; showSuspendConfirm = true; }
 	function openWarn(user: User) { actionTarget = user; warnReason = ""; warnViolationType = violationTypeOptions[0]?.value ?? ""; showWarnModal = true; }
 	function openVerify(user: User) { actionTarget = user; verifyType = ""; showVerifyModal = true; }
 
 	async function confirmVerify() {
-		if (!actionTarget) return;
-		const res = await verificationAdminApi.verifyUser(actionTarget.id, { verification_type: verifyType || undefined });
-		if (!res.ok) { pageError = res.error; } else { showVerifyModal = false; }
-		entityController?.reload();
+		if (!actionTarget || acting) return;
+		acting = true;
+		try {
+			const res = await verificationAdminApi.verifyUser(actionTarget.id, { verification_type: verifyType || undefined });
+			if (!res.ok) { pageError = res.error ?? t("common.error", "Failed to verify user"); } else { showVerifyModal = false; }
+			entityController?.reload();
+		} finally {
+			acting = false;
+		}
 	}
 	function openHardDelete(user: User) { actionTarget = user; showHardDeleteConfirm = true; }
 	function openRestore(user: User) { actionTarget = user; showRestoreConfirm = true; }
@@ -190,7 +217,10 @@
 		try {
 			const result = isBanned
 				? await userManagementApi.unbanUser(actionTarget.id)
-				: await userManagementApi.banUser(actionTarget.id);
+				: await userManagementApi.banUser(actionTarget.id, {
+						reason: banReason.trim() || undefined,
+						days: banDays > 0 ? banDays : undefined
+					});
 			if (result.ok) {
 				showBanConfirm = false;
 				entityController?.reload();
@@ -327,6 +357,8 @@
 		];
 		if (canManageUsers) {
 			acts.push({ label: t("common.edit", "Edit"), icon: Pencil, onclick: (row: User) => goto(`/users/${row.id}`) });
+		}
+		if (canModerate) {
 			acts.push({
 				label: t("users.warn", "Warn"),
 				icon: AlertTriangle,
@@ -378,6 +410,16 @@
 				},
 				show: (row: User) => row.status !== "deleted" && !!row.verified
 			});
+			// Restore lifts status via PATCH /admin/users/{id}/status — gated by
+			// admin.moderation, same as the other status transitions.
+			acts.push({
+				label: t("users.restore", "Restore"),
+				icon: RotateCcw,
+				onclick: openRestore,
+				show: (row: User) => row.status === "deleted"
+			});
+		}
+		if (canDeleteUsers) {
 			acts.push({
 				label: t("common.delete", "Delete"),
 				icon: Trash2,
@@ -385,12 +427,8 @@
 				onclick: openDelete,
 				show: (row: User) => row.status !== "deleted"
 			});
-			acts.push({
-				label: t("users.restore", "Restore"),
-				icon: RotateCcw,
-				onclick: openRestore,
-				show: (row: User) => row.status === "deleted"
-			});
+		}
+		if (canHardDelete) {
 			acts.push({
 				label: t("users.hard_delete", "Hard Delete"),
 				icon: Trash,
@@ -425,6 +463,10 @@
 		description: t("users.description", "Manage platform users"),
 		createLabel: t("users.create", "Create User"),
 		createPermission: "admin.users.manage",
+		// Soft delete is gated by user.delete (not the create/manage fallback);
+		// hard delete requires the dedicated admin.hard_delete node (Rule 11).
+		deletePermission: "user.delete",
+		hardDeletePermission: "admin.hard_delete",
 		pageSize: 25,
 		columns: [
 			{ key: "username", label: t("users.username", "Username"), sortable: true },
@@ -462,15 +504,17 @@
 		],
 		filters: filterDefs,
 		actions: rowActions,
-		bulkActions: [
-			{
-				label: t("users.bulk_hard_delete", "Hard Delete Selected"),
-				icon: Trash,
-				variant: "destructive",
-				onclick: bulkHardDelete,
-				disabled: (_ids: Set<string>, rows?: any[]) => !rows?.some((r) => r.status === "deleted")
-			}
-		],
+		bulkActions: canHardDelete
+			? [
+				{
+					label: t("users.bulk_hard_delete", "Hard Delete Selected"),
+					icon: Trash,
+					variant: "destructive",
+					onclick: bulkHardDelete,
+					disabled: (_ids: Set<string>, rows?: any[]) => !rows?.some((r) => r.status === "deleted")
+				}
+			]
+			: [],
 		fields,
 		load: async ({ page, pageSize, q, sort, filter }) => {
 			const params = new URLSearchParams({
@@ -524,7 +568,7 @@
 		class="mb-4 flex items-center justify-between gap-2 flex-wrap rounded-lg p-3 text-sm"
 		style="background: color-mix(in srgb, var(--color-warning) 10%, transparent); color: var(--color-warning)"
 	>
-		<span>{t("users.impersonating", "Impersonating")} <strong>{impersonatingTargetId ?? ''}</strong></span>
+		<span>{t("users.impersonating", "Impersonating")} <strong>{impersonatingTargetName ?? impersonatingTargetId ?? ''}</strong></span>
 		<button
 			class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
 			style="background: var(--color-warning); color: white"
@@ -562,6 +606,28 @@
 			<p class="mt-2 text-sm" style="color: var(--color-danger)">
 				{t("users.ban_warning", "This will prevent them from accessing the platform.")}
 			</p>
+			<div class="mt-3">
+				<label for="ban-reason" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("users.ban_reason", "Reason (optional)")}</label>
+				<textarea
+					id="ban-reason"
+					rows="2"
+					class="w-full rounded-lg border p-3 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					placeholder={t("users.ban_reason_ph", "Reason for ban...")}
+					bind:value={banReason}
+				></textarea>
+			</div>
+			<div class="mt-3">
+				<label for="ban-days" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("users.ban_days", "Duration in days (0 = permanent)")}</label>
+				<input
+					id="ban-days"
+					type="number"
+					min="0"
+					class="w-full rounded-lg border p-3 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={banDays}
+				/>
+			</div>
 		{/if}
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">

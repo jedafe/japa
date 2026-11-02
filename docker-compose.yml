@@ -213,6 +213,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # One-shot migration runner — same image as go-api, exits after applying
+  # pending migrations. Run in any environment with:
+  #   docker compose --profile ops run --rm migrate
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["ops"]
+    entrypoint: ["/app/japa-migrate"]
+    environment:
+      JC_DATABASE_URL: postgresql://japa:japa@postgres:5432/japa?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   # Nginx — reverse proxy in front of the Go API.
   nginx:
     image: nginx:1.29-alpine

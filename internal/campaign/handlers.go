@@ -312,5 +312,10 @@ func (h *Handlers) writeServiceError(w http.ResponseWriter, err error) {
 		return
 	}
 
+	if errors.Is(err, ErrDisabled) {
+		errpkg.WriteError(w, http.StatusNotFound, "campaign_disabled", "AI Content Campaigns are not available")
+		return
+	}
+
 	errpkg.HandleServiceError(w, err)
 }

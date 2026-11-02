@@ -145,10 +145,11 @@ func (s *Store) CountUserJobApplications(ctx context.Context, userID pgtype.UUID
 }
 
 // AdminListJobApplications returns all applications across all jobs, optionally
-// filtered by status.
-func (s *Store) AdminListJobApplications(ctx context.Context, status string, pageOffset, pageLimit int32) ([]gen.AdminListJobApplicationsRow, error) {
+// filtered by status and/or job listing (jobID.Valid scopes to one listing).
+func (s *Store) AdminListJobApplications(ctx context.Context, status string, jobID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.AdminListJobApplicationsRow, error) {
 	rows, err := s.queries.AdminListJobApplications(ctx, gen.AdminListJobApplicationsParams{
 		Status:     status,
+		JobID:      jobID,
 		PageOffset: pageOffset,
 		PageLimit:  pageLimit,
 	})
@@ -160,11 +161,11 @@ func (s *Store) AdminListJobApplications(ctx context.Context, status string, pag
 }
 
 // AdminCountJobApplications returns the total number of applications for a
-// platform, optionally filtered by status.
-func (s *Store) AdminCountJobApplications(ctx context.Context, status string) (int64, error) {
+// platform, optionally filtered by status and/or job listing.
+func (s *Store) AdminCountJobApplications(ctx context.Context, status string, jobID pgtype.UUID) (int64, error) {
 	return s.queries.AdminCountJobApplications(ctx,
 
-		status,
+		gen.AdminCountJobApplicationsParams{Status: status, JobID: jobID},
 	)
 }
 

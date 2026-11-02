@@ -1015,7 +1015,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	// list.enabled killswitch.
 	if input.ContentType == TypeList {
 		if !h.listContentEnabled(r.Context()) {
-			errpkg.WriteError(w, http.StatusForbidden, "list_feature_disabled",
+			errpkg.WriteError(w, http.StatusNotFound, "list_feature_disabled",
 				"List creation is currently disabled")
 			return
 		}
@@ -1739,6 +1739,16 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 
 	if resErr := h.Service.ResolveContentFields(r.Context(), contents, rc); resErr != nil {
 		slog.Warn("content: failed to resolve list literals", "error", resErr)
+	}
+
+	// Emit featured_image_url/header_image_url on list items — the list
+	// queries return bare content rows, so the URLs are batch-resolved
+	// from media and injected here. Fail-open: the raw rows still serve
+	// when the lookup fails, the cards just lose their covers.
+	if withImages, imgErr := h.Service.AttachListImageURLs(r.Context(), contents); imgErr != nil {
+		slog.Warn("content: failed to resolve list image URLs", "error", imgErr)
+	} else {
+		contents = withImages
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": contents})

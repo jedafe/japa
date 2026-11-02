@@ -164,6 +164,11 @@ func (h *Handlers) HandleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 	job, err := h.svc.CreateJob(r.Context(), user.UserID, in)
 	if err != nil {
+		if errors.Is(err, ErrDisabled) {
+			h.writeError(w, http.StatusNotFound, "studio_disabled", "AI Content Studio is not available")
+			return
+		}
+
 		h.writeError(w, http.StatusBadRequest, "studio_create_failed", err.Error())
 		return
 	}
@@ -195,6 +200,11 @@ func (h *Handlers) HandleRetryJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.RetryJob(r.Context(), id); err != nil {
+		if errors.Is(err, ErrDisabled) {
+			h.writeError(w, http.StatusNotFound, "studio_disabled", "AI Content Studio is not available")
+			return
+		}
+
 		h.writeError(w, http.StatusBadRequest, "retry_failed", err.Error())
 		return
 	}
@@ -254,6 +264,11 @@ func (h *Handlers) HandleCreateBatch(w http.ResponseWriter, r *http.Request) {
 
 	batch, jobs, err := h.svc.CreateBatch(r.Context(), user.UserID, in)
 	if err != nil {
+		if errors.Is(err, ErrDisabled) {
+			h.writeError(w, http.StatusNotFound, "studio_disabled", "AI Content Studio is not available")
+			return
+		}
+
 		h.writeError(w, http.StatusBadRequest, "batch_create_failed", err.Error())
 		return
 	}
@@ -289,6 +304,11 @@ func (h *Handlers) HandleRetryBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.EnqueueRetryFailed(r.Context(), id); err != nil {
+		if errors.Is(err, ErrDisabled) {
+			h.writeError(w, http.StatusNotFound, "studio_disabled", "AI Content Studio is not available")
+			return
+		}
+
 		h.writeError(w, http.StatusBadRequest, "batch_retry_failed", err.Error())
 		return
 	}

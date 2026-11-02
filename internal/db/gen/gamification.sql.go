@@ -41,6 +41,28 @@ func (q *Queries) AwardBadge(ctx context.Context, arg AwardBadgeParams) (UserBad
 	return i, err
 }
 
+const countAdminBadgeAwardEvents = `-- name: CountAdminBadgeAwardEvents :one
+SELECT COUNT(*) FROM badge_award_events bae
+JOIN badge_definitions bd ON bd.id = bae.badge_id
+LEFT JOIN users u ON u.id = bae.user_id
+WHERE ($1::uuid IS NULL OR bae.badge_id = $1::uuid)
+ AND ($2::text = '' OR u.username ILIKE '%' || $2::text || '%'
+   OR bd.name ILIKE '%' || $2::text || '%'
+   OR bae.source ILIKE '%' || $2::text || '%')
+`
+
+type CountAdminBadgeAwardEventsParams struct {
+	BadgeID pgtype.UUID `json:"badge_id"`
+	Q       string      `json:"q"`
+}
+
+func (q *Queries) CountAdminBadgeAwardEvents(ctx context.Context, arg CountAdminBadgeAwardEventsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAdminBadgeAwardEvents, arg.BadgeID, arg.Q)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countAllChallenges = `-- name: CountAllChallenges :one
 SELECT COUNT(*) AS count
 FROM challenge_definitions
@@ -90,22 +112,32 @@ func (q *Queries) CountUserActivityByKey(ctx context.Context, arg CountUserActiv
 }
 
 const createBadgeDefinition = `-- name: CreateBadgeDefinition :one
-INSERT INTO badge_definitions (slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO badge_definitions (slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 
-RETURNING id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at
+RETURNING id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id
 `
 
 type CreateBadgeDefinitionParams struct {
-	Slug               string      `json:"slug"`
-	Name               string      `json:"name"`
-	Description        *string     `json:"description"`
-	IconMediaID        pgtype.UUID `json:"icon_media_id"`
-	TriggerType        string      `json:"trigger_type"`
-	TriggerValue       *int32      `json:"trigger_value"`
-	TriggerActivityKey *string     `json:"trigger_activity_key"`
-	IsActive           bool        `json:"is_active"`
-	IsSystem           bool        `json:"is_system"`
-	DisplayOrder       int32       `json:"display_order"`
+	Slug               string             `json:"slug"`
+	Name               string             `json:"name"`
+	Description        *string            `json:"description"`
+	IconMediaID        pgtype.UUID        `json:"icon_media_id"`
+	TriggerType        string             `json:"trigger_type"`
+	TriggerValue       *int32             `json:"trigger_value"`
+	TriggerActivityKey *string            `json:"trigger_activity_key"`
+	IsActive           bool               `json:"is_active"`
+	IsSystem           bool               `json:"is_system"`
+	DisplayOrder       int32              `json:"display_order"`
+	Category           *string            `json:"category"`
+	Rarity             string             `json:"rarity"`
+	Tier               *string            `json:"tier"`
+	BadgeGroup         *string            `json:"badge_group"`
+	IsSecret           bool               `json:"is_secret"`
+	IsLimited          bool               `json:"is_limited"`
+	IsFeatured         bool               `json:"is_featured"`
+	PointsReward       int32              `json:"points_reward"`
+	AvailableFrom      pgtype.Timestamptz `json:"available_from"`
+	AvailableUntil     pgtype.Timestamptz `json:"available_until"`
 }
 
 func (q *Queries) CreateBadgeDefinition(ctx context.Context, arg CreateBadgeDefinitionParams) (BadgeDefinition, error) {
@@ -120,6 +152,16 @@ func (q *Queries) CreateBadgeDefinition(ctx context.Context, arg CreateBadgeDefi
 		arg.IsActive,
 		arg.IsSystem,
 		arg.DisplayOrder,
+		arg.Category,
+		arg.Rarity,
+		arg.Tier,
+		arg.BadgeGroup,
+		arg.IsSecret,
+		arg.IsLimited,
+		arg.IsFeatured,
+		arg.PointsReward,
+		arg.AvailableFrom,
+		arg.AvailableUntil,
 	)
 	var i BadgeDefinition
 	err := row.Scan(
@@ -135,6 +177,17 @@ func (q *Queries) CreateBadgeDefinition(ctx context.Context, arg CreateBadgeDefi
 		&i.IsSystem,
 		&i.DisplayOrder,
 		&i.CreatedAt,
+		&i.Category,
+		&i.Rarity,
+		&i.Tier,
+		&i.BadgeGroup,
+		&i.IsSecret,
+		&i.IsLimited,
+		&i.IsFeatured,
+		&i.PointsReward,
+		&i.AvailableFrom,
+		&i.AvailableUntil,
+		&i.SeasonID,
 	)
 	return i, err
 }
@@ -205,6 +258,24 @@ func (q *Queries) DeleteBadgeDefinition(ctx context.Context, id pgtype.UUID) (in
 	return result.RowsAffected(), nil
 }
 
+const deleteBadgeSeason = `-- name: DeleteBadgeSeason :exec
+DELETE FROM badge_seasons WHERE id = $1
+`
+
+func (q *Queries) DeleteBadgeSeason(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteBadgeSeason, id)
+	return err
+}
+
+const deleteBadgeTier = `-- name: DeleteBadgeTier :exec
+DELETE FROM badge_tiers WHERE id = $1
+`
+
+func (q *Queries) DeleteBadgeTier(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteBadgeTier, id)
+	return err
+}
+
 const deleteChallenge = `-- name: DeleteChallenge :execrows
 DELETE FROM challenge_definitions
 WHERE id = $1
@@ -234,8 +305,43 @@ func (q *Queries) ExpireChallengesPastEndDate(ctx context.Context) (int64, error
 	return result.RowsAffected(), nil
 }
 
+const getActivityDayStreak = `-- name: GetActivityDayStreak :one
+
+WITH days AS (
+    SELECT DISTINCT (created_at AT TIME ZONE 'UTC')::date AS d
+    FROM activity_events
+    WHERE user_id = $1
+      AND activity_key = $2
+),
+runs AS (
+    SELECT d, d - (ROW_NUMBER() OVER (ORDER BY d))::int AS grp
+    FROM days
+)
+SELECT COUNT(*)::int AS streak
+FROM runs
+WHERE grp = (SELECT grp FROM runs ORDER BY d DESC LIMIT 1)
+`
+
+type GetActivityDayStreakParams struct {
+	UserID      pgtype.UUID `json:"user_id"`
+	ActivityKey string      `json:"activity_key"`
+}
+
+// =====================================================================
+// Streak evaluation — consecutive UTC days of a given activity_key ending
+// at the user's most recent active day (gamification v2, streak_days
+// trigger). Length of the latest unbroken run; a gap before the most
+// recent day resets it.
+// =====================================================================
+func (q *Queries) GetActivityDayStreak(ctx context.Context, arg GetActivityDayStreakParams) (int32, error) {
+	row := q.db.QueryRow(ctx, getActivityDayStreak, arg.UserID, arg.ActivityKey)
+	var streak int32
+	err := row.Scan(&streak)
+	return streak, err
+}
+
 const getBadgeDefinitionByID = `-- name: GetBadgeDefinitionByID :one
-SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at FROM badge_definitions
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
 WHERE id = $1
 `
 
@@ -255,16 +361,29 @@ func (q *Queries) GetBadgeDefinitionByID(ctx context.Context, id pgtype.UUID) (B
 		&i.IsSystem,
 		&i.DisplayOrder,
 		&i.CreatedAt,
+		&i.Category,
+		&i.Rarity,
+		&i.Tier,
+		&i.BadgeGroup,
+		&i.IsSecret,
+		&i.IsLimited,
+		&i.IsFeatured,
+		&i.PointsReward,
+		&i.AvailableFrom,
+		&i.AvailableUntil,
+		&i.SeasonID,
 	)
 	return i, err
 }
 
 const getBadgesByActivityTrigger = `-- name: GetBadgesByActivityTrigger :many
 
-SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at FROM badge_definitions
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
 WHERE is_active = true
  AND trigger_type = 'activity_count'
  AND trigger_activity_key = $1
+ AND (available_from IS NULL OR available_from <= now())
+ AND (available_until IS NULL OR available_until > now())
 `
 
 // =====================================================================
@@ -292,6 +411,17 @@ func (q *Queries) GetBadgesByActivityTrigger(ctx context.Context, activityKey *s
 			&i.IsSystem,
 			&i.DisplayOrder,
 			&i.CreatedAt,
+			&i.Category,
+			&i.Rarity,
+			&i.Tier,
+			&i.BadgeGroup,
+			&i.IsSecret,
+			&i.IsLimited,
+			&i.IsFeatured,
+			&i.PointsReward,
+			&i.AvailableFrom,
+			&i.AvailableUntil,
+			&i.SeasonID,
 		); err != nil {
 			return nil, err
 		}
@@ -304,9 +434,11 @@ func (q *Queries) GetBadgesByActivityTrigger(ctx context.Context, activityKey *s
 }
 
 const getBadgesByPointsTrigger = `-- name: GetBadgesByPointsTrigger :many
-SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at FROM badge_definitions
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
 WHERE is_active = true
  AND trigger_type = 'lifetime_points'
+ AND (available_from IS NULL OR available_from <= now())
+ AND (available_until IS NULL OR available_until > now())
 `
 
 func (q *Queries) GetBadgesByPointsTrigger(ctx context.Context) ([]BadgeDefinition, error) {
@@ -331,6 +463,70 @@ func (q *Queries) GetBadgesByPointsTrigger(ctx context.Context) ([]BadgeDefiniti
 			&i.IsSystem,
 			&i.DisplayOrder,
 			&i.CreatedAt,
+			&i.Category,
+			&i.Rarity,
+			&i.Tier,
+			&i.BadgeGroup,
+			&i.IsSecret,
+			&i.IsLimited,
+			&i.IsFeatured,
+			&i.PointsReward,
+			&i.AvailableFrom,
+			&i.AvailableUntil,
+			&i.SeasonID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getBadgesByStreakTrigger = `-- name: GetBadgesByStreakTrigger :many
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
+WHERE is_active = true
+ AND trigger_type = 'streak_days'
+ AND trigger_activity_key = $1
+ AND (available_from IS NULL OR available_from <= now())
+ AND (available_until IS NULL OR available_until > now())
+`
+
+func (q *Queries) GetBadgesByStreakTrigger(ctx context.Context, activityKey *string) ([]BadgeDefinition, error) {
+	rows, err := q.db.Query(ctx, getBadgesByStreakTrigger, activityKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BadgeDefinition
+	for rows.Next() {
+		var i BadgeDefinition
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.IconMediaID,
+			&i.TriggerType,
+			&i.TriggerValue,
+			&i.TriggerActivityKey,
+			&i.IsActive,
+			&i.IsSystem,
+			&i.DisplayOrder,
+			&i.CreatedAt,
+			&i.Category,
+			&i.Rarity,
+			&i.Tier,
+			&i.BadgeGroup,
+			&i.IsSecret,
+			&i.IsLimited,
+			&i.IsFeatured,
+			&i.PointsReward,
+			&i.AvailableFrom,
+			&i.AvailableUntil,
+			&i.SeasonID,
 		); err != nil {
 			return nil, err
 		}
@@ -458,6 +654,117 @@ func (q *Queries) GetUserBadge(ctx context.Context, arg GetUserBadgeParams) (Use
 	return i, err
 }
 
+const insertBadgeAwardEvent = `-- name: InsertBadgeAwardEvent :one
+
+INSERT INTO badge_award_events (user_id, badge_id, source, activity_event_id, awarded_by) VALUES ($1, $2, $3, $4, $5)
+RETURNING id, user_id, badge_id, source, activity_event_id, awarded_by, created_at
+`
+
+type InsertBadgeAwardEventParams struct {
+	UserID          pgtype.UUID `json:"user_id"`
+	BadgeID         pgtype.UUID `json:"badge_id"`
+	Source          string      `json:"source"`
+	ActivityEventID pgtype.UUID `json:"activity_event_id"`
+	AwardedBy       pgtype.UUID `json:"awarded_by"`
+}
+
+// =====================================================================
+// Badge award events — auditable award history (v2).
+// =====================================================================
+func (q *Queries) InsertBadgeAwardEvent(ctx context.Context, arg InsertBadgeAwardEventParams) (BadgeAwardEvent, error) {
+	row := q.db.QueryRow(ctx, insertBadgeAwardEvent,
+		arg.UserID,
+		arg.BadgeID,
+		arg.Source,
+		arg.ActivityEventID,
+		arg.AwardedBy,
+	)
+	var i BadgeAwardEvent
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.BadgeID,
+		&i.Source,
+		&i.ActivityEventID,
+		&i.AwardedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertBadgeSeason = `-- name: InsertBadgeSeason :one
+INSERT INTO badge_seasons (slug, name, description, starts_at, ends_at, is_active)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, slug, name, description, starts_at, ends_at, is_active, created_at
+`
+
+type InsertBadgeSeasonParams struct {
+	Slug        string             `json:"slug"`
+	Name        string             `json:"name"`
+	Description *string            `json:"description"`
+	StartsAt    pgtype.Timestamptz `json:"starts_at"`
+	EndsAt      pgtype.Timestamptz `json:"ends_at"`
+	IsActive    bool               `json:"is_active"`
+}
+
+func (q *Queries) InsertBadgeSeason(ctx context.Context, arg InsertBadgeSeasonParams) (BadgeSeason, error) {
+	row := q.db.QueryRow(ctx, insertBadgeSeason,
+		arg.Slug,
+		arg.Name,
+		arg.Description,
+		arg.StartsAt,
+		arg.EndsAt,
+		arg.IsActive,
+	)
+	var i BadgeSeason
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Description,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertBadgeTier = `-- name: InsertBadgeTier :one
+INSERT INTO badge_tiers (badge_group, tier, name, threshold, badge_id)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, badge_group, tier, name, threshold, badge_id, created_at
+`
+
+type InsertBadgeTierParams struct {
+	BadgeGroup string      `json:"badge_group"`
+	Tier       string      `json:"tier"`
+	Name       string      `json:"name"`
+	Threshold  int32       `json:"threshold"`
+	BadgeID    pgtype.UUID `json:"badge_id"`
+}
+
+func (q *Queries) InsertBadgeTier(ctx context.Context, arg InsertBadgeTierParams) (BadgeTier, error) {
+	row := q.db.QueryRow(ctx, insertBadgeTier,
+		arg.BadgeGroup,
+		arg.Tier,
+		arg.Name,
+		arg.Threshold,
+		arg.BadgeID,
+	)
+	var i BadgeTier
+	err := row.Scan(
+		&i.ID,
+		&i.BadgeGroup,
+		&i.Tier,
+		&i.Name,
+		&i.Threshold,
+		&i.BadgeID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const leaderboardAllTime = `-- name: LeaderboardAllTime :many
 
 SELECT
@@ -475,9 +782,9 @@ WHERE wl.ledger_type = 'points'
  AND u.is_bot = false
  AND u.is_synthetic = false
  AND u.status = 'active'
- -- §28 consent model: public points display requires the
- -- show_points_publicly opt-in (default false). The leaderboard is a
- -- public surface, so non-consenting users are excluded from ranking.
+ -- §28 consent model: show_points_publicly is opt-out (migration 000978 —
+ -- DEFAULT true), so users who disabled it are excluded from ranking;
+ -- a missing privacy-settings row counts as consenting.
  AND COALESCE(ups.show_points_publicly, true) = true
  AND ($1::uuid IS NULL OR EXISTS (
  SELECT 1 FROM space_members sm
@@ -654,6 +961,114 @@ func (q *Queries) ListActiveChallenges(ctx context.Context) ([]ChallengeDefiniti
 	return items, nil
 }
 
+const listAdminBadgeAwardEvents = `-- name: ListAdminBadgeAwardEvents :many
+
+SELECT
+ bae.id,
+ bae.user_id,
+ u.username,
+ bae.badge_id,
+ bd.name AS badge_name,
+ bd.slug AS badge_slug,
+ bae.source,
+ bae.activity_event_id,
+ bae.awarded_by,
+ au.username AS awarded_by_username,
+ bae.created_at
+FROM badge_award_events bae
+JOIN badge_definitions bd ON bd.id = bae.badge_id
+LEFT JOIN users u ON u.id = bae.user_id
+LEFT JOIN users au ON au.id = bae.awarded_by
+WHERE ($1::uuid IS NULL OR bae.badge_id = $1::uuid)
+ AND ($2::text = '' OR u.username ILIKE '%' || $2::text || '%'
+   OR bd.name ILIKE '%' || $2::text || '%'
+   OR bae.source ILIKE '%' || $2::text || '%')
+ORDER BY
+ CASE WHEN $3::text = 'asc' THEN
+   CASE $4::text
+     WHEN 'username' THEN u.username
+     WHEN 'badge_name' THEN bd.name
+     WHEN 'source' THEN bae.source
+     ELSE NULL END
+ END ASC NULLS LAST,
+ CASE WHEN $3::text = 'asc' AND $4::text = 'created_at' THEN bae.created_at END ASC NULLS LAST,
+ CASE WHEN $3::text <> 'asc' THEN
+   CASE $4::text
+     WHEN 'username' THEN u.username
+     WHEN 'badge_name' THEN bd.name
+     WHEN 'source' THEN bae.source
+     ELSE NULL END
+ END DESC NULLS LAST,
+ CASE WHEN $3::text <> 'asc' AND $4::text = 'created_at' THEN bae.created_at END DESC NULLS LAST,
+ bae.created_at DESC
+LIMIT $6 OFFSET $5
+`
+
+type ListAdminBadgeAwardEventsParams struct {
+	BadgeID    pgtype.UUID `json:"badge_id"`
+	Q          string      `json:"q"`
+	SortDir    string      `json:"sort_dir"`
+	SortBy     string      `json:"sort_by"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListAdminBadgeAwardEventsRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	Username          *string            `json:"username"`
+	BadgeID           pgtype.UUID        `json:"badge_id"`
+	BadgeName         string             `json:"badge_name"`
+	BadgeSlug         string             `json:"badge_slug"`
+	Source            string             `json:"source"`
+	ActivityEventID   pgtype.UUID        `json:"activity_event_id"`
+	AwardedBy         pgtype.UUID        `json:"awarded_by"`
+	AwardedByUsername *string            `json:"awarded_by_username"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+// =====================================================================
+// Admin — award events, seasons, tiers (v2 management surfaces).
+// =====================================================================
+func (q *Queries) ListAdminBadgeAwardEvents(ctx context.Context, arg ListAdminBadgeAwardEventsParams) ([]ListAdminBadgeAwardEventsRow, error) {
+	rows, err := q.db.Query(ctx, listAdminBadgeAwardEvents,
+		arg.BadgeID,
+		arg.Q,
+		arg.SortDir,
+		arg.SortBy,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAdminBadgeAwardEventsRow
+	for rows.Next() {
+		var i ListAdminBadgeAwardEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Username,
+			&i.BadgeID,
+			&i.BadgeName,
+			&i.BadgeSlug,
+			&i.Source,
+			&i.ActivityEventID,
+			&i.AwardedBy,
+			&i.AwardedByUsername,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllChallenges = `-- name: ListAllChallenges :many
 SELECT id, slug, name, description, image_media_id, activity_key, target_count, reward_points, reward_badge_id, starts_at, ends_at, is_active, created_at FROM challenge_definitions
 
@@ -700,10 +1115,164 @@ func (q *Queries) ListAllChallenges(ctx context.Context, arg ListAllChallengesPa
 	return items, nil
 }
 
+const listBadgeAwardEventsForUser = `-- name: ListBadgeAwardEventsForUser :many
+SELECT
+ bae.id, bae.user_id, bae.badge_id, bae.source, bae.activity_event_id, bae.awarded_by, bae.created_at,
+ bd.name AS badge_name,
+ bd.slug AS badge_slug
+FROM badge_award_events bae
+JOIN badge_definitions bd ON bd.id = bae.badge_id
+WHERE bae.user_id = $1
+ORDER BY bae.created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListBadgeAwardEventsForUserParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListBadgeAwardEventsForUserRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	BadgeID         pgtype.UUID        `json:"badge_id"`
+	Source          string             `json:"source"`
+	ActivityEventID pgtype.UUID        `json:"activity_event_id"`
+	AwardedBy       pgtype.UUID        `json:"awarded_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	BadgeName       string             `json:"badge_name"`
+	BadgeSlug       string             `json:"badge_slug"`
+}
+
+func (q *Queries) ListBadgeAwardEventsForUser(ctx context.Context, arg ListBadgeAwardEventsForUserParams) ([]ListBadgeAwardEventsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listBadgeAwardEventsForUser, arg.UserID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBadgeAwardEventsForUserRow
+	for rows.Next() {
+		var i ListBadgeAwardEventsForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.BadgeID,
+			&i.Source,
+			&i.ActivityEventID,
+			&i.AwardedBy,
+			&i.CreatedAt,
+			&i.BadgeName,
+			&i.BadgeSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBadgeCollectionForUser = `-- name: ListBadgeCollectionForUser :many
+
+SELECT
+ bd.id, bd.slug, bd.name, bd.description, bd.icon_media_id, bd.trigger_type, bd.trigger_value, bd.trigger_activity_key, bd.is_active, bd.is_system, bd.display_order, bd.created_at, bd.category, bd.rarity, bd.tier, bd.badge_group, bd.is_secret, bd.is_limited, bd.is_featured, bd.points_reward, bd.available_from, bd.available_until, bd.season_id,
+ ub.awarded_at AS user_awarded_at,
+ ub.id AS user_badge_id,
+ bp.current_count AS progress_count
+FROM badge_definitions bd
+LEFT JOIN user_badges ub ON ub.badge_id = bd.id AND ub.user_id = $1
+LEFT JOIN badge_progress bp ON bp.badge_id = bd.id AND bp.user_id = $1
+WHERE bd.is_active = true
+ORDER BY bd.display_order ASC, bd.name ASC
+`
+
+type ListBadgeCollectionForUserRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	Slug               string             `json:"slug"`
+	Name               string             `json:"name"`
+	Description        *string            `json:"description"`
+	IconMediaID        pgtype.UUID        `json:"icon_media_id"`
+	TriggerType        string             `json:"trigger_type"`
+	TriggerValue       *int32             `json:"trigger_value"`
+	TriggerActivityKey *string            `json:"trigger_activity_key"`
+	IsActive           bool               `json:"is_active"`
+	IsSystem           bool               `json:"is_system"`
+	DisplayOrder       int32              `json:"display_order"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	Category           *string            `json:"category"`
+	Rarity             string             `json:"rarity"`
+	Tier               *string            `json:"tier"`
+	BadgeGroup         *string            `json:"badge_group"`
+	IsSecret           bool               `json:"is_secret"`
+	IsLimited          bool               `json:"is_limited"`
+	IsFeatured         bool               `json:"is_featured"`
+	PointsReward       int32              `json:"points_reward"`
+	AvailableFrom      pgtype.Timestamptz `json:"available_from"`
+	AvailableUntil     pgtype.Timestamptz `json:"available_until"`
+	SeasonID           pgtype.UUID        `json:"season_id"`
+	UserAwardedAt      pgtype.Timestamptz `json:"user_awarded_at"`
+	UserBadgeID        pgtype.UUID        `json:"user_badge_id"`
+	ProgressCount      *int32             `json:"progress_count"`
+}
+
+// =====================================================================
+// Achievement centre collection — full catalogue joined with the user's
+// earned badges and progress rows in a single read (v2).
+// =====================================================================
+func (q *Queries) ListBadgeCollectionForUser(ctx context.Context, userID pgtype.UUID) ([]ListBadgeCollectionForUserRow, error) {
+	rows, err := q.db.Query(ctx, listBadgeCollectionForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBadgeCollectionForUserRow
+	for rows.Next() {
+		var i ListBadgeCollectionForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.IconMediaID,
+			&i.TriggerType,
+			&i.TriggerValue,
+			&i.TriggerActivityKey,
+			&i.IsActive,
+			&i.IsSystem,
+			&i.DisplayOrder,
+			&i.CreatedAt,
+			&i.Category,
+			&i.Rarity,
+			&i.Tier,
+			&i.BadgeGroup,
+			&i.IsSecret,
+			&i.IsLimited,
+			&i.IsFeatured,
+			&i.PointsReward,
+			&i.AvailableFrom,
+			&i.AvailableUntil,
+			&i.SeasonID,
+			&i.UserAwardedAt,
+			&i.UserBadgeID,
+			&i.ProgressCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listBadgeDefinitions = `-- name: ListBadgeDefinitions :many
 
 
-SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at FROM badge_definitions
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
 WHERE ($1::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC
 `
@@ -740,6 +1309,17 @@ func (q *Queries) ListBadgeDefinitions(ctx context.Context, activeOnly bool) ([]
 			&i.IsSystem,
 			&i.DisplayOrder,
 			&i.CreatedAt,
+			&i.Category,
+			&i.Rarity,
+			&i.Tier,
+			&i.BadgeGroup,
+			&i.IsSecret,
+			&i.IsLimited,
+			&i.IsFeatured,
+			&i.PointsReward,
+			&i.AvailableFrom,
+			&i.AvailableUntil,
+			&i.SeasonID,
 		); err != nil {
 			return nil, err
 		}
@@ -752,7 +1332,7 @@ func (q *Queries) ListBadgeDefinitions(ctx context.Context, activeOnly bool) ([]
 }
 
 const listBadgeDefinitionsPaginated = `-- name: ListBadgeDefinitionsPaginated :many
-SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at FROM badge_definitions
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
 WHERE ($1::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC
 LIMIT $3 OFFSET $2
@@ -786,6 +1366,109 @@ func (q *Queries) ListBadgeDefinitionsPaginated(ctx context.Context, arg ListBad
 			&i.IsSystem,
 			&i.DisplayOrder,
 			&i.CreatedAt,
+			&i.Category,
+			&i.Rarity,
+			&i.Tier,
+			&i.BadgeGroup,
+			&i.IsSecret,
+			&i.IsLimited,
+			&i.IsFeatured,
+			&i.PointsReward,
+			&i.AvailableFrom,
+			&i.AvailableUntil,
+			&i.SeasonID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBadgeGroups = `-- name: ListBadgeGroups :many
+SELECT DISTINCT badge_group FROM badge_definitions
+WHERE badge_group IS NOT NULL AND badge_group != ''
+ORDER BY badge_group
+`
+
+func (q *Queries) ListBadgeGroups(ctx context.Context) ([]*string, error) {
+	rows, err := q.db.Query(ctx, listBadgeGroups)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*string
+	for rows.Next() {
+		var badge_group *string
+		if err := rows.Scan(&badge_group); err != nil {
+			return nil, err
+		}
+		items = append(items, badge_group)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBadgeSeasons = `-- name: ListBadgeSeasons :many
+SELECT id, slug, name, description, starts_at, ends_at, is_active, created_at FROM badge_seasons ORDER BY starts_at DESC
+`
+
+func (q *Queries) ListBadgeSeasons(ctx context.Context) ([]BadgeSeason, error) {
+	rows, err := q.db.Query(ctx, listBadgeSeasons)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BadgeSeason
+	for rows.Next() {
+		var i BadgeSeason
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.IsActive,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBadgeTiers = `-- name: ListBadgeTiers :many
+SELECT id, badge_group, tier, name, threshold, badge_id, created_at FROM badge_tiers
+ORDER BY badge_group, threshold
+`
+
+func (q *Queries) ListBadgeTiers(ctx context.Context) ([]BadgeTier, error) {
+	rows, err := q.db.Query(ctx, listBadgeTiers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BadgeTier
+	for rows.Next() {
+		var i BadgeTier
+		if err := rows.Scan(
+			&i.ID,
+			&i.BadgeGroup,
+			&i.Tier,
+			&i.Name,
+			&i.Threshold,
+			&i.BadgeID,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -803,7 +1486,11 @@ SELECT
  bd.name AS badge_name,
  bd.slug AS badge_slug,
  bd.description AS badge_description,
- bd.icon_media_id AS badge_icon_media_id
+ bd.icon_media_id AS badge_icon_media_id,
+ bd.category AS badge_category,
+ bd.rarity AS badge_rarity,
+ bd.tier AS badge_tier,
+ bd.badge_group AS badge_group
 FROM user_badges ub
 JOIN badge_definitions bd ON bd.id = ub.badge_id
 WHERE ub.user_id = $1
@@ -820,6 +1507,10 @@ type ListUserBadgesRow struct {
 	BadgeSlug        string             `json:"badge_slug"`
 	BadgeDescription *string            `json:"badge_description"`
 	BadgeIconMediaID pgtype.UUID        `json:"badge_icon_media_id"`
+	BadgeCategory    *string            `json:"badge_category"`
+	BadgeRarity      string             `json:"badge_rarity"`
+	BadgeTier        *string            `json:"badge_tier"`
+	BadgeGroup       *string            `json:"badge_group"`
 }
 
 func (q *Queries) ListUserBadges(ctx context.Context, userID pgtype.UUID) ([]ListUserBadgesRow, error) {
@@ -841,6 +1532,10 @@ func (q *Queries) ListUserBadges(ctx context.Context, userID pgtype.UUID) ([]Lis
 			&i.BadgeSlug,
 			&i.BadgeDescription,
 			&i.BadgeIconMediaID,
+			&i.BadgeCategory,
+			&i.BadgeRarity,
+			&i.BadgeTier,
+			&i.BadgeGroup,
 		); err != nil {
 			return nil, err
 		}
@@ -857,7 +1552,11 @@ SELECT
  ub.id, ub.user_id, ub.badge_id, ub.awarded_at, ub.awarded_by,
  bd.name AS badge_name,
  bd.slug AS badge_slug,
- bd.description AS badge_description
+ bd.description AS badge_description,
+ bd.category AS badge_category,
+ bd.rarity AS badge_rarity,
+ bd.tier AS badge_tier,
+ bd.badge_group AS badge_group
 FROM user_badges ub
 JOIN badge_definitions bd ON bd.id = ub.badge_id
 JOIN users u ON u.id = ub.user_id
@@ -874,6 +1573,10 @@ type ListUserBadgesByUsernameRow struct {
 	BadgeName        string             `json:"badge_name"`
 	BadgeSlug        string             `json:"badge_slug"`
 	BadgeDescription *string            `json:"badge_description"`
+	BadgeCategory    *string            `json:"badge_category"`
+	BadgeRarity      string             `json:"badge_rarity"`
+	BadgeTier        *string            `json:"badge_tier"`
+	BadgeGroup       *string            `json:"badge_group"`
 }
 
 func (q *Queries) ListUserBadgesByUsername(ctx context.Context, username string) ([]ListUserBadgesByUsernameRow, error) {
@@ -894,6 +1597,10 @@ func (q *Queries) ListUserBadgesByUsername(ctx context.Context, username string)
 			&i.BadgeName,
 			&i.BadgeSlug,
 			&i.BadgeDescription,
+			&i.BadgeCategory,
+			&i.BadgeRarity,
+			&i.BadgeTier,
+			&i.BadgeGroup,
 		); err != nil {
 			return nil, err
 		}
@@ -991,24 +1698,49 @@ SET
  trigger_value = CASE WHEN $6::boolean THEN NULL ELSE COALESCE($7, trigger_value) END,
  trigger_activity_key = CASE WHEN $8::boolean THEN NULL ELSE COALESCE($9, trigger_activity_key) END,
  is_active = COALESCE($10, is_active),
- display_order = COALESCE($11, display_order)
-WHERE id = $12
-RETURNING id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at
+ display_order = COALESCE($11, display_order),
+ category = CASE WHEN $12::boolean THEN NULL ELSE COALESCE($13, category) END,
+ rarity = COALESCE($14, rarity),
+ tier = CASE WHEN $15::boolean THEN NULL ELSE COALESCE($16, tier) END,
+ badge_group = CASE WHEN $17::boolean THEN NULL ELSE COALESCE($18, badge_group) END,
+ is_secret = COALESCE($19, is_secret),
+ is_limited = COALESCE($20, is_limited),
+ is_featured = COALESCE($21, is_featured),
+ points_reward = COALESCE($22, points_reward),
+ available_from = CASE WHEN $23::boolean THEN NULL ELSE COALESCE($24, available_from) END,
+ available_until = CASE WHEN $25::boolean THEN NULL ELSE COALESCE($26, available_until) END
+WHERE id = $27
+RETURNING id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id
 `
 
 type UpdateBadgeDefinitionParams struct {
-	Name                    *string     `json:"name"`
-	Description             *string     `json:"description"`
-	ClearIconMediaID        *bool       `json:"clear_icon_media_id"`
-	IconMediaID             pgtype.UUID `json:"icon_media_id"`
-	TriggerType             *string     `json:"trigger_type"`
-	ClearTriggerValue       *bool       `json:"clear_trigger_value"`
-	TriggerValue            *int32      `json:"trigger_value"`
-	ClearTriggerActivityKey *bool       `json:"clear_trigger_activity_key"`
-	TriggerActivityKey      *string     `json:"trigger_activity_key"`
-	IsActive                *bool       `json:"is_active"`
-	DisplayOrder            *int32      `json:"display_order"`
-	ID                      pgtype.UUID `json:"id"`
+	Name                    *string            `json:"name"`
+	Description             *string            `json:"description"`
+	ClearIconMediaID        *bool              `json:"clear_icon_media_id"`
+	IconMediaID             pgtype.UUID        `json:"icon_media_id"`
+	TriggerType             *string            `json:"trigger_type"`
+	ClearTriggerValue       *bool              `json:"clear_trigger_value"`
+	TriggerValue            *int32             `json:"trigger_value"`
+	ClearTriggerActivityKey *bool              `json:"clear_trigger_activity_key"`
+	TriggerActivityKey      *string            `json:"trigger_activity_key"`
+	IsActive                *bool              `json:"is_active"`
+	DisplayOrder            *int32             `json:"display_order"`
+	ClearCategory           *bool              `json:"clear_category"`
+	Category                *string            `json:"category"`
+	Rarity                  *string            `json:"rarity"`
+	ClearTier               *bool              `json:"clear_tier"`
+	Tier                    *string            `json:"tier"`
+	ClearBadgeGroup         *bool              `json:"clear_badge_group"`
+	BadgeGroup              *string            `json:"badge_group"`
+	IsSecret                *bool              `json:"is_secret"`
+	IsLimited               *bool              `json:"is_limited"`
+	IsFeatured              *bool              `json:"is_featured"`
+	PointsReward            *int32             `json:"points_reward"`
+	ClearAvailableFrom      *bool              `json:"clear_available_from"`
+	AvailableFrom           pgtype.Timestamptz `json:"available_from"`
+	ClearAvailableUntil     *bool              `json:"clear_available_until"`
+	AvailableUntil          pgtype.Timestamptz `json:"available_until"`
+	ID                      pgtype.UUID        `json:"id"`
 }
 
 func (q *Queries) UpdateBadgeDefinition(ctx context.Context, arg UpdateBadgeDefinitionParams) (BadgeDefinition, error) {
@@ -1024,6 +1756,21 @@ func (q *Queries) UpdateBadgeDefinition(ctx context.Context, arg UpdateBadgeDefi
 		arg.TriggerActivityKey,
 		arg.IsActive,
 		arg.DisplayOrder,
+		arg.ClearCategory,
+		arg.Category,
+		arg.Rarity,
+		arg.ClearTier,
+		arg.Tier,
+		arg.ClearBadgeGroup,
+		arg.BadgeGroup,
+		arg.IsSecret,
+		arg.IsLimited,
+		arg.IsFeatured,
+		arg.PointsReward,
+		arg.ClearAvailableFrom,
+		arg.AvailableFrom,
+		arg.ClearAvailableUntil,
+		arg.AvailableUntil,
 		arg.ID,
 	)
 	var i BadgeDefinition
@@ -1039,6 +1786,105 @@ func (q *Queries) UpdateBadgeDefinition(ctx context.Context, arg UpdateBadgeDefi
 		&i.IsActive,
 		&i.IsSystem,
 		&i.DisplayOrder,
+		&i.CreatedAt,
+		&i.Category,
+		&i.Rarity,
+		&i.Tier,
+		&i.BadgeGroup,
+		&i.IsSecret,
+		&i.IsLimited,
+		&i.IsFeatured,
+		&i.PointsReward,
+		&i.AvailableFrom,
+		&i.AvailableUntil,
+		&i.SeasonID,
+	)
+	return i, err
+}
+
+const updateBadgeSeason = `-- name: UpdateBadgeSeason :one
+UPDATE badge_seasons SET
+ name = COALESCE($1, name),
+ description = COALESCE($2, description),
+ starts_at = COALESCE($3, starts_at),
+ ends_at = COALESCE($4, ends_at),
+ is_active = COALESCE($5, is_active)
+WHERE id = $6
+RETURNING id, slug, name, description, starts_at, ends_at, is_active, created_at
+`
+
+type UpdateBadgeSeasonParams struct {
+	Name        *string            `json:"name"`
+	Description *string            `json:"description"`
+	StartsAt    pgtype.Timestamptz `json:"starts_at"`
+	EndsAt      pgtype.Timestamptz `json:"ends_at"`
+	IsActive    *bool              `json:"is_active"`
+	ID          pgtype.UUID        `json:"id"`
+}
+
+func (q *Queries) UpdateBadgeSeason(ctx context.Context, arg UpdateBadgeSeasonParams) (BadgeSeason, error) {
+	row := q.db.QueryRow(ctx, updateBadgeSeason,
+		arg.Name,
+		arg.Description,
+		arg.StartsAt,
+		arg.EndsAt,
+		arg.IsActive,
+		arg.ID,
+	)
+	var i BadgeSeason
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Description,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateBadgeTier = `-- name: UpdateBadgeTier :one
+UPDATE badge_tiers SET
+ badge_group = COALESCE($1, badge_group),
+ tier = COALESCE($2, tier),
+ name = COALESCE($3, name),
+ threshold = COALESCE($4, threshold),
+ badge_id = CASE WHEN $5::boolean THEN NULL
+            ELSE COALESCE($6, badge_id) END
+WHERE id = $7
+RETURNING id, badge_group, tier, name, threshold, badge_id, created_at
+`
+
+type UpdateBadgeTierParams struct {
+	BadgeGroup   *string     `json:"badge_group"`
+	Tier         *string     `json:"tier"`
+	Name         *string     `json:"name"`
+	Threshold    *int32      `json:"threshold"`
+	ClearBadgeID bool        `json:"clear_badge_id"`
+	BadgeID      pgtype.UUID `json:"badge_id"`
+	ID           pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateBadgeTier(ctx context.Context, arg UpdateBadgeTierParams) (BadgeTier, error) {
+	row := q.db.QueryRow(ctx, updateBadgeTier,
+		arg.BadgeGroup,
+		arg.Tier,
+		arg.Name,
+		arg.Threshold,
+		arg.ClearBadgeID,
+		arg.BadgeID,
+		arg.ID,
+	)
+	var i BadgeTier
+	err := row.Scan(
+		&i.ID,
+		&i.BadgeGroup,
+		&i.Tier,
+		&i.Name,
+		&i.Threshold,
+		&i.BadgeID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -1112,6 +1958,27 @@ func (q *Queries) UpdateChallenge(ctx context.Context, arg UpdateChallengeParams
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const upsertBadgeProgress = `-- name: UpsertBadgeProgress :exec
+
+INSERT INTO badge_progress (user_id, badge_id, current_count) VALUES ($1, $2, $3)
+ON CONFLICT (user_id, badge_id)
+DO UPDATE SET current_count = EXCLUDED.current_count, updated_at = now()
+`
+
+type UpsertBadgeProgressParams struct {
+	UserID       pgtype.UUID `json:"user_id"`
+	BadgeID      pgtype.UUID `json:"badge_id"`
+	CurrentCount int32       `json:"current_count"`
+}
+
+// =====================================================================
+// Badge progress — per-user progress toward locked badges (v2).
+// =====================================================================
+func (q *Queries) UpsertBadgeProgress(ctx context.Context, arg UpsertBadgeProgressParams) error {
+	_, err := q.db.Exec(ctx, upsertBadgeProgress, arg.UserID, arg.BadgeID, arg.CurrentCount)
+	return err
 }
 
 const upsertChallengeProgress = `-- name: UpsertChallengeProgress :one

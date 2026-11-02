@@ -5,7 +5,7 @@
 	// and their i18n `t`; the modal owns no client so it stays app-agnostic.
 	import { Dialog } from 'bits-ui';
 	import { untrack } from 'svelte';
-	import { X, Search, Loader2, ImagePlus, Upload, Download, Check, Maximize2 } from 'lucide-svelte';
+	import { X, Search, Loader2, ImagePlus, Upload, Download, Check, Maximize2, Trash2 } from 'lucide-svelte';
 	import MediaLightbox, { type LightboxItem } from './MediaLightbox.svelte';
 	import { convertImageToModernFormat } from './imageConvert';
 	import type { MediaPickerItem, StockApi, StockPhoto, StockProvider } from './types';
@@ -32,8 +32,12 @@
 		stock?: StockApi;
 		/** Host: persist metadata edits for a library item (PATCH /media/{id}).
 		 *  When provided, selecting a library item reveals an alt-text/title
-		 *  editor beneath the grid. Omit to hide it. */
+		 *  editor above the grid. Omit to hide it. */
 		onUpdate?: (id: string, updates: { alt_text?: string | null; caption?: string | null }) => Promise<void>;
+		/** Host: delete a library item (DELETE /media/{id}, ownership-scoped).
+		 *  When provided, the selected-item panel gets a Delete button with an
+		 *  inline confirm step. Omit to hide it. */
+		onDelete?: (id: string) => Promise<void>;
 		/** i18n translator injected by the host app. */
 		t?: EditorTranslator;
 	}
@@ -48,6 +52,7 @@
 		onUpload,
 		stock,
 		onUpdate,
+		onDelete,
 		t = (_k, fb) => fb ?? _k
 	}: Props = $props();
 
@@ -81,6 +86,11 @@
 	let editError = $state<string | null>(null);
 	let editSaved = $state(false);
 	let selectedItem = $derived(items.find((i) => i.id === selectedId) ?? null);
+
+	// --- Selected-item delete (inline two-step confirm) ---
+	let deleteConfirming = $state(false);
+	let deleting = $state(false);
+	let deleteError = $state<string | null>(null);
 
 	// --- Stock tab state ---
 	let stockProviders = $state<StockProvider[]>([]);
@@ -142,13 +152,27 @@
 		return base.replace(/[-_]+/g, ' ').trim();
 	}
 
+	function clearSelection() {
+		selectedId = null;
+		deleteConfirming = false;
+		deleteError = null;
+	}
+
 	function selectItem(item: MediaPickerItem) {
+		// Clicking the already-selected thumbnail toggles it off, same as
+		// clicking the empty grid area around the thumbs.
+		if (selectedId === item.id) {
+			clearSelection();
+			return;
+		}
 		selectedId = item.id ?? null;
 		const fallback = filenameLabel(item.filename);
 		editAlt = item.alt_text?.trim() || fallback;
 		editCaption = item.caption?.trim() || fallback;
 		editError = null;
 		editSaved = false;
+		deleteConfirming = false;
+		deleteError = null;
 	}
 
 	async function saveEdit() {
@@ -167,6 +191,25 @@
 			editError = err instanceof Error ? err.message : t('media.picker.edit_failed', 'Could not save changes');
 		} finally {
 			editSaving = false;
+		}
+	}
+
+	// Remove the selected library item via the host's DELETE endpoint, then
+	// drop it from the grid and clear the selection.
+	async function deleteSelected() {
+		if (!onDelete || !selectedId) return;
+		deleting = true;
+		deleteError = null;
+		const id = selectedId;
+		try {
+			await onDelete(id);
+			items = items.filter((i) => i.id !== id);
+			selectedId = null;
+			deleteConfirming = false;
+		} catch (err) {
+			deleteError = err instanceof Error ? err.message : t('media.picker.delete_failed', 'Could not delete media');
+		} finally {
+			deleting = false;
 		}
 	}
 
@@ -357,8 +400,99 @@
 					/>
 				</div>
 
-				<!-- Grid -->
-				<div class="modal-grid-wrap">
+				{#if (onUpdate || onDelete) && selectedItem}
+					<!-- Selected item panel — alt/title editor (PATCH /media/{id} via
+					     host onUpdate) plus ownership-scoped delete (host onDelete). -->
+					<div class="media-edit">
+						<div class="media-edit-row">
+							{#if onUpdate}
+								<label class="media-edit-label">
+									<span>{t('media.picker.alt_text', 'Alt text')}</span>
+									<input
+										type="text"
+										class="media-edit-input"
+										bind:value={editAlt}
+										oninput={() => (editSaved = false)}
+										placeholder={t('media.picker.alt_placeholder', 'Describe the image for screen readers')}
+									/>
+								</label>
+								<label class="media-edit-label">
+									<span>{t('media.picker.caption', 'Title')}</span>
+									<input
+										type="text"
+										class="media-edit-input"
+										bind:value={editCaption}
+										oninput={() => (editSaved = false)}
+										placeholder={t('media.picker.caption_placeholder', 'Optional caption/title')}
+									/>
+								</label>
+								<button
+									type="button"
+									class="btn-primary media-edit-save"
+									disabled={editSaving}
+									onclick={saveEdit}
+								>
+									{#if editSaving}<Loader2 class="mpm-spin" size={14} />{/if}
+									{t('media.picker.save', 'Save')}
+								</button>
+							{/if}
+							{#if onDelete}
+								<button
+									type="button"
+									class="media-edit-delete"
+									disabled={deleting}
+									onclick={() => (deleteConfirming = true)}
+								>
+									<Trash2 size={14} />
+									{t('media.picker.delete', 'Delete')}
+								</button>
+							{/if}
+						</div>
+						{#if deleteConfirming}
+							<div class="media-edit-confirm">
+								<span class="media-edit-confirm-text">
+									{t('media.picker.delete_confirm', 'Delete this image? This cannot be undone.')}
+								</span>
+								<button
+									type="button"
+									class="media-edit-confirm-yes"
+									disabled={deleting}
+									onclick={deleteSelected}
+								>
+									{#if deleting}<Loader2 size={13} class="mpm-spin" />{/if}
+									{t('media.picker.delete', 'Delete')}
+								</button>
+								<button
+									type="button"
+									class="media-edit-confirm-no"
+									disabled={deleting}
+									onclick={() => (deleteConfirming = false)}
+								>
+									{t('media.picker.cancel', 'Cancel')}
+								</button>
+							</div>
+						{/if}
+						{#if editError}
+							<div class="media-edit-error">{editError}</div>
+						{:else if deleteError}
+							<div class="media-edit-error">{deleteError}</div>
+						{:else if editSaved}
+							<div class="media-edit-saved">{t('media.picker.saved', 'Saved')}</div>
+						{/if}
+					</div>
+				{/if}
+
+				<!-- Grid — a click that lands on the wrap (padding/gaps between
+				     thumbs, empty state area) clears the selection and hides the
+				     edit panel. Keyboard users get the same via the selected
+				     thumbnail's toggle button, so this stays pointer-only. -->
+				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+				<div
+					class="modal-grid-wrap"
+					onclick={(e) => {
+						if (!(e.target as HTMLElement).closest('.media-thumb')) clearSelection();
+					}}
+				>
 					{#if loading}
 						<div class="modal-state">
 							<Loader2 size={24} class="mpm-spin" />
@@ -400,48 +534,6 @@
 						</div>
 					{/if}
 				</div>
-
-				{#if onUpdate && tab === 'library' && selectedItem}
-					<!-- Selected item metadata editor — PATCH /media/{id} via host onUpdate. -->
-					<div class="media-edit">
-						<div class="media-edit-row">
-							<label class="media-edit-label">
-								<span>{t('media.picker.alt_text', 'Alt text')}</span>
-								<input
-									type="text"
-									class="media-edit-input"
-									bind:value={editAlt}
-									oninput={() => (editSaved = false)}
-									placeholder={t('media.picker.alt_placeholder', 'Describe the image for screen readers')}
-								/>
-							</label>
-							<label class="media-edit-label">
-								<span>{t('media.picker.caption', 'Title')}</span>
-								<input
-									type="text"
-									class="media-edit-input"
-									bind:value={editCaption}
-									oninput={() => (editSaved = false)}
-									placeholder={t('media.picker.caption_placeholder', 'Optional caption/title')}
-								/>
-							</label>
-							<button
-								type="button"
-								class="btn-primary media-edit-save"
-								disabled={editSaving}
-								onclick={saveEdit}
-							>
-								{#if editSaving}<Loader2 class="spin" size={14} />{/if}
-								{t('media.picker.save', 'Save')}
-							</button>
-						</div>
-						{#if editError}
-							<div class="media-edit-error">{editError}</div>
-						{:else if editSaved}
-							<div class="media-edit-saved">{t('media.picker.saved', 'Saved')}</div>
-						{/if}
-					</div>
-				{/if}
 
 				<!-- Footer -->
 				<footer class="modal-footer">
@@ -810,11 +902,15 @@
 		color: var(--color-primary-contrast, var(--color-on-primary, #fff));
 	}
 	.media-edit {
-		border-top: 1px solid var(--media-border, #333);
-		padding: 12px 16px;
+		margin: 0 1.25rem 0.75rem;
+		padding: 10px 12px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius, 6px);
+		background: var(--color-surface-subtle);
 	}
 	.media-edit-row {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 10px;
 		align-items: flex-end;
 	}
@@ -824,31 +920,98 @@
 		gap: 4px;
 		flex: 1;
 		font-size: 12px;
-		opacity: 0.8;
+		color: var(--color-muted, var(--color-text-subtle));
 	}
 	.media-edit-input {
-		background: var(--media-input-bg, #1a1a1a);
-		border: 1px solid var(--media-border, #333);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
 		border-radius: 6px;
-		color: inherit;
+		color: var(--color-text);
 		font-size: 13px;
 		padding: 7px 10px;
 		width: 100%;
 	}
 	.media-edit-input:focus {
-		border-color: var(--media-accent, #4fae9b);
+		border-color: var(--color-primary);
 		outline: none;
 	}
 	.media-edit-save {
 		white-space: nowrap;
 	}
+	.media-edit-delete {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 8px 12px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius, 6px);
+		background: transparent;
+		color: var(--destructive, var(--color-danger, #dc2626));
+		font-size: 0.875rem;
+		font-weight: 500;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: background 0.15s, border-color 0.15s;
+	}
+	.media-edit-delete:hover:not(:disabled) {
+		border-color: var(--destructive, var(--color-danger, #dc2626));
+		background: color-mix(in srgb, var(--destructive, #dc2626) 10%, transparent);
+	}
+	.media-edit-delete:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	.media-edit-confirm {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 8px;
+		font-size: 12px;
+	}
+	.media-edit-confirm-text {
+		flex: 1;
+		color: var(--color-text);
+	}
+	.media-edit-confirm-yes,
+	.media-edit-confirm-no {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 5px 12px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius, 6px);
+		font-size: 12px;
+		font-weight: 500;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+	.media-edit-confirm-yes {
+		background: var(--destructive, #dc2626);
+		border-color: var(--destructive, #dc2626);
+		color: #fff;
+	}
+	.media-edit-confirm-yes:hover:not(:disabled) {
+		opacity: 0.9;
+	}
+	.media-edit-confirm-no {
+		background: transparent;
+		color: var(--color-text);
+	}
+	.media-edit-confirm-no:hover:not(:disabled) {
+		background: var(--color-surface);
+	}
+	.media-edit-confirm-yes:disabled,
+	.media-edit-confirm-no:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
 	.media-edit-error {
-		color: #e57373;
+		color: var(--destructive, var(--color-danger, #dc2626));
 		font-size: 12px;
 		margin-top: 8px;
 	}
 	.media-edit-saved {
-		color: var(--media-accent, #4fae9b);
+		color: var(--color-primary);
 		font-size: 12px;
 		margin-top: 8px;
 	}

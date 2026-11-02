@@ -80,6 +80,7 @@ export const routeFeatureFlags: Map<string, RouteFeatureFlag> = new Map<
 	// Gamification (§64) — leaderboard + challenges share gamification.enabled.
 	['/leaderboard', 'gamification.enabled'],
 	['/challenges', 'gamification.enabled'],
+	['/badges', 'gamification.enabled'],
 	// Public roadmap board + changelog (§113 / ADR-127).
 	['/roadmap', 'roadmap.enabled'],
 	// AI Content Studio surface (§104-era studio routes).

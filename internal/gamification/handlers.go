@@ -107,6 +107,8 @@ func validationMessage(err error) string {
 }
 
 // parsePageParams extracts limit and offset from query string, with defaults.
+// The canonical ?page_size/?page_offset names (api-response-format convention)
+// take precedence; ?limit/?offset remain accepted as legacy aliases.
 func parsePageParams(r *http.Request) (int32, int32) {
 	limit := int32(50)
 	offset := int32(0)
@@ -118,6 +120,18 @@ func parsePageParams(r *http.Request) (int32, int32) {
 	}
 
 	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = int32(n) // #nosec
+		}
+	}
+
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = int32(n) // #nosec
+		}
+	}
+
+	if v := r.URL.Query().Get("page_offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			offset = int32(n) // #nosec
 		}
@@ -284,6 +298,39 @@ func (h *Handlers) HandleMyBadges(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": badges,
+	})
+}
+
+// HandleMyBadgeCollection handles GET /api/v1/me/badge-collection — the
+// achievement-centre payload: the active catalogue grouped by category with
+// the caller's earned state and per-badge progress. Auth required.
+func (h *Handlers) HandleMyBadgeCollection(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	collection, err := h.service.GetBadgeCollection(r.Context(), user.UserID)
+	if err != nil {
+		if writeDisabled(w, err) {
+			return
+		}
+
+		slog.Error("gamification: badge collection failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "badges_fetch_failed", "Failed to fetch badges")
+
+		return
+	}
+
+	h.resolveLiterals(r, &collection)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": collection,
 	})
 }
 
@@ -719,4 +766,279 @@ func (h *Handlers) HandleAdminDeleteChallenge(w http.ResponseWriter, r *http.Req
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"deleted": true},
 	})
+}
+
+// HandleAdminListAwardEvents handles GET /api/v1/admin/gamification/award-events —
+// the badge-award audit trail, optionally scoped via ?badge_id=.
+func (h *Handlers) HandleAdminListAwardEvents(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	var badgeID pgtype.UUID
+	if raw := r.URL.Query().Get("badge_id"); raw != "" {
+		if err := badgeID.Scan(raw); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_badge_id", "Invalid badge_id")
+			return
+		}
+	}
+
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(q) > 100 {
+		q = q[:100]
+	}
+	sortBy := r.URL.Query().Get("sort_by")
+	switch sortBy {
+	case "username", "badge_name", "source", "created_at":
+	default:
+		sortBy = ""
+	}
+	sortDir := r.URL.Query().Get("sort_dir")
+	if sortDir != "asc" && sortDir != "desc" {
+		sortDir = ""
+	}
+
+	limit, offset := parsePageParams(r)
+	events, total, err := h.service.ListAwardEvents(r.Context(), badgeID, q, sortBy, sortDir, limit, offset)
+	if err != nil {
+		slog.Error("gamification: list award events failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "award_events_fetch_failed", "Failed to fetch award events")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": events,
+		"pagination": map[string]any{"total": total, "limit": limit, "offset": offset},
+	})
+}
+
+// HandleAdminListBadgeGroups handles GET /api/v1/admin/gamification/badge-groups —
+// distinct badge_group values for the tier editor.
+func (h *Handlers) HandleAdminListBadgeGroups(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	groups, err := h.service.ListBadgeGroups(r.Context())
+	if err != nil {
+		slog.Error("gamification: list badge groups failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "badge_groups_fetch_failed", "Failed to fetch badge groups")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": groups})
+}
+
+// HandleAdminListSeasons handles GET /api/v1/admin/gamification/seasons.
+func (h *Handlers) HandleAdminListSeasons(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	seasons, err := h.service.ListSeasons(r.Context())
+	if err != nil {
+		slog.Error("gamification: list seasons failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "seasons_fetch_failed", "Failed to fetch seasons")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": seasons})
+}
+
+// HandleAdminCreateSeason handles POST /api/v1/admin/gamification/seasons.
+func (h *Handlers) HandleAdminCreateSeason(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	var in CreateSeasonInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	season, err := h.service.CreateSeason(r.Context(), in)
+	if err != nil {
+		slog.Warn("gamification: create season failed", "error", err)
+		errpkg.WriteError(w, http.StatusBadRequest, "season_create_failed", err.Error())
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": season})
+}
+
+// HandleAdminUpdateSeason handles PATCH /api/v1/admin/gamification/seasons/:id.
+func (h *Handlers) HandleAdminUpdateSeason(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid season id")
+		return
+	}
+
+	var in UpdateSeasonInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	season, err := h.service.UpdateSeason(r.Context(), id, in)
+	if err != nil {
+		slog.Warn("gamification: update season failed", "id", id.String(), "error", err)
+		errpkg.WriteError(w, http.StatusBadRequest, "season_update_failed", err.Error())
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": season})
+}
+
+// HandleAdminDeleteSeason handles DELETE /api/v1/admin/gamification/seasons/:id.
+func (h *Handlers) HandleAdminDeleteSeason(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid season id")
+		return
+	}
+
+	if err := h.service.DeleteSeason(r.Context(), id); err != nil {
+		slog.Warn("gamification: delete season failed", "id", id.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "season_delete_failed", "Failed to delete season")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
+}
+
+// HandleAdminListTiers handles GET /api/v1/admin/gamification/tiers.
+func (h *Handlers) HandleAdminListTiers(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	tiers, err := h.service.ListTiers(r.Context())
+	if err != nil {
+		slog.Error("gamification: list tiers failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "tiers_fetch_failed", "Failed to fetch tiers")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tiers})
+}
+
+// HandleAdminCreateTier handles POST /api/v1/admin/gamification/tiers.
+func (h *Handlers) HandleAdminCreateTier(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	var in CreateTierInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	tier, err := h.service.CreateTier(r.Context(), in)
+	if err != nil {
+		slog.Warn("gamification: create tier failed", "error", err)
+		errpkg.WriteError(w, http.StatusBadRequest, "tier_create_failed", err.Error())
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tier})
+}
+
+// HandleAdminUpdateTier handles PATCH /api/v1/admin/gamification/tiers/:id.
+func (h *Handlers) HandleAdminUpdateTier(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tier id")
+		return
+	}
+
+	var in UpdateTierInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	tier, err := h.service.UpdateTier(r.Context(), id, in)
+	if err != nil {
+		slog.Warn("gamification: update tier failed", "id", id.String(), "error", err)
+		errpkg.WriteError(w, http.StatusBadRequest, "tier_update_failed", err.Error())
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tier})
+}
+
+// HandleAdminDeleteTier handles DELETE /api/v1/admin/gamification/tiers/:id.
+func (h *Handlers) HandleAdminDeleteTier(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "gamification_unavailable", "Gamification service not configured")
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tier id")
+		return
+	}
+
+	if err := h.service.DeleteTier(r.Context(), id); err != nil {
+		slog.Warn("gamification: delete tier failed", "id", id.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "tier_delete_failed", "Failed to delete tier")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true}})
 }

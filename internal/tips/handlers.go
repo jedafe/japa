@@ -60,7 +60,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 func writeTipError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTipsDisabled):
-		errpkg.WriteError(w, http.StatusForbidden, "tips_disabled", "Tips are disabled")
+		errpkg.WriteError(w, http.StatusNotFound, "tips_disabled", "Tips are disabled")
 	case errors.Is(err, ErrNotEligible):
 		errpkg.WriteError(w, http.StatusForbidden, "tips_not_eligible", "Tips are not enabled for your account")
 	case errors.Is(err, ErrNotAuthorized):

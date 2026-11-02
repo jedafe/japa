@@ -750,6 +750,11 @@ func requireOrgJobAdmin(w http.ResponseWriter, r *http.Request, h *Handlers, use
 // HandleAdminListJobs handles GET /api/v1/admin/jobs — admin view of all job
 // listings (Section 63: "all listings (admin)"). Admin only.
 func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -793,6 +798,11 @@ func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 // HandleAdminToggleFeature handles PATCH /api/v1/admin/jobs/:id/feature —
 // toggles the is_featured custom field value. Admin only.
 func (h *Handlers) HandleAdminToggleFeature(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -804,6 +814,11 @@ func (h *Handlers) HandleAdminToggleFeature(w http.ResponseWriter, r *http.Reque
 
 	featured, err := h.service.ToggleFeature(r.Context(), jobID)
 	if err != nil {
+		if errors.Is(err, ErrJobNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Job listing not found")
+			return
+		}
+
 		slog.Error("jobs: toggle feature failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "feature_toggle_failed", "Failed to toggle featured status")
 
@@ -824,6 +839,11 @@ func (h *Handlers) HandleAdminToggleFeature(w http.ResponseWriter, r *http.Reque
 // PATCH /admin/jobs/{id}
 // Requires: jobs.manage.
 func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -857,6 +877,11 @@ func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		if errors.Is(err, ErrJobNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Job listing not found")
+			return
+		}
+
 		slog.Error("jobs: admin update failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update job listing")
 
@@ -866,11 +891,59 @@ func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": "ok"})
 }
 
+// HandleAdminListApplications handles GET /api/v1/admin/jobs/applications —
+// admin view of all applications across all job listings, with optional
+// ?status= and ?job_id= filters and pagination (§63: jobs.manage covers
+// listings and applications). Admin only.
+func (h *Handlers) HandleAdminListApplications(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	page, limit := parsePagination(r)
+	status := r.URL.Query().Get("status")
+
+	var jobID pgtype.UUID
+	if raw := r.URL.Query().Get("job_id"); raw != "" {
+		if err := jobID.Scan(raw); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid job_id")
+			return
+		}
+	}
+
+	results, total, err := h.service.AdminListApplications(r.Context(), status, jobID, page, limit)
+	if err != nil {
+		slog.Error("jobs: admin list applications failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list job applications")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": results,
+		"meta": map[string]any{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
+}
+
 // HandleAdminDeleteJob soft-deletes a job listing. Admin only.
 //
 // DELETE /admin/jobs/{id}
 // Requires: jobs.manage.
 func (h *Handlers) HandleAdminDeleteJob(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -881,6 +954,11 @@ func (h *Handlers) HandleAdminDeleteJob(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.service.AdminDeleteJob(r.Context(), jobID); err != nil {
+		if errors.Is(err, ErrJobNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Job listing not found")
+			return
+		}
+
 		slog.Error("jobs: admin delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete job listing")
 

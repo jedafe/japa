@@ -11,6 +11,9 @@
 	// landing bundle (PageSpeed TBT).
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	const loadComposeModal = () => import('./ComposeModal.svelte');
+	// BadgeCelebration watches /me/badges and pops the congrats modal on a
+	// fresh award — dynamic import keeps it out of the guest bundle.
+	const loadBadgeCelebration = () => import('../badges/BadgeCelebration.svelte');
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import { t } from '$lib/i18n';
 	import { theme } from '$lib/stores/theme.svelte';
@@ -185,6 +188,11 @@
 		{#if composeEnabled && user}
 			{#await loadComposeModal() then { default: ComposeModal }}
 				<ComposeModal />
+			{/await}
+		{/if}
+		{#if user}
+			{#await loadBadgeCelebration() then { default: BadgeCelebration }}
+				<BadgeCelebration />
 			{/await}
 		{/if}
 	</main>

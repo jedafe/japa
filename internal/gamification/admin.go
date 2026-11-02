@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -65,12 +67,37 @@ func validateBadgeTrigger(triggerType string, value *int32, activityKey *string)
 		if activityKey == nil || *activityKey == "" {
 			return invalidInput("trigger_activity_key is required for activity_count badges")
 		}
+	case TriggerTypeStreakDays:
+		if value == nil || *value <= 0 {
+			return invalidInput("trigger_value must be a positive day count for streak_days badges")
+		}
+		if activityKey == nil || *activityKey == "" {
+			return invalidInput("trigger_activity_key is required for streak_days badges")
+		}
 	case TriggerTypeManual:
 		// Manual badges carry no trigger requirements.
 	default:
 		return invalidInput("invalid trigger_type %q", triggerType)
 	}
 	return nil
+}
+
+// validRarity reports whether s is a catalogue rarity value.
+func validRarity(s string) bool {
+	switch s {
+	case "common", "uncommon", "rare", "epic", "legendary", "mythic":
+		return true
+	}
+	return false
+}
+
+// validTier reports whether s is a progression tier value.
+func validTier(s string) bool {
+	switch s {
+	case "bronze", "silver", "gold", "platinum", "diamond":
+		return true
+	}
+	return false
 }
 
 // CreateBadge creates a new badge definition (admin).
@@ -93,6 +120,54 @@ func (s *Service) CreateBadge(ctx context.Context, in CreateBadgeInput) (BadgeIn
 		IsSystem:           false,
 		DisplayOrder:       0,
 		IsActive:           true,
+		Rarity:             "common",
+	}
+
+	if in.Rarity != nil {
+		if !validRarity(*in.Rarity) {
+			return BadgeInfo{}, invalidInput("invalid rarity %q", *in.Rarity)
+		}
+		arg.Rarity = *in.Rarity
+	}
+
+	if in.Tier != nil {
+		if !validTier(*in.Tier) {
+			return BadgeInfo{}, invalidInput("invalid tier %q", *in.Tier)
+		}
+		arg.Tier = in.Tier
+	}
+
+	arg.Category = in.Category
+	arg.BadgeGroup = in.BadgeGroup
+
+	if in.IsSecret != nil {
+		arg.IsSecret = *in.IsSecret
+	}
+	if in.IsLimited != nil {
+		arg.IsLimited = *in.IsLimited
+	}
+	if in.IsFeatured != nil {
+		arg.IsFeatured = *in.IsFeatured
+	}
+	if in.PointsReward != nil {
+		if *in.PointsReward < 0 {
+			return BadgeInfo{}, invalidInput("points_reward cannot be negative")
+		}
+		arg.PointsReward = *in.PointsReward
+	}
+	if in.AvailableFrom != nil {
+		ts, err := scanTimestamp(*in.AvailableFrom)
+		if err != nil {
+			return BadgeInfo{}, invalidInput("invalid available_from: expected RFC 3339 timestamp")
+		}
+		arg.AvailableFrom = ts
+	}
+	if in.AvailableUntil != nil {
+		ts, err := scanTimestamp(*in.AvailableUntil)
+		if err != nil {
+			return BadgeInfo{}, invalidInput("invalid available_until: expected RFC 3339 timestamp")
+		}
+		arg.AvailableUntil = ts
 	}
 
 	if in.IconMediaID != nil {
@@ -173,6 +248,63 @@ func (s *Service) UpdateBadge(ctx context.Context, badgeID pgtype.UUID, in Updat
 		arg.DisplayOrder = in.DisplayOrder
 	}
 
+	if in.Category != nil {
+		arg.Category = in.Category
+	}
+	arg.ClearCategory = &in.ClearCategory
+
+	if in.Rarity != nil {
+		if !validRarity(*in.Rarity) {
+			return BadgeInfo{}, invalidInput("invalid rarity %q", *in.Rarity)
+		}
+		arg.Rarity = in.Rarity
+	}
+
+	if in.Tier != nil {
+		if !validTier(*in.Tier) {
+			return BadgeInfo{}, invalidInput("invalid tier %q", *in.Tier)
+		}
+		arg.Tier = in.Tier
+	}
+	arg.ClearTier = &in.ClearTier
+
+	if in.BadgeGroup != nil {
+		arg.BadgeGroup = in.BadgeGroup
+	}
+	arg.ClearBadgeGroup = &in.ClearBadgeGroup
+
+	if in.IsSecret != nil {
+		arg.IsSecret = in.IsSecret
+	}
+	if in.IsLimited != nil {
+		arg.IsLimited = in.IsLimited
+	}
+	if in.IsFeatured != nil {
+		arg.IsFeatured = in.IsFeatured
+	}
+	if in.PointsReward != nil {
+		if *in.PointsReward < 0 {
+			return BadgeInfo{}, invalidInput("points_reward cannot be negative")
+		}
+		arg.PointsReward = in.PointsReward
+	}
+	if in.AvailableFrom != nil {
+		ts, err := scanTimestamp(*in.AvailableFrom)
+		if err != nil {
+			return BadgeInfo{}, invalidInput("invalid available_from: expected RFC 3339 timestamp")
+		}
+		arg.AvailableFrom = ts
+	}
+	arg.ClearAvailableFrom = &in.ClearAvailableFrom
+	if in.AvailableUntil != nil {
+		ts, err := scanTimestamp(*in.AvailableUntil)
+		if err != nil {
+			return BadgeInfo{}, invalidInput("invalid available_until: expected RFC 3339 timestamp")
+		}
+		arg.AvailableUntil = ts
+	}
+	arg.ClearAvailableUntil = &in.ClearAvailableUntil
+
 	// Validate the effective trigger combination — a partial update may
 	// change trigger_type while leaving the old value/key in place, or
 	// clear a field the new trigger still requires.
@@ -241,37 +373,28 @@ func (s *Service) AwardBadge(ctx context.Context, badgeID, userID, awardedBy pgt
 			return BadgeWithDetails{}, fmt.Errorf("gamification: award badge: %w", err)
 		}
 	} else {
-		// Fresh award — notify the recipient (fire-and-forget, Rule 8).
+		// Fresh award — audit, notify, and grant the badge's points_reward
+		// when configured (fire-and-forget, Rule 8).
+		if err := s.store.InsertBadgeAwardEvent(ctx, gen.InsertBadgeAwardEventParams{
+			UserID:    userID,
+			BadgeID:   badgeID,
+			Source:    "admin",
+			AwardedBy: awardedBy,
+		}); err != nil {
+			slog.Warn("gamification: insert award event failed",
+				"badge_id", uuidStr(badgeID), "error", err)
+		}
 		s.notifyBadgeAwarded(ctx, userID, badge.Name)
-	}
-
-	var iconID *string
-
-	if badge.IconMediaID.Valid {
-		s := badge.IconMediaID.String()
-		iconID = &s
+		s.grantBadgePoints(ctx, userID, badge)
 	}
 
 	// Fetch the awarded_at timestamp from the user_badge row.
 	ub, err := s.store.GetUserBadge(ctx, userID, badgeID)
 	if err != nil {
-		return BadgeWithDetails{
-			ID:          uuidStr(badge.ID),
-			Slug:        badge.Slug,
-			Name:        badge.Name,
-			Description: ptrStr(badge.Description),
-			IconMediaID: iconID,
-		}, nil
+		return badgeWithDetails(badge, pgtype.Timestamptz{}), nil
 	}
 
-	return BadgeWithDetails{
-		ID:          uuidStr(badge.ID),
-		Slug:        badge.Slug,
-		Name:        badge.Name,
-		Description: ptrStr(badge.Description),
-		IconMediaID: iconID,
-		AwardedAt:   rfc3339(ub.AwardedAt),
-	}, nil
+	return badgeWithDetails(badge, ub.AwardedAt), nil
 }
 
 // ListAllBadges returns all badge definitions (admin view, includes inactive).
@@ -526,4 +649,196 @@ func (s *Service) DeleteChallenge(ctx context.Context, challengeID pgtype.UUID) 
 	}
 
 	return nil
+}
+
+// --- Admin v2 surfaces: award events, seasons, tiers ---
+
+// ListAwardEvents returns the badge-award audit trail across all users,
+// optionally scoped to one badge. q filters username/badge/source;
+// sortBy is whitelisted to username|badge_name|source|created_at.
+func (s *Service) ListAwardEvents(ctx context.Context, badgeID pgtype.UUID, q, sortBy, sortDir string, limit, offset int32) ([]AwardEventInfo, int64, error) {
+	rows, total, err := s.store.ListAdminBadgeAwardEvents(ctx, badgeID, q, sortBy, sortDir, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("gamification: list award events: %w", err)
+	}
+	results := make([]AwardEventInfo, 0, len(rows))
+	for _, r := range rows {
+		ev := AwardEventInfo{
+			ID:        uuidStr(r.ID),
+			UserID:    uuidStr(r.UserID),
+			BadgeID:   uuidStr(r.BadgeID),
+			BadgeName: r.BadgeName,
+			BadgeSlug: r.BadgeSlug,
+			Source:    r.Source,
+		}
+		if r.Username != nil {
+			ev.Username = *r.Username
+		}
+		if r.AwardedBy.Valid {
+			by := r.AwardedBy.String()
+			ev.AwardedBy = &by
+		}
+		if r.AwardedByUsername != nil {
+			ev.AwardedByUsername = r.AwardedByUsername
+		}
+		ev.CreatedAt = rfc3339(r.CreatedAt)
+		results = append(results, ev)
+	}
+	return results, total, nil
+}
+
+// ListSeasons returns every collection season (newest window first).
+func (s *Service) ListSeasons(ctx context.Context) ([]SeasonInfo, error) {
+	rows, err := s.store.ListBadgeSeasons(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("gamification: list seasons: %w", err)
+	}
+	return seasonsToInfo(rows), nil
+}
+
+// CreateSeason creates a season window (admin).
+func (s *Service) CreateSeason(ctx context.Context, in CreateSeasonInput) (SeasonInfo, error) {
+	if strings.TrimSpace(in.Slug) == "" || strings.TrimSpace(in.Name) == "" {
+		return SeasonInfo{}, errors.New("gamification: slug and name are required")
+	}
+	startsAt, err := parseTimestamp(in.StartsAt)
+	if err != nil || !startsAt.Valid {
+		return SeasonInfo{}, errors.New("gamification: valid starts_at is required")
+	}
+	var endsAt pgtype.Timestamptz
+	if in.EndsAt != nil && *in.EndsAt != "" {
+		endsAt, err = parseTimestamp(*in.EndsAt)
+		if err != nil {
+			return SeasonInfo{}, errors.New("gamification: invalid ends_at")
+		}
+	}
+	var description *string
+	if in.Description != nil {
+		desc := strings.TrimSpace(*in.Description)
+		description = &desc
+	}
+	row, err := s.store.CreateBadgeSeason(ctx, strings.TrimSpace(in.Slug), strings.TrimSpace(in.Name), description, startsAt, endsAt, in.IsActive)
+	if err != nil {
+		return SeasonInfo{}, fmt.Errorf("gamification: create season: %w", err)
+	}
+	return seasonsToInfo([]gen.BadgeSeason{row})[0], nil
+}
+
+// UpdateSeason applies non-nil fields to an existing season (admin).
+func (s *Service) UpdateSeason(ctx context.Context, id pgtype.UUID, in UpdateSeasonInput) (SeasonInfo, error) {
+	arg := gen.UpdateBadgeSeasonParams{ID: id, Name: in.Name, IsActive: in.IsActive}
+	if in.Description != nil {
+		desc := strings.TrimSpace(*in.Description)
+		arg.Description = &desc
+	}
+	if in.StartsAt != nil {
+		ts, err := parseTimestamp(*in.StartsAt)
+		if err != nil {
+			return SeasonInfo{}, errors.New("gamification: invalid starts_at")
+		}
+		arg.StartsAt = ts
+	}
+	if in.EndsAt != nil {
+		ts, err := parseTimestamp(*in.EndsAt)
+		if err != nil {
+			return SeasonInfo{}, errors.New("gamification: invalid ends_at")
+		}
+		arg.EndsAt = ts
+	}
+	row, err := s.store.UpdateBadgeSeason(ctx, id, arg)
+	if err != nil {
+		return SeasonInfo{}, fmt.Errorf("gamification: update season: %w", err)
+	}
+	return seasonsToInfo([]gen.BadgeSeason{row})[0], nil
+}
+
+// DeleteSeason removes a season row (admin).
+func (s *Service) DeleteSeason(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteBadgeSeason(ctx, id)
+}
+
+// ListTiers returns tiered-collection progression metadata.
+func (s *Service) ListTiers(ctx context.Context) ([]TierInfo, error) {
+	rows, err := s.store.queries.ListBadgeTiers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("gamification: list tiers: %w", err)
+	}
+	return tiersToInfo(rows), nil
+}
+
+// CreateTier inserts a progression row (admin).
+func (s *Service) CreateTier(ctx context.Context, in CreateTierInput) (TierInfo, error) {
+	if strings.TrimSpace(in.BadgeGroup) == "" || !validTier(in.Tier) || in.Threshold < 0 {
+		return TierInfo{}, errors.New("gamification: valid badge_group, tier, and non-negative threshold are required")
+	}
+	var badgeID pgtype.UUID
+	if in.BadgeID != "" {
+		if err := badgeID.Scan(in.BadgeID); err != nil {
+			return TierInfo{}, errors.New("gamification: invalid badge_id")
+		}
+	}
+	row, err := s.store.CreateBadgeTier(ctx, strings.TrimSpace(in.BadgeGroup), in.Tier, strings.TrimSpace(in.Name), int32(in.Threshold), badgeID)
+	if err != nil {
+		return TierInfo{}, fmt.Errorf("gamification: create tier: %w", err)
+	}
+	return tiersToInfo([]gen.BadgeTier{row})[0], nil
+}
+
+// UpdateTier applies non-nil fields to a tier row (admin).
+func (s *Service) UpdateTier(ctx context.Context, id pgtype.UUID, in UpdateTierInput) (TierInfo, error) {
+	arg := gen.UpdateBadgeTierParams{ID: id, BadgeGroup: in.BadgeGroup, Tier: in.Tier, Name: in.Name, ClearBadgeID: in.ClearBadgeID}
+	if in.Threshold != nil {
+		v := int32(*in.Threshold)
+		arg.Threshold = &v
+	}
+	if in.BadgeID != nil {
+		var bid pgtype.UUID
+		if err := bid.Scan(*in.BadgeID); err != nil {
+			return TierInfo{}, errors.New("gamification: invalid badge_id")
+		}
+		arg.BadgeID = bid
+	}
+	row, err := s.store.UpdateBadgeTier(ctx, id, arg)
+	if err != nil {
+		return TierInfo{}, fmt.Errorf("gamification: update tier: %w", err)
+	}
+	return tiersToInfo([]gen.BadgeTier{row})[0], nil
+}
+
+// DeleteTier removes a tier row (admin).
+func (s *Service) DeleteTier(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteBadgeTier(ctx, id)
+}
+
+// ListBadgeGroups returns the distinct badge_group values for the tier editor.
+func (s *Service) ListBadgeGroups(ctx context.Context) ([]string, error) {
+	return s.store.ListBadgeGroups(ctx)
+}
+
+func seasonsToInfo(rows []gen.BadgeSeason) []SeasonInfo {
+	out := make([]SeasonInfo, 0, len(rows))
+	for _, r := range rows {
+		info := SeasonInfo{ID: uuidStr(r.ID), Slug: r.Slug, Name: r.Name, Description: r.Description, IsActive: r.IsActive}
+		info.StartsAt = rfc3339(r.StartsAt)
+		if e := rfc3339(r.EndsAt); e != "" {
+			info.EndsAt = &e
+		}
+		info.CreatedAt = rfc3339(r.CreatedAt)
+		out = append(out, info)
+	}
+	return out
+}
+
+func tiersToInfo(rows []gen.BadgeTier) []TierInfo {
+	out := make([]TierInfo, 0, len(rows))
+	for _, r := range rows {
+		info := TierInfo{ID: uuidStr(r.ID), BadgeGroup: r.BadgeGroup, Tier: r.Tier, Name: r.Name, Threshold: int(r.Threshold)}
+		if r.BadgeID.Valid {
+			s := r.BadgeID.String()
+			info.BadgeID = &s
+		}
+		info.CreatedAt = rfc3339(r.CreatedAt)
+		out = append(out, info)
+	}
+	return out
 }

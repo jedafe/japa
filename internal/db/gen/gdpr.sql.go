@@ -1185,6 +1185,32 @@ func (q *Queries) GdprExportAttestationCommunityUpdates(ctx context.Context, use
 	return data, err
 }
 
+const gdprExportBadgeAwardEvents = `-- name: GdprExportBadgeAwardEvents :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, user_id, badge_id, source, activity_event_id, awarded_by, created_at FROM badge_award_events WHERE user_id = $1) t
+`
+
+// §64 v2: award-audit rows where the user is the recipient.
+func (q *Queries) GdprExportBadgeAwardEvents(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportBadgeAwardEvents, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportBadgeProgress = `-- name: GdprExportBadgeProgress :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, user_id, badge_id, current_count, updated_at FROM badge_progress WHERE user_id = $1) t
+`
+
+// §64 v2: locked-badge progress tracking rows for the user.
+func (q *Queries) GdprExportBadgeProgress(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportBadgeProgress, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportCustomFieldValues = `-- name: GdprExportCustomFieldValues :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
@@ -1494,6 +1520,19 @@ func (q *Queries) GdprExportUserApiKeys(ctx context.Context, userID pgtype.UUID)
 	return data, err
 }
 
+const gdprExportUserBadges = `-- name: GdprExportUserBadges :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, user_id, badge_id, awarded_at, awarded_by FROM user_badges WHERE user_id = $1) t
+`
+
+// §64: badges the user earned (user_badges).
+func (q *Queries) GdprExportUserBadges(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserBadges, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserBlocks = `-- name: GdprExportUserBlocks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
@@ -1588,6 +1627,19 @@ FROM (
 // §86: export calendar_subscriptions for the user (BUG-025).
 func (q *Queries) GdprExportUserCalendarSubscriptions(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserCalendarSubscriptions, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserChallengeProgress = `-- name: GdprExportUserChallengeProgress :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, user_id, challenge_id, current_count, completed, completed_at, reward_claimed FROM user_challenge_progress WHERE user_id = $1) t
+`
+
+// §64: challenge progress rows for the user.
+func (q *Queries) GdprExportUserChallengeProgress(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserChallengeProgress, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err

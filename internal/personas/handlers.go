@@ -321,6 +321,8 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 // shared persona voices. Gated by persona.view permission.
 // ?slim=1 returns the {id, name} picker projection — the multi-KB
 // voice_prompt payload picker consumers never read is skipped.
+// ?q= searches name/slug/description (ILIKE); ?sort= (name|slug|created_at|
+// updated_at) + ?dir= (asc|desc) drive the admin DataTable.
 func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -350,7 +352,26 @@ func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, total, err := h.service.ListPersonaVoices(r.Context(), limit, offset)
+	// Search + whitelisted sort for the admin DataTable (BUG-PER-VOICES-001:
+	// the table's ?q= and ?sort=/&dir= params were silently ignored, so search
+	// returned the unfiltered alphabetical page).
+	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+	dir := r.URL.Query().Get("dir")
+
+	switch sort {
+	case "name", "slug", "created_at", "updated_at":
+	default:
+		sort = "name"
+	}
+
+	switch dir {
+	case "asc", "desc":
+	default:
+		dir = "asc"
+	}
+
+	items, total, err := h.service.SearchPersonaVoices(r.Context(), q, sort, dir, limit, offset)
 	if err != nil {
 		slog.Error("personas: list voices failed", "error", err)
 		handleServiceError(w, err)

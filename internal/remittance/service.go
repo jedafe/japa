@@ -45,6 +45,9 @@ var (
 	// ErrInvalidTargetRate is returned for a non-positive target_rate →
 	// 400 invalid_target_rate.
 	ErrInvalidTargetRate = errors.New("remittance: target rate must be positive")
+	// ErrTrackerDisabled is returned when the remittance.enabled feature
+	// flag is off → 404 remittance_disabled (ADR-042).
+	ErrTrackerDisabled = errors.New("remittance: tracker disabled")
 )
 
 // DataSource constants for remittance providers.
@@ -411,7 +414,7 @@ func bestCacheKey(sendCurrency, receiveCurrency string) string {
 // 15-min TTL) and fall back to a live DB query on cache miss.
 func (s *Service) GetRates(ctx context.Context, sendCurrency, receiveCurrency string) ([]RateInfo, error) {
 	if !s.IsEnabled(ctx) {
-		return nil, errors.New("remittance: tracker disabled")
+		return nil, ErrTrackerDisabled
 	}
 
 	key := ratesCacheKey(sendCurrency, receiveCurrency)
@@ -491,7 +494,7 @@ func (s *Service) GetRates(ctx context.Context, sendCurrency, receiveCurrency st
 // 15-min TTL) and fall back to a live DB query on cache miss.
 func (s *Service) GetBestRate(ctx context.Context, sendCurrency, receiveCurrency string) (*BestRate, error) {
 	if !s.IsEnabled(ctx) {
-		return nil, errors.New("remittance: tracker disabled")
+		return nil, ErrTrackerDisabled
 	}
 
 	key := bestCacheKey(sendCurrency, receiveCurrency)
@@ -560,7 +563,7 @@ func (s *Service) GetBestRate(ctx context.Context, sendCurrency, receiveCurrency
 // Valkey cache of latest rates, falling back to a live DB query.
 func (s *Service) Calculate(ctx context.Context, sendAmount float64, sendCurrency, receiveCurrency string) (*CalculateResult, error) {
 	if !s.IsEnabled(ctx) {
-		return nil, errors.New("remittance: tracker disabled")
+		return nil, ErrTrackerDisabled
 	}
 
 	if sendAmount <= 0 {
@@ -688,7 +691,7 @@ func computeProviderCalculation(r RateInfo, sendAmount float64) ProviderCalculat
 // over the past N days (default 30, max 365).
 func (s *Service) GetHistory(ctx context.Context, sendCurrency, receiveCurrency string, days int) ([]HistoryPoint, error) {
 	if !s.IsEnabled(ctx) {
-		return nil, errors.New("remittance: tracker disabled")
+		return nil, ErrTrackerDisabled
 	}
 
 	maxDays := s.HistoryRetentionDays(ctx)

@@ -230,9 +230,9 @@ func (h *Handlers) HardDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 		"id":      userID.String(),
 		"status":  "hard_deleted",
 		"message": "User permanently erased",
-	})
+	}})
 }

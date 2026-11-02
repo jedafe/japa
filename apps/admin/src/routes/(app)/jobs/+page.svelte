@@ -13,7 +13,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { loadCurrencies, currencySymbol, currencyOptions, type CurrencyInfo } from '$lib/utils/currency';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Star, Eye, Pencil, Trash2 } from 'lucide-svelte';
+	import { Star, Eye, Pencil, Trash2, Users } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	type JobListing = {
@@ -106,6 +106,45 @@
 		showFeatureConfirm = true;
 	}
 
+	// ── Applications sub-flow ─────
+	// §63 — jobs.manage covers applications: the ⋮ menu exposes a read-only
+	// per-listing applications modal backed by
+	// GET /admin/jobs/applications?job_id=…
+	type JobApplication = {
+		id: string;
+		applicant_username: string;
+		status: string;
+		employer_notes?: string;
+		applied_at: string;
+	};
+
+	let showApplications = $state(false);
+	let applicationsTarget = $state<JobListing | null>(null);
+	let applications = $state<JobApplication[]>([]);
+	let applicationsLoading = $state(false);
+	let applicationsError = $state('');
+
+	async function openApplications(listing: JobListing) {
+		applicationsTarget = listing;
+		applications = [];
+		applicationsError = '';
+		showApplications = true;
+		applicationsLoading = true;
+		try {
+			const params = new URLSearchParams({ job_id: listing.id, limit: '50' });
+			const result = await jobsAdminApi.listApplications(params.toString());
+			if (result.ok) {
+				applications = (result.data?.data as JobApplication[]) ?? [];
+			} else {
+				applicationsError = result.error ?? t('jobs.applications_error', 'Failed to load applications');
+			}
+		} catch (e) {
+			applicationsError = e instanceof Error ? e.message : t('jobs.applications_error', 'Failed to load applications');
+		} finally {
+			applicationsLoading = false;
+		}
+	}
+
 	async function confirmToggleFeature() {
 		if (!featureTarget) return;
 		if (togglingId) return; // in-flight guard
@@ -137,6 +176,11 @@
 				label: t('common.edit', 'Edit'),
 				icon: Pencil,
 				onclick: (row: JobListing, ctx) => ctx?.openEdit(row)
+			});
+			acts.push({
+				label: t('jobs.applications', 'Applications'),
+				icon: Users,
+				onclick: (row: JobListing) => openApplications(row)
 			});
 			acts.push({
 				label: t('jobs.toggle_feature', 'Toggle Featured'),
@@ -382,6 +426,46 @@
 			<Star class="me-2 h-4 w-4" />
 			{togglingId !== '' ? t('common.processing', 'Processing...') : t('common.confirm', 'Confirm')}
 		</Button>
+	</div>
+</Modal>
+
+<!-- Applications list for one listing (read-only per-job view) -->
+<Modal bind:open={showApplications} title={t('jobs.applications', 'Applications')} size="lg">
+	{#if applicationsTarget}
+		<p class="mb-4 text-sm" style="color: var(--color-muted)">
+			{t('jobs.applications_for', 'Applications for')} <strong>{applicationsTarget.title}</strong>
+		</p>
+	{/if}
+	{#if applicationsLoading}
+		<p class="text-sm" style="color: var(--color-muted)">{t('common.processing', 'Processing...')}</p>
+	{:else if applicationsError}
+		<p class="text-sm" style="color: var(--color-danger)">{applicationsError}</p>
+	{:else if applications.length === 0}
+		<p class="text-sm" style="color: var(--color-muted)">{t('jobs.no_applications', 'No applications yet.')}</p>
+	{:else}
+		<div class="max-h-96 overflow-y-auto">
+			<table class="w-full text-sm">
+				<thead>
+					<tr class="border-b" style="border-color: var(--color-border)">
+						<th class="px-2 py-2 text-left text-xs font-medium uppercase" style="color: var(--color-muted)">{t('jobs.applicant', 'Applicant')}</th>
+						<th class="px-2 py-2 text-left text-xs font-medium uppercase" style="color: var(--color-muted)">{t('jobs.status', 'Status')}</th>
+						<th class="px-2 py-2 text-left text-xs font-medium uppercase" style="color: var(--color-muted)">{t('jobs.applied_at', 'Applied')}</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each applications as app (app.id)}
+						<tr class="border-b last:border-0" style="border-color: var(--color-border)">
+							<td class="px-2 py-2" style="color: var(--color-foreground)">{app.applicant_username || '—'}</td>
+							<td class="px-2 py-2"><span class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">{app.status}</span></td>
+							<td class="px-2 py-2" style="color: var(--color-muted)">{app.applied_at ? new Date(app.applied_at).toLocaleDateString() : '—'}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/if}
+	<div class="mt-6 flex justify-end">
+		<Button variant="outline" onclick={() => (showApplications = false)}>{t('common.close', 'Close')}</Button>
 	</div>
 </Modal>
 

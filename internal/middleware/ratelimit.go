@@ -52,6 +52,11 @@ var Tiers = map[string]RateLimitTier{
 	"oauth_token":     {Requests: 120, Window: time.Minute},
 	"form_submission": {Requests: 10, Window: time.Hour},  // §06: 10 submissions per user per hour
 	"mass_provision":  {Requests: 5, Window: time.Minute}, // §68: 5 mass-provisioning batches per admin per minute (defense-in-depth on top of persona.manage RBAC)
+	// Baseline read bucket (ADR-022). SSR pages fan out to many API reads
+	// per navigation — the member profile alone can fire ~45 calls — so
+	// the write-tier ceiling 429'd ordinary browsing and recovered a minute
+	// later, presenting as a server restart. Still bounded against scraping.
+	"baseline_read": {Requests: 1200, Window: time.Minute},
 }
 
 // exemptFn, when set, reports whether an authenticated caller should skip
@@ -213,6 +218,28 @@ func RateLimit(rdb valkeycompat.Cmdable, tier string) func(http.Handler) http.Ha
 			}
 
 			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// BaselineRateLimit applies the site-wide baseline limit (ADR-022) with
+// method-aware buckets: reads (GET/HEAD/OPTIONS) use the generous
+// "baseline_read" tier because a single SSR page load legitimately fans
+// out into dozens of API reads, while writes keep the "loose" ceiling.
+func BaselineRateLimit(rdb valkeycompat.Cmdable) func(http.Handler) http.Handler {
+	read := RateLimit(rdb, "baseline_read")
+	write := RateLimit(rdb, "loose")
+
+	return func(next http.Handler) http.Handler {
+		readH := read(next)
+		writeH := write(next)
+
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+				readH.ServeHTTP(w, r)
+			} else {
+				writeH.ServeHTTP(w, r)
+			}
 		})
 	}
 }

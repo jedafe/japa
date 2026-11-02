@@ -8,6 +8,10 @@ package verification
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // Entity types stored on verification_requests.entity_type.
@@ -93,4 +97,11 @@ type ReviewInput struct {
 // subscribed endpoints (fire-and-forget, Section 12).
 type WebhookEmitter interface {
 	EmitEvent(ctx context.Context, eventType string, payload any)
+}
+
+// ActivityEmitter records wallet activity events for gamification v2 —
+// satisfied by *wallet.Service. Only the two methods the review path needs.
+type ActivityEmitter interface {
+	EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input wallet.EmitActivityEventInput) (gen.ActivityEvent, error)
+	EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error
 }

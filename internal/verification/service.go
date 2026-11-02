@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -27,6 +28,7 @@ type settingsReader interface {
 type Service struct {
 	store         *Store
 	webhooks      WebhookEmitter
+	activity      ActivityEmitter // nil = identity.verified emissions skipped
 	asynq         *asynq.Client
 	siteURL       string
 	settings      settingsReader
@@ -42,6 +44,31 @@ func NewService(database *db.DB) *Service {
 
 // SetWebhooks injects the webhook event fan-out (Section 12). Nil-safe.
 func (s *Service) SetWebhooks(w WebhookEmitter) { s.webhooks = w }
+
+// SetActivityEmitter injects the wallet service so an approved member
+// verification can emit identity.verified (gamification v2 — Verified
+// Member badge). Optional — nil-safe.
+func (s *Service) SetActivityEmitter(a ActivityEmitter) { s.activity = a }
+
+// emitApprovedActivity records identity.verified for the requester —
+// fire-and-forget (Rule 8). Dedupes on (key, request id) so retries are safe.
+func (s *Service) emitApprovedActivity(ctx context.Context, row gen.GetVerificationRequestByIDRow) {
+	if s.activity == nil || !row.RequesterUserID.Valid {
+		return
+	}
+	event, err := s.activity.EmitActivityEvent(ctx, row.RequesterUserID, wallet.EmitActivityEventInput{
+		ActivityKey: "identity.verified",
+		Reference:   "verification:" + row.ID.String(),
+		Payload:     map[string]interface{}{"request_id": row.ID.String()},
+	})
+	if err != nil {
+		slog.Warn("verification: emit identity.verified failed", "error", err)
+		return
+	}
+	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
+		slog.Warn("verification: enqueue identity.verified failed", "error", err)
+	}
+}
 
 // SetAsynqClient injects the Asynq client used to enqueue email:send tasks.
 func (s *Service) SetAsynqClient(c *asynq.Client) { s.asynq = c }
@@ -360,6 +387,12 @@ func (s *Service) ReviewRequest(ctx context.Context, id, reviewerID pgtype.UUID,
 		"entity_id":   entityID(row),
 		"status":      input.Status,
 	})
+
+	// Gamification v2 — an approved member request earns identity.verified
+	// (Verified Member badge). Org requests don't award member badges.
+	if input.Status == StatusApproved && !row.OrganizationID.Valid {
+		s.emitApprovedActivity(ctx, row)
+	}
 
 	s.enqueueReviewEmail(ctx, row, input)
 

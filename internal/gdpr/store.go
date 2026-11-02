@@ -192,6 +192,24 @@ func (s *Store) gdprExportUserBookmarkFolders(ctx context.Context, userID pgtype
 	return exportJSONSlice(ctx, s.read.GdprExportUserBookmarkFolders, userID)
 }
 
+// §64 gamification tables — badges, challenge progress, badge progress,
+// and the award audit trail (recipient-scoped).
+func (s *Store) gdprExportUserBadges(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserBadges, userID)
+}
+
+func (s *Store) gdprExportUserChallengeProgress(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserChallengeProgress, userID)
+}
+
+func (s *Store) gdprExportBadgeProgress(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportBadgeProgress, userID)
+}
+
+func (s *Store) gdprExportBadgeAwardEvents(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportBadgeAwardEvents, userID)
+}
+
 func (s *Store) gdprExportUserContentShares(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserContentShares, userID)
 }

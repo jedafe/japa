@@ -1207,7 +1207,7 @@ func (h *Handlers) DeleteUserWarning(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusNoContent, nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // UpdateUserStatus handles PATCH /admin/users/:id/status.

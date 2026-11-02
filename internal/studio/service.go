@@ -113,6 +113,10 @@ func (s *Service) SetToolTablePublisher(p ToolTablePublisher) { s.toolTablePub =
 // merge-onto-original semantics for jobless studio reviews).
 func (s *Service) SetRegenDraftMerger(m RegenDraftMerger) { s.regenMerger = m }
 
+// ErrDisabled is returned when the studio.enabled feature flag is off →
+// 404 studio_disabled (ADR-042).
+var ErrDisabled = errors.New("studio: feature is disabled")
+
 // highStakesCategories are the guide categories that always require human
 // review, regardless of studio.auto_publish_types. Hardcoded per §75 — not
 // configurable.
@@ -157,7 +161,7 @@ func IsHighStakes(guideCategory string) bool {
 // CreateJob creates a single studio job and enqueues a generation task.
 func (s *Service) CreateJob(ctx context.Context, createdBy pgtype.UUID, in CreateJobInput) (Job, error) {
 	if !s.isEnabled(ctx) {
-		return Job{}, errors.New("studio: feature is disabled")
+		return Job{}, ErrDisabled
 	}
 
 	if in.TopicPrompt == "" {
@@ -193,7 +197,7 @@ func (s *Service) CreateJob(ctx context.Context, createdBy pgtype.UUID, in Creat
 // request fast — batch generation is inherently asynchronous.
 func (s *Service) CreateBatch(ctx context.Context, createdBy pgtype.UUID, in CreateBatchInput) (Batch, []Job, error) {
 	if !s.isEnabled(ctx) {
-		return Batch{}, nil, errors.New("studio: feature is disabled")
+		return Batch{}, nil, ErrDisabled
 	}
 
 	if in.Name == "" {
@@ -254,7 +258,7 @@ func (s *Service) ListJobs(ctx context.Context, f JobListFilter) ([]Job, int64, 
 // RetryJob resets a failed job to queued and re-enqueues generation.
 func (s *Service) RetryJob(ctx context.Context, id pgtype.UUID) error {
 	if !s.isEnabled(ctx) {
-		return errors.New("studio: feature is disabled")
+		return ErrDisabled
 	}
 
 	job, err := s.store.GetJob(ctx, id)
@@ -309,7 +313,7 @@ func (s *Service) GetBatch(ctx context.Context, id pgtype.UUID) (Batch, BatchSta
 // RetryBatchFailed retries all failed jobs in a batch.
 func (s *Service) RetryBatchFailed(ctx context.Context, batchID pgtype.UUID) (int, error) {
 	if !s.isEnabled(ctx) {
-		return 0, errors.New("studio: feature is disabled")
+		return 0, ErrDisabled
 	}
 
 	jobs, err := s.store.ListFailedJobs(ctx, batchID)
@@ -716,6 +720,10 @@ func (s *Service) RetryFailed(ctx context.Context, jobID pgtype.UUID) error {
 // EnqueueRetryFailed enqueues a studio:retry_failed task for a batch. Called
 // by the HTTP handler so batch retry is asynchronous (ADR-076 §7).
 func (s *Service) EnqueueRetryFailed(ctx context.Context, batchID pgtype.UUID) error {
+	if !s.isEnabled(ctx) {
+		return ErrDisabled
+	}
+
 	return s.enqueueRetryFailed(ctx, batchID)
 }
 

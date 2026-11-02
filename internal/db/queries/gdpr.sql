@@ -1593,3 +1593,23 @@ WHERE user_id = @user_id AND deleted_at IS NULL;
 -- §99 (ADR-107): score stories survive erasure under the placeholder.
 UPDATE language_score_stories SET user_id = @placeholder
 WHERE user_id = @user_id AND deleted_at IS NULL;
+
+-- name: GdprExportUserBadges :one
+-- §64: badges the user earned (user_badges).
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM user_badges WHERE user_id = @user_id) t;
+
+-- name: GdprExportUserChallengeProgress :one
+-- §64: challenge progress rows for the user.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM user_challenge_progress WHERE user_id = @user_id) t;
+
+-- name: GdprExportBadgeProgress :one
+-- §64 v2: locked-badge progress tracking rows for the user.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM badge_progress WHERE user_id = @user_id) t;
+
+-- name: GdprExportBadgeAwardEvents :one
+-- §64 v2: award-audit rows where the user is the recipient.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM badge_award_events WHERE user_id = @user_id) t;

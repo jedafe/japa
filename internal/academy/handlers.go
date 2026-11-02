@@ -1357,6 +1357,14 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 		h.emitActivity(r.Context(), user.UserID, wallet.ActivityKeyAcademyLessonCompleted,
 			"lesson:"+lessonID.String()+":"+user.UserID.String())
 
+		// Gamification v2 — quiz badges (Quiz Master ×10, Perfect Score ×1).
+		h.emitActivity(r.Context(), user.UserID, "academy.quiz_passed",
+			"quiz:"+lessonID.String()+":"+user.UserID.String())
+		if score >= 100 {
+			h.emitActivity(r.Context(), user.UserID, "academy.quiz_perfect",
+				"quiz:"+lessonID.String()+":"+user.UserID.String())
+		}
+
 		h.enqueueTrackCompletionUpdate(user.UserID, mod.TrackID)
 		h.maybeIssueCertificate(r.Context(), user.UserID, lesson.ModuleID)
 	}

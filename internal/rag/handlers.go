@@ -139,7 +139,7 @@ func (h *Handlers) HandleReindexSpecs(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.QueueSpecReindex(r.Context(), ""); err != nil {
 		if errors.Is(err, ErrSpecCorpusDisabled) {
-			errpkg.WriteError(w, http.StatusForbidden, "feature_disabled", "Spec corpus is disabled (feature flag rag.spec_corpus)")
+			errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "Spec corpus is disabled (feature flag rag.spec_corpus)")
 			return
 		}
 

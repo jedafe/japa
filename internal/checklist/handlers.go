@@ -125,7 +125,7 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.service.Enabled(r.Context()) {
-		errpkg.WriteError(w, http.StatusForbidden, "checklist_disabled", "Checklist tool is disabled")
+		errpkg.WriteError(w, http.StatusNotFound, "checklist_disabled", "Checklist tool is disabled")
 		return
 	}
 
@@ -158,7 +158,7 @@ func (h *Handlers) HandleGetItems(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.service.Enabled(r.Context()) {
-		errpkg.WriteError(w, http.StatusForbidden, "checklist_disabled", "Checklist tool is disabled")
+		errpkg.WriteError(w, http.StatusNotFound, "checklist_disabled", "Checklist tool is disabled")
 		return
 	}
 

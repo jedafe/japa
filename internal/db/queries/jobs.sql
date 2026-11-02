@@ -92,13 +92,15 @@ FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
 JOIN contents c ON c.id = ja.job_id
 WHERE (@status::text = '' OR ja.status = @status)
+  AND (@job_id::uuid IS NULL OR ja.job_id = @job_id)
 ORDER BY ja.applied_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: AdminCountJobApplications :one
 SELECT COUNT(*) AS count
 FROM job_applications
-WHERE (@status::text = '' OR status = @status);
+WHERE (@status::text = '' OR status = @status)
+  AND (@job_id::uuid IS NULL OR job_id = @job_id);
 
 -- =====================================================================
 -- Admin: application status distribution.

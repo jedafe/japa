@@ -293,3 +293,128 @@ func (s *Store) GetChallengesByActivityKey(ctx context.Context, activityKey stri
 		activityKey,
 	)
 }
+
+// =====================================================================
+// Gamification v2 — streaks, progress, award events, collection
+// =====================================================================
+
+// GetBadgesByStreakTrigger returns active streak_days badges matching an
+// activity_key (e.g. daily.login) within their availability window.
+func (s *Store) GetBadgesByStreakTrigger(ctx context.Context, activityKey string) ([]gen.BadgeDefinition, error) {
+	return s.queries.GetBadgesByStreakTrigger(ctx,
+
+		&activityKey,
+	)
+}
+
+// GetActivityDayStreak returns the length of the user's most recent
+// unbroken run of consecutive UTC days carrying the activity_key.
+func (s *Store) GetActivityDayStreak(ctx context.Context, userID pgtype.UUID, activityKey string) (int32, error) {
+	return s.queries.GetActivityDayStreak(ctx, gen.GetActivityDayStreakParams{
+		UserID:      userID,
+		ActivityKey: activityKey,
+	})
+}
+
+// UpsertBadgeProgress records the user's current count toward a locked
+// badge (idempotent — sets the absolute count).
+func (s *Store) UpsertBadgeProgress(ctx context.Context, userID, badgeID pgtype.UUID, count int32) error {
+	return s.writeQueries.UpsertBadgeProgress(ctx, gen.UpsertBadgeProgressParams{
+		UserID:       userID,
+		BadgeID:      badgeID,
+		CurrentCount: count,
+	})
+}
+
+// InsertBadgeAwardEvent writes the auditable award-history row for a
+// granted badge.
+func (s *Store) InsertBadgeAwardEvent(ctx context.Context, arg gen.InsertBadgeAwardEventParams) error {
+	_, err := s.writeQueries.InsertBadgeAwardEvent(ctx, arg)
+	return err
+}
+
+// ListBadgeCollectionForUser returns the active catalogue joined with the
+// user's earned badges and progress rows (achievement centre read).
+func (s *Store) ListBadgeCollectionForUser(ctx context.Context, userID pgtype.UUID) ([]gen.ListBadgeCollectionForUserRow, error) {
+	return s.queries.ListBadgeCollectionForUser(ctx,
+
+		userID,
+	)
+}
+
+// --- Admin surfaces (v2): award events, seasons, tiers ---
+
+// ListAdminBadgeAwardEvents returns the audit trail across all users,
+// optionally scoped to one badge. q filters username/badge/source;
+// sortBy is whitelisted to username|badge_name|source|created_at and
+// sortDir is asc|desc (any other value sorts newest-first).
+func (s *Store) ListAdminBadgeAwardEvents(ctx context.Context, badgeID pgtype.UUID, q, sortBy, sortDir string, limit, offset int32) ([]gen.ListAdminBadgeAwardEventsRow, int64, error) {
+	rows, err := s.queries.ListAdminBadgeAwardEvents(ctx, gen.ListAdminBadgeAwardEventsParams{
+		BadgeID: badgeID, Q: q, SortBy: sortBy, SortDir: sortDir,
+		PageLimit: limit, PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.queries.CountAdminBadgeAwardEvents(ctx, gen.CountAdminBadgeAwardEventsParams{
+		BadgeID: badgeID, Q: q,
+	})
+	return rows, total, err
+}
+
+// ListBadgeSeasons returns every collection season.
+func (s *Store) ListBadgeSeasons(ctx context.Context) ([]gen.BadgeSeason, error) {
+	return s.queries.ListBadgeSeasons(ctx)
+}
+
+// CreateBadgeSeason inserts a season window.
+func (s *Store) CreateBadgeSeason(ctx context.Context, slug, name string, description *string, startsAt, endsAt pgtype.Timestamptz, isActive bool) (gen.BadgeSeason, error) {
+	return s.queries.InsertBadgeSeason(ctx, gen.InsertBadgeSeasonParams{
+		Slug: slug, Name: name, Description: description, StartsAt: startsAt, EndsAt: endsAt, IsActive: isActive,
+	})
+}
+
+// UpdateBadgeSeason applies the non-nil fields in-place.
+func (s *Store) UpdateBadgeSeason(ctx context.Context, id pgtype.UUID, arg gen.UpdateBadgeSeasonParams) (gen.BadgeSeason, error) {
+	arg.ID = id
+	return s.queries.UpdateBadgeSeason(ctx, arg)
+}
+
+// DeleteBadgeSeason removes a season row.
+func (s *Store) DeleteBadgeSeason(ctx context.Context, id pgtype.UUID) error {
+	return s.queries.DeleteBadgeSeason(ctx, id)
+}
+
+// CreateBadgeTier inserts progression metadata for a tiered group.
+func (s *Store) CreateBadgeTier(ctx context.Context, group, tier, name string, threshold int32, badgeID pgtype.UUID) (gen.BadgeTier, error) {
+	return s.queries.InsertBadgeTier(ctx, gen.InsertBadgeTierParams{
+		BadgeGroup: group, Tier: tier, Name: name, Threshold: threshold, BadgeID: badgeID,
+	})
+}
+
+// UpdateBadgeTier applies the non-nil fields in-place.
+func (s *Store) UpdateBadgeTier(ctx context.Context, id pgtype.UUID, arg gen.UpdateBadgeTierParams) (gen.BadgeTier, error) {
+	arg.ID = id
+	return s.queries.UpdateBadgeTier(ctx, arg)
+}
+
+// DeleteBadgeTier removes a tier row.
+func (s *Store) DeleteBadgeTier(ctx context.Context, id pgtype.UUID) error {
+	return s.queries.DeleteBadgeTier(ctx, id)
+}
+
+// ListBadgeGroups returns the distinct badge_group values in the catalogue —
+// feeds the tier editor's group select.
+func (s *Store) ListBadgeGroups(ctx context.Context) ([]string, error) {
+	rows, err := s.queries.ListBadgeGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(rows))
+	for _, g := range rows {
+		if g != nil {
+			out = append(out, *g)
+		}
+	}
+	return out, nil
+}

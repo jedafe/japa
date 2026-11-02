@@ -14,6 +14,7 @@ package gamification
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -26,6 +27,7 @@ import (
 const (
 	TriggerTypeLifetimePoints = "lifetime_points"
 	TriggerTypeActivityCount  = "activity_count"
+	TriggerTypeStreakDays     = "streak_days"
 	TriggerTypeManual         = "manual"
 )
 
@@ -72,13 +74,37 @@ type Notifier interface {
 	Notify(ctx context.Context, recipientID pgtype.UUID, nType, title, body, actionURL string) error
 }
 
+// ActivityEmitter records a wallet activity event and enqueues its
+// processing. Implemented by *wallet.Service; used to emit
+// challenge.completed events so challenge-count badges can trigger.
+// Nil-safe — when unset the emission is skipped.
+type ActivityEmitter interface {
+	EmitActivityEvent(ctx context.Context, userID pgtype.UUID, input EmitActivityInput) (EmitActivityEvent, error)
+	EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error
+}
+
+// EmitActivityInput mirrors wallet.EmitActivityEventInput. Declared here to
+// keep the gamification package decoupled from wallet (matching the
+// achievement emitter adapter pattern in server.go).
+type EmitActivityInput struct {
+	ActivityKey string
+	Reference   string
+	Payload     map[string]interface{}
+}
+
+// EmitActivityEvent mirrors gen.ActivityEvent for the emitter contract.
+type EmitActivityEvent struct {
+	ID pgtype.UUID
+}
+
 // Service holds the business logic for the gamification layer.
 type Service struct {
-	store         *Store
-	settings      *config.Settings
-	cache         valkeycompat.Cmdable // nil = caching disabled
-	pointsAwarder PointsAwarder        // nil = no wallet crediting
-	notifier      Notifier             // nil = no notifications
+	store           *Store
+	settings        *config.Settings
+	cache           valkeycompat.Cmdable // nil = caching disabled
+	pointsAwarder   PointsAwarder        // nil = no wallet crediting
+	notifier        Notifier             // nil = no notifications
+	activityEmitter ActivityEmitter      // nil = no challenge.completed events
 }
 
 // NewService creates a gamification service.
@@ -100,6 +126,33 @@ func (s *Service) SetPointsAwarder(p PointsAwarder) { s.pointsAwarder = p }
 // notifications (BUG-GAMMA-003). Optional — when nil, notifications are
 // skipped.
 func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// SetActivityEmitter injects the wallet service so challenge completions
+// can emit challenge.completed activity events (which themselves feed
+// activity_count badges like Challenge Hunter). Optional.
+func (s *Service) SetActivityEmitter(e ActivityEmitter) { s.activityEmitter = e }
+
+// emitActivity records a points activity event — fire-and-forget (Rule 8).
+// Nil-safe: no-op when no emitter is wired.
+func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
+	if s.activityEmitter == nil {
+		return
+	}
+
+	event, err := s.activityEmitter.EmitActivityEvent(ctx, userID, EmitActivityInput{
+		ActivityKey: key,
+		Reference:   reference,
+		Payload:     payload,
+	})
+	if err != nil {
+		slog.Warn("gamification: emit activity event failed", "activity_key", key, "error", err)
+		return
+	}
+
+	if err := s.activityEmitter.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
+		slog.Warn("gamification: enqueue activity event failed", "activity_key", key, "error", err)
+	}
+}
 
 // EvaluateForWallet is a thin wrapper around EvaluateBadges that satisfies
 // the wallet.GamificationEvaluator interface (BUG-GAMMA-001). It discards

@@ -30,6 +30,25 @@ var EmittedActivityKeys = []string{
 	ActivityKeyAcademyTrackCompleted, ActivityKeyForumSolutionMarked, ActivityKeyTipSent,
 	ActivityKeySpamDetected, ActivityKeySpamFlagged, ActivityKeyContentFlagged,
 	ActivityKeyReportUpheld, ActivityKeyScamAlertConfirmed, ActivityKeyAchievementCreated,
+	// Gamification v2 — catalogue emitters.
+	ActivityKeyForumThreadCreated, ActivityKeyForumPollVoted,
+	ActivityKeyJobSaved, ActivityKeyScholarshipSaved, ActivityKeyServiceSaved,
+	ActivityKeyComparisonCompleted, ActivityKeyWikiPageViewed,
+	ActivityKeyWikiCountryViewed, ActivityKeyWikiCityViewed, ActivityKeyContentRead,
+	ActivityKeyMentorshipRequested, ActivityKeyMentorshipConnected,
+	ActivityKeyMentorshipCompleted, ActivityKeyMentorshipMentorCompleted,
+	ActivityKeyChallengeCompleted,
+	ActivityKeyJourneyMilestoneApplication, ActivityKeyJourneyMilestoneDecision,
+	ActivityKeyJourneyMilestoneVisaApproved, ActivityKeyJourneyMilestoneJobOffer,
+	ActivityKeyJourneyMilestoneUniAccepted, ActivityKeyJourneyMilestoneArrived,
+	ActivityKeyJourneyMilestoneOneYear, ActivityKeyJourneyMilestoneCitizenship,
+	ActivityKeyVisaTimelineMilestone,
+	ActivityKeyProfilePhotoAdded, ActivityKeyProfileBioAdded, ActivityKeyProfileDestinationSet,
+	ActivityKeyEmailVerified, ActivityKeyIdentityVerified, ActivityKeySpaceCreated,
+	ActivityKeyScamReportSubmitted, ActivityKeyChecklistItemChecked,
+	ActivityKeyServiceReviewSubmitted, ActivityKeyEventRSVP,
+	ActivityKeyAIConversationStarted, ActivityKeyReferralCreated,
+	ActivityKeyScholarshipAppStarted, ActivityKeyScholarshipAppSubmitted,
 }
 
 // Ledger types.
@@ -83,9 +102,49 @@ const (
 	ActivityKeyReportUpheld           = "report.upheld"
 	// ADR-136: revert keys undo a prior vote award when the vote flips or
 	// is removed — keep magnitudes mirrored with the direction they undo.
-	ActivityKeyReactionReverted        = "reaction.reverted"
+	ActivityKeyReactionReverted         = "reaction.reverted"
 	ActivityKeyReactionNegativeReverted = "reaction.negative.reverted"
-	ActivityKeySpamFlagged             = "spam.flagged"
+	ActivityKeySpamFlagged              = "spam.flagged"
+
+	// Gamification v2 — catalogue emitters (migration 001016).
+	ActivityKeyForumThreadCreated           = "forum.thread_created"
+	ActivityKeyForumPollVoted               = "forum.poll_voted"
+	ActivityKeyJobSaved                     = "job.saved"
+	ActivityKeyScholarshipSaved             = "scholarship.saved"
+	ActivityKeyServiceSaved                 = "service.saved"
+	ActivityKeyComparisonCompleted          = "comparison.completed"
+	ActivityKeyWikiPageViewed               = "wiki.page_viewed"
+	ActivityKeyWikiCountryViewed            = "wiki.country_viewed"
+	ActivityKeyWikiCityViewed               = "wiki.city_viewed"
+	ActivityKeyContentRead                  = "content.read"
+	ActivityKeyMentorshipRequested          = "mentorship.requested"
+	ActivityKeyMentorshipConnected          = "mentorship.connected"
+	ActivityKeyMentorshipCompleted          = "mentorship.completed"
+	ActivityKeyMentorshipMentorCompleted    = "mentorship.mentor_completed"
+	ActivityKeyChallengeCompleted           = "challenge.completed"
+	ActivityKeyJourneyMilestoneApplication  = "journey.milestone.application_submitted"
+	ActivityKeyJourneyMilestoneDecision     = "journey.milestone.decision_received"
+	ActivityKeyJourneyMilestoneVisaApproved = "journey.milestone.visa_approved"
+	ActivityKeyJourneyMilestoneJobOffer     = "journey.milestone.job_offer"
+	ActivityKeyJourneyMilestoneUniAccepted  = "journey.milestone.university_accepted"
+	ActivityKeyJourneyMilestoneArrived      = "journey.milestone.arrived"
+	ActivityKeyJourneyMilestoneOneYear      = "journey.milestone.one_year"
+	ActivityKeyJourneyMilestoneCitizenship  = "journey.milestone.citizenship"
+	ActivityKeyVisaTimelineMilestone        = "visa_timeline.milestone"
+	ActivityKeyProfilePhotoAdded            = "profile.photo_added"
+	ActivityKeyProfileBioAdded              = "profile.bio_added"
+	ActivityKeyProfileDestinationSet        = "profile.destination_set"
+	ActivityKeyEmailVerified                = "email.verified"
+	ActivityKeyIdentityVerified             = "identity.verified"
+	ActivityKeySpaceCreated                 = "space.created"
+	ActivityKeyScamReportSubmitted          = "scam_report.submitted"
+	ActivityKeyChecklistItemChecked         = "checklist.item_checked"
+	ActivityKeyServiceReviewSubmitted       = "service.review_submitted"
+	ActivityKeyEventRSVP                    = "event.rsvp"
+	ActivityKeyAIConversationStarted        = "ai.conversation_started"
+	ActivityKeyReferralCreated              = "referral.created"
+	ActivityKeyScholarshipAppStarted        = "scholarship.application_started"
+	ActivityKeyScholarshipAppSubmitted      = "scholarship.application_submitted"
 )
 
 // SettingsReader is the subset of the config.Settings API that wallet uses to

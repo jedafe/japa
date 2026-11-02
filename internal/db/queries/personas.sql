@@ -222,6 +222,28 @@ SELECT * FROM persona_voices
 ORDER BY name ASC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- Admin list with search + whitelisted sort keys (GET /admin/persona-voices).
+-- Sort keys are whitelisted by CASE so no user input reaches the ORDER BY.
+-- name: SearchPersonaVoices :many
+SELECT * FROM persona_voices
+WHERE (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%' OR COALESCE(description, '') ILIKE '%' || @q || '%')
+ORDER BY
+ CASE WHEN @sort::text = 'name' AND @dir::text = 'asc' THEN name END ASC,
+ CASE WHEN @sort::text = 'name' AND @dir::text = 'desc' THEN name END DESC,
+ CASE WHEN @sort::text = 'slug' AND @dir::text = 'asc' THEN slug END ASC,
+ CASE WHEN @sort::text = 'slug' AND @dir::text = 'desc' THEN slug END DESC,
+ CASE WHEN @sort::text = 'created_at' AND @dir::text = 'asc' THEN created_at END ASC,
+ CASE WHEN @sort::text = 'created_at' AND @dir::text = 'desc' THEN created_at END DESC,
+ CASE WHEN @sort::text = 'updated_at' AND @dir::text = 'asc' THEN updated_at END ASC,
+ CASE WHEN @sort::text = 'updated_at' AND @dir::text = 'desc' THEN updated_at END DESC,
+ name ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountPersonaVoicesMatching :one
+SELECT COUNT(*) AS count
+FROM persona_voices
+WHERE (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%' OR COALESCE(description, '') ILIKE '%' || @q || '%');
+
 -- Slim {id, name} projection for picker options — skips the multi-KB
 -- voice_prompt payload picker consumers never read (GET /ai/voices?slim=1).
 -- name: ListPersonaVoiceOptions :many
