@@ -1,7 +1,6 @@
 package seo
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -11,7 +10,7 @@ func GenerateArticleJSONLD(title, description, author, imageURL, publishedAt, up
 	article := map[string]interface{}{
 		"@context":      "https://schema.org",
 		"@type":         "Article",
-		"title":         title,
+		"headline":      title,
 		"description":   description,
 		"author":        map[string]interface{}{"@type": "Person", "name": author},
 		"datePublished": publishedAt,
@@ -32,7 +31,7 @@ func GenerateArticleJSONLD(title, description, author, imageURL, publishedAt, up
 // For solved threads, set isSolved to true and provide a non-empty answerBody.
 // dateCreated should be the thread's actual creation timestamp (RFC3339);
 // when empty, the current time is used as a last resort.
-func GenerateQAPageJSONLD(questionTitle, questionBody, answerBody, author, dateCreated string, isSolved bool) map[string]interface{} {
+func GenerateQAPageJSONLD(questionTitle, questionBody, answerBody, author, dateCreated string, isSolved bool, answerAuthor string, answerCount int) map[string]interface{} {
 	created := dateCreated
 	if created == "" {
 		created = time.Now().UTC().Format(time.RFC3339)
@@ -44,17 +43,20 @@ func GenerateQAPageJSONLD(questionTitle, questionBody, answerBody, author, dateC
 		"text":        questionBody,
 		"dateCreated": created,
 		"author":      map[string]interface{}{"@type": "Person", "name": author},
-		"answerCount": 0,
-		"isAccepted":  false,
+		"answerCount": answerCount,
 	}
 
 	if isSolved && answerBody != "" {
-		question["answerCount"] = 1
-		question["acceptedAnswer"] = map[string]interface{}{
-			"@type":  "Answer",
-			"text":   answerBody,
-			"author": map[string]interface{}{"@type": "Person", "name": author},
+		answer := map[string]interface{}{
+			"@type": "Answer",
+			"text":  answerBody,
 		}
+		// The accepted answer belongs to its own author — attributing it to
+		// the question author mislabels the schema for crawlers.
+		if answerAuthor != "" {
+			answer["author"] = map[string]interface{}{"@type": "Person", "name": answerAuthor}
+		}
+		question["acceptedAnswer"] = answer
 	}
 
 	return map[string]interface{}{
@@ -82,8 +84,8 @@ func GenerateReviewJSONLD(itemName string, rating float64, reviewCount int, enti
 		"name":     itemName,
 		"aggregateRating": map[string]interface{}{
 			"@type":       "AggregateRating",
-			"ratingValue": fmt.Sprintf("%.1f", rating),
-			"bestRating":  "5",
+			"ratingValue": rating,
+			"bestRating":  5,
 			"reviewCount": reviewCount,
 		},
 	}

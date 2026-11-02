@@ -115,7 +115,10 @@ export function webSiteLd(opts?: { name?: string; description?: string; siteName
 		url: DOCS_ORIGIN,
 		potentialAction: {
 			'@type': 'SearchAction',
-			target: `${DOCS_ORIGIN}/docs/search?q={search_term_string}`,
+			target: {
+				'@type': 'EntryPoint',
+				urlTemplate: `${DOCS_ORIGIN}/docs/search?q={search_term_string}`
+			},
 			'query-input': 'required name=search_term_string'
 		}
 	};

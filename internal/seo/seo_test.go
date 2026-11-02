@@ -103,8 +103,8 @@ func TestGenerateArticleJSONLD(t *testing.T) {
 		t.Errorf("expected @type Article, got %v", ld["@type"])
 	}
 
-	if ld["title"] != "Moving to Canada" {
-		t.Errorf("expected title 'Moving to Canada', got %v", ld["title"])
+	if ld["headline"] != "Moving to Canada" {
+		t.Errorf("expected headline 'Moving to Canada', got %v", ld["headline"])
 	}
 
 	if ld["dateModified"] != "2026-06-20" {
@@ -150,6 +150,8 @@ func TestGenerateQAPageJSONLD_Solved(t *testing.T) {
 		"Ada N.",
 		"2025-01-15T10:00:00Z",
 		true,
+		"Chidi O.",
+		1,
 	)
 
 	if ld["@type"] != "QAPage" {
@@ -182,7 +184,7 @@ func TestGenerateQAPageJSONLD_Solved(t *testing.T) {
 func TestGenerateQAPageJSONLD_Unsolved(t *testing.T) {
 	t.Parallel()
 
-	ld := GenerateQAPageJSONLD("Q", "B", "", "Author", "2025-01-15T10:00:00Z", false)
+	ld := GenerateQAPageJSONLD("Q", "B", "", "Author", "2025-01-15T10:00:00Z", false, "", 0)
 
 	mainEntity := ld["mainEntity"].(map[string]interface{})
 	if mainEntity["answerCount"] != 0 {
@@ -204,8 +206,8 @@ func TestGenerateReviewJSONLD(t *testing.T) {
 	}
 
 	rating := ld["aggregateRating"].(map[string]interface{})
-	if rating["ratingValue"] != "4.5" {
-		t.Errorf("expected ratingValue '4.5', got %v", rating["ratingValue"])
+	if rating["ratingValue"] != 4.5 {
+		t.Errorf("expected ratingValue 4.5, got %v", rating["ratingValue"])
 	}
 
 	if rating["reviewCount"] != 120 {

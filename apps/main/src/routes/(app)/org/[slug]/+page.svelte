@@ -129,8 +129,7 @@
 					'@type': 'Organization',
 					name: org.name,
 					url: canonical,
-					description: org.description ?? org.tagline ?? '',
-					...(org.verified ? { sameAs: canonical } : {})
+					description: org.description ?? org.tagline ?? ''
 				})
 	);
 </script>

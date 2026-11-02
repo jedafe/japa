@@ -398,7 +398,7 @@
 					'@type': 'JobPosting',
 					title: job.title,
 					description: job.summary || job.body,
-					datePublished: job.published_at,
+					datePosted: job.published_at,
 					url: canonical,
 					hiringOrganization: {
 						'@type': 'Organization',

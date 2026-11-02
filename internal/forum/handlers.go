@@ -1317,7 +1317,7 @@ func (h *Handlers) resolveQAPageJSONLD(
 		}
 	}
 
-	return seo.GenerateQAPageJSONLD(thread.Title, questionBody, answerBody, authorName, tsString(thread.CreatedAt), isSolved)
+	return seo.GenerateQAPageJSONLD(thread.Title, questionBody, answerBody, authorName, tsString(thread.CreatedAt), isSolved, answerAuthor, int(thread.ReplyCount))
 }
 
 // ifaceString returns the first non-empty string representation of the given

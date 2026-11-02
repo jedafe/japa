@@ -1562,7 +1562,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	// to its client-side generator). Emitted as a sibling of `data` so the
 	// frontend load function can read envelope.json_ld directly.
 	resp := map[string]any{"data": dto}
-	if jsonLd, jErr := h.content.ResolveJSONLD(r.Context(), "Article", blogPostJSONLDFields(post, dto)); jErr == nil && len(jsonLd) > 0 {
+	if jsonLd, jErr := h.content.ResolveJSONLD(r.Context(), "Article", blogPostJSONLDFields(post, dto, clientip.ForwardedBaseURL(r, h.siteURL))); jErr == nil && len(jsonLd) > 0 {
 		resp["json_ld"] = json.RawMessage(jsonLd)
 	} else if jErr != nil {
 		slog.Warn("blog: JSON-LD template resolution failed", "slug", slug, "error", jErr)
@@ -1596,7 +1596,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 // blogPostJSONLDFields builds the {{field_key}} → value map for interpolating
 // an Article JSON-LD template from a blog post detail row and the enriched DTO
 // (which carries the computed featured_image_url and excerpt).
-func blogPostJSONLDFields(post gen.GetBlogPostDetailRow, dto map[string]any) map[string]string {
+func blogPostJSONLDFields(post gen.GetBlogPostDetailRow, dto map[string]any, siteBase string) map[string]string {
 	desc := ""
 	if post.MetaDescription != nil && *post.MetaDescription != "" {
 		desc = *post.MetaDescription
@@ -1616,11 +1616,21 @@ func blogPostJSONLDFields(post gen.GetBlogPostDetailRow, dto map[string]any) map
 		"description":        desc,
 		"cover_image_url":    coverURL,
 		"author_name":        post.AuthorName,
-		"author_profile_url": "",
+		"author_profile_url": authorProfileURL(siteBase, post.AuthorUsername),
 		"published_at":       formatTimestamptz(post.PublishedAt),
 		"updated_at":         formatTimestamptz(post.UpdatedAt),
 		"canonical_url":      canonical,
 	}
+}
+
+// authorProfileURL builds the public profile URL for a post author so the
+// Article template's author.url resolves instead of being pruned. Empty
+// when the base or username is missing (interpolator drops the key).
+func authorProfileURL(siteBase, username string) string {
+	if siteBase == "" || username == "" {
+		return ""
+	}
+	return siteBase + "/u/" + username
 }
 
 // formatTimestamptz renders a pgtype.Timestamptz as RFC3339 or empty.
