@@ -98,7 +98,18 @@ const PUBLIC_GET_CACHE: Array<[RegExp, number]> = [
 	[/^\/site\/settings\/public/, 60_000],
 	[/^\/space-types/, 5 * 60_000],
 	[/^\/catalogs\//, 5 * 60_000],
-	[/^\/i18n\//, 5 * 60_000]
+	[/^\/i18n\//, 5 * 60_000],
+	// Viewer-independent public profile data — the member profile page fans
+	// out to ~45 calls per navigation, so a shared 60s cache collapses
+	// repeat visits and concurrent viewers of the same profile. Anything
+	// caller-scoped (follow status, followers/following is_following,
+	// block/mute status, bookmarks) or possibly viewer-flagged (content,
+	// replies, likes, spaces) stays uncached.
+	[/^\/users\/[^/]+\/certificates(?:[/?]|$)/, 60_000],
+	[/^\/users\/[^/]+\/badges(?:[/?]|$)/, 60_000],
+	[/^\/users\/[^/]+\/japa-stage(?:[/?]|$)/, 60_000],
+	[/^\/users\/[^/]+\/media(?:[/?]|$)/, 60_000],
+	[/^\/u\/[^/]+\/videos(?:[/?]|$)/, 60_000]
 ];
 const PUBLIC_GET_CACHE_MAX = 500;
 const publicGetCache = new Map<string, { expires: number; payload: unknown }>();
