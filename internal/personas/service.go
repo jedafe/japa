@@ -289,7 +289,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID
 	// provisioning_failed (mirrors the slug pre-check above).
 	resolvedGeo := make([]pgtype.UUID, len(inputs))
 	for i, in := range inputs {
-		if in.GeoSpace == "" {
+		if strings.TrimSpace(in.GeoSpace) == "" {
 			continue
 		}
 

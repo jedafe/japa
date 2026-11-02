@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -32,6 +33,8 @@ func isGeoSpaceLevel(level string) bool {
 // both and already excludes soft-deleted rows) to an active geo space id.
 // Failures wrap ErrInvalid so callers surface 400 validation_error.
 func (s *Service) resolveGeoSpace(ctx context.Context, q *gen.Queries, ref string) (pgtype.UUID, error) {
+	ref = strings.TrimSpace(ref)
+
 	space, err := q.GetSpaceBySlug(ctx, ref)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -76,6 +79,19 @@ func geoChain(ctx context.Context, q *gen.Queries, spaceID pgtype.UUID) ([]pgtyp
 // chain head — the deepest level the admin selected. Mirrors onboarding's
 // autoJoinGeoSpaces (§09 space auto-join) minus the form-field resolution.
 func (s *Service) applyGeoSpace(ctx context.Context, q *gen.Queries, userID pgtype.UUID, chain []pgtype.UUID) error {
+	// Re-verify the chain head inside the tx — it was resolved pre-tx during
+	// provisioning and could (theoretically) be soft-deleted or deactivated
+	// before commit. Ancestors are already filtered deleted_at IS NULL by
+	// ListSpaceAncestors.
+	head := chain[0]
+	sp, err := q.GetSpaceByID(ctx, head)
+	if err != nil {
+		return fmt.Errorf("re-check geo space: %w", err)
+	}
+	if sp.DeletedAt.Valid || sp.Status != StatusActive {
+		return fmt.Errorf("geo space %s is not active: %w", head.String(), errpkg.ErrInvalid)
+	}
+
 	for _, spaceID := range chain {
 		if _, err := q.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
 			SpaceID: spaceID,
@@ -85,9 +101,8 @@ func (s *Service) applyGeoSpace(ctx context.Context, q *gen.Queries, userID pgty
 		}
 	}
 
-	head := chain[0]
 	if err := q.UpdateUserGeoSpace(ctx, gen.UpdateUserGeoSpaceParams{
-		CurrentGeoSpaceID: head,
+		CurrentGeoSpaceID: chain[0],
 		ID:                userID,
 	}); err != nil {
 		return fmt.Errorf("set current geo space: %w", err)
@@ -101,6 +116,9 @@ func (s *Service) applyGeoSpace(ctx context.Context, q *gen.Queries, userID pgty
 // current_geo_space_id updated. An empty ref clears geo assignment entirely —
 // all geo memberships are dropped and current_geo_space_id is set NULL.
 func (s *Service) replaceGeoSpace(ctx context.Context, q *gen.Queries, userID pgtype.UUID, ref string) error {
+	// Whitespace-only refs behave like empty — the clear path.
+	ref = strings.TrimSpace(ref)
+
 	var chain []pgtype.UUID
 
 	if ref != "" {

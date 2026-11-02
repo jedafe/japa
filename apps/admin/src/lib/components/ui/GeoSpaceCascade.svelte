@@ -97,7 +97,7 @@
 		value={countryId}
 		onchange={(e) => pickCountry((e.target as HTMLSelectElement).value)}
 	>
-		<option value="">{t('personas.geo_country', 'Country')}</option>
+		<option value="">{t('common.country', 'Country')}</option>
 		{#each countries as c (c.id)}
 			<option value={c.id}>{c.name}</option>
 		{/each}
@@ -110,7 +110,7 @@
 		disabled={states.length === 0}
 		onchange={(e) => pickState((e.target as HTMLSelectElement).value)}
 	>
-		<option value="">{t('personas.geo_state', 'State / Region')}</option>
+		<option value="">{t('common.state', 'State / Region')}</option>
 		{#each states as s (s.id)}
 			<option value={s.id}>{s.name}</option>
 		{/each}
@@ -123,7 +123,7 @@
 		disabled={cities.length === 0}
 		onchange={(e) => pickCity((e.target as HTMLSelectElement).value)}
 	>
-		<option value="">{t('personas.geo_city', 'City')}</option>
+		<option value="">{t('common.city', 'City')}</option>
 		{#each cities as c (c.id)}
 			<option value={c.id}>{c.name}</option>
 		{/each}
