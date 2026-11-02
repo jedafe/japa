@@ -55,11 +55,16 @@ SELECT
  u.username AS profile_slug,
  up.bio AS profile_tagline,
  pv.name AS voice_name,
- pv.slug AS voice_slug
+ pv.slug AS voice_slug,
+ gs.id AS geo_space_id,
+ gs.name AS geo_space_name,
+ gs.slug AS geo_space_slug,
+ gs.level AS geo_space_level
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
+LEFT JOIN spaces gs ON gs.id = u.current_geo_space_id AND gs.deleted_at IS NULL
 WHERE ap.id = @id;
 
 -- =====================================================================
@@ -86,11 +91,16 @@ SELECT
  up.bio AS profile_tagline,
  pv.name AS voice_name,
  stats.total_actions AS total_actions,
- stats.last_action_at AS last_action_at
+ stats.last_action_at AS last_action_at,
+ gs.id AS geo_space_id,
+ gs.name AS geo_space_name,
+ gs.slug AS geo_space_slug,
+ gs.level AS geo_space_level
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
 LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
+LEFT JOIN spaces gs ON gs.id = u.current_geo_space_id AND gs.deleted_at IS NULL
 LEFT JOIN LATERAL (
  SELECT COUNT(*) AS total_actions, MAX(pe.created_at) AS last_action_at
  FROM platform_events pe
@@ -257,3 +267,18 @@ ON CONFLICT (user_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     bio = EXCLUDED.bio,
     updated_at = now();
+
+-- =====================================================================
+-- Persona geo replace (§68 Geo Space Assignment): drops the user's
+-- memberships in geo-level spaces (country/state/city) that are not in the
+-- keep list. An empty keep list clears all geo memberships (PATCH
+-- geo_space:"" clear path). space_members.member_count self-corrects via
+-- the trigger from migration 000967.
+-- =====================================================================
+-- name: RemoveUserGeoMembershipsExcept :exec
+DELETE FROM space_members sm
+USING spaces s
+WHERE sm.space_id = s.id
+  AND sm.user_id = @user_id
+  AND s.level IN ('country','state','city')
+  AND s.id <> ALL(@keep_ids::uuid[]);
