@@ -10,6 +10,7 @@
 	import { JsonValueEditor } from '@japaconnect/ui';
 	import type { BulkAction } from '$lib/components/ui/data-table';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import GeoSpaceCascade from '$lib/components/ui/GeoSpaceCascade.svelte';
 
 	// Persona type matches the backend PersonaDetail / PersonaListItem DTOs
 	// (internal/personas/service.go). Ref: §68, ADR-068.
@@ -30,6 +31,10 @@
 		backing_username?: string;
 		profile_name?: string;
 		profile_tagline?: string | null;
+		geo_space_id?: string;
+		geo_space_name?: string | null;
+		geo_space_slug?: string | null;
+		geo_space_level?: string | null;
 		total_actions?: number;
 	};
 
@@ -44,6 +49,7 @@
 		disclosure_mode: string;
 		autonomy_mode: string;
 		activity_policy?: ActivityPolicy;
+		geo_space?: string;
 	};
 
 	type PersonaVoice = {
@@ -92,6 +98,7 @@
 		name?: string;
 		tagline?: string;
 		username?: string;
+		geo_space?: string;
 	};
 
 	const canManage = $derived(hasPermission('persona.manage'));
@@ -144,7 +151,8 @@
 			voice_prompt: '',
 			disclosure_mode: 'undisclosed',
 			autonomy_mode: 'queued',
-			activity_policy: defaultPolicy()
+			activity_policy: defaultPolicy(),
+			geo_space: ''
 		};
 	}
 
@@ -156,6 +164,9 @@
 	let editForm = $state<UpdateInput>({});
 	let editViewOnly = $state(false);
 	let savingEdit = $state(false);
+	// Geo space for the edit cascade — the new selection diff-sends as
+	// geo_space on save (mirrors the name/tagline/username pattern).
+	let editGeoSpace = $state('');
 
 	async function loadPersonaVoices() {
 		voicesLoading = true;
@@ -253,6 +264,7 @@
 	function openView(persona: Persona) {
 		editingPersona = persona;
 		editViewOnly = true;
+		editGeoSpace = '';
 		// Merge a partial backend policy over the canonical default so the edit
 		// form always has the required fields (e.g. active_hours_utc[0]).
 		const policy = persona.activity_policy as Partial<ActivityPolicy> | undefined;
@@ -273,6 +285,7 @@
 	function openEdit(persona: Persona) {
 		editingPersona = persona;
 		editViewOnly = false;
+		editGeoSpace = '';
 		// BUG-005: include activity_policy in the edit form so it is editable
 		// after creation (spec §68 PATCH updates activity_policy).
 		// Merge a partial backend policy over the canonical default so the form
@@ -379,6 +392,9 @@
 			if (body.name === (editingPersona.profile_name ?? '')) delete body.name;
 			if (body.tagline === (editingPersona.profile_tagline ?? '')) delete body.tagline;
 			if (body.username === (editingPersona.backing_username ?? '')) delete body.username;
+			// Send geo_space only when the admin picked a new chain — the
+			// cascade can't pre-seed ancestors, so untouched stays omitted.
+			if (editGeoSpace !== '') body.geo_space = editGeoSpace;
 			// voice_prompt is always sent as a string (bound to a textarea).
 			// An empty string clears it on the backend because the PATCH
 			// handler decodes VoicePrompt as *string — empty is non-nil, so
@@ -437,6 +453,12 @@
 				const cls = value === 'active' ? 'bg-success/15 text-success border-success' : 'bg-muted text-muted-foreground border-border';
 				return `<span class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${cls}">${value}</span>`;
 			}
+		},
+		{
+			key: 'geo_space_name',
+			label: t('personas.geo_space', 'Geo Space'),
+			render: (value: string, row: Persona) =>
+				`<span class="text-muted-foreground text-xs">${value ? `${value}${row.geo_space_level ? ` · ${row.geo_space_level}` : ''}` : '—'}</span>`
 		},
 		{
 			key: 'total_actions',
@@ -610,6 +632,10 @@
 							bind:value={persona.tagline}
 							placeholder={t('personas.tagline_placeholder', 'Short bio / expertise summary')}
 						/>
+					</div>
+					<div class="mt-2">
+						<label for={`persona-geo-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.geo_space', 'Geo Space')}</label>
+						<GeoSpaceCascade id={`persona-geo-${idx}`} bind:value={persona.geo_space} />
 					</div>
 					<div class="mt-2 grid gap-3 sm:grid-cols-2">
 						<div>
@@ -924,6 +950,15 @@
 					options={[{ value: 'active', label: t('personas.status_active', 'Active') }, { value: 'paused', label: t('personas.status_paused', 'Paused') }, { value: 'retired', label: t('personas.status_retired', 'Retired') }]}
 					class="w-full"
 				/>
+			</div>
+			<div>
+				<label for="edit-persona-geo" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.geo_space', 'Geo Space')}</label>
+				{#if editingPersona?.geo_space_name}
+					<p class="mb-1 text-[10px]" style="color: var(--color-muted)">
+						{t('personas.geo_current', 'Current')}: {editingPersona.geo_space_name}{editingPersona.geo_space_level ? ` · ${editingPersona.geo_space_level}` : ''}
+					</p>
+				{/if}
+				<GeoSpaceCascade id="edit-persona-geo" bind:value={editGeoSpace} />
 			</div>
 			<div>
 				<label for="edit-persona-voice" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.voice', 'Voice / Tone')}</label>
