@@ -123,14 +123,16 @@ clear query is needed.
 
 ## Admin UI (`apps/admin/src/routes/(app)/personas/+page.svelte`)
 
-- **Provision form:** geo space picker per persona row, bound to
-  `geo_space`. Uses the existing `SpaceAutocomplete` component extended with
-  an optional `levels?: string[]` prop that issues one `spacesAdminApi.list`
-  call per level and merges results client-side (single `level` prop today
-  only supports one level; geo needs country+state+city). Selection capped
-  at one space.
-- **Edit form:** same picker, pre-seeded from `geo_space_id`; sending `""`
-  clears.
+- **Provision form:** a cascading country → state → city picker per persona
+  row (new shared `GeoSpaceCascade` component) driven by the existing
+  `geoApi` (`/geo/countries`, `/geo/countries/{code}/states`,
+  `/geo/states/{id}/cities`) — the same public endpoints real users get for
+  location selection; the deepest selection's space UUID becomes
+  `geo_space`. (Review note: `SpaceAutocomplete` was rejected — it relies on
+  `/admin/spaces`, which ignores `level` server-side and requires the
+  `spaces.admin` permission a persona manager may not hold.)
+- **Edit form:** current geo space shown as text plus the same cascade to
+  change it; sending `""` clears.
 - **List:** a Geo column rendering `geo_space_name` (+ level).
 
 ## Error handling

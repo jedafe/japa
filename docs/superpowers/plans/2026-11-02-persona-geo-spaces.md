@@ -488,7 +488,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
-	gen "github.com/jedafe/japa/internal/db/gen"
 )
 
 // TestIsGeoSpaceLevel verifies only the geo hierarchy levels pass the gate —
@@ -525,18 +524,7 @@ func TestPersonaGeoSpace_Live(t *testing.T) {
 		database.Reader.Close()
 	})
 
-	q := gen.New(database.Reader)
 	ctx := t.Context()
-
-	// Pick two seeded geo spaces at different levels.
-	country, err := q.GetSpaceBySlug(ctx, "nigeria")
-	if err != nil {
-		t.Skipf("seed country space 'nigeria' missing: %v", err)
-	}
-	other, err := q.GetSpaceBySlug(ctx, "kenya")
-	if err != nil {
-		t.Skipf("seed country space 'kenya' missing: %v", err)
-	}
 
 	svc := NewService(NewStore(database), nil, nil)
 
@@ -546,10 +534,45 @@ func TestPersonaGeoSpace_Live(t *testing.T) {
 		t.Skipf("no admin user for created_by: %v", err)
 	}
 
+	// Pick two distinct seeded country spaces dynamically — hardcoded slugs
+	// would be brittle against seed drift.
+	var spaces []struct {
+		ID   pgtype.UUID
+		Slug string
+	}
+	rows, err := database.Reader.Query(ctx,
+		`SELECT id, slug FROM spaces WHERE level = 'country' AND status = 'active'
+		 AND deleted_at IS NULL ORDER BY name LIMIT 2`)
+	if err != nil {
+		t.Fatalf("list country spaces: %v", err)
+	}
+	for rows.Next() {
+		var s struct {
+			ID   pgtype.UUID
+			Slug string
+		}
+		if err := rows.Scan(&s.ID, &s.Slug); err != nil {
+			rows.Close()
+			t.Fatalf("scan country: %v", err)
+		}
+		spaces = append(spaces, s)
+	}
+	rows.Close()
+	if len(spaces) < 2 {
+		t.Skip("fewer than 2 seeded country spaces")
+	}
+	country, other := spaces[0], spaces[1]
+
 	slug := "geo-test-persona"
-	// Clean up leftovers from a previous run.
-	_, _ = database.Writer.Exec(ctx,
-		`DELETE FROM users WHERE username = $1`, slug)
+	// Clean up leftovers from a previous run (ai_personas cascades on
+	// users delete; space_members / user_profiles cleaned explicitly).
+	cleanup := func() {
+		_, _ = database.Writer.Exec(ctx, `DELETE FROM space_members WHERE user_id IN (SELECT id FROM users WHERE username = $1)`, slug)
+		_, _ = database.Writer.Exec(ctx, `DELETE FROM user_profiles WHERE user_id IN (SELECT id FROM users WHERE username = $1)`, slug)
+		_, _ = database.Writer.Exec(ctx, `DELETE FROM users WHERE username = $1`, slug)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
 
 	results, err := svc.ProvisionPersonas(ctx, adminID, []PersonaInput{{
 		Name:           "Geo Test Persona",
@@ -564,9 +587,6 @@ func TestPersonaGeoSpace_Live(t *testing.T) {
 	if results[0].ID == "" {
 		t.Fatalf("provision failed: %s", results[0].Error)
 	}
-	t.Cleanup(func() {
-		_, _ = database.Writer.Exec(ctx, `DELETE FROM users WHERE username = $1`, slug)
-	})
 
 	// Backing user: current_geo_space_id set to the selected space.
 	var personaID pgtype.UUID
@@ -593,7 +613,8 @@ func TestPersonaGeoSpace_Live(t *testing.T) {
 		t.Fatalf("geo membership count = %d, want 1", memberCount)
 	}
 
-	// PATCH replace: geo_space -> kenya. Nigeria membership must be removed.
+	// PATCH replace: geo_space -> other country. The old geo membership
+	// must be removed (replace semantics).
 	newGeo := other.Slug
 	if _, err := svc.UpdatePersona(ctx, personaID, UpdatePersonaInput{GeoSpace: &newGeo}, adminID); err != nil {
 		t.Fatalf("update geo_space: %v", err)
@@ -605,12 +626,16 @@ func TestPersonaGeoSpace_Live(t *testing.T) {
 		t.Fatalf("count geo memberships: %v", err)
 	}
 	if memberCount != 1 {
-		t.Fatalf("geo memberships after replace = %d, want 1 (kenya only)", memberCount)
+		t.Fatalf("geo memberships after replace = %d, want 1", memberCount)
 	}
+	var sameGeo bool
 	if err := database.Reader.QueryRow(ctx,
 		`SELECT current_geo_space_id = $1 FROM users WHERE id = $2`,
 		other.ID, userID).Scan(&sameGeo); err != nil {
 		t.Fatalf("check current geo: %v", err)
+	}
+	if !sameGeo {
+		t.Fatal("current_geo_space_id was not updated to the replacement space")
 	}
 
 	// PATCH clear: geo_space "" removes all geo memberships + NULLs current.
@@ -620,22 +645,33 @@ func TestPersonaGeoSpace_Live(t *testing.T) {
 	}
 	if err := database.Reader.QueryRow(ctx,
 		`SELECT COUNT(*) FROM space_members sm JOIN spaces s ON s.id = sm.space_id
-		 WHERE sm.user_id = $1 AND s.level IN ('country','state','city')
-		   AND (SELECT current_geo_space_id FROM users WHERE id = $1) IS NULL`,
+		 WHERE sm.user_id = $1 AND s.level IN ('country','state','city')`,
 		userID).Scan(&memberCount); err != nil {
 		t.Fatalf("count after clear: %v", err)
 	}
 	if memberCount != 0 {
 		t.Fatalf("geo memberships after clear = %d, want 0", memberCount)
 	}
+	var geoNull bool
+	if err := database.Reader.QueryRow(ctx,
+		`SELECT current_geo_space_id IS NULL FROM users WHERE id = $1`,
+		userID).Scan(&geoNull); err != nil {
+		t.Fatalf("check cleared geo: %v", err)
+	}
+	if !geoNull {
+		t.Fatal("current_geo_space_id was not cleared")
+	}
 
-	// Detail exposes the geo fields.
-	var detail PersonaDetail
-	_ = detail // populated via svc.GetPersona — covered by field presence above
+	// Detail exposes the geo fields (geo_space_id "" after clear).
+	detail, err := svc.GetPersona(ctx, personaID)
+	if err != nil {
+		t.Fatalf("get persona: %v", err)
+	}
+	if detail.GeoSpaceID != "" {
+		t.Fatalf("geo_space_id = %q, want empty after clear", detail.GeoSpaceID)
+	}
 }
 ```
-
-(Note: `sameGeo` needs a `var sameGeo bool` declaration before the replace check — add it with the other vars.)
 
 - [ ] **Step 2: Run unit test**
 
@@ -662,120 +698,140 @@ git commit -m "test(personas): geo space level gate + provision/update geo flows
 
 ---
 
-### Task 5: SpaceAutocomplete — `levels` and `multiple` props
+### Task 5: GeoSpaceCascade component (country → state → city picker)
 
 **Files:**
-- Modify: `apps/admin/src/lib/components/ui/SpaceAutocomplete.svelte`
+- Create: `apps/admin/src/lib/components/ui/GeoSpaceCascade.svelte`
 
 **Interfaces:**
-- Consumes: `spacesAdminApi.list(params)` — one call per level.
-- Produces: `levels?: string[]` (fetch+filter across multiple space levels) and `multiple?: boolean` (default `true`; `false` → single-select replace). Task 6 consumes both.
+- Consumes: `geoApi.listCountries() / listStates(code) / listCities(stateId)` (already in `apps/admin/src/lib/api.ts:1099`) — the same public `/geo/*` endpoints the real user location picker uses.
+- Produces: `bind:value` = deepest selected space UUID (city → state → country fallback); `''` when nothing picked. Task 6 consumes it.
+- Review note: `SpaceAutocomplete` was rejected for this use — `/admin/spaces` ignores `level` server-side and is gated by `spaces.admin`, which a `persona.manage` holder may lack. `/geo/*` is public.
 
-- [ ] **Step 1: Add the props**
+GeoSpace item shape (from `projectGeoSpace` in `internal/geoip/handlers.go`): `{ id, name, slug, level, geo_code?, ... }`. `listCountries` returns `GeoCountry[]` — check its type def near api.ts:1099 and reuse if compatible, else type locally.
 
-Extend the `$props()` destructure and type:
+- [ ] **Step 1: Create the component**
 
-```ts
+```svelte
+<script lang="ts">
+	// GeoSpaceCascade — cascading country → state → city picker backed by the
+	// public /geo/* endpoints (same source as the member location picker,
+	// ADR-064a). `value` binds the deepest selected space UUID; '' = unset.
+	import { geoApi } from '$lib/api';
+	import { t } from '$lib/stores/i18n.svelte';
+
+	type GeoSpace = { id: string; name: string; slug: string; level: string; geo_code?: string | null };
+
 	let {
-		selectedIds = $bindable<string[]>([]),
-		placeholder = '',
-		level = '',
-		levels = [],
-		multiple = true,
-		limit = 200,
-		id = 'space-autocomplete-input'
+		value = $bindable<string>(''),
+		id = 'geo-cascade'
 	}: {
-		selectedIds?: string[];
-		placeholder?: string;
-		level?: string;
-		levels?: string[];
-		multiple?: boolean;
-		limit?: number;
+		value?: string;
 		id?: string;
 	} = $props();
-```
 
-- [ ] **Step 2: Per-level fetch in the mount `$effect`**
+	let countries = $state<GeoSpace[]>([]);
+	let states = $state<GeoSpace[]>([]);
+	let cities = $state<GeoSpace[]>([]);
+	let countryId = $state('');
+	let stateId = $state('');
+	let cityId = $state('');
+	let loading = $state(false);
 
-Replace the existing single-call effect body:
-
-```ts
 	$effect(() => {
 		(async () => {
 			loading = true;
 			try {
-				// levels issues one server-filtered call per level and merges;
-				// a single level (or none) keeps the original behavior.
-				const levelList = levels.length > 0 ? levels : (level ? [level] : ['']);
-				const responses = await Promise.all(
-					levelList.map((lvl) => {
-						const params = new URLSearchParams();
-						if (lvl) params.set('level', lvl);
-						params.set('page_size', String(limit));
-						return spacesAdminApi.list(params.toString());
-					})
-				);
-				const merged: Space[] = [];
-				const seen = new Set<string>();
-				for (const result of responses) {
-					if (!result.ok) continue;
-					const data = result.data as { items?: Space[]; data?: Space[] } | Space[];
-					for (const s of Array.isArray(data) ? data : (data.items ?? data.data ?? [])) {
-						if (!seen.has(s.id)) {
-							seen.add(s.id);
-							merged.push(s);
-						}
-					}
+				const res = await geoApi.listCountries();
+				if (res.ok) {
+					const data = res.data as GeoSpace[] | { data?: GeoSpace[] };
+					countries = Array.isArray(data) ? data : (data.data ?? []);
 				}
-				allSpaces = merged;
-			} catch {
-				allSpaces = [];
 			} finally {
 				loading = false;
 			}
 		})();
 	});
-```
 
-- [ ] **Step 3: Multi-level client filter in `filtered`**
-
-Replace the single-level filter:
-
-```ts
-		const allowed = levels.length > 0 ? levels : (level ? [level] : null);
-		if (allowed) {
-			list = list.filter((s) => allowed.includes(s.level ?? ''));
+	async function pickCountry(idVal: string) {
+		countryId = idVal;
+		stateId = '';
+		cityId = '';
+		cities = [];
+		value = idVal;
+		if (!idVal) {
+			states = [];
+			return;
 		}
-```
-
-- [ ] **Step 4: Single-select in `selectSpace`**
-
-```ts
-	function selectSpace(space: Space) {
-		if (multiple) {
-			if (!selectedIds.includes(space.id)) {
-				selectedIds = [...selectedIds, space.id];
-			}
-		} else {
-			selectedIds = [space.id];
+		const res = await geoApi.listStates(geoCodeOf(idVal));
+		if (res.ok) {
+			const data = res.data as GeoSpace[] | { data?: GeoSpace[] };
+			states = Array.isArray(data) ? data : (data.data ?? []);
 		}
-		query = '';
-		dropdownOpen = false;
-		activeIndex = -1;
 	}
+
+	// listStates keys off the country's ISO geo_code, not its id.
+	function geoCodeOf(idVal: string): string {
+		return countries.find((c) => c.id === idVal)?.geo_code ?? '';
+	}
+
+	async function pickState(idVal: string) {
+		stateId = idVal;
+		cityId = '';
+		value = idVal || countryId;
+		if (!idVal) {
+			cities = [];
+			return;
+		}
+		const res = await geoApi.listCities(idVal);
+		if (res.ok) {
+			const data = res.data as GeoSpace[] | { data?: GeoSpace[] };
+			cities = Array.isArray(data) ? data : (data.data ?? []);
+		}
+	}
+
+	function pickCity(idVal: string) {
+		cityId = idVal;
+		value = idVal || stateId || countryId;
+	}
+
+	const selectCls =
+		'w-full rounded-md border px-3 py-1.5 text-sm';
+	const selectStyle =
+		'border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)';
+</script>
+
+<div class="grid gap-3 sm:grid-cols-3">
+	<select id={`${id}-country`} class={selectCls} style={selectStyle} value={countryId} onchange={(e) => pickCountry((e.target as HTMLSelectElement).value)}>
+		<option value="">{t('personas.geo_country', 'Country')}</option>
+		{#each countries as c (c.id)}
+			<option value={c.id}>{c.name}</option>
+		{/each}
+	</select>
+	<select id={`${id}-state`} class={selectCls} style={selectStyle} value={stateId} disabled={states.length === 0} onchange={(e) => pickState((e.target as HTMLSelectElement).value)}>
+		<option value="">{t('personas.geo_state', 'State / Region')}</option>
+		{#each states as s (s.id)}
+			<option value={s.id}>{s.name}</option>
+		{/each}
+	</select>
+	<select id={`${id}-city`} class={selectCls} style={selectStyle} value={cityId} disabled={cities.length === 0} onchange={(e) => pickCity((e.target as HTMLSelectElement).value)}>
+		<option value="">{t('personas.geo_city', 'City')}</option>
+		{#each cities as c (c.id)}
+			<option value={c.id}>{c.name}</option>
+		{/each}
+	</select>
+</div>
+{#if loading}
+	<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
+{/if}
 ```
 
-- [ ] **Step 5: Typecheck + commit**
+- [ ] **Step 2: Typecheck + commit**
 
 ```bash
-cd apps/admin && bunx svelte-check --tsconfig ./tsconfig.json 2>&1 | grep -i "spaceautocomplete\|error" | head
-```
-
-Expected: no new errors in SpaceAutocomplete. Then:
-
-```bash
-git add apps/admin/src/lib/components/ui/SpaceAutocomplete.svelte
-git commit -m "feat(admin): SpaceAutocomplete levels + single-select modes"
+cd apps/admin && bunx svelte-check --tsconfig ./tsconfig.json 2>&1 | grep -i "geospacecascade" | head
+git add apps/admin/src/lib/components/ui/GeoSpaceCascade.svelte
+git commit -m "feat(admin): GeoSpaceCascade country/state/city picker via /geo endpoints"
 ```
 
 ---
@@ -787,7 +843,7 @@ git commit -m "feat(admin): SpaceAutocomplete levels + single-select modes"
 - Modify: `apps/admin/src/lib/locales/en.json`, `apps/admin/src/lib/locales/fr.json` (add `personas.geo_space`, `personas.geo_space_hint`)
 
 **Interfaces:**
-- Consumes: `SpaceAutocomplete` `levels` + `multiple` props (Task 5); backend `geo_space` field + `geo_space_*` response fields (Tasks 2-3).
+- Consumes: `GeoSpaceCascade` `bind:value` (Task 5); backend `geo_space` field + `geo_space_*` response fields (Tasks 2-3).
 - Produces: provision form sends `geo_space` (UUID); edit form sends `geo_space` only when changed (mirroring the name/tagline/username diff-send pattern); list shows a Geo column.
 
 - [ ] **Step 1: Extend types and state**
@@ -812,93 +868,64 @@ git commit -m "feat(admin): SpaceAutocomplete levels + single-select modes"
 	};
 ```
 
-Add import and state:
+Add import:
 
 ```ts
-	import SpaceAutocomplete from '$lib/components/ui/SpaceAutocomplete.svelte';
+	import GeoSpaceCascade from '$lib/components/ui/GeoSpaceCascade.svelte';
 ```
+
+`PersonaInput.geo_space` is bound directly to the cascade's `value` — no parallel selection state is needed (`bind:value` on an object property works in Svelte 5). For the edit form, keep a diff baseline:
 
 ```ts
-	// Geo space selections — parallel to newPersonas (create) and editForm
-	// (edit). SpaceAutocomplete binds a string[] of space ids; geo is
-	// single-select (multiple={false}) so index 0 is the picked space.
-	let newGeoSpaces = $state<string[][]>([[]]);
-	let editGeoSpaces = $state<string[]>([]);
+	// Geo space for the edit cascade — the new selection diff-sends as
+	// geo_space on save (mirrors the name/tagline/username pattern).
+	let editGeoSpace = $state('');
 ```
 
-- [ ] **Step 2: Sync selection state with row add/remove**
+- [ ] **Step 2: Send `geo_space` in `createPersonas` and reset**
 
-```ts
-	function addPersonaRow() {
-		newPersonas = [...newPersonas, newPersonaInput()];
-		newGeoSpaces = [...newGeoSpaces, []];
-	}
+`persona.geo_space` is already populated via the bind — no extra mapping needed in `createPersonas`. On success, `newPersonas = [newPersonaInput()]` already resets `geo_space` to `''` (add `geo_space: ''` to `newPersonaInput()`'s return object for a clean initial bind).
 
-	function removePersonaRow(idx: number) {
-		newPersonas = newPersonas.filter((_, i) => i !== idx);
-		newGeoSpaces = newGeoSpaces.filter((_, i) => i !== idx);
-	}
-```
-
-- [ ] **Step 3: Send `geo_space` in `createPersonas` and reset**
-
-Inside `createPersonas`, after `const inputs = newPersonas.filter(...)`:
-
-```ts
-			inputs.forEach((p, i) => {
-				const geo = newGeoSpaces[i]?.[0];
-				if (geo) p.geo_space = geo;
-			});
-```
-
-And on success, reset `newGeoSpaces = [[]];` alongside `newPersonas = [newPersonaInput()];`.
-
-- [ ] **Step 4: Seed + diff-send in edit flow**
+- [ ] **Step 3: Seed + diff-send in edit flow**
 
 In both `openView` and `openEdit`, after building `editForm`:
 
 ```ts
-		editGeoSpaces = persona.geo_space_id ? [persona.geo_space_id] : [];
+		editGeoSpace = ''; // cascade starts unselected; current geo shows as text
 ```
 
 In `submitEdit`, after the existing diff-send deletes:
 
 ```ts
-			const newGeo = editGeoSpaces[0] ?? '';
-			if (newGeo !== (editingPersona.geo_space_id ?? '')) body.geo_space = newGeo;
+			// Send geo_space only when the admin picked a new chain — the
+			// cascade can't pre-seed ancestors, so untouched stays omitted.
+			if (editGeoSpace !== '') body.geo_space = editGeoSpace;
 ```
 
-- [ ] **Step 5: Picker in the create modal** (after the tagline `<div class="mt-2">`, before the disclosure/autonomy grid)
+- [ ] **Step 4: Picker in the create modal** (after the tagline `<div class="mt-2">`, before the disclosure/autonomy grid)
 
 ```svelte
 					<div class="mt-2">
 						<label for={`persona-geo-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.geo_space', 'Geo Space')}</label>
-						<SpaceAutocomplete
-							id={`persona-geo-${idx}`}
-							bind:selectedIds={newGeoSpaces[idx]}
-							levels={['country', 'state', 'city']}
-							multiple={false}
-							placeholder={t('personas.geo_space_hint', 'Search a country, state, or city space...')}
-						/>
+						<GeoSpaceCascade id={`persona-geo-${idx}`} bind:value={persona.geo_space} />
 					</div>
 ```
 
-- [ ] **Step 6: Picker in the edit modal** (after the status block, before voice)
+- [ ] **Step 5: Picker in the edit modal** (after the status block, before voice)
 
 ```svelte
 			<div>
 				<label for="edit-persona-geo" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.geo_space', 'Geo Space')}</label>
-				<SpaceAutocomplete
-					id="edit-persona-geo"
-					bind:selectedIds={editGeoSpaces}
-					levels={['country', 'state', 'city']}
-					multiple={false}
-					placeholder={t('personas.geo_space_hint', 'Search a country, state, or city space...')}
-				/>
+				{#if editingPersona?.geo_space_name}
+					<p class="mb-1 text-[10px]" style="color: var(--color-muted)">
+						{t('personas.geo_current', 'Current')}: {editingPersona.geo_space_name}{editingPersona.geo_space_level ? ` · ${editingPersona.geo_space_level}` : ''}
+					</p>
+				{/if}
+				<GeoSpaceCascade id="edit-persona-geo" bind:value={editGeoSpace} />
 			</div>
 ```
 
-- [ ] **Step 7: Geo column in `columns`** (insert before `total_actions`)
+- [ ] **Step 6: Geo column in `columns`** (insert before `total_actions`)
 
 ```ts
 		{
@@ -909,20 +936,26 @@ In `submitEdit`, after the existing diff-send deletes:
 		},
 ```
 
-- [ ] **Step 8: i18n keys**
+- [ ] **Step 7: i18n keys**
 
 en.json (alphabetical, after `personas.entity`):
 
 ```json
+  "personas.geo_city": "City",
+  "personas.geo_country": "Country",
+  "personas.geo_current": "Current",
   "personas.geo_space": "Geo Space",
-  "personas.geo_space_hint": "Search a country, state, or city space...",
+  "personas.geo_state": "State / Region",
 ```
 
 fr.json — same keys, French values:
 
 ```json
+  "personas.geo_city": "Ville",
+  "personas.geo_country": "Pays",
+  "personas.geo_current": "Actuel",
   "personas.geo_space": "Espace géographique",
-  "personas.geo_space_hint": "Rechercher un espace pays, région ou ville...",
+  "personas.geo_state": "État / Région",
 ```
 
 - [ ] **Step 9: Typecheck + build**
