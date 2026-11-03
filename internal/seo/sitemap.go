@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jedafe/japa/internal/bots"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/valkey"
@@ -25,6 +27,16 @@ import (
 // invalidates these keys after pre-generating fresh sitemaps.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 const sitemapCacheTTL = time.Hour
+
+// sitemapChunkSize is the maximum number of URLs per sitemap file — the
+// sitemaps.org protocol limit (Section 26: "Chunked sitemap-index, 50k URLs
+// per file"). The content sitemap paginates at this size; every other
+// sub-sitemap is capped at the same bound defensively.
+const sitemapChunkSize = 50000
+
+// maxSitemapChunks bounds chunk enumeration so a corrupt count can't produce
+// an unbounded index (100 chunks = 5M URLs, far beyond platform scale).
+const maxSitemapChunks = 100
 
 // sitemapSettingsReader is the subset of config.Settings the sitemap handlers
 // need to read the Section 43 quality-gate thresholds (seo.sitemap.*). Declared
@@ -44,25 +56,22 @@ type sitemapFeatureChecker interface {
 
 // SitemapHandler handles sitemap generation requests.
 type SitemapHandler struct {
-	queries         *gen.Queries
-	reader          *pgxpool.Pool
-	settings        sitemapSettingsReader
-	vkClient        *valkey.Client
-	flags           sitemapFeatureChecker
-	siteURL         string // JC_SITE_URL — configured base URL (Rule 3)
-	imgproxyBaseURL string // JC_IMGPROXY_BASE_URL — imgproxy origin for absolute image URLs (Rule 3)
+	queries    *gen.Queries
+	reader     *pgxpool.Pool
+	settings   sitemapSettingsReader
+	vkClient   *valkey.Client
+	flags      sitemapFeatureChecker
+	siteURL    string // JC_SITE_URL — configured base URL (Rule 3)
+	mediaURLFn func(storageBucket, storagePath string) string
 }
 
 // NewSitemapHandler creates a new sitemap handler. settings may be nil —
 // handlers fall back to bots.DefaultSitemapQualityConfig() defaults. vkClient
 // may be nil — handlers fall back to rendering without cache. siteURL is the
 // configured public base URL (JC_SITE_URL); when empty the handler derives
-// the base URL from the request host (fallback only). imgproxyBaseURL is the
-// configured imgproxy origin (JC_IMGPROXY_BASE_URL); when empty, image
-// sitemap URLs are built against the site base URL via the local media serve
-// endpoint (Rule 3 — no os.Getenv inside the package).
-func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool, settings sitemapSettingsReader, vkClient *valkey.Client, siteURL, imgproxyBaseURL string) *SitemapHandler {
-	return &SitemapHandler{queries: queries, reader: reader, settings: settings, vkClient: vkClient, siteURL: siteURL, imgproxyBaseURL: imgproxyBaseURL}
+// the base URL from the request host (fallback only).
+func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool, settings sitemapSettingsReader, vkClient *valkey.Client, siteURL string) *SitemapHandler {
+	return &SitemapHandler{queries: queries, reader: reader, settings: settings, vkClient: vkClient, siteURL: siteURL}
 }
 
 // SetFeatureChecker wires the feature flag resolver so gated surfaces are
@@ -70,6 +79,16 @@ func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool, settings site
 // advertise routes that 404. Nil-safe: a missing checker means ungated.
 func (h *SitemapHandler) SetFeatureChecker(c sitemapFeatureChecker) {
 	h.flags = c
+}
+
+// SetMediaURLResolver wires the media URL builder used by the image sitemap.
+// Pass media.MediaURL (or an equivalent) so <image:loc> entries get the same
+// signed imgproxy URL the rest of the platform emits — unsigned raw imgproxy
+// paths 403 for crawlers when signing is enforced. Nil-safe: without a
+// resolver, image URLs fall back to the local /api/v1/media/serve/ path
+// made absolute against the site URL.
+func (h *SitemapHandler) SetMediaURLResolver(fn func(storageBucket, storagePath string) string) {
+	h.mediaURLFn = fn
 }
 
 // flagOn reports whether a feature flag is enabled. Fails open when no
@@ -143,6 +162,11 @@ func InvalidateSitemapCache(ctx context.Context, rdb sitemapCacheInvalidator) {
 		"index", "content", "spaces", "tags", "users", "images", "deals", "roadmap",
 		"universities", "courses", "jobs", "scholarships", "services", "wiki", "calendar", "scam-alerts", "comparisons", "tools",
 	}
+	// Chunked content sub-sitemaps cache per-chunk keys — drop the bounded
+	// range so regenerated sitemaps can't serve stale chunks.
+	for n := 2; n <= maxSitemapChunks; n++ {
+		types = append(types, "content:chunk:"+strconv.Itoa(n))
+	}
 	for _, t := range types {
 		if err := rdb.Del(ctx, sitemapCacheKey(t)).Err(); err != nil {
 			slog.Warn("sitemap: failed to invalidate cache", "type", t, "error", err)
@@ -150,15 +174,17 @@ func InvalidateSitemapCache(ctx context.Context, rdb sitemapCacheInvalidator) {
 	}
 }
 
-// baseURL returns the configured site URL, falling back to https://r.Host when
-// unset (Rule 3 — no hardcoded config; the fallback is a last resort for
-// misconfigured deployments).
+// baseURL returns the configured site URL, falling back to the request host
+// when unset (Rule 3 — no hardcoded config; the fallback is a last resort for
+// misconfigured deployments). When a trusted reverse proxy/frontend forwards
+// X-Forwarded-Host (the SvelteKit sitemap proxy does), that public host is
+// used instead of the API host so <loc> entries stay on the site origin.
 func (h *SitemapHandler) baseURL(r *http.Request) string {
 	if h.siteURL != "" {
 		return strings.TrimRight(h.siteURL, "/")
 	}
 
-	return "https://" + r.Host
+	return clientip.ForwardedBaseURL(r, "https://"+r.Host)
 }
 
 // sitemapQualityConfig reads the seo.sitemap.* thresholds from system_settings
@@ -221,10 +247,13 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 
 	// §42: gated surfaces drop out of the index when their flag is off —
 	// the sitemap must not advertise routes that return 404.
+	// Chunked index (§26): the content sitemap paginates at sitemapChunkSize;
+	// each extra page is advertised as ?chunk=N. The count is pre-gate, so a
+	// chunk may emit fewer URLs — never more — and every row is reachable.
 	entries := []sitemapEntry{
 		{Loc: base + "/sitemap-content.xml", LastMod: contentLastMod},
 		{Loc: base + "/sitemap-spaces.xml", LastMod: spacesLastMod},
-		{Loc: base + "/sitemap-tags.xml"},
+		{Loc: base + "/sitemap-tags.xml", LastMod: h.latestSimpleLastMod(r.Context(), `SELECT updated_at FROM tags ORDER BY updated_at DESC LIMIT 1`)},
 		{Loc: base + "/sitemap-users.xml", LastMod: usersLastMod},
 		{Loc: base + "/sitemap-images.xml", LastMod: imagesLastMod},
 	}
@@ -234,27 +263,27 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 	if h.flagOn(r.Context(), "roadmap.enabled") {
 		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-roadmap.xml", LastMod: h.latestRoadmapLastMod(r.Context())})
 	}
-	entries = append(entries, sitemapEntry{Loc: base + "/sitemap-universities.xml", LastMod: h.latestUniversitiesLastMod()})
+	entries = append(entries, sitemapEntry{Loc: base + "/sitemap-universities.xml", LastMod: h.latestUniversitiesLastMod(r.Context())})
 	if h.flagOn(r.Context(), "feature.academy") {
-		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-courses.xml", LastMod: h.latestCoursesLastMod()})
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-courses.xml", LastMod: h.latestCoursesLastMod(r.Context())})
 	}
 	if h.flagOn(r.Context(), "jobs.enabled") {
 		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-jobs.xml", LastMod: h.latestJobsLastMod(r.Context())})
 	}
 	if h.flagOn(r.Context(), "scholarship_finder.enabled") {
-		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-scholarships.xml", LastMod: h.latestScholarshipsLastMod()})
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-scholarships.xml", LastMod: h.latestScholarshipsLastMod(r.Context())})
 	}
 	if h.flagOn(r.Context(), "service_directory.enabled") {
 		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-services.xml", LastMod: h.latestServicesLastMod(r.Context())})
 	}
 	if h.flagOn(r.Context(), "wiki.enabled") {
-		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-wiki.xml", LastMod: h.latestWikiLastMod()})
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-wiki.xml", LastMod: h.latestWikiLastMod(r.Context())})
 	}
 	if h.flagOn(r.Context(), "calendar.enabled") {
-		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-calendar.xml", LastMod: h.latestCalendarLastMod()})
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-calendar.xml", LastMod: h.latestCalendarLastMod(r.Context())})
 	}
 	if h.flagOn(r.Context(), "scam_alert.enabled") {
-		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-scam-alerts.xml", LastMod: h.latestScamAlertsLastMod()})
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-scam-alerts.xml", LastMod: h.latestScamAlertsLastMod(r.Context())})
 	}
 	// /compare is gated by feature.comparison AND feature.jce on the backend
 	// (stacked Gates) — drop the comparisons sitemap when either is off.
@@ -262,6 +291,17 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-comparisons.xml", LastMod: h.latestComparisonsLastMod(r.Context())})
 	}
 	entries = append(entries, sitemapEntry{Loc: base + "/sitemap-tools.xml"})
+
+	// Advertise extra content chunks when the indexable row set exceeds one
+	// file's URL budget.
+	if total, err := h.queries.CountPublishedSlugsForSitemap(r.Context()); err == nil {
+		for n := 2; n <= maxSitemapChunks && int64((n-1)*sitemapChunkSize) < total; n++ {
+			entries = append(entries, sitemapEntry{
+				Loc:     base + "/sitemap-content.xml?chunk=" + strconv.Itoa(n),
+				LastMod: contentLastMod,
+			})
+		}
+	}
 
 	var buf strings.Builder
 
@@ -283,7 +323,7 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 // latestContentLastMod returns the most recent content updated_at as RFC3339,
 // or empty string when no published content exists.
 func (h *SitemapHandler) latestContentLastMod(ctx context.Context) string {
-	rows, err := h.queries.ListPublishedSlugsForSitemap(ctx)
+	rows, err := h.queries.ListPublishedSlugsForSitemap(ctx, gen.ListPublishedSlugsForSitemapParams{ChunkLimit: sitemapChunkSize})
 	if err != nil || len(rows) == 0 {
 		return ""
 	}
@@ -346,11 +386,45 @@ func (h *SitemapHandler) latestImagesLastMod(ctx context.Context) string {
 // so the on-demand and pre-generated sitemaps agree.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md, sections/43-bot-crawler-management.md.
 func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Request) {
-	if h.cachedSitemapXML(w, r, "content") {
+	// §26 chunked sitemap-index: ?chunk=N serves the Nth 50k-URL page of the
+	// indexable row set (chunk 1 = the bare /sitemap-content.xml URL). Cache
+	// keys are per-chunk so each file caches independently. An invalid or
+	// out-of-range chunk is a 404 — the bare URL must not be served twice
+	// under different query strings (duplicate-content signal for crawlers).
+	chunk := 1
+	if s := r.URL.Query().Get("chunk"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 1 || n > maxSitemapChunks {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Sitemap chunk not found")
+			return
+		}
+
+		chunk = n
+	}
+
+	if chunk > 1 {
+		// 404 beyond the last chunk — an empty urlset here would be a valid
+		// response but wasteful and confusing in Search Console.
+		if total, err := h.queries.CountPublishedSlugsForSitemap(r.Context()); err == nil &&
+			int64((chunk-1)*sitemapChunkSize) >= total {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Sitemap chunk not found")
+			return
+		}
+	}
+
+	cacheType := "content"
+	if chunk > 1 {
+		cacheType += ":chunk:" + strconv.Itoa(chunk)
+	}
+
+	if h.cachedSitemapXML(w, r, cacheType) {
 		return
 	}
 
-	rows, err := h.queries.ListPublishedSlugsForSitemap(r.Context())
+	rows, err := h.queries.ListPublishedSlugsForSitemap(r.Context(), gen.ListPublishedSlugsForSitemapParams{
+		ChunkLimit:  sitemapChunkSize,
+		ChunkOffset: int32((chunk - 1) * sitemapChunkSize),
+	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -390,7 +464,7 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 		})
 	}
 
-	h.serveSitemapBytes(w, r, "content", renderURLSetXML(entries))
+	h.serveSitemapBytes(w, r, cacheType, renderURLSetXML(entries))
 }
 
 // ServeSpacesSitemap serves space sitemap entries (P5.6 — Task 31), filtered
@@ -424,7 +498,8 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 		     GROUP BY c.space_id
 		 ) qc ON qc.space_id = s.id
 		 WHERE s.status = 'active' AND s.deleted_at IS NULL AND s.visibility = 'public'
-		 ORDER BY s.updated_at DESC`)
+		 ORDER BY s.updated_at DESC
+		 LIMIT 50000`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -475,10 +550,19 @@ func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request
 		minContent = bots.DefaultSitemapQualityConfig().TagMinContent
 	}
 
-	query := `SELECT slug FROM tags ORDER BY name`
+	query := `SELECT slug FROM tags ORDER BY name LIMIT 50000`
 	args := []any{}
 	if minContent > 0 {
-		query = `SELECT slug FROM tags WHERE content_count >= $1 ORDER BY name`
+		// Live count, not the denormalized tags.content_count — that counter
+		// includes draft/non-public/deleted content, so a tag could pass the
+		// gate with zero indexable items.
+		query = `SELECT t.slug FROM tags t
+		 WHERE (SELECT count(*) FROM content_tags ct
+		        JOIN contents c ON c.id = ct.content_id
+		        WHERE ct.tag_id = t.id AND c.status = 'published'
+		          AND c.visibility = 'public' AND c.deleted_at IS NULL
+		          AND c.seo_indexable = true) >= $1
+		 ORDER BY t.name LIMIT 50000`
 		args = append(args, minContent)
 	}
 
@@ -550,7 +634,8 @@ func (h *SitemapHandler) ServeDealsSitemap(w http.ResponseWriter, r *http.Reques
 		 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 		 WHERE c.status = 'active' AND (c.expires_at IS NULL OR c.expires_at > now())
 		   AND (ap.id IS NULL OR ap.is_active)
-		 ORDER BY c.updated_at DESC`)
+		 ORDER BY c.updated_at DESC
+		 LIMIT 50000`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -725,7 +810,7 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 	if minPosts > 0 {
 		postsGate = ` AND (SELECT count(*) FROM contents c
 		        WHERE c.author_id = u.id AND c.status = 'published'
-		          AND c.deleted_at IS NULL) >= $1`
+		          AND c.visibility = 'public' AND c.deleted_at IS NULL) >= $1`
 		args = append(args, minPosts)
 	}
 
@@ -736,7 +821,8 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 		                JOIN user_groups ug ON ug.id = ugm.group_id
 		                WHERE ugm.user_id = u.id AND ug.allow_search_indexing))`+
 		postsGate+`
-		 ORDER BY u.updated_at DESC`, args...)
+		 ORDER BY u.updated_at DESC
+		 LIMIT 50000`, args...)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -816,7 +902,8 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 		   AND c.visibility = 'public' AND c.seo_indexable = true
 		   AND c.featured_image_id IS NOT NULL
 		   AND m.deleted_at IS NULL AND m.confirmed = true
-		 ORDER BY c.updated_at DESC`)
+		 ORDER BY c.updated_at DESC
+		 LIMIT 50000`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate image sitemap")
 		return
@@ -834,7 +921,7 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 
-		imgURL := resolveMediaURL(h.imgproxyBaseURL, base, storageBucket, storagePath)
+		imgURL := h.resolveMediaURL(base, storageBucket, storagePath)
 		entries = append(entries, imageURLEntry{
 			Loc:     base + bots.ContentURLPath(contentType, slug),
 			LastMod: updatedAt.Format(time.RFC3339),
@@ -857,21 +944,24 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 }
 
 // resolveMediaURL builds a public, absolute media URL from
-// storage_bucket/storage_path. It mirrors media.MediaURL's fallback path
-// (local serve endpoint) without importing the media package (avoids an
-// import cycle). When imgproxy is configured (imgproxyBaseURL non-empty),
-// the URL is absolute against the imgproxy origin; otherwise the local
-// /api/v1/media/serve/ path is prefixed with the sitemap base URL so the
-// emitted <image:loc> is always absolute (sitemaps.org protocol requires
-// absolute URLs — relative URLs are rejected by Google Search Console).
+// storage_bucket/storage_path. When a media URL resolver is wired
+// (SetMediaURLResolver → media.MediaURL), the returned signed imgproxy URL
+// is used as-is; a relative resolver result (local serve path, when imgproxy
+// is unconfigured) is made absolute against the sitemap base URL. Without a
+// resolver the local /api/v1/media/serve/ path is prefixed with the site
+// base so the emitted <image:loc> is always absolute (sitemaps.org protocol
+// requires absolute URLs — relative URLs are rejected by Google Search
+// Console).
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
-func resolveMediaURL(imgproxyBaseURL, siteBaseURL, storageBucket, storagePath string) string {
-	if imgproxyBaseURL != "" {
-		// Defer to the full imgproxy URL construction. We can't call
-		// media.MediaURL here (import cycle), so we build the raw source
-		// URL — imgproxy signs it, but for sitemap purposes the unsigned
-		// source URL is sufficient because crawlers fetch via the site.
-		return strings.TrimRight(imgproxyBaseURL, "/") + "/" + storageBucket + "/" + storagePath
+func (h *SitemapHandler) resolveMediaURL(siteBaseURL, storageBucket, storagePath string) string {
+	if h.mediaURLFn != nil {
+		if u := h.mediaURLFn(storageBucket, storagePath); u != "" {
+			if strings.HasPrefix(u, "/") {
+				return strings.TrimRight(siteBaseURL, "/") + u
+			}
+
+			return u
+		}
 	}
 
 	return strings.TrimRight(siteBaseURL, "/") + "/api/v1/media/serve/" + storageBucket + "/" + storagePath
@@ -900,16 +990,6 @@ func (h *SitemapHandler) serveSitemapBytes(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("X-Cache", "MISS")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
-}
-
-func (h *SitemapHandler) writeXML(w http.ResponseWriter, entries []urlEntry) {
-	w.Header().Set("Content-Type", "application/xml")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.WriteHeader(http.StatusOK)
-	_ = xml.NewEncoder(w).Encode(urlset{
-		Xmlns: "http://www.sitemaps.org/schemas/sitemap/0.9",
-		URLs:  entries,
-	})
 }
 
 // ValidateSEO handles GET /admin/seo/validate/:id — validates SEO metadata for

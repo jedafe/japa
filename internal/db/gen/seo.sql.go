@@ -45,10 +45,9 @@ type GetContentSEOByIDRow struct {
 }
 
 // Admin SEO validation (Section 26): fetches a single content row by id with
-// the same render-time resolution as GetPageMetadataBySlug, plus the raw
-// title/slug/body/visibility the validator needs to compute issues and score.
-// Unlike GetPageMetadataBySlug this does NOT filter by status — admins must be
-// able to validate drafts too.
+// render-time resolution. NOTE: the ValidateSEO handler currently uses an
+// equivalent inline query (see internal/seo/sitemap.go) because it also needs
+// engagement counts this query does not project. Keep the two in sync.
 func (q *Queries) GetContentSEOByID(ctx context.Context, contentID pgtype.UUID) (GetContentSEOByIDRow, error) {
 	row := q.db.QueryRow(ctx, getContentSEOByID, contentID)
 	var i GetContentSEOByIDRow
@@ -69,109 +68,4 @@ func (q *Queries) GetContentSEOByID(ctx context.Context, contentID pgtype.UUID) 
 		&i.JsonldTemplate,
 	)
 	return i, err
-}
-
-const getPageMetadataBySlug = `-- name: GetPageMetadataBySlug :one
-SELECT c.id, COALESCE(c.meta_title, c.title) AS title,
- COALESCE(c.meta_description, '') AS description,
- c.slug, c.content_type,
- COALESCE(c.og_image_url, '') AS og_image,
- COALESCE(c.canonical_url, '') AS canonical_url,
- COALESCE(c.meta_title, c.title) AS og_title,
- COALESCE(c.meta_description, '') AS og_description,
- c.seo_indexable,
- COALESCE(up.display_name, u.public_username, u.username, '') AS author,
- COALESCE(c.published_at, c.created_at) AS published_at,
- c.updated_at
-FROM contents c
-LEFT JOIN users u ON c.author_id = u.id
-LEFT JOIN user_profiles up ON u.id = up.user_id
-WHERE c.slug = $1 AND c.status = 'published'
-`
-
-type GetPageMetadataBySlugRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Title         string             `json:"title"`
-	Description   string             `json:"description"`
-	Slug          string             `json:"slug"`
-	ContentType   string             `json:"content_type"`
-	OgImage       string             `json:"og_image"`
-	CanonicalUrl  string             `json:"canonical_url"`
-	OgTitle       string             `json:"og_title"`
-	OgDescription string             `json:"og_description"`
-	SeoIndexable  bool               `json:"seo_indexable"`
-	Author        string             `json:"author"`
-	PublishedAt   pgtype.Timestamptz `json:"published_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-}
-
-// Render-time resolution (ADR-052): per-content SEO overrides take priority,
-// then the content title/body, then empty defaults. og_image_url falls back
-// to the featured image's media URL when blank — resolved by the caller via
-// the media join, not here (this query stays single-row).
-// og_description falls back to ” (not the title) per Section 26
-// ResolveMetadata: the caller resolves the body-excerpt fallback via
-// excerpt(body, 160) when og_description is empty. Using the title as the
-// OG description is wrong — it duplicates og_title and is useless for
-// social sharing.
-func (q *Queries) GetPageMetadataBySlug(ctx context.Context, slug string) (GetPageMetadataBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getPageMetadataBySlug, slug)
-	var i GetPageMetadataBySlugRow
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Description,
-		&i.Slug,
-		&i.ContentType,
-		&i.OgImage,
-		&i.CanonicalUrl,
-		&i.OgTitle,
-		&i.OgDescription,
-		&i.SeoIndexable,
-		&i.Author,
-		&i.PublishedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const listContentForSitemap = `-- name: ListContentForSitemap :many
-SELECT id, slug, updated_at, content_type, status
-FROM contents
-WHERE status = 'published'
-ORDER BY updated_at DESC
-`
-
-type ListContentForSitemapRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Slug        string             `json:"slug"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	ContentType string             `json:"content_type"`
-	Status      string             `json:"status"`
-}
-
-func (q *Queries) ListContentForSitemap(ctx context.Context) ([]ListContentForSitemapRow, error) {
-	rows, err := q.db.Query(ctx, listContentForSitemap)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListContentForSitemapRow
-	for rows.Next() {
-		var i ListContentForSitemapRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.UpdatedAt,
-			&i.ContentType,
-			&i.Status,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }

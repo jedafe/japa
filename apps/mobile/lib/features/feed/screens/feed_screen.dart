@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/feed/providers/feed_provider.dart';
 import 'package:japaconnect_mobile/features/nextactions/widgets/next_action_card.dart';
@@ -15,6 +16,11 @@ class FeedScreen extends ConsumerWidget {
     final t = ref.watch(tProvider);
     return Scaffold(
       appBar: AppBar(title: Text(t('feed.title'))),
+      floatingActionButton: FloatingActionButton(
+        tooltip: t('compose.title'),
+        onPressed: () => context.push('/compose'),
+        child: const Icon(Icons.edit),
+      ),
       body: RefreshIndicator(
         onRefresh: () async => ref.invalidate(feedProvider),
         child: feed.when(

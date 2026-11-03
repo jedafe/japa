@@ -14,8 +14,7 @@ BEGIN;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT ur.id, p.id
 FROM user_roles ur, permissions p
-WHERE ur.tenant_id = '00000000-0000-0000-0000-000000000001'
-  AND ur.slug IN ('member', 'pro_member', 'business_member')
+WHERE ur.slug IN ('member', 'pro_member', 'business_member')
   AND p.key = 'follows.view'
 ON CONFLICT DO NOTHING;
 

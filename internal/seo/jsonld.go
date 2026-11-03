@@ -160,7 +160,8 @@ func interpolateString(s string, fields map[string]string) string {
 
 		end := strings.Index(s[i+start:], "}}")
 		if end < 0 {
-			b.WriteString(s[i+start:])
+			// Unterminated token — drop it rather than leaking the raw
+			// {{...}} placeholder text into emitted structured data.
 			break
 		}
 

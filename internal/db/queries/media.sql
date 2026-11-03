@@ -355,7 +355,10 @@ LIMIT 50;
 -- name: UpdateMediaStorage :exec
 -- Storage-rewrite update — used by image optimization (content:process_image)
 -- to record the re-encoded bytes under a possibly different storage path.
-UPDATE media SET storage_path = @storage_path, mime_type = @mime_type, file_size_bytes = @file_size_bytes WHERE id = @id AND deleted_at IS NULL;
+UPDATE media SET storage_path = @storage_path, mime_type = @mime_type, file_size_bytes = @file_size_bytes,
+ width_px = COALESCE(sqlc.narg(width_px), width_px),
+ height_px = COALESCE(sqlc.narg(height_px), height_px)
+WHERE id = @id AND deleted_at IS NULL;
 
 -- name: ListMediaForOptimization :many
 -- Media rows holding optimizable raster content above the compression

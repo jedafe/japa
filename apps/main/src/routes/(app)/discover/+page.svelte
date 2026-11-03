@@ -2,12 +2,12 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Compass, Users, Building2, Hash, GraduationCap, FileText, Globe, BadgeCheck, Radar } from 'lucide-svelte';
+	import { Compass, Users, Building2, Hash, FileText, Globe, BadgeCheck, Radar } from 'lucide-svelte';
 	import { EmptyState, UrlTabs, FollowButton, SpaceJoinButton, DirectoryCard, type UrlTab, type CardMetaItem } from '$lib/components/ui';
 	import RadarItemRow from '$lib/components/RadarItemRow.svelte';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
-	import type { PublicOrgListItem, University } from '$lib/types';
+	import type { PublicOrgListItem } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 
@@ -21,28 +21,23 @@
 		{ value: 'organizations', label: t('discover.tab.organizations', 'organizations') },
 		{ value: 'tags', label: t('discover.tab.tags', 'tags') },
 		{ value: 'content', label: t('discover.tab.content', 'Content') },
-		{ value: 'universities', label: t('discover.tab.universities', 'universities') },
 		{ value: 'sources', label: t('discover.tab.sources', 'Sources') },
 		{ value: 'opportunities', label: t('discover.tab.opportunities', 'Opportunities') }
 	]);
 
 	const title = $derived(t('discover.title', 'Discover — {site}'));
 	const description = $derived(
-		t('discover.description', 'Find spaces, people, organizations, tags, sources, and universities in the Nigerian diaspora community.')
+		t('discover.description', 'Find spaces, people, organizations, tags, and sources in the Nigerian diaspora community.')
 	);
 
-	// ── Load-more state for the server-paginated tabs (organizations,
-	// universities). The suggestions tabs are fixed pools with a limit-only
-	// contract — there is no second page to fetch.
+	// ── Load-more state for the server-paginated tabs (organizations). The
+	// suggestions tabs are fixed pools with a limit-only contract — there is
+	// no second page to fetch.
 	let extraOrgs = $state<PublicOrgListItem[]>([]);
-	let extraUnis = $state<University[]>([]);
-	let unisPage = $state(1);
 	let loadingMore = $state(false);
 
 	const organizations = $derived([...data.organizations, ...extraOrgs]);
-	const universities = $derived([...data.universities, ...extraUnis]);
 	const orgsHasMore = $derived(organizations.length < data.orgsTotal);
-	const unisHasMore = $derived(universities.length < data.unisTotal);
 
 	// Follow state comes from /me/following (loaded server-side) — the follow
 	// endpoints are toggles, so an accurate initiallyFollowing is required or a
@@ -57,19 +52,11 @@
 	const meta = (...items: (CardMetaItem | null)[]): CardMetaItem[] =>
 		items.filter((i): i is CardMetaItem => i !== null);
 
-	// University avatar text — seeded initials can be long codes (e.g.
-	// "VERMONTLAW"); anything over 5 chars overflows the badge, so fall back
-	// to the first letter of the name.
-	const uniMark = (uni: { name: string; initials?: string | null }) =>
-		uni.initials && uni.initials.length <= 5 ? uni.initials : uni.name.charAt(0).toUpperCase();
-
 	// Reset client-appended pages whenever the active tab (and its SSR
 	// payload) changes.
 	$effect(() => {
 		void data.tab;
 		extraOrgs = [];
-		extraUnis = [];
-		unisPage = 1;
 	});
 
 	async function loadMoreOrgs() {
@@ -81,20 +68,6 @@
 		);
 		loadingMore = false;
 		if (res.data?.length) extraOrgs = [...extraOrgs, ...res.data];
-	}
-
-	async function loadMoreUnis() {
-		if (loadingMore) return;
-		loadingMore = true;
-		// GET /universities paginates with ?page=&limit= (1-based page number).
-		const res = await api.get<University[]>(
-			`/universities?page=${unisPage + 1}&limit=${data.pageSize}`
-		);
-		loadingMore = false;
-		if (res.data?.length) {
-			extraUnis = [...extraUnis, ...res.data];
-			unisPage += 1;
-		}
 	}
 </script>
 
@@ -253,44 +226,6 @@
 						/>
 					{/each}
 				</div>
-			{/if}
-		{:else if tab === 'universities'}
-			{#if universities.length === 0}
-				<EmptyState icon={GraduationCap} title={t('discover.universities_empty', 'No universities yet')} />
-			{:else}
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-					{#each universities as uni (uni.id)}
-						<DirectoryCard
-							href="/universities/{uni.slug}"
-							title={uni.name}
-							subtitle="{uni.geo_code ? `${uni.geo_code} · ` : ''}{count('meta.followers', '{n} followers', uni.follower_count)}"
-							description={uni.description}
-							imageUrl={uni.logo_url}
-							fallback={uniMark(uni)}
-							hueSeed={uni.id}
-							meta={meta(
-								{ icon: FileText, text: count('discover.posts', '{n} posts', uni.post_count) },
-								{ icon: Users, text: count('profile.followers', '{n} followers', uni.follower_count) }
-							)}
-							viewProfile
-							viewProfileLabel={t('discover.view_university', 'View university')}
-						>
-							{#snippet headerAction()}
-								<SpaceJoinButton entityId={uni.id} entitySlug={uni.slug} initiallyJoined={uni.is_member ?? false} initiallyPending={uni.is_pending ?? false} initiallyFollowing={uni.is_following ?? false} compact followOnly />
-							{/snippet}
-						</DirectoryCard>
-					{/each}
-				</div>
-				{#if unisHasMore}
-					<button
-						type="button"
-						onclick={loadMoreUnis}
-						disabled={loadingMore}
-						class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-60"
-					>
-						{t('discover.load_more', 'Load more')}
-					</button>
-				{/if}
 			{/if}
 		{:else if tab === 'sources'}
 			{#if data.sources.length === 0}

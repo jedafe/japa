@@ -29,7 +29,7 @@ SELECT * FROM badge_definitions
 WHERE id = @id;
 
 -- name: CreateBadgeDefinition :one
-INSERT INTO badge_definitions (slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until) VALUES (@slug, @name, sqlc.narg(description), sqlc.narg(icon_media_id), @trigger_type, sqlc.narg(trigger_value), sqlc.narg(trigger_activity_key), @is_active, @is_system, @display_order, sqlc.narg(category), @rarity, sqlc.narg(tier), sqlc.narg(badge_group), @is_secret, @is_limited, @is_featured, @points_reward, sqlc.narg(available_from), sqlc.narg(available_until))
+INSERT INTO badge_definitions (slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, accent_color) VALUES (@slug, @name, sqlc.narg(description), sqlc.narg(icon_media_id), @trigger_type, sqlc.narg(trigger_value), sqlc.narg(trigger_activity_key), @is_active, @is_system, @display_order, sqlc.narg(category), @rarity, sqlc.narg(tier), sqlc.narg(badge_group), @is_secret, @is_limited, @is_featured, @points_reward, sqlc.narg(available_from), sqlc.narg(available_until), sqlc.narg(accent_color))
 
 RETURNING *;
 
@@ -48,6 +48,7 @@ SET
  rarity = COALESCE(sqlc.narg(rarity), rarity),
  tier = CASE WHEN sqlc.narg(clear_tier)::boolean THEN NULL ELSE COALESCE(sqlc.narg(tier), tier) END,
  badge_group = CASE WHEN sqlc.narg(clear_badge_group)::boolean THEN NULL ELSE COALESCE(sqlc.narg(badge_group), badge_group) END,
+ accent_color = CASE WHEN sqlc.narg(clear_accent_color)::boolean THEN NULL ELSE COALESCE(sqlc.narg(accent_color), accent_color) END,
  is_secret = COALESCE(sqlc.narg(is_secret), is_secret),
  is_limited = COALESCE(sqlc.narg(is_limited), is_limited),
  is_featured = COALESCE(sqlc.narg(is_featured), is_featured),
@@ -77,6 +78,7 @@ SELECT
  bd.name AS badge_name,
  bd.slug AS badge_slug,
  bd.description AS badge_description,
+ bd.accent_color AS badge_accent_color,
  bd.icon_media_id AS badge_icon_media_id,
  bd.category AS badge_category,
  bd.rarity AS badge_rarity,
@@ -93,6 +95,8 @@ SELECT
  bd.name AS badge_name,
  bd.slug AS badge_slug,
  bd.description AS badge_description,
+ bd.accent_color AS badge_accent_color,
+ bd.icon_media_id AS badge_icon_media_id,
  bd.category AS badge_category,
  bd.rarity AS badge_rarity,
  bd.tier AS badge_tier,

@@ -6,6 +6,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { api } from '$lib/api/client';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import { t } from '$lib/i18n';
 	import { Award, X } from 'lucide-svelte';
@@ -59,6 +60,13 @@
 	}
 
 	async function resolveIcon(b: ModalBadge) {
+		// The API now emits icon_url on earned badges — prefer it. The
+		// /media/{id} fallback is ownership-gated (uploader or media.view_all
+		// only), so it only resolves for the admin who uploaded the artwork.
+		if (b.icon_url) {
+			b.iconUrl = remoteImageUrl(b.icon_url);
+			return;
+		}
 		if (!b.icon_media_id) return;
 		try {
 			const res = await api.get<{ url?: string; file_url?: string; cdn_url?: string }>(`/media/${b.icon_media_id}`);
@@ -166,11 +174,11 @@
 			</button>
 
 			<div
-				class="mx-auto grid h-20 w-20 place-items-center rounded-full border-2"
+				class="mx-auto grid h-20 w-20 place-items-center overflow-hidden rounded-full border-2"
 				style="border-color: {c}; background: color-mix(in srgb, {c} 14%, transparent)"
 			>
 				{#if current.iconUrl}
-					<img src={current.iconUrl} alt="" class="h-12 w-12 object-contain" />
+					<img src={current.iconUrl} alt="" class="h-3/4 w-3/4 object-contain" />
 				{:else}
 					<Award size={38} style="color: {c}" />
 				{/if}

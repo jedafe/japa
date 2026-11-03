@@ -477,6 +477,12 @@ func (s *Service) GetQuarantinedMedia(ctx context.Context, mediaID pgtype.UUID) 
 }
 
 // GetMedia returns a single media item by ID.
+// GetMediaByIDs batch-fetches media rows by id (deleted rows excluded) —
+// one round-trip for list endpoints resolving artwork URLs.
+func (s *Service) GetMediaByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.Medium, error) {
+	return s.store.GetMediaByIDs(ctx, ids)
+}
+
 func (s *Service) GetMedia(ctx context.Context, mediaID pgtype.UUID) (gen.Medium, error) {
 	return s.store.GetMediaByID(ctx, mediaID)
 }

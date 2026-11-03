@@ -5,30 +5,157 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const openverseAPI = "https://api.openverse.org/v1"
 
 // OpenverseProvider implements StockProvider for Openverse (api.openverse.org).
-// No API key required — this is the zero-friction default provider.
+// Works without credentials, but anonymous calls are throttled hard
+// (~200/day per IP) — a shared backend IP exhausts that almost immediately.
+// When clientID/clientSecret are set, requests authenticate via the
+// client-credentials grant for the much higher authenticated quota.
 type OpenverseProvider struct {
-	client *http.Client
+	client       *http.Client
+	clientID     string
+	clientSecret string
+
+	tokenMu      sync.Mutex
+	token        string
+	tokenExpiry  time.Time
+	tokenBackoff time.Time
 }
 
-// NewOpenverseProvider is an exported function.
-func NewOpenverseProvider(timeout time.Duration) *OpenverseProvider {
+// NewOpenverseProvider is an exported function. clientID/clientSecret may be
+// empty — the provider then calls the API anonymously.
+func NewOpenverseProvider(timeout time.Duration, clientID, clientSecret string) *OpenverseProvider {
 	return &OpenverseProvider{
-		client: &http.Client{Timeout: timeout},
+		client:       &http.Client{Timeout: timeout},
+		clientID:     clientID,
+		clientSecret: clientSecret,
 	}
 }
 
 // Name is an exported method.
 func (p *OpenverseProvider) Name() string { return "openverse" }
+
+// accessToken returns a Bearer token via the client-credentials grant,
+// caching it until shortly before expiry. Returns "" when no credentials
+// are configured; a failed token fetch backs off for a minute and falls
+// back to anonymous rather than failing the request outright.
+func (p *OpenverseProvider) accessToken(ctx context.Context) string {
+	if p.clientID == "" || p.clientSecret == "" {
+		return ""
+	}
+
+	p.tokenMu.Lock()
+	defer p.tokenMu.Unlock()
+
+	if p.token != "" && time.Now().Before(p.tokenExpiry) {
+		return p.token
+	}
+
+	if time.Now().Before(p.tokenBackoff) {
+		return ""
+	}
+
+	form := url.Values{}
+	form.Set("grant_type", "client_credentials")
+	form.Set("client_id", p.clientID)
+	form.Set("client_secret", p.clientSecret)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		openverseAPI+"/auth_tokens/token/", strings.NewReader(form.Encode()))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "JapaConnect/1.0")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		slog.Warn("openverse: token request failed", "error", err)
+		p.tokenBackoff = time.Now().Add(time.Minute)
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		slog.Warn("openverse: token request rejected", "status", resp.StatusCode)
+		p.tokenBackoff = time.Now().Add(time.Minute)
+		return ""
+	}
+
+	var tok struct {
+		AccessToken string `json:"access_token"`
+		ExpiresIn   int    `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil || tok.AccessToken == "" {
+		slog.Warn("openverse: malformed token response", "error", err)
+		p.tokenBackoff = time.Now().Add(time.Minute)
+		return ""
+	}
+
+	expiresIn := tok.ExpiresIn
+	if expiresIn <= 0 {
+		expiresIn = 3600
+	}
+	// Refresh a minute early so a borderline-expired token is never sent.
+	p.token = tok.AccessToken
+	p.tokenExpiry = time.Now().Add(time.Duration(expiresIn)*time.Second - time.Minute)
+
+	return p.token
+}
+
+// newRequest builds an Openverse API request with the app User-Agent and a
+// Bearer token when credentials are configured. Only use it for
+// api.openverse.org endpoints — never attach the token to third-party
+// download URLs.
+func (p *OpenverseProvider) newRequest(ctx context.Context, method, endpoint string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("User-Agent", "JapaConnect/1.0")
+
+	if tok := p.accessToken(ctx); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+
+	return req, nil
+}
+
+// doAPI executes an api.openverse.org request. If the API rejects a cached
+// token with 401 (e.g. revoked credentials), the token is dropped and the
+// request retried once anonymously rather than failing until token expiry.
+// GET-only today — the retry replays a nil body, so a caller with a body
+// would need its body re-buffered.
+func (p *OpenverseProvider) doAPI(req *http.Request) (*http.Response, error) {
+	resp, err := p.client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusUnauthorized || req.Header.Get("Authorization") == "" {
+		return resp, err
+	}
+	resp.Body.Close()
+
+	p.tokenMu.Lock()
+	p.token = ""
+	p.tokenExpiry = time.Time{}
+	p.tokenBackoff = time.Now().Add(time.Minute) // don't re-fetch a rejected token
+	p.tokenMu.Unlock()
+
+	retry, err := p.newRequest(req.Context(), req.Method, req.URL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	return p.client.Do(retry)
+}
 
 // Search is an exported method.
 func (p *OpenverseProvider) Search(ctx context.Context, query string, page, perPage int) (*SearchResult, error) {
@@ -43,15 +170,15 @@ func (p *OpenverseProvider) Search(ctx context.Context, query string, page, perP
 	params.Set("page_size", strconv.Itoa(perPage))
 	params.Set("mature", "false")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		openverseAPI+"/images?"+params.Encode(), nil)
+	// Trailing slash matters: api.openverse.org 301s "/v1/images" to
+	// "/v1/images/" — the redirect costs an extra slow round-trip.
+	req, err := p.newRequest(ctx, http.MethodGet,
+		openverseAPI+"/images/?"+params.Encode(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("building openverse request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "JapaConnect/1.0")
-
-	resp, err := p.client.Do(req)
+	resp, err := p.doAPI(req)
 	if err != nil {
 		return nil, fmt.Errorf("openverse search: %w", err)
 	}
@@ -112,15 +239,13 @@ func (p *OpenverseProvider) Search(ctx context.Context, query string, page, perP
 
 // GetByID is an exported method.
 func (p *OpenverseProvider) GetByID(ctx context.Context, photoID string) (*StockPhoto, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		openverseAPI+"/images/"+photoID, nil)
+	req, err := p.newRequest(ctx, http.MethodGet,
+		openverseAPI+"/images/"+url.PathEscape(photoID)+"/", nil)
 	if err != nil {
 		return nil, fmt.Errorf("building openverse request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "JapaConnect/1.0")
-
-	resp, err := p.client.Do(req)
+	resp, err := p.doAPI(req)
 	if err != nil {
 		return nil, fmt.Errorf("openverse get photo: %w", err)
 	}

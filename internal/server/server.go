@@ -1497,6 +1497,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// awards and challenge completions send user notifications
 	// (BUG-GAMMA-003, ADR-082 §2). Fire-and-forget per Rule 8.
 	gamificationService.SetNotifier(gamificationNotifierAdapter{svc: notificationService})
+	// Resolve badge artwork (icon_media_id) to imgproxy-signed icon_url so
+	// public badge surfaces can render the uploaded image — same adapter the
+	// verification service uses for its badge artwork (§64).
+	gamificationService.SetMediaResolver(&mediaURLResolver{media: mediaService})
+	// Knock out solid edge backgrounds on newly attached badge/challenge
+	// artwork so uploads on a white matte rhyme with the circular badge UI.
+	gamificationService.SetMediaImageProcessor(mediaService)
 	// Wire the gamification evaluator into the wallet service so
 	// wallet:process_activity_event evaluates activity_count badges,
 	// lifetime_points badges, and challenge progress after each successful
@@ -3142,7 +3149,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	})
 	// Wire the RBAC resolver so GetMyContent can fall back to a
 	// platform-scoped (non-author-scoped) fetch for super-admins and users
-	// with the `content.edit` permission node.
+	// with the `content.edit_any` permission node.
 	usersHandlers.SetPermissionResolver(rbacResolver)
 	// Wire the RBAC permission lister so GetMyProfile surfaces the caller's
 	// effective permission nodes on /me (§26 RBAC wiring). Frontend pages
@@ -3366,8 +3373,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// SEO & Performance subsystem (Section 26).
 	seoQueries := gen.New(database.Writer)
-	sitemapHandler := seo.NewSitemapHandler(seoQueries, database.Reader, settingsService, vkClient, cfg.SiteURL, cfg.ImgproxyBaseURL)
+	sitemapHandler := seo.NewSitemapHandler(seoQueries, database.Reader, settingsService, vkClient, cfg.SiteURL)
 	sitemapHandler.SetFeatureChecker(featureChecker) // gated sub-sitemaps drop out when their flag is off (§42)
+	// <image:loc> URLs point at the original media object via the same-origin
+	// serve endpoint — the canonical full-resolution file is the right URL
+	// for image indexing (a 640px imgproxy derivative would be a poor
+	// image:loc). ServeURL is absolute when JC_API_PUBLIC_URL is set and
+	// relative otherwise; the handler prefixes the site base for relatives.
+	sitemapHandler.SetMediaURLResolver(media.ServeURL)
 	ogImageHandler := seo.NewOGImageHandler(database.Reader, vkClient, cfg.SiteName)
 
 	// Config handlers for public settings endpoint.
@@ -9760,6 +9773,20 @@ func (r *mediaURLResolver) ResolveMediaURL(ctx context.Context, mediaID pgtype.U
 	}
 
 	return r.media.GetMediaURL(&m, media.ImageProxyOpts{}), nil
+}
+
+// ResolveMediaURLs batch-resolves media ids to display URLs — one query for
+// the whole set (gamification badge/challenge lists).
+func (r *mediaURLResolver) ResolveMediaURLs(ctx context.Context, ids []pgtype.UUID) (map[string]string, error) {
+	items, err := r.media.GetMediaByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(items))
+	for i := range items {
+		out[items[i].ID.String()] = r.media.GetMediaURL(&items[i], media.ImageProxyOpts{})
+	}
+	return out, nil
 }
 
 // ResolveMediaMIME returns the media row's stored MIME type so users.Service

@@ -21,6 +21,9 @@ class ProfileScreen extends ConsumerWidget {
                 title: Text(user.username),
                 subtitle: Text(user.email)),
             ListTile(
+                title: Text(t('compose.my_drafts')),
+                onTap: () => context.push('/studio/drafts')),
+            ListTile(
                 title: Text(t('profile.settings')),
                 onTap: () => context.push('/profile/settings')),
             ListTile(

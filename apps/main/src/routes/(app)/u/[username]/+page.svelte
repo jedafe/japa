@@ -34,6 +34,7 @@
 	import { bookmarkUrl, bookmarkLabel } from '$lib/components/profile/bookmarks';
 	import { contentHref } from '$lib/utils/contentLink';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 
 	let { data }: { data: PageData } = $props();
 
@@ -257,6 +258,11 @@
 	};
 	function rarityColor(r?: string): string {
 		return rarityColors[r ?? ''] ?? 'var(--color-primary)';
+	}
+
+	// Custom accent_color (admin-set) wins over rarity palette.
+	function badgeAccent(b: { rarity?: string; accent_color?: string | null }): string {
+		return b.accent_color || rarityColor(b.rarity);
 	}
 	const unearnedBadges = $derived(
 		isOwnProfile
@@ -1295,13 +1301,17 @@ profile is private, or no stage is set. -->
 						</div>
 						<div class="flex flex-wrap gap-2">
 							{#each data.badges.slice(0, 8) as badge (badge.id)}
-								{@const c = rarityColor(badge.rarity)}
+								{@const c = badgeAccent(badge)}
 								<span
 									class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
 									style="border-color: color-mix(in srgb, {c} 40%, var(--color-border)); color: {c}; background: color-mix(in srgb, {c} 8%, transparent)"
 									title={badge.description}
 								>
-									<Award size={11} />
+									{#if badge.icon_url}
+										<img src={remoteImageUrl(badge.icon_url)} alt="" class="h-4 w-4 object-contain" />
+									{:else}
+										<Award size={11} />
+									{/if}
 									{badge.name}
 								</span>
 							{/each}
@@ -1594,13 +1604,17 @@ profile is private, or no stage is set. -->
 										title={badge.description}
 									>
 										<span
-											class="grid h-7 w-7 shrink-0 place-items-center rounded-full"
-											style="background: color-mix(in srgb, {rarityColor(badge.rarity)} 14%, transparent); color: {rarityColor(badge.rarity)}"
+											class="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full"
+											style="background: color-mix(in srgb, {badgeAccent(badge)} 14%, transparent); color: {badgeAccent(badge)}"
 										>
-											<Award size={14} />
+											{#if badge.icon_url}
+												<img src={remoteImageUrl(badge.icon_url)} alt="" class="h-3/4 w-3/4 object-contain" />
+											{:else}
+												<Award size={14} />
+											{/if}
 										</span>
 										<span class="min-w-0 flex-1">
-											<span class="block truncate text-xs font-medium" style="color: {rarityColor(badge.rarity)}">{badge.name}</span>
+											<span class="block truncate text-xs font-medium" style="color: {badgeAccent(badge)}">{badge.name}</span>
 											<span class="block text-[10px] text-[var(--color-muted)]">
 												{t('profile.earned', 'Earned')} {new Date(badge.awarded_at).toLocaleDateString(i18n.locale, { year: 'numeric', month: 'short' })}
 											</span>
@@ -1624,8 +1638,12 @@ profile is private, or no stage is set. -->
 										class="flex items-center gap-2 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-2 opacity-70"
 										title={t('profile.how_to_earn', 'How to earn') + ': ' + badge.description}
 									>
-										<span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--color-surface)] text-[var(--color-muted)]">
-											<Award size={14} />
+										<span class="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--color-surface)] text-[var(--color-muted)]">
+											{#if badge.icon_url}
+												<img src={remoteImageUrl(badge.icon_url)} alt="" class="h-3/4 w-3/4 object-contain opacity-50 grayscale" />
+											{:else}
+												<Award size={14} />
+											{/if}
 										</span>
 										<span class="min-w-0 flex-1">
 											<span class="block truncate text-xs font-medium text-[var(--color-muted)]">{badge.name}</span>

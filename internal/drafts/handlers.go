@@ -100,6 +100,10 @@ func (h *Handlers) GetDraft(w http.ResponseWriter, r *http.Request) {
 }
 
 var kindRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+var keyRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$`)
+
+// maxDraftDataBytes caps the JSONB payload per draft (BUG-CE-020).
+const maxDraftDataBytes = 256 * 1024
 
 // PutDraft handles PUT /me/form-drafts/{kind}/{key?} — upsert. Body: {"data":{...}}.
 func (h *Handlers) PutDraft(w http.ResponseWriter, r *http.Request) {
@@ -112,12 +116,20 @@ func (h *Handlers) PutDraft(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_kind", "kind must match ^[a-z][a-z0-9_-]{0,63}$")
 		return
 	}
+	if key := chi.URLParam(r, "key"); key != "" && !keyRe.MatchString(key) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_key", "key must match ^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$")
+		return
+	}
 	var body struct {
 		Data json.RawMessage `json:"data"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
 		len(body.Data) == 0 || string(body.Data) == "null" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Body must be {\"data\": {...}}")
+		return
+	}
+	if len(body.Data) > maxDraftDataBytes {
+		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "draft_too_large", "Draft data exceeds the 256KB limit")
 		return
 	}
 	row, err := h.store.UpsertFormDraft(r.Context(), gen.UpsertFormDraftParams{

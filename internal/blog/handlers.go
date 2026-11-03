@@ -1562,15 +1562,13 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	// to its client-side generator). Emitted as a sibling of `data` so the
 	// frontend load function can read envelope.json_ld directly.
 	resp := map[string]any{"data": dto}
-	if jsonLd, jErr := h.content.ResolveJSONLD(r.Context(), "Article", blogPostJSONLDFields(post, dto, clientip.ForwardedBaseURL(r, h.siteURL))); jErr == nil && len(jsonLd) > 0 {
-		resp["json_ld"] = json.RawMessage(jsonLd)
-	} else if jErr != nil {
-		slog.Warn("blog: JSON-LD template resolution failed", "slug", slug, "error", jErr)
-	}
 
 	// GDPR / ADR-029: redact mentions of erased users in body_html and
-	// expose deleted_user_ids for frontend rendering (Section 15).
-	// Best-effort: a failure logs a warning but does not fail the request.
+	// expose deleted_user_ids for frontend rendering (Section 15). Runs
+	// before JSON-LD so structured data never leaks an erased user's
+	// mention attributes. Best-effort: a failure logs a warning but does
+	// not fail the request.
+	bodyForJSONLD := post.BodyHtml
 	if h.mentionCheckers != nil {
 		redactedHTML, erasedIDs, redErr := mentions.RedactErasedMentionsInBody(
 			r.Context(),
@@ -1583,11 +1581,32 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("blog: RedactErasedMentionsInBody failed", "post_id", post.ID.String(), "error", redErr)
 		} else {
 			dto["body_html"] = redactedHTML
+			bodyForJSONLD = redactedHTML
 
 			if len(erasedIDs) > 0 {
 				resp["deleted_user_ids"] = erasedIDs
 			}
 		}
+	}
+
+	// JSON-LD structured data (Section 14 / Section 26). Resolve the
+	// admin-managed Article template, interpolating the post's field values
+	// into the {{field_key}} placeholders. Best-effort: a missing template or
+	// resolution error degrades to no json_ld field (the frontend falls back
+	// to its client-side generator). Emitted as a sibling of `data` so the
+	// frontend load function can read envelope.json_ld directly.
+	if jsonLd, jErr := h.content.ResolveJSONLD(r.Context(), "Article", blogPostJSONLDFields(post, dto, clientip.ForwardedBaseURL(r, h.siteURL))); jErr == nil {
+		// §45: editor FAQ accordion blocks become a FAQPage node — merged
+		// under @graph with the resolved template, or emitted standalone
+		// when no template resolved. Reads the redacted HTML so erased-user
+		// mention markup never reaches structured data.
+		jsonLd = content.InjectFaqPageJSONLD(jsonLd, bodyForJSONLD, post.Body)
+
+		if len(jsonLd) > 0 {
+			resp["json_ld"] = json.RawMessage(jsonLd)
+		}
+	} else {
+		slog.Warn("blog: JSON-LD template resolution failed", "slug", slug, "error", jErr)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, resp)

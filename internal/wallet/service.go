@@ -131,7 +131,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		// Distinguish "not found" from real DB errors (BUG-007). The activity
 		// still counts for badges/challenges even without a point rule.
 		if errors.Is(err, pgx.ErrNoRows) {
-			s.settleWithoutPoints(ctx, event)
+			return s.settleWithoutPoints(ctx, event)
 			return nil
 		}
 
@@ -140,7 +140,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 
 	// Check if rule is enabled
 	if rule.IsEnabled != nil && !*rule.IsEnabled {
-		s.settleWithoutPoints(ctx, event)
+		return s.settleWithoutPoints(ctx, event)
 		return nil
 	}
 
@@ -165,8 +165,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 			// EnableEarning killswitch — no points, but the activity still
 			// counts toward badges/challenges.
 			if !ws.EnableEarning {
-				s.settleWithoutPoints(ctx, event)
-				return nil
+				return s.settleWithoutPoints(ctx, event)
 			}
 		}
 	}
@@ -181,7 +180,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		}
 
 		if count > int64(*rule.CapPerDay) {
-			s.settleWithoutPoints(ctx, event)
+			return s.settleWithoutPoints(ctx, event)
 			return nil // Cap exceeded, skip
 		}
 	}
@@ -193,7 +192,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		}
 
 		if count > int64(*rule.CapPerWeek) {
-			s.settleWithoutPoints(ctx, event)
+			return s.settleWithoutPoints(ctx, event)
 			return nil // Cap exceeded, skip
 		}
 	}
@@ -498,13 +497,42 @@ func (s *Service) evaluateGamification(ctx context.Context, event gen.ActivityEv
 // points are credited — no rule, disabled rule, or frequency caps.
 // Badges/challenges count the activity itself, not the payout (Section 64);
 // marking processed gives exactly-once evaluation on any replay.
-func (s *Service) settleWithoutPoints(ctx context.Context, event gen.ActivityEvent) {
+//
+// The mark must succeed BEFORE eval (PTS-025): UpsertChallengeProgress
+// increments are not idempotent, so an eval that ran against an
+// unprocessed event would double-count on any later replay. Propagating
+// the mark error lets Asynq retry — the retry re-marks then evals once.
+func (s *Service) settleWithoutPoints(ctx context.Context, event gen.ActivityEvent) error {
 	if err := s.store.markEventProcessed(ctx, event.ID); err != nil {
-		slog.Warn("wallet: mark skipped event processed failed",
-			"event_id", event.ID.String(), "error", err)
+		return fmt.Errorf("marking event processed: %w", err)
 	}
 
 	s.evaluateGamification(ctx, event)
+	return nil
+}
+
+// ReprocessUnprocessedEvents re-enqueues activity_events still unprocessed
+// (PTS-024). Events enqueue with their deterministic dedupe already applied
+// — a row re-enqueued after a successful settle is skipped by the
+// processed-flag check, and undoes-dependents whose award hasn't settled
+// remain unprocessed for the next sweep. Idempotent: repeated sweeps
+// converge, never double-apply.
+func (s *Service) ReprocessUnprocessedEvents(ctx context.Context) error {
+	const sweepBatch = 200
+
+	events, err := s.store.listUnprocessedEvents(ctx, sweepBatch)
+	if err != nil {
+		return fmt.Errorf("listing unprocessed events: %w", err)
+	}
+
+	for _, event := range events {
+		if err := s.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
+			slog.Warn("wallet: reprocess enqueue failed",
+				"event_id", event.ID.String(), "error", err)
+		}
+	}
+
+	return nil
 }
 
 // GetBalance returns the current balance for a user (points and/or credits).
@@ -689,8 +717,11 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 	// New balance
 	newBalance := currentBalance + input.Amount
 
-	// Non-negative balance lock (§1.3, Checklist B.10).
-	if newBalance < 0 {
+	// Non-negative balance lock (§1.3, Checklist B.10) — credits only.
+	// Points may legitimately go negative (penalty rules drive signed
+	// balances below zero per ADR-136), so an admin deduction matching a
+	// moderation penalty must not be floored (PTS-022).
+	if newBalance < 0 && input.LedgerType == LedgerTypeCredits {
 		return 0, fmt.Errorf("%w: current=%d, adjustment=%d", errpkg.ErrInsufficientBalance, currentBalance, input.Amount)
 	}
 
@@ -1038,7 +1069,13 @@ type CreateOrUpdateActivityRuleInput struct {
 // CreateOrUpdateActivityRule creates or updates an activity rule.
 func (s *Service) CreateOrUpdateActivityRule(ctx context.Context, input CreateOrUpdateActivityRuleInput) (gen.ActivityPointRule, error) {
 	if input.ActivityKey == "" {
-		return gen.ActivityPointRule{}, errors.New("activity_key is required")
+		return gen.ActivityPointRule{}, fmt.Errorf("%w: activity_key is required", errpkg.ErrInvalid)
+	}
+
+	// PTS-019: a rule for a key nothing emits is silently inert — reject it
+	// instead of letting the admin believe it works.
+	if !IsEmittedActivityKey(input.ActivityKey) {
+		return gen.ActivityPointRule{}, fmt.Errorf("%w: activity_key %q is not emitted by any platform activity", errpkg.ErrInvalid, input.ActivityKey)
 	}
 
 	return s.store.upsertActivityRule(ctx, gen.UpsertActivityRuleParams{

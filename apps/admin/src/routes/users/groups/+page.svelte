@@ -1,19 +1,23 @@
 <script lang="ts">
 	import { siteName } from '$lib/stores/site.svelte';
 	// /users/groups — migrated to the EntityPage scaffold (admin AGENTS.md
-	// mandate for entity list pages). The permission checkbox grid and the
-	// members sub-flow live in snippets/page-local state, same pattern as
-	// /tags and /users/roles.
+	// mandate for entity list pages).
+	//
+	// §03/ADR-003 three-tier RBAC: Groups → Roles → Permissions. Groups are
+	// collections of users; permissions live only on roles. This page manages
+	// members and which roles are attached (Roles sub-flow) — permission sets
+	// themselves are edited on /users/roles. Editing raw permissions here was
+	// removed because the backend materializes each group's permission set as
+	// a hidden "<name> Role" user_roles row, so every group appeared twice —
+	// once here and once on the roles page editing the same grants.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { userManagementApi, permissionsApi, api } from '$lib/api';
+	import { userManagementApi, api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { user } from '$lib/stores/auth.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import PermissionGrid from '$lib/components/ui/PermissionGrid.svelte';
-	import { Trash2, Users2 } from 'lucide-svelte';
+	import { Shield, Trash2, Users2 } from 'lucide-svelte';
 
-	type GroupRole = { id: string; name: string; slug: string };
+	type GroupRole = { id: string; name: string; slug?: string };
 	type GroupMember = { id: string; username: string; display_name: string };
 	type Group = {
 		id: string;
@@ -25,30 +29,8 @@
 		permissions: string[];
 	};
 
-	// The wildcard grant is owner-only on the backend; the picker mirrors
-	// that — non-owners see it locked instead of discovering the 403 on save.
-	const isOwner = $derived(!!user.current?.is_owner);
-
-	// Full permission catalogue — fetched once on mount for the form grid.
-	let allPermissions = $state<string[]>([]);
-
-	$effect(() => {
-		void (async () => {
-			const result = await permissionsApi.list();
-			if (result.ok) allPermissions = result.data ?? [];
-		})();
-	});
-
-	let permSearch = $state('');
-	const filteredPermissions = $derived(
-		permSearch
-			? allPermissions.filter((p) => p.toLowerCase().includes(permSearch.toLowerCase()))
-			: allPermissions
-	);
-
 	// ── Members sub-flow ──────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
-	let pageError = $state('');
 
 	let membersGroup = $state<Group | null>(null);
 	let showMembersModal = $state(false);
@@ -139,19 +121,96 @@
 		}
 	}
 
+	// ── Roles sub-flow ────────────────────────────────────────────────
+	// Attaches/detaches named permission sets via the group_roles join —
+	// the spec'd way groups get permissions (§03). The group's effective
+	// permission list shown in the table/view is the union of its roles.
+	let rolesGroup = $state<Group | null>(null);
+	let showRolesModal = $state(false);
+	let groupRoles = $state<GroupRole[]>([]);
+	let rolesLoading = $state(false);
+	let rolesError = $state('');
+	let roleActionError = $state('');
+	let allRoles = $state<GroupRole[]>([]);
+	let addRoleSelected = $state('');
+
+	// Roles not already attached to this group — picker options.
+	const attachableRoles = $derived(
+		allRoles.filter((r) => !groupRoles.some((gr) => gr.id === r.id))
+	);
+
+	async function loadGroupRoles() {
+		if (!rolesGroup) return;
+		rolesLoading = true;
+		const result = await userManagementApi.listGroupRoles(rolesGroup.id);
+		if (result.ok) {
+			groupRoles = result.data.roles ?? [];
+			rolesError = '';
+		} else {
+			rolesError = result.error ?? t('users.groups.roles_error', 'Failed to load roles');
+		}
+		rolesLoading = false;
+	}
+
+	async function loadAllRoles() {
+		// Picker needs the full set — page_size is capped at 100 server-side,
+		// which covers any realistic role catalogue.
+		const result = await userManagementApi.listRoles('page_size=100');
+		if (result.ok) {
+			allRoles = result.data.roles ?? [];
+		} else {
+			roleActionError = result.error ?? t('users.groups.roles_error', 'Failed to load roles');
+		}
+	}
+
+	function openRoles(group: Group) {
+		rolesGroup = group;
+		groupRoles = [];
+		rolesError = '';
+		roleActionError = '';
+		addRoleSelected = '';
+		showRolesModal = true;
+		loadGroupRoles();
+		if (allRoles.length === 0) loadAllRoles();
+	}
+
+	async function attachRole() {
+		if (!rolesGroup || !addRoleSelected) return;
+		const result = await userManagementApi.assignRoleToGroup(rolesGroup.id, addRoleSelected);
+		if (result.ok) {
+			addRoleSelected = '';
+			roleActionError = '';
+			loadGroupRoles();
+			entityController?.reload();
+		} else {
+			roleActionError = result.error ?? t('users.groups.role_add_error', 'Failed to attach role');
+		}
+	}
+
+	async function detachRole(roleId: string) {
+		if (!rolesGroup) return;
+		const result = await userManagementApi.removeRoleFromGroup(rolesGroup.id, roleId);
+		if (result.ok) {
+			roleActionError = '';
+			loadGroupRoles();
+			entityController?.reload();
+		} else {
+			roleActionError = result.error ?? t('users.groups.role_remove_error', 'Failed to detach role');
+		}
+	}
+
 	// Bulk delete uses the built-in confirm-gated "Delete Selected" — a
 	// page-declared destructive entry with that label is auto-replaced by the
 	// scaffold, which runs config.remove per row and collects failures.
 
 	const fields: FieldDef[] = [
 		{ key: 'name', label: t('users.groups.name', 'Name'), type: 'text', required: true },
-		{ key: 'description', label: t('users.groups.description_label', 'Description'), type: 'textarea' },
-		{ key: 'permissions', label: t('users.groups.permissions', 'Permissions'), type: 'text' }
+		{ key: 'description', label: t('users.groups.description_label', 'Description'), type: 'textarea' }
 	];
 
 	const config: EntityPageConfig = {
 		title: t('users.groups.title', 'User Groups'),
-		description: t('users.groups.description', 'Manage user groups and their permissions'),
+		description: t('users.groups.description', 'Manage user groups, their members and attached roles'),
 		createLabel: t('users.groups.create', 'Create Group'),
 		createPermission: 'admin.rbac.manage',
 		pageSize: 25,
@@ -180,7 +239,7 @@
 			},
 			{
 				key: 'permissions',
-				label: t('users.groups.permissions', 'Permissions'),
+				label: t('users.groups.effective_permissions', 'Effective permissions'),
 				render: (v: string[]) => {
 					if (!v || !Array.isArray(v)) return '';
 					const shown = v.slice(0, 3);
@@ -205,6 +264,11 @@
 				label: t('users.groups.view_members', 'Members'),
 				icon: Users2,
 				onclick: (row: Group) => openMembers(row)
+			},
+			{
+				label: t('users.groups.view_roles', 'Roles'),
+				icon: Shield,
+				onclick: (row: Group) => openRoles(row)
 			},
 			{
 				label: t('common.delete', 'Delete'),
@@ -238,18 +302,21 @@
 			throw new Error(result.error ?? t('common.error', 'Failed to load groups'));
 		},
 		create: async (body) => {
+			// No permissions on create — a group starts with no roles attached;
+			// permission sets are attached via the Roles action (§03 group→role).
 			const res = await userManagementApi.createGroup({
 				name: String(body.name ?? '').trim(),
-				description: String(body.description ?? ''),
-				permissions: Array.isArray(body.permissions) ? body.permissions : []
+				description: String(body.description ?? '')
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		update: async (id, body) => {
+			// IMPORTANT: omit `permissions` entirely — the backend treats a
+			// non-nil permissions field as a full-set replace on the group's
+			// first attached role, so sending [] would wipe that role's grants.
 			const res = await userManagementApi.updateGroup(id, {
 				name: String(body.name ?? '').trim(),
-				description: String(body.description ?? ''),
-				permissions: Array.isArray(body.permissions) ? body.permissions : []
+				description: String(body.description ?? '')
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -265,15 +332,6 @@
 <svelte:head>
 	<title>{t('users.groups.title', 'User Groups')} — {siteName()} Admin</title>
 </svelte:head>
-
-{#if pageError}
-	<div
-		class="mb-4 rounded-lg p-3 text-sm"
-		style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
-	>
-		{pageError}
-	</div>
-{/if}
 
 <EntityPage {config} bind:controller={entityController} />
 
@@ -302,7 +360,7 @@
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.member_count}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.groups.permissions', 'Permissions')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('users.groups.effective_permissions', 'Effective permissions')}</p>
 			{#if !row.permissions || row.permissions.length === 0}
 				<p class="mt-1 text-sm" style="color: var(--color-muted)">—</p>
 			{:else}
@@ -316,7 +374,8 @@
 	</div>
 {/snippet}
 
-<!-- Create/Edit form body (searchable permissions checkbox grid) -->
+<!-- Create/Edit form body — permissions are managed via the Roles action,
+     not edited directly on the group (§03 three-tier RBAC). -->
 {#snippet GroupForm({ value, editing }: { value: Record<string, any>; editing: any | null })}
 	<div class="space-y-4">
 		<div>
@@ -346,17 +405,7 @@
 				bind:value={value.description}
 			></textarea>
 		</div>
-		<div>
-			<p class="mb-2 text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.permissions', 'Permissions')}</p>
-			<input
-				type="text"
-				class="mb-2 w-full rounded-md border px-3 py-1.5 text-xs"
-				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-				placeholder={t('users.groups.search_permissions', 'Search permissions...')}
-				bind:value={permSearch}
-			/>
-			<PermissionGrid permissions={filteredPermissions} bind:value={value.permissions} {isOwner} />
-		</div>
+		<p class="text-xs" style="color: var(--color-muted)">{t('users.groups.roles_form_hint', 'Permission sets are attached to the group as roles — use the Roles action on the group row.')}</p>
 	</div>
 {/snippet}
 
@@ -442,5 +491,62 @@
 	</div>
 	{#snippet footer()}
 		<Button variant="outline" onclick={() => { showMembersModal = false; }}>{t('common.close', 'Close')}</Button>
+	{/snippet}
+</Modal>
+
+<!-- Roles modal — attach/detach named permission sets (§03 group→role).
+     Permission sets themselves are edited on /users/roles. -->
+<Modal bind:open={showRolesModal} title={rolesGroup ? `${t('users.groups.roles', 'Roles')} — ${rolesGroup.name}` : t('users.groups.roles', 'Roles')} size="lg">
+	<div class="space-y-3">
+		{#if roleActionError}
+			<div class="rounded-md border px-3 py-2 text-xs" style="border-color: var(--color-danger); color: var(--color-danger)">{roleActionError}</div>
+		{/if}
+
+		{#if rolesError}
+			<p class="text-xs" style="color: var(--color-danger)">{rolesError}</p>
+		{:else if rolesLoading}
+			<p class="text-xs" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
+		{:else if groupRoles.length === 0}
+			<p class="text-xs" style="color: var(--color-muted)">{t('users.groups.no_roles', 'No roles attached — this group grants no permissions.')}</p>
+		{:else}
+			<div class="max-h-64 overflow-y-auto">
+				{#each groupRoles as r (r.id)}
+					<div class="flex items-center justify-between gap-2 border-b py-1.5 text-xs" style="border-color: var(--color-border)">
+						<span class="font-medium" style="color: var(--color-foreground)">{r.name}</span>
+						{#if !rolesGroup?.is_system}
+							<button
+								class="rounded px-2 py-0.5 text-xs"
+								style="color: var(--color-danger)"
+								onclick={() => detachRole(r.id)}
+							>{t('common.remove', 'Remove')}</button>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+
+		{#if !rolesGroup?.is_system}
+			<div class="border-t pt-3" style="border-color: var(--color-border)">
+				<label for="attach-role-select" class="mb-2 block text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.attach_role', 'Attach role')}</label>
+				<div class="flex gap-2">
+					<select
+						id="attach-role-select"
+						class="flex-1 rounded-md border px-3 py-1.5 text-xs"
+						style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+						bind:value={addRoleSelected}
+					>
+						<option value="">{t('users.groups.select_role', 'Select a role...')}</option>
+						{#each attachableRoles as r (r.id)}
+							<option value={r.id}>{r.name}</option>
+						{/each}
+					</select>
+					<Button size="sm" onclick={attachRole} disabled={!addRoleSelected}>{t('common.add', 'Add')}</Button>
+				</div>
+				<p class="mt-2 text-xs" style="color: var(--color-muted)">{t('users.groups.roles_hint', 'Manage a role’s permission set on the Roles page.')}</p>
+			</div>
+		{/if}
+	</div>
+	{#snippet footer()}
+		<Button variant="outline" onclick={() => { showRolesModal = false; }}>{t('common.close', 'Close')}</Button>
 	{/snippet}
 </Modal>

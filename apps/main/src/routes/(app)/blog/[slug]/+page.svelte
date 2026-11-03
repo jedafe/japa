@@ -21,6 +21,7 @@
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { excerpt } from '$lib/utils/seo-score';
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
+	import { mergeJsonLd } from '$lib/seo/jsonld';
 	import { contentHref } from '$lib/utils/contentLink';
 	import type { PageData } from './$types';
 
@@ -101,8 +102,11 @@
 	// resolves the admin-managed Article template server-side and returns it
 	// in the response envelope's `json_ld` sidecar. Fall back to a basic
 	// BlogPosting schema when the backend didn't emit one (no active template).
+	// mergeJsonLd keeps the fallback alongside a standalone FAQPage payload
+	// (backend emits one when no template resolves but the body carries a
+	// §45 editor faq block).
 	const jsonLd = $derived(
-		data.jsonLd ?? {
+		mergeJsonLd(data.jsonLd, {
 			'@context': 'https://schema.org',
 			'@type': 'BlogPosting',
 			headline: article.title,
@@ -110,7 +114,7 @@
 			author: { '@type': 'Person', name: article.author_name || t('app.name') },
 			url: canonical,
 			description
-		}
+		})
 	);
 
 	// View tracking (Section 14 — POST /content/{id}/view). Fire-and-forget

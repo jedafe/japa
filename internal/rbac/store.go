@@ -126,9 +126,10 @@ func (s *Store) CreateGroupWithRole(ctx context.Context, name, slug, description
 	}
 
 	if len(permKeys) > 0 {
+		roleName := groupBackingRoleName(name)
 		roleID, err := q.CreateUserRole(ctx, gen.CreateUserRoleParams{
-			Name: name + " Role",
-			Slug: slugify(name + " Role"),
+			Name: roleName,
+			Slug: slugify(roleName),
 		})
 		if err != nil {
 			return pgtype.UUID{}, fmt.Errorf("creating role for group: %w", err)
@@ -584,6 +585,13 @@ type Role struct {
 	Slug        string      `json:"slug"`
 	Permissions []string    `json:"permissions"`
 	UserCount   int32       `json:"user_count"`
+	// GroupCount is how many user groups the role is attached to — the
+	// blast radius of a delete (members of all of them lose the grants).
+	GroupCount int32 `json:"group_count"`
+	// IsSystem marks the seeded roles backing the is_system/tier groups —
+	// DeleteRole refuses them (ErrSystemRole), so the admin UI hides the
+	// delete affordance instead of surfacing a guaranteed 409.
+	IsSystem bool `json:"is_system"`
 }
 
 // roleSortKeys is the whitelist of ListRolesPaginated sort columns.
@@ -625,14 +633,46 @@ func (s *Store) ListRolesPaginated(ctx context.Context, search, sortKey, sortDir
 		rolePerms[r.RoleID] = append(rolePerms[r.RoleID], r.Key)
 	}
 
+	// Batch query: group attachment counts per role (same no-N+1 pattern).
+	countRows, err := s.read.CountGroupsByRole(ctx)
+	if err != nil {
+		slog.Warn("rbac: failed to batch count groups by role", "error", err)
+
+		countRows = nil
+	}
+
+	groupCounts := make(map[pgtype.UUID]int32, len(countRows))
+	for _, r := range countRows {
+		groupCounts[r.RoleID] = r.GroupCount
+	}
+
+	// DeleteRole also refuses roles backing an is_system group regardless of
+	// slug — resolve that set once so IsSystem matches the real guard
+	// (system groups are a small fixed set, so this stays bounded).
+	systemRoleIDs := make(map[pgtype.UUID]bool)
+	if allGroups, err := s.read.ListUserGroups(ctx); err == nil {
+		for _, g := range allGroups {
+			if !g.IsSystem {
+				continue
+			}
+			if rids, lErr := s.read.ListGroupRolesByGroupID(ctx, g.ID); lErr == nil {
+				for _, rid := range rids {
+					systemRoleIDs[rid.ID] = true
+				}
+			}
+		}
+	}
+
 	roles := make([]Role, 0, len(rows))
 
 	for _, r := range rows {
 		role := Role{
-			ID:        r.ID,
-			Name:      r.Name,
-			Slug:      r.Slug,
-			UserCount: r.UserCount,
+			ID:         r.ID,
+			Name:       r.Name,
+			Slug:       r.Slug,
+			UserCount:  r.UserCount,
+			GroupCount: groupCounts[r.ID],
+			IsSystem:   systemRoleSlugs[r.Slug] || systemRoleIDs[r.ID],
 		}
 		role.Permissions = rolePerms[r.ID]
 

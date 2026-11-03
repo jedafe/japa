@@ -353,9 +353,10 @@
 		{ key: 'icon_media_id', label: t('gamification.icon', 'Icon'), type: 'text' },
 		{ key: 'trigger_type', label: t('gamification.trigger', 'Trigger Type'), type: 'select', options: triggerTypeOptions, required: true },
 		{ key: 'trigger_value', label: t('gamification.trigger_value', 'Trigger Value'), type: 'number' },
-		{ key: 'trigger_activity_key', label: t('gamification.activity_key', 'Activity Key'), type: 'text' },
+		{ key: 'trigger_activity_key', label: t('gamification.activity_key', 'Activity Key'), type: 'text', help: t('gamification.activity_key_help', 'Avoid reversible keys (reaction.*, *.voted) — vote/unvote cycles can inflate activity_count progress') },
 		{ key: 'category', label: t('gamification.category', 'Category'), type: 'select', options: badgeCategories },
 		{ key: 'rarity', label: t('gamification.rarity', 'Rarity'), type: 'select', options: rarityOptions },
+		{ key: 'accent_color', label: t('gamification.accent_color', 'Accent Color'), type: 'color' },
 		{ key: 'tier', label: t('gamification.tier', 'Tier'), type: 'select', options: tierOptions },
 		{ key: 'badge_group', label: t('gamification.badge_group', 'Badge Group'), type: 'text' },
 		{ key: 'points_reward', label: t('gamification.points_reward', 'Points Reward'), type: 'number' },
@@ -505,6 +506,7 @@
 					slug: body.slug.trim(),
 					description: body.description ?? '',
 					icon_media_id: body.icon_media_id || undefined,
+					accent_color: body.accent_color || undefined,
 					trigger_type: body.trigger_type,
 					trigger_value: intOr(body.trigger_value),
 					trigger_activity_key: body.trigger_activity_key?.trim() || undefined,
@@ -550,6 +552,8 @@
 			};
 			if (body.icon_media_id) payload.icon_media_id = body.icon_media_id;
 			else if (row?.icon_media_id) payload.clear_icon_media_id = true;
+			if (body.accent_color) payload.accent_color = body.accent_color;
+			else if (row?.accent_color) payload.clear_accent_color = true;
 			if (payload.trigger_value === undefined && row?.trigger_value != null) payload.clear_trigger_value = true;
 			if (payload.trigger_activity_key === undefined && row?.trigger_activity_key) payload.clear_trigger_activity_key = true;
 			if (payload.category === undefined && row?.category) payload.clear_category = true;
@@ -577,7 +581,7 @@
 		{ key: 'slug', label: t('gamification.slug', 'Slug'), type: 'text', required: true, readonlyInEdit: true },
 		{ key: 'description', label: t('gamification.description', 'Description'), type: 'textarea' },
 		{ key: 'image_media_id', label: t('gamification.image', 'Image'), type: 'text' },
-		{ key: 'activity_key', label: t('gamification.activity', 'Activity Key'), type: 'text', required: true },
+		{ key: 'activity_key', label: t('gamification.activity', 'Activity Key'), type: 'text', required: true, help: t('gamification.activity_key_help', 'Avoid reversible keys (reaction.*, *.voted) — vote/unvote cycles can inflate progress') },
 		{ key: 'target_count', label: t('gamification.target', 'Target Count'), type: 'number', required: true },
 		{ key: 'reward_points', label: t('gamification.reward', 'Reward Points'), type: 'number' },
 		{ key: 'reward_badge_id', label: t('gamification.reward_badge', 'Reward Badge'), type: 'select', options: badgeOptions },
@@ -1318,7 +1322,7 @@
 				<AutocompleteSelect id="badge-tier" bind:value={value.tier} options={tierOptions} class="w-full" />
 			</div>
 		</div>
-		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+		<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
 			<div>
 				<label for="badge-group" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.badge_group', 'Badge Group')}</label>
 				<input id="badge-group" type="text" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.badge_group} />
@@ -1326,6 +1330,20 @@
 			<div>
 				<label for="badge-points" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.points_reward', 'Points Reward')}</label>
 				<input id="badge-points" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.points_reward} />
+			</div>
+			<div>
+				<label for="badge-accent" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.accent_color', 'Accent Color')}</label>
+				<div class="flex items-center gap-2">
+					<input id="badge-accent" type="color" class="h-9 w-14 cursor-pointer rounded-md border p-1" style="border-color: var(--color-border); background: var(--color-surface)"
+						value={value.accent_color || '#6b7280'}
+						oninput={(e) => (value.accent_color = e.currentTarget.value)} />
+					{#if value.accent_color}
+						<span class="font-mono text-xs" style="color: var(--color-muted)">{value.accent_color}</span>
+						<Button variant="ghost" size="sm" onclick={() => (value.accent_color = '')}>{t('gamification.remove', 'Remove')}</Button>
+					{:else}
+						<span class="text-xs" style="color: var(--color-muted)">{t('gamification.accent_inherit', 'Inherits rarity color')}</span>
+					{/if}
+				</div>
 			</div>
 		</div>
 		<div class="flex flex-wrap items-center gap-4">

@@ -1045,21 +1045,26 @@
 										</label>
 									</td>
 									<td class="px-4 py-3">
+										<input
+											type="password"
+											class="w-full max-w-xs rounded border px-2 py-1 text-xs"
+											style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
+											placeholder={p.has_api_key
+												? '•••••••• (enter new key to replace)'
+												: p.provider_name === 'openverse'
+													? t('app.media.openverse_creds_placeholder', 'client_id:client_secret (optional)')
+													: t('app.media.paste_api_key', 'Paste API key...')}
+											onkeydown={(e) => {
+												if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+													updateProviderKey(p.provider_name, e.currentTarget.value);
+													e.currentTarget.value = '';
+												}
+											}}
+										/>
 										{#if p.provider_name === 'openverse'}
-											<span class="text-xs" style="color: var(--color-muted)">{t('app.media.no_key_required', 'No key required')}</span>
-										{:else}
-											<input
-												type="password"
-												class="w-full max-w-xs rounded border px-2 py-1 text-xs"
-												style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-												placeholder={p.has_api_key ? '•••••••• (enter new key to replace)' : t('app.media.paste_api_key', 'Paste API key...')}
-												onkeydown={(e) => {
-													if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-														updateProviderKey(p.provider_name, e.currentTarget.value);
-														e.currentTarget.value = '';
-													}
-												}}
-											/>
+											<p class="mt-1 text-xs" style="color: var(--color-muted)">
+												{t('app.media.openverse_creds_hint', 'Anonymous works but is capped ~200 req/day — OAuth credentials raise the limit.')}
+											</p>
 										{/if}
 									</td>
 									<td class="px-4 py-3">

@@ -1483,7 +1483,11 @@ func (s *Service) GetUserDraft(ctx context.Context, userID, contentID pgtype.UUI
 		PublishAt:       tsPtr(row.PublishAt),
 		PublishedAt:     tsPtr(row.PublishedAt),
 		CreatedAt:       row.CreatedAt.Time.Format(time.RFC3339),
-		UpdatedAt:       row.UpdatedAt.Time.Format(time.RFC3339),
+		// RFC3339Nano — the composer echoes updated_at back as
+		// expected_updated_at for the U1 optimistic lock; second-precision
+		// truncation would drop the Postgres microseconds and make every
+		// edit of an existing post fail the stale-write check.
+		UpdatedAt:       row.UpdatedAt.Time.Format(time.RFC3339Nano),
 	}, nil
 }
 
@@ -1502,7 +1506,7 @@ func (s *Service) GetUserContent(ctx context.Context, userID, contentID pgtype.U
 }
 
 // GetContentForEditor returns any content by ID within the platform (no author
-// filter) for super-admins or users with the RBAC `content.edit` permission
+// filter) for super-admins or users with the RBAC `content.edit_any` permission
 // who need to edit content they don't own. The handler is responsible for
 // checking permissions before calling this — it is NOT author-scoped.
 // Returns pgx.ErrNoRows (→ 404) when the content is missing or belongs to a
@@ -1560,7 +1564,9 @@ func draftResponseFromRow(
 		PublishAt:       tsPtr(publishAt),
 		PublishedAt:     tsPtr(publishedAt),
 		CreatedAt:       createdAt.Time.Format(time.RFC3339),
-		UpdatedAt:       updatedAt.Time.Format(time.RFC3339),
+		// RFC3339Nano — see GetUserDraft: updated_at feeds the U1
+		// optimistic-lock precondition and must keep microsecond precision.
+		UpdatedAt:       updatedAt.Time.Format(time.RFC3339Nano),
 	}
 }
 

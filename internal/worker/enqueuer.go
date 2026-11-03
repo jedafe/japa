@@ -604,6 +604,7 @@ var taskTypeCatalog = []struct {
 	{TypeMutualAidExpire, "low", "Expire mutual aid posts past their 30-day expires_at and notify owners 3 days before (§85)"},
 	// §INTEL — daily freshness decay cron, low tier (ADR-112).
 	{TypeWalletReconcilePayouts, "low", "Every 15m — settle in-flight withdrawals via provider status (§58, ALG-005)"},
+	{TypeWalletReprocessEvents, "low", "Every 10m — re-enqueue stranded unprocessed activity_events (§28, PTS-024)"},
 	{TypeIntelRefreshFreshness, "low", "Daily freshness decay + stale re-crawl enqueue"},
 }
 

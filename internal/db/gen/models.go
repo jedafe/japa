@@ -777,6 +777,7 @@ type BadgeDefinition struct {
 	AvailableFrom      pgtype.Timestamptz `json:"available_from"`
 	AvailableUntil     pgtype.Timestamptz `json:"available_until"`
 	SeasonID           pgtype.UUID        `json:"season_id"`
+	AccentColor        *string            `json:"accent_color"`
 }
 
 type BadgeProgress struct {

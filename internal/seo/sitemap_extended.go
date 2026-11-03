@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jedafe/japa/internal/bots"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -24,10 +26,10 @@ import (
 
 // latestSimpleLastMod runs a scalar updated_at query and formats it RFC3339,
 // returning "" when the query fails or yields no row.
-func (h *SitemapHandler) latestSimpleLastMod(query string, args ...any) string {
+func (h *SitemapHandler) latestSimpleLastMod(ctx context.Context, query string, args ...any) string {
 	var ts time.Time
 
-	if err := h.reader.QueryRow(context.Background(), query, args...).Scan(&ts); err != nil {
+	if err := h.reader.QueryRow(ctx, query, args...).Scan(&ts); err != nil {
 		return ""
 	}
 
@@ -70,7 +72,8 @@ func (h *SitemapHandler) ServeUniversitiesSitemap(w http.ResponseWriter, r *http
 		 JOIN space_types st ON st.id = s.space_type_id AND s.level = 'university'
 		 WHERE s.status = 'active' AND s.deleted_at IS NULL AND s.visibility = 'public'`+
 		gate+`
-		 ORDER BY s.updated_at DESC`, args...)
+		 ORDER BY s.updated_at DESC
+		 LIMIT 50000`, args...)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -102,8 +105,8 @@ func (h *SitemapHandler) ServeUniversitiesSitemap(w http.ResponseWriter, r *http
 
 // latestUniversitiesLastMod returns the most recent university space
 // updated_at, or empty.
-func (h *SitemapHandler) latestUniversitiesLastMod() string {
-	return h.latestSimpleLastMod(`SELECT s.updated_at
+func (h *SitemapHandler) latestUniversitiesLastMod(ctx context.Context) string {
+	return h.latestSimpleLastMod(ctx, `SELECT s.updated_at
 		 FROM spaces s
 		 JOIN space_types st ON st.id = s.space_type_id AND s.level = 'university'
 		 WHERE s.status = 'active' AND s.deleted_at IS NULL AND s.visibility = 'public'
@@ -125,7 +128,8 @@ func (h *SitemapHandler) ServeCoursesSitemap(w http.ResponseWriter, r *http.Requ
 		 JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
 		 JOIN university_course_catalog c ON c.id = o.course_id AND c.deleted_at IS NULL
 		 WHERE o.deleted_at IS NULL AND o.is_published = true AND c.is_published = true
-		 ORDER BY o.updated_at DESC`)
+		 ORDER BY o.updated_at DESC
+		 LIMIT 50000`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -157,8 +161,8 @@ func (h *SitemapHandler) ServeCoursesSitemap(w http.ResponseWriter, r *http.Requ
 
 // latestCoursesLastMod returns the most recent published offering updated_at,
 // or empty.
-func (h *SitemapHandler) latestCoursesLastMod() string {
-	return h.latestSimpleLastMod(`SELECT o.updated_at
+func (h *SitemapHandler) latestCoursesLastMod(ctx context.Context) string {
+	return h.latestSimpleLastMod(ctx, `SELECT o.updated_at
 		 FROM university_course_offerings o
 		 JOIN university_course_catalog c ON c.id = o.course_id AND c.deleted_at IS NULL
 		 WHERE o.deleted_at IS NULL AND o.is_published = true AND c.is_published = true
@@ -179,8 +183,9 @@ func (h *SitemapHandler) expiredJobSlugs(ctx context.Context) map[string]struct{
 		 WHERE c.content_type = 'job_listing'
 		   AND cf.key = 'application_deadline'
 		   AND (cfv.value_date < now()
-		        OR CASE WHEN cfv.value_text ~ '^\d{4}-\d{2}-\d{2}'
-		                THEN cfv.value_text::timestamptz END < now())`)
+		        OR (cfv.value_text ~ '^\d{4}-\d{2}-\d{2}'
+		            AND pg_input_is_valid('timestamptz', cfv.value_text)
+		            AND cfv.value_text::timestamptz < now()))`)
 	if err != nil {
 		slog.Warn("sitemap: failed to list expired jobs, skipping expiry filter", "error", err)
 		return nil
@@ -210,7 +215,7 @@ func (h *SitemapHandler) ServeJobsSitemap(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	rows, err := h.queries.ListPublishedSlugsForSitemap(r.Context())
+	rows, err := h.queries.ListPublishedSlugsForSitemap(r.Context(), gen.ListPublishedSlugsForSitemapParams{ChunkLimit: sitemapChunkSize, TypeFilter: "job_listing"})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -262,7 +267,7 @@ func (h *SitemapHandler) ServeJobsSitemap(w http.ResponseWriter, r *http.Request
 // latestJobsLastMod returns the most recent published job_listing updated_at,
 // or empty.
 func (h *SitemapHandler) latestJobsLastMod(ctx context.Context) string {
-	rows, err := h.queries.ListPublishedSlugsForSitemap(ctx)
+	rows, err := h.queries.ListPublishedSlugsForSitemap(ctx, gen.ListPublishedSlugsForSitemapParams{ChunkLimit: sitemapChunkSize, TypeFilter: "job_listing"})
 	if err != nil {
 		return ""
 	}
@@ -292,7 +297,8 @@ func (h *SitemapHandler) ServeScholarshipsSitemap(w http.ResponseWriter, r *http
 		 WHERE c.status = 'published' AND c.deleted_at IS NULL
 		   AND c.visibility = 'public' AND c.seo_indexable = true
 		   AND c.guide_category = 'scholarship'
-		 ORDER BY c.updated_at DESC`)
+		 ORDER BY c.updated_at DESC
+		 LIMIT 50000`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -324,8 +330,8 @@ func (h *SitemapHandler) ServeScholarshipsSitemap(w http.ResponseWriter, r *http
 
 // latestScholarshipsLastMod returns the most recent published scholarship
 // guide updated_at, or empty.
-func (h *SitemapHandler) latestScholarshipsLastMod() string {
-	return h.latestSimpleLastMod(`SELECT c.updated_at
+func (h *SitemapHandler) latestScholarshipsLastMod(ctx context.Context) string {
+	return h.latestSimpleLastMod(ctx, `SELECT c.updated_at
 		 FROM scholarships s
 		 JOIN contents c ON c.id = s.guide_id
 		 WHERE c.status = 'published' AND c.deleted_at IS NULL
@@ -344,7 +350,7 @@ func (h *SitemapHandler) ServeServicesSitemap(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	rows, err := h.queries.ListPublishedSlugsForSitemap(r.Context())
+	rows, err := h.queries.ListPublishedSlugsForSitemap(r.Context(), gen.ListPublishedSlugsForSitemapParams{ChunkLimit: sitemapChunkSize, TypeFilter: "service_listing"})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -391,7 +397,7 @@ func (h *SitemapHandler) ServeServicesSitemap(w http.ResponseWriter, r *http.Req
 // latestServicesLastMod returns the most recent published service_listing
 // updated_at, or empty.
 func (h *SitemapHandler) latestServicesLastMod(ctx context.Context) string {
-	rows, err := h.queries.ListPublishedSlugsForSitemap(ctx)
+	rows, err := h.queries.ListPublishedSlugsForSitemap(ctx, gen.ListPublishedSlugsForSitemapParams{ChunkLimit: sitemapChunkSize, TypeFilter: "service_listing"})
 	if err != nil {
 		return ""
 	}
@@ -409,6 +415,12 @@ func (h *SitemapHandler) latestServicesLastMod(ctx context.Context) string {
 // non-deleted page (/wiki/{space_slug}/{page_slug}) plus one index URL per
 // space (/wiki/{space_slug}). Matches the public wiki handlers (HandleGetPage
 // / HandleGetIndex) and the frontend routes.
+//
+// The same indexability contract as the rendered page applies: a page only
+// makes the sitemap when its latest approved prose revision meets the
+// seo.sitemap.wiki_min_words floor — the page itself renders noindex,follow
+// below that threshold (wiki.Service dto.Indexable), and sitemaps must not
+// advertise noindexed URLs.
 func (h *SitemapHandler) ServeWikiSitemap(w http.ResponseWriter, r *http.Request) {
 	if h.cachedSitemapXML(w, r, "wiki") {
 		return
@@ -418,22 +430,30 @@ func (h *SitemapHandler) ServeWikiSitemap(w http.ResponseWriter, r *http.Request
 	// (seeded pages still awaiting first content) return 200 but carry no
 	// content, so listing them would push thin pages at crawlers.
 	// kind='fields' revisions hold field ops only, never page prose (§80).
-	rows, err := h.reader.Query(r.Context(), `SELECT sp.slug, wp.slug, wp.updated_at
+	rows, err := h.reader.Query(r.Context(), `SELECT sp.slug, wp.slug, wp.updated_at,
+		        COALESCE(rev.content, '{}'::jsonb)
 		 FROM wiki_pages wp
 		 JOIN spaces sp ON sp.id = wp.space_id AND sp.deleted_at IS NULL
+		 JOIN LATERAL (
+		     SELECT wr.content FROM wiki_revisions wr
+		     WHERE wr.wiki_page_id = wp.id AND wr.status = 'approved'
+		       AND wr.kind <> 'fields' AND wr.deleted_at IS NULL
+		     ORDER BY wr.created_at DESC LIMIT 1
+		 ) rev ON true
 		 WHERE wp.is_active = true AND wp.deleted_at IS NULL
-		   AND EXISTS (
-		       SELECT 1 FROM wiki_revisions wr
-		       WHERE wr.wiki_page_id = wp.id AND wr.status = 'approved'
-		         AND wr.kind <> 'fields' AND wr.deleted_at IS NULL
-		   )
-		 ORDER BY wp.updated_at DESC`)
+		 ORDER BY wp.updated_at DESC
+		 LIMIT 50000`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
 	}
 
 	defer rows.Close()
+
+	minWords := 500
+	if h.settings != nil {
+		minWords = h.settings.GetIntOr(r.Context(), "seo.sitemap.wiki_min_words", 500)
+	}
 
 	base := h.baseURL(r)
 	entries := make([]urlEntry, 0)
@@ -444,7 +464,15 @@ func (h *SitemapHandler) ServeWikiSitemap(w http.ResponseWriter, r *http.Request
 		var spaceSlug, pageSlug string
 
 		var updatedAt time.Time
-		if err := rows.Scan(&spaceSlug, &pageSlug, &updatedAt); err != nil {
+
+		var revContent []byte
+		if err := rows.Scan(&spaceSlug, &pageSlug, &updatedAt, &revContent); err != nil {
+			continue
+		}
+
+		// Word floor mirrors wiki.Service's dto.Indexable contract — pages
+		// under the floor render noindex,follow and must not be advertised.
+		if len(strings.Fields(bots.TipTapText(revContent))) < minWords {
 			continue
 		}
 
@@ -480,8 +508,8 @@ func (h *SitemapHandler) ServeWikiSitemap(w http.ResponseWriter, r *http.Request
 
 // latestWikiLastMod returns the most recent active wiki page updated_at, or
 // empty.
-func (h *SitemapHandler) latestWikiLastMod() string {
-	return h.latestSimpleLastMod(`SELECT wp.updated_at
+func (h *SitemapHandler) latestWikiLastMod(ctx context.Context) string {
+	return h.latestSimpleLastMod(ctx, `SELECT wp.updated_at
 		 FROM wiki_pages wp
 		 WHERE wp.is_active = true AND wp.deleted_at IS NULL
 		 ORDER BY wp.updated_at DESC LIMIT 1`)
@@ -498,7 +526,8 @@ func (h *SitemapHandler) ServeCalendarSitemap(w http.ResponseWriter, r *http.Req
 	rows, err := h.reader.Query(r.Context(), `SELECT id, updated_at
 		 FROM calendar_entries
 		 WHERE status = 'published' AND deleted_at IS NULL
-		 ORDER BY updated_at DESC`)
+		 ORDER BY updated_at DESC
+		 LIMIT 50000`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -530,8 +559,8 @@ func (h *SitemapHandler) ServeCalendarSitemap(w http.ResponseWriter, r *http.Req
 
 // latestCalendarLastMod returns the most recent published calendar entry
 // updated_at, or empty.
-func (h *SitemapHandler) latestCalendarLastMod() string {
-	return h.latestSimpleLastMod(`SELECT updated_at
+func (h *SitemapHandler) latestCalendarLastMod(ctx context.Context) string {
+	return h.latestSimpleLastMod(ctx, `SELECT updated_at
 		 FROM calendar_entries
 		 WHERE status = 'published' AND deleted_at IS NULL
 		 ORDER BY updated_at DESC LIMIT 1`)
@@ -549,7 +578,8 @@ func (h *SitemapHandler) ServeScamAlertsSitemap(w http.ResponseWriter, r *http.R
 	rows, err := h.reader.Query(r.Context(), `SELECT id, updated_at
 		 FROM scam_reports
 		 WHERE status = 'confirmed' AND deleted_at IS NULL
-		 ORDER BY updated_at DESC`)
+		 ORDER BY updated_at DESC
+		 LIMIT 50000`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -581,8 +611,8 @@ func (h *SitemapHandler) ServeScamAlertsSitemap(w http.ResponseWriter, r *http.R
 
 // latestScamAlertsLastMod returns the most recent confirmed scam report
 // updated_at, or empty.
-func (h *SitemapHandler) latestScamAlertsLastMod() string {
-	return h.latestSimpleLastMod(`SELECT updated_at
+func (h *SitemapHandler) latestScamAlertsLastMod(ctx context.Context) string {
+	return h.latestSimpleLastMod(ctx, `SELECT updated_at
 		 FROM scam_reports
 		 WHERE status = 'confirmed' AND deleted_at IS NULL
 		 ORDER BY updated_at DESC LIMIT 1`)
@@ -599,7 +629,7 @@ func (h *SitemapHandler) ServeComparisonsSitemap(w http.ResponseWriter, r *http.
 		return
 	}
 
-	rows, err := h.queries.ListPublishedSlugsForSitemap(r.Context())
+	rows, err := h.queries.ListPublishedSlugsForSitemap(r.Context(), gen.ListPublishedSlugsForSitemapParams{ChunkLimit: sitemapChunkSize, TypeFilter: "comparison"})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -651,7 +681,7 @@ func (h *SitemapHandler) ServeComparisonsSitemap(w http.ResponseWriter, r *http.
 // latestComparisonsLastMod returns the most recent published comparison
 // content updated_at, or empty.
 func (h *SitemapHandler) latestComparisonsLastMod(ctx context.Context) string {
-	rows, err := h.queries.ListPublishedSlugsForSitemap(ctx)
+	rows, err := h.queries.ListPublishedSlugsForSitemap(ctx, gen.ListPublishedSlugsForSitemapParams{ChunkLimit: sitemapChunkSize, TypeFilter: "comparison"})
 	if err != nil {
 		return ""
 	}

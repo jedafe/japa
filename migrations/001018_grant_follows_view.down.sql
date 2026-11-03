@@ -8,8 +8,7 @@ BEGIN;
 DELETE FROM role_permissions
 WHERE role_id IN (
     SELECT id FROM user_roles
-    WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
-      AND slug IN ('member', 'pro_member', 'business_member')
+    WHERE slug IN ('member', 'pro_member', 'business_member')
 )
 AND permission_id IN (
     SELECT id FROM permissions

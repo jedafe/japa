@@ -250,6 +250,25 @@ func (h *Handlers) HandleGetLeaderboard(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// PTS-017: a space-scoped leaderboard reveals that space's member list +
+	// points. Non-public spaces are member-only; a missing/forbidden space
+	// must 404 (not 403) so the route cannot be used to probe space privacy.
+	var viewer pgtype.UUID
+	if u := auth.FromContext(r.Context()); u != nil {
+		viewer = u.UserID
+	}
+
+	allowed, aerr := h.service.CanViewSpaceLeaderboard(r.Context(), scope, viewer)
+	if aerr != nil {
+		slog.Error("gamification: leaderboard scope check failed", "error", aerr)
+		errpkg.WriteError(w, http.StatusInternalServerError, "leaderboard_fetch_failed", "Failed to fetch leaderboard")
+		return
+	}
+	if !allowed {
+		errpkg.WriteError(w, http.StatusNotFound, "leaderboard_not_found", "Leaderboard not found")
+		return
+	}
+
 	entries, err := h.service.GetLeaderboard(r.Context(), scope, period, limit)
 	if err != nil {
 		if writeDisabled(w, err) {
@@ -811,7 +830,7 @@ func (h *Handlers) HandleAdminListAwardEvents(w http.ResponseWriter, r *http.Req
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": events,
+		"data":       events,
 		"pagination": map[string]any{"total": total, "limit": limit, "offset": offset},
 	})
 }
@@ -875,8 +894,15 @@ func (h *Handlers) HandleAdminCreateSeason(w http.ResponseWriter, r *http.Reques
 
 	season, err := h.service.CreateSeason(r.Context(), in)
 	if err != nil {
-		slog.Warn("gamification: create season failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "season_create_failed", err.Error())
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", validationMessage(err))
+		case errors.Is(err, ErrSlugExists):
+			errpkg.WriteError(w, http.StatusConflict, "slug_exists", "A season with this slug already exists")
+		default:
+			slog.Error("gamification: create season failed", "error", err)
+			errpkg.WriteError(w, http.StatusBadRequest, "season_create_failed", "Failed to create season")
+		}
 		return
 	}
 
@@ -907,8 +933,15 @@ func (h *Handlers) HandleAdminUpdateSeason(w http.ResponseWriter, r *http.Reques
 
 	season, err := h.service.UpdateSeason(r.Context(), id, in)
 	if err != nil {
-		slog.Warn("gamification: update season failed", "id", id.String(), "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "season_update_failed", err.Error())
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", validationMessage(err))
+		case errors.Is(err, ErrSeasonNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "season_not_found", "Season not found")
+		default:
+			slog.Error("gamification: update season failed", "id", id.String(), "error", err)
+			errpkg.WriteError(w, http.StatusBadRequest, "season_update_failed", "Failed to update season")
+		}
 		return
 	}
 
@@ -978,8 +1011,15 @@ func (h *Handlers) HandleAdminCreateTier(w http.ResponseWriter, r *http.Request)
 
 	tier, err := h.service.CreateTier(r.Context(), in)
 	if err != nil {
-		slog.Warn("gamification: create tier failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "tier_create_failed", err.Error())
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", validationMessage(err))
+		case errors.Is(err, ErrTierExists):
+			errpkg.WriteError(w, http.StatusConflict, "tier_exists", "A tier with this name already exists for this badge group")
+		default:
+			slog.Error("gamification: create tier failed", "error", err)
+			errpkg.WriteError(w, http.StatusBadRequest, "tier_create_failed", "Failed to create tier")
+		}
 		return
 	}
 
@@ -1010,8 +1050,15 @@ func (h *Handlers) HandleAdminUpdateTier(w http.ResponseWriter, r *http.Request)
 
 	tier, err := h.service.UpdateTier(r.Context(), id, in)
 	if err != nil {
-		slog.Warn("gamification: update tier failed", "id", id.String(), "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "tier_update_failed", err.Error())
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", validationMessage(err))
+		case errors.Is(err, ErrTierNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "tier_not_found", "Tier not found")
+		default:
+			slog.Error("gamification: update tier failed", "id", id.String(), "error", err)
+			errpkg.WriteError(w, http.StatusBadRequest, "tier_update_failed", "Failed to update tier")
+		}
 		return
 	}
 

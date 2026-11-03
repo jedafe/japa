@@ -160,8 +160,11 @@ WHERE id = @id;
 -- =====================
 
 -- name: InsertActivityEvent :one
+-- Dedupe scope is (user_id, activity_key, reference) per Section 28 —
+-- entity-scoped references are correct per-user, so shared entities
+-- (polls, wiki pages, jobs) no longer single-winner (PTS-015, migration 001021).
 INSERT INTO activity_events (user_id, activity_key, reference, payload) VALUES (@user_id, @activity_key, @reference, @payload)
-ON CONFLICT (activity_key, reference) DO NOTHING
+ON CONFLICT (user_id, activity_key, reference) DO NOTHING
 RETURNING *;
 
 -- name: GetActivityEventByID :one

@@ -92,9 +92,11 @@ type Config struct {
 	UnsplashAccessKey        string // JC_UNSPLASH_ACCESS_KEY — Unsplash API access key
 	PexelsAPIKey             string // JC_PEXELS_API_KEY — Pexels API key
 	PixabayAPIKey            string // JC_PIXABAY_API_KEY — Pixabay API key
+	OpenverseClientID        string // JC_OPENVERSE_CLIENT_ID — Openverse OAuth client id (optional; anonymous quota applies without it; stored as client_id:client_secret in stock_providers.api_key_encrypted)
+	OpenverseClientSecret    string // JC_OPENVERSE_CLIENT_SECRET — Openverse OAuth client secret (optional)
 	StockCacheTTLSec         int    // JC_STOCK_CACHE_TTL_SECONDS — search result cache TTL (default 300)
 	StockCacheMaxEntries     int    // JC_STOCK_CACHE_MAX_ENTRIES — max cached search pages (default 1000)
-	StockHTTPTimeoutSec      int    // JC_STOCK_HTTP_TIMEOUT_SECONDS — provider HTTP client timeout (default 15)
+	StockHTTPTimeoutSec      int    // JC_STOCK_HTTP_TIMEOUT_SECONDS — provider HTTP client timeout (default 30)
 	OwnerEmail               string // JC_OWNER_EMAIL — email of the platform owner account; grants super_admin on registration and owner-only super_admin lifecycle control (§03 owner amendment)
 }
 
@@ -189,9 +191,11 @@ func Load() (Config, error) {
 		UnsplashAccessKey:        os.Getenv("JC_UNSPLASH_ACCESS_KEY"),
 		PexelsAPIKey:             os.Getenv("JC_PEXELS_API_KEY"),
 		PixabayAPIKey:            os.Getenv("JC_PIXABAY_API_KEY"),
+		OpenverseClientID:        os.Getenv("JC_OPENVERSE_CLIENT_ID"),
+		OpenverseClientSecret:    os.Getenv("JC_OPENVERSE_CLIENT_SECRET"),
 		StockCacheTTLSec:         getEnvInt("JC_STOCK_CACHE_TTL_SECONDS", 300),
 		StockCacheMaxEntries:     getEnvInt("JC_STOCK_CACHE_MAX_ENTRIES", 1000),
-		StockHTTPTimeoutSec:      getEnvInt("JC_STOCK_HTTP_TIMEOUT_SECONDS", 15),
+		StockHTTPTimeoutSec:      getEnvInt("JC_STOCK_HTTP_TIMEOUT_SECONDS", 30),
 		OwnerEmail:               strings.ToLower(strings.TrimSpace(os.Getenv("JC_OWNER_EMAIL"))),
 	}
 

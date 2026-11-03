@@ -608,7 +608,13 @@ func (d authorAwareReadDBTX) Exec(context.Context, string, ...interface{}) (pgco
 	return pgconn.CommandTag{}, errors.New("unexpected Exec in test")
 }
 
-func (d authorAwareReadDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+func (d authorAwareReadDBTX) Query(_ context.Context, query string, _ ...interface{}) (pgx.Rows, error) {
+	// The publish transition's required-field check (validateRequiredFields)
+	// lists custom-field groups + fields — return empty sets so the
+	// stubbed path sees "no required fields" instead of a stub error.
+	if strings.Contains(query, "custom_field") {
+		return emptyRows{}, nil
+	}
 	return nil, errors.New("unexpected Query in test")
 }
 
@@ -625,6 +631,19 @@ func (d authorAwareReadDBTX) QueryRow(_ context.Context, query string, _ ...inte
 func (d authorAwareReadDBTX) CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
 	return 0, errors.New("unexpected CopyFrom in test")
 }
+
+// emptyRows is a zero-row pgx.Rows for stubbed :many queries.
+type emptyRows struct{}
+
+func (emptyRows) Close()                                       {}
+func (emptyRows) Err() error                                   { return nil }
+func (emptyRows) CommandTag() pgconn.CommandTag                { return pgconn.CommandTag{} }
+func (emptyRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
+func (emptyRows) Next() bool                                   { return false }
+func (emptyRows) Scan(...any) error                            { return errors.New("emptyRows: no rows") }
+func (emptyRows) Values() ([]any, error)                       { return nil, nil }
+func (emptyRows) RawValues() [][]byte                          { return nil }
+func (emptyRows) Conn() *pgx.Conn                              { return nil }
 
 type boolRow bool
 
@@ -779,6 +798,9 @@ func TestUpdateContentBotAuthorSkipsReviewQueue(t *testing.T) {
 			Slug:        "stored-story",
 			Status:      StatusDraft,
 			Visibility:  VisibilityPublic,
+			// Publish transitions enforce content.min_length (default 10) —
+			// an empty stored body fails before the §79 clamp runs.
+			Body: "A stored story body long enough to publish.",
 			// Publishing requires a primary space — a stored one skips the
 			// content_spaces membership probe in the stubbed read layer.
 			SpaceID: newUUID(t),
@@ -793,9 +815,11 @@ func TestUpdateContentBotAuthorSkipsReviewQueue(t *testing.T) {
 		rr := httptest.NewRecorder()
 		// The caller IS the author (ownership edit) — no elevated permissions,
 		// so isStoryModerator is false and only the bot-author bypass can
-		// skip the §79 clamp.
+		// skip the §79 clamp. content.publish is seeded because the
+		// BUG-CE-001 status-transition gate requires it to PATCH
+		// status → published.
 		req := listRequest(t, http.MethodPatch, "/api/v1/content/"+contentID.String(), `{"status":"published"}`, callerID,
-			newListTestResolver(t, callerID, nil),
+			newListTestResolver(t, callerID, map[string]bool{"content.publish": true}),
 			map[string]string{"id": contentID.String()})
 		h.UpdateContent(rr, req)
 

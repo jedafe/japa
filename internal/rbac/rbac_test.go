@@ -364,6 +364,16 @@ func TestSlugifySanitizes(t *testing.T) {
 	}
 }
 
+func TestGroupBackingRoleName(t *testing.T) {
+	if got := groupBackingRoleName("Blog Moderator"); got != "Blog Moderator Role" {
+		t.Errorf("groupBackingRoleName = %q, want %q", got, "Blog Moderator Role")
+	}
+	// Slug derivation must stay aligned with groupPermissionRole's lookup.
+	if got := slugify(groupBackingRoleName("Blog Moderator")); got != "blog-moderator-role" {
+		t.Errorf("slugify(groupBackingRoleName) = %q, want %q", got, "blog-moderator-role")
+	}
+}
+
 func TestContainsWildcard(t *testing.T) {
 	if !containsWildcard([]string{"blog.create", "*"}) {
 		t.Error("expected containsWildcard true for set containing '*'")

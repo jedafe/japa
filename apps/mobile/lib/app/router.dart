@@ -1,16 +1,16 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'auth_guard.dart';
 import 'app_shell.dart';
-import '../i18n/app_localizations.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/register_screen.dart';
 import '../features/auth/screens/totp_screen.dart';
 import '../features/feed/screens/feed_screen.dart';
 import '../features/feed/screens/discover_screen.dart';
 import '../features/feed/screens/trending_screen.dart';
+import '../features/compose/screens/compose_screen.dart';
+import '../features/compose/screens/my_drafts_screen.dart';
 import '../features/content/screens/blog_list_screen.dart';
 import '../features/content/screens/blog_detail_screen.dart';
 import '../features/content/screens/guide_list_screen.dart';
@@ -50,17 +50,6 @@ import '../features/jobs/screens/jobs_list_screen.dart';
 import '../features/jobs/screens/job_detail_screen.dart';
 import '../features/jobs/screens/my_applications_screen.dart';
 
-class _ComposePlaceholder extends ConsumerWidget {
-  const _ComposePlaceholder();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = ref.watch(tProvider);
-    return Scaffold(
-        body: Center(child: Text(t('tools.compose_soon'))));
-  }
-}
-
 final jcRouterProvider = Provider<GoRouter>((ref) {
   final loggedIn = ref.watch(isAuthenticatedProvider);
   return GoRouter(
@@ -81,7 +70,11 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/trending', builder: (_, _) => const TrendingScreen()),
           GoRoute(
               path: '/compose',
-              builder: (_, _) => const _ComposePlaceholder()),
+              builder: (_, state) => ComposeScreen(
+                  draftKey: state.uri.queryParameters['draft'])),
+          GoRoute(
+              path: '/studio/drafts',
+              builder: (_, _) => const MyDraftsScreen()),
           GoRoute(
               path: '/spaces', builder: (_, _) => const SpaceListScreen()),
           GoRoute(

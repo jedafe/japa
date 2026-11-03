@@ -36,6 +36,9 @@ export interface CreateContentInput {
 	visa_route?: string | null;
 	source_country?: string | null;
 	target_country?: string | null;
+	/** U1 optimistic lock — RFC3339 `updated_at` the editor loaded; the
+	 *  backend returns 409 stale_write when the row moved (BUG-CE-006). */
+	expected_updated_at?: string | null;
 }
 
 /** Map an HTTP status to a save-failure class (drives retry vs surface behavior). */

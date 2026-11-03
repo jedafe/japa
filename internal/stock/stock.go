@@ -127,11 +127,10 @@ func (s *Service) ReloadProviders(ctx context.Context) error {
 			continue
 		}
 
-		// Skip if provider is already loaded.
-		if _, exists := s.providers[row.ProviderName]; exists {
-			s.mu.Unlock()
-			continue
-		}
+		// Rebuild every enabled provider — a rotated API key or updated
+		// credentials must take effect on reload, not only after restart.
+		// Provider structs are cheap (http.Client + config) and in-flight
+		// requests keep the old pointer, so swapping is safe.
 
 		var apiKey string
 		if row.APIKeyEncrypted != "" {
@@ -152,7 +151,10 @@ func (s *Service) ReloadProviders(ctx context.Context) error {
 		case "pixabay":
 			s.providers["pixabay"] = NewPixabayProvider(apiKey, s.httpTimeout())
 		case "openverse":
-			s.providers["openverse"] = NewOpenverseProvider(s.httpTimeout())
+			// Openverse's "api key" carries OAuth credentials as
+			// "client_id:client_secret" (optional — anonymous works).
+			ovID, ovSecret := splitCredentials(apiKey)
+			s.providers["openverse"] = NewOpenverseProvider(s.httpTimeout(), ovID, ovSecret)
 		}
 		s.mu.Unlock()
 	}
@@ -190,16 +192,41 @@ func (s *Service) seedFromEnv(ctx context.Context) {
 			slog.Warn("stock: failed to seed provider", "provider", name, "error", err)
 		}
 	}
-	// Openverse always gets seeded (no API key needed).
-	_ = s.store.SeedProvider(ctx, "openverse", "")
+	// Openverse works anonymously, but OAuth credentials unlock the much
+	// higher authenticated quota — anonymous calls are throttled to
+	// ~200 requests/day per IP, which a shared backend IP exhausts
+	// almost immediately. Stored encrypted as "client_id:client_secret".
+	ovCreds := ""
+	if s.cfg.OpenverseClientID != "" && s.cfg.OpenverseClientSecret != "" {
+		enc, err := crypto.Encrypt(s.cfg.OpenverseClientID + ":" + s.cfg.OpenverseClientSecret)
+		if err != nil {
+			slog.Warn("stock: failed to encrypt env Openverse credentials", "error", err)
+		} else {
+			ovCreds = enc
+		}
+	}
+	if err := s.store.SeedProvider(ctx, "openverse", ovCreds); err != nil {
+		slog.Warn("stock: failed to seed provider", "provider", "openverse", "error", err)
+	}
+}
+
+// splitCredentials splits a "client_id:client_secret" pair stored in a
+// provider's encrypted API key column. Returns empty strings when absent.
+func splitCredentials(apiKey string) (string, string) {
+	id, secret, ok := strings.Cut(apiKey, ":")
+	if !ok {
+		return "", ""
+	}
+	return strings.TrimSpace(id), strings.TrimSpace(secret)
 }
 
 // httpTimeout returns the configured provider HTTP client timeout, defaulting
-// to 15 seconds when JC_STOCK_HTTP_TIMEOUT_SECONDS is unset or invalid.
+// to 30 seconds when JC_STOCK_HTTP_TIMEOUT_SECONDS is unset or invalid —
+// Openverse's unauthenticated path is slow enough that 15s was borderline.
 func (s *Service) httpTimeout() time.Duration {
 	sec := s.cfg.StockHTTPTimeoutSec
 	if sec <= 0 {
-		sec = 15
+		sec = 30
 	}
 
 	return time.Duration(sec) * time.Second
@@ -229,6 +256,10 @@ func (s *Service) AvailableProvidersForPerms(hasSearch, hasProviders bool) []str
 			names = append(names, name)
 		}
 	}
+
+	// Map iteration order is random — sort so provider chips render
+	// in a stable order across reloads.
+	sort.Strings(names)
 
 	return names
 }

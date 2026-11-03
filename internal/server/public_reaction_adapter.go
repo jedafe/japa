@@ -3,10 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
@@ -89,13 +87,12 @@ func (a *publicReactionAdapter) AddReaction(ctx context.Context, userID, content
 
 	reaction, err := a.svc.AddReaction(ctx, content.EntityContent, contentID, userID, reactionKey)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return publicapi.PublicReaction{EntityType: content.EntityContent, EntityID: contentID.String(), ReactionKey: reactionKey}, nil
-		}
 		return publicapi.PublicReaction{}, err
 	}
 
-	if a.onChange != nil {
+	// One reaction per user (migration 001023): only a fresh insert moves
+	// the count — a same-key no-op or a key switch keeps it unchanged.
+	if reaction.PreviousKey == nil && a.onChange != nil {
 		a.onChange("content", contentID, "reaction", 1)
 	}
 

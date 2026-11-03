@@ -4,8 +4,8 @@ import type { CreateContentInput } from '$lib/api/create';
 type Res<T = unknown> = { data: T | null; error: { message: string; status: number } | null; status: number };
 
 export interface ComposerDeps {
-	create: (input: CreateContentInput) => Promise<Res<{ id: string; slug: string }>>;
-	patch: (id: string, patch: Partial<CreateContentInput>) => Promise<Res>;
+	create: (input: CreateContentInput) => Promise<Res<{ id: string; slug: string; updated_at?: string }>>;
+	patch: (id: string, patch: Partial<CreateContentInput>) => Promise<Res<{ updated_at?: string }>>;
 	publish: (id: string) => Promise<Res>;
 	schedule: (id: string, at: string) => Promise<Res>;
 	attachTag: (id: string, tagId: string) => Promise<Res>;
@@ -28,6 +28,10 @@ export interface ComposerOptions {
 export class ComposerState {
 	status = $state<ComposerStatus>('pristine');
 	contentId = $state<string | null>(null);
+	/** Latest server-side updated_at — sent as expected_updated_at on each
+	 *  PATCH so the U1 optimistic lock detects concurrent edits (BUG-CE-006).
+	 *  Must advance after every successful save or the next PATCH 409s. */
+	expectedUpdatedAt = $state<string | null>(null);
 	lastError = $state<{ cls: SaveErrorClass; message: string } | null>(null);
 	savedAt = $state<number | null>(null);
 	desiredTags = $state<string[]>([]);
@@ -38,6 +42,7 @@ export class ComposerState {
 	#rev = 0;
 	#savedRev = 0;
 	#inFlight = false;
+	#flightDone: Promise<void> | null = null;
 	#retries = 0;
 	#timer: ReturnType<typeof setTimeout> | null = null;
 	#committedTags: string[] = [];
@@ -86,9 +91,14 @@ export class ComposerState {
 		}
 	}
 
-	/** Persist the current snapshot. Single-flight; reschedules if edits arrive mid-flight. */
+	/** Persist the current snapshot. Single-flight; reschedules if edits arrive mid-flight.
+	 *  Callers that need the save to complete (publish) must await the returned
+	 *  promise — it resolves after the in-flight request finishes (BUG-CE-007). */
 	async flush(): Promise<void> {
-		if (this.#inFlight) return;
+		if (this.#inFlight) {
+			await this.#flightDone;
+			return;
+		}
 		if (this.contentId && this.#rev === this.#savedRev) return; // nothing new
 		// Suppress the initial create when the form doesn't meet the save gate
 		// (e.g. title still empty). Edits are kept in local state; the next
@@ -98,38 +108,54 @@ export class ComposerState {
 			return;
 		}
 		this.#inFlight = true;
-		this.lastError = null;
-		const rev = this.#rev;
-		const body = this.#opts.getSnapshot();
-		try {
-			if (!this.contentId) {
-				this.status = 'creating';
-				const res = await this.#deps.create({ ...body, status: 'draft' });
-				if (res.error || !res.data) return this.#fail(res.status, res.error?.message);
-				this.contentId = res.data.id;
-				// Reconcile tags/series before marking saved so a linkage failure
-				// leaves the composer in an error/dirty state instead of "saved".
-				const tagRes = await this.#reconcileTags();
-				if (tagRes?.error) return this.#fail(tagRes.status, tagRes.error.message);
-				const seriesRes = await this.#reconcileSeries();
-				if (seriesRes?.error) return this.#fail(seriesRes.status, seriesRes.error.message);
-				this.#markSaved(rev);
-			} else {
-				this.status = 'saving';
-				const res = await this.#deps.patch(this.contentId, body);
-				if (res.error) return this.#fail(res.status, res.error.message);
-				this.#markSaved(rev);
+		const done = (async () => {
+			this.lastError = null;
+			const rev = this.#rev;
+			const body = this.#opts.getSnapshot();
+			try {
+				if (!this.contentId) {
+					this.status = 'creating';
+					const res = await this.#deps.create({ ...body, status: 'draft' });
+					if (res.error || !res.data) return this.#fail(res.status, res.error?.message);
+					this.contentId = res.data.id;
+					if (res.data.updated_at) this.expectedUpdatedAt = res.data.updated_at;
+					// Reconcile tags/series before marking saved so a linkage failure
+					// leaves the composer in an error/dirty state instead of "saved".
+					const tagRes = await this.#reconcileTags();
+					if (tagRes?.error) return this.#fail(tagRes.status, tagRes.error.message);
+					const seriesRes = await this.#reconcileSeries();
+					if (seriesRes?.error) return this.#fail(seriesRes.status, seriesRes.error.message);
+					this.#markSaved(rev);
+				} else {
+					this.status = 'saving';
+					const res = await this.#deps.patch(this.contentId, {
+						...body,
+						expected_updated_at: this.expectedUpdatedAt
+					});
+					if (res.error) return this.#fail(res.status, res.error.message);
+					if (res.data?.updated_at) this.expectedUpdatedAt = res.data.updated_at;
+					this.#markSaved(rev);
+				}
+			} finally {
+				this.#inFlight = false;
+				if (this.status === 'saved' && this.#rev !== this.#savedRev) this.#schedule(0);
 			}
-		} finally {
-			this.#inFlight = false;
-			if (this.status === 'saved' && this.#rev !== this.#savedRev) this.#schedule(0);
-		}
+		})();
+		this.#flightDone = done;
+		return done;
 	}
 
-	/** Validate, flush the latest draft, then publish or schedule. Returns success. */
+	/** Validate, wait for any in-flight save, persist the latest snapshot,
+	 *  then publish or schedule. Returns success (BUG-CE-007). */
 	async publish(): Promise<boolean> {
 		if (!this.#opts.canPublish()) return false;
-		await this.flush();
+		// Bounded: flush() awaits the in-flight save; edits that arrive
+		// mid-flight bump #rev and force one more save cycle before we
+		// fire /publish — never publish a stale body.
+		for (let i = 0; i < 4 && (this.#inFlight || this.#rev !== this.#savedRev); i++) {
+			await this.flush();
+			if (this.status === 'error') break; // don't retry doomed payloads
+		}
 		if (!this.contentId || this.status === 'error') return false;
 		const at = this.#opts.getPublishAt();
 		const res = at

@@ -546,8 +546,11 @@ export interface UserGroup {
 export interface UserRole {
 	id: string;
 	name: string;
+	slug?: string;
 	permissions: string[];
 	user_count: number;
+	group_count?: number;
+	is_system?: boolean;
 }
 
 export const permissionsApi = {
@@ -645,7 +648,7 @@ export const userManagementApi = {
 
 	listGroups: (params?: string) =>
 		api<{ groups: UserGroup[]; total: number; page?: number; total_pages?: number }>(`/admin/user-groups${params ? `?${params}` : ''}`),
-	createGroup: (body: { name: string; description: string; permissions: string[] }) =>
+	createGroup: (body: { name: string; description: string; permissions?: string[] }) =>
 		api<UserGroup>('/admin/user-groups', { method: 'POST', body }),
 	updateGroup: (id: string, body: { name?: string; description?: string; permissions?: string[] }) =>
 		api<UserGroup>(`/admin/user-groups/${id}`, { method: 'PATCH', body }),

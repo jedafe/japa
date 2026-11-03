@@ -15,7 +15,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { Upload, Search, Image as ImageIcon, X, Loader2, Download, Check, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { Upload, Search, Image as ImageIcon, X, Loader2, Download, Check, ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type MediaItem = {
@@ -84,6 +84,18 @@
 	// The metadata editor only renders for callers who can actually save —
 	// PATCH /admin/media/{id} is gated by media.edit_any.
 	let canEditMedia = $derived(hasPermission('media.edit_any'));
+	// The edit/delete panel only opens via the thumbnail action buttons —
+	// clicking a thumbnail just selects it for the Select button.
+	let panelMode = $state<'edit' | 'delete' | null>(null);
+	// DELETE /admin/media/{id} (media.delete_any) — soft delete.
+	let canDeleteMedia = $derived(hasPermission('media.delete_any'));
+	let deleteConfirming = $state(false);
+	let deleting = $state(false);
+	let deleteError = $state('');
+	// Snapshot of the last picked item so the Select button still works when
+	// the user paginates away from the page containing the selected thumb
+	// (items only holds the current page).
+	let pickedItem = $state<MediaItem | null>(null);
 
 	// Clear any pending debounce timers when the modal unmounts.
 	$effect(() => {
@@ -213,12 +225,27 @@
 			if (result.error) {
 				errorMessage = result.error.message || t('common.upload_error', 'Upload failed');
 			} else if (result.data) {
-				onselect({
+				// Land on the Browse tab with the new asset highlighted —
+				// the user confirms with Select instead of the upload
+				// auto-inserting it. Clearing searchQuery keeps a stale
+				// filter from hiding the new item (and from silently
+				// re-applying on the next pagination click); the pending
+				// debounce is cancelled so it can't fire an extra fetch.
+				if (debounceTimer) clearTimeout(debounceTimer);
+				searchQuery = '';
+				activeTab = 'browse';
+				loadMedia(undefined, 0);
+				selectedId = result.data.media_id;
+				pickedItem = {
 					id: result.data.media_id,
-					url: fixMediaUrl(result.data.url),
-					filename: convertedFile.name
-				});
-				open = false;
+					url: result.data.url,
+					filename: convertedFile.name,
+					mime_type: convertedFile.type,
+					file_size: convertedFile.size,
+					status: 'approved',
+					created_at: new Date().toISOString()
+				};
+				panelMode = null;
 				uploadFile = null;
 			}
 		} catch {
@@ -237,28 +264,75 @@
 		return base.replace(/[-_]+/g, ' ').trim();
 	}
 
-	function handleSelect(item: MediaItem) {
-		selectedId = item.id;
+	// Pre-fill the edit fields from the item, falling back to a label derived
+	// from the filename when the image has no stored alt text/title.
+	function primeEditFields(item: MediaItem) {
 		const fallback = filenameLabel(item.filename);
 		editAlt = item.alt_text?.trim() || fallback;
 		editCaption = item.caption?.trim() || fallback;
 		editError = '';
 		editSaved = false;
+		deleteConfirming = false;
+		deleteError = '';
+	}
+
+	function handleSelect(item: MediaItem) {
+		if (selectedId === item.id) {
+			clearSelection();
+			return;
+		}
+		selectedId = item.id;
+		pickedItem = item;
+		primeEditFields(item);
+		panelMode = null;
+	}
+
+	function clearSelection() {
+		selectedId = null;
+		pickedItem = null;
+		panelMode = null;
+		deleteConfirming = false;
+		deleteError = '';
+	}
+
+	// Thumbnail pencil button — select the item and reveal the alt/title
+	// editor (the only way the panel opens). Re-clicking the pencil on the
+	// item already being edited is a no-op so unsaved edits aren't lost.
+	function openEditPanel(item: MediaItem) {
+		if (selectedId === item.id && panelMode === 'edit') return;
+		selectedId = item.id;
+		pickedItem = item;
+		primeEditFields(item);
+		panelMode = 'edit';
+	}
+
+	// Thumbnail trash button — select the item and go straight to the
+	// delete-confirm step.
+	function openDeleteConfirm(item: MediaItem) {
+		selectedId = item.id;
+		pickedItem = item;
+		primeEditFields(item);
+		deleteConfirming = true;
+		panelMode = 'delete';
 	}
 
 	// PATCH /admin/media/{id} (media.edit_any) — '' clears a field; the
 	// backend COALESCEs each column so a JSON null would mean "keep".
 	async function saveMetadata() {
 		if (!selectedId) return;
+		// Capture the id before the await so a mid-flight selection change
+		// can't apply this item's updates to a different list entry.
+		const id = selectedId;
 		editSaving = true;
 		editError = '';
 		editSaved = false;
 		const updates = { alt_text: editAlt.trim(), caption: editCaption.trim() };
 		try {
-			const result = await mediaAdminApi.update(selectedId, updates);
+			const result = await mediaAdminApi.update(id, updates);
 			if (result.ok) {
-				items = items.map((i) => (i.id === selectedId ? { ...i, ...updates } : i));
-				editSaved = true;
+				items = items.map((i) => (i.id === id ? { ...i, ...updates } : i));
+				if (pickedItem?.id === id) pickedItem = { ...pickedItem, ...updates };
+				if (selectedId === id) editSaved = true;
 			} else {
 				editError = result.error || t('media.picker.edit_failed', 'Could not save changes');
 			}
@@ -269,8 +343,38 @@
 		}
 	}
 
+	// DELETE /admin/media/{id} (media.delete_any) — soft delete, then drop
+	// the item from the grid and clear the selection.
+	async function deleteSelected() {
+		if (!canDeleteMedia || !selectedId) return;
+		deleting = true;
+		deleteError = '';
+		const id = selectedId;
+		try {
+			const result = await mediaAdminApi.delete(id);
+			if (result.ok) {
+				items = items.filter((i) => i.id !== id);
+				// Only clear the selection/panel/confirm if it still points
+				// at the deleted item — the user may have selected another
+				// thumbnail while the request was in flight.
+				if (selectedId === id) {
+					selectedId = null;
+					pickedItem = null;
+					panelMode = null;
+					deleteConfirming = false;
+				}
+			} else {
+				deleteError = result.error || t('media.picker.delete_failed', 'Could not delete media');
+			}
+		} catch {
+			deleteError = t('media.picker.delete_failed', 'Could not delete media');
+		} finally {
+			deleting = false;
+		}
+	}
+
 	function handleConfirm() {
-		const selected = items.find((i) => i.id === selectedId);
+		const selected = items.find((i) => i.id === selectedId) ?? (pickedItem?.id === selectedId ? pickedItem : null);
 		if (selected) {
 			onselect({
 				id: selected.id,
@@ -356,6 +460,7 @@
 
 	function handleClose() {
 		selectedId = null;
+		pickedItem = null;
 		searchQuery = '';
 		uploadFile = null;
 		errorMessage = '';
@@ -368,6 +473,10 @@
 		editCaption = '';
 		editError = '';
 		editSaved = false;
+		panelMode = null;
+		deleteConfirming = false;
+		deleting = false;
+		deleteError = '';
 	}
 
 	// Cleanup timers on destroy.
@@ -383,7 +492,7 @@
 	);
 </script>
 
-<Modal bind:open title={t('ads.media_picker_title', 'Select Image')} onclose={handleClose}>
+<Modal bind:open elevated title={t('ads.media_picker_title', 'Select Image')} onclose={handleClose}>
 	<div class="space-y-4">
 		{#if errorMessage}
 			<div class="rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
@@ -454,27 +563,66 @@
 			{:else}
 				<div class="grid max-h-80 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-4">
 					{#each filteredItems as item (item.id)}
-						<button
-							type="button"
-							class="relative overflow-hidden rounded-lg border-2 transition-all"
+						<!-- group wrapper keeps the edit/delete icon buttons as siblings
+						     of the select button (no nested interactive elements). -->
+						<div
+							class="group relative overflow-hidden rounded-lg border-2 transition-all"
 							style={selectedId === item.id
 								? 'border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary)'
 								: 'border-color: var(--color-border)'}
-							onclick={() => handleSelect(item)}
 						>
-							{#if item.url}
-								<img src={fixMediaUrl(item.url)} alt={item.alt_text || item.filename} class="h-20 w-full object-cover" loading="lazy" />
-							{:else}
-								<div class="flex h-20 items-center justify-center" style="background-color: var(--color-surface)">
-									<ImageIcon class="h-8 w-8" style="color: var(--color-muted)" />
+							<button
+								type="button"
+								class="block w-full"
+								aria-pressed={selectedId === item.id}
+								onclick={() => handleSelect(item)}
+							>
+								{#if item.url}
+									<img src={fixMediaUrl(item.url)} alt={item.alt_text || item.filename} class="h-20 w-full object-cover" loading="lazy" />
+								{:else}
+									<div class="flex h-20 items-center justify-center" style="background-color: var(--color-surface)">
+										<ImageIcon class="h-8 w-8" style="color: var(--color-muted)" />
+									</div>
+								{/if}
+								<!-- Saved title (caption) overrides the filename as the
+								     thumbnail label once set. -->
+								<p class="truncate px-1 py-1 text-xs" style="color: var(--color-muted)" title={item.caption || item.filename}>
+									{item.caption || item.filename}
+								</p>
+							</button>
+							{#if canEditMedia || canDeleteMedia}
+								<div
+									class="absolute end-1.5 top-1.5 flex gap-1 transition-opacity {selectedId === item.id
+										? 'opacity-100'
+										: 'pointer-events-none opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100'}"
+								>
+									{#if canEditMedia}
+										<button
+											type="button"
+											class="grid h-6 w-6 place-items-center rounded-full text-white transition-colors hover:bg-black/80"
+											style="background: rgb(0 0 0 / 0.55)"
+											title={t('media.picker.edit', 'Edit')}
+											aria-label={t('media.picker.edit', 'Edit')}
+											onclick={() => openEditPanel(item)}
+										>
+											<Pencil class="h-3 w-3" />
+										</button>
+									{/if}
+									{#if canDeleteMedia}
+										<button
+											type="button"
+											class="grid h-6 w-6 place-items-center rounded-full text-white transition-colors hover:bg-red-600"
+											style="background: rgb(0 0 0 / 0.55)"
+											title={t('media.picker.delete', 'Delete')}
+											aria-label={t('media.picker.delete', 'Delete')}
+											onclick={() => openDeleteConfirm(item)}
+										>
+											<Trash2 class="h-3 w-3" />
+										</button>
+									{/if}
 								</div>
 							{/if}
-							<!-- Saved title (caption) overrides the filename as the
-							     thumbnail label once set. -->
-							<p class="truncate px-1 py-1 text-xs" style="color: var(--color-muted)" title={item.caption || item.filename}>
-								{item.caption || item.filename}
-							</p>
-						</button>
+						</div>
 					{/each}
 				</div>
 
@@ -509,41 +657,91 @@
 				{/if}
 			{/if}
 
-			<!-- Selected item metadata editor — PATCH /admin/media/{id}. -->
-			{#if selectedItem && canEditMedia}
+			<!-- Item action panel — opened by the thumbnail edit/delete buttons
+			     (never by clicking the image itself). 'edit' shows the alt/title
+			     editor (PATCH /admin/media/{id}) plus a Delete button; 'delete'
+			     goes straight to the inline confirm (DELETE /admin/media/{id}). -->
+			{#if selectedItem && panelMode && (canEditMedia || canDeleteMedia)}
 				<div class="rounded-lg border p-3" style="border-color: var(--color-border); background-color: var(--color-surface)">
-					<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
-						<label class="flex-1 text-xs font-medium" style="color: var(--color-muted)">
-							{t('media.picker.alt_text', 'Alt text')}
-							<input
-								type="text"
-								bind:value={editAlt}
-								oninput={() => (editSaved = false)}
-								placeholder={t('media.picker.alt_placeholder', 'Describe the image for screen readers')}
-								class="mt-1 w-full rounded-md border px-2 py-1.5 text-sm font-normal"
-								style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-							/>
-						</label>
-						<label class="flex-1 text-xs font-medium" style="color: var(--color-muted)">
-							{t('media.picker.caption', 'Title')}
-							<input
-								type="text"
-								bind:value={editCaption}
-								oninput={() => (editSaved = false)}
-								placeholder={t('media.picker.caption_placeholder', 'Optional caption/title')}
-								class="mt-1 w-full rounded-md border px-2 py-1.5 text-sm font-normal"
-								style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-							/>
-						</label>
-						<Button onclick={saveMetadata} disabled={editSaving} size="sm">
-							{#if editSaving}
-								<Loader2 class="me-1 h-3.5 w-3.5 animate-spin" />
+					{#if panelMode === 'edit' && canEditMedia}
+						<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+							<label class="flex-1 text-xs font-medium" style="color: var(--color-muted)">
+								{t('media.picker.alt_text', 'Alt text')}
+								<input
+									type="text"
+									bind:value={editAlt}
+									oninput={() => (editSaved = false)}
+									placeholder={t('media.picker.alt_placeholder', 'Describe the image for screen readers')}
+									class="mt-1 w-full rounded-md border px-2 py-1.5 text-sm font-normal"
+									style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+								/>
+							</label>
+							<label class="flex-1 text-xs font-medium" style="color: var(--color-muted)">
+								{t('media.picker.caption', 'Title')}
+								<input
+									type="text"
+									bind:value={editCaption}
+									oninput={() => (editSaved = false)}
+									placeholder={t('media.picker.caption_placeholder', 'Optional caption/title')}
+									class="mt-1 w-full rounded-md border px-2 py-1.5 text-sm font-normal"
+									style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+								/>
+							</label>
+							<Button onclick={saveMetadata} disabled={editSaving} size="sm">
+								{#if editSaving}
+									<Loader2 class="me-1 h-3.5 w-3.5 animate-spin" />
+								{/if}
+								{t('media.picker.save', 'Save')}
+							</Button>
+							{#if canDeleteMedia}
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={deleting}
+									onclick={() => {
+										// Clear a stale "Saved"/error so it can't render
+										// alongside the confirm row.
+										editSaved = false;
+										editError = '';
+										deleteConfirming = true;
+									}}
+								>
+									<Trash2 class="me-1 h-3.5 w-3.5" />
+									{t('media.picker.delete', 'Delete')}
+								</Button>
 							{/if}
-							{t('media.picker.save', 'Save')}
-						</Button>
-					</div>
+						</div>
+					{/if}
+					{#if deleteConfirming && canDeleteMedia}
+						<div class="flex items-center gap-2 text-xs" class:mt-2={panelMode === 'edit'}>
+							<span class="flex-1" style="color: var(--color-foreground)">
+								{t('media.picker.delete_confirm', 'Delete this image? This cannot be undone.')}
+							</span>
+							<Button variant="destructive" size="sm" disabled={deleting} onclick={deleteSelected}>
+								{#if deleting}
+									<Loader2 class="me-1 h-3 w-3 animate-spin" />
+								{/if}
+								{t('media.picker.delete', 'Delete')}
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={deleting}
+								onclick={() => {
+									deleteConfirming = false;
+									// 'delete' mode has no fields to return to —
+									// close the panel rather than leave an empty box.
+									if (panelMode === 'delete') panelMode = null;
+								}}
+							>
+								{t('media.picker.cancel', 'Cancel')}
+							</Button>
+						</div>
+					{/if}
 					{#if editError}
 						<p class="mt-2 text-xs text-danger">{editError}</p>
+					{:else if deleteError}
+						<p class="mt-2 text-xs text-danger">{deleteError}</p>
 					{:else if editSaved}
 						<p class="mt-2 text-xs" style="color: var(--color-success, var(--color-muted))">{t('media.picker.saved', 'Saved')}</p>
 					{/if}

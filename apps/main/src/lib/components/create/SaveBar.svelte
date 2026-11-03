@@ -40,6 +40,13 @@
 		noneExitsPersona?: boolean;
 		onSaveDraft: () => void;
 		onPublish: () => void;
+		/** Server error message from the last failed save — shown next to the
+		 *  error status so 400s (e.g. publish_at_in_past, missing_required_fields)
+		 *  tell the user what to fix (BUG-CE-019). */
+		errorMessage?: string | null;
+		/** True while a publish is in flight — disables the publish button
+		 *  so a double-click can't fire a second publish (BUG-CE-007). */
+		publishing?: boolean;
 		/** When true, the content is already published — the primary action
 		 *  becomes "Save" (flush/PATCH) instead of "Publish" (POST .../publish).
 		 *  Re-publishing already-published content is semantically wrong UX
@@ -47,7 +54,7 @@
 		isPublished?: boolean;
 	}
 
-	let { status, savedAt, canPublish, publishReason, orgs, selectedOrgId, onSelectOrg, botAuthors = [], selectedAuthorId = null, authorNoneLabel, onSelectAuthor, personaMode = false, onPersonaMode, noneExitsPersona = false, onSaveDraft, onPublish, isPublished = false }: Props = $props();
+	let { status, savedAt, canPublish, publishReason, orgs, selectedOrgId, onSelectOrg, botAuthors = [], selectedAuthorId = null, authorNoneLabel, onSelectAuthor, personaMode = false, onPersonaMode, noneExitsPersona = false, onSaveDraft, onPublish, errorMessage = null, publishing = false, isPublished = false }: Props = $props();
 
 	const selectedOrg = $derived(orgs.find((o) => o.id === selectedOrgId) ?? null);
 	const selectedBot = $derived(botAuthors.find((b) => b.id === selectedAuthorId) ?? null);
@@ -211,6 +218,9 @@
 		{#if !canPublish && publishReason && !isPublished}
 			<span class="gate-reason">{t(publishReason)}</span>
 		{/if}
+		{#if status === 'error' && errorMessage}
+			<span class="error-message">{errorMessage}</span>
+		{/if}
 		{#if isPublished}
 			<!-- Already-published content: the primary action is "Save" (flush/PATCH).
 			     The "Save draft" secondary button is hidden because the content is
@@ -239,10 +249,10 @@
 			<button
 				type="button"
 				class="btn-primary"
-				disabled={!canPublish}
+				disabled={!canPublish || publishing}
 				onclick={onPublish}
 			>
-				{t('create.action.publish')}
+				{publishing ? t('create.status.saving', 'Saving…') : t('create.action.publish')}
 			</button>
 		{/if}
 	</div>
@@ -294,6 +304,11 @@
 	.gate-reason {
 		font-size: 0.75rem;
 		color: var(--color-muted);
+		margin-inline-end: 4px;
+	}
+	.error-message {
+		font-size: 0.75rem;
+		color: var(--color-danger, #dc2626);
 		margin-inline-end: 4px;
 	}
 	.btn-secondary {

@@ -54,7 +54,7 @@ func (h *Handlers) SetProfileRelations(f ProfileRelationsFunc) {
 
 // PermissionResolver checks RBAC permissions and super-admin status. The
 // /me/content/{id} handler uses it to decide whether a non-owner viewer
-// (super-admin or a user with the `content.edit` permission node) may
+// (super-admin or a user with the `content.edit_any` permission node) may
 // fetch content they don't own for editing.
 type PermissionResolver interface {
 	IsSuperAdmin(ctx context.Context, userID pgtype.UUID) bool
@@ -91,7 +91,7 @@ type Handlers struct {
 	// follows and interactions services. Nil-safe (omitted when unset).
 	profileRelations ProfileRelationsFunc
 	// permResolver is an optional RBAC resolver used by GetMyContent to
-	// allow super-admins and `content.edit` permission holders to fetch
+	// allow super-admins and `content.edit_any` permission holders to fetch
 	// content they don't own for editing. When nil, only the author can
 	// restore content via /me/content/{id}.
 	permResolver PermissionResolver

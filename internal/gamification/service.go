@@ -97,6 +97,23 @@ type EmitActivityEvent struct {
 	ID pgtype.UUID
 }
 
+// MediaResolver resolves a badge icon_media_id to a displayable URL — the
+// same interface shape as users.MediaResolver / verification.MediaResolver
+// (mediaURLResolver in server.go).
+type MediaResolver interface {
+	ResolveMediaURL(ctx context.Context, mediaID pgtype.UUID) (string, error)
+	// ResolveMediaURLs resolves a batch of ids in one round-trip — the
+	// list-endpoint counterpart of ResolveMediaURL.
+	ResolveMediaURLs(ctx context.Context, mediaIDs []pgtype.UUID) (map[string]string, error)
+}
+
+// MediaImageProcessor applies artwork transforms to an attached media
+// object (edge-background knockout + downscale to fit its frame).
+// Implemented by *media.Service.
+type MediaImageProcessor interface {
+	RemoveEdgeBackground(ctx context.Context, mediaID pgtype.UUID, maxDim int) error
+}
+
 // Service holds the business logic for the gamification layer.
 type Service struct {
 	store           *Store
@@ -105,6 +122,8 @@ type Service struct {
 	pointsAwarder   PointsAwarder        // nil = no wallet crediting
 	notifier        Notifier             // nil = no notifications
 	activityEmitter ActivityEmitter      // nil = no challenge.completed events
+	mediaResolver   MediaResolver        // nil = icon_url omitted from responses
+	mediaProcessor  MediaImageProcessor  // nil = no artwork background knockout
 }
 
 // NewService creates a gamification service.
@@ -131,6 +150,16 @@ func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 // can emit challenge.completed activity events (which themselves feed
 // activity_count badges like Challenge Hunter). Optional.
 func (s *Service) SetActivityEmitter(e ActivityEmitter) { s.activityEmitter = e }
+
+// SetMediaResolver injects the media URL resolver so badge artwork
+// (icon_media_id) serializes as a displayable icon_url. Optional — when nil
+// the field is omitted from responses.
+func (s *Service) SetMediaResolver(r MediaResolver) { s.mediaResolver = r }
+
+// SetMediaImageProcessor injects the media service so newly attached
+// badge/challenge artwork gets its solid edge background knocked out.
+// Optional — when nil, attachments keep the original pixels.
+func (s *Service) SetMediaImageProcessor(p MediaImageProcessor) { s.mediaProcessor = p }
 
 // emitActivity records a points activity event — fire-and-forget (Rule 8).
 // Nil-safe: no-op when no emitter is wired.

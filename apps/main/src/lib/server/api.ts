@@ -67,11 +67,20 @@ export interface ApiContext {
 
 /** Build an ApiContext from a SvelteKit request event. */
 export function apiContext(event: RequestEvent): ApiContext {
+	// getClientAddress() throws (not null) when the runtime can't read the
+	// socket address — dev-server restarts, exotic proxies. A null IP only
+	// weakens IP-based backend heuristics; an unhandled throw 500s the load.
+	let clientIP: string | null = null;
+	try {
+		clientIP = event.getClientAddress();
+	} catch {
+		clientIP = null;
+	}
 	return {
 		fetch: event.fetch,
 		token: event.locals.token,
 		host: event.locals.requestHost,
-		clientIP: event.getClientAddress() ?? null,
+		clientIP,
 		csrfToken: event.locals.csrfToken ?? null,
 		refreshCookie: event.cookies.get('jc_refresh') ?? null,
 		journeyCookie: event.cookies.get('jc_journey_token') ?? null

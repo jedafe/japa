@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { goto, replaceState } from '$app/navigation';
+	import { goto, replaceState, beforeNavigate } from '$app/navigation';
 	import { contentHref } from '$lib/utils/contentLink';
 	import { t } from '$lib/i18n';
 	import { ComposerState, type ComposerDeps } from './composerState.svelte';
@@ -292,6 +292,16 @@
 		);
 	});
 
+	// BUG-CE-010: a lapsed publish_at PATCHes a past instant → 400
+	// publish_at_in_past on every autosave. Past values clear the stale
+	// schedule (the sweep publishes overdue content anyway); null clears.
+	const publishAtIso = $derived.by(() => {
+		if (!publishAt) return null;
+		const iso = localDateTimeToIso(publishAt);
+		if (!iso) return null;
+		return new Date(iso).getTime() > Date.now() ? iso : null;
+	});
+
 	const isGuide = $derived(selectedType.value === 'guide');
 	const isVideo = $derived(selectedType.value === 'video');
 	const isList = $derived(selectedType.value === 'list');
@@ -343,7 +353,7 @@
 		// future date set via the settings panel). The raw value is a
 		// datetime-local string — normalise to an ISO instant (the API
 		// stores timestamptz and only accepts zoned formats).
-		publish_at: draft?.status === 'published' ? null : localDateTimeToIso(publishAt),
+		publish_at: draft?.status === 'published' ? null : publishAtIso,
 		space_id: spaceIds[0] ?? null,
 		guide_category: isGuide ? guideCategory : null,
 		// Journey fields apply to every content type — source/target country
@@ -396,9 +406,12 @@
 		});
 		// When restoring a draft, seed the composer with the existing content
 		// ID so it PATCHes instead of creating a duplicate content row.
+		// expectedUpdatedAt seeds the U1 optimistic lock (BUG-CE-006) — the
+		// composer advances it from each save response.
 		if (draft?.id) {
 			composer.contentId = draft.id;
 			composer.status = 'saved';
+			composer.expectedUpdatedAt = draft.updated_at ?? null;
 		}
 		// Replay the current tags/series into the freshly-created composer so
 		// they are reconciled after the first create. (Fix: wire tags + series.)
@@ -407,6 +420,18 @@
 	});
 
 	onDestroy(() => composer?.dispose());
+
+	// BUG-CE-016: guard against losing edits still inside the autosave
+	// debounce window — the dispose path clears the timer without flushing.
+	beforeNavigate((nav) => {
+		if (!composer) return;
+		if (composer.status === 'dirty' || composer.status === 'saving' || composer.status === 'creating') {
+			void composer.flush();
+			if (!confirm(t('create.unsaved_leave', 'You have unsaved changes. Leave anyway?'))) {
+				nav.cancel();
+			}
+		}
+	});
 
 	// Wire tags and series to the composer whenever they change — without
 	// these the UI collects tags/series but never sends them to the backend.
@@ -486,20 +511,30 @@
 		await saveSpaces();
 	}
 
+	// BUG-CE-007: block re-entrant publishes — the button disables while a
+	// publish is in flight so a double-click can't fire /publish twice.
+	let publishing = $state(false);
+
 	async function publish() {
-		// On an already-scheduled draft, "Publish" means go live now — clear
-		// the restored schedule so the composer calls /publish instead of
-		// re-saving publish_at through /schedule (a no-op-looking resched).
-		if (draft?.status === 'scheduled' && publishAt) publishAt = null;
-		await composer?.flush();
-		await saveSpaces();
-		const ok = await composer?.publish();
+		if (publishing) return;
+		publishing = true;
+		try {
+			// On an already-scheduled draft, "Publish" means go live now — clear
+			// the restored schedule so the composer calls /publish instead of
+			// re-saving publish_at through /schedule (a no-op-looking resched).
+			if (draft?.status === 'scheduled' && publishAt) publishAt = null;
+			await composer?.flush();
+			await saveSpaces();
+			const ok = await composer?.publish();
 		// Land on the published piece instead of silently staying in the
 		// composer — the reader now expects to see it live. Only on an
 		// actual publish: scheduled content isn't served on the canonical
 		// route yet, and a missing slug means the href can't be trusted.
-		if (ok && composer?.status === 'published' && slug) {
-			await goto(contentHref({ slug, content_type: selectedType.value }));
+			if (ok && composer?.status === 'published' && slug) {
+				await goto(contentHref({ slug, content_type: selectedType.value }));
+			}
+		} finally {
+			publishing = false;
 		}
 	}
 
@@ -552,7 +587,7 @@
 <div class="composer-grid">
 	<div class="composer-main">
 		<div class="composer-header">
-			<h1 class="composer-title">{t('create.title')}</h1>
+			<h1 class="composer-title">{draft?.id ? t('create.edit_title', 'Edit') : t('create.title')}</h1>
 			<div
 				class="composer-type-select"
 				title={typeLocked ? t('create.type_locked', 'Content type cannot be changed after creation') : undefined}
@@ -720,6 +755,8 @@
 			noneExitsPersona={!draft?.id}
 			onSaveDraft={saveDraft}
 			onPublish={publish}
+			errorMessage={composer?.lastError?.message ?? null}
+			{publishing}
 			isPublished={draft?.status === 'published'}
 		/>
 	</div>

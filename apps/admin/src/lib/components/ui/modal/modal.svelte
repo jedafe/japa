@@ -11,6 +11,7 @@
     description,
     size = "default",
     class: className,
+    elevated = false,
     children,
     footer,
     onclose
@@ -20,6 +21,7 @@
     description?: string;
     size?: "sm" | "default" | "lg" | "xl";
     class?: ClassValue;
+    elevated?: boolean;
     children?: any;
     footer?: Snippet;
     onclose?: () => void;
@@ -40,11 +42,12 @@
 
 <Dialog.Root bind:open>
   <Dialog.Portal>
-    <Dialog.Overlay class="fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
+    <Dialog.Overlay class={clsx("fixed inset-0 bg-black/80 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0", elevated ? "z-[70]" : "z-50")} />
     <Dialog.Content
       data-modal-content
       class={clsx(
-        "fixed start-[50%] top-[50%] z-50 flex max-h-[85dvh] w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden rounded-xl border p-4 shadow-xl duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] sm:p-6",
+        elevated ? "z-[70]" : "z-50",
+        "fixed start-[50%] top-[50%] flex max-h-[85dvh] w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden rounded-xl border p-4 shadow-xl duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] sm:p-6",
         sizes[size],
         className
       )}

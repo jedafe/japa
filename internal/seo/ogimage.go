@@ -119,6 +119,10 @@ func ogCacheKey(contentID string) string {
 	return "jc:og:" + contentID
 }
 
+// ogBrandCacheKey is the fixed Valkey key for the brand-fallback OG image,
+// used for invalid, private, and non-indexable content IDs.
+const ogBrandCacheKey = "jc:og:default"
+
 // ServeOGImage generates and serves an OG image for the given content ID.
 // Rendered images are cached in Valkey (key jc:og:{content_id},
 // TTL 24h per Section 26) so repeated fetches by social crawlers don't
@@ -155,6 +159,21 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	// Fallback to brand defaults when no content matched (or content is
 	// private/non-indexable — lookupContent returns nil in that case).
 	if title == "" {
+		// Serve the cached brand image when present — re-rendering a PNG on
+		// every request for invalid/private IDs is a CPU-DoS vector.
+		if h.vkClient != nil {
+			if cached, err := h.vkClient.Redis().Get(r.Context(), ogBrandCacheKey).Bytes(); err == nil && len(cached) > 0 {
+				w.Header().Set("Content-Type", "image/png")
+				w.Header().Set("Cache-Control", "public, max-age=86400")
+				w.Header().Set("X-Cache", "HIT")
+				w.WriteHeader(http.StatusOK)
+				// #nosec G705 // cached is a server-rendered PNG.
+				_, _ = w.Write(cached)
+
+				return
+			}
+		}
+
 		title = h.siteName
 		subtitle = "Community Platform"
 		isBrandFallback = true
@@ -170,11 +189,16 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cache the rendered PNG in Valkey (Section 26: TTL 24h). Cache only
-	// content-specific images (not the brand fallback) so the fallback
-	// stays cheap and doesn't pollute the cache with generic entries.
-	if h.vkClient != nil && !isBrandFallback {
-		cacheKey := ogCacheKey(idStr)
+	// Cache the rendered PNG in Valkey (Section 26: TTL 24h). Content images
+	// key by content id; the brand fallback keys under a fixed "default" key
+	// so repeated misses on invalid IDs serve the cached image instead of
+	// re-rendering.
+	if h.vkClient != nil {
+		cacheKey := ogBrandCacheKey
+		if !isBrandFallback {
+			cacheKey = ogCacheKey(idStr)
+		}
+
 		if err := h.vkClient.Redis().Set(r.Context(), cacheKey, buf.Bytes(), ogCacheTTL).Err(); err != nil {
 			slog.Warn("og-image: failed to cache", "content_id", idStr, "error", err)
 		}
@@ -261,13 +285,15 @@ func drawString(img *image.RGBA, face font.Face, x, y int, text string, clr colo
 	}
 }
 
-// truncateString truncates a string to maxLen characters.
+// truncateString truncates a string to maxLen runes — multi-byte UTF-8
+// characters (accents, non-Latin names) are never split mid-codepoint.
 func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	r := []rune(s)
+	if len(r) <= maxLen {
 		return s
 	}
 
-	return s[:maxLen-3] + "..."
+	return string(r[:maxLen-3]) + "..."
 }
 
 // cleanTitle removes special characters and truncates for display.

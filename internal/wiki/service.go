@@ -22,6 +22,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/ai"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/config"
 	contentpkg "github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -2336,31 +2337,8 @@ func (s *Service) wikiMinWords(ctx context.Context) int {
 // wikiText extracts plain text from a TipTap JSON doc for word counting —
 // walks the content tree and joins every text node. A bare JSON string
 // (plain-text fallback, see normalizeWikiContent) is used as-is.
+// wikiText delegates to the shared indexability text extractor so the wiki
+// noindex contract and the sitemap word floor count words identically.
 func wikiText(raw []byte) string {
-	var v any
-	if json.Unmarshal(raw, &v) != nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	var sb strings.Builder
-	var walk func(n any)
-	walk = func(n any) {
-		m, ok := n.(map[string]any)
-		if !ok {
-			return
-		}
-		if t, ok := m["text"].(string); ok {
-			sb.WriteString(t)
-			sb.WriteByte(' ')
-		}
-		if kids, ok := m["content"].([]any); ok {
-			for _, k := range kids {
-				walk(k)
-			}
-		}
-	}
-	walk(v)
-	return sb.String()
+	return bots.TipTapText(raw)
 }

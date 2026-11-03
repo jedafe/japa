@@ -276,7 +276,23 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 		}
 	}
 
-	return s.creditWallet(ctx, userID, ledgerType, OperationEarn, amount, source, reference, idempotencyKey)
+	return s.creditWallet(ctx, userID, ledgerType, OperationEarn, amount, source, reference, idempotencyKey, true)
+}
+
+// ── wallet:reprocess_events (Section 28, PTS-024) ──────────────────────────
+//
+// Sweep for activity_events stranded unprocessed — a task that exhausted
+// Asynq retries, an enqueue whose inline fallback also failed, or a
+// dependent 'undoes' event whose award died before enqueueDependents ran.
+// Without a sweep these rows sit unprocessed forever (the points/badge
+// progress they represent is silently lost). Re-enqueueing is safe: the
+// processor no-ops on processed events and dependents re-sleep until their
+// award event settles.
+
+// ReprocessEventsTask is the Asynq handler for wallet:reprocess_events.
+// Runs on a cron schedule; the payload is empty.
+func (s *Service) ReprocessEventsTask(ctx context.Context, _ []byte) error {
+	return s.ReprocessUnprocessedEvents(ctx)
 }
 
 // ── wallet:reconcile_payouts (ALG-005, Section 58) ─────────────────────────
@@ -428,7 +444,7 @@ func (s *Service) DeductCreditsTask(ctx context.Context, payload []byte) error {
 		idempotencyKey = fmt.Sprintf("deduct:%s:%s:%d", userID.String(), p.Reason, p.Amount)
 	}
 
-	return s.creditWallet(ctx, userID, LedgerTypeCredits, operation, ledgerAmount, p.Reason, reference, idempotencyKey)
+	return s.creditWallet(ctx, userID, LedgerTypeCredits, operation, ledgerAmount, p.Reason, reference, idempotencyKey, false)
 }
 
 // earnAllowed reports whether a positive points earn of `amount` may be
@@ -437,14 +453,20 @@ func (s *Service) DeductCreditsTask(ctx context.Context, payload []byte) error {
 // key, then the wallet_settings.daily_earning_cap fallback; -1 = unlimited)
 // per ADR-136. Called inside the per-user advisory lock so the cap check
 // and the ledger insert are atomic with concurrent earns.
-func (s *Service) earnAllowed(ctx context.Context, tx pgx.Tx, userID pgtype.UUID, amount int64) (bool, error) {
+//
+// exemptCap skips the daily-cap check only (PTS-026): the killswitch always
+// applies — it is the admin emergency brake — but committed rewards issued
+// via wallet:award_points / AwardPoints (badge points_reward, challenge
+// reward_points, checklist/referral/scholarship grants) must not be
+// silently voided by the activity-earning cap.
+func (s *Service) earnAllowed(ctx context.Context, tx pgx.Tx, userID pgtype.UUID, amount int64, exemptCap bool) (bool, error) {
 	// Killswitch — gates earnings only (penalties/compensation never reach
 	// this path).
 	if ws, werr := s.store.getWalletSettings(ctx); werr == nil && !ws.EnableEarning {
 		return false, nil
 	}
 
-	if s.settings == nil {
+	if exemptCap || s.settings == nil {
 		return true, nil
 	}
 
@@ -481,7 +503,7 @@ func (s *Service) earnAllowed(ctx context.Context, tx pgx.Tx, userID pgtype.UUID
 // deduct_credits. It acquires a per-user advisory lock, reads the current
 // balance, computes the new balance, and inserts the ledger entry — all
 // within a single transaction (AUDIT-BE-005 pattern).
-func (s *Service) creditWallet(ctx context.Context, userID pgtype.UUID, ledgerType, operation string, amount int64, source, reference, idempotencyKey string) error {
+func (s *Service) creditWallet(ctx context.Context, userID pgtype.UUID, ledgerType, operation string, amount int64, source, reference, idempotencyKey string, exemptCap bool) error {
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("wallet: beginning transaction: %w", err)
@@ -500,10 +522,13 @@ func (s *Service) creditWallet(ctx context.Context, userID pgtype.UUID, ledgerTy
 	// PTS-004: the earn gate (EnableEarning killswitch + daily earn cap)
 	// applies to every positive points earn — not just the activity-event
 	// path. Credits, spends/refunds, and penalties are exempt per ADR-136
-	// (the gates guard earnings only). A gated award is a settled no-op,
+	// (the gates guard earnings only). PTS-026: reward earns routed via
+	// wallet:award_points / AwardPoints pass exemptCap=true — the daily cap
+	// throttles activity earnings, but a committed reward must pay out;
+	// the killswitch still applies. A gated award is a settled no-op,
 	// not a retryable failure.
 	if ledgerType == LedgerTypePoints && operation == OperationEarn && amount > 0 {
-		allowed, gerr := s.earnAllowed(ctx, tx, userID, amount)
+		allowed, gerr := s.earnAllowed(ctx, tx, userID, amount, exemptCap)
 		if gerr != nil {
 			return fmt.Errorf("wallet: checking earn gate: %w", gerr)
 		}

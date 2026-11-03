@@ -301,7 +301,7 @@
 
 	// ── Row actions ─────────────────────────────────────────────────────────
 	// Custom actions replace defaults, so View is included explicitly. Remove/Restore
-	// are gated by content.moderate; Feature/Unfeature by content.edit. Featuring is
+	// are gated by content.moderate; Feature/Unfeature by content.feature. Featuring is
 	// generic (Section 14 — content_featured junction powers the Featured tabs on
 	// /guides, /stories, /forum), so it applies to every content_type.
 	const rowActions = $derived.by<ActionItem[]>(() => {

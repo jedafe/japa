@@ -27,6 +27,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/rbac"
@@ -268,7 +269,16 @@ func (h *Handlers) HandleGetBySlug(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &story)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": story})
+	resp := map[string]any{"data": story}
+
+	// §45/§26: editor FAQ accordion blocks in the story body become a
+	// standalone FAQPage node in the json_ld sidecar — the detail page
+	// merges it into its inline Article schema via mergeJsonLd.
+	if jsonLd := content.InjectFaqPageJSONLD(nil, story.BodyHTML, story.Body); len(jsonLd) > 0 {
+		resp["json_ld"] = json.RawMessage(jsonLd)
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // ---------------------------------------------------------------------------

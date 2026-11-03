@@ -11,15 +11,6 @@ import (
 	"testing"
 )
 
-func TestGeneratePlaceholderOG(t *testing.T) {
-	t.Parallel()
-	// Test that placeholder OG image generation works
-	handler := &OGImageHandler{}
-
-	// This will fail without a real database, but we can test the structure
-	_ = handler // handler is always non-nil after allocation
-}
-
 func TestSitemapXML(t *testing.T) {
 	t.Parallel()
 	// Test XML sitemap generation
@@ -50,38 +41,6 @@ func TestSitemapXML(t *testing.T) {
 
 	if decoded.XMLName.Local != "urlset" {
 		t.Errorf("Expected root element 'urlset', got '%s'", decoded.XMLName.Local)
-	}
-}
-
-func TestPageMetadata(t *testing.T) {
-	t.Parallel()
-
-	metadata := PageMetadata{
-		Title:       "Test Title",
-		Description: "Test Description",
-		Slug:        "test-title",
-		ContentType: "article",
-		OGImage:     "https://example.com/og/test.png",
-		Canonical:   "https://example.com/article/test-title",
-		Author:      "Test Author",
-	}
-
-	if metadata.Title != "Test Title" {
-		t.Errorf("Expected title 'Test Title', got '%s'", metadata.Title)
-	}
-}
-
-func TestOGImageRequest(t *testing.T) {
-	t.Parallel()
-
-	req := OGImageRequest{
-		Title:    "Test Title",
-		Subtitle: "Test Subtitle",
-		LogoPath: "/logo.png",
-	}
-
-	if req.Title != "Test Title" {
-		t.Errorf("Expected title 'Test Title', got '%s'", req.Title)
 	}
 }
 

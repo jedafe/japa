@@ -100,6 +100,7 @@ export interface WebManifest {
 	share_target?: {
 		action: string;
 		method: string;
+		enctype: string;
 		params: { title: string; text: string; url: string };
 	};
 }
@@ -204,6 +205,11 @@ export function buildWebManifest(settings: Settings, app: ManifestAppOptions): W
 		manifest.share_target = {
 			action: '/create',
 			method: 'GET',
+			// GET share targets transport params in the query string; the spec
+			// requires enctype be declared explicitly (x-www-form-urlencoded for
+			// GET, multipart only when files are shared) or Chromium logs a
+			// manifest warning.
+			enctype: 'application/x-www-form-urlencoded',
 			params: { title: 'title', text: 'text', url: 'url' }
 		};
 	}
@@ -276,7 +282,10 @@ async function fillPrecache(store: { name: string; urls: string[] }): Promise<vo
 	}
 }
 
-async function refreshPwaConfig(settingsUrl: string | undefined): Promise<void> {
+async function refreshPwaConfig(
+	sw: ServiceWorkerGlobalScope,
+	settingsUrl: string | undefined
+): Promise<void> {
 	if (!settingsUrl) return;
 	try {
 		const res = await fetch(settingsUrl);
@@ -289,6 +298,13 @@ async function refreshPwaConfig(settingsUrl: string | undefined): Promise<void> 
 		const wasEnabled = offlineEnabled;
 		offlineEnabled = !(data && data['pwa.offline_enabled'] === false);
 		pwaConfigCheckedAt = Date.now();
+		// navigationPreload must track the flag: left enabled while the fetch
+		// handler bails on every navigation, each preload is cancelled before
+		// preloadResponse settles — Chrome logs a warning per navigation.
+		await (offlineEnabled
+			? sw.registration.navigationPreload?.enable()
+			: sw.registration.navigationPreload?.disable()
+		)?.catch(() => {});
 		// A flag flip to disabled purges everything — "off" means no cached
 		// residue either, not just "stop serving from cache".
 		if (wasEnabled && !offlineEnabled) await purgeAllPwaCaches();
@@ -330,6 +346,21 @@ async function trimCache(cacheName: string, max: number): Promise<void> {
 	const keys = await cache.keys();
 	if (keys.length <= max) return;
 	await Promise.all(keys.slice(0, keys.length - max).map((k) => cache.delete(k)));
+}
+
+// Bail-path passthrough for navigations: a preload fires for every
+// navigation while navigationPreload is enabled, so a fetch handler that
+// returns without respondWith must still consume event.preloadResponse —
+// otherwise Chrome cancels it unsettled and logs "the service worker
+// navigation preload request was cancelled" on every navigation.
+async function passThroughNavigation(event: FetchEvent): Promise<Response> {
+	try {
+		const res = await event.preloadResponse;
+		if (res) return res;
+	} catch {
+		// Preload failed — fall through to a plain fetch.
+	}
+	return fetch(event.request);
 }
 
 async function networkFirstNavigation(
@@ -406,7 +437,7 @@ export function initPwaServiceWorker(sw: ServiceWorkerGlobalScope, init: Service
 			(async () => {
 				// Read the offline flag first — a disabled toggle must mean no
 				// caching at all, not "cache but never serve".
-				await refreshPwaConfig(init.settingsUrl);
+				await refreshPwaConfig(sw, init.settingsUrl);
 				if (!offlineEnabled || !precacheStore) return;
 				await fillPrecache(precacheStore);
 			})()
@@ -424,8 +455,9 @@ export function initPwaServiceWorker(sw: ServiceWorkerGlobalScope, init: Service
 				);
 				// Race navigations against SW dispatch — the request starts at
 				// commit time and the fetch handler prefers event.preloadResponse.
+				// refreshPwaConfig re-syncs this with the offline_enabled flag.
 				await sw.registration.navigationPreload?.enable().catch(() => {});
-				await refreshPwaConfig(init.settingsUrl);
+				await refreshPwaConfig(sw, init.settingsUrl);
 			})()
 		);
 	});
@@ -446,18 +478,24 @@ export function initPwaServiceWorker(sw: ServiceWorkerGlobalScope, init: Service
 
 	sw.addEventListener('fetch', (event) => {
 		const { request } = event;
-		if (request.method !== 'GET' || !offlineEnabled) return;
+		// Bail paths on navigations must still consume preloadResponse.
+		const bail = () => {
+			if (request.mode === 'navigate') {
+				event.respondWith(passThroughNavigation(event));
+			}
+		};
+		if (request.method !== 'GET' || !offlineEnabled) return bail();
 		// Re-check the offline flag periodically — picks up admin toggles within
 		// CONFIG_REFRESH_MS instead of once per worker lifetime, and retries
 		// after a failed first fetch.
 		if (Date.now() - pwaConfigCheckedAt > CONFIG_REFRESH_MS) {
-			event.waitUntil(refreshPwaConfig(init.settingsUrl));
+			event.waitUntil(refreshPwaConfig(sw, init.settingsUrl));
 		}
 		const url = new URL(request.url);
-		if (url.origin !== sw.location.origin) return;
+		if (url.origin !== sw.location.origin) return bail();
 		// Same-origin /api/* routes are auth/session endpoints in the main app —
 		// never serve them from cache.
-		if (url.pathname.startsWith('/api/')) return;
+		if (url.pathname.startsWith('/api/')) return bail();
 
 		if (url.pathname.startsWith('/_app/immutable/')) {
 			event.respondWith(cacheFirst(event, IMMUTABLE));

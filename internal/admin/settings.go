@@ -481,13 +481,6 @@ var defaultSettings = map[string]SettingCategory{
 		Key:   "seo",
 		Label: "SEO",
 		Settings: []SettingDef{
-			{Key: "meta_title_template", Label: "Meta Title Template", Type: "text"},
-			{Key: "meta_description_template", Label: "Meta Description Template", Type: "textarea"},
-			{Key: "og_image", Label: "Default OG Image", Type: "media", Accept: "image/*"},
-			{Key: "twitter_handle", Label: "Twitter/X Handle", Type: "text", Placeholder: "@username"},
-			{Key: "json_ld_type", Label: "Default JSON-LD Type", Type: "select", Options: []string{"Organization", "WebSite", "LocalBusiness"}},
-			{Key: "google_analytics_id", Label: "Google Analytics ID", Type: "text", Placeholder: "G-XXXXXXXXXX"},
-			{Key: "google_tag_manager_id", Label: "Google Tag Manager ID", Type: "text", Placeholder: "GTM-XXXXXXX"},
 			{Key: "sitemap.space_min_members", Label: "Sitemap: Min Space Members", Type: "number", Description: "Minimum member count for a space to be included in the sitemap."},
 			{Key: "sitemap.space_min_posts", Label: "Sitemap: Min Space Posts (total)", Type: "number", Description: "Minimum total post count for a space to be included in the sitemap."},
 			{Key: "sitemap.space_min_forums", Label: "Sitemap: Min Space Forums", Type: "number", Description: "Minimum forum thread count for a space to be included in the sitemap."},
@@ -505,12 +498,18 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "sitemap.forum_min_replies", Label: "Sitemap: Min Forum Replies", Type: "number", Description: "Minimum reply count for forum threads to be indexed."},
 			{Key: "sitemap.question_min_answers", Label: "Sitemap: Min Question Answers", Type: "number", Description: "Minimum answer count for questions (solved threads). Set 0 to include unsolved."},
 			{Key: "sitemap.discussion_min_comments", Label: "Sitemap: Min Discussion Comments", Type: "number", Description: "Minimum comment count for discussions to be indexed."},
+			{Key: "sitemap.user_min_posts", Label: "Sitemap: Min User Posts", Type: "number", Description: "Minimum published content count for a user profile to be included in the sitemap."},
+			{Key: "sitemap.tag_min_content", Label: "Sitemap: Min Tag Content", Type: "number", Description: "Minimum content count for a tag page to be included in the sitemap."},
 			// Removed: enable_sitemap / enable_robots_txt / enable_json_ld —
 			// sitemap & robots.txt are always served (robots.txt is generated
 			// from the bot registry per ADR-043, not a system_settings toggle),
 			// and JSON-LD is emitted by the SSR shell. These toggles had no
 			// consumer and misled admins into thinking they could disable SEO
 			// endpoints. Bot policy is managed in the Bot Management page.
+			// Removed likewise: meta_title_template / meta_description_template /
+			// og_image / twitter_handle / json_ld_type / google_analytics_id /
+			// google_tag_manager_id — no consumer read any of them (analytics is
+			// Umami, OG image defaults are hardcoded/featured-image fallbacks).
 		},
 	},
 	// NOTE: The "integrations" category was removed. Meilisearch/Honcho endpoints

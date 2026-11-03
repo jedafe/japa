@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -170,6 +171,14 @@ func (h *Handlers) handleStoreError(w http.ResponseWriter, err error, fallbackMs
 	}
 }
 
+// groupBackingRoleName returns the conventional name of a group's
+// auto-created permission role — CreateGroupWithRole and
+// groupPermissionRole both derive it this way. The rename/delete paths use
+// the same convention to recognize backing roles without a schema flag.
+func groupBackingRoleName(groupName string) string {
+	return groupName + " Role"
+}
+
 // groupPermissionRole returns the role that carries a group's permission
 // set — the group's first attached role, or an implicit "<name> Role"
 // created and attached on demand. The implicit path fixes a silent no-op
@@ -184,10 +193,19 @@ func (h *Handlers) groupPermissionRole(ctx context.Context, groupID pgtype.UUID,
 	}
 
 	if len(roles) > 0 {
+		// Prefer the convention-named backing role — the permission write
+		// should land on the group's own backing role rather than an
+		// arbitrary alphabetically-first attached role.
+		for _, r := range roles {
+			if r.Name == groupBackingRoleName(groupName) {
+				return r.ID, nil
+			}
+		}
+
 		return roles[0].ID, nil
 	}
 
-	roleName := groupName + " Role"
+	roleName := groupBackingRoleName(groupName)
 	roleSlug := slugify(roleName)
 
 	// Reuse an existing role with the derived slug instead of creating a
@@ -364,9 +382,36 @@ func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Capture attached roles before the delete — group_roles rows cascade
+	// with the group. A "<name> Role" backing role left with no remaining
+	// attachments is removed afterwards so the roles list doesn't keep an
+	// orphaned mirror of the deleted group; shared or renamed roles are
+	// left alone.
+	attachedRoles, err := h.store.ListGroupRoles(r.Context(), groupID)
+	if err != nil {
+		slog.Warn("rbac: failed to list group roles before delete", "group_id", groupID, "error", err)
+
+		attachedRoles = nil // proceed — don't block the delete
+	}
+
 	if err := h.store.DeleteGroupByID(r.Context(), groupID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete group")
 		return
+	}
+
+	for _, role := range attachedRoles {
+		if role.Name != groupBackingRoleName(group.Name) {
+			continue
+		}
+
+		remaining, err := h.store.read.ListGroupsByRoleID(r.Context(), role.ID)
+		if err != nil || len(remaining) > 0 {
+			continue
+		}
+
+		if err := h.store.DeleteRole(r.Context(), role.ID); err != nil {
+			slog.Warn("rbac: failed to delete orphaned group backing role", "group_id", groupID, "role_id", role.ID, "error", err)
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -1262,6 +1307,34 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	if err := h.store.UpdateGroup(r.Context(), groupID, updateName, updateSlug, updateDesc); err != nil {
 		h.handleStoreError(w, err, "Failed to update group")
 		return
+	}
+
+	// Keep the auto-created "<name> Role" backing role's name in sync on
+	// rename — otherwise the roles list keeps mirroring the old group name.
+	// Only a role still carrying the convention name AND attached solely to
+	// this group is renamed; an admin-renamed or deliberately shared role is
+	// left untouched (same rule as migration 001027).
+	if updateName != existing.Name {
+		attached, err := h.store.ListGroupRoles(r.Context(), groupID)
+		if err != nil {
+			slog.Warn("rbac: failed to list group roles for backing-role rename", "group_id", groupID, "error", err)
+		}
+
+		for _, role := range attached {
+			if role.Name != groupBackingRoleName(existing.Name) {
+				continue
+			}
+
+			// A shared role is not purely this group's backing role.
+			gids, err := h.store.read.ListGroupsByRoleID(r.Context(), role.ID)
+			if err != nil || len(gids) != 1 || gids[0] != groupID {
+				continue
+			}
+
+			if err := h.store.UpdateRole(r.Context(), role.ID, groupBackingRoleName(updateName)); err != nil {
+				slog.Warn("rbac: failed to rename group backing role", "group_id", groupID, "role_id", role.ID, "error", err)
+			}
+		}
 	}
 
 	// Update permissions on the group's permission role (first attached

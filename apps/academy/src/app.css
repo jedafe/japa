@@ -144,6 +144,17 @@
 	--destructive: #ef4444;
 }
 
+/* Breakpoints in px so they match the hand-written shell queries (767px /
+   1279px) — rem breakpoints scale with the browser's default font size and
+   could split the two systems apart (e.g. Edge "Large" font setting). */
+@theme {
+	--breakpoint-sm: 640px;
+	--breakpoint-md: 768px;
+	--breakpoint-lg: 1024px;
+	--breakpoint-xl: 1280px;
+	--breakpoint-2xl: 1536px;
+}
+
 /* Expose the semantic tokens as Tailwind color utilities (bg-surface, text-muted, …). */
 @theme inline {
 	--color-bg: var(--color-bg);

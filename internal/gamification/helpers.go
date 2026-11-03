@@ -3,6 +3,7 @@ package gamification
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -96,14 +97,88 @@ func scanTimestamp(s string) (pgtype.Timestamptz, error) {
 	return pgtype.Timestamptz{Time: t, Valid: true}, nil
 }
 
+// mediaURL resolves an artwork media id (badge icon, challenge image) to a
+// displayable URL via the injected MediaResolver. Returns "" when unwired
+// or resolution fails — artwork is decorative and never fails a read.
+func (s *Service) mediaURL(ctx context.Context, mediaID pgtype.UUID) string {
+	if s.mediaResolver == nil || !mediaID.Valid {
+		return ""
+	}
+	u, err := s.mediaResolver.ResolveMediaURL(ctx, mediaID)
+	if err != nil {
+		return ""
+	}
+	return u
+}
+
+// artworkChanged reports whether an update is actually replacing the
+// artwork — re-saving the same media id skips the knockout round-trip.
+func artworkChanged(current, next pgtype.UUID) bool {
+	return !current.Valid || current != next
+}
+
+// resolveIconURLs batch-resolves artwork media ids to display URLs — one
+// resolver round-trip for a whole list instead of one per badge. Keyed by
+// media id string so callers can look up per-row IconMediaID values.
+func (s *Service) resolveIconURLs(ctx context.Context, mediaIDs []pgtype.UUID) map[string]string {
+	if s.mediaResolver == nil || len(mediaIDs) == 0 {
+		return nil
+	}
+	ids := make([]pgtype.UUID, 0, len(mediaIDs))
+	seen := make(map[pgtype.UUID]bool, len(mediaIDs))
+	for _, id := range mediaIDs {
+		if !id.Valid || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	urls, err := s.mediaResolver.ResolveMediaURLs(ctx, ids)
+	if err != nil {
+		return nil
+	}
+	return urls
+}
+
+// Artwork frame sizes — the longest edge an attached asset is downscaled
+// to. Badge shields render at most ~80px (celebration modal) so 512px
+// covers high-DPI; challenge heroes span a card column so they get more.
+const (
+	badgeIconMaxDim      = 512
+	challengeImageMaxDim = 1536
+)
+
+// knockoutArtwork removes the solid edge background on a newly attached
+// artwork media id (badge icon, challenge image) and downscales it to fit
+// its frame so the asset rhymes with the circular badge/hero UI. Runs
+// fire-and-forget (Rule 8) so a heavyweight raster transform never blocks
+// the admin write — a brief window may serve the original until the
+// rewrite lands. Nil-safe and failure-tolerant.
+func (s *Service) knockoutArtwork(ctx context.Context, mediaID string, maxDim int) {
+	if s.mediaProcessor == nil || mediaID == "" {
+		return
+	}
+	id, err := scanUUID(mediaID)
+	if err != nil || !id.Valid {
+		return
+	}
+	go func() {
+		if err := s.mediaProcessor.RemoveEdgeBackground(context.WithoutCancel(ctx), id, maxDim); err != nil {
+			slog.Warn("gamification: artwork background knockout failed",
+				"media_id", mediaID, "error", err)
+		}
+	}()
+}
+
 // badgeToInfo converts a gen.BadgeDefinition to a BadgeInfo DTO.
-func badgeToInfo(b gen.BadgeDefinition) BadgeInfo {
+func (s *Service) badgeToInfo(ctx context.Context, b gen.BadgeDefinition) BadgeInfo {
 	info := BadgeInfo{
 		ID:           uuidStr(b.ID),
 		Slug:         b.Slug,
 		Name:         b.Name,
 		Description:  ptrStr(b.Description),
 		IconMediaID:  uuidStr(b.IconMediaID),
+		AccentColor:  ptrStr(b.AccentColor),
 		TriggerType:  b.TriggerType,
 		IsActive:     b.IsActive,
 		IsSystem:     b.IsSystem,
@@ -150,7 +225,7 @@ func badgeToInfo(b gen.BadgeDefinition) BadgeInfo {
 
 // badgeWithDetails builds the earned-badge DTO shared by the evaluator,
 // the user-badge list, and the admin award path.
-func badgeWithDetails(b gen.BadgeDefinition, awardedAt pgtype.Timestamptz) BadgeWithDetails {
+func (s *Service) badgeWithDetails(ctx context.Context, b gen.BadgeDefinition, awardedAt pgtype.Timestamptz) BadgeWithDetails {
 	var iconID *string
 
 	if b.IconMediaID.Valid {
@@ -173,7 +248,7 @@ func badgeWithDetails(b gen.BadgeDefinition, awardedAt pgtype.Timestamptz) Badge
 }
 
 // challengeToInfo converts a gen.ChallengeDefinition to a ChallengeInfo DTO.
-func challengeToInfo(c gen.ChallengeDefinition) ChallengeInfo {
+func (s *Service) challengeToInfo(ctx context.Context, c gen.ChallengeDefinition) ChallengeInfo {
 	info := ChallengeInfo{
 		ID:           uuidStr(c.ID),
 		Slug:         c.Slug,

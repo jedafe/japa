@@ -1300,15 +1300,18 @@ LEFT JOIN (
 ) r ON r.entity_id = c.id
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
+ AND (@type_filter::text = '' OR c.content_type = @type_filter::text)
 ORDER BY c.updated_at DESC
-LIMIT 10000;
+LIMIT @chunk_limit OFFSET @chunk_offset;
 
--- name: ListPublishedContentForRSS :many
-SELECT title, slug, created_at
-FROM contents
-WHERE status = 'published'
-ORDER BY created_at DESC
-LIMIT 50;
+-- name: CountPublishedSlugsForSitemap :one
+-- Row count behind the content sitemap — used to enumerate chunked
+-- sub-sitemap files (/sitemap-content.xml?chunk=N) in the sitemap index.
+SELECT count(*) FROM contents c
+WHERE c.status = 'published'
+ AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true;
+
+
 
 -- name: ListPublishedContentForLLMsTxt :many
 -- Same visibility/indexability contract as ListPublishedSlugsForSitemap:

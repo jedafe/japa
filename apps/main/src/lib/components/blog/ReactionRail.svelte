@@ -213,18 +213,27 @@
 		if (!requireAuth() || reactionPending) return;
 		reactionPending = reactionKey;
 		const wasActive = activeReactions.has(reactionKey);
+		// One reaction per user — picking another key replaces the active
+		// one (the server upserts the switch), so every other key
+		// deactivates and its count decrements.
+		const replacedKeys = wasActive ? [] : [...activeReactions].filter((k) => k !== reactionKey);
 
 		// Optimistic update
 		const next = new Set(activeReactions);
 		if (wasActive) {
 			next.delete(reactionKey);
 		} else {
+			for (const k of replacedKeys) next.delete(k);
 			next.add(reactionKey);
 		}
 		activeReactions = next;
 		const delta = wasActive ? -1 : 1;
 		reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + delta;
 		if (inflightDeltas) inflightDeltas[reactionKey] = (inflightDeltas[reactionKey] ?? 0) + delta;
+		for (const k of replacedKeys) {
+			reactionCounts[k] = (reactionCounts[k] || 0) - 1;
+			if (inflightDeltas) inflightDeltas[k] = (inflightDeltas[k] ?? 0) - 1;
+		}
 		updateViewerState(contentId, { reactionKeys: [...next] });
 
 		try {
@@ -244,11 +253,16 @@
 				rollback.add(reactionKey);
 			} else {
 				rollback.delete(reactionKey);
+				for (const k of replacedKeys) rollback.add(k);
 			}
 			activeReactions = rollback;
 			const rollbackDelta = wasActive ? 1 : -1;
 			reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + rollbackDelta;
 			if (inflightDeltas) inflightDeltas[reactionKey] = (inflightDeltas[reactionKey] ?? 0) + rollbackDelta;
+			for (const k of replacedKeys) {
+				reactionCounts[k] = (reactionCounts[k] || 0) + 1;
+				if (inflightDeltas) inflightDeltas[k] = (inflightDeltas[k] ?? 0) + 1;
+			}
 			updateViewerState(contentId, { reactionKeys: [...rollback] });
 			reactionPending = null;
 			return;
@@ -356,7 +370,7 @@
 			openReactions();
 			return;
 		}
-		toggleReaction(primaryKey);
+		toggleReaction(activeReaction?.key ?? primaryKey);
 	}
 
 	let openedViaTouch = $state(false);
@@ -390,7 +404,13 @@
 	const heartLikeKeys = ['like', 'love', 'heart'];
 	const useHeartGlyph = $derived(heartLikeKeys.includes(primaryReaction.key));
 	const primaryKey = $derived(primaryReaction.key);
-	const primaryActive = $derived(activeReactions.has(primaryKey));
+	// One reaction per user — the trigger is active whenever ANY key is held,
+	// not just the primary, and shows the viewer's picked emoji.
+	const activeReaction = $derived(reactionTypes.find((r) => activeReactions.has(r.key)) ?? null);
+	const primaryActive = $derived(activeReactions.size > 0);
+	const triggerEmoji = $derived(
+		activeReaction ? activeReaction.emoji : (!useHeartGlyph ? primaryReaction.emoji : null)
+	);
 	const totalReactions = $derived(
 		reactionsEnabled ? reactionTypes.reduce((sum, r) => sum + (reactionCounts[r.key] ?? 0), 0) : voteScore
 	);
@@ -434,10 +454,10 @@
 				<span
 					class="grid h-9 w-9 place-items-center rounded-full text-lg transition-colors {primaryActive ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
 				>
-					{#if useHeartGlyph}
-						<Heart size={20} fill={primaryActive ? 'currentColor' : 'none'} />
+					{#if triggerEmoji}
+						<span class="text-lg leading-none">{triggerEmoji}</span>
 					{:else}
-						<span class="text-lg leading-none">{primaryReaction.emoji}</span>
+						<Heart size={20} fill={primaryActive ? 'currentColor' : 'none'} />
 					{/if}
 				</span>
 				<span class="{isHorizontal ? 'text-sm' : 'text-[11px]'} font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">

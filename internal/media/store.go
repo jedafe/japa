@@ -35,6 +35,10 @@ func (s *Store) InsertMedia(ctx context.Context, params gen.InsertMediaParams) (
 }
 
 // GetMediaByID returns a media item by ID (excludes soft-deleted).
+func (s *Store) GetMediaByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.Medium, error) {
+	return s.read.GetMediaByIDs(ctx, ids)
+}
+
 func (s *Store) GetMediaByID(ctx context.Context, id pgtype.UUID) (gen.Medium, error) {
 	m, err := s.read.GetMediaByID(ctx,
 		id,

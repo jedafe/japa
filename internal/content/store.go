@@ -1256,7 +1256,10 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	// and admins editing someone else's post bypass this check because they
 	// are not the author. Super admins bypass even on their own content.
 	// A zero/missing created_at is treated as "no limit".
-	if !bypassEditWindow && existing.AuthorID.Valid && existing.CreatedAt.Valid &&
+	// The window only applies to published posts (BUG-CE-008) — drafts and
+	// scheduled content are in-progress work and must stay editable.
+	if !bypassEditWindow && existing.Status == StatusPublished &&
+		existing.AuthorID.Valid && existing.CreatedAt.Valid &&
 		existing.AuthorID.Bytes == editedBy.Bytes {
 		windowMinutes := defaultEditWindowMinutes
 		if s.settings != nil {
@@ -1426,6 +1429,42 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 
 	params := buildUpdateContentParams(id, input, existing, newSlug, primarySpaceID)
 
+	// BUG-CE-001: a PATCH-driven transition to published must stamp
+	// published_at — the dedicated path stamps it inside UpdateContentStatus.
+	transitionedToPublished := input.Status == StatusPublished && existing.Status != StatusPublished
+	if transitionedToPublished && !params.PublishedAt.Valid {
+		params.PublishedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	}
+
+	// BUG-CE-001: PATCH-driven transitions into live statuses must meet the
+	// same invariants as the dedicated endpoints — primary space (§14),
+	// content.min_length, and required custom fields (§23/§25).
+	transitionedToLive := (input.Status == StatusPublished || input.Status == StatusScheduled) &&
+		existing.Status != input.Status
+	if transitionedToLive {
+		// The resolved primarySpaceID already reflects this update's
+		// space_id input or the stored primary — only fall back to the
+		// content_spaces rows when neither is set (a PATCH that assigns a
+		// space and publishes in one shot must not 400 on the stale check).
+		if !primarySpaceID.Valid {
+			if err := hasPrimarySpace(ctx, s.read, id); err != nil {
+				return gen.UpdateContentRow{}, err
+			}
+		}
+
+		minLength := defaultMinLength
+		if s.settings != nil {
+			minLength = s.settings.GetIntOr(ctx, "content.min_length", defaultMinLength)
+		}
+		if len(strings.TrimSpace(existing.Body)) < minLength {
+			return gen.UpdateContentRow{}, ErrBodyTooShort
+		}
+
+		if err := s.validateRequiredFields(ctx, existing.ContentType, existing.GuideCategory, existing.FieldValues); err != nil {
+			return gen.UpdateContentRow{}, err
+		}
+	}
+
 	content, err := s.write.UpdateContent(ctx, params)
 	if err != nil {
 		return gen.UpdateContentRow{}, fmt.Errorf("updating content: %w", err)
@@ -1491,6 +1530,24 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		"title":      content.Title,
 		"actor_id":   editedBy,
 	})
+
+	// BUG-CE-001: complete the publish pipeline for PATCH-driven
+	// transitions — the content_scores row (feed queries INNER JOIN it,
+	// a missing row makes the post invisible) and the content.published
+	// webhook that subscribers (RSS, notifications) expect.
+	if transitionedToPublished {
+		if err := s.write.EnsureContentScore(ctx, content.ID); err != nil {
+			slog.Warn("content: failed to ensure content_scores on patch-publish",
+				"content_id", content.ID.String(), "error", err)
+		}
+
+		s.emitWebhook(ctx, "content.published", map[string]any{
+			"content_id": content.ID,
+			"slug":       content.Slug,
+			"title":      content.Title,
+			"actor_id":   editedBy,
+		})
+	}
 
 	// Purge both slugs — a rename leaves the old URL cached at the edge.
 	// Only publicly served revisions can sit in the edge cache; edits to
@@ -1705,13 +1762,19 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 		return gen.UpdateContentStatusRow{}, fmt.Errorf("%w: %q", ErrInvalidStatus, status)
 	}
 
-	_, err := s.read.GetContentByID(ctx, id)
+	row, err := s.read.GetContentByID(ctx, id)
 	if err != nil {
 		return gen.UpdateContentStatusRow{}, fmt.Errorf("getting content for status change: %w", err)
 	}
 
 	if status == StatusPublished || status == StatusScheduled {
 		if err := hasPrimarySpace(ctx, s.read, id); err != nil {
+			return gen.UpdateContentStatusRow{}, err
+		}
+
+		// BUG-CE-009: required custom fields are enforced server-side on
+		// publish transitions — the gate.ts required-field check is UI-only.
+		if err := s.validateRequiredFields(ctx, row.ContentType, row.GuideCategory, row.FieldValues); err != nil {
 			return gen.UpdateContentStatusRow{}, err
 		}
 	}
@@ -1770,12 +1833,18 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 // Asynq task with ProcessAt=publishAt for the actual publish to happen.
 // Scheduled content must have a primary space (Section 14 / BUG-007).
 func (s *Service) ScheduleContent(ctx context.Context, id pgtype.UUID, publishAt time.Time) (gen.ScheduleContentRow, error) {
-	_, err := s.read.GetContentByID(ctx, id)
+	row, err := s.read.GetContentByID(ctx, id)
 	if err != nil {
 		return gen.ScheduleContentRow{}, fmt.Errorf("getting content for scheduling: %w", err)
 	}
 
 	if err := hasPrimarySpace(ctx, s.read, id); err != nil {
+		return gen.ScheduleContentRow{}, err
+	}
+
+	// BUG-CE-009: required custom fields are enforced server-side on
+	// schedule transitions — the gate.ts required-field check is UI-only.
+	if err := s.validateRequiredFields(ctx, row.ContentType, row.GuideCategory, row.FieldValues); err != nil {
 		return gen.ScheduleContentRow{}, err
 	}
 
@@ -1788,6 +1857,87 @@ func (s *Service) ScheduleContent(ctx context.Context, id pgtype.UUID, publishAt
 	}
 
 	return content, nil
+}
+
+// validateRequiredFields enforces is_required custom fields on publish and
+// schedule transitions (§23/§25 / BUG-CE-009). Groups assigned to the
+// "content_type", "content_type:{slug}", and "content_type:guide:{category}"
+// entity classes are unioned; every is_required key must hold a non-empty
+// value in field_values.
+func (s *Service) validateRequiredFields(ctx context.Context, contentType string, guideCategory *string, fieldValues []byte) error {
+	classes := []string{"content_type", "content_type:" + contentType}
+	if contentType == TypeGuide && guideCategory != nil && *guideCategory != "" {
+		classes = append(classes, "content_type:guide:"+*guideCategory)
+	}
+
+	var required []string
+	seenGroups := map[pgtype.UUID]bool{}
+
+	for _, class := range classes {
+		groups, err := s.read.ListCustomFieldGroupsAndEntityClass(ctx, class)
+		if err != nil {
+			return fmt.Errorf("listing field groups for required-field check: %w", err)
+		}
+
+		for _, g := range groups {
+			// A group may surface under several entity classes — dedupe so
+			// its fields are fetched once.
+			if seenGroups[g.ID] {
+				continue
+			}
+			seenGroups[g.ID] = true
+
+			fields, err := s.read.ListCustomFieldsByGroup(ctx, g.ID)
+			if err != nil {
+				return fmt.Errorf("listing custom fields for required-field check: %w", err)
+			}
+
+			for _, f := range fields {
+				// Only frontend-visible fields: a required-but-hidden field
+				// can't be filled by the composer, so enforcing it would
+				// make publish unreachable (BUG-CE-009).
+				if f.IsRequired && f.ShowInFrontend {
+					required = append(required, f.Key)
+				}
+			}
+		}
+	}
+
+	if len(required) == 0 {
+		return nil
+	}
+
+	var values map[string]any
+	if len(fieldValues) > 0 {
+		_ = json.Unmarshal(fieldValues, &values)
+	}
+
+	var missing []string
+
+	for _, key := range required {
+		v, ok := values[key]
+		if !ok || v == nil {
+			missing = append(missing, key)
+			continue
+		}
+
+		switch t := v.(type) {
+		case string:
+			if strings.TrimSpace(t) == "" {
+				missing = append(missing, key)
+			}
+		case []any:
+			if len(t) == 0 {
+				missing = append(missing, key)
+			}
+		}
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: %s", ErrMissingRequiredFields, strings.Join(missing, ", "))
+	}
+
+	return nil
 }
 
 // IncrementContentView increments the view count of a content row.
@@ -2203,9 +2353,13 @@ func (s *Service) DeleteReactionType(ctx context.Context, key string) error {
 	})
 }
 
-// AddReaction adds a reaction from a user to an entity. Idempotent — if the
-// user already reacted with the same key, nothing changes (ON CONFLICT DO NOTHING).
-func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, userID pgtype.UUID, reactionKey string) (gen.Reaction, error) {
+// AddReaction adds a reaction from a user to an entity. One reaction per
+// user per entity (migration 001023): re-adding the same key is an idempotent
+// no-op, and adding a different key switches the existing row to the new key
+// instead of stacking a second reaction. The returned row's PreviousKey
+// distinguishes the three outcomes: NULL = fresh insert, same key = no-op,
+// different key = switch.
+func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, userID pgtype.UUID, reactionKey string) (gen.AddReactionRow, error) {
 	reaction, err := s.write.AddReaction(ctx, gen.AddReactionParams{
 		EntityType:  entityType,
 		EntityID:    entityID,
@@ -2213,19 +2367,40 @@ func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, 
 		ReactionKey: reactionKey,
 	})
 	if err != nil {
-		return gen.Reaction{}, fmt.Errorf("adding reaction: %w", err)
+		return gen.AddReactionRow{}, fmt.Errorf("adding reaction: %w", err)
 	}
 
 	// ADR-136: the content author earns reaction.added points (self-reacts
-	// excluded). Monotonic seq references let a remove→re-add cycle award
-	// again while replays dedupe (same pattern as comment/forum votes).
+	// excluded). A switch reverts the previous key's award before awarding
+	// the new key so the author never holds points for a reaction that no
+	// longer exists. Same-key no-ops award nothing.
 	if entityType == "content" {
 		if authorID, aerr := s.read.GetContentAuthorID(ctx, entityID); aerr == nil && authorID.Valid && authorID != userID {
-			s.emitReactionAward(ctx, entityID, userID, authorID, reactionKey, reaction.CreatedAt.Time.UnixMicro())
+			switched := reaction.PreviousKey != nil && *reaction.PreviousKey != reactionKey
+			if switched {
+				s.emitReactionRevert(ctx, entityID, userID, authorID, *reaction.PreviousKey)
+			}
+			if reaction.PreviousKey == nil || switched {
+				s.emitReactionAward(ctx, entityID, userID, authorID, reactionKey, reaction.CreatedAt.Time.UnixMicro())
+			}
 		}
 	}
 
 	return reaction, nil
+}
+
+// emitReactionRevert reverses the reaction.added award for the given
+// (entity, reactor, key) tuple — used when a reaction is removed or switched
+// to a different key.
+func (s *Service) emitReactionRevert(ctx context.Context, entityID, userID, authorID pgtype.UUID, reactionKey string) {
+	prefix := reactionRefPrefix(entityID, userID, reactionKey)
+	if priorRef, lerr := s.write.GetLatestActivityEventReferenceByPrefixAndKey(ctx,
+		gen.GetLatestActivityEventReferenceByPrefixAndKeyParams{ActivityKey: wallet.ActivityKeyReactionAdded, Prefix: prefix + "%"}); lerr == nil {
+		s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, priorRef+":undo",
+			map[string]interface{}{"undoes_key": wallet.ActivityKeyReactionAdded, "undoes": priorRef})
+	} else if !errors.Is(lerr, pgx.ErrNoRows) {
+		slog.Warn("content: prior reaction award lookup failed", "prefix", prefix, "error", lerr)
+	}
 }
 
 // reactionRefPrefix is the dedupe namespace for one (entity, reactor, key)
@@ -2261,14 +2436,7 @@ func (s *Service) RemoveReaction(ctx context.Context, entityType string, entityI
 	// processing skips cleanly if it never credited.
 	if rows > 0 && entityType == "content" {
 		if authorID, aerr := s.read.GetContentAuthorID(ctx, entityID); aerr == nil && authorID.Valid && authorID != userID {
-			prefix := reactionRefPrefix(entityID, userID, reactionKey)
-			if priorRef, lerr := s.write.GetLatestActivityEventReferenceByPrefixAndKey(ctx,
-				gen.GetLatestActivityEventReferenceByPrefixAndKeyParams{ActivityKey: wallet.ActivityKeyReactionAdded, Prefix: prefix + "%"}); lerr == nil {
-				s.emitActivity(ctx, authorID, wallet.ActivityKeyReactionReverted, priorRef+":undo",
-					map[string]interface{}{"undoes_key": wallet.ActivityKeyReactionAdded, "undoes": priorRef})
-			} else if !errors.Is(lerr, pgx.ErrNoRows) {
-				slog.Warn("content: prior reaction award lookup failed", "prefix", prefix, "error", lerr)
-			}
+			s.emitReactionRevert(ctx, entityID, userID, authorID, reactionKey)
 		}
 	}
 
@@ -2923,6 +3091,28 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, pr
 			}); err != nil {
 				return fmt.Errorf("adding content_space: %w", err)
 			}
+		}
+
+		return nil
+	})
+}
+
+// ClearContentSpaces removes every space assignment for a content item and
+// NULLs contents.space_id/geo_space_id (BUG-CE-013). Previously the
+// spaces endpoint required a non-empty primary, so clearing was impossible.
+// Callers must only invoke this for non-published statuses — publishing
+// without a primary is already blocked by hasPrimarySpace.
+func (s *Service) ClearContentSpaces(ctx context.Context, contentID pgtype.UUID) error {
+	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		if err := q.DeleteContentSpaces(ctx, contentID); err != nil {
+			return fmt.Errorf("deleting content_spaces: %w", err)
+		}
+
+		if err := q.SetContentSpaceID(ctx, gen.SetContentSpaceIDParams{
+			ContentID: contentID,
+			SpaceID:   pgtype.UUID{}, // NULL — no primary
+		}); err != nil {
+			return fmt.Errorf("clearing primary space on content: %w", err)
 		}
 
 		return nil

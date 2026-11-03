@@ -5,7 +5,7 @@
 	// and their i18n `t`; the modal owns no client so it stays app-agnostic.
 	import { Dialog } from 'bits-ui';
 	import { untrack } from 'svelte';
-	import { X, Search, Loader2, ImagePlus, Upload, Download, Check, Maximize2, Trash2 } from 'lucide-svelte';
+	import { X, Search, Loader2, ImagePlus, Upload, Download, Check, Maximize2, Pencil, Trash2 } from 'lucide-svelte';
 	import MediaLightbox, { type LightboxItem } from './MediaLightbox.svelte';
 	import { convertImageToModernFormat } from './imageConvert';
 	import type { MediaPickerItem, StockApi, StockPhoto, StockProvider } from './types';
@@ -31,12 +31,12 @@
 		/** Host: stock-photo provider APIs — omit to hide the Stock tab. */
 		stock?: StockApi;
 		/** Host: persist metadata edits for a library item (PATCH /media/{id}).
-		 *  When provided, selecting a library item reveals an alt-text/title
-		 *  editor above the grid. Omit to hide it. */
+		 *  When provided, each library thumbnail gets an edit button that opens
+		 *  the alt-text/title editor above the grid. Omit to hide it. */
 		onUpdate?: (id: string, updates: { alt_text?: string | null; caption?: string | null }) => Promise<void>;
 		/** Host: delete a library item (DELETE /media/{id}, ownership-scoped).
-		 *  When provided, the selected-item panel gets a Delete button with an
-		 *  inline confirm step. Omit to hide it. */
+		 *  When provided, each library thumbnail gets a delete button that
+		 *  opens an inline confirm step. Omit to hide it. */
 		onDelete?: (id: string) => Promise<void>;
 		/** i18n translator injected by the host app. */
 		t?: EditorTranslator;
@@ -86,6 +86,13 @@
 	let editError = $state<string | null>(null);
 	let editSaved = $state(false);
 	let selectedItem = $derived(items.find((i) => i.id === selectedId) ?? null);
+	// The edit/delete panel only opens via the thumbnail action buttons —
+	// clicking a thumbnail just (de)selects it for the Select button.
+	let panelMode = $state<'edit' | 'delete' | null>(null);
+	// Snapshot of the picked item so confirmSelection still works when the
+	// item is absent from the current items list (library refresh race
+	// after upload, or a stale list).
+	let pickedItem = $state<MediaPickerItem | null>(null);
 
 	// --- Selected-item delete (inline two-step confirm) ---
 	let deleteConfirming = $state(false);
@@ -102,6 +109,7 @@
 	let stockPage = $state(1);
 	let stockHasMore = $state(false);
 	let stockProviderFilter = $state<string>(''); // '' = all providers
+	let stockError = $state<string | null>(null);
 	let importingIds = $state<Set<string>>(new Set());
 	let importedIds = $state<Set<string>>(new Set());
 
@@ -116,9 +124,12 @@
 		lightboxOpen = previewItems.length > 0;
 	}
 
-	// Load the user's media library on mount.
+	// Load the user's media library on mount. untrack keeps `search` (read
+	// via loadLibrary's default param) out of this effect's dependencies —
+	// otherwise every keystroke would re-run it and fire an immediate fetch
+	// on top of the debounced one in onSearchInput.
 	$effect(() => {
-		loadLibrary();
+		untrack(() => loadLibrary());
 	});
 
 	function loadLibrary(q = search) {
@@ -154,6 +165,20 @@
 
 	function clearSelection() {
 		selectedId = null;
+		pickedItem = null;
+		panelMode = null;
+		deleteConfirming = false;
+		deleteError = null;
+	}
+
+	// Pre-fill the edit fields from the item, falling back to a label derived
+	// from the filename when the image has no stored alt text/title.
+	function primeEditFields(item: MediaPickerItem) {
+		const fallback = filenameLabel(item.filename);
+		editAlt = item.alt_text?.trim() || fallback;
+		editCaption = item.caption?.trim() || fallback;
+		editError = null;
+		editSaved = false;
 		deleteConfirming = false;
 		deleteError = null;
 	}
@@ -166,17 +191,41 @@
 			return;
 		}
 		selectedId = item.id ?? null;
-		const fallback = filenameLabel(item.filename);
-		editAlt = item.alt_text?.trim() || fallback;
-		editCaption = item.caption?.trim() || fallback;
-		editError = null;
-		editSaved = false;
-		deleteConfirming = false;
-		deleteError = null;
+		pickedItem = item;
+		primeEditFields(item);
+		panelMode = null;
+	}
+
+	// Thumbnail pencil button — select the item and reveal the alt/title
+	// editor (the only way the panel opens). Re-clicking the pencil on the
+	// item already being edited is a no-op so unsaved field edits aren't
+	// silently discarded by re-priming.
+	function openEditPanel(item: MediaPickerItem) {
+		if (selectedId === item.id && panelMode === 'edit') return;
+		selectedId = item.id ?? null;
+		pickedItem = item;
+		primeEditFields(item);
+		panelMode = 'edit';
+	}
+
+	// Thumbnail trash button — select the item and go straight to the
+	// delete-confirm step. primeEditFields also clears any stale
+	// editSaved/editError so a leftover "Saved" can't render under
+	// the confirm row.
+	function openDeleteConfirm(item: MediaPickerItem) {
+		selectedId = item.id ?? null;
+		pickedItem = item;
+		primeEditFields(item);
+		deleteConfirming = true;
+		panelMode = 'delete';
 	}
 
 	async function saveEdit() {
 		if (!onUpdate || !selectedId) return;
+		// Capture the target id before the await — if the user selects a
+		// different item while the PATCH is in flight, re-reading selectedId
+		// here would apply this item's updates to the wrong list entry.
+		const id = selectedId;
 		editSaving = true;
 		editError = null;
 		try {
@@ -184,9 +233,10 @@
 			// COALESCE(@field, field) so a JSON null means "keep existing" and
 			// would silently discard the user's attempt to clear the value.
 			const updates = { alt_text: editAlt.trim(), caption: editCaption.trim() };
-			await onUpdate(selectedId, updates);
-			items = items.map((i) => (i.id === selectedId ? { ...i, ...updates } : i));
-			editSaved = true;
+			await onUpdate(id, updates);
+			items = items.map((i) => (i.id === id ? { ...i, ...updates } : i));
+			if (pickedItem?.id === id) pickedItem = { ...pickedItem, ...updates };
+			if (selectedId === id) editSaved = true;
 		} catch (err) {
 			editError = err instanceof Error ? err.message : t('media.picker.edit_failed', 'Could not save changes');
 		} finally {
@@ -204,8 +254,15 @@
 		try {
 			await onDelete(id);
 			items = items.filter((i) => i.id !== id);
-			selectedId = null;
-			deleteConfirming = false;
+			// Only clear the selection/panel/confirm if it still points at
+			// the deleted item — the user may have selected (or opened the
+			// confirm for) another thumbnail while the request was in flight.
+			if (selectedId === id) {
+				selectedId = null;
+				pickedItem = null;
+				panelMode = null;
+				deleteConfirming = false;
+			}
 		} catch (err) {
 			deleteError = err instanceof Error ? err.message : t('media.picker.delete_failed', 'Could not delete media');
 		} finally {
@@ -214,7 +271,7 @@
 	}
 
 	function confirmSelection() {
-		const picked = items.find((i) => i.id === selectedId);
+		const picked = items.find((i) => i.id === selectedId) ?? (pickedItem?.id === selectedId ? pickedItem : null);
 		if (picked) onSelect(picked);
 	}
 
@@ -227,11 +284,20 @@
 		try {
 			const convertedFile = await convertImageToModernFormat(file);
 			const uploadedAsset = await onUpload(convertedFile, uploadContext);
-			// Switch to library tab and select the freshly uploaded asset.
+			// Switch to the library tab and highlight the freshly uploaded
+			// asset — the user confirms with Select (or opens the edit panel
+			// first) instead of the upload auto-inserting into the post.
+			// Clearing the search keeps an active filter from hiding the
+			// new item (which would leave Select enabled but dead); the
+			// pending debounce is cancelled so it can't fire the stale
+			// query afterwards either.
+			if (searchTimer) clearTimeout(searchTimer);
+			search = '';
 			tab = 'library';
-			loadLibrary();
+			loadLibrary('');
 			selectedId = uploadedAsset.id ?? null;
-			onSelect(uploadedAsset);
+			pickedItem = uploadedAsset;
+			panelMode = null;
 		} catch (err) {
 			uploadError = err instanceof Error ? err.message : t('media.picker.upload_failed', 'Upload failed');
 		} finally {
@@ -263,6 +329,15 @@
 		}
 	});
 
+	// Cancel pending debounced fetches when the modal unmounts so a late
+	// timer can't fire a search on a destroyed component.
+	$effect(() => {
+		return () => {
+			if (searchTimer) clearTimeout(searchTimer);
+			if (stockTimer) clearTimeout(stockTimer);
+		};
+	});
+
 	function runStockSearch(q: string) {
 		if (!stock) return;
 		stockQuery = q;
@@ -275,6 +350,7 @@
 		}
 		stockTimer = setTimeout(() => {
 			stockLoading = true;
+			stockError = null;
 			stock!
 				.search({
 					q: q.trim(),
@@ -286,9 +362,12 @@
 					stockResults = res.photos ?? [];
 					stockHasMore = res.has_next_page ?? false;
 				})
-				.catch(() => {
+				.catch((e) => {
+					// Surface the failure — an errored provider (e.g. rate-limited
+					// Openverse) must not look like an empty result set.
 					stockResults = [];
 					stockHasMore = false;
+					stockError = e instanceof Error ? e.message : t('media.picker.stock_search_failed', 'Stock search failed');
 				})
 				.finally(() => {
 					stockLoading = false;
@@ -311,6 +390,9 @@
 				stockResults = [...stockResults, ...(res.photos ?? [])];
 				stockHasMore = res.has_next_page ?? false;
 			})
+			.catch((e) => {
+				stockError = e instanceof Error ? e.message : t('media.picker.stock_search_failed', 'Stock search failed');
+			})
 			.finally(() => {
 				stockLoading = false;
 			});
@@ -325,6 +407,7 @@
 		if (!stock) return;
 		const key = photo.provider + ':' + photo.id;
 		importingIds = new Set([...importingIds, key]);
+		stockError = null;
 		stock
 			.import(photo.provider, photo.id)
 			.then((res) => {
@@ -333,6 +416,9 @@
 					// Refresh the Library tab so the imported asset shows up.
 					loadLibrary();
 				}
+			})
+			.catch((e) => {
+				stockError = e instanceof Error ? e.message : t('media.picker.stock_import_failed', 'Import failed');
 			})
 			.finally(() => {
 				const next = new Set(importingIds);
@@ -400,54 +486,65 @@
 					/>
 				</div>
 
-				{#if (onUpdate || onDelete) && selectedItem}
-					<!-- Selected item panel — alt/title editor (PATCH /media/{id} via
-					     host onUpdate) plus ownership-scoped delete (host onDelete). -->
+				{#if selectedItem && panelMode}
+					<!-- Item action panel — opened by the thumbnail edit/delete
+					     buttons (never by clicking the image itself). 'edit' shows
+					     the alt/title editor (PATCH /media/{id} via host onUpdate)
+					     plus a Delete button; 'delete' goes straight to the inline
+					     confirm (host onDelete). -->
 					<div class="media-edit">
-						<div class="media-edit-row">
-							{#if onUpdate}
-								<label class="media-edit-label">
-									<span>{t('media.picker.alt_text', 'Alt text')}</span>
-									<input
-										type="text"
-										class="media-edit-input"
-										bind:value={editAlt}
-										oninput={() => (editSaved = false)}
-										placeholder={t('media.picker.alt_placeholder', 'Describe the image for screen readers')}
-									/>
-								</label>
-								<label class="media-edit-label">
-									<span>{t('media.picker.caption', 'Title')}</span>
-									<input
-										type="text"
-										class="media-edit-input"
-										bind:value={editCaption}
-										oninput={() => (editSaved = false)}
-										placeholder={t('media.picker.caption_placeholder', 'Optional caption/title')}
-									/>
-								</label>
-								<button
-									type="button"
-									class="btn-primary media-edit-save"
-									disabled={editSaving}
-									onclick={saveEdit}
-								>
-									{#if editSaving}<Loader2 class="mpm-spin" size={14} />{/if}
-									{t('media.picker.save', 'Save')}
-								</button>
-							{/if}
-							{#if onDelete}
-								<button
-									type="button"
-									class="media-edit-delete"
-									disabled={deleting}
-									onclick={() => (deleteConfirming = true)}
-								>
-									<Trash2 size={14} />
-									{t('media.picker.delete', 'Delete')}
-								</button>
-							{/if}
-						</div>
+						{#if panelMode === 'edit'}
+							<div class="media-edit-row">
+								{#if onUpdate}
+									<label class="media-edit-label">
+										<span>{t('media.picker.alt_text', 'Alt text')}</span>
+										<input
+											type="text"
+											class="media-edit-input"
+											bind:value={editAlt}
+											oninput={() => (editSaved = false)}
+											placeholder={t('media.picker.alt_placeholder', 'Describe the image for screen readers')}
+										/>
+									</label>
+									<label class="media-edit-label">
+										<span>{t('media.picker.caption', 'Title')}</span>
+										<input
+											type="text"
+											class="media-edit-input"
+											bind:value={editCaption}
+											oninput={() => (editSaved = false)}
+											placeholder={t('media.picker.caption_placeholder', 'Optional caption/title')}
+										/>
+									</label>
+									<button
+										type="button"
+										class="btn-primary media-edit-save"
+										disabled={editSaving}
+										onclick={saveEdit}
+									>
+										{#if editSaving}<Loader2 class="mpm-spin" size={14} />{/if}
+										{t('media.picker.save', 'Save')}
+									</button>
+								{/if}
+								{#if onDelete}
+									<button
+										type="button"
+										class="media-edit-delete"
+										disabled={deleting}
+										onclick={() => {
+											// Clear a stale "Saved"/error so it can't render
+											// alongside the confirm row.
+											editSaved = false;
+											editError = null;
+											deleteConfirming = true;
+										}}
+									>
+										<Trash2 size={14} />
+										{t('media.picker.delete', 'Delete')}
+									</button>
+								{/if}
+							</div>
+						{/if}
 						{#if deleteConfirming}
 							<div class="media-edit-confirm">
 								<span class="media-edit-confirm-text">
@@ -466,7 +563,12 @@
 									type="button"
 									class="media-edit-confirm-no"
 									disabled={deleting}
-									onclick={() => (deleteConfirming = false)}
+									onclick={() => {
+										deleteConfirming = false;
+										// 'delete' mode has no fields to return to —
+										// close the panel rather than leave an empty box.
+										if (panelMode === 'delete') panelMode = null;
+									}}
 								>
 									{t('media.picker.cancel', 'Cancel')}
 								</button>
@@ -505,18 +607,28 @@
 					{:else}
 						<div class="modal-grid">
 							{#each items as item (item.id ?? item.url)}
-								<button
-									type="button"
+								<!-- media-thumb is a div wrapper so the edit/delete
+								     action buttons and the attribution links can sit
+								     inside it without nesting interactive elements in
+								     the select button. The button's own padding covers
+								     the whole thumb area so there is no dead zone. -->
+								<div
 									class="media-thumb"
 									class:selected={selectedId === item.id}
-									onclick={() => selectItem(item)}
 								>
-									<img src={item.url} alt={item.alt_text ?? item.filename ?? ''} loading="lazy" />
-									<!-- Saved title (caption) overrides the filename as the
-									     thumbnail label once set. -->
-									{#if item.caption || item.filename}
-										<span class="media-thumb-name">{item.caption || item.filename}</span>
-									{/if}
+									<button
+										type="button"
+										class="media-thumb-btn"
+										aria-pressed={selectedId === item.id}
+										onclick={() => selectItem(item)}
+									>
+										<img src={item.url} alt={item.alt_text ?? item.filename ?? ''} loading="lazy" />
+										<!-- Saved title (caption) overrides the filename as the
+										     thumbnail label once set. -->
+										{#if item.caption || item.filename}
+											<span class="media-thumb-name">{item.caption || item.filename}</span>
+										{/if}
+									</button>
 									{#if item.source_photographer}
 										<span class="stock-attribution">
 											{#if item.source_photographer_url}
@@ -529,7 +641,33 @@
 											{/if}
 										</span>
 									{/if}
-								</button>
+									{#if onUpdate || onDelete}
+										<div class="media-thumb-actions">
+											{#if onUpdate}
+												<button
+													type="button"
+													class="media-thumb-action"
+													title={t('media.picker.edit', 'Edit')}
+													aria-label={t('media.picker.edit', 'Edit')}
+													onclick={() => openEditPanel(item)}
+												>
+													<Pencil size={13} />
+												</button>
+											{/if}
+											{#if onDelete}
+												<button
+													type="button"
+													class="media-thumb-action media-thumb-action-danger"
+													title={t('media.picker.delete', 'Delete')}
+													aria-label={t('media.picker.delete', 'Delete')}
+													onclick={() => openDeleteConfirm(item)}
+												>
+													<Trash2 size={13} />
+												</button>
+											{/if}
+										</div>
+									{/if}
+								</div>
 							{/each}
 						</div>
 					{/if}
@@ -613,6 +751,10 @@
 								>{p.display_name}</button>
 							{/each}
 						</div>
+
+						{#if stockError}
+							<div class="stock-error">{stockError}</div>
+						{/if}
 
 						<!-- Results grid -->
 						<div class="modal-grid-wrap">
@@ -838,14 +980,12 @@
 	}
 
 	.media-thumb {
+		position: relative;
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
-		padding: 4px;
 		border: 2px solid transparent;
 		border-radius: var(--radius, 6px);
 		background: var(--color-surface-subtle);
-		cursor: pointer;
 		transition: border-color 0.15s, transform 0.1s;
 		overflow: hidden;
 	}
@@ -856,12 +996,69 @@
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
 	}
+	/* The padding lives on the button (not the wrapper) so the entire
+	   visual area — image, label, and the ring around them — is clickable. */
+	.media-thumb-btn {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		width: 100%;
+		padding: 4px;
+		border: none;
+		background: transparent;
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+	}
 	.media-thumb img {
 		width: 100%;
 		aspect-ratio: 1;
 		object-fit: cover;
 		border-radius: calc(var(--radius, 6px) - 2px);
 		background: var(--color-surface-subtle);
+	}
+	.media-thumb-actions {
+		position: absolute;
+		top: 8px;
+		inset-inline-end: 8px;
+		display: flex;
+		gap: 4px;
+		opacity: 0;
+		/* Hidden buttons must not catch clicks meant for the thumbnail. */
+		pointer-events: none;
+		transition: opacity 0.15s;
+	}
+	.media-thumb:hover .media-thumb-actions,
+	.media-thumb:focus-within .media-thumb-actions,
+	.media-thumb.selected .media-thumb-actions {
+		opacity: 1;
+		pointer-events: auto;
+	}
+	/* Touch devices have no hover — keep the buttons visible so the
+	   edit/delete affordances are reachable without a prior selection. */
+	@media (hover: none) {
+		.media-thumb-actions {
+			opacity: 1;
+			pointer-events: auto;
+		}
+	}
+	.media-thumb-action {
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		border: none;
+		border-radius: 50%;
+		background: rgb(0 0 0 / 0.55);
+		color: #fff;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+	.media-thumb-action:hover {
+		background: rgb(0 0 0 / 0.8);
+	}
+	.media-thumb-action-danger:hover {
+		background: var(--destructive, #dc2626);
 	}
 	.media-thumb-name {
 		font-size: 0.7rem;
@@ -1064,6 +1261,11 @@
 		font-size: 0.8rem;
 		color: var(--destructive, var(--color-danger, #dc2626));
 	}
+	.stock-error {
+		padding: 0 1.25rem 0.5rem;
+		font-size: 0.8rem;
+		color: var(--destructive, var(--color-danger, #dc2626));
+	}
 
 
 	/* Stock tab */
@@ -1131,11 +1333,20 @@
 		color: #fff;
 		cursor: pointer;
 		opacity: 0;
+		/* Hidden button must not catch clicks meant for the card. */
+		pointer-events: none;
 		transition: opacity 0.15s, background 0.15s;
 	}
 	.stock-card:hover .stock-preview-btn,
 	.stock-preview-btn:focus-visible {
 		opacity: 1;
+		pointer-events: auto;
+	}
+	@media (hover: none) {
+		.stock-preview-btn {
+			opacity: 1;
+			pointer-events: auto;
+		}
 	}
 	.stock-preview-btn:hover {
 		background: rgb(0 0 0 / 0.75);
@@ -1217,6 +1428,7 @@
 		font-size: 0.625rem;
 		color: var(--color-text-subtle, #888);
 		margin-top: 2px;
+		padding: 0 4px 4px;
 		line-height: 1.2;
 		text-align: center;
 	}

@@ -506,7 +506,7 @@ func (h *Handlers) GetMyDraft(w http.ResponseWriter, r *http.Request) {
 //
 // For non-owners, the handler falls back to a platform-scoped (non-author-
 // scoped) fetch when the caller is a super-admin or holds the RBAC
-// `content.edit` permission node. This lets editors fix content they don't
+// `content.edit_any` permission node. This lets editors fix content they don't
 // own. The backend still enforces the actual permission on PATCH /content/{id}.
 func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)

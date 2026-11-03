@@ -64,7 +64,7 @@ var settingsCatalog = map[string]settingMeta{
 	"auth.password.check_breach":            {Type: "bool", DefaultValue: "true", Description: "Check password against HIBP breach database before accepting.", Panel: "admin"},
 	"auth.password.history_count":           {Type: "int", DefaultValue: "5", Description: "Number of recent password hashes to check against reuse.", Panel: "admin"},
 	"auth.session.refresh_days":             {Type: "int", DefaultValue: "30", Description: "Refresh token TTL in days.", Panel: "admin"},
-	"auth.session.access_token_ttl_minutes": {Type: "int", DefaultValue: "15", Description: "Access token TTL in minutes.", Panel: "admin"},
+	"auth.session.access_token_ttl_minutes": {Type: "int", DefaultValue: "1440", Description: "Access token TTL in minutes.", Panel: "admin"},
 	"auth.totp.required_for_admin":          {Type: "bool", DefaultValue: "false", Description: "Force 2FA for admin roles.", Panel: "admin"},
 	"auth.email.verify_required":            {Type: "bool", DefaultValue: "true", Description: "Require email verification before posting.", Panel: "admin"},
 	// Feed & Content
@@ -72,7 +72,7 @@ var settingsCatalog = map[string]settingMeta{
 	"feed.velocity.gravity":            {Type: "float", DefaultValue: "1.8", Description: "HN gravity constant for Rising sort.", Panel: "admin"},
 	"feed.max_followed_spaces_in_feed": {Type: "int", DefaultValue: "50", Description: "Cap on spaces contributing to feed.", Panel: "admin"},
 	"feed.card_style":                  {Type: "json", DefaultValue: `{"default":"daily","by_type":{}}`, Description: "{default, by_type} map; each style ∈ reddit|compact|grid|magazine|daily — active feed card style, resolved per content type (tolerates a legacy scalar).", Panel: "admin"},
-	"content.edit_window_minutes":      {Type: "int", DefaultValue: "1440", Description: "Content edit window (24hr default).", Panel: "admin"},
+	"content.edit_window_minutes":      {Type: "int", DefaultValue: "0", Description: "Content edit window (0 = members may edit own posts anytime).", Panel: "admin"},
 	"content.link_preview.blacklist":   {Type: "json", DefaultValue: "[]", Description: "JSON array of blocked domains for link previews.", Panel: "admin"},
 	"content.min_length":               {Type: "int", DefaultValue: "10", Description: "Minimum content body length.", Panel: "admin"},
 	"content.max_tags":                 {Type: "int", DefaultValue: "5", Description: "Max tags per content item.", Public: true, Panel: "admin"},
@@ -409,16 +409,12 @@ var settingsCatalog = map[string]settingMeta{
 	// max_login_attempts + fail_window_minutes, and email verification uses
 	// auth.email.verify_required (the consumed key).
 	// SEO settings.
+	// Dead seo.* keys removed (no consumer): meta_title_template,
+	// meta_description_template, og_image, twitter_handle, json_ld_type,
+	// google_analytics_id, google_tag_manager_id.
 	// SEO settings managed by the admin panel (not previously catalogued —
 	// adding them with Panel: "admin" prevents DB entries from leaking into
 	// the control panel).
-	"seo.meta_title_template":             {Type: "string", DefaultValue: "", Description: "Template for meta titles.", Panel: "admin"},
-	"seo.meta_description_template":       {Type: "string", DefaultValue: "", Description: "Template for meta descriptions.", Panel: "admin"},
-	"seo.og_image":                        {Type: "string", DefaultValue: "", Description: "Default Open Graph image URL.", Panel: "admin"},
-	"seo.twitter_handle":                  {Type: "string", DefaultValue: "", Description: "Twitter/X handle for meta cards.", Panel: "admin"},
-	"seo.json_ld_type":                    {Type: "string", DefaultValue: "Organization", Description: "Default JSON-LD type.", Options: `[{"value":"Organization","label":"Organization"},{"value":"WebSite","label":"WebSite"},{"value":"LocalBusiness","label":"LocalBusiness"}]`, Panel: "admin"},
-	"seo.google_analytics_id":             {Type: "string", DefaultValue: "", Description: "Google Analytics tracking ID.", Panel: "admin"},
-	"seo.google_tag_manager_id":           {Type: "string", DefaultValue: "", Description: "Google Tag Manager container ID.", Panel: "admin"},
 	"seo.sitemap.space_min_members":       {Type: "int", DefaultValue: "1", Min: 0, Description: "Minimum member count for a space to be included in the sitemap (Section 43 quality gate).", Panel: "admin"},
 	"seo.sitemap.space_min_posts":         {Type: "int", DefaultValue: "1", Min: 0, Description: "Minimum total post count for a space to be included in the sitemap (Section 43 quality gate).", Panel: "admin"},
 	"seo.sitemap.space_min_forums":        {Type: "int", DefaultValue: "1", Min: 0, Description: "Minimum forum thread count for a space to be included in the sitemap (Section 43 quality gate).", Panel: "admin"},

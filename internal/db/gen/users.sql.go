@@ -345,7 +345,7 @@ type GetContentByIDForEditorRow struct {
 
 // Returns any content by ID within the platform (no author filter). Used by
 // GET /api/v1/me/content/{id} as a fallback when the caller is a super-admin
-// or holds the RBAC `content.edit` permission but is not the content owner.
+// or holds the RBAC `content.edit_any` permission but is not the content owner.
 // Mirrors the GetUserContent column set so the response shape is identical.
 // A missing row or a different platform's content resolves to pgx.ErrNoRows → 404.
 func (q *Queries) GetContentByIDForEditor(ctx context.Context, id pgtype.UUID) (GetContentByIDForEditorRow, error) {

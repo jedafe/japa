@@ -165,7 +165,7 @@ export const load: PageServerLoad = async (event) => {
 			// the editor restore. The status='draft'-scoped /me/drafts/{id}
 			// only covers drafts; /me/content/{id} covers the rest so the
 			// Edit button on published content detail pages works too.
-			// For non-owners (super-admin or `content.edit` RBAC holder), the
+			// For non-owners (super-admin or `content.edit_any` RBAC holder), the
 			// backend falls back to a platform-scoped fetch — see GetMyContent.
 			// ?raw keeps authored {{...}} literals unresolved — the literal
 			// middleware would otherwise rewrite the JSON response and the
@@ -317,9 +317,16 @@ export const load: PageServerLoad = async (event) => {
 	// /me exposes `permissions` (effective nodes) and `groups` (group slugs).
 	const callerPerms = {
 		permissions: event.locals.user?.permissions ?? [],
-		isSuperAdmin: (event.locals.user?.groups ?? []).some(
-			(g) => g === 'super_admin' || g === 'Super Admin'
-		)
+		// BUG-CE-015: super-admin detection no longer relies only on group
+		// slugs (a renamed group would silently lose the affordance). A
+		// wildcard '*' node or admin.hard_delete — seeded only for
+		// super_admin (Rule 11) — identifies the role regardless of name.
+		isSuperAdmin:
+			(event.locals.user?.groups ?? []).some(
+				(g) => g === 'super_admin' || g === 'Super Admin'
+			) ||
+			hasPerm(event.locals.user?.permissions, '*') ||
+			hasPerm(event.locals.user?.permissions, 'admin.hard_delete')
 	};
 
 	// author_id override (content.assign_author): the author picker is fed by

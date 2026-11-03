@@ -3,11 +3,13 @@ package gamification
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
@@ -30,8 +32,9 @@ func (s *Service) ListBadges(ctx context.Context) ([]BadgeInfo, error) {
 	}
 
 	results := make([]BadgeInfo, 0, len(badges))
+	iconIDs := make([]pgtype.UUID, 0, len(badges))
 	for _, b := range badges {
-		info := badgeToInfo(b)
+		info := s.badgeToInfo(ctx, b)
 		// Public catalogue — unearned secret badges are masked the same way
 		// the collection endpoint masks them (name/icon hidden, ??? slot).
 		if b.IsSecret {
@@ -43,8 +46,15 @@ func (s *Service) ListBadges(ctx context.Context) ([]BadgeInfo, error) {
 			info.TriggerType = ""
 			info.TriggerValue = 0
 			info.TriggerActivityKey = ""
+		} else if b.IconMediaID.Valid {
+			iconIDs = append(iconIDs, b.IconMediaID)
 		}
 		results = append(results, info)
+	}
+
+	urls := s.resolveIconURLs(ctx, iconIDs)
+	for i := range results {
+		results[i].IconURL = urls[results[i].IconMediaID]
 	}
 
 	return results, nil
@@ -63,8 +73,17 @@ func (s *Service) ListActiveChallenges(ctx context.Context) ([]ChallengeInfo, er
 	}
 
 	results := make([]ChallengeInfo, 0, len(challenges))
+	imgIDs := make([]pgtype.UUID, 0, len(challenges))
 	for _, c := range challenges {
-		results = append(results, challengeToInfo(c))
+		if c.ImageMediaID.Valid {
+			imgIDs = append(imgIDs, c.ImageMediaID)
+		}
+		results = append(results, s.challengeToInfo(ctx, c))
+	}
+
+	urls := s.resolveIconURLs(ctx, imgIDs)
+	for i := range results {
+		results[i].ImageURL = urls[results[i].ImageMediaID]
 	}
 
 	return results, nil
@@ -101,6 +120,41 @@ func ValidateLeaderboardPeriod(period string) bool {
 	default:
 		return false
 	}
+}
+
+// CanViewSpaceLeaderboard reports whether the viewer may read a space-scoped
+// leaderboard (PTS-017). Global scope is always allowed. Public spaces are
+// visible to everyone; non-public spaces require space membership —
+// guests and non-members get false (handler maps to 404 so space privacy
+// can't be probed through this route).
+func (s *Service) CanViewSpaceLeaderboard(ctx context.Context, scope string, viewer pgtype.UUID) (bool, error) {
+	scopeType, spaceIDStr, ok := ValidateLeaderboardScope(scope)
+	if !ok || scopeType != ScopeSpace {
+		return true, nil
+	}
+
+	var spaceID pgtype.UUID
+	if err := spaceID.Scan(spaceIDStr); err != nil {
+		return false, nil
+	}
+
+	vis, err := s.store.GetSpaceVisibility(ctx, spaceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Unknown space — deny; the handler maps this to 404 so the
+			// endpoint can't be used to probe which UUIDs exist.
+			return false, nil
+		}
+		return false, fmt.Errorf("gamification: space visibility: %w", err)
+	}
+	if vis == "public" {
+		return true, nil
+	}
+
+	if !viewer.Valid {
+		return false, nil
+	}
+	return s.store.IsSpaceMember(ctx, spaceID, viewer)
 }
 
 // leaderboardCacheKey builds the Valkey key for a cached leaderboard.
@@ -235,6 +289,7 @@ func (s *Service) ListUserBadges(ctx context.Context, userID pgtype.UUID) ([]Bad
 	}
 
 	results := make([]BadgeWithDetails, 0, len(rows))
+	iconIDs := make([]pgtype.UUID, 0, len(rows))
 
 	for _, r := range rows {
 		var iconID *string
@@ -242,6 +297,7 @@ func (s *Service) ListUserBadges(ctx context.Context, userID pgtype.UUID) ([]Bad
 		if r.BadgeIconMediaID.Valid {
 			s := r.BadgeIconMediaID.String()
 			iconID = &s
+			iconIDs = append(iconIDs, r.BadgeIconMediaID)
 		}
 
 		results = append(results, BadgeWithDetails{
@@ -250,12 +306,20 @@ func (s *Service) ListUserBadges(ctx context.Context, userID pgtype.UUID) ([]Bad
 			Name:        r.BadgeName,
 			Description: ptrStr(r.BadgeDescription),
 			IconMediaID: iconID,
+			AccentColor: ptrStr(r.BadgeAccentColor),
 			Category:    ptrStr(r.BadgeCategory),
 			Rarity:      r.BadgeRarity,
 			Tier:        ptrStr(r.BadgeTier),
 			BadgeGroup:  ptrStr(r.BadgeGroup),
 			AwardedAt:   rfc3339(r.AwardedAt),
 		})
+	}
+
+	urls := s.resolveIconURLs(ctx, iconIDs)
+	for i := range results {
+		if results[i].IconMediaID != nil {
+			results[i].IconURL = urls[*results[i].IconMediaID]
+		}
 	}
 
 	return results, nil
@@ -275,18 +339,36 @@ func (s *Service) ListUserBadgesByUsername(ctx context.Context, username string)
 	}
 
 	results := make([]BadgeWithDetails, 0, len(rows))
+	iconIDs := make([]pgtype.UUID, 0, len(rows))
 	for _, r := range rows {
+		var iconID *string
+
+		if r.BadgeIconMediaID.Valid {
+			s := r.BadgeIconMediaID.String()
+			iconID = &s
+			iconIDs = append(iconIDs, r.BadgeIconMediaID)
+		}
+
 		results = append(results, BadgeWithDetails{
 			ID:          uuidStr(r.BadgeID),
 			Slug:        r.BadgeSlug,
 			Name:        r.BadgeName,
 			Description: ptrStr(r.BadgeDescription),
+			IconMediaID: iconID,
+			AccentColor: ptrStr(r.BadgeAccentColor),
 			Category:    ptrStr(r.BadgeCategory),
 			Rarity:      r.BadgeRarity,
 			Tier:        ptrStr(r.BadgeTier),
 			BadgeGroup:  ptrStr(r.BadgeGroup),
 			AwardedAt:   rfc3339(r.AwardedAt),
 		})
+	}
+
+	urls := s.resolveIconURLs(ctx, iconIDs)
+	for i := range results {
+		if results[i].IconMediaID != nil {
+			results[i].IconURL = urls[*results[i].IconMediaID]
+		}
 	}
 
 	return results, nil
@@ -317,6 +399,7 @@ func (s *Service) GetBadgeCollection(ctx context.Context, userID pgtype.UUID) (B
 	// locked badges in the collection.
 	liveCounts := make(map[string]int64)
 	lifetimePts := int64(-1)
+	iconIDs := make([]pgtype.UUID, 0, len(rows))
 
 	for _, r := range rows {
 		category := ptrStr(r.Category)
@@ -330,6 +413,7 @@ func (s *Service) GetBadgeCollection(ctx context.Context, userID pgtype.UUID) (B
 			Name:         r.Name,
 			Description:  ptrStr(r.Description),
 			IconMediaID:  uuidStr(r.IconMediaID),
+			AccentColor:  ptrStr(r.AccentColor),
 			Category:     category,
 			Rarity:       r.Rarity,
 			Tier:         ptrStr(r.Tier),
@@ -368,6 +452,8 @@ func (s *Service) GetBadgeCollection(ctx context.Context, userID pgtype.UUID) (B
 			cb.IconMediaID = ""
 			cb.Progress = 0
 			cb.Goal = 0
+		} else if r.IconMediaID.Valid {
+			iconIDs = append(iconIDs, r.IconMediaID)
 		}
 
 		idx, ok := byCategory[category]
@@ -395,6 +481,14 @@ func (s *Service) GetBadgeCollection(ctx context.Context, userID pgtype.UUID) (B
 	collection.Stats.Remaining = collection.Stats.Total - collection.Stats.Earned
 	if collection.Stats.Total > 0 {
 		collection.Stats.Percent = collection.Stats.Earned * 100 / collection.Stats.Total
+	}
+
+	urls := s.resolveIconURLs(ctx, iconIDs)
+	for ci := range collection.Categories {
+		for bi := range collection.Categories[ci].Badges {
+			b := &collection.Categories[ci].Badges[bi]
+			b.IconURL = urls[b.IconMediaID]
+		}
 	}
 
 	return collection, nil

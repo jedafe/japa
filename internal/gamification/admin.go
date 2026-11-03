@@ -39,6 +39,18 @@ var ErrInvalidInput = errors.New("gamification: invalid input")
 // to 409.
 var ErrSlugExists = errors.New("gamification: slug already exists")
 
+// ErrSeasonNotFound is returned when a season does not exist — handlers
+// map it to 404.
+var ErrSeasonNotFound = errors.New("gamification: season not found")
+
+// ErrTierNotFound is returned when a badge-tier row does not exist —
+// handlers map it to 404.
+var ErrTierNotFound = errors.New("gamification: tier not found")
+
+// ErrTierExists marks a unique (badge_group, tier) violation on create —
+// handlers map it to 409.
+var ErrTierExists = errors.New("gamification: tier already exists for this badge group")
+
 // invalidInput wraps a validation detail as ErrInvalidInput.
 func invalidInput(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalidInput, fmt.Sprintf(format, args...))
@@ -139,6 +151,7 @@ func (s *Service) CreateBadge(ctx context.Context, in CreateBadgeInput) (BadgeIn
 
 	arg.Category = in.Category
 	arg.BadgeGroup = in.BadgeGroup
+	arg.AccentColor = in.AccentColor
 
 	if in.IsSecret != nil {
 		arg.IsSecret = *in.IsSecret
@@ -195,7 +208,13 @@ func (s *Service) CreateBadge(ctx context.Context, in CreateBadgeInput) (BadgeIn
 		return BadgeInfo{}, fmt.Errorf("gamification: create badge: %w", err)
 	}
 
-	return badgeToInfo(badge), nil
+	if in.IconMediaID != nil {
+		s.knockoutArtwork(ctx, *in.IconMediaID, badgeIconMaxDim)
+	}
+
+	info := s.badgeToInfo(ctx, badge)
+	info.IconURL = s.mediaURL(ctx, badge.IconMediaID)
+	return info, nil
 }
 
 // UpdateBadge updates a badge definition's mutable fields (admin). Only
@@ -272,6 +291,8 @@ func (s *Service) UpdateBadge(ctx context.Context, badgeID pgtype.UUID, in Updat
 		arg.BadgeGroup = in.BadgeGroup
 	}
 	arg.ClearBadgeGroup = &in.ClearBadgeGroup
+	arg.AccentColor = in.AccentColor
+	arg.ClearAccentColor = &in.ClearAccentColor
 
 	if in.IsSecret != nil {
 		arg.IsSecret = in.IsSecret
@@ -336,12 +357,27 @@ func (s *Service) UpdateBadge(ctx context.Context, badgeID pgtype.UUID, in Updat
 		return BadgeInfo{}, err
 	}
 
+	// Snapshot the icon before the update — comparing after the write
+	// would read the new value and the change check could never fire.
+	prevIcon, prevIconKnown := pgtype.UUID{}, false
+	if in.IconMediaID != nil {
+		if cur, cerr := s.store.GetBadgeDefinitionByID(ctx, badgeID); cerr == nil {
+			prevIcon, prevIconKnown = cur.IconMediaID, true
+		}
+	}
+
 	badge, err := s.store.UpdateBadgeDefinition(ctx, arg)
 	if err != nil {
 		return BadgeInfo{}, fmt.Errorf("gamification: update badge: %w", err)
 	}
 
-	return badgeToInfo(badge), nil
+	if in.IconMediaID != nil && (!prevIconKnown || artworkChanged(prevIcon, arg.IconMediaID)) {
+		s.knockoutArtwork(ctx, *in.IconMediaID, badgeIconMaxDim)
+	}
+
+	info := s.badgeToInfo(ctx, badge)
+	info.IconURL = s.mediaURL(ctx, badge.IconMediaID)
+	return info, nil
 }
 
 // AwardBadge manually awards a badge to a user (admin). Returns the awarded
@@ -391,10 +427,14 @@ func (s *Service) AwardBadge(ctx context.Context, badgeID, userID, awardedBy pgt
 	// Fetch the awarded_at timestamp from the user_badge row.
 	ub, err := s.store.GetUserBadge(ctx, userID, badgeID)
 	if err != nil {
-		return badgeWithDetails(badge, pgtype.Timestamptz{}), nil
+		d := s.badgeWithDetails(ctx, badge, pgtype.Timestamptz{})
+		d.IconURL = s.mediaURL(ctx, badge.IconMediaID)
+		return d, nil
 	}
 
-	return badgeWithDetails(badge, ub.AwardedAt), nil
+	d := s.badgeWithDetails(ctx, badge, ub.AwardedAt)
+	d.IconURL = s.mediaURL(ctx, badge.IconMediaID)
+	return d, nil
 }
 
 // ListAllBadges returns all badge definitions (admin view, includes inactive).
@@ -409,8 +449,16 @@ func (s *Service) ListAllBadges(ctx context.Context, limit, offset int32) ([]Bad
 	}
 
 	results := make([]BadgeInfo, 0, len(badges))
+	iconIDs := make([]pgtype.UUID, 0, len(badges))
 	for _, b := range badges {
-		results = append(results, badgeToInfo(b))
+		if b.IconMediaID.Valid {
+			iconIDs = append(iconIDs, b.IconMediaID)
+		}
+		results = append(results, s.badgeToInfo(ctx, b))
+	}
+	urls := s.resolveIconURLs(ctx, iconIDs)
+	for i := range results {
+		results[i].IconURL = urls[results[i].IconMediaID]
 	}
 
 	return results, total, nil
@@ -428,8 +476,16 @@ func (s *Service) ListAllChallenges(ctx context.Context, limit, offset int32) ([
 	}
 
 	results := make([]ChallengeInfo, 0, len(challenges))
+	imgIDs := make([]pgtype.UUID, 0, len(challenges))
 	for _, c := range challenges {
-		results = append(results, challengeToInfo(c))
+		if c.ImageMediaID.Valid {
+			imgIDs = append(imgIDs, c.ImageMediaID)
+		}
+		results = append(results, s.challengeToInfo(ctx, c))
+	}
+	urls := s.resolveIconURLs(ctx, imgIDs)
+	for i := range results {
+		results[i].ImageURL = urls[results[i].ImageMediaID]
 	}
 
 	return results, total, nil
@@ -508,7 +564,13 @@ func (s *Service) CreateChallenge(ctx context.Context, in CreateChallengeInput) 
 		return ChallengeInfo{}, fmt.Errorf("gamification: create challenge: %w", err)
 	}
 
-	return challengeToInfo(challenge), nil
+	if in.ImageMediaID != nil {
+		s.knockoutArtwork(ctx, *in.ImageMediaID, challengeImageMaxDim)
+	}
+
+	info := s.challengeToInfo(ctx, challenge)
+	info.ImageURL = s.mediaURL(ctx, challenge.ImageMediaID)
+	return info, nil
 }
 
 // UpdateChallenge updates a challenge definition's mutable fields (admin).
@@ -614,12 +676,27 @@ func (s *Service) UpdateChallenge(ctx context.Context, challengeID pgtype.UUID, 
 		}
 	}
 
+	// Snapshot the image before the update — comparing after the write
+	// would read the new value and the change check could never fire.
+	prevImage, prevImageKnown := pgtype.UUID{}, false
+	if in.ImageMediaID != nil {
+		if cur, cerr := s.store.GetChallengeByID(ctx, challengeID); cerr == nil {
+			prevImage, prevImageKnown = cur.ImageMediaID, true
+		}
+	}
+
 	challenge, err := s.store.UpdateChallenge(ctx, arg)
 	if err != nil {
 		return ChallengeInfo{}, fmt.Errorf("gamification: update challenge: %w", err)
 	}
 
-	return challengeToInfo(challenge), nil
+	if in.ImageMediaID != nil && (!prevImageKnown || artworkChanged(prevImage, arg.ImageMediaID)) {
+		s.knockoutArtwork(ctx, *in.ImageMediaID, challengeImageMaxDim)
+	}
+
+	info := s.challengeToInfo(ctx, challenge)
+	info.ImageURL = s.mediaURL(ctx, challenge.ImageMediaID)
+	return info, nil
 }
 
 // DeleteBadge deletes a non-system badge definition (admin). System badges
@@ -699,17 +776,17 @@ func (s *Service) ListSeasons(ctx context.Context) ([]SeasonInfo, error) {
 // CreateSeason creates a season window (admin).
 func (s *Service) CreateSeason(ctx context.Context, in CreateSeasonInput) (SeasonInfo, error) {
 	if strings.TrimSpace(in.Slug) == "" || strings.TrimSpace(in.Name) == "" {
-		return SeasonInfo{}, errors.New("gamification: slug and name are required")
+		return SeasonInfo{}, invalidInput("slug and name are required")
 	}
 	startsAt, err := parseTimestamp(in.StartsAt)
 	if err != nil || !startsAt.Valid {
-		return SeasonInfo{}, errors.New("gamification: valid starts_at is required")
+		return SeasonInfo{}, invalidInput("valid starts_at is required")
 	}
 	var endsAt pgtype.Timestamptz
 	if in.EndsAt != nil && *in.EndsAt != "" {
 		endsAt, err = parseTimestamp(*in.EndsAt)
 		if err != nil {
-			return SeasonInfo{}, errors.New("gamification: invalid ends_at")
+			return SeasonInfo{}, invalidInput("invalid ends_at")
 		}
 	}
 	var description *string
@@ -719,6 +796,9 @@ func (s *Service) CreateSeason(ctx context.Context, in CreateSeasonInput) (Seaso
 	}
 	row, err := s.store.CreateBadgeSeason(ctx, strings.TrimSpace(in.Slug), strings.TrimSpace(in.Name), description, startsAt, endsAt, in.IsActive)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return SeasonInfo{}, ErrSlugExists
+		}
 		return SeasonInfo{}, fmt.Errorf("gamification: create season: %w", err)
 	}
 	return seasonsToInfo([]gen.BadgeSeason{row})[0], nil
@@ -734,19 +814,22 @@ func (s *Service) UpdateSeason(ctx context.Context, id pgtype.UUID, in UpdateSea
 	if in.StartsAt != nil {
 		ts, err := parseTimestamp(*in.StartsAt)
 		if err != nil {
-			return SeasonInfo{}, errors.New("gamification: invalid starts_at")
+			return SeasonInfo{}, invalidInput("invalid starts_at")
 		}
 		arg.StartsAt = ts
 	}
 	if in.EndsAt != nil {
 		ts, err := parseTimestamp(*in.EndsAt)
 		if err != nil {
-			return SeasonInfo{}, errors.New("gamification: invalid ends_at")
+			return SeasonInfo{}, invalidInput("invalid ends_at")
 		}
 		arg.EndsAt = ts
 	}
 	row, err := s.store.UpdateBadgeSeason(ctx, id, arg)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return SeasonInfo{}, ErrSeasonNotFound
+		}
 		return SeasonInfo{}, fmt.Errorf("gamification: update season: %w", err)
 	}
 	return seasonsToInfo([]gen.BadgeSeason{row})[0], nil
@@ -769,16 +852,19 @@ func (s *Service) ListTiers(ctx context.Context) ([]TierInfo, error) {
 // CreateTier inserts a progression row (admin).
 func (s *Service) CreateTier(ctx context.Context, in CreateTierInput) (TierInfo, error) {
 	if strings.TrimSpace(in.BadgeGroup) == "" || !validTier(in.Tier) || in.Threshold < 0 {
-		return TierInfo{}, errors.New("gamification: valid badge_group, tier, and non-negative threshold are required")
+		return TierInfo{}, invalidInput("valid badge_group, tier, and non-negative threshold are required")
 	}
 	var badgeID pgtype.UUID
 	if in.BadgeID != "" {
 		if err := badgeID.Scan(in.BadgeID); err != nil {
-			return TierInfo{}, errors.New("gamification: invalid badge_id")
+			return TierInfo{}, invalidInput("invalid badge_id")
 		}
 	}
 	row, err := s.store.CreateBadgeTier(ctx, strings.TrimSpace(in.BadgeGroup), in.Tier, strings.TrimSpace(in.Name), int32(in.Threshold), badgeID)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return TierInfo{}, ErrTierExists
+		}
 		return TierInfo{}, fmt.Errorf("gamification: create tier: %w", err)
 	}
 	return tiersToInfo([]gen.BadgeTier{row})[0], nil
@@ -794,12 +880,15 @@ func (s *Service) UpdateTier(ctx context.Context, id pgtype.UUID, in UpdateTierI
 	if in.BadgeID != nil {
 		var bid pgtype.UUID
 		if err := bid.Scan(*in.BadgeID); err != nil {
-			return TierInfo{}, errors.New("gamification: invalid badge_id")
+			return TierInfo{}, invalidInput("invalid badge_id")
 		}
 		arg.BadgeID = bid
 	}
 	row, err := s.store.UpdateBadgeTier(ctx, id, arg)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return TierInfo{}, ErrTierNotFound
+		}
 		return TierInfo{}, fmt.Errorf("gamification: update tier: %w", err)
 	}
 	return tiersToInfo([]gen.BadgeTier{row})[0], nil

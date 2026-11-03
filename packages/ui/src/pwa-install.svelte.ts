@@ -36,6 +36,24 @@ function attachAuthResend(): void {
 	});
 }
 
+/**
+ * §124 dev guard — does this engine support ES-module service workers
+ * (`register(url, { type: 'module' })`)? Chrome 91+, Safari 15+,
+ * Firefox 147+ (Jan 2026). There is no synchronous feature detect, so
+ * probe the UA: Firefox ≤146 / ESR 140 (Tor Browser, LibreWolf, Kali's
+ * firefox-esr) silently ignores `type: 'module'`, evaluates the ES-module
+ * dev stub as a classic script and fails with "threw an exception during
+ * script evaluation" on every load — a permanent failure, unlike the
+ * stale-classic race the register retry handles. Production builds serve
+ * a classic IIFE every engine supports, so this only gates dev
+ * registration. Page-context only — never import into the worker.
+ */
+export function moduleServiceWorkerSupported(): boolean {
+	if (typeof navigator === 'undefined') return false;
+	const ff = navigator.userAgent.match(/Firefox\/(\d+)/);
+	return !ff || Number(ff[1]) >= 147;
+}
+
 function detectIos(): boolean {
 	if (typeof window === 'undefined') return false;
 	return (

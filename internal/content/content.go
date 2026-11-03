@@ -69,9 +69,21 @@ var ErrInvalidStatus = errors.New("invalid content status")
 // contents.visibility value outside the allowed set (§14).
 var ErrInvalidVisibility = errors.New("invalid content visibility")
 
+// ErrMissingRequiredFields is returned when a publish/schedule transition
+// finds is_required custom-field keys absent from field_values (§23/§25 /
+// BUG-CE-009). The frontend gate.ts check was client-only.
+var ErrMissingRequiredFields = errors.New("missing required custom fields")
+
+// ErrBodyTooShort is returned when a publish/schedule transition finds the
+// body under content.min_length (§14 / BUG-CE-011). Drafts may be stubs,
+// live content may not.
+var ErrBodyTooShort = errors.New("content body below minimum length")
+
 // defaultEditWindowMinutes is the fallback for content.edit_window_minutes
 // when the setting is unset or no settings reader is wired (BL-008).
-const defaultEditWindowMinutes = 1440
+// 0 disables the author edit window — members may edit their own published
+// posts at any time; moderators were never gated by it.
+const defaultEditWindowMinutes = 0
 
 // isOrgPostRole reports whether an org membership role may post/edit as the org.
 func isOrgPostRole(role string) bool {

@@ -51,7 +51,21 @@ function apiHeadersPlugin(): Plugin {
 }
 
 export default defineConfig({
+	define: {
+		// §124 — per-build/dev-start cache namespace for the service worker
+		// (replaces $service-worker version; see src/service-worker.ts).
+		__SW_VERSION__: JSON.stringify(String(Date.now()))
+	},
 	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit(), svelteTesting()],
+	resolve: {
+		// The workspace packages (@japaconnect/ui, ai-panel, landing-blocks)
+		// carry stale bun-installed svelte copies in their own node_modules
+		// (svelte@5.56.8 vs the app's 5.57.2). Without dedupe, Vite bundles a
+		// second svelte/internal/client whose init_operations() never runs —
+		// hydration then crashes with "Cannot read properties of undefined
+		// (reading 'call')" inside get_next_sibling.
+		dedupe: ['svelte']
+	},
 	// $lib/appOrigins reads PUBLIC_* origins from import.meta.env, which Vite
 	// only populates for envPrefix-matched keys (default: VITE_ only).
 	envPrefix: ['VITE_', 'PUBLIC_'],

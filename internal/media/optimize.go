@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -146,12 +145,11 @@ func (s *Service) OptimizeMedia(ctx context.Context, mediaID pgtype.UUID) error 
 		return nil // already optimal
 	}
 
-	// When the format changes the storage path extension must follow, so
-	// ServeMedia and imgproxy URLs advertise the right type.
-	newPath := m.StoragePath
-	if outMIME != m.MimeType {
-		newPath = strings.TrimSuffix(m.StoragePath, filepath.Ext(m.StoragePath)) + extensionFromMIME(outMIME)
-	}
+	// Content-hashed name — ServeMedia caches paths for a day assuming
+	// object bytes are immutable, so a rewrite must land under a new path
+	// (see transformedStoragePath). The extension tracks the output format
+	// so ServeMedia and imgproxy URLs advertise the right type.
+	newPath := transformedStoragePath(m.StoragePath, optimized, outMIME)
 
 	stored := false
 
@@ -170,12 +168,19 @@ func (s *Service) OptimizeMedia(ctx context.Context, mediaID pgtype.UUID) error 
 		}
 	}
 
-	if err := s.store.UpdateMediaStorage(ctx, gen.UpdateMediaStorageParams{
+	params := gen.UpdateMediaStorageParams{
 		ID:            mediaID,
 		StoragePath:   newPath,
 		MimeType:      outMIME,
 		FileSizeBytes: int64(len(optimized)),
-	}); err != nil {
+	}
+	// Record the (possibly downscaled) canvas dims — the re-encode may have
+	// shrunk the image below the recorded width_px/height_px.
+	if ocfg, _, cfgErr := image.DecodeConfig(bytes.NewReader(optimized)); cfgErr == nil {
+		params.WidthPx, params.HeightPx = ptrInt32(ocfg.Width), ptrInt32(ocfg.Height)
+	}
+
+	if err := s.store.UpdateMediaStorage(ctx, params); err != nil {
 		return fmt.Errorf("updating media row: %w", err)
 	}
 
@@ -230,6 +235,11 @@ func (s *Service) fetchObjectBytes(ctx context.Context, bucket, path string, lim
 	defer func() { _ = f.Close() }()
 
 	return readLimited(f, limit)
+}
+
+func ptrInt32(v int) *int32 {
+	i := int32(v)
+	return &i
 }
 
 func readLimited(r io.Reader, limit int64) ([]byte, error) {

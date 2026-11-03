@@ -225,6 +225,25 @@
 		}
 	}
 
+	const ISSUE_LABELS: Record<string, string> = {
+		missing_title: t('seo.issue.missing_title', 'Missing title'),
+		missing_slug: t('seo.issue.missing_slug', 'Missing slug'),
+		missing_meta_title: t('seo.issue.missing_meta_title', 'Missing meta title'),
+		missing_meta_description: t('seo.issue.missing_meta_description', 'Missing meta description'),
+		missing_og_title: t('seo.issue.missing_og_title', 'Missing OG title'),
+		missing_og_description: t('seo.issue.missing_og_description', 'Missing OG description'),
+		missing_json_ld_type: t('seo.issue.missing_json_ld_type', 'Missing JSON-LD type'),
+		not_indexable: t('seo.issue.not_indexable', 'Not indexable (noindex)'),
+		short_title: t('seo.issue.short_title', 'Title too short (min 10 chars)'),
+		short_slug: t('seo.issue.short_slug', 'Slug too short (min 3 chars)'),
+		short_meta_title: t('seo.issue.short_meta_title', 'Meta title too short (min 30 chars)'),
+		short_meta_description: t('seo.issue.short_meta_description', 'Meta description too short (min 70 chars)'),
+		short_og_title: t('seo.issue.short_og_title', 'OG title too short (min 30 chars)'),
+		short_og_description: t('seo.issue.short_og_description', 'OG description too short (min 70 chars)'),
+		long_meta_title: t('seo.issue.long_meta_title', 'Meta title too long (max 60 chars)'),
+		long_meta_description: t('seo.issue.long_meta_description', 'Meta description too long (max 160 chars)')
+	};
+
 	function clearResult() {
 		result = null;
 		hasValidated = false;
@@ -378,7 +397,7 @@
 						{#each result.issues as issue (issue)}
 							<li class="flex items-start gap-2 text-sm" style="color: var(--color-foreground)">
 								<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" style="color: var(--color-warning)" />
-								<span class="font-mono text-xs">{issue}</span>
+								<span class="text-xs">{ISSUE_LABELS[issue] ?? issue} <span class="font-mono" style="color: var(--color-muted)">({issue})</span></span>
 							</li>
 						{/each}
 					</ul>

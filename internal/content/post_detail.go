@@ -228,9 +228,16 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 
 	// JSON-LD structured data using the same template interpolation as the
 	// canonical single-type page.
-	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), content.ContentType, postContentJSONLDFields(content)); jErr == nil && len(jsonLd) > 0 {
-		resp["json_ld"] = json.RawMessage(jsonLd)
-	} else if jErr != nil {
+	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), jsonldTemplateKey(content.ContentType), postContentJSONLDFields(content)); jErr == nil {
+		// §45: editor FAQ accordion blocks become a FAQPage node — merged
+		// under @graph with the resolved template, or emitted standalone
+		// when no template resolved.
+		jsonLd = InjectFaqPageJSONLD(jsonLd, content.BodyHtml, content.Body)
+
+		if len(jsonLd) > 0 {
+			resp["json_ld"] = json.RawMessage(jsonLd)
+		}
+	} else {
 		slog.Warn("content: JSON-LD template resolution failed", "slug", slug, "content_type", contentType, "error", jErr)
 	}
 
@@ -274,7 +281,7 @@ func postContentJSONLDFields(c gen.GetContentDetailBySlugAndTypeRow) map[string]
 		sourceType = *c.VideoSourceType
 	}
 
-	return map[string]string{
+	fields := map[string]string{
 		"title":           c.Title,
 		"description":     desc,
 		"body":            c.Body,
@@ -288,4 +295,7 @@ func postContentJSONLDFields(c gen.GetContentDetailBySlugAndTypeRow) map[string]
 		"duration":        duration,
 		"source_type":     sourceType,
 	}
+	mergeFieldValueScalars(fields, c.FieldValues)
+
+	return fields
 }

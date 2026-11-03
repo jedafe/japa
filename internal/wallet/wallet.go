@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
@@ -31,7 +32,7 @@ var EmittedActivityKeys = []string{
 	ActivityKeySpamDetected, ActivityKeySpamFlagged, ActivityKeyContentFlagged,
 	ActivityKeyReportUpheld, ActivityKeyScamAlertConfirmed, ActivityKeyAchievementCreated,
 	// Gamification v2 — catalogue emitters.
-	ActivityKeyForumThreadCreated, ActivityKeyForumPollVoted,
+	ActivityKeyForumThreadCreated, ActivityKeyForumPollVoted, ActivityKeyForumPollCreated,
 	ActivityKeyJobSaved, ActivityKeyScholarshipSaved, ActivityKeyServiceSaved,
 	ActivityKeyComparisonCompleted, ActivityKeyWikiPageViewed,
 	ActivityKeyWikiCountryViewed, ActivityKeyWikiCityViewed, ActivityKeyContentRead,
@@ -42,6 +43,7 @@ var EmittedActivityKeys = []string{
 	ActivityKeyJourneyMilestoneVisaApproved, ActivityKeyJourneyMilestoneJobOffer,
 	ActivityKeyJourneyMilestoneUniAccepted, ActivityKeyJourneyMilestoneArrived,
 	ActivityKeyJourneyMilestoneOneYear, ActivityKeyJourneyMilestoneCitizenship,
+	ActivityKeyJourneyMilestoneOther,
 	ActivityKeyVisaTimelineMilestone,
 	ActivityKeyProfilePhotoAdded, ActivityKeyProfileBioAdded, ActivityKeyProfileDestinationSet,
 	ActivityKeyEmailVerified, ActivityKeyIdentityVerified, ActivityKeySpaceCreated,
@@ -49,6 +51,32 @@ var EmittedActivityKeys = []string{
 	ActivityKeyServiceReviewSubmitted, ActivityKeyEventRSVP,
 	ActivityKeyAIConversationStarted, ActivityKeyReferralCreated,
 	ActivityKeyScholarshipAppStarted, ActivityKeyScholarshipAppSubmitted,
+	ActivityKeyAcademyQuizPassed, ActivityKeyAcademyQuizPerfect,
+}
+
+// emittedActivityKeyPrefixes are dynamic key families emitted by route-map
+// middleware whose full enumeration lives in the emitting config rather
+// than this list: tool.<slug>.used (ToolUsageRoutes slugs).
+var emittedActivityKeyPrefixes = []string{
+	"tool.",
+}
+
+// IsEmittedActivityKey reports whether a key is one the platform can emit —
+// an exact catalog match or a member of a dynamic prefix family (tool.*).
+// The activity-rules registry uses this to reject rules that can never fire
+// (PTS-019).
+func IsEmittedActivityKey(key string) bool {
+	for _, k := range EmittedActivityKeys {
+		if k == key {
+			return true
+		}
+	}
+	for _, p := range emittedActivityKeyPrefixes {
+		if strings.HasPrefix(key, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // Ledger types.
@@ -145,6 +173,13 @@ const (
 	ActivityKeyReferralCreated              = "referral.created"
 	ActivityKeyScholarshipAppStarted        = "scholarship.application_started"
 	ActivityKeyScholarshipAppSubmitted      = "scholarship.application_submitted"
+
+	// Gamification v2 additions — emitted but previously uncatalogued
+	// (PTS-019): quiz badges, poll creation, the 'other' journey milestone.
+	ActivityKeyForumPollCreated      = "forum.poll_created"
+	ActivityKeyAcademyQuizPassed     = "academy.quiz_passed"
+	ActivityKeyAcademyQuizPerfect    = "academy.quiz_perfect"
+	ActivityKeyJourneyMilestoneOther = "journey.milestone.other"
 )
 
 // SettingsReader is the subset of the config.Settings API that wallet uses to
@@ -321,8 +356,9 @@ func (s *Service) Store() *Store {
 // ledger entry of type "points" with operation "earn" (BUG-GAMMA-002).
 // Used by the gamification service when a challenge is completed.
 // Routes through creditWallet so the per-user advisory lock, balance read,
-// deterministic idempotency key, and the earn gate (killswitch + daily cap,
-// PTS-004) apply identically to every ledger mutation.
+// deterministic idempotency key, and the earn gate apply — exemptCap=true
+// (PTS-026): rewards are committed payouts, exempt from the daily cap but
+// still subject to the EnableEarning killswitch.
 func (s *Service) AwardPoints(ctx context.Context, userID pgtype.UUID, points int, reason string) error {
 	if points <= 0 {
 		return nil
@@ -331,7 +367,7 @@ func (s *Service) AwardPoints(ctx context.Context, userID pgtype.UUID, points in
 	idempotencyKey := fmt.Sprintf("gamification_award:%s:%s", userID.String(), reason)
 
 	return s.creditWallet(ctx, userID, LedgerTypePoints, OperationEarn,
-		int64(points), "gamification", reason, idempotencyKey)
+		int64(points), "gamification", reason, idempotencyKey, true)
 }
 
 // EnqueuePointsAward records a points award via the retryable

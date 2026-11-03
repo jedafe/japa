@@ -4,6 +4,7 @@
 	import { Trophy, Lock, Calendar, Gift, Award, CheckCircle2, Target } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { RelativeTime } from '$lib/components/ui';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import type { Challenge } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -83,6 +84,14 @@
 				{#each challenges as ch (ch.id)}
 					{@const prog = myProgress[ch.id]}
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+						{#if ch.image_url}
+							<img
+								src={remoteImageUrl(ch.image_url)}
+								alt=""
+								class="mb-3 h-28 w-full rounded-[var(--radius)] object-cover"
+								loading="lazy"
+							/>
+						{/if}
 						<div class="flex items-start justify-between gap-3">
 							<div class="min-w-0 flex-1">
 								<div class="flex items-center gap-2">

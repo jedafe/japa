@@ -3,7 +3,7 @@
 // rotation support. Multiple signing secrets can be active simultaneously,
 // identified by a kid (key ID) header. This allows zero-disruption secret
 // rotation: a new secret is added, old tokens validate against the old kid,
-// and after one access token TTL (15 minutes) the old secret is retired.
+// and after one access token TTL (24 hours) the old secret is retired.
 package auth
 
 import (
@@ -20,10 +20,10 @@ import (
 )
 
 // AccessTokenTTL is the validity period for access tokens.
-// Short lifetime limits the damage window if a token is leaked.
 // Now read from system_settings 'auth.session.access_token_ttl_minutes' with
-// a 15-minute fallback. See settings.go for the implementation.
-const AccessTokenTTL = 15 * time.Minute
+// a 24-hour fallback — a leaked-token damage window bounded by JTI
+// revocation rather than a short exp. See settings.go for the implementation.
+const AccessTokenTTL = 24 * time.Hour
 
 // JWTClaims defines the structure of our access token claims.
 type JWTClaims struct {
@@ -117,7 +117,7 @@ func (kr *KeyRotation) SetCurrent(kid string) error {
 
 // MintAccessToken creates a signed JWT for the given user and platform.
 // The token expires after the access token TTL configured in system_settings
-// 'auth.session.access_token_ttl_minutes' (default: 15 minutes). Each token gets a
+// 'auth.session.access_token_ttl_minutes' (default: 24 hours). Each token gets a
 // unique JTI (JWT ID) for individual revocation support.
 func (kr *KeyRotation) MintAccessToken(userID pgtype.UUID) (string, error) {
 	return kr.MintAccessTokenWithContext(context.Background(), userID)

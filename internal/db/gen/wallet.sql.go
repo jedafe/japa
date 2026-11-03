@@ -485,7 +485,7 @@ func (q *Queries) GetWalletSettings(ctx context.Context) (WalletSetting, error) 
 const insertActivityEvent = `-- name: InsertActivityEvent :one
 
 INSERT INTO activity_events (user_id, activity_key, reference, payload) VALUES ($1, $2, $3, $4)
-ON CONFLICT (activity_key, reference) DO NOTHING
+ON CONFLICT (user_id, activity_key, reference) DO NOTHING
 RETURNING id, user_id, activity_key, reference, payload, processed, processed_at, created_at
 `
 
@@ -499,6 +499,9 @@ type InsertActivityEventParams struct {
 // =====================
 // Activity Events
 // =====================
+// Dedupe scope is (user_id, activity_key, reference) per Section 28 —
+// entity-scoped references are correct per-user, so shared entities
+// (polls, wiki pages, jobs) no longer single-winner (PTS-015, migration 001021).
 func (q *Queries) InsertActivityEvent(ctx context.Context, arg InsertActivityEventParams) (ActivityEvent, error) {
 	row := q.db.QueryRow(ctx, insertActivityEvent,
 		arg.UserID,

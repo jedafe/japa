@@ -20,6 +20,7 @@
 	} from 'lucide-svelte';
 	import { bookmarkLabel, bookmarkUrl } from '$lib/components/profile/bookmarks';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import type {
 		Badge,
 		Bookmark,
@@ -166,8 +167,12 @@
 		<ul class="space-y-2.5">
 			{#each visibleBadges as badge, i (badge.id)}
 				<li class="flex items-center gap-2.5" title={badge.description}>
-					<span class="grid h-9 w-9 shrink-0 place-items-center rounded-full {badgeColor(i)}">
-						<Award size={16} />
+					<span class="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full {badgeColor(i)}">
+						{#if badge.icon_url}
+							<img src={remoteImageUrl(badge.icon_url)} alt="" class="h-3/4 w-3/4 object-contain" />
+						{:else}
+							<Award size={16} />
+						{/if}
 					</span>
 					<span class="min-w-0 flex-1">
 						<span class="block truncate text-sm font-medium text-[var(--color-text)]">{badge.name}</span>
@@ -179,8 +184,12 @@
 			{/each}
 			{#each visibleLocked as badge, i (badge.id)}
 				<li class="flex items-center gap-2.5 opacity-60" title={badge.description}>
-					<span class="grid h-9 w-9 shrink-0 place-items-center rounded-full {badgeColor(i + visibleBadges.length)}">
-						<Award size={16} />
+					<span class="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full {badgeColor(i + visibleBadges.length)}">
+						{#if badge.icon_url}
+							<img src={remoteImageUrl(badge.icon_url)} alt="" class="h-3/4 w-3/4 object-contain opacity-60 grayscale" />
+						{:else}
+							<Award size={16} />
+						{/if}
 					</span>
 					<span class="min-w-0 flex-1">
 						<span class="block truncate text-sm font-medium text-[var(--color-muted)]">{badge.name}</span>

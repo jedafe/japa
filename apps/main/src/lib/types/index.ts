@@ -380,6 +380,9 @@ export interface ContentRecord {
 	status: string;
 	visibility: string;
 	publish_at?: string | null;
+	/** RFC3339 — sent back as expected_updated_at for the U1 optimistic
+	 *  lock on PATCH (BUG-CE-006). */
+	updated_at?: string;
 	space_id?: string | null;
 	guide_category?: string | null;
 	// Journey-aware recommendation metadata (§14 / 2026-08-21 journey design).
@@ -3132,6 +3135,9 @@ export interface Badge {
 	slug: string;
 	name: string;
 	description: string;
+	icon_media_id?: string | null;
+	icon_url?: string | null;
+	accent_color?: string | null;
 	trigger_type: string;
 	trigger_value: number;
 	trigger_activity_key: string;
@@ -3154,7 +3160,9 @@ export interface EarnedBadge {
 	slug: string;
 	name: string;
 	description: string;
-	icon_media_id: string | null;
+	icon_media_id?: string | null;
+	icon_url?: string | null;
+	accent_color?: string | null;
 	category?: string;
 	rarity?: string;
 	tier?: string;
@@ -3169,6 +3177,8 @@ export interface CollectionBadge {
 	name: string;
 	description?: string;
 	icon_media_id?: string;
+	icon_url?: string | null;
+	accent_color?: string | null;
 	category?: string;
 	rarity: string;
 	tier?: string;
@@ -3209,6 +3219,8 @@ export interface Challenge {
 	description?: string;
 	/** Optional hero image for the challenge card (media id). */
 	image_media_id?: string;
+	/** Resolved display URL for image_media_id (imgproxy-signed or serve path). */
+	image_url?: string | null;
 	/** Activity key that increments progress (e.g. "content.created"). */
 	activity_key?: string;
 	/** Number of qualifying actions needed to complete the challenge. */

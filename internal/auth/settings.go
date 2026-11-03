@@ -18,7 +18,11 @@ const DefaultRefreshTokenTTL = 30 * 24 * time.Hour // 30 days
 
 // DefaultAccessTokenTTL is the fallback access token TTL when the system setting
 // 'auth.session.access_token_ttl_minutes' is not configured. Matches the catalog default.
-const DefaultAccessTokenTTL = 15 * time.Minute
+// 24h: sessions read as "stay logged in until logout" — every surface
+// silently refreshes via the rotating jc_refresh cookie, so the longer
+// access token only reduces refresh round-trips, not revocation safety
+// (JTI revocation + per-refresh user-status checks are unchanged).
+const DefaultAccessTokenTTL = 24 * time.Hour
 
 // MaxRefreshTokenTTL caps the admin-configured refresh token TTL so a
 // misconfigured 'auth.session.refresh_days' (e.g. 1000000) cannot create
@@ -55,7 +59,7 @@ func GetRefreshTokenTTL(ctx context.Context, settings SettingsReader) time.Durat
 }
 
 // GetAccessTokenTTL reads the access token TTL from system_settings with a
-// fallback to the 15-minute default. The setting key is
+// fallback to the 24-hour default. The setting key is
 // 'auth.session.access_token_ttl_minutes' and the value is an integer number
 // of minutes.
 func GetAccessTokenTTL(ctx context.Context, settings SettingsReader) time.Duration {
@@ -63,7 +67,7 @@ func GetAccessTokenTTL(ctx context.Context, settings SettingsReader) time.Durati
 		return DefaultAccessTokenTTL
 	}
 
-	minutes := settings.GetIntOr(ctx, "auth.session.access_token_ttl_minutes", 15)
+	minutes := settings.GetIntOr(ctx, "auth.session.access_token_ttl_minutes", 1440)
 	if minutes <= 0 {
 		return DefaultAccessTokenTTL
 	}

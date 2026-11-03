@@ -61,7 +61,7 @@ export const load: PageServerLoad = async (event) => {
 	// with `content.edit_own`, a super-admin, or an editor with
 	// `content.edit_any`. The backend enforces the actual permission on
 	// PATCH /content/{id} and PATCH /admin/content/{id}; this flag only
-	// gates the UI Edit button. Ref: §03 RBAC — the legacy `content.edit`
+	// gates the UI Edit button. Ref: §03 RBAC — the legacy `content.edit_any`
 	// node was renamed to `content.edit_own`; `content.edit_any` is the
 	// admin/editor non-owner edit node.
 	const isOwner = authed && !!article.author_id && currentUserId === article.author_id;

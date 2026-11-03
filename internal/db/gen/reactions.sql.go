@@ -13,10 +13,22 @@ import (
 
 const addReaction = `-- name: AddReaction :one
 
-INSERT INTO reactions (entity_type, entity_id, user_id, reaction_key) VALUES ($1, $2, $3, $4)
-
-ON CONFLICT (entity_type, entity_id, user_id, reaction_key) DO NOTHING
-RETURNING entity_type, entity_id, user_id, reaction_key, created_at
+WITH prev AS (
+  SELECT r.reaction_key FROM reactions r
+  WHERE r.entity_type = $1 AND r.entity_id = $2 AND r.user_id = $3
+),
+upsert AS (
+  INSERT INTO reactions (entity_type, entity_id, user_id, reaction_key)
+  VALUES ($1, $2, $3, $4)
+  ON CONFLICT (entity_type, entity_id, user_id) DO UPDATE
+    SET reaction_key = EXCLUDED.reaction_key,
+        created_at = CASE WHEN reactions.reaction_key <> EXCLUDED.reaction_key
+                          THEN now() ELSE reactions.created_at END
+  RETURNING entity_type, entity_id, user_id, reaction_key, created_at
+)
+SELECT u.entity_type, u.entity_id, u.user_id, u.reaction_key, u.created_at,
+       p.reaction_key AS previous_key
+FROM upsert u LEFT JOIN prev p ON true
 `
 
 type AddReactionParams struct {
@@ -26,23 +38,43 @@ type AddReactionParams struct {
 	ReactionKey string      `json:"reaction_key"`
 }
 
+type AddReactionRow struct {
+	EntityType  string             `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	ReactionKey string             `json:"reaction_key"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	PreviousKey *string            `json:"previous_key"`
+}
+
 // =====================
 // Reactions
 // =====================
-func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) (Reaction, error) {
+// One reaction per user per entity (PK entity_type+entity_id+user_id —
+// migration 001023): inserting when the user already holds a different key
+// switches it instead of stacking a second reaction. The prev CTE snapshots
+// the pre-write key in the same statement so the caller can distinguish a
+// fresh insert (previous_key NULL) from a switch (different key) from a
+// same-key no-op (same key — no counter/notification side effects).
+// created_at advances on a real key switch so award dedupe refs anchored to
+// it (reaction:{entity}:{user}:{key}:{created_micro}) stay unique per
+// physical write — without it, a like→love→like cycle would re-emit the
+// like award under an already-used reference and be silently deduped.
+func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) (AddReactionRow, error) {
 	row := q.db.QueryRow(ctx, addReaction,
 		arg.EntityType,
 		arg.EntityID,
 		arg.UserID,
 		arg.ReactionKey,
 	)
-	var i Reaction
+	var i AddReactionRow
 	err := row.Scan(
 		&i.EntityType,
 		&i.EntityID,
 		&i.UserID,
 		&i.ReactionKey,
 		&i.CreatedAt,
+		&i.PreviousKey,
 	)
 	return i, err
 }

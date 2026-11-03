@@ -29,7 +29,6 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
-	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -3178,6 +3177,21 @@ func HandleWalletReconcilePayouts(ctx context.Context, _ *asynq.Task) error {
 	return walletProcessor.ReconcilePayoutsTask(ctx, nil)
 }
 
+// HandleWalletReprocessEvents re-enqueues stranded unprocessed
+// activity_events (PTS-024): tasks that exhausted retries, failed inline
+// fallbacks, or undoes-dependents orphaned when their award event died.
+// Safe to run repeatedly — processing is idempotent by event id.
+func HandleWalletReprocessEvents(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("task:wallet:reprocess_events")
+
+	if walletProcessor == nil {
+		slog.Warn("task:wallet:reprocess_events: no processor registered, skipping")
+		return nil
+	}
+
+	return walletProcessor.ReprocessEventsTask(ctx, nil)
+}
+
 // HandleNewsletterSend sends a newsletter campaign to all subscribers
 // matching the campaign's segment. Uses the marketing-category email
 // provider (ADR-015/ADR-080), batches sends by newsletter.batch_size
@@ -3560,111 +3574,21 @@ func baseURLFromTask(t *asynq.Task) string {
 	return resolveBaseURL(context.Background())
 }
 
-// HandleSitemapGenerate regenerates the XML sitemap for the platform.
+// HandleSitemapGenerate invalidates the cached sitemap XML for the platform.
+// The live HTTP handlers (internal/seo) render the sitemap index and every
+// sub-sitemap on demand and cache them in Valkey (jc:cache:sitemap:{}:{type},
+// 1h TTL). This task's only job is to drop the stale cache so the next
+// crawler request re-renders fresh XML — run daily and on significant content
+// events. The previous static-file write to JC_SITEMAP_DIR was removed: no
+// route served that directory and its flat urlset had drifted from the live
+// sitemapindex (missing SkipWordGate and every non-content sub-sitemap).
+// Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func HandleSitemapGenerate(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:sitemap:generate")
 
-	if dbPool == nil {
-		slog.Warn("task:sitemap:generate: no database, skipping")
-		return nil
-	}
-
-	baseURL := baseURLFromTask(t)
-	if baseURL == "" {
-		slog.Warn("task:sitemap:generate: no base_url, skipping")
-		return nil
-	}
-
-	generateSitemapForPlatform(ctx, baseURL)
+	seo.InvalidateSitemapCache(ctx, rdb)
 
 	return nil
-}
-
-// generateSitemapForPlatform generates the platform sitemap XML.
-// Content is filtered through the Section 43 sitemap quality gates
-// (bots.IsContentIndexableByType) using per-content-type thresholds
-// from system_settings.
-// Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func generateSitemapForPlatform(ctx context.Context, baseURL string) {
-	slugs, err := gen.New(dbPool.Reader).ListPublishedSlugsForSitemap(ctx)
-	if err != nil {
-		slog.Error("task:sitemap:generate: failed to list content", "error", err)
-		return
-	}
-
-	// Read all sitemap quality gate thresholds from system_settings.
-	// Falls back to spec defaults when unset or settings unavailable.
-	cfg := bots.DefaultSitemapQualityConfig()
-	if appSettings != nil {
-		cfg.MinWords = appSettings.GetIntOr(ctx, "seo.sitemap.content_min_words", cfg.MinWords)
-		cfg.BlogMinWords = appSettings.GetIntOr(ctx, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
-		cfg.ForumMinWords = appSettings.GetIntOr(ctx, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
-		cfg.DiscussionMinWords = appSettings.GetIntOr(ctx, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
-		cfg.GuideMinWords = appSettings.GetIntOr(ctx, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
-		cfg.ComparisonMinWords = appSettings.GetIntOr(ctx, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
-		cfg.BlogMinEngagement = appSettings.GetIntOr(ctx, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
-		cfg.ForumMinReplies = appSettings.GetIntOr(ctx, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
-		cfg.QuestionMinAnswers = appSettings.GetIntOr(ctx, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
-		cfg.DiscussionMinComments = appSettings.GetIntOr(ctx, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
-	}
-
-	var sitemap strings.Builder
-
-	sitemap.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-	sitemap.WriteString("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n")
-
-	urlCount := 0
-
-	for _, s := range slugs {
-		// Apply the Section 43 per-content-type quality gate.
-		isQuestion := s.IsQuestion != nil && *s.IsQuestion
-		if !bots.IsContentIndexableByType(bots.ContentIndexableInput{
-			ContentType:   s.ContentType,
-			Status:        "published",
-			Visibility:    s.Visibility,
-			WordCount:     int(s.WordCount),
-			CommentCount:  int(s.CommentCount),
-			ShareCount:    int(s.ShareCount),
-			ReactionCount: int(s.ReactionCount),
-			ReplyCount:    int(s.ReplyCount),
-			IsQuestion:    isQuestion,
-			Solved:        s.Solved,
-			SeoIndexable:  s.SeoIndexable,
-		}, cfg) {
-			continue
-		}
-
-		// Canonical frontend URLs are per-content-type routes (ADR-058 route
-		// families), not the generic /content/ prefix — matches
-		// ServeContentSitemap in internal/seo.
-		sitemap.WriteString(fmt.Sprintf("  <url>\n    <loc>%s%s</loc>\n    <lastmod>%s</lastmod>\n  </url>\n",
-			baseURL, bots.ContentURLPath(s.ContentType, s.Slug),
-			s.UpdatedAt.Time.Format("2006-01-02")))
-
-		urlCount++
-	}
-
-	sitemap.WriteString("</urlset>\n")
-
-	sitemapDir := getEnv("JC_SITEMAP_DIR", "./sitemaps")
-	//nolint:gosec // G301: bounded
-	if err := os.MkdirAll(sitemapDir, 0o755); err != nil { // #nosec //nolint:gosec // G301: bounded
-		slog.Error("task:sitemap:generate: failed to create dir", "dir", sitemapDir, "error", err)
-		return
-	}
-
-	sitemapPath := sitemapDir + "/sitemap.xml"
-	if err := os.WriteFile(sitemapPath, []byte(sitemap.String()), 0o600); err != nil {
-		slog.Error("task:sitemap:generate: failed to write file", "path", sitemapPath, "error", err)
-		return
-	}
-
-	slog.Info("task:sitemap:generate: sitemap written", "path", sitemapPath, "url_count", urlCount)
-
-	// Invalidate the on-demand sitemap Valkey cache so the live HTTP
-	// handlers serve fresh XML on next request (BE-11 fix).
-	// Ref: japaconnect-engineering/sections/26-seo-performance.md
-	seo.InvalidateSitemapCache(ctx, rdb)
 }
 
 // HandleRSSRegenerate regenerates the RSS feed for published content.

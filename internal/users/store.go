@@ -659,7 +659,7 @@ func (s *Store) getUserContent(ctx context.Context, userID, contentID pgtype.UUI
 
 // getContentByIDForEditor returns any content by ID within the platform (no
 // author filter). Used by GET /me/content/{id} as a fallback when the caller
-// is a super-admin or holds the RBAC `content.edit` permission but is not
+// is a super-admin or holds the RBAC `content.edit_any` permission but is not
 // the content owner. Returns pgx.ErrNoRows when the content is missing or
 // belongs to a different platform → 404.
 func (s *Store) getContentByIDForEditor(ctx context.Context, contentID pgtype.UUID) (gen.GetContentByIDForEditorRow, error) {

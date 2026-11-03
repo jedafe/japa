@@ -1529,13 +1529,18 @@ func (q *Queries) UpdateMediaMetadataOwn(ctx context.Context, arg UpdateMediaMet
 }
 
 const updateMediaStorage = `-- name: UpdateMediaStorage :exec
-UPDATE media SET storage_path = $1, mime_type = $2, file_size_bytes = $3 WHERE id = $4 AND deleted_at IS NULL
+UPDATE media SET storage_path = $1, mime_type = $2, file_size_bytes = $3,
+ width_px = COALESCE($4, width_px),
+ height_px = COALESCE($5, height_px)
+WHERE id = $6 AND deleted_at IS NULL
 `
 
 type UpdateMediaStorageParams struct {
 	StoragePath   string      `json:"storage_path"`
 	MimeType      string      `json:"mime_type"`
 	FileSizeBytes int64       `json:"file_size_bytes"`
+	WidthPx       *int32      `json:"width_px"`
+	HeightPx      *int32      `json:"height_px"`
 	ID            pgtype.UUID `json:"id"`
 }
 
@@ -1546,6 +1551,8 @@ func (q *Queries) UpdateMediaStorage(ctx context.Context, arg UpdateMediaStorage
 		arg.StoragePath,
 		arg.MimeType,
 		arg.FileSizeBytes,
+		arg.WidthPx,
+		arg.HeightPx,
 		arg.ID,
 	)
 	return err

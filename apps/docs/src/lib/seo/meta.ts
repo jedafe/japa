@@ -1,5 +1,4 @@
 import { env } from '$env/dynamic/private';
-
 import { DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 /** Canonical docs origin for SEO canonical URLs + JSON-LD. */
 export const DOCS_ORIGIN = (env.PUBLIC_DOCS_ORIGIN ?? 'https://docs.japa.to').replace(
@@ -43,16 +42,10 @@ export function buildMeta(opts: BuildMetaOptions): SeoMeta {
 	const title = opts.title;
 	const description = opts.description ?? '';
 	const ogUrl = opts.path ? `${DOCS_ORIGIN}${opts.path}` : DOCS_ORIGIN;
-	// OG image from the Go backend OG endpoint (Ref: §26 ROADMAP 07.06).
-	// The backend generates a branded OG image with the page title overlaid.
-	// If an explicit image is provided, use it; otherwise derive from the
-	// backend's OG image endpoint.
-	const apiBase = (env.PRIVATE_API_BASE_URL ?? '').replace(/\/$/, '');
-	const ogImage =
-		opts.image ??
-		(apiBase && opts.path
-			? `${apiBase}/og/docs?title=${encodeURIComponent(title)}&path=${encodeURIComponent(opts.path)}`
-			: '');
+	// Only an explicit image is emitted — the backend OG endpoint
+	// (/og/{id}.png) is content-scoped and has no docs-page variant, so
+	// a derived URL would 404. SeoHead omits og:image when empty.
+	const ogImage = opts.image ?? '';
 
 	return {
 		title,

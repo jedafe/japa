@@ -62,10 +62,12 @@
 			sort: string;
 			filter: Record<string, string>;
 		}) => Promise<{ data: any[]; total: number; totalPages: number } | any[]>;
-		create?: (body: Record<string, any>) => Promise<{ ok: boolean; error?: string; id?: string }>;
+		create?: (body: Record<string, any>) => Promise<{ ok: boolean; error?: string; id?: string; fieldErrors?: Record<string, string> }>;
 		/** `row` is the row being edited — lets update callbacks recover values
-		 *  the form doesn't seed (e.g. nested objects only edited via formSnippet). */
-		update?: (id: string, body: Record<string, any>, row?: any) => Promise<{ ok: boolean; error?: string }>;
+		 *  the form doesn't seed (e.g. nested objects only edited via formSnippet).
+		 *  `fieldErrors` lets the API's structured error.data drive per-field
+		 *  messages in EntityForm (BUG-CE-019). */
+		update?: (id: string, body: Record<string, any>, row?: any) => Promise<{ ok: boolean; error?: string; fieldErrors?: Record<string, string> }>;
 		remove?: (id: string) => Promise<{ ok: boolean; error?: string; inUse?: boolean }>;
 		/** Second-chance delete when `remove` reports the row is still referenced
 		 *  (returns `{ ok: false, inUse: true }`). The confirm modal then offers a
@@ -506,6 +508,21 @@
 
 	// ── Mutations ───────────────────────────────────────────────────────────
 	async function submitForm() {
+		// BUG-CE-017: required fields render * in EntityForm but nothing
+		// enforced them — validate before hitting the API and surface
+		// per-field errors.
+		const errs: Record<string, string> = {};
+		for (const f of config.fields) {
+			if (!f.required || (editing != null && f.hideInEdit)) continue;
+			const v = formValue[f.key];
+			if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) {
+				errs[f.key] = t('common.required', 'Required');
+			}
+		}
+		if (Object.keys(errs).length > 0) {
+			formErrors = errs;
+			return;
+		}
 		saving = true;
 		error = '';
 		try {
@@ -523,6 +540,9 @@
 				await reload();
 			} else {
 				error = res?.error ?? t('common.error', 'An error occurred');
+				// BUG-CE-019: surface structured field errors on the inputs —
+				// callbacks may return error.data's per-field map.
+				formErrors = res?.fieldErrors ?? {};
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('common.error', 'An error occurred');
@@ -531,8 +551,13 @@
 		}
 	}
 
+	// BUG-CE-018: shared in-flight guard for the confirm-modal action
+	// buttons — double-clicks must not duplicate the mutation.
+	let confirmBusy = $state(false);
+
 	async function confirmDelete() {
-		if (!deleteTarget) return;
+		if (!deleteTarget || confirmBusy) return;
+		confirmBusy = true;
 		try {
 			const res = await config.remove?.(deleteTarget.id);
 			if (res?.ok) {
@@ -551,11 +576,14 @@
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('common.error', 'An error occurred');
 			confirmOpen = false;
+		} finally {
+			confirmBusy = false;
 		}
 	}
 
 	async function confirmForceDelete() {
-		if (!deleteTarget || !config.forceRemove) return;
+		if (!deleteTarget || !config.forceRemove || confirmBusy) return;
+		confirmBusy = true;
 		try {
 			const res = await config.forceRemove(deleteTarget.id);
 			if (res?.ok) {
@@ -570,6 +598,8 @@
 			}
 		} catch (e) {
 			deleteBlockedMessage = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+		} finally {
+			confirmBusy = false;
 		}
 	}
 
@@ -579,7 +609,8 @@
 	}
 
 	async function confirmHardDelete() {
-		if (!hardDeleteTarget) return;
+		if (!hardDeleteTarget || confirmBusy) return;
+		confirmBusy = true;
 		try {
 			const res = await config.hardRemove?.(hardDeleteTarget.id);
 			if (res?.ok) {
@@ -592,6 +623,8 @@
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+		} finally {
+			confirmBusy = false;
 		}
 	}
 
@@ -601,7 +634,8 @@
 	}
 
 	async function confirmRestore() {
-		if (!restoreTarget) return;
+		if (!restoreTarget || confirmBusy) return;
+		confirmBusy = true;
 		try {
 			const res = await config.restore?.(restoreTarget.id);
 			if (res?.ok) {
@@ -614,6 +648,8 @@
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+		} finally {
+			confirmBusy = false;
 		}
 	}
 
@@ -1071,8 +1107,8 @@
 			<Button variant="outline" onclick={() => (confirmOpen = false)}>
 				{t('common.cancel', 'Cancel')}
 			</Button>
-			<Button variant="destructive" onclick={confirmForceDelete}>
-				{t('common.forceDelete', 'Delete Anyway')}
+			<Button variant="destructive" onclick={confirmForceDelete} disabled={confirmBusy}>
+				{confirmBusy ? t('common.deleting', 'Deleting…') : t('common.forceDelete', 'Delete Anyway')}
 			</Button>
 		</div>
 	{:else}
@@ -1083,8 +1119,8 @@
 			<Button variant="outline" onclick={() => (confirmOpen = false)}>
 				{t('common.cancel', 'Cancel')}
 			</Button>
-			<Button variant="destructive" onclick={confirmDelete}>
-				{t('common.confirm', 'Confirm')}
+			<Button variant="destructive" onclick={confirmDelete} disabled={confirmBusy}>
+				{confirmBusy ? t('common.deleting', 'Deleting…') : t('common.confirm', 'Confirm')}
 			</Button>
 		</div>
 	{/if}
@@ -1138,8 +1174,8 @@
 		<Button variant="outline" onclick={() => (hardDeleteConfirmOpen = false)}>
 			{t('common.cancel', 'Cancel')}
 		</Button>
-		<Button variant="destructive" onclick={confirmHardDelete}>
-			{t('common.hardDelete', 'Hard Delete')}
+		<Button variant="destructive" onclick={confirmHardDelete} disabled={confirmBusy}>
+			{confirmBusy ? t('common.deleting', 'Deleting…') : t('common.hardDelete', 'Hard Delete')}
 		</Button>
 	</div>
 </Modal>
@@ -1153,8 +1189,8 @@
 		<Button variant="outline" onclick={() => (restoreConfirmOpen = false)}>
 			{t('common.cancel', 'Cancel')}
 		</Button>
-		<Button onclick={confirmRestore}>
-			{t('common.restore', 'Restore')}
+		<Button onclick={confirmRestore} disabled={confirmBusy}>
+			{confirmBusy ? t('common.loading', 'Loading…') : t('common.restore', 'Restore')}
 		</Button>
 	</div>
 </Modal>

@@ -79,7 +79,7 @@ export function computeSeoScore(input: SeoScoreInput): SeoScoreResult {
 	// Resolve metadata per Section 26 ResolveMetadata (fallback chain).
 	const resolvedMetaTitle = metaTitle?.trim() || title.trim();
 	const resolvedMetaDesc = metaDescription?.trim() || excerpt(bodyHtml, 160);
-	const resolvedOGTitle = title.trim(); // og_title falls back to title
+	const resolvedOGTitle = metaTitle?.trim() || title.trim(); // og_title = meta_title ?? title (backend parity)
 	const resolvedOGDesc = resolvedMetaDesc; // og_description falls back to meta_description
 
 	// robots_meta per Section 26.

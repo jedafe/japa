@@ -23,6 +23,7 @@
 
 	let track = $state<InstructorTrack | null>(null);
 	let loading = $state(true);
+	let notFound = $state(false);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 	let success = $state<string | null>(null);
@@ -132,6 +133,13 @@
 			if (r.data) {
 				const found = r.data.find((tr) => tr.id === trackId) ?? null;
 				track = found;
+				// BUG-CE-022: a track id the caller doesn't own (or that
+				// doesn't exist) must render a not-found state, not an
+				// empty edit form.
+				if (!found) {
+					notFound = true;
+					return;
+				}
 				if (found) {
 					title = found.title ?? '';
 					description = found.description ?? '';
@@ -220,7 +228,13 @@
 		</h1>
 	</header>
 
-	{#if loading}
+	{#if notFound}
+		<div class="p-6 text-center">
+			<p class="text-sm" style="color: var(--color-muted)">
+				{t('academy.track_not_found', 'Track not found or you do not have permission to edit it.')}
+			</p>
+		</div>
+	{:else if loading}
 		<div class="max-w-2xl space-y-4">
 			{#each Array(6) as _}
 				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

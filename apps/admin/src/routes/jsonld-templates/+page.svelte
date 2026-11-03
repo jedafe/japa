@@ -26,14 +26,23 @@
 	// could allow typos or invalid content_type keys.
 	let contentTypeOptions = $state<Array<{ value: string; label: string }>>([]);
 
+	// Templates are keyed by either a contents.content_type OR a schema.org
+	// type name (Article, QAPage, Person, ...) — the seeded set mixes both,
+	// so the dropdown offers schema keys alongside the content types.
+	const SCHEMA_KEYS = ['Article', 'BlogPosting', 'QAPage', 'Review', 'FAQPage', 'JobPosting', 'Course', 'Person', 'Organization', 'Service', 'ItemList'];
+
 	$effect(() => {
 		void (async () => {
 			const res = await contentAdminApi.listContentTypes();
 			if (res.ok && res.data) {
-				contentTypeOptions = res.data.map((ct) => ({
+				const typeOpts = res.data.map((ct) => ({
 					value: ct.value,
 					label: t(`content.type.${ct.value}`, ct.label)
 				}));
+				contentTypeOptions = [
+					...typeOpts,
+					...SCHEMA_KEYS.map((k) => ({ value: k, label: `${k} (schema)` }))
+				];
 			}
 		})();
 	});
@@ -158,7 +167,7 @@
 	// `fields` drives edit-form seeding; the actual inputs are rendered by the
 	// `formSnippet` below (structured JSON editor with validation feedback).
 	const fields: FieldDef[] = [
-		{ key: 'content_type', label: t('jsonld-templates.content_type', 'Content Type'), type: 'text', required: true },
+		{ key: 'content_type', label: t('jsonld-templates.template_key', 'Template Key'), type: 'text', required: true },
 		{ key: 'is_active', label: t('jsonld-templates.status', 'Status'), type: 'checkbox' },
 		{ key: 'content', label: t('jsonld-templates.content', 'JSON-LD Content'), type: 'json' }
 	];

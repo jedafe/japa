@@ -21,6 +21,7 @@
 	import { hydrateContentEmbeds } from '$lib/tiptap/hydrateContentEmbeds';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
+	import { mergeJsonLd } from '$lib/seo/jsonld';
 	import { contentHref } from '$lib/utils/contentLink';
 	import type { ContentArticle, ContentAnalytics, SeriesPost } from '$lib/types/content';
 	import type { Comment, SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '$lib/types';
@@ -172,16 +173,21 @@
 	// resolves the admin-managed template (matching the content's
 	// content_type) server-side and returns it in the `json_ld` sidecar.
 	// Fall back to a basic Article schema when absent.
+	// comparison pages intentionally get no JSON-LD (Section 26 — no clean
+	// schema.org fit), so the generic Article fallback skips them.
+	// mergeJsonLd keeps the fallback alongside a standalone FAQPage payload
+	// (backend emits one when no template resolves but the body carries a
+	// §45 editor faq block).
 	const jsonLd = $derived(
-		data.jsonLd ?? {
+		mergeJsonLd(data.jsonLd, article.content_type === 'comparison' ? null : {
 			'@context': 'https://schema.org',
 			'@type': 'Article',
 			headline: article.title,
 			datePublished: article.published_at || article.created_at,
-				author: { '@type': 'Person', name: article.author_name || t('app.name') },
+			author: { '@type': 'Person', name: article.author_name || t('app.name') },
 			url: canonical,
 			description
-		}
+		})
 	);
 
 	// View tracking (Section 14 — POST /content/{id}/view). Fire-and-forget

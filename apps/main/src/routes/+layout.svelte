@@ -7,7 +7,7 @@
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
 	import { seedAccessToken, clearAccessToken } from '$lib/api/token.svelte';
 	import { realtime } from '$lib/realtime/realtime.svelte';
-	import { pwaInstall } from '@japaconnect/ui/pwa-install';
+	import { pwaInstall, moduleServiceWorkerSupported } from '@japaconnect/ui/pwa-install';
 	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
 	import { syncPushSubscription } from '$lib/pwa/push-sync';
 	import { env } from '$env/dynamic/public';
@@ -172,13 +172,31 @@
 		// onboarding, marketplace, public pages — gets installability,
 		// offline caching, and push delivery, not just the (app) group.
 		// Ref: .jeos/sections/124-progressive-web-app.md
-		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+		if (
+			typeof navigator !== 'undefined' &&
+			'serviceWorker' in navigator &&
+			// Firefox ≤146 / ESR 140 can't run module service workers — it
+			// falls back to classic evaluation of the ES-module dev stub and
+			// throws "script threw an exception during script evaluation" on
+			// every load. Production serves a classic IIFE, so only dev gates.
+			(!import.meta.env.DEV || moduleServiceWorkerSupported())
+		) {
 			// SvelteKit/Vite serves the source service worker as an ES module in dev,
 			// but compiles it to a classic IIFE for production. Use the matching
 			// registration type so the browser does not fail to evaluate the script.
 			const swType = import.meta.env.DEV ? 'module' : 'classic';
-			const registerSw = () => {
+			const registerSw = (retried = false) => {
 				navigator.serviceWorker.register('/service-worker.js', { type: swType }).catch((err) => {
+					// A stale classic-registered worker can win Chrome's update
+					// race and evaluate the dev ES-module stub as a classic
+					// script — one unregister+retry clears it for good.
+					if (!retried) {
+						navigator.serviceWorker.getRegistration().then((reg) => {
+							void (reg ? reg.unregister() : Promise.resolve())
+								.finally(() => registerSw(true));
+						});
+						return;
+					}
 					// eslint-disable-next-line no-console
 					console.error('Service worker registration failed:', err);
 				});

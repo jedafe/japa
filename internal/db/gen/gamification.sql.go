@@ -112,9 +112,9 @@ func (q *Queries) CountUserActivityByKey(ctx context.Context, arg CountUserActiv
 }
 
 const createBadgeDefinition = `-- name: CreateBadgeDefinition :one
-INSERT INTO badge_definitions (slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+INSERT INTO badge_definitions (slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, accent_color) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 
-RETURNING id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id
+RETURNING id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id, accent_color
 `
 
 type CreateBadgeDefinitionParams struct {
@@ -138,6 +138,7 @@ type CreateBadgeDefinitionParams struct {
 	PointsReward       int32              `json:"points_reward"`
 	AvailableFrom      pgtype.Timestamptz `json:"available_from"`
 	AvailableUntil     pgtype.Timestamptz `json:"available_until"`
+	AccentColor        *string            `json:"accent_color"`
 }
 
 func (q *Queries) CreateBadgeDefinition(ctx context.Context, arg CreateBadgeDefinitionParams) (BadgeDefinition, error) {
@@ -162,6 +163,7 @@ func (q *Queries) CreateBadgeDefinition(ctx context.Context, arg CreateBadgeDefi
 		arg.PointsReward,
 		arg.AvailableFrom,
 		arg.AvailableUntil,
+		arg.AccentColor,
 	)
 	var i BadgeDefinition
 	err := row.Scan(
@@ -188,6 +190,7 @@ func (q *Queries) CreateBadgeDefinition(ctx context.Context, arg CreateBadgeDefi
 		&i.AvailableFrom,
 		&i.AvailableUntil,
 		&i.SeasonID,
+		&i.AccentColor,
 	)
 	return i, err
 }
@@ -341,7 +344,7 @@ func (q *Queries) GetActivityDayStreak(ctx context.Context, arg GetActivityDaySt
 }
 
 const getBadgeDefinitionByID = `-- name: GetBadgeDefinitionByID :one
-SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id, accent_color FROM badge_definitions
 WHERE id = $1
 `
 
@@ -372,13 +375,14 @@ func (q *Queries) GetBadgeDefinitionByID(ctx context.Context, id pgtype.UUID) (B
 		&i.AvailableFrom,
 		&i.AvailableUntil,
 		&i.SeasonID,
+		&i.AccentColor,
 	)
 	return i, err
 }
 
 const getBadgesByActivityTrigger = `-- name: GetBadgesByActivityTrigger :many
 
-SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id, accent_color FROM badge_definitions
 WHERE is_active = true
  AND trigger_type = 'activity_count'
  AND trigger_activity_key = $1
@@ -422,6 +426,7 @@ func (q *Queries) GetBadgesByActivityTrigger(ctx context.Context, activityKey *s
 			&i.AvailableFrom,
 			&i.AvailableUntil,
 			&i.SeasonID,
+			&i.AccentColor,
 		); err != nil {
 			return nil, err
 		}
@@ -434,7 +439,7 @@ func (q *Queries) GetBadgesByActivityTrigger(ctx context.Context, activityKey *s
 }
 
 const getBadgesByPointsTrigger = `-- name: GetBadgesByPointsTrigger :many
-SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id, accent_color FROM badge_definitions
 WHERE is_active = true
  AND trigger_type = 'lifetime_points'
  AND (available_from IS NULL OR available_from <= now())
@@ -474,6 +479,7 @@ func (q *Queries) GetBadgesByPointsTrigger(ctx context.Context) ([]BadgeDefiniti
 			&i.AvailableFrom,
 			&i.AvailableUntil,
 			&i.SeasonID,
+			&i.AccentColor,
 		); err != nil {
 			return nil, err
 		}
@@ -486,7 +492,7 @@ func (q *Queries) GetBadgesByPointsTrigger(ctx context.Context) ([]BadgeDefiniti
 }
 
 const getBadgesByStreakTrigger = `-- name: GetBadgesByStreakTrigger :many
-SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id, accent_color FROM badge_definitions
 WHERE is_active = true
  AND trigger_type = 'streak_days'
  AND trigger_activity_key = $1
@@ -527,6 +533,7 @@ func (q *Queries) GetBadgesByStreakTrigger(ctx context.Context, activityKey *str
 			&i.AvailableFrom,
 			&i.AvailableUntil,
 			&i.SeasonID,
+			&i.AccentColor,
 		); err != nil {
 			return nil, err
 		}
@@ -1178,7 +1185,7 @@ func (q *Queries) ListBadgeAwardEventsForUser(ctx context.Context, arg ListBadge
 const listBadgeCollectionForUser = `-- name: ListBadgeCollectionForUser :many
 
 SELECT
- bd.id, bd.slug, bd.name, bd.description, bd.icon_media_id, bd.trigger_type, bd.trigger_value, bd.trigger_activity_key, bd.is_active, bd.is_system, bd.display_order, bd.created_at, bd.category, bd.rarity, bd.tier, bd.badge_group, bd.is_secret, bd.is_limited, bd.is_featured, bd.points_reward, bd.available_from, bd.available_until, bd.season_id,
+ bd.id, bd.slug, bd.name, bd.description, bd.icon_media_id, bd.trigger_type, bd.trigger_value, bd.trigger_activity_key, bd.is_active, bd.is_system, bd.display_order, bd.created_at, bd.category, bd.rarity, bd.tier, bd.badge_group, bd.is_secret, bd.is_limited, bd.is_featured, bd.points_reward, bd.available_from, bd.available_until, bd.season_id, bd.accent_color,
  ub.awarded_at AS user_awarded_at,
  ub.id AS user_badge_id,
  bp.current_count AS progress_count
@@ -1213,6 +1220,7 @@ type ListBadgeCollectionForUserRow struct {
 	AvailableFrom      pgtype.Timestamptz `json:"available_from"`
 	AvailableUntil     pgtype.Timestamptz `json:"available_until"`
 	SeasonID           pgtype.UUID        `json:"season_id"`
+	AccentColor        *string            `json:"accent_color"`
 	UserAwardedAt      pgtype.Timestamptz `json:"user_awarded_at"`
 	UserBadgeID        pgtype.UUID        `json:"user_badge_id"`
 	ProgressCount      *int32             `json:"progress_count"`
@@ -1255,6 +1263,7 @@ func (q *Queries) ListBadgeCollectionForUser(ctx context.Context, userID pgtype.
 			&i.AvailableFrom,
 			&i.AvailableUntil,
 			&i.SeasonID,
+			&i.AccentColor,
 			&i.UserAwardedAt,
 			&i.UserBadgeID,
 			&i.ProgressCount,
@@ -1272,7 +1281,7 @@ func (q *Queries) ListBadgeCollectionForUser(ctx context.Context, userID pgtype.
 const listBadgeDefinitions = `-- name: ListBadgeDefinitions :many
 
 
-SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id, accent_color FROM badge_definitions
 WHERE ($1::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC
 `
@@ -1320,6 +1329,7 @@ func (q *Queries) ListBadgeDefinitions(ctx context.Context, activeOnly bool) ([]
 			&i.AvailableFrom,
 			&i.AvailableUntil,
 			&i.SeasonID,
+			&i.AccentColor,
 		); err != nil {
 			return nil, err
 		}
@@ -1332,7 +1342,7 @@ func (q *Queries) ListBadgeDefinitions(ctx context.Context, activeOnly bool) ([]
 }
 
 const listBadgeDefinitionsPaginated = `-- name: ListBadgeDefinitionsPaginated :many
-SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id FROM badge_definitions
+SELECT id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id, accent_color FROM badge_definitions
 WHERE ($1::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC
 LIMIT $3 OFFSET $2
@@ -1377,6 +1387,7 @@ func (q *Queries) ListBadgeDefinitionsPaginated(ctx context.Context, arg ListBad
 			&i.AvailableFrom,
 			&i.AvailableUntil,
 			&i.SeasonID,
+			&i.AccentColor,
 		); err != nil {
 			return nil, err
 		}
@@ -1486,6 +1497,7 @@ SELECT
  bd.name AS badge_name,
  bd.slug AS badge_slug,
  bd.description AS badge_description,
+ bd.accent_color AS badge_accent_color,
  bd.icon_media_id AS badge_icon_media_id,
  bd.category AS badge_category,
  bd.rarity AS badge_rarity,
@@ -1506,6 +1518,7 @@ type ListUserBadgesRow struct {
 	BadgeName        string             `json:"badge_name"`
 	BadgeSlug        string             `json:"badge_slug"`
 	BadgeDescription *string            `json:"badge_description"`
+	BadgeAccentColor *string            `json:"badge_accent_color"`
 	BadgeIconMediaID pgtype.UUID        `json:"badge_icon_media_id"`
 	BadgeCategory    *string            `json:"badge_category"`
 	BadgeRarity      string             `json:"badge_rarity"`
@@ -1531,6 +1544,7 @@ func (q *Queries) ListUserBadges(ctx context.Context, userID pgtype.UUID) ([]Lis
 			&i.BadgeName,
 			&i.BadgeSlug,
 			&i.BadgeDescription,
+			&i.BadgeAccentColor,
 			&i.BadgeIconMediaID,
 			&i.BadgeCategory,
 			&i.BadgeRarity,
@@ -1553,6 +1567,8 @@ SELECT
  bd.name AS badge_name,
  bd.slug AS badge_slug,
  bd.description AS badge_description,
+ bd.accent_color AS badge_accent_color,
+ bd.icon_media_id AS badge_icon_media_id,
  bd.category AS badge_category,
  bd.rarity AS badge_rarity,
  bd.tier AS badge_tier,
@@ -1573,6 +1589,8 @@ type ListUserBadgesByUsernameRow struct {
 	BadgeName        string             `json:"badge_name"`
 	BadgeSlug        string             `json:"badge_slug"`
 	BadgeDescription *string            `json:"badge_description"`
+	BadgeAccentColor *string            `json:"badge_accent_color"`
+	BadgeIconMediaID pgtype.UUID        `json:"badge_icon_media_id"`
 	BadgeCategory    *string            `json:"badge_category"`
 	BadgeRarity      string             `json:"badge_rarity"`
 	BadgeTier        *string            `json:"badge_tier"`
@@ -1597,6 +1615,8 @@ func (q *Queries) ListUserBadgesByUsername(ctx context.Context, username string)
 			&i.BadgeName,
 			&i.BadgeSlug,
 			&i.BadgeDescription,
+			&i.BadgeAccentColor,
+			&i.BadgeIconMediaID,
 			&i.BadgeCategory,
 			&i.BadgeRarity,
 			&i.BadgeTier,
@@ -1703,14 +1723,15 @@ SET
  rarity = COALESCE($14, rarity),
  tier = CASE WHEN $15::boolean THEN NULL ELSE COALESCE($16, tier) END,
  badge_group = CASE WHEN $17::boolean THEN NULL ELSE COALESCE($18, badge_group) END,
- is_secret = COALESCE($19, is_secret),
- is_limited = COALESCE($20, is_limited),
- is_featured = COALESCE($21, is_featured),
- points_reward = COALESCE($22, points_reward),
- available_from = CASE WHEN $23::boolean THEN NULL ELSE COALESCE($24, available_from) END,
- available_until = CASE WHEN $25::boolean THEN NULL ELSE COALESCE($26, available_until) END
-WHERE id = $27
-RETURNING id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id
+ accent_color = CASE WHEN $19::boolean THEN NULL ELSE COALESCE($20, accent_color) END,
+ is_secret = COALESCE($21, is_secret),
+ is_limited = COALESCE($22, is_limited),
+ is_featured = COALESCE($23, is_featured),
+ points_reward = COALESCE($24, points_reward),
+ available_from = CASE WHEN $25::boolean THEN NULL ELSE COALESCE($26, available_from) END,
+ available_until = CASE WHEN $27::boolean THEN NULL ELSE COALESCE($28, available_until) END
+WHERE id = $29
+RETURNING id, slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, created_at, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, season_id, accent_color
 `
 
 type UpdateBadgeDefinitionParams struct {
@@ -1732,6 +1753,8 @@ type UpdateBadgeDefinitionParams struct {
 	Tier                    *string            `json:"tier"`
 	ClearBadgeGroup         *bool              `json:"clear_badge_group"`
 	BadgeGroup              *string            `json:"badge_group"`
+	ClearAccentColor        *bool              `json:"clear_accent_color"`
+	AccentColor             *string            `json:"accent_color"`
 	IsSecret                *bool              `json:"is_secret"`
 	IsLimited               *bool              `json:"is_limited"`
 	IsFeatured              *bool              `json:"is_featured"`
@@ -1763,6 +1786,8 @@ func (q *Queries) UpdateBadgeDefinition(ctx context.Context, arg UpdateBadgeDefi
 		arg.Tier,
 		arg.ClearBadgeGroup,
 		arg.BadgeGroup,
+		arg.ClearAccentColor,
+		arg.AccentColor,
 		arg.IsSecret,
 		arg.IsLimited,
 		arg.IsFeatured,
@@ -1798,6 +1823,7 @@ func (q *Queries) UpdateBadgeDefinition(ctx context.Context, arg UpdateBadgeDefi
 		&i.AvailableFrom,
 		&i.AvailableUntil,
 		&i.SeasonID,
+		&i.AccentColor,
 	)
 	return i, err
 }

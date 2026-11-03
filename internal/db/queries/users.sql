@@ -406,7 +406,7 @@ WHERE c.id = $1 AND c.author_id = $2
 -- name: GetContentByIDForEditor :one
 -- Returns any content by ID within the platform (no author filter). Used by
 -- GET /api/v1/me/content/{id} as a fallback when the caller is a super-admin
--- or holds the RBAC `content.edit` permission but is not the content owner.
+-- or holds the RBAC `content.edit_any` permission but is not the content owner.
 -- Mirrors the GetUserContent column set so the response shape is identical.
 -- A missing row or a different platform's content resolves to pgx.ErrNoRows → 404.
 SELECT c.id, c.author_id, c.organization_id, c.space_id,

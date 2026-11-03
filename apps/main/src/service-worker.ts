@@ -7,7 +7,14 @@
 // Ref: .jeos/sections/124-progressive-web-app.md
 
 import { PUBLIC_JC_API_URL } from '$env/static/public';
-import { version } from '$service-worker';
+// §124 — build/start timestamp injected via vite `define`, used only for
+// cache namespacing. `$service-worker` is deliberately NOT imported: its dev
+// shim guards on `self instanceof ServiceWorkerGlobalScope`, which throws at
+// evaluation time in browsers that don't expose that constructor in worker
+// scope — the whole registration then fails ("script threw an exception
+// during script evaluation").
+declare const __SW_VERSION__: string | undefined;
+const version = typeof __SW_VERSION__ === 'string' && __SW_VERSION__ ? __SW_VERSION__ : 'sw-dev';
 import { buildApiUrl } from '@japaconnect/api-url';
 import { initPwaServiceWorker } from '@japaconnect/ui/pwa';
 import { DEFAULT_SITE_NAME } from '$lib/brand';

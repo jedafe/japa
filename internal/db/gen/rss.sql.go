@@ -17,6 +17,7 @@ SELECT c.id, c.title, c.slug, c.content_type, c.body_html, c.body, c.published_a
 FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
+ AND c.visibility = 'public'
  AND c.deleted_at IS NULL
  AND c.auto_hidden = false
 ORDER BY c.published_at DESC NULLS LAST
@@ -75,6 +76,7 @@ FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
  AND c.content_type = $1
+ AND c.visibility = 'public'
  AND c.deleted_at IS NULL
  AND c.auto_hidden = false
 ORDER BY c.published_at DESC NULLS LAST
@@ -200,6 +202,7 @@ FROM contents c
 JOIN users u ON c.author_id = u.id
 JOIN spaces s ON c.space_id = s.id
 WHERE c.status = 'published'
+ AND c.visibility = 'public'
  AND s.slug = $1
  AND c.deleted_at IS NULL
  AND c.auto_hidden = false
@@ -261,6 +264,7 @@ JOIN users u ON c.author_id = u.id
 JOIN content_tags ct ON ct.content_id = c.id
 JOIN tags t ON ct.tag_id = t.id
 WHERE c.status = 'published'
+ AND c.visibility = 'public'
  AND t.slug = $1
  AND c.deleted_at IS NULL
  AND c.auto_hidden = false
@@ -320,6 +324,7 @@ SELECT c.id, c.title, c.slug, c.content_type, c.body_html, c.body, c.published_a
 FROM contents c
 JOIN users u ON c.author_id = u.id
 WHERE c.status = 'published'
+ AND c.visibility = 'public'
  AND (u.username = $1 OR lower(u.public_username) = lower($1))
  AND c.deleted_at IS NULL
  AND c.auto_hidden = false

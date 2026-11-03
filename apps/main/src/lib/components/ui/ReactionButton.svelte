@@ -109,7 +109,13 @@
 	// Render the configured emoji as the trigger glyph when the primary
 	// reaction isn't heart-like.
 	const useHeartGlyph = $derived(['like', 'love', 'heart'].includes(primaryKey));
-	const primaryActive = $derived(activeReactions.has(primaryKey));
+	// One reaction per user — the trigger is active whenever ANY key is held,
+	// not just the primary, and shows the viewer's picked emoji.
+	const activeReaction = $derived(reactionTypes.find((r) => activeReactions.has(r.key)) ?? null);
+	const primaryActive = $derived(activeReactions.size > 0);
+	const triggerEmoji = $derived(
+		activeReaction ? activeReaction.emoji : (!useHeartGlyph ? primaryReaction.emoji : null)
+	);
 	const totalReactions = $derived(
 		countsLoaded
 			? reactionTypes.reduce((sum, r) => sum + (reactionCounts[r.key] ?? 0), 0)
@@ -132,11 +138,16 @@
 
 		reactionPending = reactionKey;
 		const wasActive = activeReactions.has(reactionKey);
+		// One reaction per user — picking another key replaces the active
+		// one (the server upserts the switch), so every other key
+		// deactivates and its count decrements.
+		const replacedKeys = wasActive ? [] : [...activeReactions].filter((k) => k !== reactionKey);
 
 		const next = new Set(activeReactions);
 		if (wasActive) {
 			next.delete(reactionKey);
 		} else {
+			for (const k of replacedKeys) next.delete(k);
 			next.add(reactionKey);
 		}
 		activeReactions = next;
@@ -144,8 +155,13 @@
 		if (countsLoaded) {
 			reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + delta;
 			if (inflightDeltas) inflightDeltas[reactionKey] = (inflightDeltas[reactionKey] ?? 0) + delta;
+			for (const k of replacedKeys) {
+				reactionCounts[k] = (reactionCounts[k] || 0) - 1;
+				if (inflightDeltas) inflightDeltas[k] = (inflightDeltas[k] ?? 0) - 1;
+			}
 		} else {
-			countDelta += delta;
+			// Aggregate delta: a switch replaces one reaction with another (net 0).
+			countDelta += delta - replacedKeys.length;
 		}
 		updateViewerState(contentId, { reactionKeys: [...next] });
 
@@ -163,14 +179,19 @@
 				rollback.add(reactionKey);
 			} else {
 				rollback.delete(reactionKey);
+				for (const k of replacedKeys) rollback.add(k);
 			}
 			activeReactions = rollback;
 			const rollbackDelta = wasActive ? 1 : -1;
 			if (countsLoaded) {
 				reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + rollbackDelta;
 				if (inflightDeltas) inflightDeltas[reactionKey] = (inflightDeltas[reactionKey] ?? 0) + rollbackDelta;
+				for (const k of replacedKeys) {
+					reactionCounts[k] = (reactionCounts[k] || 0) + 1;
+					if (inflightDeltas) inflightDeltas[k] = (inflightDeltas[k] ?? 0) + 1;
+				}
 			} else {
-				countDelta += rollbackDelta;
+				countDelta += rollbackDelta + replacedKeys.length;
 			}
 			updateViewerState(contentId, { reactionKeys: [...rollback] });
 		} finally {
@@ -199,7 +220,7 @@
 			(typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches);
 		openedViaTouch = coarse;
 		if (coarse) return;
-		toggleReaction(primaryKey);
+		toggleReaction(activeReaction?.key ?? primaryKey);
 	}
 
 	const triggerActive = $derived(reactionsEnabled ? primaryActive : simpleActive);
@@ -225,10 +246,10 @@
 			aria-pressed={triggerActive}
 			disabled={!!reactionPending}
 		>
-			{#if useHeartGlyph}
-				<Heart {size} fill={triggerIconFill} aria-hidden="true" />
+			{#if triggerEmoji}
+				<span class="text-base leading-none">{triggerEmoji}</span>
 			{:else}
-				<span class="text-base leading-none">{primaryReaction.emoji}</span>
+				<Heart {size} fill={triggerIconFill} aria-hidden="true" />
 			{/if}
 			<span class="min-w-[1.25ch] tabular-nums">{formatCount(totalReactions)}</span>
 		</Popover.Trigger>

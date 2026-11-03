@@ -28,15 +28,18 @@ export const load: PageServerLoad = async (event) => {
 	const currentUserId = event.locals.user?.id ?? null;
 
 	let story: Story;
+	let jsonLd: unknown = null;
 	try {
 		const envelope = await apiGetEnvelope<Story>(ctx, `/stories/${slug}`);
 		story = envelope.data;
+		jsonLd = envelope.json_ld ?? null;
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Story not found' });
 		}
 		return {
 			story: null,
+			jsonLd: null,
 			authed,
 			currentUserId,
 			canEdit: false,
@@ -150,6 +153,7 @@ export const load: PageServerLoad = async (event) => {
 
 	return {
 		story,
+		jsonLd,
 		authed,
 		currentUserId,
 		canEdit,

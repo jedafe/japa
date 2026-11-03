@@ -152,7 +152,7 @@
 <div class="mx-auto w-full max-w-3xl">
 <OrgHeader org={displayOrg} {canManage}>
 	{#snippet children()}
-		{#if page.data.features?.['tips.enabled']}
+		{#if page.data.features?.['tips.enabled'] && !canManage}
 			<TipButton recipientType="organization" recipientKey={org.id} recipientId={org.id} recipientName={org.name} />
 		{/if}
 		{#if page.data.features?.['scam_alert.enabled']}

@@ -148,6 +148,21 @@ func (q *Queries) CountPostsByAuthor(ctx context.Context, authorID pgtype.UUID) 
 	return count, err
 }
 
+const countPublishedSlugsForSitemap = `-- name: CountPublishedSlugsForSitemap :one
+SELECT count(*) FROM contents c
+WHERE c.status = 'published'
+ AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
+`
+
+// Row count behind the content sitemap — used to enumerate chunked
+// sub-sitemap files (/sitemap-content.xml?chunk=N) in the sitemap index.
+func (q *Queries) CountPublishedSlugsForSitemap(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countPublishedSlugsForSitemap)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createBookmark = `-- name: CreateBookmark :one
 
 INSERT INTO bookmarks (user_id, entity_type, entity_id, folder, folder_id) VALUES ($1, $2, $3, $4, $5)
@@ -4515,40 +4530,6 @@ func (q *Queries) ListPublishedContentForLLMsTxt(ctx context.Context) ([]ListPub
 	return items, nil
 }
 
-const listPublishedContentForRSS = `-- name: ListPublishedContentForRSS :many
-SELECT title, slug, created_at
-FROM contents
-WHERE status = 'published'
-ORDER BY created_at DESC
-LIMIT 50
-`
-
-type ListPublishedContentForRSSRow struct {
-	Title     string             `json:"title"`
-	Slug      string             `json:"slug"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListPublishedContentForRSS(ctx context.Context) ([]ListPublishedContentForRSSRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedContentForRSS)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListPublishedContentForRSSRow
-	for rows.Next() {
-		var i ListPublishedContentForRSSRow
-		if err := rows.Scan(&i.Title, &i.Slug, &i.CreatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listPublishedSlugsForSitemap = `-- name: ListPublishedSlugsForSitemap :many
 SELECT c.slug, c.updated_at, c.visibility, c.seo_indexable, c.content_type,
  c.comment_count, c.share_count, c.reshare_count,
@@ -4567,9 +4548,16 @@ LEFT JOIN (
 ) r ON r.entity_id = c.id
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
+ AND ($1::text = '' OR c.content_type = $1::text)
 ORDER BY c.updated_at DESC
-LIMIT 10000
+LIMIT $3 OFFSET $2
 `
+
+type ListPublishedSlugsForSitemapParams struct {
+	TypeFilter  string `json:"type_filter"`
+	ChunkOffset int32  `json:"chunk_offset"`
+	ChunkLimit  int32  `json:"chunk_limit"`
+}
 
 type ListPublishedSlugsForSitemapRow struct {
 	Slug          string             `json:"slug"`
@@ -4587,8 +4575,8 @@ type ListPublishedSlugsForSitemapRow struct {
 	ReactionCount int64              `json:"reaction_count"`
 }
 
-func (q *Queries) ListPublishedSlugsForSitemap(ctx context.Context) ([]ListPublishedSlugsForSitemapRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedSlugsForSitemap)
+func (q *Queries) ListPublishedSlugsForSitemap(ctx context.Context, arg ListPublishedSlugsForSitemapParams) ([]ListPublishedSlugsForSitemapRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedSlugsForSitemap, arg.TypeFilter, arg.ChunkOffset, arg.ChunkLimit)
 	if err != nil {
 		return nil, err
 	}

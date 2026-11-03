@@ -350,6 +350,10 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility", err.Error())
 	case errors.Is(err, ErrNotSpaceMember):
 		errpkg.WriteError(w, http.StatusForbidden, "not_space_member", "You must be a member of each assigned space")
+	case errors.Is(err, ErrMissingRequiredFields):
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_required_fields", err.Error())
+	case errors.Is(err, ErrBodyTooShort):
+		errpkg.WriteError(w, http.StatusBadRequest, "body_too_short", "Content body is below the minimum length")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
@@ -1215,7 +1219,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		clientIP := clientip.FromRequest(r)
 
 		spamResult, err := h.SpamPipeline.Check(r.Context(), spam.SpamCheckRequest{
-			Content:    input.Body,
+			Content:    body,
 			UserID:     user.UserID,
 			IP:         clientIP,
 			UserType:   "existing",
@@ -1308,7 +1312,8 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
 	// (Section 15 — external links get async OG/oEmbed scrape, BUG-003).
-	h.enqueueLinkPreviewsForBody(input.BodyHtml, content.ID)
+	// BUG-CE-021: scan the sanitized HTML actually stored, not the raw input.
+	h.enqueueLinkPreviewsForBody(content.BodyHtml, content.ID)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": content})
 }
@@ -1573,11 +1578,13 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// JSON-LD structured data (Section 14 / Section 26). Resolve the
-	// admin-managed template matching the content's own content_type,
-	// interpolating the content's field values. Best-effort: a missing
-	// template or resolution error degrades to no json_ld field. Emitted as
-	// a sibling of `data` for frontend consumption.
-	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), content.ContentType, contentJSONLDFields(content)); jErr == nil && len(jsonLd) > 0 {
+	// admin-managed template for the content's schema type (seeded template
+	// keys are schema.org names — Article, JobPosting, ... — so the
+	// content_type is mapped first), interpolating the content's field
+	// values plus any scalar custom_fields (EAV) it carries. Best-effort: a
+	// missing template or resolution error degrades to no json_ld field.
+	// Emitted as a sibling of `data` for frontend consumption.
+	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), jsonldTemplateKey(content.ContentType), contentJSONLDFields(content)); jErr == nil {
 		// §14 list amendment: the {{field}} interpolator only emits strings,
 		// so itemListElement/numberOfItems are injected from
 		// field_values.items after template resolution.
@@ -1585,18 +1592,70 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 			jsonLd = injectListItemListElements(jsonLd, content.FieldValues)
 		}
 
-		resp["json_ld"] = json.RawMessage(jsonLd)
-	} else if jErr != nil {
+		// §45: editor FAQ accordion blocks become a FAQPage node — merged
+		// under @graph with the resolved template, or emitted standalone
+		// when no template resolved.
+		jsonLd = InjectFaqPageJSONLD(jsonLd, content.BodyHtml, content.Body)
+
+		if len(jsonLd) > 0 {
+			resp["json_ld"] = json.RawMessage(jsonLd)
+		}
+	} else {
 		slog.Warn("content: JSON-LD template resolution failed", "slug", slug, "content_type", content.ContentType, "error", jErr)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
+// jsonldTemplateKey maps a contents.content_type to the
+// content_type_jsonld_templates lookup key. Seeded templates are keyed by
+// schema.org type names (Article, JobPosting, QAPage, Person, ...) while a
+// few are keyed by content_type directly (list, video). Content types with
+// no clean schema fit (e.g. comparison) resolve to themselves and typically
+// have no template — the resolver returns nil and the page emits no json_ld.
+func jsonldTemplateKey(contentType string) string {
+	switch contentType {
+	case "blog_post", "guide", "story", "news", "discussion", "forum_thread", "service_listing":
+		return "Article"
+	case "job_listing":
+		return "JobPosting"
+	default:
+		return contentType
+	}
+}
+
+// mergeFieldValueScalars flattens scalar custom-field values (EAV) into the
+// interpolation map so templates can bind domain keys — e.g. JobPosting's
+// {{salary_min}}, {{city}}, {{company_name}}. Canonical fields win: an EAV
+// key never overrides a value already in the map. Nested objects/arrays are
+// skipped — the interpolator only emits strings.
+func mergeFieldValueScalars(fields map[string]string, fv []byte) {
+	var bag map[string]any
+	if len(fv) == 0 || json.Unmarshal(fv, &bag) != nil {
+		return
+	}
+
+	for k, v := range bag {
+		if _, exists := fields[k]; exists {
+			continue
+		}
+
+		switch s := v.(type) {
+		case string:
+			fields[k] = s
+		case float64:
+			fields[k] = strconv.FormatFloat(s, 'f', -1, 64)
+		case bool:
+			fields[k] = strconv.FormatBool(s)
+		}
+	}
+}
+
 // contentJSONLDFields builds the {{field_key}} → value map for interpolating
 // a JSON-LD template from a generic content row. The keys cover the common
 // placeholders used across Article, QAPage, Review, FAQPage, and JobPosting
-// templates; unused keys are simply ignored by the interpolator.
+// templates; scalar custom_field values are merged in on top; unused keys
+// are simply ignored by the interpolator.
 func contentJSONLDFields(c gen.GetContentDetailBySlugRow) map[string]string {
 	desc := ""
 	if c.MetaDescription != nil {
@@ -1613,7 +1672,7 @@ func contentJSONLDFields(c gen.GetContentDetailBySlugRow) map[string]string {
 		coverImageURL = media.MediaURL(*c.FeaturedStorageBucket, *c.FeaturedStoragePath, media.ImageProxyOpts{})
 	}
 
-	return map[string]string{
+	fields := map[string]string{
 		"title":           c.Title,
 		"description":     desc,
 		"body":            c.Body,
@@ -1624,6 +1683,9 @@ func contentJSONLDFields(c gen.GetContentDetailBySlugRow) map[string]string {
 		"cover_image_url": coverImageURL,
 		"author_name":     c.AuthorName,
 	}
+	mergeFieldValueScalars(fields, c.FieldValues)
+
+	return fields
 }
 
 // tsFormat renders a pgtype.Timestamptz as RFC3339 or empty.
@@ -2026,6 +2088,53 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Status transitions must not bypass the dedicated gated endpoints: a
+	// generic PATCH is gated by content.edit_own only, so moving to
+	// published/scheduled additionally requires the same nodes that gate
+	// POST /content/{id}/publish and /schedule (BUG-CE-001).
+	if input.Status != "" && input.Status != prevContent.Status {
+		var needNode string
+		switch input.Status {
+		case StatusPublished:
+			needNode = "content.publish"
+		case StatusScheduled:
+			needNode = "content.schedule"
+		}
+
+		if needNode != "" {
+			allowed := false
+			if resolver := rbac.FromContext(r.Context()); resolver != nil {
+				allowed = resolver.IsSuperAdmin(r.Context(), user.UserID) ||
+					resolver.HasPermission(r.Context(), user.UserID, needNode)
+			}
+
+			if !allowed {
+				errpkg.WriteError(w, http.StatusForbidden, "forbidden",
+					"You do not have permission to change this content's status")
+				return
+			}
+		}
+	}
+
+	// Pin/lock flags are moderation controls: writing them through the
+	// generic PATCH must not bypass the content.pin node (BUG-CE-002).
+	pinChanged := input.IsPinned != nil && *input.IsPinned != prevContent.IsPinned
+	lockChanged := input.IsLocked != nil && *input.IsLocked != prevContent.IsLocked
+	if pinChanged || lockChanged {
+		allowed := false
+		if resolver := rbac.FromContext(r.Context()); resolver != nil {
+			allowed = resolver.IsSuperAdmin(r.Context(), user.UserID) ||
+				resolver.HasPermission(r.Context(), user.UserID, "content.pin") ||
+				resolver.HasPermission(r.Context(), user.UserID, "content.edit_any")
+		}
+
+		if !allowed {
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden",
+				"You do not have permission to pin or lock content")
+			return
+		}
+	}
+
 	// BUG-001: enforce author-or-admin before allowing edits. Type-specific
 	// moderator nodes (story.edit_any for §79, comparison.edit_any for §30)
 	// are also honoured so those moderators can use the unified composer.
@@ -2084,6 +2193,33 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 			updateInput.AuthorID = authorID
 		}
 		authorAssigned = true
+	}
+
+	// Spam pipeline check when the update carries a new body (audit
+	// residual): edits can inject link-heavy content after passing the
+	// create-time check. Flagged bodies are held for moderation —
+	// consistent with the create path's Flagged→in_review clamp.
+	if h.SpamPipeline != nil && (input.Body != "" || input.BodyHtml != "") {
+		checkBody := input.Body
+		if checkBody == "" && input.BodyHtml != "" {
+			checkBody = SanitizeText(input.BodyHtml)
+		}
+
+		spamResult, err := h.SpamPipeline.Check(r.Context(), spam.SpamCheckRequest{
+			Content:    checkBody,
+			UserID:     user.UserID,
+			IP:         clientip.FromRequest(r),
+			UserType:   "existing",
+			EntityType: "post",
+		})
+		if err != nil {
+			slog.Warn("spam check failed", "error", err)
+		} else if spamResult.Blocked {
+			errpkg.WriteError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
+			return
+		} else if spamResult.Flagged {
+			updateInput.Status = StatusInReview
+		}
 	}
 
 	content, err := h.Service.UpdateContent(r.Context(), id, user.UserID, updateInput, bypassEditWindow)
@@ -2161,7 +2297,8 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
 	// (Section 15 — external links get async OG/oEmbed scrape, BUG-003).
-	h.enqueueLinkPreviewsForBody(input.BodyHtml, id)
+	// BUG-CE-021: scan the sanitized HTML actually stored, not the raw input.
+	h.enqueueLinkPreviewsForBody(content.BodyHtml, id)
 
 	// §22 audit trail: an author reassignment is a privileged attribution
 	// change — record it (best-effort) with the previous and new author.
@@ -2311,6 +2448,36 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// BUG-CE-011: the publish transition must meet content.min_length —
+	// drafts skip the check, so a stub draft must not go live on /publish.
+	minLength := defaultMinLength
+	if h.settings != nil {
+		minLength = h.settings.GetIntOr(r.Context(), "content.min_length", defaultMinLength)
+	}
+
+	if len(strings.TrimSpace(prevContent.Body)) < minLength {
+		errpkg.WriteError(w, http.StatusBadRequest, "body_too_short",
+			fmt.Sprintf("Content body must be at least %d characters", minLength))
+		return
+	}
+
+	// BUG-CE-005: mirror the create/update review clamp — when the platform
+	// forces publish through the queue, a direct /publish lands in_review
+	// the same way a status write through createContent/UpdateContent does.
+	if !isStoryModerator(r, user.UserID) &&
+		!h.Service.botAuthored(r.Context(), prevContent.AuthorID) &&
+		h.Service.requireContentReview(r.Context()) {
+		updated, err := h.Service.UpdateContentStatus(r.Context(), id, StatusInReview)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
+
+		return
+	}
+
 	updated, err := h.Service.UpdateContentStatus(r.Context(), id, StatusPublished)
 	if err != nil {
 		handleServiceError(w, err)
@@ -2433,6 +2600,19 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 
 	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only schedule your own content")
+		return
+	}
+
+	// BUG-CE-011: scheduling is a publish transition — the body must meet
+	// content.min_length (drafts skip the check at save time).
+	schedMinLength := defaultMinLength
+	if h.settings != nil {
+		schedMinLength = h.settings.GetIntOr(r.Context(), "content.min_length", defaultMinLength)
+	}
+
+	if len(strings.TrimSpace(prevContent.Body)) < schedMinLength {
+		errpkg.WriteError(w, http.StatusBadRequest, "body_too_short",
+			fmt.Sprintf("Content body must be at least %d characters", schedMinLength))
 		return
 	}
 
@@ -2772,35 +2952,40 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 
 	reaction, err := h.Service.AddReaction(r.Context(), EntityContent, contentID, user.UserID, input.ReactionKey)
 	if err != nil {
-		// ON CONFLICT DO NOTHING returns ErrNoRows when the user already has
-		// this reaction — treat as idempotent success, not a 404.
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-				"entity_type":     EntityContent,
-				"entity_id":       contentID,
-				"user_id":         user.UserID,
-				"reaction_key":    input.ReactionKey,
-				"already_reacted": true,
-			}})
-
-			return
-		}
-
 		handleServiceError(w, err)
 
 		return
 	}
 
-	// A new reaction was created (not an idempotent duplicate) — update the
-	// content_scores.reaction_count so feed cards show an accurate reaction count.
-	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
-	h.EnqueueEngagementUpdate("content", contentID, "reaction", 1)
+	switch {
+	case reaction.PreviousKey == nil:
+		// Fresh reaction — update content_scores.reaction_count so feed
+		// cards show an accurate count. Fire-and-forget per Rule 8.
+		// Ref: Section 32, Guide §21.
+		h.EnqueueEngagementUpdate("content", contentID, "reaction", 1)
 
-	// §35: notify the author (content.reaction — default-enabled type).
-	// Fire-and-forget; self-reactions never notify.
-	h.dispatchReactionNotification(r.Context(), existing, user.UserID)
+		// §35: notify the author (content.reaction — default-enabled type).
+		// Fire-and-forget; self-reactions never notify.
+		h.dispatchReactionNotification(r.Context(), existing, user.UserID)
 
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reaction})
+		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reaction})
+	case *reaction.PreviousKey == input.ReactionKey:
+		// Same key already held — idempotent success, not a write.
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+			"entity_type":     EntityContent,
+			"entity_id":       contentID,
+			"user_id":         user.UserID,
+			"reaction_key":    input.ReactionKey,
+			"already_reacted": true,
+		}})
+	default:
+		// One reaction per user (migration 001023): the row switched keys —
+		// the reactor count is unchanged but the author should still hear
+		// about the new reaction.
+		h.dispatchReactionNotification(r.Context(), existing, user.UserID)
+
+		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reaction})
+	}
 }
 
 // dispatchReactionNotification sends a content.reaction notification to the
@@ -3822,17 +4007,26 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.PrimarySpaceID == "" {
+	// BUG-CE-013: an empty primary with no additionals is an explicit
+	// clear-all — allowed for non-published content (publish/schedule still
+	// require a primary via hasPrimarySpace). Any other empty-primary
+	// combination is invalid.
+	clearAll := input.PrimarySpaceID == "" && len(input.AdditionalSpaceIDs) == 0
+	if input.PrimarySpaceID == "" && !clearAll {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_primary_space",
 			"A primary_space_id is required")
 		return
 	}
 
 	var primarySpaceID pgtype.UUID
-	if err := primarySpaceID.Scan(input.PrimarySpaceID); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_primary_space_id",
-			"Invalid primary_space_id format")
-		return
+	// Skip the scan on the clear-all path — an empty primary is the signal,
+	// not a malformed UUID (BUG-CE-013).
+	if !clearAll {
+		if err := primarySpaceID.Scan(input.PrimarySpaceID); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_primary_space_id",
+				"Invalid primary_space_id format")
+			return
+		}
 	}
 
 	// Verify the content exists and belongs to the caller's platform.
@@ -3846,6 +4040,25 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 	if !canModifyContent(r, user.UserID, existing.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author",
 			"Only the author can update space assignments")
+		return
+	}
+
+	// Clear-all: only non-published content may drop every space — a live
+	// post without a primary would vanish from space feeds while still
+	// claiming "published" (BUG-CE-013).
+	if clearAll {
+		if existing.Status == StatusPublished || existing.Status == StatusScheduled {
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_primary_space",
+				"Published content must keep a primary space")
+			return
+		}
+
+		if err := h.Service.ClearContentSpaces(r.Context(), contentID); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"cleared": true}})
 		return
 	}
 

@@ -19,6 +19,7 @@
 	import NextActionInline from '$lib/components/shell/NextActionInline.svelte';
 	import AdSlot from '$lib/components/ui/AdSlot.svelte';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { mergeJsonLd } from '$lib/seo/jsonld';
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import { contentHref } from '$lib/utils/contentLink';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
@@ -93,19 +94,23 @@
 	// Markdown body is the editing source, not display output.
 	const sanitizedBody = $derived(story ? sanitizeContentHtml(story.body_html || story.body, allowedIframeHosts) : '');
 
+	// §45: mergeJsonLd keeps the inline Article schema alongside a backend
+	// FAQPage payload when the story body carries editor faq blocks.
 	const jsonLd = $derived(
 		story
-			? JSON.stringify({
-					'@context': 'https://schema.org',
-					'@type': 'Article',
-					headline: story.title,
-					datePublished: story.published_at || story.created_at,
-					author: { '@type': 'Person', name: story.author_name },
-					url: canonical,
-					articleBody: story.body,
-					...(story?.destination_space_name ? { about: { '@type': 'Country', name: story.destination_space_name } } : {}),
-					...(story?.biggest_challenge ? { description: story.biggest_challenge } : {})
-				})
+			? JSON.stringify(
+					mergeJsonLd(data.jsonLd, {
+						'@context': 'https://schema.org',
+						'@type': 'Article',
+						headline: story.title,
+						datePublished: story.published_at || story.created_at,
+						author: { '@type': 'Person', name: story.author_name },
+						url: canonical,
+						articleBody: story.body,
+						...(story?.destination_space_name ? { about: { '@type': 'Country', name: story.destination_space_name } } : {}),
+						...(story?.biggest_challenge ? { description: story.biggest_challenge } : {})
+					})
+				)
 			: ''
 	);
 

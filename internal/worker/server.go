@@ -432,6 +432,9 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// via the same path as bulk import (no YouTube Data API key required).
 	schedule("20 * * * *", TypeVideoSyncChannels, 1*time.Hour)
 	schedule("*/15 * * * *", TypeWalletReconcilePayouts, 15*time.Minute)
+	// PTS-024: re-enqueue stranded unprocessed activity_events (offset 7 to
+	// spread cron load away from the :00/:15/:30/:45 cluster).
+	schedule("7-59/10 * * * *", TypeWalletReprocessEvents, 10*time.Minute)
 
 	return scheduler
 }

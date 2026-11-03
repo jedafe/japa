@@ -405,6 +405,25 @@ func (s *Store) DeleteBadgeTier(ctx context.Context, id pgtype.UUID) error {
 
 // ListBadgeGroups returns the distinct badge_group values in the catalogue —
 // feeds the tier editor's group select.
+// GetSpaceVisibility returns a space's visibility value ('public', etc.) —
+// used by the space-scoped leaderboard access gate (PTS-017).
+func (s *Store) GetSpaceVisibility(ctx context.Context, spaceID pgtype.UUID) (string, error) {
+	space, err := s.queries.GetSpaceByID(ctx, spaceID)
+	if err != nil {
+		return "", err
+	}
+	return space.Visibility, nil
+}
+
+// IsSpaceMember reports whether a user belongs to a space — used by the
+// space-scoped leaderboard access gate (PTS-017).
+func (s *Store) IsSpaceMember(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+	return s.queries.IsUserSpaceMember(ctx, gen.IsUserSpaceMemberParams{
+		SpaceID: spaceID,
+		UserID:  userID,
+	})
+}
+
 func (s *Store) ListBadgeGroups(ctx context.Context) ([]string, error) {
 	rows, err := s.queries.ListBadgeGroups(ctx)
 	if err != nil {

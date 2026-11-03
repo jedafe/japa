@@ -65,11 +65,11 @@ func NewS3ClientFromConfig(c S3Config) *S3Client {
 	}
 
 	return &S3Client{
-		endpoint:   strings.TrimRight(c.Endpoint, "/"),
-		accessKey:  c.AccessKey,
-		secretKey:  c.SecretKey,
-		region:     region,
-		bucket:     bucket,
+		endpoint:  strings.TrimRight(c.Endpoint, "/"),
+		accessKey: c.AccessKey,
+		secretKey: c.SecretKey,
+		region:    region,
+		bucket:    bucket,
 		// No total Timeout — ResponseHeaderTimeout bounds the connect+headers
 		// phase while body streaming (media serve/uploads) can run as long as
 		// the payload needs.

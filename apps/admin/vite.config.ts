@@ -5,7 +5,11 @@ import { sveltekit } from '@sveltejs/kit/vite';
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	resolve: {
-		conditions: ['browser']
+		conditions: ['browser'],
+		// Dedupe svelte: workspace packages carry stale bun-installed
+		// svelte copies — a second svelte/internal/client in the bundle
+		// crashes hydration (get_next_sibling 'call' of undefined).
+		dedupe: ['svelte']
 	},
 	server: {
 		// Fontsource packages are hoisted in the workspace root node_modules and

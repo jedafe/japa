@@ -6,24 +6,24 @@ import type {
 	SuggestedSpace,
 	SuggestedTag,
 	SuggestedContent,
-	PublicOrgListItem,
-	University
+	PublicOrgListItem
 } from '$lib/types';
 import type { Source } from '$lib/types/sources';
 import type { RadarItem } from '$lib/types';
 
 /**
  * Discover at /discover — auth-gated frontend route (ADR-058). Consumes the
- * existing /suggestions/* and /organizations + /universities endpoints; no
+ * existing /suggestions/* and /organizations endpoints; no
  * new backend route is added for Discover.
  *
- * Tabs: Spaces · People · Organizations · Tags · Content · Universities · Sources. The
- * active tab is selected via ?tab=; unknown values coerce to "spaces" so the
- * tab bar and the content pane can never disagree. Each tab's data degrades
- * to an empty list on failure (a failing endpoint must never blank Discover).
+ * Tabs: Spaces · People · Organizations · Tags · Content · Sources ·
+ * Opportunities. The active tab is selected via ?tab=; unknown values
+ * coerce to "spaces" so the tab bar and the content pane can never
+ * disagree. Each tab's data degrades to an empty list on failure (a
+ * failing endpoint must never blank Discover).
  */
 const PAGE_SIZE = 24;
-const VALID_TABS = new Set(['spaces', 'people', 'organizations', 'tags', 'content', 'universities', 'sources', 'opportunities']);
+const VALID_TABS = new Set(['spaces', 'people', 'organizations', 'tags', 'content', 'sources', 'opportunities']);
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -39,10 +39,8 @@ export const load: PageServerLoad = async (event) => {
 	let organizations: PublicOrgListItem[] = [];
 	let tags: SuggestedTag[] = [];
 	let content: SuggestedContent[] = [];
-	let universities: University[] = [];
 	let sources: Source[] = [];
 	let orgsTotal = 0;
-	let unisTotal = 0;
 	let followedSpaceIds: string[] = [];
 	let followedOrgIds: string[] = [];
 	let followedSourceIds: string[] = [];
@@ -78,17 +76,6 @@ export const load: PageServerLoad = async (event) => {
 					await apiList<SuggestedContent>(ctx, `/suggestions/content?limit=${PAGE_SIZE}`)
 				).items;
 				break;
-			case 'universities': {
-				// GET /universities paginates with ?page=&limit= — it does NOT read
-				// page_size (the param is ignored and the default limit applies).
-				const res = await apiList<University>(
-					ctx,
-					`/universities?page=1&limit=${PAGE_SIZE}`
-				);
-				universities = res.items;
-				unisTotal = res.meta?.total ?? res.items.length;
-				break;
-			}
 			case 'sources': {
 				const [res, followed] = await Promise.all([
 					apiList<Source>(ctx, `/sources?sort=popular&page_size=${PAGE_SIZE}&page_offset=0`),
@@ -123,11 +110,9 @@ export const load: PageServerLoad = async (event) => {
 		organizations,
 		tags,
 		content,
-		universities,
 		sources,
 		opportunities,
 		orgsTotal,
-		unisTotal,
 		followedSpaceIds,
 		followedOrgIds,
 		followedSourceIds,

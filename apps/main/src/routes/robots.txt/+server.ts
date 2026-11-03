@@ -26,9 +26,10 @@ const DISALLOW_ALL = 'User-agent: *\nDisallow: /\n';
 
 // Mirrors bots.defaultDisallowPaths in internal/bots/robots.go — keep in sync.
 const DISALLOW_PATHS = [
-	'/api/',
+	'/api',
 	'/admin/',
-	'/content/',
+	'/content',
+	'/r$',
 	'/r/',
 	'/search',
 	'/settings',

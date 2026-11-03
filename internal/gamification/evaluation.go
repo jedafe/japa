@@ -186,7 +186,9 @@ func (s *Service) awardIfNew(ctx context.Context, userID pgtype.UUID, b gen.Badg
 	s.notifyBadgeAwarded(ctx, userID, b.Name)
 	s.grantBadgePoints(ctx, userID, b)
 
-	return badgeWithDetails(b, ub.AwardedAt), true
+	d := s.badgeWithDetails(ctx, b, ub.AwardedAt)
+	d.IconURL = s.mediaURL(ctx, b.IconMediaID)
+	return d, true
 }
 
 // grantBadgePoints credits a badge's points_reward through the retryable

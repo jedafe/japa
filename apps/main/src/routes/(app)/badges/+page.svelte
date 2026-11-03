@@ -12,6 +12,7 @@
 		MapPin, TrendingUp, Flag
 	} from 'lucide-svelte';
 	import type { IconComponent } from '$lib/components/ui/icons';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import type { Badge, CollectionBadge } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -79,8 +80,8 @@
 		return t('badges.category.' + slug, slug.replace(/_/g, ' '));
 	}
 
-	function rarityColor(badge: { rarity?: string }): string {
-		return rarityColors[badge.rarity ?? ''] ?? 'var(--color-primary)';
+	function rarityColor(badge: { rarity?: string; accent_color?: string | null }): string {
+		return badge.accent_color || rarityColors[badge.rarity ?? ''] || 'var(--color-primary)';
 	}
 
 	function progressPct(badge: CollectionBadge): number {
@@ -149,8 +150,12 @@
 									{t('badges.limited', 'Ltd')}
 								</span>
 							{/if}
-							<div class="grid h-14 w-14 place-items-center rounded-full border-2 border-[var(--color-border)]">
-								<Lock size={18} class="text-[var(--color-muted)]" />
+							<div class="grid h-14 w-14 place-items-center overflow-hidden rounded-full border-2 border-[var(--color-border)]">
+								{#if badge.icon_url}
+									<img src={remoteImageUrl(badge.icon_url)} alt="" class="h-3/4 w-3/4 object-contain opacity-50 grayscale" />
+								{:else}
+									<Lock size={18} class="text-[var(--color-muted)]" />
+								{/if}
 							</div>
 							<h3 class="mt-2 text-xs font-bold tracking-wide uppercase text-[var(--color-muted)]">
 								{badge.is_secret ? '???' : badge.name}
@@ -225,11 +230,19 @@
 
 							<!-- Shield mark -->
 							<div
-								class="grid h-14 w-14 place-items-center rounded-full border-2"
+								class="grid h-14 w-14 place-items-center overflow-hidden rounded-full border-2"
 								style="border-color: {badge.earned ? accent : 'var(--color-border)'}; background: {badge.earned ? `color-mix(in srgb, ${accent} 14%, transparent)` : 'transparent'}"
 							>
 								{#if badge.is_secret && !badge.earned}
 									<Lock size={20} class="text-[var(--color-muted)]" />
+								{:else if badge.icon_url}
+									<img
+										src={remoteImageUrl(badge.icon_url)}
+										alt=""
+										class="h-3/4 w-3/4 object-contain"
+										class:opacity-50={!badge.earned}
+										class:grayscale={!badge.earned}
+									/>
 								{:else if badge.earned}
 									<Award size={24} style="color: {accent}" />
 								{:else}

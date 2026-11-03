@@ -27,7 +27,11 @@ function authProxyPlugin(): Plugin {
 export default defineConfig({
 	plugins: [tailwindcss(), authProxyPlugin(), sveltekit()],
 	resolve: {
-		conditions: ['browser']
+		conditions: ['browser'],
+		// Dedupe svelte: workspace packages carry stale bun-installed
+		// svelte copies — a second svelte/internal/client in the bundle
+		// crashes hydration (get_next_sibling 'call' of undefined).
+		dedupe: ['svelte']
 	},
 	server: {
 		// Vite's root is apps/control; @fontsource/inter is hoisted to the
