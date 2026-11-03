@@ -2198,45 +2198,13 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		authorAssigned = true
 	}
 
-	// Spam pipeline check when the update carries a CHANGED body (audit
-	// residual): edits can inject link-heavy content after passing the
-	// create-time check. The composer re-sends body_html on every autosave,
-	// so re-scoring an unchanged body lets nondeterministic layers (AI
-	// classification, the 10-minute rate window) block saves of text that
-	// already passed once. Flagged bodies are held for moderation —
-	// consistent with the create path's Flagged→in_review clamp.
-	bodyChanged := input.Body != "" && strings.TrimSpace(input.Body) != strings.TrimSpace(prevContent.Body)
-	if !bodyChanged && input.BodyHtml != "" {
-		// Sanitized-vs-stored comparison catches link injections that a
-		// visible-text diff misses (wrapping approved text in <a href>).
-		// updateInput.BodyHtml and the stored column share the same
-		// SanitizeHTML canonical form, so equality means truly unchanged.
-		bodyChanged = updateInput.BodyHtml != prevContent.BodyHtml
-	}
-
-	if h.SpamPipeline != nil && bodyChanged {
-		checkBody := input.Body
-		if checkBody == "" && input.BodyHtml != "" {
-			checkBody = SanitizeText(input.BodyHtml)
-		}
-
-		spamResult, err := h.SpamPipeline.Check(r.Context(), spam.SpamCheckRequest{
-			Content:    checkBody,
-			UserID:     user.UserID,
-			IP:         clientip.FromRequest(r),
-			UserType:   "existing",
-			EntityType: "post",
-		})
-		if err != nil {
-			slog.Warn("spam check failed", "error", err)
-		} else if spamResult.Blocked {
-			errpkg.WriteError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
-			return
-		} else if spamResult.Flagged {
-			updateInput.Status = StatusInReview
-		}
-	}
-
+	// No synchronous spam gate on update: the autosave-driven composer PATCHes
+	// body_html on every save, so a blocking check costs an AI classification
+	// + a layer fan-out per edit and randomly hard-fails genuine edits — and
+	// the Flagged→in_review clamp would silently unpublish live posts.
+	// Detection stays: enqueueModerationScan below flags edits asynchronously
+	// for moderator review, and content_hash still catches exact dupes at
+	// write time. Create remains the sync-gated entry point.
 	content, err := h.Service.UpdateContent(r.Context(), id, user.UserID, updateInput, bypassEditWindow)
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
