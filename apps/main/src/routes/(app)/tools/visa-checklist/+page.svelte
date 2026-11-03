@@ -11,6 +11,7 @@
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { ChecklistGuide, ChecklistItem, ChecklistSelector } from '$lib/types';
 	import type { PageData } from './$types';
+	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -329,10 +330,7 @@
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<ClipboardCheck size={20} /> {t('tools.visa_checklist', 'Visa Checklist')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
+		<ToolHeader icon={ClipboardCheck} title={t('tools.visa_checklist', 'Visa Checklist')} description={description} />
 	</div>
 
 	{#if disabled}

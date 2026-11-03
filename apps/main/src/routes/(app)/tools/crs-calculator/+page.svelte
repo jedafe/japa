@@ -14,6 +14,7 @@
 		CrsCalculateInput
 	} from '$lib/types';
 	import type { PageData } from './$types';
+	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * CRS Calculator tool — §107, ADR-118.
@@ -279,12 +280,7 @@
 <div class="mx-auto w-full max-w-4xl px-4 py-6">
 	<!-- Header -->
 	<div class="mb-6">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Gauge size={20} /> {t('crs_calculator.title', 'Express Entry CRS Calculator')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">
-			{t('crs_calculator.subtitle', 'Calculate your Comprehensive Ranking System score against the current IRCC ruleset.')}
-		</p>
+		<ToolHeader icon={Gauge} title={t('crs_calculator.title', 'Express Entry CRS Calculator')} description={t('crs_calculator.subtitle', 'Calculate your Comprehensive Ranking System score against the current IRCC ruleset.')} />
 		{#if factors?.ruleset}
 			<p class="mt-1 text-xs text-[var(--color-muted)]">
 				{t('crs_calculator.ruleset', 'Ruleset')}: {factors.ruleset.version_label}

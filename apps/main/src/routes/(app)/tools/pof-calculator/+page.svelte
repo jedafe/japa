@@ -18,6 +18,7 @@
 		PofScheduleFormula
 	} from '$lib/types';
 	import type { PageData } from './$types';
+	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Proof of Funds Calculator — §108, ADR-119.
@@ -188,17 +189,10 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6">
-	<div class="mb-6">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Wallet size={20} /> {t('pof_calculator.title', 'Proof of Funds Calculator')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">
-			{t(
+	<ToolHeader icon={Wallet} title={t('pof_calculator.title', 'Proof of Funds Calculator')} description={t(
 				'pof_calculator.subtitle',
 				'Work out the settlement funds you need to show — in local currency, NGN, and USD.'
-			)}
-		</p>
-	</div>
+			)} />
 
 	<form onsubmit={calculate} class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<!-- Destination (self-labeled by DestinationSelector) -->

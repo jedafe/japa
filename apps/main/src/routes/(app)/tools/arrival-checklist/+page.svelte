@@ -26,6 +26,7 @@
 		UserArrivalChecklistItem
 	} from '$lib/types';
 	import type { PageData } from './$types';
+	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Arrival Checklist tool — §92, ADR-088.
@@ -274,10 +275,7 @@
 
 <div class="mx-auto w-full max-w-4xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<PlaneLanding size={20} /> {title}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
+		<ToolHeader icon={PlaneLanding} title={title} description={description} />
 	</div>
 
 	{#if disabled}

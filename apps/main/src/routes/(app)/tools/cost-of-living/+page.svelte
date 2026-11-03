@@ -13,6 +13,7 @@
 	import type { PageData, ActionData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
+	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
@@ -392,10 +393,7 @@
 
 <div class="mx-auto w-full max-w-4xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Calculator size={20} /> {t('tools.cost_of_living', 'Cost of Living Calculator')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
+		<ToolHeader icon={Calculator} title={t('tools.cost_of_living', 'Cost of Living Calculator')} description={description} />
 	</div>
 
 	{#if disabled}

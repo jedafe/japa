@@ -35,6 +35,7 @@
 	import { formatMoney, currencyLabel, currencySymbol } from '$lib/utils/currency';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
@@ -349,10 +350,7 @@
 
 <div class="mx-auto w-full max-w-4xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Banknote size={20} /> {t('tools.remittance', 'Remittance Rate Tracker')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
+		<ToolHeader icon={Banknote} title={t('tools.remittance', 'Remittance Rate Tracker')} description={description} />
 	</div>
 
 	{#if disabled}

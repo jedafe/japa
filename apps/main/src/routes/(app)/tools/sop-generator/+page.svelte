@@ -9,6 +9,7 @@
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { GeoSpaceOption, SopTemplate, SopTemplateSection, SopSample, SopDraft, SopQuota } from '$lib/types';
 	import type { PageData } from './$types';
+	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * AI SOP Generator — §110, ADR-121.
@@ -308,14 +309,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl px-4 py-6">
-	<div class="mb-6">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<PenLine size={20} /> {t('sop_generator.title', 'AI SOP Generator')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">
-			{t('sop_generator.subtitle', 'Generate a tailored statement of purpose from proven templates — browse samples, refine, and export.')}
-		</p>
-	</div>
+	<ToolHeader icon={PenLine} title={t('sop_generator.title', 'AI SOP Generator')} description={t('sop_generator.subtitle', 'Generate a tailored statement of purpose from proven templates — browse samples, refine, and export.')} />
 
 	<!-- Quota (auth) -->
 	{#if authed && quota}

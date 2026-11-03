@@ -10,6 +10,7 @@
 	import { currencySymbol } from '$lib/utils/currency';
 	import type { GeoSpaceOption, EcaProvider, EcaGuide, EcaGuideDetail } from '$lib/types';
 	import type { PageData } from './$types';
+	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * ECA Evaluation Guide — §109, ADR-120.
@@ -198,14 +199,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl px-4 py-6">
-	<div class="mb-6">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<FileBadge size={20} /> {t('eca_guide.title', 'ECA Evaluation Guide')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">
-			{t('eca_guide.subtitle', 'Compare credential evaluation providers and follow the step-by-step process for your destination.')}
-		</p>
-	</div>
+	<ToolHeader icon={FileBadge} title={t('eca_guide.title', 'ECA Evaluation Guide')} description={t('eca_guide.subtitle', 'Compare credential evaluation providers and follow the step-by-step process for your destination.')} />
 
 	<!-- Selector bar -->
 	<form onsubmit={onSearch} class="{cardCls} p-4">

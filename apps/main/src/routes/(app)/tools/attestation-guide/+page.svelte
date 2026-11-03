@@ -21,6 +21,7 @@
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Attestation Guide tool — §97, ADR-088.
@@ -297,10 +298,7 @@
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Stamp size={20} /> {title}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
+		<ToolHeader icon={Stamp} title={title} description={description} />
 	</div>
 
 	{#if disabled}

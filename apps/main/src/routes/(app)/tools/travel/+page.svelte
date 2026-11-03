@@ -33,6 +33,7 @@
 	} from '$lib/types';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -572,10 +573,7 @@
 
 <div class="mx-auto w-full max-w-4xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Plane size={20} /> {t('tools.travel', 'Travel Search')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
+		<ToolHeader icon={Plane} title={t('tools.travel', 'Travel Search')} description={description} />
 	</div>
 
 	{#if disabled}
