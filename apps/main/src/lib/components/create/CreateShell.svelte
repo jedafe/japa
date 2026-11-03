@@ -419,10 +419,8 @@
 		composer.setSeries(seriesId);
 	});
 
-	onDestroy(() => composer?.dispose());
-
-	// BUG-CE-016: guard against losing edits still inside the autosave
-	// debounce window — the dispose path clears the timer without flushing.
+	// BUG-CE-016: guard against losing unsaved edits — saves are manual now,
+	// so a dirty composer means the user clicked neither Save nor Publish.
 	beforeNavigate((nav) => {
 		if (!composer) return;
 		if (composer.status === 'dirty' || composer.status === 'saving' || composer.status === 'creating') {

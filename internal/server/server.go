@@ -2721,6 +2721,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	moderationProcessorAdapter := spam.NewWorkerAdapter(spamPipeline)
 	moderationProcessorAdapter.SetActivityEmitter(&spamActivityEmitter{svc: walletService}) // ADR-136: spam.detected
+	moderationProcessorAdapter.SetNotifier(&spamNotifierAdapter{svc: notificationService})  // author warning with reason
 	worker.RegisterModerationProcessor(moderationProcessorAdapter)
 
 	// Register no-op implementations for any remaining processor interface
@@ -9868,12 +9869,35 @@ func (a *spamActivityEmitter) EmitActivityEvent(ctx context.Context, userID pgty
 	event, err := a.svc.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{
 		ActivityKey: input.ActivityKey,
 		Reference:   input.Reference,
+		Payload:     input.Payload,
 	})
 	if err != nil {
 		return spam.SpamActivityEvent{}, err
 	}
 
 	return spam.SpamActivityEvent{ID: event.ID}, nil
+}
+
+// spamNotifierAdapter adapts *notifications.Service to spam.Notifier — warns
+// the author with the pipeline's top reason when their content is flagged or
+// blocked, so a false positive is actionable instead of a silent penalty.
+type spamNotifierAdapter struct {
+	svc *notifications.Service
+}
+
+func (a *spamNotifierAdapter) NotifySpamFlag(ctx context.Context, userID pgtype.UUID, entityType, entityID string, blocked bool, reasons []string) error {
+	reason := "a safety filter"
+	if len(reasons) > 0 {
+		reason = reasons[0]
+	}
+	title := "Your post was flagged by safety filters"
+	if blocked {
+		title = "Your post was blocked by safety filters"
+	}
+	var subjectID pgtype.UUID
+	_ = subjectID.Scan(entityID)
+	return a.svc.CreateNotification(ctx, userID, "content.spam_flagged", "", pgtype.UUID{},
+		entityType, subjectID, title, "Moderation flagged your content: "+reason, "")
 }
 
 func (a *spamActivityEmitter) EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error {

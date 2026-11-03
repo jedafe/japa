@@ -19,10 +19,8 @@ export interface ComposerOptions {
 	getSnapshot: () => CreateContentInput;
 	canPublish: () => boolean;
 	getPublishAt: () => string | null;
-	/** Gate for autosave — return false to suppress a save cycle (e.g. empty title). */
+	/** Gate for saves — return false to suppress a save cycle (e.g. empty title). */
 	canSave?: () => boolean;
-	debounceMs?: number;
-	maxRetries?: number;
 }
 
 export class ComposerState {
@@ -43,21 +41,20 @@ export class ComposerState {
 	#savedRev = 0;
 	#inFlight = false;
 	#flightDone: Promise<void> | null = null;
-	#retries = 0;
-	#timer: ReturnType<typeof setTimeout> | null = null;
 	#committedTags: string[] = [];
 	#committedSeries: string | null = null;
 
 	constructor(deps: ComposerDeps, opts: ComposerOptions) {
 		this.#deps = deps;
-		this.#opts = { debounceMs: 2000, maxRetries: 3, canSave: () => true, ...opts };
+		this.#opts = { canSave: () => true, ...opts };
 	}
 
-	/** Call on any body/field edit. Bumps the revision and schedules a debounced save. */
+	/** Call on any body/field edit. Bumps the revision — saves are explicit
+	 *  (Save draft / Publish), never autosaved, so validation and safety
+	 *  errors surface on a deliberate action the user can act on. */
 	markDirty(): void {
 		this.#rev++;
 		if (this.status !== 'creating' && this.status !== 'saving') this.status = 'dirty';
-		this.#schedule(this.#opts.debounceMs);
 	}
 
 	/** Surface an out-of-band save failure (e.g. from space assignment). */
@@ -138,7 +135,6 @@ export class ComposerState {
 				}
 			} finally {
 				this.#inFlight = false;
-				if (this.status === 'saved' && this.#rev !== this.#savedRev) this.#schedule(0);
 			}
 		})();
 		this.#flightDone = done;
@@ -169,36 +165,18 @@ export class ComposerState {
 		return true;
 	}
 
-	dispose(): void {
-		if (this.#timer) clearTimeout(this.#timer);
-	}
-
 	#markSaved(rev: number): void {
 		this.#savedRev = rev;
-		this.status = 'saved';
+		// Edits that arrived mid-flight leave a newer revision — report
+		// dirty so the Save button stays armed instead of claiming saved.
+		this.status = this.#rev !== rev ? 'dirty' : 'saved';
 		this.savedAt = Date.now();
-		this.#retries = 0;
 	}
 
 	#fail(status: number, message = ''): void {
 		const cls = this.#deps.classify(status);
 		this.lastError = { cls, message };
-		if ((cls === 'network' || cls === 'server') && this.#retries < this.#opts.maxRetries) {
-			this.#retries++;
-			this.status = 'dirty';
-			this.#schedule(this.#backoff());
-		} else {
-			this.status = 'error';
-		}
-	}
-
-	#backoff(): number {
-		return Math.min(1000 * 2 ** this.#retries, 15000);
-	}
-
-	#schedule(ms: number): void {
-		if (this.#timer) clearTimeout(this.#timer);
-		this.#timer = setTimeout(() => void this.flush(), ms);
+		this.status = 'error';
 	}
 
 	async #reconcileTags(): Promise<Res | null> {

@@ -24,8 +24,6 @@ function makeState(deps: ComposerDeps, opts: Partial<ComposerOptions> = {}) {
 		getSnapshot: () => ({ content_type: 'blog_post', title: 'Hi', body_html: '<p>x</p>' }),
 		canPublish: () => true,
 		getPublishAt: () => null,
-		debounceMs: 1_000_000, // effectively disable auto-fire; tests call flush() directly
-		maxRetries: 2,
 		...opts
 	};
 	return new ComposerState(deps, options);
@@ -132,18 +130,25 @@ describe('ComposerState publish gate + failure classes', () => {
 		expect(deps.create).toHaveBeenCalledTimes(1);
 	});
 
-	it('a 500 create failure is server → keeps buffer, schedules a retry', async () => {
-		vi.useFakeTimers();
+	it('a 500 create failure is server → error, no auto-retry', async () => {
 		const deps = makeDeps({ create: vi.fn().mockResolvedValue(fail(503)) });
-		const s = makeState(deps, { debounceMs: 10 });
+		const s = makeState(deps);
 		s.markDirty();
 		await s.flush();
 		expect(s.lastError?.cls).toBe('server');
-		expect(s.status).toBe('dirty'); // queued for retry, not error
-		deps.create = vi.fn().mockResolvedValue(ok({ id: 'c1', slug: 's' }, 201));
-		// #backoff() = 1000 * 2^retries; after 1st retry #retries=1 → 2000ms.
-		await vi.advanceTimersByTimeAsync(2100);
-		expect(s.contentId).toBe('c1');
-		vi.useRealTimers();
+		expect(s.status).toBe('error'); // surfaced — no autosave retry loop
+		expect(deps.create).toHaveBeenCalledTimes(1);
+	});
+
+	it('markDirty leaves a newer revision dirty after a mid-flight save', async () => {
+		let resolve!: (v: unknown) => void;
+		const deps = makeDeps({ create: vi.fn().mockReturnValue(new Promise((r) => (resolve = r))) });
+		const s = makeState(deps);
+		s.markDirty();
+		const p = s.flush();
+		s.markDirty(); // edit lands while the save is in flight
+		resolve(ok({ id: 'c1', slug: 's' }, 201));
+		await p;
+		expect(s.status).toBe('dirty'); // newer rev not yet persisted
 	});
 });

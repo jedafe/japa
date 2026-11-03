@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -20,6 +21,8 @@ type WorkerAdapter struct {
 	pipeline *SpamPipeline
 	// activity emits the spam.detected points penalty (ADR-136).
 	activity ActivityEmitter
+	// notifier warns the author about flagged content.
+	notifier Notifier
 }
 
 // NewWorkerAdapter creates a WorkerAdapter backed by the given pipeline.
@@ -38,6 +41,9 @@ type ActivityEmitter interface {
 type SpamActivityInput struct {
 	ActivityKey string
 	Reference   string
+	// Payload carries the pipeline verdict (score + reasons) so the points
+	// ledger entry explains itself and admins can judge reversals.
+	Payload map[string]any
 }
 
 // SpamActivityEvent mirrors the event id the enqueue call needs.
@@ -48,15 +54,31 @@ type SpamActivityEvent struct {
 // SetActivityEmitter injects the wallet emitter (ADR-136).
 func (a *WorkerAdapter) SetActivityEmitter(e ActivityEmitter) { a.activity = e }
 
+// Notifier warns the author when their content trips the pipeline — the
+// violation reason travels with the notice so a false positive is fixable,
+// not a silent points loss. Local interface avoids a spam→notifications
+// import edge.
+type Notifier interface {
+	NotifySpamFlag(ctx context.Context, userID pgtype.UUID, entityType, entityID string, blocked bool, reasons []string) error
+}
+
+// SetNotifier injects the notification dispatcher.
+func (a *WorkerAdapter) SetNotifier(n Notifier) { a.notifier = n }
+
 // emitSpamPenalty deducts points for spam-flagged/blocked content —
 // fire-and-forget; deduped per entity via (activity_key, reference).
-func (a *WorkerAdapter) emitSpamPenalty(ctx context.Context, authorID pgtype.UUID, key, reference string) {
+// The verdict rides the event payload so the ledger shows WHY.
+func (a *WorkerAdapter) emitSpamPenalty(ctx context.Context, authorID pgtype.UUID, key, reference string, result SpamCheckResult) {
 	if a.activity == nil || !authorID.Valid {
 		return
 	}
 	event, err := a.activity.EmitActivityEvent(ctx, authorID, SpamActivityInput{
 		ActivityKey: key,
 		Reference:   reference,
+		Payload: map[string]any{
+			"score":   result.Score,
+			"reasons": result.Reasons,
+		},
 	})
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
@@ -65,6 +87,46 @@ func (a *WorkerAdapter) emitSpamPenalty(ctx context.Context, authorID pgtype.UUI
 		return
 	}
 	_ = a.activity.EnqueueProcessActivityEvent(ctx, event.ID)
+}
+
+// notifyAuthor warns the author about the flagged content (fire-and-forget).
+func (a *WorkerAdapter) notifyAuthor(ctx context.Context, authorID pgtype.UUID, entityType, entityID string, blocked bool, reasons []string) {
+	if a.notifier == nil || !authorID.Valid {
+		return
+	}
+	if err := a.notifier.NotifySpamFlag(ctx, authorID, entityType, entityID, blocked, reasons); err != nil {
+		slog.Warn("spam: author notification failed", "entity_type", entityType, "entity_id", entityID, "error", err)
+	}
+}
+
+// queueReport inserts a pending content_reports row so a Blocked verdict
+// lands in the moderation queue for human review — previously a blocked
+// score only hit the logs. Deduped on an existing pending report for the
+// same entity.
+func (a *WorkerAdapter) queueReport(ctx context.Context, entityType, entityID string, reasons []string) {
+	if a.pipeline.db == nil || a.pipeline.db.Writer == nil {
+		return
+	}
+	var eid pgtype.UUID
+	if err := eid.Scan(entityID); err != nil {
+		return
+	}
+	var existing pgtype.UUID
+	if err := a.pipeline.db.Writer.QueryRow(ctx,
+		`SELECT id FROM content_reports
+		  WHERE entity_type = $1 AND entity_id = $2 AND status = 'pending' LIMIT 1`,
+		entityType, eid).Scan(&existing); err == nil {
+		return // already queued
+	}
+	notes := "auto-flag score: " + strings.Join(reasons, "; ")
+	if _, err := gen.New(a.pipeline.db.Writer).CreateReport(ctx, gen.CreateReportParams{
+		EntityType: entityType,
+		EntityID:   eid,
+		Reason:     "spam",
+		Notes:      &notes,
+	}); err != nil {
+		slog.Warn("spam: queue report failed", "entity_type", entityType, "entity_id", entityID, "error", err)
+	}
 }
 
 // ScanContent runs the moderation pipeline on the given entity.
@@ -121,14 +183,17 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID st
 
 	switch {
 	case result.Blocked:
-		a.emitSpamPenalty(ctx, authorID, "spam.detected", "spam:"+entityType+":"+entityID)
+		a.queueReport(ctx, entityType, entityID, result.Reasons)
+		a.notifyAuthor(ctx, authorID, entityType, entityID, true, result.Reasons)
+		a.emitSpamPenalty(ctx, authorID, "spam.detected", "spam:"+entityType+":"+entityID, result)
 		slog.Warn("spam:worker_adapter: content blocked",
 			"entity_type", entityType, "entity_id", entityID,
 			"score", result.Score, "reasons", result.Reasons)
 	case result.Flagged:
+		a.notifyAuthor(ctx, authorID, entityType, entityID, false, result.Reasons)
 		// ADR-136: auto-flagged content may emit spam.flagged (seeded
 		// disabled — opt-in; only confirmed blocks penalize by default).
-		a.emitSpamPenalty(ctx, authorID, "spam.flagged", "spamflag:"+entityType+":"+entityID)
+		a.emitSpamPenalty(ctx, authorID, "spam.flagged", "spamflag:"+entityType+":"+entityID, result)
 		slog.Info("spam:worker_adapter: content flagged for review",
 			"entity_type", entityType, "entity_id", entityID,
 			"score", result.Score, "reasons", result.Reasons)

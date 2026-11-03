@@ -2198,13 +2198,42 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		authorAssigned = true
 	}
 
-	// No synchronous spam gate on update: the autosave-driven composer PATCHes
-	// body_html on every save, so a blocking check costs an AI classification
-	// + a layer fan-out per edit and randomly hard-fails genuine edits — and
-	// the Flagged→in_review clamp would silently unpublish live posts.
-	// Detection stays: enqueueModerationScan below flags edits asynchronously
-	// for moderator review, and content_hash still catches exact dupes at
-	// write time. Create remains the sync-gated entry point.
+	// Synchronous spam gate on genuinely changed bodies — saves are manual
+	// now (no autosave), so a block surfaces on a deliberate action with the
+	// pipeline's top reason the member can act on, instead of firing on
+	// every debounced keystroke. Flagged saves normally; the async
+	// moderation scan below handles review/penalty for it.
+	bodyChanged := input.Body != "" && strings.TrimSpace(input.Body) != strings.TrimSpace(prevContent.Body)
+	if !bodyChanged && input.BodyHtml != "" {
+		bodyChanged = updateInput.BodyHtml != prevContent.BodyHtml
+	}
+
+	if h.SpamPipeline != nil && bodyChanged {
+		checkBody := input.Body
+		if checkBody == "" && input.BodyHtml != "" {
+			checkBody = SanitizeText(input.BodyHtml)
+		}
+
+		spamResult, err := h.SpamPipeline.Check(r.Context(), spam.SpamCheckRequest{
+			Content:    checkBody,
+			UserID:     user.UserID,
+			IP:         clientip.FromRequest(r),
+			UserType:   "existing",
+			EntityType: "post",
+		})
+		if err != nil {
+			slog.Warn("spam check failed", "error", err)
+		} else if spamResult.Blocked {
+			msg := "Content blocked by safety filters"
+			if len(spamResult.Reasons) > 0 {
+				msg += ": " + spamResult.Reasons[0]
+			}
+			errpkg.WriteErrorData(w, http.StatusForbidden, "content_blocked", msg,
+				map[string]any{"reasons": spamResult.Reasons})
+			return
+		}
+	}
+
 	content, err := h.Service.UpdateContent(r.Context(), id, user.UserID, updateInput, bypassEditWindow)
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
