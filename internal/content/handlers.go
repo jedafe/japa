@@ -4065,12 +4065,16 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := h.Service.ClearContentSpaces(r.Context(), contentID); err != nil {
+		updatedAt, err := h.Service.ClearContentSpaces(r.Context(), contentID)
+		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"cleared": true}})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+			"cleared":    true,
+			"updated_at": updatedAt,
+		}})
 		return
 	}
 

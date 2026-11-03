@@ -50,7 +50,7 @@ const config = {
 							'img-src': ['self', 'data:', 'blob:', 'https:'],
 							'font-src': ['self', 'data:'],
 							'connect-src': ['self', ...connectOrigins],
-							'media-src': ['self', 'https:', 'blob:'],
+							'media-src': ['self', 'https:', 'blob:', 'data:'],
 							'frame-src': [
 								'https://www.youtube.com',
 								'https://www.youtube-nocookie.com',

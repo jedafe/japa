@@ -425,7 +425,7 @@
 	// failures snuck back in.
 	beforeNavigate((nav) => {
 		if (!composer) return;
-		if (composer.status === 'dirty' || composer.status === 'saving' || composer.status === 'creating') {
+		if (composer.status === 'dirty' || composer.status === 'saving' || composer.status === 'creating' || composer.status === 'error') {
 			if (!confirm(t('create.unsaved_leave', 'You have unsaved changes. Leave anyway?'))) {
 				nav.cancel();
 			}

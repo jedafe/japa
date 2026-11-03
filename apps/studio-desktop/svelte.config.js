@@ -30,7 +30,7 @@ const config = {
 							'img-src': ['self', 'data:', 'blob:', 'https:'],
 							'font-src': ['self', 'data:'],
 							'connect-src': ['self', 'https:', 'http:', 'wss:', 'ws:'],
-							'media-src': ['self', 'https:', 'blob:'],
+							'media-src': ['self', 'https:', 'blob:', 'data:'],
 							'worker-src': ['self'],
 							'object-src': ['none'],
 							'base-uri': ['self']

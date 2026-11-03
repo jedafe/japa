@@ -3185,8 +3185,10 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, pr
 // spaces endpoint required a non-empty primary, so clearing was impossible.
 // Callers must only invoke this for non-published statuses — publishing
 // without a primary is already blocked by hasPrimarySpace.
-func (s *Service) ClearContentSpaces(ctx context.Context, contentID pgtype.UUID) error {
-	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+func (s *Service) ClearContentSpaces(ctx context.Context, contentID pgtype.UUID) (pgtype.Timestamptz, error) {
+	var updatedAt pgtype.Timestamptz
+
+	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		if err := q.DeleteContentSpaces(ctx, contentID); err != nil {
 			return fmt.Errorf("deleting content_spaces: %w", err)
 		}
@@ -3198,8 +3200,16 @@ func (s *Service) ClearContentSpaces(ctx context.Context, contentID pgtype.UUID)
 			return fmt.Errorf("clearing primary space on content: %w", err)
 		}
 
+		row, err := q.GetContentByID(ctx, contentID)
+		if err != nil {
+			return fmt.Errorf("reading content updated_at: %w", err)
+		}
+		updatedAt = row.UpdatedAt
+
 		return nil
 	})
+
+	return updatedAt, err
 }
 
 // isSameUUID returns true when two pgtype.UUID values are equal and valid.
