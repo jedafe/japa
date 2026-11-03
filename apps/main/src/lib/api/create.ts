@@ -58,7 +58,10 @@ export const getContentSpaces = (id: string) =>
 export const patchContentSpaces = (
 	id: string,
 	input: { primary_space_id: string; additional_space_ids: string[] }
-) => api.patch<{ updated: boolean }>(`/content/${id}/spaces`, input);
+	// updated_at is the post-write row timestamp — the space sync bumps it,
+	// so the composer's expected_updated_at must adopt it or the next
+	// content PATCH trips the U1 optimistic lock.
+) => api.patch<{ updated: boolean; updated_at?: string }>(`/content/${id}/spaces`, input);
 export const publishContent = (id: string) => api.post<ContentRecord>(`/content/${id}/publish`);
 // publish_at arrives as a raw datetime-local value — the API decodes it into
 // a time.Time, which requires RFC 3339, so normalise to an ISO instant here.

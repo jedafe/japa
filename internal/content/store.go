@@ -1487,8 +1487,16 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 			}
 		}
 
-		if err := s.UpdateContentSpaces(ctx, content.ID, editedBy, primarySpaceID, additional, input.BypassSpaceCheck); err != nil {
+		spacesUpdatedAt, err := s.UpdateContentSpaces(ctx, content.ID, editedBy, primarySpaceID, additional, input.BypassSpaceCheck)
+		if err != nil {
 			return gen.UpdateContentRow{}, fmt.Errorf("updating content spaces: %w", err)
+		}
+
+		// The space sync stamps a second updated_at on the row — the
+		// response must report that later timestamp or the caller's
+		// expected_updated_at precondition 409s on the very next save.
+		if spacesUpdatedAt.Valid {
+			content.UpdatedAt = spacesUpdatedAt
 		}
 	}
 
@@ -3001,8 +3009,22 @@ func (s *Service) GetContentSpaces(ctx context.Context, contentID pgtype.UUID) (
 // is_primary = true). All space IDs are verified to exist in the platform
 // before the transaction commits (BUG-018). The entire operation runs in a
 // transaction.
-func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, primarySpaceID pgtype.UUID, additionalSpaceIDs []pgtype.UUID, bypassSpaceCheck bool) error {
-	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, primarySpaceID pgtype.UUID, additionalSpaceIDs []pgtype.UUID, bypassSpaceCheck bool) (pgtype.Timestamptz, error) {
+	var updatedAt pgtype.Timestamptz
+
+	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		// Snapshot current assignments — the posting-permission gate below
+		// only applies to spaces newly added by this call. Re-checking
+		// grandfathered assignments on every save blocks plain edits when a
+		// space's posting_perm tightens after the post was filed (verified /
+		// moderators / inactive) — editing is not a new posting.
+		existingSet := map[[16]byte]bool{}
+		if rows, err := q.GetContentSpaces(ctx, contentID); err == nil {
+			for _, sp := range rows {
+				existingSet[sp.SpaceID.Bytes] = true
+			}
+		}
+
 		// Validate that the primary and all additional spaces exist in
 		// this platform before mutating anything (BUG-018).
 		spaceIDs := append([]pgtype.UUID{primarySpaceID}, additionalSpaceIDs...)
@@ -3023,9 +3045,13 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, pr
 		}
 
 		// Enforce the space posting-permission / membership axis for
-		// non-admin callers (Section 45 / BUG-018).
+		// non-admin callers (Section 45 / BUG-018) — new assignments only.
 		if !bypassSpaceCheck && s.spaceChecker != nil {
 			for _, sid := range spaceIDs {
+				if existingSet[sid.Bytes] {
+					continue
+				}
+
 				ok, err := s.spaceChecker.CanPostInSpace(ctx, sid, userID)
 				if err != nil {
 					return fmt.Errorf("checking space permission: %w", err)
@@ -3093,8 +3119,19 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, pr
 			}
 		}
 
+		// Read back the bumped updated_at — SetContentSpaceID stamps it and
+		// callers need the value to keep the U1 optimistic lock in sync
+		// (BUG-CE-006). Inside the tx so the read can't race a later write.
+		row, err := q.GetContentByID(ctx, contentID)
+		if err != nil {
+			return fmt.Errorf("reading content updated_at: %w", err)
+		}
+		updatedAt = row.UpdatedAt
+
 		return nil
 	})
+
+	return updatedAt, err
 }
 
 // ClearContentSpaces removes every space assignment for a content item and

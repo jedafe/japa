@@ -449,7 +449,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, contentID, selectedSpac
 
 	// Auto-assignment is system-driven, so bypass the per-user membership
 	// check while keeping the platform-level space validation.
-	if err := h.Service.UpdateContentSpaces(ctx, contentID, pgtype.UUID{}, primarySpaceID, additionalIDs, true); err != nil {
+	if _, err := h.Service.UpdateContentSpaces(ctx, contentID, pgtype.UUID{}, primarySpaceID, additionalIDs, true); err != nil {
 		slog.Warn("content: auto-assign UpdateContentSpaces failed", "content_id", contentID.String(), "error", err)
 		return selectedSpaceID
 	}
@@ -2195,11 +2195,19 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		authorAssigned = true
 	}
 
-	// Spam pipeline check when the update carries a new body (audit
+	// Spam pipeline check when the update carries a CHANGED body (audit
 	// residual): edits can inject link-heavy content after passing the
-	// create-time check. Flagged bodies are held for moderation —
+	// create-time check. The composer re-sends body_html on every autosave,
+	// so re-scoring an unchanged body lets nondeterministic layers (AI
+	// classification, the 10-minute rate window) block saves of text that
+	// already passed once. Flagged bodies are held for moderation —
 	// consistent with the create path's Flagged→in_review clamp.
-	if h.SpamPipeline != nil && (input.Body != "" || input.BodyHtml != "") {
+	bodyChanged := input.Body != "" && strings.TrimSpace(input.Body) != strings.TrimSpace(prevContent.Body)
+	if !bodyChanged && input.BodyHtml != "" {
+		bodyChanged = SanitizeText(input.BodyHtml) != SanitizeText(prevContent.BodyHtml)
+	}
+
+	if h.SpamPipeline != nil && bodyChanged {
 		checkBody := input.Body
 		if checkBody == "" && input.BodyHtml != "" {
 			checkBody = SanitizeText(input.BodyHtml)
@@ -4081,7 +4089,8 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 			resolver.HasPermission(r.Context(), user.UserID, "content.edit_any")
 	}
 
-	if err := h.Service.UpdateContentSpaces(r.Context(), contentID, user.UserID, primarySpaceID, additionalSpaceIDs, bypassSpaceCheck); err != nil {
+	spacesUpdatedAt, err := h.Service.UpdateContentSpaces(r.Context(), contentID, user.UserID, primarySpaceID, additionalSpaceIDs, bypassSpaceCheck)
+	if err != nil {
 		slog.Error("updating content spaces", "error", err, "content_id", contentID.String(), "user_id", user.UserID.String())
 
 		switch {
@@ -4099,8 +4108,13 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Return the stamped updated_at — the composer keeps its U1
+	// expected_updated_at in sync or the next content PATCH 409s.
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{"updated": true},
+		"data": map[string]any{
+			"updated":    true,
+			"updated_at": spacesUpdatedAt,
+		},
 	})
 }
 

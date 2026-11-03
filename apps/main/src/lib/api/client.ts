@@ -129,16 +129,22 @@ async function clientFetchRaw<T>(
 	// anyway. The in-memory token (seeded from SSR page data / refresh)
 	// is the browser's credential. Bearer also makes the request CSRF-exempt
 	// (IsNonCookieAuthenticated) since cross-site callers can't forge headers.
-	const accessToken = untrack(getAccessToken);
-	if (accessToken && !('authorization' in baseHeaders) && !('Authorization' in baseHeaders)) {
-		baseHeaders['authorization'] = `Bearer ${accessToken}`;
+	// Computed inside doFetch so the post-refresh retry picks up the newly
+	// seeded token — a captured header would replay a null/expired Bearer and
+	// 401 again with "Authorization header is required".
+	function authHeaders(): Record<string, string> {
+		const accessToken = untrack(getAccessToken);
+		if (accessToken && !('authorization' in baseHeaders) && !('Authorization' in baseHeaders)) {
+			return { ...baseHeaders, authorization: `Bearer ${accessToken}` };
+		}
+		return baseHeaders;
 	}
 
 	async function doFetch(): Promise<Response> {
 		return fetch(buildApiUrl(path, API_BASE), {
 			...init,
 			credentials: 'include',
-			headers: withCsrfHeader(method, baseHeaders)
+			headers: withCsrfHeader(method, authHeaders())
 		});
 	}
 

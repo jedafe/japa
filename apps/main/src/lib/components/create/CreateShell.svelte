@@ -503,6 +503,10 @@
 		});
 		if (res.error) {
 			composer?.setError(res.status, res.error?.message ?? 'Failed to save spaces');
+		} else if (res.data?.updated_at && composer) {
+			// The spaces write bumps contents.updated_at — adopt it or the
+			// next PATCH's expected_updated_at 409s (stale_write).
+			composer.expectedUpdatedAt = res.data.updated_at;
 		}
 	}
 
