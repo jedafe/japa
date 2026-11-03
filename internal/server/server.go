@@ -4898,7 +4898,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), mw.WithOperation(mw.OpBlog), opBanEnforce, rbac.RequirePermission(rbacResolver, "blog.create")).
 					Post("/blog", blogHandlers.CreatePost)
 				r.Get("/blog/{slug}", blogHandlers.GetPost)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
+				// No EditLockMiddleware: blog PATCH honours expected_updated_at
+				// (stale_write) — the Valkey lock only added false "another user"
+				// blocks for sole-author edits. DELETE keeps it (no token).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
 					Patch("/blog/{id}", blogHandlers.UpdatePost)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
 					Delete("/blog/{id}", blogHandlers.DeletePost)
