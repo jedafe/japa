@@ -26,6 +26,9 @@ type SpamCheckRequest struct { //nolint:revive // stuttering type name preserved
 	IP         string      // Client IP address
 	UserType   string      // "new" or "existing"
 	EntityType string      // "post", "comment", "message", or "roadmap_submission"
+	// IsEdit marks an update-path check — the creation-rate window gates
+	// NEW posts, not edits of existing ones, so it is skipped here.
+	IsEdit bool
 }
 
 // SpamCheckResult holds the combined output of all pipeline layers.
@@ -154,7 +157,14 @@ func (p *SpamPipeline) Check(ctx context.Context, req SpamCheckRequest) (SpamChe
 
 	layers := []func(ctx context.Context, req SpamCheckRequest) (string, float64, []string){
 		p.checkIPReputation,
-		p.checkRateLimit,
+		func(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
+			// The 10-min creation window only gates new posts — inheriting
+			// it on every edit would block members who just published.
+			if req.IsEdit {
+				return "rate_limit", 0.0, nil
+			}
+			return p.checkRateLimit(ctx, req)
+		},
 		p.checkContentHash,
 		func(ctx context.Context, req SpamCheckRequest) (string, float64, []string) {
 			return p.checkCensoredWords(ctx, req)

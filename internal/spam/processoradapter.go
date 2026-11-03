@@ -61,7 +61,7 @@ func (a *WorkerAdapter) SetActivityEmitter(e ActivityEmitter) { a.activity = e }
 // not a silent points loss. Local interface avoids a spam→notifications
 // import edge.
 type Notifier interface {
-	NotifySpamFlag(ctx context.Context, userID pgtype.UUID, entityType, entityID string, blocked bool, reasons []string) error
+	NotifySpamFlag(ctx context.Context, userID pgtype.UUID, entityType, entityID string, blocked bool, reasons []string, subjectURL string) error
 }
 
 // SetNotifier injects the notification dispatcher.
@@ -94,7 +94,7 @@ func (a *WorkerAdapter) emitSpamPenalty(ctx context.Context, authorID pgtype.UUI
 // notifyAuthor warns the author about the flagged content (fire-and-forget).
 // Deduped per entity via a Valkey SETNX — repeated flagged saves of the same
 // post notify once per window instead of inbox-spamming the author.
-func (a *WorkerAdapter) notifyAuthor(ctx context.Context, authorID pgtype.UUID, entityType, entityID string, blocked bool, reasons []string) {
+func (a *WorkerAdapter) notifyAuthor(ctx context.Context, authorID pgtype.UUID, entityType, entityID string, blocked bool, reasons []string, subjectURL string) {
 	if a.notifier == nil || !authorID.Valid {
 		return
 	}
@@ -105,7 +105,7 @@ func (a *WorkerAdapter) notifyAuthor(ctx context.Context, authorID pgtype.UUID, 
 			return // already notified within the window
 		}
 	}
-	if err := a.notifier.NotifySpamFlag(ctx, authorID, entityType, entityID, blocked, reasons); err != nil {
+	if err := a.notifier.NotifySpamFlag(ctx, authorID, entityType, entityID, blocked, reasons, subjectURL); err != nil {
 		slog.Warn("spam: author notification failed", "entity_type", entityType, "entity_id", entityID, "error", err)
 	}
 }
@@ -140,6 +140,32 @@ func (a *WorkerAdapter) queueReport(ctx context.Context, entityType, entityID st
 	}
 }
 
+// contentRoutePrefix mirrors the frontend contentHref map (ADR-058) so
+// notification deep-links land on the right per-type detail route.
+var contentRoutePrefix = map[string]string{
+	"blog_post":       "/blog",
+	"guide":           "/guide",
+	"discussion":      "/forum",
+	"forum_thread":    "/forum",
+	"comparison":      "/comparisons",
+	"story":           "/story",
+	"achievement":     "/achievements",
+	"page":            "/pages",
+	"job_listing":     "/jobs",
+	"service_listing": "/services",
+	"video":           "/video",
+	"list":            "/list",
+}
+
+// contentPath returns the canonical detail URL for a content item.
+func contentPath(contentType, slug string) string {
+	prefix := contentRoutePrefix[contentType]
+	if prefix == "" {
+		prefix = "/content"
+	}
+	return prefix + "/" + slug
+}
+
 // ScanContent runs the moderation pipeline on the given entity.
 // For content entities, it looks up the body text from the database
 // and runs the full spam pipeline against it.
@@ -157,6 +183,7 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID st
 	// comments table with a []byte body column.
 	var body string
 	var authorID pgtype.UUID
+	var subjectURL string
 
 	if a.pipeline.db != nil {
 		var eid pgtype.UUID
@@ -169,6 +196,7 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID st
 					eid,
 				); err == nil {
 					body = row.Body
+					subjectURL = contentPath(row.ContentType, row.Slug)
 				}
 				if aid, aerr := queries.GetContentAuthorID(ctx, eid); aerr == nil {
 					authorID = aid
@@ -195,14 +223,14 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID st
 	switch {
 	case result.Blocked:
 		a.queueReport(ctx, entityType, entityID, result.Reasons)
-		a.notifyAuthor(ctx, authorID, entityType, entityID, true, result.Reasons)
+		a.notifyAuthor(ctx, authorID, entityType, entityID, true, result.Reasons, subjectURL)
 		a.emitSpamPenalty(ctx, authorID, "spam.detected", "spam:"+entityType+":"+entityID, result)
 		slog.Warn("spam:worker_adapter: content blocked",
 			"entity_type", entityType, "entity_id", entityID,
 			"score", result.Score, "reasons", result.Reasons)
 	case result.Flagged:
 		a.queueReport(ctx, entityType, entityID, result.Reasons)
-		a.notifyAuthor(ctx, authorID, entityType, entityID, false, result.Reasons)
+		a.notifyAuthor(ctx, authorID, entityType, entityID, false, result.Reasons, subjectURL)
 		// ADR-136: auto-flagged content may emit spam.flagged (seeded
 		// disabled — opt-in; only confirmed blocks penalize by default).
 		a.emitSpamPenalty(ctx, authorID, "spam.flagged", "spamflag:"+entityType+":"+entityID, result)

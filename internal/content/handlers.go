@@ -2220,6 +2220,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 			IP:         clientip.FromRequest(r),
 			UserType:   "existing",
 			EntityType: "post",
+			IsEdit:     true,
 		})
 		if err != nil {
 			slog.Warn("spam check failed", "error", err)

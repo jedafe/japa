@@ -9885,7 +9885,7 @@ type spamNotifierAdapter struct {
 	svc *notifications.Service
 }
 
-func (a *spamNotifierAdapter) NotifySpamFlag(ctx context.Context, userID pgtype.UUID, entityType, entityID string, blocked bool, reasons []string) error {
+func (a *spamNotifierAdapter) NotifySpamFlag(ctx context.Context, userID pgtype.UUID, entityType, entityID string, blocked bool, reasons []string, subjectURL string) error {
 	reason := "a safety filter"
 	if len(reasons) > 0 {
 		reason = reasons[0]
@@ -9894,10 +9894,13 @@ func (a *spamNotifierAdapter) NotifySpamFlag(ctx context.Context, userID pgtype.
 	if blocked {
 		title = "Your post was blocked by safety filters"
 	}
+	if subjectURL == "" {
+		subjectURL = "/notifications"
+	}
 	var subjectID pgtype.UUID
 	_ = subjectID.Scan(entityID)
 	return a.svc.CreateNotification(ctx, userID, "content.spam_flagged", "", pgtype.UUID{},
-		entityType, subjectID, title, "Moderation flagged your content: "+reason, "/notifications")
+		entityType, subjectID, title, "Moderation flagged your content: "+reason, subjectURL)
 }
 
 func (a *spamActivityEmitter) EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error {
