@@ -163,7 +163,7 @@
 		{ path: "/mentorship", label: t("nav.mentorship", "Mentorship"), icon: Users2, permission: "mentorship.admin" },
 		{ path: "/onboarding/templates", label: t("nav.onboarding_templates", "Onboarding Templates"), icon: FileText, permission: "admin.settings.view" },
 		{ path: "/gamification", label: t("nav.gamification", "Gamification"), icon: Trophy, permission: ["gamification.manage_badges", "gamification.manage_challenges", "gamification.award_badge"] },
-		{ path: "/jobs", label: t("nav.jobs", "Jobs Board"), icon: Briefcase, permission: "jobs.admin" }
+		{ path: "/jobs", label: t("nav.jobs", "Jobs Board"), icon: Briefcase, permission: "jobs.manage" }
 		]
 	},
 	{

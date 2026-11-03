@@ -5310,9 +5310,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 						Post("/me/wallet/withdrawal-methods", walletHandlers.CreateWithdrawalMethod)
 
 					// Admin withdrawal management (Section 58 Credit Withdrawal amendment).
-					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw.approve")).
+					// wallet.withdraw.manage is the JEOS-catalogued super_admin
+					// node for this surface; wallet.withdraw.approve is the
+					// fine-grained operational node seeded alongside it.
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "wallet.withdraw.approve", "wallet.withdraw.manage")).
 						Get("/admin/wallet/withdrawals", walletHandlers.AdminListWithdrawals)
-					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw.approve")).
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "wallet.withdraw.approve", "wallet.withdraw.manage")).
 						Post("/admin/wallet/withdrawals/{id}/process", walletHandlers.ProcessWithdrawal)
 				})
 

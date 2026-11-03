@@ -1,0 +1,1377 @@
+{
+ "japa_starter": {
+  "media_id": "8325a34f-16f4-49da-aa00-d786f7af0f21",
+  "accent": "#a68aeb",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/009aabc8-6e00-4b2f-b588-f112d14576ef.jpg"
+ },
+ "identity_established": {
+  "media_id": "5a53f8eb-5901-4fac-9229-2671ae7e5524",
+  "accent": "#bd82f1",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/d9b35762-7c9f-48ec-a741-8402961c98e3.jpg"
+ },
+ "passport_ready": {
+  "media_id": "c39fc439-90b5-4bc9-bd26-160545874bed",
+  "accent": "#f2ca77",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/91163598-78ba-4343-94bf-35701b4f5252.jpg"
+ },
+ "perfect_profile": {
+  "media_id": "c3bbb1e6-facd-466d-ae58-8be94853271a",
+  "accent": "#6b74f0",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/e8d9cc3d-72c6-4ebe-a886-dd56c8626c5c.jpg"
+ },
+ "world_explorer": {
+  "media_id": "160b8d40-eae9-44ce-a824-a1fdb41c1ca1",
+  "accent": "#433423",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/30923082-acb8-4f38-a479-9d2ae6b88add.jpg"
+ },
+ "country_collector": {
+  "media_id": "327f4bd6-1541-441d-824e-8a4ed8eb5bc3",
+  "accent": "#4d4d4f",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/44c4e0c4-679c-46be-ba9e-545a88f39f12.jpg"
+ },
+ "global_explorer": {
+  "media_id": "4a583342-fb33-4f4f-b318-6330ec3f2e9e",
+  "accent": "#c3812a",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/b163cd0f-5147-41f9-9a1d-be61e61b121c.jpg"
+ },
+ "world_citizen": {
+  "media_id": "917c44d2-fbe2-424c-8acc-f4ce35a593b1",
+  "accent": "#329da9",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/0678931d-0a25-4b5b-b50a-9aa95c084ab0.jpg"
+ },
+ "atlas_legend": {
+  "media_id": "e9b36395-f070-4006-b8d3-39c27e0611f1",
+  "accent": "#f2aa31",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/2a56f5de-d537-4b1d-aa15-ad05286c2190.jpg"
+ },
+ "career_explorer": {
+  "media_id": "65877a8f-30bd-4ec1-9f36-e11238e4e2b4",
+  "accent": "#476f92",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/cec282d1-044e-410a-9d38-6c9402e3be11.jpg"
+ },
+ "listing_scout": {
+  "media_id": "58927e31-4cac-4faf-bbdc-4ee68e218bcc",
+  "accent": "#f6cf77",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/8faf152c-d2c2-423f-9536-8bb3316e8b4a.jpg"
+ },
+ "opportunity_hunter": {
+  "media_id": "3c42e042-06a1-44b1-8059-e1b44044eb6a",
+  "accent": "#d3b303",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/5abe31d6-0330-463a-83f0-9a342f89a585.jpg"
+ },
+ "offer_received": {
+  "media_id": "763b7d20-aab0-40fc-ab78-417c150f5821",
+  "accent": "#78d2ee",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/1048db4e-6b76-4060-a093-8c9df6401721.jpg"
+ },
+ "visa_sponsored": {
+  "media_id": "7be5ece1-d7bc-4568-82c4-18e6b2d0ba7c",
+  "accent": "#cc832d",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/786290e4-5b72-4cab-a802-73935cddf85e.jpg"
+ },
+ "global_professional": {
+  "media_id": "7ad193b9-0ca7-4bea-86cd-2a8942c296e5",
+  "accent": "#f5a207",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/9d750ca9-3ee2-4fa3-bc25-8846b8509aab.jpg"
+ },
+ "career_trailblazer": {
+  "media_id": "95152284-15cf-47b7-8aa7-eddccb7db6b1",
+  "accent": "#c97e2b",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/1a89f76c-4b0d-43bc-8392-765519e7a4ae.webp"
+ },
+ "career_profile_ready": {
+  "media_id": "8551c547-16b0-4c22-a779-f8deb5debdc3",
+  "accent": "#bf8f33",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/fe3d4991-6c68-4f8f-812c-5a22d38808f6.jpg"
+ },
+ "first_application": {
+  "media_id": "c883dbc8-5e49-4afc-9ceb-3a013e375ae4",
+  "accent": "#b67f2d",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/155c5968-fb54-446b-8714-2588babe2748.jpg"
+ },
+ "persistent_applicant": {
+  "media_id": "83b1e1ae-86e6-4bbd-9d26-0fab552506a5",
+  "accent": "#d08832",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/d4d5c9cb-474c-4660-84f2-f322920d0920.jpg"
+ },
+ "opportunity_magnet": {
+  "media_id": "0a41c1a1-4ba8-4404-bbaa-e821ba8224cd",
+  "accent": "#ea354d",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/36ef5b70-93ba-440a-a69a-d940dacf6c01.jpg"
+ },
+ "interview_ready": {
+  "media_id": "afbbf20f-c1b4-4932-810b-355a14bcb4d2",
+  "accent": "#caaf37",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/712dfe86-1a5d-4ee1-8d76-fdc83bfb6569.jpg"
+ },
+ "community_ambassador": {
+  "media_id": "ac6025c1-39c9-403d-a791-8ef523657eb6",
+  "accent": "#e6a426",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/dca41f70-dcc6-4636-93cc-1d9e79933971.jpg"
+ },
+ "community_connector": {
+  "media_id": "74529fbd-d04b-4a4f-a468-7d39ce93663c",
+  "accent": "#fac13f",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/ca42b810-a338-4bc7-946f-d0b1a54749a7.jpg"
+ },
+ "community_champion": {
+  "media_id": "49a1f5de-d9fa-4965-bca1-d5cb211367a7",
+  "accent": "#3da5e9",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/879a0212-6cd2-4096-befa-6038898dadce.jpg"
+ },
+ "super_connector": {
+  "media_id": "c8af0bd1-d0ee-478f-bbdf-073e0041e6ce",
+  "accent": "#554faf",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/0e4f715b-4f25-44c6-9911-96de414ffcac.jpg"
+ },
+ "network_builder": {
+  "media_id": "056729ce-4051-4919-9afa-b8fdf71c5795",
+  "accent": "#99e6fd",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/8f5e8a43-55dd-40b1-ad00-c066a8dbf958.jpg"
+ },
+ "thriving_community": {
+  "media_id": "920420d7-9563-455b-be96-88a4e97191cd",
+  "accent": "#299bd7",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/09290427-af93-49d7-be36-10a58bd022f1.jpg"
+ },
+ "crowd_favourite": {
+  "media_id": "0082e037-14dc-4c6d-8d0d-7d214eddf96e",
+  "accent": "#3ba6eb",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/55ab93ba-f083-468d-bc8d-adc39e579bb2.jpg"
+ },
+ "community_pillar": {
+  "media_id": "989d72c6-4fff-4fd6-9ce2-fa0553950f56",
+  "accent": "#98e6fc",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/112591f5-d760-4a13-b802-f483aaa7c14b.jpg"
+ },
+ "friendly_face": {
+  "media_id": "6e3ff175-6e8a-4e15-b3ce-54c710ff4ae9",
+  "accent": "#329ee7",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/83a04ab0-89a7-4c12-bf18-f87608a84a0c.jpg"
+ },
+ "first_connection": {
+  "media_id": "c5c65282-240d-4d9a-927c-9a2a4f88b76a",
+  "accent": "#e8b37c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/c498483c-09a1-496f-ab37-77b1bfa28214.jpg"
+ },
+ "community_member": {
+  "media_id": "21345720-b936-4e82-8e1b-21a19aee478d",
+  "accent": "#ab7a2c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/ab1aeb8d-5ad6-457f-b5f8-36bde73d2e73.jpg"
+ },
+ "connector_extraordinaire": {
+  "media_id": "18d9dfd3-55f7-484e-bef4-507e81a7a50a",
+  "accent": "#d8c330",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/90dd2402-f645-4527-8dfe-7e73df8d69ee.jpg"
+ },
+ "daily_visitor": {
+  "media_id": "713c1888-6a6b-45d3-a7b7-fe13cdd7f87b",
+  "accent": "#cdaa5e",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/3956df8b-54e8-49a1-b26c-a1d0e545a92b.jpg"
+ },
+ "consistent": {
+  "media_id": "ea24f438-830c-4219-9f62-dd959d88fd60",
+  "accent": "#c5a158",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/3014c037-33b1-42af-907d-55f8da1097db.jpg"
+ },
+ "quarter_champion": {
+  "media_id": "18717fc6-4315-40c4-8f2a-72176a186d7f",
+  "accent": "#c1912b",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/3bb8b33d-e3ce-450d-94ee-b8b0504f3e47.jpg"
+ },
+ "two_week_warrior": {
+  "media_id": "9a84c1be-10e4-429d-b35b-f3025e4402ab",
+  "accent": "#ee9807",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/e5ff8d98-12da-46d2-ab84-d4ea512080da.jpg"
+ },
+ "challenge_accepted": {
+  "media_id": "d69b21fe-5a26-4a14-b97f-df62a17fd36a",
+  "accent": "#bc9935",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/b149cea9-ae00-4944-a7fc-e6a8c914f80d.jpg"
+ },
+ "challenge_hunter": {
+  "media_id": "6482e2ae-b011-41da-9094-25f43fdaa995",
+  "accent": "#ba9e6c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/6f3b2457-ff51-47c0-96d0-6f7ff996131b.jpg"
+ },
+ "mission_impossible": {
+  "media_id": "bcb3c460-a912-4426-9d76-f92c41f28b46",
+  "accent": "#c7a45f",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/3d65b887-558b-40c7-b578-166ae90bef4c.jpg"
+ },
+ "monthly_regular": {
+  "media_id": "1c62be64-d187-4d26-8a5d-431c03ea6fe1",
+  "accent": "#f39a36",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/01af6e4a-350a-4c59-8e60-c67257c850e3.jpg"
+ },
+ "destination_expert": {
+  "media_id": "14c68854-78ea-4388-b266-5ed0ff7fa902",
+  "accent": "#7a6a5a",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/06625c49-aaa2-4605-9b88-02867ad564d7.jpg"
+ },
+ "cultural_enthusiast": {
+  "media_id": "e4b88f3e-4317-4456-be44-19f29a89ba36",
+  "accent": "#6e5c02",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/ac642058-cf2d-4310-8cb5-78804cc6bec1.jpg"
+ },
+ "country_specialist": {
+  "media_id": "3e0e39f1-111a-4321-83f2-122aec234058",
+  "accent": "#468388",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/90319f86-ab59-469c-8740-a7569e3e89be.jpg"
+ },
+ "immigration_researcher": {
+  "media_id": "bb876c72-6ca5-4252-9f98-8d2e75cda9a0",
+  "accent": "#122a42",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/d1bba80b-e614-4284-a087-7215d63a9f48.jpg"
+ },
+ "city_explorer": {
+  "media_id": "b00dc8a0-1c88-4e26-965b-f9bc4e043acd",
+  "accent": "#c89130",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/2bf913a2-3b69-40fc-a605-7e66ab7dd19b.jpg"
+ },
+ "global_knowledge": {
+  "media_id": "eee80a62-5b85-4808-b502-5558e997fe3f",
+  "accent": "#be9558",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/07c093a6-26b3-4d78-b492-59b1a741877e.jpg"
+ },
+ "global_nomad": {
+  "media_id": "7c50e09e-02cc-4551-bbb0-4b5f06b853f2",
+  "accent": "#3d5989",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/82c9b072-0e3b-40cb-8725-eb30d3f7e6e3.jpg"
+ },
+ "japa_pioneer": {
+  "media_id": "06172af5-d8e4-4b8b-be0a-1ab772581600",
+  "accent": "#be955a",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/77eb0703-accc-414d-b9ec-6a7c0926ef00.jpg"
+ },
+ "multiple_moves": {
+  "media_id": "a37c5104-4a20-4268-a93d-302032de5f8f",
+  "accent": "#6ca8fa",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/eb24146e-09cf-4c54-98a1-adb11266c010.jpg"
+ },
+ "scholarship_seeker": {
+  "media_id": "b6294609-ae9e-4c50-8ae1-d518a0974ecd",
+  "accent": "#cf8a07",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/61c445a3-7642-4e67-8c30-6f227a9287a9.jpg"
+ },
+ "scholar_in_the_making": {
+  "media_id": "e5fef8e0-c6eb-4af0-ab9f-cb5d35597450",
+  "accent": "#cc9867",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/0906580e-8e4a-4a6b-8bdb-9145774e3cd8.jpg"
+ },
+ "funding_strategist": {
+  "media_id": "05be1b0b-8d44-40fe-9fca-1d1fd7a62aba",
+  "accent": "#845941",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/4e39e9f6-c46f-47b5-b643-576780042c57.jpg"
+ },
+ "fully_funded_dream": {
+  "media_id": "d3268924-fed8-45b0-b2d1-30e826d976b1",
+  "accent": "#c6693c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/7144df55-28ff-4300-b7c0-267135ee0d87.jpg"
+ },
+ "academic_achiever": {
+  "media_id": "a3265da8-6949-45b6-9fcb-bf1b2ccfedc6",
+  "accent": "#e9b349",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/03f43cd9-2e93-42cc-921c-92374f8b9744.jpg"
+ },
+ "university_hunter": {
+  "media_id": "c0f9edf8-a123-4028-8be8-734a89a99311",
+  "accent": "#f6de81",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/6b5fcfe3-b2a8-4b7c-8f02-113e2564759c.jpg"
+ },
+ "campus_bound": {
+  "media_id": "236f86b8-64cc-4bee-bf55-f9a32c64db23",
+  "accent": "#c39062",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/52b10bba-7050-4ca0-b5ed-22b1ffc6e363.jpg"
+ },
+ "scholarship_hunter": {
+  "media_id": "c5971416-c729-413a-87db-1d11655e48fd",
+  "accent": "#c9c194",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/b9771ffa-3aa8-4a8b-8fbb-2197b6ef1cbd.jpg"
+ },
+ "academic_explorer": {
+  "media_id": "5a05245e-a0b5-4145-8d4b-eeca815459a5",
+  "accent": "#c19d68",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/72ae2cdd-395b-49a0-b927-9a5667babb17.jpg"
+ },
+ "scholarship_applied": {
+  "media_id": "4f4da7e7-2638-4d5d-9568-24d59ca64a61",
+  "accent": "#e7a12f",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/7ccfe1a5-c6f4-4ac1-bfb4-3a0c82948c62.jpg"
+ },
+ "application_starter": {
+  "media_id": "2179a911-ca41-42a8-ab54-4175abaaf308",
+  "accent": "#856c44",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/01b32b37-80bd-47d8-a2df-49cca9219ff3.jpg"
+ },
+ "global_scholar": {
+  "media_id": "e6d349b6-06c0-4625-992f-5a072e2252f0",
+  "accent": "#cb872b",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/3caea13c-6e10-4fba-94c0-4c2413cfcb77.jpg"
+ },
+ "financial_strategist": {
+  "media_id": "bf694dc8-65f9-4ca4-b9ad-a268abdc2ab5",
+  "accent": "#bd9960",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/63870b2d-e380-42b1-bbbf-c987c7de96c0.jpg"
+ },
+ "consistent_saver": {
+  "media_id": "0c0a1d21-eb5e-481d-8748-c871da0da721",
+  "accent": "#bc9865",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/afb38adc-9614-4a4d-bc01-56e3f0cceaff.webp"
+ },
+ "smart_spender": {
+  "media_id": "a9352bca-bf04-4eba-a1e2-0fa5b666b402",
+  "accent": "#80b9f2",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/b1799d0f-7591-47ed-b0ba-ba6e6dc00e64.jpg"
+ },
+ "currency_watcher": {
+  "media_id": "c662fd68-dcf2-48c9-b27d-282c4c8c435e",
+  "accent": "#cf8b02",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/5ade5bdb-b330-4bbb-a0ca-5e185685434c.jpg"
+ },
+ "budget_planner": {
+  "media_id": "38fe2285-3c73-43cd-9b33-bb49308f6efa",
+  "accent": "#bb7d0b",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/c395fe2d-bbaa-46d8-ac14-3a462a8dc491.jpg"
+ },
+ "financial_explorer": {
+  "media_id": "7426d703-df96-46d8-8fdc-2a040fb8800c",
+  "accent": "#b1a093",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/02ae8217-7712-4886-8f27-896d82995aff.jpg"
+ },
+ "financial_freedom": {
+  "media_id": "371bd9a6-c6a7-4e35-919a-64cb308d6177",
+  "accent": "#a9bbe3",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/b3d1365d-edc6-4fe9-84cc-ab83f53b2ceb.jpg"
+ },
+ "exchange_rate_expert": {
+  "media_id": "6337f7cf-7d70-43e5-ba63-dc69f5e1ca37",
+  "accent": "#c0aa72",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/a3e5b617-8065-468a-b547-87b129a89f70.jpg"
+ },
+ "savings_starter": {
+  "media_id": "9a832c1a-4024-4ae7-b3d0-0dcea1407ba3",
+  "accent": "#7d653a",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/e665bae7-ec42-4a49-8472-7c0cfae7b473.jpg"
+ },
+ "money_mover": {
+  "media_id": "fa462cec-6a73-4e15-9eac-1d063908a667",
+  "accent": "#bc923a",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/8a58277f-ebef-4b9c-8517-43022b68cf17.jpg"
+ },
+ "cost_analyst": {
+  "media_id": "5f4ba6c7-ee2c-44cd-8d57-be2f573fd1cf",
+  "accent": "#9daec9",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/e454afff-121d-49f1-8f58-e0aec8d3de61.jpg"
+ },
+ "first_comment": {
+  "media_id": "3d937f12-5b05-4b58-b5f7-85039aa16f97",
+  "accent": "#776efe",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/5d2351b8-3332-4abc-bf5e-4514099b8211.jpg"
+ },
+ "debate_enthusiast": {
+  "media_id": "29fa5c4e-d0c5-40e9-b435-3f0e365a79d6",
+  "accent": "#7c4e15",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/45c057f4-17a4-4a81-86e4-7c27b3b023b2.jpg"
+ },
+ "discussion_champion": {
+  "media_id": "68d4407b-99a1-4106-98f5-42b39b2af614",
+  "accent": "#f6b550",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/769bee96-ca50-48e2-911b-30f0375caa13.jpg"
+ },
+ "problem_solver": {
+  "media_id": "5379c82c-5427-4b97-9dfa-f3ed5c508540",
+  "accent": "#c9ae37",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/fb00a104-2d3a-48d8-b76f-78d5001f828f.jpg"
+ },
+ "forum_legend": {
+  "media_id": "4d436236-5f3a-4741-965e-f8764bea6654",
+  "accent": "#bdaa69",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/5a8000a5-f5dd-4b4b-943e-6f1b2cfc03c8.jpg"
+ },
+ "voice_matters": {
+  "media_id": "c91aa3e4-1175-4aa7-8b17-e942acf2ae67",
+  "accent": "#5c5fd9",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/91f6cc97-d94b-4eea-a301-f780ac54d875.jpg"
+ },
+ "question_master": {
+  "media_id": "7896a2ed-ae2c-4262-aa58-ef18c111ea7c",
+  "accent": "#cda06c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/b7bd42b7-e9b1-4211-af95-5eb37f8db361.jpg"
+ },
+ "curious_mind": {
+  "media_id": "172af87b-798e-4222-9b4c-c6a918f4a8f6",
+  "accent": "#f19914",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/7ce46ebb-1143-4860-a505-ea9d4e20b4ae.jpg"
+ },
+ "solution_expert": {
+  "media_id": "aa806763-3e33-4229-a716-007209ad1380",
+  "accent": "#fdc24a",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/9a4593fa-0466-4e18-a896-7ce16ff490ea.jpg"
+ },
+ "paperwork_pro": {
+  "media_id": "1c066562-76b1-432a-acc8-c1fdff28ee28",
+  "accent": "#f7b139",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/60585b30-b511-4651-b94e-603050d1887e.jpg"
+ },
+ "plan_maker": {
+  "media_id": "78084a7e-cd98-4ba1-91e2-c25ec0935fe2",
+  "accent": "#89a7ef",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/a0007b12-f2a1-462d-896f-142aee098ef6.jpg"
+ },
+ "route_master": {
+  "media_id": "973d41fe-510d-4d12-a8ad-90836e49ae57",
+  "accent": "#c89a6a",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/063ed60d-1640-45d3-8664-ef40ff64c0b2.jpg"
+ },
+ "japa_ready": {
+  "media_id": "72bcf6ca-cc7a-4eb7-8e60-df00d1f8e5af",
+  "accent": "#aec3d3",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/f5d1d153-5070-4899-9c49-4db35a9584fc.jpg"
+ },
+ "visa_explorer": {
+  "media_id": "43febd33-3120-42d6-9774-26ed0dd8330a",
+  "accent": "#b88f23",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/806c2001-9dee-4a1f-bfd7-0979d756ce19.jpg"
+ },
+ "application_ready": {
+  "media_id": "dd21df0f-ebb0-4009-a4b9-8e42cdfbb954",
+  "accent": "#8f7d02",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/48c49f98-fcbf-4828-9712-6bf5c9cf5214.jpg"
+ },
+ "japa_curious": {
+  "media_id": "c1b5b62f-386a-46bd-8cdd-5cae3df51c75",
+  "accent": "#b8750e",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/bb6faec8-d377-4f66-9b3f-6483522365e5.jpg"
+ },
+ "document_collector": {
+  "media_id": "b6289a45-2110-4eb3-89aa-6e2f4ffddeae",
+  "accent": "#b7a9f4",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/f0670ca3-f30e-4ce8-9c7c-00cf683fda13.jpg"
+ },
+ "self_discovery": {
+  "media_id": "2d67eaf7-07f9-4103-aa42-eead36f4c0dc",
+  "accent": "#b9a99c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/05074b6f-d805-4885-9ce2-afdc1787ba30.jpg"
+ },
+ "destination_decided": {
+  "media_id": "590a88ce-454d-46c1-88db-2b1a4b5d8fa4",
+  "accent": "#323d6f",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/06f9f877-e2de-4ea6-ad97-78664bbf0d9d.jpg"
+ },
+ "journey_begins": {
+  "media_id": "f4e95435-aea8-4056-97c1-baa7978c7f71",
+  "accent": "#3887cc",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/f4fbaea5-b0f6-41d7-a34e-44f92ef10387.jpg"
+ },
+ "route_selected": {
+  "media_id": "d78c60e3-8a93-486f-b4da-5614e2717b29",
+  "accent": "#c28463",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/d12f9b58-7ec2-44ce-a4de-3618e3b631e7.jpg"
+ },
+ "approval_alert": {
+  "media_id": "8f201e68-dc58-4ac8-bb77-09cb84c6c9fe",
+  "accent": "#021b3c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/f3edf638-8925-4a53-ae14-0285917825ea.jpg"
+ },
+ "multiple_possibilities": {
+  "media_id": "a42c2f73-d9ed-46e5-be1b-594d457e2e65",
+  "accent": "#6dc0f5",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/16ebbed4-3fb1-41dd-af27-152460b51150.jpg"
+ },
+ "the_big_move": {
+  "media_id": "76151026-a545-42bf-914d-7e75e74bb624",
+  "accent": "#cb9f62",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/f335b13e-27e3-43cf-811e-02cadcad31f8.jpg"
+ },
+ "ticket_to_freedom": {
+  "media_id": "d68a7d78-24ec-472c-9316-7b28a5ef0ef8",
+  "accent": "#eebb17",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/5f116324-01e0-4bef-ab6b-dbcf061fefa4.jpg"
+ },
+ "next_chapter": {
+  "media_id": "b44d6036-ce38-4540-b7b5-f7cf10814691",
+  "accent": "#f0a826",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/21192dc0-a0a9-4744-9fb8-a0749613f175.jpg"
+ },
+ "on_the_move": {
+  "media_id": "d4197e45-1a09-4374-8580-c517cf1d2cb5",
+  "accent": "#8dcef7",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/afbdcad8-bb80-44d0-8464-1741cebfca6f.jpg"
+ },
+ "thought_leader": {
+  "media_id": "fa7a5ad7-2e5c-4279-844b-d566ce27d227",
+  "accent": "#b68038",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/a8b34163-0995-4b32-b373-21db38f161e7.jpg"
+ },
+ "first_post": {
+  "media_id": "bfa15d77-4307-4af2-8aa6-285676303cba",
+  "accent": "#c77a32",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/139ed07b-e924-4bce-9554-6af24142516b.jpg"
+ },
+ "storyteller": {
+  "media_id": "6b5dae45-5ea9-4ba8-9b00-4f518a1c488a",
+  "accent": "#aa5c06",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/536a93ca-5d11-4962-ba84-575c998feedf.jpg"
+ },
+ "knowledge_sharer": {
+  "media_id": "ac84fbd7-39d3-41d8-a41b-4b8cabc35f29",
+  "accent": "#c3995b",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/434dd3dc-4c4e-4909-9ef8-7f688b9ffa15.jpg"
+ },
+ "knowledge_seeker": {
+  "media_id": "6c83f7db-9d1a-4998-a618-430dfb46882e",
+  "accent": "#d6c76e",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/530eb76a-da20-4c7b-80ea-1ad6fb8bd947.jpg"
+ },
+ "content_machine": {
+  "media_id": "31178047-82cc-4701-8ec9-eb6b93dba84f",
+  "accent": "#bd8005",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/c5a0675f-0aeb-4f11-b33a-c46c68b4e7d5.jpg"
+ },
+ "knowledge_authority": {
+  "media_id": "1bac2991-a9c4-46f4-962c-15a52b403bae",
+  "accent": "#c08e37",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/0b79e047-b26c-45a6-97c8-3d76ce30d69d.jpg"
+ },
+ "japa_storyteller": {
+  "media_id": "db6cb3de-668a-430e-aa02-b21d4916db11",
+  "accent": "#7d5e3e",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/613c52c7-412a-4cb6-8854-986a51434732.jpg"
+ },
+ "experience_matters": {
+  "media_id": "8fcef4c8-1620-4bdf-8792-9e4db8001bf6",
+  "accent": "#c48c39",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/7164be0e-e19b-4ee7-b406-21282eea138c.jpg"
+ },
+ "mentor_mentee": {
+  "media_id": "39cd59a5-417d-449a-82d8-af30675adf67",
+  "accent": "#c14123",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/a760a839-bc46-4106-8186-daaef1d6f211.jpg"
+ },
+ "knowledge_mentor": {
+  "media_id": "6bf3e1ab-f742-4f3e-b80f-3074300d1a85",
+  "accent": "#c7a35c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/d5191dd6-5ee5-421d-924b-e0e7145fdc20.jpg"
+ },
+ "guided_journey": {
+  "media_id": "215742a9-57b0-4990-97c4-20d032766f95",
+  "accent": "#cb9c39",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/b4c5ea88-2fdd-4d8b-8d65-0ced2defab08.jpg"
+ },
+ "first_time_mentor": {
+  "media_id": "be8e5895-f7a4-4427-9964-89e17176ccc5",
+  "accent": "#bd7d0d",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/64a77fef-3bad-4bbe-8281-6760419dad65.jpg"
+ },
+ "mentorship_applicant": {
+  "media_id": "363147a9-6b81-4a6c-bf0d-450befc395ed",
+  "accent": "#72644d",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/2d307075-7afe-47a1-8f0b-acbb9fb5fb7f.jpg"
+ },
+ "dedicated_learner": {
+  "media_id": "71b1a6f2-8ff7-41e7-bb90-d226457a1a67",
+  "accent": "#fce5b0",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/710dd098-777a-4608-b788-dc1bc22eb5a5.jpg"
+ },
+ "mentorship_ambassador": {
+  "media_id": "b2a4cbe8-82f3-4d2f-a124-88dabb183569",
+  "accent": "#f3c47b",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/0868f0a0-41fe-44a6-8c8d-351cef1f3063.jpg"
+ },
+ "master_mentor": {
+  "media_id": "cc597ead-8593-4e39-91bc-7618f06a0fad",
+  "accent": "#7f593c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/997ce4a0-811d-48e3-8160-f6504f088656.jpg"
+ },
+ "mentors_favourite": {
+  "media_id": "1b579ad5-4496-4b90-90a3-9b28a8a0bb90",
+  "accent": "#f6eea5",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/9aa78a9c-6425-4688-a3f7-576f400a5ce2.jpg"
+ },
+ "service_explorer": {
+  "media_id": "bd70a482-2432-4418-b92c-d14a29a0c83d",
+  "accent": "#f7dc72",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/372bee72-47d3-4182-80c5-8c6ce6d916b2.jpg"
+ },
+ "service_champion": {
+  "media_id": "386aa2c6-9199-4434-ac2e-91e9ed26ad23",
+  "accent": "#c19d5c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/3370485c-2f78-4a02-8e31-fd3474a7ca6e.jpg"
+ },
+ "service_reviewer": {
+  "media_id": "3d07caaf-505c-4a6d-8b2c-10e4bc9405b2",
+  "accent": "#7ea4f6",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/ad1dc730-2e70-462f-98c5-f3c37407c88e.jpg"
+ },
+ "package_collector": {
+  "media_id": "a4bc9349-adbf-46c7-a851-bf67e604bbc9",
+  "accent": "#fbcf7f",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/61a10bc8-14b0-41a9-8852-8efd9802a254.jpg"
+ },
+ "loyal_customer": {
+  "media_id": "31320702-61fd-463d-bdee-788dc14f4ea7",
+  "accent": "#b77d0a",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/f08b8118-c452-4109-9f5e-e3ef9cfc8e42.jpg"
+ },
+ "service_excellence": {
+  "media_id": "4c81bafe-1d5a-4535-ba9b-19590f265991",
+  "accent": "#c58e2f",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/ad247ae8-fa62-4c84-a94b-219364e73a22.jpg"
+ },
+ "package_member": {
+  "media_id": "11e52cba-f178-4ca6-8fb4-78a2e1fdc73a",
+  "accent": "#c07ded",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/4e14668c-07a4-4c34-adf9-f06a77f6fb33.jpg"
+ },
+ "service_seeker": {
+  "media_id": "6b8004ee-07a3-4eb0-8e43-2c56d1445667",
+  "accent": "#728fd4",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/c584f621-9ac3-4233-ad42-c0a91466ce24.jpg"
+ },
+ "trusted_reviewer": {
+  "media_id": "4567c36e-5b10-44b8-ba8c-3273ad136398",
+  "accent": "#caaf37",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/dbf1534d-4226-494a-8215-6c864b22e703.jpg"
+ },
+ "first_booking": {
+  "media_id": "523fd17b-9627-402a-bbcf-9600dcad9ab4",
+  "accent": "#ebb04b",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/81449b07-221b-4770-8400-79e8d9f45a9f.jpg"
+ },
+ "partner_professional": {
+  "media_id": "f0ac8559-c009-4a01-ac6c-37be60f8f65d",
+  "accent": "#c08230",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/6e63dca5-73c0-4741-8513-3064624f55dc.jpg"
+ },
+ "package_explorer": {
+  "media_id": "031f696a-1534-4bae-9ed9-fd72c4188c5b",
+  "accent": "#79693f",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/e78c2103-da1e-48cc-8745-1b6bfe924abf.jpg"
+ },
+ "trusted_partner": {
+  "media_id": "6397a63a-caaf-48d5-b01d-cec2549491ad",
+  "accent": "#f49b3d",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/21dc6278-15a9-409d-8e5b-6b39cf557815.jpg"
+ },
+ "lifetime_achievement": {
+  "media_id": "76a63b4f-f759-44ab-8f90-84af7a871f32",
+  "accent": "#c19d5c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/38cc8df8-7dd6-4f65-9d74-78889b4a053a.jpg"
+ },
+ "early_adopter": {
+  "media_id": "b2560272-0eab-45c9-8a17-c1ac17574d0c",
+  "accent": "#c37b39",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/c31bc4ee-00ce-4a3b-8b96-f57c1381dfe2.jpg"
+ },
+ "japa_legend": {
+  "media_id": "af04abac-7303-4ac4-81a1-a086ffcf9fdc",
+  "accent": "#11462f",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/a79b242d-294b-4443-8762-79a97a4b3697.webp"
+ },
+ "trailblazer": {
+  "media_id": "b5e1363d-3309-45ca-a3d5-8cb0724d77c8",
+  "accent": "#183257",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/dac3cba9-22ae-44ba-9958-4962d490941d.jpg"
+ },
+ "change_maker": {
+  "media_id": "a3aa4478-2f79-4f17-9a76-8aca635d212e",
+  "accent": "#bd7e3a",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/59d9d083-b849-4e16-812a-4c70a9c379b3.jpg"
+ },
+ "hall_of_fame": {
+  "media_id": "3cf60c35-cbbe-4c1f-9128-a15a720e5ab5",
+  "accent": "#7a6243",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/7792d187-9333-431e-b16f-8785b810a346.jpg"
+ },
+ "community_hero": {
+  "media_id": "7fad0eba-f8cb-407f-acfc-88451f396493",
+  "accent": "#8f7d02",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/f8969507-1eaa-45b3-8191-26efa36ba0b3.jpg"
+ },
+ "japa_to_champion": {
+  "media_id": "a0e96196-3f10-4e63-80c9-0f7f35b35c38",
+  "accent": "#c37f31",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/c9e82930-037d-4bed-b99b-c5919652179f.jpg"
+ },
+ "outstanding_contributor": {
+  "media_id": "585b693e-c580-4e0b-bddc-49f891a960bc",
+  "accent": "#bf8429",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/26affa91-5eea-4003-b6ff-508fa55cc9d3.jpg"
+ },
+ "global_ambassador": {
+  "media_id": "6c701e47-e30f-4bdc-99d0-050965d2e19d",
+  "accent": "#bc8a31",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/b15a5c87-0e52-4f8a-9c18-56e59b23112c.jpg"
+ },
+ "founding_member": {
+  "media_id": "e3ec6ff0-d9b1-44b0-8877-b94b1db8aa6e",
+  "accent": "#9c56d4",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/2fd3ab02-0c93-4624-bdfc-2619f4e90da9.jpg"
+ },
+ "border_crosser": {
+  "media_id": "eb950d1e-8ee5-4be0-8e70-72692e2ddefd",
+  "accent": "#ca9666",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/95655704-9ec0-4f4a-aa76-839b07aa8104.jpg"
+ },
+ "settling_in": {
+  "media_id": "65f833bd-16c9-47d4-b9d1-378a0e2f92fa",
+  "accent": "#e2b96c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/d0b6775f-69da-44ed-94ea-5f91d25b8f14.jpg"
+ },
+ "hotel_explorer": {
+  "media_id": "03a532fc-6038-4824-9f29-aeeefd510795",
+  "accent": "#c3a461",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/1e8a1c45-04b8-466d-9d5e-c561c0faa913.jpg"
+ },
+ "flight_hunter": {
+  "media_id": "25ac2811-6095-4033-a16f-62b663df64b1",
+  "accent": "#ad933d",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/1e443d01-c02e-4985-8d96-d309e2963b90.jpg"
+ },
+ "frequent_traveller": {
+  "media_id": "9515aefc-2506-4b37-9a1e-1aa229c9e837",
+  "accent": "#8e7f76",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/bfa80543-5485-4897-902c-66d51ea49cf3.webp"
+ },
+ "travel_curious": {
+  "media_id": "e91dd990-a38a-489f-8189-9da8e5ee0f1a",
+  "accent": "#bd91d5",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/e3191a7c-ec88-45b5-8dc4-1fd837956168.jpg"
+ },
+ "global_traveller": {
+  "media_id": "aabb335c-0e93-4216-849c-8687466dcc56",
+  "accent": "#b18d2b",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/23798048-672a-4cee-9f41-54252c75d39c.jpg"
+ },
+ "new_home": {
+  "media_id": "e98511e3-e5d1-477c-ab1c-5f06a930f232",
+  "accent": "#8b4544",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/610437bd-bab9-4e99-a32d-398b080f8da7.jpg"
+ },
+ "verified_watchdog": {
+  "media_id": "64dd7f70-9d67-4be6-b5dd-62d6cb65b107",
+  "accent": "#804e03",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/ecbe14bf-409b-4bf7-bcb8-7a0f0f560358.jpg"
+ },
+ "scam_spotter": {
+  "media_id": "cc1b58c0-d613-43ab-a3f1-02d35a900bf7",
+  "accent": "#b5a70b",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/9a59cbda-0fa8-4a6f-9da3-63957278c89d.jpg"
+ },
+ "verified_identity": {
+  "media_id": "15d30f7f-0e3b-4f3a-afe2-0162b16d3f1c",
+  "accent": "#ebae46",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/377d8a36-f3e4-4a08-8d90-b28627b64531.jpg"
+ },
+ "community_protector": {
+  "media_id": "040b7f54-ab20-4e7c-9491-dbd2a1c09f07",
+  "accent": "#ecaa39",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/deb8c84f-210a-4b03-90de-1ff7ee55a224.jpg"
+ },
+ "first_alert": {
+  "media_id": "eb150ff0-a804-4162-b387-8787707e6112",
+  "accent": "#f4b347",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/39280342-c194-4f09-827a-d1bc77e4422c.jpg"
+ },
+ "digital_guardian": {
+  "media_id": "ca281cab-bae5-4694-b4b8-a655a74ed806",
+  "accent": "#c19e59",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/de1f234a-5d75-474b-9234-34a97edffc79.jpg"
+ },
+ "guardian_of_community": {
+  "media_id": "accee6e6-1528-4888-9707-6d6a1ebee7f8",
+  "accent": "#8f7d02",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/6e9b9417-46b4-45ff-9895-ff7be64ef245.jpg"
+ },
+ "community_guardian": {
+  "media_id": "9b7fd20b-f8a2-479c-9669-e0639b10c4cd",
+  "accent": "#c48e06",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/b352aa2e-1ba4-48db-98f5-4c8e4f3a833c.jpg"
+ },
+ "responsible_member": {
+  "media_id": "cb214d99-d930-4a0e-8337-afef93684eaa",
+  "accent": "#ab7a2c",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/51bd1948-f634-47a2-8dcb-3cbe8c6d9492.jpg"
+ },
+ "alert_contributor": {
+  "media_id": "d7d25901-dc2a-4498-8f24-3d08128b45fe",
+  "accent": "#cfad04",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/3bdf6d84-33d7-4022-b53f-710e41f3613e.jpg"
+ },
+ "scam_investigator": {
+  "media_id": "950ca4e4-ba4b-4820-ac78-691a9ae21fe1",
+  "accent": "#bb953b",
+  "url": "https://api.japa.to/api/v1/media/serve/japaconnect/temp/72bab902-45f4-494d-a6b3-ddbd1a938dde.jpg"
+ },
+ "space_explorer": {
+  "media_id": "c3e32f0f-13be-4c09-877f-c71bf4dc7e90",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "community_voice": {
+  "media_id": "d417b13d-5a3a-442e-834a-b54e570b61f9",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "picture_perfect": {
+  "media_id": "00489beb-6017-45d3-8a55-8ba386a76575",
+  "accent": "#059669",
+  "generated": true,
+  "glyph": true
+ },
+ "voice_of_identity": {
+  "media_id": "631c5579-6805-44b0-bcc7-b577f899b627",
+  "accent": "#059669",
+  "generated": true,
+  "glyph": true
+ },
+ "social_links": {
+  "media_id": "f33a5d2d-632d-4c30-9966-2c3c294e8b12",
+  "accent": "#059669",
+  "generated": true,
+  "glyph": true
+ },
+ "email_verified": {
+  "media_id": "ec3a97ee-c24f-449a-bcb6-1e24be9242c9",
+  "accent": "#059669",
+  "generated": true,
+  "glyph": true
+ },
+ "phone_verified": {
+  "media_id": "6ea2be2f-95ba-4f06-941a-269bc84bf508",
+  "accent": "#059669",
+  "generated": true,
+  "glyph": true
+ },
+ "verified_member": {
+  "media_id": "e52cbfe6-8a69-4542-bd10-1e24c85825ad",
+  "accent": "#059669",
+  "generated": true,
+  "glyph": true
+ },
+ "strategic_planner": {
+  "media_id": "c6a05ce2-d942-4de0-a00e-1f741720bf08",
+  "accent": "#7c3aed",
+  "generated": true,
+  "glyph": true
+ },
+ "goal_setter": {
+  "media_id": "a33d21a9-0868-4eb2-a93f-8053443ffff1",
+  "accent": "#7c3aed",
+  "generated": true,
+  "glyph": true
+ },
+ "japa_strategist": {
+  "media_id": "6528663f-6900-4598-b08d-ad9d087b3b99",
+  "accent": "#7c3aed",
+  "generated": true,
+  "glyph": true
+ },
+ "mission_accomplished": {
+  "media_id": "5b0085cb-2f91-4a23-8669-8ee37962b999",
+  "accent": "#7c3aed",
+  "generated": true,
+  "glyph": true
+ },
+ "first_destination": {
+  "media_id": "1d3a19a0-f142-4ce3-be02-0055fe8a841e",
+  "accent": "#0d9488",
+  "generated": true,
+  "glyph": true
+ },
+ "waiting_game": {
+  "media_id": "b2827c22-2c96-43a5-b92c-b328f70d490a",
+  "accent": "#0d9488",
+  "generated": true,
+  "glyph": true
+ },
+ "boarding_pass": {
+  "media_id": "643bf21c-2db1-4a91-9769-38a61a45ada6",
+  "accent": "#0d9488",
+  "generated": true,
+  "glyph": true
+ },
+ "new_beginnings": {
+  "media_id": "c1df28d3-2f21-4f6e-837d-54c39be2d3fd",
+  "accent": "#0d9488",
+  "generated": true,
+  "glyph": true
+ },
+ "settled_abroad": {
+  "media_id": "83b2043f-21b0-4a14-b704-0de63351b826",
+  "accent": "#0d9488",
+  "generated": true,
+  "glyph": true
+ },
+ "interview_champion": {
+  "media_id": "26e48b84-e026-455d-946c-0ea5d740e94c",
+  "accent": "#d97706",
+  "generated": true,
+  "glyph": true
+ },
+ "social_butterfly": {
+  "media_id": "73384e3c-2b1f-4cf0-80e4-40e489a7d1b3",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "community_regular": {
+  "media_id": "5123a200-133b-4597-8414-155148542fe3",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "conversation_starter": {
+  "media_id": "537da962-144c-4d02-9cd7-e6c940020dab",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "people_person": {
+  "media_id": "18bd8a87-46a7-429d-b649-c58487fc6feb",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "guide_creator": {
+  "media_id": "d9f2c811-65d0-4430-92b9-ef86108c8175",
+  "accent": "#65a30d",
+  "generated": true,
+  "glyph": true
+ },
+ "information_architect": {
+  "media_id": "43c24d88-fea6-4bb7-9883-8dd2edbaa464",
+  "accent": "#65a30d",
+  "generated": true,
+  "glyph": true
+ },
+ "trusted_contributor": {
+  "media_id": "9e022d1f-55ad-4b4c-80aa-0b1d156ec894",
+  "accent": "#65a30d",
+  "generated": true,
+  "glyph": true
+ },
+ "community_educator": {
+  "media_id": "c70c3cfa-27c9-4113-9e36-8904378a44fc",
+  "accent": "#65a30d",
+  "generated": true,
+  "glyph": true
+ },
+ "first_discussion": {
+  "media_id": "9a10759c-5e1d-4190-b405-b19b901d6a51",
+  "accent": "#0284c7",
+  "generated": true,
+  "glyph": true
+ },
+ "helpful_member": {
+  "media_id": "2c1ed0f0-1043-446d-8023-d756735cd343",
+  "accent": "#0284c7",
+  "generated": true,
+  "glyph": true
+ },
+ "helpful_voice": {
+  "media_id": "89d342c2-bd51-4655-b596-0cc698918647",
+  "accent": "#0284c7",
+  "generated": true,
+  "glyph": true
+ },
+ "answer_champion": {
+  "media_id": "cd2a3b52-73c6-421c-95d8-ef50a959fd2e",
+  "accent": "#0284c7",
+  "generated": true,
+  "glyph": true
+ },
+ "japa_champion": {
+  "media_id": "0fbe1aac-6da8-45d8-88f8-ecf8da1a2061",
+  "accent": "#0284c7",
+  "generated": true,
+  "glyph": true
+ },
+ "poll_participant": {
+  "media_id": "8351a8c4-aae5-43fb-a206-5b74bb9790f8",
+  "accent": "#0284c7",
+  "generated": true,
+  "glyph": true
+ },
+ "opinion_leader": {
+  "media_id": "07837498-e78c-4869-a682-f8aec83949a3",
+  "accent": "#0284c7",
+  "generated": true,
+  "glyph": true
+ },
+ "guidance_seeker": {
+  "media_id": "73bb33b0-fb8e-4092-995e-6f64fae83ac1",
+  "accent": "#e11d48",
+  "generated": true,
+  "glyph": true
+ },
+ "mentor_in_training": {
+  "media_id": "822cb31a-4487-49f1-940c-8d22276ed6f9",
+  "accent": "#e11d48",
+  "generated": true,
+  "glyph": true
+ },
+ "transformational_mentor": {
+  "media_id": "bc8b98c0-1eda-4041-a466-d60b568e7edc",
+  "accent": "#e11d48",
+  "generated": true,
+  "glyph": true
+ },
+ "budget_master": {
+  "media_id": "ba15fb95-43cb-4cda-a72d-f3a5abac8ef8",
+  "accent": "#ca8a04",
+  "generated": true,
+  "glyph": true
+ },
+ "travel_planner": {
+  "media_id": "651135cd-de7b-4ded-a474-68ad3917440a",
+  "accent": "#2563eb",
+  "generated": true,
+  "glyph": true
+ },
+ "travel_ready": {
+  "media_id": "2f0c06ed-d84e-499b-97e6-6bc1ec7efcc1",
+  "accent": "#2563eb",
+  "generated": true,
+  "glyph": true
+ },
+ "local_explorer": {
+  "media_id": "e562ac88-18db-40c9-89a4-bd5af3872cbb",
+  "accent": "#2563eb",
+  "generated": true,
+  "glyph": true
+ },
+ "safety_advocate": {
+  "media_id": "6ffb05f8-4663-4d55-922c-37d9b8faf3af",
+  "accent": "#15803d",
+  "generated": true,
+  "glyph": true
+ },
+ "trust_builder": {
+  "media_id": "be568a81-dc8a-4d4a-966e-75ee43cf8974",
+  "accent": "#15803d",
+  "generated": true,
+  "glyph": true
+ },
+ "half_year_hero": {
+  "media_id": "ef56505b-606f-42d5-ba00-d05d98200e64",
+  "accent": "#ea580c",
+  "generated": true,
+  "glyph": true
+ },
+ "year_of_dedication": {
+  "media_id": "c80cb46b-e5e4-47c0-95e0-f90045fe8a46",
+  "accent": "#ea580c",
+  "generated": true,
+  "glyph": true
+ },
+ "challenge_champion": {
+  "media_id": "20986e67-9d6e-46ac-9d02-7a73f99e8c6b",
+  "accent": "#ea580c",
+  "generated": true,
+  "glyph": true
+ },
+ "challenge_legend": {
+  "media_id": "8c642099-a376-4bcb-a2ec-f9770f266efd",
+  "accent": "#ea580c",
+  "generated": true,
+  "glyph": true
+ },
+ "comeback_kid": {
+  "media_id": "1416f9fc-ccba-4a0c-83cc-e97e2f9c505f",
+  "accent": "#ea580c",
+  "generated": true,
+  "glyph": true
+ },
+ "never_give_up": {
+  "media_id": "907081a8-faf7-4375-babc-31ba9a6067dd",
+  "accent": "#ea580c",
+  "generated": true,
+  "glyph": true
+ },
+ "smart_planner": {
+  "media_id": "5a3db63e-9dd7-48cb-8bf8-db8cf3f49c59",
+  "accent": "#0891b2",
+  "generated": true,
+  "glyph": true
+ },
+ "comparison_rookie": {
+  "media_id": "360b0077-229e-40b5-ad38-f07d80d52108",
+  "accent": "#0891b2",
+  "generated": true,
+  "glyph": true
+ },
+ "decision_maker": {
+  "media_id": "07627468-d95b-4f8b-a5c3-e0b89cb1724f",
+  "accent": "#0891b2",
+  "generated": true,
+  "glyph": true
+ },
+ "destination_analyst": {
+  "media_id": "30d0daa3-0cfc-496b-865b-81a243109c73",
+  "accent": "#0891b2",
+  "generated": true,
+  "glyph": true
+ },
+ "city_analyst": {
+  "media_id": "a0397e80-6ca5-4002-9964-8a2898b2cb68",
+  "accent": "#0891b2",
+  "generated": true,
+  "glyph": true
+ },
+ "comparison_expert": {
+  "media_id": "072d6173-c672-4682-a992-d869cf6613bb",
+  "accent": "#0891b2",
+  "generated": true,
+  "glyph": true
+ },
+ "ultimate_comparator": {
+  "media_id": "e55a3af1-0a55-4690-946b-e5da57b79c7d",
+  "accent": "#0891b2",
+  "generated": true,
+  "glyph": true
+ },
+ "first_lesson": {
+  "media_id": "d51ebd5a-c469-440c-8532-9d62c306df70",
+  "accent": "#6366f1",
+  "generated": true,
+  "glyph": true
+ },
+ "avid_learner": {
+  "media_id": "75e6b788-a202-4eb0-94a4-6c6e6495ae95",
+  "accent": "#6366f1",
+  "generated": true,
+  "glyph": true
+ },
+ "dedicated_student": {
+  "media_id": "4563d98e-bac7-4c09-9d30-ebea88d2960a",
+  "accent": "#6366f1",
+  "generated": true,
+  "glyph": true
+ },
+ "quiz_master": {
+  "media_id": "af52e66f-bd9c-4df9-b1ac-5cce700c875c",
+  "accent": "#6366f1",
+  "generated": true,
+  "glyph": true
+ },
+ "perfect_score": {
+  "media_id": "61b78f66-adbc-4e28-b73a-42042e26b407",
+  "accent": "#6366f1",
+  "generated": true,
+  "glyph": true
+ },
+ "learning_champion": {
+  "media_id": "80f33cd7-ca9e-4841-8445-90c3e508c4ee",
+  "accent": "#6366f1",
+  "generated": true,
+  "glyph": true
+ },
+ "academy_graduate": {
+  "media_id": "7c10ceb1-8f78-4d32-b2be-c0995481c78a",
+  "accent": "#6366f1",
+  "generated": true,
+  "glyph": true
+ },
+ "lifelong_learner": {
+  "media_id": "56592917-c934-4824-889a-7c376283b9fb",
+  "accent": "#6366f1",
+  "generated": true,
+  "glyph": true
+ },
+ "group_starter": {
+  "media_id": "c96086e7-03e3-4a0b-b08f-1f2f66caf978",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "space_founder": {
+  "media_id": "b1ae9855-41bf-4be9-8850-e9ccf9bd38a3",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "group_organizer": {
+  "media_id": "e24923e1-5171-47a9-9655-20dcf46d7587",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "event_participant": {
+  "media_id": "e3636d9d-e1c7-439d-b262-4b6036d868e3",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "active_participant": {
+  "media_id": "59ccfdfe-db1a-4452-9423-7ef00e2e69d3",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "community_host": {
+  "media_id": "a9d6771a-baa1-4759-8d9d-74ad634fb912",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "space_leader": {
+  "media_id": "406cc6c2-1ff8-42c4-8b79-d710789b0058",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "community_builder": {
+  "media_id": "e42f7a7d-ee18-4e36-9f08-cf349e77ea35",
+  "accent": "#3b82f6",
+  "generated": true,
+  "glyph": true
+ },
+ "home_seeker": {
+  "media_id": "b4385ee4-8a8c-4690-8642-c3b8701bfe3c",
+  "accent": "#d97706",
+  "generated": true,
+  "glyph": true
+ },
+ "housing_hunter": {
+  "media_id": "4e95c348-62a7-4706-9f0e-33bc26893b93",
+  "accent": "#d97706",
+  "generated": true,
+  "glyph": true
+ },
+ "neighbourhood_explorer": {
+  "media_id": "70eedbd9-e1a9-4ef5-b05d-8c084bb0bd59",
+  "accent": "#d97706",
+  "generated": true,
+  "glyph": true
+ },
+ "rental_ready": {
+  "media_id": "31eaffb5-06d4-4686-a558-9fe1ecb596ba",
+  "accent": "#d97706",
+  "generated": true,
+  "glyph": true
+ },
+ "first_home": {
+  "media_id": "abc8d868-e742-4d3a-8643-cbd4cebc4c83",
+  "accent": "#d97706",
+  "generated": true,
+  "glyph": true
+ },
+ "settlement_specialist": {
+  "media_id": "255f7731-4883-4035-92e8-8fe799bf0fb5",
+  "accent": "#d97706",
+  "generated": true,
+  "glyph": true
+ },
+ "home_sweet_home": {
+  "media_id": "d2b86cfb-f342-4199-b8e2-4810908c9a9a",
+  "accent": "#d97706",
+  "generated": true,
+  "glyph": true
+ },
+ "document_explorer": {
+  "media_id": "0d7191ee-fd05-44c4-8e16-74127eeface0",
+  "accent": "#0f766e",
+  "generated": true,
+  "glyph": true
+ },
+ "first_attestation": {
+  "media_id": "2e64068f-503a-4338-9827-eb68dc01cbd8",
+  "accent": "#0f766e",
+  "generated": true,
+  "glyph": true
+ },
+ "document_detective": {
+  "media_id": "8acbfeca-325e-4334-9705-316eee61fb56",
+  "accent": "#0f766e",
+  "generated": true,
+  "glyph": true
+ },
+ "verification_pro": {
+  "media_id": "8728260b-1fb4-41a5-b1cd-29ea06762f4d",
+  "accent": "#0f766e",
+  "generated": true,
+  "glyph": true
+ },
+ "paperwork_champion": {
+  "media_id": "bd25de5f-175a-4f78-b2a5-da5547c2b9dc",
+  "accent": "#0f766e",
+  "generated": true,
+  "glyph": true
+ },
+ "ai_explorer": {
+  "media_id": "8bf32a20-8cdc-422b-9000-a25d70766424",
+  "accent": "#8b5cf6",
+  "generated": true,
+  "glyph": true
+ },
+ "ai_inquisitive": {
+  "media_id": "0e08fdb5-d141-4042-a3f2-01f0544bbbb6",
+  "accent": "#8b5cf6",
+  "generated": true,
+  "glyph": true
+ },
+ "ai_researcher": {
+  "media_id": "5ae721fc-9b1e-4a16-8424-c4aac718a41a",
+  "accent": "#8b5cf6",
+  "generated": true,
+  "glyph": true
+ },
+ "ai_smart_planner": {
+  "media_id": "c6eeef1b-f66c-4754-b0e7-146c9f93fc12",
+  "accent": "#8b5cf6",
+  "generated": true,
+  "glyph": true
+ },
+ "ai_collaborator": {
+  "media_id": "985b9801-8308-4c87-98fd-3c6fcf8831c8",
+  "accent": "#8b5cf6",
+  "generated": true,
+  "glyph": true
+ },
+ "digital_strategist": {
+  "media_id": "0a4d9f94-3e88-4dc9-99f4-e36be404d381",
+  "accent": "#8b5cf6",
+  "generated": true,
+  "glyph": true
+ },
+ "first_referral": {
+  "media_id": "9b0c0bad-ac3e-4134-bc46-17ca7ee5ae7a",
+  "accent": "#16a34a",
+  "generated": true,
+  "glyph": true
+ },
+ "referral_champion": {
+  "media_id": "9dc91db0-966f-460f-8b55-f2211c1c4579",
+  "accent": "#16a34a",
+  "generated": true,
+  "glyph": true
+ },
+ "growth_ambassador": {
+  "media_id": "33d584a9-e4c6-441a-9df6-395c83c0036e",
+  "accent": "#16a34a",
+  "generated": true,
+  "glyph": true
+ },
+ "network_champion": {
+  "media_id": "1ffd1336-d04c-4781-a1a6-6eed59de0a72",
+  "accent": "#16a34a",
+  "generated": true,
+  "glyph": true
+ },
+ "community_recruiter": {
+  "media_id": "e582f0a0-c9e1-41a8-9df1-b0b3d7c36811",
+  "accent": "#16a34a",
+  "generated": true,
+  "glyph": true
+ },
+ "growth_legend": {
+  "media_id": "30bff506-9be8-4ebd-b089-33c899ab23be",
+  "accent": "#16a34a",
+  "generated": true,
+  "glyph": true
+ }
+}

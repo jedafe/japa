@@ -1,0 +1,667 @@
+[
+ {
+  "slug": "space_explorer",
+  "badge_id": "eef6cd6d-388f-41c0-aec1-662deb240a61",
+  "file": "gen2/space_explorer.png",
+  "accent": "#3b82f6",
+  "icon": "orbit"
+ },
+ {
+  "slug": "community_voice",
+  "badge_id": "dd1a3eff-fb2d-45df-b312-22bc25869e23",
+  "file": "gen2/community_voice.png",
+  "accent": "#3b82f6",
+  "icon": "megaphone"
+ },
+ {
+  "slug": "picture_perfect",
+  "badge_id": "893722c9-14ca-4651-81d6-4a351ce4671b",
+  "file": "gen2/picture_perfect.png",
+  "accent": "#059669",
+  "icon": "camera"
+ },
+ {
+  "slug": "voice_of_identity",
+  "badge_id": "8eb68972-6082-4462-9573-e205518dfbc7",
+  "file": "gen2/voice_of_identity.png",
+  "accent": "#059669",
+  "icon": "feather"
+ },
+ {
+  "slug": "social_links",
+  "badge_id": "384afbc2-f051-40a8-8ee6-a9f2af34acad",
+  "file": "gen2/social_links.png",
+  "accent": "#059669",
+  "icon": "link-2"
+ },
+ {
+  "slug": "email_verified",
+  "badge_id": "de54d642-3e4d-43c2-92ef-ab749a652d56",
+  "file": "gen2/email_verified.png",
+  "accent": "#059669",
+  "icon": "mail-check"
+ },
+ {
+  "slug": "phone_verified",
+  "badge_id": "abd211ed-9ee8-404b-9c34-5ee1cd61aa35",
+  "file": "gen2/phone_verified.png",
+  "accent": "#059669",
+  "icon": "smartphone"
+ },
+ {
+  "slug": "verified_member",
+  "badge_id": "4cc53b3f-afa0-4b2a-a192-7d5fc6ffcd51",
+  "file": "gen2/verified_member.png",
+  "accent": "#059669",
+  "icon": "badge-check"
+ },
+ {
+  "slug": "strategic_planner",
+  "badge_id": "c0c1be72-a50c-4467-b850-f972ca9e1c89",
+  "file": "gen2/strategic_planner.png",
+  "accent": "#7c3aed",
+  "icon": "route"
+ },
+ {
+  "slug": "goal_setter",
+  "badge_id": "de59e095-055a-4401-8a41-a2ca22a406d8",
+  "file": "gen2/goal_setter.png",
+  "accent": "#7c3aed",
+  "icon": "target"
+ },
+ {
+  "slug": "japa_strategist",
+  "badge_id": "db2631e0-b55d-41b4-bd2a-7bd1d60b0d04",
+  "file": "gen2/japa_strategist.png",
+  "accent": "#7c3aed",
+  "icon": "waypoints"
+ },
+ {
+  "slug": "mission_accomplished",
+  "badge_id": "c98ad730-801a-42aa-ba9a-3be8101ffa67",
+  "file": "gen2/mission_accomplished.png",
+  "accent": "#7c3aed",
+  "icon": "flag"
+ },
+ {
+  "slug": "first_destination",
+  "badge_id": "61052da5-b307-45f3-9a48-6efeac3e4bac",
+  "file": "gen2/first_destination.png",
+  "accent": "#0d9488",
+  "icon": "map-pin"
+ },
+ {
+  "slug": "waiting_game",
+  "badge_id": "b5ce18a2-277f-44d2-bd52-1e9510ac4262",
+  "file": "gen2/waiting_game.png",
+  "accent": "#0d9488",
+  "icon": "hourglass"
+ },
+ {
+  "slug": "boarding_pass",
+  "badge_id": "ce7a39fd-e9b2-41ac-98b9-5645fe3fe790",
+  "file": "gen2/boarding_pass.png",
+  "accent": "#0d9488",
+  "icon": "plane"
+ },
+ {
+  "slug": "new_beginnings",
+  "badge_id": "0564850b-8da1-424d-835a-2b224edeab6c",
+  "file": "gen2/new_beginnings.png",
+  "accent": "#0d9488",
+  "icon": "sunrise"
+ },
+ {
+  "slug": "settled_abroad",
+  "badge_id": "4906162a-ea2a-4d1f-82b5-b1d346919ccd",
+  "file": "gen2/settled_abroad.png",
+  "accent": "#0d9488",
+  "icon": "anchor"
+ },
+ {
+  "slug": "interview_champion",
+  "badge_id": "f6805b62-e5f3-4de6-99af-48f3af557f71",
+  "file": "gen2/interview_champion.png",
+  "accent": "#d97706",
+  "icon": "mic"
+ },
+ {
+  "slug": "social_butterfly",
+  "badge_id": "75a22255-48c4-448b-9008-64c394595163",
+  "file": "gen2/social_butterfly.png",
+  "accent": "#3b82f6",
+  "icon": "share-2"
+ },
+ {
+  "slug": "community_regular",
+  "badge_id": "0f85bb66-1e6a-49e5-9fa5-23532c4a3f5a",
+  "file": "gen2/community_regular.png",
+  "accent": "#3b82f6",
+  "icon": "repeat"
+ },
+ {
+  "slug": "conversation_starter",
+  "badge_id": "1eb6a95c-5780-400b-bc3c-ee713ce048dd",
+  "file": "gen2/conversation_starter.png",
+  "accent": "#3b82f6",
+  "icon": "message-circle-plus"
+ },
+ {
+  "slug": "people_person",
+  "badge_id": "29749c09-00a8-4c7e-8adf-9efcf8c3213d",
+  "file": "gen2/people_person.png",
+  "accent": "#3b82f6",
+  "icon": "heart-handshake"
+ },
+ {
+  "slug": "guide_creator",
+  "badge_id": "7b9177eb-dfcf-4cfd-a22e-eab1e5b6cfad",
+  "file": "gen2/guide_creator.png",
+  "accent": "#65a30d",
+  "icon": "notebook-pen"
+ },
+ {
+  "slug": "information_architect",
+  "badge_id": "ef8d0580-420f-4e5a-a025-201c24805f40",
+  "file": "gen2/information_architect.png",
+  "accent": "#65a30d",
+  "icon": "library-big"
+ },
+ {
+  "slug": "trusted_contributor",
+  "badge_id": "f153ddbd-a69f-45f7-97d8-a674b186c555",
+  "file": "gen2/trusted_contributor.png",
+  "accent": "#65a30d",
+  "icon": "pen-tool"
+ },
+ {
+  "slug": "community_educator",
+  "badge_id": "6f9c0024-1a89-4385-9348-08da9a1ea87f",
+  "file": "gen2/community_educator.png",
+  "accent": "#65a30d",
+  "icon": "school"
+ },
+ {
+  "slug": "first_discussion",
+  "badge_id": "397214d7-627f-4eee-b952-4de1effc36ac",
+  "file": "gen2/first_discussion.png",
+  "accent": "#0284c7",
+  "icon": "message-square-plus"
+ },
+ {
+  "slug": "helpful_member",
+  "badge_id": "67ad230f-64a2-45dd-95ed-7632e6fc574d",
+  "file": "gen2/helpful_member.png",
+  "accent": "#0284c7",
+  "icon": "hand-helping"
+ },
+ {
+  "slug": "helpful_voice",
+  "badge_id": "2198a044-b40e-4009-824d-73a0ec30a6be",
+  "file": "gen2/helpful_voice.png",
+  "accent": "#0284c7",
+  "icon": "speech"
+ },
+ {
+  "slug": "answer_champion",
+  "badge_id": "f24eed85-7d07-4779-919d-493906ff3351",
+  "file": "gen2/answer_champion.png",
+  "accent": "#0284c7",
+  "icon": "circle-check-big"
+ },
+ {
+  "slug": "japa_champion",
+  "badge_id": "016905f4-d78a-4a90-a6a1-c3fb169e73bd",
+  "file": "gen2/japa_champion.png",
+  "accent": "#0284c7",
+  "icon": "award"
+ },
+ {
+  "slug": "poll_participant",
+  "badge_id": "d9d3fc10-be18-4755-8a4c-a35a85516bb3",
+  "file": "gen2/poll_participant.png",
+  "accent": "#0284c7",
+  "icon": "vote"
+ },
+ {
+  "slug": "opinion_leader",
+  "badge_id": "e7011376-a9ef-4953-af21-f5fbadea4a76",
+  "file": "gen2/opinion_leader.png",
+  "accent": "#0284c7",
+  "icon": "speech"
+ },
+ {
+  "slug": "guidance_seeker",
+  "badge_id": "00a14226-4651-43fe-8adf-4c8e6888bce4",
+  "file": "gen2/guidance_seeker.png",
+  "accent": "#e11d48",
+  "icon": "compass"
+ },
+ {
+  "slug": "mentor_in_training",
+  "badge_id": "7c906100-7b8a-486d-9b85-7ff6dbe366c4",
+  "file": "gen2/mentor_in_training.png",
+  "accent": "#e11d48",
+  "icon": "graduation-cap"
+ },
+ {
+  "slug": "transformational_mentor",
+  "badge_id": "f2e2f975-10fd-44b5-8f4b-2ca729b9ea2f",
+  "file": "gen2/transformational_mentor.png",
+  "accent": "#e11d48",
+  "icon": "sparkles"
+ },
+ {
+  "slug": "budget_master",
+  "badge_id": "e01e337c-561d-4e58-a81d-885b2937c9e9",
+  "file": "gen2/budget_master.png",
+  "accent": "#ca8a04",
+  "icon": "calculator"
+ },
+ {
+  "slug": "travel_planner",
+  "badge_id": "60b18481-7e75-4978-9ca5-bd7a9663f200",
+  "file": "gen2/travel_planner.png",
+  "accent": "#2563eb",
+  "icon": "map"
+ },
+ {
+  "slug": "travel_ready",
+  "badge_id": "c8102cc1-6af1-4277-a71a-f3bcdede54c8",
+  "file": "gen2/travel_ready.png",
+  "accent": "#2563eb",
+  "icon": "luggage"
+ },
+ {
+  "slug": "local_explorer",
+  "badge_id": "902945af-da52-435e-8ae1-dfd63d183ac0",
+  "file": "gen2/local_explorer.png",
+  "accent": "#2563eb",
+  "icon": "footprints"
+ },
+ {
+  "slug": "safety_advocate",
+  "badge_id": "dcd922f2-fdb1-4261-936e-37b72f7da237",
+  "file": "gen2/safety_advocate.png",
+  "accent": "#15803d",
+  "icon": "shield"
+ },
+ {
+  "slug": "trust_builder",
+  "badge_id": "fc4d1842-1f8f-4df9-8951-182028713a25",
+  "file": "gen2/trust_builder.png",
+  "accent": "#15803d",
+  "icon": "shield-plus"
+ },
+ {
+  "slug": "half_year_hero",
+  "badge_id": "ddda5fdc-7e9b-46b2-8449-e52f980442d8",
+  "file": "gen2/half_year_hero.png",
+  "accent": "#ea580c",
+  "icon": "flame-kindling"
+ },
+ {
+  "slug": "year_of_dedication",
+  "badge_id": "1460308a-f805-4de9-ac4b-7616b5888ec0",
+  "file": "gen2/year_of_dedication.png",
+  "accent": "#ea580c",
+  "icon": "medal"
+ },
+ {
+  "slug": "challenge_champion",
+  "badge_id": "f79d7281-ab61-4dc9-9cf0-6efef86d3bf4",
+  "file": "gen2/challenge_champion.png",
+  "accent": "#ea580c",
+  "icon": "trophy"
+ },
+ {
+  "slug": "challenge_legend",
+  "badge_id": "dbab0de4-5e24-4851-a861-131113a6f8a4",
+  "file": "gen2/challenge_legend.png",
+  "accent": "#ea580c",
+  "icon": "crown"
+ },
+ {
+  "slug": "comeback_kid",
+  "badge_id": "220125fe-9f0d-42af-af68-c7596368c143",
+  "file": "gen2/comeback_kid.png",
+  "accent": "#ea580c",
+  "icon": "undo-2"
+ },
+ {
+  "slug": "never_give_up",
+  "badge_id": "fdd0a30d-3928-4420-9ac4-6c016b7f5de0",
+  "file": "gen2/never_give_up.png",
+  "accent": "#ea580c",
+  "icon": "mountain"
+ },
+ {
+  "slug": "smart_planner",
+  "badge_id": "e2cbee9e-7235-483f-a768-62b818b89a01",
+  "file": "gen2/smart_planner.png",
+  "accent": "#0891b2",
+  "icon": "git-compare-arrows"
+ },
+ {
+  "slug": "comparison_rookie",
+  "badge_id": "6750e113-2e0d-46a9-acf2-da6eed2685dc",
+  "file": "gen2/comparison_rookie.png",
+  "accent": "#0891b2",
+  "icon": "git-compare"
+ },
+ {
+  "slug": "decision_maker",
+  "badge_id": "d979fc5d-b3a7-452f-8bac-10f9647e3b05",
+  "file": "gen2/decision_maker.png",
+  "accent": "#0891b2",
+  "icon": "check-check"
+ },
+ {
+  "slug": "destination_analyst",
+  "badge_id": "14f08c32-0072-49be-a391-aa4a872c1067",
+  "file": "gen2/destination_analyst.png",
+  "accent": "#0891b2",
+  "icon": "chart-column"
+ },
+ {
+  "slug": "city_analyst",
+  "badge_id": "b55795f9-4252-4fb0-9d49-11f48714b1d7",
+  "file": "gen2/city_analyst.png",
+  "accent": "#0891b2",
+  "icon": "building-2"
+ },
+ {
+  "slug": "comparison_expert",
+  "badge_id": "4d5e78eb-62f6-4a9f-b0c2-1d34a8f11031",
+  "file": "gen2/comparison_expert.png",
+  "accent": "#0891b2",
+  "icon": "scale"
+ },
+ {
+  "slug": "ultimate_comparator",
+  "badge_id": "eff518b5-c87b-49b9-b08a-5d80b0cdfc97",
+  "file": "gen2/ultimate_comparator.png",
+  "accent": "#0891b2",
+  "icon": "trophy"
+ },
+ {
+  "slug": "first_lesson",
+  "badge_id": "a6219dfa-9b5c-4d39-9f9f-ceb94f6bd4c1",
+  "file": "gen2/first_lesson.png",
+  "accent": "#6366f1",
+  "icon": "book-open"
+ },
+ {
+  "slug": "avid_learner",
+  "badge_id": "7b26eeea-0316-4e09-bac6-9cfed23e673c",
+  "file": "gen2/avid_learner.png",
+  "accent": "#6366f1",
+  "icon": "book-marked"
+ },
+ {
+  "slug": "dedicated_student",
+  "badge_id": "d98f35f5-7c02-4923-a912-f6f0a520e2c3",
+  "file": "gen2/dedicated_student.png",
+  "accent": "#6366f1",
+  "icon": "graduation-cap"
+ },
+ {
+  "slug": "quiz_master",
+  "badge_id": "7945f469-6a37-4ed1-a58b-55506d5b46b3",
+  "file": "gen2/quiz_master.png",
+  "accent": "#6366f1",
+  "icon": "circle-question-mark"
+ },
+ {
+  "slug": "perfect_score",
+  "badge_id": "4a79412b-99aa-4784-baf9-8ff7c006b532",
+  "file": "gen2/perfect_score.png",
+  "accent": "#6366f1",
+  "icon": "star"
+ },
+ {
+  "slug": "learning_champion",
+  "badge_id": "80d71b67-3ecc-41f3-90da-ce8cf682ceee",
+  "file": "gen2/learning_champion.png",
+  "accent": "#6366f1",
+  "icon": "trophy"
+ },
+ {
+  "slug": "academy_graduate",
+  "badge_id": "6fbb829a-9941-4705-8339-a2039ce869e8",
+  "file": "gen2/academy_graduate.png",
+  "accent": "#6366f1",
+  "icon": "award"
+ },
+ {
+  "slug": "lifelong_learner",
+  "badge_id": "7e717c83-2ec2-4caa-96f8-5c3c3a4d3d15",
+  "file": "gen2/lifelong_learner.png",
+  "accent": "#6366f1",
+  "icon": "infinity"
+ },
+ {
+  "slug": "group_starter",
+  "badge_id": "886ce241-77d8-4bb7-ab06-ad85749e67be",
+  "file": "gen2/group_starter.png",
+  "accent": "#3b82f6",
+  "icon": "user-round-plus"
+ },
+ {
+  "slug": "space_founder",
+  "badge_id": "76f7cb90-35c2-4e16-ac66-a450b8faffc8",
+  "file": "gen2/space_founder.png",
+  "accent": "#3b82f6",
+  "icon": "flag"
+ },
+ {
+  "slug": "group_organizer",
+  "badge_id": "0e9f4e06-1ee8-4d16-ab65-488115cd656c",
+  "file": "gen2/group_organizer.png",
+  "accent": "#3b82f6",
+  "icon": "calendar-days"
+ },
+ {
+  "slug": "event_participant",
+  "badge_id": "1dfc9596-d98a-44d9-86e0-c75921784f77",
+  "file": "gen2/event_participant.png",
+  "accent": "#3b82f6",
+  "icon": "ticket"
+ },
+ {
+  "slug": "active_participant",
+  "badge_id": "6c4a4aa0-9d6c-485d-8520-7ff9c60405b6",
+  "file": "gen2/active_participant.png",
+  "accent": "#3b82f6",
+  "icon": "party-popper"
+ },
+ {
+  "slug": "community_host",
+  "badge_id": "8eff4601-5302-4a02-b934-dd041c2f5d61",
+  "file": "gen2/community_host.png",
+  "accent": "#3b82f6",
+  "icon": "mic"
+ },
+ {
+  "slug": "space_leader",
+  "badge_id": "e41003de-450a-4e1a-a364-c6d826e8e45f",
+  "file": "gen2/space_leader.png",
+  "accent": "#3b82f6",
+  "icon": "crown"
+ },
+ {
+  "slug": "community_builder",
+  "badge_id": "2ce41aca-7c17-4b4e-ab9c-9669caa515b5",
+  "file": "gen2/community_builder.png",
+  "accent": "#3b82f6",
+  "icon": "hammer"
+ },
+ {
+  "slug": "home_seeker",
+  "badge_id": "3842990c-f895-4429-987f-759f19cef7c8",
+  "file": "gen2/home_seeker.png",
+  "accent": "#d97706",
+  "icon": "house"
+ },
+ {
+  "slug": "housing_hunter",
+  "badge_id": "8173d8e7-8689-452e-8cbb-b3978a98449a",
+  "file": "gen2/housing_hunter.png",
+  "accent": "#d97706",
+  "icon": "hotel"
+ },
+ {
+  "slug": "neighbourhood_explorer",
+  "badge_id": "add3543d-4fd5-40c9-b99e-11512a055a4a",
+  "file": "gen2/neighbourhood_explorer.png",
+  "accent": "#d97706",
+  "icon": "map-pin-house"
+ },
+ {
+  "slug": "rental_ready",
+  "badge_id": "a31d2cb8-304f-4653-b278-9ee16f4c8104",
+  "file": "gen2/rental_ready.png",
+  "accent": "#d97706",
+  "icon": "key-round"
+ },
+ {
+  "slug": "first_home",
+  "badge_id": "7bed70e0-bf2a-4ad4-9e84-5e155db51c18",
+  "file": "gen2/first_home.png",
+  "accent": "#d97706",
+  "icon": "house-plus"
+ },
+ {
+  "slug": "settlement_specialist",
+  "badge_id": "8610e501-88b0-4081-bfb5-a80b71320bce",
+  "file": "gen2/settlement_specialist.png",
+  "accent": "#d97706",
+  "icon": "clipboard-check"
+ },
+ {
+  "slug": "home_sweet_home",
+  "badge_id": "ba2323d0-83bf-4dfe-bbdb-e813059f5430",
+  "file": "gen2/home_sweet_home.png",
+  "accent": "#d97706",
+  "icon": "heart"
+ },
+ {
+  "slug": "document_explorer",
+  "badge_id": "0b44719c-f239-4eb8-a4dc-81dce531013b",
+  "file": "gen2/document_explorer.png",
+  "accent": "#0f766e",
+  "icon": "file-search"
+ },
+ {
+  "slug": "first_attestation",
+  "badge_id": "0aee9a1a-fc6a-4bc4-8dd9-9938ad481d6f",
+  "file": "gen2/first_attestation.png",
+  "accent": "#0f766e",
+  "icon": "signature"
+ },
+ {
+  "slug": "document_detective",
+  "badge_id": "272f5f2d-fd46-45a8-a1fb-045c3c983e37",
+  "file": "gen2/document_detective.png",
+  "accent": "#0f766e",
+  "icon": "search-check"
+ },
+ {
+  "slug": "verification_pro",
+  "badge_id": "a2f2e685-c444-4ec0-96d8-fee030bc2360",
+  "file": "gen2/verification_pro.png",
+  "accent": "#0f766e",
+  "icon": "file-badge"
+ },
+ {
+  "slug": "paperwork_champion",
+  "badge_id": "8c707a4a-9102-40a7-9f03-16446563aa75",
+  "file": "gen2/paperwork_champion.png",
+  "accent": "#0f766e",
+  "icon": "file-stack"
+ },
+ {
+  "slug": "ai_explorer",
+  "badge_id": "64666455-b7dc-4f33-8c65-20386a0a06b5",
+  "file": "gen2/ai_explorer.png",
+  "accent": "#8b5cf6",
+  "icon": "bot"
+ },
+ {
+  "slug": "ai_inquisitive",
+  "badge_id": "4efe90b8-71e6-4ad9-8552-05fbd027dbcd",
+  "file": "gen2/ai_inquisitive.png",
+  "accent": "#8b5cf6",
+  "icon": "message-circle-question-mark"
+ },
+ {
+  "slug": "ai_researcher",
+  "badge_id": "79bbda97-a76e-4a1b-b9d2-d398414b4e6c",
+  "file": "gen2/ai_researcher.png",
+  "accent": "#8b5cf6",
+  "icon": "scan-search"
+ },
+ {
+  "slug": "ai_smart_planner",
+  "badge_id": "932f946c-6221-4afc-9cee-ad816c59c013",
+  "file": "gen2/ai_smart_planner.png",
+  "accent": "#8b5cf6",
+  "icon": "calendar-cog"
+ },
+ {
+  "slug": "ai_collaborator",
+  "badge_id": "f17b53a9-ff28-4d8c-a7bc-6dd17c82d23d",
+  "file": "gen2/ai_collaborator.png",
+  "accent": "#8b5cf6",
+  "icon": "messages-square"
+ },
+ {
+  "slug": "digital_strategist",
+  "badge_id": "c8989ff0-6c49-4f95-a16d-e9283742673b",
+  "file": "gen2/digital_strategist.png",
+  "accent": "#8b5cf6",
+  "icon": "brain"
+ },
+ {
+  "slug": "first_referral",
+  "badge_id": "3c55da46-0405-430a-830d-9966a08a6277",
+  "file": "gen2/first_referral.png",
+  "accent": "#16a34a",
+  "icon": "user-plus"
+ },
+ {
+  "slug": "referral_champion",
+  "badge_id": "a43d4178-c524-443f-8d35-f9479867d234",
+  "file": "gen2/referral_champion.png",
+  "accent": "#16a34a",
+  "icon": "gift"
+ },
+ {
+  "slug": "growth_ambassador",
+  "badge_id": "0f4b53e0-9d6e-48a4-83eb-73fc7c331c88",
+  "file": "gen2/growth_ambassador.png",
+  "accent": "#16a34a",
+  "icon": "megaphone"
+ },
+ {
+  "slug": "network_champion",
+  "badge_id": "fdf4469b-a07e-4532-b2f6-0ebc4cde86a9",
+  "file": "gen2/network_champion.png",
+  "accent": "#16a34a",
+  "icon": "network"
+ },
+ {
+  "slug": "community_recruiter",
+  "badge_id": "ea57d9d9-3a10-43ae-aa10-ce004c573e07",
+  "file": "gen2/community_recruiter.png",
+  "accent": "#16a34a",
+  "icon": "users-round"
+ },
+ {
+  "slug": "growth_legend",
+  "badge_id": "ee502d47-f587-4ee8-9110-73e00c2cb7aa",
+  "file": "gen2/growth_legend.png",
+  "accent": "#16a34a",
+  "icon": "rocket"
+ }
+]

@@ -78,7 +78,7 @@
 	// --- Route & Permissions ---
 
 	const formId = $derived(page.params.formId ?? '');
-	const canManage = $derived(hasPermission('forms.edit_any'));
+	const canManage = $derived(hasPermission('forms.edit'));
 
 	// --- Main Form Data ---
 

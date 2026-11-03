@@ -1,0 +1,278 @@
+## academy
+  first_lesson | First Lesson — Completed your first lesson.
+  avid_learner | Avid Learner — Completed 5 lessons.
+  dedicated_student | Dedicated Student — Completed 20 lessons.
+  learning_champion | Learning Champion — Completed 5 learning tracks.
+  academy_graduate | Academy Graduate — Completed 10 learning tracks.
+  lifelong_learner | Lifelong Learner — Completed 25 learning tracks.
+  quiz_master | Quiz Master — Passed 10 quizzes. [INACTIVE]
+  perfect_score | Perfect Score — Scored 100% on a quiz. [INACTIVE]
+## ai
+  ai_explorer | AI Explorer — Started your first JapaBot conversation.
+  ai_inquisitive | Curious Mind — Asked JapaBot 10 relocation questions.
+  ai_researcher | AI Researcher — Completed 10 AI-assisted research sessions.
+  ai_collaborator | AI Collaborator — Completed 20 AI-assisted sessions.
+  digital_strategist | Digital Strategist — Completed 50 AI-assisted sessions.
+  ai_smart_planner | AI Planner — Generated 5 relocation plans with JapaBot. [INACTIVE]
+## career
+  career_explorer | Career Explorer — Explored the jobs board.
+  listing_scout | Listing Scout — Viewed 10 job listings.
+  opportunity_hunter | Opportunity Hunter — Saved 5 jobs or opportunities.
+  offer_received | Offer Received — Recorded an employment offer.
+  visa_sponsored | Visa Sponsored — Recorded a sponsored employment offer.
+  global_professional | Global Professional — Recorded successful employment abroad.
+  career_trailblazer | Career Trailblazer — Completed 3 international career milestones.
+  career_profile_ready | Application Ready — Completed your job-seeker profile. [INACTIVE]
+  first_application | First Application — Submitted your first job application. [INACTIVE]
+  persistent_applicant | Persistent Applicant — Submitted 10 applications. [INACTIVE]
+  opportunity_magnet | Opportunity Magnet — Submitted 25 applications. [INACTIVE]
+  interview_ready | Interview Ready — Recorded your first interview invitation. [INACTIVE]
+  interview_champion | Interview Champion — Completed 5 interviews. [INACTIVE]
+## community
+  space_explorer | Space Explorer — Joined 5 spaces
+  community_pillar | Community Pillar — Earned 1000 lifetime points
+  super_connector | Super Connector — Followed 50 people
+  community_voice | Community Voice — Shared 5 achievements with the community
+  first_connection | First Connection — Followed your first member.
+  friendly_face | Friendly Face — Followed 10 members.
+  social_butterfly | Social Connector — Followed 50 members.
+  network_builder | Network Builder — Followed 100 members.
+  community_member | Community Member — Joined your first community space.
+  community_regular | Community Regular — Participate in 10 spaces.
+  community_connector | Community Connector — Introduced yourself in the community.
+  conversation_starter | Conversation Starter — Started 5 discussions.
+  people_person | People Person — Received 50 positive reactions.
+  crowd_favourite | Crowd Favourite — Received 250 positive reactions.
+  community_champion | Community Champion — Received 1,000 positive reactions.
+  connector_extraordinaire | Connector Extraordinaire — Referred 10 activated members.
+  community_ambassador | Community Ambassador — Received official ambassador recognition.
+  group_starter | Group Starter — Created your first community space.
+  space_founder | Space Founder — Created 5 spaces.
+  event_participant | Event Participant — Attended your first community event.
+  active_participant | Active Participant — Attended 10 events.
+  thriving_community | Thriving Community — Lead a space with 500 active members.
+  group_organizer | Group Organizer — Organised 5 community events. [INACTIVE]
+  community_host | Community Host — Hosted 10 successful events. [INACTIVE]
+  space_leader | Space Leader — Became an approved space administrator. [INACTIVE]
+  community_builder | Community Builder — Grew a space to 100 active members. [INACTIVE]
+## comparison
+  smart_planner | Smart Planner — Saved & compared 3+ options.
+  comparison_rookie | Comparison Rookie — Completed your first comparison.
+  decision_maker | Decision Maker — Completed 5 comparisons.
+  destination_analyst | Destination Analyst — Completed 10 comparisons.
+  city_analyst | City Analyst — Completed 20 comparisons.
+  comparison_expert | Comparison Expert — Completed 30 comparisons.
+  ultimate_comparator | Ultimate Comparator — Completed 50 comparisons.
+## consistency
+  daily_visitor | Daily Visitor — Logged in for 3 consecutive days.
+  consistent | Consistent — Active 7 days in a row.
+  two_week_warrior | Two-Week Warrior — Logged in for 14 consecutive days.
+  monthly_regular | Monthly Regular — Logged in for 30 consecutive days.
+  quarter_champion | Quarter Champion — Logged in for 90 consecutive days.
+  half_year_hero | Half-Year Hero — Logged in for 180 consecutive days.
+  year_of_dedication | Year of Dedication — Logged in for 365 consecutive days.
+  challenge_accepted | Challenge Accepted — Completed your first challenge.
+  challenge_hunter | Challenge Hunter — Completed 5 challenges.
+  challenge_champion | Challenge Champion — Completed 20 challenges.
+  challenge_legend | Challenge Legend — Completed 50 challenges.
+  mission_impossible | Mission Impossible — Completed a designated difficult challenge.
+  comeback_kid | Comeback Kid — Returned and completed an activity after 90 days away. [INACTIVE]
+  never_give_up | Never Give Up — Completed 10 challenges after earlier setbacks. [INACTIVE]
+## content
+  first_post | First Post — Published your first piece of content
+  storyteller | Storyteller — Published 5 articles or stories.
+  knowledge_sharer | Knowledge Sharer — Published 10 useful content pieces.
+  content_machine | Content Machine — Published 25 content pieces.
+  thought_leader | Thought Leader — Published 50 quality content pieces.
+  experience_matters | Experience Matters — Shared your first relocation experience.
+  japa_storyteller | Japa Storyteller — Shared 10 relocation experiences.
+  knowledge_seeker | Knowledge Seeker — Read 10 articles or guides.
+  guide_creator | Guide Creator — Published 5 approved guides. [INACTIVE]
+  information_architect | Information Architect — Published 10 approved guides. [INACTIVE]
+  trusted_contributor | Trusted Contributor — Had 10 content pieces editorially approved. [INACTIVE]
+  knowledge_authority | Knowledge Authority — Had 25 pieces recognised as high-quality resources. [INACTIVE]
+  community_educator | Community Educator — Published 20 helpful educational resources. [INACTIVE]
+## countries
+  world_explorer | Explorer — Explored 5 countries on japa.to.
+  country_collector | Globetrotter — Explored 10+ countries in detail.
+  global_explorer | Pathfinder — Explored 25 countries.
+  world_citizen | World Citizen — Explored 50 countries.
+  atlas_legend | Atlas Legend — Explored 100 countries.
+  country_specialist | Country Specialist — Read 10 destination wiki pages.
+  city_explorer | City Explorer — Explored 10 city profiles.
+  global_nomad | Global Nomad — Compared cost of living across countries.
+  immigration_researcher | Immigration Researcher — Researched 10 immigration pathways.
+  destination_expert | Destination Expert — Completed detailed research on 5 countries.
+  cultural_enthusiast | Cultural Enthusiast — Read 10 cultural guides. [INACTIVE]
+  global_knowledge | Global Knowledge — Completed 10 country research collections. [INACTIVE]
+## documents
+  document_explorer | Document Explorer — Explored attestation guides.
+  document_detective | Document Detective — Researched 5 document pathways.
+  verification_pro | Verification Pro — Completed 5 document verification milestones.
+  paperwork_champion | Paperwork Champion — Completed 10 configured document pathways.
+  first_attestation | First Attestation — Completed your first attestation milestone. [INACTIVE]
+## education
+  scholar_in_the_making | Scholar in the Making — Explored the education section.
+  academic_explorer | Academic Explorer — Explored 5 international universities.
+  university_hunter | University Hunter — Explored 20 universities.
+  scholarship_seeker | Scholarship Seeker — Searched for your first scholarship.
+  scholarship_hunter | Scholarship Hunter — Saved 5 scholarships.
+  funding_strategist | Funding Strategist — Saved 15 scholarships.
+  fully_funded_dream | Fully Funded Dream — Recorded a fully funded scholarship award.
+  application_starter | Application Starter — Started a scholarship application.
+  scholarship_applied | Application Submitted — Recorded a scholarship application submission.
+  academic_achiever | Academic Achiever — Recorded an admission offer.
+  campus_bound | Campus Bound — Recorded university enrolment.
+  global_scholar | Global Scholar — Completed configured international education milestones.
+## financial
+  financial_explorer | Financial Explorer — Used the cost-of-living calculator.
+  smart_spender | Smart Spender — Compared living costs on 3 days.
+  cost_analyst | Cost Analyst — Compared costs on 10 different days.
+  currency_watcher | Currency Watcher — Tracked remittance rates on 3 days.
+  exchange_rate_expert | Exchange Rate Expert — Checked remittance rates on 20 different days.
+  financial_freedom | Financial Freedom — Completed configured financial readiness milestones.
+  budget_planner | Budget Planner — Created your first relocation budget. [INACTIVE]
+  financial_strategist | Financial Strategist — Completed 5 financial planning exercises. [INACTIVE]
+  money_mover | Money Mover — Completed a verified remittance transaction. [INACTIVE]
+  savings_starter | Savings Starter — Set a relocation savings goal. [INACTIVE]
+  consistent_saver | Consistent Saver — Recorded 6 consecutive monthly savings milestones. [INACTIVE]
+  budget_master | Budget Master — Completed a relocation budget and reviewed it after 3 months. [INACTIVE]
+## forum
+  first_comment | First Comment — Joined the conversation with your first comment
+  first_discussion | First Discussion — Started your first forum discussion.
+  curious_mind | Curious Mind — Asked 10 questions.
+  question_master | Question Master — Asked 50 questions.
+  helpful_member | Helpful Member — Upvoted or answered helpful discussions.
+  helpful_voice | Helpful Voice — Provided 5 useful answers.
+  problem_solver | Problem Solver — Had 5 answers marked as solutions.
+  solution_expert | Solution Expert — Had 25 answers marked as solutions.
+  answer_champion | Answer Champion — Had 50 accepted answers.
+  japa_champion | Japa Champion — Helped 10+ members on the platform.
+  debate_enthusiast | Debate Enthusiast — Participated in 20 discussions.
+  voice_matters | Voice Matters — Voted in a poll and shared your opinion.
+  poll_participant | Poll Participant — Voted in 10 polls.
+  discussion_champion | Discussion Champion — Received 100 positive votes on contributions.
+  forum_legend | Forum Legend — Earned 1,000 positive forum votes.
+  opinion_leader | Opinion Leader — Created 10 polls. [INACTIVE]
+## getting_started
+  japa_starter | Japa Starter — Joined japa.to and started your journey.
+  identity_established | Identity Established — Completed your basic profile.
+  picture_perfect | Picture Perfect — Uploaded a profile photo.
+  voice_of_identity | Voice of Identity — Added a profile biography.
+  email_verified | Email Verified — Verified your email address.
+  verified_member | Verified Member — Completed approved identity verification.
+  early_adopter | Early Adopter — Joined during the designated launch period.
+  japa_pioneer | Japa.to Pioneer — Among the first registered members of japa.to.
+  perfect_profile | Perfect Profile — Reached 100% profile completion. [INACTIVE]
+  passport_ready | Passport Ready — Completed your travel profile and passport checklist. [INACTIVE]
+  social_links | Social Butterfly — Connected social accounts or profile links. [INACTIVE]
+  phone_verified | Phone Verified — Verified your phone number. [INACTIVE]
+## growth
+  first_referral | First Referral — Invited your first member.
+  referral_champion | Referral Champion — Referred 5 activated members.
+  growth_ambassador | Growth Ambassador — Referred 10 activated members.
+  network_champion | Network Champion — Referred 25 activated members.
+  community_recruiter | Community Recruiter — Referred 50 activated members.
+  growth_legend | Growth Legend — Referred 100 activated members.
+## housing
+  home_seeker | Home Seeker — Explored housing guides.
+  housing_hunter | Housing Hunter — Researched 5 accommodation options.
+  neighbourhood_explorer | Neighbourhood Explorer — Researched 10 neighbourhoods.
+  settlement_specialist | Settlement Specialist — Completed 10 settlement tasks.
+  home_sweet_home | Home Sweet Home — Completed the configured housing and arrival milestones.
+  rental_ready | Rental Ready — Completed the housing preparation checklist. [INACTIVE]
+  first_home | First Home — Recorded your first confirmed accommodation. [INACTIVE]
+## journey
+  journey_begins | Journey Begins — Created your first relocation timeline.
+  multiple_possibilities | Multiple Possibilities — Explored 3 destinations.
+  on_the_move | On The Move — Started your application or process.
+  waiting_game | Waiting Game — Recorded an application awaiting decision.
+  approval_alert | Approval Alert — Recorded a visa approval.
+  the_big_move | The Big Move — Confirmed your relocation or arrival.
+  next_chapter | Next Chapter — Moved to a new country (or achieved a big win!).
+  new_beginnings | New Beginnings — Completed arrival and settlement onboarding.
+  settled_abroad | Settled Abroad — Marked one year in your new country.
+  multiple_moves | Multiple Moves — Documented successful moves to 3 countries.
+  first_destination | First Destination — Added your first destination to the journey. [INACTIVE]
+  route_selected | Route Selected — Chose a relocation route. [INACTIVE]
+  ticket_to_freedom | Ticket to Freedom — Recorded confirmed international travel. [INACTIVE]
+  boarding_pass | Boarding Pass — Recorded your departure milestone. [INACTIVE]
+## mentorship
+  mentorship_applicant | First Application — Applied for mentorship.
+  mentor_mentee | Mentor Mentee — Connected or mentored another member.
+  guided_journey | Guided Journey — Completed your first mentorship connection.
+  dedicated_learner | Dedicated Learner — Completed 5 mentorship connections.
+  mentors_favourite | Mentor's Favourite — Completed 10 mentorship connections.
+  first_time_mentor | First-Time Mentor — Completed your first connection as a mentor.
+  knowledge_mentor | Knowledge Mentor — Completed 10 mentoring connections as mentor.
+  master_mentor | Master Mentor — Completed 50 mentoring connections as mentor.
+  mentorship_ambassador | Mentorship Ambassador — Received official mentorship recognition.
+  guidance_seeker | Guidance Seeker — Explored mentorship opportunities. [INACTIVE]
+  mentor_in_training | Mentor in Training — Qualified to become a mentor. [INACTIVE]
+  transformational_mentor | Transformational Mentor — Received 25 positive verified mentorship reviews. [INACTIVE]
+## readiness
+  japa_ready | Japa Ready — Completed the Readiness Assessment
+  japa_curious | Japa Curious — Visited the readiness assessment.
+  self_discovery | Self Discovery — Completed the readiness assessment.
+  plan_maker | Plan Maker — Completed your first readiness plan.
+  destination_decided | Destination Decided — Selected a destination country.
+  route_master | Route Master — Researched 3 immigration routes.
+  visa_explorer | Visa Explorer — Researched 5 visa options.
+  document_collector | Document Collector — Completed 10 visa checklist items.
+  paperwork_pro | Paperwork Pro — Completed 30 visa checklist items.
+  strategic_planner | Strategic Planner — Completed a relocation plan. [INACTIVE]
+  goal_setter | Goal Setter — Set a relocation target date. [INACTIVE]
+  application_ready | Application Ready — Completed all required pre-application planning tasks. [INACTIVE]
+  japa_strategist | Japa Strategist — Completed 5 relocation planning tools. [INACTIVE]
+  mission_accomplished | Mission Accomplished — Completed all configured readiness milestones. [INACTIVE]
+## services
+  service_explorer | Service Explorer — Explored the service directory.
+  service_seeker | Service Seeker — Viewed 10 service listings.
+  package_collector | Package Collector — Saved 5 service packages.
+  service_reviewer | Service Reviewer — Submitted 5 verified service reviews.
+  trusted_reviewer | Trusted Reviewer — Submitted 15 verified service reviews.
+  partner_professional | Partner Professional — Became an approved service partner.
+  service_excellence | Service Excellence — Maintained an outstanding rating with verified reviews.
+  first_booking | First Booking — Completed your first service booking. [INACTIVE]
+  package_explorer | Package Explorer — Explored 5 service packages. [INACTIVE]
+  package_member | Package Member — Completed your first package purchase. [INACTIVE]
+  loyal_customer | Loyal Customer — Completed 5 service purchases. [INACTIVE]
+  service_champion | Service Champion — Received 10 positive verified reviews as a provider. [INACTIVE]
+## special
+  founding_member | Founding Member — Joined during the official founding period.
+  japa_legend | Japa Legend — Top contributor making a lasting impact.
+  hall_of_fame | Hall of Fame — Inducted into the Japa.to Hall of Fame.
+  outstanding_contributor | Outstanding Contributor — Officially recognised outstanding contribution.
+  community_hero | Community Hero — Exceptional community impact.
+  global_ambassador | Global Ambassador — Officially appointed global ambassador.
+  trailblazer | Trailblazer — Pioneered an important platform initiative.
+  change_maker | Change Maker — Demonstrated exceptional positive impact.
+  lifetime_achievement | Lifetime Achievement — Exceptional long-term contribution.
+  japa_to_champion | Japa.to Champion — Highest platform recognition.
+## travel
+  travel_curious | Travel Curious — Explored travel search.
+  flight_hunter | Flight Hunter — Compared 5 flight options.
+  hotel_explorer | Hotel Explorer — Compared 5 accommodation options.
+  border_crosser | Border Crosser — Recorded arrival in 3 countries.
+  frequent_traveller | Frequent Traveller — Recorded 5 international journeys.
+  global_traveller | Global Traveller — Recorded arrival in 10 countries.
+  new_home | New Home — Worked through your first destination arrival checklist.
+  settling_in | Settling In — Completed 15 settlement activities.
+  travel_planner | Travel Planner — Created a travel itinerary. [INACTIVE]
+  travel_ready | Travel Ready — Completed the configured pre-travel checklist. [INACTIVE]
+  local_explorer | Local Explorer — Explored 10 local places in your new country. [INACTIVE]
+## trust
+  community_guardian | Community Guardian — Awarded when a scam report you submitted is confirmed by a moderator
+  first_alert | First Alert — Submitted your first scam alert.
+  alert_contributor | Alert Contributor — Submitted 5 useful alerts.
+  verified_watchdog | Verified Watchdog — Had 3 reports confirmed.
+  scam_investigator | Scam Investigator — Submitted 10 confirmed reports.
+  scam_spotter | Scam Spotter — Had 5 scam reports confirmed.
+  digital_guardian | Digital Guardian — Helped protect members through 10 verified reports.
+  verified_identity | Verified Identity — Passed identity verification.
+  trusted_partner | Trusted Partner — Maintained approved partner status for 12 months.
+  community_protector | Community Protector — Received official moderator recognition for safety contributions.
+  guardian_of_community | Guardian of the Community — Helped resolve 25 verified scam incidents.
+  safety_advocate | Safety Advocate — Published 5 approved safety resources. [INACTIVE]
+  responsible_member | Responsible Member — Completed platform safety education. [INACTIVE]
+  trust_builder | Trust Builder — Maintained a compliant account for 6 months. [INACTIVE]

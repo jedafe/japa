@@ -1,0 +1,968 @@
+[
+ {
+  "slug": "japa_starter",
+  "badge_id": "3aa59cc9-2854-49df-8658-a5fdbab070f6",
+  "file": "../data/badges/First Step.jpeg",
+  "accent": "#a68aeb"
+ },
+ {
+  "slug": "identity_established",
+  "badge_id": "edd77e3c-a54a-4dc2-8cfd-0cffa6f0c2aa",
+  "file": "../data/badges/Identity Established.jpeg",
+  "accent": "#bd82f1"
+ },
+ {
+  "slug": "passport_ready",
+  "badge_id": "0f450a7a-04c6-49ea-aca5-8ffba8eca943",
+  "file": "../data/badges/Passport Ready.jpeg",
+  "accent": "#f2ca77"
+ },
+ {
+  "slug": "perfect_profile",
+  "badge_id": "9bf32c80-7434-415d-9279-a8830e9e350f",
+  "file": "../data/badges/Perfect Profile.jpeg",
+  "accent": "#6b74f0"
+ },
+ {
+  "slug": "world_explorer",
+  "badge_id": "0c92f941-5b56-4e78-8982-f8c84a89a381",
+  "file": "../data/badges/Explorer I \u2014 Traveller\n\nExplore 5 countries\nBronze.jpeg",
+  "accent": "#433423"
+ },
+ {
+  "slug": "country_collector",
+  "badge_id": "74834b07-0504-4aea-be63-599e06c42eed",
+  "file": "../data/badges/Explorer II \u2014 Adventurer\n\nExplore 10 countries\nSilver.jpeg",
+  "accent": "#4d4d4f"
+ },
+ {
+  "slug": "global_explorer",
+  "badge_id": "0f2b5c26-14c9-4d4d-bc21-b75d6a723838",
+  "file": "../data/badges/Explorer III \u2014 Pathfinder\n\nExplore 25 countries\nGold.jpeg",
+  "accent": "#c3812a"
+ },
+ {
+  "slug": "world_citizen",
+  "badge_id": "4f044277-563a-4d14-a7b9-e2772b0409aa",
+  "file": "../data/badges/Explorer IV \u2014 World Citizen\n\nExplore 50 countries\nPlatinum.jpeg",
+  "accent": "#329da9"
+ },
+ {
+  "slug": "atlas_legend",
+  "badge_id": "5a6c958b-5024-44eb-a3ae-40fa880f5881",
+  "file": "../data/badges/Explorer V \u2014 Atlas Legend\n\nExplore 100 countries\nDiamond.jpeg",
+  "accent": "#f2aa31"
+ },
+ {
+  "slug": "career_explorer",
+  "badge_id": "84103cbb-ee20-4d86-9901-7eccecfb44c7",
+  "file": "../data/badges/Career & Employment badges/a_OG81flYDBFP6Hblf8cmZMC3eIqQTU12SRLjBxnEnIpUJQ832quFy3eN0TNbuOCe0GlpR2WdzHy2UNNgyt3vLdunLP4Pojn5bVQsWflVbWxQnOHpvL6fEUZFV2moUW8Hqoc-JUyNWkq1RG2qsT7wcqrdTEKAKEDC1OZju8VX438EK65Yo-2jJTGrrZbbXcX.jpeg",
+  "accent": "#476f92"
+ },
+ {
+  "slug": "listing_scout",
+  "badge_id": "dcaf83f6-8639-45bb-a763-d5df9c294ede",
+  "file": "../data/badges/Career & Employment badges/fhJM9a39U7Fpo8q5b2wBkOD6T_--k2GyHC2zbA7Op21kqmiVzMUHh_zcA9JnSwJu_Orr_RaHXmhKrxLJpE-gsobevIR6Yi7MbHGyIqsaozbd7lgstxN0IBoWMA2MzARRNzb_hawZQe5tzV4S0TaWO9x189fJw5DGIMAYKkjzXVWuUGcAxdcBmWrpWs1TmGPv.jpeg",
+  "accent": "#f6cf77"
+ },
+ {
+  "slug": "opportunity_hunter",
+  "badge_id": "d3dc2bd3-28ab-4206-87b4-fb865619e0a7",
+  "file": "../data/badges/Career & Employment badges/inIo-pVqZwjxiY87V1SgIBmjeucudnug6j5Ap2Rr2f0X28zmeOQAc3RnE5aFrJWKl-gL2oAOwz4mORhC2ydDL6ZCErB7M46Acsd_S5i4eGsnwnMBWHmOCrU8dLu853U0Oc46WcsRpSZe7kzGMAJemEAYmVfnRizxsPbCb2nNREgnroezrwEv0CxqVnusRTiL.jpeg",
+  "accent": "#d3b303"
+ },
+ {
+  "slug": "offer_received",
+  "badge_id": "c9fd2c97-3303-4b45-bd44-309313485843",
+  "file": "../data/badges/Career & Employment badges/99PZbptLg3Y5ZMkOeOfwEo35MRkoa_hApTMNwWi8mWkbmAcy8HDrVftSy5IcsMKpg_3esFX1amkH2ZxR3ziyh6bDKNTUd7mhvpN8QSap6RCmfoB-cSMcLoF57z6Txsa6Fd-W27yXwa7Ld7om_lVrekZCtQGjntiCGzVEi2rwmFroRddiPy7NlWs7xBxYe8ze.jpeg",
+  "accent": "#78d2ee"
+ },
+ {
+  "slug": "visa_sponsored",
+  "badge_id": "85b482af-79be-4b1e-b182-1fa2bdd7b835",
+  "file": "../data/badges/Career & Employment badges/Xlyl275DqWf_2LtGnI79_ARPY_TV-JeZbNlpIO83KsXBEOdEQ6aUQUKDXJTxBsWhv9XRgh0-4LAgorCY5xLH22s9QiFf857FdvsarWuZJLL9GCq7SIi2kzWn8El3ScGB7qFtxNQEIRC9Lrmehe9sFtL9Qaaa8Bpn74rIdObCbRfZL6D-ZkFHv9CfHxOQDXNx.jpeg",
+  "accent": "#cc832d"
+ },
+ {
+  "slug": "global_professional",
+  "badge_id": "4b0fe11a-9381-4092-87b6-1d8f42043c64",
+  "file": "../data/badges/Career & Employment badges/euJECumnLxHWNMzFW8RGbJrAVDLiccGRWzGtdJUFbu8NwdqZU25I8tRyouUhg2b2oMBOg_cAT7ILzTtGD6wJvhjzQbCrYHAKRvP7vGj9sAc1RQv-qSqYfQhQmuWZu13QP3EcVEiMOFGtaFNFShjrMaTNdJ5T5eNc350ypBPudAY.jpeg",
+  "accent": "#f5a207"
+ },
+ {
+  "slug": "career_trailblazer",
+  "badge_id": "6ddab712-7140-4f09-a12e-cc4d5bf8bd27",
+  "file": "../data/badges/Career & Employment badges/5a7-V4_qCOfwrfoPRm0sScEBdSpiNTi7f3D53GP8Hh5ehEHxzq03NC04FTqf5PxlHf30aBPThq1MXN41z6FWHYrowOGubIazumMRX6BGLiRXVSAkM1a_QazyENOSI1_rOWWm0syUuWgS05m_47rTNJ9DleLF2ZLN9OuKdYkpmgAdvn7mR3vrwXpLI5QJVEMX.jpeg",
+  "accent": "#c97e2b"
+ },
+ {
+  "slug": "career_profile_ready",
+  "badge_id": "91e527ca-2b26-48b3-a399-3ed27a8bff8f",
+  "file": "../data/badges/Career & Employment badges/Z4RA8xF_rftafDVOTKZY2-rLSzjfQKzQRCi9nyiTxIw5hl0r87VOKIkM7f06ewOukITa56zZlbEWN8uQWXQkiZpKfkNRfkHObB416LgRAeBUF_s1sJLuJDeZVr201B5egUdV3VE0RgVMbVcY-8RYpLn7RX6kZIxTIy_qbpP5J8A.jpeg",
+  "accent": "#bf8f33"
+ },
+ {
+  "slug": "first_application",
+  "badge_id": "2d8199bf-e7c1-4070-954d-089ca6b6738c",
+  "file": "../data/badges/Career & Employment badges/81YzwrLB3bzjcSctpIB1MPQjvObw4FV9AzFlGWqI91tpDJYPzxxTZdwRi97HFsH8H1L0Hi4Dm8hGppONSS89TW55G42-NLjqR8J2rZFyDZNLRxm_-l2e3uAJvkNLxpa2qK7bHf8Bk4B_9dQE8S0r1IrjN5mN64NTEeBB5jQFcsPt91vYlb6wVJ9JoS3hw3Ea.jpeg",
+  "accent": "#b67f2d"
+ },
+ {
+  "slug": "persistent_applicant",
+  "badge_id": "d91c4533-acb3-4e00-9c2e-7d161989a949",
+  "file": "../data/badges/Career & Employment badges/9YvE0EF02iJ_XKczV-jjUP2G9bd6CjZ0n8MDHmmRnMb-s4qLeVuyK6H0fK8hNtRujeh-Re1L3R4x_KeeF3cm3L4BTgiUeltdRiGCd9Jdlrbh6PUOpFTnq9XYfhDLanhH_ttztBQ63Cycq6hKiHLNtvHFajXK4H_ru7PIzvKx1NB39tJ8gwPZYSkYgOrAohXA.jpeg",
+  "accent": "#d08832"
+ },
+ {
+  "slug": "opportunity_magnet",
+  "badge_id": "967dc11f-31fc-44b1-8f6d-bc539b93331b",
+  "file": "../data/badges/Career & Employment badges/px3Euc8N3ge_8t14b3ITIW0NzCCNMJ-k-B9IRa3VL8tKh9nS0ivlfceZL1ZUUS06F81LJvy7i3Fb__ytScSCakdmCUNt3AHWIKtYlJ6QO-qoAOlqxzn_p4XSsO_YrqZXHEXcce2xi3dGizOddnrUefgv6BlBu3LT4vn-FVV9M16UFFKUpDH1GlryQQCgIEsC.jpeg",
+  "accent": "#ea354d"
+ },
+ {
+  "slug": "interview_ready",
+  "badge_id": "e80dd9ec-20a8-4512-87dc-3ce98ebdb120",
+  "file": "../data/badges/Career & Employment badges/eYTRP-wovmBx6rvdC8wCzmRvo-_FITHLnfvUiu1VS50FHRA29YtlKxhUqN31fGbvgZ6nGenzFJKlRapymROJt8yeeA4o4eyjyMK_80s3gY7W6HulNU2IDoYGiCf5Gqda8oS8RUoOJPeP0iLXR6OmUUVoikXFCdk89ZE_y2kSDzqFMIQgJZAocrOVelcYMxW8.jpeg",
+  "accent": "#caaf37"
+ },
+ {
+  "slug": "community_ambassador",
+  "badge_id": "27b813f8-3a88-4462-ad8c-27ce3fff4b21",
+  "file": "../data/badges/Community Engagement badges/5r3RBKa_w-SHFvHzGpV9a_eDU-KkfK7sC4UOuHZ4j6ecpR12KKioJlQYuDnTsgKUj3qS6TKn1E968DztfNJe1n7rJR2w-ii7oPtt-0hOabqXygl8MQ4ELnFyoXLkgQ0LorUmmhon61dOaFmrizmxbYrMuJ3B-qVRYd22-10iogAvfFjGQ3amyUDkhwJxsM4o.jpeg",
+  "accent": "#e6a426"
+ },
+ {
+  "slug": "community_connector",
+  "badge_id": "768b55e7-c5d4-47c3-bce1-0630dbd4259a",
+  "file": "../data/badges/Community Engagement badges/E488s3Fi0hMsKPXktIbPxwUC3HfWd44idVWT1pDTUHOWF4tyhOIfNJ3ZP8ZrJ5Yz5E6TBsUJrDGzbSGqjZWAmJ-3_DmYkAEJUMYF9WYx_nu848ggUPi4RH9vtmDnt48yyK7UQ2ZllFkcTyOB4W7J1zx6Ze6fDh9bO-yVl0vWml7p0x6EP_MMvLtWJRGg5eM8.jpeg",
+  "accent": "#fac13f"
+ },
+ {
+  "slug": "community_champion",
+  "badge_id": "9f983d41-31cd-480b-b32c-a24bf63f3583",
+  "file": "../data/badges/Community Engagement badges/H8Xxrx1i3BMs61waDHVVbQPaxu_1tIWDfiLdsaFy_GUeYtEmtmBB1xuV92hB1OSQQrR63QCi2-o1BOhEGGtds1K0vIVyodKRZiY6q9h3mSZa2sJG0VlYr9CP2wf1tDzSgQCPlkuGiTUF-pip0gEApO05KFOsNzZalKLq9ORlev60I0v9Q6fWMoG8zBy2xVTt.jpeg",
+  "accent": "#3da5e9"
+ },
+ {
+  "slug": "super_connector",
+  "badge_id": "0ac29ac6-bbd3-47f3-ad0e-1f699e3e5b5c",
+  "file": "../data/badges/Community Engagement badges/JT6dqdCQ3wSICiaJplCcy2usRIePNTKOVhZux5XcPzy46p-YUc_7hwiHIfXq4AbolvMQNcFPSaDxbm0-WZ-nGFOc-LrpydzlkNldG33zqDLT0FcqofndhogEhQbbmQOFCgFbktVWYqctE7_RGc5IHWxtKeg6XSTNofKG8vDzb5xTYnH-btbR-cYKaIbpSJNJ.jpeg",
+  "accent": "#554faf"
+ },
+ {
+  "slug": "network_builder",
+  "badge_id": "77b681ce-c0ee-4f9d-97b3-1682d0bcb403",
+  "file": "../data/badges/Community Engagement badges/Wg2mxOKaQLx3D5lQ-RqV2aZK6UomwOEpeVsMr9IuX15GBLfdUZBHUJ2wJHpjWbE4fD_k-hh3hJs6Y5vt9293ckZfvsJq8_jtM6PZr-38ws0B4bPin4mE8v04vorWrBYnI0ZYsCNhQfn0_P-eS-vSEtDb5lTf40bEsdkpATIc1NIGZSlrW_XJaVQKM8a3aluC.jpeg",
+  "accent": "#99e6fd"
+ },
+ {
+  "slug": "thriving_community",
+  "badge_id": "819ee2b3-4f4c-4a96-873f-eff1f1b69e6f",
+  "file": "../data/badges/Community Engagement badges/_98V-CW9Yx8NzwyXu6wQKTlBDQAO_2KBCl6V0UpSPSOofgckUZqX1HQJudu7rKrvotGmlEm4wnxTva26BPzm_wCQt7mmh-1vCK764SYTi8TCAb5OGGREvAOlA4IQMUwnshl2O4_02V5Lvop7tfAt8LOIH7hn1mEDQ2-oUgiE3zK1L0s8uHob48cfAgRoRolC.jpeg",
+  "accent": "#299bd7"
+ },
+ {
+  "slug": "crowd_favourite",
+  "badge_id": "3f98d269-77a5-4031-b568-4948eb52c623",
+  "file": "../data/badges/Community Engagement badges/kX38zkRsLWBei7LjP8cC1bSvdkAVhlYRR1acAFGZXOfwh95hwhFbRs-Y6h6k52w8JeGkqCFhjZfpDq0isox-inlKACoeBJURynE4FHalI8sgg_BW3xP6Ab_xuB9jnwUtLql6W4yVorUKhFpoF5pM9D8Vg-Ng8w6lHq92VG12zABhXxtmdji13huwzZ-j5U07.jpeg",
+  "accent": "#3ba6eb"
+ },
+ {
+  "slug": "community_pillar",
+  "badge_id": "3146b8a6-4b21-4634-bc1a-659fed8ff3bb",
+  "file": "../data/badges/Community Engagement badges/m4dwqwZF-HHWkg5l5K78PEh9RVCZeQ-FevkPUbXjVORcxuI28A2NqQN0oTXSCZs1OjQBAnCVgog9C87Odq-gx0NSJjVQIZAg08cCl0obwAW94CjylH9pC3YfJJA7Ja2IDMFczidvusrsRupgUj7n4GPtkgZyKLIaiRcHxSCjiszWJIpptfq2bGRK4Vy690KF.jpeg",
+  "accent": "#98e6fc"
+ },
+ {
+  "slug": "friendly_face",
+  "badge_id": "533e594b-3276-4a75-aeca-de2b42fb76d2",
+  "file": "../data/badges/Community Engagement badges/mNF0nLD3ajP9jHXK6aZum9XXIQfRqYjil7lbvqvFfpKEJVfYv85MpjfyAm4HZ0Wc55hvrLPYlvAF10zBxHsbQzHmhqdDMcW6JdaYeLRF5wgD0VXAtPwJODzsIGk_4vVeQMuhDW-G8cd1xiprCe85hYcHH5DVAlJwOfjzG7laiu4fvTzijfjcJoEiGaaafa2Y.jpeg",
+  "accent": "#329ee7"
+ },
+ {
+  "slug": "first_connection",
+  "badge_id": "e1ca587d-a527-4802-9e99-9a163ff557ba",
+  "file": "../data/badges/Community Engagement badges/nYy9-ee_ugZ8NgH2eLcWAJr4pvM5DQKX24p9Ty8D9zlhd1Uup5O3BJyvOxgX99Vykn109OMxPkZi6W-MqrtjPkCDOb9RDrS3P4t9jhggiiFevHYmTNRij78SBdqqHZfbWxqMB4t7Bybdd6-d3r5kTrIBRVwQn5pDHuS9LDxl978E6J4f1h3A0TDors5dRMSx.jpeg",
+  "accent": "#e8b37c"
+ },
+ {
+  "slug": "community_member",
+  "badge_id": "50a9dc07-9df9-4fa9-8b14-07dc866b3372",
+  "file": "../data/badges/Community Engagement badges/n_KVs9KRohllKYqNfqEG0u683j4DH9gDAb1AvBYWV1rUXFURmu0TuW9Yu79OVVFKLsq9PQaCOpc56PR-Lm8n-_JrlXkWrH-HKwSv9q5_4BGQoaqkOwt4WLWAFkQ3O4f9R4PWTVrSQFCATdrhhzdn1mOsDBIPiz8WCu32ad_0dSxF6ICvpRQQZU524nqAWs06.jpeg",
+  "accent": "#ab7a2c"
+ },
+ {
+  "slug": "connector_extraordinaire",
+  "badge_id": "4c3d4faf-127e-4ede-9591-5f16957b7180",
+  "file": "../data/badges/Community Engagement badges/yxsXM5LcKe_vtlbfmVSE1L5Z2uIMdfmc8U3mxyzgMSKvLk3Y4UaBZ2k2dJpZ2guTFXotbKLn0TxCwE-zNiXkglE7dwT-7CJfLC7VwJ-_azmjDLOcaUdZBzk9nFmsnuXCT5VeVLqxjvJKBgqrJVm4yAixZr6H7uKj2XCXM3f1MhMDJdG19uw9wyY9YuohSDuh.jpeg",
+  "accent": "#d8c330"
+ },
+ {
+  "slug": "daily_visitor",
+  "badge_id": "8c2a17f2-d947-4f91-9a0a-2b099426c169",
+  "file": "../data/badges/Consistency & Challenges badges/-061ZUa4jWRzT1N1PV7Vm4F37vzAzFHXmOrGU3CRZg12id0mN8aVKOoxa7GK-k-TxxqkEYTn1ergE-jYTyoxjAKs7XTYI8rf64Zka7AHYHSUXMRz2fOTEhBiGpfICL5RdKltbcbrHFl9oesETwuW5mjeG1OH51QA4_XHdJ8BwakrtTJ5hhz7FnLL2yJ03EsF.jpeg",
+  "accent": "#cdaa5e"
+ },
+ {
+  "slug": "consistent",
+  "badge_id": "c22873b6-be81-4284-82d3-f482c7aaee01",
+  "file": "../data/badges/Consistency & Challenges badges/KG03luvc6CCsd1jMlH5bpyjWX8zN2NJ391gkmR4zie3TViVj-l0O8mlLj8hS2b-5xqnuwtpeSZ2UV7Ust3Iov6POsS2c_rkcdFsjjhJkVYvHqf56LVn_jyH1NOUo9_dhaDkCaCKzEV6lMgaZyyGuiPKr-IuOxssoTwBVzjuUlxW2fwI697sC9XvzTW89TFfi.jpeg",
+  "accent": "#c5a158"
+ },
+ {
+  "slug": "quarter_champion",
+  "badge_id": "898c294e-94a2-4191-a0c8-00b9de6ccf42",
+  "file": "../data/badges/Consistency & Challenges badges/kh23AzypwKREEBdCifmhczmHcyWcaMsbXjNTQxY5fRabg4eRVpEeRW--pkuG_Fhh70XBL1SQBGKfFQbx8X6ZjTBMWKn-hIy6n9uOrDK7KjCqv2wgGtxCZjCR52dpfVFpYzz4M93DZmE0Xf8pxp0sWhcL_u-o-jdNvx45-o8hBKZ6KVgOy8KKC2ffZCkel44b.jpeg",
+  "accent": "#c1912b"
+ },
+ {
+  "slug": "two_week_warrior",
+  "badge_id": "0905c8fd-3385-4552-a180-f79384c42182",
+  "file": "../data/badges/Consistency & Challenges badges/n5V7_BCTzDTy-dSl_xuQfHn2OooDTzyT88I5LiFG91stWmbRiFw0pDmUPfpcBJ1W4jXLiMCziHziIvpnwVjvYx-rCW9Jvk3M9BZdWJQSLA0Viu-hvA-ZW_2qIAUQPJSfqjCZFLRwfImQ2huzwbGnvUm-KOcplwMKHjhHCvPYujdwLtu4Q0rNgbEihn3xZAM6.jpeg",
+  "accent": "#ee9807"
+ },
+ {
+  "slug": "challenge_accepted",
+  "badge_id": "70e0f25b-d7b6-485b-865b-afc3aa212389",
+  "file": "../data/badges/Consistency & Challenges badges/rgTmYa2fLDq1b3T_F8fVhtVrnSocZriq9iREf7zhIHT6W6vYTS1YCTrQSEEW6hmVkZSphoWqMQIUeb58wDMaKez_YG7pKQcwbSjt9TfqzezQICWL7QEQ9iH2xTQbXv1gUCgGAnp5UjT2ZFzXHZn-BwNteHLqk6UyNVxbvfs15DJotrACavi9EJU7zB-d6qzu.jpeg",
+  "accent": "#bc9935"
+ },
+ {
+  "slug": "challenge_hunter",
+  "badge_id": "12cff394-1c26-4dd1-8dc7-8c12fbd879eb",
+  "file": "../data/badges/Consistency & Challenges badges/sjkTefvEesGS_wwjA7B6B-VUhPW7uFzq2sqOpuMCQrLsJFjTAOPrrsNBoJFT6p4h-JZZkO798MAoVOObcBQhuLgPqS-nPxKLjZnclrwaW1o2EIcWjZuVny1rF3YezYxTT5lCXxrcvmNrCIYqEEnd5jkRaecULC5lmhlQI_IQZtqxUWmb-tQxRyMlw4W568VN.jpeg",
+  "accent": "#ba9e6c"
+ },
+ {
+  "slug": "mission_impossible",
+  "badge_id": "06cce6b0-0453-4c8c-b115-93b3e6b86a81",
+  "file": "../data/badges/Consistency & Challenges badges/thFahO245paZLd1T2pa--zNBNEtaL3ToudTBxCDlz7jcszRCN22J3T2Bl66xldSleDxbkTX3pMW27-amolnRORy5kDGY9jj8juIlCgNprkE-IHxBbPoR2tO9Zti8RYXuhWuZuMOJdC6RnR2ekarmoomAPiDD7I99l9hg3xc9Zyi2gS88B0yb7Qeax3WbF2_L.jpeg",
+  "accent": "#c7a45f"
+ },
+ {
+  "slug": "monthly_regular",
+  "badge_id": "4a67bf7d-adaf-4b60-b9d8-94e259e5010a",
+  "file": "../data/badges/Consistency & Challenges badges/wQdnIM3rNRbQ3XO_vNTOtmcXLRkt5FD6r0BLNYVJUz3IIrZ9iv3PNW8PKMxFyHoo5PylCTohykhRezEfNkYl065sa11YqbZiV7GioBx5Sk9tkE94fh6n2e55XMcmV-tL05j3BZLYTE3owwRXSkGM_DKHaNvAnx1hL8v5cfojGHZIjsIM0HZiUK2mWG53x3Bu.jpeg",
+  "accent": "#f39a36"
+ },
+ {
+  "slug": "destination_expert",
+  "badge_id": "a9913871-1d29-451a-b180-d8f69253c40d",
+  "file": "../data/badges/Country Explorer badges/2imFk9pOrzi0iZdt8a68rjLrRskQdT56DrmrUXcVNQ9_CufGvSiqwkzAPRbABOlOj-VzizxUiuFfwvllG1FIfwKxdJWVJ3CvAoOOHb_9Vw9mU-c5-ONoCdOW-YOD_v8k0V_Zsbmz7F_5csNcVOwDOcy_ba1LXzj0Nxk2okGCpr9yLCtr86HL86bdWPyUlo63.jpeg",
+  "accent": "#7a6a5a"
+ },
+ {
+  "slug": "cultural_enthusiast",
+  "badge_id": "7beae694-0276-4b6a-8548-dfc21c59e5eb",
+  "file": "../data/badges/Country Explorer badges/8SmaATcJuddTPlRbGfjLnhVHnLHrYXFtAi8ivBR7yH5AVHQblTn8WifNqqeVLEsMvR_NPv2toDHnX70DPX4CWVp--hUjo0czEHaphi2ls1ZVqP-nad8a138Bpa_jXIjkZkXT3HM4wPeTJBbZPLp8_3zdgMHc2iEafdphKzah34tURMb-hcbGDYT4oA1tL1xE.jpeg",
+  "accent": "#6e5c02"
+ },
+ {
+  "slug": "country_specialist",
+  "badge_id": "91e4620b-6a9a-43d1-88b6-5384158e4250",
+  "file": "../data/badges/Country Explorer badges/MIsGGP3iiumZfFoKf-Q1lHI8WB0Use3P8wGLAzgBV58-PNyu6jY7t6kWcbadvaAeDyOFH1tbpA5z2CN1l-6NrgCTI1A0WXVCx4u5bSAY78lw60BgsHxPhqkDy8kch0no4K4ANoTy9-fw4kwzOq3hxd59j-S3FBHKdrr3CbA4qXKrXcCrQK2MK06JMjuUiBYD.jpeg",
+  "accent": "#468388"
+ },
+ {
+  "slug": "immigration_researcher",
+  "badge_id": "8ef53980-40df-44c1-85c2-434a1d51cc83",
+  "file": "../data/badges/Country Explorer badges/ZmT5Yzlr7NUBHU52ccENmGs-qXD6ksV88AJUzeq71OdRqB4MsOcWfmTHqo80Qeo208LOXkKUO852VLGkQTSof1c2Wp1LKwuDvXvP84jhdCkGr2w1PVB5ElCOfOoT_bGQtOupxZap7W67ah7ZKPjHV0CbmNFONFq1kCCNTo8inGZFI2TteStBPhGfekvfoqB-.jpeg",
+  "accent": "#122a42"
+ },
+ {
+  "slug": "city_explorer",
+  "badge_id": "857a76cd-53b8-4e94-ba8d-b5cfb370d006",
+  "file": "../data/badges/Country Explorer badges/_oB-AFOSQ-udfdnbz-uLpEWVMt1EVN2wQ3Py1CvX2d5-z_YvHFv7Xf3HMS8MenHHhAcLkjDLyeTK3yTcZ0Ctt4H1zL7VQYzkLqzVeKUy2rx2FZZa0zSbFna-4syODcm76a6UghPiFo8ajGz8PMwEzbtZU5ExfZ0480Oy2JdjzQtnXl3Qsum8-PBi00lHTlzo.jpeg",
+  "accent": "#c89130"
+ },
+ {
+  "slug": "global_knowledge",
+  "badge_id": "43fb6470-354d-4d20-868b-0e94d617a065",
+  "file": "../data/badges/Country Explorer badges/_tmLEA-cH2BkIGZaEgS7Bjp2Da_USkDAbA1XakC48c5tkQhe_4sDnQN0eaA_1NctI8C_7MCvw3HQ-B7gvl6VeqKF1XuUVLbW7gpyzH8bAO_ReDgQy7ExePku32KEfjhoJCey3azs--vo0Sev8UBLpX86V9n5aFJ_mefWj28iBPoIVpXyDRLnIHDDlJRjgxaW.jpeg",
+  "accent": "#be9558"
+ },
+ {
+  "slug": "global_nomad",
+  "badge_id": "fa751cb0-7e90-4398-bbed-3de990c9add1",
+  "file": "../data/badges/Country Explorer badges/cIM-zRrP19amEg966Hm1v4s3YVs2bxTXoJAZphRD0I3y5iA71V_xmCeq-Chxjyt5Fk9-YAdjqzovRoBarLRDqTWa2Hze4b9nHOEW8pHp4I_Du5tMYc1EinN2_ESusxMQ_grLWlpiIbn7MfLc2Ck1UBWm7xb5aktqWRujLWfjFhhlyP1Gu6sowOft-r03qbDU.jpeg",
+  "accent": "#3d5989"
+ },
+ {
+  "slug": "japa_pioneer",
+  "badge_id": "7c6a72d8-2993-40a3-87f7-c1a27ac438dd",
+  "file": "../data/badges/Country Explorer badges/yNb0kY3uxO_3ofWwuAJSgUkHbIn7QbFF7siDbKVNlTLujWsYKshCPbLa3KGvV8m4Ad1mdrUUJHWzAfgqQRmk1OES4MWSxC_yt6LdICM8c_OYzzTcVJc058TpEbe1oU8dRqx1k_A-qBTkIcWLqz35YaV9Z6hpMoCtSYmrLPZT_FrErexcBgWh096Z8rN46ZWG.jpeg",
+  "accent": "#be955a"
+ },
+ {
+  "slug": "multiple_moves",
+  "badge_id": "4e564c02-c744-431a-8861-f0f4a5912293",
+  "file": "../data/badges/Country Explorer badges/wMXLi1TWWRAiVQsKw59c_a-b4I3OXIXJU7AjkZUcXiWniNh_4Uk8duRFuvWaXDl7ZNhKRCAZ5fhunSKRLkbfeJvGmY8fS90L7uZ8jNsHQwbxN7yxeF17wsKiZc52Rtr2SDDePH9mlkopwNTLxC0vUv_i9kBtPDEZWUN81GxnwsP6GCCTruBmOA_4QD_VpFVt.jpeg",
+  "accent": "#6ca8fa"
+ },
+ {
+  "slug": "scholarship_seeker",
+  "badge_id": "edb387d2-34bd-4187-bf88-aa48c80e3ea5",
+  "file": "../data/badges/Education & Scholarships badges/2xAZunngkLovYuCc6ebjxOfrujwq4Z59CcZUWTNfb4cqV0M_ZCOtgtmVkP98EF_uqWpoMg2JrDEw8PAiDhceJq1BcdzjHNfiMsY4KRouO3sEftkSab7ro9TfU0bmUSckCJAqHlc4NhRVMKFKLy_iY0mKwxJM9hu3IJ1ZKT4KSqnrvNiTXhyMxP7qMqhrOlvG.jpeg",
+  "accent": "#cf8a07"
+ },
+ {
+  "slug": "scholar_in_the_making",
+  "badge_id": "f83f9eaf-6c19-4b7f-9b4c-1faf74453cda",
+  "file": "../data/badges/Education & Scholarships badges/AJ1XR2lOb0g3zg5ltM3NFwwj6eSOXQNcXwf5oNG2xQwAeGcxtodE5Qvmm7p7DmDiKcLpjCwe0CUDgRGRWhvi62ziezoXoRsXLK0beGSLBI72XkFlNXqX-Q8n3X7cVEmwmVvtQL-eCOG3x-Maj1HRP41_WaOZb0Dq3ewVue0kOhPE-5D8smKHe8q8IrcfcyBE.jpeg",
+  "accent": "#cc9867"
+ },
+ {
+  "slug": "funding_strategist",
+  "badge_id": "b30498cc-21c7-44df-b4f9-db4a4be80c10",
+  "file": "../data/badges/Education & Scholarships badges/GsTHkftxay2E1Vj9PL9Qb6CJExjGqw0KUSiPJexlAE3EN7m2SuQ5uj5X8M7Z5MEptjEPzTpGNbO9s08a4QZOdEPWUUbkXWdKqOX23Z5Jt4veWUgz008NaXVH2QtZFA3dUOaGs4RsTwdEw8VPUOw5vhKL22mbqw-gNYFDeL7XhlvRrryTxB94CGMagWE60yiU.jpeg",
+  "accent": "#845941"
+ },
+ {
+  "slug": "fully_funded_dream",
+  "badge_id": "3dd97b4f-28c8-48c7-9a1b-9f9403b38e1b",
+  "file": "../data/badges/Education & Scholarships badges/MdmbDgEm2LMXWEC-qsPABJRHzFYpJKOTP7sXsPmCasFSXJ8Ff1O9A3YMIUQy2MXXB8CIjYwPNn5EoF2IIaqpm1xc8AkKPBVt1-_DQGQ7Eq2hceObdmumhYR76HvXPtiFTJrKwFwCLSIvxLPYdzZ7zOkiCYzV_iwewMXVfmAIdp7kZXc8cr3TrEuB-XRk20Vg.jpeg",
+  "accent": "#c6693c"
+ },
+ {
+  "slug": "academic_achiever",
+  "badge_id": "72aea9ad-9854-41bf-a9f0-d55ff1fff94e",
+  "file": "../data/badges/Education & Scholarships badges/Mh4XfVPspP0Y-Ueb8LU6L_8GdW2oTbgBSAdbYgmNBTkFXgVBFAoftzTNMbQq3C9tatcuOIx0_ty3OshMpIcINyaGBDTi5SruI0nJ-xWHAz2IWZnLwhhVu-eDYDZNIV8oF1kZIAVGpdfzE_zt7rajlefDywPfc20aE_N6JNaVeCc68b4mBJlAQUCVY3YwUVU2.jpeg",
+  "accent": "#e9b349"
+ },
+ {
+  "slug": "university_hunter",
+  "badge_id": "07260e76-a638-48a7-b62c-7dea642a0042",
+  "file": "../data/badges/Education & Scholarships badges/OGN_YPUr-TkSDm30LD6iaK6TSu2cyd7T8S7h-nZcugXEIf3OAvVkpjYeEVvd_oGnkKMoxH6IBzgUZxcOBsFEX8xWN40QKL0HBBPeMIGa85_5vCVxVC9IOdeDMqc2C4S-wdY_0Ax_reVXdmFRRLtxfnFpVEW8YJouSaMkmr5z9fZkpIAaFali99QI7pnMCese.jpeg",
+  "accent": "#f6de81"
+ },
+ {
+  "slug": "campus_bound",
+  "badge_id": "230be754-8d8b-457a-8080-e55e6164e815",
+  "file": "../data/badges/Education & Scholarships badges/RZMicFUhHLk5jKQzchoKDSs6l4mLiViV33JpaTaU5qPtX92kmp7RZrIEByj-4G0H7U7hxmXzqAUvRq--rHI9UdHv7ipd6r5cKbJkLT5A5fc_KS-bNfI66pG7QlT3NqF1J8FKCMSzQDg-5ocafAJW92ui6zakb5CRPIdue4afZg8qI4Rg7Ltp-uX45RHSDpXz.jpeg",
+  "accent": "#c39062"
+ },
+ {
+  "slug": "scholarship_hunter",
+  "badge_id": "75521100-c177-42dd-a399-997a805cbbbd",
+  "file": "../data/badges/Education & Scholarships badges/XxOc6TU7wudQepEEoCviBA8xlF0Dfq4a0mRMVNRyg9zjSdX7jbKVGlh4DSIeo_7vPgpbHxsgc9f3gorQg2j-Hc85KBzEdZffbJOK57sR5WYy30Xy3hjW-W1zXAT753z-tNjhciQgNFdiwKn28AABA7tryYqrP9A9wQJ_-OImK2o7Yh-pBEXKl3y7T9SLRbRQ.jpeg",
+  "accent": "#c9c194"
+ },
+ {
+  "slug": "academic_explorer",
+  "badge_id": "cefd6212-33da-4663-9b82-4314e127e7bf",
+  "file": "../data/badges/Education & Scholarships badges/ifDdr8T4dqzYs5hkgKBl3RjzLsvtn5p5K7L6CJKvELRYIdQvDQOJuX5mPq_H4XV-y_4JohNahLMN4JGPH771ynooXYxSi7apIavzto1VgATuTSjlvDUrTQ3GtWvoWasGXgBfcRX36xYLdPppBWkFPoE0ChZLu7r5sG--hoLViiPRDJWTZNP_F3_ni3jqeKLS.jpeg",
+  "accent": "#c19d68"
+ },
+ {
+  "slug": "scholarship_applied",
+  "badge_id": "009b20cb-5bc1-4345-8cb9-67a7c9053ca9",
+  "file": "../data/badges/Education & Scholarships badges/lz5PgQmWvdzfsfUg1W-7WtL5-aSxHyNtMHN4n095tCzb4Q1FbiB7t2-URUB8LggB363sYgRt2avQqyArx2fM-4QZuRhJDx6Gw__7ISnCdwqzx6k2c_BkUDoOlRW2rGL-KPyAO0aRE8Jt-H6VQvHQChcJ3KJKRAu4ux5ozwg-OlviYIPg-pHG9LoK309Di-Cf.jpeg",
+  "accent": "#e7a12f"
+ },
+ {
+  "slug": "application_starter",
+  "badge_id": "69d1e56c-481f-4d94-98aa-efaf836fef02",
+  "file": "../data/badges/Education & Scholarships badges/uXkcQ35WR1ZL6vgjQJsr-mEUtbLBlQZX_2xZl4B62gYd5dL5H9ZDgLTVtBJH8ZuSGoWgBOk-nzzZl-QT17VVC7udx9pNdpq2t8zHlfV9F8uzdgYrePFgLj9GXZgBApmhzAtYq_TV0VrFTC3WaTBpQPXoFGPEfa5FczqNy7X7h9g.jpeg",
+  "accent": "#856c44"
+ },
+ {
+  "slug": "global_scholar",
+  "badge_id": "20f3483f-0a9a-4007-bfb2-a487f9aed717",
+  "file": "../data/badges/Education & Scholarships badges/xVzodtX2qEBLxCUenFiycoWalapT6xYk8wjZOxexxruy-9lwp-QYioaFao7lHVbpEdAVI3oYWYBBuz3L_qkdXoFvx1RAMzThXuxWjC8LfY9XV-CfJUhfXP3hOlZ6FIw0HzsfprWpDULk_SzZ-DWviC72xdTgls6q-_y81aF-Wu9_zzkQytWyu8xPB_nHozER.jpeg",
+  "accent": "#cb872b"
+ },
+ {
+  "slug": "financial_strategist",
+  "badge_id": "f0a1400b-caee-4ad4-8413-6392c35971c0",
+  "file": "../data/badges/Financial Intelligence badges/5ekZ5oyFIpjseTmtRE1T9QBCtChvHig_JEleYRCvuZA2GCHRaqGKWwkeYyzfMNpmItEDRfzX9h_m7TFlCOGJKKjHnOy1BfEjV1AzlGZbTLeAlPe0BjE4YvSA-wW0uQAL4TUhMek6LNYM_pVVb6I4voQWNVT8fMCwMni9cTh2tksyzZa313ICIC-aceHhICay.jpeg",
+  "accent": "#bd9960"
+ },
+ {
+  "slug": "consistent_saver",
+  "badge_id": "6d0a5a93-5d17-4dfc-a5ca-8b0c4121f092",
+  "file": "../data/badges/Financial Intelligence badges/CDvPZ_HVgM63883MN63ofROmdSY7rB8J4ifsePi-7NTvwSl1OcxwO96LuQR8F0-ysRvTSaenbYpTPv3MCGOYGJ0P0wQ88oR9IPT8SspPsLJi-eCqKHzWMMj7CSy06KQXpt4fbu1i62gbWSGv5LrdV1BRhytjqkAFfVvWhgN8wItPjDWHUcQ9XTpm6Js_8eqN.jpeg",
+  "accent": "#bc9865"
+ },
+ {
+  "slug": "smart_spender",
+  "badge_id": "4c854ebe-b44c-433f-97ce-99e45f25b7e3",
+  "file": "../data/badges/Financial Intelligence badges/ESwZj51JD-KLuD6CImPByZDFTjfzPQVIdjT5u1-qlearbx06PN_DhfwT7Ty7EB4aVmaGxjIkeUP3NC1bHwYH94bev8ZqUpn4VExeKlQIPxtRvqmb-p9zX-Cyx2pC4ekcMyuBIQ4fyYygKZ-RStlX_zgVwpKimg4r6EQNNAgIXHK44eTscUkbSM4xIqAE4e5t.jpeg",
+  "accent": "#80b9f2"
+ },
+ {
+  "slug": "currency_watcher",
+  "badge_id": "64344b3a-e80b-49a1-8963-ea5bd63d67b8",
+  "file": "../data/badges/Financial Intelligence badges/Q54rUDzYIgicKOJZgxIJX7rEsAo-dfFsEewbI4BXz6uBuwK1x07QPXmiromQlWRo9S6-63Yygu0RLM4mmwhyTYqXeciFZz6Zx8H00Q9MZVWcB_ecH-M85-VjOivc4FQSSyHwx2fhJBOt_rb8rONRcRJ1mbKHMiycn5goNXK4X6rKihj97qXbGT5-LXgw_q3B.jpeg",
+  "accent": "#cf8b02"
+ },
+ {
+  "slug": "budget_planner",
+  "badge_id": "9c8e7a46-c480-416d-ba4e-7c117d98474e",
+  "file": "../data/badges/Financial Intelligence badges/Qi6aohTDVa_cd5d4IuOP02MprBt79LtUVHB1QL5c2TTJ4U8b1_NmbYJkWvlu5NVh-K9eyQP1Sfy3ttld_9I0IJuMtw_s1JtqJmSm9WIj_jqMC0DdhQjL1Z65_qPmBbeTROARhZW3cAGPUwdta_GO1Ru6r8jlpxQh-Li0xWw1qNxPWIMaqtMWbuNp8m8NCmOL.jpeg",
+  "accent": "#bb7d0b"
+ },
+ {
+  "slug": "financial_explorer",
+  "badge_id": "dc8b379a-9dca-4036-bbdc-9cc9a6e5b8e9",
+  "file": "../data/badges/Financial Intelligence badges/ZoR671vbkcptTkTQt7I7zJp4ftAVEuQMLRfwc1-eHfzqUGH1KpgnI4ke9ar_-WwpgdGOaIwvG54_4JIphAPZvu7OCTpC7CVhSV9Ya7submkUEZ4Ny7WfatWw32J96w_bmR_btEvBOoBX2NhA6WCbIc5LEnVBvw2KM15AvhMLagbz00ef2P_gUvuEquyKZ1lu.jpeg",
+  "accent": "#b1a093"
+ },
+ {
+  "slug": "financial_freedom",
+  "badge_id": "382c6209-1d7d-4361-9bf2-c264849ca95f",
+  "file": "../data/badges/Financial Intelligence badges/bHDVnIT_fpVb_VOxuBIbH2waA_j2FNjf8Nvz_Qv0L9w86jo7uc_HjfHC5j0_7WTagHfIgH7NLqb3qOb4tDZoMiH8NXaRsOs3WtgKqTWnykRc1UPZx6pROy8gZv_5Kb_7lujiXNsEgclkEvSiyRzNFlAUxyqAEyFGFzbgbXrhmX9npbHWNM1hJE_TJbMpaxUA.jpeg",
+  "accent": "#a9bbe3"
+ },
+ {
+  "slug": "exchange_rate_expert",
+  "badge_id": "c67a154e-8d81-4db7-aefa-0cb618253e8c",
+  "file": "../data/badges/Financial Intelligence badges/e5N97pMt2KF3ay7kB2v0ojclxrKo_-o6DIdBI9eai49AgSKoc6BNtbYM_HSSEOFRegZiaJiGEiKSjI7iFdyVTZ7f0Y4T6SIU1KWbPxxqJU0BSQP-AHmp2PaCVu9Kx-7uM4Fgb4LMcegx8s9e-h73FDun_V32Z0mrO-2tz34Y7UKANamuXwZPFTVRN3q2QCk0.jpeg",
+  "accent": "#c0aa72"
+ },
+ {
+  "slug": "savings_starter",
+  "badge_id": "20691c19-71e3-4e8c-857e-644ed08e4b5f",
+  "file": "../data/badges/Financial Intelligence badges/esYji86f5OwGgMs0GviWuSfQNdiHgDNxD-Isi1LHw-B7Vzlt2J3Z6fkyFIrzSQYHDv9WyN_3RTyHj4CXktgDg49ebE1YybolD88DQBC1Ck15tYi56qh0qNZNB0oitXpEFxuVGgagx6kYIme8U9QRbpcpGx3aXqenZNHwF0dTxxQEPQbyWifUj7S3luI5YYKl.jpeg",
+  "accent": "#7d653a"
+ },
+ {
+  "slug": "money_mover",
+  "badge_id": "52ccea0f-49e8-49b7-9216-37069d3ed0e5",
+  "file": "../data/badges/Financial Intelligence badges/fy-duFAKa_Uf9B3AfTr8GqLVMCL1PKIIUd0VXuMsB4YXtLy_um7ektPL_FFR5dEjOzdFBWU9bXal82reKS8b8vZ1OVGDXxt1wp3PvgKrpV-FOQeJeRRGsgODXNt-hEp8YBNZlBGwZgfZAC23gqi-7ITR_FDzKstawVqRNLuAYbyzd7nbK-ndmaG60aAuWi_R.jpeg",
+  "accent": "#bc923a"
+ },
+ {
+  "slug": "cost_analyst",
+  "badge_id": "650e83c0-7e7b-4d25-9757-943920933e3a",
+  "file": "../data/badges/Financial Intelligence badges/qkmI1nll6haVoVodyGQCJIKtwA_EONPdb0aMgFNK8wRkOjpT_6YR3hiRD4zNCpEX4uKHwDQC40Bz6REOuTrLtCCFCo1YDyJkiMCuuQKxOIS6zeEQzrv7cpnTTfYOTJOrjYfPEKlTvHIEXBTEmoaK6ajegU8F2pm063V-kigGfxOOUqmtTXYm8GgikweiNh0g.jpeg",
+  "accent": "#9daec9"
+ },
+ {
+  "slug": "first_comment",
+  "badge_id": "fac056de-84f2-41c7-a9b3-c7ecb8169fed",
+  "file": "../data/badges/Forum & Discussion badges/DNka_IxSCl0HErc5QJ4lozqIQcv42SaehsN7LTpY7wfiDAyXa2pzJX1ULZBiA18lKGz0yLv2Hpu8p3JrlrU1wxDW8DOgRb1E-MCpXuXhJoraVgGnH_jCTAG0loe0Hq8inKo5guBMhj7CtvNL2q8Ig2JLHvHLilRiNRYD7fnGdIkcxyIjCjr4Xsr9mu-IFxO5.jpeg",
+  "accent": "#776efe"
+ },
+ {
+  "slug": "debate_enthusiast",
+  "badge_id": "714be155-854e-4f04-8d9d-df89f069b668",
+  "file": "../data/badges/Forum & Discussion badges/KvsEweOpGrKVEgqW1wayrXgajaPTV1gWcNbaWTC_1y-6qGu4isyIQEbHJsQOFy6s_CLG_8AH_Ds7GdOicLnaHAx5WCAZfi8cXDOfcHZQyG0c33k7KD_ih0PPACuMCP15sF6wsnJrBVm0sqLqdGToZMGCdzeGuFgJfclYliV6IDL6ylTBRaKMwSRJ9u76e9rb.jpeg",
+  "accent": "#7c4e15"
+ },
+ {
+  "slug": "discussion_champion",
+  "badge_id": "753279cf-8a82-4e33-9118-e61931ddfe70",
+  "file": "../data/badges/Forum & Discussion badges/a1WFrPRVjZJm8V8X-dfD6NlnJZbBRe2O5EI9cBe-a_8UITxtvWIzTdQUWT86jdIEHNm7k2cYcgKtu9l6BMoUt4lF29l0kj0LoxTrlcJFuqtILLBiv78qnp3DuEE6Ugsv8rj-lToPaxmMgmZzRZ237ugQG2NbsvthwHz0e_Q3Dw_CVpoogGzZ-ta5jgMfJ8gO.jpeg",
+  "accent": "#f6b550"
+ },
+ {
+  "slug": "problem_solver",
+  "badge_id": "2695f72d-2df9-4cb4-9a4b-d823802faa4d",
+  "file": "../data/badges/Forum & Discussion badges/cTJ7VhQeIv0UVFJlwYy0ZnvxByakmhQeiZ72MnG5dvTMn1cvDKKJoAZcC3i7GTHD_dJOFLKWR0ZSbwnnJ_ZmiMh_GVVVzB86oQ-5KvgMl05TiB-NYlgwSS-5UYkaG52O4D2g2YXArD46xMveHjADYlXISGhuXew3ybSR3Q9z2iRxSF4dTpAgmOR_Y4NBhX6G.jpeg",
+  "accent": "#c9ae37"
+ },
+ {
+  "slug": "forum_legend",
+  "badge_id": "ee286c4f-fbd7-432a-ae33-7846715634a4",
+  "file": "../data/badges/Forum & Discussion badges/eB6PrTiDAqdnA0YVvoOH0S6CtSccQXxEhedVtC5M1rUpL1qs3Vyei9Mz3LZeqLhAcOH4hkaVUKSWbM8RZsy5vyn8Y_ejZMjeC_rLZQ2KqVGvtGx8TfbT47L-UZIj-LinK-4kYmTU9GRjSv0Pw5gNZ7oDv_S46V_TEkBYNJKvKqc.jpeg",
+  "accent": "#bdaa69"
+ },
+ {
+  "slug": "voice_matters",
+  "badge_id": "a0d5f2ef-8e62-4631-8d08-88fea8c5a9cf",
+  "file": "../data/badges/Forum & Discussion badges/nf88lKaMejgW6WVXtd6nAhrmx2lbM7s1SoQvO7-IjYY2MPvfr1ZmIU0DvxbjrQpg_qIREelDvPjFlA7PR3DVH5fuJIJamyjwOj72S-HBMdmbQegPuRqqLFD3hK_Fg2WG40yFqcEkG9i90DDnl1Ecx1Zu2V4DiSqrogR74oIGJRyv5UlMAH07Zy-xLt46j7Eg.jpeg",
+  "accent": "#5c5fd9"
+ },
+ {
+  "slug": "question_master",
+  "badge_id": "06d9054f-65a3-4158-9e81-6cf6d9ca6538",
+  "file": "../data/badges/Forum & Discussion badges/u9CAO5nBnxB2IPNoqlmFMz4T8sfQcsEaH3sS-IxOu7mubUOLJgFIvlogav7Z21cM-rUpp0JocNnvjSugGcOwom4INJC3W5ioOu31hF92hoQOWjHOrqStT57zbjmKuGJXcLbAn3FAxcqjsHeib8gAV8HsPOngiIZ52_qXQX-s1J8Aokb9VY-vbacSHS-79cld.jpeg",
+  "accent": "#cda06c"
+ },
+ {
+  "slug": "curious_mind",
+  "badge_id": "5fdf2f34-4eb0-43de-ad11-6932ab35a999",
+  "file": "../data/badges/Forum & Discussion badges/v03GNVbZ0CzFXqBTqtnGTsCHOy9eimLGqNTEnpWohJj6LAL73jNrC-bfXYzZCc1UXQV_629_AT3dbnkkMrZVTi529c4cRZHGf-MXEmnNwREtdvXt40bYytCZgCVGsRBoFfUGRoGXRPtaHq-ir7oDT1B5kHbjZLdXOf1FDDVnzLhJyFcK4rmEk3N7MAR42JEO.jpeg",
+  "accent": "#f19914"
+ },
+ {
+  "slug": "solution_expert",
+  "badge_id": "daeb0d6a-eddd-4f9a-ae2b-cb5c45adcbee",
+  "file": "../data/badges/Forum & Discussion badges/yKugQnFSaP5tS-auOvolZFvswtg_bI6GArqmOje6DGjPFA0Bs1tDXwt6q3qwnfO8mDrQ1XmwaImESA59c-a3nfq6r1AVd7DEIqYexdm8cX3hsJ4As0noPYojDJezZx4iuenWVPes-g0OiWLD-_tXq_9t_FMHRL5NGlsCOt77hVesaHagkgSBwxwGWVUyzSi3.jpeg",
+  "accent": "#fdc24a"
+ },
+ {
+  "slug": "paperwork_pro",
+  "badge_id": "37e844a9-93c7-4e2d-b448-8fe3ee51d5c5",
+  "file": "../data/badges/Japa Readiness badges/3fYZlZ4GqmAsJqIZ0eFBZtwFosOcrJhLrwe7XYrqFcQxLnxOnbLRlClNLkSAIP0Hzd6Gdpy3ua9NL0rnunO05_thb50OUHRqZ5OeMsM22Mj6hI-wod0u2MlP-DKhAA8atZrPiBrvJxD0COp22RJyO4-EPUod-On8rF-YGSR8kjobbhK5AtdHRI2eEUkDH2jD.jpeg",
+  "accent": "#f7b139"
+ },
+ {
+  "slug": "plan_maker",
+  "badge_id": "78f4984c-fdca-4127-ad08-1fade1401786",
+  "file": "../data/badges/Japa Readiness badges/4ruEvJ0Ue6MmaVM_ei9AhE2zGScw3hDEEWdv3cbuzyYyI6_cXqr_5vyV7uQOIBr1B9mFsyRC9iaWEXeYJoqo-o3rdRdMRhAV1kMuMsJKwRuwVydTC_DHxzKZ6UMh0xHIup6vqnxNPvmpTNePqJS-n4-v0484HvMnGlusrXqdeqtwl6k8SSD1GlQbuYg5UGkQ.jpeg",
+  "accent": "#89a7ef"
+ },
+ {
+  "slug": "route_master",
+  "badge_id": "43ec1dae-90b0-4918-ace0-e379728aaf0e",
+  "file": "../data/badges/Japa Readiness badges/7Zd6KQL90TCL0FqlZHwK5TNyeHse-Bb7ooOGpviy-jpG4He0i2GGU3bIG6IYl4qX9hmfyqkzYRlO1H7sm6E2ysb90rZ7Kotq62m2UktBNvHiGgZtPC-c4qMv_0eVCBA4R25UAqzkEH3iFKg9GLvRgiTrmvDk3INgQw0cu-j83L0RibgfnY4LBOBhSOc7D7vA.jpeg",
+  "accent": "#c89a6a"
+ },
+ {
+  "slug": "japa_ready",
+  "badge_id": "2ea8e195-0990-4449-a362-ac899b34d99e",
+  "file": "../data/badges/Japa Readiness badges/ZB9nnoOiarxwzCHJ33Gb6KO2BKIOHb7Pu728NRsoIguSXBLuz17jPqhdsopeiD-9Z6XVM8Et_LjI9IRki4Mg-0evJaEXuOCqUXmIKtqrobPgCZDxRBXN35LbXe1CA6LtpGMIkPQ1iv1bn7v8bKoUPL7rpiNjt69AHG5Y5dth6Kj9vLnYkardrupKprwLJger.jpeg",
+  "accent": "#aec3d3"
+ },
+ {
+  "slug": "visa_explorer",
+  "badge_id": "77d3fd5b-992c-4bc2-a34d-66e615f68a98",
+  "file": "../data/badges/Japa Readiness badges/bieU0KH_1ZiBc1-toHfObhkZVx2wW9ux5TUr2tAC2kQd1nNROIyBRska4_tztH2hPW_XUIQRaxJSxtlHGIqq7WWT6WszQg-Mr_ifH0DgavhXkJszQY6yBHxLGBV39pZbiruXglDwmgajOQxuaFFejlidQQJWCLwQoMruN9OzKecZSb-Eo0hCPFs4ArvBLTOI.jpeg",
+  "accent": "#b88f23"
+ },
+ {
+  "slug": "application_ready",
+  "badge_id": "e756607e-4cae-4103-931e-7aaf10a5944f",
+  "file": "../data/badges/Japa Readiness badges/dpty_WVMdu_0SCzU8vzxfwpv9943LBms07mlfvwOJ-q3rcEb8NSYPHdPSjRPKBuAi3kDX7ZCDmHR-yJwQCmqETn29mVhI9x_--siHdU5n2OoAZDP1xVhgHQZAvEJgj60tCviao_1Tj8h6OUA45tnGi85lajNPtccH1hVQermv57ef1NaUe-sTI5jRKVnnvsF.jpeg",
+  "accent": "#8f7d02"
+ },
+ {
+  "slug": "japa_curious",
+  "badge_id": "883b7f58-4ab3-428c-8ac6-e8d573eb83ef",
+  "file": "../data/badges/Japa Readiness badges/gn0acPIQTyijPN8iAhQ922mxzoc7m47pfbJTtzHsFewr-ENlowKw05G8ysinOxkzRxHJFkOpg8KnSelThH34zuXst0WezNBjP_cTgeoUSgXPtZSVfm3D7_UMYdKMv5FKLG8ThrDMRUrxa17JXZNt-hIAhPjku4Xi3vHnOXoNGD3hGBM_7-lRu0CcYiqW9-t6.jpeg",
+  "accent": "#b8750e"
+ },
+ {
+  "slug": "document_collector",
+  "badge_id": "bd232205-e58c-4baa-ac25-c1ed9881d88e",
+  "file": "../data/badges/Japa Readiness badges/rikx_6UQtqID7XVHf3X6c2_2JyEi_xbpfiFWbJzK8maHOOJn4CkpJ7smXmJLVKQTtnWp9VqsiJ4lO_6t1xRmk0lhabH3TgzUOKaMzLa9hin7Ywr0Ac-RziDJ6ZhESeYDRUe_EfOcOMifwmCBTRqwKg4LL4vYVww8jY-jJxft5adlT08zNntKnNRontY_2_CL.jpeg",
+  "accent": "#b7a9f4"
+ },
+ {
+  "slug": "self_discovery",
+  "badge_id": "d4cce1f8-7899-4eaf-9b8f-bcd1c20ba618",
+  "file": "../data/badges/Japa Readiness badges/uznJNu1PLOtv-_Vc9d4vSezZNRd89yOFk_GwyTVPjufZ4C6-N48bHeyEAV75mp6SLpa-mXLLCS7-7UqLwfjq1pNeL-FfnX-xas2P1GqyO3N7eLHYvWAqrKNxKCq_2jALV3SMZ29zXwkpR3u6Qt1NPGng1cvxl7CSY16nIcdSRnfMfRSnjGewgZdHbkItGd5C.jpeg",
+  "accent": "#b9a99c"
+ },
+ {
+  "slug": "destination_decided",
+  "badge_id": "0f818ab9-57bf-4ba5-a21a-e6ca75a438c4",
+  "file": "../data/badges/Japa Readiness badges/zGEvapXOhf1ebgmij1Vk29c2xz1_t5YVPyFQ36YAZ7s27xL7ByPop3pcCco-g9eWaWyrRoDbK2aUiX2ggD9XUKCB305HNm9HiJCqbo9j95pJJkDoMMQBMHQQwEQSpzQKGD4Xi7uaNs9vIsqsevRZy9j1wdMz0cx3XWdHwBX_9BzmfKhNUVniBEXY4eozGPaD.jpeg",
+  "accent": "#323d6f"
+ },
+ {
+  "slug": "journey_begins",
+  "badge_id": "1eca4c44-6002-4c08-a2ea-080536177690",
+  "file": "../data/badges/Journey milestone badges/2IK53Dc1gJTSYEEs1fwyHJDvHRuF431DfC01SxNpeIDJ0yr3_uiAKl8sILd_Auwf7zLSikQK2FNWinZtTx3POeJoc8el00tnreLqPe9qVgzvpeGJP_fgZVUKbbEIwE-wjyPKRDKmWd0REdMlUlfaA4MavTygRdO6abA7vd-RoL9hpDKEpchQWIi3RkA_ZR0H.jpeg",
+  "accent": "#3887cc"
+ },
+ {
+  "slug": "route_selected",
+  "badge_id": "b084f248-f456-47ba-b1e2-70174a83f75b",
+  "file": "../data/badges/Journey milestone badges/6ZOd2Y3mNADlaFLYy_PdnwlZYPRHO--ytGsGBjmWJZb_kp84QX9luiNmEdRuzqj_9DUP57aH4sht-bQ4JXpk2nOTvSW5G-PGToukzujD8sY95eT-XPR_DhsJKCq5TJSl16TE-OCV9_NjCDQaA9cbcIoKPBXMxFTjQ948_hYQa93_ADugqCjLmwtXFx19HUVZ.jpeg",
+  "accent": "#c28463"
+ },
+ {
+  "slug": "approval_alert",
+  "badge_id": "ffc79d96-7151-4f77-a4d0-683b4f02bb0d",
+  "file": "../data/badges/Journey milestone badges/EyqELLR0np9dE1hS-GnpQORSl-0iyB6BRZjViMwYZBcaejiAAzWBLjb5FI5iwy5T8sJ_cxLRKU58URrxszoxfr_dkTj1GG1RAvUPBa4WdZ25yVHYuwQjA_gYM_Rs7odZB3jtBsiWA0de8QRnNfdLCQgDPOYQ_V4XIjkmk_mwO5U4l_8B4KlPsZpatXUqqDu5.jpeg",
+  "accent": "#021b3c"
+ },
+ {
+  "slug": "multiple_possibilities",
+  "badge_id": "542c9767-96fb-4afb-b54b-1870493ef91e",
+  "file": "../data/badges/Journey milestone badges/Qp2FqBBRt3zX5NQdSZtbSFzp6S1T_NTtNfTHVGWaIs2EqguRFtOZXPfT-Q9HwNx3_MWPiSme9bBVhIT_gPFp681QxzYey5L3mQVsRu74KFXnBSkOIRFY_Z-_OgqQ1l_lIubaTrDteaZhAVOxz1dpMzxkkRWIfV2GNd3nThmAmWIPhkCBso9XXChkdMNfyyxi.jpeg",
+  "accent": "#6dc0f5"
+ },
+ {
+  "slug": "the_big_move",
+  "badge_id": "980b7d5a-014b-4a6e-a81b-a6ea8900198f",
+  "file": "../data/badges/Journey milestone badges/TTDj_4ukVV-u2x480M3yEBU1TNwEKGa_tgAF07t-yV3-dxf-gD378LoamaCKjUsPXtltCGCi0gJAqSCStylgnsaPt8YS0ufpI_yaV-brJkq29msRiZSO4WQUhh7OJKBQxFVMtewXIO_Kaovp_yF3wgd65Mql2mTQFZ4Vwsbh8oT2iSZ1YzrmK9oksaZ-me9L.jpeg",
+  "accent": "#cb9f62"
+ },
+ {
+  "slug": "ticket_to_freedom",
+  "badge_id": "aec16535-fa94-4348-94f2-e9d4481b9133",
+  "file": "../data/badges/Journey milestone badges/kqDVpuJwNv2mecOfGH0a7gsfveqCMO37ZUiN78hHR8dNqIwlr_NVn265wlftAn5MALUd9c3ofm2StX9MSLYApHFPt8G4cMYrRsE3mQ7Pa5LB08ZvidzB9lCyfXjqcP6HUBRj29V_VRq36H65Os-sK8octYd0eTdzuTO-bERtR8cuo5rcFqWxm2Nv-qBGY399.jpeg",
+  "accent": "#eebb17"
+ },
+ {
+  "slug": "next_chapter",
+  "badge_id": "f48132d9-43ea-40a5-8559-b9f27a8f1d82",
+  "file": "../data/badges/Journey milestone badges/nNBPmqLgUyD-s44-6TTIGblK4zmrZ-WpdLfqkeBewBFQnHGw5wfaWwDXVy3F-hbxUvuuafqFwiCVltqXkYc82aUa2LuutrwN1SliADKfjp5LOi1jQOneS-ofBsNri8CCKQYmAfnTZLUtLqLWm4y0EnU64XIHLR902WZgJAH7ZbWw2PUiuaKUS22CbDs-A14u.jpeg",
+  "accent": "#f0a826"
+ },
+ {
+  "slug": "on_the_move",
+  "badge_id": "284961a7-5e6e-4fad-987f-6c4068155e30",
+  "file": "../data/badges/Journey milestone badges/nXzB8l2yO9gvtU14hp6dpLmQSL70iKs17HAyj69tderpdrgpUadzBCsOTXUPIyCMAWzGrg1PA-Dgl0SGhdrgWnR1hJl4wRW4lp7P1G6QjIee5Fl8nSNR5plMjLp5J0Y_FR-wmwxHA3FVPaOQ9NKZKO7L6oxKFA7IqbsFFlMmBXmrIpD7ImALhWAGkyWuFMpN.jpeg",
+  "accent": "#8dcef7"
+ },
+ {
+  "slug": "thought_leader",
+  "badge_id": "d2cc1117-f640-492b-b936-b8fcebc18284",
+  "file": "../data/badges/Knowledge & Content badges/BPKhE8EEqQy2HBz6azpYsKO_CU3GmYa4vCGuYsdlw-jrEm34UxWp0FFHyVn6SHG29R-4YO0A0B7J7al6C3rzRBZzUSzsLQr_slaoLtNdtbX4KXdXzy3Y8Rs4dd5ngkNWIDxqhyu3GDiO_pyWw1P4i9iIvpG7o0JZ15qpkmW5D8WS_YIWG1ossP6AkBZux-hb.jpeg",
+  "accent": "#b68038"
+ },
+ {
+  "slug": "first_post",
+  "badge_id": "721b146b-db4a-4061-87ce-a91b63bf6675",
+  "file": "../data/badges/Knowledge & Content badges/DyuvkI1p_u8iGgRw6KmieofihudBKxHJz7AQ45505vQPE2tfBEPMa--oz8FZvRFzK1UQ3c3nxj8atlLzjdi65By6TbrHFrmSekg_v98Mzv7YA-7hPVQbB6_nyITpW1fl0o_jb3Rqb_gA1CWzcEJGSBSh1SUjwFTSe75WP4cY8WHBUKG3itJEZIhJshbRYPkT.jpeg",
+  "accent": "#c77a32"
+ },
+ {
+  "slug": "storyteller",
+  "badge_id": "d7af304d-b7c1-425e-b3f7-30d44dfd656d",
+  "file": "../data/badges/Knowledge & Content badges/EGeLbOMYvbvG-z4Sy6uJ6s8r9JvJEo376oie4mjHC2IdqkjHq30Wut1djmgAb-DECagGHkjj3YZw-O_YoD2ezPlM-vqyasIeq_6VKXMWZWpWlQe60mhZG4YIXa26loUmfQDVxXwsGxfQVpKSokaPsjJ6ka2Hbn8r165E7i1Z8uTUq33xsFwWABTHbfD0TWy5.jpeg",
+  "accent": "#aa5c06"
+ },
+ {
+  "slug": "knowledge_sharer",
+  "badge_id": "0ce9b45e-c5e0-4ef5-9498-0064a7834427",
+  "file": "../data/badges/Knowledge & Content badges/VfSaeaL_Imu-FeFFqe_7vx_TUWv_hpaLa6Go2UFgQB7i96GlxedtNr4UOQdbhmryqm3hPMYHMGmaA5SNnb615sLXQUyDeSj9u5PNcJhnnaztJHfLC_zEfuqsEjaU8ik1hyJgs9tOZ0ReQErd3k-7XAe10iy1eBxhcE96MT4KbUQU3EzEIwry7riXTNJk24Un.jpeg",
+  "accent": "#c3995b"
+ },
+ {
+  "slug": "knowledge_seeker",
+  "badge_id": "38d3e537-c9fb-4982-8e5d-1e4bcb0d1d3b",
+  "file": "../data/badges/Knowledge & Content badges/aA5obzQMoaV_uFrONoupCKyDbwkPYVIqK7zOvBZ3RMCzC_xIQOE59EboxLNvwaHrBg3IvMqG41xRgLNUzdJih-UVXu-ZM2DPVyt3Wse8Qzwg7A_B_BrQ8l7uHf8aLc_j1-IlM5L5P9XpwGbcVmxeCmkkuyDIEBihjy_F1Lhs9SeMoyQc__S8vtJRqJTBwgdu.jpeg",
+  "accent": "#d6c76e"
+ },
+ {
+  "slug": "content_machine",
+  "badge_id": "d50577c4-5997-4a80-a9c2-13f70e785819",
+  "file": "../data/badges/Knowledge & Content badges/bSi4y9qHAsUwqdUFmEzJGsh6xmuizNThqFSu9Go1ZmBVay_LSrC1i0l4nok1ez12s1agn3izw5WGa3qgvtw6XrMwWDDxSMmfgdhBwRuJmf8ARIXyMGG_y-MNjAJm3elK3jwOXLo583yOBLxLFR8Wc1A_2T9dwMlCiemr1GuDBNTG8fs6GHWFlrqlzuGbtuJS.jpeg",
+  "accent": "#bd8005"
+ },
+ {
+  "slug": "knowledge_authority",
+  "badge_id": "5f28a1dd-e53c-4aad-a962-75db8e9adaf7",
+  "file": "../data/badges/Knowledge & Content badges/ipIw0EBBhi8N4IpR5D1zZqlV1dbii6OUCbtBaLW8xqmm8rt1Iz9OHpANMy0ye6TpL7b7hDP4wuImQraWo03qba2d0a685fxejXMbfcFGHdy1LqrcqWOAi5iFRKho7d8Fd_c1hQYPNeAjnCB48Kre8zelfLaCYKcGXcfPmryV6KTq6Vpr6pj4HPTkdbbZ01CD.jpeg",
+  "accent": "#c08e37"
+ },
+ {
+  "slug": "japa_storyteller",
+  "badge_id": "68007a9e-bf80-44e1-97ec-bd2b36efaf41",
+  "file": "../data/badges/Knowledge & Content badges/lin9dR4qUtg2x674McowxcJ2WSAasdnjEbQnVzqkumTfF95IngGRlWdJO2sUtpQ48_RjY9NFQUnQ7nxayAmvUf9zDDM1hubHe3VZEX2F8ISleAOanaN9erkrba090K879HwxstblyYVgEWpAKfdMaY9XXidFBWjorJGgALzedyvwy-nEeUFRvv4hE5gj4vDh.jpeg",
+  "accent": "#7d5e3e"
+ },
+ {
+  "slug": "experience_matters",
+  "badge_id": "ca0be735-81c3-4560-8fa6-6c75b0011f9c",
+  "file": "../data/badges/Knowledge & Content badges/yQYzDLLHYCiCQStmWRjFd7tcej9-yI9wiysG2LMxuoC9WwzuPvHlTzqeN1FaxDOwdPhGRhGROFnhE_vG0cGwytfinYbvmCe1MBCJoIxw2d1pQeu93Bt98XNI6Cpl-gq63YQzgTnpIKAowNZoju190pO0cKyEFpZtt2uRMOL4JEwFfiW8ZZEi0yZQfzaxQRVH.jpeg",
+  "accent": "#c48c39"
+ },
+ {
+  "slug": "mentor_mentee",
+  "badge_id": "9d1175a8-73a1-4d0e-a608-8710ca814b6a",
+  "file": "../data/badges/Mentorship badges/1HNMkLfZ5-g1jmzeWLgXOJt8oWHM4J6EL3kF96lZgUMqxD79yGb7nFkCItA-MKdxRp0aLiTVuWwCDwt2uk3w_0JqHlK-veB1Jj_-FcL65XM7d3qGiMhq5sjUaThhRZulBZM2Ex9-Yvv_uAFBuDh2Ug3vVrP8LVAjUk076TW5ggqBwpLg76sSEIl7_u5NQrAZ.jpeg",
+  "accent": "#c14123"
+ },
+ {
+  "slug": "knowledge_mentor",
+  "badge_id": "e4b47ec3-353f-4261-9529-cc1b532c4b71",
+  "file": "../data/badges/Mentorship badges/3O6KwahyKhuM2wpoVeiSyAqNeDy8YPoMKrvmz92Pm0wkGAtGtvGAlXvv8SGJK1gKSx0HeQcZV29h5OyKJbCH3goW8crJOBxshMNmSOOOeoQx1TfuTrVlxDSpqKwrJPe1UARWA6YOILu38k3G7x5eFLFnFCnHiH1arzz8peZED30UnhsC_UKnSnYW6T4mYVhB.jpeg",
+  "accent": "#c7a35c"
+ },
+ {
+  "slug": "guided_journey",
+  "badge_id": "9ca74094-ee3e-4f46-9226-49c57b6330a6",
+  "file": "../data/badges/Mentorship badges/3rTssl13e6nyN25y_4Aozc0iKpTI-zV_Az8tVoo1bROOSpwMk7mVfrJzJp4cx80FrZ00Q5yVKCXe7dkUv3jGmhyjWDbb9y_SxbqnMT4ItoLZBNcHy4hNvHKd1gLxP7NP3s9c3vG_nD7sQxEL7gdg9PAMiUNA3bpqG1e9yqSzacdhNYzBjMic2-07t3FS6G8y.jpeg",
+  "accent": "#cb9c39"
+ },
+ {
+  "slug": "first_time_mentor",
+  "badge_id": "0b68adf6-d4b5-46e7-9ea5-fc5173e952d2",
+  "file": "../data/badges/Mentorship badges/BaoVf0NqJZvwQXO2_mdw5NqLDXLKCbLYGc9muTiwOnCcTK9X7X0WnlNVn1CEn89maJw-y2UMLLjBrLr-YJG57XZKZ15-sjqRxKs-sJu--rccBFG2ymysIuNk9CHjGO8GzKNebynufz7WmIRFZnd0gQojgBhIrx4kON8jhcdo6kXzLkTU9UbZzDq2bUppOdvS.jpeg",
+  "accent": "#bd7d0d"
+ },
+ {
+  "slug": "mentorship_applicant",
+  "badge_id": "b22f9be2-fd2a-450c-bf47-4ea76bd1e83a",
+  "file": "../data/badges/Mentorship badges/G_3-P1T0jLj_d3lbgVF_iz0d6GQrJFzhHueFGlMirSTuUy49BONGa2Acq9_wN4JH0atm5LHfiI0fYASNM7-8k1M5GSrTmQ0IggwaJRycXlLQJBTfgW6H9Z8NYvJM-uFiQN9O6WPq36kLCykU_0xNsGC_1mW6_L6g3YRxs9WPEjUgTcWeurvga77bHFFf3asY.jpeg",
+  "accent": "#72644d"
+ },
+ {
+  "slug": "dedicated_learner",
+  "badge_id": "b735cbb0-9d7c-48b9-8a10-dd5ecef4df64",
+  "file": "../data/badges/Mentorship badges/NDPJ2H99XP_0x2GtxGHE7xvjOBTTPhws3cWRDBmgPIm099cQMVZVImMI8DJodwvi5x3GHLbEtn70IWdQMDxLOw9kcEroMFfZtrID7tBEixyIwVb7_gQEnXRvwevxKzJwSOqtPVY7e7oVIm8GHTcOqErKQPcBTB08Xvrug7qXbkg4i39mUCxzjQxlHZqRpm56.jpeg",
+  "accent": "#fce5b0"
+ },
+ {
+  "slug": "mentorship_ambassador",
+  "badge_id": "18de9d1a-0ade-4a4d-ac2f-7926f33ab30d",
+  "file": "../data/badges/Mentorship badges/QMWdhV2QeTci-PzxONEKxtX-gUlsT46hg7QpcyUyT0JMmHqliygx6d_UazMFl_FxIe3IHwxWDmJnNwM8wgWnRuFpeg87LzLktYfReC7SD6ZJ9z97RKN1oiPYNR64QFLsi0sz_DzM7Hzns1fE0ybePYRMZ3BOq3cFAMupjxz4_lbDk7QNE5XVVG64_WGktSrN.jpeg",
+  "accent": "#f3c47b"
+ },
+ {
+  "slug": "master_mentor",
+  "badge_id": "26badad9-ff4b-47c7-95a4-3f9549e0729c",
+  "file": "../data/badges/Mentorship badges/fgZxdbZsYaprGe-CEQW0ui7kTuFzz41r-F4xXXkLb69HVHMN-O5SBF2_RzNDAH9KFXlvlEtSyvg_J9vWaPvh77XnDW33CjTsEV8Vf4X_ifIDswXJlDPydZYzIGyQ81ATXZiFQkQWkLZjDaOJh8x-rauntyxW5sDsLxqKBCd4RFu-GjEs6BvFQVmTBu7bhMdh.jpeg",
+  "accent": "#7f593c"
+ },
+ {
+  "slug": "mentors_favourite",
+  "badge_id": "20e63231-968b-4fa3-893f-2f982d8899ac",
+  "file": "../data/badges/Mentorship badges/wyGecW4qKqdgMewTf23V79Gj4onenDg_sgCDbv6wtm4u9mrxIq8cJv4UeS7Vvy_lGs0f3RpxXergZbaX1dERYCyWFw4kRKvbXw6AsiCPWNOFW1jaH8QApNXQZ7aFsazCL3fy_LX7YcNQDpsNyXnSPvpSH5lw_MTuBs2-IvZWqVUg1H5GA64pbqfRQPjuQlsP.jpeg",
+  "accent": "#f6eea5"
+ },
+ {
+  "slug": "service_explorer",
+  "badge_id": "6da24575-c3d1-4f23-8510-a316fddf8034",
+  "file": "../data/badges/Services & Packages badges/-D07peepCLj5eNoolznTHR1wWlVAwtwBPA0ruTqsTzDtWQux_7GW0WwzYTMRm2L_ZZ8ctRNG_EvE2hbNDfCBA48sLoTIepNX_vamMEtep8fwXJeC9eWO8zZ_o4aKVeQnf2eV5t0clxpEX6yfnt6NroSt64ULejF-X81xnuaMidUoHWFSM-_gSMf47Mz1we41.jpeg",
+  "accent": "#f7dc72"
+ },
+ {
+  "slug": "service_champion",
+  "badge_id": "b5a5e12b-d01a-4ac0-bad6-2e71891d21fe",
+  "file": "../data/badges/Services & Packages badges/1o0eAdnE7k9y4CPW5HeA9-fNmcxs7100UnWjngVp1TDkQ_KsN9DJfdoUj4tpVZf2j6WAMHXwOjtRexmuiohRq-5xGGDii6sQ62RxrZ8r4Rhh2xWrLu9gWnGbEbQEnixPCrCRxTnyO1vRryKUQ58muNDM99TZdIThrBJSGA5on__TCbcRelVgkY17W65jb0ZY.jpeg",
+  "accent": "#c19d5c"
+ },
+ {
+  "slug": "service_reviewer",
+  "badge_id": "defcee01-33ba-49a6-aa7f-bdb3a8fd1a75",
+  "file": "../data/badges/Services & Packages badges/IhWZ_2Sj-eep4s-tiBRFyvmMHpvS4zJKHvi-VPzoZ3531ncBmde6dXAbNdgBZM61xXGFveN8n19edLuCjCMpCl5zos1RQ3K17BcBRwYqwzqPO14fgYQpbPgAruz7gAswslGCvYpCVHGbcyV5fvrpAWGTt3LJgkfnjNeOFL1yr69m7p2nEqXUSppKC9S2JK2U.jpeg",
+  "accent": "#7ea4f6"
+ },
+ {
+  "slug": "package_collector",
+  "badge_id": "fd7975ca-58bc-4538-9c50-73a7c03cbfd1",
+  "file": "../data/badges/Services & Packages badges/MAonlfHWF1O59boRjULDiS-s47aZqvYBcOrzihwvu8l9LcOmPeBdVeJp-4sRy0fMUgwZIdQ4UFMMmSx-j8501RWiToFz2AfgHfGmwbwQYhmaF7CdbA7TbsdvZY3ZG-CfOjLo2Q8XNQTrYF1GXq5i7nbtWSQhv-xJOy7iVn2_Kpov6_Xr6LXBHT2NaP_uLO21.jpeg",
+  "accent": "#fbcf7f"
+ },
+ {
+  "slug": "loyal_customer",
+  "badge_id": "c67cb31f-3139-4e98-98c4-98bac6cf7e5e",
+  "file": "../data/badges/Services & Packages badges/RmBR6YqkVudI5ZuBmpIhehUWxbd8JUXAV0-fs2-A8r9aoIhnfuibd5pIzabPM_zQD-dVCJaNZhQVVel_aV-LVp_nBdh1oNpBJ4MLoqoyyRryn5sW0vl7Nk1HL4CYLFv2CWP7CqeVLbOm4zRHcKBsTbuRPzVMgAUASZITzhAGV7oU7u2p4BU3rH_t5C3myHlW.jpeg",
+  "accent": "#b77d0a"
+ },
+ {
+  "slug": "service_excellence",
+  "badge_id": "da7442ce-7602-4ddd-874f-e12dd9f1d692",
+  "file": "../data/badges/Services & Packages badges/UBGKe-anCYztPBHsuB29qG1dOI0dbITdcujsvGXWlqGmvExo-pWWWK-QqzcHjA1Q8tm4pWS6jfCAjO_TYQAZRol0NXCA97ObHUxLeKMp_NtPgxZTkU28czwrFvztPBKDAzXDHXZu8-K3SjgWzwiXR3lnaYGTfHgDxqh38n-KOS5eomsf14yb-7sYo768dAiS.jpeg",
+  "accent": "#c58e2f"
+ },
+ {
+  "slug": "package_member",
+  "badge_id": "3448e5a5-8ad0-48c1-8cc2-491817ea2b98",
+  "file": "../data/badges/Services & Packages badges/V_VCWqLD7ZQg2ZYL8lbyj95VBB4QJE2Teo7ymeVbsrl70if91iUZyrjWxERa6MHACjbJsfeFw8OiswLhGomEHF5I1cR59KyRK2gwSXYvDI579U6gpO9Yrf2vm-nHfilkyi_SM8aKs8B8WFsmnXcZQAvuvs2elwD8YONsc-gYACZtnaotpZiuTsJOQsNCSXpP.jpeg",
+  "accent": "#c07ded"
+ },
+ {
+  "slug": "service_seeker",
+  "badge_id": "838daa7e-a737-4e18-92fa-b68608b85d5c",
+  "file": "../data/badges/Services & Packages badges/Yu13wli_oSjvuom_TqLUj2zMiLeWhj742aqaf8iXa_UCJ6ho3YbiUgk7LLMw7eAGf_7nxhnViY-3TfOBA_huAmD-ihZiJOckR_CBEVgsRp_mwjeuT5LPYfcHi62fgK1hX5f3j71jTQASHj-qa8boCfrZRA5hd_DFUfcLqGBOjqy2wXihyRt816BCGoWmPMB9.jpeg",
+  "accent": "#728fd4"
+ },
+ {
+  "slug": "trusted_reviewer",
+  "badge_id": "18a63ecc-9e2c-450a-8164-5ba7a4368b20",
+  "file": "../data/badges/Services & Packages badges/eYTRP-wovmBx6rvdC8wCzmRvo-_FITHLnfvUiu1VS50FHRA29YtlKxhUqN31fGbvgZ6nGenzFJKlRapymROJt8yeeA4o4eyjyMK_80s3gY7W6HulNU2IDoYGiCf5Gqda8oS8RUoOJPeP0iLXR6OmUUVoikXFCdk89ZE_y2kSDzqFMIQgJZAocrOVelcYMxW8.jpeg",
+  "accent": "#caaf37"
+ },
+ {
+  "slug": "first_booking",
+  "badge_id": "4f95d195-8ae5-4fe7-a3b6-943a0aac868b",
+  "file": "../data/badges/Services & Packages badges/mX4556qZA5Yn2grUx5BhAMSZAMAk6u_0cJH1qEt7swnspDJt2lM8ZFIB_UAdyUij03AZx7AI_ohp6c-TG9YIdU1t-4te6GbOgF_fheVSCVhfoe8Uf1Tnbw5MVnDYWotCnQXfHgopxEx9DVDFwb0wsBiz7TGlRVZHeUpj11nkXrFOXh-Y4vGNgTrFH9b3y-Dm.jpeg",
+  "accent": "#ebb04b"
+ },
+ {
+  "slug": "partner_professional",
+  "badge_id": "0ce13ee7-0702-44bf-be63-2f3a18513064",
+  "file": "../data/badges/Services & Packages badges/mhEbDMXYjcN-jtpQp5p7GAXyjMKHHGYKqW9QsALgSGfJIR5pkG8P3gauC0gSRcs_1u4s7l1zXS3jGgK6QPuhHNY4mPQjicQogh0MvwErAFy-cAJINVgpEq42fF-o4yL-0f-d_w_GEG5d3O0zznzU539M8-rvqa3LE-DVkX4hbnWSjJW4xCi22BxRRxakt-i0.jpeg",
+  "accent": "#c08230"
+ },
+ {
+  "slug": "package_explorer",
+  "badge_id": "6957b281-2a60-4d40-8549-0b14332b35c0",
+  "file": "../data/badges/Services & Packages badges/tOy4xYJag6FKbS8PdgyKKCgRQ6FclgJba2AYESUB3hDmnUXw7gwpP85dJ3RoJ59KmZeGX9ffvF8XOOaYgrArCfNKMpG5Doi54EIzhAGOnWV4KVq493SGLMrMJSKpWeEgckBnrIP5iSCwF48pZnUcRkNtubnbE0WBm08ETEsc0Iw.jpeg",
+  "accent": "#79693f"
+ },
+ {
+  "slug": "trusted_partner",
+  "badge_id": "b6b03565-790b-4522-a202-5320c822267c",
+  "file": "../data/badges/Services & Packages badges/zMIn4PQpmEL-5lgtmTuzoRzScjQoVAD5bsa0F5AmmR0WyTle5g2HuI3xlRfslk4bIMhesXGbLhWT7HaKVoEhURyTcjuthudxtalFDr6HuKOXl7vPaBERpG6PwNLuZR46Y83CpZ-TIwDEg3ej41XTLLw_Dg59pBS3UDEdlp2rD_ul7ltjEfD5JTFyy4wDxcPz.jpeg",
+  "accent": "#f49b3d"
+ },
+ {
+  "slug": "lifetime_achievement",
+  "badge_id": "abf9c2af-93f2-4d60-a345-863c12207997",
+  "file": "../data/badges/Special Recognition badges/1o0eAdnE7k9y4CPW5HeA9-fNmcxs7100UnWjngVp1TDkQ_KsN9DJfdoUj4tpVZf2j6WAMHXwOjtRexmuiohRq-5xGGDii6sQ62RxrZ8r4Rhh2xWrLu9gWnGbEbQEnixPCrCRxTnyO1vRryKUQ58muNDM99TZdIThrBJSGA5on__TCbcRelVgkY17W65jb0ZY.jpeg",
+  "accent": "#c19d5c"
+ },
+ {
+  "slug": "early_adopter",
+  "badge_id": "288e442b-bd45-438b-9c5b-3d92c7bb8915",
+  "file": "../data/badges/Special Recognition badges/9wNPPyfMemtYyHyUNQV2VAA7U6fPImX9bfE5pNQGwQ3IjceXPmOeULjFmJUI6HILX0SLSzIhDLz-nir9qa2ltPk-L3bbMXPCiavmEuFo9lEPmCIxZlzzOHE_10VKLbYIsFTz_kG1f9dRT0-tvYbMvEbVounlC-54d0VYPdm8Sne8orJGVPOEIANoAhNQzUuv.jpeg",
+  "accent": "#c37b39"
+ },
+ {
+  "slug": "japa_legend",
+  "badge_id": "1aa2800b-8b9c-43ef-bafd-3eebf2e605fe",
+  "file": "../data/badges/Special Recognition badges/DjwCVxT_-UqB3OOmHgjrEPOuq_P_b3boDAL8rsfyzJ9_Y-peK6c7sKrnvzZKzk8sjlraHZI0MNOIOTyNjrAl-l9T4qVRItILqRk4VnutargNOoExnbDE7yaRxsfZLeiXRSVwPZKpzGTc1Z80h9AoYBhcAHRUS_rd0U1fIMowY6uxWtpCrFdvHMYevDl9JBHh.jpeg",
+  "accent": "#11462f"
+ },
+ {
+  "slug": "trailblazer",
+  "badge_id": "d5522057-1959-4d49-9e24-5ef6f5fafd4f",
+  "file": "../data/badges/Special Recognition badges/E9wAIyI7c7taPy6LEdx74InjZtSw0vZTwxS9vZUtrjcahcwh1wpKg9oa6SXXAaw_P-FWpvg7lJm8Pg2xEZf2buJqGRue_VURpHpRwNm8sTQrn01XuxzzPOWCOwmELQckDxeNnm2oUHr5etFu6Q9z_MLTDSasMyGM2OxhI6Oke578o4YRUngqJjcSna2vb0N8.jpeg",
+  "accent": "#183257"
+ },
+ {
+  "slug": "change_maker",
+  "badge_id": "97461cb2-fdb0-4c60-99cf-3de7d64ea62e",
+  "file": "../data/badges/Special Recognition badges/Eg7rSUgm6TQK6ixyXuY4TpHaIBA3RfcS52Q1cClyZsaKmzfTIJbItwwzTbHmq7vLYyA5UTgOpfW9RYyAjacf_4YwRsNECJzqAy1LB84WgYgaC0hi2ZyxANWafUwjnKlgpsk8HfiVk6pAP2sFxfkdtG60mT-WJz29T4gTGCM7qVg.jpeg",
+  "accent": "#bd7e3a"
+ },
+ {
+  "slug": "hall_of_fame",
+  "badge_id": "c79a09e6-9f4d-448a-ab4f-ddce3d16f6a7",
+  "file": "../data/badges/Special Recognition badges/JRKkLTyIl97S73wkqYJdZYtItq-REA8ASXItzIu2x3E92o2LskDuFk02ConOEcWEhyue5BzMIfyJtiWP6BokIhZGqEvSID2_tHNIPq0Rry-0DHhyD5UKZnaRaIFZz4p5yTWnUdl8AoWmIqB6ewtGTLk0GMpZZ_gLNxcjONQATwlkDmetrbY2TjvvBqg6Qp1w.jpeg",
+  "accent": "#7a6243"
+ },
+ {
+  "slug": "community_hero",
+  "badge_id": "918e7cc3-0fed-4695-b560-0cb275b0336a",
+  "file": "../data/badges/Special Recognition badges/dpty_WVMdu_0SCzU8vzxfwpv9943LBms07mlfvwOJ-q3rcEb8NSYPHdPSjRPKBuAi3kDX7ZCDmHR-yJwQCmqETn29mVhI9x_--siHdU5n2OoAZDP1xVhgHQZAvEJgj60tCviao_1Tj8h6OUA45tnGi85lajNPtccH1hVQermv57ef1NaUe-sTI5jRKVnnvsF.jpeg",
+  "accent": "#8f7d02"
+ },
+ {
+  "slug": "japa_to_champion",
+  "badge_id": "40962268-8467-4b8d-962e-27bdf5f65778",
+  "file": "../data/badges/Special Recognition badges/ibYspJHvg2tnZF1hkF7_Xy0MOKY3a6SsdNNtNgZmUpsMCZgZbvDTQkdRYDKzZ2JNr5N6qcTF3fNS_fyvaVHfBFcUh7BVP5vvxIxwyVaFbexP3qpaM-AZKytFtIhWfrQL3C6VDvZV8iprS5omAMzZSzaEMOVgN1827PQ7TVwJxHGODNf28WXxfdh3HvT6MaGa.jpeg",
+  "accent": "#c37f31"
+ },
+ {
+  "slug": "outstanding_contributor",
+  "badge_id": "0de5032b-2155-433f-9e75-bedb94e84f4a",
+  "file": "../data/badges/Special Recognition badges/j8P0eDRe_Dg4hr7nSbgiTcmYXHP9khXFMuMtqAKXGGj6PJ_umKJzRoNrxBZxBD5PFTJqBMsuOd30XT0UXDqXJTCgETAZo3QFbgJi6YIcm9YJEQfSUscmvtNReILZG8ygp0JKKhUR9DlvDbCWDbEVNUFPQaZbk-ecCm0eEBYBtisHZ4M3CuKIRgfigVlMvUnF.jpeg",
+  "accent": "#bf8429"
+ },
+ {
+  "slug": "global_ambassador",
+  "badge_id": "d503cbeb-0d2d-42de-97a7-d11245e9639a",
+  "file": "../data/badges/Special Recognition badges/ny6_PzFCbyRU7jH7jd3c1ZSJE4g3yOxdQKPkV9-8u71G3o73B8S6a02Mi3N2PE-T4qbBPQcV4dL7SAlMsdYxUv8dCBrbgSrGaAMmFZeGUvHMvV4Bj3eQFmonq8DnrUl9Bjn3ETpIrxKc0MfoiRgUtwe25o1ix6-0_1PQJzHo2pLa95cjxmqTYQ0qeSPCw705.jpeg",
+  "accent": "#bc8a31"
+ },
+ {
+  "slug": "founding_member",
+  "badge_id": "b3a3b190-bfe9-499e-8b21-c1e2d9be2917",
+  "file": "../data/badges/Special Recognition badges/zIsZiKgIAiQE3GEQEL_Si87xf4otEVxlym3Hc1J3o68KX-oyo_iATB9zTt8RTv02lMpTg9Mwp3YOaZfUNfUWnLJGB2b2xAt3Tz00q9bQfDpR1l9M_CBN9l6GcEyo7Dh8uEi1ZRfjgTo3cxJQQX-XOGMcQPP-sIfP9buP-YvGOyVsgVijaxzHyLFo1UhwrApo.jpeg",
+  "accent": "#9c56d4"
+ },
+ {
+  "slug": "border_crosser",
+  "badge_id": "c265c865-098c-4aa0-8e7c-c263247d3582",
+  "file": "../data/badges/Travel & Relocation badges/EuRR0RJeCXY9bBkWdGokN8FybF8SvsISQtU6o1pII_T5xAqLDhakqWMPV87uDfcPq9ZLkmKgZWc1b-K7dolcqTocy6li9zBFXKcodHjHroukwSZVeXxwY1wMiI803KPOx7IPTv2QIuCZTHtXOOMTCqaAPMuNkCzLuoQ7HFX7ETrK6TjFho4iQ7zh1hFUgMsh.jpeg",
+  "accent": "#ca9666"
+ },
+ {
+  "slug": "settling_in",
+  "badge_id": "25fcb4d6-1f1c-4689-811b-373e43b77a75",
+  "file": "../data/badges/Travel & Relocation badges/FGRYovSNo5zT4VvxZbYV6gdOzW3x3bmbwHufmQknoZdEH7y80NOj8L7WGlvBS16dZYIg35iw2KFL1B0XfUsQFkApTE_3qUMG0Pz1gl0bpGLShHR1qjZ-IbxgOJMTzBjNJMDRqxtfKB0YsMs0bhxd_qVdlZkuDX09gTNWgQJoVRkfa7N28673z-_fX41dPnSA.jpeg",
+  "accent": "#e2b96c"
+ },
+ {
+  "slug": "hotel_explorer",
+  "badge_id": "89c2a6fc-f5c9-4cdd-9e99-42838fcee123",
+  "file": "../data/badges/Travel & Relocation badges/WNcHWTpNTJBipNhFrxsv0gr6BVFqlfwR1XHClkwxzkwOXY4XCZpu-Ua0ybMG7qQ2ILDsGDIbAapOWOTB02gJVPtdArtuMzglP2jjsSKIKqT8dOQh13pNy8JZZGBRWOsORQK_1DeJUGA0wh-46YgkAN0jv5B2LzmMvK-ad2A6sI3qN1DEMLO04MuaJCokBxKy.jpeg",
+  "accent": "#c3a461"
+ },
+ {
+  "slug": "flight_hunter",
+  "badge_id": "4ba65fcb-eb55-408b-afcd-0c54ec2c0b9c",
+  "file": "../data/badges/Travel & Relocation badges/Ztxo_nfZoM0Vemg36g5yN0wwWwke_pHECvz0PnHN2un8P0RVJY2BJ4tSApgcBIYDd5GEAySFVAYeLOH5o4KEQvF596jkP6v6EAEos_r6N-LUHP3cIiRMyKz6AEzzVzMbSKhxEOtYfWwlmQckourcwHPNVhBbn1tBLNleTM3Wa-ypfkObAY3iKb6vZzATXZ76.jpeg",
+  "accent": "#ad933d"
+ },
+ {
+  "slug": "frequent_traveller",
+  "badge_id": "d6ca576b-448c-44fb-94ad-e265c20d6539",
+  "file": "../data/badges/Travel & Relocation badges/gwRIckMNDpiHtjSSWR-GBcdtp-7xLiUdkyMi0Wk6bWynNICThFZbDoxfbX78EO_XLoP0cIkgwyCTkdL2uXSydKFXku999HYEduaG-ZdXYwLMiCF0xLA6w8upgvhaMAA85qeEhmfHV5ylkZIY1hOP_cZlR6_jaoZYh1peSTezye-kuHXbUYYgRk0Vs_J6STgF.jpeg",
+  "accent": "#8e7f76"
+ },
+ {
+  "slug": "travel_curious",
+  "badge_id": "c7b4956d-010d-476d-a2b3-e5253795a7ec",
+  "file": "../data/badges/Travel & Relocation badges/uDCP150S-I3MqJ17Nj3fBfWvyK6YY-xHNu95HtqKehB1MTnS-4lN4F_k2Yvm-rT2lxoxerp5-0cC2H4ELUUzlfHgnEXetaHdMuQQ5brTlJihwSl7FSb_R1qcBx2FM1BcN3U-5GQJzZG8_IFwOlcBi9YPn39BAFkwkUxAswr8ylHboIizzSCGk2Lla-Vs7Ojg.jpeg",
+  "accent": "#bd91d5"
+ },
+ {
+  "slug": "global_traveller",
+  "badge_id": "6654fe1f-c2d8-4d06-a0bc-49e72eaf0572",
+  "file": "../data/badges/Travel & Relocation badges/vb6Mh40WqEX6Q4IdFfbWaUYM2BrnF8RitRu95CQkPYikMivEFJ6F8IfmEYoSO-NB7jBSw38XUoxj6vlGugkwLpKBzINZiOHlQMkmyC7lyd3CVPU7-c8VjB4WtJ2fD3GgJ5-eMF8_D_-XIBEUts0ojY6pf3E_LRn-0DB44qpQa_Gmo4FcNwHU8MDldsB7shCd.jpeg",
+  "accent": "#b18d2b"
+ },
+ {
+  "slug": "new_home",
+  "badge_id": "19258c63-fe4e-4577-8fee-911f982181a3",
+  "file": "../data/badges/Travel & Relocation badges/zlnP6B5QTxeTsyuWWrCu8yrjS51yirkHslYpjw-bsspUkDHwS9NJ6ii0yi5_XhF26cyWUBGPLw4kzp3J583QMopkFx6B5wcyGbFEPJXtQWeumTlHXMohTt3stww1DUYqlp2UJti6qILFoo5AyOvTfNSGZUehpHM1I_WdS5To-zxvG4EiBKKqtlUjpbcGUAyb.jpeg",
+  "accent": "#8b4544"
+ },
+ {
+  "slug": "verified_watchdog",
+  "badge_id": "c7b015ec-bad3-46c5-9bc7-2c52dee700f1",
+  "file": "../data/badges/Trust & Safety badges/24Opm80PRTCMDR8C3KYHiE4HYJuT2ZlMB0h7OfFp8l_FmGcGYI29Gyx-hWJG2SsSJb9E1EUe2v5nsOlRzOdHqgra1OnfPtLBIi9INjqnJi1kJf33un9pC-mpNzzPjajZioaQ8T1TJeVSCk6PB9q5tExhYtooaQtabTgqZYc8yBohXDPM8KzPqOoPjpIGmoyt.jpeg",
+  "accent": "#804e03"
+ },
+ {
+  "slug": "scam_spotter",
+  "badge_id": "6e637ccb-ba24-4ce0-8967-b01651ae24f4",
+  "file": "../data/badges/Trust & Safety badges/3D8I1DQIFJfJu5fSAubFn5KTwYjbsYwZ3DkQJq0yqiYQGtTMjkYVtNTrUWYoq8W22zZwL9Xl0Ai9dGWi6WBIowUFqXmA5eLJZXllPof16mclJJByZwWDFMmf5IGy6T_Yzt_EBZYHYzqe9irvXSboKZClvVwSNSuPaVkWleq4e8qCJs6qX9mp_JzmS5BYGIEL.jpeg",
+  "accent": "#b5a70b"
+ },
+ {
+  "slug": "verified_identity",
+  "badge_id": "614ac727-782a-46ad-8779-17048442e159",
+  "file": "../data/badges/Trust & Safety badges/8cxPdDhqzfw0Bx5pfRHkMad-oOcDEJTHIS6Tzz2vcKXe6av_Nt6ninZ7ZH0dRbldE5x9OfWXO0xG_Q6J-K5_5v1h475ySu5aAlKGmnV0hQ788lrqwaiFRChsvviLz_HuAEJZnEAr4RVFHrp9ck5ZqdhnnDBKZRlKbflQ93eXCOfzrrfFUB-qMGr1Dak9vdJz.jpeg",
+  "accent": "#ebae46"
+ },
+ {
+  "slug": "community_protector",
+  "badge_id": "f741796b-93a7-434c-b161-3e52c172833d",
+  "file": "../data/badges/Trust & Safety badges/Cs4vhfm2Za4E_Jh7aydX-fASxyVxnm3WzbhQDewaddWJpkDXqnVxkyMlwR5DxnOB6UZjvzIZ0GghiUB9frEW-Z8pXHFkmrhVhA0RlEKIvlSfg6Vys-XVvqWr5O4sWSmfrhIZ9yKpwYnJw6IwLe3v2cMsRod3DPydqj76VTfs4kRI34jalW4YosPM6W2AhCdu.jpeg",
+  "accent": "#ecaa39"
+ },
+ {
+  "slug": "first_alert",
+  "badge_id": "28eb1847-acc4-4e27-bd1a-ab8aafab039d",
+  "file": "../data/badges/Trust & Safety badges/MaPZs2vdMpxTY9oeCnYv35JkPXYNJJewH8aDrc7IrgEAVP-tSUezyfoDFFRDVlYFHZPSyyMsufAW5uAR6yWoDqCWZN1t3utmx0JLspgDj2ZNf5gyUoH_fzHTeLarzCi2i3z161ICWwRZZj9FybskgsQkJOOkOlVqvsVviKDQhcep_uetGz4v-EpjtmTPHSQ5.jpeg",
+  "accent": "#f4b347"
+ },
+ {
+  "slug": "digital_guardian",
+  "badge_id": "47f0f89f-2598-4dac-ab62-52a2228f22dc",
+  "file": "../data/badges/Trust & Safety badges/RiRbTqGzrcRh-esdCIomq5MgSb5NHbcVi6nT-uoc5Gvu0BErHld0_Goze6u0tQqeKGhbLIlg5xt_vNmN9J2y1HgpQnyGUQEOA8bgTiNuiddSXLOXLGz7tCyyjijpjTh0xWoPIX1sdxr_dfzz_QnZgWDe37603UuewGNGCnMzgdlL67GN56JnTExG6Rcn6Nzm.jpeg",
+  "accent": "#c19e59"
+ },
+ {
+  "slug": "guardian_of_community",
+  "badge_id": "f9acf1c0-104a-49cb-84d0-12afb5a12cef",
+  "file": "../data/badges/Trust & Safety badges/dpty_WVMdu_0SCzU8vzxfwpv9943LBms07mlfvwOJ-q3rcEb8NSYPHdPSjRPKBuAi3kDX7ZCDmHR-yJwQCmqETn29mVhI9x_--siHdU5n2OoAZDP1xVhgHQZAvEJgj60tCviao_1Tj8h6OUA45tnGi85lajNPtccH1hVQermv57ef1NaUe-sTI5jRKVnnvsF.jpeg",
+  "accent": "#8f7d02"
+ },
+ {
+  "slug": "community_guardian",
+  "badge_id": "76e95463-7d0f-4238-9b60-af5acb951ca2",
+  "file": "../data/badges/Trust & Safety badges/jyWoKehyONzV6-AhMaHEhakEEK-E5P08AIKS4cogE4rzNRelkk3K4MoMC_-63h5P8WLY-XMk4TDDj_A7Li38EI2klsQtOxZZB6Mq2e0oDg4yt-XW-pWfyV1wC_HUhnOtdv9-cUx4g5llNmbusQLWQqrIhGEOFbunSI8XBhE0RAHdqzK28ds75SDBqO5YqmxO.jpeg",
+  "accent": "#c48e06"
+ },
+ {
+  "slug": "responsible_member",
+  "badge_id": "db2a99e5-05ee-4a0c-a6bf-081909c2c331",
+  "file": "../data/badges/Trust & Safety badges/n_KVs9KRohllKYqNfqEG0u683j4DH9gDAb1AvBYWV1rUXFURmu0TuW9Yu79OVVFKLsq9PQaCOpc56PR-Lm8n-_JrlXkWrH-HKwSv9q5_4BGQoaqkOwt4WLWAFkQ3O4f9R4PWTVrSQFCATdrhhzdn1mOsDBIPiz8WCu32ad_0dSxF6ICvpRQQZU524nqAWs06.jpeg",
+  "accent": "#ab7a2c"
+ },
+ {
+  "slug": "alert_contributor",
+  "badge_id": "59e65000-cef4-40c4-8b56-d37ac04594e1",
+  "file": "../data/badges/Trust & Safety badges/pH3LuMpp3U4lsOce9HQTZ3sZi0X4_VXVOzIEM9ag6m2E4sa5CyTXFZuqN3xT8kXEyqSVrwL5HPauLW5EJyEgPbd3li-Ob-ri-20W1viy_PAgGtPIjtl6GD_yVnC8zN_4iABuUGCP8MC6KeukAzb_8WYNILSa9dKuvFXJpuOkBlK5Ib2XNrM_hOfobOK_PdSI.jpeg",
+  "accent": "#cfad04"
+ },
+ {
+  "slug": "scam_investigator",
+  "badge_id": "01d7686e-1c74-4e3e-8755-da1bc005a7b8",
+  "file": "../data/badges/Trust & Safety badges/xM5XPQyyCApz3J3DA7MrRH9MfVUYJ-BqrCf8wkzLrYeyTCuNWyL-tOUXLUKgttPoZoCNP0GkicgvXIbHwkdbaWbTaxevwfW8W3QYexZnWObB9b-xsXz8HjwkwTh-FUNx6UFxL39LfB_M7RIeuk3L_44xigaey-COqP3YWLmTVGKqQQ-XaHPuhB6pai94iENB.jpeg",
+  "accent": "#bb953b"
+ }
+]
