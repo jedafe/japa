@@ -9897,7 +9897,7 @@ func (a *spamNotifierAdapter) NotifySpamFlag(ctx context.Context, userID pgtype.
 	var subjectID pgtype.UUID
 	_ = subjectID.Scan(entityID)
 	return a.svc.CreateNotification(ctx, userID, "content.spam_flagged", "", pgtype.UUID{},
-		entityType, subjectID, title, "Moderation flagged your content: "+reason, "")
+		entityType, subjectID, title, "Moderation flagged your content: "+reason, "/notifications")
 }
 
 func (a *spamActivityEmitter) EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error {

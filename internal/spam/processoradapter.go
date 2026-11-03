@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // WorkerAdapter wraps a SpamPipeline to satisfy the worker.ModerationProcessor
@@ -90,9 +92,18 @@ func (a *WorkerAdapter) emitSpamPenalty(ctx context.Context, authorID pgtype.UUI
 }
 
 // notifyAuthor warns the author about the flagged content (fire-and-forget).
+// Deduped per entity via a Valkey SETNX — repeated flagged saves of the same
+// post notify once per window instead of inbox-spamming the author.
 func (a *WorkerAdapter) notifyAuthor(ctx context.Context, authorID pgtype.UUID, entityType, entityID string, blocked bool, reasons []string) {
 	if a.notifier == nil || !authorID.Valid {
 		return
+	}
+	if a.pipeline.rdb != nil {
+		key := valkey.MustKey("spam:notified:%s:%s", entityType, entityID)
+		set, err := a.pipeline.rdb.Redis().SetNX(ctx, key, "1", 24*time.Hour).Result()
+		if err == nil && !set {
+			return // already notified within the window
+		}
 	}
 	if err := a.notifier.NotifySpamFlag(ctx, authorID, entityType, entityID, blocked, reasons); err != nil {
 		slog.Warn("spam: author notification failed", "entity_type", entityType, "entity_id", entityID, "error", err)
@@ -190,6 +201,7 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID st
 			"entity_type", entityType, "entity_id", entityID,
 			"score", result.Score, "reasons", result.Reasons)
 	case result.Flagged:
+		a.queueReport(ctx, entityType, entityID, result.Reasons)
 		a.notifyAuthor(ctx, authorID, entityType, entityID, false, result.Reasons)
 		// ADR-136: auto-flagged content may emit spam.flagged (seeded
 		// disabled — opt-in; only confirmed blocks penalize by default).

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy, untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, replaceState, beforeNavigate } from '$app/navigation';
 	import { contentHref } from '$lib/utils/contentLink';
@@ -419,12 +419,13 @@
 		composer.setSeries(seriesId);
 	});
 
-	// BUG-CE-016: guard against losing unsaved edits — saves are manual now,
-	// so a dirty composer means the user clicked neither Save nor Publish.
+	// Guard against losing unsaved edits — saves are manual now, so a dirty
+	// composer means the user clicked neither Save nor Publish. No implicit
+	// flush on leave: an unrequested save is how silent validation/safety
+	// failures snuck back in.
 	beforeNavigate((nav) => {
 		if (!composer) return;
 		if (composer.status === 'dirty' || composer.status === 'saving' || composer.status === 'creating') {
-			void composer.flush();
 			if (!confirm(t('create.unsaved_leave', 'You have unsaved changes. Leave anyway?'))) {
 				nav.cancel();
 			}
