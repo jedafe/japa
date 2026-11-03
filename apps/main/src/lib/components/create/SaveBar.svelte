@@ -211,13 +211,16 @@
 			{/if}
 		</span>
 	{/if}
+	<!-- Publish gate reason — lives inside .bar-left so mobile keeps it on
+	     the same row as the post-as selector; on desktop margin-inline-start
+	     auto pushes it right up against the action buttons as before. -->
+	{#if !canPublish && publishReason && !isPublished}
+		<span class="gate-reason">{t(publishReason)}</span>
+	{/if}
 	</div>
 
-	<!-- Right: publish gate reason + action buttons -->
+	<!-- Right: action buttons -->
 	<div class="actions">
-		{#if !canPublish && publishReason && !isPublished}
-			<span class="gate-reason">{t(publishReason)}</span>
-		{/if}
 		{#if status === 'error' && errorMessage}
 			<span class="error-message">{errorMessage}</span>
 		{/if}
@@ -277,6 +280,7 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		flex: 1;
 		min-width: 0;
 	}
 	.author-autocomplete {
@@ -304,7 +308,7 @@
 	.gate-reason {
 		font-size: 0.75rem;
 		color: var(--color-muted);
-		margin-inline-end: 4px;
+		margin-inline-start: auto;
 	}
 	.error-message {
 		font-size: 0.75rem;
@@ -355,15 +359,21 @@
 			padding: 10px 12px;
 		}
 		.bar-left {
-			flex-direction: column;
-			align-items: stretch;
+			/* Keep the post-as selector and the gate warning on one row —
+			 * wrap only lets them split when they genuinely can't fit. */
+			flex-direction: row;
+			flex-wrap: wrap;
+			align-items: center;
 			width: 100%;
 		}
-		.author-autocomplete,
-		.status-text {
+		.author-autocomplete {
+			flex: 1 1 0;
 			min-width: 0;
 			max-width: none;
-			width: 100%;
+		}
+		.status-text {
+			flex: 1 1 0;
+			min-width: 0;
 		}
 		.actions {
 			width: 100%;
@@ -371,10 +381,10 @@
 			gap: 8px;
 		}
 		.gate-reason {
-			width: 100%;
-			margin: 0 0 4px 0;
+			flex: 1 1 0;
+			min-width: 0;
 			font-size: 0.75rem;
-			text-align: start;
+			text-align: end;
 		}
 		.btn-secondary,
 		.btn-primary {

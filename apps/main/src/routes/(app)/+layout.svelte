@@ -181,6 +181,11 @@
 			!page.route.id?.startsWith('/(app)/services/new')
 	);
 
+	// /studio renders its own mobile chrome (bottom tab bar + composer
+	// FABs) — the AI FAB stays desktop-only there so it doesn't stack with
+	// the studio controls.
+	const isStudioRoute = $derived(page.route.id?.startsWith('/(app)/studio') ?? false);
+
 	// §115 AI Quick Panel: the FAB now toggles a page-aware slide-in panel
 	// instead of linking to /ai. Deps init on every page — /ai hides the
 	// FAB but JapaAIChat streams through the same package factory.
@@ -348,7 +353,9 @@
 			aria-label={t('ai.panel.title', 'Japa AI')}
 			title={t('ai.panel.title', 'Japa AI')}
 			aria-expanded={aiPanelOpen}
-			class="fixed bottom-20 end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5"
+			class="fixed bottom-20 end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5 {isStudioRoute
+				? 'max-sm:hidden'
+				: ''}"
 		>
 			<Sparkles size={22} />
 		</button>

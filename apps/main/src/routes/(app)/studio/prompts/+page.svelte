@@ -9,6 +9,7 @@
 	import PromptRightPanel from '$lib/components/studio/PromptRightPanel.svelte';
 	import ImportPanel from '$lib/components/studio/ImportPanel.svelte';
 	import { loadStudioDefaults } from '$lib/studio/defaults';
+	import { studioMobile, resetStudioMobileBridge } from '$lib/studio/mobileView.svelte';
 	import {
 		DEFAULT_PROMPT_VALUES,
 		promptFromDefaults,
@@ -39,6 +40,24 @@
 		}
 	});
 
+	// Mobile type bridge — the studio layout's content-type FAB modal reads
+	// this registration; selecting a type mirrors the builder's own picker
+	// (type change clears guide_category). Also resets the editor/config
+	// column to the editor on (re)entry.
+	onMount(() => {
+		studioMobile.section = 'editor';
+	});
+	$effect(() => {
+		studioMobile.typeItems = data.contentTypes.map((ct) => ({ id: ct.value, label: ct.label }));
+		studioMobile.selectedTypeId = values.content_type || null;
+		studioMobile.typeLocked = false;
+		studioMobile.selectType = (id: string) => {
+			values.content_type = id;
+			values.guide_category = '';
+		};
+		return resetStudioMobileBridge;
+	});
+
 	const spaceName = $derived(
 		spaces.find((s) => s.id === values.space_id)?.name ?? ''
 	);
@@ -54,7 +73,7 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="composer-grid">
+<div class="composer-grid" data-mobile-section={studioMobile.section}>
 	<div class="composer-main">
 		<PromptBuilder
 			bind:values
@@ -115,6 +134,16 @@
 	@media (max-width: 1023px) {
 		.composer-grid {
 			grid-template-columns: 1fr;
+		}
+	}
+
+	/* Mobile: the layout's swap FAB shows one column at a time. */
+	@media (max-width: 639px) {
+		.composer-grid[data-mobile-section='editor'] > .composer-right {
+			display: none;
+		}
+		.composer-grid[data-mobile-section='config'] > .composer-main {
+			display: none;
 		}
 	}
 </style>

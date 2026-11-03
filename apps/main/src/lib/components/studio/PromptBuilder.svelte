@@ -221,6 +221,12 @@
 		width: 15rem;
 		flex-shrink: 0;
 	}
+	/* Mobile: the studio layout's type FAB replaces this field. */
+	@media (max-width: 639px) {
+		.type-field {
+			display: none;
+		}
+	}
 	.guide-category-selector {
 		display: flex;
 		flex-direction: column;
@@ -230,6 +236,13 @@
 		font-size: 0.75rem;
 		font-weight: 500;
 		color: var(--color-muted);
+	}
+	/* Mobile: the field's placeholder carries the name — hide the label.
+	 * The input keeps an accessible name via its aria-label. */
+	@media (max-width: 639px) {
+		.guide-category-label {
+			display: none;
+		}
 	}
 	.composer-field-groups {
 		display: flex;
@@ -256,6 +269,20 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
+	}
+	/* Mobile: stack the header — title on its own line, actions in a
+	 * full-width row so neither wraps mid-label. */
+	@media (max-width: 639px) {
+		.preview-header {
+			flex-direction: column;
+			align-items: stretch;
+			gap: 0.5rem;
+		}
+		.preview-actions .btn-primary,
+		.preview-actions .btn-secondary {
+			flex: 1;
+			justify-content: center;
+		}
 	}
 	.preview-actions {
 		display: flex;

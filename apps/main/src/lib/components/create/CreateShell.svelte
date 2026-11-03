@@ -44,6 +44,7 @@
 	import AiBodyButton from '$lib/ai/AiBodyButton.svelte';
 	import AiDraftPanel from '$lib/ai/AiDraftPanel.svelte';
 	import { canUseAI } from '$lib/ai/canUseAI';
+	import { studioMobile, resetStudioMobileBridge } from '$lib/studio/mobileView.svelte';
 	import type { SessionUser } from '$lib/types';
 
 	interface Props {
@@ -386,6 +387,8 @@
 	);
 
 	onMount(() => {
+		// Mobile editor/config swap always re-opens on the editor column.
+		studioMobile.section = 'editor';
 		if (!user) return;
 		const deps: ComposerDeps = {
 			create: createApi.createContent,
@@ -478,6 +481,30 @@
 	function markDirty() {
 		composer?.markDirty();
 	}
+
+	// Shared by the header type Autocomplete and the studio layout's mobile
+	// content-type modal — both keep the ?type= param and dirty state in sync.
+	function selectTypeByValue(value: string) {
+		selectedType = types.find((ty) => ty.value === value) ?? resolveType(value);
+		const url = new URL(page.url);
+		url.searchParams.set('type', selectedType.value);
+		replaceState(url, {});
+		markDirty();
+	}
+
+	// Mobile composer bridge — the /studio layout's FABs swap the two
+	// composer columns via data-mobile-section and read this registration
+	// for the content-type modal. Guarded by typeLocked like the header
+	// picker (content_type is immutable once the row exists).
+	$effect(() => {
+		studioMobile.typeItems = typeItems;
+		studioMobile.selectedTypeId = selectedType.value;
+		studioMobile.typeLocked = typeLocked;
+		studioMobile.selectType = (id: string) => {
+			if (!typeLocked) selectTypeByValue(id);
+		};
+		return resetStudioMobileBridge;
+	});
 
 	function handleTitle(v: string) {
 		title = v;
@@ -587,7 +614,7 @@
 	{/if}
 {/snippet}
 
-<div class="composer-grid">
+<div class="composer-grid" data-mobile-section={studioMobile.section}>
 	<div class="composer-main">
 		<div class="composer-header">
 			<h1 class="composer-title">{draft?.id ? t('create.edit_title', 'Edit') : t('create.title')}</h1>
@@ -603,13 +630,7 @@
 					initialFetcher={staticAutocompleteFetcher(typeItems)}
 					selectedId={selectedType.value}
 					selectedLabel={selectedType.label}
-					onSelect={(item) => {
-						selectedType = types.find((ty) => ty.value === item.id) ?? resolveType(item.id);
-						const url = new URL(page.url);
-						url.searchParams.set('type', selectedType.value);
-						replaceState(url, {});
-						markDirty();
-					}}
+					onSelect={(item) => selectTypeByValue(item.id)}
 				/>
 			</div>
 		</div>
@@ -886,11 +907,24 @@
 		font-weight: 600;
 		color: var(--color-text);
 	}
+	/* Mobile: the bottom tab bar already labels the page and the type FAB
+	 * replaces the type field — collapse the whole header row. */
+	@media (max-width: 639px) {
+		.composer-header {
+			display: none;
+		}
+	}
 	/* The type selector is an Autocomplete — this wrapper only constrains
 	 * its width; the field chrome lives in Autocomplete's own styles. */
 	.composer-type-select {
 		width: 15rem;
 		flex-shrink: 0;
+	}
+	/* Mobile: the studio layout's type FAB replaces this field. */
+	@media (max-width: 639px) {
+		.composer-type-select {
+			display: none;
+		}
 	}
 	.guide-category-selector {
 		display: flex;
@@ -902,12 +936,29 @@
 		font-weight: 500;
 		color: var(--color-muted);
 	}
+	/* Mobile: the field's placeholder carries the name — hide the label.
+	 * The input keeps an accessible name via its aria-label. */
+	@media (max-width: 639px) {
+		.guide-category-label {
+			display: none;
+		}
+	}
 	.composer-right {
 		min-width: 0;
 	}
 	@media (max-width: 1023px) {
 		.composer-grid {
 			grid-template-columns: 1fr;
+		}
+	}
+
+	/* Mobile: the /studio layout's swap FAB shows one column at a time. */
+	@media (max-width: 639px) {
+		.composer-grid[data-mobile-section='editor'] > .composer-right {
+			display: none;
+		}
+		.composer-grid[data-mobile-section='config'] > .composer-main {
+			display: none;
 		}
 	}
 </style>

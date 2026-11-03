@@ -16,7 +16,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
 	import { contentHref } from '$lib/utils/contentLink';
-	import { FileText, Search, Loader2, X } from 'lucide-svelte';
+	import { FileText, Search, Loader2, X, Check, ListFilter } from 'lucide-svelte';
 
 	interface ContentItem {
 		id: string;
@@ -139,6 +139,9 @@
 		}
 		return params;
 	}
+
+	// Mobile: the status subtabs collapse into a fixed FAB → modal list.
+	let statusModalOpen = $state(false);
 
 	function switchTab(key: string) {
 		const params = filterParams(key === 'published' ? { status: undefined } : { status: key });
@@ -397,11 +400,13 @@
 		</div>
 	{/if}
 
-	<div class="flex flex-wrap items-center gap-2">
+	<!-- Status subtabs — desktop only; on mobile they collapse into the
+	     floating status button + modal below. -->
+	<div class="hidden flex-wrap items-center gap-2 sm:flex">
 		{#each tabs as tab (tab.key)}
 			<button
 				type="button"
-				class="rounded-[var(--radius)] px-3 py-1.5 text-sm {status === tab.key || (tab.key === 'published' && !page.url.searchParams.get('status'))
+				class="rounded-[var(--radius)] px-3 py-1.5 text-sm {status === tab.key
 					? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
 					: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 				onclick={() => switchTab(tab.key)}
@@ -412,18 +417,19 @@
 	</div>
 
 	<div class="mt-2 flex flex-wrap items-center gap-2">
-		<div class="relative">
+		<!-- Mobile: search is 100% width, the two filters split 50/50. -->
+		<div class="relative w-full sm:w-auto">
 			<Search class="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-[var(--color-muted)]" />
 			<input
 				type="search"
 				placeholder={t('dashboard.content.search_placeholder')}
 				value={qParam}
 				oninput={(e) => onSearchInput(e.currentTarget.value)}
-				class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 ps-8 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-border)] sm:w-56"
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 ps-8 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-border)] sm:w-56"
 			/>
 		</div>
-		<div class="ms-auto flex flex-wrap items-center gap-2">
-			<div class="w-40">
+		<div class="flex w-full flex-wrap items-center gap-2 sm:ms-auto sm:w-auto">
+			<div class="flex-1 sm:w-40 sm:flex-none">
 				<Autocomplete
 					placeholder={t('dashboard.content.all_types')}
 					emptyMessage={t('dashboard.content.no_matches', 'No matches')}
@@ -436,7 +442,7 @@
 					class="w-full"
 				/>
 			</div>
-			<div class="w-40">
+			<div class="flex-1 sm:w-40 sm:flex-none">
 				<Autocomplete
 					placeholder={t('dashboard.content.sort_label', 'Sort')}
 					emptyMessage={t('dashboard.content.no_matches', 'No matches')}
@@ -589,6 +595,43 @@
 			</div>
 		{/if}
 	{/if}
+
+	<!-- Mobile: floating status button above the studio bottom tab bar —
+	     opens the subtabs as a modal list. -->
+	<button
+		type="button"
+		class="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:hidden"
+		onclick={() => (statusModalOpen = true)}
+		aria-label={t('common.status', 'Status')}
+		title={t('common.status', 'Status')}
+	>
+		<ListFilter size={20} />
+	</button>
+
+	<Modal bind:open={statusModalOpen} title={t('common.status', 'Status')} icon={ListFilter} size="sm">
+		{#snippet children(close)}
+			<div class="flex flex-col gap-1">
+				{#each tabs as tab (tab.key)}
+					<button
+						type="button"
+						class="flex items-center justify-between gap-3 rounded-[var(--radius)] border px-3 py-2.5 text-start text-sm {status ===
+						tab.key
+							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary)]'
+							: 'border-transparent text-[var(--color-text)] hover:bg-[var(--color-surface-elevated)]'}"
+						onclick={() => {
+							switchTab(tab.key);
+							close();
+						}}
+					>
+						<span>{t(tab.labelKey)}</span>
+						{#if status === tab.key}
+							<Check size={16} />
+						{/if}
+					</button>
+				{/each}
+			</div>
+		{/snippet}
+	</Modal>
 
 	<Modal open={deleteIds !== null} onOpenChange={(v) => { if (!v) deleteIds = null; }} overlayClass="backdrop-blur-sm" size="md">
 		{#snippet title()}

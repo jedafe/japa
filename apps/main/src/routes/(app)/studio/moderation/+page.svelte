@@ -12,7 +12,7 @@
 	import { contentHref } from '$lib/utils/contentLink';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { Shield, Search, Loader2, X, Flag } from 'lucide-svelte';
+	import { Shield, Search, Loader2, X, Flag, Check, ListFilter } from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import type { ModerationQueueItem } from './+page.server';
 
@@ -139,6 +139,9 @@
 	function applyFilter(overrides: Record<string, string | undefined>) {
 		goto(`/studio/moderation?${filterParams(overrides).toString()}`, { keepFocus: true, noScroll: true });
 	}
+
+	// Mobile: the status subtabs collapse into a fixed FAB → modal list.
+	let statusModalOpen = $state(false);
 
 	let searchTimer: ReturnType<typeof setTimeout> | null = null;
 	function onSearchInput(value: string) {
@@ -362,7 +365,9 @@
 		</div>
 	{/if}
 
-	<div class="flex flex-wrap items-center gap-2">
+	<!-- Status subtabs — desktop only; on mobile they collapse into the
+	     floating status button + modal below. -->
+	<div class="hidden flex-wrap items-center gap-2 sm:flex">
 		{#each statusTabs as tab (tab.key)}
 			<button
 				type="button"
@@ -386,18 +391,19 @@
 	</div>
 
 	<div class="mt-2 flex flex-wrap items-center gap-2">
-		<div class="relative">
+		<!-- Mobile: search is 100% width, the filters below pair up 50/50. -->
+		<div class="relative w-full sm:w-auto">
 			<Search class="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-[var(--color-muted)]" />
 			<input
 				type="search"
 				placeholder={t('studio.moderation.search_placeholder', 'Search reports…')}
 				value={qParam}
 				oninput={(e) => onSearchInput(e.currentTarget.value)}
-				class="w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 ps-8 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-border)] sm:w-56"
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-1.5 ps-8 pe-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-border)] sm:w-56"
 			/>
 		</div>
-		<div class="ms-auto flex flex-wrap items-center gap-2">
-			<div class="w-40">
+		<div class="flex w-full flex-wrap items-center gap-2 sm:ms-auto sm:w-auto">
+			<div class="w-[calc(50%-0.25rem)] sm:w-40">
 				<Autocomplete
 					placeholder={t('studio.moderation.all_types', 'All types')}
 					emptyMessage={t('studio.moderation.no_matches', 'No matches')}
@@ -419,7 +425,7 @@
 				/>
 			</div>
 			{#if typeParam === 'content'}
-				<div class="w-44">
+				<div class="w-[calc(50%-0.25rem)] sm:w-44">
 					<Autocomplete
 						placeholder={t('studio.moderation.all_content_types', 'All content types')}
 						emptyMessage={t('studio.moderation.no_matches', 'No matches')}
@@ -434,7 +440,7 @@
 				</div>
 			{/if}
 			{#if spaceItems.length > 0}
-				<div class="w-44">
+				<div class="w-[calc(50%-0.25rem)] sm:w-44">
 					<Autocomplete
 						placeholder={t('studio.moderation.all_spaces', 'All my spaces')}
 						emptyMessage={t('studio.moderation.no_matches', 'No matches')}
@@ -449,7 +455,7 @@
 				</div>
 			{/if}
 			{#if tagItems.length > 0}
-				<div class="w-44">
+				<div class="w-[calc(50%-0.25rem)] sm:w-44">
 					<Autocomplete
 						placeholder={t('studio.moderation.all_tags', 'All my tags')}
 						emptyMessage={t('studio.moderation.no_matches', 'No matches')}
@@ -463,7 +469,7 @@
 					/>
 				</div>
 			{/if}
-			<div class="w-32">
+			<div class="w-[calc(50%-0.25rem)] sm:w-32">
 				<Autocomplete
 					ariaLabel={t('studio.moderation.page_size', 'Page size')}
 					placeholder={t('studio.moderation.page_size', 'Page size')}
@@ -702,6 +708,58 @@
 			</div>
 		{/if}
 	{/if}
+
+	<!-- Mobile: floating status button above the studio bottom tab bar —
+	     opens the subtabs (and the assigned-to-me toggle) as a modal list. -->
+	<button
+		type="button"
+		class="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:hidden"
+		onclick={() => (statusModalOpen = true)}
+		aria-label={t('common.status', 'Status')}
+		title={t('common.status', 'Status')}
+	>
+		<ListFilter size={20} />
+	</button>
+
+	<Modal bind:open={statusModalOpen} title={t('common.status', 'Status')} icon={ListFilter} size="sm">
+		{#snippet children(close)}
+			<div class="flex flex-col gap-1">
+				{#each statusTabs as tab (tab.key)}
+					<button
+						type="button"
+						class="flex items-center justify-between gap-3 rounded-[var(--radius)] border px-3 py-2.5 text-start text-sm {statusParam ===
+						tab.key
+							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary)]'
+							: 'border-transparent text-[var(--color-text)] hover:bg-[var(--color-surface-elevated)]'}"
+						onclick={() => {
+							applyFilter({ status: tab.key === 'pending' ? undefined : tab.key });
+							close();
+						}}
+					>
+						<span>{tab.label}</span>
+						{#if statusParam === tab.key}
+							<Check size={16} />
+						{/if}
+					</button>
+				{/each}
+				<button
+					type="button"
+					class="mt-1 flex items-center justify-between gap-3 rounded-[var(--radius)] border px-3 py-2.5 text-start text-sm {assignedParam
+						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary)]'
+						: 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-elevated)]'}"
+					onclick={() => {
+						applyFilter({ assigned: assignedParam ? undefined : 'me' });
+						close();
+					}}
+				>
+					<span>{t('studio.moderation.assigned_to_me', 'Assigned to me')}</span>
+					{#if assignedParam}
+						<Check size={16} />
+					{/if}
+				</button>
+			</div>
+		{/snippet}
+	</Modal>
 
 	<Modal open={pendingAction !== null} onOpenChange={(v) => { if (!v) pendingAction = null; }} overlayClass="backdrop-blur-sm" size="md">
 		{#snippet title()}
