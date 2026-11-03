@@ -222,8 +222,8 @@
 
 <div class="mx-auto w-full max-w-full">
 	<div class="sticky top-0 z-10 border-b border-[var(--color-border)] bg-[var(--color-surface)]" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
-		<div class="flex items-center justify-between px-4 py-3">
-			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
+		<div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+			<h1 class="flex min-w-0 items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 				<Bell size={20} />
 				{t('notifications.heading', 'Notifications')}
 				{#if unreadCount > 0}

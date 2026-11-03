@@ -658,7 +658,7 @@
 		{#if selectedDestId && visaCategories.length > 0}
 			<!-- Optional visa category filter -->
 			<div class="border-b border-[var(--color-border)] px-4 py-3 flex items-center gap-3">
-				<label for="visa-cat" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
+				<label for="visa-cat" class="text-sm font-medium text-[var(--color-text)]">
 					{t('language_test.visa_category', 'Visa category:')}
 				</label>
 				<div class="flex-1">

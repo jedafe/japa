@@ -229,7 +229,7 @@
 
 			<!-- Employment status (select — backend validates enum) -->
 			<div class="flex items-center gap-3">
-				<label for="employment" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
+				<label for="employment" class="text-sm font-medium text-[var(--color-text)]">
 					{t('tax_calculator.employment_status', 'Employment status:')}
 				</label>
 				<AutocompleteSelect

@@ -349,7 +349,7 @@
 			<!-- Optional filters: issuing country + doc type -->
 			<div class="border-b border-[var(--color-border)] px-4 py-3 flex flex-wrap items-end gap-4">
 				<div class="flex items-center gap-3">
-					<label for="issuing-selector" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
+					<label for="issuing-selector" class="text-sm font-medium text-[var(--color-text)]">
 						{t('attestation_guide.issuing_country', 'Issuing country:')}
 					</label>
 					<Autocomplete
@@ -365,7 +365,7 @@
 					/>
 				</div>
 				<div class="flex items-center gap-3">
-					<label for="doc-type" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
+					<label for="doc-type" class="text-sm font-medium text-[var(--color-text)]">
 						{t('attestation_guide.doc_type', 'Document type:')}
 					</label>
 					<input

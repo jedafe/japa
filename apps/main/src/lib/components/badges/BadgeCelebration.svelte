@@ -196,7 +196,7 @@
 			{/if}
 
 			<div class="mt-6 flex items-center justify-center gap-2">
-				<a href="/badges" class="rounded-full bg-[var(--color-primary)] px-5 py-2 text-sm font-semibold text-white hover:opacity-90">
+				<a href="/badges" onclick={dismiss} class="rounded-full bg-[var(--color-primary)] px-5 py-2 text-sm font-semibold text-white hover:opacity-90">
 					{t('badges.celebration.view', 'View collection')}
 				</a>
 				<button bind:this={continueBtn} onclick={dismiss} class="rounded-full border border-[var(--color-border)] px-5 py-2 text-sm font-semibold text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">

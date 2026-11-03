@@ -343,7 +343,7 @@
 
 				<div class="space-y-3">
 					<div class="flex items-center gap-3">
-						<label for="output-format" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
+						<label for="output-format" class="text-sm font-medium text-[var(--color-text)]">
 							{t('cv_formatter.output_format', 'Format:')}
 						</label>
 						<AutocompleteSelect
