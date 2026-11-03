@@ -350,6 +350,9 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility", err.Error())
 	case errors.Is(err, ErrNotSpaceMember):
 		errpkg.WriteError(w, http.StatusForbidden, "not_space_member", "You must be a member of each assigned space")
+	case errors.Is(err, ErrInvalidSpace):
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_space",
+			"One or more space IDs do not belong to this platform")
 	case errors.Is(err, ErrMissingRequiredFields):
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_required_fields", err.Error())
 	case errors.Is(err, ErrBodyTooShort):
@@ -2204,7 +2207,11 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// consistent with the create path's Flagged→in_review clamp.
 	bodyChanged := input.Body != "" && strings.TrimSpace(input.Body) != strings.TrimSpace(prevContent.Body)
 	if !bodyChanged && input.BodyHtml != "" {
-		bodyChanged = SanitizeText(input.BodyHtml) != SanitizeText(prevContent.BodyHtml)
+		// Sanitized-vs-stored comparison catches link injections that a
+		// visible-text diff misses (wrapping approved text in <a href>).
+		// updateInput.BodyHtml and the stored column share the same
+		// SanitizeHTML canonical form, so equality means truly unchanged.
+		bodyChanged = updateInput.BodyHtml != prevContent.BodyHtml
 	}
 
 	if h.SpamPipeline != nil && bodyChanged {

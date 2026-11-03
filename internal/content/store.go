@@ -1438,7 +1438,11 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 
 	// BUG-CE-001: PATCH-driven transitions into live statuses must meet the
 	// same invariants as the dedicated endpoints — primary space (§14),
-	// content.min_length, and required custom fields (§23/§25).
+	// content.min_length, and required custom fields (§23/§25). The checks
+	// run against the EFFECTIVE values — a PATCH that grows a stub body or
+	// fills a required field and publishes in one shot must not fail on the
+	// stored stubs, and a PATCH that empties a required value must not pass
+	// on the stored ones.
 	transitionedToLive := (input.Status == StatusPublished || input.Status == StatusScheduled) &&
 		existing.Status != input.Status
 	if transitionedToLive {
@@ -1456,11 +1460,23 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		if s.settings != nil {
 			minLength = s.settings.GetIntOr(ctx, "content.min_length", defaultMinLength)
 		}
-		if len(strings.TrimSpace(existing.Body)) < minLength {
+		effectiveBody := input.Body
+		if effectiveBody == "" {
+			effectiveBody = existing.Body
+		}
+		if len(strings.TrimSpace(effectiveBody)) < minLength {
 			return gen.UpdateContentRow{}, ErrBodyTooShort
 		}
 
-		if err := s.validateRequiredFields(ctx, existing.ContentType, existing.GuideCategory, existing.FieldValues); err != nil {
+		effectiveFields := input.FieldValues
+		if len(effectiveFields) == 0 {
+			effectiveFields = existing.FieldValues
+		}
+		effectiveGuideCategory := input.GuideCategory
+		if effectiveGuideCategory == nil {
+			effectiveGuideCategory = existing.GuideCategory
+		}
+		if err := s.validateRequiredFields(ctx, existing.ContentType, effectiveGuideCategory, effectiveFields); err != nil {
 			return gen.UpdateContentRow{}, err
 		}
 	}
@@ -1480,23 +1496,40 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		}
 
 		additional := make([]pgtype.UUID, 0, len(existingSpaces))
+		syncNeeded := true
 
 		for _, sp := range existingSpaces {
+			if sp.IsPrimary && isSameUUID(sp.SpaceID, primarySpaceID) {
+				// Primary unchanged — the delete+reinsert below would only
+				// churn identical rows and stamp a second updated_at on every
+				// autosave. Skip it. (No is_primary row → keep syncing to
+				// repair drift.)
+				syncNeeded = false
+			}
 			if !isSameUUID(sp.SpaceID, primarySpaceID) {
 				additional = append(additional, sp.SpaceID)
 			}
 		}
 
-		spacesUpdatedAt, err := s.UpdateContentSpaces(ctx, content.ID, editedBy, primarySpaceID, additional, input.BypassSpaceCheck)
-		if err != nil {
-			return gen.UpdateContentRow{}, fmt.Errorf("updating content spaces: %w", err)
+		// §79 stories always sync — UpdateContentSpaces re-appends the
+		// destination-country assignment, so skipping here would let a
+		// removed destination stay un-federated.
+		if existing.ContentType == TypeStory {
+			syncNeeded = true
 		}
 
-		// The space sync stamps a second updated_at on the row — the
-		// response must report that later timestamp or the caller's
-		// expected_updated_at precondition 409s on the very next save.
-		if spacesUpdatedAt.Valid {
-			content.UpdatedAt = spacesUpdatedAt
+		if syncNeeded {
+			spacesUpdatedAt, err := s.UpdateContentSpaces(ctx, content.ID, editedBy, primarySpaceID, additional, input.BypassSpaceCheck)
+			if err != nil {
+				return gen.UpdateContentRow{}, fmt.Errorf("updating content spaces: %w", err)
+			}
+
+			// The space sync stamps a second updated_at on the row — the
+			// response must report that later timestamp or the caller's
+			// expected_updated_at precondition 409s on the very next save.
+			if spacesUpdatedAt.Valid {
+				content.UpdatedAt = spacesUpdatedAt
+			}
 		}
 	}
 
@@ -3013,12 +3046,25 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, pr
 	var updatedAt pgtype.Timestamptz
 
 	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		row, err := q.GetContentByID(ctx, contentID)
+		if err != nil {
+			return fmt.Errorf("getting content for spaces update: %w", err)
+		}
+
 		// Snapshot current assignments — the posting-permission gate below
 		// only applies to spaces newly added by this call. Re-checking
 		// grandfathered assignments on every save blocks plain edits when a
 		// space's posting_perm tightens after the post was filed (verified /
-		// moderators / inactive) — editing is not a new posting.
+		// moderators / inactive) — editing is not a new posting. The legacy
+		// contents.space_id/geo_space_id columns count as assigned too —
+		// rows filed before content_spaces existed carry no join rows yet.
 		existingSet := map[[16]byte]bool{}
+		if row.SpaceID.Valid {
+			existingSet[row.SpaceID.Bytes] = true
+		}
+		if row.GeoSpaceID.Valid {
+			existingSet[row.GeoSpaceID.Bytes] = true
+		}
 		if rows, err := q.GetContentSpaces(ctx, contentID); err == nil {
 			for _, sp := range rows {
 				existingSet[sp.SpaceID.Bytes] = true
@@ -3068,7 +3114,7 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, pr
 		// even when the caller (e.g. the composer's space editor) replaces it,
 		// or every save would silently un-federate the story. The destination
 		// never requires a posting grant and never displaces the primary.
-		if row, err := q.GetContentByID(ctx, contentID); err == nil && row.ContentType == TypeStory {
+		if row.ContentType == TypeStory {
 			if meta, err := q.GetStoryMetaByContent(ctx, contentID); err == nil && meta.DestinationSpaceID.Valid && !isSameUUID(meta.DestinationSpaceID, primarySpaceID) {
 				present := false
 				for _, sid := range additionalSpaceIDs {
@@ -3122,7 +3168,7 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, pr
 		// Read back the bumped updated_at — SetContentSpaceID stamps it and
 		// callers need the value to keep the U1 optimistic lock in sync
 		// (BUG-CE-006). Inside the tx so the read can't race a later write.
-		row, err := q.GetContentByID(ctx, contentID)
+		row, err = q.GetContentByID(ctx, contentID)
 		if err != nil {
 			return fmt.Errorf("reading content updated_at: %w", err)
 		}
