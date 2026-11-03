@@ -596,7 +596,7 @@
 			role="presentation"
 		>
 			<div
-				class="bg-[var(--color-surface)] rounded-[var(--radius-card)] p-6 max-w-md w-full"
+				class="bg-[var(--color-surface)] rounded-[var(--radius-card)] p-4 sm:p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto"
 				onclick={(e) => e.stopPropagation()}
 				onkeydown={(e) => e.stopPropagation()}
 				role="dialog"
