@@ -477,7 +477,7 @@
 				{/if}
 
 				<!-- Add organisation toggle -->
-				<div class="mb-6 flex items-center justify-between">
+				<div class="mb-6 flex flex-wrap items-center justify-between gap-2">
 					<h2 class="text-sm font-semibold text-[var(--color-muted)] uppercase tracking-wide">
 						{t('community_locator.organisations', 'Organisations')}
 					</h2>

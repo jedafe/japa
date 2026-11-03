@@ -273,7 +273,7 @@
 			<div class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 				{t('pof_calculator.required', 'Required proof of funds')}
 			</div>
-			<div class="mt-2 text-3xl font-bold tabular-nums text-[var(--color-primary)]">
+			<div class="mt-2 text-2xl sm:text-3xl font-bold tabular-nums text-[var(--color-primary)]">
 				{formatMoney(result.amount, result.currency, data.currencies)}
 			</div>
 			<div class="mt-1 text-sm text-[var(--color-muted)]">

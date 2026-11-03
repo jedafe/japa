@@ -420,7 +420,7 @@
 						</div>
 					{/if}
 
-					<div class="flex items-center justify-between">
+					<div class="flex flex-wrap items-center justify-between gap-2">
 						<p class="text-xs text-[var(--color-muted)]">
 							{#if inputMode === 'text'}
 								{inputText.length.toLocaleString()} {t('cv_formatter.characters', 'characters')}

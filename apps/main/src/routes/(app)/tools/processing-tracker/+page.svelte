@@ -276,7 +276,7 @@
 								<Gauge size={14} />
 								{t('processing_tracker.avg_days', 'Average')}
 							</div>
-							<p class="text-2xl font-bold text-[var(--color-text)]">
+							<p class="text-xl sm:text-2xl font-bold text-[var(--color-text)]">
 								{fmtDays(latestStat.avg_days)}
 							</p>
 						</div>
@@ -287,7 +287,7 @@
 								<BarChart3 size={14} />
 								{t('processing_tracker.median_days', 'Median')}
 							</div>
-							<p class="text-2xl font-bold text-[var(--color-text)]">
+							<p class="text-xl sm:text-2xl font-bold text-[var(--color-text)]">
 								{fmtDays(latestStat.median_days)}
 							</p>
 						</div>
@@ -298,7 +298,7 @@
 								<Zap size={14} />
 								{t('processing_tracker.fastest', 'Fastest (p10)')}
 							</div>
-							<p class="text-2xl font-bold text-green-600">
+							<p class="text-xl sm:text-2xl font-bold text-green-600">
 								{fmtDays(latestStat.p10_days)}
 							</p>
 						</div>
@@ -309,7 +309,7 @@
 								<Hourglass size={14} />
 								{t('processing_tracker.slowest', 'Slowest (p90)')}
 							</div>
-							<p class="text-2xl font-bold text-orange-600">
+							<p class="text-xl sm:text-2xl font-bold text-orange-600">
 								{fmtDays(latestStat.p90_days)}
 							</p>
 						</div>

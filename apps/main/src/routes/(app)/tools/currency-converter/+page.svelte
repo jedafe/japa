@@ -253,7 +253,7 @@
 					{:else if convertError}
 						<p class="py-4 text-sm text-red-500">{convertError}</p>
 					{:else if result}
-						<p class="text-2xl sm:text-3xl font-bold text-[var(--color-text)]">
+						<p class="text-xl sm:text-3xl font-bold text-[var(--color-text)]">
 							{fmtMoney(result.converted, result.to)}
 						</p>
 						<p class="mt-1 text-sm text-[var(--color-muted)]">
