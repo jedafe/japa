@@ -4156,7 +4156,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Update/Delete (require auth + edit lock + censor check + permission)
 			// BUG-001/BUG-002: route gates now use _own/_any scoping; authorship
 			// is verified in the handler so non-owners cannot edit/delete others.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "content.edit_own")).
+			// No EditLockMiddleware here: PATCH carries expected_updated_at,
+			// so real concurrent writes already fail cooperatively as
+			// stale_write. The Valkey lock added a 90s hard-block against any
+			// other principal that merely touched the content (admins, agents,
+			// co-editors) — "currently being edited by another user" with no
+			// way to wait it out — while adding nothing expected_updated_at
+			// doesn't already cover.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "content.edit_own")).
 				Patch("/content/{id}", contentHandlers.UpdateContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), rbac.RequirePermission(rbacResolver, "content.delete_own")).
 				Delete("/content/{id}", contentHandlers.DeleteContent)
