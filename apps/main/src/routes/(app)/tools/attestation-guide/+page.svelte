@@ -346,7 +346,7 @@
 		{#if selectedDestId}
 			<!-- Optional filters: issuing country + doc type -->
 			<div class="border-b border-[var(--color-border)] px-4 py-3 flex flex-wrap items-end gap-4">
-				<div class="flex items-center gap-3">
+				<div class="flex flex-col gap-1.5">
 					<label for="issuing-selector" class="text-sm font-medium text-[var(--color-text)]">
 						{t('attestation_guide.issuing_country', 'Issuing country:')}
 					</label>
@@ -362,7 +362,7 @@
 						onClear={() => onIssuingChange('')}
 					/>
 				</div>
-				<div class="flex items-center gap-3">
+				<div class="flex flex-col gap-1.5">
 					<label for="doc-type" class="text-sm font-medium text-[var(--color-text)]">
 						{t('attestation_guide.doc_type', 'Document type:')}
 					</label>
