@@ -4165,7 +4165,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// doesn't already cover.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "content.edit_own")).
 				Patch("/content/{id}", contentHandlers.UpdateContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), rbac.RequirePermission(rbacResolver, "content.delete_own")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.delete_own")).
 				Delete("/content/{id}", contentHandlers.DeleteContent)
 			// Lifecycle: publish/archive/schedule are status transitions.
 			// BUG-003: routes now use the dedicated content.publish and
@@ -4318,11 +4318,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comments/{id}", commentsHandlers.GetComment)
 			r.Get("/content/{id}/comments", commentsHandlers.ListComments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpComment), opBanEnforce, rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "comments.edit_own")).Patch("/comments/{id}", commentsHandlers.UpdateComment)
+			// No EditLockMiddleware on owner comment edit/delete — the same
+			// false "another user" blocks hit sole authors here; concurrent
+			// edits resolve last-write-wins, ownership-checked in the handler.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "comments.edit_own")).Patch("/comments/{id}", commentsHandlers.UpdateComment)
 			// BUG-003: own-vs-any resolved in the handler (RequireAuth only) so a
 			// moderator with comments.delete_any is not blocked by a delete_own
 			// middleware gate, and a plain member cannot delete another's comment.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService)).Delete("/comments/{id}", commentsHandlers.DeleteComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/comments/{id}", commentsHandlers.DeleteComment)
 			// E-007: comment votes are DB writes — same per-user throttle as
 			// forum votes to prevent vote-score manipulation spam.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
@@ -4903,7 +4906,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// blocks for sole-author edits. DELETE keeps it (no token).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
 					Patch("/blog/{id}", blogHandlers.UpdatePost)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
 					Delete("/blog/{id}", blogHandlers.DeletePost)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.create")).
 					Post("/blog/{id}/submit-for-review", blogHandlers.SubmitForReview)
