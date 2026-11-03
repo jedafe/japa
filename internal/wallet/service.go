@@ -132,7 +132,6 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		// still counts for badges/challenges even without a point rule.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return s.settleWithoutPoints(ctx, event)
-			return nil
 		}
 
 		return fmt.Errorf("getting activity rule: %w", err)
@@ -141,7 +140,6 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 	// Check if rule is enabled
 	if rule.IsEnabled != nil && !*rule.IsEnabled {
 		return s.settleWithoutPoints(ctx, event)
-		return nil
 	}
 
 	// ADR-136 compensation events carry {undoes_key, undoes} — decoded here
@@ -181,7 +179,6 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 
 		if count > int64(*rule.CapPerDay) {
 			return s.settleWithoutPoints(ctx, event)
-			return nil // Cap exceeded, skip
 		}
 	}
 
@@ -193,7 +190,6 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 
 		if count > int64(*rule.CapPerWeek) {
 			return s.settleWithoutPoints(ctx, event)
-			return nil // Cap exceeded, skip
 		}
 	}
 
