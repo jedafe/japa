@@ -14,7 +14,8 @@
 	 */
 	import { Modal } from '$lib/components/ui';
 	import { untrack } from 'svelte';
-	import { beforeNavigate, invalidateAll } from '$app/navigation';
+	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import { patchNewsletterPreferences, unsubscribeNewsletter } from '$lib/api/hub';
 	import { api } from '$lib/api/client';
@@ -45,8 +46,22 @@
 		}
 	);
 
+	let bypassGuard = false;
 	beforeNavigate((nav) => {
-		if (form.dirty && !confirm(t('settings.unsaved_warning'))) nav.cancel();
+		if (!form.dirty || bypassGuard || nav.type === 'leave') return;
+		nav.cancel();
+		const target = nav.to?.url;
+		confirmDialog(t('settings.unsaved_warning'), {
+			confirmLabel: t('common.leave', 'Leave')
+		}).then(async (ok) => {
+			if (!ok) return;
+			bypassGuard = true;
+			try {
+				if (target) await goto(target);
+			} finally {
+				bypassGuard = false;
+			}
+		});
 	});
 
 	// Subscribe CTA state (shown when prefs is null).

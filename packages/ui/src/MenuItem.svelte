@@ -9,6 +9,8 @@
 		onSelect?: (event: Event) => void;
 		/** Render as an anchor for navigation items. */
 		href?: string;
+		/** Anchor rel — e.g. "nofollow" for links into noindex pages. */
+		rel?: string;
 		disabled?: boolean;
 		/** Red danger styling for destructive actions. */
 		destructive?: boolean;
@@ -21,6 +23,7 @@
 	let {
 		onSelect,
 		href,
+		rel,
 		disabled = false,
 		destructive = false,
 		icon: Icon,
@@ -39,7 +42,7 @@
 {#if href}
 	<DropdownMenu.Item {disabled} onSelect={(e) => onSelect?.(e)}>
 		{#snippet child({ props })}
-			<a {href} {...props} class={itemClass}>
+			<a {href} {rel} {...props} class={itemClass}>
 				{#if Icon}
 					<Icon class={`h-4 w-4 ${iconClass}`} />
 				{/if}

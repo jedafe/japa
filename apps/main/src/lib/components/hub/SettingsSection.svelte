@@ -1,6 +1,7 @@
 <script lang="ts" generics="T extends Record<string, unknown>">
 	import type { Snippet } from 'svelte';
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { t } from '$lib/i18n';
 	import type { DirtyForm } from './useDirtyForm.svelte';
 
@@ -18,8 +19,24 @@
 	let saved = $state(false);
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
+	// Async confirm can't block a navigation — cancel first, then re-issue
+	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
+	let bypassGuard = false;
 	beforeNavigate((nav) => {
-		if (form?.dirty && !confirm(t('settings.unsaved_warning'))) nav.cancel();
+		if (!form?.dirty || bypassGuard || nav.type === 'leave') return;
+		nav.cancel();
+		const target = nav.to?.url;
+		confirmDialog(t('settings.unsaved_warning'), {
+			confirmLabel: t('common.leave', 'Leave')
+		}).then(async (ok) => {
+			if (!ok) return;
+			bypassGuard = true;
+			try {
+				if (target) await goto(target);
+			} finally {
+				bypassGuard = false;
+			}
+		});
 	});
 
 	async function handleSave() {

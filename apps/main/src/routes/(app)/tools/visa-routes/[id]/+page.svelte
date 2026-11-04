@@ -77,7 +77,7 @@
 	{#if visaJsonLd}
 		{@html safeJsonLdScript(visaJsonLd)}
 	{/if}
-	<meta name="robots" content="noindex,follow" />
+	<meta name="robots" content="noindex,nofollow" />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">

@@ -7,7 +7,8 @@
 	 */
 	import { LinkPreview } from 'bits-ui';
 	import type { Snippet } from 'svelte';
-	import { BadgeCheck, Calendar, Globe, MapPin } from 'lucide-svelte';
+	import { Calendar, Globe, MapPin } from 'lucide-svelte';
+	import VerifiedBadge from '$lib/components/ui/VerifiedBadge.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
@@ -71,6 +72,9 @@
 	let detailWebsite = $state<string | undefined>(undefined);
 	let detailCreatedAt = $state<string | undefined>(undefined);
 	let detailVerified = $state<boolean | undefined>(undefined);
+	let detailVerificationType = $state<string | undefined>(undefined);
+	// Badge artwork scope — only users and organizations carry §07 badges.
+	const badgeScope = $derived(type === 'organization' ? 'organization' : 'user');
 	let detailFollowingCount = $state<number | undefined>(undefined);
 	let detailPostsCount = $state<number | undefined>(undefined);
 	let detailUsername = $state<string | undefined>(undefined);
@@ -241,6 +245,10 @@
 				pickBool(entity, 'verified', 'is_verified') ??
 				pickBool(profile, 'verified', 'is_verified');
 			if (verified != null) detailVerified = verified;
+			const vtype =
+				pickString(entity, 'verification_type') ??
+				pickString(profile, 'verification_type');
+			if (vtype) detailVerificationType = vtype;
 			const following =
 				pickNumber(entity, 'following_count', 'following', 'follows_count') ??
 				pickNumber(profile, 'following_count', 'following', 'follows_count');
@@ -354,9 +362,7 @@
 					<div class="min-w-0">
 						<div class="flex items-center gap-1">
 							<p class="truncate text-sm font-semibold text-[var(--color-text)]">{displayName}</p>
-							{#if detailVerified}
-								<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
-							{/if}
+							<VerifiedBadge verified={detailVerified} type={detailVerificationType} scope={badgeScope} size={14} />
 						</div>
 						<p class="truncate text-xs text-[var(--color-muted)]">{handle ? (type === 'user' ? `@${handle}` : handle) : ''}</p>
 					</div>

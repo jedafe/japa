@@ -30,8 +30,17 @@ export const load: PageServerLoad = async (event) => {
 	const rawPage = parseInt(event.url.searchParams.get('page') ?? '1', 10);
 	const pageNo = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
 	const sort = event.url.searchParams.get('sort') === 'page_count' ? 'page_count' : 'name';
+	// §wiki-seo — ?region={name} filters the country gallery to one UN M49
+	// region; the region hubs remain reachable as pages via breadcrumbs and
+	// their own /wiki/{region} index, but the chips filter in place.
+	const region = event.url.searchParams.get('region') ?? '';
+	// §wiki-seo guest surface — logged-out visitors only see destinations
+	// with real prose (has_content); members keep the full stub-bearing
+	// list so the gallery doubles as the contribution map.
+	const hasContent = !event.locals.user;
 
 	let destinations: WikiDestination[] = [];
+	let hubDestinations: WikiDestination[] = [];
 	let total = 0;
 	let limit = 0;
 	let types: WikiTypeItem[] = [];
@@ -62,17 +71,36 @@ export const load: PageServerLoad = async (event) => {
 		chain = wikiDrillChain(types);
 
 		const rootSlug = chain[0]?.space_type_slug ?? '';
-		if (rootSlug) {
+		// The flag gallery is inherently country-level: when the chain roots
+		// at a hub type (region), that level renders as the browse row above
+		// the gallery instead of replacing it.
+		const gallerySlug =
+			chain.find((t) => t.space_type_slug === 'country')?.space_type_slug ??
+			chain[1]?.space_type_slug ??
+			rootSlug;
+		if (gallerySlug) {
 			const usp = new URLSearchParams({
-				level: rootSlug,
+				level: gallerySlug,
 				has_wiki: 'false',
 				sort,
 				page: String(pageNo)
 			});
+			if (hasContent) usp.set('has_content', 'true');
+			if (region) usp.set('region', region);
 			const rootDest = await apiList<WikiDestination>(ctx, `/wiki/destinations?${usp.toString()}`);
 			destinations = rootDest?.items ?? [];
 			total = rootDest?.meta?.total ?? destinations.length;
 			limit = rootDest?.meta?.limit ?? 0;
+		}
+		if (rootSlug && rootSlug !== gallerySlug) {
+			const hubUsp = new URLSearchParams({
+				level: rootSlug,
+				has_wiki: 'false',
+				limit: '50',
+				sort: 'name'
+			});
+			const hubRes = await apiList<WikiDestination>(ctx, `/wiki/destinations?${hubUsp.toString()}`);
+			hubDestinations = hubRes?.items ?? [];
 		}
 	} catch {
 		/* degrade to empty list */
@@ -96,5 +124,17 @@ export const load: PageServerLoad = async (event) => {
 		contentCountry = geoCountry;
 	}
 
-	return { destinations, total, page: pageNo, limit, sort, types, chain, builderBlocks, contentCountry };
+	return {
+		destinations,
+		hubDestinations,
+		region,
+		total,
+		page: pageNo,
+		limit,
+		sort,
+		types,
+		chain,
+		builderBlocks,
+		contentCountry
+	};
 };

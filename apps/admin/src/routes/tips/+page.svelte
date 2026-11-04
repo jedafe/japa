@@ -6,6 +6,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { tipsAdminApi } from '$lib/api';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { RotateCcw } from 'lucide-svelte';
 
@@ -66,7 +67,7 @@
 		if (refunding) return;
 		// Fiat tips now refund the donor provider-side too — confirm the
 		// destructive financial action explicitly.
-		if (!confirm(t('tips.refund_confirm', 'Refund this tip? The recipient credits are clawed back and any fiat payment is refunded.'))) return;
+		if (!(await confirmDialog(t('tips.refund_confirm', 'Refund this tip? The recipient credits are clawed back and any fiat payment is refunded.')))) return;
 		refunding = row.id;
 		pageError = '';
 		const res = await tipsAdminApi.refund(row.id);

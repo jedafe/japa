@@ -448,7 +448,7 @@ import { contentHref } from '$lib/utils/contentLink';
 	{@html safeJsonLdScript(jsonLd)}
 	{@html safeJsonLdScript(breadcrumbLd)}
 	{#if data.indexable === false || data.seoIndexable === false || thread?.seo_indexable === false || thread?.indexable === false}
-		<meta name="robots" content="noindex,follow" />
+		<meta name="robots" content="noindex,nofollow" />
 	{/if}
 </svelte:head>
 

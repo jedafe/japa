@@ -23,6 +23,43 @@ export interface ClientResult<T> {
 	status: number;
 }
 
+// Global error callback — registered by the root layout to surface failures
+// callers don't (network loss, 5xx, mutating 403s) via the toast host.
+// Avoids circular imports between the API client and the toast store.
+type GlobalErrorHandler = (error: { code: string; message: string; status: number }) => void;
+let globalErrorHandler: GlobalErrorHandler | null = null;
+
+export function setGlobalErrorHandler(handler: GlobalErrorHandler | null): void {
+	globalErrorHandler = handler;
+}
+
+/** Errors worth surfacing globally: connectivity loss, server faults, and
+ *  permission rejections on mutations (CSRF 403s are retried separately —
+ *  a genuine mutating 403 is a real "you can't do this" the page may not
+ *  render). Page-level concerns (validation 4xx on form submissions) stay
+ *  caller-owned so forms keep showing their inline errors without a
+ *  duplicate toast. */
+function shouldReportGlobally(
+	status: number,
+	code: string | undefined,
+	isMutating: boolean,
+	silent: boolean
+): boolean {
+	// Callers opt out for fire-and-forget traffic (view pings, beacons)
+	// by passing { 'x-silent-error': '1' } in headers — a failed telemetry
+	// call should never surface a user-facing toast.
+	if (silent) return false;
+	if (status >= 500) return true;
+	// Mutating 4xx failures that aren't per-field validation belong to the
+	// user: permission walls (403, minus transient CSRF codes the client
+	// retries itself) and rate limiting (429).
+	if (isMutating) {
+		if (status === 403 && code !== 'csrf_token_invalid' && code !== 'csrf_token_missing') return true;
+		if (status === 429) return true;
+	}
+	return false;
+}
+
 /** Result including sidecar envelope fields (e.g. deleted_user_ids for GDPR). */
 export interface ClientEnvelopeResult<T> extends ClientResult<T> {
 	/** Raw envelope body (data + sidecar fields like deleted_user_ids). */
@@ -116,12 +153,19 @@ async function clientFetchRaw<T>(
 ): Promise<ClientEnvelopeResult<T>> {
 	const method = (init.method ?? 'GET').toString().toUpperCase();
 	const isFormData = init.body instanceof FormData;
+	// Opt-out for fire-and-forget calls: pass { 'x-silent-error': '1' } in
+	// headers to skip the global toast on failure. Client-side only — it is
+	// stripped before the request goes out.
+	const h = { ...((init.headers ?? {}) as Record<string, string>) };
+	const silent = h['x-silent-error'] === '1' || h['X-Silent-Error'] === '1';
+	delete h['x-silent-error'];
+	delete h['X-Silent-Error'];
 	const baseHeaders: Record<string, string> = {
 		// For FormData, let the browser set the multipart boundary.
 		...(isFormData ? {} : { 'content-type': 'application/json' }),
 		// Identify this surface for scoped feature-flag resolution.
 		'x-jc-surface': JC_SURFACE,
-		...((init.headers as Record<string, string>) ?? {})
+		...h
 	};
 
 	// The Go API authenticates Authorization: Bearer only — the HttpOnly
@@ -216,12 +260,20 @@ async function clientFetchRaw<T>(
 
 		if (!res.ok || (body && typeof body === 'object' && 'error' in body)) {
 			const err = (body as { error?: { code?: string; message?: string; data?: Record<string, unknown> } } | null)?.error;
+			const code = err?.code ?? 'request_failed';
+			const message = err?.message ?? res.statusText;
+			if (
+				globalErrorHandler &&
+				shouldReportGlobally(res.status, code, MUTATING_METHODS.has(method), silent)
+			) {
+				globalErrorHandler({ code, message, status: res.status });
+			}
 			return {
 				data: null,
 				envelope: null,
 				error: {
-					code: err?.code ?? 'request_failed',
-					message: err?.message ?? res.statusText,
+					code,
+					message,
 					status: res.status,
 					data: err?.data
 				},
@@ -236,12 +288,19 @@ async function clientFetchRaw<T>(
 			status: res.status
 		};
 	} catch (e) {
+		// Caller-intentional aborts (AbortController on unmount/navigation)
+		// aren't failures — they return the same shape but skip the toast.
+		const isAbort = e instanceof DOMException && e.name === 'AbortError';
+		const message = e instanceof Error ? e.message : 'Network error';
+		if (globalErrorHandler && !isAbort && !silent) {
+			globalErrorHandler({ code: 'network_error', message, status: 0 });
+		}
 		return {
 			data: null,
 			envelope: null,
 			error: {
 				code: 'network_error',
-				message: e instanceof Error ? e.message : 'Network error',
+				message,
 				status: 0
 			},
 			status: 0

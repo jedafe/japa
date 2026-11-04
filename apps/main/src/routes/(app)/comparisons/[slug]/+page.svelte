@@ -77,7 +77,7 @@
 	// on mount; the backend deduplicates per user/session per day.
 	$effect(() => {
 		if (!comparison?.content?.id) return;
-		api.post(`/content/${comparison.content.id}/view`, {});
+		api.post(`/content/${comparison.content.id}/view`, {}, { 'x-silent-error': '1' });
 	});
 
 	function cellFor(item: MatrixItem, dim: JCEDimension): MatrixDimension | undefined {
@@ -126,7 +126,7 @@
 	<meta property="og:type" content="article" />
 	<link rel="canonical" href={canonical} />
 	{#if data.indexable === false}
-		<meta name="robots" content="noindex,follow" />
+		<meta name="robots" content="noindex,nofollow" />
 	{/if}
 	<meta property="og:url" content={canonical} />
 	{#if comparison.content.featured_image_url}<meta property="og:image" content={comparison.content.featured_image_url} />{/if}

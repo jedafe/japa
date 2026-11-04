@@ -553,6 +553,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	settingsService := config.NewSettings(database, vkClient.Redis())
 	closers = append(closers, settingsService.Close)
 	contentService.SetSettings(settingsService)
+	universitiesHandlers.SetSettings(settingsService) // §43: sitemap quality thresholds for the indexable flag
 
 	// Template-literal platform name: {{Platform_Name}}/{{Tenant_Name}}
 	// resolves from the hot-reloadable general.site_name setting (env config
@@ -3472,7 +3473,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.With(features.Gate(featureChecker, "service_coupons.enabled")).Get("/sitemap-deals.xml", sitemapHandler.ServeDealsSitemap)
 		r.With(features.Gate(featureChecker, "roadmap.enabled")).Get("/sitemap-roadmap.xml", sitemapHandler.ServeRoadmapSitemap)
 		r.Get("/sitemap-universities.xml", sitemapHandler.ServeUniversitiesSitemap)
-		r.With(features.Gate(featureChecker, "feature.academy")).Get("/sitemap-courses.xml", sitemapHandler.ServeCoursesSitemap)
+		// University course offerings live on the §39 university surface —
+		// ungated like /sitemap-universities.xml. The old /sitemap-courses.xml
+		// name (misgated on feature.academy) redirects permanently so external
+		// references (Search Console submissions) keep resolving.
+		r.Get("/sitemap-university-courses.xml", sitemapHandler.ServeUniversityCoursesSitemap)
+		r.Get("/sitemap-courses.xml", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/sitemap-university-courses.xml", http.StatusMovedPermanently)
+		})
 		r.With(features.Gate(featureChecker, "jobs.enabled")).Get("/sitemap-jobs.xml", sitemapHandler.ServeJobsSitemap)
 		r.With(features.Gate(featureChecker, "scholarship_finder.enabled")).Get("/sitemap-scholarships.xml", sitemapHandler.ServeScholarshipsSitemap)
 		r.With(features.Gate(featureChecker, "service_directory.enabled")).Get("/sitemap-services.xml", sitemapHandler.ServeServicesSitemap)

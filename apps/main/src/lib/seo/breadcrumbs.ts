@@ -24,7 +24,10 @@ export function breadcrumbJsonLd(crumbs: Breadcrumb[]): unknown {
 			'@type': 'ListItem',
 			position: i + 1,
 			name: c.name,
-			item: c.path
+			// A crumb with no matching route (e.g. an entity that lives only
+			// inside /wiki/e/{type}/{entity}/{page}) passes an empty path —
+			// emit a name-only ListItem rather than item:"".
+			...(c.path ? { item: c.path } : {})
 		}))
 	};
 }

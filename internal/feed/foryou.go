@@ -295,6 +295,8 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
 			AuthorUsername:     r.AuthorUsername,
+			AuthorVerified:         r.AuthorVerified,
+			AuthorVerificationType: r.AuthorVerificationType,
 			AuthorName:         asString(r.AuthorName),
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),

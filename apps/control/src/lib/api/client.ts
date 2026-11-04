@@ -16,6 +16,15 @@ export interface ApiResult<T> {
 	status: number;
 }
 
+// Global error callback — registered by the root layout to surface failures
+// callers don't (network loss, 5xx, mutating 403s) via the toast host.
+type GlobalErrorHandler = (error: { code: string; message: string; status: number }) => void;
+let globalErrorHandler: GlobalErrorHandler | null = null;
+
+export function setGlobalErrorHandler(handler: GlobalErrorHandler | null): void {
+	globalErrorHandler = handler;
+}
+
 const CSRF_HEADER = 'X-CSRF-Token';
 const CSRF_COOKIE = 'csrf_token';
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -134,6 +143,14 @@ export async function apiFetch<T>(
 		: buildApiUrl(path, base);
 	const method = (options.method ?? 'GET').toString().toUpperCase();
 	const isMutating = MUTATING_METHODS.has(method);
+	// Opt-out for fire-and-forget calls: pass { 'x-silent-error': '1' } in
+	// headers to skip the global toast on failure. Client-side only — it is
+	// stripped before the request goes out.
+	const h = { ...((options.headers ?? {}) as Record<string, string>) };
+	const silent = h['x-silent-error'] === '1' || h['X-Silent-Error'] === '1';
+	delete h['x-silent-error'];
+	delete h['X-Silent-Error'];
+	options = { ...options, headers: h };
 
 	async function doFetch(opts: RequestInit): Promise<{ res: Response; body: ApiOk<unknown> | ApiErr | null }> {
 		const headers: Record<string, string> = {
@@ -227,21 +244,34 @@ export async function apiFetch<T>(
 
 		if (res.status === 403) {
 			const msg = (body && 'error' in body && body.error.message) || 'Insufficient privileges';
+			const code = body && 'error' in body ? body.error.code : 'forbidden';
+			if (globalErrorHandler && isMutating && !silent && code !== 'csrf_token_invalid' && code !== 'csrf_token_missing') {
+				globalErrorHandler({ code: 'forbidden', message: msg, status: 403 });
+			}
 			return { data: null, meta: null, error: { code: 'forbidden', message: msg, status: 403 }, status: 403 };
 		}
 
 		if (!res.ok || (body && 'error' in body)) {
 			const err = body && 'error' in body ? body.error : { code: 'unknown', message: res.statusText, status: res.status };
+			if (globalErrorHandler && !silent && (res.status >= 500 || (isMutating && res.status === 429))) {
+				globalErrorHandler(err);
+			}
 			return { data: null, meta: null, error: err, status: res.status };
 		}
 
 		const meta = (body as (ApiOk<T> & { meta?: Record<string, unknown> }) | null)?.meta ?? null;
 		return { data: (body as ApiOk<T> | null)?.data ?? null, meta, error: null, status: res.status };
 	} catch (err) {
+		// Caller-intentional aborts (AbortController on unmount/navigation)
+		// aren't failures — they return the same shape but skip the toast.
+		const e = { code: 'network_error', message: err instanceof Error ? err.message : 'Network error', status: 0 };
+		if (globalErrorHandler && !(err instanceof DOMException && err.name === 'AbortError') && !silent) {
+			globalErrorHandler(e);
+		}
 		return {
 			data: null,
 			meta: null,
-			error: { code: 'network_error', message: err instanceof Error ? err.message : 'Network error', status: 0 },
+			error: e,
 			status: 0,
 		};
 	}

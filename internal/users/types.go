@@ -107,10 +107,10 @@ type UserProfileResponse struct {
 	Groups        []string `json:"groups"`
 	// GroupRefs carries the same memberships with ids so admin clients can
 	// diff memberships without name-keyed lookups (display names collide).
-	GroupRefs     []GroupRef `json:"group_refs"`
-	LastLoginAt   *string  `json:"last_login_at"`
-	CreatedAt     string   `json:"created_at"`
-	UpdatedAt     string   `json:"updated_at"`
+	GroupRefs   []GroupRef `json:"group_refs"`
+	LastLoginAt *string    `json:"last_login_at"`
+	CreatedAt   string     `json:"created_at"`
+	UpdatedAt   string     `json:"updated_at"`
 	// ContentCountryPreference is the user's geo-aware feed personalization
 	// country (ADR-064). Surfaced on /me so the feed header can render the
 	// inline "Showing: [Country] · Change" control without an extra fetch.
@@ -238,8 +238,8 @@ type PublicProfileResponse struct {
 	// disclosure_mode = 'disclosed' — the admin display toggle that marks
 	// the byline as AI-authored publicly. Undisclosed personas emit false.
 	AIDisclosed bool    `json:"ai_disclosed"`
-	Location        *string `json:"location"`
-	BannerURL       *string `json:"banner_url"`
+	Location    *string `json:"location"`
+	BannerURL   *string `json:"banner_url"`
 	// Role is the display name of the user's chosen public group
 	// (users.public_group_id → user_groups.name). Null when unset.
 	// Ref: §03 alias amendment — super_admin public role.
@@ -255,6 +255,11 @@ type PublicProfileResponse struct {
 	BlockedBy *bool `json:"blocked_by,omitempty"`
 
 	IsFollowing bool `json:"is_following"`
+
+	// §43 — indexable mirrors the users sitemap quality gate (group
+	// allow_search_indexing + seo.sitemap.user_min_posts). Set only on the
+	// public profile detail; nil elsewhere (fail-open: absent = indexable).
+	Indexable *bool `json:"indexable,omitempty"`
 }
 
 // DraftResponse is the API response for GET /api/v1/me/drafts/{id}, used by

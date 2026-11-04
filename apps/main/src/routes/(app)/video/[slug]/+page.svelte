@@ -45,7 +45,7 @@
 		<meta property="og:type" content="video.other" />
 	{/if}
 	{#if data.sourceOnly}
-		<meta name="robots" content="noindex,follow" />
+		<meta name="robots" content="noindex,nofollow" />
 	{/if}
 </svelte:head>
 

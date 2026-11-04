@@ -170,6 +170,10 @@
 	let formValue = $state<Record<string, any>>({});
 	let formErrors = $state<Record<string, string>>({});
 	let saving = $state(false);
+	// Mutation failures that occur while a modal is open render inside that
+	// modal — the page-level `error` banner sits behind the backdrop and the
+	// user would never see it.
+	let modalError = $state('');
 
 	// View modal
 	let viewOpen = $state(false);
@@ -486,6 +490,7 @@
 		}
 		formValue = seeded;
 		formErrors = {};
+		modalError = '';
 		formOpen = true;
 	}
 
@@ -497,6 +502,7 @@
 		}
 		formValue = seeded;
 		formErrors = {};
+		modalError = '';
 		formOpen = true;
 	}
 
@@ -524,7 +530,7 @@
 			return;
 		}
 		saving = true;
-		error = '';
+		modalError = '';
 		try {
 			const body = { ...formValue };
 			const res = editing
@@ -539,13 +545,13 @@
 				}
 				await reload();
 			} else {
-				error = res?.error ?? t('common.error', 'An error occurred');
+				modalError = res?.error ?? t('common.error', 'An error occurred');
 				// BUG-CE-019: surface structured field errors on the inputs —
 				// callbacks may return error.data's per-field map.
 				formErrors = res?.fieldErrors ?? {};
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+			modalError = e instanceof Error ? e.message : t('common.error', 'An error occurred');
 		} finally {
 			saving = false;
 		}
@@ -605,12 +611,14 @@
 
 	function openHardDelete(row: any) {
 		hardDeleteTarget = row;
+		modalError = '';
 		hardDeleteConfirmOpen = true;
 	}
 
 	async function confirmHardDelete() {
 		if (!hardDeleteTarget || confirmBusy) return;
 		confirmBusy = true;
+		modalError = '';
 		try {
 			const res = await config.hardRemove?.(hardDeleteTarget.id);
 			if (res?.ok) {
@@ -619,10 +627,10 @@
 				success = t('common.saved', 'Saved');
 				await reload();
 			} else {
-				error = res?.error ?? t('common.error', 'An error occurred');
+				modalError = res?.error ?? t('common.error', 'An error occurred');
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+			modalError = e instanceof Error ? e.message : t('common.error', 'An error occurred');
 		} finally {
 			confirmBusy = false;
 		}
@@ -630,12 +638,14 @@
 
 	function openRestore(row: any) {
 		restoreTarget = row;
+		modalError = '';
 		restoreConfirmOpen = true;
 	}
 
 	async function confirmRestore() {
 		if (!restoreTarget || confirmBusy) return;
 		confirmBusy = true;
+		modalError = '';
 		try {
 			const res = await config.restore?.(restoreTarget.id);
 			if (res?.ok) {
@@ -644,10 +654,10 @@
 				success = t('common.saved', 'Saved');
 				await reload();
 			} else {
-				error = res?.error ?? t('common.error', 'An error occurred');
+				modalError = res?.error ?? t('common.error', 'An error occurred');
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : t('common.error', 'An error occurred');
+			modalError = e instanceof Error ? e.message : t('common.error', 'An error occurred');
 		} finally {
 			confirmBusy = false;
 		}
@@ -1050,6 +1060,15 @@
 
 <!-- Create/Edit modal -->
 <Modal bind:open={formOpen} title={formTitle}>
+	{#if modalError}
+		<div
+			class="mb-4 rounded-lg p-3 text-sm"
+			style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+			role="alert"
+		>
+			{modalError}
+		</div>
+	{/if}
 	{#if config.formSnippet}
 		{@render config.formSnippet({ value: formValue, editing })}
 	{:else}
@@ -1167,6 +1186,11 @@
 
 <!-- Hard-delete confirm modal (permanent erasure) -->
 <Modal bind:open={hardDeleteConfirmOpen} title={t('common.hardDelete', 'Hard Delete')}>
+	{#if modalError}
+		<p class="mb-3 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)" role="alert">
+			{modalError}
+		</p>
+	{/if}
 	<p class="text-sm" style="color: var(--color-foreground)">
 		{t('common.hardDeleteWarning', 'This will permanently erase the record and all related data. This action cannot be undone.')}
 	</p>
@@ -1182,6 +1206,11 @@
 
 <!-- Restore confirm modal -->
 <Modal bind:open={restoreConfirmOpen} title={t('common.restore', 'Restore')}>
+	{#if modalError}
+		<p class="mb-3 rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)" role="alert">
+			{modalError}
+		</p>
+	{/if}
 	<p class="text-sm" style="color: var(--color-muted)">
 		{t('common.restoreConfirm', 'Are you sure you want to restore this record?')}.
 	</p>

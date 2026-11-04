@@ -7,7 +7,8 @@
 	import { api } from '$lib/api/client';
 	import { uploadLessonFile, listMyMedia, uploadMediaImage, updateMediaImage, stockApi } from '$lib/api/media';
 	import { page } from '$app/state';
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { onMount } from 'svelte';
 	import { RichTextEditor, MediaPickerModal } from '@japaconnect/ui';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
@@ -128,12 +129,25 @@
 		return () => window.removeEventListener('beforeunload', handler);
 	});
 
+	// Async confirm can't block a navigation — cancel first, then re-issue
+	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
+	let bypassGuard = false;
 	beforeNavigate((nav) => {
-		if (lessonDirty && nav.type !== 'leave') {
-			if (!confirm(t('curriculum.unsaved_confirm', 'You have unsaved lesson changes. Discard them?'))) {
-				nav.cancel();
+		if (!lessonDirty || nav.type === 'leave' || bypassGuard) return;
+		nav.cancel();
+		const target = nav.to?.url;
+		confirmDialog(t('curriculum.unsaved_confirm', 'You have unsaved lesson changes. Discard them?'), {
+			destructive: true,
+			confirmLabel: t('common.discard', 'Discard')
+		}).then(async (ok) => {
+			if (!ok) return;
+			bypassGuard = true;
+			try {
+				if (target) await goto(target);
+			} finally {
+				bypassGuard = false;
 			}
-		}
+		});
 	});
 
 	function flash(msg: string) {
@@ -195,7 +209,7 @@
 	}
 
 	async function deleteModule(m: CurriculumModule) {
-		if (!confirm(t('curriculum.confirm_delete_module', `Delete module "${m.title}" and all its lessons?`))) return;
+		if (!(await confirmDialog(t('curriculum.confirm_delete_module', `Delete module "${m.title}" and all its lessons?`)))) return;
 		const r = await api.delete(`/academy/my/modules/${m.id}`);
 		if (r.error) {
 			error = r.error.message;
@@ -252,13 +266,15 @@
 			(lessonContentEdited || quizDirty || lessonFieldsSnapshot() !== lessonBaseline)
 	);
 
-	function confirmDiscardLesson(): boolean {
+	async function confirmDiscardLesson(): Promise<boolean> {
 		if (!lessonDirty) return true;
-		return confirm(t('curriculum.unsaved_confirm', 'You have unsaved lesson changes. Discard them?'));
+		return confirmDialog(t('curriculum.unsaved_confirm', 'You have unsaved lesson changes. Discard them?'), {
+			confirmLabel: t('common.discard', 'Discard')
+		});
 	}
 
 	async function openLessonEditor(moduleId: string, lesson: CurriculumLesson | null) {
-		if (!confirmDiscardLesson()) return;
+		if (!(await confirmDiscardLesson())) return;
 		lessonModuleId = moduleId;
 		editingLessonId = lesson?.id ?? null;
 		// Seed only for article lessons — other types don't use the editor.
@@ -322,8 +338,8 @@
 		openedLessonType = null;
 	}
 
-	function cancelLessonEditor() {
-		if (!confirmDiscardLesson()) return;
+	async function cancelLessonEditor() {
+		if (!(await confirmDiscardLesson())) return;
 		resetLessonEditor();
 	}
 
@@ -354,11 +370,11 @@
 		};
 	}
 
-	function onLessonTypeChange() {
+	async function onLessonTypeChange() {
 		// Switching type on an existing lesson drops the previous type's
 		// payload (markdown body, URL, media) — warn before it happens.
 		if (editingLessonId && openedLessonType && lessonForm.lesson_type !== openedLessonType) {
-			const ok = confirm(
+			const ok = await confirmDialog(
 				t(
 					'curriculum.type_change_confirm',
 					'Changing the lesson type discards content saved for the previous type. Continue?'
@@ -423,7 +439,7 @@
 	}
 
 	async function deleteLesson(lesson: CurriculumLesson) {
-		if (!confirm(t('curriculum.confirm_delete_lesson', `Delete lesson "${lesson.title}"?`))) return;
+		if (!(await confirmDialog(t('curriculum.confirm_delete_lesson', `Delete lesson "${lesson.title}"?`)))) return;
 		const r = await api.delete(`/academy/my/lessons/${lesson.id}`);
 		if (r.error) {
 			error = r.error.message;

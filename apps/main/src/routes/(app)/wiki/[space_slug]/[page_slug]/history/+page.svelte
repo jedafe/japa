@@ -111,6 +111,7 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
+	<meta name="robots" content="noindex,nofollow" />
 </svelte:head>
 
 <SetSidebar>

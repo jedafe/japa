@@ -26,6 +26,16 @@ export interface ApiListResponse<T> {
 	page_size?: number;
 }
 
+// Global error callback — registered by the root layout to surface failures
+// callers don't (network loss, 5xx) via the toast host. 4xx stays
+// caller-owned: docs forms render those inline already.
+type GlobalErrorHandler = (error: { code: string; message: string; status: number }) => void;
+let globalErrorHandler: GlobalErrorHandler | null = null;
+
+export function setGlobalErrorHandler(handler: GlobalErrorHandler | null): void {
+	globalErrorHandler = handler;
+}
+
 export async function apiGet<T>(path: string): Promise<T | null> {
 	try {
 		const url = apiUrl(path);
@@ -89,8 +99,17 @@ export async function apiPost<T = unknown>(path: string, body?: unknown): Promis
 			const json = JSON.parse(text);
 			if (json?.error?.message) msg = json.error.message;
 		} catch {}
+		if (globalErrorHandler && res.status >= 500) {
+			globalErrorHandler({ code: 'request_failed', message: msg, status: res.status });
+		}
 		return { ok: false, error: msg };
 	} catch (err) {
-		return { ok: false, error: err instanceof Error ? err.message : 'Network error' };
+		// Caller-intentional aborts aren't failures — skip the toast.
+		const isAbort = err instanceof DOMException && err.name === 'AbortError';
+		const message = err instanceof Error ? err.message : 'Network error';
+		if (globalErrorHandler && !isAbort) {
+			globalErrorHandler({ code: 'network_error', message, status: 0 });
+		}
+		return { ok: false, error: message };
 	}
 }

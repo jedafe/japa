@@ -183,6 +183,33 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrNotImplemented):
 		WriteError(w, http.StatusNotImplemented, "not_implemented", stripSentinelPrefix(err, ErrNotImplemented))
 
+	// --- Postgres constraint violations ---
+	// Services that bubble a raw pg error up through fmt.Errorf("...: %w")
+	// without mapping it to a sentinel would otherwise land in the 500
+	// default below — a misleading status and message for what is really a
+	// client-correctable conflict. Map the two common conflict classes
+	// centrally so every handler gets a useful response for free.
+	case IsUniqueViolation(err):
+		WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
+	case IsFKViolation(err):
+		// Deliberately NOT "in_use": that code is reserved for the ErrInUse
+		// sentinel emitted on delete-side conflicts (admin UIs offer a
+		// force-delete flow on it). A 23503 here can also be insert-side
+		// (a child referencing a missing parent), where "in use" and
+		// force-delete are the wrong semantics entirely.
+		WriteError(w, http.StatusConflict, "reference_conflict",
+			"Operation conflicts with a related record")
+	case IsNotNullViolation(err):
+		// A required column was left unset — when the column maps to a
+		// request field this is a validation failure, not a server fault.
+		// Generic message on purpose: column/constraint names are schema
+		// internals, not user-facing detail.
+		WriteError(w, http.StatusBadRequest, "validation_error",
+			"A required field is missing")
+	case IsCheckViolation(err):
+		WriteError(w, http.StatusBadRequest, "validation_error",
+			"The request violates a data constraint")
+
 	// --- 500 Internal Server Error ---
 	default:
 		WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred. Please try again later.")

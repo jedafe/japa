@@ -8,6 +8,8 @@
 	import { seedAccessToken, clearAccessToken } from '$lib/api/token.svelte';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import { pwaInstall, moduleServiceWorkerSupported } from '@japaconnect/ui/pwa-install';
+	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
+	import { setGlobalErrorHandler } from '$lib/api/client';
 	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
 	import { syncPushSubscription } from '$lib/pwa/push-sync';
 	import { env } from '$env/dynamic/public';
@@ -19,6 +21,15 @@
 	// Sync the client theme store with the server-resolved value once, after
 	// hydration. The initial attribute is already on <html>, so there is no flash.
 	onMount(() => theme.init(data.theme));
+
+	// Surface unhandled API failures (network loss, 5xx, mutating 403s) as
+	// toasts — callers keep their own inline errors for page-level problems.
+	$effect(() => {
+		setGlobalErrorHandler((err) => {
+			toast.error(err.message || t('errors.generic', 'Something went wrong. Please try again.'));
+		});
+		return () => setGlobalErrorHandler(null);
+	});
 
 	// Seed the browser-side CSRF token from server-rendered page data so the
 	// first client mutation already carries X-CSRF-Token without a boot fetch.
@@ -333,3 +344,8 @@
 	the CSP nonce. Without approval the setting is inert. -->
 	{@html `<script id="jc-custom-js" nonce="${cspNonce}">` + customJs + `</script>`}
 {/if}
+
+<!-- Global transient surfaces: API/network error toasts + promise-based
+     confirm dialogs (replaces window.confirm). -->
+<ToastHost />
+<ConfirmHost />

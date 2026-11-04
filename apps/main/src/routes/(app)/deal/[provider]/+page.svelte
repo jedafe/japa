@@ -188,7 +188,7 @@
 	// recordEvent fires-and-forgets a copy event to the backend (Section 55).
 	// Errors are silently ignored — event tracking must never block the UI.
 	function recordEvent(couponId: string, eventType: 'click' | 'copy') {
-		api.post(`/coupons/${couponId}/click`, { event_type: eventType }).catch(() => {});
+		api.post(`/coupons/${couponId}/click`, { event_type: eventType }, { 'x-silent-error': '1' }).catch(() => {});
 	}
 
 	// Click-through goes through the backend /go redirect so the click is

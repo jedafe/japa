@@ -5,6 +5,7 @@
 	import { LayoutDashboard, Sparkles, Check, Settings, RefreshCw, List } from 'lucide-svelte';
 	import { initSettingsDb, loadSettings, type StudioSettings } from '$lib/services/settings';
 	import { initSiteSettings, siteName } from '$lib/stores/site.svelte';
+	import { ToastHost, ConfirmHost } from '@japaconnect/ui';
 	import { startWatcher, stopWatcher } from '$lib/services/watcher';
 
 	let { children } = $props();
@@ -94,3 +95,7 @@
 		{@render children?.()}
 	</main>
 </div>
+
+<!-- Global transient surfaces: error toasts + promise-based confirm dialogs. -->
+<ToastHost />
+<ConfirmHost />

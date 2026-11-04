@@ -33,13 +33,13 @@
 			});
 			if (!res.ok) {
 				const data = await res.json().catch(() => null);
-				const mapped = mapAuthError(data?.error?.code ?? '', res.status);
-				errors = mapped.field ? { [mapped.field]: t(mapped.messageKey) } : {};
+				const mapped = mapAuthError(data?.error?.code ?? '', res.status, data?.error?.message);
+				errors = mapped.field ? { [mapped.field]: mapped.messageKey } : {};
 				return;
 			}
 			success = true;
 		} catch {
-			errors = { form: t('auth.errors.generic') };
+			errors = { form: 'auth.errors.generic' };
 		} finally {
 			loading = false;
 		}
@@ -61,7 +61,7 @@
 	{:else}
 		{#if errors.form}
 			<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
-				{errors.form}
+				{t(errors.form)}
 			</p>
 		{/if}
 
@@ -84,7 +84,7 @@
 				aria-invalid={errors.confirm ? 'true' : undefined}
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 			/>
-			{#if errors.confirm}<p class="text-sm text-red-500">{errors.confirm}</p>{/if}
+			{#if errors.confirm}<p class="text-sm text-red-500">{t(errors.confirm)}</p>{/if}
 		</div>
 
 		<button

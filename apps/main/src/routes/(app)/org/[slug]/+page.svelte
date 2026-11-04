@@ -143,6 +143,9 @@
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
 	{@html safeJsonLdScript(jsonLd)}
+	{#if data.posts && data.posts.length === 0}
+		<meta name="robots" content="noindex,nofollow" />
+	{/if}
 </svelte:head>
 
 <SetSidebar>

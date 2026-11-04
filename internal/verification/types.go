@@ -59,6 +59,19 @@ type TypeInput struct {
 	IsActive     *bool
 }
 
+// TypePatch carries the PATCH fields for /admin/verification-types/{id}.
+// Nil pointers keep the stored value; BadgeSet distinguishes an omitted
+// badge_media_id (keep) from an explicit null (clear) because both decode
+// to a nil *string.
+type TypePatch struct {
+	Label        *string
+	Description  *string
+	BadgeMediaID *string
+	BadgeSet     bool
+	Position     *int32
+	IsActive     *bool
+}
+
 // TypeDTO is the admin/public representation — includes the resolved badge
 // artwork URL alongside the media id.
 type TypeDTO struct {
@@ -293,21 +306,53 @@ func (s *Service) AdminCreateType(ctx context.Context, in TypeInput) (TypeDTO, e
 
 // AdminUpdateType patches label/description/badge/position/is_active.
 // scope+value are immutable — entity rows store the value verbatim.
-func (s *Service) AdminUpdateType(ctx context.Context, id pgtype.UUID, in TypeInput) (TypeDTO, error) {
+// Omitted fields carry the stored value forward (same contract as
+// servicedir.AdminUpdateCategory); an explicit badge_media_id: null clears
+// the badge artwork.
+func (s *Service) AdminUpdateType(ctx context.Context, id pgtype.UUID, in TypePatch) (TypeDTO, error) {
 	if s.store == nil {
 		return TypeDTO{}, errTypeStoreUnavailable
 	}
-	if err := validateTypeInput(in, false); err != nil {
-		return TypeDTO{}, err
-	}
-	mediaID, err := scanBadgeMediaID(in.BadgeMediaID)
+	current, err := s.store.GetTypeByID(ctx, id)
 	if err != nil {
-		return TypeDTO{}, typeInputErr("invalid badge_media_id")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return TypeDTO{}, ErrTypeNotFound
+		}
+		return TypeDTO{}, fmt.Errorf("fetching verification type: %w", err)
 	}
+
+	label := current.Label
+	if in.Label != nil {
+		trimmed := strings.TrimSpace(*in.Label)
+		if trimmed == "" {
+			return TypeDTO{}, typeInputErr("label is required")
+		}
+		if len(trimmed) > 80 {
+			return TypeDTO{}, typeInputErr("label must be 80 characters or fewer")
+		}
+		label = trimmed
+	}
+
+	description := current.Description
+	if in.Description != nil {
+		description = nil
+		if *in.Description != "" {
+			description = in.Description
+		}
+	}
+
+	mediaID := current.BadgeMediaID
+	if in.BadgeSet {
+		mediaID, err = scanBadgeMediaID(in.BadgeMediaID)
+		if err != nil {
+			return TypeDTO{}, typeInputErr("invalid badge_media_id")
+		}
+	}
+
 	row, err := s.store.UpdateType(ctx, gen.UpdateVerificationTypeParams{
 		ID:           id,
-		Label:        strings.TrimSpace(in.Label),
-		Description:  in.Description,
+		Label:        label,
+		Description:  description,
 		BadgeMediaID: mediaID,
 		Position:     in.Position,
 		IsActive:     in.IsActive,

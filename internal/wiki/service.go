@@ -52,6 +52,11 @@ type WikiPageDTO struct {
 	// siblings inside the category for Prev/Next navigation.
 	PageTemplateID string `json:"page_template_id,omitempty"`
 	Position       int32  `json:"position"`
+	// §43 — indexable mirrors the page detail contract (latest approved
+	// prose revision meets the min-words floor). Set only on the public
+	// space index so the frontend can nofollow links to stub/thin pages;
+	// nil everywhere else (admin DTOs, sibling lists).
+	Indexable *bool `json:"indexable,omitempty"`
 }
 
 // AdminWikiPageDTO extends WikiPageDTO with the latest revision metadata
@@ -526,7 +531,7 @@ func (s *Service) MinReputationToEdit(ctx context.Context) int {
 // is true (limit 0 → the wiki.destinations_page_limit setting; capped at
 // 100), the pre-pagination total, and logo/description card fields (logo
 // resolved via the media service).
-func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki bool, sort string, page, limit int32, paginate bool) ([]WikiDestinationDTO, int64, int32, error) {
+func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki, hasContent bool, sort string, page, limit int32, paginate bool) ([]WikiDestinationDTO, int64, int32, error) {
 	switch sort {
 	case "", "name":
 		sort = "name"
@@ -562,12 +567,12 @@ func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, re
 		offset = (page - 1) * limit
 	}
 
-	dests, err := s.store.ListWikiDestinations(ctx, level, parentSlug, region, search, within, hasWiki, sort, limit, offset)
+	dests, err := s.store.ListWikiDestinations(ctx, level, parentSlug, region, search, within, hasWiki, hasContent, sort, limit, offset)
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("wiki: get destinations: %w", err)
 	}
 
-	total, err := s.store.CountWikiDestinations(ctx, level, parentSlug, region, search, within, hasWiki)
+	total, err := s.store.CountWikiDestinations(ctx, level, parentSlug, region, search, within, hasWiki, hasContent)
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -732,12 +737,29 @@ func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) (*WikiInde
 		}
 	}
 
-	dtos := make([]WikiPageDTO, 0, len(pages))
-	for _, p := range pages {
-		dtos = append(dtos, pageToDTO(p))
+	minWords := s.wikiMinWords(ctx)
+	states, serr := s.store.PageIndexStates(ctx, spaceID, minWords)
+	indexable := serr == nil && anyIndexable(states)
+	if serr != nil {
+		// States query failed — per-item flags stay unset (frontend
+		// follows those links) and the index flag falls back to the
+		// single aggregate check so a transient error can't noindex a
+		// healthy index.
+		slog.Warn("wiki: index page states failed", "space_id", spaceID.String(), "error", serr)
+		indexable = s.store.HasApprovedPage(ctx, spaceID, minWords)
 	}
 
-	out := &WikiIndexDTO{Pages: dtos, Indexable: s.store.HasApprovedPage(ctx, spaceID, s.wikiMinWords(ctx))}
+	dtos := make([]WikiPageDTO, 0, len(pages))
+	for _, p := range pages {
+		d := pageToDTO(p)
+		if serr == nil {
+			v := states[d.Slug]
+			d.Indexable = &v
+		}
+		dtos = append(dtos, d)
+	}
+
+	out := &WikiIndexDTO{Pages: dtos, Indexable: indexable}
 	if spaceTypeID, _, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 		out.EntityChildren = s.entityChildren(ctx, spaceID, spaceTypeID)
@@ -746,6 +768,17 @@ func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) (*WikiInde
 	out.Kind = s.spaceKindValue(ctx, spaceID)
 
 	return out, nil
+}
+
+// anyIndexable reports whether at least one page's indexable flag is true —
+// the space-level indexable contract derived from PageIndexStates.
+func anyIndexable(states map[string]bool) bool {
+	for _, v := range states {
+		if v {
+			return true
+		}
+	}
+	return false
 }
 
 // spaceKindValue reads the `kind` select field for one space — the hero
@@ -806,12 +839,25 @@ func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.
 		return nil, fmt.Errorf("wiki: index by dest: %w", err)
 	}
 
-	dtos := make([]WikiPageDTO, 0, len(pages))
-	for _, p := range pages {
-		dtos = append(dtos, pageToDTO(p))
+	minWords := s.wikiMinWords(ctx)
+	states, serr := s.store.PageIndexStates(ctx, spaceID, minWords)
+	indexable := serr == nil && anyIndexable(states)
+	if serr != nil {
+		slog.Warn("wiki: index page states failed", "space_id", spaceID.String(), "error", serr)
+		indexable = s.store.HasApprovedPage(ctx, spaceID, minWords)
 	}
 
-	out := &WikiIndexDTO{Pages: dtos, Indexable: s.store.HasApprovedPage(ctx, spaceID, s.wikiMinWords(ctx))}
+	dtos := make([]WikiPageDTO, 0, len(pages))
+	for _, p := range pages {
+		d := pageToDTO(p)
+		if serr == nil {
+			v := states[d.Slug]
+			d.Indexable = &v
+		}
+		dtos = append(dtos, d)
+	}
+
+	out := &WikiIndexDTO{Pages: dtos, Indexable: indexable}
 	if spaceTypeID, _, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 		out.EntityChildren = s.entityChildren(ctx, spaceID, spaceTypeID)
@@ -1991,9 +2037,9 @@ func (s *Service) GeneratePage(ctx context.Context, userID pgtype.UUID, input Ge
 // pageToDTO converts a WikiPage (with its space context) to a WikiPageDTO.
 func pageToDTO(p WikiPageWithSpace) WikiPageDTO {
 	dto := WikiPageDTO{
-		ID:             p.ID.String(),
-		SpaceID:        p.SpaceID.String(),
-		Slug:           p.Slug,
+		ID:      p.ID.String(),
+		SpaceID: p.SpaceID.String(),
+		Slug:    p.Slug,
 		// Seeded stubs store the category label verbatim — expand {name}
 		// so index/sidebar titles never leak the raw token.
 		Title:          substituteTemplateLabel(p.Title, p.SpaceName),

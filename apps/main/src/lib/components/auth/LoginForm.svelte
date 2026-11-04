@@ -48,8 +48,8 @@
 			});
 			const data = await res.json();
 			if (!res.ok) {
-				const mapped = mapAuthError(data?.error?.code, res.status);
-				errors = mapped.field ? { [mapped.field]: t(mapped.messageKey) } : {};
+				const mapped = mapAuthError(data?.error?.code, res.status, data?.error?.message);
+				errors = mapped.field ? { [mapped.field]: mapped.messageKey } : {};
 				return;
 			}
 			// 2FA-enabled account: redirect to the TOTP challenge page. The
@@ -69,7 +69,7 @@
 				await navigatePostLogin(data.redirect ?? safeRelativePath(redirectTarget));
 			}
 		} catch {
-			errors = { form: t('auth.errors.generic') };
+			errors = { form: 'auth.errors.generic' };
 		} finally {
 			loading = false;
 		}

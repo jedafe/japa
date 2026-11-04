@@ -493,9 +493,9 @@ WHERE s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = $9 AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = $9 AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = $9 AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = $9 AND g.level IN ('country', 'state', 'city', 'region'))
+ OR (gp.slug = $9 AND gp.level IN ('country', 'state', 'city', 'region'))
+ OR (ggp.slug = $9 AND ggp.level IN ('country', 'state', 'city', 'region'))
  ))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.
@@ -689,9 +689,9 @@ WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = $8 AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = $8 AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = $8 AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = $8 AND g.level IN ('country', 'state', 'city', 'region'))
+ OR (gp.slug = $8 AND gp.level IN ('country', 'state', 'city', 'region'))
+ OR (ggp.slug = $8 AND ggp.level IN ('country', 'state', 'city', 'region'))
  ))
 `
 
@@ -4171,9 +4171,9 @@ WHERE s.space_type_id = $1 AND s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = $8 AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = $8 AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = $8 AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = $8 AND g.level IN ('country', 'state', 'city', 'region'))
+ OR (gp.slug = $8 AND gp.level IN ('country', 'state', 'city', 'region'))
+ OR (ggp.slug = $8 AND ggp.level IN ('country', 'state', 'city', 'region'))
  ))
 ORDER BY
  CASE WHEN $9::text = 'name' THEN s.name ELSE NULL END ASC,
@@ -4340,9 +4340,9 @@ WHERE s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = $9 AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = $9 AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = $9 AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = $9 AND g.level IN ('country', 'state', 'city', 'region'))
+ OR (gp.slug = $9 AND gp.level IN ('country', 'state', 'city', 'region'))
+ OR (ggp.slug = $9 AND ggp.level IN ('country', 'state', 'city', 'region'))
  ))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.

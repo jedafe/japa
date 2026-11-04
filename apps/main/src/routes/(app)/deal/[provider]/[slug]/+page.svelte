@@ -130,7 +130,7 @@
 	// recordEvent fires-and-forgets a copy event to the backend (Section 55).
 	// Clicks are recorded by the /go redirect — no client-side call needed.
 	function recordEvent(eventType: 'click' | 'copy') {
-		api.post(`/coupons/${coupon.id}/click`, { event_type: eventType }).catch(() => {});
+		api.post(`/coupons/${coupon.id}/click`, { event_type: eventType }, { 'x-silent-error': '1' }).catch(() => {});
 	}
 
 	async function copyCode() {

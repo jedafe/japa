@@ -569,7 +569,7 @@ import { flagUrl } from '$lib/utils/flags';
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
 	{#if data.seoIndexable === false}
-		<meta name="robots" content="noindex,follow" />
+		<meta name="robots" content="noindex,nofollow" />
 	{:else}
 		<!-- §26 — per-space RSS autodiscovery (public spaces only). -->
 		<link

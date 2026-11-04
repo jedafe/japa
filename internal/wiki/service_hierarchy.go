@@ -22,9 +22,11 @@ import (
 	"github.com/jedafe/japa/internal/media"
 )
 
-// ancestorDepth caps the breadcrumb walk — mirrors the ?within= join depth
-// so navigation and descendant filtering share the same horizon.
-const ancestorDepth = 3
+// ancestorDepth caps the breadcrumb walk — the deepest declared geo chain
+// is region → country → state → city → neighborhood (4 hops); the ?within=
+// descendant join still caps at 3, which is fine because neighborhoods
+// need no descendant reach.
+const ancestorDepth = 4
 
 // WikiSpaceRefDTO is one node in an ancestor chain or rollup row — the
 // minimal space identity a breadcrumb or table cell needs.
@@ -244,7 +246,7 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 		if et.EntityKind == nil {
 			continue
 		}
-		kids, kerr := s.store.ListEntityChildren(ctx, spaceID, *et.EntityKind, discriminatorValue(et.EntityDiscriminator))
+		kids, kerr := s.store.ListEntityChildren(ctx, spaceID, *et.EntityKind, DiscriminatorValue(et.EntityDiscriminator))
 		if kerr != nil {
 			slog.Warn("wiki: directory: entity children failed", "type", et.TypeSlug, "error", kerr)
 			continue

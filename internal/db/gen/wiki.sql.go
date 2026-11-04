@@ -591,21 +591,34 @@ SELECT COUNT(*) FROM (
       AND ($5::text = '' OR sp.id IN (SELECT DISTINCT id FROM subtree))
     GROUP BY sp.id
     HAVING (NOT $6::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
+AND (NOT $7::bool OR COUNT(wp.id) FILTER (
+    WHERE wp.is_active = true AND EXISTS (
+        SELECT 1 FROM wiki_revisions wr
+        WHERE wr.wiki_page_id = wp.id
+          AND wr.status = 'approved'
+          AND wr.kind <> 'fields'
+          AND wr.deleted_at IS NULL
+    )
+) > 0)
 ) counted
 `
 
 type CountWikiDestinationsParams struct {
-	Level   string `json:"level"`
-	Region  string `json:"region"`
-	Search  string `json:"search"`
-	Parent  string `json:"parent"`
-	Within  string `json:"within"`
-	HasWiki bool   `json:"has_wiki"`
+	Level      string `json:"level"`
+	Region     string `json:"region"`
+	Search     string `json:"search"`
+	Parent     string `json:"parent"`
+	Within     string `json:"within"`
+	HasWiki    bool   `json:"has_wiki"`
+	HasContent bool   `json:"has_content"`
 }
 
 // §80 Reader UX: total matching the ListWikiDestinations filters (pre-
 // pagination) so the response can carry `total` for "Showing N" counts
 // and numbered pagination. Same predicates, same within-CTE.
+// §wiki-seo guest surface — ?has_content=true hides spaces whose pages are
+// all seeded stubs (zero approved prose revisions); guests see only
+// destinations that actually have written guides.
 func (q *Queries) CountWikiDestinations(ctx context.Context, arg CountWikiDestinationsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countWikiDestinations,
 		arg.Level,
@@ -614,6 +627,7 @@ func (q *Queries) CountWikiDestinations(ctx context.Context, arg CountWikiDestin
 		arg.Parent,
 		arg.Within,
 		arg.HasWiki,
+		arg.HasContent,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -1813,6 +1827,44 @@ func (q *Queries) ListEntityWikiPages(ctx context.Context, arg ListEntityWikiPag
 	return items, nil
 }
 
+const listEntityWikiTypesByKind = `-- name: ListEntityWikiTypesByKind :many
+SELECT st.slug, wtc.entity_discriminator, wtc.position
+FROM wiki_type_configs wtc
+JOIN space_types st ON st.id = wtc.space_type_id
+WHERE wtc.entity_kind = $1 AND wtc.enabled = true
+ORDER BY wtc.position, st.slug
+`
+
+type ListEntityWikiTypesByKindRow struct {
+	Slug                string `json:"slug"`
+	EntityDiscriminator []byte `json:"entity_discriminator"`
+	Position            int32  `json:"position"`
+}
+
+// All enabled entity-bound wiki types of a kind — used to resolve the
+// canonical type key for an entity's wiki pages: the discriminator-
+// matching type (e.g. 'student_visa') wins over the undiscriminated
+// generic type ('visa_route'). Deterministic order for stable picks.
+func (q *Queries) ListEntityWikiTypesByKind(ctx context.Context, entityKind *string) ([]ListEntityWikiTypesByKindRow, error) {
+	rows, err := q.db.Query(ctx, listEntityWikiTypesByKind, entityKind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityWikiTypesByKindRow
+	for rows.Next() {
+		var i ListEntityWikiTypesByKindRow
+		if err := rows.Scan(&i.Slug, &i.EntityDiscriminator, &i.Position); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrganizationsForWiki = `-- name: ListOrganizationsForWiki :many
 SELECT id, slug, name, org_type
 FROM organizations
@@ -2066,7 +2118,18 @@ WITH RECURSIVE subtree AS (
 )
 SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
        sp.logo_media_id, sp.description,
-       COUNT(wp.id) FILTER (WHERE wp.is_active = true) AS page_count
+       -- "Guides" = pages with real prose — a seeded stub has zero
+       -- revisions, so requiring one approved non-fields revision keeps
+       -- the badge from reporting the uniform stub count as guides.
+       COUNT(wp.id) FILTER (
+           WHERE wp.is_active = true AND EXISTS (
+               SELECT 1 FROM wiki_revisions wr
+               WHERE wr.wiki_page_id = wp.id
+                 AND wr.status = 'approved'
+                 AND wr.kind <> 'fields'
+                 AND wr.deleted_at IS NULL
+           )
+       ) AS page_count
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
 LEFT JOIN space_types st ON st.id = sp.space_type_id
@@ -2093,11 +2156,28 @@ WHERE sp.status = 'active'
 GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
          sp.logo_media_id, sp.description
 HAVING (NOT $6::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
+AND (NOT $7::bool OR COUNT(wp.id) FILTER (
+    WHERE wp.is_active = true AND EXISTS (
+        SELECT 1 FROM wiki_revisions wr
+        WHERE wr.wiki_page_id = wp.id
+          AND wr.status = 'approved'
+          AND wr.kind <> 'fields'
+          AND wr.deleted_at IS NULL
+    )
+) > 0)
 ORDER BY
-    CASE WHEN $7::text = 'name' THEN sp.name END ASC,
-    CASE WHEN $7::text = 'page_count' THEN COUNT(wp.id) FILTER (WHERE wp.is_active = true) END DESC,
+    CASE WHEN $8::text = 'name' THEN sp.name END ASC,
+    CASE WHEN $8::text = 'page_count' THEN COUNT(wp.id) FILTER (
+        WHERE wp.is_active = true AND EXISTS (
+            SELECT 1 FROM wiki_revisions wr
+            WHERE wr.wiki_page_id = wp.id
+              AND wr.status = 'approved'
+              AND wr.kind <> 'fields'
+              AND wr.deleted_at IS NULL
+        )
+    ) END DESC,
     sp.name ASC
-LIMIT NULLIF($9::int, 0) OFFSET $8
+LIMIT NULLIF($10::int, 0) OFFSET $9
 `
 
 type ListWikiDestinationsParams struct {
@@ -2107,6 +2187,7 @@ type ListWikiDestinationsParams struct {
 	Parent     string `json:"parent"`
 	Within     string `json:"within"`
 	HasWiki    bool   `json:"has_wiki"`
+	HasContent bool   `json:"has_content"`
 	Sort       string `json:"sort"`
 	PageOffset int32  `json:"page_offset"`
 	PageLimit  int32  `json:"page_limit"`
@@ -2132,6 +2213,9 @@ type ListWikiDestinationsRow struct {
 // ?within= descendant set: walk DOWN from the target (≤3 hops over
 // space_parent_spaces ∪ parent_id) once — the old form ran a 3-level
 // correlated ancestor EXISTS per candidate row (~2s on a full scan).
+// §wiki-seo guest surface — ?has_content=true hides spaces whose pages are
+// all seeded stubs (zero approved prose revisions); guests see only
+// destinations that actually have written guides.
 // §80 Reader UX: ?sort=name (default, A–Z) or page_count (most guides
 // first). Each non-selected CASE collapses to all-NULL, so only the
 // picked key orders; sp.name is the stable tiebreak.
@@ -2143,6 +2227,7 @@ func (q *Queries) ListWikiDestinations(ctx context.Context, arg ListWikiDestinat
 		arg.Parent,
 		arg.Within,
 		arg.HasWiki,
+		arg.HasContent,
 		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,

@@ -56,6 +56,8 @@
 		label: string;
 		href: string;
 		icon: ReturnType<typeof categoryIcon>;
+		/** §43 crawl gate — stub/thin targets get rel="nofollow". */
+		nofollow?: boolean;
 	}
 
 	function firstPage(catSlug: string): WikiPageIndex | undefined {
@@ -91,19 +93,19 @@
 			// lacks the directory payload); other categories prefer a
 			// materialized page and otherwise fall back to the stub —
 			// every declared category is reachable.
-			const href = c.directory && c.page_slug
-				? `${base}/${encodeURIComponent(c.page_slug)}`
-				: p
-					? `${base}/${encodeURIComponent(p.slug)}`
-					: c.page_slug
-						? `${base}/${encodeURIComponent(c.page_slug)}`
-						: null;
-			if (!href) continue;
+			const targetSlug = c.directory && c.page_slug ? c.page_slug : p?.slug ?? c.page_slug;
+			if (!targetSlug) continue;
+			// §43 crawl gate: stub targets (directory listings, lazy slugs
+			// with no materialized page) and thin materialized pages are
+			// noindex — don't crawl into them. A stub slug that was since
+			// materialized keeps its own indexable flag.
+			const linkedPage = pages.find((pg) => pg.slug === targetSlug);
 			list.push({
 				slug: c.slug,
 				label: catLabel(c),
-				href,
-				icon: categoryIconResolved(c.slug, c.icon)
+				href: `${base}/${encodeURIComponent(targetSlug)}`,
+				icon: categoryIconResolved(c.slug, c.icon),
+				nofollow: linkedPage ? linkedPage.indexable === false : true
 			});
 		}
 		// Pages whose category isn't in the canonical set still get a tab —
@@ -117,7 +119,8 @@
 				slug: p.category,
 				label: t(`wiki.category_${p.category}`, p.category.replace(/_/g, ' ')),
 				href: `${base}/${encodeURIComponent(p.slug)}`,
-				icon: categoryIcon(p.category)
+				icon: categoryIcon(p.category),
+				nofollow: p.indexable === false
 			});
 		}
 		return list;
@@ -196,6 +199,7 @@
 		{@const Icon = tab.icon}
 		<a
 			href={tab.href}
+			rel={tab.nofollow ? 'nofollow' : undefined}
 			aria-current={isCurrent(tab) ? 'page' : undefined}
 			class="{TAB_CLASSES} {tab.slug === active
 				? 'text-[var(--color-primary)] after:bg-[var(--color-primary)]'
@@ -224,6 +228,7 @@
 				{@const Icon = tab.icon}
 				<MenuItem
 					href={tab.href}
+					rel={tab.nofollow ? 'nofollow' : undefined}
 					icon={Icon}
 					class={tab.slug === active ? 'font-medium text-[var(--color-primary)]' : ''}
 				>
@@ -242,7 +247,7 @@
 	>
 		{#each tabs as tab (tab.slug)}
 			{@const Icon = tab.icon}
-			<a data-wiki-tab href={tab.href} tabindex="-1" class={TAB_CLASSES}>
+			<a data-wiki-tab href={tab.href} rel={tab.nofollow ? 'nofollow' : undefined} tabindex="-1" class={TAB_CLASSES}>
 				<Icon size={15} class="shrink-0" aria-hidden="true" />
 				{tab.label}
 			</a>

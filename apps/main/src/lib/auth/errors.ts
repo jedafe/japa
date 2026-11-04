@@ -5,11 +5,15 @@ import type { AuthErrorCode } from '$lib/types';
 
 export interface FieldError {
 	field: 'email' | 'username' | 'password' | 'form' | null;
+	/** Either an i18n key or — when the backend's own message carries
+	 *  policy specifics the client cannot know (configurable password
+	 *  policy, unmapped codes) — a literal display string. Render via
+	 *  `t()` which passes non-key strings through verbatim. */
 	messageKey: string;
 }
 
 /** Map a backend error code to a field + i18n key for form display. */
-export function mapAuthError(code: string, status?: number): FieldError {
+export function mapAuthError(code: string, status?: number, serverMessage?: string): FieldError {
 	const map: Record<AuthErrorCode, FieldError> = {
 		missing_fields: { field: 'form', messageKey: 'auth.errors.missing_fields' },
 		invalid_credentials: { field: 'form', messageKey: 'auth.errors.invalid_credentials' },
@@ -30,9 +34,22 @@ export function mapAuthError(code: string, status?: number): FieldError {
 	};
 
 	const mapped = map[code as AuthErrorCode];
-	if (mapped) return mapped;
+	if (mapped) {
+		// The password policy is admin-configurable via system_settings
+		// (min_length, require_symbol, ...) — the backend's own message
+		// names the actual failed rule, so prefer it over the static
+		// generic criteria text.
+		if (code === 'weak_password' && serverMessage) {
+			return { ...mapped, messageKey: serverMessage };
+		}
+		return mapped;
+	}
 
 	if (status === 429) return { field: 'form', messageKey: 'auth.errors.rate_limited' };
+
+	// Unmapped code: the backend's human-readable message is more accurate
+	// than a bare "Something went wrong" when one was supplied.
+	if (serverMessage) return { field: 'form', messageKey: serverMessage };
 
 	return { field: 'form', messageKey: 'auth.errors.generic' };
 }

@@ -146,7 +146,7 @@
 		// Save progress every 15 seconds.
 		if (now - lastProgressSave >= 15) {
 			lastProgressSave = now;
-			api.post(`/academy/lessons/${lesson.id}/progress`, { progress_secs: now });
+			api.post(`/academy/lessons/${lesson.id}/progress`, { progress_secs: now }, { 'x-silent-error': '1' });
 		}
 	}
 	// Flush the current position when the learner pauses or leaves — the
@@ -156,7 +156,7 @@
 		const pos = Math.floor(videoEl.currentTime);
 		if (pos !== lastProgressSave) {
 			lastProgressSave = pos;
-			api.post(`/academy/lessons/${lesson.id}/progress`, { progress_secs: pos });
+			api.post(`/academy/lessons/${lesson.id}/progress`, { progress_secs: pos }, { 'x-silent-error': '1' });
 		}
 	}
 	$effect(() => {

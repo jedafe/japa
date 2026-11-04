@@ -4,6 +4,7 @@
 	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { goto } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import DocContent from '$lib/components/docs/DocContent.svelte';
 	import SeoHead from '$lib/seo/SeoHead.svelte';
@@ -173,8 +174,8 @@
 							<form
 								method="POST"
 								action="?/restore"
-								use:enhance={({ cancel }) => {
-									if (!confirm(t('history.restore_confirm', 'Restore this version?'))) {
+								use:enhance={async ({ cancel }) => {
+									if (!(await confirmDialog(t('history.restore_confirm', 'Restore this version?')))) {
 										cancel();
 										return;
 									}
@@ -195,8 +196,8 @@
 								<form
 									method="POST"
 									action="?/deleteRevision"
-									use:enhance={({ cancel }) => {
-										if (!confirm(t('history.delete_confirm', 'Delete this revision?'))) {
+									use:enhance={async ({ cancel }) => {
+										if (!(await confirmDialog(t('history.delete_confirm', 'Delete this revision?')))) {
 											cancel();
 											return;
 										}

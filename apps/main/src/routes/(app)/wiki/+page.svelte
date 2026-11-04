@@ -59,7 +59,18 @@
 	);
 
 	const chain = $derived(data.chain ?? []);
-	const rootType = $derived(chain[0] ?? null);
+	// The grid is the flag gallery — inherently country-level, so it stays
+	// on countries even when the chain roots at a hub type (region); the
+	// root type's spaces render as the browse row above the grid instead.
+	const galleryType = $derived(
+		chain.find((t) => t.space_type_slug === 'country') ?? chain[1] ?? chain[0] ?? null
+	);
+	const hubs = $derived(data.hubDestinations ?? []);
+	const activeRegion = $derived(data.region ?? '');
+	// The region hub matching ?region= — the filtered gallery links out to
+	// the canonical listing at /wiki/{region}/countries rather than
+	// duplicating it as a second surface.
+	const activeHub = $derived(hubs.find((h) => h.name === activeRegion) ?? null);
 
 	function toAutocompleteItem(d: WikiDestination): AutocompleteItem {
 		return { id: d.slug, label: d.name, sublabel: d.geo_code ?? '' };
@@ -78,7 +89,7 @@
 			const usp = new URLSearchParams({
 				has_wiki: 'false',
 				q: query,
-				...(rootType ? { level: rootType.space_type_slug } : {})
+				...(galleryType ? { level: galleryType.space_type_slug } : {})
 			});
 			const res = await api.get<WikiDestination[]>(`/wiki/destinations?${usp.toString()}`);
 			return (res.data ?? []).map(toAutocompleteItem);
@@ -111,6 +122,7 @@
 		const s = next.sort ?? sort;
 		if (p > 1) usp.set('page', String(p));
 		if (s !== 'name') usp.set('sort', s);
+		if (activeRegion) usp.set('region', activeRegion);
 		const qs = usp.toString();
 		goto(qs ? `/wiki?${qs}` : '/wiki');
 	}
@@ -211,7 +223,7 @@
 					<h2 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)] sm:text-sm">
 						<!-- Mobile shows only the count, e.g. "250 destinations". -->
 						<span class="hidden sm:inline">
-							{rootType ? typeLabel(rootType) : t('wiki.browse_destinations', 'Browse destinations')}
+							{galleryType ? typeLabel(galleryType) : t('wiki.browse_destinations', 'Browse destinations')}
 						</span>
 						<span class="font-normal normal-case tracking-normal sm:ms-2">
 							{destinationsCountLabel(total)}
@@ -227,6 +239,47 @@
 						/>
 					</div>
 				</div>
+				{#if hubs.length > 0}
+					<!-- Region filter chips — ?region= narrows the country
+					     gallery in place; the region spaces still carry their own
+					     wiki index (/wiki/africa …) for the breadcrumb hierarchy. -->
+					<nav
+						aria-label={t('wiki.browse_by_region', 'Browse by region')}
+						class="mb-4 flex flex-wrap gap-1.5"
+					>
+						{#if activeRegion}
+							<a
+								href="/wiki"
+								class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+							>
+								{t('wiki.region_all', 'All regions')}
+							</a>
+						{/if}
+						{#each hubs as hub (hub.slug)}
+							{@const active = hub.name === activeRegion}
+							<a
+								href={active ? '/wiki' : `/wiki?region=${encodeURIComponent(hub.name)}`}
+								aria-current={active ? 'true' : undefined}
+								class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {active
+									? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+									: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary)]'}"
+							>
+								<Globe size={13} class={active ? '' : 'text-[var(--color-muted)]'} />
+								{hub.name}
+							</a>
+						{/each}
+						{#if activeHub}
+							<a
+								href="/wiki/{encodeURIComponent(activeHub.slug)}"
+								class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] transition-colors hover:underline"
+							>
+								{t('wiki.region_hub_link', 'Open the {name} wiki →', {
+									name: activeHub.name
+								})}
+							</a>
+						{/if}
+					</nav>
+				{/if}
 				<!-- Flag gallery cards — same pattern as the radar country
 				     gallery: bundled flag as the card background, name overlaid
 				     on a gradient. -->

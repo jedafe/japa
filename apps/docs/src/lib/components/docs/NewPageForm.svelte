@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { enhance } from '$app/forms';
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import DocEditor from '$lib/components/docs/DocEditor.svelte';
 	import FeatureImageField from '$lib/components/docs/FeatureImageField.svelte';
@@ -204,14 +205,26 @@
 		return () => window.removeEventListener('beforeunload', handler);
 	});
 
+	// Async confirm can't block a navigation — cancel first, then re-issue
+	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
+	let bypassGuard = false;
 	beforeNavigate((nav) => {
 		// Cover back/forward (popstate) and goto too — 'form' is our own
 		// submit (submitting) and 'leave' is handled by beforeunload.
-		if (dirty && !submitting && nav.type !== 'form' && nav.type !== 'leave') {
-			if (!confirm(t('edit.unsaved_confirm', 'You have unsaved changes. Leave this page?'))) {
-				nav.cancel();
+		if (!dirty || submitting || nav.type === 'form' || nav.type === 'leave' || bypassGuard) return;
+		nav.cancel();
+		const target = nav.to?.url;
+		confirmDialog(t('edit.unsaved_confirm', 'You have unsaved changes. Leave this page?'), {
+			confirmLabel: t('common.leave', 'Leave')
+		}).then(async (ok) => {
+			if (!ok) return;
+			bypassGuard = true;
+			try {
+				if (target) await goto(target);
+			} finally {
+				bypassGuard = false;
 			}
-		}
+		});
 	});
 </script>
 

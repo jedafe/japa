@@ -20,7 +20,7 @@
 
 		api.post('/ads/events', {
 			events: [{ campaign_id: cid, event_type: 'conversion' }]
-		}).catch(() => {
+		}, { 'x-silent-error': '1' }).catch(() => {
 			// Fire-and-forget; conversion failures are non-critical.
 		});
 	});

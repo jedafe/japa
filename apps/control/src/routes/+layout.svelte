@@ -22,7 +22,8 @@
 	import { initSiteSettings, siteName, faviconUrl, faviconForTheme } from '$lib/stores/site.svelte';
 	import { getTheme } from '$lib/stores/theme.svelte';
 	import { setToken, getToken } from '$lib/api';
-	import { apiFetch } from '$lib/api/client';
+	import { apiFetch, setGlobalErrorHandler } from '$lib/api/client';
+	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
 	import { env } from '$env/dynamic/public';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
@@ -77,6 +78,15 @@
 
 	$effect(() => {
 		loadTranslations('en');
+	});
+
+	// Surface unhandled API failures (network loss, 5xx, mutating 403s) as
+	// toasts — callers keep their own inline errors for page-level problems.
+	$effect(() => {
+		setGlobalErrorHandler((err) => {
+			toast.error(err.message || t('common.error', 'An error occurred'));
+		});
+		return () => setGlobalErrorHandler(null);
 	});
 
 	// Apply the custom favicon from appearance settings once settings load;
@@ -372,3 +382,7 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Global transient surfaces: error toasts + promise-based confirm dialogs. -->
+<ToastHost />
+<ConfirmHost />

@@ -101,7 +101,7 @@ func (h *SitemapHandler) flagOn(ctx context.Context, key string) bool {
 // sitemapCacheKey builds the platform-scoped Valkey cache key for a sitemap
 // sub-file. Pattern: jc:cache:sitemap:{}:{type}
 // (valkey-keys-catalog.md). type is "content", "spaces", "tags", "users",
-// "images", "deals", "roadmap", "universities", "courses", "jobs",
+// "images", "deals", "roadmap", "universities", "university-courses", "jobs",
 // "scholarships", "services", "wiki", "calendar", "scam-alerts",
 // "comparisons", "tools", or "index".
 func sitemapCacheKey(sitemapType string) string {
@@ -160,7 +160,7 @@ func InvalidateSitemapCache(ctx context.Context, rdb sitemapCacheInvalidator) {
 
 	types := []string{
 		"index", "content", "spaces", "tags", "users", "images", "deals", "roadmap",
-		"universities", "courses", "jobs", "scholarships", "services", "wiki", "calendar", "scam-alerts", "comparisons", "tools",
+		"universities", "university-courses", "jobs", "scholarships", "services", "wiki", "calendar", "scam-alerts", "comparisons", "tools",
 	}
 	// Chunked content sub-sitemaps cache per-chunk keys — drop the bounded
 	// range so regenerated sitemaps can't serve stale chunks.
@@ -264,9 +264,10 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-roadmap.xml", LastMod: h.latestRoadmapLastMod(r.Context())})
 	}
 	entries = append(entries, sitemapEntry{Loc: base + "/sitemap-universities.xml", LastMod: h.latestUniversitiesLastMod(r.Context())})
-	if h.flagOn(r.Context(), "feature.academy") {
-		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-courses.xml", LastMod: h.latestCoursesLastMod(r.Context())})
-	}
+	// University course offerings belong to the §39 university surface — the
+	// public routes are ungated, so the sub-sitemap is too (was misgated on
+	// feature.academy, which only covers the /academy/* learning platform).
+	entries = append(entries, sitemapEntry{Loc: base + "/sitemap-university-courses.xml", LastMod: h.latestUniversityCoursesLastMod(r.Context())})
 	if h.flagOn(r.Context(), "jobs.enabled") {
 		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-jobs.xml", LastMod: h.latestJobsLastMod(r.Context())})
 	}

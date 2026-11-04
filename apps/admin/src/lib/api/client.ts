@@ -1,12 +1,12 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { buildApiUrl } from '@japaconnect/api-url';
-import { csrfHeaders, refreshCsrfToken } from './csrf';
+import { csrfHeaders, refreshCsrfToken, isUnsafeMethod } from './csrf';
 import { getAccessToken, setAccessToken, clearAccessToken } from './token';
 
 // Global error callback — registered by the root layout to surface 403
 // permission errors to the user via the notification system. Avoids
 // circular imports between the API client and the notifications store.
-type GlobalErrorHandler = (error: { code: string; message: string; status: number }) => void;
+type GlobalErrorHandler = (error: { code: string; message: string; status: number; isMutating?: boolean }) => void;
 let globalErrorHandler: GlobalErrorHandler | null = null;
 
 export function setGlobalErrorHandler(handler: GlobalErrorHandler | null): void {
@@ -107,7 +107,8 @@ async function dispatch<T>(
 	fetcher: typeof fetch,
 	withCsrf: boolean,
 	skipRefresh: boolean = false,
-	responseKind: 'json' | 'blob' = 'json'
+	responseKind: 'json' | 'blob' = 'json',
+	silent: boolean = false
 ): Promise<ApiResult<T>> {
 	const baseHeaders = options.headers as Record<string, string> | undefined;
 	const headers = withCsrf ? await csrfHeaders(options.method, baseHeaders) : baseHeaders;
@@ -195,9 +196,12 @@ async function dispatch<T>(
 	if (!res.ok || 'error' in body) {
 		const err = 'error' in body ? body.error : { code: 'unknown', message: res.statusText, status: res.status };
 		// Surface 403 permission errors globally (non-CSRF — CSRF 403s are
-		// handled by the retry path in apiFetch below).
-		if (res.status === 403 && err.code !== 'csrf_token_invalid' && err.code !== 'csrf_token_missing' && globalErrorHandler) {
-			globalErrorHandler(err);
+		// handled by the retry path in apiFetch below). isMutating lets the
+		// registered handler decide how loudly to surface it (toast only for
+		// mutations; the notification bell still records read-side 403s).
+		// 'x-silent-error' callers (telemetry pings) skip it entirely.
+		if (res.status === 403 && !silent && err.code !== 'csrf_token_invalid' && err.code !== 'csrf_token_missing' && globalErrorHandler) {
+			globalErrorHandler({ ...err, isMutating: isUnsafeMethod(options.method) });
 		}
 		return { data: null, error: err, status: res.status };
 	}
@@ -212,10 +216,11 @@ async function retryAfterCsrfRefresh<T>(
 	url: string,
 	options: RequestInit,
 	fetcher: typeof fetch,
-	responseKind: 'json' | 'blob' = 'json'
+	responseKind: 'json' | 'blob' = 'json',
+	silent: boolean = false
 ): Promise<ApiResult<T>> {
 	await refreshCsrfToken(fetcher);
-	return dispatch<T>(url, options, fetcher, true, false, responseKind);
+	return dispatch<T>(url, options, fetcher, true, false, responseKind, silent);
 }
 
 // filenameFromDisposition parses the suggested filename from a
@@ -245,18 +250,27 @@ export async function apiFetch<T>(
 	const fetcher = fetchFn ?? fetch;
 	const url = buildApiUrl(path, PUBLIC_JC_API_URL);
 	const skipRefresh = options.headers && (options.headers as Record<string, string>)['X-Skip-Refresh'] === '1';
+	// Opt-out for fire-and-forget calls: 'x-silent-error': '1' skips the
+	// global toast/bell on failure. Read before the header is stripped.
+	const silent =
+		(options.headers as Record<string, string> | undefined)?.['x-silent-error'] === '1' ||
+		(options.headers as Record<string, string> | undefined)?.['X-Silent-Error'] === '1';
 	const cleanOptions = { ...options };
-	if (skipRefresh && cleanOptions.headers) {
+	if (cleanOptions.headers) {
+		// Strip client-side control headers — they steer local behavior and
+		// must not reach the wire (precedent: X-Skip-Refresh).
 		const h = { ...(cleanOptions.headers as Record<string, string>) };
 		delete h['X-Skip-Refresh'];
+		delete h['x-silent-error'];
+		delete h['X-Silent-Error'];
 		cleanOptions.headers = h;
 	}
 
 	try {
-		const result = await dispatch<T>(url, cleanOptions, fetcher, true, skipRefresh, responseKind);
+		const result = await dispatch<T>(url, cleanOptions, fetcher, true, skipRefresh, responseKind, silent);
 
 		if (!skipRefresh && isCsrfRejection(result.status, result.error)) {
-			return retryAfterCsrfRefresh<T>(url, cleanOptions, fetcher, responseKind);
+			return retryAfterCsrfRefresh<T>(url, cleanOptions, fetcher, responseKind, silent);
 		}
 
 		return result;

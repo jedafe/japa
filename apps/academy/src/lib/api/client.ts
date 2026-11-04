@@ -22,6 +22,15 @@ export interface ClientResult<T> {
 	status: number;
 }
 
+// Global error callback — registered by the root layout to surface failures
+// callers don't (network loss, 5xx, mutating 403s) via the toast host.
+type GlobalErrorHandler = (error: { code: string; message: string; status: number }) => void;
+let globalErrorHandler: GlobalErrorHandler | null = null;
+
+export function setGlobalErrorHandler(handler: GlobalErrorHandler | null): void {
+	globalErrorHandler = handler;
+}
+
 
 /**
  * Surface identifier sent on every backend call (X-JC-Surface). The backend
@@ -63,11 +72,18 @@ async function clientFetch<T>(
 	extractData = true
 ): Promise<ClientResult<T>> {
 	const method = (init.method ?? 'GET').toString().toUpperCase();
+	// Opt-out for fire-and-forget calls: pass { 'x-silent-error': '1' } in
+	// headers to skip the global toast on failure. Client-side only — it is
+	// stripped before the request goes out.
+	const h = { ...((init.headers ?? {}) as Record<string, string>) };
+	const silent = h['x-silent-error'] === '1' || h['X-Silent-Error'] === '1';
+	delete h['x-silent-error'];
+	delete h['X-Silent-Error'];
 	const baseHeaders: Record<string, string> = {
 		'content-type': 'application/json',
 		// Identify this surface for scoped feature-flag resolution.
 		'x-jc-surface': JC_SURFACE,
-		...((init.headers as Record<string, string>) ?? {})
+		...h
 	};
 
 	async function doFetch(): Promise<Response> {
@@ -136,11 +152,25 @@ async function clientFetch<T>(
 
 		if (!res.ok || (body && typeof body === 'object' && 'error' in body)) {
 			const err = (body as { error?: { code?: string; message?: string } } | null)?.error;
+			const code = err?.code ?? 'request_failed';
+			const message = err?.message ?? res.statusText;
+			if (
+				globalErrorHandler &&
+				!silent &&
+				(res.status >= 500 ||
+					(MUTATING_METHODS.has(method) &&
+						((res.status === 403 &&
+							code !== 'csrf_token_invalid' &&
+							code !== 'csrf_token_missing') ||
+							res.status === 429)))
+			) {
+				globalErrorHandler({ code, message, status: res.status });
+			}
 			return {
 				data: null,
 				error: {
-					code: err?.code ?? 'request_failed',
-					message: err?.message ?? res.statusText,
+					code,
+					message,
 					status: res.status
 				},
 				status: res.status
@@ -157,11 +187,18 @@ async function clientFetch<T>(
 			status: res.status
 		};
 	} catch (e) {
+		// Caller-intentional aborts (AbortController on unmount/navigation)
+		// aren't failures — they return the same shape but skip the toast.
+		const isAbort = e instanceof DOMException && e.name === 'AbortError';
+		const message = e instanceof Error ? e.message : 'Network error';
+		if (globalErrorHandler && !isAbort && !silent) {
+			globalErrorHandler({ code: 'network_error', message, status: 0 });
+		}
 		return {
 			data: null,
 			error: {
 				code: 'network_error',
-				message: e instanceof Error ? e.message : 'Network error',
+				message,
 				status: 0
 			},
 			status: 0

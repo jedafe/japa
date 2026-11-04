@@ -165,9 +165,9 @@ WHERE s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city', 'region'))
+ OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city', 'region'))
+ OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city', 'region'))
  ))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.
@@ -232,9 +232,9 @@ WHERE s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city', 'region'))
+ OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city', 'region'))
+ OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city', 'region'))
  ))
  -- §80 wiki-only types (attraction) are browsable through the wiki
  -- directory only — never the member-facing /spaces listing.
@@ -344,9 +344,9 @@ WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city', 'region'))
+ OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city', 'region'))
+ OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city', 'region'))
  ))
 ORDER BY
  CASE WHEN @sort::text = 'name' THEN s.name ELSE NULL END ASC,
@@ -393,9 +393,9 @@ WHERE s.space_type_id = @space_type_id AND s.deleted_at IS NULL
  JOIN spaces g ON g.id = links.pid AND g.deleted_at IS NULL
  LEFT JOIN spaces gp ON gp.id = g.parent_id AND gp.deleted_at IS NULL
  LEFT JOIN spaces ggp ON ggp.id = gp.parent_id AND ggp.deleted_at IS NULL
- WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city'))
- OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city'))
- OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city'))
+ WHERE (g.slug = @within AND g.level IN ('country', 'state', 'city', 'region'))
+ OR (gp.slug = @within AND gp.level IN ('country', 'state', 'city', 'region'))
+ OR (ggp.slug = @within AND ggp.level IN ('country', 'state', 'city', 'region'))
  ));
 
 -- name: ListSpacesByParentPaginated :many

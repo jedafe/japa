@@ -6,6 +6,7 @@
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { t } from '$lib/i18n';
 	import { BadgePercent, Plus, Loader2, AlertCircle, Pencil, PauseCircle, PlayCircle, Trash2, X } from 'lucide-svelte';
 	import { EmptyState, SelectField } from '$lib/components/ui';
@@ -200,7 +201,7 @@
 	}
 
 	async function remove(c: OrgCoupon) {
-		if (!confirm(t('coupons.confirm_delete', 'Delete {code}? Coupons with redemptions are suspended instead.', { code: c.code ?? c.title }))) return;
+		if (!(await confirmDialog(t('coupons.confirm_delete', 'Delete {code}? Coupons with redemptions are suspended instead.', { code: c.code ?? c.title })))) return;
 		busyId = c.id;
 		try {
 			await api.delete(`/organizations/${org.id}/coupons/${c.id}`);

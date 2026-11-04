@@ -319,7 +319,7 @@
 	// on mount; the backend deduplicates per user/session per day. ----
 	$effect(() => {
 		if (!job?.id) return;
-		api.post(`/content/${job.id}/view`, {});
+		api.post(`/content/${job.id}/view`, {}, { 'x-silent-error': '1' });
 	});
 
 	// ---- Tabs — anchor scroll with an IntersectionObserver scroll-spy. ----
@@ -432,7 +432,7 @@
 		{@html safeJsonLdScript(jsonLd)}
 	{/if}
 	{#if job?.seo_indexable === false || job?.indexable === false}
-		<meta name="robots" content="noindex,follow" />
+		<meta name="robots" content="noindex,nofollow" />
 	{/if}
 </svelte:head>
 

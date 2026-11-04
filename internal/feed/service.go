@@ -78,6 +78,10 @@ type FeedItem struct { //nolint:revive // stuttering type name preserved for API
 	AuthorUsername     string   `json:"author_username,omitempty"`
 	AuthorName         string   `json:"author_name,omitempty"`
 	AuthorAvatarURL    string   `json:"author_avatar_url,omitempty"`
+	// §07/001013 — author verification badge; verification_type resolves to
+	// custom artwork via /verification-requests/types on the frontend.
+	AuthorVerified         bool   `json:"author_verified,omitempty"`
+	AuthorVerificationType string `json:"author_verification_type,omitempty"`
 	SpaceID            *string  `json:"space_id,omitempty"`
 	SpaceName          string   `json:"space_name,omitempty"`
 	SpaceSlug          string   `json:"space_slug,omitempty"`
@@ -905,6 +909,8 @@ func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
 			AuthorUsername:     r.AuthorUsername,
+			AuthorVerified:         r.AuthorVerified,
+			AuthorVerificationType: r.AuthorVerificationType,
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),
@@ -948,6 +954,8 @@ func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
 			AuthorUsername:     r.AuthorUsername,
+			AuthorVerified:         r.AuthorVerified,
+			AuthorVerificationType: r.AuthorVerificationType,
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),
@@ -991,6 +999,8 @@ func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
 			AuthorUsername:     r.AuthorUsername,
+			AuthorVerified:         r.AuthorVerified,
+			AuthorVerificationType: r.AuthorVerificationType,
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),
@@ -1034,6 +1044,8 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
 			AuthorUsername:     r.AuthorUsername,
+			AuthorVerified:         r.AuthorVerified,
+			AuthorVerificationType: r.AuthorVerificationType,
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),
@@ -1077,6 +1089,8 @@ func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
 			AuthorUsername:     r.AuthorUsername,
+			AuthorVerified:         r.AuthorVerified,
+			AuthorVerificationType: r.AuthorVerificationType,
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nil,
@@ -1120,6 +1134,8 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
 			AuthorUsername:     r.AuthorUsername,
+			AuthorVerified:         r.AuthorVerified,
+			AuthorVerificationType: r.AuthorVerificationType,
 			AuthorName:         r.AuthorName,
 			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),

@@ -45,7 +45,7 @@
 		try {
 			await api.post('/ads/events', {
 				events: [{ campaign_id: campaign.id, event_type: 'impression' }]
-			});
+			}, { 'x-silent-error': '1' });
 		} catch {
 			// Fire-and-forget.
 		}
@@ -56,7 +56,7 @@
 		if (!campaign?.target_url) return;
 		api.post('/ads/events', {
 			events: [{ campaign_id: campaign.id, event_type: 'click' }]
-		});
+		}, { 'x-silent-error': '1' });
 		window.open(trackedAdUrl(campaign.target_url, campaign.id), '_blank', 'noopener,noreferrer');
 	}
 

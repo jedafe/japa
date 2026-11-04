@@ -2,6 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, replaceState, beforeNavigate } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { contentHref } from '$lib/utils/contentLink';
 	import { t } from '$lib/i18n';
 	import { ComposerState, type ComposerDeps } from './composerState.svelte';
@@ -426,12 +427,23 @@
 	// composer means the user clicked neither Save nor Publish. No implicit
 	// flush on leave: an unrequested save is how silent validation/safety
 	// failures snuck back in.
+	let bypassGuard = false;
 	beforeNavigate((nav) => {
-		if (!composer) return;
+		if (!composer || bypassGuard || nav.type === 'leave') return;
 		if (composer.status === 'dirty' || composer.status === 'saving' || composer.status === 'creating' || composer.status === 'error') {
-			if (!confirm(t('create.unsaved_leave', 'You have unsaved changes. Leave anyway?'))) {
-				nav.cancel();
-			}
+			nav.cancel();
+			const target = nav.to?.url;
+			confirmDialog(t('create.unsaved_leave', 'You have unsaved changes. Leave anyway?'), {
+				confirmLabel: t('common.leave', 'Leave')
+			}).then(async (ok) => {
+				if (!ok) return;
+				bypassGuard = true;
+				try {
+					if (target) await goto(target);
+				} finally {
+					bypassGuard = false;
+				}
+			});
 		}
 	});
 

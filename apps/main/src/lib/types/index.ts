@@ -234,6 +234,10 @@ export interface FeedItem {
 	author_name?: string | null;
 	author_username?: string | null;
 	author_avatar_url?: string | null;
+	/** §07 — author verification badge; verification_type resolves to custom
+	 *  artwork via /verification-requests/types (see VerifiedBadge). */
+	author_verified?: boolean;
+	author_verification_type?: string | null;
 	space_id?: string | null;
 	space_name?: string | null;
 	space_slug?: string | null;
@@ -952,6 +956,9 @@ export interface PublicUser {
 	location?: string | null;
 	/** §106 video — channel banner resolved from user_profiles.banner_media_id. */
 	banner_url?: string | null;
+	/** §43 — public profile detail only: false when the profile misses the
+	 *  users sitemap quality gate → noindex. Absent = indexable. */
+	indexable?: boolean;
 }
 
 /** GET /users/{id}/followers — mapped row for the profile followers tab. */
@@ -1397,6 +1404,9 @@ export interface Space {
 	post_count: number;
 	follower_count: number;
 	discussion_count?: number;
+	/** §43 — university detail only: false when the space misses the
+	 *  universities sitemap quality gate → noindex. Absent = indexable. */
+	indexable?: boolean;
 	visibility: string;
 	posting_perm: string;
 	replying_perm: string;
@@ -3512,6 +3522,10 @@ export interface WikiPageIndex {
 	/** §80: binds the page to a child entity class (e.g. 'visa_route') — the
 	 *  page's Data panel lists those entities instead of the space's fields. */
 	data_entity_type?: string | null;
+	/** §43 — present on space-index items: false when the page's latest
+	 *  approved prose revision misses the min-words floor; links to it get
+	 *  rel="nofollow". Absent = follow (admin lists, sibling rows). */
+	indexable?: boolean;
 }
 
 export interface WikiDestination {

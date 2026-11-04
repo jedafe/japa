@@ -2,6 +2,7 @@ package seo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -113,13 +114,19 @@ func (h *SitemapHandler) latestUniversitiesLastMod(ctx context.Context) string {
 		 ORDER BY s.updated_at DESC LIMIT 1`)
 }
 
-// ServeCoursesSitemap serves university course-offering sitemap entries — one
-// URL per published offering
+// ServeUniversityCoursesSitemap serves university course-offering sitemap
+// entries — one URL per published offering
 // (/universities/{slug}/courses/{courseSlug}). The nested route is canonical
 // (GetPublishedCourseOfferingBySlug scopes the offering to its university),
 // so both slugs come from the same join used by the public API.
-func (h *SitemapHandler) ServeCoursesSitemap(w http.ResponseWriter, r *http.Request) {
-	if h.cachedSitemapXML(w, r, "courses") {
+//
+// These offerings are part of the Section 39 university surface, not the
+// feature.academy learning platform — the public routes
+// (/universities/{slug}/courses[/{offeringSlug}]) carry no feature Gate, so
+// the sitemap carries none either (§42: sitemap gating mirrors route gating).
+// is_published on the offering and catalog rows is the only inclusion gate.
+func (h *SitemapHandler) ServeUniversityCoursesSitemap(w http.ResponseWriter, r *http.Request) {
+	if h.cachedSitemapXML(w, r, "university-courses") {
 		return
 	}
 
@@ -156,12 +163,12 @@ func (h *SitemapHandler) ServeCoursesSitemap(w http.ResponseWriter, r *http.Requ
 		})
 	}
 
-	h.serveSitemapBytes(w, r, "courses", renderURLSetXML(entries))
+	h.serveSitemapBytes(w, r, "university-courses", renderURLSetXML(entries))
 }
 
-// latestCoursesLastMod returns the most recent published offering updated_at,
-// or empty.
-func (h *SitemapHandler) latestCoursesLastMod(ctx context.Context) string {
+// latestUniversityCoursesLastMod returns the most recent published offering
+// updated_at, or empty.
+func (h *SitemapHandler) latestUniversityCoursesLastMod(ctx context.Context) string {
 	return h.latestSimpleLastMod(ctx, `SELECT o.updated_at
 		 FROM university_course_offerings o
 		 JOIN university_course_catalog c ON c.id = o.course_id AND c.deleted_at IS NULL
@@ -503,7 +510,195 @@ func (h *SitemapHandler) ServeWikiSitemap(w http.ResponseWriter, r *http.Request
 		})
 	}
 
-	h.serveSitemapBytes(w, r, "wiki", renderURLSetXML(append(indexEntries, entries...)))
+	entries = append(indexEntries, entries...)
+	entries = append(entries, h.wikiEntitySitemapEntries(r.Context(), base, minWords)...)
+
+	h.serveSitemapBytes(w, r, "wiki", renderURLSetXML(entries))
+}
+
+// wikiEntitySitemapQueries resolve entity_id → (slug, discriminator) per
+// wiki entity kind for the sitemap. Table and filter choices mirror the
+// per-kind *ForWiki queries in internal/db/queries/wiki.sql — a URL is
+// only advertised when the entity itself resolves publicly.
+var wikiEntitySitemapQueries = map[string]string{
+	"visa_route":   `SELECT id::text, slug, COALESCE(visa_category, '') FROM visa_routes WHERE id::text = ANY($1) AND is_active = true AND slug <> ''`,
+	"organization": `SELECT id::text, slug, COALESCE(org_type, '') FROM organizations WHERE id::text = ANY($1) AND deleted_at IS NULL AND status = 'active' AND slug <> ''`,
+	"embassy":      `SELECT id::text, slug, '' AS disc FROM embassies WHERE id::text = ANY($1) AND is_active = true AND slug <> ''`,
+	"course":       `SELECT id::text, slug, '' AS disc FROM university_course_offerings WHERE id::text = ANY($1) AND deleted_at IS NULL AND is_published = true AND slug <> ''`,
+	"program":      `SELECT id::text, slug, '' AS disc FROM university_course_catalog WHERE id::text = ANY($1) AND deleted_at IS NULL AND is_published = true AND slug <> ''`,
+	"scholarship":  `SELECT id::text, slug, '' AS disc FROM scholarships WHERE id::text = ANY($1) AND slug <> ''`,
+}
+
+// wikiEntityTypeDisc mirrors wiki.EntityTypeDisc — kept local because
+// importing internal/wiki here would cycle (wiki → ai → auth → worker →
+// seo). The canonical pick below mirrors wiki.CanonicalEntityTypeSlug
+// and must stay in lockstep with it: both resolve the same type key for
+// the same (entityDisc, typeSet) input.
+type wikiEntityTypeDisc struct {
+	Slug               string
+	DiscriminatorValue string
+}
+
+// entityDiscriminatorValue mirrors wiki.DiscriminatorValue — first value
+// of an entity_discriminator {column: value} map; "" when empty/malformed.
+func entityDiscriminatorValue(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var m map[string]string
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return ""
+	}
+	for _, v := range m {
+		return v
+	}
+	return ""
+}
+
+// canonicalEntityTypeSlug mirrors wiki.CanonicalEntityTypeSlug: the
+// discriminator-matching type wins, then the generic undiscriminated
+// type, then the first by seed order.
+func canonicalEntityTypeSlug(entityDiscriminator string, types []wikiEntityTypeDisc) string {
+	generic := ""
+	for _, t := range types {
+		if t.DiscriminatorValue == "" {
+			if generic == "" {
+				generic = t.Slug
+			}
+			continue
+		}
+		if entityDiscriminator != "" && t.DiscriminatorValue == entityDiscriminator {
+			return t.Slug
+		}
+	}
+	if generic != "" {
+		return generic
+	}
+	if len(types) > 0 {
+		return types[0].Slug
+	}
+	return ""
+}
+
+// wikiEntitySitemapEntries returns sitemap entries for entity-bound wiki
+// pages (/wiki/e/{type_slug}/{entity}/{page_slug}) — the wiki_pages rows
+// whose parent is an entity row rather than a space, so the space join
+// above never sees them. Same indexability contract (approved prose at
+// the min-words floor); the URL's type slug is the entity's canonical
+// type key — several type keys can serve one entity page (a student visa
+// route resolves under both 'visa_route' and 'student_visa'), and
+// advertising all of them would mint duplicate entries, so the pick
+// mirrors the rendered page's canonical (wiki.CanonicalEntityTypeSlug).
+func (h *SitemapHandler) wikiEntitySitemapEntries(ctx context.Context, base string, minWords int) []urlEntry {
+	// Entity-bound type set per kind, in the same deterministic order the
+	// canonical pick expects.
+	typeRows, err := h.reader.Query(ctx, `SELECT st.slug, wtc.entity_kind, wtc.entity_discriminator
+		 FROM wiki_type_configs wtc
+		 JOIN space_types st ON st.id = wtc.space_type_id
+		 WHERE wtc.entity_kind IS NOT NULL AND wtc.enabled = true
+		 ORDER BY wtc.position, st.slug`)
+	if err != nil {
+		return nil
+	}
+	kindTypes := map[string][]wikiEntityTypeDisc{}
+	for typeRows.Next() {
+		var slug, kind string
+		var disc []byte
+		if err := typeRows.Scan(&slug, &kind, &disc); err != nil {
+			continue
+		}
+		kindTypes[kind] = append(kindTypes[kind], wikiEntityTypeDisc{
+			Slug:               slug,
+			DiscriminatorValue: entityDiscriminatorValue(disc),
+		})
+	}
+	typeRows.Close()
+
+	rows, err := h.reader.Query(ctx, `SELECT wp.entity_type, wp.entity_id::text, wp.slug, wp.updated_at,
+		        COALESCE(rev.content, '{}'::jsonb)
+		 FROM wiki_pages wp
+		 JOIN LATERAL (
+		     SELECT wr.content FROM wiki_revisions wr
+		     WHERE wr.wiki_page_id = wp.id AND wr.status = 'approved'
+		       AND wr.kind <> 'fields' AND wr.deleted_at IS NULL
+		     ORDER BY wr.created_at DESC LIMIT 1
+		 ) rev ON true
+		 WHERE wp.entity_id IS NOT NULL AND wp.is_active = true AND wp.deleted_at IS NULL
+		 ORDER BY wp.updated_at DESC
+		 LIMIT 50000`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	type entityPage struct {
+		slug      string
+		updatedAt time.Time
+	}
+	entityIDs := map[string][]string{} // kind → entity ids needing a slug lookup
+	pagesByEntity := map[string]map[string][]entityPage{}
+	for rows.Next() {
+		var kind, entityID, slug string
+		var updatedAt time.Time
+		var revContent []byte
+		if err := rows.Scan(&kind, &entityID, &slug, &updatedAt, &revContent); err != nil {
+			continue
+		}
+		// Same word floor as the space join — stubs stay out.
+		if len(strings.Fields(bots.TipTapText(revContent))) < minWords {
+			continue
+		}
+		if _, ok := pagesByEntity[kind]; !ok {
+			pagesByEntity[kind] = map[string][]entityPage{}
+		}
+		if _, ok := pagesByEntity[kind][entityID]; !ok {
+			entityIDs[kind] = append(entityIDs[kind], entityID)
+		}
+		pagesByEntity[kind][entityID] = append(pagesByEntity[kind][entityID], entityPage{slug, updatedAt})
+	}
+
+	entries := make([]urlEntry, 0)
+	for kind, ids := range entityIDs {
+		q, ok := wikiEntitySitemapQueries[kind]
+		if !ok {
+			// A kind with indexable pages but no slug-lookup entry silently
+			// drops out of the sitemap — warn so a new entity kind can't
+			// go unnoticed (registry drift guard).
+			slog.Warn("sitemap: entity kind has wiki pages but no slug query",
+				"kind", kind, "entities", len(ids))
+			continue
+		}
+		if len(kindTypes[kind]) == 0 {
+			slog.Warn("sitemap: entity kind has wiki pages but no enabled type",
+				"kind", kind)
+			continue
+		}
+		erows, err := h.reader.Query(ctx, q, ids)
+		if err != nil {
+			slog.Warn("sitemap: entity slug lookup failed", "kind", kind, "error", err)
+			continue
+		}
+		for erows.Next() {
+			var entityID, entitySlug, entityDisc string
+			if err := erows.Scan(&entityID, &entitySlug, &entityDisc); err != nil {
+				continue
+			}
+			typeSlug := canonicalEntityTypeSlug(entityDisc, kindTypes[kind])
+			if typeSlug == "" {
+				continue
+			}
+			for _, p := range pagesByEntity[kind][entityID] {
+				entries = append(entries, urlEntry{
+					Loc:        fmt.Sprintf("%s/wiki/e/%s/%s/%s", base, typeSlug, entitySlug, p.slug),
+					LastMod:    p.updatedAt.Format(time.RFC3339),
+					ChangeFreq: "weekly",
+					Priority:   "0.6",
+				})
+			}
+		}
+		erows.Close()
+	}
+	return entries
 }
 
 // latestWikiLastMod returns the most recent active wiki page updated_at, or

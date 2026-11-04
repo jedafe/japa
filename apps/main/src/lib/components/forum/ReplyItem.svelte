@@ -186,7 +186,7 @@
 		const observer = new IntersectionObserver(
 			(entries) => {
 				if (entries[0]?.isIntersecting) {
-					api.post(`/forum/replies/${reply.id}/view`, {});
+					api.post(`/forum/replies/${reply.id}/view`, {}, { 'x-silent-error': '1' });
 					viewRecorded = true;
 					observer.disconnect();
 				}

@@ -343,7 +343,7 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 
 		h.resolveLiterals(r, &index.Pages)
 
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": index.Pages, "ancestors": index.Ancestors, "ancestors_alt": index.AncestorsAlt, "kind": index.Kind, "entity_children": index.EntityChildren})
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": index.Pages, "indexable": index.Indexable, "ancestors": index.Ancestors, "ancestors_alt": index.AncestorsAlt, "kind": index.Kind, "entity_children": index.EntityChildren})
 
 		return
 	}
@@ -369,7 +369,7 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &index.Pages)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": index.Pages, "ancestors": index.Ancestors, "ancestors_alt": index.AncestorsAlt, "kind": index.Kind, "entity_children": index.EntityChildren})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": index.Pages, "indexable": index.Indexable, "ancestors": index.Ancestors, "ancestors_alt": index.AncestorsAlt, "kind": index.Kind, "entity_children": index.EntityChildren})
 }
 
 // wikiPageTemplateItem is the public shape for one page template under a
@@ -581,6 +581,9 @@ func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request)
 	sort := strings.ToLower(strings.TrimSpace(q.Get("sort")))
 
 	hasWiki := q.Get("has_wiki") != "false"
+	// §wiki-seo guest surface — ?has_content=true hides all-stub spaces;
+	// the public landing sends it for logged-out visitors.
+	hasContent := q.Get("has_content") == "true"
 
 	// Pagination engages only when the caller asks for it (?page or ?limit) —
 	// legacy callers pass neither and get the full list. A page request
@@ -601,7 +604,7 @@ func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	dests, total, effLimit, err := h.service.GetWikiDestinations(r.Context(), level, parentSlug, region, search, within, hasWiki, sort, page, limit, paginate)
+	dests, total, effLimit, err := h.service.GetWikiDestinations(r.Context(), level, parentSlug, region, search, within, hasWiki, hasContent, sort, page, limit, paginate)
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())

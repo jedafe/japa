@@ -11,6 +11,7 @@
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { api } from '$lib/api';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import {
 		SURFACES,
@@ -437,7 +438,7 @@
 	// Registry default; custom keys disappear from the catalog entirely.
 	async function remove() {
 		if (!ext || deleting) return;
-		if (!window.confirm(t('extensions.delete_confirm', 'Delete the stored configuration for this flag?')))
+		if (!(await confirmDialog(t('extensions.delete_confirm', 'Delete the stored configuration for this flag?'))))
 			return;
 		deleting = true;
 		saveError = '';

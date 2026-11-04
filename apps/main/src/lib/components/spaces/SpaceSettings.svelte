@@ -5,6 +5,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import {
 		Camera, Loader2, Image as ImageIcon, Shield, ShieldCheck, UserMinus, UserPlus,
 		Plus, Trash2, Pencil, ArrowUp, ArrowDown, AlertTriangle, Link2, Unlink
@@ -431,7 +432,7 @@
 	let applyingPreset = $state<string | null>(null);
 
 	async function applyPreset(preset: SpacePermissionPreset) {
-		if (!confirm(`Apply the "${preset.name}" preset? This will overwrite your current permission settings.`)) {
+		if (!(await confirmDialog(`Apply the "${preset.name}" preset? This will overwrite your current permission settings.`))) {
 			return;
 		}
 		applyingPreset = preset.name;

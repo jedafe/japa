@@ -7,6 +7,7 @@
 
 	import { initNotifications, addNotification } from '$lib/stores/notifications.svelte';
 	import { setGlobalErrorHandler } from '$lib/api/client';
+	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
 	import { wsClient } from '$lib/websocket';
 	import { initSidebarFromStorage, toggleSidebar, sidebarCollapsed } from '$lib/stores/sidebar.svelte';
 	import Sidebar from '$lib/components/layout/sidebar.svelte';
@@ -75,12 +76,19 @@
 
 		// Register a global 403 error handler so permission errors from any
 		// API call surface as a notification rather than a silent blank screen.
+		// A toast fires too — the bell badge alone was easy to miss.
 		setGlobalErrorHandler((err) => {
 			addNotification({
 				title: t('common.permission_denied', 'Permission Denied'),
 				body: err.message || t('common.no_permission_action', 'You do not have permission to perform this action'),
 				type: 'error'
 			});
+			// Read-side 403 probes are common in restricted accounts — bell
+			// only. A mutating 403 means the user just tried to DO something
+			// and got refused — that's worth a toast.
+			if (err.isMutating) {
+				toast.error(err.message || t('common.no_permission_action', 'You do not have permission to perform this action'));
+			}
 		});
 
 		// Skip session restoration on auth pages — no session exists yet and
@@ -358,3 +366,7 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Global transient surfaces: error toasts + promise-based confirm dialogs. -->
+<ToastHost />
+<ConfirmHost />

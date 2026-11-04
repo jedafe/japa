@@ -31,7 +31,7 @@
 			const data = await res.json().catch(() => null);
 			if (!res.ok) {
 				// Real infrastructure/rate-limit errors are surfaced here.
-				const mapped = mapAuthError(data?.error?.code, res.status);
+				const mapped = mapAuthError(data?.error?.code, res.status, data?.error?.message);
 					formError = t(mapped.messageKey);
 				return;
 			}

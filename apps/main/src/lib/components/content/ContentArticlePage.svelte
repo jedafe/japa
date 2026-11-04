@@ -194,7 +194,7 @@
 	// on mount; the backend deduplicates per user/session per day.
 	$effect(() => {
 		if (!article.id) return;
-		api.post(`/content/${article.id}/view`, {});
+		api.post(`/content/${article.id}/view`, {}, { 'x-silent-error': '1' });
 	});
 </script>
 
@@ -206,7 +206,7 @@
 	<meta property="og:type" content="article" />
 	<link rel="canonical" href={canonical} />
 	{#if article?.seo_indexable === false || article?.indexable === false}
-		<meta name="robots" content="noindex,follow" />
+		<meta name="robots" content="noindex,nofollow" />
 	{/if}
 	<meta property="og:url" content={canonical} />
 	{#if article.featured_image_url}<meta property="og:image" content={article.featured_image_url} />{/if}

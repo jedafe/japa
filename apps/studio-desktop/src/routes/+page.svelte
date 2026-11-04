@@ -21,6 +21,7 @@
 		Trash2
 	} from 'lucide-svelte';
 	import { join } from '@tauri-apps/api/path';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { mkdir, readTextFile, writeTextFile, remove } from '@tauri-apps/plugin-fs';
 	import { queueStore } from '$lib/stores/queue.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
@@ -466,7 +467,7 @@
 
 	async function deleteFile(row: FileState) {
 		if (!settings.projectRoot) return;
-		if (!confirm(`Delete local file ${row.relativePath}? This cannot be undone.`)) return;
+		if (!(await confirmDialog(`Delete local file ${row.relativePath}? This cannot be undone.`))) return;
 		error = null;
 		try {
 			const filePath = await join(settings.projectRoot, row.relativePath);
@@ -479,7 +480,7 @@
 	}
 
 	async function revertFile(row: FileState) {
-		if (!confirm(`Revert "${row.title}" to the last server state?`)) return;
+		if (!(await confirmDialog(`Revert "${row.title}" to the last server state?`))) return;
 		error = null;
 
 		if (!row.contentId || !settings.baseUrl || !settings.apiKey) {

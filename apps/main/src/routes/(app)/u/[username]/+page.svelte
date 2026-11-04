@@ -862,6 +862,9 @@
 	<meta property="og:type" content="profile" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
+	{#if data.user?.indexable === false}
+		<meta name="robots" content="noindex,nofollow" />
+	{/if}
 	<!-- §26 — per-user RSS autodiscovery (proxied to the backend profile feed). -->
 	<link
 		rel="alternate"

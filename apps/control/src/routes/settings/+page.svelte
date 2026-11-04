@@ -19,7 +19,7 @@
 	import CsvRepeater from '$lib/components/settings/CsvRepeater.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { JsonValueEditor } from '@japaconnect/ui';
+	import { JsonValueEditor, confirmDialog } from '@japaconnect/ui';
 	import { categoryIcons, categoryNames, sensitiveKeys as categorySensitiveKeys, textareaKeys as categoryTextareaKeys, uploadKeys as categoryUploadKeys, colorKeys as categoryColorKeys } from '$lib/components/settings/categoryConfig';
 	import {
 		Settings,
@@ -830,17 +830,30 @@
 		return fetchEntityTagsInitial;
 	}
 
-	beforeNavigate(({ cancel, to, from }) => {
+	// Async confirm can't block a navigation — cancel first, then re-issue
+	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
+	let bypassGuard = false;
+	beforeNavigate((nav) => {
+		const { cancel, to, from } = nav;
 		// Same-page navigations (e.g. the ?category= deep-link update in
 		// selectCategory) never lose state — the dirty guard only applies
 		// when actually leaving the settings page.
 		if (to?.url.pathname === from?.url.pathname) return;
-		if (isDirty) {
-			const confirmed = window.confirm(
-				t('settings.unsaved_navigate', 'You have unsaved changes. Are you sure you want to leave?')
-			);
-			if (!confirmed) cancel();
-		}
+		if (!isDirty || bypassGuard || nav.type === 'leave') return;
+		cancel();
+		const target = to?.url;
+		confirmDialog(
+			t('settings.unsaved_navigate', 'You have unsaved changes. Are you sure you want to leave?'),
+			{ confirmLabel: t('common.leave', 'Leave') }
+		).then(async (ok) => {
+			if (!ok) return;
+			bypassGuard = true;
+			try {
+				if (target) await goto(target);
+			} finally {
+				bypassGuard = false;
+			}
+		});
 	});
 
 	// Deep-link support: read ?category= from the URL on load and whenever it

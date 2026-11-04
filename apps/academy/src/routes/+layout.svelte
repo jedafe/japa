@@ -13,7 +13,8 @@
 	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
 
 	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
-	import { api } from '$lib/api/client';
+	import { api, setGlobalErrorHandler } from '$lib/api/client';
+	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
 	import { pwaInstall, moduleServiceWorkerSupported } from '@japaconnect/ui/pwa-install';
 	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
 	import { realtime } from '$lib/realtime/realtime.svelte';
@@ -50,6 +51,15 @@
 	// Ref: japa-bugs-hunters.md §5.2 — audit finding C1.
 	$effect(() => {
 		seedCsrfToken(data.csrfToken ?? null);
+	});
+
+	// Surface unhandled API failures (network loss, 5xx, mutating 403s) as
+	// toasts — callers keep their own inline errors for page-level problems.
+	$effect(() => {
+		setGlobalErrorHandler((err) => {
+			toast.error(err.message || t('errors.generic', 'Something went wrong. Please try again.'));
+		});
+		return () => setGlobalErrorHandler(null);
 	});
 
 	// §124 — report auth state to the service worker so its caches only ever
@@ -256,3 +266,7 @@
 	<!-- §124 install prompt — renders only when the browser can install. -->
 	<PwaInstallBanner />
 {/if}
+
+<!-- Global transient surfaces: error toasts + promise-based confirm dialogs. -->
+<ToastHost />
+<ConfirmHost />

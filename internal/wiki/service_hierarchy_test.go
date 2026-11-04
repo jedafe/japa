@@ -1769,7 +1769,7 @@ func TestListWikiDestinations_WithinJunctionDescendants(t *testing.T) {
 			`DELETE FROM space_parent_spaces WHERE space_id IN ($1,$2)`, childID, grandID)
 	})
 
-	dests, err := store.ListWikiDestinations(ctx, "", "", "", "", parentSlug, false, "name", 0, 0)
+	dests, err := store.ListWikiDestinations(ctx, "", "", "", "", parentSlug, false, false, "name", 0, 0)
 	if err != nil {
 		t.Fatalf("within destinations: %v", err)
 	}

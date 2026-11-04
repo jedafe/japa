@@ -196,3 +196,65 @@ To patch this indexing exposure quickly, let me know:
 • Do you have a sitemap.xml generated and live yet?
 I can provide the exact code wrapper you need to block search bots from crawling your empty pages.
 
+
+---
+
+## Resolution (implemented)
+
+The audit above was reviewed against the codebase; its findings and the
+fixes applied:
+
+### What was already in place
+
+- `indexable` flag + `x-robots-tag`/`meta robots` gating on stub pages (§43).
+- Wiki sitemap word-floor (`seo.sitemap.wiki_min_words`, default 500).
+- Canonical tags, dynamic robots.txt, JSON-LD on space pages.
+
+### URL structure — flat slugs kept deliberately
+
+`/wiki/{space}` and `/wiki/{space}/{page}` stay flat. Nested
+`/wiki/nigeria/bayelsa/amassoma` paths were rejected: the space graph is a
+DAG (`ancestors_alt` multi-parent), so a single nested path cannot
+faithfully represent the hierarchy — and URL depth is a weak signal vs.
+breadcrumb/internal-link hierarchy, which now carries it.
+
+### Slug convention (documented)
+
+Geo space slugs are level-scoped, seeded in
+`migrations/archive/000286_seed_all_countries_states.up.sql`:
+
+| Level   | Pattern            | Example                  |
+|---------|--------------------|--------------------------|
+| country | `{name}`           | `nigeria`                |
+| state   | `{iso2}-{name}`    | `ng-bayelsa`, `us-georgia` |
+| city    | `{name}`           | `amassoma`, `lagos`      |
+| region  | `{region-name}`    | `africa`, `europe`       |
+
+The `{iso2}-` prefix on states is intentional — state names collide
+globally (Georgia, Victoria, …). City slugs are currently bare; at scale,
+bare city names will collide (e.g. Springfield) — new city seeds should
+evaluate a `{iso2}-{state}-{city}` or `{iso2}-{city}` prefix before bulk
+seeding. Existing live slugs must not be renamed without a 301 map.
+
+### Changes applied
+
+1. BreadcrumbList JSON-LD now emits the full chain
+   (Home → Wiki → ancestors… → space → page-parents… → page) on space
+   index pages, space pages, and entity pages — the entity page also
+   gained Article JSON-LD (it had none).
+2. Stub/thin pages emit `noindex,follow` (was `noindex,nofollow`) so
+   crawlers still discover real content through stub indexes;
+   error/removed pages keep `noindex,nofollow`. This matches the §43
+   contract documented in `internal/seo/sitemap_extended.go`.
+3. `/wiki/e/` entity pages: API now returns `canonical_type_slug` (the
+   discriminator-matching type, e.g. `student_visa` over `visa_route`);
+   the frontend canonical + the wiki sitemap both use it, collapsing the
+   duplicate type-slug URL variants.
+4. Wiki sitemap now lists indexable entity-bound pages
+   (`/wiki/e/{type}/{entity}/{page}`) — they were absent entirely.
+5. Regional hubs (migration `001037_wiki_region_hubs`): a `region` wiki
+   type above country, seven hub spaces (africa, americas, asia, europe, global,
+   oceania, polar), country→region parent edges + links, and a
+   'countries' directory category per region — `/wiki` now drills
+   region → country → state → city and every destination breadcrumb
+   gains its region ancestor.

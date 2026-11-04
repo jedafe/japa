@@ -20,6 +20,18 @@ describe('mapAuthError', () => {
 		expect(r.messageKey).toBe('auth.errors.weak_password');
 	});
 
+	it('prefers the backend message for weak_password when supplied', () => {
+		const r = mapAuthError('weak_password', 400, 'password must contain at least one symbol');
+		expect(r.field).toBe('password');
+		expect(r.messageKey).toBe('password must contain at least one symbol');
+	});
+
+	it('uses the backend message for unmapped codes when supplied', () => {
+		const r = mapAuthError('totally_unknown', 400, 'Specific backend reason');
+		expect(r.field).toBe('form');
+		expect(r.messageKey).toBe('Specific backend reason');
+	});
+
 	it('maps password_breached to password field', () => {
 		const r = mapAuthError('password_breached');
 		expect(r.field).toBe('password');

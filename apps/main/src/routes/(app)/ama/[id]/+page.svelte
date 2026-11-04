@@ -139,6 +139,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	{#if faqJsonLd}
 		{@html safeJsonLdScript(faqJsonLd)}
 	{/if}
+	{#if data.replies && data.replies.length === 0}
+		<meta name="robots" content="noindex,nofollow" />
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6">

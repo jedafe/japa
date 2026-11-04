@@ -2,7 +2,8 @@
 	import type { Snippet } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
-	import { BadgeCheck, Bot, Calendar, MessageSquare, MoreVertical, Pencil } from 'lucide-svelte';
+	import { Bot, Calendar, MessageSquare, MoreVertical, Pencil } from 'lucide-svelte';
+	import VerifiedBadge from '$lib/components/ui/VerifiedBadge.svelte';
 	import { Menu, MenuItem } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -101,9 +102,7 @@
 					<div class="hidden min-w-0 pb-1 sm:block">
 						<div class="flex items-center gap-2">
 							<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">{user.display_name ?? user.username}</h1>
-							{#if user.verified}
-								<BadgeCheck size={18} class="shrink-0 text-[var(--color-primary)]" />
-							{/if}
+							<VerifiedBadge verified={user.verified} type={user.verification_type} size={18} />
 							{#if user.ai_disclosed}
 								<span
 									class="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-muted)]"
@@ -133,9 +132,7 @@
 			<div class="mt-3 sm:hidden">
 				<div class="flex items-center gap-2">
 					<h1 class="text-xl font-semibold text-[var(--color-text)]">{user.display_name ?? user.username}</h1>
-					{#if user.verified}
-						<BadgeCheck size={18} class="text-[var(--color-primary)]" />
-					{/if}
+					<VerifiedBadge verified={user.verified} type={user.verification_type} size={18} />
 					{#if user.ai_disclosed}
 						<span
 							class="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-muted)]"

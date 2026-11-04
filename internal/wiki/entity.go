@@ -8,13 +8,13 @@ package wiki
 // entity_discriminator declare the binding.
 
 import (
-	"strings"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -46,11 +46,70 @@ type EntityChild struct {
 	// ProgramSlug links a course offering to its canonical catalog wiki
 	// page (/wiki/e/program/{slug}) — empty for other kinds.
 	ProgramSlug string `json:"program_slug,omitempty"`
+	// Indexable flags whether the child's linked wiki page (/overview) has
+	// approved prose meeting the §43 min-words floor. Nil when the state
+	// lookup couldn't run — the frontend treats absent as indexable.
+	Indexable *bool `json:"indexable,omitempty"`
 }
 
-// discriminatorValue returns the first value of an entity_discriminator
+// EntityTypeDisc is one entity-bound wiki type's canonicalization input —
+// Slug is the type key and DiscriminatorValue the first value of its
+// entity_discriminator map ("" = generic type serving every entity of the
+// kind). Inputs must arrive in deterministic (position, slug) order —
+// mirrors ListEntityWikiTypesByKind.
+type EntityTypeDisc struct {
+	Slug               string
+	DiscriminatorValue string
+}
+
+// CanonicalEntityTypeSlug picks the type key an entity's wiki pages
+// canonicalize to: the type whose discriminator matches the entity's own
+// discriminator value (a 'student' visa route resolves to 'student_visa',
+// not the generic 'visa_route'), falling back to the generic
+// undiscriminated type, then the first type by seed order.
+func CanonicalEntityTypeSlug(entityDiscriminator string, types []EntityTypeDisc) string {
+	generic := ""
+	for _, t := range types {
+		if t.DiscriminatorValue == "" {
+			if generic == "" {
+				generic = t.Slug
+			}
+			continue
+		}
+		if entityDiscriminator != "" && t.DiscriminatorValue == entityDiscriminator {
+			return t.Slug
+		}
+	}
+	if generic != "" {
+		return generic
+	}
+	if len(types) > 0 {
+		return types[0].Slug
+	}
+	return ""
+}
+
+// canonicalEntityTypeSlug resolves the entity's canonical type key via
+// the kind's enabled type set — mirrors the sitemap's pick, which shares
+// CanonicalEntityTypeSlug so both emit the same URL.
+func (s *Service) canonicalEntityTypeSlug(ctx context.Context, kind, entityDisc string) string {
+	rows, err := s.store.read.ListEntityWikiTypesByKind(ctx, &kind)
+	if err != nil || len(rows) == 0 {
+		return ""
+	}
+	types := make([]EntityTypeDisc, 0, len(rows))
+	for _, r := range rows {
+		types = append(types, EntityTypeDisc{
+			Slug:               r.Slug,
+			DiscriminatorValue: DiscriminatorValue(r.EntityDiscriminator),
+		})
+	}
+	return CanonicalEntityTypeSlug(entityDisc, types)
+}
+
+// DiscriminatorValue returns the first value of an entity_discriminator
 // {column: value} map; "" when empty or malformed.
-func discriminatorValue(raw []byte) string {
+func DiscriminatorValue(raw []byte) string {
 	if len(raw) == 0 {
 		return ""
 	}
@@ -189,18 +248,27 @@ func uuidStr(id pgtype.UUID) string {
 
 // EntityPageDTO is the entity-bound counterpart of WikiPageDetailDTO.
 type EntityPageDTO struct {
-	ID             string               `json:"id"`
-	Kind           string               `json:"kind"`
-	TypeSlug       string               `json:"type_slug"`
-	EntityID       string               `json:"entity_id"`
-	EntitySlug     string               `json:"entity_slug"`
-	EntityName     string               `json:"entity_name"`
-	Slug           string               `json:"slug"`
-	Title          string               `json:"title"`
-	Category       string               `json:"category"`
-	IsLocked       bool                 `json:"is_locked"`
-	IsFeatured     bool                 `json:"is_featured"`
-	Lazy           bool                 `json:"lazy"`
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	TypeSlug string `json:"type_slug"`
+	// §wiki-seo — the type key this entity's pages canonicalize to (the
+	// discriminator-matching type, e.g. 'student_visa' over the generic
+	// 'visa_route'). Several type keys can serve the same entity page;
+	// the frontend canonical + sitemap use this one to collapse them.
+	CanonicalTypeSlug string `json:"canonical_type_slug,omitempty"`
+	EntityID          string `json:"entity_id"`
+	EntitySlug        string `json:"entity_slug"`
+	EntityName        string `json:"entity_name"`
+	Slug              string `json:"slug"`
+	Title             string `json:"title"`
+	Category          string `json:"category"`
+	IsLocked          bool   `json:"is_locked"`
+	IsFeatured        bool   `json:"is_featured"`
+	Lazy              bool   `json:"lazy"`
+	// §43 — indexable mirrors the space page contract: true only when the
+	// latest approved prose revision meets the min-words floor. Lazy and
+	// thin pages are false → the frontend emits noindex,follow.
+	Indexable      bool                 `json:"indexable"`
 	Content        json.RawMessage      `json:"content,omitempty"`
 	FieldGroupID   *string              `json:"field_group_id,omitempty"`
 	FieldGroupSlug string               `json:"field_group_slug,omitempty"`
@@ -313,6 +381,9 @@ func (s *Service) GetEntityWikiPage(ctx context.Context, userID pgtype.UUID, typ
 		}
 		if rev, rerr := s.store.GetApprovedRevision(ctx, page.ID); rerr == nil {
 			dto.Content = json.RawMessage(rev.Content)
+			// §43 word floor — same contract as the space page's
+			// dto.Indexable and the sitemap inclusion rule.
+			dto.Indexable = len(strings.Fields(wikiText(rev.Content))) >= s.wikiMinWords(ctx)
 			if rev.Summary != nil {
 				dto.RevisionSummary = *rev.Summary
 			}
@@ -358,7 +429,6 @@ func (s *Service) attachEntityContext(ctx context.Context, userID, typeID pgtype
 	dto.Categories = s.entityTypeCategories(ctx, typeID)
 
 	s.attachEntityNav(ctx, kind, ref, pageID, dto)
-
 
 	// mode:"related" categories attach the entity's peer listing — the
 	// category row's rollup decides (a course's 'universities' page lists
@@ -417,6 +487,7 @@ func (s *Service) attachEntityFields(ctx context.Context, userID, typeID pgtype.
 // closes the ancestor chain — a visa route's crumbs are its country's chain
 // plus the country itself. pageID is zero on lazy pages (nothing is current).
 func (s *Service) attachEntityNav(ctx context.Context, kind string, ref EntityRef, pageID pgtype.UUID, dto *EntityPageDTO) {
+	dto.CanonicalTypeSlug = s.canonicalEntityTypeSlug(ctx, kind, ref.Discriminator)
 	if rows, err := s.store.read.ListEntityWikiPageSiblings(ctx, gen.ListEntityWikiPageSiblingsParams{
 		EntityType: &kind, EntityID: ref.ID, Category: dto.Category,
 	}); err == nil {
@@ -627,16 +698,39 @@ func (s *Service) entityChildren(ctx context.Context, spaceID, spaceTypeID pgtyp
 		if t.EntityKind != nil {
 			kind = *t.EntityKind
 		}
-		children, cerr := s.store.ListEntityChildren(ctx, spaceID, kind, discriminatorValue(t.EntityDiscriminator))
+		children, cerr := s.store.ListEntityChildren(ctx, spaceID, kind, DiscriminatorValue(t.EntityDiscriminator))
 		if cerr != nil || len(children) == 0 {
 			continue
 		}
+		s.flagEntityChildIndexable(ctx, kind, children)
 		out[t.TypeSlug] = children
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+// flagEntityChildIndexable sets each child's Indexable flag from the
+// §43 word-floor state of its linked wiki page (/wiki/e/{type}/{slug}/overview).
+// On lookup failure flags stay nil — the frontend treats absent as indexable
+// rather than nofollowing good pages on a transient error.
+func (s *Service) flagEntityChildIndexable(ctx context.Context, kind string, children []EntityChild) {
+	ids := make([]string, 0, len(children))
+	for _, c := range children {
+		if c.ID != "" {
+			ids = append(ids, c.ID)
+		}
+	}
+	states, err := s.store.EntityPageIndexStates(ctx, kind, ids, "overview", s.wikiMinWords(ctx))
+	if err != nil {
+		slog.Warn("wiki: entity child index states failed", "kind", kind, "error", err)
+		return
+	}
+	for i := range children {
+		v := states[children[i].ID]
+		children[i].Indexable = &v
+	}
 }
 
 // directoryCoveredEntitySlugs returns the entity-bound type slugs a

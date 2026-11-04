@@ -63,7 +63,12 @@
 	{#if instructor?.headline}
 		<meta name="description" content={instructor.headline.slice(0, 160)} />
 	{/if}
-	<meta name="robots" content="index, follow" />
+	{#if (instructor?.courses_count ?? 0) > 0}
+		<meta name="robots" content="index, follow" />
+	{:else}
+		<!-- §43 — an instructor with no published courses is a thin page. -->
+		<meta name="robots" content="noindex, nofollow" />
+	{/if}
 	<link rel="canonical" href={`https://academy.japa.to/instructors/${id}`} />
 	<meta property="og:title" content={`${instructor?.display_name ?? t('academy.instructor')} · ${t('app.name')}`} />
 	{#if instructor?.headline}

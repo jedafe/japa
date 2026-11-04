@@ -103,3 +103,19 @@ func IsUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
+
+// IsNotNullViolation reports whether err is a Postgres not-null violation
+// (SQLSTATE 23502) — a required column was left unset. Client-correctable
+// when the column maps to a request field.
+func IsNotNullViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23502"
+}
+
+// IsCheckViolation reports whether err is a Postgres check-constraint
+// violation (SQLSTATE 23514) — a value failed a CHECK rule such as a range
+// or enum guard. Client-correctable input, not a server fault.
+func IsCheckViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23514"
+}

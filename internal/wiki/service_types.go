@@ -430,7 +430,7 @@ func (s *Service) ListCategoriesForSpace(ctx context.Context, spaceSlug string) 
 				if et.EntityKind == nil {
 					continue
 				}
-				kids, kerr := s.store.ListEntityChildren(ctx, spaceID, *et.EntityKind, discriminatorValue(et.EntityDiscriminator))
+				kids, kerr := s.store.ListEntityChildren(ctx, spaceID, *et.EntityKind, DiscriminatorValue(et.EntityDiscriminator))
 				if kerr == nil && len(kids) > 0 {
 					has = true
 				}

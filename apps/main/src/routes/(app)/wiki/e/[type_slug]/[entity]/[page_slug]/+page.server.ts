@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { WikiHelpful } from '$lib/types';
 import type { PageServerLoad } from './$types';
@@ -16,6 +16,13 @@ export interface EntityWikiPage {
 	is_locked: boolean;
 	is_featured: boolean;
 	lazy: boolean;
+	/** §43 — false on lazy/thin pages (no approved prose at the min-words
+	 *  floor); the page emits noindex,follow. */
+	indexable?: boolean;
+	/** §wiki-seo — the type key the entity's pages canonicalize to (the
+	 *  discriminator-matching type, e.g. 'student_visa' over generic
+	 *  'visa_route'); absent when the kind resolves to a single type. */
+	canonical_type_slug?: string;
 	content?: unknown;
 	field_group_id?: string;
 	field_group_slug?: string;
@@ -51,11 +58,22 @@ export const load: PageServerLoad = async (event) => {
 	const userPermissions = event.locals.user?.permissions ?? [];
 	try {
 		const page = await apiGet<EntityWikiPage>(ctx, `/wiki/e/${type_slug}/${entity}/${page_slug}`);
+		// §43 crawl gate — lazy/thin entity pages carry noindex,follow.
+		if (page.indexable !== true) {
+			event.setHeaders({ 'x-robots-tag': 'noindex, follow' });
+		}
+		// §wiki-seo guest surface — entity stubs redirect guests to the
+		// host-space index (real content or coming-soon) instead of
+		// erroring; members see the stub as the contribution target.
+		if (!authed && page.indexable !== true) {
+			const host = page.ancestors?.[page.ancestors.length - 1]?.slug;
+			redirect(303, host ? `/wiki/${encodeURIComponent(host)}` : '/wiki');
+		}
 		return { page, authed, userPermissions };
 	} catch (err) {
-		if (err instanceof ApiError) {
-			error(err.status === 404 ? 404 : 500, { code: 'wiki_page_error', message: err.message });
-		}
-		error(500, { code: 'wiki_page_error', message: 'Failed to load wiki page' });
+		// redirect() throws — let it (and any non-API error) propagate
+		// instead of collapsing into a 500.
+		if (!(err instanceof ApiError)) throw err;
+		error(err.status === 404 ? 404 : 500, { code: 'wiki_page_error', message: err.message });
 	}
 };

@@ -16,7 +16,8 @@
 	 *      japaconnect-engineering/sections/50-user-dashboard-settings.md
 	 */
 	import { untrack } from 'svelte';
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import { patchNotifications } from '$lib/api/hub';
 	import { t } from '$lib/i18n';
@@ -78,8 +79,22 @@
 		}
 	);
 
+	let bypassGuard = false;
 	beforeNavigate((nav) => {
-		if (form.dirty && !confirm(t('settings.unsaved_warning'))) nav.cancel();
+		if (!form.dirty || bypassGuard || nav.type === 'leave') return;
+		nav.cancel();
+		const target = nav.to?.url;
+		confirmDialog(t('settings.unsaved_warning'), {
+			confirmLabel: t('common.leave', 'Leave')
+		}).then(async (ok) => {
+			if (!ok) return;
+			bypassGuard = true;
+			try {
+				if (target) await goto(target);
+			} finally {
+				bypassGuard = false;
+			}
+		});
 	});
 
 	function toggle(type: string, channel: 'in_app' | 'email' | 'push', next: boolean) {

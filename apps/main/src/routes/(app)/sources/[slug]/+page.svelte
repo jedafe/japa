@@ -133,6 +133,9 @@
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
 	{@html safeJsonLdScript(breadcrumbLd)}
+	{#if data.feed.items.length === 0}
+		<meta name="robots" content="noindex,nofollow" />
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl flex flex-col gap-4 p-4">

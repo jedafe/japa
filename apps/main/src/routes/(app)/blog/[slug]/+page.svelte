@@ -4,6 +4,7 @@
 	import { t, i18n } from '$lib/i18n';
 	import { ArrowLeft, Check, Clock, Eye, Loader2, Pencil, Send, Trash2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
+	import { confirmDialog } from '@japaconnect/ui';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
@@ -55,7 +56,7 @@
 	let deleting = $state(false);
 	async function deletePost() {
 		if (!data.canDelete || deleting) return;
-		const confirmed = window.confirm(t('blog.delete_confirm', 'Are you sure you want to delete this post?'));
+		const confirmed = await confirmDialog(t('blog.delete_confirm', 'Are you sure you want to delete this post?'));
 		if (!confirmed) return;
 		deleting = true;
 		actionError = null;
@@ -121,7 +122,7 @@
 	// on mount; the backend deduplicates per user/session per day.
 	$effect(() => {
 		if (!article.id) return;
-		api.post(`/content/${article.id}/view`, {});
+		api.post(`/content/${article.id}/view`, {}, { 'x-silent-error': '1' });
 	});
 
 	// BreadcrumbList JSON-LD (Section 26 — all pages with hierarchy).
@@ -153,7 +154,7 @@
 	{@html safeJsonLdScript(jsonLd)}
 	{@html safeJsonLdScript(breadcrumbLd)}
 	{#if article?.seo_indexable === false || article?.indexable === false}
-		<meta name="robots" content="noindex,follow" />
+		<meta name="robots" content="noindex,nofollow" />
 	{/if}
 </svelte:head>
 

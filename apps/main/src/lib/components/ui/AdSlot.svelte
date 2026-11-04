@@ -65,7 +65,7 @@
 			// impression is never recorded.
 			await api.post('/ads/events', {
 				events: [{ campaign_id: campaign.id, event_type: 'impression' }]
-			});
+			}, { 'x-silent-error': '1' });
 		} catch {
 			// Fire-and-forget; impression failures are non-critical.
 		}
@@ -77,7 +77,7 @@
 		// Track click event (fire-and-forget). Same {events: [...]} shape.
 		api.post('/ads/events', {
 			events: [{ campaign_id: campaign.id, event_type: 'click' }]
-		});
+		}, { 'x-silent-error': '1' });
 		// Navigate to the target URL — same-origin destinations carry the
 		// attribution param so the landing page fires the conversion event.
 		window.open(trackedAdUrl(campaign.target_url, campaign.id), '_blank', 'noopener,noreferrer');

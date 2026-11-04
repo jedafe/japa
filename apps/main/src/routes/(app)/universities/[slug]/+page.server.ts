@@ -102,5 +102,10 @@ export const load: PageServerLoad = async (event) => {
 
 	const compareHref = await comparePromise;
 
+	// §43 crawl gate — thin universities carry noindex,nofollow.
+	if (university.indexable === false) {
+		event.setHeaders({ 'x-robots-tag': 'noindex, nofollow' });
+	}
+
 	return { university, posts, reviews, reviewAggregate, members, forums, programs, wikiEnabled, wikiPages, compareHref };
 };

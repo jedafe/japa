@@ -6,6 +6,8 @@
 	import { Sparkles } from 'lucide-svelte';
 	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
 	import { pwaInstall, moduleServiceWorkerSupported } from '@japaconnect/ui/pwa-install';
+	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
+	import { setGlobalErrorHandler } from '$lib/api/client';
 	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
 	import { ensureAiPanelDeps } from '$lib/ai/panel';
 	import { resolveAiPageContext } from '$lib/ai/pageContext';
@@ -44,6 +46,15 @@
 	// Sync the client theme store with the server-resolved value once, after
 	// hydration. The initial attribute is already on <html>, so there is no flash.
 	onMount(() => theme.init(data.theme));
+
+	// Surface unhandled API failures (network loss, 5xx) as toasts — docs
+	// forms keep their own inline errors for request-level problems.
+	$effect(() => {
+		setGlobalErrorHandler((err) => {
+			toast.error(err.message || t('errors.generic', 'Something went wrong. Please try again.'));
+		});
+		return () => setGlobalErrorHandler(null);
+	});
 
 	// The i18n locale is derived from `page.data.locale` in the store — no
 	// manual setLocale() call needed (SSR-safe, no cross-request leakage).
@@ -196,3 +207,7 @@
 	<!-- §124 install prompt — renders only when the browser can install. -->
 	<PwaInstallBanner />
 {/if}
+
+<!-- Global transient surfaces: error toasts + promise-based confirm dialogs. -->
+<ToastHost />
+<ConfirmHost />

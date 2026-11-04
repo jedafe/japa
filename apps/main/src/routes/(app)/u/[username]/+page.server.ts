@@ -85,6 +85,11 @@ export const load: PageServerLoad = async (event) => {
 	try {
 		const envelope = await apiGetEnvelope<PublicUser>(ctx, `/users/${username}`);
 		user = envelope.data;
+		// §43 crawl gate — profiles below the sitemap quality gate carry
+		// noindex,nofollow.
+		if (user.indexable === false) {
+			event.setHeaders({ 'x-robots-tag': 'noindex, nofollow' });
+		}
 		relationship =
 			(envelope as unknown as { relationship?: ProfileRelationship }).relationship ?? null;
 		jsonLd = envelope.json_ld ?? null;

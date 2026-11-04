@@ -1,6 +1,6 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
 import type { PageServerLoad } from './$types';
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
 import type { WikiPage, WikiPageIndex, SpaceDetail } from '$lib/types';
 
@@ -52,6 +52,18 @@ export const load: PageServerLoad = async (event) => {
 				`/wiki/categories?space=${encodeURIComponent(spaceSlug)}`
 			).catch(() => null)
 		]);
+		// §43 crawl gate — stub/thin pages carry noindex,follow: out of the
+		// index, but crawlers still follow their links into real content.
+		if (!page?.indexable) {
+			event.setHeaders({ 'x-robots-tag': 'noindex, follow' });
+		}
+		// §wiki-seo guest surface — a prose stub redirects guests to the
+		// parent index (real content or the coming-soon state) instead of
+		// erroring; members still see the stub as the contribution target.
+		// Directory pages stay public: their rendered listing is content.
+		if (!authed && page && !page.indexable && !page.directory) {
+			redirect(303, `/wiki/${encodeURIComponent(spaceSlug)}`);
+		}
 		return {
 			spaceSlug,
 			pageSlug,
@@ -64,7 +76,9 @@ export const load: PageServerLoad = async (event) => {
 			loadError: false,
 			removed: false,
 			spaceDetail,
-			index: indexRes?.items ?? [],
+			// Guests see only indexable siblings — stub links dead-end at
+			// the 404 gate above anyway.
+			index: (indexRes?.items ?? []).filter((p) => authed || p.indexable !== false),
 			apiCategories: catRes?.data ?? ([] as WikiApiCategory[]),
 			wikiScope:
 				catRes?.scope === 'university' || catRes?.scope === 'attraction'
@@ -72,8 +86,12 @@ export const load: PageServerLoad = async (event) => {
 					: ('geo' as const)
 		};
 	} catch (e) {
-		if (e instanceof ApiError && (e.status === 404 || e.status === 410)) {
+		// redirect() throws — rethrow non-API failures (incl. the guest-stub
+		// redirect above) rather than degrading them into loadError.
+		if (!(e instanceof ApiError)) throw e;
+		if (e.status === 404 || e.status === 410) {
 			if (e.status === 410 || e.code === 'page_removed') {
+				event.setHeaders({ 'x-robots-tag': 'noindex, nofollow' });
 				return {
 					spaceSlug,
 					pageSlug,
@@ -91,6 +109,7 @@ export const load: PageServerLoad = async (event) => {
 			}
 			error(404, { code: 'wiki_page_not_found', message: 'Wiki page not found' });
 		}
+		event.setHeaders({ 'x-robots-tag': 'noindex, nofollow' });
 		return {
 			spaceSlug,
 			pageSlug,

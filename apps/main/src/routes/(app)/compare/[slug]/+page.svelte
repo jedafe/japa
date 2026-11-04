@@ -156,7 +156,7 @@
 	<title>{headTitle}</title>
 	<meta name="description" content={headDescription} />
 	<link rel="canonical" href={canonical} />
-	<meta name="robots" content="noindex,follow" />
+	<meta name="robots" content="noindex,nofollow" />
 	<meta property="og:title" content={comparison.content.title} />
 	<meta property="og:description" content={headDescription} />
 	<meta property="og:type" content="article" />

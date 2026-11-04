@@ -1,7 +1,8 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { page } from '$app/state';
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { t, siteName, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -47,11 +48,13 @@
 			? t('wiki.breadcrumb_university_guides', 'University Guides')
 			: data.wikiScope === 'attraction'
 				? t('wiki.breadcrumb_attractions', 'Attractions')
-				: spaceLevel === 'city'
-					? t('wiki.breadcrumb_city_guides', 'City Guides')
-					: spaceLevel === 'state'
-						? t('wiki.breadcrumb_state_guides', 'State Guides')
-						: t('wiki.breadcrumb_country_guides', 'Country Guides')
+				: spaceLevel === 'region'
+					? ''
+					: spaceLevel === 'city'
+						? t('wiki.breadcrumb_city_guides', 'City Guides')
+						: spaceLevel === 'state'
+							? t('wiki.breadcrumb_state_guides', 'State Guides')
+							: t('wiki.breadcrumb_country_guides', 'Country Guides')
 	);
 
 	function categoryLabel(cat: WikiCategory): string {
@@ -94,14 +97,24 @@
 
 	// The tab strip and sibling links stay live while the revision form is
 	// open — warn before a navigation silently drops an edited draft.
+	// Async confirm can't block a navigation — cancel first, then re-issue
+	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
+	let bypassGuard = false;
 	beforeNavigate((nav) => {
-		if (
-			editing &&
-			(editDirty || summary.trim()) &&
-			!confirm(t('settings.unsaved_warning', 'You have unsaved changes. Leave anyway?'))
-		) {
-			nav.cancel();
-		}
+		if (!editing || !(editDirty || summary.trim()) || bypassGuard || nav.type === 'leave') return;
+		nav.cancel();
+		const target = nav.to?.url;
+		confirmDialog(t('settings.unsaved_warning', 'You have unsaved changes. Leave anyway?'), {
+			confirmLabel: t('common.leave', 'Leave')
+		}).then(async (ok) => {
+			if (!ok) return;
+			bypassGuard = true;
+			try {
+				if (target) await goto(target);
+			} finally {
+				bypassGuard = false;
+			}
+		});
 	});
 
 	async function startEdit() {
@@ -201,11 +214,26 @@
 				})
 			: ''
 	);
+	// BreadcrumbList mirrors the visual chain — Wiki / ancestors… / space /
+	// page parents… / page — so crawlers see the full geo + topic lineage
+	// rather than a flat Home → space → page triple.
 	const wikiBreadcrumbJsonLd = $derived(
 		JSON.stringify(
 			breadcrumbJsonLd([
 				{ name: 'Home', path: page.url.origin },
-				{ name: spaceName, path: `${page.url.origin}/wiki/${data.spaceSlug}` },
+				{ name: t('wiki.heading', 'Wiki'), path: `${page.url.origin}/wiki` },
+				...(data.page?.ancestors ?? []).map((anc) => ({
+					name: anc.name,
+					path: `${page.url.origin}/wiki/${encodeURIComponent(anc.slug)}`
+				})),
+				{
+					name: spaceName,
+					path: `${page.url.origin}/wiki/${encodeURIComponent(data.spaceSlug)}`
+				},
+				...(data.page?.parents ?? []).map((par) => ({
+					name: par.title,
+					path: `${page.url.origin}/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(par.slug)}`
+				})),
 				{ name: data.page?.title ?? data.pageSlug, path: canonicalUrl }
 			])
 		)
@@ -295,6 +323,17 @@
 		pageParents.length > 0 ? pageParents[pageParents.length - 1] : null
 	);
 
+	// §43 crawl gate — links to pages that aren't indexable (lazy stubs,
+	// thin pages under the word floor) get rel="nofollow". A slug missing
+	// from the materialized index is a lazy template/stub → nofollow; a
+	// missing flag on an index row counts as indexable (fail-open).
+	const indexableBySlug = $derived(
+		new Map(data.index.map((p) => [p.slug, p.indexable !== false]))
+	);
+	function stubRel(slug: string): 'nofollow' | undefined {
+		return indexableBySlug.get(slug) === true ? undefined : 'nofollow';
+	}
+
 	// §80 Wiki Topic Pages — ON THIS PAGE anchors: the rendered field-table
 	// sections (named, non-quick_facts, non-empty or composite) plus the
 	// rollup/directory panels. Shown when the page has ≥2 anchors.
@@ -363,8 +402,11 @@
 		<meta name="twitter:card" content="summary_large_image" />
 	{/if}
 	<link rel="canonical" href={canonicalUrl} />
-	{#if data.page && !data.page.indexable}
-		<meta name="robots" content="noindex,follow" />
+	{#if (data.page && !data.page.indexable) || data.loadError || data.removed}
+		<meta
+			name="robots"
+			content={data.loadError || data.removed ? 'noindex,nofollow' : 'noindex,follow'}
+		/>
 	{/if}
 	{#if wikiArticleJsonLd}
 		{@html safeJsonLdScript(wikiArticleJsonLd)}
@@ -410,7 +452,7 @@
 							</a>
 						</li>
 					{/each}
-				{:else}
+				{:else if crumbKind}
 					<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
 					<li>{crumbKind}</li>
 				{/if}
@@ -430,6 +472,7 @@
 					<li>
 						<a
 							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(par.slug)}"
+							rel={stubRel(par.slug)}
 							class="truncate transition-colors hover:text-[var(--color-text)]"
 						>
 							{par.title}
@@ -508,6 +551,7 @@
 					<div class="mb-3">
 						<a
 							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(parentPage.slug)}"
+							rel={stubRel(parentPage.slug)}
 							class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
 						>
 							<ChevronLeft size={13} class="shrink-0 rtl:-scale-x-100" />
@@ -578,6 +622,7 @@
 					{/if}
 					<a
 						href="/wiki/{data.spaceSlug}/{data.pageSlug}/history"
+						rel="nofollow"
 						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 					>
 						<History size={14} /> {t('wiki.history', 'History')}
@@ -720,6 +765,7 @@
 							{#each moreNav as item (item.slug)}
 								<a
 									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(item.slug)}"
+									rel={stubRel(item.slug)}
 									class={item.dashed
 										? 'inline-flex items-center rounded-full border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]'
 										: 'inline-flex items-center rounded-full bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]'}
@@ -733,6 +779,7 @@
 										{#each item.children as child (child.slug)}
 											<a
 												href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(child.slug)}"
+												rel={stubRel(child.slug)}
 												class="inline-flex items-center rounded-full border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
 											>
 												{child.label}
@@ -788,6 +835,7 @@
 							{#if prevSibling}
 								<a
 									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(prevSibling.slug)}"
+									rel={stubRel(prevSibling.slug)}
 									class="inline-flex min-w-0 items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
 								>
 									<ChevronLeft size={14} class="shrink-0 rtl:-scale-x-100" />
@@ -799,6 +847,7 @@
 							{#if nextSibling}
 								<a
 									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(nextSibling.slug)}"
+									rel={stubRel(nextSibling.slug)}
 									class="inline-flex min-w-0 items-center justify-end gap-1.5 text-end text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
 								>
 									<span class="truncate">{nextSibling.title}</span>

@@ -337,7 +337,7 @@
 		}
 		if (!ok) return;
 		copiedId = coupon.id;
-		api.post(`/coupons/${coupon.id}/click`, { event_type: 'copy' }).catch(() => {});
+		api.post(`/coupons/${coupon.id}/click`, { event_type: 'copy' }, { 'x-silent-error': '1' }).catch(() => {});
 		setTimeout(() => {
 			if (copiedId === coupon.id) copiedId = null;
 		}, 2000);

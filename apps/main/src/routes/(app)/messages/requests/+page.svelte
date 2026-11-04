@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { EmptyState, AutocompleteSelect, ListPageBar } from '$lib/components/ui';
 	import MessagesTabs from '$lib/components/messages/MessagesTabs.svelte';
 	import { UserX, Search, Loader2 } from 'lucide-svelte';
@@ -88,7 +89,7 @@
 		if (acting) return;
 		// BLK-009: block is the only irreversible-flavoured request action —
 		// confirm before firing (writes user_blocks, removes follows).
-		if (action === 'block' && !confirm(t('messages.requests_block_confirm', 'Block this user? They will no longer be able to message you.'))) {
+		if (action === 'block' && !(await confirmDialog(t('messages.requests_block_confirm', 'Block this user? They will no longer be able to message you.')))) {
 			return;
 		}
 		actionError = '';

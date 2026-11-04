@@ -175,16 +175,21 @@
 				? t('wiki.guide_tagline_attraction', 'Your complete guide to {name} — what to see, hours, entry fees, and how to plan your visit.', { name: spaceName })
 				: t('wiki.guide_tagline', 'Your complete guide to living, studying, and building a successful life in {name}.', { name: spaceName })
 	);
+	// crumbKind — region pages show none: the space is already the top of
+	// the declared hierarchy, so a "Region Guides" middle crumb adds noise
+	// the geo levels don't have (they label a collection the page sits in).
 	const crumbKind = $derived(
 		isUniversityWiki
 			? t('wiki.breadcrumb_university_guides', 'University Guides')
 			: isAttractionWiki
 				? t('wiki.breadcrumb_attractions', 'Attractions')
-				: spaceLevel === 'city'
-					? t('wiki.breadcrumb_city_guides', 'City Guides')
-					: spaceLevel === 'state'
-						? t('wiki.breadcrumb_state_guides', 'State Guides')
-						: t('wiki.breadcrumb_country_guides', 'Country Guides')
+				: spaceLevel === 'region'
+					? ''
+					: spaceLevel === 'city'
+						? t('wiki.breadcrumb_city_guides', 'City Guides')
+						: spaceLevel === 'state'
+							? t('wiki.breadcrumb_state_guides', 'State Guides')
+							: t('wiki.breadcrumb_country_guides', 'Country Guides')
 	);
 
 	// Section cards — one card per category (matching the guide design),
@@ -290,10 +295,18 @@
 			url: canonicalUrl
 		})
 	);
+	// BreadcrumbList mirrors the visual chain — Wiki / ancestors… / space —
+	// so crawlers see the full geo lineage (region → country → state → city)
+	// rather than a flat Home → space pair.
 	const wikiIndexBreadcrumbJsonLd = $derived(
 		JSON.stringify(
 			breadcrumbJsonLd([
 				{ name: 'Home', path: page.url.origin },
+				{ name: t('wiki.heading', 'Wiki'), path: `${page.url.origin}/wiki` },
+				...(data.ancestors ?? []).map((anc) => ({
+					name: anc.name,
+					path: `${page.url.origin}/wiki/${encodeURIComponent(anc.slug)}`
+				})),
 				{ name: spaceName, path: canonicalUrl }
 			])
 		)
@@ -359,8 +372,11 @@
 		<meta name="twitter:card" content="summary_large_image" />
 	{/if}
 	<link rel="canonical" href={canonicalUrl} />
-	{#if data.indexable === false}
-		<meta name="robots" content="noindex,follow" />
+	{#if data.indexable === false || data.loadError}
+		<meta
+			name="robots"
+			content={data.loadError ? 'noindex,nofollow' : 'noindex,follow'}
+		/>
 	{/if}
 	{@html safeJsonLdScript(wikiIndexJsonLd)}
 	{@html safeJsonLdScript(wikiIndexBreadcrumbJsonLd)}
@@ -399,7 +415,7 @@
 							</a>
 						</li>
 					{/each}
-				{:else}
+				{:else if crumbKind}
 					<li aria-hidden="true"><ChevronRight class="rtl:-scale-x-100" size={12} /></li>
 					<li>{crumbKind}</li>
 				{/if}
@@ -563,9 +579,24 @@
 				<p class="mt-4 max-w-3xl text-sm leading-relaxed text-[var(--color-text)]">{intro}</p>
 			{/if}
 
+			<!-- Guest surface: nothing published → friendly empty state,
+			     not a 404. -->
+			{#if data.guestEmpty}
+				<div class="mt-5">
+					<EmptyState
+						icon={BookOpen}
+						title={t('wiki.guest_empty_title', 'Guides are coming soon')}
+						body={t('wiki.guest_empty_body', 'Community guides for {name} are being written. Check back soon, or sign in to contribute.', { name: spaceName })}
+					/>
+				</div>
+			{:else}
 			<!-- Section cards — one per category; sibling pages as sub-links -->
 			<div class="mt-5 divide-y divide-[var(--color-border)] rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)]">
 				{#each cardGroups as group (group.category)}
+					<!-- Guest surface: a prose-category card whose links all
+					     dead-end at stub pages is hidden entirely; directory cards
+					     stay (the listing page is public content). -->
+					{#if !data.isGuest || group.directory || group.pages.length > 0}
 					{@const Icon = categoryIconResolved(group.category, group.icon)}
 					{@const tint = categoryTint(group.category)}
 					{@const first = group.pages[0]}
@@ -574,9 +605,16 @@
 					{@const firstSlug = group.directory && group.pageSlug
 						? group.pageSlug
 						: first?.slug ?? group.templates[0]?.slug ?? group.pageSlug ?? ''}
+					<!-- §43 crawl gate — nofollow when the card target has no
+					     materialized page (directory stub, lazy template) or is a
+					     thin page under the word floor; a stub slug that was since
+					     materialized keeps its own indexable flag. -->
+					{@const linkedPage = group.pages.find((pg) => pg.slug === firstSlug)}
+					{@const firstNofollow = linkedPage ? linkedPage.indexable === false : true}
 					<div>
 						<a
 							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(firstSlug)}"
+							rel={firstNofollow ? 'nofollow' : undefined}
 							class="flex items-center gap-3.5 px-4 py-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							<span
@@ -614,6 +652,7 @@
 								{#each group.pages.slice(1) as p (p.id)}
 									<a
 										href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(p.slug)}"
+										rel={p.indexable === false ? 'nofollow' : undefined}
 										class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]"
 									>
 										{p.title}
@@ -623,18 +662,23 @@
 									</a>
 								{/each}
 								{#each group.templates as tm (tm.slug)}
+									{#if !data.isGuest}
 									<a
 										href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(tm.slug)}"
+										rel="nofollow"
 										class="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
 									>
 										{tm.label}
 									</a>
+									{/if}
 								{/each}
 							</div>
 						{/if}
 					</div>
+					{/if}
 				{/each}
 			</div>
+			{/if}
 
 			<!-- Community CTA — hidden on wiki-only spaces (attractions):
 			     "Ask a Question" opens a question-type thread composer
@@ -694,6 +738,7 @@
 								<li>
 									<a
 										href="/wiki/e/{typeSlug}/{child.slug}/overview"
+										rel={child.indexable === false ? 'nofollow' : undefined}
 										class="group flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2.5 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 									>
 										<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">

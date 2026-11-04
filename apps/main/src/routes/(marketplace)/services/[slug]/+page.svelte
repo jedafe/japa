@@ -121,7 +121,7 @@
 	// on mount; the backend deduplicates per user/session per day.
 	$effect(() => {
 		if (!service?.id) return;
-		api.post(`/content/${service.id}/view`, {});
+		api.post(`/content/${service.id}/view`, {}, { 'x-silent-error': '1' });
 	});
 
 	const title = $derived(

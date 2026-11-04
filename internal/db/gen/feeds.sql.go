@@ -57,6 +57,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(u.public_username, u.username, '') AS author_username,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  MAX(LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400))::text AS excerpt,
@@ -101,7 +103,7 @@ WHERE c.status = 'published'
  -- COALESCE keeps rows whose author join produced no users row.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, u.public_username, up.display_name, up.avatar_url,
+ u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
  o.name, o.slug, om.storage_bucket, om.storage_path,
@@ -133,6 +135,8 @@ type GetExploreFeedRow struct {
 	AuthorName                    string             `json:"author_name"`
 	AuthorAvatarUrl               string             `json:"author_avatar_url"`
 	AuthorUsername                string             `json:"author_username"`
+	AuthorVerified                bool               `json:"author_verified"`
+	AuthorVerificationType        string             `json:"author_verification_type"`
 	SpaceName                     string             `json:"space_name"`
 	SpaceSlug                     string             `json:"space_slug"`
 	Excerpt                       string             `json:"excerpt"`
@@ -193,6 +197,8 @@ func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) 
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
 			&i.AuthorUsername,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -356,6 +362,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(u.public_username, u.username, '') AS author_username,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  MAX(LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400))::text AS excerpt,
@@ -397,7 +405,7 @@ LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, u.public_username, up.display_name, up.avatar_url,
+ u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug, s.geo_code,
  c.journey_stage, c.visa_route, c.source_country, c.target_country,
  m.storage_bucket, m.storage_path,
@@ -438,6 +446,8 @@ type GetForYouCandidatesRow struct {
 	AuthorName                    string             `json:"author_name"`
 	AuthorAvatarUrl               string             `json:"author_avatar_url"`
 	AuthorUsername                string             `json:"author_username"`
+	AuthorVerified                bool               `json:"author_verified"`
+	AuthorVerificationType        string             `json:"author_verification_type"`
 	SpaceName                     string             `json:"space_name"`
 	SpaceSlug                     string             `json:"space_slug"`
 	Excerpt                       string             `json:"excerpt"`
@@ -509,6 +519,8 @@ func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidat
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
 			&i.AuthorUsername,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -583,6 +595,8 @@ SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(u.public_username, u.username, '') AS author_username,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  MAX(LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400))::text AS excerpt,
@@ -627,7 +641,7 @@ WHERE f.user_id = $1
 GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
  c.id, c.title, c.slug, c.author_id, c.created_at,
  c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, u.public_username, up.display_name, up.avatar_url,
+ u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug,
  c.read_time_minutes, m.storage_bucket, m.storage_path,
  c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -669,6 +683,8 @@ type GetPrimaryFeedRow struct {
 	AuthorName                    string             `json:"author_name"`
 	AuthorAvatarUrl               string             `json:"author_avatar_url"`
 	AuthorUsername                string             `json:"author_username"`
+	AuthorVerified                bool               `json:"author_verified"`
+	AuthorVerificationType        string             `json:"author_verification_type"`
 	SpaceName                     string             `json:"space_name"`
 	SpaceSlug                     string             `json:"space_slug"`
 	Excerpt                       string             `json:"excerpt"`
@@ -731,6 +747,8 @@ func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) 
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
 			&i.AuthorUsername,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -774,6 +792,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(u.public_username, u.username, '') AS author_username,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  MAX(LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400))::text AS excerpt,
@@ -818,7 +838,7 @@ WHERE c.author_id = $1
  )
  )
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, u.public_username, up.display_name, up.avatar_url,
+ u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
  o.name, o.slug, om.storage_bucket, om.storage_path,
@@ -856,6 +876,8 @@ type GetProfileFeedRow struct {
 	AuthorName                    string             `json:"author_name"`
 	AuthorAvatarUrl               string             `json:"author_avatar_url"`
 	AuthorUsername                string             `json:"author_username"`
+	AuthorVerified                bool               `json:"author_verified"`
+	AuthorVerificationType        string             `json:"author_verification_type"`
 	SpaceName                     string             `json:"space_name"`
 	SpaceSlug                     string             `json:"space_slug"`
 	Excerpt                       string             `json:"excerpt"`
@@ -919,6 +941,8 @@ func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) 
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
 			&i.AuthorUsername,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -983,6 +1007,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(u.public_username, u.username, '') AS author_username,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  MAX(LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400))::text AS excerpt,
@@ -1023,7 +1049,7 @@ WHERE c.status = 'published'
  -- §106: exclude synthetic video channel content from discovery feeds.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, u.public_username, up.display_name, up.avatar_url,
+ u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
  o.name, o.slug, om.storage_bucket, om.storage_path,
@@ -1057,6 +1083,8 @@ type GetRisingFeedRow struct {
 	AuthorName                    string             `json:"author_name"`
 	AuthorAvatarUrl               string             `json:"author_avatar_url"`
 	AuthorUsername                string             `json:"author_username"`
+	AuthorVerified                bool               `json:"author_verified"`
+	AuthorVerificationType        string             `json:"author_verification_type"`
 	SpaceName                     string             `json:"space_name"`
 	SpaceSlug                     string             `json:"space_slug"`
 	Excerpt                       string             `json:"excerpt"`
@@ -1115,6 +1143,8 @@ func (q *Queries) GetRisingFeed(ctx context.Context, arg GetRisingFeedParams) ([
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
 			&i.AuthorUsername,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -1159,6 +1189,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(u.public_username, u.username, '') AS author_username,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  MAX(LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400))::text AS excerpt,
@@ -1202,7 +1234,7 @@ WHERE c.space_id = $1
  )
  )
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, u.public_username, up.display_name, up.avatar_url,
+ u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
  o.name, o.slug, om.storage_bucket, om.storage_path,
@@ -1239,6 +1271,8 @@ type GetSpaceFeedRow struct {
 	AuthorName                    string             `json:"author_name"`
 	AuthorAvatarUrl               string             `json:"author_avatar_url"`
 	AuthorUsername                string             `json:"author_username"`
+	AuthorVerified                bool               `json:"author_verified"`
+	AuthorVerificationType        string             `json:"author_verification_type"`
 	SpaceName                     string             `json:"space_name"`
 	SpaceSlug                     string             `json:"space_slug"`
 	Excerpt                       string             `json:"excerpt"`
@@ -1299,6 +1333,8 @@ func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]G
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
 			&i.AuthorUsername,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -1363,6 +1399,8 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(u.public_username, u.username, '') AS author_username,
+ COALESCE(u.verified, false) AS author_verified,
+ COALESCE(u.verification_type, '') AS author_verification_type,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
  MAX(LEFT(COALESCE(NULLIF(c.body_html, ''), c.body), 400))::text AS excerpt,
@@ -1404,7 +1442,7 @@ WHERE c.status = 'published'
  -- §106: exclude synthetic video channel content from discovery feeds.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
- u.username, u.public_username, up.display_name, up.avatar_url,
+ u.username, u.public_username, u.verified, u.verification_type, up.display_name, up.avatar_url,
  s.name, s.slug,
  m.storage_bucket, m.storage_path,
  o.name, o.slug, om.storage_bucket, om.storage_path,
@@ -1439,6 +1477,8 @@ type GetTopFeedRow struct {
 	AuthorName                    string             `json:"author_name"`
 	AuthorAvatarUrl               string             `json:"author_avatar_url"`
 	AuthorUsername                string             `json:"author_username"`
+	AuthorVerified                bool               `json:"author_verified"`
+	AuthorVerificationType        string             `json:"author_verification_type"`
 	SpaceName                     string             `json:"space_name"`
 	SpaceSlug                     string             `json:"space_slug"`
 	Excerpt                       string             `json:"excerpt"`
@@ -1499,6 +1539,8 @@ func (q *Queries) GetTopFeed(ctx context.Context, arg GetTopFeedParams) ([]GetTo
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
 			&i.AuthorUsername,
+			&i.AuthorVerified,
+			&i.AuthorVerificationType,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,

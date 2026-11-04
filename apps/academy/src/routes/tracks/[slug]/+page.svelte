@@ -276,7 +276,13 @@
 	{#if track.description}
 		<meta name="description" content={track.description.slice(0, 160)} />
 	{/if}
-	<meta name="robots" content="index, follow" />
+	{#if (track.modules ?? []).reduce((n, m) => n + (m.lessons?.length ?? 0), 0) > 0}
+		<meta name="robots" content="index, follow" />
+	{:else}
+		<!-- §43 — a track with no lessons is a stub: keep it out of the
+		     index and don't let it pass crawl to its links. -->
+		<meta name="robots" content="noindex, nofollow" />
+	{/if}
 	<link rel="canonical" href={`${ACADEMY_ORIGIN}/tracks/${track.slug}`} />
 	<meta property="og:title" content={track.title} />
 	{#if track.description}

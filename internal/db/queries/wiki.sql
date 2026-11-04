@@ -95,7 +95,18 @@ WITH RECURSIVE subtree AS (
 )
 SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
        sp.logo_media_id, sp.description,
-       COUNT(wp.id) FILTER (WHERE wp.is_active = true) AS page_count
+       -- "Guides" = pages with real prose — a seeded stub has zero
+       -- revisions, so requiring one approved non-fields revision keeps
+       -- the badge from reporting the uniform stub count as guides.
+       COUNT(wp.id) FILTER (
+           WHERE wp.is_active = true AND EXISTS (
+               SELECT 1 FROM wiki_revisions wr
+               WHERE wr.wiki_page_id = wp.id
+                 AND wr.status = 'approved'
+                 AND wr.kind <> 'fields'
+                 AND wr.deleted_at IS NULL
+           )
+       ) AS page_count
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
 LEFT JOIN space_types st ON st.id = sp.space_type_id
@@ -122,12 +133,32 @@ WHERE sp.status = 'active'
 GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
          sp.logo_media_id, sp.description
 HAVING (NOT @has_wiki::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
+-- §wiki-seo guest surface — ?has_content=true hides spaces whose pages are
+-- all seeded stubs (zero approved prose revisions); guests see only
+-- destinations that actually have written guides.
+AND (NOT @has_content::bool OR COUNT(wp.id) FILTER (
+    WHERE wp.is_active = true AND EXISTS (
+        SELECT 1 FROM wiki_revisions wr
+        WHERE wr.wiki_page_id = wp.id
+          AND wr.status = 'approved'
+          AND wr.kind <> 'fields'
+          AND wr.deleted_at IS NULL
+    )
+) > 0)
 -- §80 Reader UX: ?sort=name (default, A–Z) or page_count (most guides
 -- first). Each non-selected CASE collapses to all-NULL, so only the
 -- picked key orders; sp.name is the stable tiebreak.
 ORDER BY
     CASE WHEN @sort::text = 'name' THEN sp.name END ASC,
-    CASE WHEN @sort::text = 'page_count' THEN COUNT(wp.id) FILTER (WHERE wp.is_active = true) END DESC,
+    CASE WHEN @sort::text = 'page_count' THEN COUNT(wp.id) FILTER (
+        WHERE wp.is_active = true AND EXISTS (
+            SELECT 1 FROM wiki_revisions wr
+            WHERE wr.wiki_page_id = wp.id
+              AND wr.status = 'approved'
+              AND wr.kind <> 'fields'
+              AND wr.deleted_at IS NULL
+        )
+    ) END DESC,
     sp.name ASC
 LIMIT NULLIF(@page_limit::int, 0) OFFSET @page_offset;
 
@@ -172,6 +203,18 @@ SELECT COUNT(*) FROM (
       AND (@within::text = '' OR sp.id IN (SELECT DISTINCT id FROM subtree))
     GROUP BY sp.id
     HAVING (NOT @has_wiki::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
+-- §wiki-seo guest surface — ?has_content=true hides spaces whose pages are
+-- all seeded stubs (zero approved prose revisions); guests see only
+-- destinations that actually have written guides.
+AND (NOT @has_content::bool OR COUNT(wp.id) FILTER (
+    WHERE wp.is_active = true AND EXISTS (
+        SELECT 1 FROM wiki_revisions wr
+        WHERE wr.wiki_page_id = wp.id
+          AND wr.status = 'approved'
+          AND wr.kind <> 'fields'
+          AND wr.deleted_at IS NULL
+    )
+) > 0)
 ) counted;
 
 -- =====================
@@ -678,6 +721,17 @@ SELECT wtc.space_type_id, wtc.enabled, wtc.label, wtc.entity_kind,
 FROM wiki_type_configs wtc
 JOIN space_types st ON st.id = wtc.space_type_id
 WHERE st.slug = @type_slug AND wtc.enabled = true;
+
+-- name: ListEntityWikiTypesByKind :many
+-- All enabled entity-bound wiki types of a kind — used to resolve the
+-- canonical type key for an entity's wiki pages: the discriminator-
+-- matching type (e.g. 'student_visa') wins over the undiscriminated
+-- generic type ('visa_route'). Deterministic order for stable picks.
+SELECT st.slug, wtc.entity_discriminator, wtc.position
+FROM wiki_type_configs wtc
+JOIN space_types st ON st.id = wtc.space_type_id
+WHERE wtc.entity_kind = @entity_kind AND wtc.enabled = true
+ORDER BY wtc.position, st.slug;
 
 -- name: GetEntityWikiPage :one
 SELECT wp.id, wp.space_id, wp.entity_type, wp.entity_id, wp.slug, wp.title, wp.category,

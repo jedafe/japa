@@ -11,6 +11,7 @@
 	import type { CardStyle } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
 	import DailyFeedCard from './DailyFeedCard.svelte';
+	import VerifiedBadge from '$lib/components/ui/VerifiedBadge.svelte';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import VoteRail from '$lib/components/forum/VoteRail.svelte';
@@ -182,7 +183,7 @@
 				class="inline-flex max-w-full items-center text-start"
 			>
 				{#snippet trigger()}
-					<span>{authorName}</span>
+					<span class="inline-flex items-center gap-1">{authorName}<VerifiedBadge verified={item.author_verified} type={item.author_verification_type} size={13} /></span>
 				{/snippet}
 			</UserHoverCard>
 		{/if}
@@ -263,7 +264,7 @@
 					>
 						{#snippet trigger()}
 							{@render avatar(20)}
-							<span>{authorName}{#if time} · {time}{/if}</span>
+							<span class="inline-flex items-center gap-1">{authorName}<VerifiedBadge verified={item.author_verified} type={item.author_verification_type} size={13} />{#if time} · {time}{/if}</span>
 						{/snippet}
 					</UserHoverCard>
 				{:else if time}
@@ -325,7 +326,7 @@
 				{#snippet trigger()}
 					{@render avatar(34)}
 					<span class="flex flex-col leading-tight">
-						<span class="text-[13.5px] font-semibold text-[var(--color-text)]">{authorName}</span>
+						<span class="inline-flex items-center gap-1 text-[13.5px] font-semibold text-[var(--color-text)]">{authorName}<VerifiedBadge verified={item.author_verified} type={item.author_verification_type} size={14} /></span>
 						<span class="text-xs text-[var(--color-muted)]">{#if item.space_name}{item.space_name} · {/if}{time}{#if item.reading_time_minutes} · {item.reading_time_minutes} {t('feed.min_read', 'min read')}{/if}</span>
 					</span>
 				{/snippet}

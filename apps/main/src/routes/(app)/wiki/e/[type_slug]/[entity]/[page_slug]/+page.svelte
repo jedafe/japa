@@ -8,7 +8,8 @@
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import { tiptapToText, type TipTapDoc as TipDoc } from '$lib/tiptap/serialize';
 	import { tiptapToHtml, type TipTapDoc } from '$lib/tiptap/serialize';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import { entityPageHref } from '$lib/utils/wikiEntityLinks';
 	import type { PageData } from './$types';
 	import type { EntityWikiPage } from './+page.server';
@@ -53,6 +54,65 @@
 	);
 	const entityEndpoint = $derived(
 		`/wiki/e/${encodeURIComponent(page.type_slug)}/${encodeURIComponent(page.entity_slug)}/${encodeURIComponent(page.slug)}`
+	);
+	// §43 SEO head — mirrors the space page: description from the approved
+	// prose, canonical + og, and noindex,follow on lazy/thin stubs.
+	// Canonical targets the page's canonical type key — several type slugs
+	// can resolve the same entity page (e.g. a student route is served by
+	// both 'visa_route' and 'student_visa'), so the URL path alone would
+	// mint duplicate self-canonicals. canonical_type_slug comes from the
+	// API; absent it, fall back to the request path.
+	const canonicalUrl = $derived(
+		page
+			? pageStore.url.origin +
+					entityPageHref(
+						page.canonical_type_slug ?? page.type_slug,
+						page.entity_slug,
+						page.slug
+					)
+			: pageStore.url.origin + pageStore.url.pathname
+	);
+	const metaDescription = $derived.by(() => {
+		const c = page?.content;
+		const text = typeof c === 'string' ? c : c ? tiptapToText(c as unknown as TipTapDoc) : '';
+		const clean = text.replace(/\s+/g, ' ').trim();
+		return clean
+			? clean.slice(0, 160)
+			: t('wiki.entity_description', '{title} — community-contributed info for {name}.', {
+					title: page.title,
+					name: page.entity_name
+				});
+	});
+	const entityArticleJsonLd = $derived(
+		page
+			? JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'Article',
+					headline: page.title,
+					description: metaDescription,
+					url: canonicalUrl,
+					about: { '@type': 'Thing', name: page.entity_name }
+				})
+			: ''
+	);
+	const entityBreadcrumbJsonLd = $derived(
+		page
+			? JSON.stringify(
+					breadcrumbJsonLd([
+						{ name: 'Home', path: pageStore.url.origin },
+						{ name: t('nav.wiki', 'Wiki'), path: `${pageStore.url.origin}/wiki` },
+						...(page.ancestors ?? []).map((anc) => ({
+							name: anc.name,
+							path: `${pageStore.url.origin}/wiki/${encodeURIComponent(anc.slug)}`
+						})),
+						// The entity itself has no standalone index URL —
+						// /wiki/e/{type}/{entity} is not a route — so the crumb
+						// carries a name only (schema.org ListItem without item).
+						{ name: page.entity_name, path: '' },
+						{ name: page.title, path: canonicalUrl }
+					])
+				)
+			: ''
 	);
 	const siblings = $derived(page?.siblings ?? []);
 	const prevSibling = $derived.by(() => {
@@ -135,6 +195,21 @@
 
 <svelte:head>
 	<title>{page.title} — {page.entity_name} | {siteName()} Wiki</title>
+	<meta name="description" content={metaDescription} />
+	<meta property="og:title" content="{page.title} — {page.entity_name}" />
+	<meta property="og:description" content={metaDescription} />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content={canonicalUrl} />
+	<link rel="canonical" href={canonicalUrl} />
+	{#if page.indexable !== true}
+		<meta name="robots" content="noindex,follow" />
+	{/if}
+	{#if entityArticleJsonLd}
+		{@html safeJsonLdScript(entityArticleJsonLd)}
+	{/if}
+	{#if entityBreadcrumbJsonLd}
+		{@html safeJsonLdScript(entityBreadcrumbJsonLd)}
+	{/if}
 </svelte:head>
 
 <article class="mx-auto max-w-3xl space-y-4 px-4 py-6">
@@ -197,6 +272,7 @@
 				{@const active = cat.category === page.category}
 				<a
 					href={entityPageHref(page.type_slug, page.entity_slug, cat.slug)}
+					rel="nofollow"
 					class="whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium transition-colors {active
 						? 'bg-[var(--color-primary)] text-white'
 						: 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
@@ -296,12 +372,12 @@
 	{#if !editing && (prevSibling || nextSibling)}
 		<nav class="flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4" aria-label={t('wiki.page_nav', 'Page navigation')}>
 			{#if prevSibling}
-				<a href={entityPageHref(page.type_slug, page.entity_slug, prevSibling.slug)} class="min-w-0 flex-1 truncate text-sm text-[var(--color-primary)] hover:underline">← {prevSibling.title}</a>
+				<a href={entityPageHref(page.type_slug, page.entity_slug, prevSibling.slug)} rel="nofollow" class="min-w-0 flex-1 truncate text-sm text-[var(--color-primary)] hover:underline">← {prevSibling.title}</a>
 			{:else}
 				<span class="flex-1"></span>
 			{/if}
 			{#if nextSibling}
-				<a href={entityPageHref(page.type_slug, page.entity_slug, nextSibling.slug)} class="min-w-0 flex-1 truncate text-end text-sm text-[var(--color-primary)] hover:underline">{nextSibling.title} →</a>
+				<a href={entityPageHref(page.type_slug, page.entity_slug, nextSibling.slug)} rel="nofollow" class="min-w-0 flex-1 truncate text-end text-sm text-[var(--color-primary)] hover:underline">{nextSibling.title} →</a>
 			{/if}
 		</nav>
 	{/if}
@@ -327,6 +403,7 @@
 						{#if uni.offering_slug}
 							<a
 								href={entityPageHref('course', uni.offering_slug)}
+								rel="nofollow"
 								class="text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
 							>
 								{t('wiki.view_at_university', 'View at {name}', { name: uni.name })}

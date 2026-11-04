@@ -41,7 +41,7 @@
 		}
 		// Terms agreement is a client-side gate (no backend contract).
 		if (!termsAccepted) {
-			errors = { terms: t('auth.signup.terms_required') };
+			errors = { terms: 'auth.signup.terms_required' };
 			return;
 		}
 
@@ -54,8 +54,8 @@
 			});
 			const data = await res.json();
 			if (!res.ok) {
-				const mapped = mapAuthError(data?.error?.code, res.status);
-				errors = mapped.field ? { [mapped.field]: t(mapped.messageKey) } : {};
+				const mapped = mapAuthError(data?.error?.code, res.status, data?.error?.message);
+				errors = mapped.field ? { [mapped.field]: mapped.messageKey } : {};
 				return;
 			}
 			await invalidateAll();
@@ -68,7 +68,7 @@
 				await goto(data.redirect ?? '/onboarding');
 			}
 		} catch {
-			errors = { form: t('auth.errors.generic') };
+			errors = { form: 'auth.errors.generic' };
 		} finally {
 			loading = false;
 		}

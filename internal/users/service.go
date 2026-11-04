@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/bookmarkfolders"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -425,6 +426,9 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, username strin
 	resp.Verified = p.Verified
 	resp.VerificationType = p.VerificationType
 
+	// §43 quality gate — same rule the users sitemap applies.
+	resp.Indexable = s.publicProfileIndexable(ctx, p.UserID)
+
 	// §106 video channels: resolve the channel banner from
 	// user_profiles.banner_media_id via the media resolver. Best-effort — a
 	// resolution failure degrades to no banner rather than failing the
@@ -447,6 +451,40 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, username strin
 	}
 
 	return resp, nil
+}
+
+// publicProfileIndexable mirrors the users sitemap quality gate
+// (ServeUsersSitemap): the profile is indexable when the user belongs to no
+// group or to at least one group with allow_search_indexing, and — when
+// seo.sitemap.user_min_posts > 0 — has that many published public contents.
+// Returns nil on error so the response omits the flag (fail-open).
+func (s *Service) publicProfileIndexable(ctx context.Context, userID pgtype.UUID) *bool {
+	minPosts := bots.DefaultSitemapQualityConfig().UserMinPosts
+	if s.authSettings != nil {
+		minPosts = s.authSettings.GetIntOr(ctx, "seo.sitemap.user_min_posts", minPosts)
+	}
+	if minPosts < 0 {
+		minPosts = bots.DefaultSitemapQualityConfig().UserMinPosts
+	}
+
+	q := `SELECT (NOT EXISTS (SELECT 1 FROM user_group_memberships ugm WHERE ugm.user_id = $1)
+		    OR EXISTS (SELECT 1 FROM user_group_memberships ugm
+		               JOIN user_groups ug ON ug.id = ugm.group_id
+		               WHERE ugm.user_id = $1 AND ug.allow_search_indexing))`
+	args := []any{userID}
+	if minPosts > 0 {
+		q += ` AND (SELECT count(*) FROM contents c
+		        WHERE c.author_id = $1 AND c.status = 'published'
+		          AND c.visibility = 'public' AND c.deleted_at IS NULL) >= $2`
+		args = append(args, minPosts)
+	}
+
+	var ok bool
+	if err := s.db.Reader.QueryRow(ctx, q, args...).Scan(&ok); err != nil {
+		slog.Warn("users: profile indexable check failed", "user_id", userID.String(), "error", err)
+		return nil
+	}
+	return &ok
 }
 
 // UpdateProfile updates the user profile fields. Only non-nil fields are
@@ -1191,11 +1229,11 @@ func (s *Service) GetPrivacySettings(ctx context.Context, userID pgtype.UUID) (*
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &PrivacySettings{
-				DmPrivacy:          "everyone",
-				ProfileVisibility:  "public",
-				SearchIndexable:    true,
-				ShowOnlineStatus:   true,
-				ShowActivity:       true,
+				DmPrivacy:         "everyone",
+				ProfileVisibility: "public",
+				SearchIndexable:   true,
+				ShowOnlineStatus:  true,
+				ShowActivity:      true,
 				// Opt-out model (PTS-002 + 000975): members show Points
 				// publicly unless they explicitly turn it off — an absent
 				// row means the default applies.
@@ -1487,7 +1525,7 @@ func (s *Service) GetUserDraft(ctx context.Context, userID, contentID pgtype.UUI
 		// expected_updated_at for the U1 optimistic lock; second-precision
 		// truncation would drop the Postgres microseconds and make every
 		// edit of an existing post fail the stale-write check.
-		UpdatedAt:       row.UpdatedAt.Time.Format(time.RFC3339Nano),
+		UpdatedAt: row.UpdatedAt.Time.Format(time.RFC3339Nano),
 	}, nil
 }
 
@@ -1566,7 +1604,7 @@ func draftResponseFromRow(
 		CreatedAt:       createdAt.Time.Format(time.RFC3339),
 		// RFC3339Nano — see GetUserDraft: updated_at feeds the U1
 		// optimistic-lock precondition and must keep microsecond precision.
-		UpdatedAt:       updatedAt.Time.Format(time.RFC3339Nano),
+		UpdatedAt: updatedAt.Time.Format(time.RFC3339Nano),
 	}
 }
 

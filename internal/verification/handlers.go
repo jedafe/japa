@@ -3,6 +3,7 @@ package verification
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -227,27 +228,42 @@ func (h *Handlers) AdminCreateType(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminUpdateType handles PATCH /admin/verification-types/{id}. scope+value
-// are immutable — entity rows store the value verbatim.
+// are immutable — entity rows store the value verbatim. All body fields are
+// optional; omitted fields keep the stored value, and an explicit
+// badge_media_id: null clears the badge.
 func (h *Handlers) AdminUpdateType(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid verification type ID")
 		return
 	}
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
 	var body struct {
-		Label        string  `json:"label"`
+		Label        *string `json:"label"`
 		Description  *string `json:"description"`
 		BadgeMediaID *string `json:"badge_media_id"`
 		Position     *int32  `json:"position"`
 		IsActive     *bool   `json:"is_active"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal(raw, &body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
-	dto, err := h.service.AdminUpdateType(r.Context(), id, TypeInput{
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	_, badgeSet := keys["badge_media_id"]
+
+	dto, err := h.service.AdminUpdateType(r.Context(), id, TypePatch{
 		Label: body.Label, Description: body.Description,
-		BadgeMediaID: body.BadgeMediaID, Position: body.Position, IsActive: body.IsActive,
+		BadgeMediaID: body.BadgeMediaID, BadgeSet: badgeSet,
+		Position: body.Position, IsActive: body.IsActive,
 	})
 	if err != nil {
 		writeTypeError(w, err)

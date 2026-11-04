@@ -428,7 +428,7 @@ func (s *Store) ListWikiPagesBySpaceID(ctx context.Context, spaceID pgtype.UUID)
 // §80 Reader UX: sort is the validated sort key ('name'|'page_count');
 // pageLimit 0 renders the full (unpaginated) list — the LIMIT NULLIF treats
 // 0 as ALL — while pageOffset only applies when pageLimit > 0.
-func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki bool, sort string, pageLimit, pageOffset int32) ([]WikiDestination, error) {
+func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki, hasContent bool, sort string, pageLimit, pageOffset int32) ([]WikiDestination, error) {
 	rows, err := s.read.ListWikiDestinations(ctx, gen.ListWikiDestinationsParams{
 		Level:      level,
 		Region:     region,
@@ -436,6 +436,7 @@ func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, reg
 		Parent:     parentSlug,
 		Within:     within,
 		HasWiki:    hasWiki,
+		HasContent: hasContent,
 		Sort:       sort,
 		PageOffset: pageOffset,
 		PageLimit:  pageLimit,
@@ -464,14 +465,15 @@ func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, reg
 
 // CountWikiDestinations returns the total matching the destinations filters
 // (pre-pagination) for the §80 Reader UX `total` envelope field.
-func (s *Store) CountWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki bool) (int64, error) {
+func (s *Store) CountWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki, hasContent bool) (int64, error) {
 	total, err := s.read.CountWikiDestinations(ctx, gen.CountWikiDestinationsParams{
-		Level:   level,
-		Region:  region,
-		Search:  search,
-		Parent:  parentSlug,
-		Within:  within,
-		HasWiki: hasWiki,
+		Level:      level,
+		Region:     region,
+		Search:     search,
+		Parent:     parentSlug,
+		Within:     within,
+		HasWiki:    hasWiki,
+		HasContent: hasContent,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("wiki: count destinations: %w", err)
@@ -1725,10 +1727,17 @@ func (s *Store) ListTypeParentIDs(ctx context.Context, spaceTypeID pgtype.UUID) 
 	return ids, nil
 }
 
+// wikiRevisionWordsSQL counts a revision's words for the §43 min-words
+// floor. Content is JSONB: TipTap docs count words across all text nodes;
+// a bare JSON string (plain-text fallback) is counted as a single blob.
+const wikiRevisionWordsSQL = `CASE WHEN jsonb_typeof(wr.content) = 'string'
+	THEN array_length(string_to_array(trim(wr.content #>> '{}'), ' '), 1)
+	ELSE (SELECT COALESCE(SUM(array_length(string_to_array(trim(t #>> '{}'), ' '), 1)), 0)
+	      FROM jsonb_path_query(wr.content, 'lax $.**.text') AS x(t))
+	END`
+
 // HasApprovedPage reports whether the space has at least one active page with
 // an approved non-fields revision meeting the §43 min-words threshold.
-// Content is JSONB: TipTap docs count words across all text nodes; a bare
-// JSON string (plain-text fallback) is counted as a single blob.
 func (s *Store) HasApprovedPage(ctx context.Context, spaceID pgtype.UUID, minWords int) bool {
 	var ok bool
 	err := s.pool.Reader.QueryRow(ctx,
@@ -1737,15 +1746,84 @@ func (s *Store) HasApprovedPage(ctx context.Context, spaceID pgtype.UUID, minWor
 		     JOIN wiki_revisions wr ON wr.wiki_page_id = wp.id
 		      AND wr.status = 'approved' AND wr.kind <> 'fields' AND wr.deleted_at IS NULL
 		     WHERE wp.space_id = $1 AND wp.is_active = true AND wp.deleted_at IS NULL
-		       AND CASE WHEN jsonb_typeof(wr.content) = 'string'
-		           THEN array_length(string_to_array(trim(wr.content #>> '{}'), ' '), 1)
-		           ELSE (SELECT COALESCE(SUM(array_length(string_to_array(trim(t #>> '{}'), ' '), 1)), 0)
-		                 FROM jsonb_path_query(wr.content, 'lax $.**.text') AS x(t))
-		           END >= $2
+		       AND `+wikiRevisionWordsSQL+` >= $2
 		 )`, spaceID, minWords).Scan(&ok)
 	if err != nil {
 		slog.Warn("wiki: approved-page check failed", "space_id", spaceID.String(), "error", err)
 	}
 
 	return ok
+}
+
+// PageIndexStates reports the §43 indexable flag for every active page in a
+// space, keyed by page slug — true when the page's latest approved non-fields
+// revision meets the min-words floor. This is the same contract as
+// GetWikiPage's dto.Indexable and the sitemap-wiki inclusion rule; the index
+// payload uses it so the frontend can nofollow links to stub/thin pages.
+func (s *Store) PageIndexStates(ctx context.Context, spaceID pgtype.UUID, minWords int) (map[string]bool, error) {
+	out := map[string]bool{}
+	rows, err := s.pool.Reader.Query(ctx,
+		`SELECT wp.slug, COALESCE((
+		     SELECT `+wikiRevisionWordsSQL+` >= $2
+		     FROM wiki_revisions wr
+		     WHERE wr.wiki_page_id = wp.id AND wr.status = 'approved'
+		       AND wr.kind <> 'fields' AND wr.deleted_at IS NULL
+		     ORDER BY wr.created_at DESC LIMIT 1
+		 ), false)
+		 FROM wiki_pages wp
+		 WHERE wp.space_id = $1 AND wp.is_active = true AND wp.deleted_at IS NULL`,
+		spaceID, minWords)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: page index states: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var slug string
+		var ok bool
+		if err := rows.Scan(&slug, &ok); err != nil {
+			return nil, fmt.Errorf("wiki: page index states scan: %w", err)
+		}
+		out[slug] = ok
+	}
+
+	return out, nil
+}
+
+// EntityPageIndexStates reports which entities have an indexable wiki page at
+// pageSlug (the /wiki/e/{type}/{entity}/{page} link target), keyed by entity
+// ID — same latest-approved-revision word-floor contract as PageIndexStates,
+// scoped to entity-bound wiki_pages rows.
+func (s *Store) EntityPageIndexStates(ctx context.Context, entityType string, entityIDs []string, pageSlug string, minWords int) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(entityIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.pool.Reader.Query(ctx,
+		`SELECT wp.entity_id, COALESCE((
+		     SELECT `+wikiRevisionWordsSQL+` >= $3
+		     FROM wiki_revisions wr
+		     WHERE wr.wiki_page_id = wp.id AND wr.status = 'approved'
+		       AND wr.kind <> 'fields' AND wr.deleted_at IS NULL
+		     ORDER BY wr.created_at DESC LIMIT 1
+		 ), false)
+		 FROM wiki_pages wp
+		 WHERE wp.entity_type = $1 AND wp.entity_id = ANY($2::uuid[]) AND wp.slug = $4
+		   AND wp.is_active = true AND wp.deleted_at IS NULL`,
+		entityType, entityIDs, minWords, pageSlug)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: entity page index states: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id pgtype.UUID
+		var ok bool
+		if err := rows.Scan(&id, &ok); err != nil {
+			return nil, fmt.Errorf("wiki: entity page index states scan: %w", err)
+		}
+		out[id.String()] = ok
+	}
+
+	return out, nil
 }

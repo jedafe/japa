@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { beforeNavigate } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { onMount, untrack } from 'svelte';
 	import { Check } from 'lucide-svelte';
 	import DocEditor from '$lib/components/docs/DocEditor.svelte';
@@ -163,15 +164,28 @@
 		return () => window.removeEventListener('beforeunload', handler);
 	});
 
+	// Async confirm can't block a navigation — cancel first, then re-issue
+	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
+	let bypassGuard = false;
 	beforeNavigate((nav) => {
 		// Guard every in-app navigation (link, goto, back/forward) — 'form'
 		// is our own submit (saving/reviewing) and 'leave' is handled by the
 		// beforeunload listener.
-		if (dirty && !saving && !reviewing && nav.type !== 'form' && nav.type !== 'leave') {
-			if (!confirm(t('edit.unsaved_confirm', 'You have unsaved changes. Leave this page?'))) {
-				nav.cancel();
+		if (!dirty || saving || reviewing || nav.type === 'form' || nav.type === 'leave' || bypassGuard)
+			return;
+		nav.cancel();
+		const target = nav.to?.url;
+		confirmDialog(t('edit.unsaved_confirm', 'You have unsaved changes. Leave this page?'), {
+			confirmLabel: t('common.leave', 'Leave')
+		}).then(async (ok) => {
+			if (!ok) return;
+			bypassGuard = true;
+			try {
+				if (target) await goto(target);
+			} finally {
+				bypassGuard = false;
 			}
-		}
+		});
 	});
 
 	// §44 amendment 2: the dropdown can only move between draft/in_review —

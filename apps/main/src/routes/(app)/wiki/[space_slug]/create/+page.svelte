@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { beforeNavigate, goto } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
@@ -73,14 +74,24 @@
 	// create so the redirect doesn't trip the confirm.
 	let dirty = $state(false);
 	let created = $state(false);
+	// Async confirm can't block a navigation — cancel first, then re-issue
+	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
+	let bypassGuard = false;
 	beforeNavigate((nav) => {
-		if (
-			!created &&
-			dirty &&
-			!confirm(t('settings.unsaved_warning', 'You have unsaved changes. Leave anyway?'))
-		) {
-			nav.cancel();
-		}
+		if (created || !dirty || bypassGuard || nav.type === 'leave') return;
+		nav.cancel();
+		const target = nav.to?.url;
+		confirmDialog(t('settings.unsaved_warning', 'You have unsaved changes. Leave anyway?'), {
+			confirmLabel: t('common.leave', 'Leave')
+		}).then(async (ok) => {
+			if (!ok) return;
+			bypassGuard = true;
+			try {
+				if (target) await goto(target);
+			} finally {
+				bypassGuard = false;
+			}
+		});
 	});
 
 	const catTemplates = $derived(
@@ -303,6 +314,7 @@
 <svelte:head>
 	<title>{titleText}</title>
 	<meta name="description" content={t('wiki.create_description', 'Create a new wiki page')} />
+	<meta name="robots" content="noindex,nofollow" />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl p-4">

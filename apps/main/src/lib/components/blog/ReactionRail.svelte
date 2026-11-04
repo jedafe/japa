@@ -310,7 +310,7 @@
 		api.post(`/content/${contentId}/share`, {
 			share_type: 'external',
 			platform: platform.key
-		});
+		}, { 'x-silent-error': '1' });
 	}
 
 	async function nativeShare() {

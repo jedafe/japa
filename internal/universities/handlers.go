@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
@@ -103,7 +104,20 @@ type Handlers struct {
 	intelOverrideMarker IntelOverrideMarker
 	// intelOverrideReleaser removes override keys on request; nil disables.
 	intelOverrideReleaser IntelOverrideReleaser
+	// settings provides system settings for the §43 indexability gate
+	// (sitemap quality thresholds); nil falls back to defaults.
+	settings settingsReader
 }
+
+// settingsReader is the subset of config.Settings needed by the
+// indexability gate.
+type settingsReader interface {
+	GetIntOr(ctx context.Context, key string, fallback int) int
+}
+
+// SetSettings injects the system settings reader used by the §43
+// indexability gate (wired during server setup).
+func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
 
 // literalResolver resolves {{...}} template literals in user-facing text
 // fields (§14). Implemented by *literals.Catalog; nil disables resolution.
@@ -289,14 +303,18 @@ type universityField struct {
 // admin tooling.
 type universityDetail struct {
 	gen.GetSpaceBySlugRow
-	Initials      *string                `json:"initials,omitempty"`
-	Fields        []gen.CustomFieldValue `json:"fields"`
-	DisplayFields []universityField      `json:"display_fields"`
-	LogoURL       string                 `json:"logo_url"`
-	IsMember      bool                   `json:"is_member"`
-	IsPending     bool                   `json:"is_pending"`
-	IsFollowing   bool                   `json:"is_following"`
-	DiscussionCount int32                 `json:"discussion_count"`
+	Initials        *string                `json:"initials,omitempty"`
+	Fields          []gen.CustomFieldValue `json:"fields"`
+	DisplayFields   []universityField      `json:"display_fields"`
+	LogoURL         string                 `json:"logo_url"`
+	IsMember        bool                   `json:"is_member"`
+	IsPending       bool                   `json:"is_pending"`
+	IsFollowing     bool                   `json:"is_following"`
+	DiscussionCount int32                  `json:"discussion_count"`
+	// §43 — indexable mirrors the universities sitemap inclusion rule:
+	// public spaces whose post_count + published forum threads fall below
+	// seo.sitemap.space_min_posts are thin pages → noindexed.
+	Indexable bool `json:"indexable"`
 }
 
 // ListUniversities handles GET /api/v1/universities — every space of the
@@ -589,6 +607,25 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		discussionCount = stats[space.ID.String()].DiscussionCount
 	}
 
+	// §43 quality gate — same rule the universities sitemap applies: public
+	// spaces with post_count + published forum threads below
+	// seo.sitemap.space_min_posts are thin pages and get noindexed by the
+	// frontend (sitemap exclusion alone doesn't stop indexing).
+	indexable := space.Visibility == "public"
+	if indexable {
+		minPosts := bots.DefaultSitemapQualityConfig().MinPosts
+		if h.settings != nil {
+			minPosts = h.settings.GetIntOr(r.Context(), "seo.sitemap.space_min_posts", minPosts)
+		}
+		if minPosts < 0 {
+			minPosts = bots.DefaultSitemapQualityConfig().MinPosts
+		}
+		// minPosts == 0 disables the gate (all universities indexable).
+		if minPosts > 0 {
+			indexable = space.PostCount+discussionCount >= int32(minPosts)
+		}
+	}
+
 	h.resolveLiterals(r, &space)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": universityDetail{
@@ -601,6 +638,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		IsPending:         isPending,
 		IsFollowing:       isFollowing,
 		DiscussionCount:   discussionCount,
+		Indexable:         indexable,
 	}})
 }
 

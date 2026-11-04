@@ -166,6 +166,7 @@
 				<li>
 					<a
 						href="/wiki/{encodeURIComponent(spaceSlug)}/{encodeURIComponent(p.slug)}"
+						rel={p.indexable === false ? 'nofollow' : undefined}
 						class="flex items-center gap-2 py-2 text-sm text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]"
 					>
 						<FileText size={14} class="shrink-0 text-[var(--color-muted)]" aria-hidden="true" />

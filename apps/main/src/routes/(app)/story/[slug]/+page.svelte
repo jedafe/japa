@@ -155,7 +155,7 @@
 	// on mount; the backend deduplicates per user/session per day.
 	$effect(() => {
 		if (!story?.id) return;
-		api.post(`/content/${story.id}/view`, {});
+		api.post(`/content/${story.id}/view`, {}, { 'x-silent-error': '1' });
 	});
 </script>
 
@@ -183,7 +183,7 @@
 		)}
 	{/if}
 	{#if story?.seo_indexable === false || story?.indexable === false}
-		<meta name="robots" content="noindex,follow" />
+		<meta name="robots" content="noindex,nofollow" />
 	{/if}
 </svelte:head>
 

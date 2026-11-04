@@ -2,7 +2,8 @@
 	import type { Snippet } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
-	import { BadgeCheck, Globe, Users, Calendar } from 'lucide-svelte';
+	import { Globe, Users, Calendar } from 'lucide-svelte';
+	import VerifiedBadge from '$lib/components/ui/VerifiedBadge.svelte';
 	import { safeHref } from '$lib/utils/safeHtml';
 	import type { PublicOrganization } from '$lib/types';
 
@@ -36,9 +37,7 @@
 			<div class="flex-1 pb-1">
 				<div class="flex items-center gap-2">
 					<h1 class="text-xl font-semibold text-[var(--color-text)]">{org.name}</h1>
-					{#if org.verified}
-						<BadgeCheck size={18} class="text-[var(--color-primary)]" />
-					{/if}
+					<VerifiedBadge verified={org.verified} type={org.verification_type} scope="organization" size={18} />
 				</div>
 				<p class="text-sm text-[var(--color-muted)]">@{org.slug}</p>
 				{#if org.tagline}

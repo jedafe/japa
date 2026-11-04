@@ -5,6 +5,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
+	import { confirmDialog } from '@japaconnect/ui';
 	import {
 		Users,
 		Plane,
@@ -87,7 +88,7 @@
 	let deleteLoading = $state(false);
 	async function deleteGroup() {
 		if (!group) return;
-		if (!confirm(t('planning_groups.confirm_delete', 'Delete this planning group? This cannot be undone.'))) return;
+		if (!(await confirmDialog(t('planning_groups.confirm_delete', 'Delete this planning group? This cannot be undone.')))) return;
 		deleteLoading = true;
 		const res = await api.delete<{ ok: boolean }>(`/planning-groups/${group.id}`);
 		if (res.data) {
@@ -175,6 +176,9 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
+	{#if data.checkins && data.checkins.length === 0}
+		<meta name="robots" content="noindex,nofollow" />
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">

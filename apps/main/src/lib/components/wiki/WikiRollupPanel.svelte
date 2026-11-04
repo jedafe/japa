@@ -346,6 +346,7 @@
 									{#if row.page}
 										<a
 											href="/wiki/{encodeURIComponent(row.space.slug)}/{encodeURIComponent(row.page.slug)}"
+											rel="nofollow"
 											class="font-medium text-[var(--color-primary)] hover:underline"
 										>
 											{row.page.title}

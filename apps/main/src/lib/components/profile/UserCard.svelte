@@ -9,6 +9,7 @@
 	import { page } from '$app/state';
 	import { ArrowRight, BadgeCheck, GraduationCap, MapPin } from 'lucide-svelte';
 	import { t, i18n } from '$lib/i18n';
+	import { verificationBadgeUrl, verificationBadgeLabel } from '$lib/stores/verification-badges.svelte';
 	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import type { PublicUser } from '$lib/types';
@@ -33,6 +34,8 @@
 	// §07 verification badge — the badge reflects the granted flag, not the
 	// tier (a business/pro account is not automatically verified).
 	const verified = $derived(Boolean(user.verified));
+	const badgeUrl = $derived(verificationBadgeUrl('user', user.verification_type));
+	const badgeLabel = $derived(verificationBadgeLabel('user', user.verification_type) ?? t('profile.verified', 'Verified'));
 	const isOwn = $derived(page.data.user?.id === user.id);
 </script>
 
@@ -64,12 +67,16 @@
 			</div>
 		{/if}
 		{#if verified}
-			<span
-				class="absolute end-3 top-3 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)]"
-				title={tierLabel}
-			>
-				<BadgeCheck size={16} />
-			</span>
+			{#if badgeUrl}
+				<img src={badgeUrl} alt={badgeLabel} title={badgeLabel} class="absolute end-3 top-3 h-7 w-7" />
+			{:else}
+				<span
+					class="absolute end-3 top-3 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)]"
+					title={tierLabel}
+				>
+					<BadgeCheck size={16} />
+				</span>
+			{/if}
 		{/if}
 	</div>
 

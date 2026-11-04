@@ -7,6 +7,7 @@
 	// editor + BlockStylePanel + motion/visibility settings + geo preview.
 	import { page } from '$app/state';
 	import { goto, beforeNavigate } from '$app/navigation';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { browser } from '$app/environment';
 	import { onMount, untrack, type Component } from 'svelte';
 	import { PUBLIC_JC_SITE_URL, PUBLIC_JC_API_URL } from '$env/static/public';
@@ -1045,11 +1046,24 @@
 		return () => window.removeEventListener('beforeunload', handler);
 	});
 
+	// Async confirm can't block a navigation — cancel first, then re-issue
+	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
+	let bypassGuard = false;
 	beforeNavigate((nav) => {
-		if (!unsavedChanges) return;
-		if (!window.confirm(t('pageBuilder.leave_unsaved', 'You have unsaved changes. Leave anyway?'))) {
-			nav.cancel();
-		}
+		if (!unsavedChanges || bypassGuard || nav.type === 'leave') return;
+		nav.cancel();
+		const target = nav.to?.url;
+		confirmDialog(t('pageBuilder.leave_unsaved', 'You have unsaved changes. Leave anyway?'), {
+			confirmLabel: t('common.leave', 'Leave')
+		}).then(async (ok) => {
+			if (!ok) return;
+			bypassGuard = true;
+			try {
+				if (target) await goto(target);
+			} finally {
+				bypassGuard = false;
+			}
+		});
 	});
 </script>
 

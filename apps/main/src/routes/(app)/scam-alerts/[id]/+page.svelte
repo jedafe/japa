@@ -104,6 +104,9 @@
 			])
 		)}
 	{/if}
+	{#if alert && alert.status !== 'confirmed'}
+		<meta name="robots" content="noindex,nofollow" />
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6">

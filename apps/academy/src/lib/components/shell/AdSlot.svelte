@@ -83,7 +83,7 @@
 			// a bare object is rejected with 400 empty_events.
 			await api.post('/ads/events', {
 				events: [{ campaign_id: campaign.id, event_type: 'impression' }]
-			});
+			}, { 'x-silent-error': '1' });
 		} catch {
 			// Fire-and-forget; impression failures are non-critical.
 		}
@@ -94,7 +94,7 @@
 		e.preventDefault();
 		api.post('/ads/events', {
 			events: [{ campaign_id: campaign.id, event_type: 'click' }]
-		});
+		}, { 'x-silent-error': '1' });
 		// Same-origin destinations carry the attribution param so the landing
 		// page fires the conversion event (§25 — mirrors main's trackedAdUrl).
 		try {

@@ -126,6 +126,9 @@
 	{#if jsonLd}
 		{@html safeJsonLdScript(jsonLd)}
 	{/if}
+	{#if entry && entry.status !== 'published'}
+		<meta name="robots" content="noindex,nofollow" />
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">

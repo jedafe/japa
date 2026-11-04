@@ -31,6 +31,7 @@
 
 <svelte:head>
 	<title>{t('wiki.history', 'History')} — {page.title} | {siteName()} Wiki</title>
+	<meta name="robots" content="noindex,nofollow" />
 </svelte:head>
 
 <article class="mx-auto max-w-3xl space-y-4 px-4 py-6">

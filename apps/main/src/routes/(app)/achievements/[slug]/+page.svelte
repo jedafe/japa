@@ -8,6 +8,7 @@
 	import { t, i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
 	import { api } from '$lib/api/client';
+	import { confirmDialog } from '@japaconnect/ui';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import {
 		ArrowLeft,
@@ -99,12 +100,12 @@
 	// on mount; the backend deduplicates per user/session per day.
 	$effect(() => {
 		if (!achievement.id) return;
-		api.post(`/content/${achievement.id}/view`, {});
+		api.post(`/content/${achievement.id}/view`, {}, { 'x-silent-error': '1' });
 	});
 
 	async function deleteAchievement() {
 		if (deleting || !data.canEdit) return;
-		if (!confirm(t('achievements.confirm_delete', 'Delete this achievement? This cannot be undone.'))) return;
+		if (!(await confirmDialog(t('achievements.confirm_delete', 'Delete this achievement? This cannot be undone.')))) return;
 		deleting = true;
 		deleteError = null;
 		const res = await api.delete(`/achievements/${achievement.id}`);
@@ -125,7 +126,7 @@
 	<meta property="og:type" content="article" />
 	<meta property="og:url" content={page.url.href} />
 	{#if achievement?.seo_indexable === false || achievement?.indexable === false}
-		<meta name="robots" content="noindex,follow" />
+		<meta name="robots" content="noindex,nofollow" />
 	{/if}
 </svelte:head>
 

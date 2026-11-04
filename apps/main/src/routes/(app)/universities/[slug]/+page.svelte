@@ -260,6 +260,9 @@
 	<meta property="og:type" content="website" />
 	<link rel="canonical" href={canonical} />
 	<meta property="og:url" content={canonical} />
+	{#if data.university.indexable === false}
+		<meta name="robots" content="noindex,nofollow" />
+	{/if}
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
