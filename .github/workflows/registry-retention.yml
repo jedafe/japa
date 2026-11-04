@@ -48,14 +48,30 @@ jobs:
                       'application/vnd.docker.distribution.manifest.list.v2+json,'
                       'application/vnd.oci.image.manifest.v1+json,'
                       'application/vnd.oci.image.index.v1+json')
+          def digest_of(app, tag):
+              try:
+                  _, h = req('GET', f'/v2/japa-{app}/manifests/{tag}', MANIFEST)
+                  return h['Docker-Content-Digest']
+              except Exception:
+                  return None
+
           for app in apps:
               body, _ = req('GET', f'/v2/japa-{app}/tags/list')
               tags = [t for t in json.loads(body).get('tags') or []
                       if t not in ('staging','production','buildcache')]
               if len(tags) <= keep: continue
+              # Mutable tags share a manifest digest with the sha tag pushed
+              # in the same build. DELETE by digest removes the manifest
+              # itself, orphaning staging/production — never delete a digest
+              # a mutable tag still points at.
+              protected = {d for d in
+                           (digest_of(app, t) for t in ('staging', 'production'))
+                           if d}
               for tag in sorted(tags)[:-keep]:
-                  _, h = req('GET', f'/v2/japa-{app}/manifests/{tag}', MANIFEST)
-                  digest = h['Docker-Content-Digest']
+                  digest = digest_of(app, tag)
+                  if not digest or digest in protected:
+                      print(f'skipped japa-{app}:{tag} (digest protected)')
+                      continue
                   req('DELETE', f'/v2/japa-{app}/manifests/{digest}')
                   print(f'deleted japa-{app}:{tag} ({digest[:19]})')
           PYEOF
