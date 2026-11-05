@@ -200,6 +200,12 @@ var settingsCatalog = map[string]settingMeta{
 	"mentorship.max_capacity.staff":               {Type: "int", DefaultValue: "50", Description: "Platform cap for mentor capacity for staff-tier users.", Panel: "admin"},
 	"mentorship.max_capacity.admin":               {Type: "int", DefaultValue: "100", Description: "Platform cap for mentor capacity for admin-tier users.", Panel: "admin"},
 	"mentorship.max_capacity.super_admin":         {Type: "int", DefaultValue: "-1", Description: "Platform cap for mentor capacity for super_admin-tier users (-1 = unlimited).", Panel: "admin"},
+	"sop_generator.quota_standard.staff":          {Type: "int", DefaultValue: "25", Description: "Monthly SOP generator quota for staff-tier users.", Panel: "admin"},
+	"sop_generator.quota_standard.admin":          {Type: "int", DefaultValue: "50", Description: "Monthly SOP generator quota for admin-tier users.", Panel: "admin"},
+	"sop_generator.quota_standard.super_admin":    {Type: "int", DefaultValue: "-1", Description: "Monthly SOP generator quota for super_admin-tier users (-1 = unlimited).", Panel: "admin"},
+	"video.import.max_items_per_run.staff":        {Type: "int", DefaultValue: "200", Description: "Max videos per import run for staff-tier users.", Panel: "admin"},
+	"video.import.max_items_per_run.admin":        {Type: "int", DefaultValue: "500", Description: "Max videos per import run for admin-tier users.", Panel: "admin"},
+	"video.import.max_items_per_run.super_admin":  {Type: "int", DefaultValue: "-1", Description: "Max videos per import run for super_admin-tier users (-1 = unlimited).", Panel: "admin"},
 	// CORS
 	"cors.allowed_origins": {Type: "csv", DefaultValue: "*", Description: "Comma-separated list of allowed CORS origins.", Panel: "control"},
 	// Control panel ops

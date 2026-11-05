@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/tiers"
 )
 
 // ErrQuotaExceeded is returned when the monthly generation quota is hit.
@@ -214,6 +215,20 @@ type Service struct {
 	enqueuer     TaskEnqueuer
 	cache        Cache
 	aiDispatcher AIDispatcher
+	tierResolver tiers.QuotaTierResolver
+}
+
+// SetTierResolver wires the tier resolver for sop_generator.quota_standard.{tier}
+// staff-tier quota overrides (001062).
+func (s *Service) SetTierResolver(t tiers.QuotaTierResolver) { s.tierResolver = t }
+
+// defaultStaffSOPQuota are the staff-tier fallbacks for
+// sop_generator.quota_standard.{tier}; subscription tiers fall back to the
+// flat key. -1 = unlimited.
+var defaultStaffSOPQuota = map[string]int{
+	"staff":       25,
+	"admin":       50,
+	"super_admin": -1,
 }
 
 // NewService creates the service.
@@ -269,7 +284,7 @@ func (s *Service) GetSample(ctx context.Context, id pgtype.UUID) (SampleDTO, err
 
 // Quota returns the caller's remaining monthly generation quota.
 func (s *Service) Quota(ctx context.Context, userID pgtype.UUID) (QuotaDTO, error) {
-	limit := s.quotaLimit(ctx)
+	limit := s.quotaLimit(ctx, userID)
 
 	used, err := s.quotaUsed(ctx, userID)
 	if err != nil {
@@ -475,12 +490,8 @@ func (s *Service) ApproveSample(ctx context.Context, id, reviewerID pgtype.UUID,
 // Quota (mirrors cvformatter — §95 pattern)
 // ---------------------------------------------------------------------
 
-func (s *Service) quotaLimit(ctx context.Context) int {
-	if s.settings != nil {
-		return s.settings.GetIntOr(ctx, "sop_generator.quota_standard", 3)
-	}
-
-	return 3
+func (s *Service) quotaLimit(ctx context.Context, userID pgtype.UUID) int {
+	return tiers.QuotaLimit(ctx, s.tierResolver, s.settings, userID, "sop_generator.quota_standard", 3, defaultStaffSOPQuota)
 }
 
 func (s *Service) quotaUsed(ctx context.Context, userID pgtype.UUID) (int64, error) {
@@ -494,7 +505,7 @@ func (s *Service) quotaUsed(ctx context.Context, userID pgtype.UUID) (int64, err
 // burn a monthly generation.
 func (s *Service) consumeQuota(ctx context.Context, userID pgtype.UUID) (func(), error) {
 	noop := func() {}
-	limit := s.quotaLimit(ctx)
+	limit := s.quotaLimit(ctx, userID)
 
 	if limit <= 0 {
 		return noop, nil

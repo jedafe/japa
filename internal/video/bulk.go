@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -274,7 +275,7 @@ func (s *Service) resolveAndCapBulkURLs(ctx context.Context, provider *YouTubePr
 		return nil, 0, err
 	}
 
-	maxItems := s.maxItemsPerRun(ctx)
+	maxItems := s.maxItemsPerRun(ctx, job.UserID)
 	if len(urls) > maxItems {
 		urls = urls[:maxItems]
 	}
@@ -405,7 +406,7 @@ type BulkImportPreview struct {
 // would be imported (capped by video.import.max_items_per_run) and a sample of
 // the first video so the user can confirm before starting.
 // Ref: .jeos/sections/106-video-content-and-import.md.
-func (s *Service) PreviewBulkImport(ctx context.Context, _ pgtype.UUID, req BulkImportRequest) (BulkImportPreview, error) {
+func (s *Service) PreviewBulkImport(ctx context.Context, userID pgtype.UUID, req BulkImportRequest) (BulkImportPreview, error) {
 	if !s.IsEnabled(ctx) {
 		return BulkImportPreview{}, errpkg.ErrFeatureDisabled
 	}
@@ -433,7 +434,7 @@ func (s *Service) PreviewBulkImport(ctx context.Context, _ pgtype.UUID, req Bulk
 		return BulkImportPreview{}, err
 	}
 
-	limit := s.maxItemsPerRun(ctx)
+	limit := s.maxItemsPerRun(ctx, userID)
 	if len(urls) > limit {
 		urls = urls[:limit]
 	}
@@ -534,12 +535,8 @@ func (s *Service) resolveBulkURLs(ctx context.Context, p *YouTubeProvider, job g
 	}
 }
 
-func (s *Service) maxItemsPerRun(ctx context.Context) int {
-	if s.settings == nil {
-		return 50
-	}
-
-	return s.settings.GetIntOr(ctx, "video.import.max_items_per_run", 50)
+func (s *Service) maxItemsPerRun(ctx context.Context, userID pgtype.UUID) int {
+	return tiers.QuotaLimit(ctx, s.tierResolver, s.settings, userID, "video.import.max_items_per_run", 50, defaultStaffVideoImportCaps)
 }
 
 func (s *Service) getYouTubeAPIKey(ctx context.Context) (string, error) {

@@ -1150,7 +1150,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	affiliateService := affiliate.NewServiceWithEnqueuer(database, taskEnqueuer)
 	affiliateService.SetSettings(settingsService) // SETTING-002/003: configurable commission/limits
 	affiliateService.SetFeatureChecker(featureChecker)
-	affiliateService.SetTierResolver(tierService)         // staff-tier quota overrides (001060)
+	affiliateService.SetTierResolver(tierService) // staff-tier quota overrides (001060)
 	affiliateHandlers := affiliate.NewHandlers(affiliateService)
 	affiliateHandlers.AsynqClient = asynqClient
 	affiliateHandlers.Cache = vkClient.Redis() // jc:aff_dedup + jc:aff_click (Section 56)
@@ -1789,7 +1789,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		WithNotifier(notificationService).
 		WithHoncho(honcho.NewClient(cfg.HonchoURL))
 	japaStageService.SetFeatureChecker(featureChecker) // japa_stage.enabled + achievement.enabled read feature_flags
-	japaStageService.SetTierResolver(tierService)       // staff-tier quota overrides (001060)
+	japaStageService.SetTierResolver(tierService)      // staff-tier quota overrides (001060)
 	japaStageHandlers := japastage.NewHandlers(japaStageService, settingsService, asynqClient).WithRedis(vkClient.Redis())
 	japaStageHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in japastage responses
 
@@ -1869,7 +1869,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	cvFormatterService.SetFeatureChecker(featureChecker)
 	cvFormatterService.SetRBAC(rbacResolver)
 	cvFormatterService.SetEnqueuer(taskEnqueuer)
-	cvFormatterService.SetTierResolver(tierService)     // staff-tier quota overrides (001060)
+	cvFormatterService.SetTierResolver(tierService) // staff-tier quota overrides (001060)
 	cvFormatterService.SetCache(&cvFormatterCache{rdb: vkClient.Redis()})
 	cvFormatterHandlers := cvformatter.NewHandlers(cvFormatterService, settingsService)
 
@@ -2014,6 +2014,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	sopGeneratorService := sopgenerator.NewService(sopGeneratorStore, settingsService)
 	sopGeneratorService.SetEnqueuer(taskEnqueuer)
 	sopGeneratorService.SetCache(&sopQuotaCache{rdb: vkClient.Redis()})
+	sopGeneratorService.SetTierResolver(tierService) // staff-tier quota overrides (001062)
 	sopGeneratorHandlers := sopgenerator.NewHandlers(sopGeneratorService, settingsService)
 	sopGeneratorHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in sopgenerator responses
 
@@ -2079,7 +2080,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mentorshipService := mentorship.NewService(database)
 	mentorshipService.SetEnqueuer(taskEnqueuer)
 	mentorshipService.SetSettingsProvider(settingsService)
-	mentorshipService.SetTierResolver(tierService)      // staff-tier quota overrides (001060)
+	mentorshipService.SetTierResolver(tierService) // staff-tier quota overrides (001060)
 	mentorshipService.SetEventTracker(analyticsEventTrackerAdapter{analyticsService})
 	// 000824 unification: connection lifecycle + mentor shadow listing
 	// delegate to servicedir bookings/listings. The servicedir service
@@ -3248,6 +3249,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	videoService.SetSourceRegistry(intelSourcesService)
 	videoService.SetEnqueuer(taskEnqueuer)
 	videoService.SetSettings(settingsService)
+	videoService.SetTierResolver(tierService) // staff-tier quota overrides (001062)
 	videoService.SetContentService(contentService)
 	videoService.SetYouTubeProvider(ytProvider)
 	videoService.SetDispatcher(aiDispatcher)

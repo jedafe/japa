@@ -26,6 +26,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -102,18 +103,32 @@ type SourceRegistry interface {
 // Service coordinates video URL resolution, synthetic channel creation,
 // thumbnail storage, and source persistence.
 type Service struct {
-	store       *Store
-	resolver    Resolver
-	userManager UserManager
-	media       MediaManager
-	enqueuer    TaskEnqueuer
-	settings    settingsReader
-	checker     FeatureChecker
-	content     ContentCreator
-	dispatcher  AIDispatcher
-	ytProvider  *YouTubeProvider
-	sources     SourceRegistry
-	perms       permissionChecker
+	store        *Store
+	resolver     Resolver
+	userManager  UserManager
+	media        MediaManager
+	enqueuer     TaskEnqueuer
+	settings     settingsReader
+	checker      FeatureChecker
+	content      ContentCreator
+	dispatcher   AIDispatcher
+	ytProvider   *YouTubeProvider
+	sources      SourceRegistry
+	perms        permissionChecker
+	tierResolver tiers.QuotaTierResolver
+}
+
+// SetTierResolver wires the tier resolver for video.import.max_items_per_run.{tier}
+// staff-tier quota overrides (001062).
+func (s *Service) SetTierResolver(t tiers.QuotaTierResolver) { s.tierResolver = t }
+
+// defaultStaffVideoImportCaps are the staff-tier fallbacks for
+// video.import.max_items_per_run.{tier}; subscription tiers fall back to the
+// flat key. -1 = unlimited.
+var defaultStaffVideoImportCaps = map[string]int{
+	"staff":       200,
+	"admin":       500,
+	"super_admin": -1,
 }
 
 // NewService returns a video Service.
