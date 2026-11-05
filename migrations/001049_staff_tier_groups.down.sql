@@ -27,6 +27,15 @@ DELETE FROM system_settings WHERE key IN (
     'wallet.max_daily_earn_points.super_admin'
 );
 
+-- Clear plain-FK references that would block the group delete
+-- (comparison_type_access, tickets, ticket_types have no ON DELETE action).
+DELETE FROM comparison_type_access
+WHERE user_group_id = '00000000-0000-0000-0000-000000000060';
+UPDATE tickets SET assigned_group_id = NULL
+WHERE assigned_group_id = '00000000-0000-0000-0000-000000000060';
+UPDATE ticket_types SET auto_assign_group_id = NULL
+WHERE auto_assign_group_id = '00000000-0000-0000-0000-000000000060';
+
 -- Remove staff group membership rows, the group_role link, the group itself
 -- and the backing role (order matters for FKs).
 DELETE FROM user_group_memberships
