@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -493,6 +494,15 @@ func (s *Service) GetIntSetting(ctx context.Context, key string, fallback int) i
 // maxKeysPerUser is the compiled-in fallback when no settings reader is wired.
 const maxKeysPerUser = 5
 
+// defaultStaffKeyCaps are the staff-tier fallbacks for
+// api.keys.max_per_user.{tier} when the tier-scoped key is unset (001060);
+// subscription tiers fall back to the flat key. -1 = unlimited.
+var defaultStaffKeyCaps = map[string]int{
+	"staff":       25,
+	"admin":       50,
+	"super_admin": -1,
+}
+
 // CreateAPIKey generates a new API key owned by userID, stores its hash,
 // and returns the full key exactly once. The caller must save it — it
 // cannot be retrieved later. Enforces the api.keys.max_per_user system
@@ -521,11 +531,9 @@ func (s *Service) CreateAPIKeyForUser(ctx context.Context, callerID, ownerID pgt
 		return CreateAPIKeyResponse{}, ErrScopeRequiresAdmin
 	}
 
-	// Enforce max keys per user (Section 47: api.keys.max_per_user, default 5).
-	limit := maxKeysPerUser
-	if s.keyCountReader != nil {
-		limit = s.keyCountReader.GetIntOr(ctx, "api.keys.max_per_user", maxKeysPerUser)
-	}
+	// Enforce max keys per user (Section 47: api.keys.max_per_user, default 5;
+	// api.keys.max_per_user.{tier} overrides for staff tiers).
+	limit := tiers.QuotaLimit(ctx, s.tierResolver, s.keyCountReader, ownerID, "api.keys.max_per_user", maxKeysPerUser, defaultStaffKeyCaps)
 
 	var currentCount int
 
@@ -1113,14 +1121,12 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 		return nil, errors.New("api key does not belong to user")
 	}
 
-	// Enforce max keys per user (Section 47: api.keys.max_per_user, default 5).
+	// Enforce max keys per user (Section 47: api.keys.max_per_user, default 5;
+	// api.keys.max_per_user.{tier} overrides for staff tiers).
 	// Count active keys excluding the one being rotated (it will be expired,
 	// not revoked, during the 24h grace period — so it still counts as active
 	// until the grace expiry). The new key adds 1 to the active count.
-	limit := maxKeysPerUser
-	if s.keyCountReader != nil {
-		limit = s.keyCountReader.GetIntOr(ctx, "api.keys.max_per_user", maxKeysPerUser)
-	}
+	limit := tiers.QuotaLimit(ctx, s.tierResolver, s.keyCountReader, userID, "api.keys.max_per_user", maxKeysPerUser, defaultStaffKeyCaps)
 
 	var currentCount int
 

@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -120,6 +121,20 @@ type Service struct {
 	cache        Cache
 	aiDispatcher AIDispatcher
 	checker      FeatureChecker
+	tierResolver tiers.QuotaTierResolver
+}
+
+// SetTierResolver wires the tier resolver for cv_formatter.quota_standard.{tier}
+// staff-tier quota overrides (001060).
+func (s *Service) SetTierResolver(t tiers.QuotaTierResolver) { s.tierResolver = t }
+
+// defaultStaffCVQuota are the staff-tier fallbacks for
+// cv_formatter.quota_standard.{tier}; subscription tiers fall back to the
+// flat key. -1 = unlimited.
+var defaultStaffCVQuota = map[string]int{
+	"staff":       25,
+	"admin":       50,
+	"super_admin": -1,
 }
 
 // NewService creates a CV formatter service.
@@ -180,10 +195,7 @@ func (s *Service) CheckQuota(ctx context.Context, userID pgtype.UUID) error {
 		return nil
 	}
 
-	limit := 3
-	if s.settings != nil {
-		limit = s.settings.GetIntOr(ctx, "cv_formatter.quota_standard", 3)
-	}
+	limit := tiers.QuotaLimit(ctx, s.tierResolver, s.settings, userID, "cv_formatter.quota_standard", 3, defaultStaffCVQuota)
 
 	if limit <= 0 {
 		return nil

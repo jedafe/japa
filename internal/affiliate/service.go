@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/tiers"
 )
 
 // Enqueuer is an exported type.
@@ -41,11 +42,12 @@ type FeatureChecker interface {
 
 // Service is an exported type.
 type Service struct {
-	store    *Store
-	db       *db.DB
-	enqueuer Enqueuer
-	settings SettingsProvider
-	checker  FeatureChecker
+	store        *Store
+	db           *db.DB
+	enqueuer     Enqueuer
+	settings     SettingsProvider
+	checker      FeatureChecker
+	tierResolver tiers.QuotaTierResolver
 }
 
 // NewService is an exported function.
@@ -69,6 +71,19 @@ func NewServiceWithEnqueuer(database *db.DB, enqueuer Enqueuer) *Service {
 // (SETTING-002/003). When wired, commission rates and link limits are read
 // from system_settings; otherwise compiled-in defaults are used.
 func (s *Service) SetSettings(sp SettingsProvider) { s.settings = sp }
+
+// SetTierResolver wires the tier resolver for affiliate.max_links_per_user.{tier}
+// staff-tier quota overrides (001060).
+func (s *Service) SetTierResolver(t tiers.QuotaTierResolver) { s.tierResolver = t }
+
+// defaultStaffAffiliateCaps are the staff-tier fallbacks for
+// affiliate.max_links_per_user.{tier}; subscription tiers fall back to the
+// flat key. -1 = unlimited.
+var defaultStaffAffiliateCaps = map[string]int{
+	"staff":       50,
+	"admin":       100,
+	"super_admin": -1,
+}
 
 // SetFeatureChecker injects the feature flag checker so FeatureEnabled reads
 // feature_flags (the single source of truth for reachability toggles);
@@ -287,11 +302,8 @@ func (s *Service) CreateLink(ctx context.Context, userID pgtype.UUID, input Crea
 		return gen.UserAffiliateLink{}, fmt.Errorf("counting links: %w", err)
 	}
 	// Max links per user is configurable via system_settings
-	// (affiliate.max_links_per_user, default 10) — SETTING-002.
-	maxLinks := 10
-	if s.settings != nil {
-		maxLinks = s.settings.GetIntOr(ctx, "affiliate.max_links_per_user", 10)
-	}
+	// (affiliate.max_links_per_user, default 10; .{tier} staff overrides) — SETTING-002.
+	maxLinks := tiers.QuotaLimit(ctx, s.tierResolver, s.settings, userID, "affiliate.max_links_per_user", 10, defaultStaffAffiliateCaps)
 
 	if count >= int64(maxLinks) {
 		return gen.UserAffiliateLink{}, ErrTooManyLinks

@@ -37,6 +37,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -337,7 +338,19 @@ const (
 	defaultCostLimitUSD    = 0.50
 	defaultRateLimitPerDay = 50
 	defaultDailyBudgetUSD  = 5.00
-	defaultLLMTemperature  = 0.3
+)
+
+// defaultStaffAgentRateCaps are the staff-tier fallbacks for
+// agent.rate_limit_per_day.{tier} when the tier-scoped key is unset;
+// subscription tiers fall back to the flat key. -1 = unlimited.
+var defaultStaffAgentRateCaps = map[string]int{
+	"staff":       250,
+	"admin":       500,
+	"super_admin": -1,
+}
+
+const (
+	defaultLLMTemperature = 0.3
 )
 
 // runPreSearch executes the §103 pre-search (content + RAG, privacy-filtered,
@@ -1134,7 +1147,11 @@ func (h *AgentHandler) checkRateLimit(ctx context.Context, userID pgtype.UUID) e
 		}
 	}
 
-	limit := h.getIntSetting(ctx, "agent.rate_limit_per_day", defaultRateLimitPerDay)
+	var tr tiers.QuotaTierResolver
+	if h.preflight != nil {
+		tr = h.preflight.tiers
+	}
+	limit := tiers.QuotaLimit(ctx, tr, h.settings, userID, "agent.rate_limit_per_day", defaultRateLimitPerDay, defaultStaffAgentRateCaps)
 	if int(count) > limit {
 		return fmt.Errorf("ai: daily agent rate limit exceeded (%d/%d)", count, limit)
 	}

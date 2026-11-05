@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -136,6 +137,15 @@ var defaultDailyQueryLimits = map[string]int{
 	"business":    -1,
 	"staff":       250,
 	"admin":       500,
+	"super_admin": -1,
+}
+
+// defaultByokDailyCaps are the staff-tier fallbacks for
+// ai.byok.daily_query_cap.{tier}; regular/pro/business fall back to the flat
+// key. -1 = unlimited.
+var defaultByokDailyCaps = map[string]int{
+	"staff":       2000,
+	"admin":       5000,
 	"super_admin": -1,
 }
 
@@ -292,10 +302,7 @@ func (p *Preflight) CheckByokBudget(ctx context.Context, userID pgtype.UUID) *Pr
 		return nil
 	}
 
-	limit := 200
-	if p.settings != nil {
-		limit = p.settings.GetIntOr(ctx, "ai.byok.daily_query_cap", 200)
-	}
+	limit := tiers.QuotaLimit(ctx, p.tiers, p.settings, userID, "ai.byok.daily_query_cap", 200, defaultByokDailyCaps)
 
 	if limit <= 0 {
 		return nil // disabled

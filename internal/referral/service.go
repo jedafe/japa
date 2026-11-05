@@ -25,6 +25,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -84,6 +85,20 @@ type Service struct {
 	valkey       valkeycompat.Cmdable
 	enqueuer     TaskEnqueuer
 	activity     wallet.ActivityEmitter
+	tierResolver tiers.QuotaTierResolver
+}
+
+// SetTierResolver wires the tier resolver for referral.max_rewards_per_period.{tier}
+// staff-tier quota overrides (001060).
+func (s *Service) SetTierResolver(t tiers.QuotaTierResolver) { s.tierResolver = t }
+
+// defaultStaffReferralCaps are the staff-tier fallbacks for
+// referral.max_rewards_per_period.{tier}; subscription tiers fall back to
+// the flat key. -1 = unlimited.
+var defaultStaffReferralCaps = map[string]int{
+	"staff":       50,
+	"admin":       100,
+	"super_admin": -1,
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -496,11 +511,9 @@ func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype
 		return nil // No referral record — nothing to do.
 	}
 
-	// Check monthly cap.
-	maxPerPeriod := 10
-	if s.settings != nil {
-		maxPerPeriod = s.settings.GetIntOr(ctx, "referral.max_rewards_per_period", 10)
-	}
+	// Check monthly cap (referral.max_rewards_per_period; .{tier} staff
+	// overrides).
+	maxPerPeriod := tiers.QuotaLimit(ctx, s.tierResolver, s.settings, referral.ReferrerID, "referral.max_rewards_per_period", 10, defaultStaffReferralCaps)
 
 	periodStart := time.Now().AddDate(0, -1, 0)
 

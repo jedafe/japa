@@ -27,6 +27,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/honcho"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/visitor"
 )
 
@@ -105,12 +106,26 @@ type FeatureChecker interface {
 
 // Service holds the business logic for Japa Stage Progress Profiles.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	checker  FeatureChecker
-	notifier Notifier
-	honcho   *honcho.Client
-	assess   AssessmentChecker
+	store        *Store
+	settings     *config.Settings
+	checker      FeatureChecker
+	notifier     Notifier
+	honcho       *honcho.Client
+	assess       AssessmentChecker
+	tierResolver tiers.QuotaTierResolver
+}
+
+// SetTierResolver wires the tier resolver for japa_stage.max_journeys.{tier}
+// staff-tier quota overrides (001060).
+func (s *Service) SetTierResolver(t tiers.QuotaTierResolver) { s.tierResolver = t }
+
+// defaultStaffJourneyCaps are the staff-tier fallbacks for
+// japa_stage.max_journeys.{tier}; subscription tiers fall back to the flat
+// key. -1 = unlimited.
+var defaultStaffJourneyCaps = map[string]int{
+	"staff":       50,
+	"admin":       100,
+	"super_admin": -1,
 }
 
 // NewService creates a japa stage service with the core dependencies needed

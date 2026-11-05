@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/servicedir"
+	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/pgvector/pgvector-go"
 )
@@ -32,6 +33,7 @@ type Service struct {
 	embedder           Embedder
 	meilisearchIndexer MeilisearchIndexer
 	tracker            EventTracker
+	tierResolver       tiers.QuotaTierResolver
 	// bookings is the servicedir compatibility seam (000824 unification):
 	// connection lifecycle and the mentor shadow listing are servicedir
 	// bookings/listings behind the scenes. Nil keeps program/match/
@@ -325,17 +327,55 @@ func (s *Service) SetDMCreator(d DMCreator) { s.dmCreator = d }
 // SetSettingsProvider wires the system_settings reader for capacity validation.
 func (s *Service) SetSettingsProvider(sp SettingsProvider) { s.settings = sp }
 
-// mentorMaxCapacity returns the platform cap for mentor capacity from system_settings.
-func (s *Service) mentorMaxCapacity(ctx context.Context) int32 {
-	maxCap := int32(10) // catalog default for mentorship.max_capacity (§102)
+// SetTierResolver wires the tier resolver for mentorship.max_capacity.{tier}
+// staff-tier quota overrides (001060).
+func (s *Service) SetTierResolver(t tiers.QuotaTierResolver) { s.tierResolver = t }
+
+// defaultStaffMentorCaps are the staff-tier fallbacks for
+// mentorship.max_capacity.{tier}; subscription tiers fall back to the flat
+// key. -1 = unlimited.
+var defaultStaffMentorCaps = map[string]int{
+	"staff":       50,
+	"admin":       100,
+	"super_admin": -1,
+}
+
+// mentorMaxCapacity returns the platform cap for mentor capacity from
+// system_settings — mentorship.max_capacity.{tier} overrides for staff
+// tiers; a negative resolved value means unlimited.
+func (s *Service) mentorMaxCapacity(ctx context.Context, userID pgtype.UUID) int32 {
+	maxCap := 10 // catalog default for mentorship.max_capacity (§102)
 
 	if s.settings != nil {
 		if v, err := s.settings.GetSettingInt(ctx, "mentorship.max_capacity"); err == nil && v > 0 && v <= math.MaxInt32 {
-			maxCap = int32(v) //nolint:gosec // G115: v is checked against math.MaxInt32.
+			maxCap = v
 		}
 	}
 
-	return maxCap
+	tier := "regular"
+	if s.tierResolver != nil {
+		if t2, terr := s.tierResolver.ResolveUserTier(ctx, userID); terr == nil && t2 != "" {
+			tier = t2
+		}
+	}
+
+	if tier != "regular" {
+		fallback := maxCap
+		if d, ok := defaultStaffMentorCaps[tier]; ok {
+			fallback = d
+		}
+		maxCap = fallback
+		if s.settings != nil {
+			if v, err := s.settings.GetSettingInt(ctx, "mentorship.max_capacity."+tier); err == nil && v <= math.MaxInt32 {
+				maxCap = v
+			}
+		}
+	}
+
+	if maxCap < 0 {
+		return math.MaxInt32
+	}
+	return int32(maxCap) //nolint:gosec // G115: bounded by math.MaxInt32 above.
 }
 
 // SetEmbedder wires the AI embedder for mentor:generate_embedding tasks.
@@ -394,7 +434,7 @@ func (s *Service) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Men
 
 		IsMentor:          row.IsMentor,
 		MentorCapacity:    row.MentorCapacity,
-		MentorMaxCapacity: s.mentorMaxCapacity(ctx),
+		MentorMaxCapacity: s.mentorMaxCapacity(ctx, userID),
 		ActiveMenteeCount: row.ActiveMenteeCount,
 		MentorAreas:       row.MentorAreas,
 		MentorBio:         row.MentorBio,
@@ -433,7 +473,7 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 	}
 
 	// Load the platform-wide cap once for validation and the response.
-	mentorMaxCap := s.mentorMaxCapacity(ctx)
+	mentorMaxCap := s.mentorMaxCapacity(ctx, userID)
 
 	// Merge: use new values where provided, otherwise keep current.
 	mergedIsMentor := current.IsMentor

@@ -19,6 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/tiers"
 )
 
 // Journey lifecycle statuses (ADR-136). Transition rules live in
@@ -251,12 +252,9 @@ func (s *Service) CreateJourney(ctx context.Context, userID pgtype.UUID, in Jour
 		return JourneyDTO{}, err
 	}
 
-	// japa_stage.max_journeys caps live journeys (ADR-136); fall back to
-	// the seeded default when settings are unavailable (tests).
-	max := 10
-	if s.settings != nil {
-		max = s.settings.GetIntOr(ctx, "japa_stage.max_journeys", 10)
-	}
+	// japa_stage.max_journeys caps live journeys (ADR-136); .{tier} staff
+	// overrides; compiled default when settings are unavailable (tests).
+	max := tiers.QuotaLimit(ctx, s.tierResolver, s.settings, userID, "japa_stage.max_journeys", 10, defaultStaffJourneyCaps)
 
 	count, err := s.store.CountLiveJourneys(ctx, userID)
 	if err != nil {
