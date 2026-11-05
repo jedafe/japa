@@ -1820,6 +1820,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// fan-out, and the §17 platform-fee payment creator.
 	serviceDirService.SetCache(vkClient.Redis())
 	serviceDirService.SetEnqueuer(taskEnqueuer)
+	serviceDirService.SetTierResolver(tierService) // staff-tier quota overrides (001063)
 	serviceDirService.SetPayments(&serviceDirPaymentAdapter{svc: paymentService})
 	// BUG-014: §98 spec says GET /services/:slug returns "service detail +
 	// reviews". The adapter bridges the §29 reviews subsystem to the

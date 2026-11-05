@@ -202,6 +202,8 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_tiers", "The pricing tier list is invalid")
 	case errors.Is(err, ErrTooManyCoupons):
 		errpkg.WriteError(w, http.StatusBadRequest, "too_many_coupons", "Too many coupons attached to this listing")
+	case errors.Is(err, ErrListingQuotaExceeded):
+		errpkg.WriteError(w, http.StatusTooManyRequests, "listing_quota_exceeded", "You've reached your service listing limit")
 	case errors.Is(err, ErrOrgNotVerified):
 		errpkg.WriteError(w, http.StatusForbidden, "organization_not_verified", "Only verified organizations can publish packages")
 	case errors.Is(err, ErrOrgRequired):

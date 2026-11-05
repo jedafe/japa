@@ -1585,3 +1585,12 @@ SET selling_points = COALESCE(sqlc.narg(selling_points), selling_points),
     steps = COALESCE(sqlc.narg(steps), steps),
     updated_at = now()
 WHERE content_id = @content_id;
+
+-- name: CountServiceListingsByAuthor :one
+-- Per-user service listing count for the services.listings.max_per_user.{tier}
+-- quota gate (001063). Excludes soft-deleted rows.
+SELECT count(*)::bigint
+FROM contents
+WHERE author_id = @author_id
+  AND content_type = 'service_listing'
+  AND deleted_at IS NULL;

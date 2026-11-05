@@ -206,6 +206,13 @@ var settingsCatalog = map[string]settingMeta{
 	"video.import.max_items_per_run.staff":        {Type: "int", DefaultValue: "200", Description: "Max videos per import run for staff-tier users.", Panel: "admin"},
 	"video.import.max_items_per_run.admin":        {Type: "int", DefaultValue: "500", Description: "Max videos per import run for admin-tier users.", Panel: "admin"},
 	"video.import.max_items_per_run.super_admin":  {Type: "int", DefaultValue: "-1", Description: "Max videos per import run for super_admin-tier users (-1 = unlimited).", Panel: "admin"},
+	"services.listings.max_per_user":              {Type: "int", DefaultValue: "5", Description: "Max service listings a user can create (flat fallback).", Panel: "admin"},
+	"services.listings.max_per_user.regular":      {Type: "int", DefaultValue: "5", Description: "Max service listings for regular-tier users.", Panel: "admin"},
+	"services.listings.max_per_user.pro":          {Type: "int", DefaultValue: "15", Description: "Max service listings for pro-tier users.", Panel: "admin"},
+	"services.listings.max_per_user.business":     {Type: "int", DefaultValue: "50", Description: "Max service listings for business-tier users.", Panel: "admin"},
+	"services.listings.max_per_user.staff":        {Type: "int", DefaultValue: "100", Description: "Max service listings for staff-tier users.", Panel: "admin"},
+	"services.listings.max_per_user.admin":        {Type: "int", DefaultValue: "250", Description: "Max service listings for admin-tier users.", Panel: "admin"},
+	"services.listings.max_per_user.super_admin":  {Type: "int", DefaultValue: "-1", Description: "Max service listings for super_admin-tier users (-1 = unlimited).", Panel: "admin"},
 	// CORS
 	"cors.allowed_origins": {Type: "csv", DefaultValue: "*", Description: "Comma-separated list of allowed CORS origins.", Panel: "control"},
 	// Control panel ops
@@ -939,7 +946,9 @@ var settingsCatalog = map[string]settingMeta{
 	"users.guide":         {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /users.", Panel: "admin"},
 	"jobs.guide":          {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /jobs.", Panel: "admin"},
 	"universities.guide":  {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /universities.", Panel: "admin"},
-	"radar.guide":         {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /radar.", Panel: "admin"},
+
+		{Key: "comparisons.guide", Label: "Comparisons guide panel", Group: "content", Public: true},
+		{Key: "compare.guide", Label: "Compare workspace guide panel", Group: "content", Public: true},	"radar.guide":         {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /radar.", Panel: "admin"},
 	"spaces.guide":        {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /spaces.", Panel: "admin"},
 	"tools.guide":         {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /tools.", Panel: "admin"},
 	"scholarships.guide":  {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /scholarships.", Panel: "admin"},

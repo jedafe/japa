@@ -32,6 +32,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/tiers"
 )
 
 // ContentService is the subset of content.Service the servicedir package
@@ -405,15 +406,33 @@ type SettingsReader interface {
 
 // Service holds the business logic for the Service Directory.
 type Service struct {
-	store     *Store
-	content   ContentService
-	settings  SettingsReader
-	checker   FeatureChecker
-	vk        valkeycompat.Cmdable  // §111 package detail cache (jc:svc_package:*)
-	enqueuer  TaskEnqueuer          // §111 booking notifications/fee settlement
-	payments  PaymentCreator        // §17 fee payment intents
-	dmCreator DMConversationCreator // §48 DM seam — mentorship accept auto-open (wired by server)
-	tracker   EventTracker          // §102 analytics events (wired by server; nil = best-effort off)
+	store        *Store
+	content      ContentService
+	settings     SettingsReader
+	checker      FeatureChecker
+	vk           valkeycompat.Cmdable    // §111 package detail cache (jc:svc_package:*)
+	enqueuer     TaskEnqueuer            // §111 booking notifications/fee settlement
+	payments     PaymentCreator          // §17 fee payment intents
+	dmCreator    DMConversationCreator   // §48 DM seam — mentorship accept auto-open (wired by server)
+	tracker      EventTracker            // §102 analytics events (wired by server; nil = best-effort off)
+	tierResolver tiers.QuotaTierResolver // 001063: listing quota staff-tier overrides
+}
+
+// SetTierResolver wires the tier resolver for
+// services.listings.max_per_user.{tier} quota overrides (001063).
+func (s *Service) SetTierResolver(t tiers.QuotaTierResolver) { s.tierResolver = t }
+
+// ErrListingQuotaExceeded is returned when a user exceeds
+// services.listings.max_per_user.{tier}.
+var ErrListingQuotaExceeded = errors.New("service_listing quota exceeded")
+
+// defaultStaffListingCaps are the staff-tier fallbacks for
+// services.listings.max_per_user.{tier}; subscription tiers fall back to the
+// flat key. -1 = unlimited.
+var defaultStaffListingCaps = map[string]int{
+	"staff":       100,
+	"admin":       250,
+	"super_admin": -1,
 }
 
 // EventTracker records platform analytics events (§102). The
@@ -1070,6 +1089,15 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 	if input.Title == "" {
 		return ServiceDTO{}, errors.New("title is required")
 	}
+
+	// Per-user listing quota: services.listings.max_per_user.{tier} wins,
+	// staff tiers fall back to defaultStaffListingCaps, the flat key or 5
+	// otherwise. -1 = unlimited (001063).
+	if limit := tiers.QuotaLimit(ctx, s.tierResolver, s.settings, authorID, "services.listings.max_per_user", 5, defaultStaffListingCaps); limit >= 0 {
+		if cnt, err := s.store.read.CountServiceListingsByAuthor(ctx, authorID); err == nil && cnt >= int64(limit) {
+			return ServiceDTO{}, ErrListingQuotaExceeded
+		}
+	}
 	// BUG-013: validate service_category against the dynamic taxonomy —
 	// categorySet resolves the service_categories table with the §98 enum
 	// as fallback. Empty is rejected because the column is NOT NULL (and
@@ -1474,7 +1502,7 @@ func (s *Service) validatePackageItems(ctx context.Context, orgID pgtype.UUID, i
 	}
 
 	maxItems := int32(s.settings.GetIntOr(ctx, "service_packages.max_items", 25)) // #nosec G115 -- operator-configured bound
-	if int32(len(items)) > maxItems { // #nosec G115 -- slice length bounded by request-scoped data
+	if int32(len(items)) > maxItems {                                             // #nosec G115 -- slice length bounded by request-scoped data
 		return nil, ErrTooManyPackageItems
 	}
 

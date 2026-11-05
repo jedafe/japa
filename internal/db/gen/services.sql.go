@@ -1172,6 +1172,23 @@ func (q *Queries) CountServiceListings(ctx context.Context, arg CountServiceList
 	return count, err
 }
 
+const countServiceListingsByAuthor = `-- name: CountServiceListingsByAuthor :one
+SELECT count(*)::bigint
+FROM contents
+WHERE author_id = $1
+  AND content_type = 'service_listing'
+  AND deleted_at IS NULL
+`
+
+// Per-user service listing count for the services.listings.max_per_user.{tier}
+// quota gate (001063). Excludes soft-deleted rows.
+func (q *Queries) CountServiceListingsByAuthor(ctx context.Context, authorID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countServiceListingsByAuthor, authorID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countServiceListingsByCategory = `-- name: CountServiceListingsByCategory :one
 SELECT COUNT(*) FROM service_listing_meta WHERE service_category = $1
 `
