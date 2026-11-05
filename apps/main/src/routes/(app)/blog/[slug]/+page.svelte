@@ -354,6 +354,7 @@
 			canModerate={data.canModerate}
 			loadError={data.commentsLoadError}
 			deletedUserIds={deletedUserIds}
+			showDiscussions
 		/>
 
 		<!-- §25: engagement-area ad slots — hidden when no campaign fills them. -->

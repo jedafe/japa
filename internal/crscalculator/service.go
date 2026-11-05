@@ -13,11 +13,12 @@
 package crscalculator
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"strings"
 	"time"
 
@@ -373,12 +374,12 @@ func (s *Service) ListRulesets(ctx context.Context) ([]RulesetDTO, error) {
 // CreateRuleset creates a draft ruleset with its factor rows in one tx.
 func (s *Service) CreateRuleset(ctx context.Context, in CreateRulesetRequest) (*RulesetDTO, error) {
 	if in.VersionLabel == "" || in.EffectiveDate == "" {
-		return nil, errors.New("version_label and effective_date are required")
+		return nil, fmt.Errorf("%w: version_label and effective_date are required", errpkg.ErrInvalid)
 	}
 
 	var d pgtype.Date
 	if err := d.Scan(in.EffectiveDate); err != nil {
-		return nil, errors.New("invalid effective_date")
+		return nil, fmt.Errorf("%w: invalid effective_date", errpkg.ErrInvalid)
 	}
 
 	tx, err := s.store.BeginTx(ctx)
@@ -454,7 +455,7 @@ func (s *Service) UpdateRuleset(ctx context.Context, id pgtype.UUID, in CreateRu
 	var d pgtype.Date
 	if in.EffectiveDate != "" {
 		if err := d.Scan(in.EffectiveDate); err != nil {
-			return errors.New("invalid effective_date")
+			return fmt.Errorf("%w: invalid effective_date", errpkg.ErrInvalid)
 		}
 	}
 
@@ -500,12 +501,12 @@ func (s *Service) DeleteDraw(ctx context.Context, id pgtype.UUID) error {
 // CreateDraw records a draw entry (admin).
 func (s *Service) CreateDraw(ctx context.Context, in DrawRequest) (*DrawDTO, error) {
 	if in.DrawDate == "" || in.Category == "" || in.CRSCutoff == nil || in.InvitationsIssued == nil {
-		return nil, errors.New("draw_date, category, crs_cutoff and invitations_issued are required")
+		return nil, fmt.Errorf("%w: draw_date, category, crs_cutoff and invitations_issued are required", errpkg.ErrInvalid)
 	}
 
 	var d pgtype.Date
 	if err := d.Scan(in.DrawDate); err != nil {
-		return nil, errors.New("invalid draw_date")
+		return nil, fmt.Errorf("%w: invalid draw_date", errpkg.ErrInvalid)
 	}
 
 	row := DrawRow{
@@ -541,7 +542,7 @@ func (s *Service) UpdateDraw(ctx context.Context, id pgtype.UUID, in DrawRequest
 	if in.DrawDate != "" {
 		var d pgtype.Date
 		if err := d.Scan(in.DrawDate); err != nil {
-			return errors.New("invalid draw_date")
+			return fmt.Errorf("%w: invalid draw_date", errpkg.ErrInvalid)
 		}
 
 		row.DrawDate = d

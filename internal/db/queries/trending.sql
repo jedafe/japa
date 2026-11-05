@@ -228,13 +228,20 @@ LIMIT $2;
 -- seed content's relevance_embedding and all other published content.
 -- Falls back to trending content ordering when no seed is provided
 -- (seed_content_id IS NULL → returns top trending content by score).
+-- Dedupe by content: an entity holds one snapshot per geo_code (global +
+-- one scoped row per resolved geo), so an unfiltered geo read would
+-- otherwise list the same content once per scope.
 -- Params: $1=window, $2=geo_code(narg), $3=seed_content_id, $4=limit
 WITH seed AS (
  SELECT cs.relevance_embedding AS emb
  FROM content_scores cs
  WHERE cs.content_id = $3::uuid
 )
-SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
+SELECT id, title, slug, content_type, author_id, space_id, view_count,
+ similarity_score, trending_score
+FROM (
+ SELECT DISTINCT ON (c.id)
+ c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.view_count,
  CASE
  WHEN (SELECT emb FROM seed) IS NOT NULL
@@ -254,10 +261,7 @@ WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND ($3::uuid IS NULL OR c.id != $3::uuid)
  AND ($3::uuid IS NULL OR cs.relevance_embedding IS NOT NULL)
-ORDER BY
- CASE
- WHEN (SELECT emb FROM seed) IS NOT NULL
- THEN cs.relevance_embedding <=> (SELECT emb FROM seed)
- ELSE -ts.score
- END
+ORDER BY c.id, ts.score DESC
+) dedup
+ORDER BY similarity_score DESC NULLS LAST
 LIMIT $4;

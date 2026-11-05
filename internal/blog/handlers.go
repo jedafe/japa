@@ -349,7 +349,7 @@ func handleContentError(w http.ResponseWriter, err error) {
 	case errors.Is(err, content.ErrDuplicateContent):
 		errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "Content with this body already exists")
 	case errors.Is(err, content.ErrOrgPostForbidden):
-		errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "Not authorized to post as this organization")
+		errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "Your organization role doesn't allow posting on its behalf")
 	case errors.Is(err, content.ErrEditWindowExpired):
 		errpkg.WriteError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this content has expired")
 	case errors.Is(err, content.ErrMissingPrimarySpace):

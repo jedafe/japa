@@ -396,15 +396,27 @@ WHERE om.organization_id = @organization_id
 ORDER BY om.joined_at DESC;
 
 -- name: ListPublicOrganizations :many
--- Public Discover "Organizations": ACTIVE orgs only. By default only verified
--- orgs are shown (matching the original behavior); pass verified="" to include
--- unverified. Search filters by name or slug. org_type filters by type (empty
--- = all). Ordered by created_at DESC (newest first).
+-- Public Discover "Organizations": ACTIVE orgs only. filter semantics:
+--   'claimed'    → orgs with an owner (default — a real operator is behind
+--                  the page; informational directory entities are never in
+--                  this table, migration 001045)
+--   'verified'   → badge-holders (implies claimed; verify requires an owner)
+--   'unverified' → orgs without a badge
+--   ''           → all active orgs
+-- Search filters by name or slug. org_type filters by type (empty = all).
+-- Ordered by created_at DESC (newest first). claimed is projected so the
+-- frontend can distinguish claimed vs unclaimed listings.
 SELECT id, name, slug, tagline, org_type, logo_media_id, header_media_id,
- country_code, verified, follower_count, member_count, created_at
+ country_code, verified, follower_count, member_count, created_at,
+ CAST(owner_user_id IS NOT NULL AS bool) AS claimed
 FROM organizations
 WHERE status = 'active' AND deleted_at IS NULL
- AND (@verified::text = '' OR verified = (@verified = 'true'))
+ AND (
+    @filter::text = ''
+    OR (@filter = 'claimed' AND owner_user_id IS NOT NULL)
+    OR (@filter = 'verified' AND verified)
+    OR (@filter = 'unverified' AND NOT verified)
+ )
  AND (@org_type::text = '' OR org_type = @org_type)
  AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
 ORDER BY created_at DESC
@@ -423,7 +435,12 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: CountPublicOrganizations :one
 SELECT COUNT(*) FROM organizations
 WHERE status = 'active' AND deleted_at IS NULL
- AND (@verified::text = '' OR verified = (@verified = 'true'))
+ AND (
+    @filter::text = ''
+    OR (@filter = 'claimed' AND owner_user_id IS NOT NULL)
+    OR (@filter = 'verified' AND verified)
+    OR (@filter = 'unverified' AND NOT verified)
+ )
  AND (@org_type::text = '' OR org_type = @org_type)
  AND (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%');
 

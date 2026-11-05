@@ -28,6 +28,176 @@ func (q *Queries) CheckAnyLedgerIdempotencyKey(ctx context.Context, idempotencyK
 	return exists, err
 }
 
+const countAllAnonymousAdminAdjusts = `-- name: CountAllAnonymousAdminAdjusts :one
+SELECT COUNT(*)::int AS row_count, COALESCE(SUM(cl.amount), 0)::bigint AS credit_total
+FROM credits_ledger cl
+WHERE cl.operation = 'admin_adjust'
+ AND cl.amount > 0
+ AND cl.actor_user_id IS NULL
+`
+
+type CountAllAnonymousAdminAdjustsRow struct {
+	RowCount    int32 `json:"row_count"`
+	CreditTotal int64 `json:"credit_total"`
+}
+
+// Global form of CountAnonymousAdminAdjusts for the solvency sweep.
+func (q *Queries) CountAllAnonymousAdminAdjusts(ctx context.Context) (CountAllAnonymousAdminAdjustsRow, error) {
+	row := q.db.QueryRow(ctx, countAllAnonymousAdminAdjusts)
+	var i CountAllAnonymousAdminAdjustsRow
+	err := row.Scan(&i.RowCount, &i.CreditTotal)
+	return i, err
+}
+
+const countAllUnbackedPurchaseCredits = `-- name: CountAllUnbackedPurchaseCredits :one
+SELECT COUNT(*)::int AS row_count, COALESCE(SUM(cl.amount), 0)::bigint AS credit_total
+FROM credits_ledger cl
+LEFT JOIN payments p ON p.id = cl.payment_id AND p.user_id = cl.user_id
+ AND p.status IN ('succeeded', 'refunded')
+WHERE cl.operation = 'purchase'
+ AND p.id IS NULL
+`
+
+type CountAllUnbackedPurchaseCreditsRow struct {
+	RowCount    int32 `json:"row_count"`
+	CreditTotal int64 `json:"credit_total"`
+}
+
+// Global purchase-backing sweep (SEC-W-012): purchase entries platform-wide
+// lacking a succeeded payment.
+func (q *Queries) CountAllUnbackedPurchaseCredits(ctx context.Context) (CountAllUnbackedPurchaseCreditsRow, error) {
+	row := q.db.QueryRow(ctx, countAllUnbackedPurchaseCredits)
+	var i CountAllUnbackedPurchaseCreditsRow
+	err := row.Scan(&i.RowCount, &i.CreditTotal)
+	return i, err
+}
+
+const countAnonymousAdminAdjusts = `-- name: CountAnonymousAdminAdjusts :one
+SELECT COUNT(*)::int AS row_count, COALESCE(SUM(cl.amount), 0)::bigint AS credit_total
+FROM credits_ledger cl
+WHERE cl.user_id = $1
+ AND cl.operation = 'admin_adjust'
+ AND cl.amount > 0
+ AND cl.actor_user_id IS NULL
+`
+
+type CountAnonymousAdminAdjustsRow struct {
+	RowCount    int32 `json:"row_count"`
+	CreditTotal int64 `json:"credit_total"`
+}
+
+// Admin adjustments via the app always carry actor_user_id. A positive
+// admin_adjust with NULL actor was written outside the service path
+// (SEC-W-011 — forged mint detection).
+func (q *Queries) CountAnonymousAdminAdjusts(ctx context.Context, userID pgtype.UUID) (CountAnonymousAdminAdjustsRow, error) {
+	row := q.db.QueryRow(ctx, countAnonymousAdminAdjusts, userID)
+	var i CountAnonymousAdminAdjustsRow
+	err := row.Scan(&i.RowCount, &i.CreditTotal)
+	return i, err
+}
+
+const countDivergentCreditsLedgers = `-- name: CountDivergentCreditsLedgers :one
+WITH sums AS (
+  SELECT user_id, COALESCE(SUM(amount), 0)::bigint AS s
+  FROM credits_ledger
+  GROUP BY user_id
+), tails AS (
+  SELECT DISTINCT ON (user_id) user_id, resulting_balance
+  FROM credits_ledger
+  ORDER BY user_id, seq DESC
+)
+SELECT COUNT(*)::int
+FROM sums
+JOIN tails USING (user_id)
+WHERE sums.s <> tails.resulting_balance
+`
+
+// Global chain-integrity sweep (SEC-W-012 solvency reconcile): counts users
+// whose SUM(amount) diverges from their latest resulting_balance.
+// Single-pass over the table — no per-user correlated lookups.
+func (q *Queries) CountDivergentCreditsLedgers(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, countDivergentCreditsLedgers)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countSourcelessCreditGrants = `-- name: CountSourcelessCreditGrants :one
+SELECT COUNT(*)::int AS row_count, COALESCE(SUM(cl.amount), 0)::bigint AS credit_total
+FROM credits_ledger cl
+WHERE cl.user_id = $1
+ AND cl.amount > 0
+ AND cl.source IS NULL
+`
+
+type CountSourcelessCreditGrantsRow struct {
+	RowCount    int32 `json:"row_count"`
+	CreditTotal int64 `json:"credit_total"`
+}
+
+// Legitimate positive entries always carry a source (tip, credit_purchase,
+// admin_*, award reasons). A positive row without one is suspicious
+// (SEC-W-003).
+func (q *Queries) CountSourcelessCreditGrants(ctx context.Context, userID pgtype.UUID) (CountSourcelessCreditGrantsRow, error) {
+	row := q.db.QueryRow(ctx, countSourcelessCreditGrants, userID)
+	var i CountSourcelessCreditGrantsRow
+	err := row.Scan(&i.RowCount, &i.CreditTotal)
+	return i, err
+}
+
+const countUnbackedPurchaseCredits = `-- name: CountUnbackedPurchaseCredits :one
+SELECT COUNT(*)::int AS row_count, COALESCE(SUM(cl.amount), 0)::bigint AS credit_total
+FROM credits_ledger cl
+LEFT JOIN payments p ON p.id = cl.payment_id AND p.user_id = cl.user_id
+ AND p.status IN ('succeeded', 'refunded')
+WHERE cl.user_id = $1
+ AND cl.operation = 'purchase'
+ AND p.id IS NULL
+`
+
+type CountUnbackedPurchaseCreditsRow struct {
+	RowCount    int32 `json:"row_count"`
+	CreditTotal int64 `json:"credit_total"`
+}
+
+// Every purchase entry must be backed by a succeeded §17 payment
+// (SEC-W-003). Rows lacking payment linkage (or whose payment did not
+// succeed) are unbacked credit issuance.
+func (q *Queries) CountUnbackedPurchaseCredits(ctx context.Context, userID pgtype.UUID) (CountUnbackedPurchaseCreditsRow, error) {
+	row := q.db.QueryRow(ctx, countUnbackedPurchaseCredits, userID)
+	var i CountUnbackedPurchaseCreditsRow
+	err := row.Scan(&i.RowCount, &i.CreditTotal)
+	return i, err
+}
+
+const countUnbackedTipEarns = `-- name: CountUnbackedTipEarns :one
+SELECT COUNT(*)::int AS row_count, COALESCE(SUM(cl.amount), 0)::bigint AS credit_total
+FROM credits_ledger cl
+WHERE cl.user_id = $1
+ AND cl.operation = 'earn'
+ AND cl.source = 'tip'
+ AND NOT EXISTS (
+   SELECT 1 FROM tips t
+   WHERE t.id::text = cl.reference
+     AND t.status IN ('completed', 'refunded')
+     AND t.net_credits = cl.amount
+ )
+`
+
+type CountUnbackedTipEarnsRow struct {
+	RowCount    int32 `json:"row_count"`
+	CreditTotal int64 `json:"credit_total"`
+}
+
+// Tip-sourced earns must reference a completed tips row with matching net
+// credits (SEC-W-005 tip-laundering guard).
+func (q *Queries) CountUnbackedTipEarns(ctx context.Context, userID pgtype.UUID) (CountUnbackedTipEarnsRow, error) {
+	row := q.db.QueryRow(ctx, countUnbackedTipEarns, userID)
+	var i CountUnbackedTipEarnsRow
+	err := row.Scan(&i.RowCount, &i.CreditTotal)
+	return i, err
+}
+
 const countUserActivityThisWeek = `-- name: CountUserActivityThisWeek :one
 SELECT COUNT(*) FROM activity_events
 WHERE user_id = $1 AND activity_key = $2
@@ -140,7 +310,7 @@ func (q *Queries) DeleteActivityRule(ctx context.Context, id pgtype.UUID) error 
 }
 
 const getActivityEventByID = `-- name: GetActivityEventByID :one
-SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
+SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at, outcome FROM activity_events
 WHERE id = $1
 `
 
@@ -156,12 +326,13 @@ func (q *Queries) GetActivityEventByID(ctx context.Context, id pgtype.UUID) (Act
 		&i.Processed,
 		&i.ProcessedAt,
 		&i.CreatedAt,
+		&i.Outcome,
 	)
 	return i, err
 }
 
 const getActivityEventByReference = `-- name: GetActivityEventByReference :one
-SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
+SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at, outcome FROM activity_events
 WHERE activity_key = $1 AND reference = $2
 `
 
@@ -182,6 +353,7 @@ func (q *Queries) GetActivityEventByReference(ctx context.Context, arg GetActivi
 		&i.Processed,
 		&i.ProcessedAt,
 		&i.CreatedAt,
+		&i.Outcome,
 	)
 	return i, err
 }
@@ -306,6 +478,22 @@ func (q *Queries) GetCreditRefundedTotal(ctx context.Context, reversesID pgtype.
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const getCreditsLedgerSum = `-- name: GetCreditsLedgerSum :one
+SELECT COALESCE(SUM(amount), 0)::bigint AS amount_sum
+FROM credits_ledger
+WHERE user_id = $1
+`
+
+// Chain-integrity probe (SEC-W-003): SUM(amount) must equal the latest
+// resulting_balance. Divergence means a row was inserted with a forged
+// balance snapshot.
+func (q *Queries) GetCreditsLedgerSum(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getCreditsLedgerSum, userID)
+	var amount_sum int64
+	err := row.Scan(&amount_sum)
+	return amount_sum, err
 }
 
 const getLatestActivityEventReferenceByPrefixAndKey = `-- name: GetLatestActivityEventReferenceByPrefixAndKey :one
@@ -461,6 +649,28 @@ func (q *Queries) GetMergedLedgerEntryByID(ctx context.Context, id pgtype.UUID) 
 	return i, err
 }
 
+const getUserCreditEarnsSince = `-- name: GetUserCreditEarnsSince :one
+SELECT COALESCE(SUM(amount), 0)::bigint
+FROM credits_ledger
+WHERE user_id = $1
+ AND operation = 'earn'
+ AND amount > 0
+ AND created_at >= $2
+`
+
+type GetUserCreditEarnsSinceParams struct {
+	UserID pgtype.UUID        `json:"user_id"`
+	Since  pgtype.Timestamptz `json:"since"`
+}
+
+// Rolling-window total of positive credits earns (SEC-W-014 earn cap).
+func (q *Queries) GetUserCreditEarnsSince(ctx context.Context, arg GetUserCreditEarnsSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getUserCreditEarnsSince, arg.UserID, arg.Since)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getWalletSettings = `-- name: GetWalletSettings :one
 
 SELECT id, created_at, updated_at, daily_earning_cap, enable_earning FROM wallet_settings
@@ -486,7 +696,7 @@ const insertActivityEvent = `-- name: InsertActivityEvent :one
 
 INSERT INTO activity_events (user_id, activity_key, reference, payload) VALUES ($1, $2, $3, $4)
 ON CONFLICT (user_id, activity_key, reference) DO NOTHING
-RETURNING id, user_id, activity_key, reference, payload, processed, processed_at, created_at
+RETURNING id, user_id, activity_key, reference, payload, processed, processed_at, created_at, outcome
 `
 
 type InsertActivityEventParams struct {
@@ -519,6 +729,7 @@ func (q *Queries) InsertActivityEvent(ctx context.Context, arg InsertActivityEve
 		&i.Processed,
 		&i.ProcessedAt,
 		&i.CreatedAt,
+		&i.Outcome,
 	)
 	return i, err
 }
@@ -659,7 +870,7 @@ func (q *Queries) InsertWalletAuditLog(ctx context.Context, arg InsertWalletAudi
 }
 
 const listActivityEventsUndoing = `-- name: ListActivityEventsUndoing :many
-SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
+SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at, outcome FROM activity_events
 WHERE payload->>'undoes' = $1::text AND payload->>'undoes_key' = $2::text
   AND processed IS NOT TRUE
 `
@@ -689,6 +900,7 @@ func (q *Queries) ListActivityEventsUndoing(ctx context.Context, arg ListActivit
 			&i.Processed,
 			&i.ProcessedAt,
 			&i.CreatedAt,
+			&i.Outcome,
 		); err != nil {
 			return nil, err
 		}
@@ -825,7 +1037,7 @@ func (q *Queries) ListMergedLedgerEntriesByUser(ctx context.Context, arg ListMer
 }
 
 const listUnprocessedEvents = `-- name: ListUnprocessedEvents :many
-SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
+SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at, outcome FROM activity_events
 WHERE processed = false
 ORDER BY created_at ASC
 LIMIT $1
@@ -849,6 +1061,61 @@ func (q *Queries) ListUnprocessedEvents(ctx context.Context, pageLimit int32) ([
 			&i.Processed,
 			&i.ProcessedAt,
 			&i.CreatedAt,
+			&i.Outcome,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserActivityEvents = `-- name: ListUserActivityEvents :many
+SELECT id, user_id, activity_key, reference, processed, outcome, created_at
+FROM activity_events
+WHERE user_id = $1
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListUserActivityEventsParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListUserActivityEventsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	ActivityKey string             `json:"activity_key"`
+	Reference   string             `json:"reference"`
+	Processed   *bool              `json:"processed"`
+	Outcome     *string            `json:"outcome"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+// Member-facing activity history — includes the settle outcome so "did X
+// but earned nothing" rows are explainable (capped, floored, no_rule, …).
+func (q *Queries) ListUserActivityEvents(ctx context.Context, arg ListUserActivityEventsParams) ([]ListUserActivityEventsRow, error) {
+	rows, err := q.db.Query(ctx, listUserActivityEvents, arg.UserID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserActivityEventsRow
+	for rows.Next() {
+		var i ListUserActivityEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ActivityKey,
+			&i.Reference,
+			&i.Processed,
+			&i.Outcome,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -862,12 +1129,17 @@ func (q *Queries) ListUnprocessedEvents(ctx context.Context, pageLimit int32) ([
 
 const markEventProcessed = `-- name: MarkEventProcessed :exec
 UPDATE activity_events
-SET processed = true, processed_at = now()
-WHERE id = $1
+SET processed = true, processed_at = now(), outcome = $1
+WHERE id = $2
 `
 
-func (q *Queries) MarkEventProcessed(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, markEventProcessed, id)
+type MarkEventProcessedParams struct {
+	Outcome *string     `json:"outcome"`
+	ID      pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) MarkEventProcessed(ctx context.Context, arg MarkEventProcessedParams) error {
+	_, err := q.db.Exec(ctx, markEventProcessed, arg.Outcome, arg.ID)
 	return err
 }
 

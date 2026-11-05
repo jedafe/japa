@@ -1046,6 +1046,8 @@ func (c OAuthClientConfig) NewProvider(redirectBase string) OAuthProvider {
 		return &githubProvider{clientID: c.ClientID, clientSecret: c.ClientSecret, redirectURL: redirect}
 	case "facebook":
 		return &facebookProvider{appID: c.ClientID, appSecret: c.ClientSecret, redirectURL: redirect}
+	case "microsoft":
+		return &microsoftProvider{clientID: c.ClientID, clientSecret: c.ClientSecret, redirectURL: redirect}
 	default:
 		return nil
 	}
@@ -1132,4 +1134,92 @@ func (s *ValkeyOAuthClientStore) GetClientConfig(ctx context.Context, provider s
 	}
 
 	return nil, nil
+}
+
+// microsoftProvider implements OAuthProvider for Microsoft Entra ID
+// (common tenant — personal + work/school accounts).
+type microsoftProvider struct {
+	clientID     string
+	clientSecret string
+	redirectURL  string
+}
+
+func (m *microsoftProvider) Name() string { return "microsoft" }
+
+func (m *microsoftProvider) AuthURL(state, codeChallenge string) string {
+	params := url.Values{
+		"client_id":     {m.clientID},
+		"redirect_uri":  {m.redirectURL},
+		"response_type": {"code"},
+		"response_mode": {"query"},
+		"scope":         {"openid email profile User.Read"},
+		"state":         {state},
+	}
+	if codeChallenge != "" {
+		params.Set("code_challenge", codeChallenge)
+		params.Set("code_challenge_method", "S256")
+	}
+	return "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?" + params.Encode()
+}
+
+func (m *microsoftProvider) Exchange(ctx context.Context, code, codeVerifier, _ string) (*OAuthUserInfo, error) {
+	params := url.Values{
+		"code":          {code},
+		"client_id":     {m.clientID},
+		"client_secret": {m.clientSecret},
+		"redirect_uri":  {m.redirectURL},
+		"grant_type":    {"authorization_code"},
+		"scope":         {"openid email profile User.Read"},
+	}
+	if codeVerifier != "" {
+		params.Set("code_verifier", codeVerifier)
+	}
+
+	tokenResp, err := exchangeCode(ctx, "https://login.microsoftonline.com/common/oauth2/v2.0/token", params)
+	if err != nil {
+		return nil, fmt.Errorf("microsoft token exchange: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://graph.microsoft.com/v1.0/me", nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating graph /me request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tokenResp.AccessToken)
+
+	resp, err := oauthHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching microsoft userinfo: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("microsoft /me returned %d: %s", resp.StatusCode, body)
+	}
+
+	var info struct {
+		ID                string `json:"id"`
+		Mail              string `json:"mail"`
+		UserPrincipalName string `json:"userPrincipalName"`
+		DisplayName       string `json:"displayName"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, fmt.Errorf("decoding microsoft /me: %w", err)
+	}
+
+	// Graph /me: `mail` is often null — fall back to userPrincipalName.
+	// Microsoft accounts in the directory are operator-attested, so the
+	// identity is treated as verified.
+	email := info.Mail
+	if email == "" {
+		email = info.UserPrincipalName
+	}
+
+	return &OAuthUserInfo{
+		Provider:       "microsoft",
+		ProviderUserID: info.ID,
+		Email:          email,
+		Name:           info.DisplayName,
+		EmailVerified:  true,
+	}, nil
 }

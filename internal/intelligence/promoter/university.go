@@ -429,9 +429,9 @@ func (p *UniversityPromoter) universityCreatePath(ctx context.Context, record ge
 			GeoCode:        geoCode,
 			Level:          universityLevel,
 			Visibility:     "public",
-			PostingPerm:    "members",
-			ReplyingPerm:   "members",
-			CommentingPerm: "members",
+			PostingPerm:    "open",
+			ReplyingPerm:   "open",
+			CommentingPerm: "open",
 			JoiningPerm:    "open",
 			Status:         "active",
 		})

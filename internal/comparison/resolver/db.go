@@ -41,8 +41,8 @@ type DBConfig struct {
 
 	// Optional generic discriminator filter (JCE ↔ wiki mapping): when both
 	// are set, filters[FilterParam] appends `t.FilterColumn = $N` — e.g.
-	// FilterParam "org_type" on organizations lets a 'bank' comparison type
-	// narrow to bank orgs server-side.
+	// FilterParam "org_type" on organizations lets a subtype-filtered comparison type
+	// narrow to a given org_type server-side.
 	FilterParam  string
 	FilterColumn string
 }

@@ -3,16 +3,21 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Rss, Plus } from 'lucide-svelte';
+	import { Rss, Plus, Search, ChevronRight, Tag, Filter } from 'lucide-svelte';
 	import {
-		FilterToggle,
+		EntityHero,
+		GuideSlideOver,
 		ListPageBar,
+		Modal,
 		SearchInput,
 		SelectField,
 		UrlTabs,
+		type GuideContent,
 		type SearchSuggestion,
 		type UrlTab
 	} from '$lib/components/ui';
+	import HeroArtSources from '$lib/components/heroes/HeroArtSources.svelte';
+	import { formatMetric } from '$lib/components/hub/charts/format';
 	import SourceCard from '$lib/components/source/SourceCard.svelte';
 	import ProposeSourceModal from '$lib/components/source/ProposeSourceModal.svelte';
 	import { sourceCategoryOptions, sourceCategoryLabel } from '$lib/sources';
@@ -80,12 +85,39 @@
 		}))
 	]);
 
-	// Only category / source type are inside the filter panel now.
+	// Active-filter dot for the modal-held controls (category / source kind).
 	const hasActiveFilters = $derived(!!selectedCategory || !!selectedSourceKind);
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasActiveFilters) showFilters = true;
+
+	// Right-side bar controls — each opens a modal rather than taking bar space.
+	let filtersModalOpen = $state(false);
+	let searchModalOpen = $state(false);
+
+	// "How it works" slide-over — title/intro/CTAs live in a public
+	// system-settings JSON blob (sources.guide) so staff can edit them
+	// inline (PUT /admin/settings/general → {sources_guide}).
+	let guideOpen = $state(false);
+	let guideOverride = $state<GuideContent | null>(null);
+
+	const siteSettings = $derived(
+		(page.data.siteSettings ?? {}) as Record<string, unknown>
+	);
+	const storedGuide = $derived.by((): Partial<GuideContent> => {
+		const raw = siteSettings['sources.guide'];
+		if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Partial<GuideContent>;
+		return {};
 	});
+	const effectiveGuide = $derived<GuideContent>({
+		title: guideOverride?.title ?? storedGuide.title ?? t('common.how_it_works', 'How it works'),
+		body: guideOverride?.body ?? storedGuide.body ?? t('sources.guide_body', ''),
+		ctas: guideOverride?.ctas ?? storedGuide.ctas ?? [{ title: t('sources.guide_cta_title', 'Read the full guide'), url: '/guides' }]
+	});
+
+	async function saveGuide(v: GuideContent): Promise<string | null> {
+		const res = await api.put('/admin/settings/general', { sources_guide: v });
+		if (res.error) return res.error.message || t('common.error', 'Something went wrong');
+		guideOverride = v;
+		return null;
+	}
 
 	const searchPlaceholder = $derived(t('sources.search_placeholder', 'Search sources…'));
 
@@ -139,103 +171,54 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
-	<!-- Header -->
-	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: var(--page-gutter)">
-		<div class="flex flex-wrap items-start justify-between gap-4">
-			<div class="min-w-0 flex-1 basis-56">
-				<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-					<Rss size={20} /> {t('sources.heading', 'Sources')}
-				</h1>
-				<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
-					{description}
-				</p>
-			</div>
-			<div class="flex shrink-0 items-center gap-2">
+	<!-- Header — EntityHero directory panel -->
+	<EntityHero
+		class="mt-4"
+		icon={Rss}
+		accent="var(--color-primary)"
+		heading={t('sources.heading', 'Sources')}
+		description={t('sources.hero_desc', 'Browse trusted sources for scholarships, jobs, remittance, universities, and more.')}
+		crumbs={[
+			{ label: t('common.home', 'Home'), href: '/' },
+			{ label: t('sources.heading', 'Sources') }
+		]}
+		stats={[
+			{ icon: Rss, value: formatMetric(data.meta?.total ?? 0), label: t('sources.stats_sources', 'Sources') },
+			...(data.sourceMeta?.categories?.length
+				? [{ icon: Tag, value: formatMetric(data.sourceMeta.categories.length), label: t('sources.stats_categories', 'Categories') }]
+				: [])
+		]}
+	>
+		{#snippet art()}
+			<HeroArtSources accent="var(--color-primary)" />
+		{/snippet}
+		{#snippet actions(c)}
+			<!-- Full-width CTA row — the three actions share the hero's width
+			     evenly and stay on one line at desktop. -->
+			<div class="grid w-full grid-cols-2 gap-3 sm:flex sm:items-center">
+				<a href="#sources-results" class="{c.primary} flex-1 justify-center whitespace-nowrap">
+					<Search size={15} /> {t('sources.browse', 'Browse sources')}
+				</a>
 				<button
 					type="button"
 					onclick={async () => {
 						if (!(await requireAuthOrRedirect())) return;
 						proposeOpen = true;
 					}}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+					class="{c.secondary} flex-1 justify-center whitespace-nowrap"
 				>
-					<Plus size={15} />
-					{t('sources.propose', 'Propose a source')}
+					<Plus size={15} /> {t('sources.propose', 'Propose a source')}
 				</button>
-				<FilterToggle
-					bind:show={showFilters}
-					active={hasActiveFilters}
-					controls="sources-filter-panel"
-				/>
+				<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} col-span-2 flex-1 justify-center whitespace-nowrap sm:col-span-1">
+					{t('common.how_it_works', 'How it works')}
+					<ChevronRight size={14} class="rtl:-scale-x-100" />
+				</button>
 			</div>
-		</div>
-	</div>
+		{/snippet}
+	</EntityHero>
 
-	<!-- Search is a primary directory action — it stays visible above the
-	     sort tabs rather than living inside the collapsible filter panel. -->
-	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
-		<form
-			class="w-full"
-			role="search"
-			onsubmit={(e) => {
-				e.preventDefault();
-				onFilterChange();
-			}}
-		>
-			<SearchInput
-				bind:value={query}
-				placeholder={searchPlaceholder}
-				ariaLabel={t('sources.heading', 'Sources')}
-				fetcher={sourceSearchFetcher}
-			/>
-		</form>
-	</div>
-
-	{#if showFilters}
-		<div id="sources-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-				{#if categoryOptions.length > 0}
-					<div>
-						<label for="sources-category" class="sr-only">
-							{t('sources.category_label', 'Category')}
-						</label>
-						<SelectField
-							id="sources-category"
-							value={selectedCategory}
-							options={categorySelectOptions}
-							placeholder={t('sources.category.all', 'All categories')}
-							onValueChange={(v) => {
-								selectedCategory = v;
-								onFilterChange();
-							}}
-							class="w-full"
-						/>
-					</div>
-				{/if}
-
-				{#if sourceKindOptions.length > 0}
-					<div>
-						<label for="sources-source-kind" class="sr-only">
-							{t('sources.source_type_label', 'Source type')}
-						</label>
-						<SelectField
-							id="sources-source-kind"
-							value={selectedSourceKind}
-							options={sourceKindSelectOptions}
-							placeholder={t('sources.source_kind.all', 'All source types')}
-							onValueChange={(v) => {
-								selectedSourceKind = v;
-								onFilterChange();
-							}}
-							class="w-full"
-						/>
-					</div>
-				{/if}
-			</div>
-		</div>
-	{/if}
-
-	<!-- Sort tabs -->
+	<!-- Sort tabs on the left; Filters + Search buttons on the right —
+	     one ListPageBar row (the /org, /users, /jobs pattern). -->
 	<ListPageBar>
 		{#if sortTabs.length > 0}
 			<UrlTabs
@@ -248,9 +231,119 @@
 				class="!border-b-0 !bg-transparent"
 			/>
 		{/if}
+		{#snippet actions()}
+			{#if categoryOptions.length > 0 || sourceKindOptions.length > 0}
+				<button
+					type="button"
+					onclick={() => (filtersModalOpen = true)}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('common.filters', 'Filters')}
+					{#if hasActiveFilters}
+						<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+					{/if}
+					<Filter size={16} />
+				</button>
+			{/if}
+			<button
+				type="button"
+				onclick={() => (searchModalOpen = true)}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.search', 'Search')}
+				{#if query.trim()}
+					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+				{/if}
+				<Search size={16} />
+			</button>
+		{/snippet}
 	</ListPageBar>
 
-	<div class="mx-auto w-full max-w-3xl p-4">
+	<!-- Filters modal — category + source kind dropdowns. -->
+	{#if categoryOptions.length > 0 || sourceKindOptions.length > 0}
+		<Modal
+			bind:open={filtersModalOpen}
+			title={t('common.filters', 'Filters')}
+			icon={Filter}
+			size="lg"
+		>
+			{#snippet children()}
+				<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+					{#if categoryOptions.length > 0}
+						<div>
+							<label for="sources-category" class="sr-only">
+								{t('sources.category_label', 'Category')}
+							</label>
+							<SelectField
+								id="sources-category"
+								value={selectedCategory}
+								options={categorySelectOptions}
+								placeholder={t('sources.category.all', 'All categories')}
+								onValueChange={(v) => {
+									selectedCategory = v;
+									onFilterChange();
+								}}
+								class="w-full"
+							/>
+						</div>
+					{/if}
+
+					{#if sourceKindOptions.length > 0}
+						<div>
+							<label for="sources-source-kind" class="sr-only">
+								{t('sources.source_type_label', 'Source type')}
+							</label>
+							<SelectField
+								id="sources-source-kind"
+								value={selectedSourceKind}
+								options={sourceKindSelectOptions}
+								placeholder={t('sources.source_kind.all', 'All source types')}
+								onValueChange={(v) => {
+									selectedSourceKind = v;
+									onFilterChange();
+								}}
+								class="w-full"
+							/>
+						</div>
+					{/if}
+				</div>
+				{#if hasActiveFilters}
+					<button
+						type="button"
+						onclick={() => { selectedCategory = ''; selectedSourceKind = ''; onFilterChange(); }}
+						class="mt-3 text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
+					>
+						{t('common.clear_filters', 'Clear filters')}
+					</button>
+				{/if}
+			{/snippet}
+		</Modal>
+	{/if}
+
+	<!-- Search modal — GET form preserving the active filters. -->
+	<Modal bind:open={searchModalOpen} title={t('common.search', 'Search')} icon={Search} size="sm">
+		{#snippet children()}
+			<form action="/sources" method="get" role="search" onsubmit={() => (searchModalOpen = false)}>
+				<SearchInput
+					bind:value={query}
+					placeholder={searchPlaceholder}
+					ariaLabel={t('sources.heading', 'Sources')}
+					fetcher={sourceSearchFetcher}
+				/>
+				{#if selectedSort}
+					<input type="hidden" name="sort" value={selectedSort} />
+				{/if}
+				{#if selectedCategory}
+					<input type="hidden" name="category" value={selectedCategory} />
+				{/if}
+				{#if selectedSourceKind}
+					<input type="hidden" name="source_kind" value={selectedSourceKind} />
+				{/if}
+			</form>
+		{/snippet}
+	</Modal>
+
+	<div id="sources-results" class="mx-auto w-full max-w-3xl p-4">
 		<!-- NOTE: the curated-collections sections (GET /sources/collections)
 			were intentionally removed from this page — the directory is just the
 			sorted grid below. Do not re-add collection rails here; the API
@@ -301,6 +394,17 @@
 		{/if}
 	</div>
 </div>
+
+<!-- "How it works" slide-over — reusable GuideSlideOver; staff with
+     admin.settings edit the CTA title/link inline (sources.guide_*). -->
+<GuideSlideOver
+	bind:open={guideOpen}
+	title={effectiveGuide.title}
+	body={effectiveGuide.body}
+	ctas={effectiveGuide.ctas}
+	canManage={data.canManage}
+	onSave={saveGuide}
+/>
 
 <ProposeSourceModal
 	bind:open={proposeOpen}

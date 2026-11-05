@@ -163,11 +163,11 @@ func writeAgentError(w http.ResponseWriter, err error) {
 		// their own status/code — write them verbatim.
 		errpkg.WriteError(w, perr.Status, perr.Code, perr.Message)
 	case errors.Is(err, errAINoPermission):
-		errpkg.WriteError(w, http.StatusForbidden, "ai_permission_required", "You do not have permission to use Japa AI")
+		errpkg.WriteError(w, http.StatusForbidden, "ai_permission_required", "Your account doesn't have access to Japa AI — contact an administrator to enable it")
 	case errors.Is(err, errInvalidModel):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_model", "The requested model is not available")
 	case errors.Is(err, errByokNoPermission):
-		errpkg.WriteError(w, http.StatusForbidden, "permission_denied", "You do not have permission to use your own API keys")
+		errpkg.WriteError(w, http.StatusForbidden, "permission_denied", "Your account isn't allowed to use your own API keys — contact an administrator to enable BYOK")
 	case errors.Is(err, errByokUnavailable):
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "byok_unavailable", "BYOK is not configured")
 	case errors.Is(err, ErrAIKeyNotFound):
@@ -183,7 +183,7 @@ func writeAgentError(w http.ResponseWriter, err error) {
 	case errors.Is(err, errAgentDisabled):
 		errpkg.WriteError(w, http.StatusNotFound, "agent_disabled", "The AI agent is currently disabled")
 	case errors.Is(err, errAgentNoPermission):
-		errpkg.WriteError(w, http.StatusForbidden, "agent_permission_required", "You do not have permission to use the AI agent")
+		errpkg.WriteError(w, http.StatusForbidden, "agent_permission_required", "Your account doesn't have access to the AI agent — contact an administrator to enable it")
 	case errors.Is(err, errAgentRateLimited):
 		errpkg.WriteError(w, http.StatusTooManyRequests, "rate_limited", "Daily agent request limit exceeded")
 	case errors.Is(err, errAgentBudgetExceeded):

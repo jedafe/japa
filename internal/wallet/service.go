@@ -22,6 +22,16 @@ import (
 // pgx.ErrNoRows so existing errors.Is(err, pgx.ErrNoRows) checks keep working.
 var ErrDuplicateActivity = errors.New("wallet: duplicate activity event")
 
+// floorPointsDebit clamps a downward points mutation at a zero balance —
+// points never go negative (product rule). Returns the clamped amount and
+// the resulting balance; non-negative amounts pass through unchanged.
+func floorPointsDebit(amount, currentBalance int64) (adjAmount, newBalance int64) {
+	if amount < 0 && currentBalance+amount < 0 {
+		return -currentBalance, 0
+	}
+	return amount, currentBalance + amount
+}
+
 // EmitActivityEventInput holds parameters for emitting an activity event.
 type EmitActivityEventInput struct {
 	ActivityKey string
@@ -131,7 +141,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		// Distinguish "not found" from real DB errors (BUG-007). The activity
 		// still counts for badges/challenges even without a point rule.
 		if errors.Is(err, pgx.ErrNoRows) {
-			return s.settleWithoutPoints(ctx, event)
+			return s.settleWithoutPoints(ctx, event, "no_rule")
 		}
 
 		return fmt.Errorf("getting activity rule: %w", err)
@@ -139,7 +149,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 
 	// Check if rule is enabled
 	if rule.IsEnabled != nil && !*rule.IsEnabled {
-		return s.settleWithoutPoints(ctx, event)
+		return s.settleWithoutPoints(ctx, event, "disabled")
 	}
 
 	// ADR-136 compensation events carry {undoes_key, undoes} — decoded here
@@ -163,7 +173,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 			// EnableEarning killswitch — no points, but the activity still
 			// counts toward badges/challenges.
 			if !ws.EnableEarning {
-				return s.settleWithoutPoints(ctx, event)
+				return s.settleWithoutPoints(ctx, event, "killswitch")
 			}
 		}
 	}
@@ -178,7 +188,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		}
 
 		if count > int64(*rule.CapPerDay) {
-			return s.settleWithoutPoints(ctx, event)
+			return s.settleWithoutPoints(ctx, event, "capped")
 		}
 	}
 
@@ -189,7 +199,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		}
 
 		if count > int64(*rule.CapPerWeek) {
-			return s.settleWithoutPoints(ctx, event)
+			return s.settleWithoutPoints(ctx, event, "capped")
 		}
 	}
 
@@ -225,7 +235,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		})
 		if errors.Is(rerr, pgx.ErrNoRows) {
 			// No award event exists — nothing to undo. Mark processed.
-			if err := qtx.MarkEventProcessed(ctx, eventID); err != nil {
+			if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{ID: eventID, Outcome: strPtr("reverted")}); err != nil {
 				return fmt.Errorf("marking no-op revert processed: %w", err)
 			}
 			if err := tx.Commit(ctx); err != nil {
@@ -253,7 +263,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		if errors.Is(lerr, pgx.ErrNoRows) {
 			// The award event processed but credited nothing (cap,
 			// killswitch, disabled) — there is no debt to undo.
-			if err := qtx.MarkEventProcessed(ctx, eventID); err != nil {
+			if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{ID: eventID, Outcome: strPtr("reverted")}); err != nil {
 				return fmt.Errorf("marking uncredited revert processed: %w", err)
 			}
 			if err := tx.Commit(ctx); err != nil {
@@ -278,7 +288,21 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		if berr != nil && !errors.Is(berr, pgx.ErrNoRows) {
 			return fmt.Errorf("getting balance for revert: %w", berr)
 		}
-		newBalance := balance + compensation
+		// Points floor at zero — a revert can only take back what the user
+		// still holds; clamp instead of driving the balance negative.
+		compensation, newBalance := floorPointsDebit(compensation, balance)
+		if compensation == 0 {
+			// The award's points are already spent — nothing left to claw
+			// back. Settle without a phantom zero-amount row.
+			if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{ID: eventID, Outcome: strPtr("spent")}); err != nil {
+				return fmt.Errorf("marking spent revert processed: %w", err)
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return fmt.Errorf("committing spent revert: %w", err)
+			}
+			s.evaluateGamification(ctx, event)
+			return nil
+		}
 		idempotencyKey := fmt.Sprintf("activity::%s:%s:%s", event.UserID.String(), event.ActivityKey, event.Reference)
 		if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 			UserID:           event.UserID,
@@ -292,7 +316,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		}); err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-				if merr := qtx.MarkEventProcessed(ctx, eventID); merr != nil {
+				if merr := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{ID: eventID, Outcome: strPtr("reverted")}); merr != nil {
 					return fmt.Errorf("marking duplicate revert processed: %w", merr)
 				}
 				if cerr := tx.Commit(ctx); cerr != nil {
@@ -303,7 +327,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 			}
 			return fmt.Errorf("inserting revert ledger entry: %w", err)
 		}
-		if err := qtx.MarkEventProcessed(ctx, eventID); err != nil {
+		if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{ID: eventID, Outcome: strPtr("reverted")}); err != nil {
 			return fmt.Errorf("marking revert processed: %w", err)
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -327,7 +351,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 
 		if count > 0 {
 			// Mark processed so the event is not retried.
-			if err := qtx.MarkEventProcessed(ctx, eventID); err != nil {
+			if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{ID: eventID, Outcome: strPtr("one_time")}); err != nil {
 				return fmt.Errorf("marking one-time event processed: %w", err)
 			}
 
@@ -387,11 +411,16 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 
 		// amount > 0: penalty entries (negative 'earn', ADR-136) must not
 		// refund cap headroom — the cap throttles points earned, not net
-		// balance change.
+		// balance change. idempotency_key LIKE 'activity::%' scopes the sum
+		// to activity-event earns only (Section 28) — reward earns routed
+		// through wallet:award_points ('award::'/'one_time::' keys: badge
+		// points_reward, challenge reward_points, checklist/referral/
+		// scholarship grants) are real achievements and never consume cap.
 		row := tx.QueryRow(ctx, `
 			SELECT COALESCE(SUM(amount), 0) FROM wallet_ledger
 			WHERE user_id = $1 AND ledger_type = 'points' AND amount > 0
-			  AND operation = 'earn' AND created_at >= CURRENT_DATE`, event.UserID)
+			  AND operation = 'earn' AND created_at >= CURRENT_DATE
+			  AND idempotency_key LIKE 'activity::%'`, event.UserID)
 		if qerr := row.Scan(&earnedToday); qerr != nil {
 			return fmt.Errorf("checking daily earning cap: %w", qerr)
 		}
@@ -400,7 +429,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 			// Cap reached — no points, but the activity still counts toward
 			// badges/challenges. Mark processed inside the tx for exactly-once
 			// evaluation on any replay (same pattern as the one-time skip).
-			if merr := qtx.MarkEventProcessed(ctx, eventID); merr != nil {
+			if merr := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{ID: eventID, Outcome: strPtr("capped")}); merr != nil {
 				return fmt.Errorf("marking capped event processed: %w", merr)
 			}
 
@@ -414,8 +443,28 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		}
 	}
 
-	// Calculate new balance
-	newBalance := currentBalance + int64(rule.PointValue)
+	// Calculate new balance — points floor at zero: a penalty (negative
+	// point_value) can only deduct what the user holds, so a -20 spam hit
+	// on a +4 balance records -4, not -16.
+	amount := int64(rule.PointValue)
+	amount, newBalance := floorPointsDebit(amount, currentBalance)
+
+	// A penalty fully floored at zero records nothing — no phantom
+	// zero-amount row. The event still settles so the activity counts for
+	// badges/challenges.
+	if amount == 0 {
+		if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{ID: eventID, Outcome: strPtr("floored")}); err != nil {
+			return fmt.Errorf("marking floored event processed: %w", err)
+		}
+
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("committing floored event: %w", err)
+		}
+
+		s.evaluateGamification(ctx, event)
+
+		return nil
+	}
 
 	// Create idempotency key from event. Include platform and user to avoid
 	// cross-platform collisions (ADR-004, Section 28).
@@ -426,7 +475,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		UserID:           event.UserID,
 		LedgerType:       LedgerTypePoints,
 		Operation:        OperationEarn,
-		Amount:           int64(rule.PointValue),
+		Amount:           amount,
 		ResultingBalance: newBalance,
 		Source:           &event.ActivityKey,
 		Reference:        &event.Reference,
@@ -440,7 +489,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		// as already-processed instead of dead-lettering the task (ALG-019).
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			if merr := qtx.MarkEventProcessed(ctx, eventID); merr != nil {
+			if merr := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{ID: eventID, Outcome: strPtr("duplicate")}); merr != nil {
 				return fmt.Errorf("marking duplicate event processed: %w", merr)
 			}
 
@@ -455,7 +504,7 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 	}
 
 	// Mark event as processed within the transaction.
-	if err := qtx.MarkEventProcessed(ctx, eventID); err != nil {
+	if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{ID: eventID, Outcome: strPtr("earned")}); err != nil {
 		return fmt.Errorf("marking event processed: %w", err)
 	}
 
@@ -498,8 +547,8 @@ func (s *Service) evaluateGamification(ctx context.Context, event gen.ActivityEv
 // increments are not idempotent, so an eval that ran against an
 // unprocessed event would double-count on any later replay. Propagating
 // the mark error lets Asynq retry — the retry re-marks then evals once.
-func (s *Service) settleWithoutPoints(ctx context.Context, event gen.ActivityEvent) error {
-	if err := s.store.markEventProcessed(ctx, event.ID); err != nil {
+func (s *Service) settleWithoutPoints(ctx context.Context, event gen.ActivityEvent, outcome string) error {
+	if err := s.store.markEventProcessed(ctx, event.ID, outcome); err != nil {
 		return fmt.Errorf("marking event processed: %w", err)
 	}
 
@@ -710,15 +759,22 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 		currentBalance = 0
 	}
 
-	// New balance
+	// New balance. Credits reject an overdraw (§1.3, Checklist B.10);
+	// points floor at zero — a downward adjustment is clamped to what the
+	// user holds rather than driving the balance negative.
 	newBalance := currentBalance + input.Amount
+	if newBalance < 0 {
+		if input.LedgerType == LedgerTypeCredits {
+			return 0, fmt.Errorf("%w: current=%d, adjustment=%d", errpkg.ErrInsufficientBalance, currentBalance, input.Amount)
+		}
+		input.Amount = -currentBalance
+		newBalance = 0
+	}
 
-	// Non-negative balance lock (§1.3, Checklist B.10) — credits only.
-	// Points may legitimately go negative (penalty rules drive signed
-	// balances below zero per ADR-136), so an admin deduction matching a
-	// moderation penalty must not be floored (PTS-022).
-	if newBalance < 0 && input.LedgerType == LedgerTypeCredits {
-		return 0, fmt.Errorf("%w: current=%d, adjustment=%d", errpkg.ErrInsufficientBalance, currentBalance, input.Amount)
+	// A downward adjust on an already-zero points balance has nothing to
+	// take — reject rather than write a phantom zero-amount row.
+	if input.Amount == 0 {
+		return 0, fmt.Errorf("%w: points balance already zero", errpkg.ErrInsufficientBalance)
 	}
 
 	// Create idempotency key — include a UUID so multiple adjustments with
@@ -728,7 +784,7 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 	idempotencyKey := fmt.Sprintf("admin_adjust:%s:%x:%s:%d", uuid.NewString(), targetUserID.Bytes, input.Reason, input.Amount)
 
 	// Insert ledger entry
-	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+	entry, err := qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
 		UserID:           targetUserID,
 		LedgerType:       input.LedgerType,
 		Operation:        OperationAdminAdjust,
@@ -742,6 +798,24 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, actorUserID pgtype.UUI
 	})
 	if err != nil {
 		return 0, fmt.Errorf("inserting admin adjust entry: %w", err)
+	}
+
+	// SEC-W-011: credits minting is a monetary write — audit-log it the same
+	// way credits refunds do, in the same transaction.
+	if input.LedgerType == LedgerTypeCredits {
+		meta, _ := json.Marshal(map[string]any{
+			"entry_id": entry.ID.String(), "amount": input.Amount, "balance_after": newBalance,
+			"reason": input.Reason, "reference": input.Reference,
+		})
+		if err := qtx.InsertWalletAuditLog(ctx, gen.InsertWalletAuditLogParams{
+			ActorUserID: actorUserID,
+			ActionType:  "wallet.admin_adjust",
+			TargetType:  strPtr("credits_ledger"),
+			TargetID:    entry.ID,
+			Metadata:    meta,
+		}); err != nil {
+			return 0, fmt.Errorf("writing admin adjust audit log: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -835,9 +909,14 @@ func (s *Service) adminReversePointsEntry(ctx context.Context, actorUserID, entr
 	}
 
 	reversal := -original.Amount
-	newBalance := currentBalance + reversal
-	if reversal < 0 && newBalance < 0 {
-		return 0, fmt.Errorf("%w: current=%d, reversal=%d", errpkg.ErrInsufficientBalance, currentBalance, reversal)
+	// Points floor at zero — a downward reversal can only take back what
+	// remains; clamp instead of driving the balance negative.
+	reversal, newBalance := floorPointsDebit(reversal, currentBalance)
+	if reversal == 0 {
+		return 0, fmt.Errorf("%w: nothing to reverse — points balance already zero", errpkg.ErrInsufficientBalance)
+	}
+	if reversal != -original.Amount {
+		reason += " (partial — clamped at zero balance)"
 	}
 
 	reference := "reverse:" + entryID.String()
@@ -1110,6 +1189,13 @@ func (s *Service) UpdateActivityRuleByID(ctx context.Context, id pgtype.UUID, in
 // DeleteActivityRule deletes an activity rule.
 func (s *Service) DeleteActivityRule(ctx context.Context, id pgtype.UUID) error {
 	return s.store.deleteActivityRule(ctx, id)
+}
+
+// ListActivityEvents returns a user's processed activity events with
+// their settle outcome — surfaces "did X but earned nothing" rows
+// (capped, floored, no_rule) that the ledger feed alone can't explain.
+func (s *Service) ListActivityEvents(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListUserActivityEventsRow, error) {
+	return s.store.listUserActivityEvents(ctx, userID, limit, offset)
 }
 
 // ListLedgerEntries returns ledger entries for a user.

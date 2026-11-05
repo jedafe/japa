@@ -160,6 +160,10 @@ func (f *fakeTierManager) ResolveUserTier(_ context.Context, _ pgtype.UUID) (str
 	return f.tier, nil
 }
 
+func (f *fakeTierManager) ResolveSubscriptionTier(_ context.Context, _ pgtype.UUID) (string, error) {
+	return f.tier, nil
+}
+
 func TestRevokePlanTier_OnlyRevokesGrantedTier(t *testing.T) {
 	var uid pgtype.UUID
 

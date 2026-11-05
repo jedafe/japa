@@ -121,7 +121,8 @@ func (h *Handlers) HandleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		// (not a second route gate): the kind isn't known until the
 		// listing loads.
 		if h.rbac == nil || !h.rbac.HasPermission(r.Context(), user.UserID, "mentorship.request") {
-			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to perform this action")
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden",
+				"Your account isn't allowed to request mentorship — contact an administrator if you need access")
 			return
 		}
 	} else if !h.packagesAvailable(w, r) {
@@ -349,7 +350,7 @@ func (h *Handlers) HandleMyBookingRespond(w http.ResponseWriter, r *http.Request
 	kindRow, kindErr := h.service.GetBooking(r.Context(), bookingID, user.UserID, false)
 	if kindErr == nil && kindRow.ListingKind == ListingKindMentorship &&
 		(h.rbac == nil || !h.rbac.HasPermission(r.Context(), user.UserID, "mentorship.respond")) {
-		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to respond to mentorship requests")
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Only mentors who opted in can respond to mentorship requests")
 		return
 	}
 

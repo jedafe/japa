@@ -1,21 +1,21 @@
 package forum
 
 import (
-	"time"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/wallet"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -566,7 +566,7 @@ const (
 
 // ErrMembersOnly is returned when a non-member tries to read or interact
 // with members-only forum content (title_only → 403 members_only).
-var ErrMembersOnly = errors.New("members_only")
+var ErrMembersOnly = errors.New("only space members can access this thread")
 
 // ThreadAccessLevel resolves the viewer's access to a thread via its
 // containing space (F-009).

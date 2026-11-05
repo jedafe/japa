@@ -146,12 +146,16 @@ var PullChannels = []string{ChannelPopup, ChannelAnnouncementBar, ChannelSidebar
 // PushChannels are dispatched via the sweep + Section 35 — registered users only.
 var PushChannels = []string{ChannelNotification, ChannelPush, ChannelEmail}
 
-// User classes.
+// User classes. Staff tiers (migration 001049) resolve from effective tier,
+// so rules may target internal users explicitly.
 const (
-	ClassGuest    = "guest"
-	ClassRegular  = "regular"
-	ClassPro      = "pro"
-	ClassBusiness = "business"
+	ClassGuest      = "guest"
+	ClassRegular    = "regular"
+	ClassPro        = "pro"
+	ClassBusiness   = "business"
+	ClassStaff      = "staff"
+	ClassAdmin      = "admin"
+	ClassSuperAdmin = "super_admin"
 )
 
 // userActionState is a decoded user_next_actions row (or guest equivalent).

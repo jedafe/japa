@@ -12,6 +12,7 @@ type WalletProcessor interface {
 	AwardPointsTask(ctx context.Context, payload []byte) error
 	DeductCreditsTask(ctx context.Context, payload []byte) error
 	ReconcilePayoutsTask(ctx context.Context, payload []byte) error
+	ReconcileSolvencyTask(ctx context.Context, payload []byte) error
 	ReprocessEventsTask(ctx context.Context, payload []byte) error
 }
 

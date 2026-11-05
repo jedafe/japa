@@ -529,6 +529,7 @@ func (s *Service) coerceNewRows(rows []gen.ListCommentsByContentNewRow) []gen.Li
 			VoteScore:     rows[i].VoteScore,
 			UpvoteCount:   rows[i].UpvoteCount,
 			DownvoteCount: rows[i].DownvoteCount,
+			ViewCount:     rows[i].ViewCount,
 			IsPinned:      rows[i].IsPinned,
 			IsEdited:      rows[i].IsEdited,
 			EditedAt:      rows[i].EditedAt,
@@ -561,6 +562,7 @@ func (s *Service) coerceOldestRows(rows []gen.ListCommentsByContentOldestRow) []
 			VoteScore:     rows[i].VoteScore,
 			UpvoteCount:   rows[i].UpvoteCount,
 			DownvoteCount: rows[i].DownvoteCount,
+			ViewCount:     rows[i].ViewCount,
 			IsPinned:      rows[i].IsPinned,
 			IsEdited:      rows[i].IsEdited,
 			EditedAt:      rows[i].EditedAt,
@@ -1108,4 +1110,36 @@ func (s *Service) CountCommentsByContent(ctx context.Context, contentID pgtype.U
 	}
 
 	return count, nil
+}
+
+// RecordCommentView records that a user viewed a comment (Section 49 —
+// optional reply view tracking). Idempotent via the (comment_id, user_id)
+// PK; the trg_comment_views_increment trigger bumps comments.view_count.
+func (s *Service) RecordCommentView(ctx context.Context, commentID, userID pgtype.UUID) error {
+	if err := s.write.InsertCommentView(ctx, gen.InsertCommentViewParams{
+		CommentID: commentID,
+		UserID:    userID,
+	}); err != nil {
+		return fmt.Errorf("recording comment view: %w", err)
+	}
+
+	return nil
+}
+
+// RecordCommentViews batch-records views for a set of comments (Guide §4.3 —
+// one round trip per thread, not per comment). Same live-comment guard and
+// idempotency as RecordCommentView.
+func (s *Service) RecordCommentViews(ctx context.Context, commentIDs []pgtype.UUID, userID pgtype.UUID) error {
+	if len(commentIDs) == 0 {
+		return nil
+	}
+
+	if err := s.write.InsertCommentViews(ctx, gen.InsertCommentViewsParams{
+		CommentIds: commentIDs,
+		UserID:     userID,
+	}); err != nil {
+		return fmt.Errorf("recording comment views: %w", err)
+	}
+
+	return nil
 }

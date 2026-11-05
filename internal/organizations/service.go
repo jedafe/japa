@@ -1047,10 +1047,16 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, reviewedBy 
 // immigration_lawyer|professional_body); nil preserves any existing value.
 // §111 package publishing requires business or professional_body.
 func (s *Service) VerifyOrganization(ctx context.Context, id, adminID pgtype.UUID, vtype *string) error {
-	// Fetch the org name for the webhook payload (best-effort).
 	org, err := s.store.GetOrganizationByID(ctx, id)
 	if err != nil {
-		slog.Warn("organizations: fetch org for verify webhook payload", "org_id", id.String(), "error", err)
+		return fmt.Errorf("fetching organization for verify: %w", err)
+	}
+
+	// A verified badge asserts the platform confirmed the real entity behind
+	// the page — that only holds when an owner claimed the profile. Unclaimed
+	// (e.g. seeded/directory) orgs must never carry the badge.
+	if !org.OwnerUserID.Valid {
+		return fmt.Errorf("%w: organization must be claimed before it can be verified", errpkg.ErrInvalid)
 	}
 
 	if err := s.store.VerifyOrganization(ctx, id, vtype); err != nil {
@@ -1132,6 +1138,12 @@ func (s *Service) ActiveOrgExists(ctx context.Context, id pgtype.UUID) (bool, er
 	return s.store.ActiveOrgExistsByID(ctx, id)
 }
 
+// BankExistsBySlug reports whether an active informational bank entity owns
+// this slug — the public org handler uses it to emit org_relocated.
+func (s *Service) BankExistsBySlug(ctx context.Context, slug string) (bool, error) {
+	return s.store.BankExistsBySlug(ctx, slug)
+}
+
 // GetPublicOrganizationBySlug returns an active org for the public profile header.
 // Uses read-through Valkey cache (jc:org:profile:{}:{slug}) when
 // a Valkey client is configured; falls back to direct DB on cache miss or
@@ -1152,12 +1164,11 @@ func (s *Service) GetOrgOwnerPublicProfile(ctx context.Context, orgID pgtype.UUI
 }
 
 // ListPublicOrganizations returns active orgs for the public Discover list.
-// search filters by name/slug, orgType filters by org_type, verified filters
-// by verified status (empty = all, "true" = verified only, "false" = unverified
-// only). By default the handler passes verified="true" to preserve the original
-// behavior of only showing verified orgs.
-func (s *Service) ListPublicOrganizations(ctx context.Context, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
-	return s.getOrSetOrgList(ctx, search, orgType, verified, limit, offset)
+// search filters by name/slug, orgType filters by org_type, filter selects
+// the trust slice: "claimed" (default — owner set), "verified" (badge
+// holders), "unverified" (no badge), "" (all active orgs).
+func (s *Service) ListPublicOrganizations(ctx context.Context, search, orgType, filter string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
+	return s.getOrSetOrgList(ctx, search, orgType, filter, limit, offset)
 }
 
 func strPtr(s string) *string {

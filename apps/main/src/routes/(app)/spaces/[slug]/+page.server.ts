@@ -1,6 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList, apiRadarList } from '$lib/server/api';
 import type { RadarItem } from '$lib/types';
 import type {
 	SpaceDetail,
@@ -244,7 +244,7 @@ export const load: PageServerLoad = async (event) => {
 	const opportunities =
 		event.url.searchParams.get('tab') === 'opportunities'
 			? (
-					await apiGet<{ items?: RadarItem[] }>(
+					await apiRadarList<RadarItem>(
 						ctx,
 						`/intel/radar?space_id=${space.id}&page_size=24`
 					).catch(() => null)

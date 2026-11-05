@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"log/slog"
 	"net/http"
@@ -51,6 +52,9 @@ type Handlers struct {
 	NOWPaymentsIPNKey   string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC key
 	PaystackSecretKey   string // Paystack secret key for webhook HMAC verification
 	settings            SettingsProvider
+	// PayoutWebhookHandler delegates transfer.* events to the wallet
+	// payout processor (SEC-W-NGN) — wired to wallet.Service.
+	PayoutWebhookHandler func(ctx context.Context, payload []byte, signature string) error
 }
 
 // NewHandlers creates Handlers with the given Service.
@@ -491,7 +495,7 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 		}
 	} else {
 		sig := r.Header.Get("X-Paystack-Signature")
-		if err := verifyHMACSHA256(body, sig, h.PaystackSecretKey); err != nil {
+		if err := verifyPaystackSignature(body, sig, h.PaystackSecretKey); err != nil {
 			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_signature", "Invalid webhook signature")
 			return
 		}
@@ -515,6 +519,22 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 
 	// Resolve payment status from the Paystack event type in the payload.
 	status := resolvePaystackStatus(event)
+
+	// SEC-W-NGN: transfer.* events are OUTBOUND payouts (wallet package),
+	// not inbound payments — delegate to the payout webhook processor.
+	// Paystack has a single webhook URL so both share this route.
+	if strings.HasPrefix(event.EventType, "transfer.") {
+		if h.PayoutWebhookHandler != nil {
+			sig := r.Header.Get("x-paystack-signature")
+			if err := h.PayoutWebhookHandler(r.Context(), body, sig); err != nil {
+				slog.Error("paystack payout webhook failed", "error", err)
+				errpkg.WriteError(w, http.StatusUnauthorized, "payout_webhook_error", "Failed to process transfer event")
+				return
+			}
+		}
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+		return
+	}
 
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), ProviderPaystack, event, status); err != nil {
@@ -2132,4 +2152,21 @@ func (h *Handlers) PublicListPlanTracks(w http.ResponseWriter, r *http.Request) 
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// verifyPaystackSignature accepts HMAC-SHA512 (Paystack's documented
+// algorithm) and falls back to HMAC-SHA256 for backward compatibility
+// with the legacy verifier — either validates, never both required.
+func verifyPaystackSignature(payload []byte, signature, secret string) error {
+	if signature == "" {
+		return errors.New("missing signature")
+	}
+	for _, h := range []hash.Hash{sha512.New(), sha256.New()} {
+		mac := hmac.New(func() hash.Hash { return h }, []byte(secret))
+		mac.Write(payload)
+		if hmac.Equal([]byte(hex.EncodeToString(mac.Sum(nil))), []byte(signature)) {
+			return nil
+		}
+	}
+	return errors.New("invalid signature")
 }

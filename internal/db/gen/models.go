@@ -263,6 +263,7 @@ type ActivityEvent struct {
 	Processed   *bool              `json:"processed"`
 	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Outcome     *string            `json:"outcome"`
 }
 
 type ActivityPointRule struct {
@@ -807,6 +808,20 @@ type BadgeTier struct {
 	Threshold  int32              `json:"threshold"`
 	BadgeID    pgtype.UUID        `json:"badge_id"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type Bank struct {
+	ID          pgtype.UUID        `json:"id"`
+	Slug        string             `json:"slug"`
+	Name        string             `json:"name"`
+	Description *string            `json:"description"`
+	Website     *string            `json:"website"`
+	GeoSpaceID  pgtype.UUID        `json:"geo_space_id"`
+	CountryCode *string            `json:"country_code"`
+	FieldValues []byte             `json:"field_values"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type BlogSeries struct {
@@ -4678,6 +4693,7 @@ type User struct {
 	Verified            bool               `json:"verified"`
 	// business|embassy|notable|immigration_lawyer|professional_body — set via POST /admin/users/{id}/verify
 	VerificationType *string `json:"verification_type"`
+	KycStatus        string  `json:"kyc_status"`
 }
 
 type UserAffiliateLink struct {
@@ -4794,6 +4810,18 @@ type UserJourney struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type UserKycSubmission struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	DocumentType string             `json:"document_type"`
+	DocumentRef  *string            `json:"document_ref"`
+	Note         *string            `json:"note"`
+	Status       string             `json:"status"`
+	SubmittedAt  pgtype.Timestamptz `json:"submitted_at"`
+	DecidedAt    pgtype.Timestamptz `json:"decided_at"`
+	DecidedBy    pgtype.UUID        `json:"decided_by"`
 }
 
 type UserModerationAction struct {
@@ -5099,6 +5127,15 @@ type WalletLedger struct {
 	Reason           *string            `json:"reason"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	Seq              int64              `json:"seq"`
+}
+
+type WalletLedgerMutationAudit struct {
+	ID         int64              `json:"id"`
+	TableName  string             `json:"table_name"`
+	Operation  string             `json:"operation"`
+	RowID      *string            `json:"row_id"`
+	DbUser     string             `json:"db_user"`
+	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
 }
 
 type WalletSetting struct {

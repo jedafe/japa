@@ -5,11 +5,12 @@
 package ecaguide
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -150,7 +151,7 @@ func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string)
 	}
 
 	if params["destination_space_id"] == "" || params["provider_id"] == "" {
-		return errors.New("destination_space_id and provider_id are required")
+		return fmt.Errorf("%w: destination_space_id and provider_id are required", errpkg.ErrInvalid)
 	}
 
 	payload := map[string]string{"entity_type": "eca_guide"}
@@ -227,11 +228,11 @@ func (s *Service) GetGuide(ctx context.Context, id pgtype.UUID) (*GuideDetailDTO
 // CompareGuides returns published guides side-by-side per provider.
 func (s *Service) CompareGuides(ctx context.Context, destSpaceID pgtype.UUID, providerIDs []pgtype.UUID) ([]GuideDTO, error) {
 	if len(providerIDs) == 0 {
-		return nil, errors.New("provider_ids is required")
+		return nil, fmt.Errorf("%w: provider_ids is required", errpkg.ErrInvalid)
 	}
 
 	if len(providerIDs) > 8 {
-		return nil, errors.New("provider_ids: max 8 providers")
+		return nil, fmt.Errorf("%w: provider_ids: max 8 providers", errpkg.ErrInvalid)
 	}
 
 	rows, err := s.store.CompareGuides(ctx, destSpaceID, providerIDs)
@@ -285,7 +286,7 @@ func (s *Service) AdminListGuides(ctx context.Context, destSpaceID pgtype.UUID, 
 // CreateGuide inserts a guide (admin).
 func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, error) {
 	if in.DestinationSpaceID == "" || in.ProviderID == "" || in.Purpose == "" || in.PathwaySteps == nil {
-		return nil, errors.New("destination_space_id, provider_id, purpose and pathway_steps are required")
+		return nil, fmt.Errorf("%w: destination_space_id, provider_id, purpose and pathway_steps are required", errpkg.ErrInvalid)
 	}
 
 	row := GuideRow{
@@ -293,11 +294,11 @@ func (s *Service) CreateGuide(ctx context.Context, in GuideRequest) (*GuideDTO, 
 		Status:  orDefault(in.Status, StatusDraft),
 	}
 	if err := row.DestinationSpaceID.Scan(in.DestinationSpaceID); err != nil {
-		return nil, errors.New("invalid destination_space_id")
+		return nil, fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
 	}
 
 	if err := row.ProviderID.Scan(in.ProviderID); err != nil {
-		return nil, errors.New("invalid provider_id")
+		return nil, fmt.Errorf("%w: invalid provider_id", errpkg.ErrInvalid)
 	}
 
 	row.PathwaySteps = *in.PathwaySteps
@@ -536,7 +537,7 @@ func (s *Service) AdminListProviders(ctx context.Context) ([]ProviderDTO, error)
 // CreateProvider inserts a provider (admin).
 func (s *Service) CreateProvider(ctx context.Context, in ProviderRequest) (ProviderDTO, error) {
 	if in.Slug == "" || in.Name == "" {
-		return ProviderDTO{}, errors.New("slug and name are required")
+		return ProviderDTO{}, fmt.Errorf("%w: slug and name are required", errpkg.ErrInvalid)
 	}
 
 	var website *string

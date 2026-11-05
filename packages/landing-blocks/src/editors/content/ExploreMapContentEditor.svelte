@@ -143,6 +143,7 @@
           <select value={stat.source} onchange={(e) => listUpdate<ExploreMapStat>('stats', P.stats ?? [], i, { source: e.currentTarget.value as ExploreMapStat['source'] })} class={inputClass}>
             <option value="countries">Countries</option>
             <option value="col_cities">COL cities</option>
+            <option value="cities">Cities</option>
             <option value="blog">Blog posts</option>
             <option value="services">Services</option>
             <option value="manual">Manual</option>

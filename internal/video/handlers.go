@@ -15,6 +15,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/literals"
+	"github.com/jedafe/japa/internal/rbac"
 )
 
 const (
@@ -89,7 +90,7 @@ func (h *Handlers) requirePerm(w http.ResponseWriter, r *http.Request, userID pg
 		return true
 	}
 
-	errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to perform this action")
+	errpkg.WriteError(w, http.StatusForbidden, "forbidden", rbac.DenialMessage(permKey))
 
 	return false
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/rbac"
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
@@ -385,7 +386,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	if permKey != "mutual_aid.create_offer" && h.perms != nil {
 		if !h.perms.HasPermission(r.Context(), user.UserID, permKey) {
-			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to create this post type")
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", rbac.DenialMessage(permKey))
 			return
 		}
 	}

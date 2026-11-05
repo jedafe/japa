@@ -371,12 +371,12 @@ func TestDefaultPermAxes(t *testing.T) {
 		t.Errorf("default posting = %q, want %q", axes.Posting, PermMembers)
 	}
 
-	if axes.Replying != PermMembers {
-		t.Errorf("default replying = %q, want %q", axes.Replying, PermMembers)
+	if axes.Replying != PermOpen {
+		t.Errorf("default replying = %q, want %q", axes.Replying, PermOpen)
 	}
 
-	if axes.Commenting != PermMembers {
-		t.Errorf("default commenting = %q, want %q", axes.Commenting, PermMembers)
+	if axes.Commenting != PermOpen {
+		t.Errorf("default commenting = %q, want %q", axes.Commenting, PermOpen)
 	}
 
 	if axes.Joining != JoiningOpen {
@@ -385,5 +385,44 @@ func TestDefaultPermAxes(t *testing.T) {
 
 	if !ValidPermissionAxes(axes) {
 		t.Error("default axes should be valid")
+	}
+}
+
+func TestPrimaryPermAxes(t *testing.T) {
+	t.Parallel()
+
+	axes := PrimaryPermAxes()
+	if axes.Visibility != VisibilityPublic {
+		t.Errorf("primary visibility = %q, want %q", axes.Visibility, VisibilityPublic)
+	}
+
+	if axes.Posting != PermOpen || axes.Replying != PermOpen || axes.Commenting != PermOpen {
+		t.Errorf("primary axes = %+v, want all open", axes)
+	}
+
+	if axes.Joining != JoiningOpen {
+		t.Errorf("primary joining = %q, want %q", axes.Joining, JoiningOpen)
+	}
+
+	if !ValidPermissionAxes(axes) {
+		t.Error("primary axes should be valid")
+	}
+}
+
+func TestDefaultPermAxesForLevel(t *testing.T) {
+	t.Parallel()
+
+	for _, level := range []string{LevelCountry, LevelState, LevelCity, LevelUniversity, LevelGlobal} {
+		if axes := DefaultPermAxesForLevel(level); axes.Posting != PermOpen {
+			t.Errorf("level %q posting = %q, want %q", level, axes.Posting, PermOpen)
+		}
+	}
+
+	if axes := DefaultPermAxesForLevel(LevelCustom); axes.Posting != PermMembers {
+		t.Errorf("custom posting = %q, want %q", axes.Posting, PermMembers)
+	}
+
+	if IsPrimaryLevel(LevelCustom) {
+		t.Error("custom must not be a primary level")
 	}
 }

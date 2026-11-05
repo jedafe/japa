@@ -1,5 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiPost, apiPut, ApiError } from '$lib/server/api';
+import { fail, redirect } from '@sveltejs/kit';
+import type { Actions } from './$types';
 import type { University, ListMeta, GeoCountry, GeoState, GeoCity, SpaceDetail } from '$lib/types';
 
 /**
@@ -126,7 +128,22 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// Staff gate for the inline guide editor (same as /sources).
+	const isSuperAdmin = (event.locals.user?.groups ?? []).some(
+		(g) => g === 'Super Admin' || g === 'super_admin'
+	);
+	let canManage = isSuperAdmin;
+	if (event.locals.user && !canManage) {
+		try {
+			const perms = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+			canManage = (perms?.permissions ?? []).some((p) => p.startsWith('admin.settings'));
+		} catch {
+			canManage = false;
+		}
+	}
+
 	return {
+		canManage,
 		universities,
 		meta,
 		pageSize: PAGE_SIZE,
@@ -138,4 +155,87 @@ export const load: PageServerLoad = async (event) => {
 		states,
 		cities
 	};
+};
+
+export const actions: Actions = {
+	default: async (event) => {
+		if (!event.locals.user) {
+			return fail(401, { error: 'unauthenticated', message: 'Sign in to save a comparison' });
+		}
+		const form = await event.request.formData();
+		const uniSlugs = form.getAll('uni_slug').filter((v): v is string => typeof v === 'string');
+		if (uniSlugs.length < 2 || uniSlugs.length > 4) {
+			return fail(400, { error: 'invalid_selection', message: 'Select 2 to 4 universities' });
+		}
+		const ctx = apiContext(event);
+		let unis: { name: string; description: string | null; id: string; slug: string; geo_code?: string | null; follower_count?: number; member_count?: number; post_count?: number; level?: string | null }[];
+		try {
+			unis = await Promise.all(
+				uniSlugs.map((slug) => apiGet<typeof unis[number]>(ctx, `/universities/${encodeURIComponent(slug)}`))
+			);
+		} catch (e) {
+			return fail(500, { error: 'fetch_failed', message: e instanceof ApiError ? e.message : 'Could not load universities' });
+		}
+		const items = unis.map((u, i) => ({
+			title: u.name,
+			description: u.description ?? '',
+			position: i,
+			item_ref: { type: 'space', id: u.id, slug: u.slug }
+		}));
+		const dimensionLabels = ['Country', 'Followers', 'Members', 'Posts', 'Type'];
+
+		let created: { id: string; slug: string };
+		try {
+			created = await apiPost<{ id: string; slug: string }>(ctx, '/jce/comparisons', {
+				title: 'University comparison',
+				depth: 'quick',
+				body: '',
+				items,
+				dimensions: dimensionLabels
+			});
+		} catch (e) {
+			return fail(500, { error: 'create_failed', message: e instanceof ApiError ? e.message : 'Could not create comparison' });
+		}
+
+		let jce: { items: { id: string; position: number }[]; dimensions: { id: string; label: string }[] };
+		try {
+			jce = await apiGet<typeof jce>(ctx, `/jce/comparisons/${created.id}`);
+		} catch (e) {
+			return fail(500, { error: 'detail_failed', message: e instanceof ApiError ? e.message : 'Could not load created comparison' });
+		}
+
+		const itemByPosition = new Map<number, string>();
+		for (const it of jce.items) itemByPosition.set(it.position, it.id);
+		const dimByLabel = new Map(jce.dimensions.map((d) => [d.label, d.id]));
+
+		function getValue(u: (typeof unis)[number], label: string): string {
+			switch (label) {
+				case 'Country': return u.geo_code ?? '';
+				case 'Followers': return u.follower_count != null ? String(u.follower_count) : '';
+				case 'Members': return u.member_count != null ? String(u.member_count) : '';
+				case 'Posts': return u.post_count != null ? String(u.post_count) : '';
+				case 'Type': return u.level ?? '';
+				default: return '';
+			}
+		}
+
+		for (const label of dimensionLabels) {
+			const dimId = dimByLabel.get(label);
+			if (!dimId) continue;
+			const values = unis
+				.map((u, i) => {
+					const itemId = itemByPosition.get(i);
+					return itemId ? { item_id: itemId, value: getValue(u, label) } : null;
+				})
+				.filter((v): v is { item_id: string; value: string } => v !== null);
+			if (values.length === 0) continue;
+			try {
+				await apiPut<unknown>(ctx, `/jce/comparisons/dimensions/${dimId}/values`, { values });
+			} catch (e) {
+				console.error('failed to seed dimension values:', e instanceof ApiError ? e.message : e);
+			}
+		}
+
+		throw redirect(303, `/compare/${created.slug}`);
+	}
 };

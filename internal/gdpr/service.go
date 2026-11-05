@@ -1253,6 +1253,9 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		if err := q.GdprDeleteCommentVotesByUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting user comment votes: %w", err)
 		}
+		if err := q.GdprDeleteCommentViewsByUser(ctx, userID); err != nil {
+			return fmt.Errorf("deleting user comment views: %w", err)
+		}
 		if err := q.GdprDeleteDocPageVotesByUser(ctx, userID); err != nil {
 			return fmt.Errorf("deleting user doc page votes: %w", err)
 		}
@@ -2399,6 +2402,7 @@ type UserDataExport struct {
 	ForumReplies                []map[string]interface{} `json:"forum_replies"`
 	ForumVotes                  []map[string]interface{} `json:"forum_votes"`
 	CommentVotes                []map[string]interface{} `json:"comment_votes"`
+	CommentViews                []map[string]interface{} `json:"comment_views"`
 	DocPageVotes                []map[string]interface{} `json:"doc_page_votes"`
 	WikiPageFeedback            []map[string]interface{} `json:"wiki_page_feedback"`
 	RoadmapVotes                []map[string]interface{} `json:"roadmap_votes"`
@@ -2766,6 +2770,12 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		export.CommentVotes = rows
 	} else {
 		slog.Warn("failed to collect comment_votes for export", "user_id", userID.String(), "error", err)
+	}
+
+	if rows, err := s.store.gdprExportUserCommentViews(ctx, userID); err == nil {
+		export.CommentViews = rows
+	} else {
+		slog.Warn("failed to collect comment_views for export", "user_id", userID.String(), "error", err)
 	}
 
 	if rows, err := s.store.gdprExportUserDocPageVotes(ctx, userID); err == nil {

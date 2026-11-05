@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -131,7 +132,8 @@ func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
 
 	jobs, total, err := h.svc.ListJobs(r.Context(), f)
 	if err != nil {
-		h.writeError(w, http.StatusInternalServerError, "studio_list_failed", err.Error())
+		slog.Error("studio: studio_list_failed", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "studio_list_failed", "The server encountered an error — please try again")
 		return
 	}
 
@@ -239,7 +241,8 @@ func (h *Handlers) HandleListBatches(w http.ResponseWriter, r *http.Request) {
 
 	batches, total, err := h.svc.ListBatches(r.Context(), limit, offset)
 	if err != nil {
-		h.writeError(w, http.StatusInternalServerError, "batch_list_failed", err.Error())
+		slog.Error("studio: batch_list_failed", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "batch_list_failed", "The server encountered an error — please try again")
 		return
 	}
 
@@ -326,7 +329,8 @@ func (h *Handlers) HandleContentTypes(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.svc.GetStats(r.Context())
 	if err != nil {
-		h.writeError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		slog.Error("studio: stats_failed", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "stats_failed", "The server encountered an error — please try again")
 		return
 	}
 

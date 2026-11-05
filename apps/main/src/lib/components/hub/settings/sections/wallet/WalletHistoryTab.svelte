@@ -38,6 +38,64 @@
 		});
 	}
 
+	// Activity events stream — rows for actions that settled without
+	// points (capped, floored, no_rule, …) so "did X, earned nothing" is
+	// visible instead of silently absent from the ledger feed.
+	interface RawActivityEvent {
+		id: string;
+		activity_key?: string;
+		reference?: unknown;
+		outcome?: string | null;
+		processed?: boolean | null;
+		created_at?: string;
+	}
+
+	const OUTCOME_LABELS: Record<string, { key: string; default: string }> = {
+		capped: { key: 'wallet.outcome.capped', default: 'Daily cap reached' },
+		killswitch: { key: 'wallet.outcome.killswitch', default: 'Earning paused' },
+		disabled: { key: 'wallet.outcome.disabled', default: 'Rule disabled' },
+		no_rule: { key: 'wallet.outcome.no_rule', default: 'No points for this activity' },
+		one_time: { key: 'wallet.outcome.one_time', default: 'Already claimed' },
+		floored: { key: 'wallet.outcome.floored', default: 'Balance at zero' },
+		duplicate: { key: 'wallet.outcome.duplicate', default: 'Already recorded' },
+		reverted: { key: 'wallet.outcome.reverted', default: 'Points reverted' },
+		spent: { key: 'wallet.outcome.spent', default: 'Nothing to revert' }
+	};
+
+	function mapActivity(events: RawActivityEvent[] | undefined): LedgerEntry[] {
+		return (events ?? [])
+			.filter((e) => e.processed && e.outcome && e.outcome !== 'earned')
+			.map((e) => ({
+				id: `act-${e.id}`,
+				type: 'points',
+				operation: 'activity',
+				amount: 0,
+				description: `${e.activity_key ?? ''} — ${t(OUTCOME_LABELS[e.outcome!]?.key ?? 'wallet.outcome.other', OUTCOME_LABELS[e.outcome!]?.default ?? e.outcome!)}`,
+				created_at: e.created_at
+			}));
+	}
+
+	let activity = $state<LedgerEntry[]>([]);
+	let activityOffset = $state(0);
+	let activityMore = $state(false);
+	let activityTried = $state(false);
+
+	// Fetch the first activity page lazily on mount — the SSR loader only
+	// covers the two ledger streams.
+	$effect(() => {
+		if (activityTried) return;
+		activityTried = true;
+		api
+			.get<RawActivityEvent[]>(`/me/wallet/activity?page_size=${LEDGER_PAGE}&page_offset=0`)
+			.then((res) => {
+				const batch = res.data ?? [];
+				activity = mapActivity(batch);
+				activityOffset = batch.length;
+				activityMore = batch.length === LEDGER_PAGE;
+			})
+			.catch(() => {});
+	});
+
 	// Localized headline for known ledger operations — the backend stores
 	// English `reference`/`reason` strings, so the operation discriminator
 	// (earn/spend/purchase/convert/refund/clawback/admin_adjust/withdraw)
@@ -71,7 +129,7 @@
 	// a page boundary if new rows land between fetches), sort newest-first.
 	const ledger = $derived.by(() => {
 		const seen = new Set<string>();
-		return [...(data.ledger ?? []), ...extra]
+		return [...(data.ledger ?? []), ...extra, ...activity]
 			.filter((e) => {
 				const k = `${e.type}:${e.id}`;
 				if (seen.has(k)) return false;
@@ -81,7 +139,7 @@
 			.sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
 	});
 	const filtered = $derived(filter === 'all' ? ledger : ledger.filter((e) => e.type === filter));
-	const hasMore = $derived(pointsMore || creditsMore);
+	const hasMore = $derived(pointsMore || creditsMore || activityMore);
 
 	async function loadMore() {
 		if (moreLoading || !hasMore) return;
@@ -112,6 +170,18 @@
 							extra = [...extra, ...mapEntries(batch, 'credits')];
 							creditsOffset += batch.length;
 							creditsMore = batch.length === LEDGER_PAGE;
+						})
+				: Promise.resolve(),
+			activityMore
+				? api
+						.get<RawActivityEvent[]>(
+							`/me/wallet/activity?page_size=${LEDGER_PAGE}&page_offset=${activityOffset}`
+						)
+						.then((res) => {
+							const batch = res.data ?? [];
+							activity = [...activity, ...mapActivity(batch)];
+							activityOffset += batch.length;
+							activityMore = batch.length === LEDGER_PAGE;
 						})
 				: Promise.resolve()
 		]);

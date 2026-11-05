@@ -17,12 +17,17 @@ var gateTracker GateHitTracker
 // it must never block or alter the 403).
 func SetGateTracker(fn GateHitTracker) { gateTracker = fn }
 
-// tierRanks orders unified user tiers lowest to highest. Unknown tiers
-// resolve to rank 0 — denied by any positive minimum (fail-closed).
+// tierRanks orders unified user tiers lowest to highest. Staff tiers
+// (migration 001049) rank above business so staff satisfy every subscription
+// gate. Unknown tiers resolve to rank 0 — denied by any positive minimum
+// (fail-closed).
 var tierRanks = map[string]int{
-	"regular":  1,
-	"pro":      2,
-	"business": 3,
+	"regular":     1,
+	"pro":         2,
+	"business":    3,
+	"staff":       4,
+	"admin":       5,
+	"super_admin": 6,
 }
 
 // RequireTier enforces that the API key owner's unified user tier is at

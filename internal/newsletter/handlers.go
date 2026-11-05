@@ -751,7 +751,8 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token != "" {
 		if err := h.Service.UnsubscribeByToken(r.Context(), token); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
+			slog.Error("newsletter: unsubscribe_failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "The server encountered an error — please try again")
 			return
 		}
 
@@ -767,7 +768,8 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Service.Unsubscribe(r.Context(), email); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
+		slog.Error("newsletter: unsubscribe_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "The server encountered an error — please try again")
 		return
 	}
 
@@ -821,7 +823,8 @@ func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Reques
 
 	updated, err := h.Service.UpdatePreferences(r.Context(), subscriber.ID, body.DigestEnabled, body.CampaignEnabled)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
+		slog.Error("newsletter: update_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "The server encountered an error — please try again")
 		return
 	}
 
@@ -838,7 +841,8 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.Service.AdminSubscriberStats(r.Context())
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		slog.Error("newsletter: stats_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "The server encountered an error — please try again")
 		return
 	}
 

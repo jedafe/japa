@@ -248,9 +248,12 @@ var ErrNestedNotAllowed = fmt.Errorf("%w: nested comparison type is not allowed"
 // jce.comparisons.max_per_day.{tier} from the system-settings catalog.
 // A negative value means unlimited.
 var defaultDailyComparisonLimits = map[string]int{
-	"regular":  5,
-	"pro":      25,
-	"business": -1,
+	"regular":     5,
+	"pro":         25,
+	"business":    -1,
+	"staff":       -1,
+	"admin":       -1,
+	"super_admin": -1,
 }
 
 // dailyComparisonCountKey returns the Valkey counter key tracking how many JCE

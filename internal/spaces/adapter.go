@@ -68,6 +68,41 @@ func (a *PostCheckerAdapter) CanCommentInSpace(ctx context.Context, spaceID, use
 	return a.Service.CanCommentInSpace(ctx, space, userID, a.PermChecker, a.VerifiedChecker), nil
 }
 
+// ExplainSpaceDenial returns a user-facing message describing why the write
+// action ("post", "comment", or "reply") is denied for the user in the space,
+// or "" when the action is allowed. Handlers use it to answer 403s with the
+// concrete missing requirement (join the space, verify email, moderators
+// only) instead of a bare "no permission" string.
+func (a *PostCheckerAdapter) ExplainSpaceDenial(ctx context.Context, spaceID, userID pgtype.UUID, action string) (string, error) {
+	space, err := a.Service.GetSpace(ctx, spaceID)
+	if err != nil {
+		return "", fmt.Errorf("loading space for denial explanation: %w", err)
+	}
+
+	// §80 wiki-only space types accept no community writes (see CanPostInSpace).
+	if a.Service.IsWikiOnlyType(ctx, space.SpaceTypeID) {
+		return "", ErrWikiOnlySpace
+	}
+
+	// Super admins bypass all write-perm checks — no denial to explain.
+	isSuperAdmin, err := a.Service.IsSuperAdmin(ctx, userID)
+	if err == nil && isSuperAdmin {
+		return "", nil
+	}
+
+	perm := space.CommentingPerm
+	switch action {
+	case "post":
+		perm = space.PostingPerm
+	case "reply":
+		perm = space.ReplyingPerm
+	}
+
+	denial := a.Service.SpaceWriteDenial(ctx, perm, space, userID, a.PermChecker, a.VerifiedChecker)
+
+	return DenialMessage(denial, action), nil
+}
+
 // CanReplyInSpace loads the space and checks the replying_perm axis
 // (Section 05 lines 145-154, BUG-002). Super admins bypass the check.
 func (a *PostCheckerAdapter) CanReplyInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {

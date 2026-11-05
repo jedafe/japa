@@ -139,12 +139,12 @@ func (h *Handlers) checkAudienceGate(w http.ResponseWriter, r *http.Request, aud
 
 	if h.rbac == nil {
 		// Fallback: deny if no RBAC resolver configured (defensive).
-		errpkg.WriteError(w, http.StatusForbidden, "audience_forbidden", "Access denied")
+		errpkg.WriteError(w, http.StatusForbidden, "audience_forbidden", "Documentation access can't be verified — contact an administrator")
 		return false
 	}
 
 	if !h.rbac.HasPermission(r.Context(), user.UserID, requiredPerm) {
-		errpkg.WriteError(w, http.StatusForbidden, "audience_forbidden", "You do not have access to this documentation section")
+		errpkg.WriteError(w, http.StatusForbidden, "audience_forbidden", rbac.DenialMessage(requiredPerm))
 		return false
 	}
 

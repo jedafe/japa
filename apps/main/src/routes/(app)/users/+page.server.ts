@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 import type { PublicUser } from '$lib/types';
 
 /**
@@ -72,5 +72,20 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(303, `/users?${params.toString()}`);
 	}
 
-	return { users, q, profileType, sort, page, pageSize, totalPages, total, forbidden, loadError };
+	// Staff gate for the inline guide editor in the "How it works"
+	// slide-over — super_admin group bypasses, else admin.settings.* node.
+	const isSuperAdmin = (event.locals.user?.groups ?? []).some(
+		(g) => g === 'Super Admin' || g === 'super_admin'
+	);
+	let canManage = isSuperAdmin;
+	if (event.locals.user && !canManage) {
+		try {
+			const perms = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+			canManage = (perms?.permissions ?? []).some((p) => p.startsWith('admin.settings'));
+		} catch {
+			canManage = false;
+		}
+	}
+
+	return { users, q, profileType, sort, page, pageSize, totalPages, total, forbidden, loadError, canManage };
 };

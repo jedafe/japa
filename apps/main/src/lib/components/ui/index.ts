@@ -1,5 +1,7 @@
 export { default as EmptyState } from './EmptyState.svelte';
 export { default as Modal } from './Modal.svelte';
+export { default as GuideSlideOver } from './GuideSlideOver.svelte';
+export type { GuideCta, GuideContent } from './GuideSlideOver.svelte';
 export { Menu, MenuItem, MenuSeparator } from '@japaconnect/ui';
 export { default as LoadingSkeleton } from './LoadingSkeleton.svelte';
 export { default as AdSlot } from './AdSlot.svelte';
@@ -14,6 +16,8 @@ export { default as AutocompleteSelect } from './AutocompleteSelect.svelte';
 export { default as SearchInput } from './SearchInput.svelte';
 export type { SearchSuggestion } from './SearchInput.svelte';
 export { default as ListPageBar } from './ListPageBar.svelte';
+export { default as EntityHero } from './EntityHero.svelte';
+export type { HeroStat, HeroCrumb, HeroActionClasses } from './EntityHero.svelte';
 export { default as PageAction } from './PageAction.svelte';
 export { default as UrlTabs } from './UrlTabs.svelte';
 export type { UrlTab } from './UrlTabs.svelte';

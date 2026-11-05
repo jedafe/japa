@@ -21,6 +21,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // ErrGuideNotFound indicates the target guide is not a published scholarship
@@ -925,7 +926,7 @@ func (s *Service) SaveScholarship(ctx context.Context, userID, guideID pgtype.UU
 // string (nil means "leave unchanged", matching the SQL COALESCE update).
 func (s *Service) UpdateSavedScholarship(ctx context.Context, userID, guideID pgtype.UUID, status string, notes *string, remindBeforeDays *int32) (gen.SavedScholarship, error) {
 	if status != "" && !IsValidStatus(status) {
-		return gen.SavedScholarship{}, fmt.Errorf("scholarships: invalid status: %s", status)
+		return gen.SavedScholarship{}, fmt.Errorf("%w: invalid status: %s", errpkg.ErrInvalid, status)
 	}
 
 	var statusArg *string
@@ -992,11 +993,29 @@ func (s *Service) DeleteSavedScholarship(ctx context.Context, userID, guideID pg
 	})
 }
 
-// ListLevels returns the distinct degree_level values across published
-// scholarship guides — the option list consumed by the finder's level
-// autocomplete (Rule 16). Each entry is {value, label} where value is the
-// stored level code and label is the same value for display.
+// ListLevels returns the canonical "Level of Study" option set defined in
+// custom_fields for the guide_scholarship_fields group — the same vocabulary
+// the guide create/edit form offers (Rule 16: one canonical option list, not
+// distinct raw values). Options are stored as plain strings; value = label.
+// Falls back to distinct degree_level values only if the field def is missing.
 func (s *Service) ListLevels(ctx context.Context) ([]Option, error) {
+	var raw []byte
+	err := s.store.pool.Reader.QueryRow(ctx, `
+		SELECT cf.options
+		FROM custom_fields cf
+		JOIN custom_field_groups g ON g.id = cf.group_id
+		WHERE g.slug = 'guide_scholarship_fields' AND cf.key = 'level_of_study'`).Scan(&raw)
+	if err == nil {
+		var opts []string
+		if json.Unmarshal(raw, &opts) == nil && len(opts) > 0 {
+			out := make([]Option, 0, len(opts))
+			for _, o := range opts {
+				out = append(out, Option{Value: o, Label: o})
+			}
+			return out, nil
+		}
+	}
+
 	const query = `
 		SELECT DISTINCT s.degree_level
 		FROM scholarships s

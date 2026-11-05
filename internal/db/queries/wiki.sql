@@ -799,6 +799,25 @@ WHERE geo_space_id = @space_id AND deleted_at IS NULL AND status = 'active'
   AND (@org_type::text = '' OR org_type = @org_type)
 ORDER BY name;
 
+-- name: GetBankForWiki :one
+SELECT id, slug, name, geo_space_id
+FROM banks
+WHERE slug = @slug AND is_active = true
+LIMIT 1;
+
+-- name: ListBanksForWiki :many
+-- Banks (informational entities — migration 001045) hosted by a geo space.
+SELECT id, slug, name
+FROM banks
+WHERE geo_space_id = @space_id AND is_active = true
+ORDER BY name;
+
+-- name: GetBankBySlug :one
+SELECT id, slug
+FROM banks
+WHERE slug = @slug AND is_active = true
+LIMIT 1;
+
 -- name: GetEmbassyForWiki :one
 SELECT id, slug, name, host_space_id
 FROM embassies

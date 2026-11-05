@@ -84,6 +84,7 @@ type Config struct {
 	StripeWebhookSecret      string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret (whsec_...)
 	NOWPaymentsIPNSecret     string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC secret
 	NOWPaymentsAPIKey        string // JC_NOWPAYMENTS_API_KEY — NOWPayments API key for invoice and payout calls
+	CircleAPIKey             string // JC_CIRCLE_API_KEY — Circle business API key for USDC payouts (required idempotencyKey — SEC-W-009)
 	PaystackSecretKey        string // JC_PAYSTACK_SECRET_KEY — Paystack webhook HMAC secret
 	XiaomiAPIKey             string // JC_XIAOMI_API_KEY — Xiaomi MiMo API key (tp- for Token Plan, sk- for Pay-as-you-go)
 	CORSOrigins              string // JC_CORS_ORIGINS — comma-separated allowed CORS origins for production
@@ -183,6 +184,7 @@ func Load() (Config, error) {
 		StripeWebhookSecret:      os.Getenv("JC_STRIPE_WEBHOOK_SECRET"),
 		NOWPaymentsIPNSecret:     os.Getenv("JC_NOWPAYMENTS_IPN_SECRET"),
 		NOWPaymentsAPIKey:        os.Getenv("JC_NOWPAYMENTS_API_KEY"),
+		CircleAPIKey:             os.Getenv("JC_CIRCLE_API_KEY"),
 		PaystackSecretKey:        os.Getenv("JC_PAYSTACK_SECRET_KEY"),
 		XiaomiAPIKey:             os.Getenv("JC_XIAOMI_API_KEY"),
 		CORSOrigins:              os.Getenv("JC_CORS_ORIGINS"),

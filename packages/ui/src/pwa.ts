@@ -496,6 +496,17 @@ export function initPwaServiceWorker(sw: ServiceWorkerGlobalScope, init: Service
 		// Same-origin /api/* routes are auth/session endpoints in the main app —
 		// never serve them from cache.
 		if (url.pathname.startsWith('/api/')) return bail();
+		// Vite dev internals (module graph, optimizer deps, generated client
+		// nodes) must always reach the dev server — a cached or error-fallback
+		// module strands the open page on a stale module graph after any
+		// restart. No-op in production: these paths only exist under vite dev.
+		if (
+			url.pathname.startsWith('/node_modules/') ||
+			url.pathname.startsWith('/.svelte-kit/') ||
+			url.pathname.startsWith('/src/') ||
+			url.pathname.startsWith('/@')
+		)
+			return bail();
 
 		if (url.pathname.startsWith('/_app/immutable/')) {
 			event.respondWith(cacheFirst(event, IMMUTABLE));

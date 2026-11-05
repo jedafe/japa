@@ -31,7 +31,7 @@ export const EXPLORE_MAP_DEFAULTS: ExploreMapProps = {
 	],
 	stats: [
 		{ icon: 'Globe', label: 'Countries', source: 'countries' },
-		{ icon: 'Building2', label: 'Cities', source: 'col_cities', suffix: '+' },
+		{ icon: 'Building2', label: 'Cities', source: 'cities', suffix: '+' },
 		{ icon: 'BookOpen', label: 'Guides', source: 'blog', suffix: '+' },
 		{ icon: 'Handshake', label: 'Services', source: 'services', suffix: '+' },
 	],

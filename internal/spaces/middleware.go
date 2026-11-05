@@ -48,7 +48,7 @@ func SpaceResolver(service *Service) func(http.Handler) http.Handler {
 					return
 				}
 
-				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Something went wrong")
+				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "The server encountered an error — please try again")
 
 				return
 			}

@@ -7,6 +7,7 @@
 	import type { Comment } from '$lib/types';
 	import CommentItem from './CommentItem.svelte';
 	import LazyCommentEditor from './LazyCommentEditor.svelte';
+	import DiscussionPanel from './DiscussionPanel.svelte';
 
 	/**
 	 * Unified comment engine for content singles (blog + CPTs) — Section 49.
@@ -37,8 +38,13 @@
 		loadError?: boolean;
 		/** Erased-user IDs for GDPR/ADR-029 mention redaction (Section 15). */
 		deletedUserIds?: Set<string>;
+		/** Section 49 thread links — render the "Start A Conversation" /
+		 * linked-discussions panel. Enable on non-discussion content singles
+		 * (blog, story, comparisons); discussion-type pages are the threads
+		 * themselves and leave this off. */
+		showDiscussions?: boolean;
 	}
-	let { comments: initial, totalCount, commentsTotal, contentId, contentType, authed, currentUserId, canModerate, loadError = false, deletedUserIds }: Props = $props();
+	let { comments: initial, totalCount, commentsTotal, contentId, contentType, authed, currentUserId, canModerate, loadError = false, deletedUserIds, showDiscussions = false }: Props = $props();
 
 	let comments = $state<Comment[]>(untrack(() => initial));
 
@@ -113,11 +119,14 @@
 		if (typeof meta?.total === 'number') commentsTotal = meta.total;
 	}
 
-	// Top-level composer state — body is base64 TipTap JSON.
+	// Top-level composer state — body is base64 TipTap JSON. resetNonce is
+	// bumped after a successful submit so the editor clears its own internal
+	// document (draftBody alone can't reach into the TipTap instance).
 	let draftBody = $state<string>('');
 	let draftAnonymous = $state(false);
 	let submitting = $state(false);
 	let composeError = $state<string | null>(null);
+	let resetNonce = $state(0);
 
 	async function submitComment() {
 		if (!draftBody || submitting || !authed) return;
@@ -136,6 +145,7 @@
 		comments = sort === 'oldest' ? [...comments, res.data] : [res.data, ...comments];
 		draftBody = '';
 		draftAnonymous = false;
+		resetNonce++;
 		if (totalCount != null) {
 			localDelta++;
 		}
@@ -181,9 +191,13 @@
 		<p class="mb-4 text-xs text-[var(--color-danger)]">{sortError}</p>
 	{/if}
 
+	{#if showDiscussions}
+		<DiscussionPanel {contentId} {authed} />
+	{/if}
+
 	{#if authed}
 		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<LazyCommentEditor placeholder={t('comments.placeholder')} oninput={(b) => (draftBody = b)} />
+			<LazyCommentEditor placeholder={t('comments.placeholder')} oninput={(b) => (draftBody = b)} {resetNonce} />
 			<div class="mt-3 flex items-center justify-between">
 				<label class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
 					<input type="checkbox" bind:checked={draftAnonymous} class="h-3.5 w-3.5 accent-[var(--color-primary)]" />

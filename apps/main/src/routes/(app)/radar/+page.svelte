@@ -3,8 +3,12 @@
 	import { page } from '$app/state';
 	import { goto, invalidate, replaceState } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Radar, Pin, Loader2, Lock, Globe } from 'lucide-svelte';
-	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { Radar, Pin, Loader2, Lock, Globe, Search, ChevronRight } from 'lucide-svelte';
+	import { EmptyState, EntityHero, UrlTabs, SelectField, type UrlTab } from '$lib/components/ui';
+	import { GuideSlideOver, Modal, type GuideContent } from '$lib/components/ui';
+	import { Filter } from 'lucide-svelte';
+	import HeroArtRadar from '$lib/components/heroes/HeroArtRadar.svelte';
+	import { formatMetric } from '$lib/components/hub/charts/format';
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import RadarItemRow from '$lib/components/RadarItemRow.svelte';
@@ -67,6 +71,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	// SSR feed stays the source of truth.
 	const selectedItemType = $derived(data.itemType ?? '');
 	const radarTypeOptions = ['', 'scholarship', 'job', 'visa', 'housing', 'remittance', 'cost_of_living', 'course_offering'] as const;
+	// Same option set as a SelectField list — used by the filters modal.
+	const typeSelectOptions = $derived(radarTypeOptions.map((o) => ({ value: o, label: o === '' ? t('radar.type.all', 'All') : t(`radar.type.${o}`, o.replaceAll('_', ' ')) })));
 	function typeUrl(t: string): string {
 		const p = new URLSearchParams();
 		if (selectedSpaceId) p.set('space_id', selectedSpaceId);
@@ -358,6 +364,30 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			url: page.url.href
 		})
 	);
+
+	// "How it works" slide-over — markdown panel + CTA repeater persisted to
+	// public system settings (radar.guide) via PUT /admin/settings/general.
+	let guideOpen = $state(false);
+	let guideOverride = $state<GuideContent | null>(null);
+	const siteSettings = $derived((page.data.siteSettings ?? {}) as Record<string, unknown>);
+	const storedGuide = $derived.by((): Partial<GuideContent> => {
+		const raw = siteSettings['radar.guide'];
+		if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Partial<GuideContent>;
+		return {};
+	});
+	const effectiveGuide = $derived<GuideContent>({
+		title: guideOverride?.title ?? storedGuide.title ?? t('common.how_it_works', 'How it works'),
+		body: guideOverride?.body ?? storedGuide.body ?? t('radar.guide_body', ''),
+		ctas: guideOverride?.ctas ?? storedGuide.ctas ?? [{ title: t('guide_panel.read_full_guide', 'Read the full guide'), url: '/guides' }]
+	});
+
+	async function saveGuide(v: GuideContent): Promise<string | null> {
+		const res = await api.put('/admin/settings/general', { radar_guide: v });
+		if (res.error) return res.error.message || t('common.error', 'Something went wrong');
+		guideOverride = v;
+		return null;
+	}
+	let filtersModalOpen = $state(false);
 </script>
 
 <svelte:head>
@@ -371,14 +401,80 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
-	<div class="mx-auto w-full max-w-3xl p-4">
-	<!-- Header -->
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Radar size={20} /> {t('radar.heading', 'Japa Opportunities')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{description}</p>
-	</div>
+	<!-- Header — EntityHero directory panel -->
+	<EntityHero
+		class="mt-4"
+		icon={Radar}
+		accent="var(--color-primary)"
+		heading={t('radar.heading', 'Japa Opportunities')}
+		description={t('radar.hero_desc', 'Track scholarships, jobs, and openings across the countries you follow — all in one feed.')}
+		crumbs={[
+			{ label: t('common.home', 'Home'), href: '/' },
+			{ label: t('radar.heading', 'Radar') }
+		]}
+		stats={[
+			{
+				icon: Radar,
+				value: formatMetric(
+					Object.values(hasGeoFilter ? (data.geoCountsByType ?? {}) : (data.followedCountsByType ?? {})).reduce((a, b) => a + b, 0)
+				),
+				label: t('radar.stats_opportunities', 'Opportunities')
+			},
+			{ icon: Globe, value: formatMetric(countries.length), label: t('radar.stats_countries', 'Countries') }
+		]}
+	>
+		{#snippet art()}
+			<HeroArtRadar accent="var(--color-primary)" />
+		{/snippet}
+		{#snippet actions(c)}
+			<div class="grid w-full grid-cols-2 gap-3 sm:flex sm:items-center">
+			<a href="#radar-feed" class="{c.primary} flex-1 justify-center whitespace-nowrap">
+				<Search size={15} /> {t('radar.view_feed', 'View opportunities')}
+			</a>
+			<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} flex-1 justify-center whitespace-nowrap">
+				{t('common.how_it_works', 'How it works')}
+				<ChevronRight size={14} class="rtl:-scale-x-100" />
+				</button>
+			</div>
+		{/snippet}
+	</EntityHero>
+
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="sm">
+		{#snippet children()}
+			<SelectField
+				value={selectedItemType}
+				options={typeSelectOptions}
+				placeholder={t('radar.filter_type', 'Filter by type')}
+				onValueChange={(v) => { filtersModalOpen = false; goto(typeUrl(v), { keepFocus: true }); }}
+				class="mb-3 w-full"
+			/>
+			<Autocomplete
+				placeholder={t('radar.browse_countries', 'Browse countries')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchCountries}
+				initialFetcher={fetchCountriesInitial}
+				selectedId={selectedSpaceId || null}
+				selectedLabel={selectedCountryName || null}
+				onSelect={(item) => {
+					filtersModalOpen = false;
+					if (item.id) goto(radarUrl(item.id), { keepFocus: true });
+					else goto(radarUrl(), { keepFocus: true });
+				}}
+				onClear={() => { filtersModalOpen = false; goto(radarUrl(), { keepFocus: true }); }}
+			/>
+			{#if hasGeoFilter}
+				<button
+					type="button"
+					onclick={() => goto(radarUrl(), { keepFocus: true })}
+					class="mt-3 text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
+				>
+					{t('common.clear', 'Clear')}
+				</button>
+			{/if}
+		{/snippet}
+	</Modal>
+
+	<div id="radar-feed" class="mx-auto w-full max-w-3xl p-4">
 
 	{#if !intelUnavailable}
 		{#if authed}
@@ -391,32 +487,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					<UrlTabs tabs={radarTabs} value={activeTab} onValueChange={handleTabChange} urlParam="tab" class="!border-b-0 !bg-transparent" />
 				</div>
 				<div class="flex shrink-0 items-center gap-2 px-3" style="min-height: var(--nav-height)">
-					<div class="w-40 sm:w-52">
-						<Autocomplete
-							placeholder={t('radar.browse_countries', 'Browse countries')}
-							emptyMessage={t('common.no_results', 'No results found')}
-							fetcher={fetchCountries}
-							initialFetcher={fetchCountriesInitial}
-							selectedId={selectedSpaceId || null}
-							selectedLabel={selectedCountryName || null}
-							onSelect={(item) => {
-								if (item.id) goto(radarUrl(item.id), { keepFocus: true });
-								else goto(radarUrl(), { keepFocus: true });
-							}}
-							onClear={() => goto(radarUrl(), { keepFocus: true })}
-						/>
-					</div>
-					{#if hasGeoFilter}
-						<button
-							type="button"
-							onclick={() => goto(radarUrl(), { keepFocus: true })}
-							class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-						>
-							{t('common.clear', 'Clear')}
-						</button>
-					{/if}
-				</div>
+				<button type="button" onclick={() => (filtersModalOpen = true)} class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]">
+				{t('common.filters', 'Filters')}
+				{#if hasGeoFilter}<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>{/if}
+				<Filter size={16} />
+			</button>
 			</div>
+		</div>
 		{:else}
 			<!-- Guest / geo-filtered — country selector row (first input,
 			     §31 spaces / §32 feed geo-aware pattern). -->
@@ -448,11 +525,6 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 				<!-- Domain filter — ?item_type= per catalog. Guest/geo view
 				     renders it here; the authed feed renders it in the panel. -->
-				{#if hasGeoFilter}
-					<div class="mt-2.5">
-						{@render typeChips()}
-					</div>
-				{/if}
 			</div>
 		{/if}
 	{/if}
@@ -470,13 +542,6 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		     (via ?space_id= or ?dest=). This is public so guests can browse a
 		     specific country's opportunities. BUG-012 fix. -->
 		<div class="border-b border-[var(--color-border)] px-4 py-4">
-			{#if authed}
-				<!-- Domain filter chips — same position as the Opportunities tab
-				     so the panel doesn't jump between views. -->
-				<div class="mb-3">
-					{@render typeChips()}
-				</div>
-			{/if}
 			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 				<Globe size={16} class="text-[var(--color-primary)]" />
 				{#if selectedSpace?.slug}
@@ -579,7 +644,6 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				<!-- Domain filter chips — ?item_type=, scoped to the
 				     opportunities feed. -->
 				<div class="mb-3">
-					{@render typeChips()}
 				</div>
 				{#if allFollowedItems.length === 0}
 					<EmptyState
@@ -661,23 +725,6 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	</div>
 {/snippet}
 
-{#snippet typeChips()}
-	<div class="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('radar.filter_type', 'Filter by type')}>
-		{#each radarTypeOptions as opt (opt)}
-			<button
-				type="button"
-				onclick={() => goto(typeUrl(opt), { keepFocus: true })}
-				aria-pressed={selectedItemType === opt}
-				class="rounded-full px-2.5 py-1 text-xs font-medium transition-colors {selectedItemType === opt
-					? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-					: 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
-			>
-				{opt === '' ? t('radar.type.all', 'All') : t(`radar.type.${opt}`, opt.replaceAll('_', ' '))}
-			</button>
-		{/each}
-	</div>
-{/snippet}
-
 {#snippet countryGallery(items: GeoCountry[])}
 	<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 		{#each items as space (space.id)}
@@ -739,3 +786,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		</button>
 	</div>
 {/snippet}
+
+<!-- "How it works" slide-over — GuideSlideOver; admins edit inline (radar.guide). -->
+<GuideSlideOver
+	bind:open={guideOpen}
+	title={effectiveGuide.title}
+	body={effectiveGuide.body}
+	ctas={effectiveGuide.ctas}
+	canManage={data.canManage}
+	onSave={saveGuide}
+/>

@@ -273,6 +273,19 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "site_description", Label: "Site Description", Type: "textarea"},
 			{Key: "maintenance_mode", Label: "Maintenance Mode", Type: "toggle"},
 			{Key: "registration_open", Label: "Open Registration", Type: "toggle"},
+			// "How it works" slide-over content per directory page — edited
+			// inline on the public page by admins; stored under <entity>.guide
+			// so the public settings endpoint exposes them (is_public via
+			// control catalog). JSON blob: {"title","body" (md),"ctas":[{title,url}]}.
+			{Key: "sources_guide", Label: "Sources Guide Panel", Type: "json", Hidden: true, StorageKey: "sources.guide"},
+			{Key: "organizations_guide", Label: "Organizations Guide Panel", Type: "json", Hidden: true, StorageKey: "organizations.guide"},
+			{Key: "users_guide", Label: "Users Guide Panel", Type: "json", Hidden: true, StorageKey: "users.guide"},
+			{Key: "jobs_guide", Label: "Jobs Guide Panel", Type: "json", Hidden: true, StorageKey: "jobs.guide"},
+			{Key: "universities_guide", Label: "Universities Guide Panel", Type: "json", Hidden: true, StorageKey: "universities.guide"},
+			{Key: "radar_guide", Label: "Radar Guide Panel", Type: "json", Hidden: true, StorageKey: "radar.guide"},
+			{Key: "spaces_guide", Label: "Spaces Guide Panel", Type: "json", Hidden: true, StorageKey: "spaces.guide"},
+			{Key: "tools_guide", Label: "Tools Guide Panel", Type: "json", Hidden: true, StorageKey: "tools.guide"},
+			{Key: "scholarships_guide", Label: "Scholarships Guide Panel", Type: "json", Hidden: true, StorageKey: "scholarships.guide"},
 		},
 	},
 	// NOTE: The "features" category was removed from the admin Settings page.

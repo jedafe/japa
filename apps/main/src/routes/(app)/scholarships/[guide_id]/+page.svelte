@@ -236,7 +236,7 @@
 <svelte:head>
 	<title>{title}</title>
 	<meta name="description" content={description} />
-	<link rel="canonical" href={page.url.href} />
+	<link rel="canonical" href="{page.url.origin}/guide/{scholarship.slug}" />
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:url" content={page.url.href} />

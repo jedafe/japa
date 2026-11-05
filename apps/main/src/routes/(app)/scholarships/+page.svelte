@@ -4,10 +4,13 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
-	import { GraduationCap, Lock, Bookmark, BookmarkCheck, ClipboardList, GitCompare, Loader2, ExternalLink, Clock, ShieldCheck, ShieldAlert } from 'lucide-svelte';
-	import { EmptyState, PaginationControls, SearchInput, FilterToggle, AutocompleteSelect, type SearchSuggestion } from '$lib/components/ui';
-	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import { GraduationCap, Lock, Bookmark, BookmarkCheck, ClipboardList, GitCompare, Loader2, ExternalLink, Clock, ShieldCheck, ShieldAlert, Search, Globe, ChevronRight } from 'lucide-svelte';
+	import { Filter } from 'lucide-svelte';
+	import { EmptyState, EntityHero, ListPageBar, PaginationControls, SearchInput, AutocompleteSelect, SelectField, UrlTabs, type SearchSuggestion } from '$lib/components/ui';
+	import { GuideSlideOver, Modal, type GuideContent } from '$lib/components/ui';
+	import HeroArtScholarships from '$lib/components/heroes/HeroArtScholarships.svelte';
+	import { formatMetric } from '$lib/components/hub/charts/format';
+		import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
@@ -173,25 +176,27 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		goto('/scholarships');
 	}
 
-	const hasActiveFilters = $derived(
+		// Level options = distinct "Level of Study" values — API list first
+	// (/scholarships/levels), fallback to the loaded page's values (Rule 16).
+	const levelSelectOptions = $derived.by(() => {
+		const src = (data.levels?.length ?? 0) > 0
+			? data.levels!
+			: [...new Set(scholarships.map((s) => s.level_of_study).filter(Boolean))];
+		// Case-insensitive dedupe — the API returns "Masters"/"masters" variants.
+		const seen = new Map<string, string>();
+		for (const l of src) if (!seen.has(l.toLowerCase())) seen.set(l.toLowerCase(), l);
+		return [
+			{ value: '', label: t('scholarships.level_all', 'All levels') },
+			...[...seen.values()].map((l) => ({ value: l, label: l }))
+		];
+	});
+
+const hasActiveFilters = $derived(
 		!!q || !!country || !!level || !!minAmount || !!maxAmount || !!renewable || !!deadlineFrom || !!deadlineTo || !!sort || includeExpired
 	);
 
-	// Level filter options come from GET /scholarships/levels (all published
-	// levels), falling back to levels present in the loaded page when the
-	// endpoint is unavailable. Free-text input is still allowed.
-	const levelFetcher = $derived(
-		staticAutocompleteFetcher(
-			autocompleteItems(
-				(data.levels?.length ?? 0) > 0 ? data.levels : scholarships.map((s) => s.level_of_study)
-			)
-		)
-	);
-
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasActiveFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
+	let searchModalOpen = $state(false);
 	// 1-based page (data.currentPage is 1-based); showing range is
 	// [(page-1)*size + 1, min(page*size, total)].
 	const showingStart = $derived((data.currentPage - 1) * data.pageSize + 1);
@@ -303,6 +308,29 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				})
 			: ''
 	);
+
+	// "How it works" slide-over — markdown panel + CTA repeater persisted to
+	// public system settings (scholarships.guide) via PUT /admin/settings/general.
+	let guideOpen = $state(false);
+	let guideOverride = $state<GuideContent | null>(null);
+	const siteSettings = $derived((page.data.siteSettings ?? {}) as Record<string, unknown>);
+	const storedGuide = $derived.by((): Partial<GuideContent> => {
+		const raw = siteSettings['scholarships.guide'];
+		if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Partial<GuideContent>;
+		return {};
+	});
+	const effectiveGuide = $derived<GuideContent>({
+		title: guideOverride?.title ?? storedGuide.title ?? t('common.how_it_works', 'How it works'),
+		body: guideOverride?.body ?? storedGuide.body ?? t('scholarships.guide_body', ''),
+		ctas: guideOverride?.ctas ?? storedGuide.ctas ?? [{ title: t('guide_panel.read_full_guide', 'Read the full guide'), url: '/guides' }]
+	});
+
+	async function saveGuide(v: GuideContent): Promise<string | null> {
+		const res = await api.put('/admin/settings/general', { scholarships_guide: v });
+		if (res.error) return res.error.message || t('common.error', 'Something went wrong');
+		guideOverride = v;
+		return null;
+	}
 </script>
 
 <svelte:head>
@@ -317,23 +345,46 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	{/if}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-4xl">
-	<!-- Header — same structure as the radar pages, with the filter
-	     toggle pinned to the top-right. -->
-	<div class="mx-4 flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-4">
-		<div class="min-w-0">
-			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-				<GraduationCap size={20} /> {t('tools.scholarships', 'Scholarship Finder')}
-			</h1>
-			<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{description}</p>
-		</div>
-		{#if !disabled}
-			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="scholarships-filter-panel" />
-		{/if}
-	</div>
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
+	<!-- Header — EntityHero directory panel -->
+	<EntityHero
+		class="mt-4"
+		icon={GraduationCap}
+		accent="var(--color-primary)"
+		heading={t('tools.scholarships', 'Scholarship Finder')}
+		description={t('scholarships.hero_desc', 'Find and track scholarships, fellowships, and grants for your study-abroad journey.')}
+		crumbs={[
+			{ label: t('common.home', 'Home'), href: '/' },
+			{ label: t('tools.scholarships', 'Scholarships') }
+		]}
+		stats={[
+			{ icon: GraduationCap, value: formatMetric(data.total), label: t('scholarships.stats_open', 'Scholarships') },
+			{ icon: Globe, value: formatMetric(data.countries.length), label: t('scholarships.stats_countries', 'Countries') }
+		]}
+	>
+		{#snippet art()}
+			<HeroArtScholarships accent="var(--color-primary)" />
+		{/snippet}
+		{#snippet actions(c)}
+			<div class="grid w-full grid-cols-2 gap-3 sm:flex sm:items-center">
+			<a href="#scholarship-results" class="{c.primary} flex-1 justify-center whitespace-nowrap">
+				<Search size={15} /> {t('scholarships.find', 'Find scholarships')}
+			</a>
+			{#if authed}
+				<a href="/scholarships/saved" class="{c.secondary} flex-1 justify-center whitespace-nowrap">
+					<Bookmark size={15} /> {t('scholarships.saved_cta', 'Saved scholarships')}
+				</a>
+			{/if}
+			<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} flex-1 justify-center whitespace-nowrap">
+				{t('common.how_it_works', 'How it works')}
+				<ChevronRight size={14} class="rtl:-scale-x-100" />
+				</button>
+			</div>
+		{/snippet}
+	</EntityHero>
 
 	{#if disabled}
-		<div class="p-4">
+		<div class="p-4" style="margin-inline: var(--page-gutter)">
 			<EmptyState
 				icon={Lock}
 				title={t('tools.disabled_title', 'This tool is currently unavailable')}
@@ -341,20 +392,38 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			/>
 		</div>
 	{:else}
-		<!-- Filter row — radar-style compact bar: search + country + level,
-		     with the advanced filters tucked behind the toggle. -->
-		<div class="border-b border-[var(--color-border)] px-4 py-3">
-			<div class="flex flex-wrap items-center gap-2">
-				<div class="min-w-44 flex-1">
-					<SearchInput
-						bind:value={q}
-						placeholder={t('scholarships.search', 'Search')}
-						ariaLabel={t('tools.scholarships', 'Scholarship Finder')}
-						fetcher={scholarshipSearchFetcher}
-						onInput={queueApply}
-						inputClass="min-h-[40px] py-2 focus:ring-2 focus:ring-[var(--color-primary)]"
-					/>
-				</div>
+<!-- Filters + Search on the right — the /sources pattern. -->
+		<ListPageBar>
+			<UrlTabs
+				tabs={levelSelectOptions}
+				value={level}
+				onValueChange={(v) => { level = v; applyFilters(); }}
+				urlParam="level"
+				class="!border-b-0 !bg-transparent"
+			/>
+			{#snippet actions()}
+				<button type="button" onclick={() => (filtersModalOpen = true)} class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]">
+					{t('common.filters', 'Filters')}
+					{#if hasActiveFilters}<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>{/if}
+					<Filter size={16} />
+				</button>
+				<button type="button" onclick={() => (searchModalOpen = true)} class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]">
+					{t('common.search', 'Search')}
+					{#if q.trim()}<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>{/if}
+					<Search size={16} />
+				</button>
+			{/snippet}
+		</ListPageBar>
+
+						<!-- Advanced filter panel -->
+		<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+		<div>
+
+			{#if amountError}
+				<p class="mb-2 text-xs text-[var(--color-danger)]" role="alert">{amountError}</p>
+				{/if}
+			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 				<Autocomplete
 					placeholder={t('scholarships.country', 'Country')}
 					ariaLabel={t('scholarships.country', 'Country')}
@@ -363,44 +432,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					initialFetcher={fetchCountriesInitial}
 					selectedId={country || null}
 					selectedLabel={selectedCountryLabel}
-					class="h-[40px] box-border"
-					inputClass="!min-h-0 !h-full"
 					onSelect={(item) => { country = item.id; applyFilters(); }}
 					onClear={() => { country = ''; applyFilters(); }}
 				/>
-				<Autocomplete
-					placeholder={t('scholarships.level', 'Level')}
-					ariaLabel={t('scholarships.level', 'Level')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={levelFetcher}
-					initialFetcher={levelFetcher}
-					selectedId={level || null}
-					selectedLabel={level || null}
-					allowFreeText
-					class="h-[40px] box-border"
-					inputClass="!min-h-0 !h-full"
-					onSelect={(item) => { level = item.id; applyFilters(); }}
-					onClear={() => { level = ''; applyFilters(); }}
-				/>
-				{#if hasActiveFilters}
-					<button
-						type="button"
-						onclick={clearFilters}
-						class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-					>
-						{t('common.clear', 'Clear')}
-					</button>
-				{/if}
-			</div>
-		</div>
-
-		<!-- Advanced filter panel -->
-		{#if showFilters}
-		<div id="scholarships-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
-			{#if amountError}
-				<p class="mb-2 text-xs text-[var(--color-danger)]" role="alert">{amountError}</p>
-				{/if}
-			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
 				<input
 					type="number"
 					min="0"
@@ -434,20 +468,29 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						applyFilters();
 					}}
 				/>
-				<input
-					type="date"
-					aria-label={t('scholarships.deadline_from', 'Deadline from')}
-					bind:value={deadlineFrom}
-					onchange={applyFilters}
-					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				/>
-				<input
-					type="date"
-					aria-label={t('scholarships.deadline_to', 'Deadline to')}
-					bind:value={deadlineTo}
-					onchange={applyFilters}
-					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				/>
+				<fieldset class="sm:col-span-2">
+					<legend class="mb-1 text-xs font-medium text-[var(--color-muted)]">{t('scholarships.deadline', 'Application deadline')}</legend>
+					<div class="grid grid-cols-2 gap-2">
+						<label class="flex flex-col gap-1">
+							<span class="text-xs text-[var(--color-muted)]">{t('scholarships.deadline_from', 'From')}</span>
+							<input
+								type="date"
+								bind:value={deadlineFrom}
+								onchange={applyFilters}
+								class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+							/>
+						</label>
+						<label class="flex flex-col gap-1">
+							<span class="text-xs text-[var(--color-muted)]">{t('scholarships.deadline_to', 'To')}</span>
+							<input
+								type="date"
+								bind:value={deadlineTo}
+								onchange={applyFilters}
+								class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+							/>
+						</label>
+					</div>
+				</fieldset>
 				<AutocompleteSelect
 					ariaLabel={t('scholarships.sort', 'Sort by')}
 					value={sort}
@@ -481,11 +524,12 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				</button>
 			{/if}
 		</div>
-		{/if}
+		{/snippet}
+	</Modal>
 
 		<!-- Application tracker — Phase 33.04 -->
 		{#if authed && savedScholarships.length > 0}
-			<div class="border-b border-[var(--color-border)] px-4 py-3">
+			<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
 				<div class="mb-3 flex items-center justify-between">
 					<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 						<ClipboardList size={16} />
@@ -534,7 +578,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{/if}
 
 		<!-- Results -->
-		<div class="p-4">
+		<div id="scholarship-results" class="p-4" style="margin-inline: var(--page-gutter)">
 			{#if scholarships.length === 0}
 				<EmptyState
 					icon={GraduationCap}
@@ -739,5 +783,28 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{/if}
 			{/if}
 		</div>
+
+	<Modal bind:open={searchModalOpen} title={t('common.search', 'Search')} icon={Search} size="sm">
+		{#snippet children()}
+			<SearchInput
+				bind:value={q}
+				placeholder={t('scholarships.search', 'Search')}
+				ariaLabel={t('tools.scholarships', 'Scholarship Finder')}
+				fetcher={scholarshipSearchFetcher}
+				onInput={queueApply}
+				inputClass="min-h-[40px] py-2 focus:ring-2 focus:ring-[var(--color-primary)]"
+			/>
+		{/snippet}
+	</Modal>
 	{/if}
 </div>
+
+<!-- "How it works" slide-over — GuideSlideOver; admins edit inline (scholarships.guide). -->
+<GuideSlideOver
+	bind:open={guideOpen}
+	title={effectiveGuide.title}
+	body={effectiveGuide.body}
+	ctas={effectiveGuide.ctas}
+	canManage={data.canManage}
+	onSave={saveGuide}
+/>

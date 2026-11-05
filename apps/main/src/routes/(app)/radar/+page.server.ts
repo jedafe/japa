@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiRadarList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiRadarList, ApiError } from '$lib/server/api';
 import type { GeoCountry, RadarItem } from '$lib/types';
 
 /**
@@ -154,7 +154,22 @@ export const load: PageServerLoad = async (event) => {
 	const geoNextCursor = (geoFeed?.meta?.['next_cursor'] as string | undefined) ?? '';
 	const geoCountsByType = (geoFeed?.meta?.['counts_by_type'] as Record<string, number> | undefined) ?? {};
 
+	// Staff gate for the inline guide editor (same as /sources).
+	const isSuperAdmin = (event.locals.user?.groups ?? []).some(
+		(g) => g === 'Super Admin' || g === 'super_admin'
+	);
+	let canManage = isSuperAdmin;
+	if (event.locals.user && !canManage) {
+		try {
+			const perms = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+			canManage = (perms?.permissions ?? []).some((p) => p.startsWith('admin.settings'));
+		} catch {
+			canManage = false;
+		}
+	}
+
 	return {
+		canManage,
 		countries,
 		countriesError,
 		followedItems,

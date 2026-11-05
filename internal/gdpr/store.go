@@ -250,6 +250,14 @@ func (s *Store) gdprExportUserCommentVotes(ctx context.Context, userID pgtype.UU
 	return decodeJSONSlice(data)
 }
 
+func (s *Store) gdprExportUserCommentViews(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	data, err := s.read.GdprExportUserCommentViews(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSONSlice(data)
+}
+
 func (s *Store) gdprExportUserDocPageVotes(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	data, err := s.read.GdprExportUserDocPageVotes(ctx, userID)
 	if err != nil {

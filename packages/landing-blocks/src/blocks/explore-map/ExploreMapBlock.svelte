@@ -68,12 +68,14 @@
 
       // Stat totals — independent best-effort fetches.
       const counts: Record<string, number> = { countries: ctx.apiCountries.length };
-      const [col, blog, svc] = await Promise.all([
+      const [col, cities, blog, svc] = await Promise.all([
         ctx.api<{ data: { total: number } }>('/calculator/cost-of-living/cities?page_size=1'),
+        ctx.api<{ meta: { total: number } }>('/spaces?level=city&page_size=1'),
         ctx.api<{ meta: { total: number } }>('/blog?page_size=1'),
         ctx.api<{ meta: { total: number } }>('/services?limit=1'),
       ]);
       if (col?.data?.total != null) counts.col_cities = col.data.total;
+      if (cities?.meta?.total != null) counts.cities = cities.meta.total;
       if (blog?.meta?.total != null) counts.blog = blog.meta.total;
       if (svc?.meta?.total != null) counts.services = svc.meta.total;
       ctx.statCounts = counts;

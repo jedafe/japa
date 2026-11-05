@@ -55,6 +55,9 @@ type SubscriptionCheckoutResult struct {
 type TierManager interface {
 	SetUserTier(ctx context.Context, userID pgtype.UUID, tier string) error
 	ResolveUserTier(ctx context.Context, userID pgtype.UUID) (string, error)
+	// ResolveSubscriptionTier returns regular/pro/business only — staff-tier
+	// groups are ignored so staff rank never masks plan state on revoke.
+	ResolveSubscriptionTier(ctx context.Context, userID pgtype.UUID) (string, error)
 }
 
 // SetTierManager injects the tier grant/revoke seam.
@@ -659,7 +662,7 @@ func (s *Service) revokePlanTier(ctx context.Context, userID pgtype.UUID, plan s
 		return nil
 	}
 
-	current, err := s.tierManager.ResolveUserTier(ctx, userID)
+	current, err := s.tierManager.ResolveSubscriptionTier(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("resolving tier before revoke: %w", err)
 	}

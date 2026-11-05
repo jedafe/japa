@@ -450,7 +450,7 @@ func TestEntityClassesFor(t *testing.T) {
 		{"space", spaceTypeID, "country", []string{"space_type:country", "space_type:" + spaceTypeID.String(), "space_type"}},
 		{"country", pgtype.UUID{}, "", []string{"space_type"}},
 		{"organization", pgtype.UUID{}, "", []string{"organization"}},
-		{"bank", pgtype.UUID{}, "", []string{"organization"}},
+		{"bank", pgtype.UUID{}, "", []string{"space_type:bank", "bank"}},
 		{"content", pgtype.UUID{}, "", []string{"content_type"}},
 		{"content:guide", pgtype.UUID{}, "", []string{"content_type:guide"}},
 		{"guide_category:visa", pgtype.UUID{}, "", []string{"content_type:guide:visa"}},

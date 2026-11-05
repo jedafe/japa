@@ -63,6 +63,16 @@ func (s *Store) WithTx(ctx context.Context, fn func(*Store) error) error {
 	})
 }
 
+// GetGuideSlug returns the slug and content_type of a contents row by id —
+// used to resolve a radar item's guide_id to its canonical frontend route.
+func (s *Store) GetGuideSlug(ctx context.Context, id pgtype.UUID) (string, string, error) {
+	var slug, contentType string
+	err := s.pool.Reader.QueryRow(ctx,
+		`SELECT c.slug, c.content_type FROM contents c WHERE c.id = $1 AND c.deleted_at IS NULL`,
+		id).Scan(&slug, &contentType)
+	return slug, contentType, err
+}
+
 // ---------------------------------------------------------------------------
 // IntelRawDocuments
 // ---------------------------------------------------------------------------

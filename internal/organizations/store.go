@@ -322,6 +322,20 @@ func (s *Store) GetPublicOrganizationBySlug(ctx context.Context, slug string) (g
 	return s.read.GetPublicOrganizationBySlug(ctx, slug)
 }
 
+// BankExistsBySlug reports whether an active informational bank entity owns
+// this slug (migration 001045). Used to answer org_relocated for /org/{slug}
+// links that predate the split.
+func (s *Store) BankExistsBySlug(ctx context.Context, slug string) (bool, error) {
+	_, err := s.read.GetBankBySlug(ctx, slug)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // ListPublicMembers is an exported method.
 func (s *Store) ListPublicMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListPublicOrganizationMembersRow, error) {
 	return s.read.ListPublicOrganizationMembers(ctx, orgID)
@@ -335,22 +349,22 @@ func (s *Store) GetOrgOwnerPublicProfile(ctx context.Context, orgID pgtype.UUID)
 }
 
 // ListPublicOrganizations is an exported method.
-func (s *Store) ListPublicOrganizations(ctx context.Context, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, error) {
+func (s *Store) ListPublicOrganizations(ctx context.Context, search, orgType, filter string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, error) {
 	return s.read.ListPublicOrganizations(ctx, gen.ListPublicOrganizationsParams{
 		Search:     search,
 		OrgType:    orgType,
-		Verified:   verified,
+		Filter:     filter,
 		PageLimit:  clampLimit(limit),
 		PageOffset: offset,
 	})
 }
 
 // CountPublicOrganizations is an exported method.
-func (s *Store) CountPublicOrganizations(ctx context.Context, search, orgType, verified string) (int64, error) {
+func (s *Store) CountPublicOrganizations(ctx context.Context, search, orgType, filter string) (int64, error) {
 	return s.read.CountPublicOrganizations(ctx, gen.CountPublicOrganizationsParams{
-		Search:   search,
-		OrgType:  orgType,
-		Verified: verified,
+		Search:  search,
+		OrgType: orgType,
+		Filter:  filter,
 	})
 }
 

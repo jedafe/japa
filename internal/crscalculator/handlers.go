@@ -271,7 +271,11 @@ func (h *Handlers) HandleAdminCreateRuleset(w http.ResponseWriter, r *http.Reque
 
 	ruleset, err := h.service.CreateRuleset(r.Context(), input)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("crscalculator: create_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -558,7 +562,11 @@ func (h *Handlers) HandleAdminCreateDraw(w http.ResponseWriter, r *http.Request)
 
 	draw, err := h.service.CreateDraw(r.Context(), input)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("crscalculator: create_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 

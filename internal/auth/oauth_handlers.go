@@ -990,3 +990,9 @@ func (h *OAuthHandlers) sendVerificationEmail(ctx context.Context, userID pgtype
 
 	enqueueEmailTask(h.AsynqClient, to, "Verify Your Email", htmlBody, true)
 }
+
+// ResolveProvider exposes resolveProvider for cross-handler wiring
+// (SEC-W-015 step-up OAuth verification on AuthHandlers).
+func (h *OAuthHandlers) ResolveProvider(ctx context.Context, providerName string) OAuthProvider {
+	return h.resolveProvider(ctx, providerName)
+}

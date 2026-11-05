@@ -2956,7 +2956,19 @@ func (a *agentCommentsAdapter) CreateComment(ctx context.Context, userID pgtype.
 			if err != nil {
 				slog.Warn("agent comment: space perm check failed", "space_id", spaceID.String(), "error", err)
 			} else if !allowed {
-				return gen.Comment{}, fmt.Errorf("%w: space commenting", errpkg.ErrForbidden)
+				action := "comment"
+				if in.ParentID.Valid {
+					action = "reply"
+				}
+
+				msg := "space " + action + " denied"
+				if ex, ok := a.space.(comments.SpaceDenialExplainer); ok {
+					if m, e := ex.ExplainSpaceDenial(ctx, spaceID, userID, action); e == nil && m != "" {
+						msg = m
+					}
+				}
+
+				return gen.Comment{}, fmt.Errorf("%w: %s", errpkg.ErrForbidden, msg)
 			}
 		}
 	}

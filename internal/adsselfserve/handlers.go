@@ -9,6 +9,7 @@ package adsselfserve
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -36,7 +37,8 @@ func (h *Handlers) HandleListSlots(w http.ResponseWriter, r *http.Request) {
 
 	slots, err := h.svc.ListSlots(r.Context())
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		slog.Error("adsselfserve: internal_error", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "The server encountered an error — please try again")
 		return
 	}
 
@@ -124,7 +126,8 @@ func (h *Handlers) HandleListCampaigns(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		slog.Error("adsselfserve: list_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "The server encountered an error — please try again")
 		return
 	}
 

@@ -25,15 +25,19 @@ import (
 // See https://documenter.getpostman.com/view/7907941/2s93JusNJt
 type NOWPaymentsPayoutProvider struct {
 	apiKey     string
+	ipnSecret  string
 	httpClient *http.Client
 	supported  map[string]bool
 }
 
 // NewNOWPaymentsPayoutProvider creates a new NOWPayments payout provider.
-// The apiKey is the same JC_NOWPAYMENTS_IPN_SECRET used for inbound payments.
-func NewNOWPaymentsPayoutProvider(apiKey string) *NOWPaymentsPayoutProvider {
+// apiKey (JC_NOWPAYMENTS_API_KEY) authenticates API calls; ipnSecret
+// (JC_NOWPAYMENTS_IPN_SECRET) verifies IPN webhook signatures — they are
+// separate credentials and must never be substituted for each other.
+func NewNOWPaymentsPayoutProvider(apiKey, ipnSecret string) *NOWPaymentsPayoutProvider {
 	return &NOWPaymentsPayoutProvider{
 		apiKey:     apiKey,
+		ipnSecret:  ipnSecret,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 		supported: map[string]bool{
 			"btc":        true,
@@ -113,8 +117,24 @@ func (p *NOWPaymentsPayoutProvider) InitiatePayout(ctx context.Context, req Payo
 	// so binary-float dust cannot drift the settled amount.
 	amountMajor := math.Round(float64(req.AmountMinor)/100.0*1e8) / 1e8
 
-	// Use fiat_amount when the amount is in fiat; otherwise send amount in crypto.
-	if req.Currency == strings.ToUpper(req.Currency) && len(req.Currency) == 3 {
+	// SEC-W-001: the platform always knows the FIAT net amount. When the
+	// caller supplies FiatCurrency (crypto payout methods), send fiat_amount
+	// + fiat_currency and let NOWPayments do the conversion — the fiat
+	// figure must never land in `amount` where it would be read as a coin
+	// quantity (withdrawing $500 would attempt a 500 BTC payout). Only when
+	// no fiat context exists do we fall back to amount-in-crypto.
+	if req.FiatCurrency != "" {
+		// Convert minor units using the fiat's actual exponent — JPY/KRW/VND
+		// are 0-decimal, BHD-class are 3; a flat /100 misprices them 100x.
+		exp := FiatExponent(req.FiatCurrency)
+		div := 1.0
+		for i := 0; i < exp; i++ {
+			div *= 10
+		}
+		fiatMajor := math.Round(float64(req.FiatAmountMinor)/div*1e8) / 1e8
+		payload.FiatAmount = fiatMajor
+		payload.FiatCurrency = strings.ToLower(req.FiatCurrency)
+	} else if req.Currency == strings.ToUpper(req.Currency) && len(req.Currency) == 3 {
 		payload.FiatAmount = amountMajor
 		payload.FiatCurrency = strings.ToLower(req.Currency)
 	} else {
@@ -147,6 +167,17 @@ func (p *NOWPaymentsPayoutProvider) InitiatePayout(ctx context.Context, req Payo
 	}
 
 	if resp.StatusCode >= 400 {
+		// 4xx = definitive business rejection (bad address, unsupported
+		// coin, insufficient merchant balance) — the payout did NOT run,
+		// so refunding is safe. 5xx stays a plain error: the request may
+		// have been processed server-side (SEC-W-009).
+		if resp.StatusCode < 500 {
+			return PayoutResponse{}, &PayoutRejectedError{
+				Provider:   "nowpayments",
+				StatusCode: resp.StatusCode,
+				Body:       string(respBody),
+			}
+		}
 		return PayoutResponse{}, fmt.Errorf("nowpayments payout error (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
@@ -216,6 +247,12 @@ func (p *NOWPaymentsPayoutProvider) PayoutStatus(ctx context.Context, providerRe
 	}, nil
 }
 
+// NormalizePayoutStatus maps a raw NOWPayments payout status onto the wallet
+// withdrawal state machine — used by the payout IPN webhook (SEC-W-008).
+func (p *NOWPaymentsPayoutProvider) NormalizePayoutStatus(s string) string {
+	return mapNOWPaymentsPayoutStatus(s)
+}
+
 // mapNOWPaymentsPayoutStatus normalizes NOWPayments payout statuses onto the
 // wallet withdrawal state machine.
 func mapNOWPaymentsPayoutStatus(s string) string {
@@ -233,10 +270,10 @@ func mapNOWPaymentsPayoutStatus(s string) string {
 
 // VerifyWebhookSignature validates a NOWPayments IPN signature. Their scheme
 // (ALG-012) is HMAC-SHA512 of the payload canonicalized with object keys
-// sorted recursively — not HMAC-SHA256 of the raw body. The apiKey here must
-// be the IPN secret (JC_NOWPAYMENTS_IPN_SECRET).
+// sorted recursively — not HMAC-SHA256 of the raw body. Verified with the IPN
+// secret (JC_NOWPAYMENTS_IPN_SECRET), not the API key.
 func (p *NOWPaymentsPayoutProvider) VerifyWebhookSignature(payload []byte, signature string) error {
-	if p.apiKey == "" {
+	if p.ipnSecret == "" {
 		return errors.New("nowpayments IPN secret not configured")
 	}
 
@@ -249,7 +286,7 @@ func (p *NOWPaymentsPayoutProvider) VerifyWebhookSignature(payload []byte, signa
 		return fmt.Errorf("canonicalizing ipn payload: %w", err)
 	}
 
-	mac := hmac.New(sha512.New, []byte(p.apiKey))
+	mac := hmac.New(sha512.New, []byte(p.ipnSecret))
 	mac.Write(canonical)
 	expected := hex.EncodeToString(mac.Sum(nil))
 
@@ -331,4 +368,50 @@ func writeSortedJSON(buf *bytes.Buffer, v any) error {
 
 		return nil
 	}
+}
+
+// fiatExponent maps ISO-4217 minor-unit exponents (JPY=0; default 2).
+// Mirrors tips.currencyExponent — keep both in sync when adding currencies.
+func FiatExponent(code string) int {
+	switch strings.ToUpper(code) {
+	case "JPY", "KRW", "VND", "XOF", "XAF":
+		return 0
+	case "BHD", "JOD", "KWD", "OMR":
+		return 3
+	default:
+		return 2
+	}
+}
+
+// PayoutBalance returns the merchant payout balances keyed by coin
+// ticker (GET /balance).
+func (p *NOWPaymentsPayoutProvider) PayoutBalance(ctx context.Context) (map[string]float64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.nowpayments.io/v1/payout/balance", nil)
+	if err != nil {
+		return nil, fmt.Errorf("building balance request: %w", err)
+	}
+	req.Header.Set("x-api-key", p.apiKey)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("nowpayments balance request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("nowpayments balance %d: %s", resp.StatusCode, respBody)
+	}
+
+	var result map[string]struct {
+		Amount float64 `json:"amount"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("decoding balance: %w", err)
+	}
+	out := make(map[string]float64, len(result))
+	for k, v := range result {
+		out[k] = v.Amount
+	}
+	return out, nil
 }

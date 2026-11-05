@@ -21,10 +21,18 @@
 		Stamp,
 		Languages,
 		Receipt,
-		MapPin
+		MapPin,
+		Search,
+		ChevronRight,
+		Layers
 	} from 'lucide-svelte';
 	import type { IconComponent, UrlTab } from '$lib/components/ui';
-	import { ListPageBar, UrlTabs } from '$lib/components/ui';
+	import { GuideSlideOver, type GuideContent } from '$lib/components/ui';
+	import { Filter } from 'lucide-svelte';
+	import { api } from '$lib/api/client';
+	import { EntityHero, ListPageBar, UrlTabs } from '$lib/components/ui';
+	import HeroArtTools from '$lib/components/heroes/HeroArtTools.svelte';
+	import { formatMetric } from '$lib/components/hub/charts/format';
 	import { getEnabledToolsBySection, TOOL_SECTIONS, type MainToolMeta, type ToolSection } from '$lib/tools/registry';
 	import { FileCheck2, Wallet2, PenLine } from 'lucide-svelte';
 	import type { PageData } from './$types';
@@ -97,6 +105,29 @@
 		sections.map((s) => ({ value: s.section, label: t(`tools.section_${s.section}`, s.section) }))
 	);
 	const activeTools = $derived(sections.find((s) => s.section === activeTab)?.tools ?? []);
+
+	// "How it works" slide-over — markdown panel + CTA repeater persisted to
+	// public system settings (tools.guide) via PUT /admin/settings/general.
+	let guideOpen = $state(false);
+	let guideOverride = $state<GuideContent | null>(null);
+	const siteSettings = $derived((page.data.siteSettings ?? {}) as Record<string, unknown>);
+	const storedGuide = $derived.by((): Partial<GuideContent> => {
+		const raw = siteSettings['tools.guide'];
+		if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Partial<GuideContent>;
+		return {};
+	});
+	const effectiveGuide = $derived<GuideContent>({
+		title: guideOverride?.title ?? storedGuide.title ?? t('common.how_it_works', 'How it works'),
+		body: guideOverride?.body ?? storedGuide.body ?? t('tools.guide_body', ''),
+		ctas: guideOverride?.ctas ?? storedGuide.ctas ?? [{ title: t('guide_panel.read_full_guide', 'Read the full guide'), url: '/guides' }]
+	});
+
+	async function saveGuide(v: GuideContent): Promise<string | null> {
+		const res = await api.put('/admin/settings/general', { tools_guide: v });
+		if (res.error) return res.error.message || t('common.error', 'Something went wrong');
+		guideOverride = v;
+		return null;
+	}
 </script>
 
 <svelte:head>
@@ -109,12 +140,37 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
-	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Compass size={20} /> {t('tools.heading', 'Tools')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
-	</div>
+	<!-- Header — EntityHero directory panel -->
+	<EntityHero
+		class="mt-4"
+		icon={Compass}
+		accent="var(--color-primary)"
+		heading={t('tools.heading', 'Tools')}
+		description={t('tools.hero_desc', 'Plan your move with calculators, checklists, and trackers built for the diaspora.')}
+		crumbs={[
+			{ label: t('common.home', 'Home'), href: '/' },
+			{ label: t('tools.heading', 'Tools') }
+		]}
+		stats={[
+			{ icon: Compass, value: formatMetric(totalEnabled), label: t('tools.stats_tools', 'Tools') },
+			{ icon: Layers, value: formatMetric(sections.length), label: t('tools.stats_categories', 'Categories') }
+		]}
+	>
+		{#snippet art()}
+			<HeroArtTools accent="var(--color-primary)" />
+		{/snippet}
+		{#snippet actions(c)}
+			<div class="grid w-full grid-cols-2 gap-3 sm:flex sm:items-center">
+			<a href="#tools-grid" class="{c.primary} flex-1 justify-center whitespace-nowrap">
+				<Search size={15} /> {t('tools.browse', 'Browse tools')}
+			</a>
+			<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} flex-1 justify-center whitespace-nowrap">
+				{t('common.how_it_works', 'How it works')}
+				<ChevronRight size={14} class="rtl:-scale-x-100" />
+				</button>
+			</div>
+		{/snippet}
+	</EntityHero>
 
 	{#if totalEnabled === 0}
 		<p class="px-4 py-8 text-center text-sm text-[var(--color-muted)]">
@@ -126,7 +182,7 @@
 			<UrlTabs {tabs} bind:value={activeTab} class="!border-b-0 !bg-transparent" />
 		</ListPageBar>
 
-		<div class="mx-auto w-full max-w-3xl p-4">
+		<div id="tools-grid" class="mx-auto w-full max-w-3xl p-4">
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each activeTools as tool (tool.href)}
 					{@render toolCard(tool)}
@@ -157,3 +213,13 @@
 		</span>
 	</a>
 {/snippet}
+
+<!-- "How it works" slide-over — GuideSlideOver; admins edit inline (tools.guide). -->
+<GuideSlideOver
+	bind:open={guideOpen}
+	title={effectiveGuide.title}
+	body={effectiveGuide.body}
+	ctas={effectiveGuide.ctas}
+	canManage={data.canManage}
+	onSave={saveGuide}
+/>

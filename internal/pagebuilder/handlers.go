@@ -593,7 +593,7 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	// transition — it must go through the pages.publish permission, the
 	// same gate used by POST /pages/{id}/publish and /archive.
 	if input.Status != "" && input.Status != PageStatusDraft && !canPublishPages(r, user) {
-		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to publish pages")
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Your account can't publish pages — save it as a draft or ask someone with publish access")
 		return
 	}
 
@@ -635,7 +635,7 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if !canPublishPages(r, user) {
-				errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to change page status")
+				errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Your account can't change page status — only users with publish access can")
 				return
 			}
 		}

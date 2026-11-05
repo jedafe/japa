@@ -48,7 +48,7 @@ type schemaField struct {
 // absent: the spaces table has no field_values column, and cfv is canonical.
 var entityFieldValuesTable = map[string]string{
 	"organization": "organizations",
-	"bank":         "organizations",
+	"bank":         "banks",
 	"content":      "contents",
 }
 

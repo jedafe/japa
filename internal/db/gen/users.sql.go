@@ -253,6 +253,23 @@ func (q *Queries) DeactivateUser(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const decideKYCSubmission = `-- name: DecideKYCSubmission :exec
+UPDATE user_kyc_submissions
+SET status = $1, decided_at = now(), decided_by = $2
+WHERE id = $3 AND status = 'pending'
+`
+
+type DecideKYCSubmissionParams struct {
+	Status    string      `json:"status"`
+	DecidedBy pgtype.UUID `json:"decided_by"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) DecideKYCSubmission(ctx context.Context, arg DecideKYCSubmissionParams) error {
+	_, err := q.db.Exec(ctx, decideKYCSubmission, arg.Status, arg.DecidedBy, arg.ID)
+	return err
+}
+
 const disconnectOAuthAccount = `-- name: DisconnectOAuthAccount :exec
 DELETE FROM oauth_accounts WHERE user_id = $1 AND provider = $2
 `
@@ -1377,6 +1394,43 @@ func (q *Queries) GetUserIDByEmail(ctx context.Context, email string) (pgtype.UU
 	return id, err
 }
 
+const getUserKYCStatus = `-- name: GetUserKYCStatus :one
+SELECT kyc_status FROM users WHERE id = $1
+`
+
+// Platform-wide KYC flag (SEC-W-015b) — gates withdrawals at 'kyc' level.
+func (q *Queries) GetUserKYCStatus(ctx context.Context, userID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getUserKYCStatus, userID)
+	var kyc_status string
+	err := row.Scan(&kyc_status)
+	return kyc_status, err
+}
+
+const getUserLatestKYCSubmission = `-- name: GetUserLatestKYCSubmission :one
+SELECT id, user_id, document_type, document_ref, note, status, submitted_at, decided_at, decided_by
+FROM user_kyc_submissions
+WHERE user_id = $1
+ORDER BY submitted_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetUserLatestKYCSubmission(ctx context.Context, userID pgtype.UUID) (UserKycSubmission, error) {
+	row := q.db.QueryRow(ctx, getUserLatestKYCSubmission, userID)
+	var i UserKycSubmission
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.DocumentType,
+		&i.DocumentRef,
+		&i.Note,
+		&i.Status,
+		&i.SubmittedAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+	)
+	return i, err
+}
+
 const getUserPasswordHash = `-- name: GetUserPasswordHash :one
 SELECT id, password_hash FROM users WHERE id = $1
 `
@@ -1984,6 +2038,41 @@ func (q *Queries) GetUserVerified(ctx context.Context, id pgtype.UUID) (bool, er
 	return verified, err
 }
 
+const insertKYCSubmission = `-- name: InsertKYCSubmission :one
+INSERT INTO user_kyc_submissions (user_id, document_type, document_ref, note)
+VALUES ($1, $2, $3, $4)
+RETURNING id, user_id, document_type, document_ref, note, status, submitted_at, decided_at, decided_by
+`
+
+type InsertKYCSubmissionParams struct {
+	UserID       pgtype.UUID `json:"user_id"`
+	DocumentType string      `json:"document_type"`
+	DocumentRef  *string     `json:"document_ref"`
+	Note         *string     `json:"note"`
+}
+
+func (q *Queries) InsertKYCSubmission(ctx context.Context, arg InsertKYCSubmissionParams) (UserKycSubmission, error) {
+	row := q.db.QueryRow(ctx, insertKYCSubmission,
+		arg.UserID,
+		arg.DocumentType,
+		arg.DocumentRef,
+		arg.Note,
+	)
+	var i UserKycSubmission
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.DocumentType,
+		&i.DocumentRef,
+		&i.Note,
+		&i.Status,
+		&i.SubmittedAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+	)
+	return i, err
+}
+
 const listActiveUsersForDigest = `-- name: ListActiveUsersForDigest :many
 SELECT u.id, u.email
 FROM users u
@@ -2049,6 +2138,67 @@ func (q *Queries) ListOAuthAccounts(ctx context.Context, userID pgtype.UUID) ([]
 			&i.Provider,
 			&i.ProviderUserID,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingKYCSubmissions = `-- name: ListPendingKYCSubmissions :many
+SELECT s.id, s.user_id, s.document_type, s.document_ref, s.note, s.status, s.submitted_at, s.decided_at, s.decided_by,
+ u.email, u.username
+FROM user_kyc_submissions s
+JOIN users u ON u.id = s.user_id
+WHERE s.status = 'pending'
+ORDER BY s.submitted_at ASC
+LIMIT $2 OFFSET $1
+`
+
+type ListPendingKYCSubmissionsParams struct {
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
+}
+
+type ListPendingKYCSubmissionsRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	DocumentType string             `json:"document_type"`
+	DocumentRef  *string            `json:"document_ref"`
+	Note         *string            `json:"note"`
+	Status       string             `json:"status"`
+	SubmittedAt  pgtype.Timestamptz `json:"submitted_at"`
+	DecidedAt    pgtype.Timestamptz `json:"decided_at"`
+	DecidedBy    pgtype.UUID        `json:"decided_by"`
+	Email        string             `json:"email"`
+	Username     string             `json:"username"`
+}
+
+func (q *Queries) ListPendingKYCSubmissions(ctx context.Context, arg ListPendingKYCSubmissionsParams) ([]ListPendingKYCSubmissionsRow, error) {
+	rows, err := q.db.Query(ctx, listPendingKYCSubmissions, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPendingKYCSubmissionsRow
+	for rows.Next() {
+		var i ListPendingKYCSubmissionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.DocumentType,
+			&i.DocumentRef,
+			&i.Note,
+			&i.Status,
+			&i.SubmittedAt,
+			&i.DecidedAt,
+			&i.DecidedBy,
+			&i.Email,
+			&i.Username,
 		); err != nil {
 			return nil, err
 		}
@@ -2645,6 +2795,23 @@ type SetUserDisplayNameParams struct {
 // display_name without touching the other profile columns.
 func (q *Queries) SetUserDisplayName(ctx context.Context, arg SetUserDisplayNameParams) error {
 	_, err := q.db.Exec(ctx, setUserDisplayName, arg.UserID, arg.DisplayName)
+	return err
+}
+
+const setUserKYCStatus = `-- name: SetUserKYCStatus :exec
+UPDATE users SET kyc_status = $1, updated_at = now()
+WHERE id = $2
+`
+
+type SetUserKYCStatusParams struct {
+	KycStatus string      `json:"kyc_status"`
+	UserID    pgtype.UUID `json:"user_id"`
+}
+
+// Admin KYC decision (admin.users.manage) — transitions are recorded in
+// audit_logs by the caller.
+func (q *Queries) SetUserKYCStatus(ctx context.Context, arg SetUserKYCStatusParams) error {
+	_, err := q.db.Exec(ctx, setUserKYCStatus, arg.KycStatus, arg.UserID)
 	return err
 }
 

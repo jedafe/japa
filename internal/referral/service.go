@@ -24,6 +24,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -518,9 +519,12 @@ func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype
 	// Qualify + credit in a single transaction (BUG-011). Without a tx, a
 	// CreditReferral failure leaves the referral in 'qualified' with no credit
 	// awarded — non-idempotent and unrecoverable without manual SQL.
-	rewardCredits := 500
+	// Rewards are POINTS (reputation), never credits — promotional awards
+	// must not mint withdrawable value (SEC-W-014 policy decision).
+	rewardPoints := 500
 	if s.settings != nil {
-		rewardCredits = s.settings.GetIntOr(ctx, "referral.reward_credits", 500)
+		rewardPoints = s.settings.GetIntOr(ctx, "referral.reward_points",
+			s.settings.GetIntOr(ctx, "referral.reward_credits", 500))
 	}
 
 	tx, err := s.db.Writer.Begin(ctx)
@@ -541,7 +545,7 @@ func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype
 
 	if _, err = qtx.CreditReferral(ctx, gen.CreditReferralParams{
 		ID:           referral.ID,
-		RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},
+		RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardPoints)), Exp: 0, Valid: true},
 	}); err != nil {
 		return fmt.Errorf("referral: credit: %w", err)
 	}
@@ -553,12 +557,12 @@ func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype
 	// ADR-136: a completed referral earns the referrer points (dedupe by ref).
 	s.emitActivity(ctx, referral.ReferrerID, "referral.completed", "referral:"+referral.ID.String())
 
-	// Award credits to referrer wallet (fire-and-forget per Rule 8).
+	// Award points to referrer wallet (fire-and-forget per Rule 8).
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]interface{}{
 			"user_id":     referral.ReferrerID.String(),
-			"amount":      rewardCredits,
-			"ledger_type": "credits",
+			"amount":      rewardPoints,
+			"ledger_type": "points",
 			"reason":      "referral_reward",
 		})
 		if err := s.enqueuer.Enqueue(TaskAwardPoints, payload); err != nil {
@@ -662,14 +666,16 @@ func (s *Service) AdminListReferrals(ctx context.Context, status string, page, l
 func (s *Service) AdminResolveFlagged(ctx context.Context, referralID pgtype.UUID, action string) error {
 	switch strings.ToLower(action) {
 	case "credit":
-		rewardCredits := 500
+		// Points reward — same precedence chain as the conversion path.
+		rewardPoints := 500
 		if s.settings != nil {
-			rewardCredits = s.settings.GetIntOr(ctx, "referral.reward_credits", 500)
+			rewardPoints = s.settings.GetIntOr(ctx, "referral.reward_points",
+				s.settings.GetIntOr(ctx, "referral.reward_credits", 500))
 		}
 
 		_, err := s.writeQueries.CreditFlaggedReferral(ctx, gen.CreditFlaggedReferralParams{
 			ID:           referralID,
-			RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},
+			RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardPoints)), Exp: 0, Valid: true},
 		})
 
 		return err
@@ -679,7 +685,7 @@ func (s *Service) AdminResolveFlagged(ctx context.Context, referralID pgtype.UUI
 			referralID,
 		)
 	default:
-		return fmt.Errorf("referral: invalid action: %s", action)
+		return fmt.Errorf("%w: invalid action: %s", errpkg.ErrInvalid, action)
 	}
 }
 

@@ -225,7 +225,7 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 	case errors.Is(err, ErrNotOrgMember):
 		errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
 	case errors.Is(err, ErrNotOwner):
-		errpkg.WriteError(w, http.StatusForbidden, "not_owner", "Insufficient permissions")
+		errpkg.WriteError(w, http.StatusForbidden, "not_owner", "Only the listing owner or an admin can modify it")
 	case errors.Is(err, ErrDepartureFull):
 		errpkg.WriteError(w, http.StatusConflict, "departure_full", "The selected departure is full or no longer available")
 	case errors.Is(err, ErrInvalidBookingTransition):

@@ -1326,7 +1326,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 				}
 
 				if !canEdit {
-					errpkg.WriteError(w, http.StatusForbidden, "field_not_editable", "You do not have permission to edit this custom field")
+					errpkg.WriteError(w, http.StatusForbidden, "field_not_editable", "Your account isn't allowed to edit this field — contact an administrator for edit access")
 					return
 				}
 			}

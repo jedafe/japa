@@ -60,6 +60,23 @@ export const load: PageServerLoad = async (event) => {
 		redirect(303, `${url.pathname}${url.search}`);
 	}
 
+	// Staff gate for the inline guide-CTA editor in the "How it works"
+	// slide-over — same pattern as tags/[slug]: super_admin group membership
+	// bypasses (super_admin isn't in /me/permissions output), everyone else
+	// needs an admin.settings.* node. Backend re-enforces on PUT.
+	const isSuperAdmin = (event.locals.user?.groups ?? []).some(
+		(g) => g === 'Super Admin' || g === 'super_admin'
+	);
+	let canManage = isSuperAdmin;
+	if (event.locals.user && !canManage) {
+		try {
+			const perms = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+			canManage = (perms?.permissions ?? []).some((p) => p.startsWith('admin.settings'));
+		} catch {
+			canManage = false;
+		}
+	}
+
 	return {
 		sources,
 		meta,
@@ -69,6 +86,7 @@ export const load: PageServerLoad = async (event) => {
 		sourceKind,
 		sort,
 		page,
-		pageSize
+		pageSize,
+		canManage
 	};
 };

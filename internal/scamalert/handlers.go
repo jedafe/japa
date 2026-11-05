@@ -343,7 +343,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		// resolvable identity for the RBAC check).
 		if h.service != nil && h.service.rbac != nil &&
 			!h.service.rbac.HasPermission(r.Context(), user.UserID, "scam_alert.create") {
-			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to submit scam reports")
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Your account isn't allowed to submit scam reports — contact an administrator if you need access")
 			return
 		}
 		reporterID = user.UserID
@@ -488,7 +488,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if errors.Is(err, ErrEditForbidden) {
-			errpkg.WriteError(w, http.StatusForbidden, "edit_forbidden", "You do not have permission to edit this report")
+			errpkg.WriteError(w, http.StatusForbidden, "edit_forbidden", "Only the report's author or a moderator can edit this report")
 			return
 		}
 

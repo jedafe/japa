@@ -8,7 +8,7 @@
 	 * Ref: japaconnect-engineering/sections/49-comments-replies.md
 	 */
 
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import { Editor } from '@tiptap/core';
 	import { StarterKit } from '@tiptap/starter-kit';
 	import Link from '@tiptap/extension-link';
@@ -34,9 +34,11 @@
 		oninput?: (body: string) => void;
 		/** CSS class for the editor container. */
 		class?: string;
+		/** Bumped by the parent to clear the editor after a successful submit. */
+		resetNonce?: number;
 	}
 
-	let { placeholder = '', initialBody = null, oninput, class: cls = '' }: Props = $props();
+	let { placeholder = '', initialBody = null, oninput, class: cls = '', resetNonce = 0 }: Props = $props();
 
 	let editor: Editor | null = null;
 	let element: HTMLDivElement;
@@ -128,6 +130,17 @@
 	onDestroy(() => {
 		editor?.destroy();
 		editor = null;
+	});
+
+	// Parent-driven reset (post-submit): clear the ProseMirror doc — the
+	// parent's body state alone can't reach inside the editor.
+	let lastResetNonce = $state(untrack(() => resetNonce));
+	$effect(() => {
+		if (resetNonce !== lastResetNonce) {
+			lastResetNonce = resetNonce;
+			editor?.commands.clearContent();
+			syncMarks();
+		}
 	});
 
 	// Toolbar actions.

@@ -3,6 +3,7 @@ package comparison
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
@@ -754,7 +755,11 @@ func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) 
 		ItemRefs: req.ItemRefs,
 	})
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "token_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("comparison: token_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 

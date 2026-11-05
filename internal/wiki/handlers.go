@@ -242,7 +242,7 @@ func writeFieldOpsError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrOpNotPermitted):
 		errpkg.WriteError(w, http.StatusForbidden, "op_not_permitted",
-			"You do not have permission for one or more of these field operations")
+			"One or more of these field changes isn't permitted for your account — check each field's edit permissions")
 	case errors.Is(err, ErrEntityNotResolvable):
 		errpkg.WriteError(w, http.StatusNotFound, "entity_not_found",
 			"The target entity could not be resolved")

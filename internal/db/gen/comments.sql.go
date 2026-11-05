@@ -98,12 +98,42 @@ func (q *Queries) CountCommentsByContent(ctx context.Context, contentID pgtype.U
 
 const countContentThreadLinks = `-- name: CountContentThreadLinks :one
 SELECT COUNT(*)::int AS count
-FROM content_thread_links
-WHERE content_id = $1
+FROM content_thread_links l
+JOIN contents ct ON ct.id = l.thread_id
+LEFT JOIN spaces ts ON ts.id = ct.space_id
+WHERE l.content_id = $1
+ AND ct.deleted_at IS NULL
+ AND ct.status = 'published'
+ AND ct.auto_hidden = false
+ AND (
+     ts.id IS NULL
+     OR (ts.deleted_at IS NULL AND (
+         ts.visibility = 'public'
+         OR EXISTS (
+             SELECT 1 FROM space_members sm
+             WHERE sm.space_id = ts.id
+               AND sm.user_id = $2
+               AND sm.status = 'approved'
+         )
+     ))
+ )
+ AND (
+     ct.visibility = 'public'
+     OR (ct.visibility = 'members' AND $3::boolean)
+     OR (ct.visibility = 'private' AND ct.author_id = $2)
+ )
 `
 
-func (q *Queries) CountContentThreadLinks(ctx context.Context, contentID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countContentThreadLinks, contentID)
+type CountContentThreadLinksParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+	Authed    bool        `json:"authed"`
+}
+
+// Mirrors the ListContentThreadLinks visibility predicate so pagination meta
+// matches the rows a viewer actually receives.
+func (q *Queries) CountContentThreadLinks(ctx context.Context, arg CountContentThreadLinksParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countContentThreadLinks, arg.ContentID, arg.UserID, arg.Authed)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -262,7 +292,7 @@ func (q *Queries) DeleteCommentVote(ctx context.Context, arg DeleteCommentVotePa
 
 const getComment = `-- name: GetComment :one
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.status,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
@@ -284,6 +314,7 @@ type GetCommentRow struct {
 	VoteScore     int32              `json:"vote_score"`
 	UpvoteCount   int32              `json:"upvote_count"`
 	DownvoteCount int32              `json:"downvote_count"`
+	ViewCount     int32              `json:"view_count"`
 	IsPinned      bool               `json:"is_pinned"`
 	IsEdited      bool               `json:"is_edited"`
 	EditedAt      pgtype.Timestamptz `json:"edited_at"`
@@ -310,6 +341,7 @@ func (q *Queries) GetComment(ctx context.Context, id pgtype.UUID) (GetCommentRow
 		&i.VoteScore,
 		&i.UpvoteCount,
 		&i.DownvoteCount,
+		&i.ViewCount,
 		&i.IsPinned,
 		&i.IsEdited,
 		&i.EditedAt,
@@ -483,6 +515,54 @@ func (q *Queries) IncrementCommentReplyCount(ctx context.Context, parentID pgtyp
 	return err
 }
 
+const insertCommentView = `-- name: InsertCommentView :exec
+INSERT INTO comment_views (comment_id, user_id)
+SELECT $1, $2
+WHERE EXISTS (
+    SELECT 1 FROM comments c
+    WHERE c.id = $1 AND c.deleted_at IS NULL AND c.status = 'published'
+)
+ON CONFLICT DO NOTHING
+`
+
+type InsertCommentViewParams struct {
+	CommentID pgtype.UUID `json:"comment_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+}
+
+// Section 49 — optional reply view tracking (admin-toggleable per Section
+// 08). Idempotent via the (comment_id, user_id) PK; the
+// trg_comment_views_increment trigger bumps comments.view_count.
+// The EXISTS guard silently skips nonexistent, deleted, or removed comments
+// so a view ping can never 500 on a dangling FK.
+func (q *Queries) InsertCommentView(ctx context.Context, arg InsertCommentViewParams) error {
+	_, err := q.db.Exec(ctx, insertCommentView, arg.CommentID, arg.UserID)
+	return err
+}
+
+const insertCommentViews = `-- name: InsertCommentViews :exec
+INSERT INTO comment_views (comment_id, user_id)
+SELECT v.comment_id, $1
+FROM unnest($2::uuid[]) AS v(comment_id)
+WHERE EXISTS (
+    SELECT 1 FROM comments c
+    WHERE c.id = v.comment_id AND c.deleted_at IS NULL AND c.status = 'published'
+)
+ON CONFLICT DO NOTHING
+`
+
+type InsertCommentViewsParams struct {
+	UserID     pgtype.UUID   `json:"user_id"`
+	CommentIds []pgtype.UUID `json:"comment_ids"`
+}
+
+// Batch view recording (Guide §4.3 — one round trip per thread, not per
+// comment). Same live-comment guard + idempotency as InsertCommentView.
+func (q *Queries) InsertCommentViews(ctx context.Context, arg InsertCommentViewsParams) error {
+	_, err := q.db.Exec(ctx, insertCommentViews, arg.UserID, arg.CommentIds)
+	return err
+}
+
 const listCommentsByAuthor = `-- name: ListCommentsByAuthor :many
 SELECT c.id, c.content_id, c.parent_id, c.body, c.vote_score,
  c.created_at,
@@ -550,7 +630,7 @@ func (q *Queries) ListCommentsByAuthor(ctx context.Context, arg ListCommentsByAu
 
 const listCommentsByContent = `-- name: ListCommentsByContent :many
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  COALESCE((
  SELECT cv.value
@@ -598,6 +678,7 @@ type ListCommentsByContentRow struct {
 	VoteScore     int32              `json:"vote_score"`
 	UpvoteCount   int32              `json:"upvote_count"`
 	DownvoteCount int32              `json:"downvote_count"`
+	ViewCount     int32              `json:"view_count"`
 	IsPinned      bool               `json:"is_pinned"`
 	IsEdited      bool               `json:"is_edited"`
 	EditedAt      pgtype.Timestamptz `json:"edited_at"`
@@ -639,6 +720,7 @@ func (q *Queries) ListCommentsByContent(ctx context.Context, arg ListCommentsByC
 			&i.VoteScore,
 			&i.UpvoteCount,
 			&i.DownvoteCount,
+			&i.ViewCount,
 			&i.IsPinned,
 			&i.IsEdited,
 			&i.EditedAt,
@@ -664,7 +746,7 @@ func (q *Queries) ListCommentsByContent(ctx context.Context, arg ListCommentsByC
 
 const listCommentsByContentNew = `-- name: ListCommentsByContentNew :many
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  COALESCE((
  SELECT cv.value
@@ -712,6 +794,7 @@ type ListCommentsByContentNewRow struct {
 	VoteScore     int32              `json:"vote_score"`
 	UpvoteCount   int32              `json:"upvote_count"`
 	DownvoteCount int32              `json:"downvote_count"`
+	ViewCount     int32              `json:"view_count"`
 	IsPinned      bool               `json:"is_pinned"`
 	IsEdited      bool               `json:"is_edited"`
 	EditedAt      pgtype.Timestamptz `json:"edited_at"`
@@ -751,6 +834,7 @@ func (q *Queries) ListCommentsByContentNew(ctx context.Context, arg ListComments
 			&i.VoteScore,
 			&i.UpvoteCount,
 			&i.DownvoteCount,
+			&i.ViewCount,
 			&i.IsPinned,
 			&i.IsEdited,
 			&i.EditedAt,
@@ -776,7 +860,7 @@ func (q *Queries) ListCommentsByContentNew(ctx context.Context, arg ListComments
 
 const listCommentsByContentOldest = `-- name: ListCommentsByContentOldest :many
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  COALESCE((
  SELECT cv.value
@@ -824,6 +908,7 @@ type ListCommentsByContentOldestRow struct {
 	VoteScore     int32              `json:"vote_score"`
 	UpvoteCount   int32              `json:"upvote_count"`
 	DownvoteCount int32              `json:"downvote_count"`
+	ViewCount     int32              `json:"view_count"`
 	IsPinned      bool               `json:"is_pinned"`
 	IsEdited      bool               `json:"is_edited"`
 	EditedAt      pgtype.Timestamptz `json:"edited_at"`
@@ -863,6 +948,7 @@ func (q *Queries) ListCommentsByContentOldest(ctx context.Context, arg ListComme
 			&i.VoteScore,
 			&i.UpvoteCount,
 			&i.DownvoteCount,
+			&i.ViewCount,
 			&i.IsPinned,
 			&i.IsEdited,
 			&i.EditedAt,
@@ -893,14 +979,36 @@ SELECT l.id, l.content_id, l.thread_id, l.link_count, l.created_at,
  ct.author_id AS thread_author_id
 FROM content_thread_links l
 JOIN contents ct ON ct.id = l.thread_id
+LEFT JOIN spaces ts ON ts.id = ct.space_id
 WHERE l.content_id = $1
  AND ct.deleted_at IS NULL
+ AND ct.status = 'published'
+ AND ct.auto_hidden = false
+ AND (
+     ts.id IS NULL
+     OR (ts.deleted_at IS NULL AND (
+         ts.visibility = 'public'
+         OR EXISTS (
+             SELECT 1 FROM space_members sm
+             WHERE sm.space_id = ts.id
+               AND sm.user_id = $2
+               AND sm.status = 'approved'
+         )
+     ))
+ )
+ AND (
+     ct.visibility = 'public'
+     OR (ct.visibility = 'members' AND $3::boolean)
+     OR (ct.visibility = 'private' AND ct.author_id = $2)
+ )
 ORDER BY l.created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $5 OFFSET $4
 `
 
 type ListContentThreadLinksParams struct {
 	ContentID  pgtype.UUID `json:"content_id"`
+	UserID     pgtype.UUID `json:"user_id"`
+	Authed     bool        `json:"authed"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -918,8 +1026,17 @@ type ListContentThreadLinksRow struct {
 }
 
 // Linked discussion threads for a blog/content, most recently linked first.
+// Threads are only as visible as their own row: drafts, removed, and
+// audience-restricted threads (members/private, private-space) are filtered
+// per-viewer — mirrors the CanViewComments predicate (Section 49, C-021).
 func (q *Queries) ListContentThreadLinks(ctx context.Context, arg ListContentThreadLinksParams) ([]ListContentThreadLinksRow, error) {
-	rows, err := q.db.Query(ctx, listContentThreadLinks, arg.ContentID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listContentThreadLinks,
+		arg.ContentID,
+		arg.UserID,
+		arg.Authed,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -950,7 +1067,7 @@ func (q *Queries) ListContentThreadLinks(ctx context.Context, arg ListContentThr
 
 const listPublicCommentsByContent = `-- name: ListPublicCommentsByContent :many
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  COALESCE((
  SELECT cv.value
@@ -995,6 +1112,7 @@ type ListPublicCommentsByContentRow struct {
 	VoteScore     int32              `json:"vote_score"`
 	UpvoteCount   int32              `json:"upvote_count"`
 	DownvoteCount int32              `json:"downvote_count"`
+	ViewCount     int32              `json:"view_count"`
 	IsPinned      bool               `json:"is_pinned"`
 	IsEdited      bool               `json:"is_edited"`
 	EditedAt      pgtype.Timestamptz `json:"edited_at"`
@@ -1038,6 +1156,7 @@ func (q *Queries) ListPublicCommentsByContent(ctx context.Context, arg ListPubli
 			&i.VoteScore,
 			&i.UpvoteCount,
 			&i.DownvoteCount,
+			&i.ViewCount,
 			&i.IsPinned,
 			&i.IsEdited,
 			&i.EditedAt,
@@ -1063,7 +1182,7 @@ func (q *Queries) ListPublicCommentsByContent(ctx context.Context, arg ListPubli
 
 const listPublicRepliesByParent = `-- name: ListPublicRepliesByParent :many
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  0::smallint AS user_vote,
  c.is_anonymous,
@@ -1101,6 +1220,7 @@ type ListPublicRepliesByParentRow struct {
 	VoteScore     int32              `json:"vote_score"`
 	UpvoteCount   int32              `json:"upvote_count"`
 	DownvoteCount int32              `json:"downvote_count"`
+	ViewCount     int32              `json:"view_count"`
 	IsPinned      bool               `json:"is_pinned"`
 	IsEdited      bool               `json:"is_edited"`
 	EditedAt      pgtype.Timestamptz `json:"edited_at"`
@@ -1141,6 +1261,7 @@ func (q *Queries) ListPublicRepliesByParent(ctx context.Context, arg ListPublicR
 			&i.VoteScore,
 			&i.UpvoteCount,
 			&i.DownvoteCount,
+			&i.ViewCount,
 			&i.IsPinned,
 			&i.IsEdited,
 			&i.EditedAt,
@@ -1166,7 +1287,7 @@ func (q *Queries) ListPublicRepliesByParent(ctx context.Context, arg ListPublicR
 
 const listRepliesByParent = `-- name: ListRepliesByParent :many
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  COALESCE((
  SELECT cv.value
@@ -1214,6 +1335,7 @@ type ListRepliesByParentRow struct {
 	VoteScore     int32              `json:"vote_score"`
 	UpvoteCount   int32              `json:"upvote_count"`
 	DownvoteCount int32              `json:"downvote_count"`
+	ViewCount     int32              `json:"view_count"`
 	IsPinned      bool               `json:"is_pinned"`
 	IsEdited      bool               `json:"is_edited"`
 	EditedAt      pgtype.Timestamptz `json:"edited_at"`
@@ -1253,6 +1375,7 @@ func (q *Queries) ListRepliesByParent(ctx context.Context, arg ListRepliesByPare
 			&i.VoteScore,
 			&i.UpvoteCount,
 			&i.DownvoteCount,
+			&i.ViewCount,
 			&i.IsPinned,
 			&i.IsEdited,
 			&i.EditedAt,

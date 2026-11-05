@@ -431,7 +431,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	entry, err := h.updater.Update(r.Context(), entryID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrEditForbidden) {
-			errpkg.WriteError(w, http.StatusForbidden, "edit_forbidden", "You do not have permission to edit this calendar entry")
+			errpkg.WriteError(w, http.StatusForbidden, "edit_forbidden", "Only the entry's author or a moderator can edit this calendar entry")
 			return
 		}
 

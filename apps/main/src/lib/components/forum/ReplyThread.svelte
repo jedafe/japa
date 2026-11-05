@@ -56,9 +56,11 @@
 		return byParent.get(id) ?? [];
 	}
 
-	// Top-level reply composer state — body is base64 TipTap JSON.
+	// Top-level reply composer state — body is base64 TipTap JSON. resetNonce
+	// clears the editor's internal document after a successful submit.
 	let topBody = $state<string>('');
 	let topSubmitting = $state(false);
+	let resetNonce = $state(0);
 	let addedTop: ForumReply[] = $state([]);
 
 	async function submitTopReply() {
@@ -72,6 +74,7 @@
 		topSubmitting = false;
 		if (res.error || !res.data) return;
 		topBody = '';
+		resetNonce++;
 		// Refetch so the new reply renders with the joined author row — the
 		// POST response is a bare forum_replies row (no author fields), and a
 		// locally-appended copy would show "Member" + a blank avatar plus
@@ -108,7 +111,7 @@
 	<!-- Composer renders for guests too — the submit button stays enabled
 	     and redirects to /login on click (see submitTopReply). -->
 	<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-		<LazyCommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (topBody = b)} />
+		<LazyCommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (topBody = b)} {resetNonce} />
 		<div class="mt-2 flex items-center justify-between">
 			<span class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
 				<CornerUpLeft class="rtl:-scale-x-100" size={12} /> {t('forum.replying_to_thread', 'Replying to this thread')}

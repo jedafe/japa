@@ -21,7 +21,7 @@ var ErrTagInUse = errors.New("tag is still attached to content")
 
 // ErrEditWindowExpired is returned when the author edits after
 // edit_window_minutes has elapsed (moderators bypass the window).
-var ErrEditWindowExpired = errors.New("edit window has expired")
+var ErrEditWindowExpired = errors.New("the edit window for this thread has expired")
 
 // Forum tags are universal (Sections 08, 14): they live in the shared `tags`
 // and `content_tags` tables, attached to a thread through its backing

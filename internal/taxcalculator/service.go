@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // GuideDTO is the API response shape for a single tax obligation guide.
@@ -349,29 +350,29 @@ func (s *Service) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, 
 // (tax_calculator.manage permission checked at route level).
 func (s *Service) GenerateGuide(ctx context.Context, req GenerateGuideRequest) (GenerateGuideResult, error) {
 	if req.EmploymentStatus == "" {
-		return GenerateGuideResult{}, errors.New("employment_status is required")
+		return GenerateGuideResult{}, fmt.Errorf("%w: employment_status is required", errpkg.ErrInvalid)
 	}
 
 	if !validEmploymentStatus(req.EmploymentStatus) {
-		return GenerateGuideResult{}, errors.New("invalid employment_status")
+		return GenerateGuideResult{}, fmt.Errorf("%w: invalid employment_status", errpkg.ErrInvalid)
 	}
 
 	if req.OriginSpaceID == "" {
-		return GenerateGuideResult{}, errors.New("origin_space_id is required")
+		return GenerateGuideResult{}, fmt.Errorf("%w: origin_space_id is required", errpkg.ErrInvalid)
 	}
 
 	if req.DestinationSpaceID == "" {
-		return GenerateGuideResult{}, errors.New("destination_space_id is required")
+		return GenerateGuideResult{}, fmt.Errorf("%w: destination_space_id is required", errpkg.ErrInvalid)
 	}
 
 	var originSpaceID pgtype.UUID
 	if err := originSpaceID.Scan(req.OriginSpaceID); err != nil {
-		return GenerateGuideResult{}, fmt.Errorf("invalid origin_space_id: %w", err)
+		return GenerateGuideResult{}, fmt.Errorf("%w: invalid origin_space_id: %w", errpkg.ErrInvalid, err)
 	}
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(req.DestinationSpaceID); err != nil {
-		return GenerateGuideResult{}, fmt.Errorf("invalid destination_space_id: %w", err)
+		return GenerateGuideResult{}, fmt.Errorf("%w: invalid destination_space_id: %w", errpkg.ErrInvalid, err)
 	}
 
 	// Compute ai_prompt_hash = SHA256(prompt) for audit reproducibility

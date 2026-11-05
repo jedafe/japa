@@ -880,8 +880,8 @@ export interface ForumVote {
  * Unified comment engine — Section 49
  * Ref: japaconnect-engineering/sections/49-unified-comments.md
  * Comments attach to any content type via content_id. Nested replies
- * support up to depth 3 (parent_id links them). The body is a plain
- * string (not base64 TipTap like forum replies).
+ * support up to depth 3 (parent_id links them). The body is a
+ * base64-encoded TipTap JSON document (jsonb on the backend).
  * ------------------------------------------------------------------ */
 
 /** GET /content/{id}/comments and GET /content/{id}/comments?parent_id=. */
@@ -902,6 +902,8 @@ export interface Comment {
 	downvote_count: number;
 	/** The authenticated viewer's current vote on this comment (1, -1, or 0). */
 	user_vote: 1 | -1 | 0;
+	/** Materialised view count from comment_views (Section 49 view tracking). */
+	view_count?: number;
 	is_pinned: boolean;
 	is_edited: boolean;
 	edited_at: string | null;
@@ -1116,8 +1118,12 @@ export interface PublicOrganization {
 	org_type: string;
 	logo_media_id?: string | null;
 	header_media_id?: string | null;
+	logo_url?: string | null;
+	header_url?: string | null;
 	website_url?: string | null;
 	country_code?: string | null;
+	/** True when an owner operates the page (a verified badge implies claimed). */
+	claimed: boolean;
 	verified: boolean;
 	verification_type?: string | null;
 	follower_count: number;
@@ -5164,6 +5170,12 @@ export interface RadarItem {
 	field_values?: Record<string, string> | null;
 	/** Only populated by the detail endpoint (GET /intel/radar/feed/:id). */
 	saved?: boolean | null;
+	/** Backing contents row id for guide-linked domains (scholarship, job) —
+	 *  detail endpoint only; used to 301 /radar/feed/{id} to the canonical post. */
+	guide_id?: string | null;
+	/** Frontend route that owns this content — detail endpoint only; the page
+	 *  301s /radar/feed/{id} to it. Empty for non-guide domains. */
+	canonical_url?: string | null;
 }
 
 /** Per-country scholarship count row from GET /intel/radar/counts. */

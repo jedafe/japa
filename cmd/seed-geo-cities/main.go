@@ -64,7 +64,7 @@ import (
 
 const insertSpaceSQL = `INSERT INTO spaces (id, parent_id, space_type_id, name, slug, geo_code, level,
 	visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status)
-	VALUES ($1,$2,$3,$4,$5,$6,'city','public','members','members','members','open','active')`
+	VALUES ($1,$2,$3,$4,$5,$6,'city','public','open','open','open','open','active')`
 
 const insertParentSQL = `INSERT INTO space_parent_spaces (space_id, parent_space_id)
 	VALUES ($1,$2) ON CONFLICT DO NOTHING`

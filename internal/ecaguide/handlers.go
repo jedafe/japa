@@ -252,7 +252,11 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 
 	guides, err := h.service.CompareGuides(r.Context(), dest, providerIDs)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "compare_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("ecaguide: compare_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -292,7 +296,11 @@ func (h *Handlers) HandleCreateUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("ecaguide: create_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 
 		return
 	}
@@ -353,7 +361,11 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 
 	guide, err := h.service.CreateGuide(r.Context(), input)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("ecaguide: create_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -379,7 +391,11 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.EnqueueGenerate(r.Context(), body); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "generate_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("ecaguide: generate_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -645,7 +661,11 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 
 	provider, err := h.service.CreateProvider(r.Context(), input)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("ecaguide: create_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 

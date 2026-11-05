@@ -5,7 +5,7 @@ RETURNING *;
 
 -- name: GetComment :one
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.status,
  c.is_anonymous,
  COALESCE(u.public_username, u.username, '') AS username,
@@ -21,7 +21,7 @@ WHERE c.id = @id;
 -- (Section 49 — body scrubbed by the handler) so reply trees stay intact.
 -- Leaf soft-deletes stay filtered out.
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  COALESCE((
  SELECT cv.value
@@ -58,7 +58,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- consumers.
 -- Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  COALESCE((
  SELECT cv.value
@@ -89,7 +89,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Public API parity with ListRepliesByParent: replies for a parent comment,
 -- only when the parent content is public (tombstones included).
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  0::smallint AS user_vote,
  c.is_anonymous,
@@ -112,7 +112,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListCommentsByContentNew :many
 -- Section 49 ?sort=new — newest first (pinned still surface on top).
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  COALESCE((
  SELECT cv.value
@@ -145,7 +145,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListCommentsByContentOldest :many
 -- Section 49 ?sort=oldest — oldest first (pinned still surface on top).
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  COALESCE((
  SELECT cv.value
@@ -177,7 +177,7 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListRepliesByParent :many
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
- c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+ c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
  c.reply_count,
  COALESCE((
  SELECT cv.value
@@ -457,18 +457,91 @@ RETURNING id, content_id, thread_id, link_count, created_at;
 
 -- name: ListContentThreadLinks :many
 -- Linked discussion threads for a blog/content, most recently linked first.
+-- Threads are only as visible as their own row: drafts, removed, and
+-- audience-restricted threads (members/private, private-space) are filtered
+-- per-viewer — mirrors the CanViewComments predicate (Section 49, C-021).
 SELECT l.id, l.content_id, l.thread_id, l.link_count, l.created_at,
  ct.title AS thread_title, ct.slug AS thread_slug,
  ct.comment_count AS thread_comment_count,
  ct.author_id AS thread_author_id
 FROM content_thread_links l
 JOIN contents ct ON ct.id = l.thread_id
+LEFT JOIN spaces ts ON ts.id = ct.space_id
 WHERE l.content_id = @content_id
  AND ct.deleted_at IS NULL
+ AND ct.status = 'published'
+ AND ct.auto_hidden = false
+ AND (
+     ts.id IS NULL
+     OR (ts.deleted_at IS NULL AND (
+         ts.visibility = 'public'
+         OR EXISTS (
+             SELECT 1 FROM space_members sm
+             WHERE sm.space_id = ts.id
+               AND sm.user_id = @user_id
+               AND sm.status = 'approved'
+         )
+     ))
+ )
+ AND (
+     ct.visibility = 'public'
+     OR (ct.visibility = 'members' AND @authed::boolean)
+     OR (ct.visibility = 'private' AND ct.author_id = @user_id)
+ )
 ORDER BY l.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountContentThreadLinks :one
+-- Mirrors the ListContentThreadLinks visibility predicate so pagination meta
+-- matches the rows a viewer actually receives.
 SELECT COUNT(*)::int AS count
-FROM content_thread_links
-WHERE content_id = @content_id;
+FROM content_thread_links l
+JOIN contents ct ON ct.id = l.thread_id
+LEFT JOIN spaces ts ON ts.id = ct.space_id
+WHERE l.content_id = @content_id
+ AND ct.deleted_at IS NULL
+ AND ct.status = 'published'
+ AND ct.auto_hidden = false
+ AND (
+     ts.id IS NULL
+     OR (ts.deleted_at IS NULL AND (
+         ts.visibility = 'public'
+         OR EXISTS (
+             SELECT 1 FROM space_members sm
+             WHERE sm.space_id = ts.id
+               AND sm.user_id = @user_id
+               AND sm.status = 'approved'
+         )
+     ))
+ )
+ AND (
+     ct.visibility = 'public'
+     OR (ct.visibility = 'members' AND @authed::boolean)
+     OR (ct.visibility = 'private' AND ct.author_id = @user_id)
+ );
+
+-- name: InsertCommentView :exec
+-- Section 49 — optional reply view tracking (admin-toggleable per Section
+-- 08). Idempotent via the (comment_id, user_id) PK; the
+-- trg_comment_views_increment trigger bumps comments.view_count.
+-- The EXISTS guard silently skips nonexistent, deleted, or removed comments
+-- so a view ping can never 500 on a dangling FK.
+INSERT INTO comment_views (comment_id, user_id)
+SELECT @comment_id, @user_id
+WHERE EXISTS (
+    SELECT 1 FROM comments c
+    WHERE c.id = @comment_id AND c.deleted_at IS NULL AND c.status = 'published'
+)
+ON CONFLICT DO NOTHING;
+
+-- name: InsertCommentViews :exec
+-- Batch view recording (Guide §4.3 — one round trip per thread, not per
+-- comment). Same live-comment guard + idempotency as InsertCommentView.
+INSERT INTO comment_views (comment_id, user_id)
+SELECT v.comment_id, @user_id
+FROM unnest(@comment_ids::uuid[]) AS v(comment_id)
+WHERE EXISTS (
+    SELECT 1 FROM comments c
+    WHERE c.id = v.comment_id AND c.deleted_at IS NULL AND c.status = 'published'
+)
+ON CONFLICT DO NOTHING;

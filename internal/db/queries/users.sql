@@ -1068,3 +1068,39 @@ WHERE id = $1;
 -- name: GetUserVerified :one
 -- Eligibility probe for POST /verification-requests (entity_type='user').
 SELECT verified FROM users WHERE id = $1;
+
+-- name: GetUserKYCStatus :one
+-- Platform-wide KYC flag (SEC-W-015b) — gates withdrawals at 'kyc' level.
+SELECT kyc_status FROM users WHERE id = @user_id;
+
+-- name: SetUserKYCStatus :exec
+-- Admin KYC decision (admin.users.manage) — transitions are recorded in
+-- audit_logs by the caller.
+UPDATE users SET kyc_status = @kyc_status, updated_at = now()
+WHERE id = @user_id;
+
+-- name: InsertKYCSubmission :one
+INSERT INTO user_kyc_submissions (user_id, document_type, document_ref, note)
+VALUES (@user_id, @document_type, sqlc.narg(document_ref), sqlc.narg(note))
+RETURNING id, user_id, document_type, document_ref, note, status, submitted_at, decided_at, decided_by;
+
+-- name: GetUserLatestKYCSubmission :one
+SELECT id, user_id, document_type, document_ref, note, status, submitted_at, decided_at, decided_by
+FROM user_kyc_submissions
+WHERE user_id = @user_id
+ORDER BY submitted_at DESC
+LIMIT 1;
+
+-- name: ListPendingKYCSubmissions :many
+SELECT s.id, s.user_id, s.document_type, s.document_ref, s.note, s.status, s.submitted_at, s.decided_at, s.decided_by,
+ u.email, u.username
+FROM user_kyc_submissions s
+JOIN users u ON u.id = s.user_id
+WHERE s.status = 'pending'
+ORDER BY s.submitted_at ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: DecideKYCSubmission :exec
+UPDATE user_kyc_submissions
+SET status = @status, decided_at = now(), decided_by = @decided_by
+WHERE id = @id AND status = 'pending';

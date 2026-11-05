@@ -11,6 +11,53 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimWithdrawalForProcessing = `-- name: ClaimWithdrawalForProcessing :one
+UPDATE wallet_withdrawals
+SET status = 'approved',
+ reviewed_by = $1,
+ reviewed_at = now(),
+ updated_at = now()
+WHERE id = $2
+ AND status IN ('pending', 'pending_approval')
+RETURNING id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at
+`
+
+type ClaimWithdrawalForProcessingParams struct {
+	ReviewedBy pgtype.UUID `json:"reviewed_by"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+// Atomic claim for the approval → payout transition (SEC-W-002). Only a row
+// still in a processable state can be claimed — the loser of a concurrent
+// approval race gets no row and must never reach the provider call.
+func (q *Queries) ClaimWithdrawalForProcessing(ctx context.Context, arg ClaimWithdrawalForProcessingParams) (WalletWithdrawal, error) {
+	row := q.db.QueryRow(ctx, claimWithdrawalForProcessing, arg.ReviewedBy, arg.ID)
+	var i WalletWithdrawal
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.CreditAmount,
+		&i.CurrencyCode,
+		&i.CreditsPerUnit,
+		&i.FiatAmount,
+		&i.FeeAmount,
+		&i.FeeBasis,
+		&i.FeeRate,
+		&i.NetAmount,
+		&i.Status,
+		&i.PayoutMethodID,
+		&i.PayoutProvider,
+		&i.ProviderRef,
+		&i.AdminNote,
+		&i.ReviewedBy,
+		&i.ReviewedAt,
+		&i.IdempotencyKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const countWithdrawals = `-- name: CountWithdrawals :one
 SELECT COUNT(*) FROM wallet_withdrawals
 WHERE ($1::text IS NULL OR status = $1)
@@ -76,6 +123,49 @@ func (q *Queries) DeleteWithdrawalFeeTier(ctx context.Context, id pgtype.UUID) (
 	return i, err
 }
 
+const getInFlightWithdrawalTotalsByProvider = `-- name: GetInFlightWithdrawalTotalsByProvider :many
+SELECT payout_provider, currency_code,
+ COUNT(*)::int AS row_count,
+ COALESCE(SUM(net_amount), 0)::bigint AS net_total
+FROM wallet_withdrawals
+WHERE status IN ('pending', 'pending_approval', 'approved', 'processing')
+GROUP BY payout_provider, currency_code
+`
+
+type GetInFlightWithdrawalTotalsByProviderRow struct {
+	PayoutProvider string `json:"payout_provider"`
+	CurrencyCode   string `json:"currency_code"`
+	RowCount       int32  `json:"row_count"`
+	NetTotal       int64  `json:"net_total"`
+}
+
+// SEC-W-NGN float-vs-liability: sum of net payout amounts still in flight
+// per provider+currency — reconciler alerts when provider float < this.
+func (q *Queries) GetInFlightWithdrawalTotalsByProvider(ctx context.Context) ([]GetInFlightWithdrawalTotalsByProviderRow, error) {
+	rows, err := q.db.Query(ctx, getInFlightWithdrawalTotalsByProvider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetInFlightWithdrawalTotalsByProviderRow
+	for rows.Next() {
+		var i GetInFlightWithdrawalTotalsByProviderRow
+		if err := rows.Scan(
+			&i.PayoutProvider,
+			&i.CurrencyCode,
+			&i.RowCount,
+			&i.NetTotal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPayoutProviderByType = `-- name: GetPayoutProviderByType :one
 SELECT id, type, name, is_active, is_default, config, supported_currencies, created_at, updated_at FROM payout_providers
 WHERE type = $1
@@ -137,6 +227,62 @@ func (q *Queries) GetUserGroupByUserID(ctx context.Context, userID pgtype.UUID) 
 	return i, err
 }
 
+const getUserWithdrawalPolicy = `-- name: GetUserWithdrawalPolicy :one
+SELECT COALESCE(bool_or(ug.requires_withdrawal_approval), false)::boolean AS requires_approval,
+ CASE WHEN bool_or(ug.auto_withdrawal_limit IS NULL OR ug.auto_withdrawal_limit <= 0)
+   THEN 0::bigint
+   ELSE min(ug.auto_withdrawal_limit)::bigint
+ END AS auto_limit
+FROM user_groups ug
+JOIN user_group_memberships ugm ON ugm.group_id = ug.id
+WHERE ugm.user_id = $1
+`
+
+type GetUserWithdrawalPolicyRow struct {
+	RequiresApproval bool  `json:"requires_approval"`
+	AutoLimit        int64 `json:"auto_limit"`
+}
+
+// Effective withdrawal policy across ALL of a user's group memberships
+// (SEC-W-016): the old LIMIT-1 lookup let an arbitrary group win. Fold
+// to the most restrictive policy — approval required if ANY membership
+// demands it; auto-approve limit is the minimum positive limit, and 0
+// if any membership has no positive limit.
+func (q *Queries) GetUserWithdrawalPolicy(ctx context.Context, userID pgtype.UUID) (GetUserWithdrawalPolicyRow, error) {
+	row := q.db.QueryRow(ctx, getUserWithdrawalPolicy, userID)
+	var i GetUserWithdrawalPolicyRow
+	err := row.Scan(&i.RequiresApproval, &i.AutoLimit)
+	return i, err
+}
+
+const getUserWithdrawalTotalsSince = `-- name: GetUserWithdrawalTotalsSince :one
+SELECT COALESCE(SUM(credit_amount), 0)::bigint AS credit_total,
+ COUNT(*)::int AS withdrawal_count
+FROM wallet_withdrawals
+WHERE user_id = $1
+ AND status IN ('pending', 'pending_approval', 'approved', 'processing', 'completed')
+ AND created_at >= $2
+`
+
+type GetUserWithdrawalTotalsSinceParams struct {
+	UserID pgtype.UUID        `json:"user_id"`
+	Since  pgtype.Timestamptz `json:"since"`
+}
+
+type GetUserWithdrawalTotalsSinceRow struct {
+	CreditTotal     int64 `json:"credit_total"`
+	WithdrawalCount int32 `json:"withdrawal_count"`
+}
+
+// Rolling-window velocity totals for withdrawal caps (SEC-W-004). Failed,
+// rejected and cancelled rows released no value, so they don't count.
+func (q *Queries) GetUserWithdrawalTotalsSince(ctx context.Context, arg GetUserWithdrawalTotalsSinceParams) (GetUserWithdrawalTotalsSinceRow, error) {
+	row := q.db.QueryRow(ctx, getUserWithdrawalTotalsSince, arg.UserID, arg.Since)
+	var i GetUserWithdrawalTotalsSinceRow
+	err := row.Scan(&i.CreditTotal, &i.WithdrawalCount)
+	return i, err
+}
+
 const getWithdrawalByID = `-- name: GetWithdrawalByID :one
 SELECT id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
 WHERE id = $1
@@ -144,6 +290,40 @@ WHERE id = $1
 
 func (q *Queries) GetWithdrawalByID(ctx context.Context, id pgtype.UUID) (WalletWithdrawal, error) {
 	row := q.db.QueryRow(ctx, getWithdrawalByID, id)
+	var i WalletWithdrawal
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.CreditAmount,
+		&i.CurrencyCode,
+		&i.CreditsPerUnit,
+		&i.FiatAmount,
+		&i.FeeAmount,
+		&i.FeeBasis,
+		&i.FeeRate,
+		&i.NetAmount,
+		&i.Status,
+		&i.PayoutMethodID,
+		&i.PayoutProvider,
+		&i.ProviderRef,
+		&i.AdminNote,
+		&i.ReviewedBy,
+		&i.ReviewedAt,
+		&i.IdempotencyKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getWithdrawalByProviderRef = `-- name: GetWithdrawalByProviderRef :one
+SELECT id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
+WHERE provider_ref = $1
+LIMIT 1
+`
+
+func (q *Queries) GetWithdrawalByProviderRef(ctx context.Context, providerRef *string) (WalletWithdrawal, error) {
+	row := q.db.QueryRow(ctx, getWithdrawalByProviderRef, providerRef)
 	var i WalletWithdrawal
 	err := row.Scan(
 		&i.ID,
@@ -586,6 +766,95 @@ func (q *Queries) ListWithdrawalsByUser(ctx context.Context, arg ListWithdrawals
 	return items, nil
 }
 
+const rejectWithdrawalAtomic = `-- name: RejectWithdrawalAtomic :one
+UPDATE wallet_withdrawals
+SET status = 'rejected',
+ admin_note = COALESCE($1, admin_note),
+ reviewed_by = $2,
+ reviewed_at = now(),
+ updated_at = now()
+WHERE id = $3
+ AND status IN ('pending', 'pending_approval')
+RETURNING id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at
+`
+
+type RejectWithdrawalAtomicParams struct {
+	AdminNote  *string     `json:"admin_note"`
+	ReviewedBy pgtype.UUID `json:"reviewed_by"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+// Atomic reject claim (SEC-W-013): only a row still in a rejectable state
+// transitions — concurrent rejects can't both refund.
+func (q *Queries) RejectWithdrawalAtomic(ctx context.Context, arg RejectWithdrawalAtomicParams) (WalletWithdrawal, error) {
+	row := q.db.QueryRow(ctx, rejectWithdrawalAtomic, arg.AdminNote, arg.ReviewedBy, arg.ID)
+	var i WalletWithdrawal
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.CreditAmount,
+		&i.CurrencyCode,
+		&i.CreditsPerUnit,
+		&i.FiatAmount,
+		&i.FeeAmount,
+		&i.FeeBasis,
+		&i.FeeRate,
+		&i.NetAmount,
+		&i.Status,
+		&i.PayoutMethodID,
+		&i.PayoutProvider,
+		&i.ProviderRef,
+		&i.AdminNote,
+		&i.ReviewedBy,
+		&i.ReviewedAt,
+		&i.IdempotencyKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const reopenWithdrawalForAppeal = `-- name: ReopenWithdrawalForAppeal :one
+UPDATE wallet_withdrawals
+SET status = 'pending_approval',
+ reviewed_by = NULL,
+ reviewed_at = NULL,
+ updated_at = now()
+WHERE id = $1
+ AND status = 'rejected'
+RETURNING id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at
+`
+
+// Atomic rejected → pending_approval reopen (SEC-W-013): conditional so a
+// concurrent re-review can't double-deduct the re-reserved credits.
+func (q *Queries) ReopenWithdrawalForAppeal(ctx context.Context, id pgtype.UUID) (WalletWithdrawal, error) {
+	row := q.db.QueryRow(ctx, reopenWithdrawalForAppeal, id)
+	var i WalletWithdrawal
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.CreditAmount,
+		&i.CurrencyCode,
+		&i.CreditsPerUnit,
+		&i.FiatAmount,
+		&i.FeeAmount,
+		&i.FeeBasis,
+		&i.FeeRate,
+		&i.NetAmount,
+		&i.Status,
+		&i.PayoutMethodID,
+		&i.PayoutProvider,
+		&i.ProviderRef,
+		&i.AdminNote,
+		&i.ReviewedBy,
+		&i.ReviewedAt,
+		&i.IdempotencyKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateWithdrawalFeeTier = `-- name: UpdateWithdrawalFeeTier :one
 UPDATE wallet_withdrawal_fee_tiers
 SET min_amount = $1,
@@ -681,6 +950,24 @@ WHERE user_id = $1 AND is_default = true
 
 func (q *Queries) UpdateWithdrawalMethodDefault(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, updateWithdrawalMethodDefault, userID)
+	return err
+}
+
+const updateWithdrawalMethodMetadata = `-- name: UpdateWithdrawalMethodMetadata :exec
+UPDATE wallet_withdrawal_methods
+SET metadata = $1, updated_at = now()
+WHERE id = $2
+`
+
+type UpdateWithdrawalMethodMetadataParams struct {
+	Metadata []byte      `json:"metadata"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+// Cache provider-side artifacts on the method (e.g. Paystack
+// recipient_code created lazily at first payout — SEC-W-NGN).
+func (q *Queries) UpdateWithdrawalMethodMetadata(ctx context.Context, arg UpdateWithdrawalMethodMetadataParams) error {
+	_, err := q.db.Exec(ctx, updateWithdrawalMethodMetadata, arg.Metadata, arg.ID)
 	return err
 }
 

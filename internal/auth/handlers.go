@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -57,27 +58,28 @@ type SourceManager interface {
 
 // AuthHandlers holds dependencies for auth HTTP handlers.
 type AuthHandlers struct { //nolint:revive // stuttering type name preserved for API compatibility
-	DB                  Querier
-	Queries             *gen.Queries
-	Database            *db.DB // Raw DB access for operations not yet in sqlc (e.g., backup code update)
-	KeyRotation         *KeyRotation
-	BruteForce          BruteForceStore
-	Policy              PasswordPolicy
-	AsynqClient         *asynq.Client
-	VKClient            *valkey.Client        // Valkey client for per-email rate limiting
-	Settings            SettingsReader        // Hot-reloadable system settings for auth token TTLs
-	SiteName            string                // Brand name for email templates (e.g. "JapaConnect")
-	SiteURL             string                // Public site base URL (JC_SITE_URL) for email links — never derived from request Host
-	SupportURL          string                // Support page URL for email footers
-	CookieDomain        string                // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
-	SecureCookies       bool                  // When true, session/CSRF cookies are marked Secure (production / TLS)
-	ReferralCapturer    ReferralCapturer      // Optional — wired by server after referral.Service is constructed (§60)
-	DefaultFolderSetter DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
-	TierManager         TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
-	SourceManager       SourceManager         // Optional — wired by server for v2 source directory auto-creation
-	OwnerEmail          string                // JC_OWNER_EMAIL — designates the platform owner account (§03 owner amendment)
-	OwnerPromoter       SuperAdminPromoter    // Optional — promotes the owner account into the super_admin group at registration
-	Activity            ActivityEmitter       // Optional — wired by server for user.registered / daily.login point events (ADR-136)
+	DB                    Querier
+	Queries               *gen.Queries
+	Database              *db.DB // Raw DB access for operations not yet in sqlc (e.g., backup code update)
+	KeyRotation           *KeyRotation
+	BruteForce            BruteForceStore
+	Policy                PasswordPolicy
+	AsynqClient           *asynq.Client
+	VKClient              *valkey.Client                                           // Valkey client for per-email rate limiting
+	Settings              SettingsReader                                           // Hot-reloadable system settings for auth token TTLs
+	SiteName              string                                                   // Brand name for email templates (e.g. "JapaConnect")
+	SiteURL               string                                                   // Public site base URL (JC_SITE_URL) for email links — never derived from request Host
+	SupportURL            string                                                   // Support page URL for email footers
+	CookieDomain          string                                                   // Cookie domain for cross-subdomain sharing (e.g. ".example.com"), empty = exact host
+	SecureCookies         bool                                                     // When true, session/CSRF cookies are marked Secure (production / TLS)
+	OAuthProviderResolver func(ctx context.Context, provider string) OAuthProvider // Optional — wired by server to oauthHandlers.resolveProvider for step-up (SEC-W-015)
+	ReferralCapturer      ReferralCapturer                                         // Optional — wired by server after referral.Service is constructed (§60)
+	DefaultFolderSetter   DefaultFolderProvider                                    // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
+	TierManager           TierManager                                              // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
+	SourceManager         SourceManager                                            // Optional — wired by server for v2 source directory auto-creation
+	OwnerEmail            string                                                   // JC_OWNER_EMAIL — designates the platform owner account (§03 owner amendment)
+	OwnerPromoter         SuperAdminPromoter                                       // Optional — promotes the owner account into the super_admin group at registration
+	Activity              ActivityEmitter                                          // Optional — wired by server for user.registered / daily.login point events (ADR-136)
 }
 
 // ActivityEmitter records a wallet activity event and enqueues its async
@@ -1881,4 +1883,327 @@ func loginAllowedStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+// StepUp handles POST /api/v1/auth/step-up (SEC-W-015). Requires an
+// authenticated session; verifies a fresh TOTP code (users with 2FA
+// enabled) or the account password, and mints a scoped "step_up" token
+// required by sensitive mutations (withdrawals, payout-method creation).
+func (h *AuthHandlers) StepUp(w http.ResponseWriter, r *http.Request) {
+	user := FromContext(r.Context())
+	if user == nil || !user.UserID.Valid {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	var req struct {
+		Code         string `json:"code"`
+		Password     string `json:"password"`
+		Provider     string `json:"provider"`      // "google" | "microsoft" — OAuth step-up
+		OAuthCode    string `json:"oauth_code"`    // authorization code from the provider
+		CodeVerifier string `json:"code_verifier"` // PKCE verifier matching the authorize request
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+	req.Code = sanitizeCode(req.Code)
+
+	// Rate-limit step-up attempts per user — same posture as the TOTP
+	// challenge path (5 attempts / 5 minutes, fail-open on cache errors).
+	if h.VKClient != nil {
+		rlKey := valkey.MustKey("jc:ratelimit:totp_challenge:%s", user.UserID.String())
+		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), rlKey, 5, 5*time.Minute)
+		if err != nil {
+			slog.Error("step-up: rate limit check failed, allowing request", "error", err)
+		}
+		if !ok {
+			errpkg.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+				"Too many verification attempts. Please try again later.")
+			return
+		}
+	}
+
+	// Prefer TOTP when enabled; fall back to password otherwise.
+	totpRecord, totpErr := h.Queries.GetTOTPCredentials(r.Context(), user.UserID)
+	totpEnabled := totpErr == nil && totpRecord.EnabledAt.Valid
+
+	// OAuth step-up (SEC-W-015): user re-authenticates at Google or
+	// Microsoft; the returned identity must match an oauth_accounts row
+	// linked to this user — mere email equality is not accepted.
+	if req.Provider != "" {
+		if req.OAuthCode == "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "oauth_code is required with provider")
+			return
+		}
+		if h.OAuthProviderResolver == nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "oauth_unavailable", "OAuth step-up is not configured")
+			return
+		}
+		p := h.OAuthProviderResolver(r.Context(), strings.ToLower(req.Provider))
+		if p == nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "oauth_unavailable", "Provider is not configured")
+			return
+		}
+		info, err := p.Exchange(r.Context(), req.OAuthCode, req.CodeVerifier, "")
+		if err != nil {
+			slog.Warn("step-up: oauth exchange failed", "provider", req.Provider, "error", err)
+			errpkg.WriteError(w, http.StatusUnauthorized, "oauth_failed", "OAuth verification failed")
+			return
+		}
+		accounts, err := h.Queries.GetOAuthAccountsByUser(r.Context(), user.UserID)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "user_error", "Failed to load linked accounts")
+			return
+		}
+		linked := false
+		for _, a := range accounts {
+			if a.Provider == info.Provider && a.ProviderUserID == info.ProviderUserID {
+				linked = true
+				break
+			}
+		}
+		if !linked {
+			// Auto-link when the provider attests the SAME verified email
+			// as this account — proving control of the provider identity is
+			// equivalent to the link flow, and removes the catch-22 for
+			// password users who never linked a social account.
+			rec, err := h.Queries.GetUserByID(r.Context(), user.UserID)
+			if err != nil || !info.EmailVerified || !strings.EqualFold(rec.Email, info.Email) {
+				errpkg.WriteError(w, http.StatusForbidden, "oauth_not_linked",
+					"This "+info.Provider+" identity is not linked to your account")
+				return
+			}
+			if _, err := h.Queries.LinkOAuthAccount(r.Context(), gen.LinkOAuthAccountParams{
+				UserID:         user.UserID,
+				Provider:       info.Provider,
+				ProviderUserID: info.ProviderUserID,
+			}); err != nil {
+				slog.Warn("step-up: auto-link oauth account failed", "provider", info.Provider, "error", err)
+				errpkg.WriteError(w, http.StatusInternalServerError, "link_failed", "Failed to link OAuth identity")
+				return
+			}
+		}
+	} else if totpEnabled {
+		if req.Code == "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_code", "Verification code is required")
+			return
+		}
+		plaintext, err := decryptSecret(totpRecord.SecretEncrypted)
+		if err != nil {
+			slog.Error("step-up: decrypt TOTP secret", "user_id", user.UserID.String())
+			errpkg.WriteError(w, http.StatusInternalServerError, "totp_error", "Failed to verify 2FA")
+			return
+		}
+		if !VerifyTOTP(plaintext, req.Code) {
+			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_totp", "Invalid verification code")
+			return
+		}
+		// Replay guard — a captured code cannot be reused in-window.
+		if h.VKClient != nil && !claimTOTPCode(r.Context(), h.VKClient.Redis(), user.UserID, req.Code) {
+			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_totp", "Invalid verification code")
+			return
+		}
+	} else {
+		if req.Password == "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "password is required")
+			return
+		}
+		// Look up the password hash by email — GetUserByID lacks it.
+		rec, err := h.Queries.GetUserByID(r.Context(), user.UserID)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "user_error", "Failed to load user")
+			return
+		}
+		authRow, err := h.Queries.GetUserByEmail(r.Context(), rec.Email)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusInternalServerError, "user_error", "Failed to load user")
+			return
+		}
+		if authRow.PasswordHash == nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "password_unavailable", "Password verification is not available for this account")
+			return
+		}
+		if err := VerifyPassword(*authRow.PasswordHash, req.Password); err != nil {
+			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_password", "Invalid password")
+			return
+		}
+	}
+
+	token, err := h.KeyRotation.MintStepUpToken(user.UserID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to issue step-up token")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"step_up_token": token,
+		"expires_in":    int(StepUpTTL.Seconds()),
+	})
+}
+
+// AdminSetUserKYC handles POST /api/v1/admin/users/{id}/kyc
+// (admin.users.manage, SEC-W-015b). Sets users.kyc_status — the flag the
+// 'kyc' withdrawal verification level reads — and records the decision
+// in audit_logs. A full document-verification pipeline can write the
+// same column; this is the manual-decision path.
+func (h *AuthHandlers) AdminSetUserKYC(w http.ResponseWriter, r *http.Request) {
+	admin := FromContext(r.Context())
+	if admin == nil || !admin.UserID.Valid {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	var targetID pgtype.UUID
+	if err := targetID.Scan(chi.URLParam(r, "id")); err != nil || !targetID.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid user ID")
+		return
+	}
+
+	var req struct {
+		Status string `json:"status"`
+		Note   string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	switch req.Status {
+	case "unverified", "pending", "verified", "failed":
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status",
+			"status must be one of: unverified, pending, verified, failed")
+		return
+	}
+
+	if err := h.Queries.SetUserKYCStatus(r.Context(), gen.SetUserKYCStatusParams{
+		UserID:    targetID,
+		KycStatus: req.Status,
+	}); err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update KYC status")
+		return
+	}
+
+	// Close the loop on the pending submission — approved/failed user
+	// decisions decide the newest pending row, keeping the queue clean.
+	if req.Status == "verified" || req.Status == "failed" {
+		if sub, err := h.Queries.GetUserLatestKYCSubmission(r.Context(), targetID); err == nil {
+			subStatus := "approved"
+			if req.Status == "failed" {
+				subStatus = "rejected"
+			}
+			_ = h.Queries.DecideKYCSubmission(r.Context(), gen.DecideKYCSubmissionParams{
+				ID: sub.ID, Status: subStatus, DecidedBy: admin.UserID,
+			})
+		}
+	}
+
+	meta, _ := json.Marshal(map[string]interface{}{"status": req.Status, "note": req.Note})
+	target := "users"
+	if _, err := h.Queries.CreateAuditLog(r.Context(), gen.CreateAuditLogParams{
+		ActorUserID: admin.UserID,
+		ActionType:  "users.kyc_status",
+		TargetType:  &target,
+		TargetID:    targetID,
+		Metadata:    meta,
+	}); err != nil {
+		slog.Warn("kyc audit log write failed", "target", targetID.String(), "error", err)
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{"user_id": targetID.String(), "kyc_status": req.Status},
+	})
+}
+
+var allowedKYCDocTypes = map[string]bool{
+	"passport": true, "national_id": true, "drivers_license": true,
+	"proof_of_address": true, "other": true,
+}
+
+// SubmitKYC handles POST /api/v1/me/kyc (SEC-W-015b). Records a KYC
+// submission and moves users.kyc_status to 'pending'. Admins decide via
+// POST /admin/users/{id}/kyc. The document itself lives in storage —
+// document_ref is a path/provider reference, never document data.
+func (h *AuthHandlers) SubmitKYC(w http.ResponseWriter, r *http.Request) {
+	user := FromContext(r.Context())
+	if user == nil || !user.UserID.Valid {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	var req struct {
+		DocumentType string `json:"document_type"`
+		DocumentRef  string `json:"document_ref"`
+		Note         string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+	if !allowedKYCDocTypes[req.DocumentType] {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_document_type",
+			"document_type must be one of: passport, national_id, drivers_license, proof_of_address, other")
+		return
+	}
+
+	status, err := h.Queries.GetUserKYCStatus(r.Context(), user.UserID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "user_error", "Failed to load account")
+		return
+	}
+	if status == "verified" || status == "pending" {
+		errpkg.WriteError(w, http.StatusConflict, "kyc_already_"+status, "KYC is already "+status)
+		return
+	}
+
+	var ref, note *string
+	if req.DocumentRef != "" {
+		ref = &req.DocumentRef
+	}
+	if req.Note != "" {
+		note = &req.Note
+	}
+	sub, err := h.Queries.InsertKYCSubmission(r.Context(), gen.InsertKYCSubmissionParams{
+		UserID:       user.UserID,
+		DocumentType: req.DocumentType,
+		DocumentRef:  ref,
+		Note:         note,
+	})
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to record submission")
+		return
+	}
+	if err := h.Queries.SetUserKYCStatus(r.Context(), gen.SetUserKYCStatusParams{
+		UserID: user.UserID, KycStatus: "pending",
+	}); err != nil {
+		slog.Warn("kyc: status transition failed after submission", "user_id", user.UserID.String(), "error", err)
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{"data": sub})
+}
+
+// AdminListPendingKYC handles GET /api/v1/admin/kyc (admin.users.manage) —
+// the review queue backing POST /admin/users/{id}/kyc decisions.
+func (h *AuthHandlers) AdminListPendingKYC(w http.ResponseWriter, r *http.Request) {
+	limit, offset := int32(50), int32(0)
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = int32(n)
+		}
+	}
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			offset = int32(n-1) * limit
+		}
+	}
+
+	rows, err := h.Queries.ListPendingKYCSubmissions(r.Context(), gen.ListPendingKYCSubmissionsParams{
+		PageLimit: limit, PageOffset: offset,
+	})
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list submissions")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
@@ -113,7 +114,8 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 
 	results, total, err := h.svc.FindScholarships(r.Context(), filters)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", err.Error())
+		slog.Error("scholarships: search_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", "The server encountered an error — please try again")
 		return
 	}
 
@@ -183,7 +185,8 @@ func (h *Handlers) HandleLevels(w http.ResponseWriter, r *http.Request) {
 
 	levels, err := h.svc.ListLevels(r.Context())
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "levels_failed", err.Error())
+		slog.Error("scholarships: levels_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "levels_failed", "The server encountered an error — please try again")
 		return
 	}
 
@@ -265,7 +268,11 @@ func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.R
 
 	saved, err := h.svc.UpdateSavedScholarship(r.Context(), userID, guideID, body.Status, body.Notes, body.RemindBeforeDays)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("scholarships: update_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -299,7 +306,11 @@ func (h *Handlers) HandleDeleteSavedScholarship(w http.ResponseWriter, r *http.R
 	}
 
 	if err := h.svc.DeleteSavedScholarship(r.Context(), userID, guideID); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "delete_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("scholarships: delete_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -337,7 +348,8 @@ func (h *Handlers) HandleListSavedScholarships(w http.ResponseWriter, r *http.Re
 
 	rows, total, err := h.svc.ListSavedScholarships(r.Context(), userID, status, guideID, page, limit)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		slog.Error("scholarships: list_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "The server encountered an error — please try again")
 		return
 	}
 
@@ -369,7 +381,8 @@ func (h *Handlers) HandleAdminStatusDistribution(w http.ResponseWriter, r *http.
 
 	stats, err := h.svc.AdminStats(r.Context())
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		slog.Error("scholarships: stats_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "The server encountered an error — please try again")
 		return
 	}
 
@@ -388,7 +401,8 @@ func handleAdminReport[T any](w http.ResponseWriter, r *http.Request, report fun
 
 	rows, err := report(r.Context(), page, limit)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "report_failed", err.Error())
+		slog.Error("scholarships: report_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "report_failed", "The server encountered an error — please try again")
 		return
 	}
 

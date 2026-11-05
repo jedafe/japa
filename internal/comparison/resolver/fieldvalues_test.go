@@ -175,7 +175,7 @@ func TestMentorBaseFieldValues(t *testing.T) {
 			MentorAreas: []string{"canada", "express entry"},
 			MentorBio:   &bio, MentorSince: since,
 			MentorCapacity: &capacity, ActiveMenteeCount: &mentees,
-			AvailableSlots: 3,
+			AvailableSlots:  3,
 			Countries:       []string{"Canada", "United States"},
 			Credentials:     []string{"Certified career coach"},
 			YearsExperience: &years, MenteesHelped: ptrInt32(47),

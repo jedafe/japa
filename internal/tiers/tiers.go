@@ -1,9 +1,11 @@
 // Package tiers resolves and manages a user's effective tier from user_groups.
 //
 // The tier system replaces the legacy Professional Profiles feature with a
-// unified regular / pro / business model. A user's effective tier is the
-// highest tier among their group memberships, synced to users.profile_type
-// for fast display and filtering.
+// unified regular / pro / business model, extended by migration 001049 with
+// staff tiers (staff / admin / super_admin) ranked above business. A user's
+// effective tier is the highest tier among their group memberships; the
+// subscription tier is the highest of regular/pro/business only and is
+// synced to users.profile_type for fast display and filtering.
 //
 // Ref: docs/superpowers/specs/2026-09-03-unified-user-tiers-and-professional-profile-removal-design.md
 package tiers
@@ -48,33 +50,70 @@ func (s *Service) SetValkey(v valkeycompat.Cmdable) {
 	s.valkey = v
 }
 
-var tierRanks = map[string]int{
+// subscriptionTierRanks are the purchasable tiers managed by SetUserTier and
+// synced to users.profile_type. Staff tiers are deliberately excluded —
+// they are assigned through group membership, never through subscription
+// grant/revoke flows.
+var subscriptionTierRanks = map[string]int{
 	"regular":  1,
 	"pro":      2,
 	"business": 3,
 }
 
-// ResolveUserTier returns the user's effective tier (regular/pro/business).
+// effectiveTierRanks adds the staff tiers (migration 001049) ranked above
+// business. ResolveUserTier returns the effective tier so every tier-scoped
+// quota (jce.comparisons.max_per_day.{tier}, ai.assistant.daily_queries.{tier},
+// organizations.max_per_user.{tier}, etc.) honours staff overrides.
+var effectiveTierRanks = map[string]int{
+	"regular":     1,
+	"pro":         2,
+	"business":    3,
+	"staff":       4,
+	"admin":       5,
+	"super_admin": 6,
+}
+
+// ResolveUserTier returns the user's effective tier — the highest tier across
+// all tier-bearing group memberships, including staff tiers
+// (regular/pro/business/staff/admin/super_admin).
 func (s *Service) ResolveUserTier(ctx context.Context, userID pgtype.UUID) (string, error) {
 	rank, err := s.store.read.ResolveUserTier(ctx, userID)
 	if err != nil {
 		return "", fmt.Errorf("resolve user tier: %w", err)
 	}
 
-	for tier, r := range tierRanks {
+	return tierNameForRank(effectiveTierRanks, rank), nil
+}
+
+// ResolveSubscriptionTier returns the user's highest subscription tier only
+// (regular/pro/business), ignoring staff-tier groups. Payment grant/revoke
+// flows use this so a staff rank never masks the plan state.
+func (s *Service) ResolveSubscriptionTier(ctx context.Context, userID pgtype.UUID) (string, error) {
+	rank, err := s.store.read.ResolveSubscriptionTier(ctx, userID)
+	if err != nil {
+		return "", fmt.Errorf("resolve subscription tier: %w", err)
+	}
+
+	return tierNameForRank(subscriptionTierRanks, rank), nil
+}
+
+// tierNameForRank maps a resolved rank back to its tier name, defaulting to
+// regular for unknown ranks.
+func tierNameForRank(ranks map[string]int, rank int32) string {
+	for tier, r := range ranks {
 		if r == int(rank) {
-			return tier, nil
+			return tier
 		}
 	}
 
-	return "regular", nil
+	return "regular"
 }
 
 // SetUserTier assigns the user to the tier group matching the requested tier
 // and syncs users.profile_type. The user always remains in the base members
 // group so they keep the member role and permissions.
 func (s *Service) SetUserTier(ctx context.Context, userID pgtype.UUID, tier string) error {
-	if _, ok := tierRanks[tier]; !ok {
+	if _, ok := subscriptionTierRanks[tier]; !ok {
 		return fmt.Errorf("invalid tier: %s", tier)
 	}
 

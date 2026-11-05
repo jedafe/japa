@@ -69,6 +69,43 @@ type SpaceCommentChecker interface {
 	CanPostInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
 }
 
+// SpaceDenialExplainer is optionally implemented by space checkers that can
+// produce a user-facing reason for a denied write action
+// (spaces.PostCheckerAdapter does). Handlers use it to answer 403s with the
+// concrete missing requirement — join the space, verify email, moderators
+// only — instead of a bare "no permission" string.
+type SpaceDenialExplainer interface {
+	ExplainSpaceDenial(ctx context.Context, spaceID, userID pgtype.UUID, action string) (string, error)
+}
+
+// spaceDenialMessage resolves the user-facing message for a denied space
+// write action ("post", "comment", "reply"). It asks the checker for an
+// explanation when supported and falls back to a generic denial otherwise.
+func spaceDenialMessage(ctx context.Context, checker SpaceCommentChecker, spaceID, userID pgtype.UUID, action string) string {
+	verb := action
+	if verb != "post" && verb != "reply" {
+		verb = "comment"
+	}
+
+	fallback := "You do not have permission to " + verb + " in this space"
+
+	if checker == nil {
+		return fallback
+	}
+
+	ex, ok := checker.(SpaceDenialExplainer)
+	if !ok {
+		return fallback
+	}
+
+	msg, err := ex.ExplainSpaceDenial(ctx, spaceID, userID, verb)
+	if err != nil || msg == "" {
+		return fallback
+	}
+
+	return msg
+}
+
 // literalResolver resolves {{...}} template literals in user-facing text
 // fields (§14 Global Template Literals). Implemented by *literals.Catalog;
 // nil disables resolution.
@@ -639,8 +676,13 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 
 				slog.Warn("comments: space perm check failed", "space_id", spaceID.String(), "error", err)
 			} else if !allowed {
+				action := "comment"
+				if isReply {
+					action = "reply"
+				}
+
 				errpkg.WriteError(w, http.StatusForbidden, "space_permission_denied",
-					"You do not have permission to comment in this space")
+					spaceDenialMessage(r.Context(), h.spaceChecker, spaceID, user.UserID, action))
 				return
 			}
 		}
@@ -745,7 +787,10 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 
 	// C-019: resolve the author-vs-moderator path up front. comments.edit_own
 	// uses the author query (edit window applies); comments.edit_any is the
-	// moderator path (no window, no author filter).
+	// moderator path (no window, no author filter). The route is wired with
+	// RequireAuth only; the own-vs-any decision is made here at request time
+	// so a moderator holding only comments.edit_any is not blocked by an
+	// edit_own middleware gate — mirrors DeleteComment.
 	existing, err := h.Service.GetComment(r.Context(), commentID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -754,15 +799,18 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 
 	isAuthor := existing.AuthorUserID.Valid && existing.AuthorUserID.Bytes == user.UserID.Bytes
 
+	canEditOwn := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, "comments.edit_own")
+	canEditAny := h.perms != nil && h.perms.HasPermission(r.Context(), user.UserID, "comments.edit_any")
+
 	var comment gen.Comment
-	if isAuthor {
+	switch {
+	case isAuthor && canEditOwn:
 		comment, err = h.Service.UpdateComment(r.Context(), commentID, user.UserID, input.Body)
-	} else {
-		if h.perms == nil || !h.perms.HasPermission(r.Context(), user.UserID, "comments.edit_any") {
-			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only edit your own comments")
-			return
-		}
+	case canEditAny:
 		comment, err = h.Service.UpdateCommentModerate(r.Context(), commentID, user.UserID, input.Body)
+	default:
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only edit your own comments")
+		return
 	}
 
 	if err != nil {
@@ -944,7 +992,8 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.canPinComment(r, user.UserID, commentID) {
-		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to pin this comment")
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden",
+			"Only the post author or a moderator can pin comments")
 		return
 	}
 
@@ -971,7 +1020,8 @@ func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.canPinComment(r, user.UserID, commentID) {
-		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to unpin this comment")
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden",
+			"Only the post author or a moderator can unpin comments")
 		return
 	}
 
@@ -998,6 +1048,74 @@ func (h *Handlers) canPinComment(r *http.Request, userID, commentID pgtype.UUID)
 	}
 
 	return contentAuthorID.Valid && contentAuthorID.Bytes == userID.Bytes
+}
+
+// RecordCommentView handles POST /api/v1/comments/{id}/view.
+// Idempotently records that the current user viewed a comment; the count is
+// materialised from comment_views via trigger (Section 49, optional reply
+// view tracking per Section 08). Anonymous viewers are accepted but not
+// recorded — the table requires a user_id.
+func (h *Handlers) RecordCommentView(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+
+	commentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid comment ID")
+		return
+	}
+
+	if user == nil {
+		errpkg.WriteJSON(w, http.StatusNoContent, nil)
+		return
+	}
+
+	if err := h.Service.RecordCommentView(r.Context(), commentID, user.UserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
+}
+
+// RecordCommentViews handles POST /api/v1/comments/views.
+// Batch counterpart of RecordCommentView — one call per rendered thread
+// instead of one per comment (Guide §4.3). Auth required; ids beyond the
+// cap are truncated, malformed ids are skipped, and the live-comment guard
+// in the query silently drops nonexistent/deleted comments.
+func (h *Handlers) RecordCommentViews(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	const maxIDs = 200
+	ids := input.IDs
+	if len(ids) > maxIDs {
+		ids = ids[:maxIDs]
+	}
+
+	commentIDs := make([]pgtype.UUID, 0, len(ids))
+	for _, raw := range ids {
+		var id pgtype.UUID
+		if err := id.Scan(raw); err == nil && id.Valid {
+			commentIDs = append(commentIDs, id)
+		}
+	}
+
+	if err := h.Service.RecordCommentViews(r.Context(), commentIDs, user.UserID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
 // RemoveComment handles POST /api/v1/admin/comments/{id}/remove.

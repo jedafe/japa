@@ -262,6 +262,6 @@ func writeWikiTypeErr(w http.ResponseWriter, err error, op string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent_template", err.Error())
 	default:
 		slog.Error("wiki: "+op+" failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Operation failed")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "The server encountered an error — please try again")
 	}
 }

@@ -7,7 +7,8 @@
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import OrgHeader from '$lib/components/profile/OrgHeader.svelte';
 	import OrgProfileSidebar from '$lib/components/profile/OrgProfileSidebar.svelte';
-	import { EmptyState, FollowButton, UrlTabs } from '$lib/components/ui';
+	import { goto } from '$app/navigation';
+	import { EmptyState, FollowButton, MenuItem, UrlTabs } from '$lib/components/ui';
 	import type { UrlTab } from '$lib/components/ui';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -32,6 +33,12 @@
 		(data.posts ?? []).filter((p) => p.content_type === 'job_listing')
 	);
 	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
+	// Overflow-menu affordances — only mount the menu when at least one
+	// gated item can render (tips requires a non-manager viewer).
+	const hasOrgActions = $derived(
+		(!canManage && page.data.features?.['tips.enabled']) ||
+			page.data.features?.['scam_alert.enabled']
+	);
 	// Live follower count — the SSR org.follower_count is a snapshot, so
 	// FollowButton's onFollowerCountChange overrides it after a toggle.
 	let followerOverride = $state<number | null>(null);
@@ -80,14 +87,6 @@
 		};
 	}
 
-	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'about'));
-	// Keep the bound tab in sync with ?tab= on back/forward navigation —
-	// UrlTabs only writes the URL on click, it doesn't re-read it.
-	$effect(() => {
-		const tabParam = page.url.searchParams.get('tab');
-		untrack(() => { activeTab = tabParam ?? 'about'; });
-	});
-
 	// Section 39 — university-type orgs get a "Compare" tab that links to
 	// the Comparison System (Section 30) with this org pre-selected as
 	// item 1. Other org types omit the tab.
@@ -107,6 +106,21 @@
 			? [{ value: 'compare', label: t('profile.tab.compare', 'Compare') }]
 			: [])
 	]);
+
+	// Hidden tabs (jobs for non-editors, compare for non-universities) must
+	// not render their section on a ?tab= deep link — fall back to 'about'
+	// when the URL names a tab that isn't in the list.
+	function resolveTab(v: string | null): string {
+		return v && tabs.some((tb) => tb.value === v) ? v : 'about';
+	}
+
+	let activeTab = $state(untrack(() => resolveTab(page.url.searchParams.get('tab'))));
+	// Keep the bound tab in sync with ?tab= on back/forward navigation —
+	// UrlTabs only writes the URL on click, it doesn't re-read it.
+	$effect(() => {
+		const tabParam = page.url.searchParams.get('tab');
+		untrack(() => { activeTab = resolveTab(tabParam); });
+	});
 
 	// Pre-fill link to the JCE picker with this university as item 1 (Section 39).
 	const compareNewHref = $derived(
@@ -149,28 +163,15 @@
 </svelte:head>
 
 <SetSidebar>
-	<OrgProfileSidebar members={data.members} owner={data.org.owner ?? null} />
+	<OrgProfileSidebar members={data.members} />
 </SetSidebar>
 
 <div class="mx-auto w-full max-w-3xl">
-<OrgHeader org={displayOrg} {canManage}>
+<OrgHeader org={displayOrg} {canManage} menuItems={hasOrgActions ? orgActionItems : undefined}>
 	{#snippet children()}
-		{#if page.data.features?.['tips.enabled'] && !canManage}
-			<TipButton recipientType="organization" recipientKey={org.id} recipientId={org.id} recipientName={org.name} />
-		{/if}
-		{#if page.data.features?.['scam_alert.enabled']}
-			<a
-				href="/scam-alerts/new?platform=internal&subject_type=organization&subject_id={org.id}&subject_label={encodeURIComponent(org.name ?? org.slug)}"
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-				title={t('scam_alerts.report_button', 'Report a Scam')}
-			>
-				<TriangleAlert size={15} />
-				{t('scam_alerts.report_button', 'Report a Scam')}
-			</a>
-		{/if}
 		{#if page.data.user}
 			<FollowButton entityType="organization" entityId={org.id} entitySlug={org.slug} {initiallyFollowing} onFollowerCountChange={(n) => (followerOverride = n)} />
-			{#if !org.verified}
+			{#if !org.claimed}
 				<a
 					href="/claim-ownership?org={org.slug}"
 					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
@@ -183,6 +184,23 @@
 		{/if}
 	{/snippet}
 </OrgHeader>
+
+{#snippet orgActionItems()}
+	{#if page.data.features?.['tips.enabled'] && !canManage}
+		<TipButton recipientType="organization" recipientKey={org.id} recipientId={org.id} recipientName={org.name} menuItem />
+	{/if}
+	{#if page.data.features?.['scam_alert.enabled']}
+		<MenuItem
+			icon={TriangleAlert}
+			onSelect={() =>
+				goto(
+					`/scam-alerts/new?platform=internal&subject_type=organization&subject_id=${org.id}&subject_label=${encodeURIComponent(org.name ?? org.slug)}`
+				)}
+		>
+			{t('scam_alerts.report_button', 'Report a Scam')}
+		</MenuItem>
+	{/if}
+{/snippet}
 </div>
 
 <div class="mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} /></div>
@@ -267,7 +285,7 @@
 										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.user.display_name ?? member.user.username}</span>
 										<span class="block text-xs text-[var(--color-muted)]">@{member.user.username}</span>
 									</span>
-									<span class="shrink-0 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs capitalize text-[var(--color-text-subtle)]">{member.role}</span>
+									<span class="shrink-0 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs capitalize text-[var(--color-text-subtle)]">{t(`org_admin.role.${member.role}`, member.role)}</span>
 								{/snippet}
 							</UserHoverCard>
 						</li>

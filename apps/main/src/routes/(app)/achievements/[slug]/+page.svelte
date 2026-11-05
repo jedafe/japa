@@ -285,5 +285,6 @@
 		canModerate={data.canEdit}
 		loadError={data.commentsLoadError ?? false}
 		deletedUserIds={new Set(data.deletedUserIds ?? [])}
+		showDiscussions
 	/>
 </div>

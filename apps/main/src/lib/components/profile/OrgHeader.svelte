@@ -2,17 +2,20 @@
 	import type { Snippet } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
-	import { Globe, Users, Calendar } from 'lucide-svelte';
+	import { Globe, Users, Calendar, MoreVertical } from 'lucide-svelte';
+	import { Menu } from '$lib/components/ui';
 	import VerifiedBadge from '$lib/components/ui/VerifiedBadge.svelte';
 	import { safeHref } from '$lib/utils/safeHtml';
+	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import type { PublicOrganization } from '$lib/types';
 
 	interface Props {
 		org: PublicOrganization;
 		canManage: boolean;
 		children?: Snippet;
+		menuItems?: Snippet;
 	}
-	let { org, canManage, children }: Props = $props();
+	let { org, canManage, children, menuItems }: Props = $props();
 
 	const joinDate = $derived(
 		new Date(org.created_at).toLocaleDateString(i18n.locale, {
@@ -23,16 +26,48 @@
 	const initials = $derived(org.name?.charAt(0)?.toUpperCase() ?? '?');
 </script>
 
-<header class="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-	<div class="h-32 bg-gradient-to-br from-[var(--color-primary)]/15 to-[var(--color-surface-subtle)] sm:h-40"></div>
+<header class="relative border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+	{#if org.header_url}
+		<img src={remoteImageUrl(org.header_url)} alt="" class="h-32 w-full object-cover sm:h-40" />
+	{:else}
+		<div class="h-32 bg-gradient-to-br from-[var(--color-primary)]/15 to-[var(--color-surface-subtle)] sm:h-40"></div>
+	{/if}
+
+	<!-- Overflow actions pinned to the cover's top-right corner; the header
+	     row keeps only primary actions (Follow, Claim) as buttons. -->
+	{#if menuItems}
+		<div class="absolute end-3 top-3 z-10">
+			<Menu>
+				{#snippet trigger(props)}
+					<button
+						type="button"
+						{...props}
+						class="grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
+						aria-label={t('common.actions', 'Actions')}
+					>
+						<MoreVertical size={16} />
+					</button>
+				{/snippet}
+				{@render menuItems()}
+			</Menu>
+		</div>
+	{/if}
 
 	<div class="px-4 pb-4">
 		<div class="-mt-10 flex flex-col gap-3 sm:-mt-14 sm:flex-row sm:items-end sm:gap-4">
-			<span
-				class="grid h-20 w-20 place-items-center rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-primary)]/10 text-2xl font-bold text-[var(--color-primary)] sm:h-28 sm:w-28"
-			>
-				{initials}
-			</span>
+			{#if org.logo_url}
+				<img
+					src={remoteImageUrl(org.logo_url)}
+					alt=""
+					class="h-20 w-20 rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-surface)] object-cover sm:h-28 sm:w-28"
+				/>
+			{:else}
+				<span
+					class="grid h-20 w-20 place-items-center rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-primary)]/10 text-2xl font-bold text-[var(--color-primary)] sm:h-28 sm:w-28"
+				>
+					{initials}
+				</span>
+			{/if}
 
 			<div class="flex-1 pb-1">
 				<div class="flex items-center gap-2">
@@ -58,8 +93,8 @@
 		</div>
 
 		<div class="mt-3 flex flex-wrap items-center gap-4 text-sm text-[var(--color-muted)]">
-			<span class="flex items-center gap-1"><Users size={14} /> {org.member_count === 1 ? t('profile.members_one', '1 member') : t('profile.members', '{n} members').replace('{n}', String(org.member_count))}</span>
-			<span>{org.follower_count === 1 ? t('profile.followers_one', '1 follower') : t('profile.followers', '{n} followers').replace('{n}', String(org.follower_count))}</span>
+			<span class="flex items-center gap-1"><Users size={14} /> {(org.member_count === 1 ? t('profile.members_one', '{n} member') : t('profile.members', '{n} members')).replace('{n}', String(org.member_count))}</span>
+			<span>{(org.follower_count === 1 ? t('profile.followers_one', '{n} follower') : t('profile.followers', '{n} followers')).replace('{n}', String(org.follower_count))}</span>
 			{#if safeHref(org.website_url)}
 				<a href={safeHref(org.website_url)} target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 text-[var(--color-primary)] hover:underline">
 					<Globe size={14} /> {t('profile.website', 'Website')}

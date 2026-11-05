@@ -212,9 +212,26 @@ func (s *Store) getActivityEventByID(ctx context.Context, id pgtype.UUID) (gen.A
 	return row, nil
 }
 
-func (s *Store) markEventProcessed(ctx context.Context, id pgtype.UUID) error {
+func (s *Store) listUserActivityEvents(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListUserActivityEventsRow, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	rows, err := s.read.ListUserActivityEvents(ctx, gen.ListUserActivityEventsParams{
+		UserID:     userID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing user activity events: %w", err)
+	}
+
+	return rows, nil
+}
+
+func (s *Store) markEventProcessed(ctx context.Context, id pgtype.UUID, outcome string) error {
 	if err := s.write.MarkEventProcessed(ctx,
-		id,
+		gen.MarkEventProcessedParams{ID: id, Outcome: &outcome},
 	); err != nil {
 		return fmt.Errorf("marking event processed: %w", err)
 	}

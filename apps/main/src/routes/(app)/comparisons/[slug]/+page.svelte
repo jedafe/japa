@@ -343,6 +343,7 @@
 		canModerate={data.canModerate}
 		loadError={data.commentsLoadError}
 		deletedUserIds={deletedUserIds}
+		showDiscussions
 	/>
 
 	<!-- §25: engagement-area ad slot. -->

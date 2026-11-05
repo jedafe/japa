@@ -5,7 +5,7 @@
 // must be able to read an opportunity after browsing to it. Only the Save
 // action is auth-gated (client-side requireAuthOrRedirect).
 // Renders inside the unified app shell (ADR-058) via the (app) layout group.
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { RadarItem } from '$lib/types';
@@ -27,8 +27,14 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		const item = await apiGet<RadarItem>(ctx, path);
+		// Radar items mirror the canonical post — 301 to whichever route the
+		// backend resolved (/scholarships/{id}, /jobs/{slug}, /guide/{slug}).
+		if (item.canonical_url) {
+			throw redirect(301, item.canonical_url);
+		}
 		return { item, authed: !!event.locals.user };
 	} catch (err) {
+		if (err && typeof err === 'object' && 'status' in err && (err.status === 301 || err.status === 302)) throw err;
 		if (err instanceof ApiError) {
 			throw error(err.status, { code: err.code, message: err.message });
 		}

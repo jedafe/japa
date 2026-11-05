@@ -1007,8 +1007,10 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		parentSpaceUUIDs = matchedParentIDs
 	}
 
-	// Resolve permission axes: from the named preset, or the defaults.
-	axes := DefaultPermAxes()
+	// Resolve permission axes: from the named preset, or the level defaults —
+	// primary (geo/university) spaces are fully open, member-created public
+	// spaces open engagement (reply/comment) by default (§05 amendment).
+	axes := DefaultPermAxesForLevel(req.Level)
 
 	if req.PresetName != "" {
 		preset, err := h.Service.GetPermissionPreset(r.Context(), req.PresetName)

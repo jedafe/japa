@@ -9,8 +9,8 @@
 package comparison
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 

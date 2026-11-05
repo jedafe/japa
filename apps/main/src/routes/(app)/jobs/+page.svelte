@@ -3,8 +3,10 @@
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
-	import { Briefcase, Lock, ArrowRight, Plus, GitCompare, Loader2, Building2, Globe, BadgeCheck, CircleDollarSign, Users, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, ListPageBar, FilterToggle, PageAction, type SearchSuggestion } from '$lib/components/ui';
+	import { Briefcase, Lock, ArrowRight, Plus, GitCompare, Loader2, Building2, Globe, BadgeCheck, CircleDollarSign, Users, ChevronRight, Search, Filter } from 'lucide-svelte';
+	import { EmptyState, EntityHero, GuideSlideOver, LoadingSkeleton, PaginationControls, SearchInput, ListPageBar, Modal, UrlTabs, type GuideContent, type SearchSuggestion, type UrlTab } from '$lib/components/ui';
+	import HeroArtJobs from '$lib/components/heroes/HeroArtJobs.svelte';
+	import { formatMetric } from '$lib/components/hub/charts/format';
 	import BookmarkButton from '$lib/components/jobs/BookmarkButton.svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
@@ -16,7 +18,6 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
-	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { navigating } from '$app/state';
 	import type { JobListing } from '$lib/types';
@@ -52,7 +53,8 @@
 		return d.getTime() < Date.now();
 	}
 
-	const locationTypeOptions = $derived([
+	// location_type is the bar's tab axis (Any location first).
+	const locationTypeOptions = $derived<UrlTab[]>([
 		{ value: '', label: t('jobs.any_location', 'Any location') },
 		{ value: 'remote', label: t('jobs.remote', 'Remote') },
 		{ value: 'hybrid', label: t('jobs.hybrid', 'Hybrid') },
@@ -75,16 +77,6 @@
 		if (includeExpired) params.set('include_expired', 'true');
 		goto(`/jobs?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
-
-	// Debounced auto-apply for the free-text search field.
-	let qTimer: ReturnType<typeof setTimeout> | null = null;
-	function queueApply() {
-		if (qTimer) clearTimeout(qTimer);
-		qTimer = setTimeout(applyFilters, 400);
-	}
-	onDestroy(() => {
-		if (qTimer) clearTimeout(qTimer);
-	});
 
 	function clearFilters() {
 		q = '';
@@ -136,8 +128,10 @@
 	}
 
 
+	// Active-filter dot for the modal-held controls — q has its own dot on
+	// the Search button; remote is visible in the tab row.
 	const hasActiveFilters = $derived(
-		!!q || !!country || !!jobType || !!remote || visaSponsorship || (sort !== 'newest' && !!sort)
+		!!country || !!jobType || visaSponsorship || includeExpired || (sort !== 'newest' && !!sort)
 	);
 
 	// job_type suggestions come from the seeded job_listing_fields select
@@ -152,10 +146,10 @@
 		)
 	);
 
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasActiveFilters) showFilters = true;
-	});
+	// Right-side bar controls — each opens a modal rather than taking bar space.
+	let filtersModalOpen = $state(false);
+	let searchModalOpen = $state(false);
+
 	const showingStart = $derived((data.currentPage - 1) * data.pageSize + 1);
 	const showingEnd = $derived(Math.min(data.currentPage * data.pageSize, data.total));
 
@@ -212,6 +206,29 @@
 	const selectedCountryLabel = $derived(
 		country ? data.countries.find((c) => c.name === country)?.name ?? country : null
 	);
+
+	// "How it works" slide-over — markdown panel + CTA repeater persisted to
+	// public system settings (jobs.guide) via PUT /admin/settings/general.
+	let guideOpen = $state(false);
+	let guideOverride = $state<GuideContent | null>(null);
+	const siteSettings = $derived((page.data.siteSettings ?? {}) as Record<string, unknown>);
+	const storedGuide = $derived.by((): Partial<GuideContent> => {
+		const raw = siteSettings['jobs.guide'];
+		if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Partial<GuideContent>;
+		return {};
+	});
+	const effectiveGuide = $derived<GuideContent>({
+		title: guideOverride?.title ?? storedGuide.title ?? t('common.how_it_works', 'How it works'),
+		body: guideOverride?.body ?? storedGuide.body ?? t('jobs.guide_body', ''),
+		ctas: guideOverride?.ctas ?? storedGuide.ctas ?? [{ title: t('guide_panel.read_full_guide', 'Read the full guide'), url: '/guides' }]
+	});
+
+	async function saveGuide(v: GuideContent): Promise<string | null> {
+		const res = await api.put('/admin/settings/general', { jobs_guide: v });
+		if (res.error) return res.error.message || t('common.error', 'Something went wrong');
+		guideOverride = v;
+		return null;
+	}
 </script>
 
 <svelte:head>
@@ -239,25 +256,190 @@
 {/snippet}
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
-	<ListPageBar title={t('jobs.heading', 'Jobs')}>
-		{#snippet actions()}
-			{#if !disabled}
-				<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="jobs-filter-panel" />
-			{/if}
-			{#if authed && !disabled}
-				<PageAction
-					href="/me/applications"
-					icon={Briefcase}
-					label={t('jobs.my_applications_link', 'My applications')}
-				/>
-				<PageAction
-					href="/jobs/create"
-					icon={Plus}
-					label={t('jobs.create_button', 'Post a job')}
-				/>
-			{/if}
+	<!-- Header — EntityHero directory panel -->
+	<EntityHero
+		class="mt-4"
+		icon={Briefcase}
+		accent="var(--color-primary)"
+		heading={t('jobs.heading', 'Jobs')}
+		description={t('jobs.hero_desc', 'Find diaspora-friendly roles — remote work, visa sponsorship, and opportunities back home.')}
+		crumbs={[
+			{ label: t('common.home', 'Home'), href: '/' },
+			{ label: t('jobs.heading', 'Jobs') }
+		]}
+		stats={[
+			{ icon: Briefcase, value: formatMetric(data.total), label: t('jobs.stats_jobs', 'Open roles') },
+			{ icon: Globe, value: formatMetric(data.countries.length), label: t('jobs.stats_countries', 'Countries') }
+		]}
+	>
+		{#snippet art()}
+			<HeroArtJobs accent="var(--color-primary)" />
 		{/snippet}
-	</ListPageBar>
+		{#snippet actions(c)}
+			<div class="grid w-full grid-cols-2 gap-3 sm:flex sm:items-center">
+				<a href="#jobs-results" class="{c.primary} flex-1 justify-center whitespace-nowrap">
+					<Search size={15} /> {t('jobs.find', 'Browse jobs')}
+				</a>
+				{#if authed && !disabled}
+					<a href="/jobs/create" class="{c.secondary} flex-1 justify-center whitespace-nowrap">
+						<Plus size={15} /> {t('jobs.create_button', 'Post a job')}
+					</a>
+					<a href="/me/applications" class="{c.ghost} flex-1 justify-center whitespace-nowrap">
+						{t('jobs.my_applications_link', 'My applications')}
+						<ChevronRight size={14} class="rtl:-scale-x-100" />
+					</a>
+				{/if}
+				<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} flex-1 justify-center whitespace-nowrap {authed && !disabled ? '' : 'col-span-2 sm:col-span-1'}">
+					{t('common.how_it_works', 'How it works')}
+					<ChevronRight size={14} class="rtl:-scale-x-100" />
+				</button>
+			</div>
+		{/snippet}
+	</EntityHero>
+
+	{#if !disabled}
+		<!-- Location tabs on the left; Filters + Search buttons on the right —
+		     one ListPageBar row (the /org, /users pattern). -->
+		<ListPageBar>
+			<UrlTabs
+				tabs={locationTypeOptions}
+				value={remote}
+				onValueChange={(v) => { remote = v; applyFilters(); }}
+				class="!border-b-0 !bg-transparent"
+			/>
+			{#snippet actions()}
+				<button
+					type="button"
+					onclick={() => (filtersModalOpen = true)}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('common.filters', 'Filters')}
+					{#if hasActiveFilters}
+						<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+					{/if}
+					<Filter size={16} />
+				</button>
+				<button
+					type="button"
+					onclick={() => (searchModalOpen = true)}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('common.search', 'Search')}
+					{#if q.trim()}
+						<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+					{/if}
+					<Search size={16} />
+				</button>
+			{/snippet}
+		</ListPageBar>
+
+		<!-- Filters modal — the remaining controls (location_type lives in
+		     the tab row now). Each control applies on commit. -->
+		<Modal
+			bind:open={filtersModalOpen}
+			title={t('common.filters', 'Filters')}
+			icon={Filter}
+			size="lg"
+		>
+			{#snippet children()}
+				<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+					<Autocomplete
+						placeholder={t('jobs.country', 'Country')}
+						ariaLabel={t('jobs.country', 'Country')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchCountries}
+						initialFetcher={fetchCountriesInitial}
+						selectedId={country || null}
+						selectedLabel={selectedCountryLabel}
+						onSelect={(item) => { country = item.id; applyFilters(); }}
+						onClear={() => { country = ''; applyFilters(); }}
+					/>
+					<Autocomplete
+						placeholder={t('jobs.job_type', 'Job type')}
+						ariaLabel={t('jobs.job_type', 'Job type')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={jobTypeFetcher}
+						initialFetcher={jobTypeFetcher}
+						selectedId={jobType || null}
+						selectedLabel={jobType || null}
+						allowFreeText
+						onSelect={(item) => { jobType = item.id; applyFilters(); }}
+						onClear={() => { jobType = ''; applyFilters(); }}
+					/>
+					<SelectField
+						value={sort}
+						options={sortOptions}
+						placeholder={t('jobs.sort_label', 'Sort')}
+						ariaLabel={t('jobs.sort_label', 'Sort')}
+						onValueChange={(v) => { sort = v; applyFilters(); }}
+						class="w-full"
+					/>
+					<div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+						<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+							<input
+								type="checkbox"
+								checked={visaSponsorship}
+								onchange={() => { visaSponsorship = !visaSponsorship; applyFilters(); }}
+								class="accent-[var(--color-primary)]"
+							/>
+							{t('jobs.visa_sponsorship', 'Visa sponsorship')}
+						</label>
+						<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+							<input
+								type="checkbox"
+								checked={includeExpired}
+								onchange={() => { includeExpired = !includeExpired; applyFilters(); }}
+								class="accent-[var(--color-primary)]"
+							/>
+							{t('jobs.include_expired', 'Include expired')}
+						</label>
+					</div>
+				</div>
+				{#if hasActiveFilters}
+					<button
+						type="button"
+						onclick={clearFilters}
+						class="mt-3 text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
+					>
+						{t('common.clear_filters', 'Clear filters')}
+					</button>
+				{/if}
+			{/snippet}
+		</Modal>
+
+		<!-- Search modal — same GET form as the previous panel search. -->
+		<Modal bind:open={searchModalOpen} title={t('common.search', 'Search')} icon={Search} size="sm">
+			{#snippet children()}
+				<form action="/jobs" method="get" role="search" onsubmit={() => (searchModalOpen = false)}>
+					<SearchInput
+						bind:value={q}
+						placeholder={t('jobs.search', 'Search jobs…')}
+						ariaLabel={t('jobs.heading', 'Jobs')}
+						fetcher={jobSearchFetcher}
+					/>
+					<!-- Hidden fields to preserve the active filters on submit -->
+					{#if country}
+						<input type="hidden" name="country" value={country} />
+					{/if}
+					{#if jobType}
+						<input type="hidden" name="job_type" value={jobType} />
+					{/if}
+					{#if remote}
+						<input type="hidden" name="remote" value={remote} />
+					{/if}
+					{#if visaSponsorship}
+						<input type="hidden" name="visa_sponsorship" value="true" />
+					{/if}
+					{#if sort && sort !== 'newest'}
+						<input type="hidden" name="sort" value={sort} />
+					{/if}
+					{#if includeExpired}
+						<input type="hidden" name="include_expired" value="true" />
+					{/if}
+				</form>
+			{/snippet}
+		</Modal>
+	{/if}
 
 	{#if disabled}
 		<div class="mx-auto w-full max-w-3xl p-4">
@@ -268,84 +450,9 @@
 			/>
 		</div>
 	{:else}
-		<!-- Filter panel -->
-		{#if showFilters}
-		<div id="jobs-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
-			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-				<SearchInput
-					bind:value={q}
-					placeholder={t('jobs.search', 'Search jobs…')}
-					ariaLabel={t('jobs.heading', 'Jobs')}
-					fetcher={jobSearchFetcher}
-					onInput={queueApply}
-					inputClass="focus:ring-2 focus:ring-[var(--color-primary)]"
-				/>
-				<Autocomplete
-					placeholder={t('jobs.country', 'Country')}
-					ariaLabel={t('jobs.country', 'Country')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={fetchCountries}
-					initialFetcher={fetchCountriesInitial}
-					selectedId={country || null}
-					selectedLabel={selectedCountryLabel}
-					onSelect={(item) => { country = item.id; applyFilters(); }}
-					onClear={() => { country = ''; applyFilters(); }}
-				/>
-				<Autocomplete
-					placeholder={t('jobs.job_type', 'Job type')}
-					ariaLabel={t('jobs.job_type', 'Job type')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={jobTypeFetcher}
-					initialFetcher={jobTypeFetcher}
-					selectedId={jobType || null}
-					selectedLabel={jobType || null}
-					allowFreeText
-					onSelect={(item) => { jobType = item.id; applyFilters(); }}
-					onClear={() => { jobType = ''; applyFilters(); }}
-				/>
-				<SelectField
-					value={remote}
-					options={locationTypeOptions}
-					onValueChange={(v) => { remote = v; applyFilters(); }}
-				/>
-				<SelectField
-					value={sort}
-					options={sortOptions}
-					onValueChange={(v) => { sort = v; applyFilters(); }}
-				/>
-				<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
-					<input
-						type="checkbox"
-						checked={visaSponsorship}
-						onchange={() => { visaSponsorship = !visaSponsorship; applyFilters(); }}
-						class="accent-[var(--color-primary)]"
-					/>
-					{t('jobs.visa_sponsorship', 'Visa sponsorship')}
-				</label>
-				<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
-					<input
-						type="checkbox"
-						checked={includeExpired}
-						onchange={() => { includeExpired = !includeExpired; applyFilters(); }}
-						class="accent-[var(--color-primary)]"
-					/>
-					{t('jobs.include_expired', 'Include expired')}
-				</label>
-			</form>
-			{#if hasActiveFilters}
-				<button
-					type="button"
-					onclick={clearFilters}
-					class="mt-2 text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
-				>
-					{t('common.clear_filters', 'Clear filters')}
-				</button>
-			{/if}
-		</div>
-		{/if}
 
 		<!-- Results -->
-		<div class="mx-auto w-full max-w-3xl p-4">
+		<div id="jobs-results" class="mx-auto w-full max-w-3xl p-4">
 			{#if navigating.to}
 				<LoadingSkeleton variant="card" />
 			{:else if jobs.length === 0}
@@ -623,3 +730,13 @@
 		</div>
 	{/if}
 </div>
+
+<!-- "How it works" slide-over — GuideSlideOver; admins edit inline (jobs.guide). -->
+<GuideSlideOver
+	bind:open={guideOpen}
+	title={effectiveGuide.title}
+	body={effectiveGuide.body}
+	ctas={effectiveGuide.ctas}
+	canManage={data.canManage}
+	onSave={saveGuide}
+/>

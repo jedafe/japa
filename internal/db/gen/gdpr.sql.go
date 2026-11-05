@@ -975,6 +975,17 @@ func (q *Queries) GdprDeleteCalendarSubscriptionsByUser(ctx context.Context, use
 	return err
 }
 
+const gdprDeleteCommentViewsByUser = `-- name: GdprDeleteCommentViewsByUser :exec
+DELETE FROM comment_views WHERE user_id = $1
+`
+
+// Comment view history (§49) is a user-keyed behavioral record — same
+// self-documenting erasure rationale as comment_votes.
+func (q *Queries) GdprDeleteCommentViewsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteCommentViewsByUser, userID)
+	return err
+}
+
 const gdprDeleteCommentVotesByUser = `-- name: GdprDeleteCommentVotesByUser :exec
 DELETE FROM comment_votes WHERE user_id = $1
 `
@@ -1498,7 +1509,7 @@ func (q *Queries) GdprExportUserAcademyCertificates(ctx context.Context, userID 
 
 const gdprExportUserActivityEvents = `-- name: GdprExportUserActivityEvents :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events WHERE user_id = $1) t
+FROM (SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at, outcome FROM activity_events WHERE user_id = $1) t
 `
 
 func (q *Queries) GdprExportUserActivityEvents(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
@@ -1640,6 +1651,19 @@ FROM (SELECT id, user_id, challenge_id, current_count, completed, completed_at, 
 // §64: challenge progress rows for the user.
 func (q *Queries) GdprExportUserChallengeProgress(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserChallengeProgress, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
+const gdprExportUserCommentViews = `-- name: GdprExportUserCommentViews :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT comment_id, user_id, viewed_at FROM comment_views WHERE user_id = $1) t
+`
+
+// comment_views belong in the right-to-access export alongside comment_votes.
+func (q *Queries) GdprExportUserCommentViews(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserCommentViews, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err

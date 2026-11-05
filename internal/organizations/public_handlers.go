@@ -2,11 +2,13 @@ package organizations
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -52,6 +54,15 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 
 	org, err := h.service.GetPublicOrganizationBySlug(r.Context(), param)
 	if err != nil {
+		// 001045: seeded bank "orgs" moved to informational bank entities — a
+		// slug that misses organizations but resolves in banks gets a typed
+		// code so the frontend can 301 to the wiki bank page.
+		if errors.Is(err, pgx.ErrNoRows) {
+			if relocated, berr := h.service.BankExistsBySlug(r.Context(), param); berr == nil && relocated {
+				errpkg.WriteError(w, http.StatusNotFound, "org_relocated", "This listing moved to the wiki bank directory")
+				return
+			}
+		}
 		handleServiceError(w, err)
 		return
 	}
@@ -60,6 +71,8 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 	// the "Org Leader" sidebar widget. Best-effort: a missing/deleted owner
 	// degrades to a nil owner field (the widget shows its empty state).
 	orgDTO := toPublicOrg(org)
+	orgDTO.LogoURL = h.resolveLogoURL(r.Context(), org.LogoMediaID)
+	orgDTO.HeaderURL = h.resolveHeaderURL(r.Context(), org.HeaderMediaID)
 	h.resolveLiterals(r, &orgDTO)
 
 	if ownerRow, oErr := h.service.GetOrgOwnerPublicProfile(r.Context(), org.ID); oErr == nil {
@@ -78,7 +91,7 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 	resp := map[string]any{"data": orgDTO}
 
 	if h.jsonldResolver != nil {
-		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), "Organization", orgJSONLDFields(org)); jErr == nil && len(jsonLd) > 0 {
+		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), "Organization", h.orgJSONLDFields(r.Context(), org)); jErr == nil && len(jsonLd) > 0 {
 			resp["json_ld"] = json.RawMessage(jsonLd)
 		} else if jErr != nil {
 			slog.Warn("organizations: JSON-LD template resolution failed", "slug", param, "error", jErr)
@@ -112,7 +125,8 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 // ListPublicOrganizations handles GET /organizations (public): active orgs,
 // paginated with search and filters. Query params: q (search by name/slug),
 // org_type (filter: business/ngo/government/embassy/university/media/community),
-// verified (filter: "true"=verified only [default], "false"=unverified only,
+// verified (trust filter — "claimed"=orgs with an owner [default],
+// "verified"/"true"=badge holders, "unverified"/"false"=no badge,
 // "all"=all active orgs), page_size, page_offset.
 func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
@@ -120,19 +134,22 @@ func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Reques
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	orgType := strings.TrimSpace(r.URL.Query().Get("org_type"))
 
-	verified := strings.TrimSpace(r.URL.Query().Get("verified"))
-	switch verified {
-	case "":
-		// Default: only verified orgs (preserves original behavior).
-		verified = "true"
+	// The directory default is claimed orgs — organizations with a real
+	// operator behind the page. Legacy "true"/"false" values keep working.
+	filter := strings.TrimSpace(r.URL.Query().Get("verified"))
+	switch filter {
+	case "", "claimed":
+		filter = "claimed"
+	case "true", "verified":
+		filter = "verified"
+	case "false", "unverified":
+		filter = "unverified"
 	case "all":
-		// The SQL treats "" as "no filter" — map the explicit "all" value to it.
-		// Without this, "all" would fall into verified=('all'='true')=false and
-		// incorrectly return only unverified orgs.
-		verified = ""
+		// The SQL treats "" as "no filter".
+		filter = ""
 	}
 
-	rows, total, err := h.service.ListPublicOrganizations(r.Context(), search, orgType, verified, limit, offset)
+	rows, total, err := h.service.ListPublicOrganizations(r.Context(), search, orgType, filter, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -147,6 +164,10 @@ func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Reques
 	}
 
 	orgs := toPublicOrgList(rows)
+	for i := range orgs {
+		orgs[i].LogoURL = h.resolveLogoURL(r.Context(), orgs[i].LogoMediaID)
+		orgs[i].HeaderURL = h.resolveHeaderURL(r.Context(), orgs[i].HeaderMediaID)
+	}
 	h.resolveLiterals(r, &orgs)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{

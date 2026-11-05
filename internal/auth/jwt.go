@@ -213,6 +213,58 @@ func (kr *KeyRotation) ValidateChallengeToken(tokenString string) (*JWTClaims, e
 	return claims, nil
 }
 
+// StepUpTTL bounds a step-up token — long enough to submit a sensitive
+// request, short enough that a stolen token is useless for a later drain.
+const StepUpTTL = 2 * time.Minute
+
+// MintStepUpToken creates a short-lived token with scope "step_up" after
+// a successful fresh TOTP or password verification (POST /auth/step-up).
+// Required by SEC-W-015 gates on payout-method creation and withdrawals.
+func (kr *KeyRotation) MintStepUpToken(userID pgtype.UUID) (string, error) {
+	if !userID.Valid {
+		return "", errors.New("cannot mint step-up token: user ID is not valid")
+	}
+
+	jti := uuid.New().String()
+	now := time.Now()
+
+	claims := JWTClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(StepUpTTL)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ID:        jti,
+		},
+		UserID: userID.String(),
+		JTI:    jti,
+		Scope:  "step_up",
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token.Header["kid"] = kr.CurrentKeyID
+
+	secret, ok := kr.Keys[kr.CurrentKeyID]
+	if !ok {
+		return "", fmt.Errorf("current key ID %s not found in rotation", kr.CurrentKeyID)
+	}
+
+	return token.SignedString(secret)
+}
+
+// ValidateStepUpToken validates a step-up token and returns its claims.
+// It enforces that the token has scope "step_up".
+func (kr *KeyRotation) ValidateStepUpToken(tokenString string) (*JWTClaims, error) {
+	claims, err := kr.parseToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+
+	if claims.Scope != "step_up" {
+		return nil, errors.New("token is not a step-up token")
+	}
+
+	return claims, nil
+}
+
 // ValidateAccessToken validates a full-session JWT and returns its claims.
 // Scoped tokens (such as the "totp_verify" challenge issued before the 2FA
 // step completes) are rejected: they only grant access to the endpoint that

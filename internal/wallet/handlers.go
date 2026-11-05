@@ -9,7 +9,9 @@ package wallet
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -69,7 +71,16 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
-	errpkg.HandleServiceError(w, err)
+	switch {
+	case errors.Is(err, ErrStepUpRequired):
+		errpkg.WriteError(w, http.StatusForbidden, "step_up_required",
+			"Fresh verification required — call POST /auth/step-up and retry with step_up_token")
+	case errors.Is(err, ErrVerificationRequired):
+		errpkg.WriteError(w, http.StatusForbidden, "verification_required",
+			"Account verification is required before withdrawing")
+	default:
+		errpkg.HandleServiceError(w, err)
+	}
 }
 
 // stripSentinel removes the sentinel error prefix from an error message.
@@ -248,6 +259,27 @@ func (h *Handlers) GetLedger(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(entries)})
+}
+
+// GetActivityEvents handles GET /api/v1/me/wallet/activity — processed
+// activity events with their settle outcome so members can see why an
+// action earned nothing (capped, floored, no_rule, killswitch, …).
+func (h *Handlers) GetActivityEvents(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageSizeOffset(r)
+
+	events, err := h.Service.ListActivityEvents(r.Context(), user.UserID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(events)})
 }
 
 // GetSettings handles GET /api/v1/wallet/settings.
@@ -763,6 +795,7 @@ func (h *Handlers) CreateWithdrawal(w http.ResponseWriter, r *http.Request) {
 		CreditAmount   int64  `json:"credit_amount"`
 		CurrencyCode   string `json:"currency_code"`
 		PayoutMethodID string `json:"payout_method_id"`
+		StepUpToken    string `json:"step_up_token"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -777,6 +810,7 @@ func (h *Handlers) CreateWithdrawal(w http.ResponseWriter, r *http.Request) {
 		CurrencyCode:   input.CurrencyCode,
 		PayoutMethodID: input.PayoutMethodID,
 		IdempotencyKey: idempotencyKey,
+		StepUpToken:    input.StepUpToken,
 	})
 	if err != nil {
 		slog.Error("withdrawal creation failed", "user_id", user.UserID, "error", err)
@@ -815,6 +849,7 @@ func (h *Handlers) CreateWithdrawalMethod(w http.ResponseWriter, r *http.Request
 		CurrencyCode string `json:"currency_code"`
 		IsDefault    bool   `json:"is_default"`
 		Metadata     any    `json:"metadata"`
+		StepUpToken  string `json:"step_up_token"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -829,6 +864,7 @@ func (h *Handlers) CreateWithdrawalMethod(w http.ResponseWriter, r *http.Request
 		CurrencyCode: input.CurrencyCode,
 		IsDefault:    input.IsDefault,
 		Metadata:     input.Metadata,
+		StepUpToken:  input.StepUpToken,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -892,17 +928,18 @@ func (h *Handlers) ProcessWithdrawal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Action    string `json:"action"`
-		AdminNote string `json:"admin_note"`
+		Action      string `json:"action"`
+		AdminNote   string `json:"admin_note"`
+		StepUpToken string `json:"step_up_token"`
 	}
 
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	var result WithdrawalResult
 	if body.Action == "reject" {
-		result, err = h.Service.RejectWithdrawal(r.Context(), user.UserID, id, body.AdminNote)
+		result, err = h.Service.RejectWithdrawal(r.Context(), user.UserID, id, body.AdminNote, body.StepUpToken)
 	} else {
-		result, err = h.Service.ProcessWithdrawal(r.Context(), user.UserID, id)
+		result, err = h.Service.ProcessWithdrawal(r.Context(), user.UserID, id, body.StepUpToken)
 	}
 
 	if err != nil {
@@ -913,6 +950,32 @@ func (h *Handlers) ProcessWithdrawal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// HandleNOWPaymentsPayoutWebhook handles POST /api/v1/payments/webhook/nowpayments/payout.
+// Public endpoint — NOWPayments IPN posts signed payout status updates here
+// (SEC-W-008). Signature verified against JC_NOWPAYMENTS_IPN_SECRET inside
+// the service; unsigned or bad-signature callbacks are rejected 401.
+func (h *Handlers) HandleNOWPaymentsPayoutWebhook(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
+		return
+	}
+	defer func() { _ = r.Body.Close() }()
+
+	sig := r.Header.Get("x-nowpayments-sig")
+	if err := h.Service.ProcessPayoutWebhook(r.Context(), "nowpayments", body, sig); err != nil {
+		if errors.Is(err, ErrInvalidPayoutSignature) {
+			errpkg.WriteError(w, http.StatusUnauthorized, "invalid_signature", "Invalid webhook signature")
+			return
+		}
+		slog.Error("nowpayments payout webhook processing failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
 // ListWithdrawals handles GET /api/v1/me/wallet/withdrawals.
@@ -932,4 +995,66 @@ func (h *Handlers) ListWithdrawals(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(withdrawals)})
+}
+
+// ListNGNBanks handles GET /api/v1/me/wallet/banks — the Paystack bank
+// list for the bank_code picker on POST /me/wallet/withdrawal-methods
+// (SEC-W-NGN, Rule 16: no hardcoded bank lists in the frontend).
+func (h *Handlers) ListNGNBanks(w http.ResponseWriter, r *http.Request) {
+	_, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+	banks, err := h.Service.ListNGNBanks(r.Context(), r.URL.Query().Get("country"))
+	if err != nil {
+		slog.Error("bank list failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "banks_error", "Failed to load banks")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": banks})
+}
+
+// GetPayoutFloat handles GET /api/v1/admin/wallet/payout-float — each
+// provider's spendable balance for ops (SEC-W-NGN).
+func (h *Handlers) GetPayoutFloat(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": h.Service.PayoutFloat(r.Context())})
+}
+
+// DisablePaystackOTP handles POST /api/v1/admin/wallet/paystack/otp/disable —
+// asks Paystack to send the business an OTP for disabling transfer OTP.
+func (h *Handlers) DisablePaystackOTP(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+	msg, err := h.Service.DisableTransferOTP(r.Context())
+	if err != nil {
+		slog.Error("paystack otp disable failed", "error", err)
+		errpkg.WriteError(w, http.StatusBadGateway, "otp_disable_failed", err.Error())
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"message": msg}})
+}
+
+// FinalizePaystackOTP handles POST /api/v1/admin/wallet/paystack/otp/finalize —
+// submits the OTP code to complete disabling transfer OTP.
+func (h *Handlers) FinalizePaystackOTP(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+	var body struct {
+		OTP string `json:"otp"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.OTP == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_otp", "otp is required")
+		return
+	}
+	if err := h.Service.FinalizeTransferOTP(r.Context(), body.OTP); err != nil {
+		slog.Error("paystack otp finalize failed", "error", err)
+		errpkg.WriteError(w, http.StatusBadGateway, "otp_finalize_failed", err.Error())
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": "otp_disabled"}})
 }

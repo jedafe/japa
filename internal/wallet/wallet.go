@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -229,6 +230,15 @@ type Service struct {
 	// gamificationEvaluator evaluates badges after ledger earns
 	// (BUG-GAMMA-001). Optional — nil = skip evaluation.
 	gamificationEvaluator GamificationEvaluator
+	// payoutCallbackURL is the public endpoint providers POST signed payout
+	// status callbacks to (SEC-W-008). Optional — empty means no IPN
+	// callback URL is sent and status relies on reconcile polling.
+	payoutCallbackURL string
+
+	// SEC-W-015: validates scoped "step_up" tokens proving a fresh TOTP or
+	// password check (POST /auth/step-up). Required for withdrawals and
+	// payout-method creation when wallet.require_step_up is enabled.
+	stepUpVerifier func(ctx context.Context, userID pgtype.UUID, token string) error
 }
 
 // CacheInvalidator flushes Valkey cache entries for the wallet currency
@@ -299,6 +309,10 @@ func (s *Service) SetPayoutProvider(provider payout.Provider) {
 // SetCacheInvalidator injects the Valkey cache invalidator for the currency
 // cache (Section 58, Rule 4). Called after any currency CRUD operation.
 func (s *Service) SetCacheInvalidator(c CacheInvalidator) { s.cacheInvalidator = c }
+
+// SetPayoutCallbackURL sets the public URL sent to payout providers as their
+// signed status-callback target (SEC-W-008).
+func (s *Service) SetPayoutCallbackURL(url string) { s.payoutCallbackURL = url }
 
 // GamificationEvaluator evaluates badges and challenge progress after a
 // wallet ledger earn (BUG-GAMMA-001, ADR-082 §2). Implemented by
@@ -382,6 +396,11 @@ func (s *Service) EnqueuePointsAward(ctx context.Context, userID pgtype.UUID, po
 		Reason:      reason,
 		ReferenceID: referenceID,
 	}
+	if referenceID == "" {
+		// Stamped once at enqueue — stable across Asynq retries, unique per
+		// logical award so same-reason same-amount grants don't collapse.
+		payload.Nonce = uuid.NewString()
+	}
 
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -398,4 +417,10 @@ func (s *Service) EnqueuePointsAward(ctx context.Context, userID pgtype.UUID, po
 	}
 
 	return s.AwardPointsTask(ctx, b)
+}
+
+// SetStepUpVerifier wires the scoped step-up token validator (auth's
+// ValidateStepUpToken adapted to compare claims.UserID) — SEC-W-015.
+func (s *Service) SetStepUpVerifier(fn func(ctx context.Context, userID pgtype.UUID, token string) error) {
+	s.stepUpVerifier = fn
 }

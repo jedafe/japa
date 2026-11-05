@@ -454,6 +454,7 @@
 			canModerate={data.canModerate}
 			loadError={data.commentsLoadError}
 			deletedUserIds={deletedUserIds}
+			showDiscussions
 		/>
 
 		<!-- Same-type recommendations, ranked by embedding similarity. -->

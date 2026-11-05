@@ -79,7 +79,19 @@ func (a *publicCommentAdapter) CreateComment(ctx context.Context, userID, conten
 			if err != nil {
 				slog.Warn("public comment: space perm check failed", "space_id", spaceID.String(), "error", err)
 			} else if !allowed {
-				return publicapi.PublicComment{}, fmt.Errorf("%w: space commenting", errpkg.ErrForbidden)
+				action := "comment"
+				if parentID.Valid {
+					action = "reply"
+				}
+
+				msg := "space " + action + " denied"
+				if ex, ok := a.space.(comments.SpaceDenialExplainer); ok {
+					if m, e := ex.ExplainSpaceDenial(ctx, spaceID, userID, action); e == nil && m != "" {
+						msg = m
+					}
+				}
+
+				return publicapi.PublicComment{}, fmt.Errorf("%w: %s", errpkg.ErrForbidden, msg)
 			}
 		}
 	}

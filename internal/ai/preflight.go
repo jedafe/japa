@@ -131,9 +131,12 @@ func aiCostKey(userID pgtype.UUID) string {
 // defaultDailyQueryLimits mirrors the ai.assistant.daily_queries.{tier}
 // catalog defaults. -1 = unlimited.
 var defaultDailyQueryLimits = map[string]int{
-	"regular":  10,
-	"pro":      100,
-	"business": -1,
+	"regular":     10,
+	"pro":         100,
+	"business":    -1,
+	"staff":       -1,
+	"admin":       -1,
+	"super_admin": -1,
 }
 
 // gateEnabled resolves surface reachability: feature_flags is the source

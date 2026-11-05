@@ -3177,6 +3177,20 @@ func HandleWalletReconcilePayouts(ctx context.Context, _ *asynq.Task) error {
 	return walletProcessor.ReconcilePayoutsTask(ctx, nil)
 }
 
+// HandleWalletReconcileSolvency runs the platform-wide credits-ledger
+// integrity probes (SEC-W-012): divergent balances and unbacked purchase
+// credits are paged via the error tracker.
+func HandleWalletReconcileSolvency(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("task:wallet:reconcile_solvency")
+
+	if walletProcessor == nil {
+		slog.Warn("task:wallet:reconcile_solvency: no processor registered, skipping")
+		return nil
+	}
+
+	return walletProcessor.ReconcileSolvencyTask(ctx, nil)
+}
+
 // HandleWalletReprocessEvents re-enqueues stranded unprocessed
 // activity_events (PTS-024): tasks that exhausted retries, failed inline
 // fallbacks, or undoes-dependents orphaned when their award event died.

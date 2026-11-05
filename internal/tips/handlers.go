@@ -64,7 +64,7 @@ func writeTipError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrNotEligible):
 		errpkg.WriteError(w, http.StatusForbidden, "tips_not_eligible", "Tips are not enabled for your account")
 	case errors.Is(err, ErrNotAuthorized):
-		errpkg.WriteError(w, http.StatusForbidden, "not_authorized", "Not authorized")
+		errpkg.WriteError(w, http.StatusForbidden, "not_authorized", "You aren't authorized to send tips on behalf of this organization")
 	case errors.Is(err, ErrRecipientNoTips):
 		errpkg.WriteError(w, http.StatusForbidden, "recipient_no_tips", "This recipient does not accept tips")
 	case errors.Is(err, ErrNotFound):
@@ -104,7 +104,7 @@ func writeTipError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrOCAccess):
 		errpkg.WriteError(w, http.StatusBadRequest, "oc_access_denied", "Token has no access to this collective")
 	default:
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal", "Internal error")
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal", "The server encountered an error — please try again")
 	}
 }
 

@@ -1,6 +1,6 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
 import type { PublicOrganization, OrgMember, ProfilePost, OrgMedia, ComparisonListItem, JobListing, ComposerOrganization } from '$lib/types';
 
 // Job editors = owner/admin/editor members — the same roles the
@@ -30,6 +30,11 @@ export const load: PageServerLoad = async (event) => {
 		org = envelope.data;
 		jsonLd = envelope.json_ld ?? null;
 	} catch (e) {
+		// Seeded bank "orgs" moved to informational wiki bank entities — the
+		// API answers org_relocated for those slugs, so 301 to the wiki page.
+		if (e instanceof ApiError && e.status === 404 && e.code === 'org_relocated') {
+			throw redirect(301, `/wiki/e/bank/${encodeURIComponent(slug)}/overview`);
+		}
 		const status = e instanceof Error && 'status' in e ? (e as { status: number }).status : 500;
 		throw error(status === 404 ? 404 : 500, {
 			code: status === 404 ? 'not_found' : 'server_error',

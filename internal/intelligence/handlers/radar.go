@@ -55,6 +55,16 @@ type radarItem struct {
 	// list responses to avoid an N+1 saved-status check per item.
 	Saved *bool `json:"saved,omitempty"`
 
+	// GuideID is the backing contents row id for guide-linked domains
+	// (scholarship, job). Populated only in the detail handler so the
+	// frontend can 301 /radar/feed/{id} to the canonical post route.
+	GuideID string `json:"guide_id,omitempty"`
+
+	// CanonicalURL is the frontend route that owns this content
+	// (/scholarships/{guide_id}, /jobs/{slug}, /guide/{slug}). Populated only
+	// in the detail handler; the frontend 301s /radar/feed/{id} to it.
+	CanonicalURL string `json:"canonical_url,omitempty"`
+
 	// Internal fields used for source-blocking (Task 2 v2). Not exposed in the
 	// JSON envelope.
 	IntelRecordID pgtype.UUID `json:"-"`
@@ -1444,10 +1454,37 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 	h.resolveRadarCountryNames(r.Context(), resolved)
 	item = resolved[0]
 	h.resolveLiterals(r, &item)
+	item.GuideID = pgUUIDString(guideID)
+	item.CanonicalURL = h.radarCanonicalURL(r.Context(), guideID, item.Type)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": item,
 	})
+}
+
+// radarCanonicalURL maps a resolved radar item to the frontend route that
+// owns the content: scholarships to the finder detail (/scholarships/{id}),
+// job listings to /jobs/{slug}, and every other guide-backed domain to the
+// canonical editorial route (/guide/{slug}). Empty when the item has no
+// backing contents row (remittance, cost_of_living, course_offering, …).
+func (h *Handlers) radarCanonicalURL(ctx context.Context, guideID pgtype.UUID, itemType string) string {
+	if !guideID.Valid {
+		return ""
+	}
+
+	slug, contentType, err := h.intelStores.GetGuideSlug(ctx, guideID)
+	if err != nil || slug == "" {
+		return ""
+	}
+
+	switch {
+	case itemType == "scholarship":
+		return "/scholarships/" + guideID.String()
+	case contentType == "job_listing":
+		return "/jobs/" + slug
+	default:
+		return "/guide/" + slug
+	}
 }
 
 // HandleRadarSaved lists the caller's saved radar opportunities. In v1 these

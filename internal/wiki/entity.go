@@ -147,6 +147,12 @@ func (s *Store) ResolveEntityRef(ctx context.Context, kind, ref string) (EntityR
 		if err == nil {
 			out.ID, out.Name, out.ParentSpaceID, out.Discriminator = r.ID, r.Name, r.GeoSpaceID, r.OrgType
 		}
+	case "bank":
+		var r gen.GetBankForWikiRow
+		r, err = s.read.GetBankForWiki(ctx, ref)
+		if err == nil {
+			out.ID, out.Name, out.ParentSpaceID = r.ID, r.Name, r.GeoSpaceID
+		}
 	case "embassy":
 		var r gen.GetEmbassyForWikiRow
 		r, err = s.read.GetEmbassyForWiki(ctx, ref)
@@ -200,6 +206,16 @@ func (s *Store) ListEntityChildren(ctx context.Context, spaceID pgtype.UUID, kin
 		out := make([]EntityChild, 0, len(rows))
 		for _, r := range rows {
 			out = append(out, EntityChild{ID: uuidStr(r.ID), Slug: r.Slug, Name: r.Name, Discriminator: r.OrgType})
+		}
+		return out, nil
+	case "bank":
+		rows, err := s.read.ListBanksForWiki(ctx, spaceID)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]EntityChild, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, EntityChild{ID: uuidStr(r.ID), Slug: r.Slug, Name: r.Name})
 		}
 		return out, nil
 	case "embassy":

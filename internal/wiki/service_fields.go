@@ -1733,7 +1733,11 @@ func isSpaceBackedEntityType(entityType string) bool {
 // space, not just one spelling of the class:
 //   - space/university/country/state/city → ["space_type:{slug}",
 //     "space_type:{id}", "space_type"]
-//   - organization/bank                   → ["organization"]
+//   - organization                        → ["organization"]
+//   - bank                                → ["space_type:bank", "bank"] —
+//     banks are informational entities (001045); their wiki field groups
+//     seed under the space_type:bank class convention like every other
+//     entity-bound type.
 //   - content, content:{slug}             → ["content_type[:{slug}]"]
 //   - guide_category:{slug}               → ["content_type:guide:{slug}"] (§06)
 //   - table-backed JCE types              → ["jce_entity:{type}", "{type}"] —
@@ -1755,8 +1759,10 @@ func entityClassesFor(entityType string, spaceTypeID pgtype.UUID, spaceTypeSlug 
 		}
 
 		return append(classes, "space_type")
-	case entityType == "organization" || entityType == "bank":
+	case entityType == "organization":
 		return []string{"organization"}
+	case entityType == "bank":
+		return []string{"space_type:bank", "bank"}
 	case entityType == "content":
 		return []string{"content_type"}
 	case strings.HasPrefix(entityType, "content:"):

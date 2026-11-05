@@ -970,7 +970,7 @@ func (s *Service) CreateCity(ctx context.Context, stateID pgtype.UUID, name stri
 		return gen.CreateSpaceRow{}, fmt.Errorf("getting city space type: %w", err)
 	}
 
-	axes := DefaultPermAxes()
+	axes := DefaultPermAxesForLevel(LevelCity)
 	params := gen.CreateSpaceParams{
 		ParentID:       stateID,
 		SpaceTypeID:    cityType.ID,
@@ -1534,9 +1534,9 @@ func (s *Service) CountSpaceStats(ctx context.Context, spaceIDs []pgtype.UUID) (
 	stats := make(map[string]SpaceStat, len(rows))
 	for _, r := range rows {
 		stats[r.ID.String()] = SpaceStat{
-			MemberCount:   r.MemberCount,
-			PostCount:     r.PostCount,
-			FollowerCount: r.FollowerCount,
+			MemberCount:     r.MemberCount,
+			PostCount:       r.PostCount,
+			FollowerCount:   r.FollowerCount,
 			DiscussionCount: r.DiscussionCount,
 		}
 	}

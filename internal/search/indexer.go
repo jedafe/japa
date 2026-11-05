@@ -1321,6 +1321,10 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 	}
 
 	// Organizations — offset-paginated via ListOrganizations with empty filters.
+	// keepOrgs feeds the stale-doc sweep below: ReindexAll upserts live rows
+	// but cannot see hard-deleted or relocated ones (e.g. the 001045 bank
+	// split), so index docs for them would linger forever without a diff.
+	keepOrgs := make(map[string]struct{})
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.ListOrganizations(ctx, gen.ListOrganizationsParams{
 			Column1: "", Column2: // org_type filter (empty = all)
@@ -1340,6 +1344,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 		}
 
 		for _, row := range rows {
+			keepOrgs[row.ID.String()] = struct{}{}
 			if err := ix.IndexOrganization(ctx, row.ID.Bytes); err != nil {
 				slog.Warn("search:reindex: organization failed", "id", row.ID, "error", err)
 
@@ -1353,8 +1358,49 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 			break
 		}
 	}
+	purgeStaleIndexDocs(ctx, ix.engine, IndexOrganizations, keepOrgs)
 
 	return summary, nil
+}
+
+// purgeStaleIndexDocs removes index documents whose primary key is absent
+// from keepIDs — the delete-side counterpart to ReindexAll's upsert sweep,
+// for rows that were hard-deleted or moved to another table since the last
+// run. Pages the index via Search requesting only the "id" field. Orgs
+// indexes stay small enough for this; larger indexes would need a cheaper
+// diff strategy (e.g. updated_at cursors).
+func purgeStaleIndexDocs(ctx context.Context, engine Engine, index string, keepIDs map[string]struct{}) {
+	const pageSize = 500
+	for offset := 0; ; offset += pageSize {
+		res, err := engine.Search(ctx, index, Query{
+			IndexUID:             index,
+			Text:                 "",
+			Limit:                pageSize,
+			Offset:               offset,
+			AttributesToRetrieve: []string{"id"},
+		})
+		if err != nil {
+			slog.Warn("search:reindex: stale-doc sweep failed", "index", index, "error", err)
+			return
+		}
+		for _, hit := range res.Hits {
+			var doc struct {
+				ID string `json:"id"`
+			}
+			if err := hit.DecodeInto(&doc); err != nil || doc.ID == "" {
+				continue
+			}
+			if _, keep := keepIDs[doc.ID]; keep {
+				continue
+			}
+			if err := engine.DeleteDocument(ctx, index, doc.ID); err != nil {
+				slog.Warn("search:reindex: stale doc delete failed", "index", index, "id", doc.ID, "error", err)
+			}
+		}
+		if len(res.Hits) < pageSize {
+			return
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

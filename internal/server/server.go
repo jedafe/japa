@@ -562,9 +562,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		return settingsService.GetStringOr(ctx, "general.site_name", cfg.SiteName)
 	})
 
-	// Unified user tier service (regular/pro/business). Resolves effective tier
-	// from user_groups, syncs users.profile_type, and enforces per-tier limits.
-	// Wired into users, organizations, public API, and registration handlers.
+	// Unified user tier service (regular/pro/business + staff tiers). Resolves
+	// effective tier from user_groups, syncs users.profile_type, and enforces
+	// per-tier limits. Wired into users, organizations, public API, and
+	// registration handlers.
 	tierService := tiers.NewService(database)
 
 	// BL-014: apply the configurable iframe embed allowlist from system_settings
@@ -760,6 +761,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	oauthHandlers.AsynqClient = asynqClient
 	oauthHandlers.SiteName = cfg.SiteName
 	oauthHandlers.Clients = auth.NewValkeyOAuthClientStore(vkClient.Redis())
+	// SEC-W-015: /auth/step-up accepts Google/Microsoft proof via linked
+	// oauth_accounts — resolve providers through the OAuth handlers' store.
+	authHandlers.OAuthProviderResolver = oauthHandlers.ResolveProvider
 
 	kr.Settings = settingsService
 	contentHandlers.AsynqClient = asynqClient
@@ -949,15 +953,56 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// the payout provider stays unwired and crypto withdrawals fall back to
 	// the manual flow.
 	if cfg.NOWPaymentsAPIKey != "" {
-		walletService.SetPayoutProvider(payout.NewNOWPaymentsPayoutProvider(cfg.NOWPaymentsAPIKey))
+		walletService.SetPayoutProvider(payout.NewNOWPaymentsPayoutProvider(cfg.NOWPaymentsAPIKey, cfg.NOWPaymentsIPNSecret))
 	} else {
 		slog.Error("payments: JC_NOWPAYMENTS_API_KEY not set, crypto payouts disabled (manual flow only)")
+	}
+
+	// SEC-W-009: Circle USDC payouts carry a REQUIRED idempotencyKey — the
+	// withdrawal ID is sent server-side so retries can't duplicate real
+	// money. Preferred stablecoin provider when configured.
+	if cfg.CircleAPIKey != "" {
+		walletService.SetPayoutProvider(payout.NewCirclePayoutProvider(cfg.CircleAPIKey))
+	}
+
+	// SEC-W-NGN: Paystack transfers are the cheap NGN rail (~₦10-100 flat
+	// vs ~2% crypto). `reference`=withdrawalID dedupes server-side.
+	if cfg.PaystackSecretKey != "" {
+		walletService.SetPayoutProvider(payout.NewPaystackPayoutProvider(cfg.PaystackSecretKey))
+	}
+
+	// SEC-W-008: signed payout status callbacks land on the public API
+	// base. Empty when JC_API_PUBLIC_URL is unset — status then relies on
+	// the wallet:reconcile_payouts poller alone.
+	if cfg.APIPublicURL != "" {
+		walletService.SetPayoutCallbackURL(strings.TrimRight(cfg.APIPublicURL, "/") + "/api/v1/payments/webhook/nowpayments/payout")
 	}
 
 	// Wire the Valkey cache invalidator for the currency cache
 	// (Section 58, Rule 4). After any currency CRUD operation, the
 	// jc:wallet:currencies:{} key is flushed.
 	walletService.SetCacheInvalidator(&walletCacheInvalidator{vk: vkClient.Redis()})
+
+	// SEC-W-015: withdrawals and payout-method creation require a scoped
+	// step_up token (fresh TOTP/password check via POST /auth/step-up).
+	walletService.SetStepUpVerifier(func(ctx context.Context, userID pgtype.UUID, token string) error {
+		claims, err := kr.ValidateStepUpToken(token)
+		if err != nil {
+			return err
+		}
+		if claims.UserID != userID.String() {
+			return fmt.Errorf("step-up token subject mismatch")
+		}
+		// SEC-W-015 single-use: check the JTI isn't already consumed, then
+		// revoke — a captured token can't be replayed within its 2min TTL.
+		if auth.IsTokenRevoked(ctx, claims.JTI, vkClient.Redis()) {
+			return fmt.Errorf("step-up token already used")
+		}
+		if err := auth.RevokeToken(ctx, claims.JTI, claims.ExpiresAt.Time, vkClient.Redis()); err != nil {
+			return fmt.Errorf("consuming step-up token: %w", err)
+		}
+		return nil
+	})
 
 	// Register wallet processor with worker for background tasks.
 	worker.RegisterWalletProcessor(walletService)
@@ -1027,6 +1072,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	paymentHandlers.StripeWebhookSecret = cfg.StripeWebhookSecret
 	paymentHandlers.NOWPaymentsIPNKey = cfg.NOWPaymentsIPNSecret
 	paymentHandlers.PaystackSecretKey = cfg.PaystackSecretKey
+	// SEC-W-NGN: transfer.* events on the shared Paystack webhook route
+	// delegate to the wallet payout processor (same signature scheme).
+	paymentHandlers.PayoutWebhookHandler = func(ctx context.Context, payload []byte, sig string) error {
+		return walletService.ProcessPayoutWebhook(ctx, "paystack", payload, sig)
+	}
 
 	// §17 recurring billing: tier grants flow through tiers.Service, provider
 	// return URLs are built off the public site URL, and the worker handles
@@ -1190,6 +1240,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Bucket:    cfg.S3Bucket,
 	})
 	verificationService.SetMediaResolver(&mediaURLResolver{media: mediaService}) // badge artwork URLs
+	orgHandlers.SetMediaResolver(mediaService)                                   // org logo/header imgproxy URLs
 	// Pin the local-storage root (JC_MEDIA_ROOT) before any upload, scan, or
 	// transcode path resolves mediaRoot — an unset env keeps the default.
 	media.SetMediaRoot(cfg.MediaRoot)
@@ -2134,11 +2185,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code", FieldValuesColumn: "field_values",
 		FilterParam: "org_type", FilterColumn: "org_type",
 	}, resolver.WithQueries(jceReadQueries)))
+	// bank entities live in the dedicated banks table (001045) — informational
+	// wiki entities, never organizations, so no org_type discriminator or
+	// verified gate applies.
 	jceResolver.Register("bank", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
-		Entity: "bank", Table: "organizations", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
-		DescColumn: "description", PlatformColumn: "", ActiveWhere: "t.verified = true",
+		Entity: "bank", Table: "banks", IDColumn: "id", TitleColumn: "name", SlugColumn: "slug",
+		DescColumn: "description", PlatformColumn: "", ActiveWhere: "t.is_active = true",
 		GeoSpaceIDColumn: "geo_space_id", CountryColumn: "country_code", FieldValuesColumn: "field_values",
-		FilterParam: "org_type", FilterColumn: "org_type",
 	}, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("job", resolver.NewDBResolver(database.Reader, resolver.DBConfig{
 		Entity: "job", Table: "intel_jobs", IDColumn: "id", TitleColumn: "title", SlugColumn: "",
@@ -4329,7 +4382,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// No EditLockMiddleware on owner comment edit/delete — the same
 			// false "another user" blocks hit sole authors here; concurrent
 			// edits resolve last-write-wins, ownership-checked in the handler.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "comments.edit_own")).Patch("/comments/{id}", commentsHandlers.UpdateComment)
+			// Own-vs-any resolved in the handler (RequireAuth only) so a
+			// moderator with comments.edit_any is not blocked by an edit_own
+			// middleware gate — same pattern as DeleteComment (BUG-003 class).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient)).Patch("/comments/{id}", commentsHandlers.UpdateComment)
 			// BUG-003: own-vs-any resolved in the handler (RequireAuth only) so a
 			// moderator with comments.delete_any is not blocked by a delete_own
 			// middleware gate, and a plain member cannot delete another's comment.
@@ -4339,6 +4395,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
+			// Section 49 — optional reply view tracking (Section 08 parity
+			// with /forum/replies/{id}/view): guests 204 without a record.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Post("/comments/{id}/view", commentsHandlers.RecordCommentView)
+			// Batch counterpart — the frontend flushes all rendered comment
+			// views in one call (Guide §4.3 N+1 fix).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Post("/comments/views", commentsHandlers.RecordCommentViews)
 			// BL-003: pin/unpin route is RequireAuth only; the handler resolves
 			// moderator (comments.pin) vs content-author at request time so a
 			// content author who doesn't hold comments.pin can still pin comments
@@ -4634,6 +4698,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// previous dm.view gate caused 403 for users without DM
 			// permission, breaking notification delivery on the Academy app.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/auth/ws-ticket", wsHandlers.GetWSTicket)
+			// SEC-W-015: step-up verification mints a scoped token required
+			// by sensitive mutations (withdrawals, payout-method creation).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/auth/step-up", authHandlers.StepUp)
+			// SEC-W-015b: self-serve KYC submission — feeds the admin review queue.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/me/kyc", authHandlers.SubmitKYC)
 
 			// WebSocket + DM routes — gated by feature.dm (Section 10)
 			r.With(features.Gate(featureChecker, "feature.dm")).Group(func(r chi.Router) {
@@ -5165,6 +5234,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/paystack", paymentHandlers.HandlePaystackWebhook)
 			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/stripe", paymentHandlers.HandleStripeWebhook)
 			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/nowpayments", paymentHandlers.HandleNOWPaymentsWebhook)
+			// NOWPayments payout IPN — signed outbound-payout status callbacks
+			// (§58, SEC-W-008).
+			r.With(mw.RateLimit(vkClient.Redis(), "webhook")).Post("/payments/webhook/nowpayments/payout", walletHandlers.HandleNOWPaymentsPayoutWebhook)
 			// Payment listing and details (catalog: /me/payments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments", paymentHandlers.ListPayments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/payments/{id}", paymentHandlers.GetPayment)
@@ -5238,6 +5310,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/wallet/credits", walletHandlers.GetCreditsBalance)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
 					Get("/me/wallet/ledger", walletHandlers.GetLedger)
+				// Activity events with settle outcome — explains zero-earn actions.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
+					Get("/me/wallet/activity", walletHandlers.GetActivityEvents)
 					// Member-facing, read-only wallet limits (catalog: /me/wallet/settings).
 				// Reuses wallet.points.balance — anyone who can view their balance can view them.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.points.balance")).
@@ -5314,8 +5389,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 						Get("/me/wallet/withdrawals", walletHandlers.ListWithdrawals)
 					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw")).
 						Get("/me/wallet/withdrawal-methods", walletHandlers.ListWithdrawalMethods)
-					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw")).
+					// Idempotency: the paystack branch makes external calls
+					// (resolve + recipient create) before insert — a retry
+					// without a key could orphan provider-side recipients.
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw"),
+						mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 						Post("/me/wallet/withdrawal-methods", walletHandlers.CreateWithdrawalMethod)
+					// SEC-W-NGN: bank_code picker for Paystack payout methods.
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wallet.withdraw")).
+						Get("/me/wallet/banks", walletHandlers.ListNGNBanks)
 
 					// Admin withdrawal management (Section 58 Credit Withdrawal amendment).
 					// wallet.withdraw.manage is the JEOS-catalogued super_admin
@@ -5325,6 +5407,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 						Get("/admin/wallet/withdrawals", walletHandlers.AdminListWithdrawals)
 					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "wallet.withdraw.approve", "wallet.withdraw.manage")).
 						Post("/admin/wallet/withdrawals/{id}/process", walletHandlers.ProcessWithdrawal)
+					// SEC-W-NGN ops: provider float + Paystack OTP disable flow.
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "wallet.withdraw.approve", "wallet.withdraw.manage")).
+						Get("/admin/wallet/payout-float", walletHandlers.GetPayoutFloat)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "wallet.withdraw.approve", "wallet.withdraw.manage")).
+						Post("/admin/wallet/paystack/otp/disable", walletHandlers.DisablePaystackOTP)
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "wallet.withdraw.approve", "wallet.withdraw.manage")).
+						Post("/admin/wallet/paystack/otp/finalize", walletHandlers.FinalizePaystackOTP)
 				})
 
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -6150,6 +6239,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// admin.hard_delete node (migration 000746), not just user.delete.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.hard_delete")).Delete("/admin/users/{id}/hard", adminHandlers.HardDeleteUser)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Patch("/admin/users/{id}/profile-type", usersHandlers.UpdateProfileType)
+			// SEC-W-015b: manual KYC decision — sets users.kyc_status that
+			// the 'kyc' withdrawal verification level gates on.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Post("/admin/users/{id}/kyc", authHandlers.AdminSetUserKYC)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.users.manage")).Get("/admin/kyc", authHandlers.AdminListPendingKYC)
 
 			// Onboarding routes (Section 09)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/onboarding/status", onboardingHandlers.GetStatus)

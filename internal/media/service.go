@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // MaxFileSizeBytes is the fallback maximum allowed upload size when
@@ -92,15 +93,15 @@ type UploadResult struct {
 func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, filename, mimeType string, fileSize int64, uploadCtx UploadContext) (UploadResult, error) {
 	// Guard: validate inputs early.
 	if filename == "" {
-		return UploadResult{}, errors.New("filename is required")
+		return UploadResult{}, fmt.Errorf("%w: filename is required", errpkg.ErrInvalid)
 	}
 
 	if mimeType == "" {
-		return UploadResult{}, errors.New("mime_type is required")
+		return UploadResult{}, fmt.Errorf("%w: mime_type is required", errpkg.ErrInvalid)
 	}
 
 	if fileSize <= 0 {
-		return UploadResult{}, errors.New("file_size_bytes must be positive")
+		return UploadResult{}, fmt.Errorf("%w: file_size_bytes must be positive", errpkg.ErrInvalid)
 	}
 
 	// Max upload size from system_settings 'media.max_upload_mb' (Rule 3).
@@ -108,11 +109,11 @@ func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, fi
 	maxBytes := s.MaxUploadBytes(ctx)
 
 	if fileSize > maxBytes {
-		return UploadResult{}, fmt.Errorf("file too large: %d bytes exceeds limit of %d bytes", fileSize, maxBytes)
+		return UploadResult{}, fmt.Errorf("%w: file too large: %d bytes exceeds limit of %d bytes", errpkg.ErrInvalid, fileSize, maxBytes)
 	}
 
 	if !s.isAllowedMIME(ctx, mimeType, uploadCtx) {
-		return UploadResult{}, fmt.Errorf("unsupported MIME type: %s", mimeType)
+		return UploadResult{}, fmt.Errorf("%w: unsupported MIME type: %s", errpkg.ErrInvalid, mimeType)
 	}
 
 	// Generate unique storage path under temp/ prefix.

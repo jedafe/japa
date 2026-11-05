@@ -411,8 +411,9 @@ export interface ExploreMapCategory {
 export interface ExploreMapStat {
   icon?: string;
   label: string;
-  /** Live source key or 'manual' to use the literal `value`. */
-  source: 'manual' | 'countries' | 'col_cities' | 'blog' | 'services';
+  /** Live source key or 'manual' to use the literal `value`. 'cities' counts
+   * all city spaces; 'col_cities' counts only cities with COL data. */
+  source: 'manual' | 'countries' | 'col_cities' | 'cities' | 'blog' | 'services';
   value?: string;
   suffix?: string;
 }

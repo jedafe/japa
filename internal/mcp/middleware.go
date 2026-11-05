@@ -93,7 +93,7 @@ func AuthMiddleware(kr *auth.KeyRotation, vkClient valkeycompat.Cmdable, publicA
 				ctx = context.WithValue(ctx, apiKeyCallerKey, true)
 			} else {
 				if !resolver.HasPermission(r.Context(), user.UserID, agentUsePermission) {
-					http.Error(w, `{"error":{"code":"forbidden","message":"You do not have permission to use the agent"}}`, http.StatusForbidden)
+					http.Error(w, `{"error":{"code":"forbidden","message":"Your account doesn't have permission to use the agent — contact an administrator"}}`, http.StatusForbidden)
 					return
 				}
 			}

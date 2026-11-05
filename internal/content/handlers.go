@@ -105,6 +105,14 @@ type SpacePostChecker interface {
 	CanPostInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
 }
 
+// SpaceDenialExplainer is optionally implemented by space checkers that can
+// produce a user-facing reason for a denied write action
+// (spaces.PostCheckerAdapter does). Handlers use it to answer 403s with the
+// concrete missing requirement instead of a bare "no permission" string.
+type SpaceDenialExplainer interface {
+	ExplainSpaceDenial(ctx context.Context, spaceID, userID pgtype.UUID, action string) (string, error)
+}
+
 // SpaceKeywordMatcher finds primary+public spaces (country/state/city and
 // public universities) whose keywords, full name, or university initials match
 // the content title, for auto-assigning content to spaces. Implemented by
@@ -339,7 +347,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrDuplicateContent):
 		errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "Content with this body already exists")
 	case errors.Is(err, ErrOrgPostForbidden):
-		errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "Not authorized to post as this organization")
+		errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "Your organization role doesn't allow posting on its behalf")
 	case errors.Is(err, ErrEditWindowExpired):
 		errpkg.WriteError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this content has expired")
 	case errors.Is(err, ErrMissingPrimarySpace):
@@ -349,7 +357,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrInvalidVisibility):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility", err.Error())
 	case errors.Is(err, ErrNotSpaceMember):
-		errpkg.WriteError(w, http.StatusForbidden, "not_space_member", "You must be a member of each assigned space")
+		errpkg.WriteError(w, http.StatusForbidden, "not_space_member",
+			"You do not have permission to post in one or more of the assigned spaces — join the space first")
 	case errors.Is(err, ErrInvalidSpace):
 		errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_space",
 			"One or more space IDs do not belong to this platform")
@@ -1012,7 +1021,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 		if !allowed {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden",
-				"You do not have permission to create stories")
+				"Your account isn't allowed to create stories — contact an administrator if you need access")
 			return
 		}
 	}
@@ -1035,7 +1044,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 		if !allowed {
 			errpkg.WriteError(w, http.StatusForbidden, "list_permission_required",
-				"You do not have permission to create lists")
+				"Your account isn't allowed to create lists — contact an administrator if you need access")
 			return
 		}
 
@@ -1162,8 +1171,14 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if !allowed {
-				errpkg.WriteError(w, http.StatusForbidden, "space_post_denied",
-					"You do not have permission to post in this space")
+				msg := "You do not have permission to post in this space"
+				if ex, ok := h.spaceChecker.(SpaceDenialExplainer); ok {
+					if m, e := ex.ExplainSpaceDenial(r.Context(), createInput.SpaceID, user.UserID, "post"); e == nil && m != "" {
+						msg = m
+					}
+				}
+
+				errpkg.WriteError(w, http.StatusForbidden, "space_post_denied", msg)
 				return
 			}
 		}
@@ -1241,7 +1256,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	content, err := h.Service.CreateContent(r.Context(), createInput)
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
-			errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to post as this organization")
+			errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "Your organization role doesn't allow posting on its behalf")
 			return
 		}
 
@@ -2113,7 +2128,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 			if !allowed {
 				errpkg.WriteError(w, http.StatusForbidden, "forbidden",
-					"You do not have permission to change this content's status")
+					"Only a moderator can change this content's status")
 				return
 			}
 		}
@@ -2133,7 +2148,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 		if !allowed {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden",
-				"You do not have permission to pin or lock content")
+				"Only a moderator can pin or lock content")
 			return
 		}
 	}
@@ -2238,7 +2253,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	content, err := h.Service.UpdateContent(r.Context(), id, user.UserID, updateInput, bypassEditWindow)
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
-			errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to edit as this organization")
+			errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "Your organization role doesn't allow editing on its behalf")
 			return
 		}
 		// U1: stale precondition — return 409 with the current row so the
@@ -4108,7 +4123,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 				"One or more space IDs do not belong to this platform")
 		case errors.Is(err, ErrNotSpaceMember):
 			errpkg.WriteError(w, http.StatusForbidden, "not_space_member",
-				"You must be a member of each assigned space")
+				"You do not have permission to post in one or more of the assigned spaces — join the space first")
 		default:
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error",
 				"Failed to update space assignments")

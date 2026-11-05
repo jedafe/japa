@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -43,14 +44,19 @@ type DiscussionSummary struct {
 }
 
 // ListDiscussions returns the discussion threads linked to a content item
-// (Section 49 — blog/non-forum ↔ discussion cross-links).
-func (s *Service) ListDiscussions(ctx context.Context, contentID pgtype.UUID, limit, offset int32) ([]DiscussionSummary, int32, error) {
+// (Section 49 — blog/non-forum ↔ discussion cross-links). Threads are
+// filtered per-viewer: drafts and audience-restricted threads (members,
+// private, private-space) are only listed for viewers who can see them —
+// same predicate as CanViewComments (C-021 parity).
+func (s *Service) ListDiscussions(ctx context.Context, contentID, viewerID pgtype.UUID, authed bool, limit, offset int32) ([]DiscussionSummary, int32, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 
 	rows, err := s.read.ListContentThreadLinks(ctx, gen.ListContentThreadLinksParams{
 		ContentID: contentID,
+		UserID:    viewerID,
+		Authed:    authed,
 
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -73,9 +79,11 @@ func (s *Service) ListDiscussions(ctx context.Context, contentID pgtype.UUID, li
 		}
 	}
 
-	total, err := s.read.CountContentThreadLinks(ctx,
-		contentID,
-	)
+	total, err := s.read.CountContentThreadLinks(ctx, gen.CountContentThreadLinksParams{
+		ContentID: contentID,
+		UserID:    viewerID,
+		Authed:    authed,
+	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting content thread links: %w", err)
 	}
@@ -202,7 +210,23 @@ func (h *Handlers) ListDiscussions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	discussions, total, err := h.Service.ListDiscussions(r.Context(), contentID, limit, offset)
+	// C-021 parity: linked discussions are only as visible as the parent
+	// content — 404 (never 403) so the endpoint cannot probe restricted
+	// content for thread links.
+	viewerID := viewerIDFromRequest(r)
+	authed := auth.FromContext(r.Context()) != nil
+	visible, err := h.Service.CanViewComments(r.Context(), contentID, viewerID, authed)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !visible {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
+	discussions, total, err := h.Service.ListDiscussions(r.Context(), contentID, viewerID, authed, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -275,7 +299,7 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 				slog.Warn("comments: space posting_perm check failed", "space_id", spaceID.String(), "error", err)
 			} else if !allowed {
 				errpkg.WriteError(w, http.StatusForbidden, "space_permission_denied",
-					"You do not have permission to post in this space")
+					spaceDenialMessage(r.Context(), h.spaceChecker, spaceID, user.UserID, "post"))
 				return
 			}
 		}

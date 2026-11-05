@@ -10,6 +10,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -135,8 +136,14 @@ func parseWindow(r *http.Request) string {
 func parseGeoCode(r *http.Request) string {
 	// ADR-064: when ?geo= is not explicitly provided, default to the
 	// VisitorContext's ContentCountry (resolved by the visitor middleware
-	// from user preference → GeoIP → system default).
+	// from user preference → GeoIP → system default). ?geo=all is the
+	// documented "unfiltered" override — it must not reach SQL as a literal
+	// geo_code (it would match nothing and blank the feed).
 	if g := r.URL.Query().Get("geo"); g != "" {
+		if strings.EqualFold(g, "all") {
+			return ""
+		}
+
 		return g
 	}
 
@@ -596,6 +603,17 @@ func (h *Handlers) GetSuggestedContent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Geo fallback: a visitor whose country has no scoped snapshots gets
+	// the unfiltered list rather than an empty widget — same rule as the
+	// /trending/* handlers (geoCode nil/"" = all scopes, deduped in SQL).
+	if len(data) == 0 && geoCode != nil && *geoCode != "" {
+		data, err = h.Store.GetSuggestedContent(r.Context(), window, nil, seedContentID, limit)
+		if err != nil {
+			handleServiceError(w, err)
+			return
+		}
 	}
 
 	if data == nil {

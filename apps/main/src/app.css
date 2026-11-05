@@ -76,6 +76,17 @@
 	--chart-4: #f59e0b;
 	--chart-5: #ec4899;
 
+	/* EntityHero per-entity accents (light variants) */
+	--hero-accent-users: #4f46e5;
+	--hero-accent-organizations: #0284c7;
+	--hero-accent-scholarships: #d97706;
+	--hero-accent-universities: #2563eb;
+	--hero-accent-sources: #e11d48;
+	--hero-accent-radar: #059669;
+	--hero-accent-spaces: #7c3aed;
+	--hero-accent-jobs: #ea580c;
+	--hero-accent-tools: #0d9488;
+
 	/* Japa Stage progression colours (§87) — semantic, dark-mode-aware */
 	--stage-planning: #3b82f6;
 	--stage-preparing: #8b5cf6;
@@ -132,6 +143,17 @@
 	--chart-3: #4ade80;
 	--chart-4: #fbbf24;
 	--chart-5: #f472b6;
+
+	/* EntityHero per-entity accents — brightened for dark surfaces */
+	--hero-accent-users: #818cf8;
+	--hero-accent-organizations: #38bdf8;
+	--hero-accent-scholarships: #f59e0b;
+	--hero-accent-universities: #60a5fa;
+	--hero-accent-sources: #fb7185;
+	--hero-accent-radar: #34d399;
+	--hero-accent-spaces: #a78bfa;
+	--hero-accent-jobs: #fb923c;
+	--hero-accent-tools: #2dd4bf;
 
 	/* Japa Stage progression colours (§87) — dark-mode-adjusted */
 	--stage-planning: #60a5fa;

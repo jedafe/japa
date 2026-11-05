@@ -8,13 +8,14 @@
 package sopgenerator
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -809,7 +810,7 @@ func (s *Service) CreateSample(ctx context.Context, in SampleRequest) (SampleDTO
 	if in.DestinationSpaceID != "" {
 		var sid pgtype.UUID
 		if err := sid.Scan(in.DestinationSpaceID); err != nil {
-			return SampleDTO{}, errors.New("invalid destination_space_id")
+			return SampleDTO{}, fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
 		}
 
 		row.DestinationSpaceID = sid
@@ -847,7 +848,7 @@ func (s *Service) UpdateSample(ctx context.Context, id pgtype.UUID, in SampleReq
 	if in.DestinationSpaceID != "" {
 		var sid pgtype.UUID
 		if err := sid.Scan(in.DestinationSpaceID); err != nil {
-			return errors.New("invalid destination_space_id")
+			return fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
 		}
 
 		row.DestinationSpaceID = sid

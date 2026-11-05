@@ -98,6 +98,7 @@ func PredicateSpecs() []PredicateSpec {
 // surface makes a rule silently never-match, so validate at write time.
 var userClassSet = map[string]bool{
 	ClassGuest: true, ClassRegular: true, ClassPro: true, ClassBusiness: true,
+	ClassStaff: true, ClassAdmin: true, ClassSuperAdmin: true,
 }
 
 // VocabChannels/VocabUserClasses/VocabSurfaces return the bounded vocabularies

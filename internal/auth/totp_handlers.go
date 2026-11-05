@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -229,7 +230,11 @@ func (h *TOTPHandlers) HandleDisable(w http.ResponseWriter, r *http.Request) {
 
 	if err := DisableTOTP(r.Context(), h.Store, user.UserID, req.Code); err != nil {
 		slog.Warn("TOTP disable failed", "user_id", user.UserID.String(), "error", err)
-		errpkg.WriteError(w, http.StatusBadRequest, "totp_disable_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("auth: totp_disable_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 
 		return
 	}

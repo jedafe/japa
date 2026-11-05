@@ -123,17 +123,59 @@ func ValidPermissionAxes(a SpacePermAxes) bool {
 		validJoiningPerm[a.Joining]
 }
 
+// primaryLevels are the platform-seeded space levels — the geo hierarchy
+// (country/state/city), universities, and the global space. They are the
+// platform's public squares: fully open engagement by default. LevelCustom
+// is deliberately excluded — it marks member-created spaces.
+var primaryLevels = map[string]bool{
+	LevelCountry: true, LevelState: true, LevelCity: true,
+	LevelUniversity: true, LevelGlobal: true,
+}
+
+// IsPrimaryLevel returns true if the level is a platform-seeded primary
+// space level (geo or university — never member-created custom).
+func IsPrimaryLevel(level string) bool {
+	return primaryLevels[level]
+}
+
 // DefaultPermAxes returns the default permission axes applied to a new
-// space when no preset is specified: public visibility, members-only
-// posting/replying/commenting, and open joining.
+// member-created space when no preset is specified: public visibility,
+// members-only posting, open replying/commenting, and open joining.
+// Engagement (comment/reply, plus reactions and shares which are not
+// space-gated) is open by default — see the §05 open-by-default engagement
+// amendment.
 func DefaultPermAxes() SpacePermAxes {
 	return SpacePermAxes{
 		Visibility: VisibilityPublic,
 		Posting:    PermMembers,
-		Replying:   PermMembers,
-		Commenting: PermMembers,
+		Replying:   PermOpen,
+		Commenting: PermOpen,
 		Joining:    JoiningOpen,
 	}
+}
+
+// PrimaryPermAxes returns the default permission axes for primary
+// (geo/university/global) spaces: fully open posting, replying, commenting,
+// and joining — anyone may participate without joining first.
+func PrimaryPermAxes() SpacePermAxes {
+	return SpacePermAxes{
+		Visibility: VisibilityPublic,
+		Posting:    PermOpen,
+		Replying:   PermOpen,
+		Commenting: PermOpen,
+		Joining:    JoiningOpen,
+	}
+}
+
+// DefaultPermAxesForLevel returns PrimaryPermAxes for platform-seeded
+// primary levels (geo/university/global) and DefaultPermAxes for
+// member-created (custom) spaces.
+func DefaultPermAxesForLevel(level string) SpacePermAxes {
+	if IsPrimaryLevel(level) {
+		return PrimaryPermAxes()
+	}
+
+	return DefaultPermAxes()
 }
 
 // ErrWikiOnlySpace rejects writes into a space whose type is wiki-only

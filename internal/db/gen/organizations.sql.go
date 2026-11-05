@@ -156,19 +156,24 @@ func (q *Queries) CountOwnershipClaimsForAdmin(ctx context.Context, arg CountOwn
 const countPublicOrganizations = `-- name: CountPublicOrganizations :one
 SELECT COUNT(*) FROM organizations
 WHERE status = 'active' AND deleted_at IS NULL
- AND ($1::text = '' OR verified = ($1 = 'true'))
+ AND (
+    $1::text = ''
+    OR ($1 = 'claimed' AND owner_user_id IS NOT NULL)
+    OR ($1 = 'verified' AND verified)
+    OR ($1 = 'unverified' AND NOT verified)
+ )
  AND ($2::text = '' OR org_type = $2)
  AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
 `
 
 type CountPublicOrganizationsParams struct {
-	Verified string `json:"verified"`
-	OrgType  string `json:"org_type"`
-	Search   string `json:"search"`
+	Filter  string `json:"filter"`
+	OrgType string `json:"org_type"`
+	Search  string `json:"search"`
 }
 
 func (q *Queries) CountPublicOrganizations(ctx context.Context, arg CountPublicOrganizationsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countPublicOrganizations, arg.Verified, arg.OrgType, arg.Search)
+	row := q.db.QueryRow(ctx, countPublicOrganizations, arg.Filter, arg.OrgType, arg.Search)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -1478,10 +1483,16 @@ func (q *Queries) ListPublicOrganizationMembers(ctx context.Context, organizatio
 
 const listPublicOrganizations = `-- name: ListPublicOrganizations :many
 SELECT id, name, slug, tagline, org_type, logo_media_id, header_media_id,
- country_code, verified, follower_count, member_count, created_at
+ country_code, verified, follower_count, member_count, created_at,
+ CAST(owner_user_id IS NOT NULL AS bool) AS claimed
 FROM organizations
 WHERE status = 'active' AND deleted_at IS NULL
- AND ($1::text = '' OR verified = ($1 = 'true'))
+ AND (
+    $1::text = ''
+    OR ($1 = 'claimed' AND owner_user_id IS NOT NULL)
+    OR ($1 = 'verified' AND verified)
+    OR ($1 = 'unverified' AND NOT verified)
+ )
  AND ($2::text = '' OR org_type = $2)
  AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
 ORDER BY created_at DESC
@@ -1489,7 +1500,7 @@ LIMIT $5 OFFSET $4
 `
 
 type ListPublicOrganizationsParams struct {
-	Verified   string `json:"verified"`
+	Filter     string `json:"filter"`
 	OrgType    string `json:"org_type"`
 	Search     string `json:"search"`
 	PageOffset int32  `json:"page_offset"`
@@ -1509,15 +1520,24 @@ type ListPublicOrganizationsRow struct {
 	FollowerCount int32              `json:"follower_count"`
 	MemberCount   int32              `json:"member_count"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Claimed       bool               `json:"claimed"`
 }
 
-// Public Discover "Organizations": ACTIVE orgs only. By default only verified
-// orgs are shown (matching the original behavior); pass verified="" to include
-// unverified. Search filters by name or slug. org_type filters by type (empty
-// = all). Ordered by created_at DESC (newest first).
+// Public Discover "Organizations": ACTIVE orgs only. filter semantics:
+//
+//	'claimed'    → orgs with an owner (default — a real operator is behind
+//	               the page; informational directory entities are never in
+//	               this table, migration 001045)
+//	'verified'   → badge-holders (implies claimed; verify requires an owner)
+//	'unverified' → orgs without a badge
+//	''           → all active orgs
+//
+// Search filters by name or slug. org_type filters by type (empty = all).
+// Ordered by created_at DESC (newest first). claimed is projected so the
+// frontend can distinguish claimed vs unclaimed listings.
 func (q *Queries) ListPublicOrganizations(ctx context.Context, arg ListPublicOrganizationsParams) ([]ListPublicOrganizationsRow, error) {
 	rows, err := q.db.Query(ctx, listPublicOrganizations,
-		arg.Verified,
+		arg.Filter,
 		arg.OrgType,
 		arg.Search,
 		arg.PageOffset,
@@ -1543,6 +1563,7 @@ func (q *Queries) ListPublicOrganizations(ctx context.Context, arg ListPublicOrg
 			&i.FollowerCount,
 			&i.MemberCount,
 			&i.CreatedAt,
+			&i.Claimed,
 		); err != nil {
 			return nil, err
 		}

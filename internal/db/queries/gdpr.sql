@@ -700,6 +700,11 @@ DELETE FROM reactions WHERE user_id = @user_id;
 -- self-documenting erasure rationale as reactions/forum_votes (BUG-011).
 DELETE FROM comment_votes WHERE user_id = @user_id;
 
+-- name: GdprDeleteCommentViewsByUser :exec
+-- Comment view history (§49) is a user-keyed behavioral record — same
+-- self-documenting erasure rationale as comment_votes.
+DELETE FROM comment_views WHERE user_id = @user_id;
+
 -- name: GdprDeleteDocPageVotesByUser :exec
 -- E-009: deletes doc_page_votes rows (§44 helpful votes).
 DELETE FROM doc_page_votes WHERE user_id = @user_id;
@@ -778,6 +783,11 @@ FROM (SELECT * FROM forum_votes WHERE user_id = @user_id) t;
 -- reactions/forum_votes.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM comment_votes WHERE user_id = @user_id) t;
+
+-- name: GdprExportUserCommentViews :one
+-- comment_views belong in the right-to-access export alongside comment_votes.
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT * FROM comment_views WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserDocPageVotes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data

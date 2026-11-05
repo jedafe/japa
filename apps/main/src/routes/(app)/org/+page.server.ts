@@ -66,7 +66,23 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// Staff gate for the inline guide editor in the "How it works"
+	// slide-over — super_admin group bypasses, else admin.settings.* node.
+	const isSuperAdmin = (event.locals.user?.groups ?? []).some(
+		(g) => g === 'Super Admin' || g === 'super_admin'
+	);
+	let canManage = isSuperAdmin;
+	if (event.locals.user && !canManage) {
+		try {
+			const perms = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+			canManage = (perms?.permissions ?? []).some((p) => p.startsWith('admin.settings'));
+		} catch {
+			canManage = false;
+		}
+	}
+
 	return {
+		canManage,
 		orgs,
 		q,
 		orgType,

@@ -2,6 +2,7 @@ package spaces
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -19,6 +20,71 @@ type PermissionChecker interface {
 // Implemented by a closure or store method.
 type UserVerifiedChecker func(ctx context.Context, userID pgtype.UUID) (bool, error)
 
+// SpaceDenial classifies why a write action (post/comment/reply) is denied in
+// a space. It lets handlers render an actionable 403 message — the user sees
+// the actual requirement (join, verify email, moderators only) instead of a
+// bare "no permission" string.
+type SpaceDenial string
+
+const (
+	DenialNone           SpaceDenial = ""
+	DenialWikiOnly       SpaceDenial = "wiki_only"
+	DenialSpaceInactive  SpaceDenial = "space_inactive"
+	DenialJoinRequired   SpaceDenial = "join_required"
+	DenialVerifiedOnly   SpaceDenial = "verified_only"
+	DenialModeratorsOnly SpaceDenial = "moderators_only"
+	DenialAdminsOnly     SpaceDenial = "admins_only"
+	DenialRestricted     SpaceDenial = "restricted"
+)
+
+// denialNoun maps a write action to the plural noun used in denial messages.
+var denialNoun = map[string]string{
+	"post":    "posts",
+	"comment": "comments",
+	"reply":   "replies",
+}
+
+// denialVerb maps a write action to the verb used in denial messages. Any
+// unrecognized action falls back to "comment".
+func denialVerb(action string) string {
+	switch action {
+	case "post":
+		return "post"
+	case "reply":
+		return "reply"
+	default:
+		return "comment"
+	}
+}
+
+// DenialMessage renders the user-facing explanation for a denied space write
+// action. action is "post", "comment", or "reply". It describes the concrete
+// requirement the user is missing without exposing internal state (e.g. why
+// a space is inactive). Returns "" for DenialNone.
+func DenialMessage(d SpaceDenial, action string) string {
+	verb := denialVerb(action)
+	noun := denialNoun[verb]
+
+	switch d {
+	case DenialWikiOnly:
+		return "This space is wiki-only"
+	case DenialSpaceInactive:
+		return fmt.Sprintf("This space is not accepting new %s.", noun)
+	case DenialJoinRequired:
+		return fmt.Sprintf("You must join this space to %s.", verb)
+	case DenialVerifiedOnly:
+		return fmt.Sprintf("You must verify your email address to %s in this space.", verb)
+	case DenialModeratorsOnly:
+		return fmt.Sprintf("Only this space's moderators can %s.", verb)
+	case DenialAdminsOnly:
+		return fmt.Sprintf("Only administrators can %s in this space.", verb)
+	case DenialRestricted:
+		return fmt.Sprintf("You do not have permission to %s in this space.", verb)
+	default:
+		return ""
+	}
+}
+
 // CanPostInSpace reports whether the given user may post content into the
 // space, based on the space's posting_perm axis (Section 05 lines 145-154,
 // BUG-003).
@@ -35,59 +101,7 @@ func (s *Service) CanPostInSpace(
 	permChecker PermissionChecker,
 	verifiedChecker UserVerifiedChecker,
 ) bool {
-	// §80 wiki-only space types accept no posts — structural rule, applied
-	// before the posting_perm axis so even admin-granted writes can't land.
-	if s.IsWikiOnlyType(ctx, space.SpaceTypeID) {
-		return false
-	}
-
-	// Non-active spaces are frozen — no new posts regardless of the axis.
-	if space.Status != StatusActive {
-		return false
-	}
-
-	switch space.PostingPerm {
-	case PermOpen:
-		return true
-	case PermMembers:
-		isMember, err := s.IsMember(ctx, space.ID, userID)
-		if err != nil || !isMember {
-			return false
-		}
-
-		return true
-	case PermVerified:
-		isMember, err := s.IsMember(ctx, space.ID, userID)
-		if err != nil || !isMember {
-			return false
-		}
-
-		if verifiedChecker == nil {
-			return false
-		}
-
-		verified, err := verifiedChecker(ctx, userID)
-		if err != nil || !verified {
-			return false
-		}
-
-		return true
-	case PermModerators:
-		isMod, err := s.IsModerator(ctx, space.ID, userID)
-		if err != nil || !isMod {
-			return false
-		}
-
-		return true
-	case PermAdmins:
-		if permChecker == nil {
-			return false
-		}
-
-		return permChecker.HasPermission(ctx, userID, "spaces.moderate.any")
-	default:
-		return false
-	}
+	return s.spaceWriteDenial(ctx, space.PostingPerm, space, userID, permChecker, verifiedChecker) == DenialNone
 }
 
 // CanReplyInSpace reports whether the given user may reply to content in the
@@ -100,7 +114,7 @@ func (s *Service) CanReplyInSpace(
 	permChecker PermissionChecker,
 	verifiedChecker UserVerifiedChecker,
 ) bool {
-	return canActInSpace(ctx, s, space.ReplyingPerm, space, userID, permChecker, verifiedChecker)
+	return s.spaceWriteDenial(ctx, space.ReplyingPerm, space, userID, permChecker, verifiedChecker) == DenialNone
 }
 
 // CanCommentInSpace reports whether the given user may comment on content in
@@ -113,72 +127,91 @@ func (s *Service) CanCommentInSpace(
 	permChecker PermissionChecker,
 	verifiedChecker UserVerifiedChecker,
 ) bool {
-	return canActInSpace(ctx, s, space.CommentingPerm, space, userID, permChecker, verifiedChecker)
+	return s.spaceWriteDenial(ctx, space.CommentingPerm, space, userID, permChecker, verifiedChecker) == DenialNone
 }
 
-// canActInSpace is the shared enforcement logic for the posting, replying, and
-// commenting permission axes (Section 05 lines 145-154). All three axes share
-// the same value set and resolution rules; only the column differs.
-func canActInSpace(
+// SpaceWriteDenial evaluates the given perm axis for the user in the space
+// and returns the denial reason — DenialNone when the action is allowed.
+// Exported for the PostCheckerAdapter's ExplainSpaceDenial; callers that only
+// need a verdict should use the Can*InSpace methods.
+func (s *Service) SpaceWriteDenial(
 	ctx context.Context,
-	s *Service,
 	perm string,
 	space gen.GetSpaceByIDRow,
 	userID pgtype.UUID,
 	permChecker PermissionChecker,
 	verifiedChecker UserVerifiedChecker,
-) bool {
+) SpaceDenial {
+	return s.spaceWriteDenial(ctx, perm, space, userID, permChecker, verifiedChecker)
+}
+
+// spaceWriteDenial is the shared enforcement logic for the posting, replying,
+// and commenting permission axes (Section 05 lines 145-154). All three axes
+// share the same value set and resolution rules; only the column differs.
+func (s *Service) spaceWriteDenial(
+	ctx context.Context,
+	perm string,
+	space gen.GetSpaceByIDRow,
+	userID pgtype.UUID,
+	permChecker PermissionChecker,
+	verifiedChecker UserVerifiedChecker,
+) SpaceDenial {
 	// §80 wiki-only space types accept no community writes — structural rule,
 	// applied before the axis so even admin-granted writes can't land.
 	if s.IsWikiOnlyType(ctx, space.SpaceTypeID) {
-		return false
+		return DenialWikiOnly
 	}
 
-	// Non-active spaces are frozen — no replies/comments regardless of axis.
+	// Non-active spaces are frozen — no posts/replies/comments regardless of
+	// the axis (BUG-040).
 	if space.Status != StatusActive {
-		return false
+		return DenialSpaceInactive
 	}
 
 	switch perm {
 	case PermOpen:
-		return true
+		return DenialNone
 	case PermMembers:
 		isMember, err := s.IsMember(ctx, space.ID, userID)
 		if err != nil || !isMember {
-			return false
+			return DenialJoinRequired
 		}
 
-		return true
+		return DenialNone
 	case PermVerified:
 		isMember, err := s.IsMember(ctx, space.ID, userID)
 		if err != nil || !isMember {
-			return false
+			return DenialJoinRequired
 		}
 
 		if verifiedChecker == nil {
-			return false
+			return DenialRestricted
 		}
 
 		verified, err := verifiedChecker(ctx, userID)
 		if err != nil || !verified {
-			return false
+			return DenialVerifiedOnly
 		}
 
-		return true
+		return DenialNone
 	case PermModerators:
 		isMod, err := s.IsModerator(ctx, space.ID, userID)
 		if err != nil || !isMod {
-			return false
+			return DenialModeratorsOnly
 		}
 
-		return true
+		return DenialNone
 	case PermAdmins:
 		if permChecker == nil {
-			return false
+			return DenialRestricted
 		}
 
-		return permChecker.HasPermission(ctx, userID, "spaces.moderate.any")
+		if permChecker.HasPermission(ctx, userID, "spaces.moderate.any") {
+			return DenialNone
+		}
+
+		return DenialAdminsOnly
 	default:
-		return false
+		return DenialRestricted
 	}
 }

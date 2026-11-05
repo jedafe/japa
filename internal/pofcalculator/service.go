@@ -6,11 +6,12 @@
 package pofcalculator
 
 import (
-	"github.com/jedafe/japa/internal/brand"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jedafe/japa/internal/brand"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -244,21 +245,21 @@ func (s *Service) AdminListRequirements(ctx context.Context, destSpaceID pgtype.
 func (s *Service) CreateRequirement(ctx context.Context, in RequirementRequest) (*RequirementDTO, error) {
 	if in.DestinationSpaceID == "" || in.VisaType == "" || in.ProgramLabel == "" ||
 		in.AmountSchedule == nil || in.Currency == "" || in.EffectiveDate == "" {
-		return nil, errors.New("destination_space_id, visa_type, program_label, amount_schedule, currency and effective_date are required")
+		return nil, fmt.Errorf("%w: destination_space_id, visa_type, program_label, amount_schedule, currency and effective_date are required", errpkg.ErrInvalid)
 	}
 
 	var dest pgtype.UUID
 	if err := dest.Scan(in.DestinationSpaceID); err != nil {
-		return nil, errors.New("invalid destination_space_id")
+		return nil, fmt.Errorf("%w: invalid destination_space_id", errpkg.ErrInvalid)
 	}
 
 	var eff pgtype.Date
 	if err := eff.Scan(in.EffectiveDate); err != nil {
-		return nil, errors.New("invalid effective_date")
+		return nil, fmt.Errorf("%w: invalid effective_date", errpkg.ErrInvalid)
 	}
 
 	if _, err := resolveSchedule(*in.AmountSchedule, 1); err != nil {
-		return nil, fmt.Errorf("invalid amount_schedule: %w", err)
+		return nil, fmt.Errorf("%w: invalid amount_schedule: %w", errpkg.ErrInvalid, err)
 	}
 
 	status := in.Status
@@ -269,7 +270,7 @@ func (s *Service) CreateRequirement(ctx context.Context, in RequirementRequest) 
 	// published comes from the approve endpoint, ai_draft from the
 	// Content Agent, rejected from the reject endpoint.
 	if status != StatusDraft && status != StatusPending {
-		return nil, errors.New("status must be draft or pending; review transitions use the approve/reject endpoints")
+		return nil, fmt.Errorf("%w: status must be draft or pending; review transitions use the approve/reject endpoints", errpkg.ErrInvalid)
 	}
 
 	row := RequirementRow{
@@ -590,7 +591,7 @@ func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string)
 	}
 
 	if params["destination_space_id"] == "" {
-		return errors.New("destination_space_id is required")
+		return fmt.Errorf("%w: destination_space_id is required", errpkg.ErrInvalid)
 	}
 
 	if _, err := uuidParam(params, "destination_space_id"); err != nil {

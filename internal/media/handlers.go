@@ -379,14 +379,18 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 	if isVideoMIME(CanonicalMIMEType(input.MimeType)) && h.perms != nil {
 		if !h.perms.HasPermission(r.Context(), user.UserID, "media.video.upload") {
 			errpkg.WriteError(w, http.StatusForbidden, "video_upload_forbidden",
-				"You do not have permission to upload video files")
+				"Your account isn't allowed to upload video files — contact an administrator to enable video uploads")
 			return
 		}
 	}
 
 	result, err := h.service.InitiateUpload(r.Context(), user.UserID, input.Filename, input.MimeType, input.FileSize, uploadCtx)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "upload_error", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("media: initiate upload failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 

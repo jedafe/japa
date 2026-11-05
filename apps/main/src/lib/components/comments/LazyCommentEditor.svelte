@@ -11,7 +11,7 @@
 	 * `eager`/`initialBody` indicates the user explicitly asked for it
 	 * (reply/edit affordances).
 	 */
-	import { onMount, type Component } from 'svelte';
+	import { onMount, untrack, type Component } from 'svelte';
 	import { Bold, Code, ImagePlus, Italic, Link as LinkIcon, Loader2, Strikethrough } from 'lucide-svelte';
 	import { encodeTiptapDoc, type TipTapDoc } from '$lib/tiptap/serialize';
 
@@ -26,15 +26,27 @@
 		class?: string;
 		/** Load the real editor on mount instead of waiting for interaction. */
 		eager?: boolean;
+		/** Bumped by the parent to clear the editor after a successful submit. */
+		resetNonce?: number;
 	}
 
-	let { placeholder = '', initialBody = null, oninput, class: cls = '', eager = false }: Props = $props();
+	let { placeholder = '', initialBody = null, oninput, class: cls = '', eager = false, resetNonce = 0 }: Props = $props();
 
 	let EditorComponent = $state<Component<Props> | null>(null);
 	let loading = $state(false);
 	let stubText = $state('');
 	let wrap = $state<HTMLDivElement | null>(null);
 	let wantsFocus = $state(false);
+
+	// Parent-driven reset (post-submit): clear anything typed into the stub;
+	// the loaded editor clears itself via its own resetNonce watcher.
+	let lastResetNonce = $state(untrack(() => resetNonce));
+	$effect(() => {
+		if (resetNonce !== lastResetNonce) {
+			lastResetNonce = resetNonce;
+			stubText = '';
+		}
+	});
 
 	function load() {
 		if (EditorComponent || loading) return;
@@ -89,7 +101,7 @@
 
 {#if EditorComponent}
 	<div bind:this={wrap} class="contents">
-		<EditorComponent {placeholder} initialBody={initialBody ?? stubDoc} {oninput} class={cls} />
+		<EditorComponent {placeholder} initialBody={initialBody ?? stubDoc} {oninput} class={cls} {resetNonce} />
 	</div>
 {:else}
 	<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] {cls}">

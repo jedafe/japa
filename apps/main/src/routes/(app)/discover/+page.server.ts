@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
+import { apiContext, apiList, apiRadarList } from '$lib/server/api';
 import type {
 	SuggestedUser,
 	SuggestedSpace,
@@ -72,8 +72,10 @@ export const load: PageServerLoad = async (event) => {
 				tags = (await apiList<SuggestedTag>(ctx, `/suggestions/tags?limit=${PAGE_SIZE}`)).items;
 				break;
 			case 'content':
+				// 7d window, not the 24h default — a discovery surface should
+				// not blank out on days with no freshly published content.
 				content = (
-					await apiList<SuggestedContent>(ctx, `/suggestions/content?limit=${PAGE_SIZE}`)
+					await apiList<SuggestedContent>(ctx, `/suggestions/content?window=7d&limit=${PAGE_SIZE}`)
 				).items;
 				break;
 			case 'sources': {
@@ -86,7 +88,14 @@ export const load: PageServerLoad = async (event) => {
 				break;
 			}
 			case 'opportunities': {
-				opportunities = (await apiList<RadarItem>(ctx, `/intel/radar?page_size=${PAGE_SIZE}`)).items;
+				// Followed-countries feed (/intel/radar/followed), not the
+				// global /intel/radar — Discover surfaces opportunities for the
+				// spaces the caller follows, matching the dashboard widget.
+				// Both endpoints emit the §739 radar envelope {items, ...},
+				// not {data: [...]} — apiList would silently read an empty list.
+				opportunities = (
+					await apiRadarList<RadarItem>(ctx, `/intel/radar/followed?page_size=${PAGE_SIZE}`)
+				).items;
 				break;
 			}
 			default: {

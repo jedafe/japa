@@ -2,12 +2,25 @@ package rbac
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 )
+
+// writeErrorJSON renders the standard {error:{code,message}} envelope for
+// middleware denials (unauthenticated/forbidden).
+func writeErrorJSON(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+
+	body, _ := json.Marshal(map[string]any{
+		"error": map[string]string{"code": code, "message": message},
+	})
+	_, _ = w.Write(body)
+}
 
 // rbacContextKey is used to store the RBAC resolver in request context.
 type rbacContextKey struct{ name string }
@@ -34,10 +47,7 @@ func RequirePermission(resolver *RBAC, permKey string) func(http.Handler) http.H
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := auth.FromContext(r.Context())
 			if user == nil || !user.UserID.Valid {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
-
+				writeErrorJSON(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 				return
 			}
 
@@ -50,10 +60,7 @@ func RequirePermission(resolver *RBAC, permKey string) func(http.Handler) http.H
 			}
 
 			if !resolver.HasPermission(r.Context(), user.UserID, permKey) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
-
+				writeErrorJSON(w, http.StatusForbidden, "forbidden", DenialMessage(permKey))
 				return
 			}
 
@@ -81,10 +88,7 @@ func RequireAnyPermission(resolver *RBAC, permKeys ...string) func(http.Handler)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := auth.FromContext(r.Context())
 			if user == nil || !user.UserID.Valid {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
-
+				writeErrorJSON(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 				return
 			}
 
@@ -105,9 +109,7 @@ func RequireAnyPermission(resolver *RBAC, permKeys ...string) func(http.Handler)
 				}
 			}
 
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+			writeErrorJSON(w, http.StatusForbidden, "forbidden", AnyDenialMessage(permKeys...))
 		})
 	}
 }
@@ -129,19 +131,13 @@ func RequireForceDelete(resolver *RBAC) func(http.Handler) http.Handler {
 
 			user := auth.FromContext(r.Context())
 			if user == nil || !user.UserID.Valid {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
-
+				writeErrorJSON(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 				return
 			}
 
 			if !resolver.IsSuperAdmin(r.Context(), user.UserID) &&
 				!resolver.HasPermission(r.Context(), user.UserID, forcePerm) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
-
+				writeErrorJSON(w, http.StatusForbidden, "forbidden", DenialMessage(forcePerm))
 				return
 			}
 
@@ -164,10 +160,7 @@ func RequirePermissionWithInvalidation(resolver *RBAC, permKey string) func(http
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := auth.FromContext(r.Context())
 			if user == nil || !user.UserID.Valid {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
-
+				writeErrorJSON(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 				return
 			}
 
@@ -180,10 +173,7 @@ func RequirePermissionWithInvalidation(resolver *RBAC, permKey string) func(http
 			}
 
 			if !resolver.HasPermission(r.Context(), user.UserID, permKey) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
-
+				writeErrorJSON(w, http.StatusForbidden, "forbidden", DenialMessage(permKey))
 				return
 			}
 
@@ -237,10 +227,7 @@ func OptionalPermission(resolver *RBAC, permKey string) func(http.Handler) http.
 			}
 
 			if !resolver.HasPermission(r.Context(), user.UserID, permKey) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to view this directory"}}`))
-
+				writeErrorJSON(w, http.StatusForbidden, "forbidden", DenialMessage(permKey))
 				return
 			}
 
@@ -286,10 +273,7 @@ func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) h
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := auth.FromContext(r.Context())
 			if user == nil || !user.UserID.Valid {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				_, _ = w.Write([]byte(`{"error":{"code":"unauthenticated","message":"Authentication required"}}`))
-
+				writeErrorJSON(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 				return
 			}
 
@@ -318,10 +302,7 @@ func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) h
 			}
 
 			if !resolver.HasSpacePermission(r.Context(), user.UserID, spaceID, permKey) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
-
+				writeErrorJSON(w, http.StatusForbidden, "forbidden", SpaceDenialMessage(permKey))
 				return
 			}
 

@@ -252,14 +252,14 @@ func orgProfileCacheKey(slug string) string {
 }
 
 // orgListCacheKey builds jc:org:list:{}:{page}.
-func orgListCacheKey(search, orgType, verified string, limit, offset int32) string {
+func orgListCacheKey(search, orgType, filter string, limit, offset int32) string {
 	// Normalize the search term (trim + lowercase) so "Japa" and " japa "
 	// share one cache entry, then hash the full filter tuple so the key
 	// stays fixed-length and unambiguous regardless of filter content.
 	sum := sha256.Sum256([]byte(strings.Join([]string{
 		strings.ToLower(strings.TrimSpace(search)),
 		strings.ToLower(strings.TrimSpace(orgType)),
-		strings.ToLower(strings.TrimSpace(verified)),
+		strings.ToLower(strings.TrimSpace(filter)),
 		strconv.Itoa(int(limit)),
 		strconv.Itoa(int(offset)),
 	}, "\x00")))
@@ -379,12 +379,12 @@ func (s *Service) getOrSetOrgProfile(ctx context.Context, slug string) (gen.Orga
 }
 
 // getOrSetOrgList implements read-through cache for ListPublicOrganizations.
-func (s *Service) getOrSetOrgList(ctx context.Context, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
+func (s *Service) getOrSetOrgList(ctx context.Context, search, orgType, filter string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
 	if s.vk == nil {
-		return s.fetchOrgList(ctx, search, orgType, verified, limit, offset)
+		return s.fetchOrgList(ctx, search, orgType, filter, limit, offset)
 	}
 
-	cacheKey := orgListCacheKey(search, orgType, verified, limit, offset)
+	cacheKey := orgListCacheKey(search, orgType, filter, limit, offset)
 
 	if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 		var entry cachedPublicOrgList
@@ -393,7 +393,7 @@ func (s *Service) getOrSetOrgList(ctx context.Context, search, orgType, verified
 		}
 	}
 
-	rows, total, err := s.fetchOrgList(ctx, search, orgType, verified, limit, offset)
+	rows, total, err := s.fetchOrgList(ctx, search, orgType, filter, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -409,13 +409,13 @@ func (s *Service) getOrSetOrgList(ctx context.Context, search, orgType, verified
 }
 
 // fetchOrgList is the uncached DB fetch for ListPublicOrganizations.
-func (s *Service) fetchOrgList(ctx context.Context, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
-	rows, err := s.store.ListPublicOrganizations(ctx, search, orgType, verified, limit, offset)
+func (s *Service) fetchOrgList(ctx context.Context, search, orgType, filter string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
+	rows, err := s.store.ListPublicOrganizations(ctx, search, orgType, filter, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountPublicOrganizations(ctx, search, orgType, verified)
+	total, err := s.store.CountPublicOrganizations(ctx, search, orgType, filter)
 	if err != nil {
 		return nil, 0, err
 	}

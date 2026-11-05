@@ -323,7 +323,11 @@ func (h *Handlers) HandleGenerateGuide(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.GenerateGuide(r.Context(), input)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "generate_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("taxcalculator: generate guide failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 

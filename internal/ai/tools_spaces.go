@@ -240,19 +240,28 @@ func SpacesCreateHandler(deps *ToolDeps) ToolHandler {
 			visibility = "public"
 		}
 
+		// §05 open-by-default amendment: engagement axes default to "open" on
+		// public spaces; primary levels (geo/university/global) also default
+		// posting to "open" — member-created spaces keep "members" posting.
+		isPrimaryLevel := a.Level == "country" || a.Level == "state" ||
+			a.Level == "city" || a.Level == "university" || a.Level == "global"
+
 		postingPerm := a.PostingPerm
 		if postingPerm == "" {
 			postingPerm = "members"
+			if isPrimaryLevel {
+				postingPerm = "open"
+			}
 		}
 
 		replyingPerm := a.ReplyingPerm
 		if replyingPerm == "" {
-			replyingPerm = "members"
+			replyingPerm = "open"
 		}
 
 		commentingPerm := a.CommentingPerm
 		if commentingPerm == "" {
-			commentingPerm = "members"
+			commentingPerm = "open"
 		}
 
 		joiningPerm := a.JoiningPerm

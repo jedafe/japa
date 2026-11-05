@@ -151,7 +151,7 @@ func run() error {
 				space_type_id, name, slug, description, level,
 				visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status
 			) VALUES ($1, $2, $3, $4, 'country',
-				'public', 'members', 'members', 'members', 'open', 'active')
+				'public', 'open', 'open', 'open', 'open', 'active')
 			ON CONFLICT (slug) WHERE deleted_at IS NULL DO UPDATE SET slug = EXCLUDED.slug
 			RETURNING id`, stID, s.Name, s.Slug, s.Description).Scan(&spaceID)
 		if err != nil {

@@ -523,6 +523,7 @@ func (h *SitemapHandler) ServeWikiSitemap(w http.ResponseWriter, r *http.Request
 var wikiEntitySitemapQueries = map[string]string{
 	"visa_route":   `SELECT id::text, slug, COALESCE(visa_category, '') FROM visa_routes WHERE id::text = ANY($1) AND is_active = true AND slug <> ''`,
 	"organization": `SELECT id::text, slug, COALESCE(org_type, '') FROM organizations WHERE id::text = ANY($1) AND deleted_at IS NULL AND status = 'active' AND slug <> ''`,
+	"bank":         `SELECT id::text, slug, '' AS disc FROM banks WHERE id::text = ANY($1) AND is_active = true AND slug <> ''`,
 	"embassy":      `SELECT id::text, slug, '' AS disc FROM embassies WHERE id::text = ANY($1) AND is_active = true AND slug <> ''`,
 	"course":       `SELECT id::text, slug, '' AS disc FROM university_course_offerings WHERE id::text = ANY($1) AND deleted_at IS NULL AND is_published = true AND slug <> ''`,
 	"program":      `SELECT id::text, slug, '' AS disc FROM university_course_catalog WHERE id::text = ANY($1) AND deleted_at IS NULL AND is_published = true AND slug <> ''`,

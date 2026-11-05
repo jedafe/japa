@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/ledger"
 	"github.com/jedafe/japa/internal/wallet/payout"
 	"github.com/jedafe/japa/internal/worker"
@@ -193,6 +197,7 @@ type AwardPointsPayload struct {
 	ReferenceID    string `json:"reference_id,omitempty"`
 	GuideID        string `json:"guide_id,omitempty"`
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	Nonce          string `json:"nonce,omitempty"`
 }
 
 // AwardPointsTask is the Asynq task handler for wallet:award_points. It
@@ -271,7 +276,10 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 			}
 
 			if p.ReferenceID == "" && p.GuideID == "" {
-				idempotencyKey = fmt.Sprintf("award::%s:%s:%d", userID.String(), p.Reason, amount)
+				// Reference-less grants: the nonce (stamped at enqueue, stable
+				// across retries) replaces the old per-amount collapse that
+				// silently dropped a second same-amount award (PTS-020).
+				idempotencyKey = fmt.Sprintf("award::%s:%s:%s", userID.String(), p.Reason, p.Nonce)
 			}
 		}
 	}
@@ -310,7 +318,7 @@ func (s *Service) ReconcilePayoutsTask(ctx context.Context, _ []byte) error {
 // settle those by hand. "completed" marks the withdrawal completed; "failed"
 // marks it failed and refunds the reserved credits.
 func (s *Service) ReconcilePayouts(ctx context.Context) error {
-	for _, st := range []string{WithdrawalStatusPending, WithdrawalStatusProcessing} {
+	for _, st := range []string{WithdrawalStatusPending, WithdrawalStatusProcessing, WithdrawalStatusApproved} {
 		status := st
 
 		rows, err := s.store.read.ListWithdrawals(ctx, gen.ListWithdrawalsParams{
@@ -330,7 +338,24 @@ func (s *Service) ReconcilePayouts(ctx context.Context) error {
 }
 
 // settleWithdrawal resolves one in-flight withdrawal against its provider.
+// 'approved' rows arrive from the atomic claim path (SEC-W-002): a crash
+// between claim and provider call leaves status='approved' with no
+// provider_ref — those are sent back to the approval queue, not polled.
 func (s *Service) settleWithdrawal(ctx context.Context, w gen.WalletWithdrawal) {
+	// Claimed but payout never initiated — nothing to poll; requeue for
+	// review so the row can't strand in 'approved' forever.
+	if w.Status == WithdrawalStatusApproved && (w.ProviderRef == nil || *w.ProviderRef == "") {
+		note := "claimed but payout never initiated — auto-returned to approval queue by reconciler"
+		if _, err := s.store.write.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
+			ID:        w.ID,
+			Status:    WithdrawalStatusPendingApproval,
+			AdminNote: &note,
+		}); err != nil {
+			slog.Error("wallet: reconcile: unclaim stuck approved withdrawal failed", "withdrawal_id", w.ID.String(), "error", err)
+		}
+		return
+	}
+
 	provider, ok := s.payoutProviders[w.PayoutProvider]
 	if !ok {
 		return
@@ -488,10 +513,16 @@ func (s *Service) earnAllowed(ctx context.Context, tx pgx.Tx, userID pgtype.UUID
 	}
 
 	var earnedToday int64
+	// idempotency_key LIKE 'activity::%' scopes the sum to activity-event
+	// earns only (Section 28) — reward earns routed through
+	// wallet:award_points ('award::'/'one_time::' keys: badge points_reward,
+	// challenge reward_points, checklist/referral/scholarship grants) are
+	// real achievements and never consume the daily cap.
 	row := tx.QueryRow(ctx, `
 		SELECT COALESCE(SUM(amount), 0) FROM wallet_ledger
 		WHERE user_id = $1 AND ledger_type = 'points' AND amount > 0
-		  AND operation = 'earn' AND created_at >= CURRENT_DATE`, userID)
+		  AND operation = 'earn' AND created_at >= CURRENT_DATE
+		  AND idempotency_key LIKE 'activity::%'`, userID)
 	if err := row.Scan(&earnedToday); err != nil {
 		return false, fmt.Errorf("checking daily earning cap: %w", err)
 	}
@@ -540,6 +571,36 @@ func (s *Service) creditWallet(ctx context.Context, userID pgtype.UUID, ledgerTy
 		}
 	}
 
+	// SEC-W-014: earned credits are minted without fiat backing — cap the
+	// rolling-24h earn total so activity-farming can't inflate a balance
+	// faster than ops can respond. Unlike the points gate this applies even
+	// to exemptCap callers (award/referral tasks): exemptCap was designed
+	// for the activity cap — a monetary cap is a different control and a
+	// reward that would exceed it is an ops-level event, not a silent drop.
+	// wallet.max_daily_earn_credits=0 disables.
+	if ledgerType == LedgerTypeCredits && operation == OperationEarn && amount > 0 && s.settings != nil {
+		if cap := s.settings.GetIntOr(ctx, "wallet.max_daily_earn_credits", 0); cap > 0 {
+			earned, cerr := qtx.GetUserCreditEarnsSince(ctx, gen.GetUserCreditEarnsSinceParams{
+				UserID: userID,
+				Since:  pgtype.Timestamptz{Time: time.Now().Add(-24 * time.Hour), Valid: true},
+			})
+			if cerr != nil {
+				return fmt.Errorf("wallet: checking credits earn cap: %w", cerr)
+			}
+
+			if earned+amount > int64(cap) {
+				// A capped award is reported, not silently dropped — it
+				// likely signals farming or a runaway task, and the reward
+				// is still owed (ops reviews and grants manually).
+				slog.Warn("wallet: credits earn gated by daily cap",
+					"user_id", userID.String(), "amount", amount, "earned_24h", earned, "cap", cap, "source", source)
+				errpkg.CaptureException(fmt.Errorf("wallet: credits earn capped: user=%s amount=%d earned_24h=%d cap=%d source=%s",
+					userID.String(), amount, earned, cap, source))
+				return nil
+			}
+		}
+	}
+
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
 		UserID:     userID,
 		LedgerType: ledgerType,
@@ -554,13 +615,24 @@ func (s *Service) creditWallet(ctx context.Context, userID pgtype.UUID, ledgerTy
 
 	newBalance := currentBalance + amount
 
-	// Non-negative balance guard (§1.3, Checklist B.10) — except clawback,
-	// which per Section 28 may take a Credits balance negative rather than
-	// being blocked outright (BUG-W-004).
-	if newBalance < 0 && operation != OperationClawback {
-		slog.Warn("wallet: deduct would result in negative balance, skipping", "user_id", userID.String(), "ledger_type", ledgerType, "current", currentBalance, "amount", amount)
+	// Non-negative balance guard (§1.3, Checklist B.10) — floors apply to
+	// EVERY ledger. Deductions that would go negative are blocked; clawback
+	// clamps to what exists (recover all available, log the shortfall)
+	// instead of pushing the balance negative (SEC-W-017 policy: balances
+	// never go below 0).
+	if newBalance < 0 {
+		if operation != OperationClawback {
+			slog.Warn("wallet: deduct would result in negative balance, skipping", "user_id", userID.String(), "ledger_type", ledgerType, "current", currentBalance, "amount", amount)
 
-		return fmt.Errorf("wallet: insufficient balance: current=%d, delta=%d", currentBalance, amount)
+			return fmt.Errorf("wallet: insufficient balance: current=%d, delta=%d", currentBalance, amount)
+		}
+		// Clamped clawback: take what's there, flag the unrecoverable delta.
+		slog.Warn("wallet: clawback clamped to available balance",
+			"user_id", userID.String(), "ledger_type", ledgerType,
+			"current", currentBalance, "requested", amount,
+			"shortfall", newBalance)
+		amount = -currentBalance
+		newBalance = 0
 	}
 
 	src := source
@@ -592,6 +664,94 @@ func (s *Service) creditWallet(ctx context.Context, userID pgtype.UUID, ledgerTy
 	}
 
 	slog.Info("wallet: ledger entry inserted", "user_id", userID.String(), "ledger_type", ledgerType, "operation", operation, "amount", amount, "new_balance", newBalance, "source", source)
+
+	return nil
+}
+
+// ── wallet:reconcile_solvency (SEC-W-012) ────────────────────────────────
+
+// ReconcileSolvencyTask is the Asynq handler for wallet:reconcile_solvency.
+// It runs the platform-wide integrity probes — the aggregate form of the
+// per-user provenance checks applied at withdrawal time. Any non-zero
+// result means unbacked credits exist somewhere; that's an ops page, not a
+// silent log line.
+func (s *Service) ReconcileSolvencyTask(ctx context.Context, _ []byte) error {
+	var flagged bool
+
+	diverged, err := s.store.read.CountDivergentCreditsLedgers(ctx)
+	if err != nil {
+		return fmt.Errorf("solvency: counting divergent ledgers: %w", err)
+	}
+	if diverged > 0 {
+		flagged = true
+		slog.Error("wallet: solvency: credits ledgers diverged from entry sums",
+			"user_count", diverged)
+		errpkg.CaptureException(fmt.Errorf("wallet solvency: %d credits ledgers diverged (sum != reported balance)", diverged))
+	}
+
+	unbacked, err := s.store.read.CountAllUnbackedPurchaseCredits(ctx)
+	if err != nil {
+		return fmt.Errorf("solvency: counting unbacked purchases: %w", err)
+	}
+	if unbacked.RowCount > 0 {
+		flagged = true
+		slog.Error("wallet: solvency: unbacked purchase credits exist",
+			"row_count", unbacked.RowCount, "credit_total", unbacked.CreditTotal)
+		errpkg.CaptureException(fmt.Errorf("wallet solvency: %d purchase entries (%d credits) lack a succeeded payment",
+			unbacked.RowCount, unbacked.CreditTotal))
+	}
+
+	anonAdjusts, err := s.store.read.CountAllAnonymousAdminAdjusts(ctx)
+	if err != nil {
+		return fmt.Errorf("solvency: counting anonymous admin adjusts: %w", err)
+	}
+	if anonAdjusts.RowCount > 0 {
+		flagged = true
+		slog.Error("wallet: solvency: admin adjustments without actor exist",
+			"row_count", anonAdjusts.RowCount, "credit_total", anonAdjusts.CreditTotal)
+		errpkg.CaptureException(fmt.Errorf("wallet solvency: %d admin adjustments (%d credits) lack an actor",
+			anonAdjusts.RowCount, anonAdjusts.CreditTotal))
+	}
+
+	// SEC-W-NGN float-vs-liability: an underfunded payout rail means
+	// pending withdrawals will fail at the provider — flag before ops
+	// notices from support tickets. Compares per provider+currency;
+	// providers without a balance API are skipped.
+	providerFloats := s.PayoutFloat(ctx)
+	liabilities, err := s.store.read.GetInFlightWithdrawalTotalsByProvider(ctx)
+	if err != nil {
+		return fmt.Errorf("solvency: reading in-flight withdrawal totals: %w", err)
+	}
+	for _, liab := range liabilities {
+		if liab.RowCount == 0 || liab.NetTotal <= 0 {
+			continue
+		}
+		provFloat, ok := providerFloats[liab.PayoutProvider]
+		if !ok {
+			continue
+		}
+		balances, ok := provFloat.(map[string]float64)
+		if !ok {
+			continue // provider reported an error or no balance API
+		}
+		avail, ok := balances[strings.ToUpper(liab.CurrencyCode)]
+		if !ok {
+			continue // provider holds no balance in this currency
+		}
+		liability := float64(liab.NetTotal) / math.Pow10(payout.FiatExponent(liab.CurrencyCode))
+		if avail < liability {
+			flagged = true
+			slog.Error("wallet: solvency: payout float below in-flight liability",
+				"provider", liab.PayoutProvider, "currency", liab.CurrencyCode,
+				"available", avail, "liability", liability, "pending_withdrawals", liab.RowCount)
+			errpkg.CaptureException(fmt.Errorf("wallet solvency: %s float %.2f %s < %.2f in %d in-flight withdrawals",
+				liab.PayoutProvider, avail, liab.CurrencyCode, liability, liab.RowCount))
+		}
+	}
+
+	if !flagged {
+		slog.Info("wallet: solvency check clean")
+	}
 
 	return nil
 }

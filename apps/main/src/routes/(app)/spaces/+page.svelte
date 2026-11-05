@@ -3,8 +3,11 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Layers, Users, MessageSquare, Plus, ShieldX, ChevronLeft, ChevronRight, X } from 'lucide-svelte';
-	import { EmptyState, SpaceJoinButton, SearchInput, DirectoryCard, ListPageBar, FilterToggle, PageAction, SelectField, UrlTabs, type SearchSuggestion, type CardMetaItem, type UrlTab } from '$lib/components/ui';
+	import { Filter, Layers, Users, MessageSquare, Plus, ShieldX, ChevronLeft, ChevronRight, X, Search, Globe } from 'lucide-svelte';
+	import { EmptyState, EntityHero, SpaceJoinButton, SearchInput, DirectoryCard, ListPageBar, SelectField, UrlTabs, type SearchSuggestion, type CardMetaItem, type UrlTab } from '$lib/components/ui';
+	import { GuideSlideOver, Modal, type GuideContent } from '$lib/components/ui';
+	import HeroArtSpaces from '$lib/components/heroes/HeroArtSpaces.svelte';
+	import { formatMetric } from '$lib/components/hub/charts/format';
 	import { api } from '$lib/api/client';
 	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -68,10 +71,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		!!data.type || !!data.level || !!data.geo || !!data.region ||
 		!!data.subregion || !!data.parent
 	);
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasActiveFilters) showFilters = true;
-	});
+	let filtersModalOpen = $state(false);
+	let searchModalOpen = $state(false);
 
 	const visibleSpaces = $derived(data.spaces);
 	const visibleTotal = $derived(data.total);
@@ -213,6 +214,29 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			type: 'space'
 		}));
 	}
+
+	// "How it works" slide-over — markdown panel + CTA repeater persisted to
+	// public system settings (spaces.guide) via PUT /admin/settings/general.
+	let guideOpen = $state(false);
+	let guideOverride = $state<GuideContent | null>(null);
+	const siteSettings = $derived((page.data.siteSettings ?? {}) as Record<string, unknown>);
+	const storedGuide = $derived.by((): Partial<GuideContent> => {
+		const raw = siteSettings['spaces.guide'];
+		if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Partial<GuideContent>;
+		return {};
+	});
+	const effectiveGuide = $derived<GuideContent>({
+		title: guideOverride?.title ?? storedGuide.title ?? t('common.how_it_works', 'How it works'),
+		body: guideOverride?.body ?? storedGuide.body ?? t('spaces.guide_body', ''),
+		ctas: guideOverride?.ctas ?? storedGuide.ctas ?? [{ title: t('guide_panel.read_full_guide', 'Read the full guide'), url: '/guides' }]
+	});
+
+	async function saveGuide(v: GuideContent): Promise<string | null> {
+		const res = await api.put('/admin/settings/general', { spaces_guide: v });
+		if (res.error) return res.error.message || t('common.error', 'Something went wrong');
+		guideOverride = v;
+		return null;
+	}
 </script>
 
 <svelte:head>
@@ -229,56 +253,42 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
-	<!-- Header + search (H1/description; Filter + Create controls sit on the heading row) -->
-	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: var(--page-gutter)">
-		<div class="flex items-start justify-between gap-3">
-			<div class="min-w-0">
-				<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-					<Layers size={20} /> {t('spaces.heading', 'Spaces')}
-				</h1>
-				<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
-					{t('spaces.subtitle', 'Join spaces to connect with people who share your interests.')}
-				</p>
+	<!-- Header — EntityHero directory panel -->
+	<EntityHero
+		class="mt-4"
+		icon={Layers}
+		accent="var(--color-primary)"
+		heading={t('spaces.heading', 'Spaces')}
+		description={t('spaces.hero_desc', 'Join countries, cities, and topical communities — find your people wherever the journey takes you.')}
+		crumbs={[
+			{ label: t('common.home', 'Home'), href: '/' },
+			{ label: t('spaces.heading', 'Spaces') }
+		]}
+		stats={[
+			{ icon: Layers, value: formatMetric(data.total), label: t('spaces.stats_spaces', 'Spaces') },
+			{ icon: Globe, value: formatMetric(data.countries.length), label: t('spaces.stats_countries', 'Countries') }
+		]}
+	>
+		{#snippet art()}
+			<HeroArtSpaces accent="var(--color-primary)" />
+		{/snippet}
+		{#snippet actions(c)}
+			<div class="grid w-full grid-cols-2 gap-3 sm:flex sm:items-center">
+			<a href="#spaces-results" class="{c.primary} flex-1 justify-center whitespace-nowrap">
+				<Search size={15} /> {t('spaces.find', 'Find a space')}
+			</a>
+			{#if page.data.user}
+				<button type="button" onclick={() => (showCreateModal = true)} class="{c.secondary} flex-1 justify-center whitespace-nowrap">
+					<Plus size={15} /> {t('spaces.create_space', 'Create a space')}
+				</button>
+			{/if}
+			<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} flex-1 justify-center whitespace-nowrap">
+				{t('common.how_it_works', 'How it works')}
+				<ChevronRight size={14} class="rtl:-scale-x-100" />
+				</button>
 			</div>
-			<!-- Page controls on the heading row: Create only — the Filters
-			     toggle lives on the ListPageBar (same pattern as /blog).
-			     PageAction keeps its mobile FAB (portaled to <body>), so this
-			     wrapper only carries the desktop layout. -->
-			<div class="flex shrink-0 items-center gap-2 pt-0.5">
-				{#if page.data.user}
-					<PageAction
-						onclick={() => (showCreateModal = true)}
-						icon={Plus}
-						label={t('spaces.create', 'Create')}
-					/>
-				{/if}
-			</div>
-		</div>
-
-		<form class="mt-3" action="/spaces" method="get" role="search">
-			<SearchInput
-				bind:value={query}
-				placeholder={searchPlaceholder}
-				ariaLabel={t('spaces.heading', 'Spaces')}
-				fetcher={spaceSearchFetcher}
-			/>
-			{#if selectedCountry}
-				<input type="hidden" name="country" value={selectedCountry} />
-			{/if}
-			{#if selectedState}
-				<input type="hidden" name="state" value={selectedState} />
-			{/if}
-			{#if selectedCity}
-				<input type="hidden" name="city" value={selectedCity} />
-			{/if}
-			{#if selectedSort}
-				<input type="hidden" name="sort" value={selectedSort} />
-			{/if}
-			{#if joinedOnly}
-				<input type="hidden" name="joined" value="1" />
-			{/if}
-		</form>
-	</div>
+		{/snippet}
+	</EntityHero>
 
 	<!-- Scope tabs (All / My spaces) + filter toggle — the ListPageBar/UrlTabs
 	     pattern used by /blog and /sources. Guests see the plain count. -->
@@ -301,19 +311,48 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					{visibleTotal} {t('spaces.results', 'spaces')}
 				</span>
 			{/if}
-			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="spaces-filter-panel" />
+			<button type="button" onclick={() => (filtersModalOpen = true)} class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]">
+				{t('common.filters', 'Filters')}
+				{#if hasActiveFilters}<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>{/if}
+				<Filter size={16} />
+			</button>
+			<button type="button" onclick={() => (searchModalOpen = true)} class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]">
+				{t('common.search', 'Search')}
+				{#if query.trim()}<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>{/if}
+				<Search size={16} />
+			</button>
 		{/snippet}
 	</ListPageBar>
 
-	{#if showFilters}
+	<Modal bind:open={searchModalOpen} title={t('common.search', 'Search')} icon={Search} size="sm">
+		{#snippet children()}
+			<form action="/spaces" method="get" role="search" onsubmit={() => (searchModalOpen = false)}>
+				<SearchInput
+					bind:value={query}
+					placeholder={searchPlaceholder}
+					ariaLabel={t('spaces.heading', 'Spaces')}
+					fetcher={spaceSearchFetcher}
+				/>
+				{#if selectedCountry}<input type="hidden" name="country" value={selectedCountry} />{/if}
+				{#if selectedState}<input type="hidden" name="state" value={selectedState} />{/if}
+				{#if selectedCity}<input type="hidden" name="city" value={selectedCity} />{/if}
+				{#if selectedSort}<input type="hidden" name="sort" value={selectedSort} />{/if}
+				{#if joinedOnly}<input type="hidden" name="joined" value="1" />{/if}
+			</form>
+		{/snippet}
+	</Modal>
+
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="lg">
+		{#snippet children()}
+		<div>
 		<!-- Filter panel — one uniform field grid (SelectField/Autocomplete),
 		     same pattern as /sources and /blog. Type+level are merged into a
 		     single picker; ?subregion= stays URL-only (no dedicated control). -->
 		<div id="spaces-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
 			<!-- Universities-style geo cascade (filter parity with /universities):
 			     country → ?geo=, state/city → ?parent= (deepest wins) + sort. -->
-			<div class="flex flex-wrap gap-2">
-				<div class="w-56">
+			<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+				<div>
 					<Autocomplete
 						placeholder={t('universities.all_countries', 'All countries')}
 						ariaLabel={t('universities.country_filter', 'Filter by country')}
@@ -326,7 +365,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						onClear={() => { selectedCountry = ''; selectedState = ''; selectedCity = ''; onFilterChange(); }}
 					/>
 				</div>
-				<div class="w-56 {selectedCountry ? '' : 'pointer-events-none opacity-50'}">
+				<div class="{selectedCountry ? '' : 'pointer-events-none opacity-50'}">
 					<Autocomplete
 						placeholder={selectedCountry
 							? t('universities.all_states', 'All states')
@@ -341,7 +380,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						onClear={() => { selectedState = ''; selectedCity = ''; onFilterChange(); }}
 					/>
 				</div>
-				<div class="w-56 {selectedState || selectedCity ? '' : 'pointer-events-none opacity-50'}">
+				<div class="{selectedState || selectedCity ? '' : 'pointer-events-none opacity-50'}">
 					<Autocomplete
 						placeholder={selectedState || selectedCity
 							? t('universities.all_cities', 'All cities')
@@ -356,7 +395,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						onClear={() => { selectedCity = ''; onFilterChange(); }}
 					/>
 				</div>
-				<div class="w-44">
+				<div>
 					<label for="spaces-filter-sort" class="sr-only">{t('spaces.sort_label', 'Sort')}</label>
 					<SelectField
 						id="spaces-filter-sort"
@@ -381,9 +420,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				</div>
 			{/if}
 		</div>
-	{/if}
+		</div>
+		{/snippet}
+	</Modal>
 
-	<div class="mx-auto w-full max-w-3xl p-4">
+	<div id="spaces-results" class="mx-auto w-full max-w-3xl p-4">
 		{#if data.forbidden}
 			<div class="flex flex-col items-center gap-3 py-16 text-center">
 				<ShieldX size={40} class="text-[var(--color-muted)]" />
@@ -460,3 +501,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </div>
 
 <SpaceCreationModal bind:open={showCreateModal} />
+
+<!-- "How it works" slide-over — GuideSlideOver; admins edit inline (spaces.guide). -->
+<GuideSlideOver
+	bind:open={guideOpen}
+	title={effectiveGuide.title}
+	body={effectiveGuide.body}
+	ctas={effectiveGuide.ctas}
+	canManage={data.canManage}
+	onSave={saveGuide}
+/>

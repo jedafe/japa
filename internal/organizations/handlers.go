@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -34,6 +35,15 @@ type Handlers struct {
 	customFieldLookup CustomFieldLookup
 	asynqClient       *asynq.Client   // nil disables search index enqueue (test-only)
 	lit               literalResolver // nil disables literal resolution (§14)
+	media             MediaResolver   // nil = logo_url/header_url omitted from responses
+}
+
+// MediaResolver resolves a media ID to an imgproxy-signed URL for the org
+// logo/header images (same contract as the spaces MediaResolver). The
+// media.Service satisfies this.
+type MediaResolver interface {
+	GetMedia(ctx context.Context, mediaID pgtype.UUID) (gen.Medium, error)
+	GetMediaURL(m *gen.Medium, opts media.ImageProxyOpts) string
 }
 
 // FollowService is the subset of the follows.Service used by org handlers.
@@ -80,6 +90,41 @@ func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.asynqClient = c }
 // SetLiteralResolver injects the template-literal catalog so organization
 // names/descriptions render {{...}} placeholders (§14).
 func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// SetMediaResolver injects the media service so logo_media_id/header_media_id
+// resolve to public imgproxy URLs in org responses. nil = URLs omitted.
+func (h *Handlers) SetMediaResolver(m MediaResolver) { h.media = m }
+
+// resolveLogoURL resolves an org's logo_media_id to an imgproxy-signed URL.
+// Best-effort: returns "" when no logo is set, the resolver is not wired, or
+// the media item cannot be loaded.
+func (h *Handlers) resolveLogoURL(ctx context.Context, logoMediaID pgtype.UUID) string {
+	if !logoMediaID.Valid || h.media == nil {
+		return ""
+	}
+
+	m, err := h.media.GetMedia(ctx, logoMediaID)
+	if err != nil {
+		return ""
+	}
+
+	return h.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 128, Height: 128, Format: "webp"})
+}
+
+// resolveHeaderURL resolves an org's header_media_id to an imgproxy-signed
+// URL. Best-effort, same degradation as resolveLogoURL.
+func (h *Handlers) resolveHeaderURL(ctx context.Context, headerMediaID pgtype.UUID) string {
+	if !headerMediaID.Valid || h.media == nil {
+		return ""
+	}
+
+	m, err := h.media.GetMedia(ctx, headerMediaID)
+	if err != nil {
+		return ""
+	}
+
+	return h.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 1280, Height: 320, Format: "webp"})
+}
 
 // resolveLiterals resolves {{...}} placeholders on an organization DTO or
 // slice. Best-effort — failures are logged inside the resolver.
@@ -295,7 +340,7 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 
 // orgJSONLDFields builds the {{field_key}} → value map for interpolating an
 // Organization JSON-LD template from an organization row.
-func orgJSONLDFields(o gen.Organization) map[string]string {
+func (h *Handlers) orgJSONLDFields(ctx context.Context, o gen.Organization) map[string]string {
 	desc := ""
 	if o.Description != nil {
 		desc = *o.Description
@@ -311,18 +356,36 @@ func orgJSONLDFields(o gen.Organization) map[string]string {
 		country = *o.CountryCode
 	}
 
-	return map[string]string{
+	fields := map[string]string{
 		"name":         o.Name,
 		"description":  desc,
 		"website":      website,
 		"country":      country,
 		"city":         "",
-		"logo_url":     "",
+		"logo_url":     h.resolveLogoURL(ctx, o.LogoMediaID),
 		"twitter_url":  "",
 		"linkedin_url": "",
 		"facebook_url": "",
 		"founded_at":   "",
 	}
+
+	// Custom field values (§06) overlay the placeholders — JSON-LD template
+	// vars are plain field keys, so an admin-defined organization field
+	// (city, twitter_url, founded_at, …) populates its var automatically.
+	var fv map[string]any
+	if len(o.FieldValues) > 0 && json.Unmarshal(o.FieldValues, &fv) == nil {
+		for k, v := range fv {
+			if s, ok := v.(string); ok {
+				fields[k] = s
+			} else if v != nil {
+				if b, err := json.Marshal(v); err == nil {
+					fields[k] = string(b)
+				}
+			}
+		}
+	}
+
+	return fields
 }
 
 type updateOrganizationRequest struct {

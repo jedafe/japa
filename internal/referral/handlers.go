@@ -20,6 +20,7 @@ package referral
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"math"
 	"net/http"
@@ -223,7 +224,8 @@ func (h *Handlers) HandleGetMyCode(w http.ResponseWriter, r *http.Request) {
 
 	stats, err := h.Service.GetReferralStats(r.Context(), u.UserID)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		slog.Error("referral: stats_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "The server encountered an error — please try again")
 		return
 	}
 
@@ -300,7 +302,8 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 
 	rows, total, err := h.Service.ListReferralHistory(r.Context(), u.UserID, status, page, limit)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		slog.Error("referral: list_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "The server encountered an error — please try again")
 		return
 	}
 
@@ -328,7 +331,8 @@ func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Reque
 
 	rows, total, err := h.Service.AdminListReferrals(r.Context(), status, page, limit)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		slog.Error("referral: list_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "The server encountered an error — please try again")
 		return
 	}
 
@@ -366,7 +370,11 @@ func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.Service.AdminResolveFlagged(r.Context(), referralID, body.Action); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "resolve_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("referral: resolve_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 
@@ -383,7 +391,8 @@ func (h *Handlers) HandleAdminReferralStats(w http.ResponseWriter, r *http.Reque
 
 	stats, err := h.Service.AdminReferralStats(r.Context())
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
+		slog.Error("referral: stats_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "The server encountered an error — please try again")
 		return
 	}
 
@@ -403,7 +412,8 @@ func (h *Handlers) HandleAdminFlagged(w http.ResponseWriter, r *http.Request) {
 
 	rows, total, err := h.Service.AdminListFlagged(r.Context(), page, limit)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		slog.Error("referral: list_failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "The server encountered an error — please try again")
 		return
 	}
 

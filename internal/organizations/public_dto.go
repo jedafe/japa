@@ -18,8 +18,13 @@ type PublicOrgResponse struct {
 	OrgType          string             `json:"org_type"`
 	LogoMediaID      pgtype.UUID        `json:"logo_media_id"`
 	HeaderMediaID    pgtype.UUID        `json:"header_media_id"`
+	LogoURL          string             `json:"logo_url"`
+	HeaderURL        string             `json:"header_url"`
 	WebsiteURL       *string            `json:"website_url"`
 	CountryCode      *string            `json:"country_code"`
+	// Claimed is true when an owner operates the page (owner_user_id set).
+	// A verified badge implies claimed — the grant refuses ownerless orgs.
+	Claimed          bool               `json:"claimed"`
 	Verified         bool               `json:"verified"`
 	VerificationType *string            `json:"verification_type"`
 	FollowerCount    int32              `json:"follower_count"`
@@ -50,6 +55,7 @@ func toPublicOrg(o gen.Organization) PublicOrgResponse {
 		HeaderMediaID:    o.HeaderMediaID,
 		WebsiteURL:       o.WebsiteUrl,
 		CountryCode:      o.CountryCode,
+		Claimed:          o.OwnerUserID.Valid,
 		Verified:         o.Verified,
 		VerificationType: o.VerificationType,
 		FollowerCount:    o.FollowerCount,
@@ -103,8 +109,11 @@ type PublicOrgListItem struct {
 	OrgType       string             `json:"org_type"`
 	LogoMediaID   pgtype.UUID        `json:"logo_media_id"`
 	HeaderMediaID pgtype.UUID        `json:"header_media_id"`
+	LogoURL       string             `json:"logo_url"`
+	HeaderURL     string             `json:"header_url"`
 	CountryCode   *string            `json:"country_code"`
 	Verified      bool               `json:"verified"`
+	Claimed       bool               `json:"claimed"`
 	FollowerCount int32              `json:"follower_count"`
 	MemberCount   int32              `json:"member_count"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
@@ -125,6 +134,7 @@ func toPublicOrgList(rows []gen.ListPublicOrganizationsRow) []PublicOrgListItem 
 			HeaderMediaID: r.HeaderMediaID,
 			CountryCode:   r.CountryCode,
 			Verified:      r.Verified,
+			Claimed:       r.Claimed,
 			FollowerCount: r.FollowerCount,
 			MemberCount:   r.MemberCount,
 			CreatedAt:     r.CreatedAt,

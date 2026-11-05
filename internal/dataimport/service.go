@@ -562,6 +562,11 @@ func (s *Service) insertLedgerRow(ctx context.Context, mode string, row map[stri
 		return err
 	}
 
+	if query == "" {
+		// Points debit fully floored at zero — nothing to record.
+		return nil
+	}
+
 	if _, err := tx.Exec(ctx, query, args...); err != nil {
 		return fmt.Errorf("inserting ledger row: %w", err)
 	}
@@ -591,6 +596,19 @@ func buildLedgerInsertQuery(row map[string]string, userID pgtype.UUID, ledgerTyp
 	}
 
 	resultingBalance := current + amount
+
+	// Points floor at zero — an imported downward row can only deduct what
+	// the user holds (same rule as the live wallet paths). A debit fully
+	// floored records nothing.
+	if ledgerType == "points" {
+		if amount < 0 && resultingBalance < 0 {
+			amount = -current
+			resultingBalance = 0
+		}
+		if amount == 0 {
+			return "", nil, nil
+		}
+	}
 
 	if ledgerType == "credits" {
 		return `

@@ -19,8 +19,8 @@ import (
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/wallet"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 

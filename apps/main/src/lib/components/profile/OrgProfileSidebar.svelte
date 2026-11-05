@@ -1,20 +1,19 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import type { OrgMember, OrgOwner } from '$lib/types';
+	import type { OrgMember } from '$lib/types';
 
 	interface Props {
 		members: OrgMember[];
-		owner?: OrgOwner | null;
 	}
-	let { members, owner = null }: Props = $props();
+	let { members }: Props = $props();
 </script>
 
 {#if members.length > 0}
 	<section class="mt-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">
-		{members.length === 1
-			? t('profile.members_one', '1 member')
-			: t('profile.members', '{n} members').replace('{n}', String(members.length))}
+		{(members.length === 1
+			? t('profile.members_one', '{n} member')
+			: t('profile.members', '{n} members')).replace('{n}', String(members.length))}
 	</h2>
 		<ul class="space-y-2">
 			{#each members.slice(0, 8) as member (member.user.id)}
@@ -32,7 +31,7 @@
 						{/if}
 						<span class="min-w-0 flex-1">
 							<span class="block truncate text-sm text-[var(--color-text)]">{member.user.display_name ?? member.user.username}</span>
-							<span class="block text-xs text-[var(--color-muted)] capitalize">{member.role}</span>
+							<span class="block text-xs text-[var(--color-muted)] capitalize">{t(`org_admin.role.${member.role}`, member.role)}</span>
 						</span>
 					</a>
 				</li>

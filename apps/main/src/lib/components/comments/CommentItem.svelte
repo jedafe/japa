@@ -19,6 +19,7 @@
 	import { t, i18n } from '$lib/i18n';
 	import type { Comment } from '$lib/types';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
+	import { queueCommentView } from '$lib/comments/viewTracker';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import CommentItem from './CommentItem.svelte';
@@ -78,6 +79,20 @@
 	// Local delete flag — folded into isTombstone so own deletes render the
 	// same placeholder as server-returned tombstones.
 	let deleted = $state(false);
+	let viewRecorded = $state(false);
+
+	// Section 49 view tracking — batched via viewTracker (one POST per
+	// thread flush instead of one per comment). Server-side dedupe via the
+	// comment_views PK; guests are skipped.
+	$effect(() => {
+		if (authed && !comment.deleted_at && !viewRecorded) {
+			viewRecorded = true;
+			queueCommentView(comment.id, authed);
+			// Optimistic +1 — the viewer's own view counts immediately;
+			// server dedupe makes a remount idempotent.
+			comment = { ...comment, view_count: (comment.view_count ?? 0) + 1 };
+		}
+	});
 	// Tombstone (Section 49, C-009): soft-deleted comments returned by the API
 	// keep their place in the thread so live replies stay reachable — render
 	// a "[deleted]" placeholder instead of the body and hide all actions.
@@ -590,7 +605,11 @@
 						{/if}
 					</Menu>
 
-					<span class="ms-auto text-xs text-[var(--color-muted)]" title={t('comments.see_upvoters', 'See who upvoted')}>
+					<span class="ms-auto inline-flex items-center gap-2 text-xs text-[var(--color-muted)]" title={t('comments.see_upvoters', 'See who upvoted')}>
+						{#if (comment.view_count ?? 0) > 0}
+							<span>{t('comments.view_count', '{count} views').replace('{count}', String(comment.view_count))}</span>
+							<span aria-hidden="true">·</span>
+						{/if}
 						{upvotes === 1 ? '1 upvote' : t('comments.upvote_count', '{count} upvotes').replace('{count}', String(upvotes))}
 					</span>
 				</div>

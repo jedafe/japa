@@ -130,7 +130,7 @@ func serviceErr(w http.ResponseWriter, r *http.Request, err error, notFoundMsg s
 	case errors.Is(err, ErrInvalidProgramLevel):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_program_level", ErrInvalidProgramLevel.Error())
 	case errors.Is(err, ErrInvalidInput):
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	case errors.Is(err, ErrDuplicateField):
 		errpkg.WriteError(w, http.StatusConflict, "duplicate_field", ErrDuplicateField.Error())
 	default:
@@ -447,7 +447,11 @@ func (h *Handlers) HandleAdminGenerateTemplate(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.service.EnqueueGenerate(r.Context(), body); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "generate_failed", err.Error())
+		if !errors.Is(err, errpkg.ErrInvalid) {
+			slog.Error("sopgenerator: generate_failed", "error", err)
+		}
+
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 

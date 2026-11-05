@@ -897,6 +897,51 @@ func (q *Queries) GetApprovedWikiRevision(ctx context.Context, pageID pgtype.UUI
 	return i, err
 }
 
+const getBankBySlug = `-- name: GetBankBySlug :one
+SELECT id, slug
+FROM banks
+WHERE slug = $1 AND is_active = true
+LIMIT 1
+`
+
+type GetBankBySlugRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+}
+
+func (q *Queries) GetBankBySlug(ctx context.Context, slug string) (GetBankBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getBankBySlug, slug)
+	var i GetBankBySlugRow
+	err := row.Scan(&i.ID, &i.Slug)
+	return i, err
+}
+
+const getBankForWiki = `-- name: GetBankForWiki :one
+SELECT id, slug, name, geo_space_id
+FROM banks
+WHERE slug = $1 AND is_active = true
+LIMIT 1
+`
+
+type GetBankForWikiRow struct {
+	ID         pgtype.UUID `json:"id"`
+	Slug       string      `json:"slug"`
+	Name       string      `json:"name"`
+	GeoSpaceID pgtype.UUID `json:"geo_space_id"`
+}
+
+func (q *Queries) GetBankForWiki(ctx context.Context, slug string) (GetBankForWikiRow, error) {
+	row := q.db.QueryRow(ctx, getBankForWiki, slug)
+	var i GetBankForWikiRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.GeoSpaceID,
+	)
+	return i, err
+}
+
 const getCourseOfferingForWiki = `-- name: GetCourseOfferingForWiki :one
 SELECT o.id, o.slug, o.university_id, o.course_id,
        c.title AS name, c.slug AS program_slug
@@ -1643,6 +1688,40 @@ func (q *Queries) IsUniversitySpaceBySlug(ctx context.Context, slug string) (boo
 	var is_university bool
 	err := row.Scan(&is_university)
 	return is_university, err
+}
+
+const listBanksForWiki = `-- name: ListBanksForWiki :many
+SELECT id, slug, name
+FROM banks
+WHERE geo_space_id = $1 AND is_active = true
+ORDER BY name
+`
+
+type ListBanksForWikiRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+	Name string      `json:"name"`
+}
+
+// Banks (informational entities — migration 001045) hosted by a geo space.
+func (q *Queries) ListBanksForWiki(ctx context.Context, spaceID pgtype.UUID) ([]ListBanksForWikiRow, error) {
+	rows, err := q.db.Query(ctx, listBanksForWiki, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListBanksForWikiRow
+	for rows.Next() {
+		var i ListBanksForWikiRow
+		if err := rows.Scan(&i.ID, &i.Slug, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listCourseOfferingsForWiki = `-- name: ListCourseOfferingsForWiki :many

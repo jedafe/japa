@@ -286,11 +286,15 @@ func resolveTierLimit(ctx context.Context, tier string, sr rateLimitSettingsRead
 
 // userTierToRateLimitCap maps a unified user tier to the highest API rate
 // limit tier that user may receive. regular -> basic, pro -> standard,
-// business -> premium.
+// business and all staff tiers -> premium ("unlimited" is not a real
+// limit tier — resolveTierLimit has no case for it).
 var userTierToRateLimitCap = map[string]string{
-	"regular":  "basic",
-	"pro":      "standard",
-	"business": "premium",
+	"regular":     "basic",
+	"pro":         "standard",
+	"business":    "premium",
+	"staff":       "premium",
+	"admin":       "premium",
+	"super_admin": "premium",
 }
 
 // rateLimitTierRanks orders API key rate limit tiers from lowest to highest.
