@@ -287,7 +287,8 @@ membership rather than subscriptions:
   `users.profile_type` remain subscription-scoped — staff membership is never
   stripped by plan flows and staff tiers cannot be purchased.
 - Settings: `*.{staff,admin,super_admin}` keys seeded for all six tier-scoped
-  families, defaulting to business-level entitlements (unlimited quotas,
-  10% credit discount), tunable per key in admin settings.
+  families. Only `super_admin` is unlimited (-1); `staff`/`admin` get
+  finite-but-generous quotas (rescoped by `001058`), all tunable per key in
+  admin settings. Credit-pack discount stays at business level (10%).
 - `001057` marks `admin-group` `is_system=true` so it cannot be deleted via
   the admin UI.

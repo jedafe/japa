@@ -390,13 +390,13 @@ func (s *Service) processActivityEvent(ctx context.Context, eventID pgtype.UUID)
 		dailyCap = int64(s.settings.GetIntOr(ctx, "wallet.max_daily_earn_points", 0))
 		// Tier-scoped override (wallet.max_daily_earn_points.{tier}) — a
 		// negative value means unlimited for that tier (ADR-136); a missing
-		// key falls back to the global cap, except staff tiers which default
-		// to unlimited when their key is unset.
+		// key falls back to the global cap, except staff tiers which use
+		// their own finite-but-generous defaults.
 		if s.tierResolver != nil {
 			if tier, terr := s.tierResolver.ResolveUserTier(ctx, event.UserID); terr == nil && tier != "" {
 				fallback := int(dailyCap)
-				if isStaffTier(tier) {
-					fallback = -1
+				if d, ok := defaultStaffEarnCaps[tier]; ok {
+					fallback = d
 				}
 				dailyCap = int64(s.settings.GetIntOr(ctx, "wallet.max_daily_earn_points."+tier, fallback))
 			}

@@ -134,8 +134,8 @@ var defaultDailyQueryLimits = map[string]int{
 	"regular":     10,
 	"pro":         100,
 	"business":    -1,
-	"staff":       -1,
-	"admin":       -1,
+	"staff":       250,
+	"admin":       500,
 	"super_admin": -1,
 }
 

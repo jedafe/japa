@@ -251,8 +251,8 @@ var defaultDailyComparisonLimits = map[string]int{
 	"regular":     5,
 	"pro":         25,
 	"business":    -1,
-	"staff":       -1,
-	"admin":       -1,
+	"staff":       50,
+	"admin":       100,
 	"super_admin": -1,
 }
 

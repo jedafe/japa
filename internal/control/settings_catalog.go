@@ -129,25 +129,26 @@ var settingsCatalog = map[string]settingMeta{
 	"wallet.max_daily_earn_points.regular":  {Type: "int", DefaultValue: "100", Description: "Max points a regular-tier user can earn per day.", Panel: "admin"},
 	"wallet.max_daily_earn_points.pro":      {Type: "int", DefaultValue: "500", Description: "Max points a pro-tier user can earn per day.", Panel: "admin"},
 	"wallet.max_daily_earn_points.business": {Type: "int", DefaultValue: "-1", Description: "Max points a business-tier user can earn per day (-1 = unlimited).", Panel: "admin"},
-	// Staff tiers (migration 001049) — defaults mirror business entitlements
-	// so staff never land below business perks; tighten per key as needed.
-	"organizations.max_per_user.staff":         {Type: "int", DefaultValue: "-1", Description: "Max organizations a staff-tier user can create (-1 = unlimited).", Panel: "admin"},
-	"organizations.max_per_user.admin":         {Type: "int", DefaultValue: "-1", Description: "Max organizations an admin-tier user can create (-1 = unlimited).", Panel: "admin"},
+	// Staff tiers (migration 001049; defaults rescoped 001058) — only
+	// super_admin is unlimited; staff/admin get finite-but-generous quotas
+	// tunable per key in the settings panel.
+	"organizations.max_per_user.staff":         {Type: "int", DefaultValue: "10", Description: "Max organizations a staff-tier user can create.", Panel: "admin"},
+	"organizations.max_per_user.admin":         {Type: "int", DefaultValue: "25", Description: "Max organizations an admin-tier user can create.", Panel: "admin"},
 	"organizations.max_per_user.super_admin":   {Type: "int", DefaultValue: "-1", Description: "Max organizations a super_admin-tier user can create (-1 = unlimited).", Panel: "admin"},
-	"ai.assistant.daily_queries.staff":         {Type: "int", DefaultValue: "-1", Description: "Max AI assistant queries per day for staff-tier users (-1 = unlimited).", Panel: "admin"},
-	"ai.assistant.daily_queries.admin":         {Type: "int", DefaultValue: "-1", Description: "Max AI assistant queries per day for admin-tier users (-1 = unlimited).", Panel: "admin"},
+	"ai.assistant.daily_queries.staff":         {Type: "int", DefaultValue: "250", Description: "Max AI assistant queries per day for staff-tier users.", Panel: "admin"},
+	"ai.assistant.daily_queries.admin":         {Type: "int", DefaultValue: "500", Description: "Max AI assistant queries per day for admin-tier users.", Panel: "admin"},
 	"ai.assistant.daily_queries.super_admin":   {Type: "int", DefaultValue: "-1", Description: "Max AI assistant queries per day for super_admin-tier users (-1 = unlimited).", Panel: "admin"},
-	"content.posts_per_day.staff":              {Type: "int", DefaultValue: "-1", Description: "Max content posts per day for staff-tier users (-1 = unlimited).", Panel: "admin"},
-	"content.posts_per_day.admin":              {Type: "int", DefaultValue: "-1", Description: "Max content posts per day for admin-tier users (-1 = unlimited).", Panel: "admin"},
+	"content.posts_per_day.staff":              {Type: "int", DefaultValue: "50", Description: "Max content posts per day for staff-tier users.", Panel: "admin"},
+	"content.posts_per_day.admin":              {Type: "int", DefaultValue: "100", Description: "Max content posts per day for admin-tier users.", Panel: "admin"},
 	"content.posts_per_day.super_admin":        {Type: "int", DefaultValue: "-1", Description: "Max content posts per day for super_admin-tier users (-1 = unlimited).", Panel: "admin"},
 	"credits.pack_discount_pct.staff":          {Type: "int", DefaultValue: "10", Description: "Credit pack discount percent for staff-tier users.", Panel: "admin"},
 	"credits.pack_discount_pct.admin":          {Type: "int", DefaultValue: "10", Description: "Credit pack discount percent for admin-tier users.", Panel: "admin"},
 	"credits.pack_discount_pct.super_admin":    {Type: "int", DefaultValue: "10", Description: "Credit pack discount percent for super_admin-tier users.", Panel: "admin"},
-	"jce.comparisons.max_per_day.staff":        {Type: "int", DefaultValue: "-1", Description: "Max JCE comparisons created per day for staff-tier users (-1 = unlimited).", Panel: "admin"},
-	"jce.comparisons.max_per_day.admin":        {Type: "int", DefaultValue: "-1", Description: "Max JCE comparisons created per day for admin-tier users (-1 = unlimited).", Panel: "admin"},
+	"jce.comparisons.max_per_day.staff":        {Type: "int", DefaultValue: "50", Description: "Max JCE comparisons created per day for staff-tier users.", Panel: "admin"},
+	"jce.comparisons.max_per_day.admin":        {Type: "int", DefaultValue: "100", Description: "Max JCE comparisons created per day for admin-tier users.", Panel: "admin"},
 	"jce.comparisons.max_per_day.super_admin":  {Type: "int", DefaultValue: "-1", Description: "Max JCE comparisons created per day for super_admin-tier users (-1 = unlimited).", Panel: "admin"},
-	"wallet.max_daily_earn_points.staff":       {Type: "int", DefaultValue: "-1", Description: "Max points a staff-tier user can earn per day (-1 = unlimited).", Panel: "admin"},
-	"wallet.max_daily_earn_points.admin":       {Type: "int", DefaultValue: "-1", Description: "Max points an admin-tier user can earn per day (-1 = unlimited).", Panel: "admin"},
+	"wallet.max_daily_earn_points.staff":       {Type: "int", DefaultValue: "1000", Description: "Max points a staff-tier user can earn per day.", Panel: "admin"},
+	"wallet.max_daily_earn_points.admin":       {Type: "int", DefaultValue: "2500", Description: "Max points an admin-tier user can earn per day.", Panel: "admin"},
 	"wallet.max_daily_earn_points.super_admin": {Type: "int", DefaultValue: "-1", Description: "Max points a super_admin-tier user can earn per day (-1 = unlimited).", Panel: "admin"},
 	// CORS
 	"cors.allowed_origins": {Type: "csv", DefaultValue: "*", Description: "Comma-separated list of allowed CORS origins.", Panel: "control"},
