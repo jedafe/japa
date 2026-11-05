@@ -270,3 +270,24 @@ This maps the existing `api.rate_limit.{basic,standard,premium}` keys directly t
 
 - Recurring subscription billing and webhook-driven tier changes. `subscription_plans.tier` is stored and exposed for future billing integration, but the actual payment/subscription creation remains unchanged.
 - Complete wiring of every per-tier feature in this single PR. The first implementation installs the tier system, enforces `organizations.max_per_user.{tier}`, and seeds the `pro` / `business` tier groups with `max_spaces_creatable`, `pro_member`, and `business_member` roles. AI query limits, content post limits, credit pack discounts, and V2 tool permission nodes will be fully implemented as each consuming feature is built, but the settings and permission catalog entries are added now.
+
+## Amendment 2026-11-05 — Staff tiers (staff / admin / super_admin)
+
+Migration `001049` extends `user_groups.tier` with three staff tiers ranked
+above business (`staff=4`, `admin=5`, `super_admin=6`), granted through group
+membership rather than subscriptions:
+
+- `super_admin` group → `super_admin`, `admin-group` → `admin`, new `staff`
+  system group → `staff`.
+- `ResolveUserTier` returns the **effective** tier (highest across all
+  tier-bearing groups) so every `*.{tier}` quota setting honours staff
+  overrides; `ResolveSubscriptionTier` returns regular/pro/business only and
+  is used by payment grant/revoke flows.
+- `SetUserTier`, `RemoveUserFromTierGroups`, `ClearPublicGroupTierRole`, and
+  `users.profile_type` remain subscription-scoped — staff membership is never
+  stripped by plan flows and staff tiers cannot be purchased.
+- Settings: `*.{staff,admin,super_admin}` keys seeded for all six tier-scoped
+  families, defaulting to business-level entitlements (unlimited quotas,
+  10% credit discount), tunable per key in admin settings.
+- `001057` marks `admin-group` `is_system=true` so it cannot be deleted via
+  the admin UI.

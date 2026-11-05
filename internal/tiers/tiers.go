@@ -109,6 +109,12 @@ func tierNameForRank(ranks map[string]int, rank int32) string {
 	return "regular"
 }
 
+// IsStaffTier reports whether tier is a staff tier (staff/admin/super_admin) —
+// a tier granted through group membership rather than a subscription.
+func IsStaffTier(tier string) bool {
+	return effectiveTierRanks[tier] > subscriptionTierRanks["business"]
+}
+
 // SetUserTier assigns the user to the tier group matching the requested tier
 // and syncs users.profile_type. The user always remains in the base members
 // group so they keep the member role and permissions.

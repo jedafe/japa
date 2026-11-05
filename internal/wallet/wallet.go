@@ -289,6 +289,17 @@ type TierResolver interface {
 // SetTierResolver injects the tier resolver for tier-scoped earn caps.
 func (s *Service) SetTierResolver(t TierResolver) { s.tierResolver = t }
 
+// isStaffTier reports whether a resolved effective tier is a staff tier
+// (staff/admin/super_admin, migration 001049). Kept local so wallet does not
+// import internal/tiers for a constant check.
+func isStaffTier(tier string) bool {
+	switch tier {
+	case "staff", "admin", "super_admin":
+		return true
+	}
+	return false
+}
+
 // SetCurrencyResolver injects the currency resolver for geo-aware currency
 // resolution at checkout (Section 58, ADR-065).
 func (s *Service) SetCurrencyResolver(r *CurrencyResolver) { s.currencyResolver = r }

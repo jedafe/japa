@@ -498,7 +498,11 @@ func (s *Service) earnAllowed(ctx context.Context, tx pgx.Tx, userID pgtype.UUID
 	dailyCap := int64(s.settings.GetIntOr(ctx, "wallet.max_daily_earn_points", 0))
 	if s.tierResolver != nil {
 		if tier, terr := s.tierResolver.ResolveUserTier(ctx, userID); terr == nil && tier != "" {
-			dailyCap = int64(s.settings.GetIntOr(ctx, "wallet.max_daily_earn_points."+tier, int(dailyCap)))
+			fallback := int(dailyCap)
+			if isStaffTier(tier) {
+				fallback = -1
+			}
+			dailyCap = int64(s.settings.GetIntOr(ctx, "wallet.max_daily_earn_points."+tier, fallback))
 		}
 	}
 
