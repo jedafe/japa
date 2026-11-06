@@ -101,6 +101,18 @@ product_providers(
 - **Product CRUD + type CRUD** — `POST/PATCH/DELETE /admin/wiki/product-types` (admin RBAC node `wiki.entity_kind.create` — new) and `/wiki/products`; product create auto-creates its wiki page.
 - Rating dimensions — `rating_avg`, `review_count` surface as resolver metadata → comparable dimensions (hydrated like cfv).
 
+### Type-create auto-provisioning
+
+`POST /admin/wiki/product-types` must provision the **whole chain in one tx** — a new type ("hosting", "cloud") is instantly a wiki kind AND a JCE comparison type with zero manual wiring:
+
+1. `product_types` row (slug, label, icon)
+2. `wiki_type_configs` + default `custom_field_groups` (from the request's `categories` array, else standard Overview/Pricing/Features/Reviews) + `wiki_type_page_templates` default
+3. `comparison_type_definitions` — `slug={type_slug}s`, `item_ref_types=[product]`, `field_group_id`=default group, `config.subtype={type_slug}`
+4. `comparison_type_field_groups` pool rows (Sub-spec 6 seed path — `CreateComparisonType` already auto-inserts the default row)
+5. No resolver work — the single `product` resolver serves every subtype via `config.subtype`
+
+After the POST returns, the new type is browseable (`/wiki/e/hosting`), creatable (`/studio` product form lists it), and comparable (`/compare` shows "Hostings" with its field pool).
+
 ### JCE comparison candidates
 
 The model enables four comparison shapes — all like-for-like (§30's one-kind-plus-nested-comparison rule holds):
