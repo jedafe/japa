@@ -14,8 +14,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // Wiki entity directory (§80 Entity Directory amendment): /wiki/e and
@@ -59,25 +59,16 @@ var kindListSources = map[string]kindListSource{
 	"scholarship": {
 		"scholarships", "id", "title", "slug", "",
 	},
-	"product": {
-		// Products join their type so the discriminator is the type SLUG
-		// (t.slug) — URLs and filters stay slug-based end to end.
-		"products p JOIN product_types t ON t.id = p.product_type_id",
-		"p.id", "p.name", "p.slug", "p.deleted_at IS NULL",
-	},
-	"provider": {
-		"affiliate_providers", "id", "name", "slug", "is_active = true",
-	},
-	"deal": {
-		"coupons", "id", "title", "slug", "status = 'active'",
-	},
+	// Products, providers and deals are intentionally absent: like mentors,
+	// they are comparison entities (JCE resolvers) with dedicated surfaces
+	// (/products, /products/deals, /deal/{provider}) — they do not surface
+	// under /wiki/e.
 }
 
 // kindDiscriminatorColumn maps kind → its discriminator column, "" = none.
 var kindDiscriminatorColumn = map[string]string{
 	"visa_route":   "visa_category",
 	"organization": "org_type",
-	"product":      "t.slug",
 }
 
 // EntityKindTypeDTO is one discriminated type entry on the index —
@@ -142,25 +133,6 @@ func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) 
 			continue
 		}
 
-		// Product types live in product_types (not wiki_type_configs) —
-		// same chip shape, counted through t.slug on the join.
-		if out[i].Kind == "product" {
-			pts, err := s.store.read.ListProductTypes(ctx)
-			if err != nil {
-				continue
-			}
-			for _, pt := range pts {
-				var tn int64
-				clause := src.where + " AND t.slug = $1"
-				if err := s.store.pool.Reader.QueryRow(ctx,
-					fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", src.from, clause), pt.Slug).Scan(&tn); err != nil {
-					tn = 0
-				}
-				out[i].Types = append(out[i].Types, EntityKindTypeDTO{Slug: pt.Slug, Label: pt.Label, Count: tn})
-			}
-			continue
-		}
-
 		typeRows, err := s.store.read.ListEntityWikiTypesByKind(ctx, &out[i].Kind)
 		if err != nil {
 			continue
@@ -213,10 +185,6 @@ func (s *Service) ListEntitiesByKind(ctx context.Context, slug, q string, limit,
 		}
 	} else if kc, err := s.store.read.GetWikiEntityKind(ctx, slug); err == nil {
 		label = kc.Label
-	} else if pt, perr := s.store.read.GetProductTypeBySlug(ctx, slug); perr == nil && pt.IsEnabled {
-		// Product type slugs (ai-agent, hosting, …) list the products of
-		// that type — the type slug itself is the discriminator.
-		kind, discFilter, label = "product", slug, pt.Label
 	} else {
 		return nil, 0, "", err
 	}
@@ -365,6 +333,9 @@ type ProductTypeCategory struct {
 // comparison_type_definitions (config.subtype → product resolver) →
 // comparison_type_field_groups pool. Sequential writes — a partial failure
 // leaves a usable type row, and re-runs are idempotent via unique slugs.
+// Products are not wiki entities (same stance as mentors): no space_types /
+// wiki_type_configs / page templates are provisioned — the new type is
+// browseable on /products and comparable on /compare, never under /wiki/e.
 func (s *Service) CreateProductType(ctx context.Context, slug, label, icon string, categories []ProductTypeCategory, config []byte) error {
 	if slug == "" || label == "" {
 		return fmt.Errorf("product type requires slug and label")
@@ -400,13 +371,20 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 		category ProductTypeCategory
 	}
 	groups := make([]groupRow, 0, len(categories))
-	for _, cat := range categories {
+	for i, cat := range categories {
 		gslug := "wiki_" + strings.ReplaceAll(slug, "-", "_") + "_" + strings.ReplaceAll(cat.Slug, "-", "_")
 		g, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
 			Name: label + " — " + cat.Label, Slug: gslug, IsSystem: true,
 		})
 		if err != nil {
 			return fmt.Errorf("creating field group %s: %w", gslug, err)
+		}
+		// Bind the group to the type (entity_class = type slug) so
+		// /custom-field-groups?entity_class={slug} resolves the schema.
+		if _, err := q.CreateAssignment(ctx, gen.CreateAssignmentParams{
+			GroupID: g.ID, EntityClass: slug, Position: int32(i),
+		}); err != nil {
+			return fmt.Errorf("assigning group %s: %w", gslug, err)
 		}
 		groups = append(groups, groupRow{id: g.ID.Bytes, category: cat})
 	}
@@ -423,7 +401,7 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 	ct, err := q.CreateComparisonType(ctx, gen.CreateComparisonTypeParams{
 		Name: label, Slug: slug, Description: &desc, Icon: iconVal,
 		FieldGroupID: pgtype.UUID{Bytes: overviewID, Valid: true},
-		ItemLabel: label, IsSystem: false, Config: typeCfg,
+		ItemLabel:    label, IsSystem: false, Config: typeCfg,
 	})
 	if err != nil {
 		return fmt.Errorf("creating comparison type %s: %w", slug, err)
@@ -441,47 +419,6 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 		}
 	}
 
-	// Wiki surfacing — without these the entity pages 404 even though the
-	// listing works: space_types (wiki_only) → wiki_type_configs (entity
-	// kind 'product', disc {type_slug}) → categories → page templates.
-	st, err := q.CreateWikiEntitySpaceType(ctx, gen.CreateWikiEntitySpaceTypeParams{
-		Name: label, Slug: slug, Description: &desc, Icon: iconVal,
-	})
-	if err != nil {
-		return fmt.Errorf("creating space type %s: %w", slug, err)
-	}
-	disc, _ := json.Marshal(map[string]string{"type_slug": slug})
-	ek := "product"
-	if _, err := q.UpsertWikiEntityTypeConfig(ctx, gen.UpsertWikiEntityTypeConfigParams{
-		SpaceTypeID: st.ID, Label: &label, Icon: iconVal,
-		EntityKind: &ek, EntityDiscriminator: disc, Position: 0,
-	}); err != nil {
-		return fmt.Errorf("creating wiki type config %s: %w", slug, err)
-	}
-	for i, g := range groups {
-		cat := g.category
-		wc, err := q.CreateWikiTypeCategory(ctx, gen.CreateWikiTypeCategoryParams{
-			SpaceTypeID: st.ID, Slug: cat.Slug,
-			Category:      strings.ReplaceAll(cat.Slug, "-", "_"),
-			Label:         cat.Label,
-			FieldGroupID:  pgtype.UUID{Bytes: g.id, Valid: true},
-			Position:      int32(i),
-			IsSystem:      true,
-		})
-		if err != nil {
-			return fmt.Errorf("creating wiki category %s: %w", cat.Slug, err)
-		}
-		if _, err := q.CreateWikiPageTemplate(ctx, gen.CreateWikiPageTemplateParams{
-			CategoryID:   wc.ID,
-			Slug:         cat.Slug,
-			Label:        cat.Label,
-			FieldGroupID: pgtype.UUID{Bytes: g.id, Valid: true},
-			Position:     int32(i),
-			IsSystem:     true,
-		}); err != nil {
-			return fmt.Errorf("creating page template %s: %w", cat.Slug, err)
-		}
-	}
 	return tx.Commit(ctx)
 }
 

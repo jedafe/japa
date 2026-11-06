@@ -3535,6 +3535,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// routes they describe — a disabled feature must not keep public SEO
 		// entry points that all 404.
 		r.With(features.Gate(featureChecker, "service_coupons.enabled")).Get("/sitemap-deals.xml", sitemapHandler.ServeDealsSitemap)
+		r.With(features.Gate(featureChecker, "feature.jce")).Get("/sitemap-products.xml", sitemapHandler.ServeProductsSitemap)
 		r.With(features.Gate(featureChecker, "roadmap.enabled")).Get("/sitemap-roadmap.xml", sitemapHandler.ServeRoadmapSitemap)
 		r.Get("/sitemap-universities.xml", sitemapHandler.ServeUniversitiesSitemap)
 		// University course offerings live on the §39 university surface —
@@ -6660,6 +6661,72 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// ── Coupons & External Affiliate Providers (Section 55) ────
 
+			// §80 Product Domain — dedicated public surface (de-wikied):
+			// products/providers/deals are comparison entities like mentors,
+			// not wiki kinds. Ungated like /coupons.
+			r.Get("/products", wikiHandlers.HandleListProducts)
+			r.Get("/products/types", wikiHandlers.HandleListProductTypes)
+			r.Get("/products/{slug}", wikiHandlers.HandleGetProduct)
+			r.Get("/products/{slug}/providers", wikiHandlers.HandleListProductProviders)
+
+			// §80 Product Domain — canonical admin CRUD under /admin/products*
+			// + /admin/product-types*, gated by the dedicated products.* /
+			// product_types.* nodes (001081). DELETE supports ?force=true
+			// hard delete via rbac.RequireForceDelete (admin.hard_delete).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "products.list")).
+				Get("/admin/products", wikiHandlers.HandleAdminListProducts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "products.delete")).
+				Post("/admin/products/bulk", wikiHandlers.HandleBulkProducts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "products.view")).
+				Get("/admin/products/{slug}", wikiHandlers.HandleAdminGetProduct)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "products.create")).
+				Post("/admin/products", wikiHandlers.HandleCreateProduct)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "products.update")).
+				Patch("/admin/products/{slug}", wikiHandlers.HandleUpdateProduct)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "products.delete"), rbac.RequireForceDelete(rbacResolver)).
+				Delete("/admin/products/{slug}", wikiHandlers.HandleDeleteProduct)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "products.update")).
+				Post("/admin/products/{slug}/restore", wikiHandlers.HandleRestoreProduct)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "products.update")).
+				Put("/admin/products/{slug}/providers/{provider_id}", wikiHandlers.HandleSetProductProvider)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "products.update")).
+				Delete("/admin/products/{slug}/providers/{provider_id}", wikiHandlers.HandleSetProductProvider)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "products.update")).
+				Put("/admin/products/{slug}/deals/{coupon_id}", wikiHandlers.HandleSetProductDeal)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "products.update")).
+				Delete("/admin/products/{slug}/deals/{coupon_id}", wikiHandlers.HandleSetProductDeal)
+
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "product_types.list")).
+				Get("/admin/product-types", wikiHandlers.HandleAdminProductTypes)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "product_types.view")).
+				Get("/admin/product-types/{slug}", wikiHandlers.HandleAdminGetProductType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "product_types.create")).
+				Post("/admin/product-types", wikiHandlers.HandleCreateProductType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "product_types.update")).
+				Patch("/admin/product-types/{slug}", wikiHandlers.HandleUpdateProductType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "product_types.delete")).
+				Delete("/admin/product-types/{slug}", wikiHandlers.HandleDeleteProductType)
+
+			// Field schema for the product create/edit forms — auth-only like
+			// the /custom-field-groups read routes.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/products/types/{slug}/field-schema", wikiHandlers.HandleProductFieldSchema)
+
+			// §80 Product Domain legacy aliases: the original /admin/wiki/*
+			// paths stay wired to the same handlers under wiki.manage —
+			// canonical paths are /admin/products* + /admin/product-types*.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+				Post("/admin/wiki/product-types", wikiHandlers.HandleCreateProductType)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+				Post("/admin/wiki/products", wikiHandlers.HandleCreateProduct)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+				Patch("/admin/wiki/products/{slug}", wikiHandlers.HandleUpdateProduct)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+				Delete("/admin/wiki/products/{slug}", wikiHandlers.HandleDeleteProduct)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+				Post("/admin/wiki/products/{slug}/providers/{provider_id}", wikiHandlers.HandleSetProductProvider)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+				Delete("/admin/wiki/products/{slug}/providers/{provider_id}", wikiHandlers.HandleSetProductProvider)
+
 			// Public coupon routes
 			r.Get("/coupons", couponHandlers.ListPublicCoupons)
 			r.Get("/coupons/{id}", couponHandlers.GetCoupon)
@@ -7989,29 +8056,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Entity-bound pages (JCE ↔ wiki mapping): /wiki/e/{type}/{entity}/{page}
 				// — registered before {space_slug} so the static 'e' segment wins.
 				r.Get("/wiki/e/{type_slug}/{entity}/{page_slug}", wikiHandlers.HandleGetEntityPage)
-				// §80: providers repeater source — review form + product CTAs.
-				r.Get("/wiki/e/{type_slug}/{entity}/providers", wikiHandlers.HandleListProductProviders)
 				// Picker options for entity create forms (universities, countries).
 				r.Get("/wiki/pickers/spaces", wikiHandlers.HandleListPickerSpaces)
-				// §80 Product Domain: create a product type — provisions the
-				// config layer of a new "kind" (wiki.manage).
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
-					Post("/admin/wiki/product-types", wikiHandlers.HandleCreateProductType)
-				// §80 Product Domain: product instance CRUD (wiki.manage).
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
-					Post("/admin/wiki/products", wikiHandlers.HandleCreateProduct)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
-					Patch("/admin/wiki/products/{slug}", wikiHandlers.HandleUpdateProduct)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
-					Delete("/admin/wiki/products/{slug}", wikiHandlers.HandleDeleteProduct)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
-					Post("/admin/wiki/products/{slug}/providers/{provider_id}", wikiHandlers.HandleSetProductProvider)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
-					Delete("/admin/wiki/products/{slug}/providers/{provider_id}", wikiHandlers.HandleSetProductProvider)
 				// Authenticated: create a page on an entity + submit revision
 				// on an entity-bound page (wiki.edit).
-				// §80: create an entity instance on its listing — product
-				// types create products; pages lazy-materialize (wiki.edit).
+				// §80: create an entity instance on its listing — products
+				// are excluded (de-wikied; they use the admin product CRUD).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.edit")).
 					Post("/wiki/e/{type_slug}", wikiHandlers.HandleCreateEntityInstance)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.edit")).
