@@ -46,7 +46,7 @@ products(
   product_type_id uuid fk → product_types,
   slug text unique,
   name text,
-  vendor text,
+  provider_id uuid fk → affiliate_providers,   -- the provider; nullable
   tagline text,
   website_url text,
   logo_id uuid fk → media,
@@ -61,11 +61,20 @@ products(
 
 **Type-specific fields live in `custom_field_values`** (`entity_class` = product type slug, groups per `wiki_{type}_{category}` pattern). Core columns carry what all products share; cfv carries type-specific long tail (`context_window` on AI models, `framework` on web apps).
 
+### Provider + deals integration
+
+- `provider_id → affiliate_providers.id` — providers are the **existing affiliate-provider registry** (`base_url`, `tracking_param`, `commission_rate`, `organization_id`, `is_featured`), not a new vendor entity.
+- `has_deal` is **derived, not a column**: a product "has deal" when its provider has an active affiliate offer (`affiliate_providers.is_active` + an active link/deal in the existing `/deals` system).
+- **CTA contract** — on any product page and on any review of a product, the CTA resolves the provider's affiliate link (`base_url` + `tracking_param` via the existing `user_affiliate_links`/link-resolution flow); when no affiliate link exists the CTA falls back to plain `website_url`.
+- **Monetization loop** — routed clicks write `affiliate_link_events`; conversions pay the author their `author_commission_pct` via `affiliate_content_commissions`. Review authors are the monetization channel — the CTA must carry the *content-author's* attribution, not just a global link.
+- `has_deal` also surfaces as a JCE dimension ("Deal available") via resolver metadata.
+
 ### Review content type
 
 - New `reviews` content type in `content` (`/studio/create?type=review`) — inherits §14 machinery free: slugs, moderation, comments, feeds, `content_hash`.
 - `contents.config` (or `content_entity_links`) binds `product_id` + `rating` (1–5) + optional `pros`/`cons` fields.
 - On review publish/unpublish: update `products.rating_avg`/`review_count` in the same flow (or an Asynq rollup task — catalog-registered per §11 if async).
+- Every review renders the product CTA — affiliate-linked when the provider has a deal, carrying the review author's attribution.
 
 ### Wiki wiring
 
