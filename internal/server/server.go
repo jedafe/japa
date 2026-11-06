@@ -7979,6 +7979,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/wiki/destinations", wikiHandlers.HandleGetDestinations)
 				// §80 Wiki Types: enabled wiki types for navigation/filters.
 				r.Get("/wiki/types", wikiHandlers.HandleListWikiTypes)
+				// §80 Entity Directory: kind index + per-kind listing —
+				// registered before {space_slug} so 'entity-kinds' wins.
+				r.Get("/wiki/entity-kinds", wikiHandlers.HandleListEntityKinds)
+				r.Get("/wiki/entity-kinds/{kind}/entities", wikiHandlers.HandleListEntitiesByKind)
 				// Entity-bound pages (JCE ↔ wiki mapping): /wiki/e/{type}/{entity}/{page}
 				// — registered before {space_slug} so the static 'e' segment wins.
 				r.Get("/wiki/e/{type_slug}/{entity}/{page_slug}", wikiHandlers.HandleGetEntityPage)

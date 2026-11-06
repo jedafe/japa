@@ -2339,6 +2339,46 @@ func (q *Queries) ListWikiDestinations(ctx context.Context, arg ListWikiDestinat
 	return items, nil
 }
 
+const listWikiEntityKinds = `-- name: ListWikiEntityKinds :many
+SELECT entity_kind, source_table, id_column, slug_column, label
+FROM wiki_entity_kinds
+ORDER BY entity_kind
+`
+
+type ListWikiEntityKindsRow struct {
+	EntityKind  string  `json:"entity_kind"`
+	SourceTable string  `json:"source_table"`
+	IDColumn    string  `json:"id_column"`
+	SlugColumn  *string `json:"slug_column"`
+	Label       string  `json:"label"`
+}
+
+func (q *Queries) ListWikiEntityKinds(ctx context.Context) ([]ListWikiEntityKindsRow, error) {
+	rows, err := q.db.Query(ctx, listWikiEntityKinds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWikiEntityKindsRow
+	for rows.Next() {
+		var i ListWikiEntityKindsRow
+		if err := rows.Scan(
+			&i.EntityKind,
+			&i.SourceTable,
+			&i.IDColumn,
+			&i.SlugColumn,
+			&i.Label,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWikiPageSiblings = `-- name: ListWikiPageSiblings :many
 
 

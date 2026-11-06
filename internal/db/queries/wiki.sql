@@ -947,3 +947,8 @@ SET deleted_at = now()
 WHERE wiki_page_id = @page_id
   AND status != 'pending'
   AND deleted_at IS NULL;
+
+-- name: ListWikiEntityKinds :many
+SELECT entity_kind, source_table, id_column, slug_column, label
+FROM wiki_entity_kinds
+ORDER BY entity_kind;
