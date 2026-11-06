@@ -76,6 +76,6 @@ export const load: PageServerLoad = async (event) => {
 		pageSize: PAGE_SIZE,
 		loadError: res === null,
 		canCreate: hasPerm(event.locals.user?.permissions, 'products.create'),
-		dealsEnabled: features?.['service_coupons.enabled'] === true
+		dealsEnabled: features?.['feature.products.deals'] === true
 	};
 };

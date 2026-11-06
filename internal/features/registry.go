@@ -162,6 +162,9 @@ var Registry = []Feature{
 	// JCE Sub-spec 4 — data-source provenance, freshness, and refresh
 	{Key: "feature.jce.data_sources", Label: "JCE Data Sources", Description: "Registered data sources with trust and freshness tracking for comparison values", Default: true, Category: "Tools", SettingsCategory: "jce"},
 	{Key: "feature.jce.refresh", Label: "JCE Value Refresh", Description: "Manual and scheduled refresh of comparison values from registered data sources", Default: true, Category: "Tools", SettingsCategory: "jce"},
+	// Product deals surface (/products/deals) — decoupled from
+	// service_coupons.enabled which gates service-listing coupons.
+	{Key: "feature.products.deals", Label: "Product Deals", Description: "Deals and coupons attached to catalog products", Default: true, Category: "Tools", SettingsCategory: "products"},
 }
 
 // DefaultFor returns the default enabled state for a feature key.

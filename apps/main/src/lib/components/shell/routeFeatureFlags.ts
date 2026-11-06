@@ -65,6 +65,9 @@ export const routeFeatureFlags: Map<string, RouteFeatureFlag> = new Map<
 	['/donate', 'tips.enabled'],
 	['/me/tips', 'tips.enabled'],
 	// Coupons & deals surfaces — all backed by the service_coupons feature.
+	// The deals index moved under /products (/products/deals); the legacy
+	// entries stay so older nav items still hide with the flag.
+	['/products/deals', 'feature.products.deals'],
 	['/deals', 'service_coupons.enabled'],
 	['/deal', 'service_coupons.enabled'],
 	['/coupons', 'service_coupons.enabled'],
@@ -119,6 +122,11 @@ export const routeFeatureFlags: Map<string, RouteFeatureFlag> = new Map<
 	['/tools/currency-converter', 'fx.enabled'],
 	// V2 Community features
 	['/wiki', 'wiki.enabled'],
+	// Products surface — de-wikied comparison-entity directory (/products
+	// listing, /product/{slug} detail); gated by feature.jce like /compare.
+	// /products/deals keeps its own flag above via longest-prefix matching.
+	['/products', 'feature.jce'],
+	['/product', 'feature.jce'],
 	['/scam-alerts', 'scam_alert.enabled'],
 	['/planning-groups', 'planning_group.enabled'],
 	['/visa-timelines', 'visa_timeline.enabled'],
