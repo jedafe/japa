@@ -1,6 +1,6 @@
 import type { ContentTypeMeta, GuideCategory } from '$lib/types';
 
-export type FormKind = 'standard' | 'comparison' | 'list';
+export type FormKind = 'standard' | 'comparison' | 'list' | 'review';
 
 export interface TypeEntry {
 	value: string;
@@ -85,6 +85,14 @@ const COMPOSER_OVERRIDES: Record<string, Partial<Omit<TypeEntry, 'label'>>> = {
 		formKind: 'standard',
 		supportsSeries: false,
 		featureFlag: null
+	},
+	// §14 review amendment — product picker + rating + providers repeater;
+	// gated by the review.create RBAC node (product domain §80).
+	review: {
+		formKind: 'review',
+		supportsSeries: false,
+		featureFlag: null,
+		requiredPermission: 'review.create'
 	}
 };
 
@@ -138,7 +146,7 @@ export function availableTypes(
 }
 
 /** Content types that can be created through the /create page composer. */
-export const CREATE_ALLOWED_TYPES = ['blog_post', 'comparison', 'guide', 'story', 'video', 'list', 'news'] as const;
+export const CREATE_ALLOWED_TYPES = ['blog_post', 'comparison', 'guide', 'story', 'video', 'list', 'news', 'review'] as const;
 
 const CREATE_TYPE_ORDER = Object.fromEntries(
 	CREATE_ALLOWED_TYPES.map((value, index) => [value, index])

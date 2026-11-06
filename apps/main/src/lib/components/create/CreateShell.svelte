@@ -36,6 +36,7 @@
 	import type { EditorMode } from './editors/PostEditor.svelte';
 	import ComparisonBuilder from './editors/ComparisonBuilder.svelte';
 	import ListBuilder from './editors/ListBuilder.svelte';
+	import ReviewForm from './ReviewForm.svelte';
 	import VideoField from './VideoField.svelte';
 	import type { VideoSource } from '$lib/types';
 	import CreateRightPanel from './panel/CreateRightPanel.svelte';
@@ -219,6 +220,10 @@
 		)
 	);
 	let listItemCount = $state(untrack(() => listFieldValues.items?.length ?? 0));
+	// §14 review CT — product/rating/providers ride field_values (same
+	// bypass mechanism as the list snapshot).
+	let reviewFieldValues = $state<Record<string, unknown>>(untrack(() => (draft?.content_type === 'review' ? (draft.field_values ?? {}) : {})));
+
 
 	// AI drafting panel (Task 7)
 	let aiPanelOpen = $state(false);
@@ -307,6 +312,7 @@
 	const isGuide = $derived(selectedType.value === 'guide');
 	const isVideo = $derived(selectedType.value === 'video');
 	const isList = $derived(selectedType.value === 'list');
+	const isReview = $derived(selectedType.value === 'review');
 	const snapshot = $derived({
 		content_type: selectedType.value,
 		title,
@@ -316,7 +322,8 @@
 			...activeFieldValues,
 			...(isGuide && roadmapDimension ? { dimension: roadmapDimension } : {}),
 			...(isGuide && roadmapPurpose ? { purpose: roadmapPurpose } : {}),
-			...(isList ? listFieldValues : {})
+			...(isList ? listFieldValues : {}),
+			...(isReview ? reviewFieldValues : {})
 		},
 		canonical_url: canonicalUrl || null,
 		featured_image_id: featuredImageId,
@@ -704,6 +711,14 @@
 				onvalues={(fv) => { listFieldValues = fv; }}
 				onhtml={(v) => { bodyHtml = v; }}
 				oncounts={(n) => { listItemCount = n; }}
+				onedit={markDirty}
+			/>
+		{:else if selectedType.formKind === 'review'}
+			<ReviewForm
+				initial={draft?.content_type === 'review' ? draft.field_values : null}
+				defaultEditor={defaultEditor}
+				onvalues={(fv: Record<string, unknown>) => { reviewFieldValues = fv; }}
+				onhtml={(v: string) => { bodyHtml = v; }}
 				onedit={markDirty}
 			/>
 		{:else}
