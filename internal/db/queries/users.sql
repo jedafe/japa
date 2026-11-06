@@ -15,6 +15,7 @@ SELECT DISTINCT ON (u.id)
  up.marital_status,
  up.date_of_birth,
  up.gender,
+ up.interests,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
  u.email, u.username, u.profile_type, u.verified, u.verification_type,
@@ -128,7 +129,7 @@ INSERT INTO user_profiles (user_id, display_name) VALUES (@user_id, @display_nam
 ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name;
 
 -- name: UpsertUserProfile :exec
-INSERT INTO user_profiles (user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url, location, banner_media_id, website_url, education, profession, marital_status, date_of_birth, gender) VALUES (@user_id, @display_name, @avatar_url, @avatar_media_id, @header_media_id, @bio, @timezone, @cover_url, sqlc.narg(location), sqlc.narg(banner_media_id), sqlc.narg(website_url), sqlc.narg(education), sqlc.narg(profession), sqlc.narg(marital_status), sqlc.narg(date_of_birth)::date, sqlc.narg(gender))
+INSERT INTO user_profiles (user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url, location, banner_media_id, website_url, education, profession, marital_status, date_of_birth, gender, interests) VALUES (@user_id, @display_name, @avatar_url, @avatar_media_id, @header_media_id, @bio, @timezone, @cover_url, sqlc.narg(location), sqlc.narg(banner_media_id), sqlc.narg(website_url), sqlc.narg(education), sqlc.narg(profession), sqlc.narg(marital_status), sqlc.narg(date_of_birth)::date, sqlc.narg(gender), sqlc.narg(interests))
 ON CONFLICT (user_id) DO UPDATE SET
  display_name = EXCLUDED.display_name,
  avatar_url = EXCLUDED.avatar_url,
@@ -149,6 +150,7 @@ ON CONFLICT (user_id) DO UPDATE SET
  marital_status = EXCLUDED.marital_status,
  date_of_birth = EXCLUDED.date_of_birth,
  gender = EXCLUDED.gender,
+ interests = EXCLUDED.interests,
  updated_at = now();
 
 -- name: GetUserProfileForUpdate :one
@@ -158,7 +160,7 @@ ON CONFLICT (user_id) DO UPDATE SET
 -- from racing on the merge step.
 SELECT id, user_id, display_name, avatar_url, avatar_media_id,
  header_media_id, bio, timezone, cover_url, website_url,
- education, profession, marital_status, date_of_birth, gender,
+ education, profession, marital_status, date_of_birth, gender, interests,
  created_at, updated_at
 FROM user_profiles
 WHERE user_id = @user_id

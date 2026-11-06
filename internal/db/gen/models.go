@@ -4996,6 +4996,7 @@ type UserProfile struct {
 	DateOfBirth              pgtype.Date         `json:"date_of_birth"`
 	Gender                   *string             `json:"gender"`
 	MenteeGoalEmbedding      *pgvector_go.Vector `json:"mentee_goal_embedding"`
+	Interests                []string            `json:"interests"`
 }
 
 type UserRole struct {

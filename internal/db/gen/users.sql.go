@@ -1657,6 +1657,7 @@ SELECT DISTINCT ON (u.id)
  up.marital_status,
  up.date_of_birth,
  up.gender,
+ up.interests,
  COALESCE(up.created_at, u.created_at) AS created_at,
  COALESCE(up.updated_at, u.updated_at) AS updated_at,
  u.email, u.username, u.profile_type, u.verified, u.verification_type,
@@ -1714,6 +1715,7 @@ type GetUserProfileRow struct {
 	MaritalStatus    *string            `json:"marital_status"`
 	DateOfBirth      pgtype.Date        `json:"date_of_birth"`
 	Gender           *string            `json:"gender"`
+	Interests        []string           `json:"interests"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	Email            string             `json:"email"`
@@ -1749,6 +1751,7 @@ func (q *Queries) GetUserProfile(ctx context.Context, userID pgtype.UUID) (GetUs
 		&i.MaritalStatus,
 		&i.DateOfBirth,
 		&i.Gender,
+		&i.Interests,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
@@ -1770,7 +1773,7 @@ func (q *Queries) GetUserProfile(ctx context.Context, userID pgtype.UUID) (GetUs
 const getUserProfileForUpdate = `-- name: GetUserProfileForUpdate :one
 SELECT id, user_id, display_name, avatar_url, avatar_media_id,
  header_media_id, bio, timezone, cover_url, website_url,
- education, profession, marital_status, date_of_birth, gender,
+ education, profession, marital_status, date_of_birth, gender, interests,
  created_at, updated_at
 FROM user_profiles
 WHERE user_id = $1
@@ -1793,6 +1796,7 @@ type GetUserProfileForUpdateRow struct {
 	MaritalStatus *string            `json:"marital_status"`
 	DateOfBirth   pgtype.Date        `json:"date_of_birth"`
 	Gender        *string            `json:"gender"`
+	Interests     []string           `json:"interests"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
@@ -1820,6 +1824,7 @@ func (q *Queries) GetUserProfileForUpdate(ctx context.Context, userID pgtype.UUI
 		&i.MaritalStatus,
 		&i.DateOfBirth,
 		&i.Gender,
+		&i.Interests,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -3038,7 +3043,7 @@ func (q *Queries) UpsertUserPrivacySettings(ctx context.Context, arg UpsertUserP
 }
 
 const upsertUserProfile = `-- name: UpsertUserProfile :exec
-INSERT INTO user_profiles (user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url, location, banner_media_id, website_url, education, profession, marital_status, date_of_birth, gender) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::date, $16)
+INSERT INTO user_profiles (user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url, location, banner_media_id, website_url, education, profession, marital_status, date_of_birth, gender, interests) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::date, $16, $17)
 ON CONFLICT (user_id) DO UPDATE SET
  display_name = EXCLUDED.display_name,
  avatar_url = EXCLUDED.avatar_url,
@@ -3059,6 +3064,7 @@ ON CONFLICT (user_id) DO UPDATE SET
  marital_status = EXCLUDED.marital_status,
  date_of_birth = EXCLUDED.date_of_birth,
  gender = EXCLUDED.gender,
+ interests = EXCLUDED.interests,
  updated_at = now()
 `
 
@@ -3079,6 +3085,7 @@ type UpsertUserProfileParams struct {
 	MaritalStatus *string     `json:"marital_status"`
 	DateOfBirth   pgtype.Date `json:"date_of_birth"`
 	Gender        *string     `json:"gender"`
+	Interests     []string    `json:"interests"`
 }
 
 func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfileParams) error {
@@ -3099,6 +3106,7 @@ func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfilePa
 		arg.MaritalStatus,
 		arg.DateOfBirth,
 		arg.Gender,
+		arg.Interests,
 	)
 	return err
 }
