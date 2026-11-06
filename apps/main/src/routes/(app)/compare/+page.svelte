@@ -16,6 +16,7 @@
 	import CompareTray from '$lib/components/compare/CompareTray.svelte';
 	import AiQuickPanel from '$lib/components/compare/AiQuickPanel.svelte';
 	import TypeCardGrid from '$lib/components/compare/TypeCardGrid.svelte';
+	import FieldPoolPicker from '$lib/components/compare/FieldPoolPicker.svelte';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
 	import { EmptyState, EntityHero, ListPageBar, PaginationControls, UrlTabs, GuideSlideOver, type GuideContent, type IconComponent, type UrlTab } from '$lib/components/ui';
 	import { Popover } from 'bits-ui';
@@ -78,6 +79,22 @@
 	let allItems = $derived(data.items ?? []);
 	let itemsTotal = $derived(data.itemsTotal ?? null);
 	let preselectedItems = $derived(data.preselectedItems ?? []);
+	// Sub-spec 6: dimension pool selection — defaults to the pool's
+	// is_default groups (today's Overview-only behavior).
+	let fieldPool = $derived(data.fieldPool ?? { groups: [] });
+	let selectedFieldIds = $state<Set<string>>(new Set());
+	let lastPoolTypeId = $state('');
+
+	$effect(() => {
+		const tid = selectedType?.id ?? '';
+		if (tid === lastPoolTypeId) return;
+		lastPoolTypeId = tid;
+		const init = new Set<string>();
+		for (const g of fieldPool.groups) {
+			if (g.is_default) for (const f of g.fields) if (f.comparable) init.add(f.id);
+		}
+		selectedFieldIds = init;
+	});
 	let loadError = $derived(data.loadError ?? '');
 	let loadErrorParams = $derived(data.loadErrorParams ?? {});
 	let user = $derived(data.user ?? null);
@@ -596,7 +613,8 @@
 				type_id: type.id,
 				item_ref: { type: i.type, id: i.id, title: i.title, slug: (i.metadata?.slug as string) ?? '' }
 			})),
-			dimensions: []
+			dimensions: [],
+			...(selectedFieldIds.size > 0 ? { field_ids: [...selectedFieldIds] } : {})
 		});
 		creating = false;
 		if (res.error) {
@@ -664,7 +682,8 @@
 		}));
 		const token = await createGuestSelection({ type_slug: type.slug, item_refs: itemRefs });
 		if (token) {
-			const returnUrl = encodeURIComponent(`/compare?type=${encodeURIComponent(type.slug)}&compare_token=${token}`);
+			const fieldsParam = selectedFieldIds.size > 0 ? `&fields=${[...selectedFieldIds].join(',')}` : '';
+			const returnUrl = encodeURIComponent(`/compare?type=${encodeURIComponent(type.slug)}&compare_token=${token}${fieldsParam}`);
 			// Ref: sections/02-authentication-sessions.md (redirect after anonymous selection token)
 			navigateToMain(`/login?redirect=${returnUrl}`);
 		} else {
@@ -1077,6 +1096,12 @@
 			{#if pageCount > 1}
 				<PaginationControls page={effectivePage} totalPages={pageCount} onPageChange={setPage} />
 			{/if}
+		{/if}
+
+		{#if selectedType && fieldPool.groups.length > 0}
+			<div class="px-4 pb-3">
+				<FieldPoolPicker groups={fieldPool.groups} bind:selected={selectedFieldIds} />
+			</div>
 		{/if}
 
 		<!-- Sticky zone: AI quick panel + compare tray (hidden in nested browse mode) -->

@@ -230,5 +230,8 @@
   "jce.compare.visibility.private": "Privée",
   "forum.poll_error": "Échec de l’envoi de votre vote. Veuillez réessayer.",
   "jce.comparisons.errors.load_types": "Impossible de charger les types de comparaison. {message}",
-  "jce.comparisons.errors.types_not_found": "Types de comparaison introuvables."
+  "jce.comparisons.errors.types_not_found": "Types de comparaison introuvables.",
+  "jce.compare.fields.title": "Champs à comparer",
+  "jce.compare.fields.all": "Toutes les catégories",
+  "jce.compare.fields.non_comparable": "non comparable"
 }

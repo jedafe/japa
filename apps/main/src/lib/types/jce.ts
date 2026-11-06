@@ -169,7 +169,30 @@ export interface CreateQuickComparisonInput {
 	visibility: 'private';
 	items: JCEItem[];
 	dimensions: string[];
+	/** Sub-spec 6: explicit field picks across the type's pool. */
+	field_ids?: string[];
+	/** Sub-spec 6: whole pool groups. */
+	group_ids?: string[];
 	config?: Record<string, unknown>;
+}
+
+export interface JCEPoolField {
+	id: string;
+	key: string;
+	label: string;
+	field_type: string;
+	section?: string | null;
+	/** false → render disabled (non-comparable composite). */
+	comparable: boolean;
+}
+
+export interface JCEFieldPoolGroup {
+	group_id: string;
+	slug: string;
+	label: string;
+	category?: string | null;
+	is_default: boolean;
+	fields: JCEPoolField[];
 }
 
 export interface DataSource {

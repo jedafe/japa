@@ -230,5 +230,8 @@
   "jce.compare.visibility.unlisted": "Unlisted",
   "jce.compare.visibility.private": "Private",
   "jce.comparisons.errors.load_types": "Could not load comparison types. {message}",
-  "jce.comparisons.errors.types_not_found": "Comparison types could not be found."
+  "jce.comparisons.errors.types_not_found": "Comparison types could not be found.",
+  "jce.compare.fields.title": "Compare fields",
+  "jce.compare.fields.all": "All categories",
+  "jce.compare.fields.non_comparable": "not comparable"
 }

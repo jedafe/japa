@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/public';
 import { apiContext, apiGet, apiList, apiPost, ApiError, API_BASE } from '$lib/server/api';
-import type { ComparisonType, ComparisonTypeConfig, JCEComparisonSummary, ResolvedItem } from '$lib/types/jce';
+import type { ComparisonType, ComparisonTypeConfig, JCEComparisonSummary, JCEFieldPoolGroup, ResolvedItem } from '$lib/types/jce';
 import type { ListMeta } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
@@ -222,6 +222,8 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const compareToken = searchParams.get('compare_token') ?? '';
+	// Sub-spec 6: dimension pool picks ride the URL as a CSV of field ids.
+	const fieldIds = (searchParams.get('fields') ?? '').split(',').filter(Boolean);
 	const mine = searchParams.get('mine') === 'true';
 	const preselect = searchParams.get('preselect') ?? '';
 
@@ -245,7 +247,8 @@ export const load: PageServerLoad = async (event) => {
 		try {
 			const cmp = await apiPost<{ slug: string }>(ctx, '/jce/comparisons/from-token', {
 				token: compareToken,
-				type_id: selectedType.id
+				type_id: selectedType.id,
+				...(fieldIds.length > 0 ? { field_ids: fieldIds } : {})
 			});
 			if (cmp?.slug) {
 				fromTokenSlug = cmp.slug;
@@ -478,8 +481,20 @@ export const load: PageServerLoad = async (event) => {
 		loadErrorParams = { message: mineRes.message };
 	}
 
+	// Sub-spec 6: the selected type's dimension pool for the picker.
+	// Best-effort — a failed fetch hides the picker; auto-dims still apply.
+	let fieldPool: { groups: JCEFieldPoolGroup[] } = { groups: [] };
+	if (selectedType) {
+		try {
+			fieldPool = (await apiGet<{ groups: JCEFieldPoolGroup[] }>(ctx, `/jce/comparison-types/${selectedType.id}/fields`)) ?? { groups: [] };
+		} catch {
+			fieldPool = { groups: [] };
+		}
+	}
+
 	return {
 		types,
+		fieldPool,
 		selectedType: selectedType ?? null,
 		source,
 		itemRefTypes,
