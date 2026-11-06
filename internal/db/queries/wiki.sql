@@ -985,3 +985,23 @@ FROM product_providers pp
 JOIN affiliate_providers ap ON ap.id = pp.provider_id
 WHERE pp.product_id = @product_id
 ORDER BY pp.position, ap.name;
+
+-- name: GetProviderBySlug :one
+SELECT id, slug, name, provider_type, logo_media_id, base_url, category,
+       commission_rate, is_featured
+FROM affiliate_providers
+WHERE slug = @slug AND is_active = true;
+
+-- name: GetProviderByID :one
+SELECT id, slug, name, provider_type, logo_media_id, base_url, category,
+       commission_rate, is_featured
+FROM affiliate_providers
+WHERE id = @id AND is_active = true;
+
+-- name: SearchProviders :many
+SELECT id, slug, name, provider_type, category
+FROM affiliate_providers
+WHERE is_active = true
+  AND ($1::text = '' OR name ILIKE '%' || $1 || '%')
+ORDER BY name
+LIMIT @limit_count OFFSET @offset_count;

@@ -2175,6 +2175,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	))
 	jceResolver.Register("course", resolver.NewCourseResolver(universityCourseService, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("product", resolver.NewProductResolver(resolver.WithQueries(jceReadQueries)))
+	jceResolver.Register("provider", resolver.NewProviderResolver(resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("col_city", resolver.NewCityResolver(costOfLivingStore, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("visa_route", resolver.NewVisaRouteResolver(visaRoutesService, resolver.WithQueries(jceReadQueries)))
 	jceResolver.Register("scholarship", resolver.NewScholarshipResolver(scholarshipsService))

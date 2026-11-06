@@ -1206,6 +1206,78 @@ func (q *Queries) GetProgramForWiki(ctx context.Context, slug string) (GetProgra
 	return i, err
 }
 
+const getProviderByID = `-- name: GetProviderByID :one
+SELECT id, slug, name, provider_type, logo_media_id, base_url, category,
+       commission_rate, is_featured
+FROM affiliate_providers
+WHERE id = $1 AND is_active = true
+`
+
+type GetProviderByIDRow struct {
+	ID             pgtype.UUID    `json:"id"`
+	Slug           string         `json:"slug"`
+	Name           string         `json:"name"`
+	ProviderType   string         `json:"provider_type"`
+	LogoMediaID    pgtype.UUID    `json:"logo_media_id"`
+	BaseUrl        *string        `json:"base_url"`
+	Category       *string        `json:"category"`
+	CommissionRate pgtype.Numeric `json:"commission_rate"`
+	IsFeatured     bool           `json:"is_featured"`
+}
+
+func (q *Queries) GetProviderByID(ctx context.Context, id pgtype.UUID) (GetProviderByIDRow, error) {
+	row := q.db.QueryRow(ctx, getProviderByID, id)
+	var i GetProviderByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.ProviderType,
+		&i.LogoMediaID,
+		&i.BaseUrl,
+		&i.Category,
+		&i.CommissionRate,
+		&i.IsFeatured,
+	)
+	return i, err
+}
+
+const getProviderBySlug = `-- name: GetProviderBySlug :one
+SELECT id, slug, name, provider_type, logo_media_id, base_url, category,
+       commission_rate, is_featured
+FROM affiliate_providers
+WHERE slug = $1 AND is_active = true
+`
+
+type GetProviderBySlugRow struct {
+	ID             pgtype.UUID    `json:"id"`
+	Slug           string         `json:"slug"`
+	Name           string         `json:"name"`
+	ProviderType   string         `json:"provider_type"`
+	LogoMediaID    pgtype.UUID    `json:"logo_media_id"`
+	BaseUrl        *string        `json:"base_url"`
+	Category       *string        `json:"category"`
+	CommissionRate pgtype.Numeric `json:"commission_rate"`
+	IsFeatured     bool           `json:"is_featured"`
+}
+
+func (q *Queries) GetProviderBySlug(ctx context.Context, slug string) (GetProviderBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getProviderBySlug, slug)
+	var i GetProviderBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.ProviderType,
+		&i.LogoMediaID,
+		&i.BaseUrl,
+		&i.Category,
+		&i.CommissionRate,
+		&i.IsFeatured,
+	)
+	return i, err
+}
+
 const getScholarshipForWiki = `-- name: GetScholarshipForWiki :one
 SELECT id, slug, title, country_space_id
 FROM scholarships
@@ -3037,6 +3109,55 @@ func (q *Queries) SearchProducts(ctx context.Context, arg SearchProductsParams) 
 			&i.Name,
 			&i.Tagline,
 			&i.TypeSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchProviders = `-- name: SearchProviders :many
+SELECT id, slug, name, provider_type, category
+FROM affiliate_providers
+WHERE is_active = true
+  AND ($1::text = '' OR name ILIKE '%' || $1 || '%')
+ORDER BY name
+LIMIT $3 OFFSET $2
+`
+
+type SearchProvidersParams struct {
+	Column1     string `json:"column_1"`
+	OffsetCount int32  `json:"offset_count"`
+	LimitCount  int32  `json:"limit_count"`
+}
+
+type SearchProvidersRow struct {
+	ID           pgtype.UUID `json:"id"`
+	Slug         string      `json:"slug"`
+	Name         string      `json:"name"`
+	ProviderType string      `json:"provider_type"`
+	Category     *string     `json:"category"`
+}
+
+func (q *Queries) SearchProviders(ctx context.Context, arg SearchProvidersParams) ([]SearchProvidersRow, error) {
+	rows, err := q.db.Query(ctx, searchProviders, arg.Column1, arg.OffsetCount, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchProvidersRow
+	for rows.Next() {
+		var i SearchProvidersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.ProviderType,
+			&i.Category,
 		); err != nil {
 			return nil, err
 		}
