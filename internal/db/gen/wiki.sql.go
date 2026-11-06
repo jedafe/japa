@@ -1944,6 +1944,34 @@ func (q *Queries) InsertInitialWikiRevision(ctx context.Context, arg InsertIniti
 	return id, err
 }
 
+const insertWikiEntityKind = `-- name: InsertWikiEntityKind :one
+INSERT INTO wiki_entity_kinds (entity_kind, label, source_table, id_column, slug_column)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (entity_kind) DO NOTHING
+RETURNING entity_kind
+`
+
+type InsertWikiEntityKindParams struct {
+	EntityKind  string  `json:"entity_kind"`
+	Label       string  `json:"label"`
+	SourceTable string  `json:"source_table"`
+	IDColumn    string  `json:"id_column"`
+	SlugColumn  *string `json:"slug_column"`
+}
+
+func (q *Queries) InsertWikiEntityKind(ctx context.Context, arg InsertWikiEntityKindParams) (string, error) {
+	row := q.db.QueryRow(ctx, insertWikiEntityKind,
+		arg.EntityKind,
+		arg.Label,
+		arg.SourceTable,
+		arg.IDColumn,
+		arg.SlugColumn,
+	)
+	var entity_kind string
+	err := row.Scan(&entity_kind)
+	return entity_kind, err
+}
+
 const insertWikiRevision = `-- name: InsertWikiRevision :one
 INSERT INTO wiki_revisions (wiki_page_id, kind, content, ops, summary,
     target_entity_type, target_entity_id, status,
@@ -2342,6 +2370,35 @@ func (q *Queries) ListProductProviders(ctx context.Context, productID pgtype.UUI
 			&i.PriceFrom,
 			&i.OfferUrl,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProductTypes = `-- name: ListProductTypes :many
+SELECT slug, label FROM product_types WHERE is_enabled = true ORDER BY label
+`
+
+type ListProductTypesRow struct {
+	Slug  string `json:"slug"`
+	Label string `json:"label"`
+}
+
+func (q *Queries) ListProductTypes(ctx context.Context) ([]ListProductTypesRow, error) {
+	rows, err := q.db.Query(ctx, listProductTypes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProductTypesRow
+	for rows.Next() {
+		var i ListProductTypesRow
+		if err := rows.Scan(&i.Slug, &i.Label); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -1038,3 +1038,12 @@ RETURNING id, slug, label, icon, is_enabled, config;
 SELECT id, slug, label, icon, is_enabled, config
 FROM product_types
 WHERE slug = @slug;
+
+-- name: ListProductTypes :many
+SELECT slug, label FROM product_types WHERE is_enabled = true ORDER BY label;
+
+-- name: InsertWikiEntityKind :one
+INSERT INTO wiki_entity_kinds (entity_kind, label, source_table, id_column, slug_column)
+VALUES (@entity_kind, @label, @source_table, @id_column, @slug_column)
+ON CONFLICT (entity_kind) DO NOTHING
+RETURNING entity_kind;

@@ -59,12 +59,25 @@ var kindListSources = map[string]kindListSource{
 	"scholarship": {
 		"scholarships", "id", "title", "slug", "",
 	},
+	"product": {
+		// Products join their type so the discriminator is the type SLUG
+		// (t.slug) — URLs and filters stay slug-based end to end.
+		"products p JOIN product_types t ON t.id = p.product_type_id",
+		"p.id", "p.name", "p.slug", "p.deleted_at IS NULL",
+	},
+	"provider": {
+		"affiliate_providers", "id", "name", "slug", "is_active = true",
+	},
+	"deal": {
+		"coupons", "id", "title", "slug", "status = 'active'",
+	},
 }
 
 // kindDiscriminatorColumn maps kind → its discriminator column, "" = none.
 var kindDiscriminatorColumn = map[string]string{
 	"visa_route":   "visa_category",
 	"organization": "org_type",
+	"product":      "t.slug",
 }
 
 // EntityKindTypeDTO is one discriminated type entry on the index —
@@ -129,6 +142,25 @@ func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) 
 			continue
 		}
 
+		// Product types live in product_types (not wiki_type_configs) —
+		// same chip shape, counted through t.slug on the join.
+		if out[i].Kind == "product" {
+			pts, err := s.store.read.ListProductTypes(ctx)
+			if err != nil {
+				continue
+			}
+			for _, pt := range pts {
+				var tn int64
+				clause := src.where + " AND t.slug = $1"
+				if err := s.store.pool.Reader.QueryRow(ctx,
+					fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", src.from, clause), pt.Slug).Scan(&tn); err != nil {
+					tn = 0
+				}
+				out[i].Types = append(out[i].Types, EntityKindTypeDTO{Slug: pt.Slug, Label: pt.Label, Count: tn})
+			}
+			continue
+		}
+
 		typeRows, err := s.store.read.ListEntityWikiTypesByKind(ctx, &out[i].Kind)
 		if err != nil {
 			continue
@@ -179,10 +211,14 @@ func (s *Service) ListEntitiesByKind(ctx context.Context, slug, q string, limit,
 		if tc.Label != nil && *tc.Label != "" {
 			label = *tc.Label
 		}
-	} else if kc, err := s.store.read.GetWikiEntityKind(ctx, slug); err != nil {
-		return nil, 0, "", err
-	} else {
+	} else if kc, err := s.store.read.GetWikiEntityKind(ctx, slug); err == nil {
 		label = kc.Label
+	} else if pt, perr := s.store.read.GetProductTypeBySlug(ctx, slug); perr == nil && pt.IsEnabled {
+		// Product type slugs (ai-agent, hosting, …) list the products of
+		// that type — the type slug itself is the discriminator.
+		kind, discFilter, label = "product", slug, pt.Label
+	} else {
+		return nil, 0, "", err
 	}
 
 	src, ok := kindListSources[kind]
