@@ -880,16 +880,16 @@ const createScholarshipForWiki = `-- name: CreateScholarshipForWiki :one
 INSERT INTO scholarships (title, slug, source_url, source_type, trust_level,
     country, fields_of_study, eligible_countries, funding,
     required_documents, language_requirements, last_verified_at)
-VALUES ($1, $2, $3, 'manual', 0,
-    $4, '{}', '{}', '{}', '{}', '{}', now())
+VALUES ($1, $2, COALESCE($3, ''), 'manual', 0,
+    COALESCE($4, ''), '{}', '{}', '{}', '{}', '{}', now())
 RETURNING slug
 `
 
 type CreateScholarshipForWikiParams struct {
-	Title     string  `json:"title"`
-	Slug      string  `json:"slug"`
-	SourceUrl *string `json:"source_url"`
-	Country   *string `json:"country"`
+	Title     string      `json:"title"`
+	Slug      string      `json:"slug"`
+	SourceUrl interface{} `json:"source_url"`
+	Country   interface{} `json:"country"`
 }
 
 func (q *Queries) CreateScholarshipForWiki(ctx context.Context, arg CreateScholarshipForWikiParams) (string, error) {
@@ -908,7 +908,7 @@ const createVisaRouteForWiki = `-- name: CreateVisaRouteForWiki :one
 INSERT INTO visa_routes (name, slug, destination_space_id, visa_category,
     gov_source_url, status, ai_generated, is_active)
 VALUES ($1, $2, $3, $4,
-    $5, 'published', false, true)
+    COALESCE($5, ''), 'published', false, true)
 RETURNING slug
 `
 
@@ -917,7 +917,7 @@ type CreateVisaRouteForWikiParams struct {
 	Slug               string      `json:"slug"`
 	DestinationSpaceID pgtype.UUID `json:"destination_space_id"`
 	VisaCategory       string      `json:"visa_category"`
-	GovSourceUrl       *string     `json:"gov_source_url"`
+	GovSourceUrl       interface{} `json:"gov_source_url"`
 }
 
 func (q *Queries) CreateVisaRouteForWiki(ctx context.Context, arg CreateVisaRouteForWikiParams) (string, error) {

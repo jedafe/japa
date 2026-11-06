@@ -1140,15 +1140,15 @@ RETURNING slug;
 INSERT INTO visa_routes (name, slug, destination_space_id, visa_category,
     gov_source_url, status, ai_generated, is_active)
 VALUES (@name, @slug, @destination_space_id, @visa_category,
-    sqlc.narg(gov_source_url), 'published', false, true)
+    COALESCE(sqlc.narg(gov_source_url), ''), 'published', false, true)
 RETURNING slug;
 
 -- name: CreateScholarshipForWiki :one
 INSERT INTO scholarships (title, slug, source_url, source_type, trust_level,
     country, fields_of_study, eligible_countries, funding,
     required_documents, language_requirements, last_verified_at)
-VALUES (@title, @slug, sqlc.narg(source_url), 'manual', 0,
-    sqlc.narg(country), '{}', '{}', '{}', '{}', '{}', now())
+VALUES (@title, @slug, COALESCE(sqlc.narg(source_url), ''), 'manual', 0,
+    COALESCE(sqlc.narg(country), ''), '{}', '{}', '{}', '{}', '{}', now())
 RETURNING slug;
 
 -- name: ListSpacesByTypeKind :many

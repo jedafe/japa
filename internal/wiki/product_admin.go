@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -204,6 +205,10 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 	if name == "" {
 		name = body.Title
 	}
+	if name == "" && !strings.EqualFold(typeSlug, "course") {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Name is required")
+		return
+	}
 
 	href := "/wiki/e/" + typeSlug + "/" + body.Slug + "/overview"
 	out := map[string]any{"slug": body.Slug, "href": href}
@@ -283,7 +288,7 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 			out["skipped"] = skipped
 		}
 		if len(created) == 0 {
-			errpkg.WriteError(w, http.StatusBadRequest, "university_not_found", "No matching universities")
+			errpkg.WriteError(w, http.StatusConflict, "no_offerings_created", "No offerings created — universities not found or slugs already exist")
 			return
 		}
 		out["created"] = created
@@ -343,6 +348,9 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 			h.failEntityCreate(w, typeSlug, err)
 			return
 		}
+	case "product":
+		errpkg.WriteError(w, http.StatusBadRequest, "type_required", "Create products under their type (/wiki/e/{product_type_slug})")
+		return
 	default:
 		errpkg.WriteError(w, http.StatusBadRequest, "kind_not_creatable", "This entity kind cannot be created here")
 		return
