@@ -1140,7 +1140,7 @@ RETURNING slug;
 INSERT INTO visa_routes (name, slug, destination_space_id, visa_category,
     gov_source_url, status, ai_generated, is_active)
 VALUES (@name, @slug, @destination_space_id, @visa_category,
-    sqlc.narg(gov_source_url), 'active', false, true)
+    sqlc.narg(gov_source_url), 'published', false, true)
 RETURNING slug;
 
 -- name: CreateScholarshipForWiki :one

@@ -908,7 +908,7 @@ const createVisaRouteForWiki = `-- name: CreateVisaRouteForWiki :one
 INSERT INTO visa_routes (name, slug, destination_space_id, visa_category,
     gov_source_url, status, ai_generated, is_active)
 VALUES ($1, $2, $3, $4,
-    $5, 'active', false, true)
+    $5, 'published', false, true)
 RETURNING slug
 `
 

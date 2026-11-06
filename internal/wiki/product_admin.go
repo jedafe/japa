@@ -279,6 +279,7 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 		}
 		out["created"] = created
 		out["slug"] = created[0]
+		out["href"] = "/wiki/e/" + typeSlug + "/" + created[0] + "/overview"
 
 	case "embassy":
 		host, err := h.service.store.read.GetSpaceBySlugKind(ctx, gen.GetSpaceBySlugKindParams{Slug: body.HostSlug, TypeSlug: "country"})
