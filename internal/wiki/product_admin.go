@@ -6,11 +6,13 @@ package wiki
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -258,9 +260,11 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 			return
 		}
 		created := []string{}
+		skipped := []string{}
 		for _, uslug := range uniSlugs {
 			uni, err := h.service.store.read.GetSpaceBySlugKind(ctx, gen.GetSpaceBySlugKindParams{Slug: uslug, TypeSlug: "education"})
 			if err != nil {
+				skipped = append(skipped, uslug)
 				continue // skip unknown universities rather than fail the batch
 			}
 			oslug := body.Slug
@@ -271,7 +275,12 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 				CourseID: prog.ID, UniversityID: uni, Slug: oslug,
 			}); err == nil {
 				created = append(created, oslug)
+			} else {
+				skipped = append(skipped, uslug) // existing slug or other conflict
 			}
+		}
+		if len(skipped) > 0 {
+			out["skipped"] = skipped
 		}
 		if len(created) == 0 {
 			errpkg.WriteError(w, http.StatusBadRequest, "university_not_found", "No matching universities")
@@ -295,6 +304,10 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 		}
 
 	case "bank":
+		if body.CountryCode != "" && (len(body.CountryCode) != 2 || !isAlpha(body.CountryCode)) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_country_code", "Country code must be 2 letters (ISO 3166-1)")
+			return
+		}
 		var geo pgtype.UUID
 		if body.HostSlug != "" {
 			if g, err := h.service.store.read.GetSpaceBySlugKind(ctx, gen.GetSpaceBySlugKindParams{Slug: body.HostSlug, TypeSlug: "country"}); err == nil {
@@ -339,8 +352,24 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 }
 
 func (h *Handlers) failEntityCreate(w http.ResponseWriter, typeSlug string, err error) {
+	var pge *pgconn.PgError
+	if errors.As(err, &pge) && pge.Code == "23505" {
+		errpkg.WriteError(w, http.StatusConflict, "slug_conflict", "An entity with this slug already exists")
+		return
+	}
 	slog.Error("wiki: create entity failed", "type", typeSlug, "error", err)
 	errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create entity")
+}
+
+func isAlpha(s string) bool {
+	for _, c := range s {
+		if c < 'a' || c > 'z' {
+			if c < 'A' || c > 'Z' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func strPtr(v string) *string {
@@ -412,7 +441,9 @@ func (h *Handlers) HandleListPickerSpaces(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusBadRequest, "type_required", "type query param required")
 		return
 	}
-	rows, err := h.service.store.read.ListSpacesByTypeKind(r.Context(), typeSlug)
+	rows, err := h.service.store.read.ListSpacesByTypeKind(r.Context(), gen.ListSpacesByTypeKindParams{
+		TypeSlug: typeSlug, Q: r.URL.Query().Get("q"),
+	})
 	if err != nil {
 		slog.Error("wiki: picker spaces failed", "type", typeSlug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to list spaces")

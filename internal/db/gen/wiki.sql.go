@@ -2750,8 +2750,14 @@ const listSpacesByTypeKind = `-- name: ListSpacesByTypeKind :many
 SELECT s.id, s.slug, s.name FROM spaces s
 JOIN space_types st ON st.id = s.space_type_id
 WHERE st.slug = $1 AND s.deleted_at IS NULL
+  AND ($2::text = '' OR s.name ILIKE '%' || $2 || '%')
 ORDER BY s.name LIMIT 500
 `
+
+type ListSpacesByTypeKindParams struct {
+	TypeSlug string `json:"type_slug"`
+	Q        string `json:"q"`
+}
 
 type ListSpacesByTypeKindRow struct {
 	ID   pgtype.UUID `json:"id"`
@@ -2760,8 +2766,9 @@ type ListSpacesByTypeKindRow struct {
 }
 
 // Picker source for entity create forms (universities, countries).
-func (q *Queries) ListSpacesByTypeKind(ctx context.Context, typeSlug string) ([]ListSpacesByTypeKindRow, error) {
-	rows, err := q.db.Query(ctx, listSpacesByTypeKind, typeSlug)
+// q filters by name so large sets (10k universities) stay searchable.
+func (q *Queries) ListSpacesByTypeKind(ctx context.Context, arg ListSpacesByTypeKindParams) ([]ListSpacesByTypeKindRow, error) {
+	rows, err := q.db.Query(ctx, listSpacesByTypeKind, arg.TypeSlug, arg.Q)
 	if err != nil {
 		return nil, err
 	}
