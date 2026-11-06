@@ -95,7 +95,11 @@ Center column, top to bottom:
 
 1. **`EntityHero`** (same component as `/users`, `/org`): heading "Japa
    Stage", description, breadcrumbs, member-total stat (`formatMetric`),
-   `HeroArtJapaStage` art snippet (new, matching the heroes/ pattern), and
+   `HeroArtJapaStage` art snippet (new, matching the heroes/ pattern) that
+   **composites the photo cutout** `/illustrations/japa-stage-hero.webp`
+   (white background flood-removed, alpha WebP, ~112 KB) **over the SVG
+   dot-map + flight-arc scene** — matching the mockup's
+   people-in-front-of-world-map treatment — and
    actions — primary "Update My Japa Stage" (→ `/japa-stage/me`; guests →
    `/login?redirect=/japa-stage/me`), ghost **"How it works"** that opens
    `GuideSlideOver` fed by `siteSettings['japa_stage.guide']` with
