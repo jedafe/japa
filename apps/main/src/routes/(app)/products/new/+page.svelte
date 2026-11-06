@@ -54,7 +54,8 @@
 			case 'checkbox': case 'boolean': return 'bool';
 			case 'date': return 'date';
 			case 'select': return 'select';
-			case 'multiselect': case 'suggest': return 'multiselect';
+			case 'multiselect': return 'multiselect';
+			case 'suggest': return 'suggest';
 			case 'image_single': case 'media': return 'image_single';
 			case 'image_multi': return 'image_multi';
 			case 'textarea': case 'rich_text': return 'textarea';
@@ -286,6 +287,11 @@
 											</label>
 										{/each}
 									</div>
+								{:else if kind === 'suggest'}
+									<input id="np-f-{f.id}" class={inp} list="dl-{f.id}" bind:value={fieldValues[f.id]} placeholder={f.placeholder ?? ''} />
+									<datalist id="dl-{f.id}">
+										{#each fieldOptions(f) as o}<option value={typeof o === 'object' ? (o.value ?? o.label) : o}>{typeof o === 'object' ? (o.label ?? o.value) : o}</option>{/each}
+									</datalist>
 								{:else if kind === 'image_single'}
 									<div class="flex items-center gap-2">
 										<button type="button" onclick={() => pickFile(f.id)} disabled={uploading === f.id}

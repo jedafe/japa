@@ -100,7 +100,8 @@
 			case 'checkbox': case 'boolean': return 'bool';
 			case 'date': return 'date';
 			case 'select': return 'select';
-			case 'multiselect': case 'suggest': return 'multiselect';
+			case 'multiselect': return 'multiselect';
+			case 'suggest': return 'suggest';
 			case 'image_single': case 'media': return 'image_single';
 			case 'image_multi': return 'image_multi';
 			case 'textarea': case 'rich_text': return 'textarea';
@@ -231,17 +232,6 @@
 		return Array.isArray(fieldValues[fid]) ? fieldValues[fid] : [];
 	}
 
-	function fieldValueType(f: FieldDef): 'text' | 'number' | 'bool' | 'date' | 'json' {
-		switch (f.field_type) {
-			case 'number': return 'number';
-			case 'checkbox':
-			case 'boolean': return 'bool';
-			case 'date': return 'date';
-			case 'json': return 'json';
-			default: return 'text';
-		}
-	}
-
 	async function submit() {
 		saveErr = '';
 		if (!typeSlug) { saveErr = t('products.err_type', 'Pick a product type'); return; }
@@ -258,7 +248,9 @@
 					case 'number': entry.value_number = Number(v); break;
 					case 'bool': entry.value_bool = !!v; break;
 					case 'date': entry.value_date = new Date(v).toISOString(); break;
-					case 'multiselect': case 'image_multi': case 'json':
+					case 'image_multi':
+						entry.value_json = Array.isArray(v) ? v.map((x: any) => x?.id ?? x) : v; break;
+					case 'multiselect': case 'json':
 						entry.value_json = typeof v === 'string' ? JSON.parse(v || 'null') : v; break;
 					default: entry.value_text = String(v);
 				}
@@ -380,6 +372,11 @@
 										</label>
 									{/each}
 								</div>
+							{:else if kind === 'suggest'}
+								<input id="pf-f-{f.id}" class={inp} list="dl-{f.id}" bind:value={fieldValues[f.id]} placeholder={f.placeholder ?? ''} />
+								<datalist id="dl-{f.id}">
+									{#each fieldOptions(f) as o}<option value={typeof o === 'object' ? (o.value ?? o.label) : o}>{typeof o === 'object' ? (o.label ?? o.value) : o}</option>{/each}
+								</datalist>
 							{:else if kind === 'image_single'}
 								<div class="flex items-center gap-2">
 									<button type="button" onclick={() => openPicker(f.id)}

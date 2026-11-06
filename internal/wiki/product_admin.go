@@ -80,15 +80,6 @@ func numPtr(f *float64) pgtype.Numeric {
 	return n
 }
 
-// logoParam resolves an optional logo id for INSERT — empty/missing → NULL.
-func logoParam(id *string) pgtype.UUID {
-	var u pgtype.UUID
-	if id != nil && *id != "" {
-		_ = u.Scan(*id)
-	}
-	return u
-}
-
 func uuidOf(id string) pgtype.UUID {
 	var u pgtype.UUID
 	_ = u.Scan(id)
@@ -112,10 +103,18 @@ func (s *Service) CreateProduct(ctx context.Context, in ProductInput) (string, e
 	defer tx.Rollback(ctx)
 	q := s.store.write.WithTx(tx)
 
+	var logoID pgtype.UUID
+	if in.LogoID != nil && *in.LogoID != "" {
+		var lerr error
+		logoID, lerr = validUUID(*in.LogoID)
+		if lerr != nil {
+			return "", lerr
+		}
+	}
 	row, err := q.CreateProduct(ctx, gen.CreateProductParams{
 		ProductTypeID: typeID, Slug: in.Slug, Name: in.Name,
 		Tagline: in.Tagline, Description: in.Description,
-		LogoID: logoParam(in.LogoID), WebsiteUrl: in.WebsiteURL,
+		LogoID: logoID, WebsiteUrl: in.WebsiteURL,
 		PricingModel: in.PricingModel, PriceFrom: numPtr(in.PriceFrom),
 	})
 	if err != nil {
