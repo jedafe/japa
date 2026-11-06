@@ -20,6 +20,7 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -204,6 +205,27 @@ func duplicatePrefixFiles(files []string) []string {
 // This is the single forward-only apply path reused by cmd/migrate and
 // the integration-test harness (ADR-061).
 func ApplyPending(ctx context.Context, pool *pgxpool.Pool, dir string) ([]string, error) {
+	// Serialize concurrent migrators: rolling deploys and multi-replica
+	// boots can run ApplyPending simultaneously. The loser waits on the
+	// lock instead of racing the winner's in-flight transaction.
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquiring migration lock connection: %w", err)
+	}
+	defer conn.Release()
+
+	// The key folds in current_database(): pg advisory locks are
+	// cluster-wide, and parallel test databases on one Postgres server
+	// must not serialize against each other.
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock(hashtext(current_database() || ':japa:migrate'))"); err != nil {
+		return nil, fmt.Errorf("acquiring migration lock: %w", err)
+	}
+	defer func() {
+		if _, err := conn.Exec(context.Background(), "SELECT pg_advisory_unlock(hashtext(current_database() || ':japa:migrate'))"); err != nil {
+			slog.Warn("releasing migration advisory lock failed", "error", err)
+		}
+	}()
+
 	if err := EnsureMigrationsTable(ctx, pool); err != nil {
 		return nil, fmt.Errorf("ensuring schema_migrations table: %w", err)
 	}

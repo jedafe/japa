@@ -20,6 +20,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	errtracking "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/migrate"
 	"github.com/jedafe/japa/internal/server"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -74,6 +75,26 @@ func run() error {
 	}
 
 	defer database.Close()
+
+	// Apply pending schema migrations before anything serves traffic — a
+	// deploy must never run new code against a stale schema, and leaving
+	// the step to manual ops or a post-deploy hook lets schema and code
+	// drift (JEOS RULES: migrations are a distinct step *before* the new
+	// version serves). The runner is idempotent and holds a DB-level
+	// advisory lock, so concurrent boots serialize safely. Worker-only
+	// nodes (JC_HTTP_ENABLED=0) skip it; JC_MIGRATE_ON_BOOT=1 forces it
+	// on anywhere, JC_MIGRATE_ON_BOOT=0 disables it anywhere.
+	migrateOnBoot := os.Getenv("JC_MIGRATE_ON_BOOT")
+	if migrateOnBoot == "1" || (migrateOnBoot == "" && os.Getenv("JC_HTTP_ENABLED") != "0") {
+		applied, err := migrate.ApplyPending(context.Background(), database.Writer, migrate.FindMigrationsDir())
+		if err != nil {
+			return fmt.Errorf("applying database migrations: %w", err)
+		}
+		for _, name := range applied {
+			slog.Info("applied migration", "file", name)
+		}
+		slog.Info("database migrations up to date", "newly_applied", len(applied))
+	}
 
 	// Build the HTTP server with the configured port.
 	workerCfg := worker.DefaultConfig()

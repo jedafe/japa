@@ -268,19 +268,19 @@ in too). `japa-seed` requires `JC_SEED_ADMIN_PASSWORD` when
 `JC_ENV=production` (no dev default). Never point staging at the prod
 database.
 
-**Wiring automatic migrations:** on the api application → **Advanced** →
-set **Post-Deployment Command** to `/app/japa-migrate` (leave the container
-field empty for a single-container app). Do the same on the staging api
-app so schema follows every staging deploy.
+**Automatic migrations:** the api runs `migrate.ApplyPending` at boot,
+after the pool connects and before the HTTP listener or worker starts —
+every deploy self-migrates, no Coolify setting required. The runner is
+idempotent (`schema_migrations` tracker) and holds a
+`pg_advisory_lock`, so concurrent boots during a rolling deploy
+serialize safely. If a migration fails the process exits non-zero and
+the deploy fails loudly instead of serving new code against a stale
+schema.
 
-Why post- and not pre-: Coolify runs *pre*-deployment commands inside the
-**old** container (which doesn't carry the new migration files — and it's
-skipped on first deploy). *Post*-deployment runs inside the new container,
-which has the new `migrations/` and the binary. A post-deploy failure is
-logged but doesn't roll back the deploy — additive zero-downtime
-migrations keep that window safe (new code must already tolerate the old
-schema), but check the deployment log / `schema_migrations` count when a
-release ships a migration.
+Env knobs: worker-only nodes (`JC_HTTP_ENABLED=0`) skip boot-migrate by
+default — run `JC_SCHEDULER_ENABLED=0`-style splits on the api replicas
+and let the api node own migrations. `JC_MIGRATE_ON_BOOT=1` forces it on
+anywhere, `=0` disables it anywhere.
 
 Manual equivalent any time: `docker exec <api-container> /app/japa-migrate`.
 
