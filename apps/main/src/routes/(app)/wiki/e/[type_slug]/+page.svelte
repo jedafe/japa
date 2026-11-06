@@ -39,7 +39,7 @@
 		showCreate = true;
 		if (isCourse) {
 			const [us, ps] = await Promise.all([
-				api.get<{ items: { slug: string; name: string }[] }>('/wiki/pickers/spaces?type=university'),
+				api.get<{ items: { slug: string; name: string }[] }>('/wiki/pickers/spaces?type=education'),
 				api.get<{ items: { slug: string; name: string }[] }>('/wiki/entity-kinds/program/entities?limit=200')
 			]);
 			universities = us.data?.items ?? [];

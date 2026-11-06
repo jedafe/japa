@@ -259,7 +259,7 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 		}
 		created := []string{}
 		for _, uslug := range uniSlugs {
-			uni, err := h.service.store.read.GetSpaceBySlugKind(ctx, gen.GetSpaceBySlugKindParams{Slug: uslug, TypeSlug: "university"})
+			uni, err := h.service.store.read.GetSpaceBySlugKind(ctx, gen.GetSpaceBySlugKindParams{Slug: uslug, TypeSlug: "education"})
 			if err != nil {
 				continue // skip unknown universities rather than fail the batch
 			}
