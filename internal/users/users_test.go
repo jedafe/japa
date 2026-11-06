@@ -654,12 +654,13 @@ func TestNormalizeInterests(t *testing.T) {
 		}
 	}
 
-	// Empty / all-blank input clears the list (nil).
-	if got, err := normalizeInterests(nil); err != nil || got != nil {
-		t.Errorf("nil input: got %v err %v, want nil nil", got, err)
+	// Empty / all-blank input clears the list (non-nil empty slice —
+	// the upsert COALESCEs NULL to "preserve", so clearing needs []).
+	if got, err := normalizeInterests(nil); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("nil input: got %v err %v, want empty non-nil slice", got, err)
 	}
-	if got, err := normalizeInterests([]string{"  ", ""}); err != nil || got != nil {
-		t.Errorf("blank input: got %v err %v, want nil nil", got, err)
+	if got, err := normalizeInterests([]string{"  ", ""}); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("blank input: got %v err %v, want empty non-nil slice", got, err)
 	}
 
 	// Over the item cap → ErrInvalid.

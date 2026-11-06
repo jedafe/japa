@@ -49,6 +49,7 @@ type ProfileRow struct {
 	JapaStagePublic   bool
 	JapaStageHistory  []byte // raw jsonb
 	JapaStageUpdated  pgtype.Timestamptz
+	Verified          bool
 }
 
 // DirectoryRow is the trimmed shape returned by ListByStage (public directory).
@@ -78,7 +79,8 @@ func (s *Store) GetUserProfile(ctx context.Context, userID pgtype.UUID) (Profile
 SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_intent, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
-       up.japa_stage_is_public, up.japa_stage_history, up.japa_stage_updated_at
+       up.japa_stage_is_public, up.japa_stage_history, up.japa_stage_updated_at,
+       u.verified
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
@@ -93,6 +95,7 @@ LIMIT 1
 		&r.JapaStage, &r.JapaIntent, &r.JapaStageDestID,
 		&r.JapaStageDestName, &r.JapaStageDestCode,
 		&r.JapaStagePublic, &r.JapaStageHistory, &r.JapaStageUpdated,
+		&r.Verified,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -112,7 +115,8 @@ func (s *Store) GetProfileByUsername(ctx context.Context, username string) (Prof
 SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_intent, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
-       up.japa_stage_is_public, up.japa_stage_history, up.japa_stage_updated_at
+       up.japa_stage_is_public, up.japa_stage_history, up.japa_stage_updated_at,
+       u.verified
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
@@ -127,6 +131,7 @@ LIMIT 1
 		&r.JapaStage, &r.JapaIntent, &r.JapaStageDestID,
 		&r.JapaStageDestName, &r.JapaStageDestCode,
 		&r.JapaStagePublic, &r.JapaStageHistory, &r.JapaStageUpdated,
+		&r.Verified,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

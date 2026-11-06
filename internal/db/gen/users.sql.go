@@ -3064,7 +3064,10 @@ ON CONFLICT (user_id) DO UPDATE SET
  marital_status = EXCLUDED.marital_status,
  date_of_birth = EXCLUDED.date_of_birth,
  gender = EXCLUDED.gender,
- interests = EXCLUDED.interests,
+ -- interests follows the COALESCE convention (see location/banner_media_id):
+ -- NULL preserves the stored list; callers that manage the field
+ -- (UpdateProfile) pass an explicit empty array to clear it.
+ interests = COALESCE(EXCLUDED.interests, user_profiles.interests),
  updated_at = now()
 `
 

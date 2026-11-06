@@ -3345,11 +3345,19 @@ type Product struct {
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Description   *string            `json:"description"`
 }
 
 type ProductDeal struct {
 	ProductID pgtype.UUID        `json:"product_id"`
 	CouponID  pgtype.UUID        `json:"coupon_id"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type ProductGallery struct {
+	ProductID pgtype.UUID        `json:"product_id"`
+	MediaID   pgtype.UUID        `json:"media_id"`
 	Position  int32              `json:"position"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }

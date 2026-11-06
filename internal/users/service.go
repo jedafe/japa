@@ -873,10 +873,12 @@ func normalizeCountryCode(s string) string {
 
 // normalizeInterests cleans a requested interests list for storage (§87):
 // trims each entry, drops blanks, dedupes case-insensitively, and enforces
-// the 10-item / 40-char caps. An empty result stores NULL (clears the list).
+// the 10-item / 40-char caps. An empty result returns a non-nil empty
+// slice — the upsert treats NULL as "preserve" so clearing requires an
+// explicit empty array.
 func normalizeInterests(in []string) ([]string, error) {
 	if len(in) == 0 {
-		return nil, nil
+		return []string{}, nil
 	}
 	if len(in) > 10 {
 		return nil, fmt.Errorf("%w: interests is limited to 10 items", errpkg.ErrInvalid)
@@ -899,7 +901,7 @@ func normalizeInterests(in []string) ([]string, error) {
 		out = append(out, v)
 	}
 	if len(out) == 0 {
-		return nil, nil
+		return []string{}, nil
 	}
 	return out, nil
 }

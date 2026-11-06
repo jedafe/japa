@@ -715,6 +715,7 @@ func profileRowToPublicDTO(r ProfileRow) PublicProfileDTO {
 	dto := PublicProfileDTO{
 		UserID:    r.UserID.String(),
 		UpdatedAt: formatTs(r.JapaStageUpdated),
+		Verified:  r.Verified,
 	}
 	if r.Username != nil {
 		dto.Username = *r.Username

@@ -71,7 +71,7 @@
 	<img
 		src="/illustrations/japa-stage-hero.webp"
 		alt=""
-		class="absolute bottom-0 right-0 h-[105%] w-auto object-contain object-bottom"
+		class="absolute bottom-0 right-0 h-full w-auto object-contain object-bottom"
 		loading="eager"
 		decoding="async"
 	/>
