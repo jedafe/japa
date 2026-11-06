@@ -373,6 +373,24 @@ func (h *Handlers) GetComparisonType(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
+// GetComparisonTypeFields serves GET /api/v1/jce/comparison-types/{id}/fields —
+// the Sub-spec 6 dimension pool for the /compare picker.
+func (h *Handlers) GetComparisonTypeFields(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid type ID")
+		return
+	}
+
+	pool, err := h.Service.ListComparisonTypeFieldPool(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"groups": pool}})
+}
+
 // UpdateComparisonType handles PATCH /api/v1/comparisons/types/{id}.
 func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
@@ -387,13 +405,14 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var input struct {
-		Name         string          `json:"name"`
-		Slug         string          `json:"slug"`
-		Description  string          `json:"description"`
-		Icon         string          `json:"icon"`
-		FieldGroupID string          `json:"field_group_id"`
-		ItemLabel    string          `json:"item_label"`
-		Config       json.RawMessage `json:"config"`
+		Name          string          `json:"name"`
+		Slug          string          `json:"slug"`
+		Description   string          `json:"description"`
+		Icon          string          `json:"icon"`
+		FieldGroupID  string          `json:"field_group_id"`
+		ItemLabel     string          `json:"item_label"`
+		Config        json.RawMessage `json:"config"`
+		FieldGroupIDs *[]string       `json:"field_group_ids"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -415,13 +434,14 @@ func (h *Handlers) UpdateComparisonType(w http.ResponseWriter, r *http.Request) 
 	}
 
 	result, err := h.Service.UpdateComparisonType(r.Context(), id, UpdateComparisonTypeInput{
-		Name:         input.Name,
-		Slug:         input.Slug,
-		Description:  input.Description,
-		Icon:         input.Icon,
-		FieldGroupID: fieldGroupID,
-		ItemLabel:    input.ItemLabel,
-		Config:       input.Config,
+		Name:          input.Name,
+		Slug:          input.Slug,
+		Description:   input.Description,
+		Icon:          input.Icon,
+		FieldGroupID:  fieldGroupID,
+		ItemLabel:     input.ItemLabel,
+		Config:        input.Config,
+		FieldGroupIDs: input.FieldGroupIDs,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -1003,6 +1023,7 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 		Label         string `json:"label"`
 		DimensionType string `json:"dimension_type"`
 		Position      int32  `json:"position"`
+		FieldID       string `json:"field_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1030,6 +1051,7 @@ func (h *Handlers) CreateComparisonDimension(w http.ResponseWriter, r *http.Requ
 		Label:         input.Label,
 		DimensionType: input.DimensionType,
 		Position:      input.Position,
+		FieldID:       input.FieldID,
 	})
 	if err != nil {
 		handleServiceError(w, err)

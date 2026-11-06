@@ -199,6 +199,8 @@ type createJCEComparisonBody struct {
 	Depth      string        `json:"depth"`
 	Items      []jceItemBody `json:"items"`
 	Dimensions []string      `json:"dimensions"`
+	FieldIDs   []string      `json:"field_ids"`
+	GroupIDs   []string      `json:"group_ids"`
 	Config     any           `json:"config"`
 	// Optional journey targeting for the backing content row (§14 / §71).
 	JourneyStage  *string `json:"journey_stage"`
@@ -323,6 +325,8 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 		Depth:         depth,
 		Items:         items,
 		Dimensions:    body.Dimensions,
+		FieldIDs:      body.FieldIDs,
+		GroupIDs:      body.GroupIDs,
 		Config:        config,
 		JourneyStage:  body.JourneyStage,
 		VisaRoute:     body.VisaRoute,
@@ -775,11 +779,13 @@ func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.R
 	}
 
 	var req struct {
-		Token   string `json:"token"`
-		Title   string `json:"title"`
-		Body    string `json:"body"`
-		SpaceID string `json:"space_id"`
-		TypeID  string `json:"type_id"`
+		Token    string   `json:"token"`
+		Title    string   `json:"title"`
+		Body     string   `json:"body"`
+		SpaceID  string   `json:"space_id"`
+		TypeID   string   `json:"type_id"`
+		FieldIDs []string `json:"field_ids"`
+		GroupIDs []string `json:"group_ids"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -793,9 +799,11 @@ func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.R
 	}
 
 	input := CreateJCEComparisonInput{
-		Title: req.Title,
-		Body:  req.Body,
-		Depth: DepthQuick,
+		Title:    req.Title,
+		Body:     req.Body,
+		Depth:    DepthQuick,
+		FieldIDs: req.FieldIDs,
+		GroupIDs: req.GroupIDs,
 	}
 	if req.SpaceID != "" {
 		if err := input.SpaceID.Scan(req.SpaceID); err != nil {

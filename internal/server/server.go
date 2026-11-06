@@ -5074,6 +5074,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.create")).
 					Post("/jce/comparison-types", comparisonHandlers.CreateComparisonType)
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/comparison-types/{slug}", comparisonHandlers.GetComparisonType)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/jce/comparison-types/{id}/fields", comparisonHandlers.GetComparisonTypeFields)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.edit")).
 					Patch("/jce/comparison-types/{id}", comparisonHandlers.UpdateComparisonType)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.type.delete")).
