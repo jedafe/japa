@@ -1738,7 +1738,7 @@ func (q *Queries) GetScholarshipForWiki(ctx context.Context, slug string) (GetSc
 
 const getSpaceBySlugKind = `-- name: GetSpaceBySlugKind :one
 SELECT s.id FROM spaces s
-JOIN space_types st ON st.id = s.type_id
+JOIN space_types st ON st.id = s.space_type_id
 WHERE s.slug = $1 AND st.slug = $2 AND s.deleted_at IS NULL
 `
 
@@ -2748,7 +2748,7 @@ func (q *Queries) ListScholarshipsForWiki(ctx context.Context, spaceID pgtype.UU
 
 const listSpacesByTypeKind = `-- name: ListSpacesByTypeKind :many
 SELECT s.id, s.slug, s.name FROM spaces s
-JOIN space_types st ON st.id = s.type_id
+JOIN space_types st ON st.id = s.space_type_id
 WHERE st.slug = $1 AND s.deleted_at IS NULL
 ORDER BY s.name LIMIT 500
 `

@@ -1118,7 +1118,7 @@ RETURNING slug;
 -- name: GetSpaceBySlugKind :one
 -- Resolve a hosting space by slug + type slug (university for offerings).
 SELECT s.id FROM spaces s
-JOIN space_types st ON st.id = s.type_id
+JOIN space_types st ON st.id = s.space_type_id
 WHERE s.slug = @slug AND st.slug = @type_slug AND s.deleted_at IS NULL;
 
 -- name: CreateOfferingForWiki :one
@@ -1154,6 +1154,6 @@ RETURNING slug;
 -- name: ListSpacesByTypeKind :many
 -- Picker source for entity create forms (universities, countries).
 SELECT s.id, s.slug, s.name FROM spaces s
-JOIN space_types st ON st.id = s.type_id
+JOIN space_types st ON st.id = s.space_type_id
 WHERE st.slug = @type_slug AND s.deleted_at IS NULL
 ORDER BY s.name LIMIT 500;
