@@ -39,7 +39,7 @@ var kindListSources = map[string]kindListSource{
 		"visa_routes", "id", "name", "slug", "is_active = true",
 	},
 	"organization": {
-		"organizations", "id", "name", "slug", "deleted_at IS NULL",
+		"organizations", "id", "name", "slug", "deleted_at IS NULL AND status = 'active'",
 	},
 	"bank": {
 		"banks", "id", "name", "slug", "is_active = true",
