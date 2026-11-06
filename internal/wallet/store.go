@@ -522,3 +522,9 @@ func (s *Store) listCreditPurchases(ctx context.Context, p gen.ListCreditPurchas
 
 	return rows, nil
 }
+
+// countCreditPurchases returns the total credit purchase count matching the
+// same filters — admin list pagination meta (Rule 5).
+func (s *Store) countCreditPurchases(ctx context.Context, p gen.CountCreditPurchasesParams) (int64, error) {
+	return s.read.CountCreditPurchases(ctx, p)
+}

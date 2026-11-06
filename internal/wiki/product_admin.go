@@ -175,8 +175,16 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 		Name           string `json:"name"`
 		Title          string `json:"title"`
 		Language       string `json:"language"`
-		UniversitySlug string `json:"university_slug"`
-		ProgramSlug    string `json:"program_slug"`
+		UniversitySlug  string   `json:"university_slug"`
+		UniversitySlugs []string `json:"university_slugs"`
+		ProgramSlug     string   `json:"program_slug"`
+		HostSlug        string   `json:"host_slug"`
+		DestinationSlug string   `json:"destination_slug"`
+		VisaCategory    string   `json:"visa_category"`
+		CountryCode     string   `json:"country_code"`
+		Country         string   `json:"country"`
+		SourceURL       string   `json:"source_url"`
+		GovSourceURL    string   `json:"gov_source_url"`
 		Tagline        string `json:"tagline"`
 		WebsiteURL     string `json:"website_url"`
 		PricingModel   string `json:"pricing_model"`
@@ -234,13 +242,14 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 			return
 		}
 	case "course":
-		if body.UniversitySlug == "" || body.ProgramSlug == "" {
-			errpkg.WriteError(w, http.StatusBadRequest, "missing_parents", "university_slug and program_slug are required for courses")
-			return
+		// Universities are multiselect — one offering per selected uni
+		// (uni-prefixed slugs like unilag-bsc-cs).
+		uniSlugs := body.UniversitySlugs
+		if len(uniSlugs) == 0 && body.UniversitySlug != "" {
+			uniSlugs = []string{body.UniversitySlug}
 		}
-		uni, err := h.service.store.read.GetSpaceBySlugKind(ctx, gen.GetSpaceBySlugKindParams{Slug: body.UniversitySlug, TypeSlug: "university"})
-		if err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "university_not_found", "University not found")
+		if len(uniSlugs) == 0 || body.ProgramSlug == "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_parents", "university_slugs and program_slug are required for courses")
 			return
 		}
 		prog, err := h.service.store.read.GetProgramForWiki(ctx, body.ProgramSlug)
@@ -248,8 +257,74 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 			errpkg.WriteError(w, http.StatusBadRequest, "program_not_found", "Program not found")
 			return
 		}
-		if _, err := h.service.store.write.CreateOfferingForWiki(ctx, gen.CreateOfferingForWikiParams{
-			CourseID: prog.ID, UniversityID: uni, Slug: body.Slug,
+		created := []string{}
+		for _, uslug := range uniSlugs {
+			uni, err := h.service.store.read.GetSpaceBySlugKind(ctx, gen.GetSpaceBySlugKindParams{Slug: uslug, TypeSlug: "university"})
+			if err != nil {
+				continue // skip unknown universities rather than fail the batch
+			}
+			oslug := body.Slug
+			if len(uniSlugs) > 1 {
+				oslug = uslug + "-" + body.Slug
+			}
+			if _, err := h.service.store.write.CreateOfferingForWiki(ctx, gen.CreateOfferingForWikiParams{
+				CourseID: prog.ID, UniversityID: uni, Slug: oslug,
+			}); err == nil {
+				created = append(created, oslug)
+			}
+		}
+		if len(created) == 0 {
+			errpkg.WriteError(w, http.StatusBadRequest, "university_not_found", "No matching universities")
+			return
+		}
+		out["created"] = created
+		out["slug"] = created[0]
+
+	case "embassy":
+		host, err := h.service.store.read.GetSpaceBySlugKind(ctx, gen.GetSpaceBySlugKindParams{Slug: body.HostSlug, TypeSlug: "country"})
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "host_not_found", "Host country not found")
+			return
+		}
+		if _, err := h.service.store.write.CreateEmbassyForWiki(ctx, gen.CreateEmbassyForWikiParams{
+			Name: name, Slug: body.Slug, HostSpaceID: host,
+		}); err != nil {
+			h.failEntityCreate(w, typeSlug, err)
+			return
+		}
+
+	case "bank":
+		var geo pgtype.UUID
+		if body.HostSlug != "" {
+			if g, err := h.service.store.read.GetSpaceBySlugKind(ctx, gen.GetSpaceBySlugKindParams{Slug: body.HostSlug, TypeSlug: "country"}); err == nil {
+				geo = g
+			}
+		}
+		if _, err := h.service.store.write.CreateBankForWiki(ctx, gen.CreateBankForWikiParams{
+			Name: name, Slug: body.Slug, GeoSpaceID: geo, CountryCode: strPtr(body.CountryCode),
+		}); err != nil {
+			h.failEntityCreate(w, typeSlug, err)
+			return
+		}
+
+	case "visa_route":
+		dest, err := h.service.store.read.GetSpaceBySlugKind(ctx, gen.GetSpaceBySlugKindParams{Slug: body.DestinationSlug, TypeSlug: "country"})
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "destination_not_found", "Destination country not found")
+			return
+		}
+		if _, err := h.service.store.write.CreateVisaRouteForWiki(ctx, gen.CreateVisaRouteForWikiParams{
+			Name: name, Slug: body.Slug, DestinationSpaceID: dest,
+			VisaCategory: body.VisaCategory, GovSourceUrl: strPtr(body.GovSourceURL),
+		}); err != nil {
+			h.failEntityCreate(w, typeSlug, err)
+			return
+		}
+
+	case "scholarship":
+		if _, err := h.service.store.write.CreateScholarshipForWiki(ctx, gen.CreateScholarshipForWikiParams{
+			Title: name, Slug: body.Slug,
+			SourceUrl: strPtr(body.SourceURL), Country: strPtr(body.Country),
 		}); err != nil {
 			h.failEntityCreate(w, typeSlug, err)
 			return
@@ -326,4 +401,25 @@ func (h *Handlers) HandleSetProductProvider(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
+}
+
+// HandleListPickerSpaces serves GET /wiki/pickers/spaces?type={type_slug} —
+// university/country option lists for the entity create forms.
+func (h *Handlers) HandleListPickerSpaces(w http.ResponseWriter, r *http.Request) {
+	typeSlug := r.URL.Query().Get("type")
+	if typeSlug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "type_required", "type query param required")
+		return
+	}
+	rows, err := h.service.store.read.ListSpacesByTypeKind(r.Context(), typeSlug)
+	if err != nil {
+		slog.Error("wiki: picker spaces failed", "type", typeSlug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to list spaces")
+		return
+	}
+	items := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, map[string]any{"id": row.ID.String(), "slug": row.Slug, "name": row.Name})
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": items}})
 }

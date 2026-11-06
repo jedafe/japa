@@ -6858,5 +6858,13 @@
 	"wiki.entities.fld_language": "Language",
 	"wiki.entities.fld_categories": "Categories — one per line, slug: Label",
 	"common.creating": "Creating…",
-	"common.create": "Create"
+	"common.create": "Create",
+	"wiki.entities.fld_universities": "Universities",
+	"wiki.entities.fld_host": "Host country",
+	"wiki.entities.fld_destination": "Destination country",
+	"wiki.entities.fld_country": "Country",
+	"wiki.entities.fld_country_code": "Country code",
+	"wiki.entities.fld_visa_category": "Visa category",
+	"wiki.entities.fld_gov_url": "Gov source URL",
+	"wiki.entities.fld_source_url": "Source URL"
 }

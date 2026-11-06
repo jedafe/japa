@@ -22,9 +22,40 @@
 	let creating = $state(false);
 	let createErr = $state('');
 	let form = $state<Record<string, string>>({});
+	let uniPicks = $state<Set<string>>(new Set());
+	let universities = $state<{ slug: string; name: string }[]>([]);
+	let countries = $state<{ slug: string; name: string }[]>([]);
+	let programs = $state<{ slug: string; name: string }[]>([]);
 
 	const isProduct = $derived(data.kind === 'product');
 	const isCourse = $derived(data.kind === 'course');
+	const isEmbassy = $derived(data.kind === 'embassy');
+	const isBank = $derived(data.kind === 'bank');
+	const isVisa = $derived(data.kind === 'visa_route');
+	const isScholar = $derived(data.kind === 'scholarship');
+	const needsCountry = $derived(isEmbassy || isVisa || isScholar || isBank);
+
+	async function openCreate() {
+		showCreate = true;
+		if (isCourse) {
+			const [us, ps] = await Promise.all([
+				api.get<{ items: { slug: string; name: string }[] }>('/wiki/pickers/spaces?type=university'),
+				api.get<{ items: { slug: string; name: string }[] }>('/wiki/entity-kinds/program/entities?limit=200')
+			]);
+			universities = us.data?.items ?? [];
+			programs = (ps.data?.items ?? []).map((p: any) => ({ slug: p.slug, name: p.name }));
+		}
+		if (needsCountry) {
+			const cs = await api.get<{ items: { slug: string; name: string }[] }>('/wiki/pickers/spaces?type=country');
+			countries = cs.data?.items ?? [];
+		}
+	}
+
+	function toggleUni(slug: string) {
+		const next = new Set(uniPicks);
+		next.has(slug) ? next.delete(slug) : next.add(slug);
+		uniPicks = next;
+	}
 
 	async function submitCreate() {
 		createErr = '';
@@ -33,9 +64,24 @@
 		const body: Record<string, unknown> = { slug: form.slug.trim() };
 		if (isProduct) body.name = form.name ?? form.slug;
 		else if (isCourse) {
-			body.slug = form.slug;
-			body.university_slug = form.university_slug;
+			body.university_slugs = [...uniPicks];
 			body.program_slug = form.program_slug;
+		} else if (isEmbassy) {
+			body.name = form.name;
+			body.host_slug = form.country;
+		} else if (isBank) {
+			body.name = form.name;
+			body.host_slug = form.country || undefined;
+			body.country_code = form.country_code || undefined;
+		} else if (isVisa) {
+			body.name = form.name;
+			body.destination_slug = form.country;
+			body.visa_category = form.visa_category;
+			body.gov_source_url = form.gov_source_url || undefined;
+		} else if (isScholar) {
+			body.name = form.name;
+			body.country = form.country;
+			body.source_url = form.source_url || undefined;
 		} else {
 			body.title = form.name ?? form.slug;
 			body.language = form.language || 'en';
@@ -87,7 +133,7 @@
 			{#if !showCreate}
 				<button
 					type="button"
-					onclick={() => (showCreate = true)}
+					onclick={openCreate}
 					class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary)]"
 				>
 					<Plus size={13} /> {t('wiki.entities.new_entry', 'New {label}').replace('{label}', label)}
@@ -101,27 +147,78 @@
 					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 						<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
 							{t('wiki.entities.fld_slug', 'Slug')}
-							<input bind:value={form.slug} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" placeholder="my-{data.slug}" />
+							<input bind:value={form.slug} class="inp" placeholder="my-{data.slug}" />
 						</label>
 						{#if !isCourse}
 							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
 								{t('wiki.entities.fld_name', 'Name')}
-								<input bind:value={form.name} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" />
-							</label>
-						{:else}
-							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
-								{t('wiki.entities.fld_university', 'University slug')}
-								<input bind:value={form.university_slug} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" placeholder="university-of-lagos" />
-							</label>
-							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
-								{t('wiki.entities.fld_program', 'Program slug')}
-								<input bind:value={form.program_slug} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" placeholder="bsc-computer-science" />
+								<input bind:value={form.name} class="inp" />
 							</label>
 						{/if}
-						{#if !isProduct && !isCourse}
+						{#if isCourse}
+							<fieldset class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)] sm:col-span-2">
+								<legend class="mb-1">{t('wiki.entities.fld_universities', 'Universities')}</legend>
+								<div class="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] p-2">
+									{#each universities as u (u.slug)}
+										<label class="flex items-center gap-2 px-1 py-0.5 text-sm text-[var(--color-text)]">
+											<input type="checkbox" checked={uniPicks.has(u.slug)} onchange={() => toggleUni(u.slug)} />
+											{u.name}
+										</label>
+									{/each}
+								</div>
+							</fieldset>
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{t('wiki.entities.fld_program', 'Program')}
+								<select bind:value={form.program_slug} class="inp">
+									<option value="">—</option>
+									{#each programs as pr (pr.slug)}<option value={pr.slug}>{pr.name}</option>{/each}
+								</select>
+							</label>
+						{/if}
+						{#if needsCountry && !isBank}
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{isEmbassy ? t('wiki.entities.fld_host', 'Host country') : isVisa ? t('wiki.entities.fld_destination', 'Destination country') : t('wiki.entities.fld_country', 'Country')}
+								<select bind:value={form.country} class="inp">
+									<option value="">—</option>
+									{#each countries as c (c.slug)}<option value={c.slug}>{c.name}</option>{/each}
+								</select>
+							</label>
+						{/if}
+						{#if isBank}
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{t('wiki.entities.fld_country', 'Country')}
+								<select bind:value={form.country} class="inp">
+									<option value="">—</option>
+									{#each countries as c (c.slug)}<option value={c.slug}>{c.name}</option>{/each}
+								</select>
+							</label>
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{t('wiki.entities.fld_country_code', 'Country code')}
+								<input bind:value={form.country_code} class="inp" placeholder="NG" maxlength="2" />
+							</label>
+						{/if}
+						{#if isVisa}
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{t('wiki.entities.fld_visa_category', 'Visa category')}
+								<select bind:value={form.visa_category} class="inp">
+									{#each ['student','work','tourist','business','family','pr'] as vc}<option value={vc}>{vc}</option>{/each}
+								</select>
+							</label>
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{t('wiki.entities.fld_gov_url', 'Gov source URL')}
+								<input bind:value={form.gov_source_url} class="inp" placeholder="https://…" />
+							</label>
+						{/if}
+						{#if isScholar}
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{t('wiki.entities.fld_source_url', 'Source URL')}
+								<input bind:value={form.source_url} class="inp" placeholder="https://…" />
+							</label>
+						{/if}
+						{#if !isProduct && !isCourse && !isEmbassy && !isBank && !isVisa && !isScholar}
 							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
 								{t('wiki.entities.fld_language', 'Language')}
-								<input bind:value={form.language} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" placeholder="en" />
+								<input bind:value={form.language} class="inp" placeholder="en" />
 							</label>
 						{/if}
 					</div>
@@ -182,3 +279,19 @@
 		{/if}
 	{/if}
 </div>
+
+<style>
+	.inp {
+		border-radius: var(--radius);
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		padding: 0.5rem 0.75rem;
+		font-size: 0.875rem;
+		color: var(--color-text);
+		outline: none;
+	}
+	.inp:focus {
+		border-color: var(--color-primary);
+		opacity: 0.9;
+	}
+</style>

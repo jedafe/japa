@@ -1125,3 +1125,35 @@ WHERE s.slug = @slug AND st.slug = @type_slug AND s.deleted_at IS NULL;
 INSERT INTO university_course_offerings (course_id, university_id, slug, is_published, editorial_overrides)
 VALUES (@course_id, @university_id, @slug, true, '{}')
 RETURNING slug;
+
+-- name: CreateEmbassyForWiki :one
+INSERT INTO embassies (name, slug, host_space_id, is_active)
+VALUES (@name, @slug, @host_space_id, true)
+RETURNING slug;
+
+-- name: CreateBankForWiki :one
+INSERT INTO banks (name, slug, geo_space_id, country_code, is_active)
+VALUES (@name, @slug, @geo_space_id, @country_code, true)
+RETURNING slug;
+
+-- name: CreateVisaRouteForWiki :one
+INSERT INTO visa_routes (name, slug, destination_space_id, visa_category,
+    gov_source_url, status, ai_generated, is_active)
+VALUES (@name, @slug, @destination_space_id, @visa_category,
+    sqlc.narg(gov_source_url), 'active', false, true)
+RETURNING slug;
+
+-- name: CreateScholarshipForWiki :one
+INSERT INTO scholarships (title, slug, source_url, source_type, trust_level,
+    country, fields_of_study, eligible_countries, funding,
+    required_documents, language_requirements, last_verified_at)
+VALUES (@title, @slug, sqlc.narg(source_url), 'manual', 0,
+    sqlc.narg(country), '{}', '{}', '{}', '{}', '{}', now())
+RETURNING slug;
+
+-- name: ListSpacesByTypeKind :many
+-- Picker source for entity create forms (universities, countries).
+SELECT s.id, s.slug, s.name FROM spaces s
+JOIN space_types st ON st.id = s.type_id
+WHERE st.slug = @type_slug AND s.deleted_at IS NULL
+ORDER BY s.name LIMIT 500;

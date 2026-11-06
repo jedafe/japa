@@ -665,6 +665,50 @@ func (q *Queries) CountWikiRevisionsByTarget(ctx context.Context, arg CountWikiR
 	return count, err
 }
 
+const createBankForWiki = `-- name: CreateBankForWiki :one
+INSERT INTO banks (name, slug, geo_space_id, country_code, is_active)
+VALUES ($1, $2, $3, $4, true)
+RETURNING slug
+`
+
+type CreateBankForWikiParams struct {
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	GeoSpaceID  pgtype.UUID `json:"geo_space_id"`
+	CountryCode *string     `json:"country_code"`
+}
+
+func (q *Queries) CreateBankForWiki(ctx context.Context, arg CreateBankForWikiParams) (string, error) {
+	row := q.db.QueryRow(ctx, createBankForWiki,
+		arg.Name,
+		arg.Slug,
+		arg.GeoSpaceID,
+		arg.CountryCode,
+	)
+	var slug string
+	err := row.Scan(&slug)
+	return slug, err
+}
+
+const createEmbassyForWiki = `-- name: CreateEmbassyForWiki :one
+INSERT INTO embassies (name, slug, host_space_id, is_active)
+VALUES ($1, $2, $3, true)
+RETURNING slug
+`
+
+type CreateEmbassyForWikiParams struct {
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	HostSpaceID pgtype.UUID `json:"host_space_id"`
+}
+
+func (q *Queries) CreateEmbassyForWiki(ctx context.Context, arg CreateEmbassyForWikiParams) (string, error) {
+	row := q.db.QueryRow(ctx, createEmbassyForWiki, arg.Name, arg.Slug, arg.HostSpaceID)
+	var slug string
+	err := row.Scan(&slug)
+	return slug, err
+}
+
 const createEntityWikiPage = `-- name: CreateEntityWikiPage :one
 INSERT INTO wiki_pages (space_id, entity_type, entity_id, slug, title, category,
                         is_active, created_by, page_template_id, field_group_id)
@@ -827,6 +871,63 @@ type CreateProgramForWikiParams struct {
 
 func (q *Queries) CreateProgramForWiki(ctx context.Context, arg CreateProgramForWikiParams) (string, error) {
 	row := q.db.QueryRow(ctx, createProgramForWiki, arg.Title, arg.Slug, arg.Language)
+	var slug string
+	err := row.Scan(&slug)
+	return slug, err
+}
+
+const createScholarshipForWiki = `-- name: CreateScholarshipForWiki :one
+INSERT INTO scholarships (title, slug, source_url, source_type, trust_level,
+    country, fields_of_study, eligible_countries, funding,
+    required_documents, language_requirements, last_verified_at)
+VALUES ($1, $2, $3, 'manual', 0,
+    $4, '{}', '{}', '{}', '{}', '{}', now())
+RETURNING slug
+`
+
+type CreateScholarshipForWikiParams struct {
+	Title     string  `json:"title"`
+	Slug      string  `json:"slug"`
+	SourceUrl *string `json:"source_url"`
+	Country   *string `json:"country"`
+}
+
+func (q *Queries) CreateScholarshipForWiki(ctx context.Context, arg CreateScholarshipForWikiParams) (string, error) {
+	row := q.db.QueryRow(ctx, createScholarshipForWiki,
+		arg.Title,
+		arg.Slug,
+		arg.SourceUrl,
+		arg.Country,
+	)
+	var slug string
+	err := row.Scan(&slug)
+	return slug, err
+}
+
+const createVisaRouteForWiki = `-- name: CreateVisaRouteForWiki :one
+INSERT INTO visa_routes (name, slug, destination_space_id, visa_category,
+    gov_source_url, status, ai_generated, is_active)
+VALUES ($1, $2, $3, $4,
+    $5, 'active', false, true)
+RETURNING slug
+`
+
+type CreateVisaRouteForWikiParams struct {
+	Name               string      `json:"name"`
+	Slug               string      `json:"slug"`
+	DestinationSpaceID pgtype.UUID `json:"destination_space_id"`
+	VisaCategory       string      `json:"visa_category"`
+	GovSourceUrl       *string     `json:"gov_source_url"`
+}
+
+func (q *Queries) CreateVisaRouteForWiki(ctx context.Context, arg CreateVisaRouteForWikiParams) (string, error) {
+	row := q.db.QueryRow(ctx, createVisaRouteForWiki,
+		arg.Name,
+		arg.Slug,
+		arg.DestinationSpaceID,
+		arg.VisaCategory,
+		arg.GovSourceUrl,
+	)
 	var slug string
 	err := row.Scan(&slug)
 	return slug, err
@@ -2635,6 +2736,40 @@ func (q *Queries) ListScholarshipsForWiki(ctx context.Context, spaceID pgtype.UU
 	for rows.Next() {
 		var i ListScholarshipsForWikiRow
 		if err := rows.Scan(&i.ID, &i.Slug, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSpacesByTypeKind = `-- name: ListSpacesByTypeKind :many
+SELECT s.id, s.slug, s.name FROM spaces s
+JOIN space_types st ON st.id = s.type_id
+WHERE st.slug = $1 AND s.deleted_at IS NULL
+ORDER BY s.name LIMIT 500
+`
+
+type ListSpacesByTypeKindRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+	Name string      `json:"name"`
+}
+
+// Picker source for entity create forms (universities, countries).
+func (q *Queries) ListSpacesByTypeKind(ctx context.Context, typeSlug string) ([]ListSpacesByTypeKindRow, error) {
+	rows, err := q.db.Query(ctx, listSpacesByTypeKind, typeSlug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpacesByTypeKindRow
+	for rows.Next() {
+		var i ListSpacesByTypeKindRow
+		if err := rows.Scan(&i.ID, &i.Slug, &i.Name); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

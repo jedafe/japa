@@ -1146,6 +1146,19 @@ type CreateOrUpdateActivityRuleInput struct {
 	Description *string
 }
 
+// validateRuleCaps rejects negative cap values — nil means "no cap" but a
+// negative cap is unambiguously an invalid config that would silently
+// suppress all earning for the rule.
+func validateRuleCaps(input CreateOrUpdateActivityRuleInput) error {
+	if input.CapPerDay != nil && *input.CapPerDay < 0 {
+		return fmt.Errorf("%w: cap_per_day cannot be negative", errpkg.ErrInvalid)
+	}
+	if input.CapPerWeek != nil && *input.CapPerWeek < 0 {
+		return fmt.Errorf("%w: cap_per_week cannot be negative", errpkg.ErrInvalid)
+	}
+	return nil
+}
+
 // CreateOrUpdateActivityRule creates or updates an activity rule.
 func (s *Service) CreateOrUpdateActivityRule(ctx context.Context, input CreateOrUpdateActivityRuleInput) (gen.ActivityPointRule, error) {
 	if input.ActivityKey == "" {
@@ -1156,6 +1169,10 @@ func (s *Service) CreateOrUpdateActivityRule(ctx context.Context, input CreateOr
 	// instead of letting the admin believe it works.
 	if !IsEmittedActivityKey(input.ActivityKey) {
 		return gen.ActivityPointRule{}, fmt.Errorf("%w: activity_key %q is not emitted by any platform activity", errpkg.ErrInvalid, input.ActivityKey)
+	}
+
+	if err := validateRuleCaps(input); err != nil {
+		return gen.ActivityPointRule{}, err
 	}
 
 	return s.store.upsertActivityRule(ctx, gen.UpsertActivityRuleParams{
@@ -1179,6 +1196,10 @@ func (s *Service) ToggleActivityRule(ctx context.Context, id pgtype.UUID) (gen.A
 // method updates the rule identified by {id} — the {id} from the URL route
 // parameter — so PATCH /admin/wallet/rules/{id} updates the correct rule.
 func (s *Service) UpdateActivityRuleByID(ctx context.Context, id pgtype.UUID, input CreateOrUpdateActivityRuleInput) (gen.ActivityPointRule, error) {
+	if err := validateRuleCaps(input); err != nil {
+		return gen.ActivityPointRule{}, err
+	}
+
 	return s.store.updateActivityRuleByID(ctx, gen.UpdateActivityRuleByIDParams{
 		ID: id,
 

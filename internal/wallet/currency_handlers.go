@@ -478,13 +478,16 @@ func (h *Handlers) AdminListCreditPurchases(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	purchases, err := h.Service.listCreditPurchases(r.Context(), params)
+	purchases, count, err := h.Service.listCreditPurchases(r.Context(), params)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": orEmpty(purchases)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":  orEmpty(purchases),
+		"count": count,
+	})
 }
 
 // ---------------------------------------------------------------------------

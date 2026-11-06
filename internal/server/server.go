@@ -7991,6 +7991,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/wiki/e/{type_slug}/{entity}/{page_slug}", wikiHandlers.HandleGetEntityPage)
 				// §80: providers repeater source — review form + product CTAs.
 				r.Get("/wiki/e/{type_slug}/{entity}/providers", wikiHandlers.HandleListProductProviders)
+				// Picker options for entity create forms (universities, countries).
+				r.Get("/wiki/pickers/spaces", wikiHandlers.HandleListPickerSpaces)
 				// §80 Product Domain: create a product type — provisions the
 				// config layer of a new "kind" (wiki.manage).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).

@@ -164,13 +164,29 @@ func (s *Service) setPreferredCurrency(ctx context.Context, userID pgtype.UUID, 
 	return s.store.setUserPreferredCurrency(ctx, userID, currencyCode)
 }
 
-// listCreditPurchases returns credit purchase payment rows for admin viewing.
-func (s *Service) listCreditPurchases(ctx context.Context, p gen.ListCreditPurchasesParams) ([]gen.ListCreditPurchasesRow, error) {
+// listCreditPurchases returns credit purchase payment rows for admin viewing,
+// plus the total matching count for pagination meta.
+func (s *Service) listCreditPurchases(ctx context.Context, p gen.ListCreditPurchasesParams) ([]gen.ListCreditPurchasesRow, int64, error) {
 	if p.PageLimit <= 0 || p.PageLimit > MaxPageSize {
 		p.PageLimit = DefaultPageSize
 	}
 
-	return s.store.listCreditPurchases(ctx, p)
+	rows, err := s.store.listCreditPurchases(ctx, p)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	count, err := s.store.countCreditPurchases(ctx, gen.CountCreditPurchasesParams{
+		UserID:   p.UserID,
+		Currency: p.Currency,
+		FromDate: p.FromDate,
+		ToDate:   p.ToDate,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting credit purchases: %w", err)
+	}
+
+	return rows, count, nil
 }
 
 // purchaseCredits initiates a credit purchase by creating a payments row.

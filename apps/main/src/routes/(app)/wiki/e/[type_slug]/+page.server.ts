@@ -37,7 +37,7 @@ export const load: PageServerLoad = async (event) => {
 		if (err instanceof ApiError && err.status === 404) throw error(404);
 	}
 
-	const creatableKinds = ['product', 'program', 'course'];
+	const creatableKinds = ['product', 'program', 'course', 'embassy', 'bank', 'visa_route', 'scholarship'];
 	return {
 		kind: res.kind ?? kind,
 		slug: kind,

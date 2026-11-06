@@ -6743,5 +6743,13 @@
 	"wiki.entities.fld_language": "Langue",
 	"wiki.entities.fld_categories": "Catégories — une par ligne, slug : Libellé",
 	"common.creating": "Création…",
-	"common.create": "Créer"
+	"common.create": "Créer",
+	"wiki.entities.fld_universities": "Universités",
+	"wiki.entities.fld_host": "Pays hôte",
+	"wiki.entities.fld_destination": "Pays de destination",
+	"wiki.entities.fld_country": "Pays",
+	"wiki.entities.fld_country_code": "Code pays",
+	"wiki.entities.fld_visa_category": "Catégorie de visa",
+	"wiki.entities.fld_gov_url": "URL source gouv.",
+	"wiki.entities.fld_source_url": "URL source"
 }
