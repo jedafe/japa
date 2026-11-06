@@ -78,3 +78,58 @@ func (s *Store) getComparisonBySlugOrID(ctx context.Context, id pgtype.UUID, slu
 
 	return row, nil
 }
+
+// ---------------------------------------------------------------------------
+// Dimension pool helpers (§30 Sub-spec 6)
+// ---------------------------------------------------------------------------
+
+func (s *Store) listComparisonTypeFieldGroups(ctx context.Context, typeID pgtype.UUID) ([]gen.ListComparisonTypeFieldGroupsRow, error) {
+	rows, err := s.read.ListComparisonTypeFieldGroups(ctx, typeID)
+	if err != nil {
+		return nil, fmt.Errorf("listing comparison type field groups: %w", err)
+	}
+
+	return rows, nil
+}
+
+func (s *Store) listComparisonTypePoolFields(ctx context.Context, typeID pgtype.UUID) ([]gen.ListComparisonTypePoolFieldsRow, error) {
+	rows, err := s.read.ListComparisonTypePoolFields(ctx, typeID)
+	if err != nil {
+		return nil, fmt.Errorf("listing comparison type pool fields: %w", err)
+	}
+
+	return rows, nil
+}
+
+func (s *Store) listPoolFieldsByGroupIDs(ctx context.Context, typeID pgtype.UUID, ids []pgtype.UUID) ([]gen.ListPoolFieldsByGroupIDsRow, error) {
+	rows, err := s.read.ListPoolFieldsByGroupIDs(ctx, gen.ListPoolFieldsByGroupIDsParams{
+		TypeID:   typeID,
+		GroupIds: ids,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing pool fields by groups: %w", err)
+	}
+
+	return rows, nil
+}
+
+func (s *Store) countPoolFieldsByIDs(ctx context.Context, typeID pgtype.UUID, ids []pgtype.UUID) (int64, error) {
+	n, err := s.read.CountPoolFieldsByIDs(ctx, gen.CountPoolFieldsByIDsParams{
+		TypeID:   typeID,
+		FieldIds: ids,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting pool fields: %w", err)
+	}
+
+	return n, nil
+}
+
+func (s *Store) listCustomFieldsByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.ListCustomFieldsByIDsRow, error) {
+	rows, err := s.read.ListCustomFieldsByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("listing custom fields: %w", err)
+	}
+
+	return rows, nil
+}

@@ -53,6 +53,11 @@ type CreateJCEComparisonInput struct {
 	Depth      string // 'quick' or 'detailed'
 	Items      []JCEItemInput
 	Dimensions []string
+	// Sub-spec 6: dimension pool picks — mutually exclusive with Dimensions
+	// and with each other. FieldIDs selects individual custom_fields across
+	// the type's pool; GroupIDs selects whole pool groups.
+	FieldIDs   []string
+	GroupIDs   []string
 	Config     []byte // JSON metadata config
 	// Optional journey targeting for the backing content row — describes the
 	// journey the comparison covers, not the author's (§14 Global Template
@@ -361,15 +366,42 @@ func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, i
 		return JCEComparisonResult{}, fmt.Errorf("%w: too many items (max %d)", errpkg.ErrInvalid, typeCfg.MaxItemCount)
 	}
 
-	var autoFields []gen.ListCustomFieldsByGroupRow
+	var autoFields []dimensionField
 
-	if len(input.Dimensions) == 0 && typeDef != nil && typeDef.FieldGroupID.Valid {
+	switch {
+	case len(input.Dimensions) > 0 && (len(input.FieldIDs) > 0 || len(input.GroupIDs) > 0):
+		return JCEComparisonResult{}, fmt.Errorf("%w: dimensions is mutually exclusive with field_ids/group_ids", errpkg.ErrInvalid)
+	case len(input.FieldIDs) > 0 && len(input.GroupIDs) > 0:
+		return JCEComparisonResult{}, fmt.Errorf("%w: field_ids and group_ids are mutually exclusive", errpkg.ErrInvalid)
+	case len(input.FieldIDs) > 0:
+		if !input.TypeID.Valid {
+			return JCEComparisonResult{}, fmt.Errorf("%w: field_ids requires a comparison type", errpkg.ErrInvalid)
+		}
+
+		fields, ferr := s.poolFieldsByIDs(ctx, input.TypeID, input.FieldIDs)
+		if ferr != nil {
+			return JCEComparisonResult{}, ferr
+		}
+
+		autoFields = fields
+	case len(input.GroupIDs) > 0:
+		if !input.TypeID.Valid {
+			return JCEComparisonResult{}, fmt.Errorf("%w: group_ids requires a comparison type", errpkg.ErrInvalid)
+		}
+
+		fields, ferr := s.poolFieldsByGroups(ctx, input.TypeID, input.GroupIDs)
+		if ferr != nil {
+			return JCEComparisonResult{}, ferr
+		}
+
+		autoFields = fields
+	case len(input.Dimensions) == 0 && typeDef != nil && typeDef.FieldGroupID.Valid:
 		fields, ferr := s.cfSvc.ListFieldsByGroup(ctx, typeDef.FieldGroupID)
 		if ferr != nil {
 			return JCEComparisonResult{}, fmt.Errorf("listing field-group fields: %w", ferr)
 		}
 
-		autoFields = filterFieldsByConfigSections(fields, typeDef.Config)
+		autoFields = dimensionFieldsFromGroup(filterFieldsByConfigSections(fields, typeDef.Config))
 	}
 
 	// Enforce the per-tier daily creation quota

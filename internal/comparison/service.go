@@ -85,15 +85,33 @@ func (s *Service) CreateComparisonType(ctx context.Context, input CreateComparis
 		return gen.CreateComparisonTypeRow{}, fmt.Errorf("marshalling comparison type config: %w", err)
 	}
 
-	return s.store.createComparisonType(ctx, gen.CreateComparisonTypeParams{
-		Name:         input.Name,
-		Slug:         input.Slug,
-		Description:  description,
-		Icon:         icon,
-		FieldGroupID: input.FieldGroupID,
-		ItemLabel:    input.ItemLabel,
-		IsSystem:     input.IsSystem,
-		Config:       config,
+	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.CreateComparisonTypeRow, error) {
+		row, err := q.CreateComparisonType(ctx, gen.CreateComparisonTypeParams{
+			Name:         input.Name,
+			Slug:         input.Slug,
+			Description:  description,
+			Icon:         icon,
+			FieldGroupID: input.FieldGroupID,
+			ItemLabel:    input.ItemLabel,
+			IsSystem:     input.IsSystem,
+			Config:       config,
+		})
+		if err != nil {
+			return row, err
+		}
+
+		// Sub-spec 6: the bound group is always the pool's default member.
+		if input.FieldGroupID.Valid {
+			if err := q.CreateComparisonTypeFieldGroup(ctx, gen.CreateComparisonTypeFieldGroupParams{
+				TypeID:    row.ID,
+				GroupID:   input.FieldGroupID,
+				IsDefault: true,
+			}); err != nil {
+				return row, fmt.Errorf("seeding dimension pool: %w", err)
+			}
+		}
+
+		return row, nil
 	})
 }
 
@@ -907,6 +925,11 @@ type UpdateComparisonTypeInput struct {
 	FieldGroupID pgtype.UUID
 	ItemLabel    string
 	Config       []byte
+	// FieldGroupIDs replaces the type's dimension pool when non-nil
+	// (Sub-spec 6): nil leaves the pool untouched, empty resets it to the
+	// bound group only. The bound FieldGroupID is always re-inserted as
+	// is_default.
+	FieldGroupIDs *[]string
 }
 
 // UpdateComparisonType updates an existing comparison type.
@@ -953,7 +976,7 @@ func (s *Service) UpdateComparisonType(ctx context.Context, id pgtype.UUID, inpu
 		return gen.UpdateComparisonTypeRow{}, fmt.Errorf("marshalling comparison type config: %w", err)
 	}
 
-	return s.store.updateComparisonType(ctx, gen.UpdateComparisonTypeParams{
+	row, err := s.store.updateComparisonType(ctx, gen.UpdateComparisonTypeParams{
 		ID: id,
 
 		Name:         input.Name,
@@ -964,6 +987,17 @@ func (s *Service) UpdateComparisonType(ctx context.Context, id pgtype.UUID, inpu
 		ItemLabel:    input.ItemLabel,
 		Config:       config,
 	})
+	if err != nil {
+		return row, err
+	}
+
+	if input.FieldGroupIDs != nil {
+		if err := s.replaceFieldGroupPool(ctx, id, *input.FieldGroupIDs); err != nil {
+			return row, err
+		}
+	}
+
+	return row, nil
 }
 
 // ErrComparisonTypeInUse is returned when a DeleteComparisonType is attempted
@@ -1262,10 +1296,74 @@ type CreateComparisonDimensionInput struct {
 	Label         string
 	DimensionType string
 	Position      int32
+	// FieldID binds a pool field post-create (Sub-spec 6): label,
+	// dimension_type, and source_field_id default from the field def.
+	FieldID string
 }
 
 // CreateComparisonDimension adds a new dimension to a comparison.
 func (s *Service) CreateComparisonDimension(ctx context.Context, input CreateComparisonDimensionInput) (gen.CreateComparisonDimensionRow, error) {
+	var sourceFieldID pgtype.UUID
+
+	if input.FieldID != "" {
+		fid, err := resolver.ParseUUID(input.FieldID)
+		if err != nil {
+			return gen.CreateComparisonDimensionRow{}, fmt.Errorf("%w: invalid field_id", errpkg.ErrInvalid)
+		}
+
+		fields, err := s.store.listCustomFieldsByIDs(ctx, []pgtype.UUID{fid})
+		if err != nil {
+			return gen.CreateComparisonDimensionRow{}, err
+		}
+
+		if len(fields) == 0 {
+			return gen.CreateComparisonDimensionRow{}, fmt.Errorf("%w: field not found", errpkg.ErrInvalid)
+		}
+
+		f := fields[0]
+
+		// Pool-validate against the comparison's type — resolved from the
+		// first typed item, same rule as promote (Sub-spec 6).
+		items, ierr := s.store.listComparisonItemsByContent(ctx, input.ContentID)
+		if ierr != nil {
+			return gen.CreateComparisonDimensionRow{}, ierr
+		}
+
+		var typeID pgtype.UUID
+
+		for _, it := range items {
+			if it.TypeID.Valid {
+				typeID = it.TypeID
+				break
+			}
+		}
+
+		if typeID.Valid {
+			n, cerr := s.store.countPoolFieldsByIDs(ctx, typeID, []pgtype.UUID{fid})
+			if cerr != nil {
+				return gen.CreateComparisonDimensionRow{}, cerr
+			}
+
+			if n == 0 {
+				return gen.CreateComparisonDimensionRow{}, fmt.Errorf("%w: field is outside this comparison's dimension pool", errpkg.ErrInvalid)
+			}
+		}
+
+		if input.Label == "" {
+			input.Label = f.Label
+		}
+
+		if input.DimensionType == "" {
+			input.DimensionType = fieldToDimensionType(f.FieldType, f.Options)
+		}
+
+		if input.DimensionType == "" {
+			return gen.CreateComparisonDimensionRow{}, fmt.Errorf("%w: field is not comparable", errpkg.ErrInvalid)
+		}
+
+		sourceFieldID = f.ID
+	}
+
 	if input.Label == "" {
 		return gen.CreateComparisonDimensionRow{}, errors.New("label is required")
 	}
@@ -1289,7 +1387,7 @@ func (s *Service) CreateComparisonDimension(ctx context.Context, input CreateCom
 		Label:         input.Label,
 		DimensionType: input.DimensionType,
 		Position:      input.Position,
-		SourceFieldID: pgtype.UUID{},
+		SourceFieldID: sourceFieldID,
 	})
 }
 
