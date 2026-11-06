@@ -74,7 +74,7 @@ func (r *productResolver) toItem(ctx context.Context, id pgtype.UUID, slug, name
 	if website != nil && *website != "" {
 		md["website_url"] = *website
 	}
-	md["field_values"] = customfields.EntityFieldValues(ctx, r.queries, "product:"+typeSlug, id)
+	md["field_values"] = customfields.EntityFieldValues(ctx, r.queries, typeSlug, id)
 	providers, _ := r.queries.ListProductProviders(ctx, id)
 	plist := make([]map[string]any, 0, len(providers))
 	for _, pp := range providers {
