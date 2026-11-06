@@ -1109,3 +1109,19 @@ SELECT id, slug, name FROM affiliate_providers WHERE slug = @slug AND is_active 
 
 -- name: GetDealForWiki :one
 SELECT id, slug, title AS name FROM coupons WHERE slug = @slug AND status = 'active';
+
+-- name: CreateProgramForWiki :one
+INSERT INTO university_course_catalog (title, slug, language, is_published)
+VALUES (@title, @slug, @language, true)
+RETURNING slug;
+
+-- name: GetSpaceBySlugKind :one
+-- Resolve a hosting space by slug + type slug (university for offerings).
+SELECT s.id FROM spaces s
+JOIN space_types st ON st.id = s.type_id
+WHERE s.slug = @slug AND st.slug = @type_slug AND s.deleted_at IS NULL;
+
+-- name: CreateOfferingForWiki :one
+INSERT INTO university_course_offerings (course_id, university_id, slug, is_published, editorial_overrides)
+VALUES (@course_id, @university_id, @slug, true, '{}')
+RETURNING slug;

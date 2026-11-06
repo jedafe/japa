@@ -7,7 +7,9 @@
 	import { EntityHero } from '$lib/components/ui';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
-	import { ChevronRight, Search, Table2 } from 'lucide-svelte';
+	import { api } from '$lib/api/client';
+	import { invalidateAll } from '$app/navigation';
+	import { ChevronRight, Plus, Search, Table2, X } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -16,6 +18,35 @@
 	let label = $derived(data.label ?? data.kind);
 	let pageCount = $derived(Math.max(1, Math.ceil(total / data.limit)));
 	let search = $state(data.q ?? '');
+	let showCreate = $state(false);
+	let creating = $state(false);
+	let createErr = $state('');
+	let form = $state<Record<string, string>>({});
+
+	const isProduct = $derived(data.kind === 'product');
+	const isCourse = $derived(data.kind === 'course');
+
+	async function submitCreate() {
+		createErr = '';
+		if (!form.slug?.trim()) { createErr = t('wiki.entities.err_slug', 'Slug is required'); return; }
+		creating = true;
+		const body: Record<string, unknown> = { slug: form.slug.trim() };
+		if (isProduct) body.name = form.name ?? form.slug;
+		else if (isCourse) {
+			body.slug = form.slug;
+			body.university_slug = form.university_slug;
+			body.program_slug = form.program_slug;
+		} else {
+			body.title = form.name ?? form.slug;
+			body.language = form.language || 'en';
+		}
+		const res = await api.post<{ slug?: string; href?: string }>(`/wiki/e/${data.slug}`, body);
+		creating = false;
+		if (res.error) { createErr = res.error.message || t('wiki.entities.err_create', 'Create failed'); return; }
+		showCreate = false;
+		form = {};
+		await invalidateAll();
+	}
 
 	function applySearch() {
 		const url = new URL(page.url);
@@ -50,6 +81,67 @@
 			{ icon: Table2, value: String(total), label: t('wiki.entities.stat_entries', 'Entries') }
 		]}
 	/>
+
+	{#if data.canCreate}
+		<div class="mt-4" style="margin-inline: var(--page-gutter)">
+			{#if !showCreate}
+				<button
+					type="button"
+					onclick={() => (showCreate = true)}
+					class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary)]"
+				>
+					<Plus size={13} /> {t('wiki.entities.new_entry', 'New {label}').replace('{label}', label)}
+				</button>
+			{:else}
+				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="mb-3 flex items-center justify-between">
+						<p class="text-sm font-semibold text-[var(--color-text)]">{t('wiki.entities.new_entry', 'New {label}').replace('{label}', label)}</p>
+						<button type="button" onclick={() => (showCreate = false)} class="text-[var(--color-muted)] hover:text-[var(--color-text)]"><X size={15} /></button>
+					</div>
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+						<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+							{t('wiki.entities.fld_slug', 'Slug')}
+							<input bind:value={form.slug} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" placeholder="my-{data.slug}" />
+						</label>
+						{#if !isCourse}
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{t('wiki.entities.fld_name', 'Name')}
+								<input bind:value={form.name} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" />
+							</label>
+						{:else}
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{t('wiki.entities.fld_university', 'University slug')}
+								<input bind:value={form.university_slug} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" placeholder="university-of-lagos" />
+							</label>
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{t('wiki.entities.fld_program', 'Program slug')}
+								<input bind:value={form.program_slug} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" placeholder="bsc-computer-science" />
+							</label>
+						{/if}
+						{#if !isProduct && !isCourse}
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{t('wiki.entities.fld_language', 'Language')}
+								<input bind:value={form.language} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" placeholder="en" />
+							</label>
+						{/if}
+					</div>
+					{#if createErr}
+						<p class="mt-2 text-xs text-[var(--color-danger,#dc2626)]">{createErr}</p>
+					{/if}
+					<div class="mt-3 flex justify-end">
+						<button
+							type="button"
+							onclick={submitCreate}
+							disabled={creating}
+							class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
+						>
+							{creating ? t('common.creating', 'Creating…') : t('common.create', 'Create')}
+						</button>
+					</div>
+				</div>
+			{/if}
+		</div>
+	{/if}
 
 	{#if total > 0 || search}
 		<form style="margin-inline: var(--page-gutter)" class="mt-6 flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 transition-colors focus-within:border-[var(--color-primary)]/60" onsubmit={(e) => { e.preventDefault(); applySearch(); }}>

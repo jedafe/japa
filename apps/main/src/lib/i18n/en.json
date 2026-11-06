@@ -6845,5 +6845,18 @@
 	"wiki.entities.eyebrow": "Directory",
 	"wiki.entities.count": "{count} entries",
 	"wiki.entities.stat_entries": "Entries",
-	"wiki.entities.stat_kinds": "Kinds"
+	"wiki.entities.stat_kinds": "Kinds",
+	"wiki.entities.new_entry": "New {label}",
+	"wiki.entities.new_kind": "New kind",
+	"wiki.entities.err_slug": "Slug is required",
+	"wiki.entities.err_create": "Create failed",
+	"wiki.entities.err_kind_fields": "Slug and label are required",
+	"wiki.entities.fld_slug": "Slug",
+	"wiki.entities.fld_name": "Name",
+	"wiki.entities.fld_university": "University slug",
+	"wiki.entities.fld_program": "Program slug",
+	"wiki.entities.fld_language": "Language",
+	"wiki.entities.fld_categories": "Categories — one per line, slug: Label",
+	"common.creating": "Creating…",
+	"common.create": "Create"
 }

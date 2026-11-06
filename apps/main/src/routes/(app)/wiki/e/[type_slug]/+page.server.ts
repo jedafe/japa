@@ -1,6 +1,7 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md (Entity Directory amendment)
 import { error } from '@sveltejs/kit';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { hasPerm } from '$lib/server/auth';
 import type { PageServerLoad } from './$types';
 
 export interface EntityDirectoryItem {
@@ -36,13 +37,16 @@ export const load: PageServerLoad = async (event) => {
 		if (err instanceof ApiError && err.status === 404) throw error(404);
 	}
 
+	const creatableKinds = ['product', 'program', 'course'];
 	return {
 		kind: res.kind ?? kind,
+		slug: kind,
 		label: res.label ?? kind,
 		q,
 		page,
 		limit,
 		items: res.items ?? [],
-		total: res.total ?? 0
+		total: res.total ?? 0,
+		canCreate: hasPerm(event.locals.user?.permissions, 'wiki.edit') && creatableKinds.includes(res.kind ?? kind)
 	};
 };

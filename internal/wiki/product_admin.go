@@ -163,34 +163,115 @@ func (h *Handlers) HandleDeleteProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleCreateEntityInstance serves POST /wiki/e/{type_slug} — creates an
-// entity on its canonical listing (§80). Product-type slugs create a
-// product; the wiki page lazy-materializes on first view.
+// entity on its canonical listing (§80): product types → products,
+// 'program' → university_course_catalog, 'course' → offerings (with
+// university + program resolution). Pages lazy-materialize on first view.
 func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Request) {
 	typeSlug := chi.URLParam(r, "type_slug")
+	ctx := r.Context()
 
-	// Only product-type slugs are creatable for now — the chain resolves
-	// the type's kind when other kinds gain creation.
-	pt, err := h.service.store.read.GetProductTypeBySlug(r.Context(), typeSlug)
-	if err != nil || !pt.IsEnabled {
-		errpkg.WriteError(w, http.StatusNotFound, "type_not_found", "Entity type not found")
-		return
+	var body struct {
+		Slug           string `json:"slug"`
+		Name           string `json:"name"`
+		Title          string `json:"title"`
+		Language       string `json:"language"`
+		UniversitySlug string `json:"university_slug"`
+		ProgramSlug    string `json:"program_slug"`
+		Tagline        string `json:"tagline"`
+		WebsiteURL     string `json:"website_url"`
+		PricingModel   string `json:"pricing_model"`
+		PriceFrom      *float64 `json:"price_from"`
 	}
-
-	var body ProductInput
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
-	body.TypeSlug = typeSlug
-	slug, err := h.service.CreateProduct(r.Context(), body)
-	if err != nil {
-		slog.Error("wiki: create entity failed", "type", typeSlug, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create entity")
+	if body.Slug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
 		return
 	}
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
-		"slug": slug, "href": "/wiki/e/" + typeSlug + "/" + slug + "/overview",
-	}})
+	name := body.Name
+	if name == "" {
+		name = body.Title
+	}
+
+	href := "/wiki/e/" + typeSlug + "/" + body.Slug + "/overview"
+	out := map[string]any{"slug": body.Slug, "href": href}
+
+	// Product-type slugs → products (slug-keyed creation).
+	if pt, err := h.service.store.read.GetProductTypeBySlug(ctx, typeSlug); err == nil && pt.IsEnabled {
+		slug, err := h.service.CreateProduct(ctx, ProductInput{
+			TypeSlug: typeSlug, Slug: body.Slug, Name: name,
+			Tagline: strPtr(body.Tagline), WebsiteURL: strPtr(body.WebsiteURL),
+			PricingModel: strPtr(body.PricingModel), PriceFrom: body.PriceFrom,
+		})
+		if err != nil {
+			h.failEntityCreate(w, typeSlug, err)
+			return
+		}
+		out["slug"] = slug
+		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": out})
+		return
+	}
+
+	// Table-backed kinds.
+	kind, err := h.service.store.read.GetWikiEntityKind(ctx, typeSlug)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "type_not_found", "Entity type not found")
+		return
+	}
+
+	switch kind.EntityKind {
+	case "program":
+		lang := body.Language
+		if lang == "" {
+			lang = "en"
+		}
+		if _, err := h.service.store.write.CreateProgramForWiki(ctx, gen.CreateProgramForWikiParams{
+			Title: name, Slug: body.Slug, Language: lang,
+		}); err != nil {
+			h.failEntityCreate(w, typeSlug, err)
+			return
+		}
+	case "course":
+		if body.UniversitySlug == "" || body.ProgramSlug == "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_parents", "university_slug and program_slug are required for courses")
+			return
+		}
+		uni, err := h.service.store.read.GetSpaceBySlugKind(ctx, gen.GetSpaceBySlugKindParams{Slug: body.UniversitySlug, TypeSlug: "university"})
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "university_not_found", "University not found")
+			return
+		}
+		prog, err := h.service.store.read.GetProgramForWiki(ctx, body.ProgramSlug)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "program_not_found", "Program not found")
+			return
+		}
+		if _, err := h.service.store.write.CreateOfferingForWiki(ctx, gen.CreateOfferingForWikiParams{
+			CourseID: prog.ID, UniversityID: uni, Slug: body.Slug,
+		}); err != nil {
+			h.failEntityCreate(w, typeSlug, err)
+			return
+		}
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "kind_not_creatable", "This entity kind cannot be created here")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": out})
+}
+
+func (h *Handlers) failEntityCreate(w http.ResponseWriter, typeSlug string, err error) {
+	slog.Error("wiki: create entity failed", "type", typeSlug, "error", err)
+	errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create entity")
+}
+
+func strPtr(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
 }
 
 // HandleListProductProviders serves GET /wiki/e/{type_slug}/{entity}/providers —

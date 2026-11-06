@@ -4,6 +4,8 @@
 	import { t, siteName } from '$lib/i18n';
 	import { EntityHero } from '$lib/components/ui';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { api } from '$lib/api/client';
+	import { invalidateAll } from '$app/navigation';
 	import {
 		ArrowRight,
 		Award,
@@ -14,14 +16,50 @@
 		Landmark,
 		Package,
 		Plane,
+		Plus,
 		School,
-		Store
+		Store,
+		X
 	} from 'lucide-svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 	let kinds = $derived(data.kinds ?? []);
 	let totalEntities = $derived(kinds.reduce((n, k) => n + k.entity_count, 0));
+	let showCreate = $state(false);
+	let creating = $state(false);
+	let createErr = $state('');
+	let form = $state<Record<string, string>>({});
+
+	// New kind = a product type (§80 Product Domain) — POST provisions the
+	// full chain: field groups → JCE comparison type → pool → wiki surfacing.
+	async function submitCreate() {
+		createErr = '';
+		if (!form.slug?.trim() || !form.label?.trim()) {
+			createErr = t('wiki.entities.err_kind_fields', 'Slug and label are required');
+			return;
+		}
+		creating = true;
+		const categories = (form.categories ?? '')
+			.split('\n')
+			.map((l) => l.trim())
+			.filter(Boolean)
+			.map((l) => {
+				const [slug, ...rest] = l.split(':');
+				return { slug: slug.trim(), label: (rest.join(':').trim() || slug.trim()) };
+			});
+		const res = await api.post('/admin/wiki/product-types', {
+			slug: form.slug.trim(),
+			label: form.label.trim(),
+			icon: form.icon?.trim() || undefined,
+			categories: categories.length ? categories : undefined
+		});
+		creating = false;
+		if (res.error) { createErr = res.error.message || t('wiki.entities.err_create', 'Create failed'); return; }
+		showCreate = false;
+		form = {};
+		await invalidateAll();
+	}
 
 	const KIND_ICONS: Record<string, typeof BookOpen> = {
 		course: GraduationCap,
@@ -59,6 +97,59 @@
 			{ icon: Package, value: String(kinds.length), label: t('wiki.entities.stat_kinds', 'Kinds') }
 		]}
 	/>
+
+	{#if data.canManage}
+		<div class="mt-4" style="margin-inline: var(--page-gutter)">
+			{#if !showCreate}
+				<button
+					type="button"
+					onclick={() => (showCreate = true)}
+					class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary)]"
+				>
+					<Plus size={13} /> {t('wiki.entities.new_kind', 'New kind')}
+				</button>
+			{:else}
+				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="mb-3 flex items-center justify-between">
+						<p class="text-sm font-semibold text-[var(--color-text)]">{t('wiki.entities.new_kind', 'New kind')}</p>
+						<button type="button" onclick={() => (showCreate = false)} class="text-[var(--color-muted)] hover:text-[var(--color-text)]"><X size={15} /></button>
+					</div>
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+						<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+							{t('wiki.entities.fld_slug', 'Slug')}
+							<input bind:value={form.slug} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" placeholder="ai-agents" />
+						</label>
+						<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+							{t('wiki.entities.fld_name', 'Label')}
+							<input bind:value={form.label} class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60" placeholder="AI Agents" />
+						</label>
+						<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)] sm:col-span-2">
+							{t('wiki.entities.fld_categories', 'Categories — one per line, slug: Label')}
+							<textarea
+								bind:value={form.categories}
+								rows={3}
+								class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]/60"
+								placeholder={'overview: Overview\nspecs: Specs\npricing: Pricing'}
+							></textarea>
+						</label>
+					</div>
+					{#if createErr}
+						<p class="mt-2 text-xs text-[var(--color-danger,#dc2626)]">{createErr}</p>
+					{/if}
+					<div class="mt-3 flex justify-end">
+						<button
+							type="button"
+							onclick={submitCreate}
+							disabled={creating}
+							class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50"
+						>
+							{creating ? t('common.creating', 'Creating…') : t('common.create', 'Create')}
+						</button>
+					</div>
+				</div>
+			{/if}
+		</div>
+	{/if}
 
 	{#if kinds.length === 0}
 		<div class="mt-8" style="margin-inline: var(--page-gutter)">

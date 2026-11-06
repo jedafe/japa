@@ -716,6 +716,25 @@ func (q *Queries) CreateEntityWikiPage(ctx context.Context, arg CreateEntityWiki
 	return i, err
 }
 
+const createOfferingForWiki = `-- name: CreateOfferingForWiki :one
+INSERT INTO university_course_offerings (course_id, university_id, slug, is_published, editorial_overrides)
+VALUES ($1, $2, $3, true, '{}')
+RETURNING slug
+`
+
+type CreateOfferingForWikiParams struct {
+	CourseID     pgtype.UUID `json:"course_id"`
+	UniversityID pgtype.UUID `json:"university_id"`
+	Slug         string      `json:"slug"`
+}
+
+func (q *Queries) CreateOfferingForWiki(ctx context.Context, arg CreateOfferingForWikiParams) (string, error) {
+	row := q.db.QueryRow(ctx, createOfferingForWiki, arg.CourseID, arg.UniversityID, arg.Slug)
+	var slug string
+	err := row.Scan(&slug)
+	return slug, err
+}
+
 const createProduct = `-- name: CreateProduct :one
 INSERT INTO products (product_type_id, slug, name, tagline, website_url, pricing_model, price_from)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -792,6 +811,25 @@ func (q *Queries) CreateProductType(ctx context.Context, arg CreateProductTypePa
 		&i.Config,
 	)
 	return i, err
+}
+
+const createProgramForWiki = `-- name: CreateProgramForWiki :one
+INSERT INTO university_course_catalog (title, slug, language, is_published)
+VALUES ($1, $2, $3, true)
+RETURNING slug
+`
+
+type CreateProgramForWikiParams struct {
+	Title    string `json:"title"`
+	Slug     string `json:"slug"`
+	Language string `json:"language"`
+}
+
+func (q *Queries) CreateProgramForWiki(ctx context.Context, arg CreateProgramForWikiParams) (string, error) {
+	row := q.db.QueryRow(ctx, createProgramForWiki, arg.Title, arg.Slug, arg.Language)
+	var slug string
+	err := row.Scan(&slug)
+	return slug, err
 }
 
 const createWikiEntitySpaceType = `-- name: CreateWikiEntitySpaceType :one
@@ -1595,6 +1633,25 @@ func (q *Queries) GetScholarshipForWiki(ctx context.Context, slug string) (GetSc
 		&i.CountrySpaceID,
 	)
 	return i, err
+}
+
+const getSpaceBySlugKind = `-- name: GetSpaceBySlugKind :one
+SELECT s.id FROM spaces s
+JOIN space_types st ON st.id = s.type_id
+WHERE s.slug = $1 AND st.slug = $2 AND s.deleted_at IS NULL
+`
+
+type GetSpaceBySlugKindParams struct {
+	Slug     string `json:"slug"`
+	TypeSlug string `json:"type_slug"`
+}
+
+// Resolve a hosting space by slug + type slug (university for offerings).
+func (q *Queries) GetSpaceBySlugKind(ctx context.Context, arg GetSpaceBySlugKindParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getSpaceBySlugKind, arg.Slug, arg.TypeSlug)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getSpaceTypeRef = `-- name: GetSpaceTypeRef :one

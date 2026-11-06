@@ -6730,5 +6730,18 @@
 	"wiki.entities.eyebrow": "Annuaire",
 	"wiki.entities.count": "{count} entrées",
 	"wiki.entities.stat_entries": "Entrées",
-	"wiki.entities.stat_kinds": "Catégories"
+	"wiki.entities.stat_kinds": "Catégories",
+	"wiki.entities.new_entry": "Nouveau : {label}",
+	"wiki.entities.new_kind": "Nouvelle catégorie",
+	"wiki.entities.err_slug": "Le slug est requis",
+	"wiki.entities.err_create": "Échec de la création",
+	"wiki.entities.err_kind_fields": "Slug et libellé requis",
+	"wiki.entities.fld_slug": "Slug",
+	"wiki.entities.fld_name": "Nom",
+	"wiki.entities.fld_university": "Slug de l'université",
+	"wiki.entities.fld_program": "Slug du programme",
+	"wiki.entities.fld_language": "Langue",
+	"wiki.entities.fld_categories": "Catégories — une par ligne, slug : Libellé",
+	"common.creating": "Création…",
+	"common.create": "Créer"
 }
