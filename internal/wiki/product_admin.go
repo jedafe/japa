@@ -219,7 +219,11 @@ func (h *Handlers) HandleSetProductProvider(w http.ResponseWriter, r *http.Reque
 			OfferURL  string `json:"offer_url"`
 			Position  int32  `json:"position"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+		// EOF = empty body (bare link) — valid; other decode errors 400.
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err.Error() != "EOF" {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+			return
+		}
 		price, offer, pos = body.PriceFrom, body.OfferURL, body.Position
 	}
 	if err := h.service.SetProductProvider(r.Context(), slug, providerID, price, offer, pos, unlink); err != nil {

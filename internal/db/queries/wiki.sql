@@ -1077,3 +1077,35 @@ SET price_from = EXCLUDED.price_from, offer_url = EXCLUDED.offer_url, position =
 
 -- name: RemoveProductProvider :exec
 DELETE FROM product_providers WHERE product_id = @product_id AND provider_id = @provider_id;
+
+-- name: CreateWikiEntitySpaceType :one
+-- space_types row for an entity-bound product type — wiki_only so it
+-- renders through /wiki/e instead of the space flow.
+INSERT INTO space_types (name, slug, description, icon, category, is_system, wiki_only)
+VALUES (@name, @slug, sqlc.narg(description), sqlc.narg(icon), sqlc.narg(category), true, true)
+RETURNING id, slug;
+
+-- name: UpsertWikiEntityTypeConfig :one
+-- wiki_type_configs row binding a space type to an entity kind +
+-- discriminator (product types bind kind 'product', disc {type_slug}).
+INSERT INTO wiki_type_configs (space_type_id, enabled, label, icon, entity_kind, entity_discriminator, seed_stubs, position)
+VALUES (@space_type_id, true, sqlc.narg(label), sqlc.narg(icon), @entity_kind, @entity_discriminator::jsonb, false, @position)
+ON CONFLICT (space_type_id) DO UPDATE
+SET entity_kind = EXCLUDED.entity_kind,
+    entity_discriminator = EXCLUDED.entity_discriminator,
+    enabled = true
+RETURNING space_type_id, entity_kind;
+
+-- name: GetProductForWiki :one
+-- Join the type for its slug — the product's discriminator for canonical
+-- type resolution (the t.slug text discriminator, no UUID in URLs).
+SELECT p.id, p.slug, p.name, t.slug AS discriminator
+FROM products p
+JOIN product_types t ON t.id = p.product_type_id
+WHERE p.slug = @slug AND p.deleted_at IS NULL;
+
+-- name: GetProviderForWiki :one
+SELECT id, slug, name FROM affiliate_providers WHERE slug = @slug AND is_active = true;
+
+-- name: GetDealForWiki :one
+SELECT id, slug, title AS name FROM coupons WHERE slug = @slug AND status = 'active';

@@ -433,6 +433,48 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 			return fmt.Errorf("seeding pool for %s: %w", slug, err)
 		}
 	}
+
+	// Wiki surfacing — without these the entity pages 404 even though the
+	// listing works: space_types (wiki_only) → wiki_type_configs (entity
+	// kind 'product', disc {type_slug}) → categories → page templates.
+	st, err := s.store.write.CreateWikiEntitySpaceType(ctx, gen.CreateWikiEntitySpaceTypeParams{
+		Name: label, Slug: slug, Description: &desc, Icon: iconVal,
+	})
+	if err != nil {
+		return fmt.Errorf("creating space type %s: %w", slug, err)
+	}
+	disc, _ := json.Marshal(map[string]string{"type_slug": slug})
+	ek := "product"
+	if _, err := s.store.write.UpsertWikiEntityTypeConfig(ctx, gen.UpsertWikiEntityTypeConfigParams{
+		SpaceTypeID: st.ID, Label: &label, Icon: iconVal,
+		EntityKind: &ek, EntityDiscriminator: disc, Position: 0,
+	}); err != nil {
+		return fmt.Errorf("creating wiki type config %s: %w", slug, err)
+	}
+	for i, g := range groups {
+		cat := g.category
+		wc, err := s.store.write.CreateWikiTypeCategory(ctx, gen.CreateWikiTypeCategoryParams{
+			SpaceTypeID: st.ID, Slug: cat.Slug,
+			Category:      strings.ReplaceAll(cat.Slug, "-", "_"),
+			Label:         cat.Label,
+			FieldGroupID:  pgtype.UUID{Bytes: g.id, Valid: true},
+			Position:      int32(i),
+			IsSystem:      true,
+		})
+		if err != nil {
+			return fmt.Errorf("creating wiki category %s: %w", cat.Slug, err)
+		}
+		if _, err := s.store.write.CreateWikiPageTemplate(ctx, gen.CreateWikiPageTemplateParams{
+			CategoryID:   wc.ID,
+			Slug:         cat.Slug,
+			Label:        cat.Label,
+			FieldGroupID: pgtype.UUID{Bytes: g.id, Valid: true},
+			Position:     int32(i),
+			IsSystem:     true,
+		}); err != nil {
+			return fmt.Errorf("creating page template %s: %w", cat.Slug, err)
+		}
+	}
 	return nil
 }
 

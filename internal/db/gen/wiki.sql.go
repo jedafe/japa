@@ -794,6 +794,40 @@ func (q *Queries) CreateProductType(ctx context.Context, arg CreateProductTypePa
 	return i, err
 }
 
+const createWikiEntitySpaceType = `-- name: CreateWikiEntitySpaceType :one
+INSERT INTO space_types (name, slug, description, icon, category, is_system, wiki_only)
+VALUES ($1, $2, $3, $4, $5, true, true)
+RETURNING id, slug
+`
+
+type CreateWikiEntitySpaceTypeParams struct {
+	Name        string  `json:"name"`
+	Slug        string  `json:"slug"`
+	Description *string `json:"description"`
+	Icon        *string `json:"icon"`
+	Category    *string `json:"category"`
+}
+
+type CreateWikiEntitySpaceTypeRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+}
+
+// space_types row for an entity-bound product type — wiki_only so it
+// renders through /wiki/e instead of the space flow.
+func (q *Queries) CreateWikiEntitySpaceType(ctx context.Context, arg CreateWikiEntitySpaceTypeParams) (CreateWikiEntitySpaceTypeRow, error) {
+	row := q.db.QueryRow(ctx, createWikiEntitySpaceType,
+		arg.Name,
+		arg.Slug,
+		arg.Description,
+		arg.Icon,
+		arg.Category,
+	)
+	var i CreateWikiEntitySpaceTypeRow
+	err := row.Scan(&i.ID, &i.Slug)
+	return i, err
+}
+
 const createWikiPage = `-- name: CreateWikiPage :one
 INSERT INTO wiki_pages (space_id, slug, title, category, created_by,
     page_template_id, field_group_id, position)
@@ -1143,6 +1177,23 @@ func (q *Queries) GetDealBySlug(ctx context.Context, slug string) (GetDealBySlug
 	return i, err
 }
 
+const getDealForWiki = `-- name: GetDealForWiki :one
+SELECT id, slug, title AS name FROM coupons WHERE slug = $1 AND status = 'active'
+`
+
+type GetDealForWikiRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+	Name string      `json:"name"`
+}
+
+func (q *Queries) GetDealForWiki(ctx context.Context, slug string) (GetDealForWikiRow, error) {
+	row := q.db.QueryRow(ctx, getDealForWiki, slug)
+	var i GetDealForWikiRow
+	err := row.Scan(&i.ID, &i.Slug, &i.Name)
+	return i, err
+}
+
 const getEmbassyForWiki = `-- name: GetEmbassyForWiki :one
 SELECT id, slug, name, host_space_id
 FROM embassies
@@ -1354,6 +1405,34 @@ func (q *Queries) GetProductBySlug(ctx context.Context, slug string) (GetProduct
 	return i, err
 }
 
+const getProductForWiki = `-- name: GetProductForWiki :one
+SELECT p.id, p.slug, p.name, t.slug AS discriminator
+FROM products p
+JOIN product_types t ON t.id = p.product_type_id
+WHERE p.slug = $1 AND p.deleted_at IS NULL
+`
+
+type GetProductForWikiRow struct {
+	ID            pgtype.UUID `json:"id"`
+	Slug          string      `json:"slug"`
+	Name          string      `json:"name"`
+	Discriminator string      `json:"discriminator"`
+}
+
+// Join the type for its slug — the product's discriminator for canonical
+// type resolution (the t.slug text discriminator, no UUID in URLs).
+func (q *Queries) GetProductForWiki(ctx context.Context, slug string) (GetProductForWikiRow, error) {
+	row := q.db.QueryRow(ctx, getProductForWiki, slug)
+	var i GetProductForWikiRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Discriminator,
+	)
+	return i, err
+}
+
 const getProductTypeBySlug = `-- name: GetProductTypeBySlug :one
 SELECT id, slug, label, icon, is_enabled, config
 FROM product_types
@@ -1473,6 +1552,23 @@ func (q *Queries) GetProviderBySlug(ctx context.Context, slug string) (GetProvid
 		&i.CommissionRate,
 		&i.IsFeatured,
 	)
+	return i, err
+}
+
+const getProviderForWiki = `-- name: GetProviderForWiki :one
+SELECT id, slug, name FROM affiliate_providers WHERE slug = $1 AND is_active = true
+`
+
+type GetProviderForWikiRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+	Name string      `json:"name"`
+}
+
+func (q *Queries) GetProviderForWiki(ctx context.Context, slug string) (GetProviderForWikiRow, error) {
+	row := q.db.QueryRow(ctx, getProviderForWiki, slug)
+	var i GetProviderForWikiRow
+	err := row.Scan(&i.ID, &i.Slug, &i.Name)
 	return i, err
 }
 
@@ -3647,6 +3743,46 @@ func (q *Queries) UpsertProductProvider(ctx context.Context, arg UpsertProductPr
 		arg.Position,
 	)
 	return err
+}
+
+const upsertWikiEntityTypeConfig = `-- name: UpsertWikiEntityTypeConfig :one
+INSERT INTO wiki_type_configs (space_type_id, enabled, label, icon, entity_kind, entity_discriminator, seed_stubs, position)
+VALUES ($1, true, $2, $3, $4, $5::jsonb, false, $6)
+ON CONFLICT (space_type_id) DO UPDATE
+SET entity_kind = EXCLUDED.entity_kind,
+    entity_discriminator = EXCLUDED.entity_discriminator,
+    enabled = true
+RETURNING space_type_id, entity_kind
+`
+
+type UpsertWikiEntityTypeConfigParams struct {
+	SpaceTypeID         pgtype.UUID `json:"space_type_id"`
+	Label               *string     `json:"label"`
+	Icon                *string     `json:"icon"`
+	EntityKind          *string     `json:"entity_kind"`
+	EntityDiscriminator []byte      `json:"entity_discriminator"`
+	Position            int32       `json:"position"`
+}
+
+type UpsertWikiEntityTypeConfigRow struct {
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	EntityKind  *string     `json:"entity_kind"`
+}
+
+// wiki_type_configs row binding a space type to an entity kind +
+// discriminator (product types bind kind 'product', disc {type_slug}).
+func (q *Queries) UpsertWikiEntityTypeConfig(ctx context.Context, arg UpsertWikiEntityTypeConfigParams) (UpsertWikiEntityTypeConfigRow, error) {
+	row := q.db.QueryRow(ctx, upsertWikiEntityTypeConfig,
+		arg.SpaceTypeID,
+		arg.Label,
+		arg.Icon,
+		arg.EntityKind,
+		arg.EntityDiscriminator,
+		arg.Position,
+	)
+	var i UpsertWikiEntityTypeConfigRow
+	err := row.Scan(&i.SpaceTypeID, &i.EntityKind)
+	return i, err
 }
 
 const upsertWikiPageFeedback = `-- name: UpsertWikiPageFeedback :one
