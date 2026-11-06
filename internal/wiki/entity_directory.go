@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -315,11 +316,20 @@ func (h *Handlers) HandleListEntitiesByKind(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// CreateProductType inserts a product_types row — the config layer of a
-// new "kind" (§80 Product Domain). The JCE/wiki provisioning chain
-// (type config + field groups + comparison type + pool) follows in a
-// separate commit.
-func (s *Service) CreateProductType(ctx context.Context, slug, label, icon string, config []byte) error {
+// ProductTypeCategory is one field-group category on a product type —
+// e.g. overview/pricing/features, each becoming a custom_field_groups row
+// (wiki_{type}_{cat}) plus a pool member on the comparison type.
+type ProductTypeCategory struct {
+	Slug  string `json:"slug"`
+	Label string `json:"label"`
+}
+
+// CreateProductType provisions a new product "kind" in one chain (§80
+// Product Domain): product_types row → per-category custom_field_groups →
+// comparison_type_definitions (config.subtype → product resolver) →
+// comparison_type_field_groups pool. Sequential writes — a partial failure
+// leaves a usable type row, and re-runs are idempotent via unique slugs.
+func (s *Service) CreateProductType(ctx context.Context, slug, label, icon string, categories []ProductTypeCategory, config []byte) error {
 	if slug == "" || label == "" {
 		return fmt.Errorf("product type requires slug and label")
 	}
@@ -331,25 +341,79 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 	if len(config) > 0 {
 		cfg = config
 	}
-	_, err := s.store.write.CreateProductType(ctx, gen.CreateProductTypeParams{
+	if _, err := s.store.write.CreateProductType(ctx, gen.CreateProductTypeParams{
 		Slug: slug, Label: label, Icon: iconVal, Config: cfg,
+	}); err != nil {
+		return err
+	}
+
+	// Categories → field groups. Default to overview when unset — every
+	// comparison type needs at least a bound group.
+	if len(categories) == 0 {
+		categories = []ProductTypeCategory{{Slug: "overview", Label: "Overview"}}
+	}
+	type groupRow struct {
+		id       [16]byte
+		category ProductTypeCategory
+	}
+	groups := make([]groupRow, 0, len(categories))
+	for _, cat := range categories {
+		gslug := "wiki_" + strings.ReplaceAll(slug, "-", "_") + "_" + strings.ReplaceAll(cat.Slug, "-", "_")
+		g, err := s.store.write.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
+			Name: label + " — " + cat.Label, Slug: gslug, IsSystem: true,
+		})
+		if err != nil {
+			return fmt.Errorf("creating field group %s: %w", gslug, err)
+		}
+		groups = append(groups, groupRow{id: g.ID.Bytes, category: cat})
+	}
+
+	// Comparison type: subtype filter → product resolver; config auto_fields
+	// are the resolver-injected core dims (price/rating/deal).
+	typeCfg, _ := json.Marshal(map[string]any{
+		"subtype":     slug,
+		"auto_fields": []string{"rating_avg", "review_count", "has_deal", "price_from"},
 	})
-	return err
+	var overviewID [16]byte
+	overviewID = groups[0].id
+	desc := "Compare " + label
+	ct, err := s.store.write.CreateComparisonType(ctx, gen.CreateComparisonTypeParams{
+		Name: label, Slug: slug, Description: &desc, Icon: iconVal,
+		FieldGroupID: pgtype.UUID{Bytes: overviewID, Valid: true},
+		ItemLabel: label, IsSystem: false, Config: typeCfg,
+	})
+	if err != nil {
+		return fmt.Errorf("creating comparison type %s: %w", slug, err)
+	}
+
+	// Pool: every created group is a selectable category on the type.
+	for i, g := range groups {
+		lbl := g.category.Label
+		isDef := i == 0
+		if err := s.store.write.CreateComparisonTypeFieldGroup(ctx, gen.CreateComparisonTypeFieldGroupParams{
+			TypeID: ct.ID, GroupID: pgtype.UUID{Bytes: g.id, Valid: true},
+			Category: &g.category.Slug, Label: &lbl, Position: int32(i), IsDefault: isDef,
+		}); err != nil {
+			return fmt.Errorf("seeding pool for %s: %w", slug, err)
+		}
+	}
+	return nil
 }
 
 // HandleCreateProductType serves POST /admin/wiki/product-types.
 func (h *Handlers) HandleCreateProductType(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Slug   string          `json:"slug"`
-		Label  string          `json:"label"`
-		Icon   string          `json:"icon"`
-		Config json.RawMessage `json:"config"`
+		Slug       string                `json:"slug"`
+		Label      string                `json:"label"`
+		Icon       string                `json:"icon"`
+		Categories []ProductTypeCategory `json:"categories"`
+		Config     json.RawMessage       `json:"config"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
-	if err := h.service.CreateProductType(r.Context(), body.Slug, body.Label, body.Icon, body.Config); err != nil {
+	if err := h.service.CreateProductType(r.Context(), body.Slug, body.Label, body.Icon, body.Categories, body.Config); err != nil {
 		slog.Error("wiki: create product type failed", "slug", body.Slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create product type")
 		return
