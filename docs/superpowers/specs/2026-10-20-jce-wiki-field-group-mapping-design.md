@@ -259,8 +259,9 @@ COL sub-compares.
   picker → items. `ScopeChain`/`NarrowPanel`/`compareFlow.ts` already
   carry scope-selection; extend the chain with the level/subpage step
   (`requiredScopeStep` analogue: `level` for entity types).
-- No group picker ever — the group is always implied by (type, level,
-  subtype).
+- ~~No group picker ever~~ **Superseded by §30 Sub-spec 6 (2026-11):** the
+  type's pool spans its wiki type's category groups; a group/field picker
+  lets creators choose categories and fields at creation.
 
 **`/wiki`** (`apps/main/src/routes/(app)/wiki`):
 - Entity-bound pages route under `/wiki/e/{kind}/{slug}/…`; the
