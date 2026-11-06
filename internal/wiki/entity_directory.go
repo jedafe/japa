@@ -1,19 +1,20 @@
 package wiki
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
-
-	"context"
-	"fmt"
-	"strings"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // Wiki entity directory (§80 Entity Directory amendment): /wiki/e and
@@ -312,4 +313,46 @@ func (h *Handlers) HandleListEntitiesByKind(w http.ResponseWriter, r *http.Reque
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"items": items, "total": total, "kind": kind, "label": label},
 	})
+}
+
+// CreateProductType inserts a product_types row — the config layer of a
+// new "kind" (§80 Product Domain). The JCE/wiki provisioning chain
+// (type config + field groups + comparison type + pool) follows in a
+// separate commit.
+func (s *Service) CreateProductType(ctx context.Context, slug, label, icon string, config []byte) error {
+	if slug == "" || label == "" {
+		return fmt.Errorf("product type requires slug and label")
+	}
+	var iconVal *string
+	if icon != "" {
+		iconVal = &icon
+	}
+	cfg := []byte("{}")
+	if len(config) > 0 {
+		cfg = config
+	}
+	_, err := s.store.write.CreateProductType(ctx, gen.CreateProductTypeParams{
+		Slug: slug, Label: label, Icon: iconVal, Config: cfg,
+	})
+	return err
+}
+
+// HandleCreateProductType serves POST /admin/wiki/product-types.
+func (h *Handlers) HandleCreateProductType(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Slug   string          `json:"slug"`
+		Label  string          `json:"label"`
+		Icon   string          `json:"icon"`
+		Config json.RawMessage `json:"config"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	if err := h.service.CreateProductType(r.Context(), body.Slug, body.Label, body.Icon, body.Config); err != nil {
+		slog.Error("wiki: create product type failed", "slug", body.Slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create product type")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"slug": body.Slug, "label": body.Label}})
 }

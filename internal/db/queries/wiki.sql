@@ -1028,3 +1028,13 @@ WHERE c.status = 'active'
   AND ($1::text = '' OR c.title ILIKE '%' || $1 || '%')
 ORDER BY c.title
 LIMIT @limit_count OFFSET @offset_count;
+
+-- name: CreateProductType :one
+INSERT INTO product_types (slug, label, icon, config)
+VALUES (@slug, @label, @icon, @config)
+RETURNING id, slug, label, icon, is_enabled, config;
+
+-- name: GetProductTypeBySlug :one
+SELECT id, slug, label, icon, is_enabled, config
+FROM product_types
+WHERE slug = @slug;

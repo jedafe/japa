@@ -716,6 +716,47 @@ func (q *Queries) CreateEntityWikiPage(ctx context.Context, arg CreateEntityWiki
 	return i, err
 }
 
+const createProductType = `-- name: CreateProductType :one
+INSERT INTO product_types (slug, label, icon, config)
+VALUES ($1, $2, $3, $4)
+RETURNING id, slug, label, icon, is_enabled, config
+`
+
+type CreateProductTypeParams struct {
+	Slug   string  `json:"slug"`
+	Label  string  `json:"label"`
+	Icon   *string `json:"icon"`
+	Config []byte  `json:"config"`
+}
+
+type CreateProductTypeRow struct {
+	ID        pgtype.UUID `json:"id"`
+	Slug      string      `json:"slug"`
+	Label     string      `json:"label"`
+	Icon      *string     `json:"icon"`
+	IsEnabled bool        `json:"is_enabled"`
+	Config    []byte      `json:"config"`
+}
+
+func (q *Queries) CreateProductType(ctx context.Context, arg CreateProductTypeParams) (CreateProductTypeRow, error) {
+	row := q.db.QueryRow(ctx, createProductType,
+		arg.Slug,
+		arg.Label,
+		arg.Icon,
+		arg.Config,
+	)
+	var i CreateProductTypeRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Label,
+		&i.Icon,
+		&i.IsEnabled,
+		&i.Config,
+	)
+	return i, err
+}
+
 const createWikiPage = `-- name: CreateWikiPage :one
 INSERT INTO wiki_pages (space_id, slug, title, category, created_by,
     page_template_id, field_group_id, position)
@@ -1263,6 +1304,35 @@ func (q *Queries) GetProductBySlug(ctx context.Context, slug string) (GetProduct
 		&i.ReviewCount,
 		&i.GeoSpaceID,
 		&i.TypeSlug,
+	)
+	return i, err
+}
+
+const getProductTypeBySlug = `-- name: GetProductTypeBySlug :one
+SELECT id, slug, label, icon, is_enabled, config
+FROM product_types
+WHERE slug = $1
+`
+
+type GetProductTypeBySlugRow struct {
+	ID        pgtype.UUID `json:"id"`
+	Slug      string      `json:"slug"`
+	Label     string      `json:"label"`
+	Icon      *string     `json:"icon"`
+	IsEnabled bool        `json:"is_enabled"`
+	Config    []byte      `json:"config"`
+}
+
+func (q *Queries) GetProductTypeBySlug(ctx context.Context, slug string) (GetProductTypeBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getProductTypeBySlug, slug)
+	var i GetProductTypeBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Label,
+		&i.Icon,
+		&i.IsEnabled,
+		&i.Config,
 	)
 	return i, err
 }
