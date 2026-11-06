@@ -148,3 +148,34 @@ func (h *Handlers) HandleDeleteProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
 }
+
+// HandleCreateEntityInstance serves POST /wiki/e/{type_slug} — creates an
+// entity on its canonical listing (§80). Product-type slugs create a
+// product; the wiki page lazy-materializes on first view.
+func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Request) {
+	typeSlug := chi.URLParam(r, "type_slug")
+
+	// Only product-type slugs are creatable for now — the chain resolves
+	// the type's kind when other kinds gain creation.
+	pt, err := h.service.store.read.GetProductTypeBySlug(r.Context(), typeSlug)
+	if err != nil || !pt.IsEnabled {
+		errpkg.WriteError(w, http.StatusNotFound, "type_not_found", "Entity type not found")
+		return
+	}
+
+	var body ProductInput
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	body.TypeSlug = typeSlug
+	slug, err := h.service.CreateProduct(r.Context(), body)
+	if err != nil {
+		slog.Error("wiki: create entity failed", "type", typeSlug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create entity")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
+		"slug": slug, "href": "/wiki/e/" + typeSlug + "/" + slug + "/overview",
+	}})
+}
