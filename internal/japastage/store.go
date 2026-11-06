@@ -63,6 +63,12 @@ type DirectoryRow struct {
 	JapaStageDestName *string
 	JapaStageDestCode *string
 	JapaStageUpdated  pgtype.Timestamptz
+	Bio               *string
+	Profession        *string
+	Interests         []string
+	Verified          bool
+	CoverURL          *string
+	LastActiveAt      pgtype.Timestamptz
 }
 
 // GetUserProfile fetches the user_profiles row (with japa_stage columns)
@@ -293,13 +299,54 @@ WHERE user_id = $1
 	return nil
 }
 
+// DirectorySort orders the public member directory (§87 discovery hub).
+// "recent" is the default — most recently active members first.
+type DirectorySort string
+
+const (
+	DirectorySortRecent       DirectorySort = "recent"
+	DirectorySortStageUpdated DirectorySort = "stage_updated"
+	DirectorySortName         DirectorySort = "name"
+)
+
+// ValidDirectorySort reports whether s is a recognized sort value.
+func ValidDirectorySort(s string) bool {
+	switch DirectorySort(s) {
+	case DirectorySortRecent, DirectorySortStageUpdated, DirectorySortName:
+		return true
+	}
+	return false
+}
+
+// directoryOrderBy maps a sort value to its ORDER BY clause. The user_id
+// tiebreaker keeps pagination stable across all orderings.
+func directoryOrderBy(sort string) string {
+	switch DirectorySort(sort) {
+	case DirectorySortName:
+		return "up.display_name ASC NULLS LAST, u.username, up.user_id"
+	case DirectorySortStageUpdated:
+		return "up.japa_stage_updated_at DESC NULLS LAST, up.user_id"
+	default:
+		return "u.last_login_at DESC NULLS LAST, up.user_id"
+	}
+}
+
+// likeEscape escapes %, _ and \ so a user-supplied search term cannot inject
+// LIKE wildcards (paired with ESCAPE '\' in the query).
+func likeEscape(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
+}
+
 // ListByStage returns a paginated directory of public japa stage profiles.
 // stage, when non-empty, filters to that stage. intent, when non-empty,
 // filters to that journey class (ADR-122) — including stage-less members
 // for non-relocation intents. When both are empty, all public profiles with
 // a set japa_stage are returned. destSpaceID, when valid, further filters
-// by destination (geo-aware ?dest= filter, §87).
-func (s *Store) ListByStage(ctx context.Context, stage, intent string, destSpaceID pgtype.UUID, limit, offset int32) ([]DirectoryRow, int64, error) {
+// by destination (geo-aware ?dest= filter, §87). q is a substring match over
+// username, display_name, profession and interests (§87 discovery hub).
+// sort selects the ORDER BY (recent|stage_updated|name; empty = recent).
+func (s *Store) ListByStage(ctx context.Context, stage, intent, q, sort string, destSpaceID pgtype.UUID, limit, offset int32) ([]DirectoryRow, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -316,21 +363,21 @@ func (s *Store) ListByStage(ctx context.Context, stage, intent string, destSpace
 		"up.japa_stage_is_public = true",
 	}
 	countPredicates := []string{
-		"japa_stage_is_public = true",
+		"up.japa_stage_is_public = true",
 	}
 	listArgs := []any{}
 	countArgs := []any{}
 
 	if stage != "" {
 		listPredicates = append(listPredicates, fmt.Sprintf("up.japa_stage = $%d", len(listArgs)+1))
-		countPredicates = append(countPredicates, fmt.Sprintf("japa_stage = $%d", len(countArgs)+1))
+		countPredicates = append(countPredicates, fmt.Sprintf("up.japa_stage = $%d", len(countArgs)+1))
 		listArgs = append(listArgs, stage)
 		countArgs = append(countArgs, stage)
 	}
 
 	if intent != "" {
 		listPredicates = append(listPredicates, fmt.Sprintf("up.japa_intent = $%d", len(listArgs)+1))
-		countPredicates = append(countPredicates, fmt.Sprintf("japa_intent = $%d", len(countArgs)+1))
+		countPredicates = append(countPredicates, fmt.Sprintf("up.japa_intent = $%d", len(countArgs)+1))
 		listArgs = append(listArgs, intent)
 		countArgs = append(countArgs, intent)
 	} else if stage == "" {
@@ -338,28 +385,41 @@ func (s *Store) ListByStage(ctx context.Context, stage, intent string, destSpace
 		// stage. An intent filter bypasses this so stage-less visit/business
 		// members are listable (ADR-122).
 		listPredicates = append(listPredicates, "up.japa_stage IS NOT NULL")
-		countPredicates = append(countPredicates, "japa_stage IS NOT NULL")
+		countPredicates = append(countPredicates, "up.japa_stage IS NOT NULL")
 	}
 
 	if destSpaceID.Valid {
 		listPredicates = append(listPredicates, fmt.Sprintf("up.japa_stage_dest_space_id = $%d", len(listArgs)+1))
-		countPredicates = append(countPredicates, fmt.Sprintf("japa_stage_dest_space_id = $%d", len(countArgs)+1))
+		countPredicates = append(countPredicates, fmt.Sprintf("up.japa_stage_dest_space_id = $%d", len(countArgs)+1))
 		listArgs = append(listArgs, destSpaceID)
 		countArgs = append(countArgs, destSpaceID)
+	}
+
+	if term := strings.TrimSpace(q); term != "" {
+		needle := "%" + likeEscape(term) + "%"
+		listPredicates = append(listPredicates, fmt.Sprintf(
+			`(u.username ILIKE $%d ESCAPE '\' OR up.display_name ILIKE $%d ESCAPE '\' OR up.profession ILIKE $%d ESCAPE '\' OR EXISTS (SELECT 1 FROM unnest(up.interests) i WHERE i ILIKE $%d ESCAPE '\'))`,
+			len(listArgs)+1, len(listArgs)+1, len(listArgs)+1, len(listArgs)+1))
+		countPredicates = append(countPredicates, fmt.Sprintf(
+			`(u.username ILIKE $%d ESCAPE '\' OR up.display_name ILIKE $%d ESCAPE '\' OR up.profession ILIKE $%d ESCAPE '\' OR EXISTS (SELECT 1 FROM unnest(up.interests) i WHERE i ILIKE $%d ESCAPE '\'))`,
+			len(countArgs)+1, len(countArgs)+1, len(countArgs)+1, len(countArgs)+1))
+		listArgs = append(listArgs, needle)
+		countArgs = append(countArgs, needle)
 	}
 
 	listQuery := fmt.Sprintf(`
 SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_intent, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
-       up.japa_stage_updated_at
+       up.japa_stage_updated_at,
+       up.bio, up.profession, up.interests, u.verified, up.cover_url, u.last_login_at
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
 WHERE %s
-ORDER BY up.japa_stage_updated_at DESC NULLS LAST, up.user_id
+ORDER BY %s
 LIMIT $%d OFFSET $%d
-`, strings.Join(listPredicates, "\n  AND "), len(listArgs)+1, len(listArgs)+2)
+`, strings.Join(listPredicates, "\n  AND "), directoryOrderBy(sort), len(listArgs)+1, len(listArgs)+2)
 
 	listArgs = append(listArgs, limit, offset)
 
@@ -375,7 +435,9 @@ LIMIT $%d OFFSET $%d
 		return nil, 0, err
 	}
 
-	countQuery := "SELECT COUNT(*) FROM user_profiles\nWHERE " + strings.Join(countPredicates, "\n  AND ")
+	// The count query joins users so the q predicate (u.username) resolves
+	// identically to the list query.
+	countQuery := "SELECT COUNT(*) FROM user_profiles up\nJOIN users u ON u.id = up.user_id\nWHERE " + strings.Join(countPredicates, "\n  AND ")
 
 	var total int64
 	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
@@ -383,6 +445,96 @@ LIMIT $%d OFFSET $%d
 	}
 
 	return out, total, nil
+}
+
+// StageCountRow is one stage→count bucket for the discovery hub stats.
+type StageCountRow struct {
+	Stage string
+	Count int64
+}
+
+// DestinationStatRow is one top-destination bucket for the stats endpoint.
+type DestinationStatRow struct {
+	SpaceID pgtype.UUID
+	Name    *string
+	GeoCode *string
+	Count   int64
+}
+
+// StageCounts aggregates public staged profiles per stage (§87 discovery
+// hub). intent, when non-empty, scopes the buckets to that journey class.
+// Also returns the total count of staged public profiles.
+func (s *Store) StageCounts(ctx context.Context, intent string) ([]StageCountRow, int64, error) {
+	q := `
+SELECT up.japa_stage, COUNT(*)
+FROM user_profiles up
+WHERE up.japa_stage_is_public = true
+  AND up.japa_stage IS NOT NULL`
+	args := []any{}
+	if intent != "" {
+		q += fmt.Sprintf(" AND up.japa_intent = $%d", len(args)+1)
+		args = append(args, intent)
+	}
+	q += " GROUP BY up.japa_stage"
+
+	rows, err := s.pool.Reader.Query(ctx, q, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("japastage: stage counts: %w", err)
+	}
+	defer rows.Close()
+
+	out := []StageCountRow{}
+	var total int64
+	for rows.Next() {
+		var r StageCountRow
+		if err := rows.Scan(&r.Stage, &r.Count); err != nil {
+			return nil, 0, fmt.Errorf("japastage: scan stage count: %w", err)
+		}
+		total += r.Count
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("japastage: iterate stage counts: %w", err)
+	}
+
+	return out, total, nil
+}
+
+// TopDestinations returns the destination spaces with the most staged
+// public members, ordered by member count (§87 discovery hub).
+func (s *Store) TopDestinations(ctx context.Context, limit int32) ([]DestinationStatRow, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	const q = `
+SELECT ds.id, ds.name, ds.geo_code, COUNT(*) AS members
+FROM user_profiles up
+JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
+WHERE up.japa_stage_is_public = true
+  AND up.japa_stage IS NOT NULL
+GROUP BY ds.id, ds.name, ds.geo_code
+ORDER BY members DESC, ds.name
+LIMIT $1`
+
+	rows, err := s.pool.Reader.Query(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("japastage: top destinations: %w", err)
+	}
+	defer rows.Close()
+
+	out := []DestinationStatRow{}
+	for rows.Next() {
+		var r DestinationStatRow
+		if err := rows.Scan(&r.SpaceID, &r.Name, &r.GeoCode, &r.Count); err != nil {
+			return nil, fmt.Errorf("japastage: scan destination stat: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("japastage: iterate destination stats: %w", err)
+	}
+
+	return out, nil
 }
 
 // scanDirectoryRows scans a DirectoryRow set from an open pgx.Rows cursor.
@@ -396,6 +548,8 @@ func scanDirectoryRows(rows pgx.Rows) ([]DirectoryRow, error) {
 			&r.JapaStage, &r.JapaIntent, &r.JapaStageDestID,
 			&r.JapaStageDestName, &r.JapaStageDestCode,
 			&r.JapaStageUpdated,
+			&r.Bio, &r.Profession, &r.Interests, &r.Verified, &r.CoverURL,
+			&r.LastActiveAt,
 		); err != nil {
 			return nil, fmt.Errorf("japastage: scan directory row: %w", err)
 		}

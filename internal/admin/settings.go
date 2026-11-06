@@ -288,6 +288,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "spaces_guide", Label: "Spaces Guide Panel", Type: "json", Hidden: true, StorageKey: "spaces.guide"},
 			{Key: "tools_guide", Label: "Tools Guide Panel", Type: "json", Hidden: true, StorageKey: "tools.guide"},
 			{Key: "scholarships_guide", Label: "Scholarships Guide Panel", Type: "json", Hidden: true, StorageKey: "scholarships.guide"},
+			{Key: "japa_stage_guide", Label: "Japa Stage Guide Panel", Type: "json", Hidden: true, StorageKey: "japa_stage.guide"},
 		},
 	},
 	// NOTE: The "features" category was removed from the admin Settings page.

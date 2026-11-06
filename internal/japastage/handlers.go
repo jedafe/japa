@@ -236,8 +236,10 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 
 // HandleListByStage handles GET /members/by-stage — public directory of
 // members filtered by stage and/or intent. Query params:
-// ?stage=&intent=&dest=&page=&page_size= (dest is the destination space id,
-// geo-aware ?dest= filter per §87; intent per ADR-122).
+// ?stage=&intent=&dest=&q=&sort=&page=&page_size= (dest is the destination
+// space id, geo-aware ?dest= filter per §87; intent per ADR-122; q searches
+// username/display_name/profession/interests; sort is recent|stage_updated|
+// name, default recent).
 func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
@@ -264,9 +266,18 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dest := r.URL.Query().Get("dest")
+	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+
+	// §87 discovery hub: sort is whitelisted (recent|stage_updated|name).
+	if sort != "" && !ValidDirectorySort(sort) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_sort", "Invalid sort; must be one of: recent, stage_updated, name")
+		return
+	}
+
 	page, limit := parsePageParams(r)
 
-	members, total, err := h.service.ListByStage(r.Context(), stage, intent, dest, page, limit)
+	members, total, err := h.service.ListByStage(r.Context(), stage, intent, q, sort, dest, page, limit)
 	if err != nil {
 		slog.Error("japastage: list by stage failed", "stage", stage, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list members by stage")
@@ -292,6 +303,32 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 			"total_pages": totalPages,
 		},
 	})
+}
+
+// HandleStats handles GET /japa-stage/stats — discovery-hub aggregates:
+// total public staged members, a count per stage, and the top destination
+// spaces (§87). Optional ?intent= scopes the stage counts to a journey
+// class (validated by ValidIntent → invalid_intent 400).
+func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "japa_stage_disabled", "Japa stage profiles are not available")
+		return
+	}
+
+	intent := r.URL.Query().Get("intent")
+	if intent != "" && !ValidIntent(intent) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_intent", "Invalid intent; must be one of: "+JoinIntents())
+		return
+	}
+
+	stats, err := h.service.Stats(r.Context(), intent)
+	if err != nil {
+		slog.Error("japastage: stats failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to load japa stage stats")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": stats})
 }
 
 // ---------------------------------------------------------------------------

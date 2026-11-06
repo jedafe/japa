@@ -50,17 +50,47 @@ type ProfileDTO struct {
 
 // PublicProfileDTO is the trimmed shape returned for the public view and
 // the stage directory. History and the visibility flag are omitted.
+// The discovery-hub fields (bio/profession/interests/verified/cover_url/
+// last_active_at) populate only on the /members/by-stage directory view.
 type PublicProfileDTO struct {
-	UserID        string `json:"user_id"`
-	Username      string `json:"username,omitempty"`
-	DisplayName   string `json:"display_name,omitempty"`
-	AvatarURL     string `json:"avatar_url,omitempty"`
-	Stage         string `json:"stage"`
-	Intent        string `json:"intent,omitempty"`
-	DestSpaceID   string `json:"destination_space_id,omitempty"`
-	DestSpaceName string `json:"destination_space_name,omitempty"`
-	DestSpaceCode string `json:"destination_space_code,omitempty"`
-	UpdatedAt     string `json:"updated_at,omitempty"`
+	UserID        string   `json:"user_id"`
+	Username      string   `json:"username,omitempty"`
+	DisplayName   string   `json:"display_name,omitempty"`
+	AvatarURL     string   `json:"avatar_url,omitempty"`
+	Stage         string   `json:"stage"`
+	Intent        string   `json:"intent,omitempty"`
+	DestSpaceID   string   `json:"destination_space_id,omitempty"`
+	DestSpaceName string   `json:"destination_space_name,omitempty"`
+	DestSpaceCode string   `json:"destination_space_code,omitempty"`
+	Bio           string   `json:"bio,omitempty"`
+	Profession    string   `json:"profession,omitempty"`
+	Interests     []string `json:"interests,omitempty"`
+	Verified      bool     `json:"verified"`
+	CoverURL      string   `json:"cover_url,omitempty"`
+	LastActiveAt  string   `json:"last_active_at,omitempty"`
+	UpdatedAt     string   `json:"updated_at,omitempty"`
+}
+
+// StatsDTO is the discovery-hub aggregate payload (§87): per-stage member
+// counts plus the top destination spaces by staged public members.
+type StatsDTO struct {
+	Total        int64                `json:"total"`
+	Stages       []StageCountDTO      `json:"stages"`
+	Destinations []DestinationStatDTO `json:"destinations"`
+}
+
+// StageCountDTO is one entry of the stage-count list.
+type StageCountDTO struct {
+	Stage string `json:"stage"`
+	Count int64  `json:"count"`
+}
+
+// DestinationStatDTO is one top-destination entry.
+type DestinationStatDTO struct {
+	SpaceID string `json:"space_id"`
+	Name    string `json:"name"`
+	GeoCode string `json:"geo_code,omitempty"`
+	Count   int64  `json:"count"`
 }
 
 // UpdateStageInput is the request body for PATCH /me/japa-stage. IsPublic
@@ -537,13 +567,17 @@ func (s *Service) resolveToolSlugs(ctx context.Context, stage, intent string) []
 // filters to that journey class (ADR-122). When both are empty, all public
 // profiles with a set stage are returned. destSpaceID, when non-empty,
 // further filters by destination (geo-aware ?dest= filter, §87).
-func (s *Service) ListByStage(ctx context.Context, stage, intent, destSpaceID string, page, limit int32) ([]PublicProfileDTO, int64, error) {
+func (s *Service) ListByStage(ctx context.Context, stage, intent, q, sort, destSpaceID string, page, limit int32) ([]PublicProfileDTO, int64, error) {
 	if stage != "" && !ValidStage(stage) {
 		return nil, 0, fmt.Errorf("invalid stage %q; must be one of: %s", stage, JoinStages())
 	}
 
 	if intent != "" && !ValidIntent(intent) {
 		return nil, 0, fmt.Errorf("invalid intent %q; must be one of: %s", intent, JoinIntents())
+	}
+
+	if sort != "" && !ValidDirectorySort(sort) {
+		return nil, 0, fmt.Errorf("invalid sort %q; must be one of: recent, stage_updated, name", sort)
 	}
 
 	if limit <= 0 {
@@ -567,7 +601,7 @@ func (s *Service) ListByStage(ctx context.Context, stage, intent, destSpaceID st
 		}
 	}
 
-	rows, total, err := s.store.ListByStage(ctx, stage, intent, dest, limit, offset)
+	rows, total, err := s.store.ListByStage(ctx, stage, intent, q, sort, dest, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("japastage: list by stage: %w", err)
 	}
@@ -578,6 +612,54 @@ func (s *Service) ListByStage(ctx context.Context, stage, intent, destSpaceID st
 	}
 
 	return dtos, total, nil
+}
+
+// Stats returns the discovery-hub aggregates (§87): the total number of
+// public staged members, a count per stage (optionally scoped by intent),
+// and the top destination spaces capped by japa_stage.top_destinations_limit.
+func (s *Service) Stats(ctx context.Context, intent string) (StatsDTO, error) {
+	if intent != "" && !ValidIntent(intent) {
+		return StatsDTO{}, fmt.Errorf("invalid intent %q; must be one of: %s", intent, JoinIntents())
+	}
+
+	limit := int32(5)
+	if s.settings != nil {
+		limit = int32(s.settings.GetIntOr(ctx, "japa_stage.top_destinations_limit", 5))
+	}
+
+	stages, total, err := s.store.StageCounts(ctx, intent)
+	if err != nil {
+		return StatsDTO{}, fmt.Errorf("japastage: stats stages: %w", err)
+	}
+
+	dests, err := s.store.TopDestinations(ctx, limit)
+	if err != nil {
+		return StatsDTO{}, fmt.Errorf("japastage: stats destinations: %w", err)
+	}
+
+	dto := StatsDTO{
+		Total:        total,
+		Stages:       make([]StageCountDTO, 0, len(stages)),
+		Destinations: make([]DestinationStatDTO, 0, len(dests)),
+	}
+	for _, sc := range stages {
+		dto.Stages = append(dto.Stages, StageCountDTO{Stage: sc.Stage, Count: sc.Count})
+	}
+	for _, d := range dests {
+		entry := DestinationStatDTO{Count: d.Count}
+		if d.SpaceID.Valid {
+			entry.SpaceID = d.SpaceID.String()
+		}
+		if d.Name != nil {
+			entry.Name = *d.Name
+		}
+		if d.GeoCode != nil {
+			entry.GeoCode = *d.GeoCode
+		}
+		dto.Destinations = append(dto.Destinations, entry)
+	}
+
+	return dto, nil
 }
 
 // profileRowToDTO converts a ProfileRow (joined query result) to a ProfileDTO
@@ -672,8 +754,11 @@ func profileRowToPublicDTO(r ProfileRow) PublicProfileDTO {
 // directoryRowToDTO converts a DirectoryRow to a PublicProfileDTO.
 func directoryRowToDTO(r DirectoryRow) PublicProfileDTO {
 	dto := PublicProfileDTO{
-		UserID:    r.UserID.String(),
-		UpdatedAt: formatTs(r.JapaStageUpdated),
+		UserID:       r.UserID.String(),
+		UpdatedAt:    formatTs(r.JapaStageUpdated),
+		LastActiveAt: formatTs(r.LastActiveAt),
+		Verified:     r.Verified,
+		Interests:    r.Interests,
 	}
 	if r.Username != nil {
 		dto.Username = *r.Username
@@ -705,6 +790,18 @@ func directoryRowToDTO(r DirectoryRow) PublicProfileDTO {
 
 	if r.JapaStageDestCode != nil {
 		dto.DestSpaceCode = *r.JapaStageDestCode
+	}
+
+	if r.Bio != nil {
+		dto.Bio = *r.Bio
+	}
+
+	if r.Profession != nil {
+		dto.Profession = *r.Profession
+	}
+
+	if r.CoverURL != nil {
+		dto.CoverURL = *r.CoverURL
 	}
 
 	return dto

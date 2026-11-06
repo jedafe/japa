@@ -953,6 +953,9 @@ var settingsCatalog = map[string]settingMeta{
 	"spaces.guide":       {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /spaces.", Panel: "admin"},
 	"tools.guide":        {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /tools.", Panel: "admin"},
 	"scholarships.guide": {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /scholarships.", Panel: "admin"},
+	"japa_stage.guide":   {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /japa-stage.", Panel: "admin"},
+
+	"japa_stage.top_destinations_limit": {Type: "int", DefaultValue: "5", Min: 1, Description: "Max destinations returned by GET /japa-stage/stats (§87 discovery hub).", Panel: "control"},
 }
 
 // IsPublicSetting reports whether the given dot-notation key is marked Public

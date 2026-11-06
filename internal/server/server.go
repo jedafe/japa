@@ -8347,6 +8347,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(features.Gate(featureChecker, "japa_stage.enabled")).Group(func(r chi.Router) {
 				r.Get("/japa-stage/stages", japaStageHandlers.HandleStages)
 				r.Get("/japa-stage/intents", japaStageHandlers.HandleIntents)
+				r.Get("/japa-stage/stats", japaStageHandlers.HandleStats)
 				r.Get("/users/{username}/japa-stage", japaStageHandlers.HandleGetByUsername)
 				r.Get("/members/by-stage", japaStageHandlers.HandleListByStage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
