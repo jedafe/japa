@@ -229,7 +229,10 @@
 	}
 	/** Renders a compact media preview list for image_multi fields. */
 	function fieldMediaList(fid: string): Array<{ id: string; url: string }> {
-		return Array.isArray(fieldValues[fid]) ? fieldValues[fid] : [];
+		const v = fieldValues[fid];
+		if (!Array.isArray(v)) return [];
+		// cfv seeds are bare uuids; picker entries carry {id, url}.
+		return v.map((x: any) => (typeof x === 'string' ? { id: x, url: '' } : x));
 	}
 
 	async function submit() {
@@ -399,7 +402,11 @@
 									<div class="flex flex-wrap gap-2">
 										{#each fieldMediaList(f.id) as m, i (m.id)}
 											<div class="relative">
-												<img src={m.url} alt="" class="h-14 w-14 rounded object-cover" />
+												{#if m.url}
+													<img src={m.url} alt="" class="h-14 w-14 rounded object-cover" />
+												{:else}
+													<div class="grid h-14 w-14 place-items-center rounded border border-[var(--color-border)] text-[var(--color-muted)]"><ImagePlus size={14} /></div>
+												{/if}
 												<button type="button" onclick={() => removeFieldMedia(f.id, i)}
 													class="absolute -right-1 -top-1 rounded-full bg-[var(--color-surface)] p-0.5 text-[var(--color-muted)] hover:text-red-500"><X size={11} /></button>
 											</div>
