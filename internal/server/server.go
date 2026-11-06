@@ -7989,6 +7989,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Entity-bound pages (JCE ↔ wiki mapping): /wiki/e/{type}/{entity}/{page}
 				// — registered before {space_slug} so the static 'e' segment wins.
 				r.Get("/wiki/e/{type_slug}/{entity}/{page_slug}", wikiHandlers.HandleGetEntityPage)
+				// §80: providers repeater source — review form + product CTAs.
+				r.Get("/wiki/e/{type_slug}/{entity}/providers", wikiHandlers.HandleListProductProviders)
 				// §80 Product Domain: create a product type — provisions the
 				// config layer of a new "kind" (wiki.manage).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).

@@ -179,3 +179,27 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 		"slug": slug, "href": "/wiki/e/" + typeSlug + "/" + slug + "/overview",
 	}})
 }
+
+// HandleListProductProviders serves GET /wiki/e/{type_slug}/{entity}/providers —
+// the providers repeater source for the review form + product CTAs.
+func (h *Handlers) HandleListProductProviders(w http.ResponseWriter, r *http.Request) {
+	p, err := h.service.store.read.GetProductBySlug(r.Context(), chi.URLParam(r, "entity"))
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "product_not_found", "Product not found")
+		return
+	}
+	rows, err := h.service.store.read.ListProductProviders(r.Context(), p.ID)
+	if err != nil {
+		slog.Error("wiki: list providers failed", "slug", p.Slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to list providers")
+		return
+	}
+	items := make([]map[string]any, 0, len(rows))
+	for _, pp := range rows {
+		items = append(items, map[string]any{
+			"provider_id": pp.ProviderID.String(), "name": pp.Name,
+			"price_from": pp.PriceFrom, "offer_url": pp.OfferUrl,
+		})
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": items}})
+}
