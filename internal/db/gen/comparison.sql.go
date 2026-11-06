@@ -111,6 +111,25 @@ func (q *Queries) CountComparisonsWithFilters(ctx context.Context, arg CountComp
 	return column_1, err
 }
 
+const countPoolFieldsByIDs = `-- name: CountPoolFieldsByIDs :one
+SELECT count(*) FROM custom_fields f
+JOIN comparison_type_field_groups ctfg ON ctfg.group_id = f.group_id
+WHERE ctfg.type_id = $1
+  AND f.id = ANY($2::uuid[])
+`
+
+type CountPoolFieldsByIDsParams struct {
+	TypeID   pgtype.UUID   `json:"type_id"`
+	FieldIds []pgtype.UUID `json:"field_ids"`
+}
+
+func (q *Queries) CountPoolFieldsByIDs(ctx context.Context, arg CountPoolFieldsByIDsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPoolFieldsByIDs, arg.TypeID, arg.FieldIds)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createComparisonDimension = `-- name: CreateComparisonDimension :one
 
 INSERT INTO comparison_dimensions (content_id, type_id, label, dimension_type, position, source_field_id) VALUES ($1, $2, $3, $4, $5, $6)
@@ -283,6 +302,32 @@ func (q *Queries) CreateComparisonType(ctx context.Context, arg CreateComparison
 	return i, err
 }
 
+const createComparisonTypeFieldGroup = `-- name: CreateComparisonTypeFieldGroup :exec
+INSERT INTO comparison_type_field_groups (type_id, group_id, category, label, position, is_default)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type CreateComparisonTypeFieldGroupParams struct {
+	TypeID    pgtype.UUID `json:"type_id"`
+	GroupID   pgtype.UUID `json:"group_id"`
+	Category  *string     `json:"category"`
+	Label     *string     `json:"label"`
+	Position  int32       `json:"position"`
+	IsDefault bool        `json:"is_default"`
+}
+
+func (q *Queries) CreateComparisonTypeFieldGroup(ctx context.Context, arg CreateComparisonTypeFieldGroupParams) error {
+	_, err := q.db.Exec(ctx, createComparisonTypeFieldGroup,
+		arg.TypeID,
+		arg.GroupID,
+		arg.Category,
+		arg.Label,
+		arg.Position,
+		arg.IsDefault,
+	)
+	return err
+}
+
 const deleteComparisonContentMetadata = `-- name: DeleteComparisonContentMetadata :exec
 DELETE FROM comparison_content_metadata
 WHERE content_id = $1
@@ -339,6 +384,15 @@ type DeleteComparisonTypeAccessParams struct {
 
 func (q *Queries) DeleteComparisonTypeAccess(ctx context.Context, arg DeleteComparisonTypeAccessParams) error {
 	_, err := q.db.Exec(ctx, deleteComparisonTypeAccess, arg.TypeID, arg.UserGroupID)
+	return err
+}
+
+const deleteComparisonTypeFieldGroups = `-- name: DeleteComparisonTypeFieldGroups :exec
+DELETE FROM comparison_type_field_groups WHERE type_id = $1
+`
+
+func (q *Queries) DeleteComparisonTypeFieldGroups(ctx context.Context, typeID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonTypeFieldGroups, typeID)
 	return err
 }
 
@@ -969,6 +1023,113 @@ func (q *Queries) ListComparisonTypeAccess(ctx context.Context, typeID pgtype.UU
 	return items, nil
 }
 
+const listComparisonTypeFieldGroups = `-- name: ListComparisonTypeFieldGroups :many
+
+SELECT ctfg.group_id, ctfg.category, ctfg.label, ctfg.position, ctfg.is_default,
+       g.slug AS group_slug, g.name AS group_name
+FROM comparison_type_field_groups ctfg
+JOIN custom_field_groups g ON g.id = ctfg.group_id
+WHERE ctfg.type_id = $1
+ORDER BY ctfg.is_default DESC, ctfg.position ASC, g.name ASC
+`
+
+type ListComparisonTypeFieldGroupsRow struct {
+	GroupID   pgtype.UUID `json:"group_id"`
+	Category  *string     `json:"category"`
+	Label     *string     `json:"label"`
+	Position  int32       `json:"position"`
+	IsDefault bool        `json:"is_default"`
+	GroupSlug string      `json:"group_slug"`
+	GroupName string      `json:"group_name"`
+}
+
+// =====================
+// dimension pools (§30 Sub-spec 6)
+// =====================
+func (q *Queries) ListComparisonTypeFieldGroups(ctx context.Context, typeID pgtype.UUID) ([]ListComparisonTypeFieldGroupsRow, error) {
+	rows, err := q.db.Query(ctx, listComparisonTypeFieldGroups, typeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListComparisonTypeFieldGroupsRow
+	for rows.Next() {
+		var i ListComparisonTypeFieldGroupsRow
+		if err := rows.Scan(
+			&i.GroupID,
+			&i.Category,
+			&i.Label,
+			&i.Position,
+			&i.IsDefault,
+			&i.GroupSlug,
+			&i.GroupName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listComparisonTypePoolFields = `-- name: ListComparisonTypePoolFields :many
+SELECT f.id, f.group_id, f.label, f.key, f.field_type, f.options, f.position, f.section,
+       ctfg.is_default AS group_is_default, ctfg.category AS group_category,
+       ctfg.label AS group_label
+FROM comparison_type_field_groups ctfg
+JOIN custom_fields f ON f.group_id = ctfg.group_id
+WHERE ctfg.type_id = $1
+ORDER BY ctfg.is_default DESC, ctfg.position ASC, f.position ASC, f.created_at ASC
+`
+
+type ListComparisonTypePoolFieldsRow struct {
+	ID             pgtype.UUID `json:"id"`
+	GroupID        pgtype.UUID `json:"group_id"`
+	Label          string      `json:"label"`
+	Key            string      `json:"key"`
+	FieldType      string      `json:"field_type"`
+	Options        []byte      `json:"options"`
+	Position       int32       `json:"position"`
+	Section        *string     `json:"section"`
+	GroupIsDefault bool        `json:"group_is_default"`
+	GroupCategory  *string     `json:"group_category"`
+	GroupLabel     *string     `json:"group_label"`
+}
+
+func (q *Queries) ListComparisonTypePoolFields(ctx context.Context, typeID pgtype.UUID) ([]ListComparisonTypePoolFieldsRow, error) {
+	rows, err := q.db.Query(ctx, listComparisonTypePoolFields, typeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListComparisonTypePoolFieldsRow
+	for rows.Next() {
+		var i ListComparisonTypePoolFieldsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.Label,
+			&i.Key,
+			&i.FieldType,
+			&i.Options,
+			&i.Position,
+			&i.Section,
+			&i.GroupIsDefault,
+			&i.GroupCategory,
+			&i.GroupLabel,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listComparisonTypes = `-- name: ListComparisonTypes :many
 SELECT id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
 FROM comparison_type_definitions
@@ -1493,6 +1654,115 @@ func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListCompar
 			&i.PromotedAt,
 			&i.MetadataConfig,
 			&i.TypeID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCustomFieldsByIDs = `-- name: ListCustomFieldsByIDs :many
+SELECT id, group_id, label, key, field_type, options, is_required, is_system,
+       show_in_frontend, position, section, created_at
+FROM custom_fields
+WHERE id = ANY($1::uuid[])
+`
+
+type ListCustomFieldsByIDsRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	GroupID        pgtype.UUID        `json:"group_id"`
+	Label          string             `json:"label"`
+	Key            string             `json:"key"`
+	FieldType      string             `json:"field_type"`
+	Options        []byte             `json:"options"`
+	IsRequired     bool               `json:"is_required"`
+	IsSystem       bool               `json:"is_system"`
+	ShowInFrontend bool               `json:"show_in_frontend"`
+	Position       int32              `json:"position"`
+	Section        *string            `json:"section"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListCustomFieldsByIDs(ctx context.Context, ids []pgtype.UUID) ([]ListCustomFieldsByIDsRow, error) {
+	rows, err := q.db.Query(ctx, listCustomFieldsByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCustomFieldsByIDsRow
+	for rows.Next() {
+		var i ListCustomFieldsByIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.Label,
+			&i.Key,
+			&i.FieldType,
+			&i.Options,
+			&i.IsRequired,
+			&i.IsSystem,
+			&i.ShowInFrontend,
+			&i.Position,
+			&i.Section,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPoolFieldsByGroupIDs = `-- name: ListPoolFieldsByGroupIDs :many
+SELECT f.id, f.group_id, f.label, f.key, f.field_type, f.options, f.position, f.section
+FROM custom_fields f
+JOIN comparison_type_field_groups ctfg ON ctfg.group_id = f.group_id
+WHERE ctfg.type_id = $1
+  AND ctfg.group_id = ANY($2::uuid[])
+ORDER BY ctfg.position ASC, f.position ASC
+`
+
+type ListPoolFieldsByGroupIDsParams struct {
+	TypeID   pgtype.UUID   `json:"type_id"`
+	GroupIds []pgtype.UUID `json:"group_ids"`
+}
+
+type ListPoolFieldsByGroupIDsRow struct {
+	ID        pgtype.UUID `json:"id"`
+	GroupID   pgtype.UUID `json:"group_id"`
+	Label     string      `json:"label"`
+	Key       string      `json:"key"`
+	FieldType string      `json:"field_type"`
+	Options   []byte      `json:"options"`
+	Position  int32       `json:"position"`
+	Section   *string     `json:"section"`
+}
+
+func (q *Queries) ListPoolFieldsByGroupIDs(ctx context.Context, arg ListPoolFieldsByGroupIDsParams) ([]ListPoolFieldsByGroupIDsRow, error) {
+	rows, err := q.db.Query(ctx, listPoolFieldsByGroupIDs, arg.TypeID, arg.GroupIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPoolFieldsByGroupIDsRow
+	for rows.Next() {
+		var i ListPoolFieldsByGroupIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.Label,
+			&i.Key,
+			&i.FieldType,
+			&i.Options,
+			&i.Position,
+			&i.Section,
 		); err != nil {
 			return nil, err
 		}

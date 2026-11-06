@@ -456,3 +456,51 @@ SELECT DISTINCT content_id
 FROM comparison_items
 WHERE deleted_at IS NULL
   AND item_ref @> jsonb_build_object('type', @entity_type::text, 'id', @entity_id::text);
+
+-- =====================
+-- dimension pools (§30 Sub-spec 6)
+-- =====================
+
+-- name: ListComparisonTypeFieldGroups :many
+SELECT ctfg.group_id, ctfg.category, ctfg.label, ctfg.position, ctfg.is_default,
+       g.slug AS group_slug, g.name AS group_name
+FROM comparison_type_field_groups ctfg
+JOIN custom_field_groups g ON g.id = ctfg.group_id
+WHERE ctfg.type_id = @type_id
+ORDER BY ctfg.is_default DESC, ctfg.position ASC, g.name ASC;
+
+-- name: ListComparisonTypePoolFields :many
+SELECT f.id, f.group_id, f.label, f.key, f.field_type, f.options, f.position, f.section,
+       ctfg.is_default AS group_is_default, ctfg.category AS group_category,
+       ctfg.label AS group_label
+FROM comparison_type_field_groups ctfg
+JOIN custom_fields f ON f.group_id = ctfg.group_id
+WHERE ctfg.type_id = @type_id
+ORDER BY ctfg.is_default DESC, ctfg.position ASC, f.position ASC, f.created_at ASC;
+
+-- name: ListPoolFieldsByGroupIDs :many
+SELECT f.id, f.group_id, f.label, f.key, f.field_type, f.options, f.position, f.section
+FROM custom_fields f
+JOIN comparison_type_field_groups ctfg ON ctfg.group_id = f.group_id
+WHERE ctfg.type_id = @type_id
+  AND ctfg.group_id = ANY(@group_ids::uuid[])
+ORDER BY ctfg.position ASC, f.position ASC;
+
+-- name: CountPoolFieldsByIDs :one
+SELECT count(*) FROM custom_fields f
+JOIN comparison_type_field_groups ctfg ON ctfg.group_id = f.group_id
+WHERE ctfg.type_id = @type_id
+  AND f.id = ANY(@field_ids::uuid[]);
+
+-- name: ListCustomFieldsByIDs :many
+SELECT id, group_id, label, key, field_type, options, is_required, is_system,
+       show_in_frontend, position, section, created_at
+FROM custom_fields
+WHERE id = ANY(@ids::uuid[]);
+
+-- name: DeleteComparisonTypeFieldGroups :exec
+DELETE FROM comparison_type_field_groups WHERE type_id = @type_id;
+
+-- name: CreateComparisonTypeFieldGroup :exec
+INSERT INTO comparison_type_field_groups (type_id, group_id, category, label, position, is_default)
+VALUES (@type_id, @group_id, @category, @label, @position, @is_default);

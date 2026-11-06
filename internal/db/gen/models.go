@@ -1143,6 +1143,15 @@ type ComparisonTypeDefinition struct {
 	Config       []byte             `json:"config"`
 }
 
+type ComparisonTypeFieldGroup struct {
+	TypeID    pgtype.UUID `json:"type_id"`
+	GroupID   pgtype.UUID `json:"group_id"`
+	Category  *string     `json:"category"`
+	Label     *string     `json:"label"`
+	Position  int32       `json:"position"`
+	IsDefault bool        `json:"is_default"`
+}
+
 type ComparisonValue struct {
 	DimensionID  pgtype.UUID        `json:"dimension_id"`
 	ItemID       pgtype.UUID        `json:"item_id"`
