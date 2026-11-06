@@ -95,10 +95,38 @@ product_providers(
 
 ## Part C — JCE integration
 
-- **One `product` resolver** — `Search/Get/List` reads `products` + batched cfv; honors `config.subtype` = product type slug for like-for-like filtering (the visa-kind pattern).
+- **One `product` resolver** — `Search/Get/List` reads `products` + `product_providers` + batched cfv; honors `config.subtype` = product type slug for like-for-like filtering (the visa-kind pattern).
+- **One `provider` resolver** — `affiliate_providers` rows become comparable entities; reads provider cfv + `coupon`/`affiliate` aggregates.
 - **One comparison type per product type** — `comparison_type_definitions` seeded per `product_types` row with `config.subtype` filtering; pool rows seed its bound groups (Sub-spec 6 seed path).
 - **Product CRUD + type CRUD** — `POST/PATCH/DELETE /admin/wiki/product-types` (admin RBAC node `wiki.entity_kind.create` — new) and `/wiki/products`; product create auto-creates its wiki page.
 - Rating dimensions — `rating_avg`, `review_count` surface as resolver metadata → comparable dimensions (hydrated like cfv).
+
+### JCE comparison candidates
+
+The model enables four comparison shapes — all like-for-like (§30's one-kind-plus-nested-comparison rule holds):
+
+1. **Product vs Product (per type)** — `ai-agents`, `ai-models`, `web-apps`, `websites`, `saas-tools`, `mobile-apps`. `item_ref_types=[product]` + `config.subtype={type_slug}` → like-for-like subtype filter. Dimension pool = the product type's bound cfv groups (Overview, Pricing, Features, …) + resolver-injected core columns as dims (`price_from`, `rating_avg`, `review_count`, `has_deal`, provider count).
+
+2. **Provider vs Provider** — `providers` comparison type over `affiliate_providers`. Dims: commission_rate, provider_type, active deal count, product coverage, category. Answers "which reseller to use for a given class of product".
+
+3. **Within-product provider matrix** — the product page's `product_providers` table IS a comparison (one product × its providers on price/offer/deal). Renders via the same matrix machinery as a scoped comparison — not a comparison type; it's the per-product detail surface. Reuses `hydrateMatrixCell` on provider cfv where the source is the provider entry.
+
+4. **Deal vs Deal** — `deals` comparison type over `coupons` rows on providers (e.g. "Kilo's Kimi deal vs Devin's Kimi deal"). Dims: discount type/value, expiry, provider. Lower priority — most deals differ by product already covered in #3.
+
+### Comparison-type seeds
+
+| Comparison type slug | Item ref | Subtype filter | Pool (cfv groups) |
+|---|---|---|---|
+| `ai-agents` | `product` | `ai-agent` | `wiki_ai_agent_{overview,pricing,features,capabilities,reviews}` |
+| `ai-models` | `product` | `ai-model` | `wiki_ai_model_{overview,pricing,capabilities,context,reviews}` |
+| `web-apps` | `product` | `web-app` | `wiki_web_app_{overview,pricing,features,reviews}` |
+| `websites` | `product` | `website` | `wiki_website_{overview,features,stack,reviews}` |
+| `saas-tools` | `product` | `saas` | `wiki_saas_{overview,pricing,features,integrations,reviews}` |
+| `mobile-apps` | `product` | `mobile-app` | `wiki_mobile_app_{overview,pricing,features,reviews}` |
+| `providers` | `provider` | — | `wiki_provider_{overview,offers,commission,coverage}` |
+| `deals` | `deal` | — | `wiki_deal_{overview,offer,terms}` |
+
+Subtype filtering is `config.subtype` → `products.product_type_id` join — identical mechanics to `visa_category` on visa kinds.
 
 ## Key decisions
 
@@ -108,7 +136,8 @@ product_providers(
 | Kind definition | `product_types` lookup row | New kind = config insert, not schema |
 | JCE wiring | `config.subtype` filter | Reuses the proven visa-kind subtype pattern |
 | Reviews | `review` content type + product link | Free §14 features (moderation, comments, feeds); aggregates denormalize onto product |
-| Kind scope | Product-domain only | Doesn't try to be arbitrary entity kinds — programs/cities stay table-backed |
+| Kind scope | Product-domain + providers + deals | Product comparisons via subtype filter; provider/deal become new item kinds on the same machinery — other domains stay table-backed |
+| Deal entity | `deal` item ref over `coupons` | Reuses the coupon backend; `/deals` surface already exists |
 
 ## Open questions
 
