@@ -241,7 +241,7 @@ func (s *Service) UpdateProduct(ctx context.Context, slug string, in ProductInpu
 		var terr error
 		typeID, terr = s.productTypeID(ctx, in.TypeSlug)
 		if terr != nil {
-			return fmt.Errorf("product type %q not found", in.TypeSlug)
+			return fmt.Errorf("product type %q not found: %w", in.TypeSlug, terr)
 		}
 	}
 	if err := q.UpdateProduct(ctx, gen.UpdateProductParams{
@@ -650,8 +650,8 @@ func (h *Handlers) HandleCreateProduct(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusConflict, "slug_conflict", "A product with this slug already exists")
 			return
 		}
-		if errors.Is(err, errInvalidID) {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		if errors.Is(err, errInvalidID) || errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 			return
 		}
 		slog.Error("wiki: create product failed", "error", err)
