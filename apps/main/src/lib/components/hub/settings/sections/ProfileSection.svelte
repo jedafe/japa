@@ -68,6 +68,7 @@
 			marital_status: profile?.marital_status ?? '',
 			date_of_birth: profile?.date_of_birth ?? '',
 			gender: profile?.gender ?? '',
+			interests: profile?.interests ?? [],
 			avatar_url: profile?.avatar_url ?? '',
 			cover_url: profile?.cover_url ?? ''
 		})),
@@ -83,6 +84,30 @@
 	// Constrain DOB client-side to the range the backend accepts
 	// (1900 → today) so invalid picks never reach the API.
 	const dobMax = new Date().toISOString().slice(0, 10);
+
+	// §87: free-form interest/skill chips — shown on the japa-stage
+	// directory cards and matched by its member search. The backend caps at
+	// 10 items × 40 chars, deduped case-insensitively; mirror that here so a
+	// rejected PATCH never surprises the user.
+	let interestInput = $state('');
+
+	function addInterest(raw: string) {
+		const v = raw.trim().replace(/,+$/, '').trim();
+		if (!v) return;
+		const list = (form.values.interests as string[]) ?? [];
+		if (list.length >= 10) return;
+		if (list.some((i) => i.toLowerCase() === v.toLowerCase())) {
+			interestInput = '';
+			return;
+		}
+		form.set({ interests: [...list, v.slice(0, 40)] } as Partial<typeof form.values>);
+		interestInput = '';
+	}
+
+	function removeInterest(i: string) {
+		const list = ((form.values.interests as string[]) ?? []).filter((x) => x !== i);
+		form.set({ interests: list } as Partial<typeof form.values>);
+	}
 
 	let avatarPickerOpen = $state(false);
 	let coverPickerOpen = $state(false);
@@ -268,6 +293,42 @@
 				ariaLabel={t('settings.profile.marital_status', 'Marital status')}
 				onValueChange={(v) => form.set({ marital_status: v ?? '' })}
 			/>
+		</label>
+		<label class="block sm:col-span-2">
+			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.profile.interests', 'Interests & skills')}</span>
+			<div class="flex flex-wrap items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5">
+				{#each ((form.values.interests as string[]) ?? []) as interest (interest)}
+					<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)]">
+						{interest}
+						<button
+							type="button"
+							onclick={() => removeInterest(interest)}
+							aria-label={t('common.remove', 'Remove')}
+							class="text-[var(--color-muted)] hover:text-[var(--color-text)]"
+						>
+							&times;
+						</button>
+					</span>
+				{/each}
+				<input
+					type="text"
+					bind:value={interestInput}
+					placeholder={t('settings.profile.interests_placeholder', 'Add an interest and press Enter')}
+					aria-label={t('settings.profile.interests', 'Interests & skills')}
+					maxlength="40"
+					class="min-w-32 flex-1 border-0 bg-transparent px-1 py-1 text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)]"
+					onkeydown={(e) => {
+						if (e.key === 'Enter' || e.key === ',') {
+							e.preventDefault();
+							addInterest(interestInput);
+						}
+					}}
+					onblur={() => { if (interestInput.trim()) addInterest(interestInput); }}
+				/>
+			</div>
+			<span class="mt-1 block text-xs text-[var(--color-muted)]">
+				{t('settings.profile.interests_hint', 'Shown on your Japa Stage card so members with shared interests can find you. Up to 10.')}
+			</span>
 		</label>
 	</div>
 </SettingsSection>

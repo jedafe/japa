@@ -588,6 +588,8 @@ export interface MeProfile {
 	/** §07 verification badge (ADR-029) — gates the request-verification action. */
 	verified?: boolean;
 	verification_type?: string | null;
+	/** §87: free-form interest/skill chips — shown on japa-stage directory cards. */
+	interests?: string[];
 }
 
 /** GET/PATCH /me/privacy — a map of privacy toggles. */
@@ -2093,7 +2095,7 @@ export function dealPath(coupon: Pick<Coupon, 'slug' | 'provider_slug'>): string
 	// A coupon without a slug has no canonical deal page — fall back to the
 	// index rather than emitting a malformed URL segment. Both segments are
 	// encoded so slugs carrying spaces or unicode resolve correctly.
-	if (!coupon.slug) return '/deals';
+	if (!coupon.slug) return '/products/deals';
 	return `/deal/${encodeURIComponent(coupon.provider_slug || INTERNAL_DEAL_PROVIDER_SLUG)}/${encodeURIComponent(coupon.slug)}`;
 }
 
@@ -4186,7 +4188,20 @@ export interface MemberStage {
 	destination_space_id?: string;
 	destination_space_name?: string;
 	destination_space_code?: string;
+	bio?: string;
+	profession?: string;
+	interests?: string[];
+	verified?: boolean;
+	cover_url?: string;
+	last_active_at?: string;
 	updated_at?: string;
+}
+
+/** GET /japa-stage/stats — discovery-hub aggregates (§87). */
+export interface JapaStageStats {
+	total: number;
+	stages: { stage: string; count: number }[];
+	destinations: { space_id: string; name: string; geo_code?: string; count: number }[];
 }
 
 /** GET /users/:username/japa-stage — a single member's public japa stage. */

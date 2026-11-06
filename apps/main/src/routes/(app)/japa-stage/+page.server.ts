@@ -2,14 +2,16 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { MemberStage, JapaStageOption, JapaIntent, GeoCountry } from '$lib/types';
+import type { MemberStage, JapaStageOption, JapaStageStats, JapaIntent, GeoCountry, TrendingContent } from '$lib/types';
 
 const PAGE_SIZE = 20;
+const SORT_KEYS = new Set(['recent', 'stage_updated', 'name']);
 
 /**
- * Japa Stage directory at /japa-stage — lists public member profiles grouped
- * by their japa_stage. Pass-through ?stage filter and ?page to the backend's
- * GET /members/by-stage endpoint.
+ * Japa Stage discovery hub at /japa-stage — hero, stage counts, search and
+ * filters, enriched member cards from GET /members/by-stage, plus stats
+ * (GET /japa-stage/stats) and trending discussions (GET /trending/content)
+ * for the right-sidebar widgets. Pass-through ?stage&intent&dest&q&sort&page.
  */
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
@@ -22,23 +24,30 @@ export const load: PageServerLoad = async (event) => {
 	const stage = event.url.searchParams.get('stage') ?? '';
 	const intent = event.url.searchParams.get('intent') ?? '';
 	const dest = event.url.searchParams.get('dest') ?? '';
+	const q = (event.url.searchParams.get('q') ?? '').trim();
+	const sortParam = event.url.searchParams.get('sort') ?? '';
+	const sort = SORT_KEYS.has(sortParam) ? sortParam : 'recent';
 	const page = Number(event.url.searchParams.get('page') ?? '1') || 1;
 
-	let members: MemberStage[] = [];
-	let totalPages = 1;
-	let loadError = false;
 	const params = new URLSearchParams({ page_size: String(PAGE_SIZE), page: String(page) });
 	if (stage) params.set('stage', stage);
 	if (intent) params.set('intent', intent);
 	if (dest) params.set('dest', dest);
+	if (q) params.set('q', q);
+	if (sort !== 'recent') params.set('sort', sort);
 
-	// Members list, country filter options, and stage/intent option lists are
-	// independent — fetch concurrently.
-	const [membersResult, countries, stages, intents] = await Promise.all([
+	// Members list, stats, trending discussions, and the filter option lists
+	// are independent — fetch concurrently. Stats/discussions degrade to
+	// null/[] so a widget failure never blanks the directory.
+	const [membersResult, stats, discussions, countries, stages, intents] = await Promise.all([
 		apiList<MemberStage>(ctx, `/members/by-stage?${params.toString()}`).then(
-			({ items, meta }) => ({ items, totalPages: meta?.total_pages ?? 1, loadError: false }),
-			() => ({ items: [] as MemberStage[], totalPages: 0, loadError: true })
+			({ items, meta }) => ({ items, totalPages: meta?.total_pages ?? 1, total: meta?.total ?? 0, loadError: false }),
+			() => ({ items: [] as MemberStage[], totalPages: 0, total: 0, loadError: true })
 		),
+		apiGet<JapaStageStats>(ctx, '/japa-stage/stats').catch(() => null),
+		apiList<TrendingContent>(ctx, '/trending/content?page_size=8')
+			.then((r) => r.items)
+			.catch(() => [] as TrendingContent[]),
 		apiList<GeoCountry>(ctx, '/geo/countries')
 			.then((r) => r.items)
 			.catch(() => [] as GeoCountry[]),
@@ -50,20 +59,35 @@ export const load: PageServerLoad = async (event) => {
 			.catch(() => [] as JapaIntent[])
 	]);
 
-	members = membersResult.items;
-	totalPages = membersResult.totalPages;
-	loadError = membersResult.loadError;
+	// Staff gate for the inline guide editor in the "How it works"
+	// slide-over — super_admin group bypasses, else admin.settings.* node.
+	const isSuperAdmin = (event.locals.user?.groups ?? []).some(
+		(g) => g === 'Super Admin' || g === 'super_admin'
+	);
+	let canManage = isSuperAdmin;
+	if (event.locals.user && !canManage) {
+		try {
+			const perms = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+			canManage = (perms?.permissions ?? []).some((p) => p.startsWith('admin.settings'));
+		} catch {
+			canManage = false;
+		}
+	}
 
 	return {
-		members,
+		members: membersResult.items,
+		total: membersResult.total,
 		authed,
+		canManage,
+		stats,
+		discussions,
 		countries,
 		stages,
 		intents,
 		pageSize: PAGE_SIZE,
 		currentPage: page,
-		totalPages,
-		loadError,
-		filters: { stage, intent, dest }
+		totalPages: membersResult.totalPages,
+		loadError: membersResult.loadError,
+		filters: { stage, intent, dest, q, sort }
 	};
 };
