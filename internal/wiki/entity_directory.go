@@ -92,9 +92,18 @@ func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) 
 	out := make([]EntityKindDTO, 0, len(kinds))
 	for _, k := range kinds {
 		var n int64
-		// source_table is the trusted kinds-row identifier.
+		// Count through the same FROM/WHERE as the listing so the index
+		// total matches what /wiki/e/{type} actually shows (active,
+		// published, non-deleted rows only).
+		from, where := k.SourceTable, ""
+		if src, ok := kindListSources[k.EntityKind]; ok {
+			from = src.from
+			if src.where != "" {
+				where = " WHERE " + src.where
+			}
+		}
 		if err := s.store.pool.Reader.QueryRow(ctx,
-			fmt.Sprintf("SELECT count(*) FROM %s", k.SourceTable)).Scan(&n); err != nil {
+			fmt.Sprintf("SELECT count(*) FROM %s%s", from, where)).Scan(&n); err != nil {
 			n = 0
 		}
 		out = append(out, EntityKindDTO{Kind: k.EntityKind, Label: k.Label, EntityCount: n})
@@ -102,10 +111,11 @@ func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) 
 	return out, nil
 }
 
-// ListEntitiesByKind pages one kind's entities. kind is the entity_kind
-// (e.g. 'program'), not the wiki type key — hrefs canonicalize through
-// the kind's discriminator-matching type.
-func (s *Service) ListEntitiesByKind(ctx context.Context, kind, q string, limit, offset int) ([]EntityDirectoryItem, int64, error) {
+// ListEntitiesByKind pages one kind's entities. The URL slug may be an
+// entity kind ('visa_route') or a wiki type key ('student_visa') — type
+// keys resolve through wiki_type_configs to their kind + discriminator
+// filter, so each discriminated type gets its own listing.
+func (s *Service) ListEntitiesByKind(ctx context.Context, slug, q string, limit, offset int) ([]EntityDirectoryItem, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 24
 	}
@@ -113,7 +123,11 @@ func (s *Service) ListEntitiesByKind(ctx context.Context, kind, q string, limit,
 		offset = 0
 	}
 
-	if _, err := s.store.read.GetWikiEntityKind(ctx, kind); err != nil {
+	kind, discFilter := slug, ""
+	if tc, err := s.store.GetEntityKindConfig(ctx, slug); err == nil && tc.EntityKind != nil && *tc.EntityKind != "" {
+		kind = *tc.EntityKind
+		discFilter = DiscriminatorValue(tc.EntityDiscriminator)
+	} else if _, err := s.store.read.GetWikiEntityKind(ctx, slug); err != nil {
 		return nil, 0, err
 	}
 
@@ -132,14 +146,29 @@ func (s *Service) ListEntitiesByKind(ctx context.Context, kind, q string, limit,
 
 	where := src.where
 	args := []any{}
-	if q != "" {
-		clause := fmt.Sprintf("%s ILIKE '%%' || $1 || '%%'", src.nameExpr)
+	argN := 1
+	nextArg := func() int {
+		i := argN
+		argN++
+		return i
+	}
+	if discFilter != "" && discCol != "" {
+		clause := fmt.Sprintf("%s = $%d", discCol, nextArg())
+		args = append(args, discFilter)
 		if where == "" {
 			where = clause
 		} else {
 			where += " AND " + clause
 		}
+	}
+	if q != "" {
+		clause := fmt.Sprintf("%s ILIKE '%%' || $%d || '%%'", src.nameExpr, nextArg())
 		args = append(args, q)
+		if where == "" {
+			where = clause
+		} else {
+			where += " AND " + clause
+		}
 	}
 	if where != "" {
 		where = " WHERE " + where
@@ -162,6 +191,17 @@ func (s *Service) ListEntitiesByKind(ctx context.Context, kind, q string, limit,
 	}
 	defer rows.Close()
 
+	// Fetch the kind's enabled types once — canonical type resolution is a
+	// pure function over this set (previously re-queried per row).
+	typeRows, _ := s.store.read.ListEntityWikiTypesByKind(ctx, &kind)
+	types := make([]EntityTypeDisc, 0, len(typeRows))
+	for _, tr := range typeRows {
+		types = append(types, EntityTypeDisc{
+			Slug:               tr.Slug,
+			DiscriminatorValue: DiscriminatorValue(tr.EntityDiscriminator),
+		})
+	}
+
 	out := []EntityDirectoryItem{}
 	for rows.Next() {
 		var it EntityDirectoryItem
@@ -172,9 +212,9 @@ func (s *Service) ListEntitiesByKind(ctx context.Context, kind, q string, limit,
 		if disc != nil {
 			it.Discriminator = *disc
 		}
-		typeSlug := s.canonicalEntityTypeSlug(ctx, kind, it.Discriminator)
+		typeSlug := CanonicalEntityTypeSlug(it.Discriminator, types)
 		if typeSlug == "" {
-			typeSlug = kind
+			typeSlug = slug
 		}
 		it.Href = fmt.Sprintf("/wiki/e/%s/%s/overview", typeSlug, it.Slug)
 		out = append(out, it)
