@@ -213,21 +213,8 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 	href := "/wiki/e/" + typeSlug + "/" + body.Slug + "/overview"
 	out := map[string]any{"slug": body.Slug, "href": href}
 
-	// Product-type slugs → products (slug-keyed creation).
-	if pt, err := h.service.store.read.GetProductTypeBySlug(ctx, typeSlug); err == nil && pt.IsEnabled {
-		slug, err := h.service.CreateProduct(ctx, ProductInput{
-			TypeSlug: typeSlug, Slug: body.Slug, Name: name,
-			Tagline: strPtr(body.Tagline), WebsiteURL: strPtr(body.WebsiteURL),
-			PricingModel: strPtr(body.PricingModel), PriceFrom: body.PriceFrom,
-		})
-		if err != nil {
-			h.failEntityCreate(w, typeSlug, err)
-			return
-		}
-		out["slug"] = slug
-		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": out})
-		return
-	}
+	// Products are created via /products/new (admin product CRUD) —
+	// product-type slugs no longer accept creates on this surface.
 
 	// Table-backed kinds.
 	kind, err := h.service.store.read.GetWikiEntityKind(ctx, typeSlug)
@@ -349,7 +336,7 @@ func (h *Handlers) HandleCreateEntityInstance(w http.ResponseWriter, r *http.Req
 			return
 		}
 	case "product":
-		errpkg.WriteError(w, http.StatusBadRequest, "type_required", "Create products under their type (/wiki/e/{product_type_slug})")
+		errpkg.WriteError(w, http.StatusBadRequest, "use_products_new", "Products are created at /products/new")
 		return
 	default:
 		errpkg.WriteError(w, http.StatusBadRequest, "kind_not_creatable", "This entity kind cannot be created here")

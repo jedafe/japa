@@ -9,6 +9,7 @@
 	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
 	import { api } from '$lib/api/client';
 	import { invalidateAll } from '$app/navigation';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { ChevronRight, Plus, Search, Table2, X } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
@@ -23,9 +24,9 @@
 	let createErr = $state('');
 	let form = $state<Record<string, string>>({});
 	let uniPicks = $state<Set<string>>(new Set());
-	let universities = $state<{ slug: string; name: string }[]>([]);
+	let uniLabels = $state<Record<string, string>>({});
+	let programLabel = $state('');
 	let countries = $state<{ slug: string; name: string }[]>([]);
-	let programs = $state<{ slug: string; name: string }[]>([]);
 
 	const isProduct = $derived(data.kind === 'product');
 	const isCourse = $derived(data.kind === 'course');
@@ -37,23 +38,39 @@
 
 	async function openCreate() {
 		showCreate = true;
-		if (isCourse) {
-			const [us, ps] = await Promise.all([
-				api.get<{ items: { slug: string; name: string }[] }>('/wiki/pickers/spaces?type=education'),
-				api.get<{ items: { slug: string; name: string }[] }>('/wiki/entity-kinds/program/entities?limit=200')
-			]);
-			universities = us.data?.items ?? [];
-			programs = (ps.data?.items ?? []).map((p: any) => ({ slug: p.slug, name: p.name }));
-		}
-		if (needsCountry) {
+		if (needsCountry && countries.length === 0) {
 			const cs = await api.get<{ items: { slug: string; name: string }[] }>('/wiki/pickers/spaces?type=country');
 			countries = cs.data?.items ?? [];
 		}
 	}
 
-	function toggleUni(slug: string) {
+	// Course pickers — Autocomplete fetchers hit the live search endpoints.
+	async function fetchUniversities(q: string): Promise<AutocompleteItem[]> {
+		const res = await api.get<{ items: { slug: string; name: string }[] }>(
+			`/wiki/pickers/spaces?type=education&q=${encodeURIComponent(q)}`
+		);
+		return (res.data?.items ?? [])
+			.filter((u) => !uniPicks.has(u.slug))
+			.map((u) => ({ id: u.slug, label: u.name }));
+	}
+
+	async function fetchPrograms(q: string): Promise<AutocompleteItem[]> {
+		const res = await api.get<{ items: { slug?: string; id: string; name: string }[] }>(
+			`/wiki/entity-kinds/program/entities?q=${encodeURIComponent(q)}&limit=20`
+		);
+		return (res.data?.items ?? []).map((p) => ({ id: p.slug ?? p.id, label: p.name }));
+	}
+
+	function pickUniversity(item: AutocompleteItem) {
 		const next = new Set(uniPicks);
-		next.has(slug) ? next.delete(slug) : next.add(slug);
+		next.add(item.id);
+		uniPicks = next;
+		uniLabels = { ...uniLabels, [item.id]: item.label };
+	}
+
+	function removeUniversity(slug: string) {
+		const next = new Set(uniPicks);
+		next.delete(slug);
 		uniPicks = next;
 	}
 
@@ -156,24 +173,40 @@
 							</label>
 						{/if}
 						{#if isCourse}
-							<fieldset class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)] sm:col-span-2">
-								<legend class="mb-1">{t('wiki.entities.fld_universities', 'Universities')}</legend>
-								<div class="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] p-2">
-									{#each universities as u (u.slug)}
-										<label class="flex items-center gap-2 px-1 py-0.5 text-sm text-[var(--color-text)]">
-											<input type="checkbox" checked={uniPicks.has(u.slug)} onchange={() => toggleUni(u.slug)} />
-											{u.name}
-										</label>
-									{/each}
-								</div>
-							</fieldset>
-							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
-								{t('wiki.entities.fld_program', 'Program')}
-								<select bind:value={form.program_slug} class="inp">
-									<option value="">—</option>
-									{#each programs as pr (pr.slug)}<option value={pr.slug}>{pr.name}</option>{/each}
-								</select>
-							</label>
+							<div class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)] sm:col-span-2">
+								<span>{t('wiki.entities.fld_universities', 'Universities')}</span>
+								{#if uniPicks.size > 0}
+									<div class="flex flex-wrap gap-1.5">
+										{#each [...uniPicks] as u (u)}
+											<span class="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2.5 py-1 text-[11px] font-medium text-[var(--color-text)]">
+												{uniLabels[u] ?? u}
+												<button type="button" onclick={() => removeUniversity(u)} class="text-[var(--color-muted)] hover:text-[var(--color-text)]" aria-label="remove"><X size={12} /></button>
+											</span>
+										{/each}
+									</div>
+								{/if}
+								<Autocomplete
+									placeholder={t('wiki.entities.uni_placeholder', 'Search universities…')}
+									emptyMessage={t('wiki.entities.no_universities', 'No universities found')}
+									fetcher={fetchUniversities}
+									initialFetcher={() => fetchUniversities('')}
+									selectedId={null}
+									onSelect={pickUniversity}
+								/>
+							</div>
+							<div class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								<span>{t('wiki.entities.fld_program', 'Program')}</span>
+								<Autocomplete
+									placeholder={t('wiki.entities.program_placeholder', 'Search programs…')}
+									emptyMessage={t('wiki.entities.no_programs', 'No programs found')}
+									fetcher={fetchPrograms}
+									initialFetcher={() => fetchPrograms('')}
+									selectedId={form.program_slug || null}
+									selectedLabel={programLabel}
+									onSelect={(item) => { form.program_slug = item.id; programLabel = item.label; }}
+									onClear={() => { form.program_slug = ''; programLabel = ''; }}
+								/>
+							</div>
 						{/if}
 						{#if needsCountry && !isBank}
 							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">

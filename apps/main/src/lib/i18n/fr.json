@@ -6751,5 +6751,9 @@
 	"wiki.entities.fld_country_code": "Code pays",
 	"wiki.entities.fld_visa_category": "Catégorie de visa",
 	"wiki.entities.fld_gov_url": "URL source gouv.",
-	"wiki.entities.fld_source_url": "URL source"
+	"wiki.entities.fld_source_url": "URL source",
+	"wiki.entities.uni_placeholder": "Rechercher une université…",
+	"wiki.entities.no_universities": "Aucune université trouvée",
+	"wiki.entities.program_placeholder": "Rechercher un programme…",
+	"wiki.entities.no_programs": "Aucun programme trouvé"
 }

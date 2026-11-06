@@ -6866,5 +6866,9 @@
 	"wiki.entities.fld_country_code": "Country code",
 	"wiki.entities.fld_visa_category": "Visa category",
 	"wiki.entities.fld_gov_url": "Gov source URL",
-	"wiki.entities.fld_source_url": "Source URL"
+	"wiki.entities.fld_source_url": "Source URL",
+	"wiki.entities.uni_placeholder": "Search universities…",
+	"wiki.entities.no_universities": "No universities found",
+	"wiki.entities.program_placeholder": "Search programs…",
+	"wiki.entities.no_programs": "No programs found"
 }
