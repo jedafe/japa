@@ -974,6 +974,88 @@ func (q *Queries) GetCourseOfferingForWiki(ctx context.Context, slug string) (Ge
 	return i, err
 }
 
+const getDealByID = `-- name: GetDealByID :one
+SELECT c.id, c.slug, c.title, c.coupon_type, c.discount_type, c.discount_value,
+       c.currency, c.status, c.expires_at, c.referral_url, ap.name AS provider_name
+FROM coupons c
+LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
+WHERE c.id = $1 AND c.status = 'active'
+`
+
+type GetDealByIDRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	Slug          string             `json:"slug"`
+	Title         string             `json:"title"`
+	CouponType    string             `json:"coupon_type"`
+	DiscountType  *string            `json:"discount_type"`
+	DiscountValue pgtype.Numeric     `json:"discount_value"`
+	Currency      *string            `json:"currency"`
+	Status        string             `json:"status"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	ReferralUrl   *string            `json:"referral_url"`
+	ProviderName  *string            `json:"provider_name"`
+}
+
+func (q *Queries) GetDealByID(ctx context.Context, id pgtype.UUID) (GetDealByIDRow, error) {
+	row := q.db.QueryRow(ctx, getDealByID, id)
+	var i GetDealByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.CouponType,
+		&i.DiscountType,
+		&i.DiscountValue,
+		&i.Currency,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.ReferralUrl,
+		&i.ProviderName,
+	)
+	return i, err
+}
+
+const getDealBySlug = `-- name: GetDealBySlug :one
+SELECT c.id, c.slug, c.title, c.coupon_type, c.discount_type, c.discount_value,
+       c.currency, c.status, c.expires_at, c.referral_url, ap.name AS provider_name
+FROM coupons c
+LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
+WHERE c.slug = $1 AND c.status = 'active'
+`
+
+type GetDealBySlugRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	Slug          string             `json:"slug"`
+	Title         string             `json:"title"`
+	CouponType    string             `json:"coupon_type"`
+	DiscountType  *string            `json:"discount_type"`
+	DiscountValue pgtype.Numeric     `json:"discount_value"`
+	Currency      *string            `json:"currency"`
+	Status        string             `json:"status"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	ReferralUrl   *string            `json:"referral_url"`
+	ProviderName  *string            `json:"provider_name"`
+}
+
+func (q *Queries) GetDealBySlug(ctx context.Context, slug string) (GetDealBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getDealBySlug, slug)
+	var i GetDealBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Title,
+		&i.CouponType,
+		&i.DiscountType,
+		&i.DiscountValue,
+		&i.Currency,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.ReferralUrl,
+		&i.ProviderName,
+	)
+	return i, err
+}
+
 const getEmbassyForWiki = `-- name: GetEmbassyForWiki :one
 SELECT id, slug, name, host_space_id
 FROM embassies
@@ -3061,6 +3143,54 @@ func (q *Queries) RejectWikiRevision(ctx context.Context, arg RejectWikiRevision
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const searchDeals = `-- name: SearchDeals :many
+SELECT c.id, c.slug, c.title, ap.name AS provider_name
+FROM coupons c
+LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
+WHERE c.status = 'active'
+  AND ($1::text = '' OR c.title ILIKE '%' || $1 || '%')
+ORDER BY c.title
+LIMIT $3 OFFSET $2
+`
+
+type SearchDealsParams struct {
+	Column1     string `json:"column_1"`
+	OffsetCount int32  `json:"offset_count"`
+	LimitCount  int32  `json:"limit_count"`
+}
+
+type SearchDealsRow struct {
+	ID           pgtype.UUID `json:"id"`
+	Slug         string      `json:"slug"`
+	Title        string      `json:"title"`
+	ProviderName *string     `json:"provider_name"`
+}
+
+func (q *Queries) SearchDeals(ctx context.Context, arg SearchDealsParams) ([]SearchDealsRow, error) {
+	rows, err := q.db.Query(ctx, searchDeals, arg.Column1, arg.OffsetCount, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchDealsRow
+	for rows.Next() {
+		var i SearchDealsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Title,
+			&i.ProviderName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const searchProducts = `-- name: SearchProducts :many

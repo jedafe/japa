@@ -1005,3 +1005,26 @@ WHERE is_active = true
   AND ($1::text = '' OR name ILIKE '%' || $1 || '%')
 ORDER BY name
 LIMIT @limit_count OFFSET @offset_count;
+
+-- name: GetDealBySlug :one
+SELECT c.id, c.slug, c.title, c.coupon_type, c.discount_type, c.discount_value,
+       c.currency, c.status, c.expires_at, c.referral_url, ap.name AS provider_name
+FROM coupons c
+LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
+WHERE c.slug = @slug AND c.status = 'active';
+
+-- name: GetDealByID :one
+SELECT c.id, c.slug, c.title, c.coupon_type, c.discount_type, c.discount_value,
+       c.currency, c.status, c.expires_at, c.referral_url, ap.name AS provider_name
+FROM coupons c
+LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
+WHERE c.id = @id AND c.status = 'active';
+
+-- name: SearchDeals :many
+SELECT c.id, c.slug, c.title, ap.name AS provider_name
+FROM coupons c
+LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
+WHERE c.status = 'active'
+  AND ($1::text = '' OR c.title ILIKE '%' || $1 || '%')
+ORDER BY c.title
+LIMIT @limit_count OFFSET @offset_count;
