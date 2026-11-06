@@ -6720,5 +6720,11 @@
 	"comparisons.hero_desc": "Comparez des outils, universités, emplois et plus côte à côte — voyez les différences qui comptent pour votre parcours.",
 	"comparisons.guide_body": "Parcourez les comparaisons de la communauté.\n\n1. **Filtrez par type** — universités, emplois, outils et plus.\n2. **Recherchez** — trouvez une comparaison par titre.\n3. **Créez la vôtre** — choisissez jusqu’à 4 éléments et comparez-les.",
 	"compare.hero_desc": "Choisissez quoi comparer — universités, emplois, voies de visa et plus — et voyez-les côte à côte.",
-	"compare.guide_body": "Créez une comparaison côte à côte en trois étapes.\n\n1. **Choisissez un type** — universités, emplois, voies de visa, outils et plus.\n2. **Sélectionnez les éléments** — choisissez 2 à 4 entrées.\n3. **Comparez** — la matrice met en avant les différences instantanément."
+	"compare.guide_body": "Créez une comparaison côte à côte en trois étapes.\n\n1. **Choisissez un type** — universités, emplois, voies de visa, outils et plus.\n2. **Sélectionnez les éléments** — choisissez 2 à 4 entrées.\n3. **Comparez** — la matrice met en avant les différences instantanément.",
+	"wiki.entities.title": "Wiki des entités",
+	"wiki.entities.subtitle": "Parcourez les entités par type — programmes, offres de cours, banques, ambassades, et plus.",
+	"wiki.entities.empty": "Aucun type d'entité disponible",
+	"wiki.entities.items": "entrées",
+	"wiki.entities.search": "Rechercher…",
+	"wiki.entities.empty_list": "Aucune entrée trouvée"
 }

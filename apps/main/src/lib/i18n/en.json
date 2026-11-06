@@ -6779,5 +6779,11 @@
 	"comparisons.hero_desc": "Compare tools, universities, jobs and more side by side — see the differences that matter to your journey.",
 	"comparisons.guide_body": "Browse saved comparisons from the community.\n\n1. **Filter by type** — narrow to universities, jobs, tools and more.\n2. **Search** — find a comparison by title.\n3. **Create your own** — pick up to 4 items and see them side by side.",
 	"compare.hero_desc": "Pick what to compare — universities, jobs, visa routes and more — and see them side by side.",
-	"compare.guide_body": "Build a side-by-side comparison in three steps.\n\n1. **Choose a type** — universities, jobs, visa routes, tools and more.\n2. **Select items** — pick 2–4 entries from the picker.\n3. **Compare** — the matrix highlights the differences instantly."
+	"compare.guide_body": "Build a side-by-side comparison in three steps.\n\n1. **Choose a type** — universities, jobs, visa routes, tools and more.\n2. **Select items** — pick 2–4 entries from the picker.\n3. **Compare** — the matrix highlights the differences instantly.",
+	"wiki.entities.title": "Entity Wiki",
+	"wiki.entities.subtitle": "Browse entities by kind — programs, course offerings, banks, embassies, and more.",
+	"wiki.entities.empty": "No entity kinds available",
+	"wiki.entities.items": "entries",
+	"wiki.entities.search": "Search…",
+	"wiki.entities.empty_list": "No entries found"
 }
