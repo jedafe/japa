@@ -1336,7 +1336,9 @@ func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, userID pgtyp
 	}
 
 	// The redeeming type must match the minted one — a token minted for
-	// universities must not fund a banks comparison after login.
+	// universities must not fund a banks comparison after login. When the
+	// request omits type_id, the token's slug supplies it (Sub-spec 6
+	// field_ids/group_ids validation needs a resolved type either way).
 	if input.TypeID.Valid {
 		td, terr := s.store.getComparisonTypeByID(ctx, input.TypeID)
 		if terr != nil {
@@ -1345,6 +1347,11 @@ func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, userID pgtyp
 
 		if payload.TypeSlug != "" && td.Slug != payload.TypeSlug {
 			return JCEComparisonResult{}, fmt.Errorf("%w: selection token is for type %q", errpkg.ErrInvalid, payload.TypeSlug)
+		}
+	} else if payload.TypeSlug != "" {
+		td, terr := s.store.getComparisonTypeBySlug(ctx, payload.TypeSlug)
+		if terr == nil {
+			input.TypeID = td.ID
 		}
 	}
 

@@ -43,6 +43,7 @@ func dimensionFieldsFromGroup(rows []gen.ListCustomFieldsByGroupRow) []dimension
 
 func parseUUIDList(ids []string) ([]pgtype.UUID, error) {
 	out := make([]pgtype.UUID, 0, len(ids))
+	seen := make(map[[16]byte]bool, len(ids))
 
 	for _, s := range ids {
 		id, err := resolver.ParseUUID(s)
@@ -50,6 +51,11 @@ func parseUUIDList(ids []string) ([]pgtype.UUID, error) {
 			return nil, err
 		}
 
+		if seen[id.Bytes] {
+			continue
+		}
+
+		seen[id.Bytes] = true
 		out = append(out, id)
 	}
 
@@ -232,13 +238,19 @@ func (s *Service) ListComparisonTypeFieldPool(ctx context.Context, typeID pgtype
 			label = *g.Label
 		}
 
+		// Empty groups serialize as [] not null — the picker iterates fields.
+		groupFields := byGroup[g.GroupID.Bytes]
+		if groupFields == nil {
+			groupFields = []PoolField{}
+		}
+
 		out = append(out, PoolGroup{
 			GroupID:   g.GroupID.String(),
 			Slug:      g.GroupSlug,
 			Label:     label,
 			Category:  g.Category,
 			IsDefault: g.IsDefault,
-			Fields:    byGroup[g.GroupID.Bytes],
+			Fields:    groupFields,
 		})
 	}
 

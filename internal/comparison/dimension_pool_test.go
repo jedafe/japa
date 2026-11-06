@@ -17,8 +17,10 @@ func TestParseUUIDList(t *testing.T) {
 		t.Fatalf("parseUUIDList valid: %v", err)
 	}
 
-	if len(got) != 2 || !got[0].Valid {
-		t.Fatalf("parseUUIDList = %+v, want 2 valid UUIDs", got)
+	// Duplicates collapse — the pool-membership count check compares
+	// against distinct ids, so duplicates must not cause false rejection.
+	if len(got) != 1 || !got[0].Valid {
+		t.Fatalf("parseUUIDList = %+v, want 1 deduped valid UUID", got)
 	}
 
 	if _, err := parseUUIDList([]string{"not-a-uuid"}); err == nil {
