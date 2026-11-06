@@ -1047,3 +1047,30 @@ INSERT INTO wiki_entity_kinds (entity_kind, label, source_table, id_column, slug
 VALUES (@entity_kind, @label, @source_table, @id_column, @slug_column)
 ON CONFLICT (entity_kind) DO NOTHING
 RETURNING entity_kind;
+
+-- name: CreateProduct :one
+INSERT INTO products (product_type_id, slug, name, tagline, website_url, pricing_model, price_from)
+VALUES (@product_type_id, @slug, @name, sqlc.narg(tagline), sqlc.narg(website_url), sqlc.narg(pricing_model), sqlc.narg(price_from))
+RETURNING id, slug, name;
+
+-- name: UpdateProduct :exec
+UPDATE products SET
+    name = sqlc.narg(name),
+    tagline = sqlc.narg(tagline),
+    website_url = sqlc.narg(website_url),
+    pricing_model = sqlc.narg(pricing_model),
+    price_from = sqlc.narg(price_from),
+    updated_at = now()
+WHERE slug = @slug AND deleted_at IS NULL;
+
+-- name: DeleteProduct :exec
+UPDATE products SET deleted_at = now() WHERE slug = @slug AND deleted_at IS NULL;
+
+-- name: UpsertProductProvider :exec
+INSERT INTO product_providers (product_id, provider_id, price_from, offer_url, position)
+VALUES (@product_id, @provider_id, sqlc.narg(price_from), sqlc.narg(offer_url), @position)
+ON CONFLICT (product_id, provider_id) DO UPDATE
+SET price_from = EXCLUDED.price_from, offer_url = EXCLUDED.offer_url, position = EXCLUDED.position;
+
+-- name: RemoveProductProvider :exec
+DELETE FROM product_providers WHERE product_id = @product_id AND provider_id = @provider_id;

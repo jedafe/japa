@@ -7993,6 +7993,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// config layer of a new "kind" (wiki.manage).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
 					Post("/admin/wiki/product-types", wikiHandlers.HandleCreateProductType)
+				// §80 Product Domain: product instance CRUD (wiki.manage).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Post("/admin/wiki/products", wikiHandlers.HandleCreateProduct)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Patch("/admin/wiki/products/{slug}", wikiHandlers.HandleUpdateProduct)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Delete("/admin/wiki/products/{slug}", wikiHandlers.HandleDeleteProduct)
 				// Authenticated: create a page on an entity + submit revision
 				// on an entity-bound page (wiki.edit).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.edit")).

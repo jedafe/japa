@@ -3328,6 +3328,45 @@ type PofRequirement struct {
 	AssignedTo           pgtype.UUID        `json:"assigned_to"`
 }
 
+type Product struct {
+	ID            pgtype.UUID        `json:"id"`
+	ProductTypeID pgtype.UUID        `json:"product_type_id"`
+	Slug          string             `json:"slug"`
+	Name          string             `json:"name"`
+	Tagline       *string            `json:"tagline"`
+	WebsiteUrl    *string            `json:"website_url"`
+	LogoID        pgtype.UUID        `json:"logo_id"`
+	PricingModel  *string            `json:"pricing_model"`
+	PriceFrom     pgtype.Numeric     `json:"price_from"`
+	RatingAvg     pgtype.Numeric     `json:"rating_avg"`
+	ReviewCount   int32              `json:"review_count"`
+	GeoSpaceID    pgtype.UUID        `json:"geo_space_id"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ProductProvider struct {
+	ProductID  pgtype.UUID        `json:"product_id"`
+	ProviderID pgtype.UUID        `json:"provider_id"`
+	PriceFrom  pgtype.Numeric     `json:"price_from"`
+	OfferUrl   *string            `json:"offer_url"`
+	Position   int32              `json:"position"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type ProductType struct {
+	ID        pgtype.UUID        `json:"id"`
+	Slug      string             `json:"slug"`
+	Label     string             `json:"label"`
+	Icon      *string            `json:"icon"`
+	IsEnabled bool               `json:"is_enabled"`
+	Config    []byte             `json:"config"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ProfessionalDocument struct {
 	ID           pgtype.UUID        `json:"id"`
 	Title        string             `json:"title"`

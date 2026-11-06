@@ -716,6 +716,43 @@ func (q *Queries) CreateEntityWikiPage(ctx context.Context, arg CreateEntityWiki
 	return i, err
 }
 
+const createProduct = `-- name: CreateProduct :one
+INSERT INTO products (product_type_id, slug, name, tagline, website_url, pricing_model, price_from)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, slug, name
+`
+
+type CreateProductParams struct {
+	ProductTypeID pgtype.UUID    `json:"product_type_id"`
+	Slug          string         `json:"slug"`
+	Name          string         `json:"name"`
+	Tagline       *string        `json:"tagline"`
+	WebsiteUrl    *string        `json:"website_url"`
+	PricingModel  *string        `json:"pricing_model"`
+	PriceFrom     pgtype.Numeric `json:"price_from"`
+}
+
+type CreateProductRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+	Name string      `json:"name"`
+}
+
+func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (CreateProductRow, error) {
+	row := q.db.QueryRow(ctx, createProduct,
+		arg.ProductTypeID,
+		arg.Slug,
+		arg.Name,
+		arg.Tagline,
+		arg.WebsiteUrl,
+		arg.PricingModel,
+		arg.PriceFrom,
+	)
+	var i CreateProductRow
+	err := row.Scan(&i.ID, &i.Slug, &i.Name)
+	return i, err
+}
+
 const createProductType = `-- name: CreateProductType :one
 INSERT INTO product_types (slug, label, icon, config)
 VALUES ($1, $2, $3, $4)
@@ -795,6 +832,15 @@ func (q *Queries) CreateWikiPage(ctx context.Context, arg CreateWikiPageParams) 
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const deleteProduct = `-- name: DeleteProduct :exec
+UPDATE products SET deleted_at = now() WHERE slug = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) DeleteProduct(ctx context.Context, slug string) error {
+	_, err := q.db.Exec(ctx, deleteProduct, slug)
+	return err
 }
 
 const deleteWikiPageFeedback = `-- name: DeleteWikiPageFeedback :exec
@@ -3272,6 +3318,20 @@ func (q *Queries) RejectWikiRevision(ctx context.Context, arg RejectWikiRevision
 	return result.RowsAffected(), nil
 }
 
+const removeProductProvider = `-- name: RemoveProductProvider :exec
+DELETE FROM product_providers WHERE product_id = $1 AND provider_id = $2
+`
+
+type RemoveProductProviderParams struct {
+	ProductID  pgtype.UUID `json:"product_id"`
+	ProviderID pgtype.UUID `json:"provider_id"`
+}
+
+func (q *Queries) RemoveProductProvider(ctx context.Context, arg RemoveProductProviderParams) error {
+	_, err := q.db.Exec(ctx, removeProductProvider, arg.ProductID, arg.ProviderID)
+	return err
+}
+
 const searchDeals = `-- name: SearchDeals :many
 SELECT c.id, c.slug, c.title, ap.name AS provider_name
 FROM coupons c
@@ -3475,6 +3535,38 @@ func (q *Queries) SoftDeleteWikiRevision(ctx context.Context, id pgtype.UUID) (i
 	return result.RowsAffected(), nil
 }
 
+const updateProduct = `-- name: UpdateProduct :exec
+UPDATE products SET
+    name = $1,
+    tagline = $2,
+    website_url = $3,
+    pricing_model = $4,
+    price_from = $5,
+    updated_at = now()
+WHERE slug = $6 AND deleted_at IS NULL
+`
+
+type UpdateProductParams struct {
+	Name         *string        `json:"name"`
+	Tagline      *string        `json:"tagline"`
+	WebsiteUrl   *string        `json:"website_url"`
+	PricingModel *string        `json:"pricing_model"`
+	PriceFrom    pgtype.Numeric `json:"price_from"`
+	Slug         string         `json:"slug"`
+}
+
+func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) error {
+	_, err := q.db.Exec(ctx, updateProduct,
+		arg.Name,
+		arg.Tagline,
+		arg.WebsiteUrl,
+		arg.PricingModel,
+		arg.PriceFrom,
+		arg.Slug,
+	)
+	return err
+}
+
 const updateWikiPage = `-- name: UpdateWikiPage :execrows
 UPDATE wiki_pages
 SET is_locked = COALESCE($1, is_locked),
@@ -3523,6 +3615,32 @@ UPDATE wiki_pages SET updated_at = now() WHERE id = $1
 
 func (q *Queries) UpdateWikiPageTouched(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, updateWikiPageTouched, id)
+	return err
+}
+
+const upsertProductProvider = `-- name: UpsertProductProvider :exec
+INSERT INTO product_providers (product_id, provider_id, price_from, offer_url, position)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (product_id, provider_id) DO UPDATE
+SET price_from = EXCLUDED.price_from, offer_url = EXCLUDED.offer_url, position = EXCLUDED.position
+`
+
+type UpsertProductProviderParams struct {
+	ProductID  pgtype.UUID    `json:"product_id"`
+	ProviderID pgtype.UUID    `json:"provider_id"`
+	PriceFrom  pgtype.Numeric `json:"price_from"`
+	OfferUrl   *string        `json:"offer_url"`
+	Position   int32          `json:"position"`
+}
+
+func (q *Queries) UpsertProductProvider(ctx context.Context, arg UpsertProductProviderParams) error {
+	_, err := q.db.Exec(ctx, upsertProductProvider,
+		arg.ProductID,
+		arg.ProviderID,
+		arg.PriceFrom,
+		arg.OfferUrl,
+		arg.Position,
+	)
 	return err
 }
 
