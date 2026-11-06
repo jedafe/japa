@@ -952,3 +952,36 @@ WHERE wiki_page_id = @page_id
 SELECT entity_kind, source_table, id_column, slug_column, label
 FROM wiki_entity_kinds
 ORDER BY entity_kind;
+
+-- name: GetProductBySlug :one
+SELECT p.id, p.product_type_id, p.slug, p.name, p.tagline, p.website_url,
+       p.logo_id, p.pricing_model, p.price_from, p.rating_avg, p.review_count,
+       p.geo_space_id, t.slug AS type_slug
+FROM products p
+JOIN product_types t ON t.id = p.product_type_id
+WHERE p.slug = @slug AND p.deleted_at IS NULL;
+
+-- name: GetProductByID :one
+SELECT p.id, p.product_type_id, p.slug, p.name, p.tagline, p.website_url,
+       p.logo_id, p.pricing_model, p.price_from, p.rating_avg, p.review_count,
+       p.geo_space_id, t.slug AS type_slug
+FROM products p
+JOIN product_types t ON t.id = p.product_type_id
+WHERE p.id = @id AND p.deleted_at IS NULL;
+
+-- name: SearchProducts :many
+SELECT p.id, p.slug, p.name, p.tagline, t.slug AS type_slug
+FROM products p
+JOIN product_types t ON t.id = p.product_type_id
+WHERE p.deleted_at IS NULL
+  AND ($1::text = '' OR t.slug = $1)
+  AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%')
+ORDER BY p.name
+LIMIT @limit_count OFFSET @offset_count;
+
+-- name: ListProductProviders :many
+SELECT pp.provider_id, ap.name, pp.price_from, pp.offer_url
+FROM product_providers pp
+JOIN affiliate_providers ap ON ap.id = pp.provider_id
+WHERE pp.product_id = @product_id
+ORDER BY pp.position, ap.name;

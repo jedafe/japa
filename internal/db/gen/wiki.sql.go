@@ -1093,6 +1093,98 @@ func (q *Queries) GetOrganizationForWiki(ctx context.Context, slug string) (GetO
 	return i, err
 }
 
+const getProductByID = `-- name: GetProductByID :one
+SELECT p.id, p.product_type_id, p.slug, p.name, p.tagline, p.website_url,
+       p.logo_id, p.pricing_model, p.price_from, p.rating_avg, p.review_count,
+       p.geo_space_id, t.slug AS type_slug
+FROM products p
+JOIN product_types t ON t.id = p.product_type_id
+WHERE p.id = $1 AND p.deleted_at IS NULL
+`
+
+type GetProductByIDRow struct {
+	ID            pgtype.UUID    `json:"id"`
+	ProductTypeID pgtype.UUID    `json:"product_type_id"`
+	Slug          string         `json:"slug"`
+	Name          string         `json:"name"`
+	Tagline       *string        `json:"tagline"`
+	WebsiteUrl    *string        `json:"website_url"`
+	LogoID        pgtype.UUID    `json:"logo_id"`
+	PricingModel  *string        `json:"pricing_model"`
+	PriceFrom     pgtype.Numeric `json:"price_from"`
+	RatingAvg     pgtype.Numeric `json:"rating_avg"`
+	ReviewCount   int32          `json:"review_count"`
+	GeoSpaceID    pgtype.UUID    `json:"geo_space_id"`
+	TypeSlug      string         `json:"type_slug"`
+}
+
+func (q *Queries) GetProductByID(ctx context.Context, id pgtype.UUID) (GetProductByIDRow, error) {
+	row := q.db.QueryRow(ctx, getProductByID, id)
+	var i GetProductByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.ProductTypeID,
+		&i.Slug,
+		&i.Name,
+		&i.Tagline,
+		&i.WebsiteUrl,
+		&i.LogoID,
+		&i.PricingModel,
+		&i.PriceFrom,
+		&i.RatingAvg,
+		&i.ReviewCount,
+		&i.GeoSpaceID,
+		&i.TypeSlug,
+	)
+	return i, err
+}
+
+const getProductBySlug = `-- name: GetProductBySlug :one
+SELECT p.id, p.product_type_id, p.slug, p.name, p.tagline, p.website_url,
+       p.logo_id, p.pricing_model, p.price_from, p.rating_avg, p.review_count,
+       p.geo_space_id, t.slug AS type_slug
+FROM products p
+JOIN product_types t ON t.id = p.product_type_id
+WHERE p.slug = $1 AND p.deleted_at IS NULL
+`
+
+type GetProductBySlugRow struct {
+	ID            pgtype.UUID    `json:"id"`
+	ProductTypeID pgtype.UUID    `json:"product_type_id"`
+	Slug          string         `json:"slug"`
+	Name          string         `json:"name"`
+	Tagline       *string        `json:"tagline"`
+	WebsiteUrl    *string        `json:"website_url"`
+	LogoID        pgtype.UUID    `json:"logo_id"`
+	PricingModel  *string        `json:"pricing_model"`
+	PriceFrom     pgtype.Numeric `json:"price_from"`
+	RatingAvg     pgtype.Numeric `json:"rating_avg"`
+	ReviewCount   int32          `json:"review_count"`
+	GeoSpaceID    pgtype.UUID    `json:"geo_space_id"`
+	TypeSlug      string         `json:"type_slug"`
+}
+
+func (q *Queries) GetProductBySlug(ctx context.Context, slug string) (GetProductBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getProductBySlug, slug)
+	var i GetProductBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.ProductTypeID,
+		&i.Slug,
+		&i.Name,
+		&i.Tagline,
+		&i.WebsiteUrl,
+		&i.LogoID,
+		&i.PricingModel,
+		&i.PriceFrom,
+		&i.RatingAvg,
+		&i.ReviewCount,
+		&i.GeoSpaceID,
+		&i.TypeSlug,
+	)
+	return i, err
+}
+
 const getProgramForWiki = `-- name: GetProgramForWiki :one
 SELECT id, slug, title AS name
 FROM university_course_catalog
@@ -1996,6 +2088,46 @@ func (q *Queries) ListOrganizationsForWiki(ctx context.Context, arg ListOrganiza
 	return items, nil
 }
 
+const listProductProviders = `-- name: ListProductProviders :many
+SELECT pp.provider_id, ap.name, pp.price_from, pp.offer_url
+FROM product_providers pp
+JOIN affiliate_providers ap ON ap.id = pp.provider_id
+WHERE pp.product_id = $1
+ORDER BY pp.position, ap.name
+`
+
+type ListProductProvidersRow struct {
+	ProviderID pgtype.UUID    `json:"provider_id"`
+	Name       string         `json:"name"`
+	PriceFrom  pgtype.Numeric `json:"price_from"`
+	OfferUrl   *string        `json:"offer_url"`
+}
+
+func (q *Queries) ListProductProviders(ctx context.Context, productID pgtype.UUID) ([]ListProductProvidersRow, error) {
+	rows, err := q.db.Query(ctx, listProductProviders, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProductProvidersRow
+	for rows.Next() {
+		var i ListProductProvidersRow
+		if err := rows.Scan(
+			&i.ProviderID,
+			&i.Name,
+			&i.PriceFrom,
+			&i.OfferUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listScholarshipsForWiki = `-- name: ListScholarshipsForWiki :many
 SELECT id, slug, title
 FROM scholarships
@@ -2857,6 +2989,63 @@ func (q *Queries) RejectWikiRevision(ctx context.Context, arg RejectWikiRevision
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const searchProducts = `-- name: SearchProducts :many
+SELECT p.id, p.slug, p.name, p.tagline, t.slug AS type_slug
+FROM products p
+JOIN product_types t ON t.id = p.product_type_id
+WHERE p.deleted_at IS NULL
+  AND ($1::text = '' OR t.slug = $1)
+  AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%')
+ORDER BY p.name
+LIMIT $4 OFFSET $3
+`
+
+type SearchProductsParams struct {
+	Column1     string `json:"column_1"`
+	Column2     string `json:"column_2"`
+	OffsetCount int32  `json:"offset_count"`
+	LimitCount  int32  `json:"limit_count"`
+}
+
+type SearchProductsRow struct {
+	ID       pgtype.UUID `json:"id"`
+	Slug     string      `json:"slug"`
+	Name     string      `json:"name"`
+	Tagline  *string     `json:"tagline"`
+	TypeSlug string      `json:"type_slug"`
+}
+
+func (q *Queries) SearchProducts(ctx context.Context, arg SearchProductsParams) ([]SearchProductsRow, error) {
+	rows, err := q.db.Query(ctx, searchProducts,
+		arg.Column1,
+		arg.Column2,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchProductsRow
+	for rows.Next() {
+		var i SearchProductsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Tagline,
+			&i.TypeSlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setWikiRevisionApplyError = `-- name: SetWikiRevisionApplyError :exec
