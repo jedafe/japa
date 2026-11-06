@@ -29,6 +29,9 @@ type UpdateProfileRequest struct {
 	MaritalStatus      *string `json:"marital_status"`
 	DateOfBirth        *string `json:"date_of_birth"`
 	Gender             *string `json:"gender"`
+	// Interests: free-form interest/skill chips (§87) — nil leaves the
+	// stored list unchanged, [] clears it.
+	Interests          *[]string `json:"interests"`
 	OriginCountry      *string `json:"origin_country"`
 	OriginStateID      *string `json:"origin_state_id"`
 	OriginCityID       *string `json:"origin_city_id"`
@@ -100,6 +103,7 @@ type UserProfileResponse struct {
 	MaritalStatus *string  `json:"marital_status"`
 	DateOfBirth   *string  `json:"date_of_birth"`
 	Gender        *string  `json:"gender"`
+	Interests     []string `json:"interests"`
 	ProfileType   string   `json:"profile_type"`
 	Status        string   `json:"status"`
 	FollowerCount int32    `json:"follower_count"`

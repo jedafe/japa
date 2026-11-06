@@ -271,7 +271,7 @@ func (s *Store) getProfileForUpdateTx(ctx context.Context, q *gen.Queries, userI
 // upsertProfileTx upserts the user profile inside the caller's transaction.
 // Every parameter is the merged request/current value — NULL clears the
 // field (matching UpdateProfile's read-merge-upsert semantics).
-func (s *Store) upsertProfileTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone, websiteURL, education, profession, maritalStatus, gender *string, dateOfBirth pgtype.Date, avatarMediaID, headerMediaID pgtype.UUID) error {
+func (s *Store) upsertProfileTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone, websiteURL, education, profession, maritalStatus, gender *string, interests []string, dateOfBirth pgtype.Date, avatarMediaID, headerMediaID pgtype.UUID) error {
 	if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
 		UserID:        userID,
 		DisplayName:   displayName,
@@ -286,6 +286,7 @@ func (s *Store) upsertProfileTx(ctx context.Context, q *gen.Queries, userID pgty
 		Profession:    profession,
 		MaritalStatus: maritalStatus,
 		Gender:        gender,
+		Interests:     interests,
 		DateOfBirth:   dateOfBirth,
 	}); err != nil {
 		return fmt.Errorf("upserting user profile: %w", err)

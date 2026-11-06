@@ -309,6 +309,7 @@ func (s *Service) GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProf
 		MaritalStatus:            p.MaritalStatus,
 		DateOfBirth:              pgDatePtr(p.DateOfBirth),
 		Gender:                   p.Gender,
+		Interests:                p.Interests,
 		ProfileType:              p.ProfileType,
 		Status:                   p.Status,
 		FollowerCount:            p.FollowerCount,
@@ -610,6 +611,17 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 			}
 		}
 
+		// §87: free-form interest/skill chips shown on the japa-stage
+		// directory. nil leaves the stored list; [] clears it.
+		interests := current.Interests
+		if req.Interests != nil {
+			var err error
+			interests, err = normalizeInterests(*req.Interests)
+			if err != nil {
+				return err
+			}
+		}
+
 		// Media ID fields (BUG-004): when provided, resolve to URLs via the
 		// MediaResolver (if wired) and store both the media_id and the URL.
 		avatarMediaID := current.AvatarMediaID
@@ -658,7 +670,7 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 			}
 		}
 
-		if err := s.store.upsertProfileTx(ctx, q, userID, displayName, avatarURL, coverURL, bio, timezone, websiteURL, education, profession, maritalStatus, gender, dob, avatarMediaID, headerMediaID); err != nil {
+		if err := s.store.upsertProfileTx(ctx, q, userID, displayName, avatarURL, coverURL, bio, timezone, websiteURL, education, profession, maritalStatus, gender, interests, dob, avatarMediaID, headerMediaID); err != nil {
 			return fmt.Errorf("updating profile: %w", err)
 		}
 
@@ -857,6 +869,39 @@ func normalizeCountryCode(s string) string {
 	}
 
 	return strings.TrimSpace(s)
+}
+
+// normalizeInterests cleans a requested interests list for storage (§87):
+// trims each entry, drops blanks, dedupes case-insensitively, and enforces
+// the 10-item / 40-char caps. An empty result stores NULL (clears the list).
+func normalizeInterests(in []string) ([]string, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	if len(in) > 10 {
+		return nil, fmt.Errorf("%w: interests is limited to 10 items", errpkg.ErrInvalid)
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		v := strings.TrimSpace(raw)
+		if v == "" {
+			continue
+		}
+		if len(v) > 40 {
+			return nil, fmt.Errorf("%w: interest entries are limited to 40 characters", errpkg.ErrInvalid)
+		}
+		key := strings.ToLower(v)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, v)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // pgDatePtr formats a pgtype.Date as "YYYY-MM-DD" for the JSON contract.

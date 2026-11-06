@@ -635,3 +635,44 @@ func TestCheckImageMedia(t *testing.T) {
 		t.Errorf("resolver error returned %v, want nil (fail-open)", err)
 	}
 }
+
+func TestNormalizeInterests(t *testing.T) {
+	t.Parallel()
+
+	// Trims, drops blanks, dedupes case-insensitively, preserves first-seen casing.
+	got, err := normalizeInterests([]string{"  Data Science ", "nursing", "", "NURSING", "Design"})
+	if err != nil {
+		t.Fatalf("normalizeInterests: %v", err)
+	}
+	want := []string{"Data Science", "nursing", "Design"}
+	if len(got) != len(want) {
+		t.Fatalf("len = %d, want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	// Empty / all-blank input clears the list (nil).
+	if got, err := normalizeInterests(nil); err != nil || got != nil {
+		t.Errorf("nil input: got %v err %v, want nil nil", got, err)
+	}
+	if got, err := normalizeInterests([]string{"  ", ""}); err != nil || got != nil {
+		t.Errorf("blank input: got %v err %v, want nil nil", got, err)
+	}
+
+	// Over the item cap → ErrInvalid.
+	tooMany := make([]string, 11)
+	for i := range tooMany {
+		tooMany[i] = "x"
+	}
+	if _, err := normalizeInterests(tooMany); !errors.Is(err, errpkg.ErrInvalid) {
+		t.Errorf("11 items: err = %v, want ErrInvalid", err)
+	}
+
+	// Over the per-item length cap → ErrInvalid.
+	if _, err := normalizeInterests([]string{strings.Repeat("a", 41)}); !errors.Is(err, errpkg.ErrInvalid) {
+		t.Errorf("41-char entry: err = %v, want ErrInvalid", err)
+	}
+}
