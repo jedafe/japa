@@ -189,7 +189,11 @@
 				position: i
 			})),
 			deal_ids: dealIds,
-			custom_fields
+			custom_fields,
+			clear_field_ids: schema
+				.flatMap((g) => g.fields)
+				.filter((f) => !custom_fields.some((cf) => cf.field_id === f.id))
+				.map((f) => f.id)
 		});
 		saving = false;
 		if (res.error) {

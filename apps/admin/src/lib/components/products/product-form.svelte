@@ -261,11 +261,12 @@
 			type_slug: typeSlug,
 			name: name.trim(),
 			slug: slug.trim(),
-			tagline: tagline || null,
-			description: description || null,
+			tagline: mode === 'edit' ? tagline : tagline || null,
+			description: mode === 'edit' ? description : description || null,
+			website_url: mode === 'edit' ? websiteUrl : websiteUrl || null,
+			pricing_model: mode === 'edit' ? pricingModel : pricingModel || null,
 			gallery_media_ids: gallery.map((g) => g.media_id),
-			website_url: websiteUrl || null,
-			pricing_model: pricingModel || null,
+
 			price_from: priceFrom !== '' ? Number(priceFrom) : null,
 			providers: providerRows.filter((r) => r.provider_id).map((r, i) => ({
 				provider_id: r.provider_id,
@@ -274,9 +275,13 @@
 				position: i
 			})),
 			deal_ids: dealIds,
-			custom_fields
+			custom_fields,
+			clear_field_ids: schema
+				.flatMap((g) => g.fields)
+				.filter((f) => !custom_fields.some((cf) => cf.field_id === f.id))
+				.map((f) => f.id)
 		};
-		if (mode === 'create' || logoTouched) body.logo_id = logoId;
+		if (mode === 'create' || logoTouched) body.logo_id = logoId ?? '';
 		const res =
 			mode === 'create'
 				? await productsAdminApi.create(body)
