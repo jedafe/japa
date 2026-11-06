@@ -6726,5 +6726,7 @@
 	"wiki.entities.empty": "Aucun type d'entité disponible",
 	"wiki.entities.items": "entrées",
 	"wiki.entities.search": "Rechercher…",
-	"wiki.entities.empty_list": "Aucune entrée trouvée"
+	"wiki.entities.empty_list": "Aucune entrée trouvée",
+	"wiki.entities.eyebrow": "Annuaire",
+	"wiki.entities.count": "{count} entrées"
 }
