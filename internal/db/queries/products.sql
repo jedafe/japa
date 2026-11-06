@@ -42,7 +42,7 @@ FROM products p
 JOIN product_types t ON t.id = p.product_type_id
 LEFT JOIN media m ON m.id = p.logo_id
 WHERE (@type_slug::text = '' OR t.slug = @type_slug)
-  AND (@q::text = '' OR p.name ILIKE '%' || @q || '%' OR p.slug ILIKE '%' || @q || '%')
+  AND (@q::text = '' OR p.name ILIKE '%' || @q || '%' ESCAPE '\' OR p.slug ILIKE '%' || @q || '%' ESCAPE '\')
   AND (@status::text = 'all'
        OR (@status = 'deleted' AND p.deleted_at IS NOT NULL)
        OR (@status <> 'deleted' AND @status <> 'all' AND p.deleted_at IS NULL))
@@ -58,7 +58,7 @@ SELECT count(*)
 FROM products p
 JOIN product_types t ON t.id = p.product_type_id
 WHERE (@type_slug::text = '' OR t.slug = @type_slug)
-  AND (@q::text = '' OR p.name ILIKE '%' || @q || '%' OR p.slug ILIKE '%' || @q || '%')
+  AND (@q::text = '' OR p.name ILIKE '%' || @q || '%' ESCAPE '\' OR p.slug ILIKE '%' || @q || '%' ESCAPE '\')
   AND (@status::text = 'all'
        OR (@status = 'deleted' AND p.deleted_at IS NOT NULL)
        OR (@status <> 'deleted' AND @status <> 'all' AND p.deleted_at IS NULL));
@@ -108,7 +108,13 @@ WHERE product_id = @product_id AND coupon_id <> ALL(@keep_ids::uuid[]);
 SELECT t.id, t.slug, t.label, t.icon, t.is_enabled, t.config, t.created_at, t.updated_at,
        (SELECT count(*) FROM products p WHERE p.product_type_id = t.id AND p.deleted_at IS NULL) AS product_count
 FROM product_types t
-ORDER BY t.label;
+WHERE (@q::text = '' OR t.label ILIKE '%' || @q || '%' ESCAPE '\' OR t.slug ILIKE '%' || @q || '%' ESCAPE '\')
+ORDER BY t.label
+LIMIT @limit_count OFFSET @offset_count;
+
+-- name: AdminCountProductTypes :one
+SELECT count(*) FROM product_types t
+WHERE (@q::text = '' OR t.label ILIKE '%' || @q || '%' ESCAPE '\' OR t.slug ILIKE '%' || @q || '%' ESCAPE '\');
 
 -- name: AdminCountProductsByType :one
 SELECT count(*) FROM products WHERE product_type_id = @product_type_id AND deleted_at IS NULL;

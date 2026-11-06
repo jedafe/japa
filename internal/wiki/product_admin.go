@@ -115,10 +115,26 @@ func (s *Service) CreateProduct(ctx context.Context, in ProductInput) (string, e
 	return row.Slug, nil
 }
 
+var errInvalidID = errors.New("invalid id")
+
+// validUUID parses an id into a pgtype.UUID, failing with errInvalidID on
+// malformed input (uuidOf alone would silently produce a zero UUID → FK error).
+func validUUID(id string) (pgtype.UUID, error) {
+	var u pgtype.UUID
+	if err := u.Scan(id); err != nil || !u.Valid {
+		return pgtype.UUID{}, fmt.Errorf("%w: %q", errInvalidID, id)
+	}
+	return u, nil
+}
+
 // syncProductLinks writes provider links, deal links and custom field values
 // for a product inside q's tx.
 func (s *Service) syncProductLinks(ctx context.Context, q *gen.Queries, productID pgtype.UUID, in ProductInput) error {
 	for i, pv := range in.Providers {
+		pid, err := validUUID(pv.ProviderID)
+		if err != nil {
+			return err
+		}
 		var pf pgtype.Numeric
 		if pv.PriceFrom != "" {
 			_ = pf.Scan(pv.PriceFrom)
@@ -132,15 +148,19 @@ func (s *Service) syncProductLinks(ctx context.Context, q *gen.Queries, productI
 			pos = int32(i)
 		}
 		if err := q.UpsertProductProvider(ctx, gen.UpsertProductProviderParams{
-			ProductID: productID, ProviderID: uuidOf(pv.ProviderID),
+			ProductID: productID, ProviderID: pid,
 			PriceFrom: pf, OfferUrl: ou, Position: pos,
 		}); err != nil {
 			return fmt.Errorf("link provider: %w", err)
 		}
 	}
 	for i, did := range in.DealIDs {
+		cid, err := validUUID(did)
+		if err != nil {
+			return err
+		}
 		if err := q.UpsertProductDeal(ctx, gen.UpsertProductDealParams{
-			ProductID: productID, CouponID: uuidOf(did), Position: int32(i),
+			ProductID: productID, CouponID: cid, Position: int32(i),
 		}); err != nil {
 			return fmt.Errorf("link deal: %w", err)
 		}
@@ -152,6 +172,10 @@ func (s *Service) syncProductLinks(ctx context.Context, q *gen.Queries, productI
 // any field ids in clearIDs.
 func (s *Service) writeProductFieldValues(ctx context.Context, q *gen.Queries, productID pgtype.UUID, fields []ProductFieldValueInput, clearIDs []string) error {
 	for _, f := range fields {
+		fid, err := validUUID(f.FieldID)
+		if err != nil {
+			return err
+		}
 		var num pgtype.Numeric
 		if f.ValueNumber != nil {
 			_ = num.Scan(fmt.Sprintf("%f", *f.ValueNumber))
@@ -165,7 +189,7 @@ func (s *Service) writeProductFieldValues(ctx context.Context, q *gen.Queries, p
 			vj = *f.ValueJSON
 		}
 		if _, err := q.UpsertCustomFieldValue(ctx, gen.UpsertCustomFieldValueParams{
-			FieldID: uuidOf(f.FieldID), EntityType: "product", EntityID: productID,
+			FieldID: fid, EntityType: "product", EntityID: productID,
 			ValueText: f.ValueText, ValueNumber: num, ValueBool: f.ValueBool,
 			ValueDate: dt, ValueJson: vj,
 		}); err != nil {
@@ -173,8 +197,12 @@ func (s *Service) writeProductFieldValues(ctx context.Context, q *gen.Queries, p
 		}
 	}
 	for _, id := range clearIDs {
+		cfid, err := validUUID(id)
+		if err != nil {
+			return err
+		}
 		if err := q.DeleteCustomFieldValue(ctx, gen.DeleteCustomFieldValueParams{
-			FieldID: uuidOf(id), EntityType: "product", EntityID: productID,
+			FieldID: cfid, EntityType: "product", EntityID: productID,
 		}); err != nil {
 			return fmt.Errorf("clear field value: %w", err)
 		}
@@ -207,14 +235,24 @@ func (s *Service) UpdateProduct(ctx context.Context, slug string, in ProductInpu
 	defer tx.Rollback(ctx)
 	q := s.store.write.WithTx(tx)
 
+	var typeID pgtype.UUID
+	if in.TypeSlug != "" {
+		var terr error
+		typeID, terr = s.productTypeID(ctx, in.TypeSlug)
+		if terr != nil {
+			return fmt.Errorf("product type %q not found", in.TypeSlug)
+		}
+	}
 	if err := q.UpdateProduct(ctx, gen.UpdateProductParams{
-		Name: name, Tagline: in.Tagline, WebsiteUrl: in.WebsiteURL,
+		Name: name, ProductTypeID: typeID, Tagline: in.Tagline, WebsiteUrl: in.WebsiteURL,
 		PricingModel: in.PricingModel, PriceFrom: numPtr(in.PriceFrom), Slug: slug,
 		ClearFields: clear,
 	}); err != nil {
 		return err
 	}
-	p, err := q.GetProductBySlug(ctx, slug)
+	// AdminGetProductBySlug includes soft-deleted rows — a PATCH on a deleted
+	// product still works (edit-then-restore flow).
+	p, err := q.AdminGetProductBySlug(ctx, slug)
 	if err != nil {
 		return err
 	}
@@ -297,10 +335,13 @@ func (s *Service) HardDeleteProduct(ctx context.Context, slug string) error {
 
 // AdminListProducts is the DataTable contract list: type/q/status filters +
 // allow-listed sort + offset pagination.
+var ilikeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 func (s *Service) AdminListProducts(ctx context.Context, typeSlug, q, status, sort string, limit, offset int32) ([]gen.AdminListProductsRow, int64, error) {
 	if status == "" {
 		status = "active"
 	}
+	q = ilikeEscaper.Replace(q)
 	sortKey := ""
 	switch sort {
 	case "name:asc", "name:desc", "created_at:asc":
@@ -325,7 +366,7 @@ type ProductDetail struct {
 	Product   gen.AdminGetProductBySlugRow                 `json:"product"`
 	Providers []map[string]any                             `json:"providers"`
 	Deals     []gen.ListProductDealsRow                    `json:"deals"`
-	Fields    []gen.ListCustomFieldValuesWithDefsByEntityRow `json:"field_values"`
+	Fields    []gen.CustomFieldValue                      `json:"field_values"`
 }
 
 // AdminGetProduct returns the full product detail (deleted rows included so
@@ -351,8 +392,10 @@ func (s *Service) AdminGetProduct(ctx context.Context, slug string) (*ProductDet
 	if err != nil {
 		return nil, err
 	}
-	d.Fields, err = s.store.read.ListCustomFieldValuesWithDefsByEntity(ctx,
-		gen.ListCustomFieldValuesWithDefsByEntityParams{EntityType: "product", EntityID: p.ID})
+	// ListCustomFieldValuesByEntity (not the WithDefs variant — that one
+	// filters show_in_frontend, which would hide admin-only fields).
+	d.Fields, err = s.store.read.ListCustomFieldValuesByEntity(ctx,
+		gen.ListCustomFieldValuesByEntityParams{EntityType: "product", EntityID: p.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -385,8 +428,15 @@ type ProductTypeInput struct {
 	Categories []ProductTypeCategory `json:"categories"`
 }
 
-func (s *Service) AdminListProductTypes(ctx context.Context) ([]gen.AdminListProductTypesRow, error) {
-	return s.store.read.AdminListProductTypes(ctx)
+func (s *Service) AdminListProductTypes(ctx context.Context, q string, limit, offset int32) ([]gen.AdminListProductTypesRow, int64, error) {
+	rows, err := s.store.read.AdminListProductTypes(ctx, gen.AdminListProductTypesParams{
+		Q: ilikeEscaper.Replace(q), LimitCount: limit, OffsetCount: offset,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.read.AdminCountProductTypes(ctx, q)
+	return rows, total, err
 }
 
 // ProductTypeDetail carries a type plus its bound field groups and their
@@ -570,8 +620,21 @@ func (h *Handlers) HandleCreateProduct(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+	if in.TypeSlug == "" || in.Slug == "" || in.Name == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "type_slug, slug and name are required")
+		return
+	}
 	slug, err := h.service.CreateProduct(r.Context(), in)
 	if err != nil {
+		var pge *pgconn.PgError
+		if errors.As(err, &pge) && pge.Code == "23505" {
+			errpkg.WriteError(w, http.StatusConflict, "slug_conflict", "A product with this slug already exists")
+			return
+		}
+		if errors.Is(err, errInvalidID) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+			return
+		}
 		slog.Error("wiki: create product failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create product")
 		return
@@ -586,6 +649,10 @@ func (h *Handlers) HandleUpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.UpdateProduct(r.Context(), chi.URLParam(r, "slug"), in); err != nil {
+		if errors.Is(err, errInvalidID) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+			return
+		}
 		slog.Error("wiki: update product failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update product")
 		return
@@ -729,7 +796,16 @@ func (h *Handlers) HandleSetProductDeal(w http.ResponseWriter, r *http.Request) 
 // HandleAdminProductTypes serves GET /admin/product-types — all types incl.
 // disabled, with live product counts.
 func (h *Handlers) HandleAdminProductTypes(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.service.AdminListProductTypes(r.Context())
+	qp := r.URL.Query()
+	page, _ := strconv.Atoi(qp.Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	limit, _ := strconv.Atoi(qp.Get("limit"))
+	if limit < 1 || limit > 200 {
+		limit = 200
+	}
+	rows, total, err := h.service.AdminListProductTypes(r.Context(), qp.Get("q"), int32(limit), int32((page-1)*limit))
 	if err != nil {
 		slog.Error("wiki: list product types failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list product types")
@@ -738,7 +814,9 @@ func (h *Handlers) HandleAdminProductTypes(w http.ResponseWriter, r *http.Reques
 	if rows == nil {
 		rows = []gen.AdminListProductTypesRow{}
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": rows, "total": len(rows)}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": rows, "total": total, "page": page, "page_size": limit,
+	})
 }
 
 // HandleAdminGetProductType serves GET /admin/product-types/{slug} — type +
@@ -781,6 +859,35 @@ func (h *Handlers) HandleDeleteProductType(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
+}
+
+// HandleListProductDeals serves GET /products/deals?provider_ids=a,b — the
+// deal-picker source for the product forms (auth-only; no coupons.manage).
+func (h *Handlers) HandleListProductDeals(w http.ResponseWriter, r *http.Request) {
+	var ids []pgtype.UUID
+	if raw := r.URL.Query().Get("provider_ids"); raw != "" {
+		for _, s := range strings.Split(raw, ",") {
+			id, err := validUUID(strings.TrimSpace(s))
+			if err != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+				return
+			}
+			ids = append(ids, id)
+		}
+	}
+	if ids == nil {
+		ids = []pgtype.UUID{}
+	}
+	rows, err := h.service.store.read.ListCouponsForProviders(r.Context(), ids)
+	if err != nil {
+		slog.Error("wiki: list deals failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list deals")
+		return
+	}
+	if rows == nil {
+		rows = []gen.ListCouponsForProvidersRow{}
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": rows}})
 }
 
 // HandleProductFieldSchema serves GET /products/types/{slug}/field-schema —

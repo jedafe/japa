@@ -761,19 +761,44 @@ func (q *Queries) CreateEntityWikiPage(ctx context.Context, arg CreateEntityWiki
 }
 
 const createOfferingForWiki = `-- name: CreateOfferingForWiki :one
-INSERT INTO university_course_offerings (course_id, university_id, slug, is_published, editorial_overrides)
-VALUES ($1, $2, $3, true, '{}')
+INSERT INTO university_course_offerings (course_id, university_id, slug,
+    tuition, currency, duration_years, study_mode, intake_months,
+    entry_requirements, accreditation, is_published, editorial_overrides)
+VALUES ($1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9,
+    $10, true, '{}')
 RETURNING slug
 `
 
 type CreateOfferingForWikiParams struct {
-	CourseID     pgtype.UUID `json:"course_id"`
-	UniversityID pgtype.UUID `json:"university_id"`
-	Slug         string      `json:"slug"`
+	CourseID          pgtype.UUID    `json:"course_id"`
+	UniversityID      pgtype.UUID    `json:"university_id"`
+	Slug              string         `json:"slug"`
+	Tuition           pgtype.Numeric `json:"tuition"`
+	Currency          *string        `json:"currency"`
+	DurationYears     pgtype.Numeric `json:"duration_years"`
+	StudyMode         *string        `json:"study_mode"`
+	IntakeMonths      []string       `json:"intake_months"`
+	EntryRequirements *string        `json:"entry_requirements"`
+	Accreditation     *string        `json:"accreditation"`
 }
 
+// Mirrors the admin CreateCourseOffering field set (§39) — the wiki create
+// form exposes the same offering fields.
 func (q *Queries) CreateOfferingForWiki(ctx context.Context, arg CreateOfferingForWikiParams) (string, error) {
-	row := q.db.QueryRow(ctx, createOfferingForWiki, arg.CourseID, arg.UniversityID, arg.Slug)
+	row := q.db.QueryRow(ctx, createOfferingForWiki,
+		arg.CourseID,
+		arg.UniversityID,
+		arg.Slug,
+		arg.Tuition,
+		arg.Currency,
+		arg.DurationYears,
+		arg.StudyMode,
+		arg.IntakeMonths,
+		arg.EntryRequirements,
+		arg.Accreditation,
+	)
 	var slug string
 	err := row.Scan(&slug)
 	return slug, err
@@ -858,19 +883,40 @@ func (q *Queries) CreateProductType(ctx context.Context, arg CreateProductTypePa
 }
 
 const createProgramForWiki = `-- name: CreateProgramForWiki :one
-INSERT INTO university_course_catalog (title, slug, language, is_published)
-VALUES ($1, $2, $3, true)
+INSERT INTO university_course_catalog (title, slug, description, degree_type,
+    department, field_of_study, language, default_duration_years, is_published)
+VALUES ($1, $2, $3, $4,
+    $5, $6,
+    COALESCE($7, 'English'), $8, true)
 RETURNING slug
 `
 
 type CreateProgramForWikiParams struct {
-	Title    string `json:"title"`
-	Slug     string `json:"slug"`
-	Language string `json:"language"`
+	Title                string         `json:"title"`
+	Slug                 string         `json:"slug"`
+	Description          *string        `json:"description"`
+	DegreeType           *string        `json:"degree_type"`
+	Department           *string        `json:"department"`
+	FieldOfStudy         *string        `json:"field_of_study"`
+	Language             interface{}    `json:"language"`
+	DefaultDurationYears pgtype.Numeric `json:"default_duration_years"`
 }
 
+// Products/providers/deals are de-wikied (001080) — no *ForWiki lookups:
+// they resolve through their JCE resolvers and the public /products API.
+// Mirrors the admin CreateCourseCatalog field set (§39) — the wiki create
+// form exposes the same catalog fields.
 func (q *Queries) CreateProgramForWiki(ctx context.Context, arg CreateProgramForWikiParams) (string, error) {
-	row := q.db.QueryRow(ctx, createProgramForWiki, arg.Title, arg.Slug, arg.Language)
+	row := q.db.QueryRow(ctx, createProgramForWiki,
+		arg.Title,
+		arg.Slug,
+		arg.Description,
+		arg.DegreeType,
+		arg.Department,
+		arg.FieldOfStudy,
+		arg.Language,
+		arg.DefaultDurationYears,
+	)
 	var slug string
 	err := row.Scan(&slug)
 	return slug, err
@@ -1316,23 +1362,6 @@ func (q *Queries) GetDealBySlug(ctx context.Context, slug string) (GetDealBySlug
 	return i, err
 }
 
-const getDealForWiki = `-- name: GetDealForWiki :one
-SELECT id, slug, title AS name FROM coupons WHERE slug = $1 AND status = 'active'
-`
-
-type GetDealForWikiRow struct {
-	ID   pgtype.UUID `json:"id"`
-	Slug string      `json:"slug"`
-	Name string      `json:"name"`
-}
-
-func (q *Queries) GetDealForWiki(ctx context.Context, slug string) (GetDealForWikiRow, error) {
-	row := q.db.QueryRow(ctx, getDealForWiki, slug)
-	var i GetDealForWikiRow
-	err := row.Scan(&i.ID, &i.Slug, &i.Name)
-	return i, err
-}
-
 const getEmbassyForWiki = `-- name: GetEmbassyForWiki :one
 SELECT id, slug, name, host_space_id
 FROM embassies
@@ -1544,34 +1573,6 @@ func (q *Queries) GetProductBySlug(ctx context.Context, slug string) (GetProduct
 	return i, err
 }
 
-const getProductForWiki = `-- name: GetProductForWiki :one
-SELECT p.id, p.slug, p.name, t.slug AS discriminator
-FROM products p
-JOIN product_types t ON t.id = p.product_type_id
-WHERE p.slug = $1 AND p.deleted_at IS NULL
-`
-
-type GetProductForWikiRow struct {
-	ID            pgtype.UUID `json:"id"`
-	Slug          string      `json:"slug"`
-	Name          string      `json:"name"`
-	Discriminator string      `json:"discriminator"`
-}
-
-// Join the type for its slug — the product's discriminator for canonical
-// type resolution (the t.slug text discriminator, no UUID in URLs).
-func (q *Queries) GetProductForWiki(ctx context.Context, slug string) (GetProductForWikiRow, error) {
-	row := q.db.QueryRow(ctx, getProductForWiki, slug)
-	var i GetProductForWikiRow
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Name,
-		&i.Discriminator,
-	)
-	return i, err
-}
-
 const getProductTypeBySlug = `-- name: GetProductTypeBySlug :one
 SELECT id, slug, label, icon, is_enabled, config
 FROM product_types
@@ -1691,23 +1692,6 @@ func (q *Queries) GetProviderBySlug(ctx context.Context, slug string) (GetProvid
 		&i.CommissionRate,
 		&i.IsFeatured,
 	)
-	return i, err
-}
-
-const getProviderForWiki = `-- name: GetProviderForWiki :one
-SELECT id, slug, name FROM affiliate_providers WHERE slug = $1 AND is_active = true
-`
-
-type GetProviderForWikiRow struct {
-	ID   pgtype.UUID `json:"id"`
-	Slug string      `json:"slug"`
-	Name string      `json:"name"`
-}
-
-func (q *Queries) GetProviderForWiki(ctx context.Context, slug string) (GetProviderForWikiRow, error) {
-	row := q.db.QueryRow(ctx, getProviderForWiki, slug)
-	var i GetProviderForWikiRow
-	err := row.Scan(&i.ID, &i.Slug, &i.Name)
 	return i, err
 }
 
@@ -2641,7 +2625,7 @@ func (q *Queries) ListOrganizationsForWiki(ctx context.Context, arg ListOrganiza
 }
 
 const listProductProviders = `-- name: ListProductProviders :many
-SELECT pp.provider_id, ap.name, pp.price_from, pp.offer_url,
+SELECT pp.provider_id, ap.name, ap.slug AS provider_slug, pp.price_from, pp.offer_url,
        EXISTS (SELECT 1 FROM coupons c WHERE c.provider_id = pp.provider_id AND c.status = 'active') AS has_deal
 FROM product_providers pp
 JOIN affiliate_providers ap ON ap.id = pp.provider_id
@@ -2650,11 +2634,12 @@ ORDER BY pp.position, ap.name
 `
 
 type ListProductProvidersRow struct {
-	ProviderID pgtype.UUID    `json:"provider_id"`
-	Name       string         `json:"name"`
-	PriceFrom  pgtype.Numeric `json:"price_from"`
-	OfferUrl   *string        `json:"offer_url"`
-	HasDeal    bool           `json:"has_deal"`
+	ProviderID   pgtype.UUID    `json:"provider_id"`
+	Name         string         `json:"name"`
+	ProviderSlug string         `json:"provider_slug"`
+	PriceFrom    pgtype.Numeric `json:"price_from"`
+	OfferUrl     *string        `json:"offer_url"`
+	HasDeal      bool           `json:"has_deal"`
 }
 
 func (q *Queries) ListProductProviders(ctx context.Context, productID pgtype.UUID) ([]ListProductProvidersRow, error) {
@@ -2669,6 +2654,7 @@ func (q *Queries) ListProductProviders(ctx context.Context, productID pgtype.UUI
 		if err := rows.Scan(
 			&i.ProviderID,
 			&i.Name,
+			&i.ProviderSlug,
 			&i.PriceFrom,
 			&i.OfferUrl,
 			&i.HasDeal,
@@ -3685,7 +3671,7 @@ JOIN product_types t ON t.id = p.product_type_id
 WHERE p.deleted_at IS NULL
   AND ($1::text = '' OR t.slug = $1)
   AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%')
-ORDER BY p.name
+ORDER BY p.name, p.id
 LIMIT $4 OFFSET $3
 `
 
@@ -3836,22 +3822,24 @@ func (q *Queries) SoftDeleteWikiRevision(ctx context.Context, id pgtype.UUID) (i
 const updateProduct = `-- name: UpdateProduct :exec
 UPDATE products SET
     name = COALESCE($1, name),
-    tagline = CASE WHEN 'tagline' = ANY($2::text[]) THEN NULL ELSE COALESCE($3, tagline) END,
-    website_url = CASE WHEN 'website_url' = ANY($2::text[]) THEN NULL ELSE COALESCE($4, website_url) END,
-    pricing_model = CASE WHEN 'pricing_model' = ANY($2::text[]) THEN NULL ELSE COALESCE($5, pricing_model) END,
-    price_from = CASE WHEN 'price_from' = ANY($2::text[]) THEN NULL ELSE COALESCE($6, price_from) END,
+    product_type_id = COALESCE($2, product_type_id),
+    tagline = CASE WHEN 'tagline' = ANY($3::text[]) THEN NULL ELSE COALESCE($4, tagline) END,
+    website_url = CASE WHEN 'website_url' = ANY($3::text[]) THEN NULL ELSE COALESCE($5, website_url) END,
+    pricing_model = CASE WHEN 'pricing_model' = ANY($3::text[]) THEN NULL ELSE COALESCE($6, pricing_model) END,
+    price_from = CASE WHEN 'price_from' = ANY($3::text[]) THEN NULL ELSE COALESCE($7, price_from) END,
     updated_at = now()
-WHERE slug = $7 AND deleted_at IS NULL
+WHERE slug = $8 AND deleted_at IS NULL
 `
 
 type UpdateProductParams struct {
-	Name         *string        `json:"name"`
-	ClearFields  []string       `json:"clear_fields"`
-	Tagline      *string        `json:"tagline"`
-	WebsiteUrl   *string        `json:"website_url"`
-	PricingModel *string        `json:"pricing_model"`
-	PriceFrom    pgtype.Numeric `json:"price_from"`
-	Slug         string         `json:"slug"`
+	Name          *string        `json:"name"`
+	ProductTypeID pgtype.UUID    `json:"product_type_id"`
+	ClearFields   []string       `json:"clear_fields"`
+	Tagline       *string        `json:"tagline"`
+	WebsiteUrl    *string        `json:"website_url"`
+	PricingModel  *string        `json:"pricing_model"`
+	PriceFrom     pgtype.Numeric `json:"price_from"`
+	Slug          string         `json:"slug"`
 }
 
 // COALESCE keeps omitted (NULL) params; clear_fields[] explicitly nulls
@@ -3859,6 +3847,7 @@ type UpdateProductParams struct {
 func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) error {
 	_, err := q.db.Exec(ctx, updateProduct,
 		arg.Name,
+		arg.ProductTypeID,
 		arg.ClearFields,
 		arg.Tagline,
 		arg.WebsiteUrl,

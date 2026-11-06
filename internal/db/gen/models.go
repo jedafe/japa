@@ -3347,6 +3347,13 @@ type Product struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ProductDeal struct {
+	ProductID pgtype.UUID        `json:"product_id"`
+	CouponID  pgtype.UUID        `json:"coupon_id"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type ProductProvider struct {
 	ProductID  pgtype.UUID        `json:"product_id"`
 	ProviderID pgtype.UUID        `json:"provider_id"`

@@ -6710,6 +6710,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Field schema for the product create/edit forms — auth-only like
 			// the /custom-field-groups read routes.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/products/types/{slug}/field-schema", wikiHandlers.HandleProductFieldSchema)
+			// Deal picker for the product forms — auth-only; the admin
+			// /admin/coupons list needs coupons.manage which product
+			// editors may not hold.
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/products/deals", wikiHandlers.HandleListProductDeals)
 
 			// §80 Product Domain legacy aliases: the original /admin/wiki/*
 			// paths stay wired to the same handlers under wiki.manage —

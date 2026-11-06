@@ -220,7 +220,13 @@ export const walletApi = {
 
 	getUserBalance: (userId: string) => api<unknown>(`/admin/wallet/user/${userId}/balance`),
 	adjustBalance: (body: { user_id: string; amount: number; reason: string; ledger_type: 'points' | 'credits' }) =>
-		api('/admin/wallet/adjust', { method: 'POST', body }),
+		api('/admin/wallet/adjust', {
+			method: 'POST',
+			body,
+			// Money movement — Idempotency-Key so client-level retries
+			// (401-refresh / CSRF replay) can't double-post a ledger entry.
+			headers: { 'idempotency-key': crypto.randomUUID() }
+		}),
 
 	// Credit Currency System (Section 58, ADR-065)
 	listCreditPacks: () => api<unknown>('/admin/wallet/credit-packs'),
@@ -230,16 +236,27 @@ export const walletApi = {
 		api(`/admin/wallet/credit-packs/${id}`, { method: 'PATCH', body }),
 	deleteCreditPack: (id: string) =>
 		api(`/admin/wallet/credit-packs/${id}`, { method: 'DELETE' }),
+	// Both endpoints return { data: [...], count: N } — count is a sibling of
+	// data, so apiRaw (full body) is required; api() would only expose the array.
 	listCreditPurchases: (params?: string) =>
-		api<unknown>(`/admin/wallet/purchases${params ? `?${params}` : ''}`),
+		apiRaw<{ data: any[]; count: number }>(`/admin/wallet/purchases${params ? `?${params}` : ''}`),
 	listWithdrawals: (params?: string) =>
-		api<{ data: any[]; count: number }>(`/admin/wallet/withdrawals${params ? `?${params}` : ''}`),
-	processWithdrawal: (id: string, body?: { action?: string; admin_note?: string }) =>
+		apiRaw<{ data: any[]; count: number }>(`/admin/wallet/withdrawals${params ? `?${params}` : ''}`),
+	processWithdrawal: (id: string, body?: { action?: string; admin_note?: string; step_up_token?: string }) =>
 		api(`/admin/wallet/withdrawals/${id}/process`, { method: 'POST', body }),
 
 	// Currencies — for currency symbol lookup (Rule 16, BUG-022).
 	// Uses the public /currencies reference list (Section 58).
 	getCurrencies: () => api<{ code: string; symbol: string; name?: string }[]>('/currencies'),
+};
+
+export const authApi = {
+	// POST /auth/step-up (SEC-W-015) — mints a short-lived scoped "step_up"
+	// token from a fresh TOTP code or the account password. The response is
+	// NOT wrapped in the standard { data } envelope ({ step_up_token,
+	// expires_in }), so apiRaw is used to read the full body.
+	stepUp: (body: { code?: string; password?: string }) =>
+		apiRaw<{ step_up_token?: string; expires_in?: number }>('/auth/step-up', { method: 'POST', body }),
 };
 
 export const spaceTypesApi = {
@@ -2818,4 +2835,32 @@ export const verificationAdminApi = {
 			created_at: string;
 			request_id: string;
 		}>(`/admin/verification-requests/${requestId}/submission`),
+};
+
+// Product management (§80 — canonical /admin/products* + /admin/product-types*).
+export const productsAdminApi = {
+	list: (params?: string) => apiRaw(`/admin/products${params ? `?${params}` : ''}`),
+	get: (slug: string) => api<unknown>(`/admin/products/${slug}`),
+	create: (body: Record<string, unknown>) =>
+		api<unknown>('/admin/products', { method: 'POST', body }),
+	update: (slug: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/products/${slug}`, { method: 'PATCH', body }),
+	delete: (slug: string, force = false) =>
+		api<unknown>(`/admin/products/${slug}${force ? '?force=true' : ''}`, { method: 'DELETE' }),
+	restore: (slug: string) =>
+		api<unknown>(`/admin/products/${slug}/restore`, { method: 'POST', body: {} }),
+	bulk: (body: { action: string; ids: string[] }) =>
+		api<unknown>('/admin/products/bulk', { method: 'POST', body }),
+	fieldSchema: (typeSlug: string) => api<unknown>(`/products/types/${typeSlug}/field-schema`),
+};
+
+export const productTypesAdminApi = {
+	list: (params?: string) => apiRaw(`/admin/product-types${params ? `?${params}` : ''}`),
+	get: (slug: string) => api<unknown>(`/admin/product-types/${slug}`),
+	create: (body: Record<string, unknown>) =>
+		api<unknown>('/admin/product-types', { method: 'POST', body }),
+	update: (slug: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/product-types/${slug}`, { method: 'PATCH', body }),
+	delete: (slug: string) =>
+		api<unknown>(`/admin/product-types/${slug}`, { method: 'DELETE' }),
 };

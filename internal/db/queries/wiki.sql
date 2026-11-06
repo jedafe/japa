@@ -976,11 +976,11 @@ JOIN product_types t ON t.id = p.product_type_id
 WHERE p.deleted_at IS NULL
   AND ($1::text = '' OR t.slug = $1)
   AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%')
-ORDER BY p.name
+ORDER BY p.name, p.id
 LIMIT @limit_count OFFSET @offset_count;
 
 -- name: ListProductProviders :many
-SELECT pp.provider_id, ap.name, pp.price_from, pp.offer_url,
+SELECT pp.provider_id, ap.name, ap.slug AS provider_slug, pp.price_from, pp.offer_url,
        EXISTS (SELECT 1 FROM coupons c WHERE c.provider_id = pp.provider_id AND c.status = 'active') AS has_deal
 FROM product_providers pp
 JOIN affiliate_providers ap ON ap.id = pp.provider_id
@@ -1059,6 +1059,7 @@ RETURNING id, slug, name;
 -- a named field — so a PATCH can both preserve and clear per key.
 UPDATE products SET
     name = COALESCE(sqlc.narg(name), name),
+    product_type_id = COALESCE(sqlc.narg(product_type_id), product_type_id),
     tagline = CASE WHEN 'tagline' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(tagline), tagline) END,
     website_url = CASE WHEN 'website_url' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(website_url), website_url) END,
     pricing_model = CASE WHEN 'pricing_model' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(pricing_model), pricing_model) END,
@@ -1096,23 +1097,16 @@ SET entity_kind = EXCLUDED.entity_kind,
     enabled = true
 RETURNING space_type_id, entity_kind;
 
--- name: GetProductForWiki :one
--- Join the type for its slug — the product's discriminator for canonical
--- type resolution (the t.slug text discriminator, no UUID in URLs).
-SELECT p.id, p.slug, p.name, t.slug AS discriminator
-FROM products p
-JOIN product_types t ON t.id = p.product_type_id
-WHERE p.slug = @slug AND p.deleted_at IS NULL;
-
--- name: GetProviderForWiki :one
-SELECT id, slug, name FROM affiliate_providers WHERE slug = @slug AND is_active = true;
-
--- name: GetDealForWiki :one
-SELECT id, slug, title AS name FROM coupons WHERE slug = @slug AND status = 'active';
-
+-- Products/providers/deals are de-wikied (001080) — no *ForWiki lookups:
+-- they resolve through their JCE resolvers and the public /products API.
 -- name: CreateProgramForWiki :one
-INSERT INTO university_course_catalog (title, slug, language, is_published)
-VALUES (@title, @slug, @language, true)
+-- Mirrors the admin CreateCourseCatalog field set (§39) — the wiki create
+-- form exposes the same catalog fields.
+INSERT INTO university_course_catalog (title, slug, description, degree_type,
+    department, field_of_study, language, default_duration_years, is_published)
+VALUES (@title, @slug, sqlc.narg(description), sqlc.narg(degree_type),
+    sqlc.narg(department), sqlc.narg(field_of_study),
+    COALESCE(sqlc.narg(language), 'English'), sqlc.narg(default_duration_years), true)
 RETURNING slug;
 
 -- name: GetSpaceBySlugKind :one
@@ -1122,8 +1116,15 @@ JOIN space_types st ON st.id = s.space_type_id
 WHERE s.slug = @slug AND st.slug = @type_slug AND s.deleted_at IS NULL;
 
 -- name: CreateOfferingForWiki :one
-INSERT INTO university_course_offerings (course_id, university_id, slug, is_published, editorial_overrides)
-VALUES (@course_id, @university_id, @slug, true, '{}')
+-- Mirrors the admin CreateCourseOffering field set (§39) — the wiki create
+-- form exposes the same offering fields.
+INSERT INTO university_course_offerings (course_id, university_id, slug,
+    tuition, currency, duration_years, study_mode, intake_months,
+    entry_requirements, accreditation, is_published, editorial_overrides)
+VALUES (@course_id, @university_id, @slug, sqlc.narg(tuition),
+    sqlc.narg(currency), sqlc.narg(duration_years), sqlc.narg(study_mode),
+    sqlc.narg(intake_months), sqlc.narg(entry_requirements),
+    sqlc.narg(accreditation), true, '{}')
 RETURNING slug;
 
 -- name: CreateEmbassyForWiki :one

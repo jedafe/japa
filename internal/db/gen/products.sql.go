@@ -11,12 +11,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adminCountProductTypes = `-- name: AdminCountProductTypes :one
+SELECT count(*) FROM product_types t
+WHERE ($1::text = '' OR t.label ILIKE '%' || $1 || '%' ESCAPE '\' OR t.slug ILIKE '%' || $1 || '%' ESCAPE '\')
+`
+
+func (q *Queries) AdminCountProductTypes(ctx context.Context, q_ string) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountProductTypes, q_)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const adminCountProducts = `-- name: AdminCountProducts :one
 SELECT count(*)
 FROM products p
 JOIN product_types t ON t.id = p.product_type_id
 WHERE ($1::text = '' OR t.slug = $1)
-  AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%' OR p.slug ILIKE '%' || $2 || '%')
+  AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%' ESCAPE '\' OR p.slug ILIKE '%' || $2 || '%' ESCAPE '\')
   AND ($3::text = 'all'
        OR ($3 = 'deleted' AND p.deleted_at IS NOT NULL)
        OR ($3 <> 'deleted' AND $3 <> 'all' AND p.deleted_at IS NULL))
@@ -107,8 +119,16 @@ const adminListProductTypes = `-- name: AdminListProductTypes :many
 SELECT t.id, t.slug, t.label, t.icon, t.is_enabled, t.config, t.created_at, t.updated_at,
        (SELECT count(*) FROM products p WHERE p.product_type_id = t.id AND p.deleted_at IS NULL) AS product_count
 FROM product_types t
+WHERE ($1::text = '' OR t.label ILIKE '%' || $1 || '%' ESCAPE '\' OR t.slug ILIKE '%' || $1 || '%' ESCAPE '\')
 ORDER BY t.label
+LIMIT $3 OFFSET $2
 `
+
+type AdminListProductTypesParams struct {
+	Q           string `json:"q"`
+	OffsetCount int32  `json:"offset_count"`
+	LimitCount  int32  `json:"limit_count"`
+}
 
 type AdminListProductTypesRow struct {
 	ID           pgtype.UUID        `json:"id"`
@@ -123,8 +143,8 @@ type AdminListProductTypesRow struct {
 }
 
 // ── Admin product types ─────────────────────────────────────────────────
-func (q *Queries) AdminListProductTypes(ctx context.Context) ([]AdminListProductTypesRow, error) {
-	rows, err := q.db.Query(ctx, adminListProductTypes)
+func (q *Queries) AdminListProductTypes(ctx context.Context, arg AdminListProductTypesParams) ([]AdminListProductTypesRow, error) {
+	rows, err := q.db.Query(ctx, adminListProductTypes, arg.Q, arg.OffsetCount, arg.LimitCount)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +186,7 @@ FROM products p
 JOIN product_types t ON t.id = p.product_type_id
 LEFT JOIN media m ON m.id = p.logo_id
 WHERE ($1::text = '' OR t.slug = $1)
-  AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%' OR p.slug ILIKE '%' || $2 || '%')
+  AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%' ESCAPE '\' OR p.slug ILIKE '%' || $2 || '%' ESCAPE '\')
   AND ($3::text = 'all'
        OR ($3 = 'deleted' AND p.deleted_at IS NOT NULL)
        OR ($3 <> 'deleted' AND $3 <> 'all' AND p.deleted_at IS NULL))
