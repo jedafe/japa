@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
@@ -435,7 +436,16 @@ func (h *Handlers) HandleCreateProductType(w http.ResponseWriter, r *http.Reques
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+	if body.Slug == "" || body.Label == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "slug and label are required")
+		return
+	}
 	if err := h.service.CreateProductType(r.Context(), body.Slug, body.Label, body.Icon, body.Categories, body.Config); err != nil {
+		var pge *pgconn.PgError
+		if errors.As(err, &pge) && pge.Code == "23505" {
+			errpkg.WriteError(w, http.StatusConflict, "slug_conflict", "A product type with this slug already exists")
+			return
+		}
 		slog.Error("wiki: create product type failed", "slug", body.Slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create product type")
 		return

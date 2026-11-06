@@ -379,13 +379,16 @@ func (q *Queries) GetPublicProductBySlug(ctx context.Context, slug string) (GetP
 	return i, err
 }
 
-const hardDeleteProduct = `-- name: HardDeleteProduct :exec
+const hardDeleteProduct = `-- name: HardDeleteProduct :execrows
 DELETE FROM products WHERE slug = $1 AND deleted_at IS NOT NULL
 `
 
-func (q *Queries) HardDeleteProduct(ctx context.Context, slug string) error {
-	_, err := q.db.Exec(ctx, hardDeleteProduct, slug)
-	return err
+func (q *Queries) HardDeleteProduct(ctx context.Context, slug string) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteProduct, slug)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const listCouponsForProviders = `-- name: ListCouponsForProviders :many
@@ -619,14 +622,17 @@ func (q *Queries) RemoveProductDeal(ctx context.Context, arg RemoveProductDealPa
 	return err
 }
 
-const restoreProduct = `-- name: RestoreProduct :exec
+const restoreProduct = `-- name: RestoreProduct :execrows
 UPDATE products SET deleted_at = NULL, updated_at = now()
 WHERE slug = $1 AND deleted_at IS NOT NULL
 `
 
-func (q *Queries) RestoreProduct(ctx context.Context, slug string) error {
-	_, err := q.db.Exec(ctx, restoreProduct, slug)
-	return err
+func (q *Queries) RestoreProduct(ctx context.Context, slug string) (int64, error) {
+	result, err := q.db.Exec(ctx, restoreProduct, slug)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateProductType = `-- name: UpdateProductType :one

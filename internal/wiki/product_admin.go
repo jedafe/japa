@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -296,7 +297,11 @@ func (s *Service) UpdateProduct(ctx context.Context, slug string, in ProductInpu
 
 // DeleteProduct soft-deletes a product by slug.
 func (s *Service) DeleteProduct(ctx context.Context, slug string) error {
-	return s.store.write.DeleteProduct(ctx, slug)
+	n, err := s.store.write.DeleteProduct(ctx, slug)
+	if err == nil && n == 0 {
+		return pgx.ErrNoRows
+	}
+	return err
 }
 
 // SetProductProvider links/unlinks a provider with optional price+offer.
@@ -305,7 +310,10 @@ func (s *Service) SetProductProvider(ctx context.Context, productSlug string, pr
 	if err != nil {
 		return err
 	}
-	pid := uuidOf(providerID)
+	pid, err := validUUID(providerID)
+	if err != nil {
+		return err
+	}
 	if unlink {
 		return s.store.write.RemoveProductProvider(ctx, gen.RemoveProductProviderParams{ProductID: p.ID, ProviderID: pid})
 	}
@@ -324,13 +332,21 @@ func (s *Service) SetProductProvider(ctx context.Context, productSlug string, pr
 
 // RestoreProduct clears deleted_at on a soft-deleted product.
 func (s *Service) RestoreProduct(ctx context.Context, slug string) error {
-	return s.store.write.RestoreProduct(ctx, slug)
+	n, err := s.store.write.RestoreProduct(ctx, slug)
+	if err == nil && n == 0 {
+		return pgx.ErrNoRows
+	}
+	return err
 }
 
 // HardDeleteProduct permanently removes a soft-deleted product — the
 // ?force=true path gated by admin.hard_delete (Rule 11).
 func (s *Service) HardDeleteProduct(ctx context.Context, slug string) error {
-	return s.store.write.HardDeleteProduct(ctx, slug)
+	n, err := s.store.write.HardDeleteProduct(ctx, slug)
+	if err == nil && n == 0 {
+		return pgx.ErrNoRows
+	}
+	return err
 }
 
 // AdminListProducts is the DataTable contract list: type/q/status filters +
@@ -409,7 +425,10 @@ func (s *Service) SetProductDeal(ctx context.Context, productSlug string, coupon
 	if err != nil {
 		return err
 	}
-	cid := uuidOf(couponID)
+	cid, err := validUUID(couponID)
+	if err != nil {
+		return err
+	}
 	if unlink {
 		return s.store.write.RemoveProductDeal(ctx, gen.RemoveProductDealParams{ProductID: p.ID, CouponID: cid})
 	}
@@ -435,7 +454,7 @@ func (s *Service) AdminListProductTypes(ctx context.Context, q string, limit, of
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.store.read.AdminCountProductTypes(ctx, q)
+	total, err := s.store.read.AdminCountProductTypes(ctx, ilikeEscaper.Replace(q))
 	return rows, total, err
 }
 
@@ -649,12 +668,7 @@ func (h *Handlers) HandleUpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.UpdateProduct(r.Context(), chi.URLParam(r, "slug"), in); err != nil {
-		if errors.Is(err, errInvalidID) {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
-			return
-		}
-		slog.Error("wiki: update product failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update product")
+		writeErr(w, err, "update_failed", "Failed to update product")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
@@ -666,16 +680,14 @@ func (h *Handlers) HandleDeleteProduct(w http.ResponseWriter, r *http.Request) {
 	// admin.hard_delete node is enforced by rbac.RequireForceDelete (Rule 11).
 	if r.URL.Query().Get("force") == "true" {
 		if err := h.service.HardDeleteProduct(r.Context(), slug); err != nil {
-			slog.Error("wiki: hard delete product failed", "error", err)
-			errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete product")
+			writeErr(w, err, "delete_failed", "Failed to delete product")
 			return
 		}
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
 		return
 	}
 	if err := h.service.DeleteProduct(r.Context(), slug); err != nil {
-		slog.Error("wiki: delete product failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete product")
+		writeErr(w, err, "delete_failed", "Failed to delete product")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
@@ -729,8 +741,7 @@ func (h *Handlers) HandleAdminGetProduct(w http.ResponseWriter, r *http.Request)
 // HandleRestoreProduct serves POST /admin/products/{slug}/restore.
 func (h *Handlers) HandleRestoreProduct(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.RestoreProduct(r.Context(), chi.URLParam(r, "slug")); err != nil {
-		slog.Error("wiki: restore product failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "restore_failed", "Failed to restore product")
+		writeErr(w, err, "restore_failed", "Failed to restore product")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
@@ -786,8 +797,7 @@ func (h *Handlers) HandleSetProductDeal(w http.ResponseWriter, r *http.Request) 
 		pos = body.Position
 	}
 	if err := h.service.SetProductDeal(r.Context(), slug, couponID, pos, unlink); err != nil {
-		slog.Error("wiki: set product deal failed", "slug", slug, "coupon", couponID, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "set_failed", "Failed to set product deal")
+		writeErr(w, err, "set_failed", "Failed to set product deal")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
@@ -830,6 +840,21 @@ func (h *Handlers) HandleAdminGetProductType(w http.ResponseWriter, r *http.Requ
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": d})
 }
 
+// writeErr maps sentinel errors to the standard envelope — ErrNoRows → 404,
+// errInvalidID → 400 — everything else → 500 with the given code.
+func writeErr(w http.ResponseWriter, err error, code, msg string) {
+	if errors.Is(err, pgx.ErrNoRows) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Not found")
+		return
+	}
+	if errors.Is(err, errInvalidID) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+	slog.Error("wiki: "+code, "error", err)
+	errpkg.WriteError(w, http.StatusInternalServerError, code, msg)
+}
+
 // HandleUpdateProductType serves PATCH /admin/product-types/{slug}.
 func (h *Handlers) HandleUpdateProductType(w http.ResponseWriter, r *http.Request) {
 	var in ProductTypeInput
@@ -838,8 +863,7 @@ func (h *Handlers) HandleUpdateProductType(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := h.service.UpdateProductType(r.Context(), chi.URLParam(r, "slug"), in); err != nil {
-		slog.Error("wiki: update product type failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update product type")
+		writeErr(w, err, "update_failed", "Failed to update product type")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
@@ -854,8 +878,7 @@ func (h *Handlers) HandleDeleteProductType(w http.ResponseWriter, r *http.Reques
 			errpkg.WriteError(w, http.StatusConflict, "type_has_products", "Product type still has products — remove or retype them first")
 			return
 		}
-		slog.Error("wiki: delete product type failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete product type")
+		writeErr(w, err, "delete_failed", "Failed to delete product type")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
@@ -887,7 +910,7 @@ func (h *Handlers) HandleListProductDeals(w http.ResponseWriter, r *http.Request
 	if rows == nil {
 		rows = []gen.ListCouponsForProvidersRow{}
 	}
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": rows}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
 }
 
 // HandleProductFieldSchema serves GET /products/types/{slug}/field-schema —
@@ -1268,8 +1291,7 @@ func (h *Handlers) HandleSetProductProvider(w http.ResponseWriter, r *http.Reque
 		price, offer, pos = body.PriceFrom, body.OfferURL, body.Position
 	}
 	if err := h.service.SetProductProvider(r.Context(), slug, providerID, price, offer, pos, unlink); err != nil {
-		slog.Error("wiki: set product provider failed", "slug", slug, "provider", providerID, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "set_failed", "Failed to set product provider")
+		writeErr(w, err, "set_failed", "Failed to set product provider")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})

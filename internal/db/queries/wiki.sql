@@ -1067,7 +1067,7 @@ UPDATE products SET
     updated_at = now()
 WHERE slug = @slug AND deleted_at IS NULL;
 
--- name: DeleteProduct :exec
+-- name: DeleteProduct :execrows
 UPDATE products SET deleted_at = now() WHERE slug = @slug AND deleted_at IS NULL;
 
 -- name: UpsertProductProvider :exec

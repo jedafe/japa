@@ -73,11 +73,11 @@ FROM products p
 JOIN product_types t ON t.id = p.product_type_id
 WHERE p.slug = @slug;
 
--- name: RestoreProduct :exec
+-- name: RestoreProduct :execrows
 UPDATE products SET deleted_at = NULL, updated_at = now()
 WHERE slug = @slug AND deleted_at IS NOT NULL;
 
--- name: HardDeleteProduct :exec
+-- name: HardDeleteProduct :execrows
 DELETE FROM products WHERE slug = @slug AND deleted_at IS NOT NULL;
 
 -- Product deals (product_deals join — §80 product management).

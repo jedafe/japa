@@ -1053,13 +1053,16 @@ func (q *Queries) CreateWikiPage(ctx context.Context, arg CreateWikiPageParams) 
 	return id, err
 }
 
-const deleteProduct = `-- name: DeleteProduct :exec
+const deleteProduct = `-- name: DeleteProduct :execrows
 UPDATE products SET deleted_at = now() WHERE slug = $1 AND deleted_at IS NULL
 `
 
-func (q *Queries) DeleteProduct(ctx context.Context, slug string) error {
-	_, err := q.db.Exec(ctx, deleteProduct, slug)
-	return err
+func (q *Queries) DeleteProduct(ctx context.Context, slug string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProduct, slug)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteWikiPageFeedback = `-- name: DeleteWikiPageFeedback :exec
