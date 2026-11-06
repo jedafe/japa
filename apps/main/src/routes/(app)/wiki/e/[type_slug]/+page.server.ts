@@ -2,7 +2,6 @@
 import { error } from '@sveltejs/kit';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { PageServerLoad } from './$types';
-import type { EntityKind } from '../+page.server';
 
 export interface EntityDirectoryItem {
 	id: string;
@@ -15,6 +14,8 @@ export interface EntityDirectoryItem {
 interface EntitiesResponse {
 	items: EntityDirectoryItem[];
 	total: number;
+	kind: string;
+	label: string;
 }
 
 export const load: PageServerLoad = async (event) => {
@@ -28,22 +29,20 @@ export const load: PageServerLoad = async (event) => {
 	const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
 	if (q) params.set('q', q);
 
-	let res: EntitiesResponse = { items: [], total: 0 };
+	let res: EntitiesResponse = { items: [], total: 0, kind, label: kind };
 	try {
 		res = (await apiGet<EntitiesResponse>(ctx, `/wiki/entity-kinds/${kind}/entities?${params}`)) ?? res;
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) throw error(404);
-		res = { items: [], total: 0 };
 	}
 
-	// Kind label for the page header — cheap second call, index is tiny.
-	let label = kind;
-	try {
-		const kinds = (await apiGet<EntityKind[]>(ctx, '/wiki/entity-kinds')) ?? [];
-		label = kinds.find((k) => k.kind === kind)?.label ?? kind;
-	} catch {
-		/* keep slug fallback */
-	}
-
-	return { kind, label, q, page, limit, items: res.items, total: res.total };
+	return {
+		kind: res.kind ?? kind,
+		label: res.label ?? kind,
+		q,
+		page,
+		limit,
+		items: res.items ?? [],
+		total: res.total ?? 0
+	};
 };

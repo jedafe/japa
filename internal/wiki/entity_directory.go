@@ -65,11 +65,20 @@ var kindDiscriminatorColumn = map[string]string{
 	"organization": "org_type",
 }
 
+// EntityKindTypeDTO is one discriminated type entry on the index —
+// e.g. student_visa inside visa_route, each linking to its own listing.
+type EntityKindTypeDTO struct {
+	Slug  string `json:"slug"`
+	Label string `json:"label"`
+	Count int64  `json:"entity_count"`
+}
+
 // EntityKindDTO is one entry on the /wiki/e index.
 type EntityKindDTO struct {
-	Kind        string `json:"kind"`
-	Label       string `json:"label"`
-	EntityCount int64  `json:"entity_count"`
+	Kind        string              `json:"kind"`
+	Label       string              `json:"label"`
+	EntityCount int64               `json:"entity_count"`
+	Types       []EntityKindTypeDTO `json:"types,omitempty"`
 }
 
 // EntityDirectoryItem is one row on /wiki/e/{type}.
@@ -108,6 +117,43 @@ func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) 
 		}
 		out = append(out, EntityKindDTO{Kind: k.EntityKind, Label: k.Label, EntityCount: n})
 	}
+
+	// Expand discriminated kinds into per-type entries — each type links to
+	// its own filtered listing (/wiki/e/{type_slug}).
+	for i := range out {
+		src, ok := kindListSources[out[i].Kind]
+		discCol := kindDiscriminatorColumn[out[i].Kind]
+		if !ok || discCol == "" {
+			continue
+		}
+
+		typeRows, err := s.store.read.ListEntityWikiTypesByKind(ctx, &out[i].Kind)
+		if err != nil {
+			continue
+		}
+
+		for _, tr := range typeRows {
+			dv := DiscriminatorValue(tr.EntityDiscriminator)
+			if dv == "" {
+				continue // undiscriminated type = the kind listing itself
+			}
+
+			var tn int64
+			clause := src.where
+			if clause == "" {
+				clause = fmt.Sprintf("%s = $1", discCol)
+			} else {
+				clause += fmt.Sprintf(" AND %s = $1", discCol)
+			}
+			if err := s.store.pool.Reader.QueryRow(ctx,
+				fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", src.from, clause), dv).Scan(&tn); err != nil {
+				tn = 0
+			}
+
+			out[i].Types = append(out[i].Types, EntityKindTypeDTO{Slug: tr.Slug, Label: tr.TypeName, Count: tn})
+		}
+	}
+
 	return out, nil
 }
 
@@ -115,7 +161,7 @@ func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) 
 // entity kind ('visa_route') or a wiki type key ('student_visa') — type
 // keys resolve through wiki_type_configs to their kind + discriminator
 // filter, so each discriminated type gets its own listing.
-func (s *Service) ListEntitiesByKind(ctx context.Context, slug, q string, limit, offset int) ([]EntityDirectoryItem, int64, error) {
+func (s *Service) ListEntitiesByKind(ctx context.Context, slug, q string, limit, offset int) ([]EntityDirectoryItem, int64, string, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 24
 	}
@@ -123,17 +169,23 @@ func (s *Service) ListEntitiesByKind(ctx context.Context, slug, q string, limit,
 		offset = 0
 	}
 
-	kind, discFilter := slug, ""
+	kind, discFilter, label := slug, "", ""
 	if tc, err := s.store.GetEntityKindConfig(ctx, slug); err == nil && tc.EntityKind != nil && *tc.EntityKind != "" {
 		kind = *tc.EntityKind
 		discFilter = DiscriminatorValue(tc.EntityDiscriminator)
-	} else if _, err := s.store.read.GetWikiEntityKind(ctx, slug); err != nil {
-		return nil, 0, err
+		label = tc.TypeName
+		if tc.Label != nil && *tc.Label != "" {
+			label = *tc.Label
+		}
+	} else if kc, err := s.store.read.GetWikiEntityKind(ctx, slug); err != nil {
+		return nil, 0, "", err
+	} else {
+		label = kc.Label
 	}
 
 	src, ok := kindListSources[kind]
 	if !ok {
-		return nil, 0, fmt.Errorf("wiki: kind %q has no listing source", kind)
+		return nil, 0, "", pgx.ErrNoRows // kind exists but has no listing adapter → 404
 	}
 	discCol := kindDiscriminatorColumn[kind]
 
@@ -177,7 +229,7 @@ func (s *Service) ListEntitiesByKind(ctx context.Context, slug, q string, limit,
 	var total int64
 	if err := s.store.pool.Reader.QueryRow(ctx,
 		fmt.Sprintf("SELECT count(*) FROM %s%s", src.from, where), args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("counting %s entities: %w", kind, err)
+		return nil, 0, "", fmt.Errorf("counting %s entities: %w", kind, err)
 	}
 
 	var sb strings.Builder
@@ -187,7 +239,7 @@ func (s *Service) ListEntitiesByKind(ctx context.Context, slug, q string, limit,
 
 	rows, err := s.store.pool.Reader.Query(ctx, sb.String(), args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("listing %s entities: %w", kind, err)
+		return nil, 0, "", fmt.Errorf("listing %s entities: %w", kind, err)
 	}
 	defer rows.Close()
 
@@ -207,7 +259,7 @@ func (s *Service) ListEntitiesByKind(ctx context.Context, slug, q string, limit,
 		var it EntityDirectoryItem
 		var disc *string
 		if err := rows.Scan(&it.ID, &it.Slug, &it.Name, &disc); err != nil {
-			return nil, 0, err
+			return nil, 0, "", err
 		}
 		if disc != nil {
 			it.Discriminator = *disc
@@ -219,7 +271,7 @@ func (s *Service) ListEntitiesByKind(ctx context.Context, slug, q string, limit,
 		it.Href = fmt.Sprintf("/wiki/e/%s/%s/overview", typeSlug, it.Slug)
 		out = append(out, it)
 	}
-	return out, total, rows.Err()
+	return out, total, label, rows.Err()
 }
 
 // HandleListEntityKinds serves GET /wiki/entity-kinds — the /wiki/e index.
@@ -246,7 +298,7 @@ func (h *Handlers) HandleListEntitiesByKind(w http.ResponseWriter, r *http.Reque
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	q := r.URL.Query().Get("q")
 
-	items, total, err := h.service.ListEntitiesByKind(r.Context(), kind, q, limit, offset)
+	items, total, label, err := h.service.ListEntitiesByKind(r.Context(), kind, q, limit, offset)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "kind_not_found", "Entity kind not found")
@@ -258,6 +310,6 @@ func (h *Handlers) HandleListEntitiesByKind(w http.ResponseWriter, r *http.Reque
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{"items": items, "total": total},
+		"data": map[string]any{"items": items, "total": total, "kind": kind, "label": label},
 	})
 }

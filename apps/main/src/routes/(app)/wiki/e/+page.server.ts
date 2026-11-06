@@ -2,10 +2,17 @@
 import { apiContext, apiGet } from '$lib/server/api';
 import type { PageServerLoad } from './$types';
 
+export interface EntityKindType {
+	slug: string;
+	label: string;
+	entity_count: number;
+}
+
 export interface EntityKind {
 	kind: string;
 	label: string;
 	entity_count: number;
+	types?: EntityKindType[];
 }
 
 export const load: PageServerLoad = async (event) => {

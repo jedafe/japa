@@ -1907,7 +1907,7 @@ func (q *Queries) ListEntityWikiPages(ctx context.Context, arg ListEntityWikiPag
 }
 
 const listEntityWikiTypesByKind = `-- name: ListEntityWikiTypesByKind :many
-SELECT st.slug, wtc.entity_discriminator, wtc.position
+SELECT st.slug, st.name AS type_name, wtc.entity_discriminator, wtc.position
 FROM wiki_type_configs wtc
 JOIN space_types st ON st.id = wtc.space_type_id
 WHERE wtc.entity_kind = $1 AND wtc.enabled = true
@@ -1916,6 +1916,7 @@ ORDER BY wtc.position, st.slug
 
 type ListEntityWikiTypesByKindRow struct {
 	Slug                string `json:"slug"`
+	TypeName            string `json:"type_name"`
 	EntityDiscriminator []byte `json:"entity_discriminator"`
 	Position            int32  `json:"position"`
 }
@@ -1933,7 +1934,12 @@ func (q *Queries) ListEntityWikiTypesByKind(ctx context.Context, entityKind *str
 	var items []ListEntityWikiTypesByKindRow
 	for rows.Next() {
 		var i ListEntityWikiTypesByKindRow
-		if err := rows.Scan(&i.Slug, &i.EntityDiscriminator, &i.Position); err != nil {
+		if err := rows.Scan(
+			&i.Slug,
+			&i.TypeName,
+			&i.EntityDiscriminator,
+			&i.Position,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

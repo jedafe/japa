@@ -24,11 +24,20 @@
 	{:else}
 		<div class="grid">
 			{#each kinds as k (k.kind)}
-				<a href="/wiki/e/{k.kind}" class="kind-card">
-					<span class="kind-label">{k.label}</span>
-					<span class="kind-count">{k.entity_count}</span>
-					<ArrowRight size={16} />
-				</a>
+				<div class="kind-wrap">
+					<a href="/wiki/e/{k.kind}" class="kind-card">
+						<span class="kind-label">{k.label}</span>
+						<span class="kind-count">{k.entity_count}</span>
+						<ArrowRight size={16} />
+					</a>
+					{#if k.types?.length}
+						<div class="type-chips">
+							{#each k.types as ty (ty.slug)}
+								<a href="/wiki/e/{ty.slug}" class="chip">{ty.label} <span>{ty.entity_count}</span></a>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			{/each}
 		</div>
 	{/if}
@@ -69,6 +78,32 @@
 	}
 	.kind-card:hover {
 		border-color: var(--color-primary, #2563eb);
+	}
+	.kind-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+	.type-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
+		padding-left: 0.25rem;
+	}
+	.chip {
+		font-size: 0.75rem;
+		padding: 0.2rem 0.55rem;
+		border: 1px solid var(--color-border, #e2e8f0);
+		border-radius: 999px;
+		text-decoration: none;
+		color: var(--color-muted-foreground, #64748b);
+	}
+	.chip:hover {
+		border-color: var(--color-primary, #2563eb);
+		color: var(--color-primary, #2563eb);
+	}
+	.chip span {
+		opacity: 0.7;
 	}
 	.kind-label {
 		font-weight: 600;

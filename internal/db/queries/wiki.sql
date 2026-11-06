@@ -727,7 +727,7 @@ WHERE st.slug = @type_slug AND wtc.enabled = true;
 -- canonical type key for an entity's wiki pages: the discriminator-
 -- matching type (e.g. 'student_visa') wins over the undiscriminated
 -- generic type ('visa_route'). Deterministic order for stable picks.
-SELECT st.slug, wtc.entity_discriminator, wtc.position
+SELECT st.slug, st.name AS type_name, wtc.entity_discriminator, wtc.position
 FROM wiki_type_configs wtc
 JOIN space_types st ON st.id = wtc.space_type_id
 WHERE wtc.entity_kind = @entity_kind AND wtc.enabled = true
