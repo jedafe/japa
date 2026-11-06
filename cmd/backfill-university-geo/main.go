@@ -77,7 +77,7 @@ func main() {
 		SELECT s.id, s.name, COALESCE(s.geo_code, '')
 		FROM spaces s
 		JOIN space_types st ON st.id = s.space_type_id
-		WHERE st.slug = 'university' AND s.deleted_at IS NULL
+		WHERE st.slug = 'education' AND s.level = 'university' AND s.deleted_at IS NULL
 		ORDER BY s.id
 	`)
 	if err != nil {
@@ -272,7 +272,7 @@ func main() {
 		JOIN spaces sp ON sp.id = sps.parent_space_id
 		JOIN spaces su ON su.id = sps.space_id
 		JOIN space_types st ON st.id = su.space_type_id
-		WHERE st.slug = 'university'
+		WHERE st.slug = 'education' AND su.level = 'university'
 		  AND su.deleted_at IS NULL AND sp.deleted_at IS NULL
 		  AND sp.level IN ('country', 'state', 'city')
 	`)

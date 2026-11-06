@@ -282,7 +282,9 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "users_guide", Label: "Users Guide Panel", Type: "json", Hidden: true, StorageKey: "users.guide"},
 			{Key: "jobs_guide", Label: "Jobs Guide Panel", Type: "json", Hidden: true, StorageKey: "jobs.guide"},
 			{Key: "universities_guide", Label: "Universities Guide Panel", Type: "json", Hidden: true, StorageKey: "universities.guide"},
-			{Key: "radar_guide", Label: "Radar Guide Panel", Type: "json", Hidden: true, StorageKey: "radar.guide"},
+
+			{Key: "comparisons_guide", Type: "json", StorageKey: "comparisons.guide", Hidden: true},
+			{Key: "compare_guide", Type: "json", StorageKey: "compare.guide", Hidden: true}, {Key: "radar_guide", Label: "Radar Guide Panel", Type: "json", Hidden: true, StorageKey: "radar.guide"},
 			{Key: "spaces_guide", Label: "Spaces Guide Panel", Type: "json", Hidden: true, StorageKey: "spaces.guide"},
 			{Key: "tools_guide", Label: "Tools Guide Panel", Type: "json", Hidden: true, StorageKey: "tools.guide"},
 			{Key: "scholarships_guide", Label: "Scholarships Guide Panel", Type: "json", Hidden: true, StorageKey: "scholarships.guide"},

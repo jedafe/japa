@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, apiPost, apiPut, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import type { University, ListMeta, GeoCountry, GeoState, GeoCity, SpaceDetail } from '$lib/types';
@@ -168,74 +168,49 @@ export const actions: Actions = {
 			return fail(400, { error: 'invalid_selection', message: 'Select 2 to 4 universities' });
 		}
 		const ctx = apiContext(event);
-		let unis: { name: string; description: string | null; id: string; slug: string; geo_code?: string | null; follower_count?: number; member_count?: number; post_count?: number; level?: string | null }[];
+		type Uni = { name: string; description: string | null; id: string; slug: string };
+		let unis: Uni[];
 		try {
 			unis = await Promise.all(
-				uniSlugs.map((slug) => apiGet<typeof unis[number]>(ctx, `/universities/${encodeURIComponent(slug)}`))
+				uniSlugs.map((slug) => apiGet<Uni>(ctx, `/universities/${encodeURIComponent(slug)}`))
 			);
 		} catch (e) {
 			return fail(500, { error: 'fetch_failed', message: e instanceof ApiError ? e.message : 'Could not load universities' });
 		}
-		const items = unis.map((u, i) => ({
+		// Resolve the universities comparison type — the backend seeds the
+		// canonical wiki-overview matrix from it (same as the /compare picker).
+		type CmpType = { id: string; slug: string; config?: { default_item_ref_type?: string } };
+		let type: CmpType | undefined;
+		try {
+			const types = await apiGet<CmpType[]>(ctx, '/jce/comparison-types?page_size=100');
+			type = (types ?? []).find((t) => t.slug === 'universities');
+		} catch {
+			type = undefined;
+		}
+		if (!type) {
+			return fail(500, { error: 'type_not_found', message: 'University comparison type is not configured' });
+		}
+		const refType = type.config?.default_item_ref_type ?? 'university';
+		const items = unis.map((u) => ({
 			title: u.name,
 			description: u.description ?? '',
-			position: i,
-			item_ref: { type: 'space', id: u.id, slug: u.slug }
+			type_id: type.id,
+			item_ref: { type: refType, id: u.id, title: u.name, slug: u.slug }
 		}));
-		const dimensionLabels = ['Country', 'Followers', 'Members', 'Posts', 'Type'];
-
-		let created: { id: string; slug: string };
+		let created: { slug: string };
 		try {
-			created = await apiPost<{ id: string; slug: string }>(ctx, '/jce/comparisons', {
-				title: 'University comparison',
+			created = await apiPost<{ slug: string }>(ctx, '/jce/comparisons', {
+				title: unis.map((u) => u.name).join(' vs '),
+				type_id: type.id,
 				depth: 'quick',
-				body: '',
+				status: 'draft',
+				visibility: 'private',
 				items,
-				dimensions: dimensionLabels
+				dimensions: []
 			});
 		} catch (e) {
 			return fail(500, { error: 'create_failed', message: e instanceof ApiError ? e.message : 'Could not create comparison' });
 		}
-
-		let jce: { items: { id: string; position: number }[]; dimensions: { id: string; label: string }[] };
-		try {
-			jce = await apiGet<typeof jce>(ctx, `/jce/comparisons/${created.id}`);
-		} catch (e) {
-			return fail(500, { error: 'detail_failed', message: e instanceof ApiError ? e.message : 'Could not load created comparison' });
-		}
-
-		const itemByPosition = new Map<number, string>();
-		for (const it of jce.items) itemByPosition.set(it.position, it.id);
-		const dimByLabel = new Map(jce.dimensions.map((d) => [d.label, d.id]));
-
-		function getValue(u: (typeof unis)[number], label: string): string {
-			switch (label) {
-				case 'Country': return u.geo_code ?? '';
-				case 'Followers': return u.follower_count != null ? String(u.follower_count) : '';
-				case 'Members': return u.member_count != null ? String(u.member_count) : '';
-				case 'Posts': return u.post_count != null ? String(u.post_count) : '';
-				case 'Type': return u.level ?? '';
-				default: return '';
-			}
-		}
-
-		for (const label of dimensionLabels) {
-			const dimId = dimByLabel.get(label);
-			if (!dimId) continue;
-			const values = unis
-				.map((u, i) => {
-					const itemId = itemByPosition.get(i);
-					return itemId ? { item_id: itemId, value: getValue(u, label) } : null;
-				})
-				.filter((v): v is { item_id: string; value: string } => v !== null);
-			if (values.length === 0) continue;
-			try {
-				await apiPut<unknown>(ctx, `/jce/comparisons/dimensions/${dimId}/values`, { values });
-			} catch (e) {
-				console.error('failed to seed dimension values:', e instanceof ApiError ? e.message : e);
-			}
-		}
-
 		throw redirect(303, `/compare/${created.slug}`);
 	}
 };

@@ -14,6 +14,9 @@ JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
 WHERE o.deleted_at IS NULL AND o.is_published = true
  AND c.is_published = true
  AND (@university_id::uuid IS NULL OR o.university_id = @university_id)
+ AND (@ancestor_id::uuid IS NULL OR EXISTS (
+     SELECT 1 FROM space_parent_spaces sps
+     WHERE sps.space_id = o.university_id AND sps.parent_space_id = @ancestor_id))
  AND (@search::text = '' OR c.title ILIKE '%' || @search || '%')
  AND (@degree_type::text = '' OR c.degree_type = @degree_type)
 ORDER BY c.title ASC
@@ -53,6 +56,9 @@ JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
 WHERE o.deleted_at IS NULL AND o.is_published = true
  AND c.is_published = true
  AND (@university_id::uuid IS NULL OR o.university_id = @university_id)
+ AND (@ancestor_id::uuid IS NULL OR EXISTS (
+     SELECT 1 FROM space_parent_spaces sps
+     WHERE sps.space_id = o.university_id AND sps.parent_space_id = @ancestor_id))
  AND (@search::text = '' OR c.title ILIKE '%' || @search || '%')
  AND (@degree_type::text = '' OR c.degree_type = @degree_type);
 

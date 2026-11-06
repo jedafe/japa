@@ -25,19 +25,22 @@ export const load: PageServerLoad = async (event) => {
 		? `/intel/radar/feed/${event.params.id}?item_type=${encodeURIComponent(itemType)}`
 		: `/intel/radar/feed/${event.params.id}`;
 
+	let item: RadarItem;
 	try {
-		const item = await apiGet<RadarItem>(ctx, path);
-		// Radar items mirror the canonical post — 301 to whichever route the
-		// backend resolved (/scholarships/{id}, /jobs/{slug}, /guide/{slug}).
-		if (item.canonical_url) {
-			throw redirect(301, item.canonical_url);
-		}
-		return { item, authed: !!event.locals.user };
+		item = await apiGet<RadarItem>(ctx, path);
 	} catch (err) {
-		if (err && typeof err === 'object' && 'status' in err && (err.status === 301 || err.status === 302)) throw err;
 		if (err instanceof ApiError) {
 			throw error(err.status, { code: err.code, message: err.message });
 		}
 		throw error(500, { code: 'api_error', message: 'Radar item could not be loaded' });
 	}
+
+	// Radar items mirror the canonical post — 301 to whichever route the
+	// backend resolved (/scholarships/{id}, /jobs/{slug}, /guide/{slug}).
+	// Thrown outside the try so the Redirect is never caught.
+	if (item.canonical_url) {
+		throw redirect(301, item.canonical_url);
+	}
+
+	return { item, authed: !!event.locals.user };
 };

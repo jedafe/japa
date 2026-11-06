@@ -2,13 +2,38 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onDestroy } from 'svelte';
-	import { Search, Eye, MessageCircle, Share2, Plus, GitCompare } from 'lucide-svelte';
+	import { Search, Eye, MessageCircle, Share2, GitCompare, Filter, ChevronRight } from 'lucide-svelte';
 	import { i18n, t, siteName} from '$lib/i18n';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
-	import { EmptyState, ListPageBar, PaginationControls, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
+	import { EmptyState, EntityHero, ListPageBar, PaginationControls, UrlTabs, GuideSlideOver, Modal, type GuideContent, type UrlTab } from '$lib/components/ui';
 	import type { PageData } from './$types';
+	import { api } from '$lib/api/client';
+	import HeroArtCompare from '$lib/components/heroes/HeroArtCompare.svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	// "How it works" slide-over — editable via comparisons.guide (admins).
+	let guideOpen = $state(false);
+	const fallbackGuide: GuideContent = {
+		title: t('common.how_it_works', 'How it works'),
+		body: t('comparisons.guide_body', ''),
+		ctas: []
+	};
+	let guideContent = $state<GuideContent | null>(null);
+	const effectiveGuide = $derived(guideContent ?? fallbackGuide);
+	async function saveGuide(v: GuideContent): Promise<string | null> {
+		try {
+			const res = await api.put<{ comparisons_guide?: GuideContent }>('/admin/settings/general', { comparisons_guide: v });
+			if (res.data?.comparisons_guide) guideContent = res.data.comparisons_guide;
+			else guideContent = v;
+			return null;
+		} catch (e) {
+			return e instanceof Error ? e.message : 'save_failed';
+		}
+	}
+
+	let filtersModalOpen = $state(false);
+	let searchModalOpen = $state(false);
 
 	let items = $derived(data.items ?? []);
 	let defaultPageSize = $derived(data.defaultPageSize ?? 12);
@@ -43,16 +68,12 @@
 		{ value: 'mine', label: t('jce.comparisons.tab_mine') }
 	]);
 
-	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /guides).
+	// Filters live in the right-side modal — hasActiveFilters drives the dot.
 	// Panel-active = type filter or non-default sort — the always-visible search
 	// box doesn't count (it's not in the panel).
 	const hasActiveFilters = $derived(
 		!!filters.filter_type || (!!filters.sort && filters.sort !== (sortValues[0] || 'created_at'))
 	);
-	let showFilters = $state(false);
-	$effect(() => {
-		if (hasActiveFilters) showFilters = true;
-	});
 
 	let typeSelectOptions = $derived([
 		{ value: '', label: t('jce.comparisons.all_types') },
@@ -168,6 +189,29 @@
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('jce.comparisons.heading')}</h1>
 
+	<!-- Header — EntityHero directory panel -->
+	<EntityHero
+		icon={GitCompare}
+		heading={t('jce.comparisons.heading')}
+		description={t('comparisons.hero_desc', 'Compare tools, universities, jobs and more side by side — see the differences that matter to your journey.')}
+		accent="var(--color-primary)"
+	>
+		{#snippet actions(c)}
+			<div class="grid w-full grid-cols-2 gap-2 sm:flex">
+				<a href="/compare" class="{c.primary} flex-1 justify-center whitespace-nowrap">
+					<GitCompare size={15} /> {t('jce.comparisons.create')}
+				</a>
+				<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} flex-1 justify-center whitespace-nowrap">
+					{t('common.how_it_works', 'How it works')}
+					<ChevronRight size={14} class="rtl:-scale-x-100" />
+				</button>
+			</div>
+		{/snippet}
+		{#snippet art()}
+			<HeroArtCompare accent="var(--color-primary)" />
+		{/snippet}
+	</EntityHero>
+
 	<!-- Tab + filter bar: ListPageBar pattern, same as /blog, /guides -->
 	<ListPageBar>
 		{#if user}
@@ -183,14 +227,51 @@
 			</span>
 		{/if}
 		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="comparisons-filter-panel" />
-			<PageAction
-				href="/compare"
-				icon={Plus}
-				label={t('jce.comparisons.create')}
-			/>
+			<button type="button" onclick={() => (filtersModalOpen = true)} class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]">
+				{t('common.filters', 'Filters')}
+				{#if hasActiveFilters}<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>{/if}
+				<Filter size={16} />
+			</button>
+			<button type="button" onclick={() => (searchModalOpen = true)} class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]">
+				{t('common.search', 'Search')}
+				{#if filters.q}<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>{/if}
+				<Search size={16} />
+			</button>
 		{/snippet}
 	</ListPageBar>
+
+	<Modal bind:open={filtersModalOpen} title={t('common.filters', 'Filters')} icon={Filter} size="sm">
+		{#snippet children()}
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+				<JceSelect
+					options={sortOptions}
+					value={filters.sort || sortValues[0] || 'created_at'}
+					onchange={(value) => setSort(value)}
+					placeholder={t('jce.comparisons.sort_placeholder', 'Sort by')}
+				/>
+				<JceSelect
+					options={typeSelectOptions}
+					value={filters.filter_type || ''}
+					onchange={(value) => setFilterType(value)}
+				/>
+			</div>
+		{/snippet}
+	</Modal>
+
+	<Modal bind:open={searchModalOpen} title={t('common.search', 'Search')} icon={Search} size="sm">
+		{#snippet children()}
+			<div class="relative">
+				<Search size={16} class="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
+				<input
+					type="text"
+					bind:value={query}
+					oninput={onSearchInput}
+					placeholder={t('jce.comparisons.search_placeholder')}
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 ps-9 pe-4 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+				/>
+			</div>
+		{/snippet}
+	</Modal>
 
 	<div class="mx-auto w-full max-w-3xl space-y-4 p-4">
 		{#if loadError}
@@ -199,35 +280,8 @@
 			</p>
 		{/if}
 
-		<div class="relative">
-			<Search size={16} class="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
-			<input
-				type="text"
-				bind:value={query}
-				oninput={onSearchInput}
-				placeholder={t('jce.comparisons.search_placeholder')}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 ps-9 pe-4 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-			/>
-		</div>
-
-		{#if showFilters}
-			<div
-				id="comparisons-filter-panel"
-				class="grid grid-cols-1 gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 sm:grid-cols-[auto_auto]"
-			>
-				<JceSelect
-					options={sortOptions}
-					value={filters.sort || sortValues[0] || 'created_at'}
-					onchange={(value) => setSort(value)}
-					placeholder={t('jce.comparisons.sort_placeholder', 'Sort by')}
-				/>
-
-				<JceSelect
-					options={typeSelectOptions}
-					value={filters.filter_type || ''}
-					onchange={(value) => setFilterType(value)}
-				/>
-			</div>
+		{#if filters.q}
+			<p class="text-xs text-[var(--color-muted)]">{t('jce.comparisons.search_placeholder')}: {filters.q}</p>
 		{/if}
 
 		{#if items.length === 0}
@@ -288,3 +342,12 @@
 		{/if}
 	</div>
 </div>
+
+<GuideSlideOver
+	bind:open={guideOpen}
+	title={effectiveGuide.title}
+	body={effectiveGuide.body}
+	ctas={effectiveGuide.ctas}
+	canManage={data.canManage}
+	onSave={saveGuide}
+/>

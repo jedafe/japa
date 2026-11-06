@@ -4,7 +4,7 @@ package spaces
 // entity and write general-info facts (population, languages, currency,
 // postal codes, calling code, capital, founded, head of government, time
 // zone; universities: founded year, student population, website, initials)
-// into the space's wiki page custom fields (geo_fields / university_fields
+// into the space's wiki page custom fields (geo_fields / wiki_university_overview
 // groups).
 //
 // Ref: japaconnect-engineering/sections/11-job-queue-asynq.md (wiki:populate_facts)
@@ -47,7 +47,8 @@ var geoFactsFieldUUIDs = struct {
 	TimeZone:         "4dfd79c2-d087-4e5c-80b1-bb10b5f90007",
 }
 
-// universityFactsFieldUUIDs — university_fields entries (000735 baseline).
+// universityFactsFieldUUIDs — canonical university field UUIDs (000288;
+// defs consolidated into wiki_university_overview in 001060, ids unchanged).
 var universityFactsFieldUUIDs = struct {
 	Initials, OfficialWebsite, ContactEmail, WorldRanking, CountryRanking,
 	FoundedYear, UniType, ProgramsOffered, StudentPopulation, Colleges string

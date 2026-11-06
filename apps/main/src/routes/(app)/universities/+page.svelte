@@ -21,6 +21,7 @@
 	} from '$lib/components/ui';
 	import { GuideSlideOver, Modal, type GuideContent } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import HeroArtUniversities from '$lib/components/heroes/HeroArtUniversities.svelte';
 	import { formatMetric } from '$lib/components/hub/charts/format';
 	import type { University } from '$lib/types';
@@ -43,12 +44,10 @@
 	// SSR list changes (filter/sort/search navigation reloads data).
 	let allUnis = $state<University[]>(untrack(() => data.universities));
 	let loadingMore = $state(false);
-	let uniItems = $state<University[]>(untrack(() => data.universities));
 	$effect(() => {
 		const fresh = data.universities;
 		untrack(() => {
 			allUnis = fresh;
-			uniItems = fresh;
 		});
 	});
 	const paged = $derived<University[]>(allUnis);
@@ -77,6 +76,20 @@
 	let savingJCE = $state(false);
 	const canCompare = $derived(selectedUniSlugs.size >= 2 && selectedUniSlugs.size <= 4);
 	const selectedUnis = $derived<University[]>(allUnis.filter((u) => selectedUniSlugs.has(u.slug)));
+
+	// Guest compare flow — the selection is stashed before the login redirect
+	// and restored on return so the user doesn't re-pick 2–4 unis.
+	const COMPARE_KEY = 'universities_compare_selection';
+	$effect(() => {
+		if (!data.user) return;
+		const raw = untrack(() => sessionStorage.getItem(COMPARE_KEY));
+		if (!raw) return;
+		sessionStorage.removeItem(COMPARE_KEY);
+		try {
+			const slugs = JSON.parse(raw) as string[];
+			selectedUniSlugs = new Set(slugs.filter((x) => typeof x === 'string').slice(0, 4));
+		} catch { /* ignore malformed */ }
+	});
 
 	function toggleUni(slug: string) {
 		const next = new Set(selectedUniSlugs);
@@ -549,21 +562,27 @@
 
 			{#if form?.error}
 				<div class="mb-4 rounded-[var(--radius)] border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-					{form.message || t('jobs.jce_error', 'Could not create comparison')}
+					{form.message || t('universities.compare_error', 'Could not create comparison')}
 				</div>
 			{/if}
 			{#if selectedUniSlugs.size > 0}
 				<form method="POST" use:enhance={() => { savingJCE = true; return async ({ update }) => { savingJCE = false; await update(); }; }} class="mb-4 flex flex-wrap items-center justify-between gap-3">
-					<p class="text-sm text-[var(--color-muted)]">{t('jobs.selected', 'Selected')}: {selectedUniSlugs.size} / 4</p>
+					<p class="text-sm text-[var(--color-muted)]">{t('universities.selected', 'Selected')}: {selectedUniSlugs.size} / 4</p>
 					{#each selectedUnis as uni (uni.slug)}<input type="hidden" name="uni_slug" value={uni.slug} />{/each}
 					<button
-						type="submit"
-						disabled={!canCompare || !data.user}
-						title={data.user ? t('jobs.compare_in_jce_hint', 'Open in JCE comparison') : t('jobs.sign_in_to_compare', 'Sign in to compare')}
+						type={data.user ? 'submit' : 'button'}
+						onclick={() => {
+							if (!data.user) {
+								sessionStorage.setItem(COMPARE_KEY, JSON.stringify([...selectedUniSlugs]));
+								requireAuthOrRedirect();
+							}
+						}}
+						disabled={data.user ? !canCompare : false}
+						title={data.user ? t('universities.compare_hint', 'Select up to 4 universities to compare side by side.') : t('universities.sign_in_to_compare', 'Sign in to compare')}
 						class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
 					>
 						{#if savingJCE}<Loader2 size={16} class="animate-spin" />{:else}<GitCompare size={16} />{/if}
-						{t('jobs.compare_in_jce', 'Compare in JCE')}
+						{t('universities.compare_selected', 'Compare selected')}
 					</button>
 				</form>
 			{/if}
@@ -586,27 +605,29 @@
 							meta={cardMeta}
 						>
 							{#snippet actions()}
-								<input
-									type="checkbox"
-									checked={selectedUniSlugs.has(uni.slug)}
-									onchange={() => toggleUni(uni.slug)}
-									disabled={selectedUniSlugs.size >= 4 && !selectedUniSlugs.has(uni.slug)}
-									title={t('jobs.compare_in_jce_hint', 'Select up to 4 to compare side by side.')}
-									aria-label={t('jobs.compare_in_jce_hint', 'Select up to 4 to compare side by side.')}
-									onclick={(e) => e.stopPropagation()}
-									class="accent-[var(--color-primary)]"
-								/>
-								{#if data.user}
-									<SpaceJoinButton
-										entityId={uni.id}
-										entitySlug={uni.slug}
-										initiallyJoined={uni.is_member ?? false}
-										initiallyPending={uni.is_pending ?? false}
-										initiallyFollowing={uni.is_following ?? false}
-										compact
-									followOnly
+								<div class="flex items-center gap-2">
+									<input
+										type="checkbox"
+										checked={selectedUniSlugs.has(uni.slug)}
+										onchange={() => toggleUni(uni.slug)}
+										disabled={selectedUniSlugs.size >= 4 && !selectedUniSlugs.has(uni.slug)}
+										title={t('universities.compare_hint', 'Select up to 4 universities to compare side by side.')}
+										aria-label={t('universities.compare_hint', 'Select up to 4 universities to compare side by side.')}
+										onclick={(e) => e.stopPropagation()}
+										class="shrink-0 accent-[var(--color-primary)]"
 									/>
-								{/if}
+									<div class="ms-auto min-w-0">
+										<SpaceJoinButton
+											entityId={uni.id}
+											entitySlug={uni.slug}
+											initiallyJoined={uni.is_member ?? false}
+											initiallyPending={uni.is_pending ?? false}
+											initiallyFollowing={uni.is_following ?? false}
+											compact
+										followOnly
+										/>
+									</div>
+								</div>
 							{/snippet}
 						</DirectoryCard>
 					{/each}
@@ -620,7 +641,7 @@
 								<th class="px-4 py-2 text-center font-medium">{t('universities.col_initials', 'Initials')}</th>
 								<th class="px-4 py-2 text-end font-medium">{t('universities.col_posts', 'Posts')}</th>
 								<th class="px-4 py-2 text-end font-medium">{t('universities.col_followers', 'Followers')}</th>
-								<th class="w-10 px-2 py-2 font-medium" aria-label={t('jobs.compare_in_jce_hint', 'Compare')}></th>
+								<th class="w-10 px-2 py-2 font-medium" aria-label={t('universities.compare_hint', 'Compare')}></th>
 							</tr>
 						</thead>
 						<tbody>
@@ -661,7 +682,7 @@
 											checked={selectedUniSlugs.has(uni.slug)}
 											onchange={() => toggleUni(uni.slug)}
 											disabled={selectedUniSlugs.size >= 4 && !selectedUniSlugs.has(uni.slug)}
-											aria-label={t('jobs.compare_in_jce_hint', 'Compare')}
+											aria-label={t('universities.compare_hint', 'Compare')}
 											class="accent-[var(--color-primary)]"
 										/>
 									</td>

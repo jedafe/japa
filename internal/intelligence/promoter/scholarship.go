@@ -321,7 +321,7 @@ func (p *ScholarshipPromoter) createScholarshipGuide(ctx context.Context, tx TxS
 		Slug:            slug,
 		Body:            bodyText,
 		BodyHtml:        bodyHTML(bodyText),
-		FieldValues:     extractedFieldValues(ext),
+		FieldValues:     scholarshipFieldValues(ext),
 		ContentHash:     &hash,
 		GeoSpaceID:      countrySpaceID,
 		CanonicalUrl:    &canonicalURL,
@@ -527,7 +527,7 @@ func (p *ScholarshipPromoter) createGuideOnApprove(ctx context.Context, tx TxSto
 		Slug:            slug,
 		Body:            bodyText,
 		BodyHtml:        bodyHTML(bodyText),
-		FieldValues:     extractedFieldValues(ext),
+		FieldValues:     scholarshipFieldValues(ext),
 		ContentHash:     &hash,
 		GeoSpaceID:      params.CountrySpaceID,
 		CanonicalUrl:    &canonicalURL,
@@ -1852,4 +1852,58 @@ func isNotFound(err error) bool {
 	msg := err.Error()
 
 	return strings.Contains(msg, "no rows in result set")
+}
+
+// scholarshipFieldValues serializes the extraction into contents.field_values
+// JSONB, aliasing intel-schema keys onto the guide_scholarship_fields
+// vocabulary so the same values hydrate comparison matrix cells and the
+// guide-sync projection under the canonical guide keys (§30 Sub-spec 5).
+// Aliases never clobber a key the extraction already carries.
+func scholarshipFieldValues(ext extractor.Extraction) []byte {
+	raw := extractedFieldValues(ext)
+
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil || len(m) == 0 {
+		return raw
+	}
+
+	alias := func(from, to string) {
+		if v, ok := m[from]; ok && v != nil {
+			if _, exists := m[to]; !exists {
+				m[to] = v
+			}
+		}
+	}
+
+	alias("deadline", "application_deadline")
+	alias("application_url", "application_link")
+	alias("degree_level", "level_of_study")
+	alias("eligible_countries", "countries_eligible")
+	alias("university", "provider_institution")
+	alias("title", "scholarship_name")
+
+	if f, ok := m["funding"].(map[string]any); ok {
+		if _, exists := m["award_amount_usd"]; !exists {
+			if v, ok := f["award_amount_usd"]; ok && v != nil {
+				m["award_amount_usd"] = v
+			}
+		}
+		if _, exists := m["is_renewable"]; !exists {
+			if v, ok := f["is_renewable"]; ok && v != nil {
+				m["is_renewable"] = v
+			}
+		}
+		if _, exists := m["coverage"]; !exists {
+			if v, ok := f["coverage"]; ok && v != nil {
+				m["coverage"] = v
+			}
+		}
+	}
+
+	out, err := json.Marshal(m)
+	if err != nil {
+		return raw
+	}
+
+	return out
 }

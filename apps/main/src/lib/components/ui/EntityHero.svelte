@@ -143,7 +143,7 @@
 					<div class="min-w-0">
 						<h1
 							id="entity-hero-heading"
-							class="whitespace-nowrap text-2xl font-bold tracking-tight text-[var(--color-text)] sm:text-[2rem]"
+							class="break-words text-2xl font-bold tracking-tight text-[var(--color-text)] sm:whitespace-nowrap sm:text-[2rem]"
 						>
 							{heading}
 						</h1>

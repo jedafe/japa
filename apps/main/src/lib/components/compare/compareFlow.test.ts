@@ -26,16 +26,15 @@ describe('compareFlow', () => {
 		expect(defaultItemRefType(type({}))).toBe('space');
 	});
 
-	it('requiredScopeStep: course requires university, everything else null', () => {
-		expect(requiredScopeStep('course', ['university'])).toBe('university');
+	it('requiredScopeStep: no required steps — all scopes are optional filters', () => {
+		expect(requiredScopeStep('course', ['university'])).toBeNull();
 		expect(requiredScopeStep('university', ['country', 'city'])).toBeNull();
 		expect(requiredScopeStep('space', [])).toBeNull();
 	});
 
-	it('missingRequiredScope reports the missing step only while unset', () => {
-		const chain = ['university'];
-		expect(missingRequiredScope('course', chain, {})).toBe('university');
-		expect(missingRequiredScope('course', chain, { university: 'u1' })).toBeNull();
+	it('missingRequiredScope always returns null now', () => {
+		expect(missingRequiredScope('course', ['university'], {})).toBeNull();
+		expect(missingRequiredScope('course', ['university'], { university: 'u1' })).toBeNull();
 		expect(missingRequiredScope('col_city', ['country', 'city'], {})).toBeNull();
 	});
 

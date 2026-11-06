@@ -119,6 +119,7 @@ export const load: PageServerLoad = async (event) => {
 
 	return {
 		user: event.locals.user,
+		canManage: await canManageGuides(ctx, event),
 		items,
 		meta,
 		types,
@@ -139,3 +140,19 @@ export const load: PageServerLoad = async (event) => {
 		}
 	};
 };
+
+// canManageGuides gates the GuideSlideOver pencil — super_admin group or any
+// admin.settings.* permission, same check as the directory pages.
+async function canManageGuides(ctx: ReturnType<typeof apiContext>, event: { locals: App.Locals }): Promise<boolean> {
+	if (!event.locals.user) return false;
+	const isSuperAdmin = (event.locals.user.groups ?? []).some(
+		(g) => g === 'Super Admin' || g === 'super_admin'
+	);
+	if (isSuperAdmin) return true;
+	try {
+		const perms = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+		return (perms?.permissions ?? []).some((p) => p.startsWith('admin.settings'));
+	} catch {
+		return false;
+	}
+}

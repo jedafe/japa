@@ -305,13 +305,13 @@ func (h *Handlers) ListUniversityCourses(w http.ResponseWriter, r *http.Request)
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 	degreeType := strings.TrimSpace(r.URL.Query().Get("degree_type"))
 
-	offerings, err := h.svc.SearchOfferings(r.Context(), space.ID, search, degreeType, limit32, offset)
+	offerings, err := h.svc.SearchOfferings(r.Context(), space.ID, pgtype.UUID{}, search, degreeType, limit32, offset)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
 	}
 
-	total, err := h.svc.CountOfferingsByUniversity(r.Context(), space.ID, search, degreeType)
+	total, err := h.svc.CountOfferingsByUniversity(r.Context(), space.ID, pgtype.UUID{}, search, degreeType)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return

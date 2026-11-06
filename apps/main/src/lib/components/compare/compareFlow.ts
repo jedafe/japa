@@ -11,8 +11,8 @@ export function defaultItemRefType(type: ComparisonType | null | undefined): str
 }
 
 export function requiredScopeStep(source: string, _chain: string[]): string | null {
-	// Course search must be scoped to a university — same rule as +page.server.ts.
-	if (source === 'course') return 'university';
+	// No required scope steps — course searches run globally and the
+	// country → university cascade narrows optionally (resolver supports it).
 	return null;
 }
 

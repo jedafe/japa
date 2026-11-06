@@ -172,10 +172,19 @@ export const load: PageServerLoad = async (event) => {
 	const sort = searchParams.get('sort') ?? '';
 
 	let scopeChain = (selectedType?.config?.scope_chain as string[]) ?? [];
-	// Course search must be scoped to a university. Older type configs that do
-	// not include a scope_chain still need this selector so users can choose one.
-	if (source === 'course' && !scopeChain.includes('university')) {
-		scopeChain = [...scopeChain, 'university'];
+	// Courses narrow country → university: the country step filters the
+	// university autocomplete to one country (BSc Agric UNILAG vs UNIBEN).
+	// Older type configs that do not include a scope_chain still need this
+	// selector so users can choose one.
+	if (source === 'course') {
+		if (!scopeChain.includes('country')) {
+			const idx = scopeChain.indexOf('university');
+			if (idx >= 0) scopeChain.splice(idx, 0, 'country');
+			else scopeChain = [...scopeChain, 'country'];
+		}
+		if (!scopeChain.includes('university')) {
+			scopeChain = [...scopeChain, 'university'];
+		}
 	}
 	// A chain whose leaf step matches the entity being listed is
 	// self-referential — filtering cities down to a single city, or states to
@@ -258,11 +267,8 @@ export const load: PageServerLoad = async (event) => {
 	// Compare permission are all independent once the type is resolved.
 	const itemsPromise = (async () => {
 		if (!selectedType) return { items: [] as ResolvedItem[], itemsTotal: null as number | null, error: null as Record<string, string> | null };
-		// Course search requires a university scope. Don't call the resolver
-		// before the user has selected one; the scope dropdown is the prompt.
-		if (source === 'course' && !scopeParams['university']) {
-			return { items: [] as ResolvedItem[], itemsTotal: null as number | null, error: null as Record<string, string> | null };
-		}
+		// Course search works globally — the university/country scope steps
+		// are optional narrowing filters, not required gates.
 		try {
 			const params = new URLSearchParams({ q });
 			params.set('limit', String(fetchLimit));
@@ -493,6 +499,7 @@ export const load: PageServerLoad = async (event) => {
 		loadError,
 		loadErrorParams,
 		user: event.locals.user,
+		canManage: await canManageGuides(ctx, event),
 		mine,
 		myComparisons,
 		myMeta,
@@ -502,3 +509,19 @@ export const load: PageServerLoad = async (event) => {
 		mainOrigin: event.url.origin
 	};
 };
+
+// canManageGuides gates the GuideSlideOver pencil — super_admin group or any
+// admin.settings.* permission, same check as the directory pages.
+async function canManageGuides(ctx: ReturnType<typeof apiContext>, event: { locals: App.Locals }): Promise<boolean> {
+	if (!event.locals.user) return false;
+	const isSuperAdmin = (event.locals.user.groups ?? []).some(
+		(g) => g === 'Super Admin' || g === 'super_admin'
+	);
+	if (isSuperAdmin) return true;
+	try {
+		const perms = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+		return (perms?.permissions ?? []).some((p) => p.startsWith('admin.settings'));
+	} catch {
+		return false;
+	}
+}

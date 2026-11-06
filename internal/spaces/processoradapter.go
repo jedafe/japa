@@ -587,7 +587,8 @@ func (a *ProcessorAdapter) enrichWebsiteFromWikipedia(ctx context.Context, space
 	}
 }
 
-// universityFieldUUIDs are the deterministic UUIDs for university_fields custom
+// universityFieldUUIDs are the deterministic UUIDs for the canonical university
+// field defs (seeded university_fields, moved to wiki_university_overview in 001060).
 // field definitions, seeded in migration 000288. Using these directly avoids
 // a DB lookup per enrichment.
 var universityFieldUUIDs = struct {

@@ -1869,7 +1869,7 @@ func (s *Store) UpdateSpace(ctx context.Context, arg gen.UpdateSpaceParams) (gen
 }
 
 // GetCustomFieldGroupBySlug resolves a custom_field_groups row by slug
-// ("university_fields" for university CFVs).
+// ("wiki_university_overview" for university CFVs — consolidated 001060).
 func (s *Store) GetCustomFieldGroupBySlug(ctx context.Context, slug string) (gen.CustomFieldGroup, error) {
 	row, err := s.queries.GetCustomFieldGroupBySlug(ctx, slug)
 	if err != nil {

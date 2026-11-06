@@ -947,11 +947,12 @@ var settingsCatalog = map[string]settingMeta{
 	"jobs.guide":          {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /jobs.", Panel: "admin"},
 	"universities.guide":  {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /universities.", Panel: "admin"},
 
-		{Key: "comparisons.guide", Label: "Comparisons guide panel", Group: "content", Public: true},
-		{Key: "compare.guide", Label: "Compare workspace guide panel", Group: "content", Public: true},	"radar.guide":         {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /radar.", Panel: "admin"},
-	"spaces.guide":        {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /spaces.", Panel: "admin"},
-	"tools.guide":         {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /tools.", Panel: "admin"},
-	"scholarships.guide":  {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /scholarships.", Panel: "admin"},
+	"comparisons.guide":  {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /comparisons.", Panel: "admin"},
+	"compare.guide":      {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /compare.", Panel: "admin"},
+	"radar.guide":        {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /radar.", Panel: "admin"},
+	"spaces.guide":       {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /spaces.", Panel: "admin"},
+	"tools.guide":        {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /tools.", Panel: "admin"},
+	"scholarships.guide": {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /scholarships.", Panel: "admin"},
 }
 
 // IsPublicSetting reports whether the given dot-notation key is marked Public

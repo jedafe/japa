@@ -50,6 +50,10 @@ var entityFieldValuesTable = map[string]string{
 	"organization": "organizations",
 	"bank":         "banks",
 	"content":      "contents",
+	// Scholarships are guide content rows (entity_id = contents.id) — ops
+	// also refresh the denormalized field_values mirror loadGuideFields
+	// merges, same as 'content' ops.
+	"scholarship": "contents",
 }
 
 // applyOps executes a revision's ops array in order inside the caller's

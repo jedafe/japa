@@ -94,9 +94,10 @@ func toCourseOffering(row any) (CourseOffering, error) {
 
 // SearchOfferings returns published course offerings for a platform, optionally
 // filtered by university, search query, and/or degree type.
-func (s *Store) SearchOfferings(ctx context.Context, universityID pgtype.UUID, query, degreeType string, limit, offset int32) ([]CourseOffering, error) {
+func (s *Store) SearchOfferings(ctx context.Context, universityID, ancestorID pgtype.UUID, query, degreeType string, limit, offset int32) ([]CourseOffering, error) {
 	rows, err := s.read.ListCourseOfferingsByUniversity(ctx, gen.ListCourseOfferingsByUniversityParams{
 		UniversityID: universityID,
+		AncestorID:   ancestorID,
 		Search:       query,
 		DegreeType:   degreeType,
 		LimitVal:     limit,
@@ -146,9 +147,10 @@ func (s *Store) GetOfferingBySlug(ctx context.Context, slug string) (CourseOffer
 
 // CountOfferingsByUniversity returns the total published offerings matching
 // the same filters as SearchOfferings — used for pagination meta.
-func (s *Store) CountOfferingsByUniversity(ctx context.Context, universityID pgtype.UUID, query, degreeType string) (int64, error) {
+func (s *Store) CountOfferingsByUniversity(ctx context.Context, universityID, ancestorID pgtype.UUID, query, degreeType string) (int64, error) {
 	total, err := s.read.CountCourseOfferingsByUniversity(ctx, gen.CountCourseOfferingsByUniversityParams{
 		UniversityID: universityID,
+		AncestorID:   ancestorID,
 		Search:       query,
 		DegreeType:   degreeType,
 	})

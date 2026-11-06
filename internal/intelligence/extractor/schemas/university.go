@@ -3,7 +3,7 @@ package schemas
 // University is the entity schema for the university domain.
 // Projection: a spaces row on the 'education' space type with
 // level='university' plus custom_field_values on the seeded
-// university_fields group (§39); the university_intel_links table ties the
+// wiki_university_overview group (§39, consolidated 001060); the university_intel_links table ties the
 // space to the intel record and carries the editorial_overrides set.
 // Field names mirror the group's custom-field keys so the promoter maps
 // extraction fields 1:1 onto custom field values.

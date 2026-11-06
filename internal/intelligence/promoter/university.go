@@ -1,6 +1,7 @@
 // The university domain projects an intel_record onto a spaces row
 // (space_types.slug='education', level='university') plus the
-// custom_field_values of the seeded university_fields group (§39). The
+// custom_field_values of the canonical university field group
+// (wiki_university_overview — defs consolidated there in 001060, §39). The
 // university_intel_links table ties the space to the intel record and
 // carries the field-level editorial_overrides set — the same
 // human-edit-wins invariant every projection promoter enforces.
@@ -37,16 +38,17 @@ const universitySpaceType = "education"
 // universityLevel is the spaces.level marking a platform university.
 const universityLevel = "university"
 
-// universityFieldGroupSlug is the seeded custom_field_groups slug holding
-// the university field definitions (§39).
-const universityFieldGroupSlug = "university_fields"
+// universityFieldGroupSlug is the custom_field_groups slug holding the
+// canonical university field definitions (§39). 001060 moved the defs into
+// the wiki overview group — field UUIDs unchanged.
+const universityFieldGroupSlug = "wiki_university_overview"
 
 // cfvEntityType is the custom_field_values.entity_type for space-scoped
 // values (matches universities.customFieldEntityTypeSpace).
 const cfvEntityType = "space"
 
 // universityCFVKeys is the set of extraction field names that map 1:1 onto
-// university_fields custom-field keys. Everything else in the schema
+// the canonical university custom-field keys. Everything else in the schema
 // (name, slug, country, city, description, source_url) maps to space
 // columns or is unused.
 var universityCFVKeys = []string{
@@ -101,7 +103,7 @@ type SpaceAutoPopulateEnqueuer interface {
 const taskSpaceAutoPopulate = "space:auto_populate"
 
 // UniversityPromoter promotes university intel_records into a university
-// space + university_fields custom field values, linked by a
+// space + wiki_university_overview custom field values, linked by a
 // university_intel_links row. On the update path any field key present in
 // the link's editorial_overrides is left untouched — a human edit always
 // wins over a re-crawl.
@@ -179,8 +181,8 @@ type universityFieldDef struct {
 	options   []byte
 }
 
-// resolveUniversityFieldDefs loads the university_fields group once and
-// resolves every CFV-mapped field definition in a single query — admins
+// resolveUniversityFieldDefs loads the wiki_university_overview group once
+// and resolves every CFV-mapped field definition in a single query — admins
 // can mutate defs, so this intentionally runs per-promote rather than
 // being cached. Missing keys (field removed by an admin) are absent from
 // the map, never an error — extraction still lands on the record.
@@ -189,7 +191,7 @@ func (p *UniversityPromoter) resolveUniversityFieldDefs(ctx context.Context) map
 
 	group, err := p.store.GetCustomFieldGroupBySlug(ctx, universityFieldGroupSlug)
 	if err != nil {
-		slog.Warn("promoter: university_fields group not resolvable, skipping CFV writes", "error", err)
+		slog.Warn("promoter: university field group not resolvable, skipping CFV writes", "error", err)
 		return defs
 	}
 

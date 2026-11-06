@@ -44,15 +44,16 @@ func mapStoreError(err error) error {
 }
 
 // SearchOfferings returns published course offerings for a platform, optionally
-// filtered by university, search query, and/or degree type.
-func (s *Service) SearchOfferings(ctx context.Context, universityID pgtype.UUID, query, degreeType string, limit, offset int32) ([]CourseOffering, error) {
-	return s.store.SearchOfferings(ctx, universityID, query, degreeType, limit, offset)
+// filtered by university, ancestor (country/state/city via space_parent_spaces),
+// search query, and/or degree type.
+func (s *Service) SearchOfferings(ctx context.Context, universityID, ancestorID pgtype.UUID, query, degreeType string, limit, offset int32) ([]CourseOffering, error) {
+	return s.store.SearchOfferings(ctx, universityID, ancestorID, query, degreeType, limit, offset)
 }
 
 // CountOfferingsByUniversity returns the total published offerings matching
 // the SearchOfferings filters — used for pagination meta.
-func (s *Service) CountOfferingsByUniversity(ctx context.Context, universityID pgtype.UUID, query, degreeType string) (int64, error) {
-	return s.store.CountOfferingsByUniversity(ctx, universityID, query, degreeType)
+func (s *Service) CountOfferingsByUniversity(ctx context.Context, universityID, ancestorID pgtype.UUID, query, degreeType string) (int64, error) {
+	return s.store.CountOfferingsByUniversity(ctx, universityID, ancestorID, query, degreeType)
 }
 
 // GetOfferingByID returns a course offering by its ID.

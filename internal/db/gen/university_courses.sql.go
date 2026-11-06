@@ -121,18 +121,27 @@ JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
 WHERE o.deleted_at IS NULL AND o.is_published = true
  AND c.is_published = true
  AND ($1::uuid IS NULL OR o.university_id = $1)
- AND ($2::text = '' OR c.title ILIKE '%' || $2 || '%')
- AND ($3::text = '' OR c.degree_type = $3)
+ AND ($2::uuid IS NULL OR EXISTS (
+     SELECT 1 FROM space_parent_spaces sps
+     WHERE sps.space_id = o.university_id AND sps.parent_space_id = $2))
+ AND ($3::text = '' OR c.title ILIKE '%' || $3 || '%')
+ AND ($4::text = '' OR c.degree_type = $4)
 `
 
 type CountCourseOfferingsByUniversityParams struct {
 	UniversityID pgtype.UUID `json:"university_id"`
+	AncestorID   pgtype.UUID `json:"ancestor_id"`
 	Search       string      `json:"search"`
 	DegreeType   string      `json:"degree_type"`
 }
 
 func (q *Queries) CountCourseOfferingsByUniversity(ctx context.Context, arg CountCourseOfferingsByUniversityParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countCourseOfferingsByUniversity, arg.UniversityID, arg.Search, arg.DegreeType)
+	row := q.db.QueryRow(ctx, countCourseOfferingsByUniversity,
+		arg.UniversityID,
+		arg.AncestorID,
+		arg.Search,
+		arg.DegreeType,
+	)
 	var total int64
 	err := row.Scan(&total)
 	return total, err
@@ -1104,14 +1113,18 @@ JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
 WHERE o.deleted_at IS NULL AND o.is_published = true
  AND c.is_published = true
  AND ($1::uuid IS NULL OR o.university_id = $1)
- AND ($2::text = '' OR c.title ILIKE '%' || $2 || '%')
- AND ($3::text = '' OR c.degree_type = $3)
+ AND ($2::uuid IS NULL OR EXISTS (
+     SELECT 1 FROM space_parent_spaces sps
+     WHERE sps.space_id = o.university_id AND sps.parent_space_id = $2))
+ AND ($3::text = '' OR c.title ILIKE '%' || $3 || '%')
+ AND ($4::text = '' OR c.degree_type = $4)
 ORDER BY c.title ASC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type ListCourseOfferingsByUniversityParams struct {
 	UniversityID pgtype.UUID `json:"university_id"`
+	AncestorID   pgtype.UUID `json:"ancestor_id"`
 	Search       string      `json:"search"`
 	DegreeType   string      `json:"degree_type"`
 	OffsetVal    int32       `json:"offset_val"`
@@ -1150,6 +1163,7 @@ type ListCourseOfferingsByUniversityRow struct {
 func (q *Queries) ListCourseOfferingsByUniversity(ctx context.Context, arg ListCourseOfferingsByUniversityParams) ([]ListCourseOfferingsByUniversityRow, error) {
 	rows, err := q.db.Query(ctx, listCourseOfferingsByUniversity,
 		arg.UniversityID,
+		arg.AncestorID,
 		arg.Search,
 		arg.DegreeType,
 		arg.OffsetVal,

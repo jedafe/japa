@@ -4234,7 +4234,8 @@ type ListSpacesByTypePaginatedRow struct {
 // sort accepts: ” (default → newest), 'name' (A–Z), 'name_desc' (Z–A), 'created' (oldest
 // first), 'members', 'followers', 'posts' (all numeric DESC). Unknown values fall back
 // to newest.
-// The initials column comes from the university_fields custom field group
+// The initials column comes from the canonical university field group
+// (university_fields — defs moved to wiki_university_overview in 001060)
 // (key = 'initials', deterministic id 00000000-0000-0000-0000-000000000090)
 // and is left-joined so it is NULL for non-university space types.
 // @include_inactive: when true, spaces of any status are returned (admin

@@ -17,7 +17,7 @@
 	import AiQuickPanel from '$lib/components/compare/AiQuickPanel.svelte';
 	import TypeCardGrid from '$lib/components/compare/TypeCardGrid.svelte';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
-	import { EmptyState, ListPageBar, PaginationControls, UrlTabs, type IconComponent, type UrlTab } from '$lib/components/ui';
+	import { EmptyState, EntityHero, ListPageBar, PaginationControls, UrlTabs, GuideSlideOver, type GuideContent, type IconComponent, type UrlTab } from '$lib/components/ui';
 	import { Popover } from 'bits-ui';
 	import {
 		missingRequiredScope,
@@ -25,9 +25,12 @@
 		sourceOptions
 	} from '$lib/components/compare/compareFlow';
 	import type { PageData } from './$types';
+	import { api } from '$lib/api/client';
+	import HeroArtCompare from '$lib/components/heroes/HeroArtCompare.svelte';
 	import { i18n, t, siteName} from '$lib/i18n';
 	import {
 		GitCompare,
+		ChevronRight,
 		Search,
 		ArrowRight,
 		Trash2,
@@ -45,6 +48,26 @@
 	} from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	// "How it works" slide-over — editable via compare.guide (admins).
+	let guideOpen = $state(false);
+	const fallbackGuide: GuideContent = {
+		title: t('common.how_it_works', 'How it works'),
+		body: t('compare.guide_body', ''),
+		ctas: []
+	};
+	let guideContent = $state<GuideContent | null>(null);
+	const effectiveGuide = $derived(guideContent ?? fallbackGuide);
+	async function saveGuide(v: GuideContent): Promise<string | null> {
+		try {
+			const res = await api.put<{ compare_guide?: GuideContent }>('/admin/settings/general', { compare_guide: v });
+			if (res.data?.compare_guide) guideContent = res.data.compare_guide;
+			else guideContent = v;
+			return null;
+		} catch (e) {
+			return e instanceof Error ? e.message : 'save_failed';
+		}
+	}
 
 	let types = $derived(data.types ?? []);
 	let selectedType = $derived(data.selectedType ?? null);
@@ -724,6 +747,29 @@
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('jce.compare.heading')}</h1>
 
+	<!-- Header — EntityHero directory panel -->
+	<EntityHero
+		icon={GitCompare}
+		heading={t('jce.compare.heading')}
+		description={t('compare.hero_desc', 'Pick what to compare — universities, jobs, visa routes and more — and see them side by side.')}
+		accent="var(--color-primary)"
+	>
+		{#snippet actions(c)}
+			<div class="grid w-full grid-cols-2 gap-2 sm:flex">
+				<a href="/comparisons" class="{c.secondary} flex-1 justify-center whitespace-nowrap">
+					<GitCompare size={15} /> {t('jce.comparisons.heading', 'Comparisons')}
+				</a>
+				<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} flex-1 justify-center whitespace-nowrap">
+					{t('common.how_it_works', 'How it works')}
+					<ChevronRight size={14} class="rtl:-scale-x-100" />
+				</button>
+			</div>
+		{/snippet}
+		{#snippet art()}
+			<HeroArtCompare accent="var(--color-primary)" />
+		{/snippet}
+	</EntityHero>
+
 	{#if user && (!selectedType || mine)}
 		<ListPageBar>
 			<UrlTabs
@@ -1067,3 +1113,12 @@
 	{/if}
 	</div>
 </div>
+
+<GuideSlideOver
+	bind:open={guideOpen}
+	title={effectiveGuide.title}
+	body={effectiveGuide.body}
+	ctas={effectiveGuide.ctas}
+	canManage={data.canManage}
+	onSave={saveGuide}
+/>

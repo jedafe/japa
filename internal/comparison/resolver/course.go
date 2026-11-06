@@ -9,7 +9,6 @@ import (
 
 	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db/gen"
-	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/university_courses"
 )
 
@@ -81,12 +80,22 @@ func (r *courseResolver) Search(ctx context.Context, query string, filters map[s
 		offset = 0
 	}
 
+	// university_id is optional — absent, the query lists published
+	// offerings across all universities (compare pickers have no
+	// university context; BSc-Agric-UNILAG vs UNIBEN style searches).
 	universityID := parseUUIDFilter(filters, "university_id")
-	if !universityID.Valid {
-		return nil, fmt.Errorf("%w: university_id filter is required for course search", errpkg.ErrRequired)
+
+	// country_id/state_id/city_id narrow via the offering's university
+	// ancestor edges — same ancestor mechanism the university resolver uses.
+	ancestorID := parseUUIDFilter(filters, "country_id")
+	if !ancestorID.Valid {
+		ancestorID = parseUUIDFilter(filters, "state_id")
+	}
+	if !ancestorID.Valid {
+		ancestorID = parseUUIDFilter(filters, "city_id")
 	}
 
-	offerings, err := r.svc.SearchOfferings(ctx, universityID, query, "", limit, offset)
+	offerings, err := r.svc.SearchOfferings(ctx, universityID, ancestorID, query, "", limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("searching course offerings: %w", err)
 	}
@@ -115,14 +124,18 @@ func (r *courseResolver) Search(ctx context.Context, query string, filters map[s
 }
 
 // Count returns the total number of published course offerings matching the
-// query, scoped to the university_id filter (required, same as Search).
+// query; university_id scopes to one university when provided.
 func (r *courseResolver) Count(ctx context.Context, query string, filters map[string]any) (int64, error) {
 	universityID := parseUUIDFilter(filters, "university_id")
-	if !universityID.Valid {
-		return -1, fmt.Errorf("%w: university_id filter is required for course count", errpkg.ErrRequired)
+	ancestorID := parseUUIDFilter(filters, "country_id")
+	if !ancestorID.Valid {
+		ancestorID = parseUUIDFilter(filters, "state_id")
+	}
+	if !ancestorID.Valid {
+		ancestorID = parseUUIDFilter(filters, "city_id")
 	}
 
-	return r.svc.CountOfferingsByUniversity(ctx, universityID, query, "")
+	return r.svc.CountOfferingsByUniversity(ctx, universityID, ancestorID, query, "")
 }
 
 func pgNumericToFloat64(n pgtype.Numeric) float64 {

@@ -598,8 +598,12 @@ const entityTypeSpace = "space"
 // canonical-per-entity-type table:
 //
 //	space/university/country/state/city → bucket 'space' (shared cfv rows)
-//	organization/bank                   → bucket 'organization'
+//	organization, bank, embassy, ...    → own entity-type bucket (passthrough)
 //	content (+ content:{slug})          → bucket 'content'
+//	scholarship                         → bucket 'content' (scholarship
+//	                                      entities are guide content rows)
+//	program                             → bucket 'course' (programs are
+//	                                      course offerings — same ids)
 //	guide_category:{slug}               → bucket 'guide_category:{slug}'
 //	everything else                     → bucket 'jce_entity:{type}' read,
 //	                                      stored under its own entity_type
@@ -611,6 +615,15 @@ func ValueEntityType(entityType string) string {
 	switch entityType {
 	case entityTypeSpace, "university", "country", "state", "city":
 		return entityTypeSpace
+	case "scholarship":
+		// Scholarship entities ARE guide content rows — one cfv bucket so
+		// wiki field ops, the guide editor, and the comparison resolver's
+		// field_values merge all see the same values (§30 Sub-spec 5).
+		return "content"
+	case "program":
+		// Programs ARE course offerings — 'program' is the wiki surface
+		// name, 'course' the cfv bucket the course resolver reads.
+		return "course"
 	default:
 		return entityType
 	}

@@ -251,7 +251,8 @@ func (h *Handlers) upsertUniversityInitials(ctx context.Context, spaceID pgtype.
 	return err
 }
 
-// resolveInitialsFieldID resolves the university_fields.initials definition.
+// resolveInitialsFieldID resolves the canonical initials field definition
+// (university_fields consolidated into wiki_university_overview, 001060).
 // It queries by key in the common case, but falls back to the deterministic
 // UUID from migration 000288 so the call never fails for a correctly-migrated DB.
 func (h *Handlers) resolveInitialsFieldID(ctx context.Context) (pgtype.UUID, error) {
