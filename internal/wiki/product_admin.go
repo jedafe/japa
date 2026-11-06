@@ -203,3 +203,29 @@ func (h *Handlers) HandleListProductProviders(w http.ResponseWriter, r *http.Req
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"items": items}})
 }
+
+// HandleSetProductProvider serves POST+DELETE
+// /admin/wiki/products/{slug}/providers/{provider_id} — the N:M link.
+func (h *Handlers) HandleSetProductProvider(w http.ResponseWriter, r *http.Request) {
+	providerID := chi.URLParam(r, "provider_id")
+	slug := chi.URLParam(r, "slug")
+
+	unlink := r.Method == http.MethodDelete
+	var price, offer string
+	var pos int32
+	if !unlink {
+		var body struct {
+			PriceFrom string `json:"price_from"`
+			OfferURL  string `json:"offer_url"`
+			Position  int32  `json:"position"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		price, offer, pos = body.PriceFrom, body.OfferURL, body.Position
+	}
+	if err := h.service.SetProductProvider(r.Context(), slug, providerID, price, offer, pos, unlink); err != nil {
+		slog.Error("wiki: set product provider failed", "slug", slug, "provider", providerID, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "set_failed", "Failed to set product provider")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"ok": true}})
+}

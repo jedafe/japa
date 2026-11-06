@@ -8002,6 +8002,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/wiki/products/{slug}", wikiHandlers.HandleUpdateProduct)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
 					Delete("/admin/wiki/products/{slug}", wikiHandlers.HandleDeleteProduct)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Post("/admin/wiki/products/{slug}/providers/{provider_id}", wikiHandlers.HandleSetProductProvider)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Delete("/admin/wiki/products/{slug}/providers/{provider_id}", wikiHandlers.HandleSetProductProvider)
 				// Authenticated: create a page on an entity + submit revision
 				// on an entity-bound page (wiki.edit).
 				// §80: create an entity instance on its listing — product

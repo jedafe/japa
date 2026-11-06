@@ -980,7 +980,8 @@ ORDER BY p.name
 LIMIT @limit_count OFFSET @offset_count;
 
 -- name: ListProductProviders :many
-SELECT pp.provider_id, ap.name, pp.price_from, pp.offer_url
+SELECT pp.provider_id, ap.name, pp.price_from, pp.offer_url,
+       EXISTS (SELECT 1 FROM coupons c WHERE c.provider_id = pp.provider_id AND c.status = 'active') AS has_deal
 FROM product_providers pp
 JOIN affiliate_providers ap ON ap.id = pp.provider_id
 WHERE pp.product_id = @product_id
@@ -1054,12 +1055,14 @@ VALUES (@product_type_id, @slug, @name, sqlc.narg(tagline), sqlc.narg(website_ur
 RETURNING id, slug, name;
 
 -- name: UpdateProduct :exec
+-- COALESCE keeps omitted (NULL) params as current values — real PATCH
+-- semantics instead of clearing whatever the caller didn't send.
 UPDATE products SET
-    name = sqlc.narg(name),
-    tagline = sqlc.narg(tagline),
-    website_url = sqlc.narg(website_url),
-    pricing_model = sqlc.narg(pricing_model),
-    price_from = sqlc.narg(price_from),
+    name = COALESCE(sqlc.narg(name), name),
+    tagline = COALESCE(sqlc.narg(tagline), tagline),
+    website_url = COALESCE(sqlc.narg(website_url), website_url),
+    pricing_model = COALESCE(sqlc.narg(pricing_model), pricing_model),
+    price_from = COALESCE(sqlc.narg(price_from), price_from),
     updated_at = now()
 WHERE slug = @slug AND deleted_at IS NULL;
 

@@ -2387,7 +2387,8 @@ func (q *Queries) ListOrganizationsForWiki(ctx context.Context, arg ListOrganiza
 }
 
 const listProductProviders = `-- name: ListProductProviders :many
-SELECT pp.provider_id, ap.name, pp.price_from, pp.offer_url
+SELECT pp.provider_id, ap.name, pp.price_from, pp.offer_url,
+       EXISTS (SELECT 1 FROM coupons c WHERE c.provider_id = pp.provider_id AND c.status = 'active') AS has_deal
 FROM product_providers pp
 JOIN affiliate_providers ap ON ap.id = pp.provider_id
 WHERE pp.product_id = $1
@@ -2399,6 +2400,7 @@ type ListProductProvidersRow struct {
 	Name       string         `json:"name"`
 	PriceFrom  pgtype.Numeric `json:"price_from"`
 	OfferUrl   *string        `json:"offer_url"`
+	HasDeal    bool           `json:"has_deal"`
 }
 
 func (q *Queries) ListProductProviders(ctx context.Context, productID pgtype.UUID) ([]ListProductProvidersRow, error) {
@@ -2415,6 +2417,7 @@ func (q *Queries) ListProductProviders(ctx context.Context, productID pgtype.UUI
 			&i.Name,
 			&i.PriceFrom,
 			&i.OfferUrl,
+			&i.HasDeal,
 		); err != nil {
 			return nil, err
 		}
@@ -3537,11 +3540,11 @@ func (q *Queries) SoftDeleteWikiRevision(ctx context.Context, id pgtype.UUID) (i
 
 const updateProduct = `-- name: UpdateProduct :exec
 UPDATE products SET
-    name = $1,
-    tagline = $2,
-    website_url = $3,
-    pricing_model = $4,
-    price_from = $5,
+    name = COALESCE($1, name),
+    tagline = COALESCE($2, tagline),
+    website_url = COALESCE($3, website_url),
+    pricing_model = COALESCE($4, pricing_model),
+    price_from = COALESCE($5, price_from),
     updated_at = now()
 WHERE slug = $6 AND deleted_at IS NULL
 `
@@ -3555,6 +3558,8 @@ type UpdateProductParams struct {
 	Slug         string         `json:"slug"`
 }
 
+// COALESCE keeps omitted (NULL) params as current values — real PATCH
+// semantics instead of clearing whatever the caller didn't send.
 func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) error {
 	_, err := q.db.Exec(ctx, updateProduct,
 		arg.Name,

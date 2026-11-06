@@ -407,8 +407,8 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 	// Comparison type: subtype filter → product resolver; config auto_fields
 	// are the resolver-injected core dims (price/rating/deal).
 	typeCfg, _ := json.Marshal(map[string]any{
-		"subtype":     slug,
-		"auto_fields": []string{"rating_avg", "review_count", "has_deal", "price_from"},
+		"subtype":        slug,
+		"item_ref_types": []string{"product", "comparison"},
 	})
 	var overviewID [16]byte
 	overviewID = groups[0].id

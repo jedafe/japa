@@ -298,6 +298,7 @@ export const load: PageServerLoad = async (event) => {
 			if (typeof subtypeParam === 'string' && subtypeParam) {
 				if (source === 'visa_route') params.set('visa_category', subtypeParam);
 				if (source === 'organization' || source === 'bank') params.set('org_type', subtypeParam);
+				if (source === 'product') params.set('subtype', subtypeParam);
 			}
 			if (sort) params.set('sort', sort);
 			const res = await apiList<ResolvedItem>(ctx, `/jce/entities/${source}?${params.toString()}`);

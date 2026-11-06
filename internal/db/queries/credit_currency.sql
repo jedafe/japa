@@ -118,3 +118,12 @@ WHERE p.purpose_type = 'credit_purchase'
  AND (p.created_at <= sqlc.narg(to_date) OR sqlc.narg(to_date) IS NULL)
 ORDER BY p.created_at DESC, p.id DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountCreditPurchases :one
+SELECT COUNT(*)
+FROM payments p
+WHERE p.purpose_type = 'credit_purchase'
+ AND (sqlc.narg(user_id)::uuid IS NULL OR p.user_id = sqlc.narg(user_id))
+ AND (sqlc.narg(currency)::text IS NULL OR p.currency = sqlc.narg(currency))
+ AND (p.created_at >= sqlc.narg(from_date) OR sqlc.narg(from_date) IS NULL)
+ AND (p.created_at <= sqlc.narg(to_date) OR sqlc.narg(to_date) IS NULL);

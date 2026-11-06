@@ -11,6 +11,35 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countCreditPurchases = `-- name: CountCreditPurchases :one
+SELECT COUNT(*)
+FROM payments p
+WHERE p.purpose_type = 'credit_purchase'
+ AND ($1::uuid IS NULL OR p.user_id = $1)
+ AND ($2::text IS NULL OR p.currency = $2)
+ AND (p.created_at >= $3 OR $3 IS NULL)
+ AND (p.created_at <= $4 OR $4 IS NULL)
+`
+
+type CountCreditPurchasesParams struct {
+	UserID   pgtype.UUID        `json:"user_id"`
+	Currency *string            `json:"currency"`
+	FromDate pgtype.Timestamptz `json:"from_date"`
+	ToDate   pgtype.Timestamptz `json:"to_date"`
+}
+
+func (q *Queries) CountCreditPurchases(ctx context.Context, arg CountCreditPurchasesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCreditPurchases,
+		arg.UserID,
+		arg.Currency,
+		arg.FromDate,
+		arg.ToDate,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countSpacesByCurrency = `-- name: CountSpacesByCurrency :one
 SELECT count(*)::int FROM spaces WHERE currency_code = $1
 `
