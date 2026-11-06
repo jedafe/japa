@@ -8,6 +8,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -253,10 +254,9 @@
 								{:else if kind === 'date'}
 									<input id="np-f-{f.id}" class={inp} type="date" bind:value={fieldValues[f.id]} />
 								{:else if kind === 'select'}
-									<select id="np-f-{f.id}" class={inp} bind:value={fieldValues[f.id]}>
-										<option value="">—</option>
-										{#each fieldOptions(f) as o}<option value={typeof o === 'object' ? (o.value ?? o.label) : o}>{typeof o === 'object' ? (o.label ?? o.value) : o}</option>{/each}
-									</select>
+									<AutocompleteSelect id="np-f-{f.id}" bind:value={fieldValues[f.id]}
+										options={fieldOptions(f).map((o) => ({ value: String(typeof o === 'object' ? (o.value ?? o.label) : o), label: String(typeof o === 'object' ? (o.label ?? o.value) : o) }))}
+										placeholder={f.placeholder ?? ''} class="w-full" />
 								{:else if kind === 'multiselect'}
 									<div class="space-y-1">
 										{#each fieldOptions(f) as o}
@@ -273,10 +273,9 @@
 										{/each}
 									</div>
 								{:else if kind === 'suggest'}
-									<input id="np-f-{f.id}" class={inp} list="dl-{f.id}" bind:value={fieldValues[f.id]} placeholder={f.placeholder ?? ''} />
-									<datalist id="dl-{f.id}">
-										{#each fieldOptions(f) as o}<option value={typeof o === 'object' ? (o.value ?? o.label) : o}>{typeof o === 'object' ? (o.label ?? o.value) : o}</option>{/each}
-									</datalist>
+									<AutocompleteSelect id="np-f-{f.id}" bind:value={fieldValues[f.id]}
+										options={fieldOptions(f).map((o) => ({ value: String(typeof o === 'object' ? (o.value ?? o.label) : o), label: String(typeof o === 'object' ? (o.label ?? o.value) : o) }))}
+										placeholder={f.placeholder ?? ''} class="w-full" />
 								{:else if kind === 'image_single'}
 									<div class="flex items-center gap-2">
 										<button type="button" onclick={() => openPicker(f.id)}

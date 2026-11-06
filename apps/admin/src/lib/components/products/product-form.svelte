@@ -7,6 +7,7 @@
 	import { onMount } from 'svelte';
 	import { Loader2, Plus, Trash2, ImagePlus, X } from 'lucide-svelte';
 	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type Provider = { id: string; name: string; slug: string };
 	type Deal = { id: string; title: string; provider_name?: string | null; provider_id?: string | null };
@@ -362,10 +363,9 @@
 							{:else if kind === 'date'}
 								<input id="pf-f-{f.id}" class={inp} type="date" bind:value={fieldValues[f.id]} />
 							{:else if kind === 'select'}
-								<select id="pf-f-{f.id}" class={inp} bind:value={fieldValues[f.id]}>
-									<option value="">—</option>
-									{#each fieldOptions(f) as o}<option value={typeof o === 'object' ? (o.value ?? o.label) : o}>{typeof o === 'object' ? (o.label ?? o.value) : o}</option>{/each}
-								</select>
+								<AutocompleteSelect id="pf-f-{f.id}" bind:value={fieldValues[f.id]}
+									options={fieldOptions(f).map((o) => ({ value: String(typeof o === 'object' ? (o.value ?? o.label) : o), label: String(typeof o === 'object' ? (o.label ?? o.value) : o) }))}
+									placeholder={f.placeholder ?? ''} class="w-full" />
 							{:else if kind === 'multiselect'}
 								<div class="space-y-1">
 									{#each fieldOptions(f) as o}
@@ -382,10 +382,9 @@
 									{/each}
 								</div>
 							{:else if kind === 'suggest'}
-								<input id="pf-f-{f.id}" class={inp} list="dl-{f.id}" bind:value={fieldValues[f.id]} placeholder={f.placeholder ?? ''} />
-								<datalist id="dl-{f.id}">
-									{#each fieldOptions(f) as o}<option value={typeof o === 'object' ? (o.value ?? o.label) : o}>{typeof o === 'object' ? (o.label ?? o.value) : o}</option>{/each}
-								</datalist>
+								<AutocompleteSelect id="pf-f-{f.id}" bind:value={fieldValues[f.id]}
+									options={fieldOptions(f).map((o) => ({ value: String(typeof o === 'object' ? (o.value ?? o.label) : o), label: String(typeof o === 'object' ? (o.label ?? o.value) : o) }))}
+									placeholder={f.placeholder ?? ''} class="w-full" />
 							{:else if kind === 'image_single'}
 								<div class="flex items-center gap-2">
 									<button type="button" onclick={() => openPicker(f.id)}
@@ -488,10 +487,9 @@
 					<div class="grid grid-cols-[1fr_120px_1fr_auto] items-end gap-2">
 						<div>
 							<label class={lbl} for="pf-pv-{i}">{t('products.provider', 'Provider')}</label>
-							<select id="pf-pv-{i}" class={inp} bind:value={row.provider_id}>
-								<option value="">—</option>
-								{#each providersAll as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-							</select>
+							<AutocompleteSelect id="pf-pv-{i}" bind:value={row.provider_id}
+								options={providersAll.map((p) => ({ value: p.id, label: p.name }))}
+								placeholder="—" class="w-full" />
 						</div>
 						<div>
 							<label class={lbl} for="pf-pp-{i}">{t('products.fld_price_from', 'Price from')}</label>
