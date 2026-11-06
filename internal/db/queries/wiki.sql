@@ -1055,14 +1055,14 @@ VALUES (@product_type_id, @slug, @name, sqlc.narg(tagline), sqlc.narg(website_ur
 RETURNING id, slug, name;
 
 -- name: UpdateProduct :exec
--- COALESCE keeps omitted (NULL) params as current values — real PATCH
--- semantics instead of clearing whatever the caller didn't send.
+-- COALESCE keeps omitted (NULL) params; clear_fields[] explicitly nulls
+-- a named field — so a PATCH can both preserve and clear per key.
 UPDATE products SET
     name = COALESCE(sqlc.narg(name), name),
-    tagline = COALESCE(sqlc.narg(tagline), tagline),
-    website_url = COALESCE(sqlc.narg(website_url), website_url),
-    pricing_model = COALESCE(sqlc.narg(pricing_model), pricing_model),
-    price_from = COALESCE(sqlc.narg(price_from), price_from),
+    tagline = CASE WHEN 'tagline' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(tagline), tagline) END,
+    website_url = CASE WHEN 'website_url' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(website_url), website_url) END,
+    pricing_model = CASE WHEN 'pricing_model' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(pricing_model), pricing_model) END,
+    price_from = CASE WHEN 'price_from' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(price_from), price_from) END,
     updated_at = now()
 WHERE slug = @slug AND deleted_at IS NULL;
 

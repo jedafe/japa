@@ -3637,16 +3637,17 @@ func (q *Queries) SoftDeleteWikiRevision(ctx context.Context, id pgtype.UUID) (i
 const updateProduct = `-- name: UpdateProduct :exec
 UPDATE products SET
     name = COALESCE($1, name),
-    tagline = COALESCE($2, tagline),
-    website_url = COALESCE($3, website_url),
-    pricing_model = COALESCE($4, pricing_model),
-    price_from = COALESCE($5, price_from),
+    tagline = CASE WHEN 'tagline' = ANY($2::text[]) THEN NULL ELSE COALESCE($3, tagline) END,
+    website_url = CASE WHEN 'website_url' = ANY($2::text[]) THEN NULL ELSE COALESCE($4, website_url) END,
+    pricing_model = CASE WHEN 'pricing_model' = ANY($2::text[]) THEN NULL ELSE COALESCE($5, pricing_model) END,
+    price_from = CASE WHEN 'price_from' = ANY($2::text[]) THEN NULL ELSE COALESCE($6, price_from) END,
     updated_at = now()
-WHERE slug = $6 AND deleted_at IS NULL
+WHERE slug = $7 AND deleted_at IS NULL
 `
 
 type UpdateProductParams struct {
 	Name         *string        `json:"name"`
+	ClearFields  []string       `json:"clear_fields"`
 	Tagline      *string        `json:"tagline"`
 	WebsiteUrl   *string        `json:"website_url"`
 	PricingModel *string        `json:"pricing_model"`
@@ -3654,11 +3655,12 @@ type UpdateProductParams struct {
 	Slug         string         `json:"slug"`
 }
 
-// COALESCE keeps omitted (NULL) params as current values — real PATCH
-// semantics instead of clearing whatever the caller didn't send.
+// COALESCE keeps omitted (NULL) params; clear_fields[] explicitly nulls
+// a named field — so a PATCH can both preserve and clear per key.
 func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) error {
 	_, err := q.db.Exec(ctx, updateProduct,
 		arg.Name,
+		arg.ClearFields,
 		arg.Tagline,
 		arg.WebsiteUrl,
 		arg.PricingModel,

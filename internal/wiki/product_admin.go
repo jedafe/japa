@@ -75,9 +75,22 @@ func (s *Service) UpdateProduct(ctx context.Context, slug string, in ProductInpu
 	if in.Name != "" {
 		name = &in.Name
 	}
+	// nil = keep (COALESCE), "" = clear (clear_fields) — PATCH can both
+	// preserve and clear per key. price_from has no clear path (zero is a
+	// valid price; clearing needs an explicit admin op).
+	clear := []string{}
+	for _, kv := range []struct {
+		key string
+		val *string
+	}{{"tagline", in.Tagline}, {"website_url", in.WebsiteURL}, {"pricing_model", in.PricingModel}} {
+		if kv.val != nil && *kv.val == "" {
+			clear = append(clear, kv.key)
+		}
+	}
 	return s.store.write.UpdateProduct(ctx, gen.UpdateProductParams{
 		Name: name, Tagline: in.Tagline, WebsiteUrl: in.WebsiteURL,
 		PricingModel: in.PricingModel, PriceFrom: numPtr(in.PriceFrom), Slug: slug,
+		ClearFields: clear,
 	})
 }
 

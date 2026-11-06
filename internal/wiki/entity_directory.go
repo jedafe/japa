@@ -377,7 +377,14 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 	if len(config) > 0 {
 		cfg = config
 	}
-	if _, err := s.store.write.CreateProductType(ctx, gen.CreateProductTypeParams{
+	tx, err := s.store.pool.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	q := s.store.write.WithTx(tx)
+
+	if _, err := q.CreateProductType(ctx, gen.CreateProductTypeParams{
 		Slug: slug, Label: label, Icon: iconVal, Config: cfg,
 	}); err != nil {
 		return err
@@ -395,7 +402,7 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 	groups := make([]groupRow, 0, len(categories))
 	for _, cat := range categories {
 		gslug := "wiki_" + strings.ReplaceAll(slug, "-", "_") + "_" + strings.ReplaceAll(cat.Slug, "-", "_")
-		g, err := s.store.write.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
+		g, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
 			Name: label + " — " + cat.Label, Slug: gslug, IsSystem: true,
 		})
 		if err != nil {
@@ -413,7 +420,7 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 	var overviewID [16]byte
 	overviewID = groups[0].id
 	desc := "Compare " + label
-	ct, err := s.store.write.CreateComparisonType(ctx, gen.CreateComparisonTypeParams{
+	ct, err := q.CreateComparisonType(ctx, gen.CreateComparisonTypeParams{
 		Name: label, Slug: slug, Description: &desc, Icon: iconVal,
 		FieldGroupID: pgtype.UUID{Bytes: overviewID, Valid: true},
 		ItemLabel: label, IsSystem: false, Config: typeCfg,
@@ -426,7 +433,7 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 	for i, g := range groups {
 		lbl := g.category.Label
 		isDef := i == 0
-		if err := s.store.write.CreateComparisonTypeFieldGroup(ctx, gen.CreateComparisonTypeFieldGroupParams{
+		if err := q.CreateComparisonTypeFieldGroup(ctx, gen.CreateComparisonTypeFieldGroupParams{
 			TypeID: ct.ID, GroupID: pgtype.UUID{Bytes: g.id, Valid: true},
 			Category: &g.category.Slug, Label: &lbl, Position: int32(i), IsDefault: isDef,
 		}); err != nil {
@@ -437,7 +444,7 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 	// Wiki surfacing — without these the entity pages 404 even though the
 	// listing works: space_types (wiki_only) → wiki_type_configs (entity
 	// kind 'product', disc {type_slug}) → categories → page templates.
-	st, err := s.store.write.CreateWikiEntitySpaceType(ctx, gen.CreateWikiEntitySpaceTypeParams{
+	st, err := q.CreateWikiEntitySpaceType(ctx, gen.CreateWikiEntitySpaceTypeParams{
 		Name: label, Slug: slug, Description: &desc, Icon: iconVal,
 	})
 	if err != nil {
@@ -445,7 +452,7 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 	}
 	disc, _ := json.Marshal(map[string]string{"type_slug": slug})
 	ek := "product"
-	if _, err := s.store.write.UpsertWikiEntityTypeConfig(ctx, gen.UpsertWikiEntityTypeConfigParams{
+	if _, err := q.UpsertWikiEntityTypeConfig(ctx, gen.UpsertWikiEntityTypeConfigParams{
 		SpaceTypeID: st.ID, Label: &label, Icon: iconVal,
 		EntityKind: &ek, EntityDiscriminator: disc, Position: 0,
 	}); err != nil {
@@ -453,7 +460,7 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 	}
 	for i, g := range groups {
 		cat := g.category
-		wc, err := s.store.write.CreateWikiTypeCategory(ctx, gen.CreateWikiTypeCategoryParams{
+		wc, err := q.CreateWikiTypeCategory(ctx, gen.CreateWikiTypeCategoryParams{
 			SpaceTypeID: st.ID, Slug: cat.Slug,
 			Category:      strings.ReplaceAll(cat.Slug, "-", "_"),
 			Label:         cat.Label,
@@ -464,7 +471,7 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 		if err != nil {
 			return fmt.Errorf("creating wiki category %s: %w", cat.Slug, err)
 		}
-		if _, err := s.store.write.CreateWikiPageTemplate(ctx, gen.CreateWikiPageTemplateParams{
+		if _, err := q.CreateWikiPageTemplate(ctx, gen.CreateWikiPageTemplateParams{
 			CategoryID:   wc.ID,
 			Slug:         cat.Slug,
 			Label:        cat.Label,
@@ -475,7 +482,7 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 			return fmt.Errorf("creating page template %s: %w", cat.Slug, err)
 		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 // HandleCreateProductType serves POST /admin/wiki/product-types.
