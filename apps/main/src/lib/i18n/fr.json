@@ -6728,5 +6728,7 @@
 	"wiki.entities.search": "Rechercher…",
 	"wiki.entities.empty_list": "Aucune entrée trouvée",
 	"wiki.entities.eyebrow": "Annuaire",
-	"wiki.entities.count": "{count} entrées"
+	"wiki.entities.count": "{count} entrées",
+	"wiki.entities.stat_entries": "Entrées",
+	"wiki.entities.stat_kinds": "Catégories"
 }

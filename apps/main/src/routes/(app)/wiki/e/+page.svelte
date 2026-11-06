@@ -2,6 +2,7 @@
 	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md (Entity Directory amendment)
 	import { t, siteName } from '$lib/i18n';
+	import { EntityHero } from '$lib/components/ui';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import {
 		ArrowRight,
@@ -20,6 +21,7 @@
 
 	let { data }: { data: PageData } = $props();
 	let kinds = $derived(data.kinds ?? []);
+	let totalEntities = $derived(kinds.reduce((n, k) => n + k.entity_count, 0));
 
 	const KIND_ICONS: Record<string, typeof BookOpen> = {
 		course: GraduationCap,
@@ -41,23 +43,29 @@
 
 <SeoHead title={`${t('wiki.entities.title', 'Entity Wiki')} — ${siteName()}`} description={t('wiki.entities.description', 'Community-maintained wiki entries for destinations, services, schools, and organisations — written and kept up to date by members.')} />
 
-<div class="mx-auto w-full max-w-4xl px-4 py-4 sm:px-6">
-	<header class="mt-4">
-		<p class="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-			{t('wiki.entities.eyebrow', 'Directory')}
-		</p>
-		<h1 class="mt-1 text-2xl font-bold text-[var(--color-text)]">{t('wiki.entities.title', 'Entity Wiki')}</h1>
-		<p class="mt-1 text-sm text-[var(--color-muted)]">
-			{t('wiki.entities.subtitle', 'Browse entities by kind — programs, course offerings, banks, embassies, and more.')}
-		</p>
-	</header>
+<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
+	<EntityHero
+		class="mt-4"
+		icon={BookOpen}
+		accent="var(--color-primary)"
+		heading={t('wiki.entities.title', 'Entity Wiki')}
+		description={t('wiki.entities.subtitle', 'Browse entities by kind — programs, course offerings, banks, embassies, and more.')}
+		crumbs={[
+			{ label: t('common.home', 'Home'), href: '/' },
+			{ label: t('wiki.entities.title', 'Entity Wiki') }
+		]}
+		stats={[
+			{ icon: BookOpen, value: String(totalEntities), label: t('wiki.entities.stat_entries', 'Entries') },
+			{ icon: Package, value: String(kinds.length), label: t('wiki.entities.stat_kinds', 'Kinds') }
+		]}
+	/>
 
 	{#if kinds.length === 0}
-		<div class="mt-8">
+		<div class="mt-8" style="margin-inline: var(--page-gutter)">
 			<EmptyState icon={BookOpen} title={t('wiki.entities.empty', 'No entity kinds available')} />
 		</div>
 	{:else}
-		<div class="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
+		<div class="mt-6 grid grid-cols-1 gap-3 p-4 sm:grid-cols-2" style="margin-inline: var(--page-gutter)">
 			{#each kinds as k (k.kind)}
 				{@const Icon = kindIcon(k.kind)}
 				<div class="flex flex-col gap-2">

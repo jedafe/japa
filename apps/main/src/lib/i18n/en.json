@@ -6843,5 +6843,7 @@
 	"wiki.wiki_only_banner_body": "{name} is a wiki-only place — guides and facts live here instead of a community feed.",
 	"wiki.wiki_only_banner_title": "This place lives on the wiki",
 	"wiki.entities.eyebrow": "Directory",
-	"wiki.entities.count": "{count} entries"
+	"wiki.entities.count": "{count} entries",
+	"wiki.entities.stat_entries": "Entries",
+	"wiki.entities.stat_kinds": "Kinds"
 }
