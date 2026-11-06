@@ -327,7 +327,9 @@ func directoryOrderBy(sort string) string {
 	case DirectorySortStageUpdated:
 		return "up.japa_stage_updated_at DESC NULLS LAST, up.user_id"
 	default:
-		return "u.last_login_at DESC NULLS LAST, up.user_id"
+		// §19/ADR-014: members who opted out of online status never expose
+		// activity — they sort last rather than leaking it via position.
+		return "CASE WHEN COALESCE(ups.show_online_status, true) THEN u.last_login_at END DESC NULLS LAST, up.user_id"
 	}
 }
 
@@ -412,10 +414,12 @@ SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_intent, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        up.japa_stage_updated_at,
-       up.bio, up.profession, up.interests, u.verified, up.cover_url, u.last_login_at
+       up.bio, up.profession, up.interests, u.verified, up.cover_url,
+       CASE WHEN COALESCE(ups.show_online_status, true) THEN u.last_login_at END AS last_active_at
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = up.user_id
 WHERE %s
 ORDER BY %s
 LIMIT $%d OFFSET $%d
