@@ -268,6 +268,7 @@
 			gallery_media_ids: gallery.map((g) => g.media_id),
 
 			price_from: priceFrom !== '' ? Number(priceFrom) : null,
+			clear_fields: mode === 'edit' && priceFrom === '' ? ['price_from'] : [],
 			providers: providerRows.filter((r) => r.provider_id).map((r, i) => ({
 				provider_id: r.provider_id,
 				price_from: r.price_from,

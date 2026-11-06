@@ -60,6 +60,9 @@ type ProductInput struct {
 	GalleryMediaIDs []string               `json:"gallery_media_ids"` // nil = untouched on PATCH; [] clears
 	CustomFields  []ProductFieldValueInput `json:"custom_fields"`
 	ClearFieldIDs []string                 `json:"clear_field_ids"`
+	// ClearFields passes explicit clear targets for COALESCE'd columns the
+	// typed fields can't distinguish ("" vs absent) — e.g. ["price_from"].
+	ClearFields   []string                 `json:"clear_fields"`
 }
 
 func (s *Service) productTypeID(ctx context.Context, typeSlug string) (pgtype.UUID, error) {
@@ -253,6 +256,7 @@ func (s *Service) UpdateProduct(ctx context.Context, slug string, in ProductInpu
 			clear = append(clear, kv.key)
 		}
 	}
+	clear = append(clear, in.ClearFields...)
 	var logoID pgtype.UUID
 	if in.LogoID != nil && *in.LogoID != "" {
 		var lerr error

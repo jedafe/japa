@@ -7,7 +7,7 @@
 	import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { initiateUpload, uploadToPresigned, confirmMedia } from '$lib/api/create';
+	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -33,7 +33,28 @@
 	let logoUrl = $state<string | null>(null);
 	type GalleryItem = { media_id: string; url: string };
 	let gallery = $state<GalleryItem[]>([]);
-	let uploading = $state<'logo' | 'gallery' | string | null>(null);
+	let pickerOpen = $state(false);
+	let pickerTarget = $state<'logo' | 'gallery' | string>('logo');
+	function openPicker(target: 'logo' | 'gallery' | string) {
+		pickerTarget = target;
+		pickerOpen = true;
+	}
+	function onPicked(m: { id: string; url: string }) {
+		if (pickerTarget === 'logo') {
+			logoId = m.id;
+			logoUrl = m.url;
+		} else if (pickerTarget === 'gallery') {
+			if (!gallery.some((g) => g.media_id === m.id)) {
+				gallery = [...gallery, { media_id: m.id, url: m.url }];
+			}
+		} else if (pickerTarget.startsWith('multi:')) {
+			const fid = pickerTarget.slice(6);
+			const cur = Array.isArray(fieldValues[fid]) ? fieldValues[fid] : [];
+			fieldValues[fid] = [...cur, m.id];
+		} else {
+			fieldValues[pickerTarget] = m.id;
+		}
+	}
 	let websiteUrl = $state('');
 	let pricingModel = $state('');
 	let priceFrom = $state('');
@@ -65,46 +86,6 @@
 			case 'repeater': case 'price_parts': case 'price_range': case 'json': return 'json';
 			default: return 'text';
 		}
-	}
-
-	/** 2-step presigned upload → confirm → returns the media id. */
-	async function uploadMedia(file: File, target: 'logo' | 'gallery' | string): Promise<void> {
-		uploading = target;
-		try {
-			const init = await initiateUpload({ filename: file.name, mime_type: file.type, file_size: file.size });
-			if (init.error || !init.data) throw new Error(init.error?.message ?? 'upload failed');
-			const put = await uploadToPresigned(init.data.presigned_url, file);
-			if (!put.ok) throw new Error('storage upload failed');
-			const conf = await confirmMedia(init.data.media_id);
-			if (conf.error) throw new Error(conf.error.message);
-			const preview = URL.createObjectURL(file);
-			if (target === 'logo') {
-				logoId = init.data.media_id;
-				logoUrl = preview;
-			} else if (target === 'gallery') {
-				gallery = [...gallery, { media_id: init.data.media_id, url: preview }];
-			} else if (target.startsWith('multi:')) {
-				const fid = target.slice(6);
-				const cur = Array.isArray(fieldValues[fid]) ? fieldValues[fid] : [];
-				fieldValues[fid] = [...cur, init.data.media_id];
-			} else {
-				fieldValues[target] = init.data.media_id;
-			}
-		} catch (e) {
-			saveErr = e instanceof Error ? e.message : 'Upload failed';
-		} finally {
-			uploading = null;
-		}
-	}
-	function pickFile(target: 'logo' | 'gallery' | string) {
-		const inp = document.createElement('input');
-		inp.type = 'file';
-		inp.accept = 'image/*';
-		inp.onchange = () => {
-			const file = inp.files?.[0];
-			if (file) uploadMedia(file, target);
-		};
-		inp.click();
 	}
 
 	/** custom_fields.options is jsonb — bare array or {choices:[...]}. */
@@ -298,7 +279,7 @@
 									</datalist>
 								{:else if kind === 'image_single'}
 									<div class="flex items-center gap-2">
-										<button type="button" onclick={() => pickFile(f.id)} disabled={uploading === f.id}
+										<button type="button" onclick={() => openPicker(f.id)}
 											class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50">
 											<Plus size={13} /> {fieldValues[f.id] ? t('products.change_image', 'Change image') : t('products.pick_image', 'Pick image')}
 										</button>
@@ -309,7 +290,7 @@
 									</div>
 								{:else if kind === 'image_multi'}
 									<div class="flex items-center gap-2">
-										<button type="button" onclick={() => pickFile('multi:' + f.id)} disabled={uploading != null}
+										<button type="button" onclick={() => openPicker('multi:' + f.id)}
 											class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50">
 											<Plus size={13} /> {t('products.add_image', 'Add image')}
 										</button>
@@ -345,7 +326,7 @@
 					{#if logoUrl}
 						<img src={logoUrl} alt="" class="h-14 w-14 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
 					{/if}
-					<button type="button" onclick={() => pickFile('logo')} disabled={uploading != null}
+					<button type="button" onclick={() => openPicker('logo')}
 						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50">
 						<Plus size={13} /> {logoUrl ? t('products.change_image', 'Change image') : t('products.pick_image', 'Pick image')}
 					</button>
@@ -364,9 +345,9 @@
 								class="absolute -right-1 -top-1 rounded-full bg-[var(--color-surface)] p-0.5 text-[var(--color-muted)] hover:text-red-500">✕</button>
 						</div>
 					{/each}
-					<button type="button" onclick={() => pickFile('gallery')} disabled={uploading != null}
+					<button type="button" onclick={() => openPicker('gallery')}
 						class="inline-flex h-14 w-14 items-center justify-center rounded-[var(--radius)] border border-dashed border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)] disabled:opacity-50">
-						{#if uploading === 'gallery'}<Loader2 size={14} class="animate-spin" />{:else}<Plus size={16} />{/if}
+						<Plus size={16} />
 					</button>
 				</div>
 			</div>
@@ -427,6 +408,10 @@
 				</ul>
 			{/if}
 		</section>
+
+	{#if pickerOpen}
+		<MediaLibraryModal onSelect={onPicked} onClose={() => (pickerOpen = false)} allowedType="image" />
+	{/if}
 
 		{#if saveErr}
 			<p class="text-sm text-red-500" role="alert">{saveErr}</p>
