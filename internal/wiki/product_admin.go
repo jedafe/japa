@@ -732,7 +732,7 @@ func (h *Handlers) HandleAdminListProducts(w http.ResponseWriter, r *http.Reques
 func (h *Handlers) HandleAdminGetProduct(w http.ResponseWriter, r *http.Request) {
 	d, err := h.service.AdminGetProduct(r.Context(), chi.URLParam(r, "slug"))
 	if err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "product_not_found", "Product not found")
+		writeErr(w, err, "get_failed", "Failed to load product")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": d})
@@ -834,7 +834,7 @@ func (h *Handlers) HandleAdminProductTypes(w http.ResponseWriter, r *http.Reques
 func (h *Handlers) HandleAdminGetProductType(w http.ResponseWriter, r *http.Request) {
 	d, err := h.service.AdminGetProductType(r.Context(), chi.URLParam(r, "slug"))
 	if err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "type_not_found", "Product type not found")
+		writeErr(w, err, "get_failed", "Failed to load product type")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": d})
@@ -850,6 +850,17 @@ func writeErr(w http.ResponseWriter, err error, code, msg string) {
 	if errors.Is(err, errInvalidID) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
 		return
+	}
+	var pge *pgconn.PgError
+	if errors.As(err, &pge) {
+		switch pge.Code {
+		case "23503": // FK violation — referenced provider/deal/type doesn't exist
+			errpkg.WriteError(w, http.StatusBadRequest, "bad_reference", "Referenced record does not exist")
+			return
+		case "23505":
+			errpkg.WriteError(w, http.StatusConflict, "slug_conflict", "A record with this slug already exists")
+			return
+		}
 	}
 	slog.Error("wiki: "+code, "error", err)
 	errpkg.WriteError(w, http.StatusInternalServerError, code, msg)
