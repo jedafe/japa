@@ -1050,8 +1050,8 @@ ON CONFLICT (entity_kind) DO NOTHING
 RETURNING entity_kind;
 
 -- name: CreateProduct :one
-INSERT INTO products (product_type_id, slug, name, tagline, website_url, pricing_model, price_from)
-VALUES (@product_type_id, @slug, @name, sqlc.narg(tagline), sqlc.narg(website_url), sqlc.narg(pricing_model), sqlc.narg(price_from))
+INSERT INTO products (product_type_id, slug, name, tagline, description, website_url, logo_id, pricing_model, price_from)
+VALUES (@product_type_id, @slug, @name, sqlc.narg(tagline), sqlc.narg(description), sqlc.narg(website_url), sqlc.narg(logo_id), sqlc.narg(pricing_model), sqlc.narg(price_from))
 RETURNING id, slug, name;
 
 -- name: UpdateProduct :exec
@@ -1061,6 +1061,8 @@ UPDATE products SET
     name = COALESCE(sqlc.narg(name), name),
     product_type_id = COALESCE(sqlc.narg(product_type_id), product_type_id),
     tagline = CASE WHEN 'tagline' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(tagline), tagline) END,
+    description = CASE WHEN 'description' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(description), description) END,
+    logo_id = CASE WHEN 'logo_id' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(logo_id), logo_id) END,
     website_url = CASE WHEN 'website_url' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(website_url), website_url) END,
     pricing_model = CASE WHEN 'pricing_model' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(pricing_model), pricing_model) END,
     price_from = CASE WHEN 'price_from' = ANY(@clear_fields::text[]) THEN NULL ELSE COALESCE(sqlc.narg(price_from), price_from) END,

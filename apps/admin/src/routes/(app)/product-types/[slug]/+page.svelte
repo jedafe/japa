@@ -4,7 +4,7 @@
 	// Fields are edited via the existing /custom-field-groups endpoints.
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import Modal from '$lib/components/ui/modal/modal.svelte';
-	import { api, productTypesAdminApi, fieldGroupsAdminApiExtended } from '$lib/api';
+	import { api, productTypesAdminApi, fieldGroupsAdminApiExtended, fieldTypesAdminApi, type FieldTypeInfo } from '$lib/api';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -29,9 +29,14 @@
 	// Add-field modal state.
 	let fieldModal = $state<{ group: any } | null>(null);
 	let newField = $state({ key: '', label: '', field_type: 'text', is_required: false });
+	let fieldTypes = $state<FieldTypeInfo[]>([]);
 	let fieldErr = $state('');
 
-	onMount(load);
+	onMount(async () => {
+		load();
+		const ft = await fieldTypesAdminApi.list();
+		if (ft.ok && Array.isArray(ft.data)) fieldTypes = ft.data;
+	});
 
 	async function load() {
 		loading = true;
@@ -194,9 +199,13 @@
 			<div>
 				<label class={lbl} for="nf-type">{t('products.fld_field_type', 'Field type')}</label>
 				<select id="nf-type" class={inp} bind:value={newField.field_type}>
-					{#each ['text', 'textarea', 'number', 'checkbox', 'date', 'select', 'url'] as ft}
-						<option value={ft}>{ft}</option>
-					{/each}
+					{#if fieldTypes.length === 0}
+						<option value="text">text</option>
+					{:else}
+						{#each fieldTypes as ft}
+							<option value={ft.value}>{ft.label}</option>
+						{/each}
+					{/if}
 				</select>
 			</div>
 			<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">

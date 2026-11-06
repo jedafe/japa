@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/media"
 )
 
 // ProductProviderInput is one provider link in the create/update body.
@@ -49,11 +50,14 @@ type ProductInput struct {
 	Name          string                   `json:"name"`
 	Slug          string                   `json:"slug"`
 	Tagline       *string                  `json:"tagline"`
+	Description   *string                  `json:"description"`
+	LogoID        *string                  `json:"logo_id"` // "" on PATCH clears the logo
 	WebsiteURL    *string                  `json:"website_url"`
 	PricingModel  *string                  `json:"pricing_model"`
 	PriceFrom     *float64                 `json:"price_from"`
 	Providers     []ProductProviderInput   `json:"providers"`
 	DealIDs       []string                 `json:"deal_ids"`
+	GalleryMediaIDs []string               `json:"gallery_media_ids"` // nil = untouched on PATCH; [] clears
 	CustomFields  []ProductFieldValueInput `json:"custom_fields"`
 	ClearFieldIDs []string                 `json:"clear_field_ids"`
 }
@@ -74,6 +78,15 @@ func numPtr(f *float64) pgtype.Numeric {
 		_ = n.Scan(fmt.Sprintf("%f", *f))
 	}
 	return n
+}
+
+// logoParam resolves an optional logo id for INSERT — empty/missing → NULL.
+func logoParam(id *string) pgtype.UUID {
+	var u pgtype.UUID
+	if id != nil && *id != "" {
+		_ = u.Scan(*id)
+	}
+	return u
 }
 
 func uuidOf(id string) pgtype.UUID {
@@ -101,7 +114,8 @@ func (s *Service) CreateProduct(ctx context.Context, in ProductInput) (string, e
 
 	row, err := q.CreateProduct(ctx, gen.CreateProductParams{
 		ProductTypeID: typeID, Slug: in.Slug, Name: in.Name,
-		Tagline: in.Tagline, WebsiteUrl: in.WebsiteURL,
+		Tagline: in.Tagline, Description: in.Description,
+		LogoID: logoParam(in.LogoID), WebsiteUrl: in.WebsiteURL,
 		PricingModel: in.PricingModel, PriceFrom: numPtr(in.PriceFrom),
 	})
 	if err != nil {
@@ -153,6 +167,17 @@ func (s *Service) syncProductLinks(ctx context.Context, q *gen.Queries, productI
 			PriceFrom: pf, OfferUrl: ou, Position: pos,
 		}); err != nil {
 			return fmt.Errorf("link provider: %w", err)
+		}
+	}
+	for i, gid := range in.GalleryMediaIDs {
+		mid, err := validUUID(gid)
+		if err != nil {
+			return err
+		}
+		if err := q.UpsertProductGalleryImage(ctx, gen.UpsertProductGalleryImageParams{
+			ProductID: productID, MediaID: mid, Position: int32(i),
+		}); err != nil {
+			return fmt.Errorf("link gallery image: %w", err)
 		}
 	}
 	for i, did := range in.DealIDs {
@@ -224,9 +249,17 @@ func (s *Service) UpdateProduct(ctx context.Context, slug string, in ProductInpu
 	for _, kv := range []struct {
 		key string
 		val *string
-	}{{"tagline", in.Tagline}, {"website_url", in.WebsiteURL}, {"pricing_model", in.PricingModel}} {
+	}{{"tagline", in.Tagline}, {"description", in.Description}, {"website_url", in.WebsiteURL}, {"pricing_model", in.PricingModel}, {"logo_id", in.LogoID}} {
 		if kv.val != nil && *kv.val == "" {
 			clear = append(clear, kv.key)
+		}
+	}
+	var logoID pgtype.UUID
+	if in.LogoID != nil && *in.LogoID != "" {
+		var lerr error
+		logoID, lerr = validUUID(*in.LogoID)
+		if lerr != nil {
+			return lerr
 		}
 	}
 	tx, err := s.store.pool.Writer.Begin(ctx)
@@ -245,7 +278,8 @@ func (s *Service) UpdateProduct(ctx context.Context, slug string, in ProductInpu
 		}
 	}
 	if err := q.UpdateProduct(ctx, gen.UpdateProductParams{
-		Name: name, ProductTypeID: typeID, Tagline: in.Tagline, WebsiteUrl: in.WebsiteURL,
+		Name: name, ProductTypeID: typeID, Tagline: in.Tagline,
+		Description: in.Description, LogoID: logoID, WebsiteUrl: in.WebsiteURL,
 		PricingModel: in.PricingModel, PriceFrom: numPtr(in.PriceFrom), Slug: slug,
 		ClearFields: clear,
 	}); err != nil {
@@ -382,6 +416,8 @@ type ProductDetail struct {
 	Product   gen.AdminGetProductBySlugRow                 `json:"product"`
 	Providers []map[string]any                             `json:"providers"`
 	Deals     []gen.ListProductDealsRow                    `json:"deals"`
+	Gallery   []map[string]any                           `json:"gallery"`
+	LogoURL   string                                     `json:"logo_url"`
 	Fields    []gen.CustomFieldValue                      `json:"field_values"`
 }
 
@@ -407,6 +443,21 @@ func (s *Service) AdminGetProduct(ctx context.Context, slug string) (*ProductDet
 	d.Deals, err = s.store.read.ListProductDeals(ctx, p.ID)
 	if err != nil {
 		return nil, err
+	}
+	gal, err := s.store.read.ListProductGallery(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range gal {
+		d.Gallery = append(d.Gallery, map[string]any{
+			"media_id": g.MediaID.String(), "position": g.Position,
+			"url":      media.MediaURL(g.StorageBucket, g.StoragePath, media.ImageProxyOpts{}),
+			"filename": g.OriginalFilename, "mime_type": g.MimeType,
+		})
+	}
+	// Logo URL resolves through the same mediaURL path the pickers return.
+	if p.LogoID.Valid && p.LogoStoragePath != nil && p.LogoStorageBucket != nil {
+		d.LogoURL = media.MediaURL(*p.LogoStorageBucket, *p.LogoStoragePath, media.ImageProxyOpts{})
 	}
 	// ListCustomFieldValuesByEntity (not the WithDefs variant — that one
 	// filters show_in_frontend, which would hide admin-only fields).

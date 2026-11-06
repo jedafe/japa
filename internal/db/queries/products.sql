@@ -65,13 +65,34 @@ WHERE (@type_slug::text = '' OR t.slug = @type_slug)
 
 -- Admin detail — includes deleted rows so the edit page can restore.
 -- name: AdminGetProductBySlug :one
-SELECT p.id, p.product_type_id, p.slug, p.name, p.tagline, p.website_url,
-       p.logo_id, p.pricing_model, p.price_from, p.rating_avg, p.review_count,
+SELECT p.id, p.product_type_id, p.slug, p.name, p.tagline, p.description,
+       p.website_url, p.logo_id, p.pricing_model,
+       p.price_from, p.rating_avg, p.review_count,
        p.geo_space_id, p.deleted_at, p.created_at, p.updated_at,
-       t.slug AS type_slug, t.label AS type_label
+       t.slug AS type_slug, t.label AS type_label,
+       m.storage_path AS logo_storage_path, m.storage_bucket AS logo_storage_bucket
 FROM products p
 JOIN product_types t ON t.id = p.product_type_id
+LEFT JOIN media m ON m.id = p.logo_id
 WHERE p.slug = @slug;
+
+-- Product gallery (product_gallery join — §80 product management).
+-- name: ListProductGallery :many
+SELECT pg.media_id, pg.position, m.storage_bucket, m.storage_path,
+       m.original_filename, m.mime_type
+FROM product_gallery pg
+JOIN media m ON m.id = pg.media_id
+WHERE pg.product_id = @product_id
+ORDER BY pg.position;
+
+-- name: UpsertProductGalleryImage :exec
+INSERT INTO product_gallery (product_id, media_id, position)
+VALUES (@product_id, @media_id, @position)
+ON CONFLICT (product_id, media_id) DO UPDATE SET position = EXCLUDED.position;
+
+-- name: DeleteProductGalleryNotIn :exec
+DELETE FROM product_gallery
+WHERE product_id = @product_id AND media_id <> ALL(@keep::uuid[]);
 
 -- name: RestoreProduct :execrows
 UPDATE products SET deleted_at = NULL, updated_at = now()

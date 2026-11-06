@@ -5,7 +5,8 @@
 	import { api, productsAdminApi, productTypesAdminApi, affiliateProvidersAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { onMount } from 'svelte';
-	import { Loader2, Plus, Trash2 } from 'lucide-svelte';
+	import { Loader2, Plus, Trash2, ImagePlus, X } from 'lucide-svelte';
+	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
 
 	type Provider = { id: string; name: string; slug: string };
 	type Deal = { id: string; title: string; provider_name?: string | null; provider_id?: string | null };
@@ -40,6 +41,25 @@
 	let slug = $state(initial?.product?.slug ?? '');
 	let slugTouched = $state(mode === 'edit');
 	let tagline = $state(initial?.product?.tagline ?? '');
+	let description = $state(initial?.product?.description ?? '');
+	let logoId = $state<string | null>(initial?.product?.logo_id ?? null);
+	let logoUrl = $state<string | null>(initial?.logo_url ?? null);
+	let logoTouched = $state(false); // PATCH sends logo_id only when picked/cleared
+	type GalleryItem = { media_id: string; url: string; filename?: string };
+	let gallery = $state<GalleryItem[]>(
+		(initial?.gallery ?? []).map((g: any) => ({ media_id: g.media_id, url: g.url, filename: g.filename }))
+	);
+	let pickerFor = $state<'logo' | 'gallery' | null>(null);
+	let pickerOpen = $state(false);
+	function openPicker(target: 'logo' | 'gallery' | string) {
+		if (target === 'logo' || target === 'gallery') pickerFor = target;
+		else fieldPickerFor = target;
+		pickerOpen = true;
+	}
+	$effect(() => {
+		if (!pickerOpen) { pickerFor = null; fieldPickerFor = null; }
+	});
+	let fieldPickerFor = $state<string | null>(null); // cfv field_id for image_single/media
 	let websiteUrl = $state(initial?.product?.website_url ?? '');
 	let pricingModel = $state(initial?.product?.pricing_model ?? '');
 	let priceFrom = $state(initial?.product?.price_from ?? '');
@@ -71,6 +91,26 @@
 		}
 		fieldValues = seeded;
 	});
+
+	/** The 22 backend field types collapse into these renderer kinds. */
+	function fieldKind(f: FieldDef): string {
+		switch (f.field_type) {
+			case 'number': case 'currency': case 'percentage': case 'duration': case 'rating':
+				return 'number';
+			case 'checkbox': case 'boolean': return 'bool';
+			case 'date': return 'date';
+			case 'select': return 'select';
+			case 'multiselect': case 'suggest': return 'multiselect';
+			case 'image_single': case 'media': return 'image_single';
+			case 'image_multi': return 'image_multi';
+			case 'textarea': case 'rich_text': return 'textarea';
+			case 'email': return 'email';
+			case 'phone': return 'tel';
+			case 'url': return 'url';
+			case 'repeater': case 'price_parts': case 'price_range': case 'json': return 'json';
+			default: return 'text';
+		}
+	}
 
 	/** custom_fields.options is jsonb — may be a bare array or {choices:[...]}. */
 	function fieldOptions(f: FieldDef): Array<{ value?: any; label?: string } | string> {
@@ -145,6 +185,52 @@
 		providerRows = providerRows.filter((_, j) => j !== i);
 	}
 
+	function onPicked(m: { id: string; url: string; filename: string }) {
+		if (fieldPickerFor) {
+			if (fieldPickerFor.endsWith(':multi')) {
+				addFieldMedia(fieldPickerFor.replace(':multi', ''), m);
+			} else {
+				fieldValues[fieldPickerFor] = m.id;
+			}
+			fieldPickerFor = null;
+			return;
+		}
+		if (pickerFor === 'logo') {
+			logoId = m.id;
+			logoUrl = m.url;
+			logoTouched = true;
+		} else if (pickerFor === 'gallery') {
+			if (!gallery.some((g) => g.media_id === m.id)) {
+				gallery = [...gallery, { media_id: m.id, url: m.url, filename: m.filename }];
+			}
+		} else if (fieldPickerFor) {
+			fieldValues[fieldPickerFor] = m.id;
+			fieldPickerFor = null;
+		}
+		pickerFor = null;
+	}
+	function clearLogo() {
+		logoId = null;
+		logoUrl = null;
+		logoTouched = true;
+	}
+	function removeGallery(i: number) {
+		gallery = gallery.filter((_, j) => j !== i);
+	}
+
+	// cfv media fields store the media uuid (value_text single / value_json array).
+	function addFieldMedia(fid: string, m: { id: string; url: string }) {
+		const cur = Array.isArray(fieldValues[fid]) ? fieldValues[fid] : [];
+		fieldValues[fid] = [...cur, { id: m.id, url: m.url }];
+	}
+	function removeFieldMedia(fid: string, i: number) {
+		fieldValues[fid] = (fieldValues[fid] ?? []).filter((_: any, j: number) => j !== i);
+	}
+	/** Renders a compact media preview list for image_multi fields. */
+	function fieldMediaList(fid: string): Array<{ id: string; url: string }> {
+		return Array.isArray(fieldValues[fid]) ? fieldValues[fid] : [];
+	}
+
 	function fieldValueType(f: FieldDef): 'text' | 'number' | 'bool' | 'date' | 'json' {
 		switch (f.field_type) {
 			case 'number': return 'number';
@@ -168,11 +254,12 @@
 				const v = fieldValues[f.id];
 				if (v === undefined || v === null || v === '') continue;
 				const entry: any = { field_id: f.id };
-				switch (fieldValueType(f)) {
+				switch (fieldKind(f)) {
 					case 'number': entry.value_number = Number(v); break;
 					case 'bool': entry.value_bool = !!v; break;
 					case 'date': entry.value_date = new Date(v).toISOString(); break;
-					case 'json': entry.value_json = typeof v === 'string' ? JSON.parse(v || 'null') : v; break;
+					case 'multiselect': case 'image_multi': case 'json':
+						entry.value_json = typeof v === 'string' ? JSON.parse(v || 'null') : v; break;
 					default: entry.value_text = String(v);
 				}
 				custom_fields.push(entry);
@@ -183,6 +270,8 @@
 			name: name.trim(),
 			slug: slug.trim(),
 			tagline: tagline || null,
+			description: description || null,
+			gallery_media_ids: gallery.map((g) => g.media_id),
 			website_url: websiteUrl || null,
 			pricing_model: pricingModel || null,
 			price_from: priceFrom !== '' ? Number(priceFrom) : null,
@@ -195,6 +284,7 @@
 			deal_ids: dealIds,
 			custom_fields
 		};
+		if (mode === 'create' || logoTouched) body.logo_id = logoId;
 		const res =
 			mode === 'create'
 				? await productsAdminApi.create(body)
@@ -231,6 +321,10 @@
 			<label for="pf-tagline" class={lbl}>{t('products.fld_tagline', 'Tagline')}</label>
 			<input id="pf-tagline" class={inp} bind:value={tagline} />
 		</div>
+		<div class="sm:col-span-2">
+			<label for="pf-desc" class={lbl}>{t('products.fld_description', 'Description')}</label>
+			<textarea id="pf-desc" class={inp} rows="3" bind:value={description}></textarea>
+		</div>
 		<div>
 			<label for="pf-website" class={lbl}>{t('products.fld_website', 'Website URL')}</label>
 			<input id="pf-website" class={inp} type="url" bind:value={websiteUrl} />
@@ -255,23 +349,75 @@
 				<h3 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{g.name}</h3>
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					{#each g.fields as f (f.id)}
+						{@const kind = fieldKind(f)}
 						<div>
 							<label class={lbl} for="pf-f-{f.id}">
 								{f.label}{f.is_required ? ' *' : ''}
 							</label>
-							{#if f.field_type === 'checkbox' || f.field_type === 'boolean'}
+							{#if kind === 'bool'}
 								<input id="pf-f-{f.id}" type="checkbox" bind:checked={fieldValues[f.id]} class="h-4 w-4" />
-							{:else if f.field_type === 'number'}
+							{:else if kind === 'number'}
 								<input id="pf-f-{f.id}" class={inp} type="number" bind:value={fieldValues[f.id]} placeholder={f.placeholder ?? ''} />
-							{:else if f.field_type === 'date'}
+							{:else if kind === 'date'}
 								<input id="pf-f-{f.id}" class={inp} type="date" bind:value={fieldValues[f.id]} />
-							{:else if f.field_type === 'select' && fieldOptions(f).length > 0}
+							{:else if kind === 'select'}
 								<select id="pf-f-{f.id}" class={inp} bind:value={fieldValues[f.id]}>
 									<option value="">—</option>
 									{#each fieldOptions(f) as o}<option value={typeof o === 'object' ? (o.value ?? o.label) : o}>{typeof o === 'object' ? (o.label ?? o.value) : o}</option>{/each}
 								</select>
-							{:else if f.field_type === 'textarea' || f.field_type === 'rich_text'}
+							{:else if kind === 'multiselect'}
+								<div class="space-y-1">
+									{#each fieldOptions(f) as o}
+										{@const ov = typeof o === 'object' ? (o.value ?? o.label) : o}
+										<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+											<input type="checkbox" class="h-4 w-4"
+												checked={Array.isArray(fieldValues[f.id]) && fieldValues[f.id].includes(ov)}
+												onchange={(e) => {
+													const cur = Array.isArray(fieldValues[f.id]) ? fieldValues[f.id] : [];
+													fieldValues[f.id] = e.currentTarget.checked ? [...cur, ov] : cur.filter((x: any) => x !== ov);
+												}} />
+											{typeof o === 'object' ? (o.label ?? o.value) : o}
+										</label>
+									{/each}
+								</div>
+							{:else if kind === 'image_single'}
+								<div class="flex items-center gap-2">
+									<button type="button" onclick={() => openPicker(f.id)}
+										class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+										<ImagePlus size={13} /> {fieldValues[f.id] ? t('products.change_image', 'Change image') : t('products.pick_image', 'Pick image')}
+									</button>
+									{#if fieldValues[f.id]}
+										<span class="text-xs text-[var(--color-muted)]">✓</span>
+										<button type="button" onclick={() => (fieldValues[f.id] = '')} class="text-xs text-red-500 hover:underline">{t('common.clear', 'Clear')}</button>
+									{/if}
+								</div>
+							{:else if kind === 'image_multi'}
+								<div class="space-y-1">
+									<div class="flex flex-wrap gap-2">
+										{#each fieldMediaList(f.id) as m, i (m.id)}
+											<div class="relative">
+												<img src={m.url} alt="" class="h-14 w-14 rounded object-cover" />
+												<button type="button" onclick={() => removeFieldMedia(f.id, i)}
+													class="absolute -right-1 -top-1 rounded-full bg-[var(--color-surface)] p-0.5 text-[var(--color-muted)] hover:text-red-500"><X size={11} /></button>
+											</div>
+										{/each}
+									</div>
+									<button type="button" onclick={() => openPicker(f.id + ':multi')}
+										class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text)]"><ImagePlus size={13} /> {t('products.add_image', 'Add image')}</button>
+								</div>
+							{:else if kind === 'textarea'}
 								<textarea id="pf-f-{f.id}" class={inp} rows="3" bind:value={fieldValues[f.id]}></textarea>
+							{:else if kind === 'email'}
+								<input id="pf-f-{f.id}" class={inp} type="email" bind:value={fieldValues[f.id]} />
+							{:else if kind === 'tel'}
+								<input id="pf-f-{f.id}" class={inp} type="tel" bind:value={fieldValues[f.id]} />
+							{:else if kind === 'url'}
+								<input id="pf-f-{f.id}" class={inp} type="url" bind:value={fieldValues[f.id]} />
+							{:else if kind === 'json'}
+								<textarea id="pf-f-{f.id}" class={inp} rows="3"
+									value={typeof fieldValues[f.id] === 'object' ? JSON.stringify(fieldValues[f.id], null, 2) : (fieldValues[f.id] ?? '')}
+									oninput={(e) => { try { fieldValues[f.id] = JSON.parse(e.currentTarget.value); } catch { fieldValues[f.id] = e.currentTarget.value; } }}
+									placeholder={'{"key": "value"}'}></textarea>
 							{:else}
 								<input id="pf-f-{f.id}" class={inp} bind:value={fieldValues[f.id]} placeholder={f.placeholder ?? ''} />
 							{/if}
@@ -281,6 +427,40 @@
 			</section>
 		{/each}
 	{/if}
+
+	<section class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+		<div>
+			<h3 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('products.logo', 'Logo')}</h3>
+			<div class="flex items-center gap-3">
+				{#if logoUrl}
+					<img src={logoUrl} alt="" class="h-14 w-14 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
+				{/if}
+				<button type="button" onclick={() => openPicker('logo')}
+					class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+					<ImagePlus size={13} /> {logoUrl ? t('products.change_image', 'Change image') : t('products.pick_image', 'Pick image')}
+				</button>
+				{#if logoUrl}
+					<button type="button" onclick={clearLogo} class="text-xs text-red-500 hover:underline">{t('common.clear', 'Clear')}</button>
+				{/if}
+			</div>
+		</div>
+		<div>
+			<h3 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('products.gallery', 'Gallery')}</h3>
+			<div class="flex flex-wrap items-center gap-2">
+				{#each gallery as g, i (g.media_id)}
+					<div class="relative">
+						<img src={g.url} alt={g.filename ?? ''} class="h-14 w-14 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
+						<button type="button" onclick={() => removeGallery(i)}
+							class="absolute -right-1 -top-1 rounded-full bg-[var(--color-surface)] p-0.5 text-[var(--color-muted)] hover:text-red-500"><X size={11} /></button>
+					</div>
+				{/each}
+				<button type="button" onclick={() => openPicker('gallery')}
+					class="inline-flex h-14 w-14 items-center justify-center rounded-[var(--radius)] border border-dashed border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]">
+					<Plus size={16} />
+				</button>
+			</div>
+		</div>
+	</section>
 
 	<section>
 		<div class="mb-2 flex items-center justify-between">
@@ -360,4 +540,6 @@
 			{mode === 'create' ? t('common.create', 'Create') : t('common.save', 'Save')}
 		</button>
 	</div>
+
+<MediaPickerModal bind:open={pickerOpen} onselect={onPicked} />
 </div>

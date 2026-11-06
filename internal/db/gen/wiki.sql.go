@@ -805,8 +805,8 @@ func (q *Queries) CreateOfferingForWiki(ctx context.Context, arg CreateOfferingF
 }
 
 const createProduct = `-- name: CreateProduct :one
-INSERT INTO products (product_type_id, slug, name, tagline, website_url, pricing_model, price_from)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO products (product_type_id, slug, name, tagline, description, website_url, logo_id, pricing_model, price_from)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, slug, name
 `
 
@@ -815,7 +815,9 @@ type CreateProductParams struct {
 	Slug          string         `json:"slug"`
 	Name          string         `json:"name"`
 	Tagline       *string        `json:"tagline"`
+	Description   *string        `json:"description"`
 	WebsiteUrl    *string        `json:"website_url"`
+	LogoID        pgtype.UUID    `json:"logo_id"`
 	PricingModel  *string        `json:"pricing_model"`
 	PriceFrom     pgtype.Numeric `json:"price_from"`
 }
@@ -832,7 +834,9 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (C
 		arg.Slug,
 		arg.Name,
 		arg.Tagline,
+		arg.Description,
 		arg.WebsiteUrl,
+		arg.LogoID,
 		arg.PricingModel,
 		arg.PriceFrom,
 	)
@@ -3827,11 +3831,13 @@ UPDATE products SET
     name = COALESCE($1, name),
     product_type_id = COALESCE($2, product_type_id),
     tagline = CASE WHEN 'tagline' = ANY($3::text[]) THEN NULL ELSE COALESCE($4, tagline) END,
-    website_url = CASE WHEN 'website_url' = ANY($3::text[]) THEN NULL ELSE COALESCE($5, website_url) END,
-    pricing_model = CASE WHEN 'pricing_model' = ANY($3::text[]) THEN NULL ELSE COALESCE($6, pricing_model) END,
-    price_from = CASE WHEN 'price_from' = ANY($3::text[]) THEN NULL ELSE COALESCE($7, price_from) END,
+    description = CASE WHEN 'description' = ANY($3::text[]) THEN NULL ELSE COALESCE($5, description) END,
+    logo_id = CASE WHEN 'logo_id' = ANY($3::text[]) THEN NULL ELSE COALESCE($6, logo_id) END,
+    website_url = CASE WHEN 'website_url' = ANY($3::text[]) THEN NULL ELSE COALESCE($7, website_url) END,
+    pricing_model = CASE WHEN 'pricing_model' = ANY($3::text[]) THEN NULL ELSE COALESCE($8, pricing_model) END,
+    price_from = CASE WHEN 'price_from' = ANY($3::text[]) THEN NULL ELSE COALESCE($9, price_from) END,
     updated_at = now()
-WHERE slug = $8 AND deleted_at IS NULL
+WHERE slug = $10 AND deleted_at IS NULL
 `
 
 type UpdateProductParams struct {
@@ -3839,6 +3845,8 @@ type UpdateProductParams struct {
 	ProductTypeID pgtype.UUID    `json:"product_type_id"`
 	ClearFields   []string       `json:"clear_fields"`
 	Tagline       *string        `json:"tagline"`
+	Description   *string        `json:"description"`
+	LogoID        pgtype.UUID    `json:"logo_id"`
 	WebsiteUrl    *string        `json:"website_url"`
 	PricingModel  *string        `json:"pricing_model"`
 	PriceFrom     pgtype.Numeric `json:"price_from"`
@@ -3853,6 +3861,8 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) er
 		arg.ProductTypeID,
 		arg.ClearFields,
 		arg.Tagline,
+		arg.Description,
+		arg.LogoID,
 		arg.WebsiteUrl,
 		arg.PricingModel,
 		arg.PriceFrom,

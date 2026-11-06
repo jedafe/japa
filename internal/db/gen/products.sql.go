@@ -59,33 +59,39 @@ func (q *Queries) AdminCountProductsByType(ctx context.Context, productTypeID pg
 }
 
 const adminGetProductBySlug = `-- name: AdminGetProductBySlug :one
-SELECT p.id, p.product_type_id, p.slug, p.name, p.tagline, p.website_url,
-       p.logo_id, p.pricing_model, p.price_from, p.rating_avg, p.review_count,
+SELECT p.id, p.product_type_id, p.slug, p.name, p.tagline, p.description,
+       p.website_url, p.logo_id, p.pricing_model,
+       p.price_from, p.rating_avg, p.review_count,
        p.geo_space_id, p.deleted_at, p.created_at, p.updated_at,
-       t.slug AS type_slug, t.label AS type_label
+       t.slug AS type_slug, t.label AS type_label,
+       m.storage_path AS logo_storage_path, m.storage_bucket AS logo_storage_bucket
 FROM products p
 JOIN product_types t ON t.id = p.product_type_id
+LEFT JOIN media m ON m.id = p.logo_id
 WHERE p.slug = $1
 `
 
 type AdminGetProductBySlugRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ProductTypeID pgtype.UUID        `json:"product_type_id"`
-	Slug          string             `json:"slug"`
-	Name          string             `json:"name"`
-	Tagline       *string            `json:"tagline"`
-	WebsiteUrl    *string            `json:"website_url"`
-	LogoID        pgtype.UUID        `json:"logo_id"`
-	PricingModel  *string            `json:"pricing_model"`
-	PriceFrom     pgtype.Numeric     `json:"price_from"`
-	RatingAvg     pgtype.Numeric     `json:"rating_avg"`
-	ReviewCount   int32              `json:"review_count"`
-	GeoSpaceID    pgtype.UUID        `json:"geo_space_id"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	TypeSlug      string             `json:"type_slug"`
-	TypeLabel     string             `json:"type_label"`
+	ID                pgtype.UUID        `json:"id"`
+	ProductTypeID     pgtype.UUID        `json:"product_type_id"`
+	Slug              string             `json:"slug"`
+	Name              string             `json:"name"`
+	Tagline           *string            `json:"tagline"`
+	Description       *string            `json:"description"`
+	WebsiteUrl        *string            `json:"website_url"`
+	LogoID            pgtype.UUID        `json:"logo_id"`
+	PricingModel      *string            `json:"pricing_model"`
+	PriceFrom         pgtype.Numeric     `json:"price_from"`
+	RatingAvg         pgtype.Numeric     `json:"rating_avg"`
+	ReviewCount       int32              `json:"review_count"`
+	GeoSpaceID        pgtype.UUID        `json:"geo_space_id"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	TypeSlug          string             `json:"type_slug"`
+	TypeLabel         string             `json:"type_label"`
+	LogoStoragePath   *string            `json:"logo_storage_path"`
+	LogoStorageBucket *string            `json:"logo_storage_bucket"`
 }
 
 // Admin detail — includes deleted rows so the edit page can restore.
@@ -98,6 +104,7 @@ func (q *Queries) AdminGetProductBySlug(ctx context.Context, slug string) (Admin
 		&i.Slug,
 		&i.Name,
 		&i.Tagline,
+		&i.Description,
 		&i.WebsiteUrl,
 		&i.LogoID,
 		&i.PricingModel,
@@ -110,6 +117,8 @@ func (q *Queries) AdminGetProductBySlug(ctx context.Context, slug string) (Admin
 		&i.UpdatedAt,
 		&i.TypeSlug,
 		&i.TypeLabel,
+		&i.LogoStoragePath,
+		&i.LogoStorageBucket,
 	)
 	return i, err
 }
@@ -315,6 +324,21 @@ func (q *Queries) DeleteProductDealsNotIn(ctx context.Context, arg DeleteProduct
 	return err
 }
 
+const deleteProductGalleryNotIn = `-- name: DeleteProductGalleryNotIn :exec
+DELETE FROM product_gallery
+WHERE product_id = $1 AND media_id <> ALL($2::uuid[])
+`
+
+type DeleteProductGalleryNotInParams struct {
+	ProductID pgtype.UUID   `json:"product_id"`
+	Keep      []pgtype.UUID `json:"keep"`
+}
+
+func (q *Queries) DeleteProductGalleryNotIn(ctx context.Context, arg DeleteProductGalleryNotInParams) error {
+	_, err := q.db.Exec(ctx, deleteProductGalleryNotIn, arg.ProductID, arg.Keep)
+	return err
+}
+
 const deleteProductType = `-- name: DeleteProductType :execrows
 DELETE FROM product_types WHERE slug = $1
 `
@@ -489,6 +513,52 @@ func (q *Queries) ListProductDeals(ctx context.Context, productID pgtype.UUID) (
 			&i.Status,
 			&i.ExpiresAt,
 			&i.ProviderName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProductGallery = `-- name: ListProductGallery :many
+SELECT pg.media_id, pg.position, m.storage_bucket, m.storage_path,
+       m.original_filename, m.mime_type
+FROM product_gallery pg
+JOIN media m ON m.id = pg.media_id
+WHERE pg.product_id = $1
+ORDER BY pg.position
+`
+
+type ListProductGalleryRow struct {
+	MediaID          pgtype.UUID `json:"media_id"`
+	Position         int32       `json:"position"`
+	StorageBucket    string      `json:"storage_bucket"`
+	StoragePath      string      `json:"storage_path"`
+	OriginalFilename string      `json:"original_filename"`
+	MimeType         string      `json:"mime_type"`
+}
+
+// Product gallery (product_gallery join — §80 product management).
+func (q *Queries) ListProductGallery(ctx context.Context, productID pgtype.UUID) ([]ListProductGalleryRow, error) {
+	rows, err := q.db.Query(ctx, listProductGallery, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProductGalleryRow
+	for rows.Next() {
+		var i ListProductGalleryRow
+		if err := rows.Scan(
+			&i.MediaID,
+			&i.Position,
+			&i.StorageBucket,
+			&i.StoragePath,
+			&i.OriginalFilename,
+			&i.MimeType,
 		); err != nil {
 			return nil, err
 		}
@@ -699,5 +769,22 @@ type UpsertProductDealParams struct {
 
 func (q *Queries) UpsertProductDeal(ctx context.Context, arg UpsertProductDealParams) error {
 	_, err := q.db.Exec(ctx, upsertProductDeal, arg.ProductID, arg.CouponID, arg.Position)
+	return err
+}
+
+const upsertProductGalleryImage = `-- name: UpsertProductGalleryImage :exec
+INSERT INTO product_gallery (product_id, media_id, position)
+VALUES ($1, $2, $3)
+ON CONFLICT (product_id, media_id) DO UPDATE SET position = EXCLUDED.position
+`
+
+type UpsertProductGalleryImageParams struct {
+	ProductID pgtype.UUID `json:"product_id"`
+	MediaID   pgtype.UUID `json:"media_id"`
+	Position  int32       `json:"position"`
+}
+
+func (q *Queries) UpsertProductGalleryImage(ctx context.Context, arg UpsertProductGalleryImageParams) error {
+	_, err := q.db.Exec(ctx, upsertProductGalleryImage, arg.ProductID, arg.MediaID, arg.Position)
 	return err
 }
