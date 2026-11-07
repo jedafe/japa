@@ -283,8 +283,15 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 
 	// §54: ?geo=NG override takes precedence over the visitor's resolved
 	// ContentCountry (used by the public search API for testing/locale).
+	// ?geo=all is the explicit-global sentinel (ADR-064 §2): an empty
+	// geoCountry skips the relevant_countries filter entirely — "ALL"
+	// must never reach it, or only globally-tagged documents would match.
 	if geoParam := r.URL.Query().Get("geo"); geoParam != "" {
-		geoCountry = strings.ToUpper(strings.TrimSpace(geoParam))
+		if strings.EqualFold(strings.TrimSpace(geoParam), "all") {
+			geoCountry = ""
+		} else {
+			geoCountry = strings.ToUpper(strings.TrimSpace(geoParam))
+		}
 	}
 
 	// §54: build the extra posts-index filter from content_type, space_id,

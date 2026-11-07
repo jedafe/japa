@@ -539,6 +539,13 @@ func (h *Handlers) invalidateVisitorContextCache(r *http.Request) {
 	ip := clientip.FromRequest(r)
 	_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("visitor:ctx:ip:%s", ip)).Build()).Error()
 	_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("recommendations:ip:%s", ip)).Build()).Error()
+
+	// A guest already carrying a journey cookie resolves under the
+	// token-scoped key — evict that too so the previous journey context
+	// cannot outlive the new POST for the cache TTL.
+	if c, err := r.Cookie("jc_journey_token"); err == nil && c.Value != "" {
+		_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("visitor:ctx:journey:%s", c.Value)).Build()).Error()
+	}
 }
 
 // GetCardStyle handles GET /api/v1/feed/card-style — public endpoint.

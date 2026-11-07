@@ -14,16 +14,34 @@ import (
 	"github.com/oschwald/geoip2-golang"
 )
 
-// UpdateURL is the MaxMind GeoLite2-City download endpoint.
+// updateURLFormat is the MaxMind per-edition download endpoint template.
 // Requires a license key (free MaxMind account).
-const UpdateURL = "https://download.maxmind.com/geoip/databases/GeoLite2-City/update"
+const updateURLFormat = "https://download.maxmind.com/geoip/databases/%s/update"
 
-// Updater handles downloading and applying GeoLite2 database updates.
+// MaxMind edition names the updater knows how to refresh.
+const (
+	// CityEdition is the default GeoLite2-City database.
+	CityEdition = "GeoLite2-City"
+	// AnonIPEdition is the GeoLite2-Anonymous-IP database — powers the
+	// is_vpn contract field when geoip.anonymous_ip_enabled is on (§37).
+	AnonIPEdition = "GeoLite2-Anonymous-IP"
+)
+
+// dbTarget is one database file the updater refreshes: the edition to
+// download, where to install it, and how to swap it into the live reader.
+type dbTarget struct {
+	edition string
+	dbPath  string
+	apply   func(*geoip2.Reader)
+}
+
+// Updater handles downloading and applying GeoIP database updates.
+// NewUpdater registers the City target; AddAnonymousTarget adds the
+// optional anonymous-IP database so one scheduled task refreshes both.
 type Updater struct {
 	accountID  string
 	licenseKey string
-	dbPath     string
-	reader     *Reader
+	targets    []dbTarget
 }
 
 // NewUpdater creates an Updater that downloads updates using the
@@ -35,16 +53,32 @@ type Updater struct {
 // the license key is used as both (backward compatibility with older
 // configs that only set JC_MAXMIND_LICENSE_KEY).
 func NewUpdater(accountID, licenseKey, dbPath string, reader *Reader) *Updater {
-	return &Updater{
+	u := &Updater{
 		accountID:  accountID,
 		licenseKey: licenseKey,
-		dbPath:     dbPath,
-		reader:     reader,
 	}
+	u.targets = append(u.targets, dbTarget{
+		edition: CityEdition,
+		dbPath:  dbPath,
+		apply:   reader.Swap,
+	})
+
+	return u
 }
 
-// DownloadAndUpdate downloads the latest GeoLite2-City database,
-// extracts the .mmdb file, and atomically swaps it into the reader.
+// AddAnonymousTarget registers a GeoLite2-Anonymous-IP database at dbPath
+// so DownloadAndUpdate refreshes it alongside the City database and swaps
+// it into reader via SwapAnonymous.
+func (u *Updater) AddAnonymousTarget(dbPath string, reader *Reader) {
+	u.targets = append(u.targets, dbTarget{
+		edition: AnonIPEdition,
+		dbPath:  dbPath,
+		apply:   reader.SwapAnonymous,
+	})
+}
+
+// DownloadAndUpdate downloads the latest database for every registered
+// target, extracts the .mmdb file, and atomically swaps it into the reader.
 // This is called by the maintenance:update_geoip_db Asynq task
 // (weekly, Sunday 02:00 UTC).
 func (u *Updater) DownloadAndUpdate() error {
@@ -52,8 +86,24 @@ func (u *Updater) DownloadAndUpdate() error {
 		return errors.New("JC_MAXMIND_LICENSE_KEY is not set - cannot update geoip database")
 	}
 
+	for _, t := range u.targets {
+		if t.dbPath == "" {
+			continue
+		}
+
+		if err := u.updateTarget(t); err != nil {
+			return fmt.Errorf("updating %s: %w", t.edition, err)
+		}
+	}
+
+	return nil
+}
+
+// updateTarget downloads one edition archive, installs it at t.dbPath, and
+// applies it to the reader.
+func (u *Updater) updateTarget(t dbTarget) error {
 	// Download the database archive
-	req, err := http.NewRequest(http.MethodGet, UpdateURL, nil)
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf(updateURLFormat, t.edition), nil)
 	if err != nil {
 		return fmt.Errorf("creating update request: %w", err)
 	}
@@ -92,7 +142,7 @@ func (u *Updater) DownloadAndUpdate() error {
 	// truth: if the rename fails the previous database is still intact and
 	// no swap occurs, so the live reader never points at a tmp file that a
 	// later update could overwrite.
-	tmpPath := u.dbPath + ".tmp"
+	tmpPath := t.dbPath + ".tmp"
 	if err := extractMMDB(resp.Body, tmpPath); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("extracting mmdb: %w", err)
@@ -100,18 +150,18 @@ func (u *Updater) DownloadAndUpdate() error {
 
 	// Move the temp file to the final location before opening it, so the
 	// reader always owns dbPath (not tmpPath).
-	if err := os.Rename(tmpPath, u.dbPath); err != nil {
+	if err := os.Rename(tmpPath, t.dbPath); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("moving database file: %w", err)
 	}
 
 	// Open the newly installed database and atomically swap it in.
-	newReader, err := geoip2.Open(u.dbPath)
+	newReader, err := geoip2.Open(t.dbPath)
 	if err != nil {
 		return fmt.Errorf("opening new database: %w", err)
 	}
 
-	u.reader.Swap(newReader)
+	t.apply(newReader)
 
 	return nil
 }

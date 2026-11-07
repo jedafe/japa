@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/jedafe/japa/internal/geoip"
 )
 
 // defaultMarketSets returns the ADR-064 default origin/destination market sets
@@ -274,7 +277,10 @@ func TestCacheRoundTrip(t *testing.T) {
 		JapaStage:          "planning",
 	}
 
-	b, err := json.Marshal(vc)
+	b, err := json.Marshal(cachedVisitorContext{
+		Fingerprint: res.geoConfigFingerprint(t.Context()),
+		VC:          vc,
+	})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -312,13 +318,52 @@ func TestUnmarshalCacheRejectsOldFormat(t *testing.T) {
 	}
 }
 
+func TestUnmarshalCacheRejectsBareVisitorContext(t *testing.T) {
+	t.Parallel()
+
+	// Entries written before the fingerprint-in-payload format are bare
+	// VisitorContext JSON — they decode to an empty fingerprint and must be
+	// treated as misses (self-heals via re-resolution).
+	res := NewResolver(nil, nil, nil)
+	b, err := json.Marshal(VisitorContext{ContentCountry: "NG", Source: "geoip"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	if _, ok := res.unmarshalCache(t.Context(), string(b)); ok {
+		t.Fatal("unmarshalCache accepted bare VisitorContext; expected ok=false")
+	}
+}
+
+func TestUnmarshalCacheRejectsStaleFingerprint(t *testing.T) {
+	t.Parallel()
+
+	// An entry resolved under a different geo config must not be served —
+	// a fingerprint mismatch is a miss, not a stale serve.
+	res := NewResolver(nil, nil, nil)
+	b, err := json.Marshal(cachedVisitorContext{
+		Fingerprint: "otherfp",
+		VC:          VisitorContext{ContentCountry: "GB", Source: "geoip"},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	if _, ok := res.unmarshalCache(t.Context(), string(b)); ok {
+		t.Fatal("unmarshalCache accepted stale fingerprint; expected ok=false")
+	}
+}
+
 func TestUnmarshalCacheEmptyCountryDefaultsToNG(t *testing.T) {
 	t.Parallel()
 
 	// A cached JSON entry with an empty ContentCountry (edge case) must
 	// fall back to the configured default (NG when no settings/platform).
 	res := NewResolver(nil, nil, nil)
-	b, _ := json.Marshal(VisitorContext{Source: "archetype"})
+	b, _ := json.Marshal(cachedVisitorContext{
+		Fingerprint: res.geoConfigFingerprint(t.Context()),
+		VC:          VisitorContext{Source: "archetype"},
+	})
 
 	got, ok := res.unmarshalCache(t.Context(), string(b))
 	if !ok {
@@ -383,5 +428,132 @@ func TestEnrichArchetypePreservesContentCountryPreference(t *testing.T) {
 
 	if vc.Archetype != ArchetypeOriginVisitor {
 		t.Errorf("Archetype = %q, want origin_visitor", vc.Archetype)
+	}
+}
+
+func TestExplicitGeoParam(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		url    string
+		wantCC string
+		wantOK bool
+	}{
+		{"/feed?geo=all", "", true},
+		{"/feed?geo=ALL", "", true},
+		{"/feed?geo=All", "", true},
+		{"/feed?geo=ng", "NG", true},
+		{"/feed?geo=%20gb%20", "GB", true},
+		{"/feed", "", false},
+		{"/feed?geo=", "", false},
+		{"/feed?geo=NGA", "", false},
+		{"/feed?geo=12", "", false},
+	}
+
+	for _, tt := range tests {
+		req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+
+		cc, ok := explicitGeoParam(req)
+		if ok != tt.wantOK || cc != tt.wantCC {
+			t.Errorf("explicitGeoParam(%q) = (%q, %v), want (%q, %v)",
+				tt.url, cc, ok, tt.wantCC, tt.wantOK)
+		}
+	}
+}
+
+// withGeoIP injects a GeoContext the way geoip.Middleware would.
+func withGeoIP(r *http.Request, gc geoip.GeoContext) *http.Request {
+	ctx := context.WithValue(r.Context(), geoip.GeoContextKey, gc)
+	return r.WithContext(ctx)
+}
+
+func TestResolve_GeoAllExplicitGlobal(t *testing.T) {
+	t.Parallel()
+
+	// ADR-064 §2: ?geo=all explicitly requests global ranking — an empty
+	// ContentCountry (no geo filter), even when GeoIP resolved a country.
+	res := NewResolver(nil, nil, nil)
+	req := withGeoIP(httptest.NewRequest(http.MethodGet, "/feed?geo=all", nil),
+		geoip.GeoContext{CountryCode: "GB", IsValid: true})
+
+	vc := res.resolve(req)
+	if vc.ContentCountry != "" {
+		t.Errorf("ContentCountry = %q, want empty (global)", vc.ContentCountry)
+	}
+
+	if vc.Source != "query" {
+		t.Errorf("Source = %q, want query", vc.Source)
+	}
+}
+
+func TestResolve_GeoParamPinsCountry(t *testing.T) {
+	t.Parallel()
+
+	// ?geo=fr wins over GeoIP GB — the explicit param is priority 1.
+	res := NewResolver(nil, nil, nil)
+	req := withGeoIP(httptest.NewRequest(http.MethodGet, "/feed?geo=fr", nil),
+		geoip.GeoContext{CountryCode: "GB", IsValid: true})
+
+	vc := res.resolve(req)
+	if vc.ContentCountry != "FR" {
+		t.Errorf("ContentCountry = %q, want FR", vc.ContentCountry)
+	}
+
+	if vc.Source != "query" {
+		t.Errorf("Source = %q, want query", vc.Source)
+	}
+}
+
+func TestResolve_GeoParamInvalidFallsThrough(t *testing.T) {
+	t.Parallel()
+
+	// An invalid ?geo= value must not be treated as an override — normal
+	// resolution proceeds (GeoIP GB → diaspora → ContentCountry GB).
+	res := NewResolver(nil, nil, nil)
+	req := withGeoIP(httptest.NewRequest(http.MethodGet, "/feed?geo=1A", nil),
+		geoip.GeoContext{CountryCode: "GB", IsValid: true})
+
+	vc := res.resolve(req)
+	if vc.ContentCountry != "GB" {
+		t.Errorf("ContentCountry = %q, want GB", vc.ContentCountry)
+	}
+
+	if vc.Source == "query" {
+		t.Error("Source = query for an invalid ?geo= value; expected archetype/default")
+	}
+}
+
+func TestAnonCacheKey(t *testing.T) {
+	t.Parallel()
+
+	res := NewResolver(nil, nil, nil)
+
+	// Journey-cookie guests resolve under the token — never the IP key, so
+	// journey fields cannot bleed to other guests on the same NAT address.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: "jc_journey_token", Value: "tok123"})
+
+	if k := res.anonCacheKey(req); !strings.HasSuffix(k, "visitor:ctx:journey:tok123") {
+		t.Errorf("anonCacheKey(cookie) = %q, want ...visitor:ctx:journey:tok123", k)
+	}
+
+	// Param-only journeys are transient — no cache entry at all.
+	req = httptest.NewRequest(http.MethodGet, "/?journey_origin=NG", nil)
+	if k := res.anonCacheKey(req); k != "" {
+		t.Errorf("anonCacheKey(param-only) = %q, want empty", k)
+	}
+
+	// Cookie wins over params (cookie guests are keyed by token).
+	req = httptest.NewRequest(http.MethodGet, "/?journey_origin=NG", nil)
+	req.AddCookie(&http.Cookie{Name: "jc_journey_token", Value: "tok9"})
+
+	if k := res.anonCacheKey(req); !strings.HasSuffix(k, "visitor:ctx:journey:tok9") {
+		t.Errorf("anonCacheKey(cookie+params) = %q, want journey scope", k)
+	}
+
+	// Plain anonymous guests fall back to the IP scope.
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	if k := res.anonCacheKey(req); !strings.Contains(k, "visitor:ctx:ip:") {
+		t.Errorf("anonCacheKey(plain) = %q, want ip scope", k)
 	}
 }

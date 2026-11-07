@@ -1189,6 +1189,19 @@ func parseTrendingWindow(r *http.Request) string {
 	return "24h"
 }
 
+// parseTrendingGeo normalizes the ?geo= query param for the trending SQL
+// ($2 IS NULL/” → unfiltered). ?geo=all is the documented unfiltered
+// override (ADR-064 §2) — it must not reach SQL as a literal geo_code, or
+// it would match nothing and blank the feed.
+func parseTrendingGeo(r *http.Request) string {
+	g := r.URL.Query().Get("geo")
+	if strings.EqualFold(strings.TrimSpace(g), "all") {
+		return ""
+	}
+
+	return g
+}
+
 // GetTrendingContentHandler handles GET /api/v1/trending/content — returns
 // trending content snapshots for the API key's platform.
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
@@ -1205,7 +1218,7 @@ func (h *Handlers) GetTrendingContentHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	window := parseTrendingWindow(r)
-	geoCode := r.URL.Query().Get("geo")
+	geoCode := parseTrendingGeo(r)
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingContent(r.Context(), gen.GetTrendingContentParams{
@@ -1246,7 +1259,7 @@ func (h *Handlers) GetTrendingTagsHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	window := parseTrendingWindow(r)
-	geoCode := r.URL.Query().Get("geo")
+	geoCode := parseTrendingGeo(r)
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingTags(r.Context(), gen.GetTrendingTagsParams{
@@ -1278,7 +1291,7 @@ func (h *Handlers) GetTrendingSpacesHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	window := parseTrendingWindow(r)
-	geoCode := r.URL.Query().Get("geo")
+	geoCode := parseTrendingGeo(r)
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingSpaces(r.Context(), gen.GetTrendingSpacesParams{
@@ -1310,7 +1323,7 @@ func (h *Handlers) GetTrendingUsersHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	window := parseTrendingWindow(r)
-	geoCode := r.URL.Query().Get("geo")
+	geoCode := parseTrendingGeo(r)
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingUsers(r.Context(), gen.GetTrendingUsersParams{

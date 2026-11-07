@@ -259,12 +259,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		slog.Warn("geoip database not loaded", "error", err)
 	}
 
+	// Optional GeoLite2-Anonymous-IP database (Section 37 is_vpn). Loaded
+	// eagerly when a path is configured; the response field stays gated on
+	// the geoip.anonymous_ip_enabled setting until an operator turns it on.
+	if cfg.GeoIPAnonDBPath != "" {
+		if aerr := geoipReader.LoadAnonymousDB(cfg.GeoIPAnonDBPath); aerr != nil {
+			slog.Warn("geoip anonymous-IP database not loaded",
+				"path", cfg.GeoIPAnonDBPath, "error", aerr)
+		}
+	}
+
 	r.Use(geoip.Middleware(geoipReader))
 
 	// GeoIP updater for the maintenance: update_geoip_db task.
 	// Created here and registered with the worker so the Asynq handler
 	// can atomically swap in a fresh MaxMind database weekly.
 	geoipUpdater := geoip.NewUpdater(cfg.MaxmindAccountID, cfg.MaxmindLicenseKey, cfg.GeoIPDBPath, geoipReader)
+	if cfg.GeoIPAnonDBPath != "" {
+		geoipUpdater.AddAnonymousTarget(cfg.GeoIPAnonDBPath, geoipReader)
+	}
 	worker.RegisterGeoIPUpdater(geoipUpdater)
 
 	// Register site name for worker handlers (RSS feeds, LLMS.txt, emails) and
@@ -527,6 +540,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// payment webhook) can enqueue follow-up tasks like affiliate commission.
 	worker.RegisterTaskEnqueuer(taskEnqueuer)
 
+	// Boot-gap (Section 37): a fresh deploy has no GeoIP database until the
+	// weekly maintenance task runs (Sunday 02:00 UTC). Kick an immediate
+	// update when a configured DB file is missing so geo-aware surfaces work
+	// on first boot instead of degrading to defaults for days.
+	missingGeoDB := (cfg.GeoIPDBPath != "" && !geoipReader.IsLoaded()) ||
+		(cfg.GeoIPAnonDBPath != "" && !geoipReader.AnonymousLoaded())
+	if missingGeoDB && cfg.MaxmindLicenseKey != "" {
+		if err := taskEnqueuer.Enqueue(worker.TypeMaintenanceUpdateGeoIPDB, nil); err != nil {
+			slog.Warn("server: geoip boot update enqueue failed", "error", err)
+		} else {
+			slog.Info("server: geoip database missing — enqueued immediate update")
+		}
+	}
+
 	// Wire enqueuer into services that need async tasks.
 	spaceService.SetEnqueuer(taskEnqueuer)
 	spaceService.SetValkey(vkClient.Redis()) // VALKEY-001: mute key cache invalidation (Section 52)
@@ -554,6 +581,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// are read.
 	settingsService := config.NewSettings(database, vkClient.Redis())
 	closers = append(closers, settingsService.Close)
+	// §37 is_vpn: emit the anonymous-IP flag only while the
+	// geoip.anonymous_ip_enabled setting is on (hot-reloadable).
+	geoHandlers.SetVPNChecker(func(ctx context.Context) bool {
+		return settingsService.GetBoolOr(ctx, "geoip.anonymous_ip_enabled", false)
+	})
 	contentService.SetSettings(settingsService)
 	universitiesHandlers.SetSettings(settingsService) // §43: sitemap quality thresholds for the indexable flag
 
@@ -3507,7 +3539,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	controlHandlers.SetValkey(vkClient.Redis())
 	controlHandlers.SetSearchEngine(searchEngine)
 	controlHandlers.SetHoncho(honcho.NewClient(cfg.HonchoURL)) // ADR-027: infra health
-	controlHandlers.SetAIStore(aiStore)                        // AI budget dashboard aggregation
+	controlHandlers.SetGeoIP(geoIPHealth{                      // §37: .mmdb load status
+		reader:      geoipReader,
+		anonPending: cfg.GeoIPAnonDBPath != "",
+	})
+	controlHandlers.SetAIStore(aiStore) // AI budget dashboard aggregation
 	// Same off→on activation hook as the admin flag endpoints — /extensions
 	// is the primary manage surface, so enabling a flag there must not skip
 	// the activation fan-out (§80 wiki stub seeding).
@@ -9718,6 +9754,23 @@ func (a audienceResolverAdapter) ResolveScope(ctx context.Context, userID pgtype
 
 	return groups, uc.Permissions, a.rbac.IsSuperAdmin(ctx, userID), nil
 }
+
+// ---------------------------------------------------------------------------
+// Adapter: geoip.Reader → control.GeoIPHealthChecker
+// ---------------------------------------------------------------------------
+
+// geoIPHealth exposes GeoIP database load status to the Control Panel
+// health view (Section 37). anonPending records whether JC_GEOIP_ANON_DB_PATH
+// was configured so the anonymous-IP check only appears when an operator
+// asked for that database.
+type geoIPHealth struct {
+	reader      *geoip.Reader
+	anonPending bool
+}
+
+func (g geoIPHealth) IsLoaded() bool            { return g.reader.IsLoaded() }
+func (g geoIPHealth) AnonymousConfigured() bool { return g.anonPending }
+func (g geoIPHealth) AnonymousLoaded() bool     { return g.reader.AnonymousLoaded() }
 
 // ---------------------------------------------------------------------------
 // Adapter: wallet.Service → payments.CreditSpender

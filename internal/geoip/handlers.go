@@ -64,11 +64,29 @@ type GeoSpace struct {
 type Handlers struct {
 	reader *Reader
 	spaces SpacesService
+	// vpnCheck reports whether anonymous-IP detection is enabled
+	// (geoip.anonymous_ip_enabled). Nil means disabled — is_vpn then
+	// always emits false per Section 37.
+	vpnCheck func(ctx context.Context) bool
 }
 
 // NewHandlers creates new geo handlers.
 func NewHandlers(reader *Reader, spacesService SpacesService) *Handlers {
 	return &Handlers{reader: reader, spaces: spacesService}
+}
+
+// SetVPNChecker wires the geoip.anonymous_ip_enabled setting reader so
+// is_vpn reflects the anonymous-IP record only while the feature is on.
+func (h *Handlers) SetVPNChecker(fn func(ctx context.Context) bool) {
+	h.vpnCheck = fn
+}
+
+// isVPN projects GeoContext.IsVPN into the response contract: true only
+// when the anonymous-IP DB flagged the address AND the feature setting is
+// enabled (Section 37 — "is_vpn is always false" while the integration is
+// off).
+func (h *Handlers) isVPN(ctx context.Context, geo GeoContext) bool {
+	return geo.IsVPN && h.vpnCheck != nil && h.vpnCheck(ctx)
 }
 
 // HandleGeoMe returns geo data for the current request IP.
@@ -92,10 +110,9 @@ func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
 		"latitude":         geo.Latitude,
 		"longitude":        geo.Longitude,
 		"suggested_spaces": h.suggestedSpaces(r, geo),
-		// GeoLite2-City carries no anonymous-IP data; is_vpn is always false
-		// until a GeoLite2-Anonymous-IP integration is enabled via the
-		// geoip.anonymous_ip_enabled system setting (Section 37).
-		"is_vpn": false,
+		// Populated from the anonymous-IP record only when a second .mmdb
+		// is loaded and geoip.anonymous_ip_enabled is on (Section 37).
+		"is_vpn": h.isVPN(r.Context(), geo),
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})
@@ -142,8 +159,8 @@ func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 		"time_zone":    geo.TimeZone,
 		"latitude":     geo.Latitude,
 		"longitude":    geo.Longitude,
-		// See HandleGeoMe: GeoLite2-City has no anonymous-IP data.
-		"is_vpn": false,
+		// See HandleGeoMe: gated on geoip.anonymous_ip_enabled (Section 37).
+		"is_vpn": h.isVPN(r.Context(), geo),
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": resp})

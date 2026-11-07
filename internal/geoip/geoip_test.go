@@ -203,6 +203,99 @@ func TestReader_Close_Idempotent(t *testing.T) {
 	}
 }
 
+// TestReader_LoadAnonymousDB_Missing verifies the anonymous-IP loader
+// degrades gracefully: a missing file returns an error, AnonymousLoaded
+// stays false, and City lookups are unaffected.
+func TestReader_LoadAnonymousDB_Missing(t *testing.T) {
+	t.Parallel()
+
+	r := &Reader{}
+	if err := r.LoadAnonymousDB(t.TempDir() + "/missing.mmdb"); err == nil {
+		t.Fatal("LoadAnonymousDB on a missing path must return an error")
+	}
+
+	if r.AnonymousLoaded() {
+		t.Error("AnonymousLoaded = true after failed load")
+	}
+
+	gc := r.Lookup("8.8.8.8")
+	if gc.IsVPN {
+		t.Error("IsVPN = true without an anonymous-IP database")
+	}
+}
+
+// TestReader_Close_ClosesAnonymous verifies Close releases the anon reader
+// alongside the city reader (SwapAnonymous(nil) semantics).
+func TestReader_Close_ClosesAnonymous(t *testing.T) {
+	r := &Reader{}
+	r.SwapAnonymous(nil) // no-op on unloaded; must not panic
+	r.Close()
+
+	if r.AnonymousLoaded() {
+		t.Error("AnonymousLoaded = true after Close")
+	}
+}
+
+// TestHandlers_IsVPNGating verifies is_vpn emission honours the
+// geoip.anonymous_ip_enabled contract: the raw anonymous-IP flag only
+// surfaces when the checker reports the setting on (Section 37).
+func TestHandlers_IsVPNGating(t *testing.T) {
+	t.Parallel()
+
+	geo := GeoContext{IsValid: true, CountryCode: "NG", IsVPN: true}
+
+	// No checker wired → disabled → always false (spec default).
+	h := NewHandlers(&Reader{}, &mockSpacesService{})
+	if h.isVPN(t.Context(), geo) {
+		t.Error("is_vpn emitted without a wired checker")
+	}
+
+	// Setting off → false even though the DB flagged the IP.
+	h.SetVPNChecker(func(context.Context) bool { return false })
+	if h.isVPN(t.Context(), geo) {
+		t.Error("is_vpn emitted while the setting is off")
+	}
+
+	// Setting on + flagged IP → true.
+	h.SetVPNChecker(func(context.Context) bool { return true })
+	if !h.isVPN(t.Context(), geo) {
+		t.Error("is_vpn suppressed while the setting is on and the IP is flagged")
+	}
+
+	// Setting on but the IP is not flagged → false.
+	if h.isVPN(t.Context(), GeoContext{IsValid: true, CountryCode: "NG"}) {
+		t.Error("is_vpn emitted for an unflagged IP")
+	}
+}
+
+// TestHandleGeoMe_IsVPN verifies the /geo/me response projects is_vpn
+// through the settings gate end-to-end.
+func TestHandleGeoMe_IsVPN(t *testing.T) {
+	t.Parallel()
+
+	svc := &mockSpacesService{
+		countryErr: errors.New("not found"),
+		cityErr:    errors.New("not found"),
+	}
+	h := NewHandlers(&Reader{}, svc)
+	h.SetVPNChecker(func(context.Context) bool { return true })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/geo/me", nil)
+	req = withGeoContext(req, GeoContext{CountryCode: "NG", IsValid: true, IsVPN: true})
+	rec := httptest.NewRecorder()
+
+	h.HandleGeoMe(rec, req)
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshalling body: %v", err)
+	}
+
+	if data := body["data"].(map[string]any); data["is_vpn"] != true {
+		t.Errorf("is_vpn = %v, want true", data["is_vpn"])
+	}
+}
+
 // TestExtractMMDB_ValidArchive verifies that extractMMDB correctly
 // extracts a .mmdb file from a .tar.gz archive.
 func TestExtractMMDB_ValidArchive(t *testing.T) {

@@ -78,6 +78,16 @@ type SearchHealthChecker interface {
 	Name() string
 }
 
+// GeoIPHealthChecker reports GeoIP database load status for the Control
+// Panel infrastructure health group (Section 37). The anonymous-IP
+// database is optional — AnonymousConfigured reports whether a path was
+// set so its check only appears when the operator asked for it.
+type GeoIPHealthChecker interface {
+	IsLoaded() bool
+	AnonymousConfigured() bool
+	AnonymousLoaded() bool
+}
+
 // Handlers holds dependencies for control panel HTTP handlers.
 type Handlers struct {
 	DB                *db.DB
@@ -90,6 +100,7 @@ type Handlers struct {
 	Settings          *config.Settings
 	Valkey            valkeycompat.Cmdable
 	SearchEngine      SearchHealthChecker
+	GeoIP             GeoIPHealthChecker
 	WSHub             *websocket.Hub
 	Honcho            HonchoHealthChecker
 	AIStore           *ai.Store
@@ -171,6 +182,13 @@ func (h *Handlers) SetWSHub(hub *websocket.Hub) {
 // group (ADR-027).
 func (h *Handlers) SetHoncho(hc HonchoHealthChecker) {
 	h.Honcho = hc
+}
+
+// SetGeoIP injects the GeoIP status checker for the infrastructure health
+// group (Section 37) — an unloaded .mmdb degrades every geo-aware surface
+// silently, so it must be visible alongside PostgreSQL/Valkey.
+func (h *Handlers) SetGeoIP(g GeoIPHealthChecker) {
+	h.GeoIP = g
 }
 
 // SetAIStore injects the AI usage store for the AI budget dashboard
@@ -600,6 +618,29 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 			_, err := h.Valkey.Ping(ctx).Result()
 			return err
 		}))
+	}
+
+	// GeoIP (Section 37): a missing/unloadable .mmdb degrades geo-aware
+	// surfaces to defaults without erroring any request — the only place
+	// that failure is visible is here.
+	if h.GeoIP != nil {
+		infrastructure = append(infrastructure, checkService("GeoIP", func(_ context.Context) error {
+			if !h.GeoIP.IsLoaded() {
+				return errors.New("city database not loaded")
+			}
+
+			return nil
+		}))
+
+		if h.GeoIP.AnonymousConfigured() {
+			infrastructure = append(infrastructure, checkService("GeoIP Anonymous-IP", func(_ context.Context) error {
+				if !h.GeoIP.AnonymousLoaded() {
+					return errors.New("anonymous-IP database not loaded")
+				}
+
+				return nil
+			}))
+		}
 	}
 
 	application := []serviceStatus{

@@ -2,7 +2,8 @@
 // personalization (ADR-064). It runs after the GeoIP middleware and resolves
 // the effective content country for the current request, using this priority:
 //
-//  1. Explicit ?geo= query parameter (when present and valid)
+//  1. Explicit ?geo= query parameter ("?geo=NG" pins a country; "?geo=all"
+//     explicitly requests global — empty ContentCountry)
 //  2. Authenticated user's content_country_preference (when set)
 //  3. Archetype-resolved ContentCountry (origin_visitor → destination/origin;
 //     diaspora/global_traveler → current country)
@@ -12,7 +13,13 @@
 // The resolved context is cached in Valkey under jc:visitor:ctx:{session_id}
 // with a 30-minute TTL (ADR-064) to avoid repeated DB lookups for
 // authenticated users. The cache key is the JWT JTI (session ID) for
-// authenticated requests and the client IP for anonymous requests.
+// authenticated requests; anonymous guests resolve under
+// jc:visitor:ctx:journey:{token} when they carry a journey cookie and
+// jc:visitor:ctx:ip:{ip} otherwise — never the IP key for cookied journeys,
+// so one guest's journey cannot bleed to another guest on the same NAT IP.
+// Param-only journeys (?journey_*) are transient and are not cached.
+// The geo-config fingerprint rides inside the cached payload (not the key)
+// so plain-key DEL invalidation keeps working.
 //
 // Archetype market lists (origin vs destination countries) are config-driven
 // via system_settings geo_personalization.origin_markets and
@@ -279,8 +286,8 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	// in the trending SQL means "no geo filter", while "NG" would filter
 	// to Nigeria only (BUG-VIS-001).
 	if !res.geoPersonalizationEnabled(r.Context()) {
-		if q := normalizeCountry(r.URL.Query().Get("geo")); q != "" {
-			vc.ContentCountry = q
+		if cc, ok := explicitGeoParam(r); ok {
+			vc.ContentCountry = cc
 			vc.Source = "query"
 		} else {
 			vc.ContentCountry = ""
@@ -291,8 +298,9 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	}
 
 	// 1. Explicit ?geo= query parameter — always wins when present.
-	if q := normalizeCountry(r.URL.Query().Get("geo")); q != "" {
-		vc.ContentCountry = q
+	// "?geo=all" explicitly requests global ranking (ADR-064 §2).
+	if cc, ok := explicitGeoParam(r); ok {
+		vc.ContentCountry = cc
 		vc.Source = "query"
 
 		return vc
@@ -306,8 +314,8 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 
 	// Determine cache key and auth state.
 	// ADR-064: cache key is jc:visitor:ctx:{session_id} for authenticated
-	// users (using the JWT JTI as session ID) and jc:visitor:ctx:ip:{ip}
-	// for anonymous visitors.
+	// users (using the JWT JTI as session ID). Anonymous guests resolve
+	// under a journey-token or IP scope — see anonCacheKey.
 	var cacheKey string
 
 	if user != nil {
@@ -318,19 +326,12 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 			cacheKey = valkey.MustKey("visitor:ctx:user:%s", user.UserID.String())
 		}
 	} else {
-		cacheKey = valkey.MustKey("visitor:ctx:ip:%s", clientip.FromRequest(r))
-	}
-
-	// Fold the geo config fingerprint into the cache key so market-list and
-	// related setting changes self-invalidate cached contexts instead of
-	// waiting out the 30-minute TTL.
-	if cacheKey != "" {
-		cacheKey += ":" + res.geoConfigFingerprint(r.Context())
+		cacheKey = res.anonCacheKey(r)
 	}
 
 	// Try cache first. cacheKey is empty when the anonymous visitor has no
 	// platform context (BUG-V001: we skip caching rather than risk cross-platform
-	// bleed on an unscoped key).
+	// bleed on an unscoped key) or carries only transient ?journey_* params.
 	if res.rdb != nil && cacheKey != "" {
 		if cached, err := res.rdb.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
 			if cv, ok := res.unmarshalCache(r.Context(), cached); ok {
@@ -637,12 +638,83 @@ func (res *Resolver) defaultCountry(ctx context.Context) string {
 	return fallback
 }
 
+// cachedVisitorContext is the on-wire cache payload: the resolved context
+// plus the geo-config fingerprint it was resolved under. The fingerprint
+// rides inside the value — not the key — so the plain scope keys
+// (visitor:ctx:{session|user|ip|journey}) remain directly DEL-able by the
+// invalidation call sites, while a config change still self-invalidates:
+// a fingerprint mismatch on read is treated as a miss and re-resolves.
+type cachedVisitorContext struct {
+	Fingerprint string         `json:"fp"`
+	VC          VisitorContext `json:"vc"`
+}
+
+// anonCacheKey picks the cache scope for an anonymous visitor. A guest
+// carrying a jc_journey_token cookie resolves under the journey token —
+// never the shared IP key, or the journey fields baked into the cached
+// context (origin, destination, stage, visa) would bleed to every other
+// guest behind the same NAT/CGNAT address. Guests carrying only transient
+// ?journey_* params (shared links) get no cache entry: their context must
+// not land under the IP key either, and a param-hash key would multiply
+// pointless entries.
+func (res *Resolver) anonCacheKey(r *http.Request) string {
+	if c, err := r.Cookie("jc_journey_token"); err == nil && c.Value != "" {
+		return valkey.MustKey("visitor:ctx:journey:%s", c.Value)
+	}
+
+	if hasJourneyParams(r) {
+		return ""
+	}
+
+	return valkey.MustKey("visitor:ctx:ip:%s", clientip.FromRequest(r))
+}
+
+// hasJourneyParams reports whether the request carries any of the
+// ?journey_* query parameters enrichGuestJourney honours.
+func hasJourneyParams(r *http.Request) bool {
+	q := r.URL.Query()
+
+	for _, k := range []string{
+		"journey_origin", "journey_destination", "journey_stage",
+		"journey_intent", "journey_visa", "journey_purpose", "journey_travel_date",
+	} {
+		if q.Get(k) != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// explicitGeoParam parses the ?geo= override. "all" (any case) is the
+// documented explicit-global value (ADR-064 §2): it returns ok=true with an
+// empty country — ContentCountry stays "" which downstream treats as "no
+// geo filter". A valid ISO code returns (cc, true); an absent or invalid
+// value returns ("", false) so resolution proceeds normally.
+func explicitGeoParam(r *http.Request) (cc string, ok bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("geo"))
+	if raw == "" {
+		return "", false
+	}
+
+	if strings.EqualFold(raw, "all") {
+		return "", true
+	}
+
+	if cc = normalizeCountry(raw); cc != "" {
+		return cc, true
+	}
+
+	return "", false
+}
+
 // geoConfigFingerprint returns a short hash of the geo-personalization
 // settings that affect resolution (archetype market lists, city-level
-// killswitch, default country). It is appended to the visitor-context cache
-// key so a config change yields a different key — stale entries simply
-// expire unread. Reads are served by the settings L1 cache, so this costs
-// a few map lookups per request.
+// killswitch, default country). It rides inside the cached payload —
+// unmarshalCache rejects entries whose fingerprint differs, so a config
+// change self-invalidates without waiting out the 30-minute TTL. Reads are
+// served by the settings L1 cache, so this costs a few map lookups per
+// cache read/write.
 func (res *Resolver) geoConfigFingerprint(ctx context.Context) string {
 	if res.settings == nil {
 		return "nocfg"
@@ -669,26 +741,37 @@ func (res *Resolver) geoConfigFingerprint(ctx context.Context) string {
 
 // cache writes the resolved context to Valkey (best-effort, never blocks).
 func (res *Resolver) cache(ctx context.Context, key string, vc VisitorContext) {
-	if res.rdb == nil {
+	if res.rdb == nil || key == "" {
 		return
 	}
 
-	if b, err := json.Marshal(vc); err == nil {
+	payload := cachedVisitorContext{Fingerprint: res.geoConfigFingerprint(ctx), VC: vc}
+	if b, err := json.Marshal(payload); err == nil {
 		_ = res.rdb.Set(ctx, key, b, cacheTTL).Err()
 	}
 }
 
-// unmarshalCache decodes a JSON-cached VisitorContext. Returns ok=false for
-// old-format (country|source) entries so the caller re-resolves.
+// unmarshalCache decodes a cached visitor-context payload. Returns ok=false
+// for unrecognised formats — the pre-fingerprint bare VisitorContext JSON
+// and the older "country|source" string both decode to an empty fingerprint
+// and are treated as misses so the caller re-resolves.
 func (res *Resolver) unmarshalCache(ctx context.Context, s string) (VisitorContext, bool) {
 	if len(s) == 0 || s[0] != '{' {
 		return VisitorContext{}, false
 	}
 
-	var vc VisitorContext
-	if err := json.Unmarshal([]byte(s), &vc); err != nil {
+	var wrap cachedVisitorContext
+	if err := json.Unmarshal([]byte(s), &wrap); err != nil {
 		return VisitorContext{}, false
 	}
+
+	// Stale-shape entries (no fingerprint) and entries resolved under a
+	// different geo config must not be served.
+	if wrap.Fingerprint == "" || wrap.Fingerprint != res.geoConfigFingerprint(ctx) {
+		return VisitorContext{}, false
+	}
+
+	vc := wrap.VC
 
 	if vc.ContentCountry == "" {
 		vc.ContentCountry = res.defaultCountry(ctx)

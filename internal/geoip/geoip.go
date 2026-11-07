@@ -37,7 +37,13 @@ type GeoContext struct {
 	TimeZone    string  `json:"time_zone"`
 	Latitude    float64 `json:"latitude"`
 	Longitude   float64 `json:"longitude"`
-	IsValid     bool    `json:"-"`
+	// IsVPN is true when the anonymous-IP database flags the address
+	// (anonymous VPN, Tor exit node, public/residential proxy, hosting
+	// provider). Populated only when a second .mmdb is loaded via
+	// LoadAnonymousDB; emitted as is_vpn by handlers only when the
+	// geoip.anonymous_ip_enabled system setting is on (Section 37).
+	IsVPN   bool `json:"is_vpn"`
+	IsValid bool `json:"-"`
 }
 
 // FromContext extracts the GeoContext from the request context.
@@ -53,8 +59,12 @@ func FromContext(ctx context.Context) GeoContext {
 
 // Reader holds a pointer to the current geoip2.Reader. The pointer is
 // stored atomically so database updates can swap it without locking.
+// anon optionally holds a GeoLite2-Anonymous-IP reader (loaded via
+// LoadAnonymousDB) — the same atomic-swap pattern so its weekly update
+// needs no restart either.
 type Reader struct {
 	current atomic.Pointer[geoip2.Reader]
+	anon    atomic.Pointer[geoip2.Reader]
 }
 
 // NewReader opens a GeoLite2 database file and returns a Reader.
@@ -74,6 +84,36 @@ func NewReader(dbPath string) (*Reader, error) {
 	r.current.Store(reader)
 
 	return r, nil
+}
+
+// LoadAnonymousDB opens a GeoLite2-Anonymous-IP database file and installs
+// it as the anonymous-IP reader. Unlike NewReader it returns the open error
+// so the caller can log a misconfigured path — the Reader stays usable for
+// City lookups either way.
+func (r *Reader) LoadAnonymousDB(path string) error {
+	reader, err := geoip2.Open(path)
+	if err != nil {
+		return err
+	}
+
+	r.SwapAnonymous(reader)
+
+	return nil
+}
+
+// SwapAnonymous atomically replaces the anonymous-IP reader, closing the
+// previous one. Mirrors Swap — used by the update task after downloading a
+// fresh anonymous-IP database.
+func (r *Reader) SwapAnonymous(newReader *geoip2.Reader) {
+	old := r.anon.Swap(newReader)
+	if old != nil {
+		_ = old.Close()
+	}
+}
+
+// AnonymousLoaded returns true when an anonymous-IP database is installed.
+func (r *Reader) AnonymousLoaded() bool {
+	return r.anon.Load() != nil
 }
 
 // Lookup resolves an IP address to a GeoContext.
@@ -128,6 +168,16 @@ func (r *Reader) Lookup(ipStr string) GeoContext {
 
 	gc.IsValid = gc.CountryCode != ""
 
+	// Anonymous-IP overlay (Section 37 is_vpn): a lookup miss or absent
+	// record leaves IsVPN false — the City record stays authoritative for
+	// IsValid either way.
+	if anon := r.anon.Load(); anon != nil {
+		if rec, aerr := anon.AnonymousIP(ip); aerr == nil && rec != nil {
+			gc.IsVPN = rec.IsAnonymous || rec.IsAnonymousVPN || rec.IsTorExitNode ||
+				rec.IsPublicProxy || rec.IsResidentialProxy || rec.IsHostingProvider
+		}
+	}
+
 	return gc
 }
 
@@ -152,6 +202,8 @@ func (r *Reader) Close() {
 	if old != nil {
 		_ = old.Close()
 	}
+
+	r.SwapAnonymous(nil)
 }
 
 // IsLoaded returns true if a geoip database is currently loaded.
