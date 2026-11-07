@@ -3,7 +3,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Rss, Plus, Search, ChevronRight, Tag, Filter } from 'lucide-svelte';
+	import { Rss, Plus, Search, ChevronRight, ChevronDown, Tag, Filter } from 'lucide-svelte';
 	import {
 		EntityHero,
 		GuideSlideOver,
@@ -27,6 +27,22 @@
 	import type { Source } from '$lib/types/sources';
 
 	let { data }: { data: PageData } = $props();
+
+	// Load more — client-side appends (replaces Previous/Next pagination);
+	// resets when the SSR list changes (filter/sort/search navigation).
+	let allSources = $state<Source[]>(untrack(() => data.sources));
+	let loadingMore = $state(false);
+	let moreError = $state(false);
+	$effect(() => {
+		const fresh = data.sources;
+		untrack(() => {
+			allSources = fresh;
+			moreError = false;
+		});
+	});
+
+	const total = $derived(data.meta?.total ?? 0);
+	const pageSize = $derived(data.pageSize);
 
 	const title = $derived(t('sources.title', 'Sources — {site}'));
 	const description = $derived(
@@ -131,20 +147,6 @@
 		goto(qs ? `/sources?${qs}` : '/sources', { keepFocus: true });
 	}
 
-	function pageUrl(pageNumber: number) {
-		const url = new URL(page.url);
-		url.searchParams.set('sort', data.sort);
-		if (data.q) url.searchParams.set('q', data.q);
-		else url.searchParams.delete('q');
-		if (data.category) url.searchParams.set('category', data.category);
-		else url.searchParams.delete('category');
-		if (data.sourceKind) url.searchParams.set('source_kind', data.sourceKind);
-		else url.searchParams.delete('source_kind');
-		if (pageNumber > 1) url.searchParams.set('page', String(pageNumber));
-		else url.searchParams.delete('page');
-		return url;
-	}
-
 	async function sourceSearchFetcher(q: string): Promise<SearchSuggestion[]> {
 		const res = await api.get<Source[]>(`/sources?q=${encodeURIComponent(q)}&page_size=8`);
 		if (res.error || !res.data) return [];
@@ -155,6 +157,34 @@
 			excerpt: s.domain,
 			type: 'source'
 		}));
+	}
+
+	async function loadMore() {
+		if (loadingMore || allSources.length >= total) return;
+		loadingMore = true;
+		moreError = false;
+		try {
+			const params = new URLSearchParams();
+			if (data.q) params.set('q', data.q);
+			if (data.category) params.set('category', data.category);
+			if (data.sourceKind) params.set('source_kind', data.sourceKind);
+			params.set('sort', data.sort);
+			params.set('page_size', String(pageSize));
+			params.set('page_offset', String(allSources.length));
+			const res = await api.get<{ items?: Source[]; data?: Source[] } | Source[]>(
+				`/sources?${params.toString()}`
+			);
+			const payload = (res as { data?: unknown }).data ?? res;
+			const next: Source[] = Array.isArray(payload)
+				? payload
+				: ((payload as { items?: Source[] }).items ?? []);
+			const seen = new Set(allSources.map((s) => s.slug));
+			allSources = [...allSources, ...next.filter((s) => !seen.has(s.slug))];
+		} catch {
+			moreError = true;
+		} finally {
+			loadingMore = false;
+		}
 	}
 
 </script>
@@ -354,41 +384,27 @@
 			</p>
 		{:else}
 			<div class="grid gap-3 grid-cols-1 sm:grid-cols-2">
-				{#each data.sources as source (source.slug)}
+				{#each allSources as source (source.slug)}
 					<SourceCard {source} />
 				{/each}
 			</div>
 		{/if}
 
-		{#if data.meta && data.meta.total}
-			{@const total = data.meta.total}
-			{@const pageSize = data.pageSize}
-			{@const lastPage = Math.max(1, Math.ceil(total / pageSize))}
-			<div class="flex items-center justify-between pt-4 text-sm">
-				{#if data.page > 1}
-					<a
-						href={pageUrl(data.page - 1).toString()}
-						class="rounded-md border border-[var(--color-border)] px-3 py-2"
-					>
-						{t('pagination.previous', 'Previous')}
-					</a>
-				{:else}
-					<span></span>
-				{/if}
-				<span class="text-[var(--color-text-subtle)]">
-					{t('pagination.page', 'Page {page} of {total}')
-						.replace('{page}', String(data.page))
-						.replace('{total}', String(lastPage))}
-				</span>
-				{#if data.page < lastPage}
-					<a
-						href={pageUrl(data.page + 1).toString()}
-						class="rounded-md border border-[var(--color-border)] px-3 py-2"
-					>
-						{t('pagination.next', 'Next')}
-					</a>
-				{:else}
-					<span></span>
+		{#if total > 0}
+			<div class="mt-4 flex justify-center">
+				<button
+					type="button"
+					onclick={loadMore}
+					disabled={loadingMore || allSources.length >= total}
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+				>
+					{loadingMore ? t('common.loading', 'Loading…') : t('common.load_more', 'Load more')}
+					<ChevronDown size={14} />
+				</button>
+				{#if moreError}
+					<span class="ml-3 text-sm text-[var(--color-text-subtle)]">
+						{t('common.load_error', 'Failed to load more. Please try again.')}
+					</span>
 				{/if}
 			</div>
 		{/if}

@@ -1221,6 +1221,22 @@ func mapAutocompleteResults(indexResults []IndexResult) []AutocompleteSuggestion
 		}
 	}
 
+	// §54 omnibus — contents surface first in the omnibox: content-type
+	// suggestions lead, followed by users, spaces, tags, and doc pages,
+	// preserving relative order within each group.
+	ordered := make([]AutocompleteSuggestion, 0, len(suggestions))
+	for _, s := range suggestions {
+		if s.Type == "content" {
+			ordered = append(ordered, s)
+		}
+	}
+	for _, s := range suggestions {
+		if s.Type != "content" {
+			ordered = append(ordered, s)
+		}
+	}
+	suggestions = ordered
+
 	return suggestions
 }
 
