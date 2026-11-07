@@ -176,6 +176,8 @@ func (extractorPortDouble) Extract(_ context.Context, _, _, _, _ string) ([]Inte
 	return nil, nil
 }
 
+func (extractorPortDouble) SupportsPrompt(_ string) bool { return true }
+
 func allTaskTypes() []string {
 	types := []string{
 		// Critical

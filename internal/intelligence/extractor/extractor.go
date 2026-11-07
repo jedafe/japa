@@ -430,6 +430,18 @@ var universityPrompt string
 //go:embed prompts/university_course.txt
 var universityCoursePrompt string
 
+//go:embed prompts/wiki_page.txt
+var wikiPagePrompt string
+
+//go:embed prompts/language_test_requirement.txt
+var languageTestPrompt string
+
+//go:embed prompts/tax_obligation_guide.txt
+var taxObligationPrompt string
+
+//go:embed prompts/community_organisation.txt
+var communityOrganisationPrompt string
+
 // promptTemplates maps entity_type → embedded prompt template. Adding a
 // domain = add a //go:embed line + an entry here. No buildPrompt code
 // change.
@@ -453,6 +465,20 @@ var promptTemplates = map[string]string{
 	schemas.EntityTypeNews:              newsPrompt,
 	schemas.EntityTypeUniversity:        universityPrompt,
 	schemas.EntityTypeUniversityCourse:  universityCoursePrompt,
+	schemas.EntityTypeWikiPage:          wikiPagePrompt,
+	schemas.EntityTypeLanguageTest:      languageTestPrompt,
+	schemas.EntityTypeTaxObligation:     taxObligationPrompt,
+	schemas.EntityTypeCommunityOrganisation: communityOrganisationPrompt,
+}
+
+// HasPromptTemplate reports whether a registered extraction prompt exists
+// for entityType — the worker's extract task consults it before calling
+// Extract so a schema-only type (schema + promoter but no template)
+// degrades to a review stub instead of failing the whole task on
+// buildPrompt's error.
+func HasPromptTemplate(entityType string) bool {
+	_, ok := promptTemplates[entityType]
+	return ok
 }
 
 // buildPrompt loads the prompt template for the given entity schema and

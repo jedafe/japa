@@ -172,6 +172,15 @@ func (a *intelExtractorPortAdapter) Extract(ctx context.Context, entityType, sou
 	return a.recordsToResults(sourceURL, result.Records)
 }
 
+// SupportsPrompt reports whether the extractor has a prompt template
+// registered for entityType — the worker consults it before dispatching so
+// a schema-registered type with no template degrades to a review stub
+// (no_prompt_template) instead of failing the whole task on buildPrompt's
+// deterministic error.
+func (a *intelExtractorPortAdapter) SupportsPrompt(entityType string) bool {
+	return extractor.HasPromptTemplate(entityType)
+}
+
 // intelPromoterPortAdapter wraps a promoter.Promoter so it satisfies the
 // worker.intelPromoterPort interface without the worker package importing
 // internal/intelligence/promoter. One adapter is registered per domain

@@ -109,6 +109,12 @@ type IntelPromoteResult struct {
 // schemas.CategoryToEntityType.
 type intelExtractorPort interface {
 	Extract(ctx context.Context, entityType, sourceURL, sourceType, sourceText string) ([]IntelExtractResult, error)
+	// SupportsPrompt reports whether an extraction prompt template exists
+	// for entityType — a schema-registered type with no template can never
+	// extract, so the task skips to a review stub instead of failing on
+	// buildPrompt's deterministic error (worker → extractor import cycle
+	// keeps the registry check behind this port).
+	SupportsPrompt(entityType string) bool
 }
 
 // IntelExtractResult mirrors the fields the worker persists from one record
@@ -423,6 +429,7 @@ type intelPostPublishPayload struct {
 	RecordID   string `json:"record_id"`
 	DomainID   string `json:"domain_id"`
 	EntityType string `json:"entity_type"`
+	ContentID  string `json:"content_id,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -1926,7 +1933,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 
 	var persisted int
 
-	var retriesExhausted, curateOnly bool
+	var retriesExhausted, curateOnly, noTemplate bool
 
 	var lastEntityErr error
 
@@ -1940,6 +1947,19 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 			slog.Warn("task:intel:extract: curate-only entity type reached extract, skipping", "raw_doc_id", p.RawDocID, "entity_type", entityType)
 
 			curateOnly = true
+
+			continue
+		}
+
+		// Schema-registered types without a prompt template can never
+		// extract — buildPrompt's "no prompt template" error is
+		// deterministic, so failing the task on it just burns asynq
+		// retries. Skip to the review stub instead (no_prompt_template).
+		if !intelExtractor.SupportsPrompt(entityType) {
+			slog.Warn("task:intel:extract: no prompt template for entity type, skipping", "raw_doc_id", p.RawDocID, "entity_type", entityType)
+
+			noTemplate = true
+			lastEntityErr = fmt.Errorf("extractor: no prompt template for entity type %q", entityType)
 
 			continue
 		}
@@ -2001,12 +2021,16 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if persisted == 0 {
-		if retriesExhausted || curateOnly {
-			slog.Warn("task:intel:extract: no extractable entity types, routing to review", "raw_doc_id", p.RawDocID, "retries_exhausted", retriesExhausted, "curate_only", curateOnly)
+		if retriesExhausted || curateOnly || noTemplate {
+			slog.Warn("task:intel:extract: no extractable entity types, routing to review", "raw_doc_id", p.RawDocID, "retries_exhausted", retriesExhausted, "curate_only", curateOnly, "no_template", noTemplate)
 
 			reason, detail := "curate_only_entity_type", "resolved entity types have no extraction path"
 			if retriesExhausted {
 				reason = "extraction_retries_exhausted"
+			}
+
+			if noTemplate {
+				reason = "no_prompt_template"
 			}
 
 			if lastEntityErr != nil {
@@ -3344,6 +3368,7 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 		RecordID:   p.RecordID,
 		DomainID:   result.DomainID.String(),
 		EntityType: record.EntityType,
+		ContentID:  result.ContentID.String(),
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelPostPublish, payload)
@@ -3460,6 +3485,21 @@ func HandleIntelPostPublish(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("task:intel:post_publish: event published", "entity_type", p.EntityType, "domain_id", domainID.String())
+
+	// When the promoter wrote a real contents row (guide_content domains),
+	// sync it into the index side-effects — §69 scoped-retrieval amendment:
+	// every publish transition must re-index, not just those flowing through
+	// the HTTP update handler. Without this, intel-promoted contents never
+	// reach Meilisearch or the RAG embedding store. Projection-table domains
+	// (ContentID unset) skip — Studio owns their contents row lifecycle.
+	if p.ContentID != "" && p.ContentID != uuid.Nil.String() {
+		if contentID, cerr := scanUUID(p.ContentID); cerr == nil {
+			EnqueueSearchIndexSync(ctx, entityTypeContent, contentID)
+			EnqueueContentEmbedding(ctx, contentID)
+		} else {
+			slog.Warn("task:intel:post_publish: bad content_id, skipping index fan-out", "content_id", p.ContentID, "error", cerr)
+		}
+	}
 
 	return nil
 }

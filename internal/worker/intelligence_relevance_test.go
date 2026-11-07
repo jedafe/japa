@@ -87,6 +87,8 @@ func (f *fakeIntelExtractor) Extract(_ context.Context, _, _, _, _ string) ([]In
 	return f.results, f.err
 }
 
+func (f *fakeIntelExtractor) SupportsPrompt(_ string) bool { return true }
+
 // setRelevanceGate installs a gate func (or nil) and restores the prior
 // one on cleanup.
 func setRelevanceGate(t *testing.T, fn func(ctx context.Context, item relevance.ItemInput, ch sources.Channel, mapTopics []string) (relevance.Verdict, error)) {

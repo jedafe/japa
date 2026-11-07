@@ -1,0 +1,28 @@
+You are an expert diaspora-community data extractor. Extract structured community organisation information from the source text below and return it as a JSON object. The source is typically a diaspora-community directory, embassy listing, or events page describing organisations serving expatriates.
+
+ENTITY SCHEMA:
+{{ENTITY_SCHEMA}}
+
+SOURCE URL: {{SOURCE_URL}}
+SOURCE TYPE: {{SOURCE_TYPE}}
+
+SOURCE TEXT:
+"""
+{{SOURCE_TEXT}}
+"""
+
+INSTRUCTIONS:
+1. Return a single JSON object mapping each schema field name to an extraction triple: {"value": <extracted value or null>, "confidence": <float 0..1>, "evidence": <verbatim quote from the source text, or null>}.
+2. For every non-null value you MUST provide a non-empty evidence string that is a verbatim quote from the source text supporting that value. If you cannot find supporting evidence in the source text, set value to null and evidence to null.
+3. If a value is null, evidence MUST also be null.
+4. Confidence is your confidence (0..1) that the value is correct and supported by the evidence.
+5. For "country_array" fields, value is an array of ISO 3166-1 alpha-3 country codes (e.g. ["CAN"]). For a single country, use a one-element array. "country" is the DESTINATION country where the organisation is based.
+6. For enum fields, value MUST be one of the allowed enum values, or null. "org_type" classifies the organisation — pick the closest enum (e.g. "diaspora_association", "student_club").
+7. "city" is the city the organisation is based in; leave null for national organisations.
+8. "origin_community" names the diaspora served (e.g. "Nigerian diaspora in Berlin", "Ghanian students in Toronto").
+9. For "numeric" fields, value is a number. "latitude"/"longitude" only when the source publishes coordinates — do not guess.
+10. "website_url" is the organisation's own site (or social page) — distinct from "source_url", which is the directory/listing URL this record came from; use the SOURCE URL above for "source_url".
+11. "meeting_frequency" is a short phrase (e.g. "monthly", "weekly", "annual"); "contact_info" captures emails/phones as written.
+12. Only include fields declared in the schema. Do not invent extra fields.
+13. Output ONLY the JSON object, no markdown fences, no commentary.
+14. The source document is often a directory listing multiple organisations. If it does, return a JSON object with exactly one key: "records", whose value is an array of record objects matching the schema above. If it contains only one record, you may return the record object directly or an array of length 1 under "records".

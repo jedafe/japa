@@ -3,11 +3,14 @@ package promoter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/content"
@@ -47,8 +50,7 @@ func extractedFieldValues(ext extractor.Extraction) []byte {
 // standalone projection table —
 // the promoter creates a contents row (content_type='guide',
 // guide_category=<category>) and the extraction is the projection. The
-// intel_record itself carries the confidence/freshness/editorial_overrides
-// provenance.
+// intel_record itself carries the confidence/freshness provenance.
 type GuideContentStore interface {
 	PersonaResolver
 	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
@@ -62,6 +64,8 @@ type GuideContentStore interface {
 // GuideContentTxStore is the transactional subset.
 type GuideContentTxStore interface {
 	CreateContent(ctx context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+	GetContentByID(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
+	UpdateContent(ctx context.Context, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
 	UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateIntelRecordPromotedParams) error
 	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
@@ -75,15 +79,12 @@ type GuideContentTxStore interface {
 // is a separate promoter instance with a different entityType +
 // guideCategory (+ contentType when not 'guide').
 //
-// On the update path, the promoter re-extracts the body from the
-// extraction and updates the contents row. Editorial overrides are
-// tracked via the intel_record's editorial_overrides column (set by the
-// moderation surface) — when a field is overridden, the promoter skips
-// updating the contents body for that field. Because the guide content
-// types store all structured data in custom_field_values (not in the
-// contents row itself), the promoter writes the body as a JSON
-// serialization of the extraction and the moderation surface edits
-// individual custom fields.
+// On the update path, the promoter re-derives title/body/field_values/
+// canonical_url from the extraction and writes them back to the contents
+// row while preserving editorial columns (slug, status, images, meta/seo,
+// publish stamps). contents has no per-field override tracking, so the
+// guard rails are the is_locked flag (locked rows are skipped entirely)
+// and the auto_update review log, which records the real field-level diff.
 type GuideContentPromoter struct {
 	store         GuideContentStore
 	authorID      pgtype.UUID
@@ -166,57 +167,8 @@ func (p *GuideContentPromoter) Promote(ctx context.Context, recordID uuid.UUID) 
 }
 
 func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
-	title := stringField(ext, "title")
-	if title == "" {
-		title = source.Name
-	}
-
-	body := guideBodyFromExtraction(ext, title)
-	slug := content.Slugify(title)
-	hash := content.ComputeContentHash(body)
-	// Prefer the extraction's own article link (news schema carries
-	// article_url — the per-item URL is a better canonical than the feed
-	// URL); fall back to the source URL when absent.
-	canonicalURL := source.SourceUrl
-	if u := stringField(ext, "article_url"); u != "" {
-		canonicalURL = u
-	}
-
-	// guide_category only applies to the 'guide' content type; other
-	// content-projection domains (e.g. news) leave it NULL.
-	var guideCategory *string
-	if p.guideCategory != "" {
-		guideCategory = &p.guideCategory
-	}
-
-	contentParams := gen.CreateContentParams{
-		AuthorID:        resolveAuthorID(ctx, p.store, source, p.authorID),
-		FieldValues:     extractedFieldValues(ext),
-		ContentType:     p.contentType,
-		Title:           title,
-		Slug:            slug,
-		Body:            body,
-		BodyHtml:        "<p>" + html.EscapeString(body) + "</p>",
-		ContentHash:     &hash,
-		CanonicalUrl:    &canonicalURL,
-		Status:          "published",
-		Visibility:      "public",
-		SeoIndexable:    true,
-		ReadTimeMinutes: content.ComputeReadTime(body),
-		GuideCategory:   guideCategory,
-		PublishAt:       pgtype.Timestamptz{Time: p.now(), Valid: true},
-		PublishedAt:     pgtype.Timestamptz{Time: p.now(), Valid: true},
-		AiGenerated:     true,      // ADR-088: mark as AI-generated (INTEL-003)
-		AiModel:         p.aiModel, // from intel.extraction_model system setting
-		AiGeneratedAt:   pgtype.Timestamptz{Time: p.now(), Valid: true},
-		IntelSourceID:   source.ID,
-		IntelRecordID:   record.ID,
-	}
-	// INTEL-026 fix: stamp hitl_reviewed_by when a human approved the record.
-	if reviewerID, ok := reviewerctx.ReviewerFromContext(ctx); ok {
-		contentParams.HitlReviewedBy = reviewerID
-		contentParams.HitlReviewedAt = pgtype.Timestamptz{Time: p.now(), Valid: true}
-	}
+	title := guideTitle(ext, source)
+	contentParams := p.buildCreateContentParams(ctx, record, source, ext, title)
 
 	var result PromoteResult
 
@@ -241,43 +193,174 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 	return result, err
 }
 
-func (p *GuideContentPromoter) guideUpdatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
-	// For guide content types, the update path re-derives the body from
-	// the extraction and records an auto_update review log entry. The
-	// intel_record's editorial_overrides tracks which fields are
-	// human-controlled — the moderation surface edits individual
-	// custom_field_values rows directly, and a follow-up will add
-	// field-level custom_field_values updates with editorial override
-	// checks. For now, the update path emits the review log and the
-	// ActionUpdated result so the post-publish event fires.
+// guideTitle resolves the extraction title, falling back to the source name.
+func guideTitle(ext extractor.Extraction, source gen.IntelSource) string {
 	title := stringField(ext, "title")
 	if title == "" {
 		title = source.Name
 	}
 
-	_ = guideBodyFromExtraction(ext, title) // body re-derived; contents row update is a follow-up
+	return title
+}
 
-	note := noteAutoRecrawl
-	reviewLogParams := gen.CreateIntelReviewLogParams{
-		IntelRecordID: record.ID,
-		ActorUserID:   p.authorID,
-		Action:        "auto_update",
-		FieldChanges:  []byte(`[{"field":"body","from":"<previous>","to":"<updated>"}]`),
-		Note:          &note,
+// buildCreateContentParams assembles the contents-row insert for a guide
+// promotion — shared by the create path and the update path's
+// recreate-when-missing branch.
+func (p *GuideContentPromoter) buildCreateContentParams(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction, title string) gen.CreateContentParams {
+	body := guideBodyFromExtraction(ext, title)
+	hash := content.ComputeContentHash(body)
+	// Prefer the extraction's own article link (news schema carries
+	// article_url — the per-item URL is a better canonical than the feed
+	// URL); fall back to the source URL when absent.
+	canonicalURL := source.SourceUrl
+	if u := stringField(ext, "article_url"); u != "" {
+		canonicalURL = u
+	}
+
+	// guide_category only applies to the 'guide' content type; other
+	// content-projection domains (e.g. news) leave it NULL.
+	var guideCategory *string
+	if p.guideCategory != "" {
+		guideCategory = &p.guideCategory
+	}
+
+	params := gen.CreateContentParams{
+		AuthorID:        resolveAuthorID(ctx, p.store, source, p.authorID),
+		FieldValues:     extractedFieldValues(ext),
+		ContentType:     p.contentType,
+		Title:           title,
+		Slug:            content.Slugify(title),
+		Body:            body,
+		BodyHtml:        "<p>" + html.EscapeString(body) + "</p>",
+		ContentHash:     &hash,
+		CanonicalUrl:    &canonicalURL,
+		Status:          "published",
+		Visibility:      "public",
+		SeoIndexable:    true,
+		ReadTimeMinutes: content.ComputeReadTime(body),
+		GuideCategory:   guideCategory,
+		PublishAt:       pgtype.Timestamptz{Time: p.now(), Valid: true},
+		PublishedAt:     pgtype.Timestamptz{Time: p.now(), Valid: true},
+		AiGenerated:     true,      // ADR-088: mark as AI-generated (INTEL-003)
+		AiModel:         p.aiModel, // from intel.extraction_model system setting
+		AiGeneratedAt:   pgtype.Timestamptz{Time: p.now(), Valid: true},
+		IntelSourceID:   source.ID,
+		IntelRecordID:   record.ID,
+	}
+	// INTEL-026 fix: stamp hitl_reviewed_by when a human approved the record.
+	if reviewerID, ok := reviewerctx.ReviewerFromContext(ctx); ok {
+		params.HitlReviewedBy = reviewerID
+		params.HitlReviewedAt = pgtype.Timestamptz{Time: p.now(), Valid: true}
+	}
+
+	return params
+}
+
+func (p *GuideContentPromoter) guideUpdatePath(ctx context.Context, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) (PromoteResult, error) {
+	title := guideTitle(ext, source)
+	body := guideBodyFromExtraction(ext, title)
+	hash := content.ComputeContentHash(body)
+	fieldValues := extractedFieldValues(ext)
+	canonicalURL := source.SourceUrl
+	if u := stringField(ext, "article_url"); u != "" {
+		canonicalURL = u
 	}
 
 	var result PromoteResult
 
 	err := p.store.WithTx(ctx, func(tx GuideContentTxStore) error {
-		if err := tx.CreateIntelReviewLog(ctx, reviewLogParams); err != nil {
-			return fmt.Errorf("promoter: write auto_update review log: %w", err)
+		existing, gerr := tx.GetContentByID(ctx, record.PromotedRecordID)
+		if errors.Is(gerr, pgx.ErrNoRows) {
+			// The promoted contents row was deleted — recreate it so the
+			// record still resolves to a live contents row.
+			created, cerr := tx.CreateContent(ctx, p.buildCreateContentParams(ctx, record, source, ext, title))
+			if cerr != nil {
+				return fmt.Errorf("promoter: recreate guide content: %w", cerr)
+			}
+
+			if err := tx.UpdateIntelRecordPromoted(ctx, gen.UpdateIntelRecordPromotedParams{
+				ID:               record.ID,
+				PromotedRecordID: created.ID,
+			}); err != nil {
+				return fmt.Errorf("promoter: mark intel record promoted: %w", err)
+			}
+
+			result = PromoteResult{DomainID: pgToUUID(created.ID), ContentID: pgToUUID(created.ID), Action: ActionCreated}
+
+			return nil
+		}
+
+		if gerr != nil {
+			return fmt.Errorf("promoter: load guide content: %w", gerr)
+		}
+
+		// An editor-locked row is never auto-updated — the lock is the
+		// moderation surface's "human owns this content" marker (there is
+		// no per-field override tracking on contents).
+		if existing.IsLocked {
+			note := "auto_update skipped: contents row is editor-locked"
+			if lerr := tx.CreateIntelReviewLog(ctx, gen.CreateIntelReviewLogParams{
+				IntelRecordID: record.ID,
+				ActorUserID:   p.authorID,
+				Action:        "auto_update",
+				FieldChanges:  []byte(`[]`),
+				Note:          &note,
+			}); lerr != nil {
+				return fmt.Errorf("promoter: write lock-skip review log: %w", lerr)
+			}
+
+			result = PromoteResult{DomainID: pgToUUID(existing.ID), ContentID: pgToUUID(existing.ID), Action: ActionVerified}
+
+			return nil
+		}
+
+		// A re-crawl that yields no evidence-backed fields must not wipe the
+		// existing projection — a sparse page would otherwise blank every
+		// previously-extracted field. Preserve the current projection and
+		// drop it from the diff.
+		updateFieldValues := fieldValues
+		if len(fieldValues) <= 2 {
+			updateFieldValues = existing.FieldValues
+		}
+
+		changes, changed := diffGuideContent(existing, title, body, updateFieldValues, canonicalURL)
+		if len(changed) == 0 {
+			result = PromoteResult{DomainID: pgToUUID(existing.ID), ContentID: pgToUUID(existing.ID), Action: ActionVerified}
+
+			return nil
+		}
+
+		params := buildContentUpdateParams(existing, title, existing.Slug, body, hash)
+		params.FieldValues = updateFieldValues
+		params.CanonicalUrl = &canonicalURL
+		params.AiGeneratedAt = pgtype.Timestamptz{Time: p.now(), Valid: true}
+		params.AiModel = p.aiModel
+
+		if _, uerr := tx.UpdateContent(ctx, params); uerr != nil {
+			return fmt.Errorf("promoter: update guide content: %w", uerr)
+		}
+
+		changesJSON, merr := json.Marshal(changes)
+		if merr != nil {
+			return fmt.Errorf("promoter: marshal field changes: %w", merr)
+		}
+
+		note := noteAutoRecrawl
+		if lerr := tx.CreateIntelReviewLog(ctx, gen.CreateIntelReviewLogParams{
+			IntelRecordID: record.ID,
+			ActorUserID:   p.authorID,
+			Action:        "auto_update",
+			FieldChanges:  changesJSON,
+			Note:          &note,
+		}); lerr != nil {
+			return fmt.Errorf("promoter: write auto_update review log: %w", lerr)
 		}
 
 		result = PromoteResult{
-			DomainID:      pgToUUID(record.PromotedRecordID),
-			ContentID:     pgToUUID(record.PromotedRecordID),
+			DomainID:      pgToUUID(existing.ID),
+			ContentID:     pgToUUID(existing.ID),
 			Action:        ActionUpdated,
-			ChangedFields: []string{"body"},
+			ChangedFields: changed,
 		}
 
 		return nil
@@ -286,15 +369,116 @@ func (p *GuideContentPromoter) guideUpdatePath(ctx context.Context, record gen.I
 	return result, err
 }
 
+// diffGuideContent computes the real extraction-owned field diff between
+// the live contents row and the re-derived extraction — the auto_update
+// review log records these, not placeholders.
+func diffGuideContent(existing gen.GetContentByIDRow, title, body string, fieldValues []byte, canonicalURL string) ([]fieldChange, []string) {
+	changes := []fieldChange{}
+	changed := []string{}
+
+	if existing.Title != title {
+		changes = append(changes, fieldChange{Field: fieldTitle, From: existing.Title, To: title})
+		changed = append(changed, fieldTitle)
+	}
+
+	if existing.Body != body {
+		changes = append(changes, fieldChange{Field: "body", From: fmt.Sprintf("%d chars", len(existing.Body)), To: fmt.Sprintf("%d chars", len(body))})
+		changed = append(changed, "body")
+	}
+
+	// field_values is the projection for guide types — diff per key so the
+	// review log names the field that moved, not a blob.
+	changes, changed = diffFieldValues(existing.FieldValues, fieldValues, changes, changed)
+
+	existingCanonical := ""
+	if existing.CanonicalUrl != nil {
+		existingCanonical = *existing.CanonicalUrl
+	}
+
+	if existingCanonical != canonicalURL {
+		changes = append(changes, fieldChange{Field: "canonical_url", From: existingCanonical, To: canonicalURL})
+		changed = append(changed, "canonical_url")
+	}
+
+	return changes, changed
+}
+
+// diffFieldValues appends one fieldChange per differing top-level key in
+// contents.field_values ({name: value} map written by extractedFieldValues).
+// Capped at 20 entries so a wholesale rewrite doesn't bloat the log row.
+func diffFieldValues(oldJSON, newJSON []byte, changes []fieldChange, changed []string) ([]fieldChange, []string) {
+	var oldMap, newMap map[string]any
+
+	_ = json.Unmarshal(oldJSON, &oldMap)
+	_ = json.Unmarshal(newJSON, &newMap)
+
+	if len(oldMap) == 0 && len(newMap) == 0 {
+		return changes, changed
+	}
+
+	keys := map[string]struct{}{}
+	for k := range oldMap {
+		keys[k] = struct{}{}
+	}
+
+	for k := range newMap {
+		keys[k] = struct{}{}
+	}
+
+	sortedKeys := make([]string, 0, len(keys))
+	for k := range keys {
+		sortedKeys = append(sortedKeys, k)
+	}
+	sort.Strings(sortedKeys)
+
+	diffed := 0
+
+	for _, k := range sortedKeys {
+		oldV, okOld := oldMap[k]
+		newV, okNew := newMap[k]
+
+		if okOld && okNew {
+			oldB, _ := json.Marshal(oldV)
+			newB, _ := json.Marshal(newV)
+			if string(oldB) == string(newB) {
+				continue
+			}
+		}
+
+		if diffed >= 20 {
+			break
+		}
+
+		changes = append(changes, fieldChange{Field: "field_values." + k, From: oldV, To: newV})
+		diffed++
+	}
+
+	if diffed > 0 {
+		changed = append(changed, "field_values")
+	}
+
+	return changes, changed
+}
+
 // guideBodyFromExtraction serializes the extraction as a JSON body for
 // the contents row. The guide content types store structured data in
 // custom_field_values, so the body is a human-readable summary plus the
 // JSON extraction for downstream consumers.
 func guideBodyFromExtraction(ext extractor.Extraction, title string) string {
-	// Build a readable body from the extraction fields.
+	// Build a readable body from the extraction fields. Keys are sorted so
+	// the same extraction always serializes identically — an unordered map
+	// walk would produce a new content_hash on every re-crawl and trigger
+	// a spurious auto_update diff on the update path.
 	body := title + "\n\n"
 
-	for key, field := range ext {
+	keys := make([]string, 0, len(ext))
+	for key := range ext {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		field := ext[key]
 		if field.Value == nil {
 			continue
 		}
