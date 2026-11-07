@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	// Roadmap item detail — status stepper, vote pill, category chip, target
 	// window, feature-flag rollout badge, description, and the §49 comment
@@ -76,27 +77,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{item.title} — {t('roadmap.title', 'Product Roadmap')} — {siteName()}</title>
-	<meta
-		name="description"
-		content={item.summary || t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')}
-	/>
-	<link rel="canonical" href={page.url.href} />
-	<meta property="og:title" content={item.title} />
-	<meta
-		property="og:description"
-		content={item.summary || t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')}
-	/>
-	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={item.title} />
-	<meta
-		name="twitter:description"
-		content={item.summary || t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')}
-	/>
-</svelte:head>
+<SeoHead title={`${item.title} — ${t('roadmap.title', 'Product Roadmap')} — ${siteName()}`} description={item.summary || t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')} ogTitle={item.title} ogType="article" />
 
 <section class="mx-auto max-w-3xl space-y-6 px-4 py-8">
 	<a

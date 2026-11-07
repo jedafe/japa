@@ -970,12 +970,16 @@ JOIN product_types t ON t.id = p.product_type_id
 WHERE p.id = @id AND p.deleted_at IS NULL;
 
 -- name: SearchProducts :many
-SELECT p.id, p.slug, p.name, p.tagline, t.slug AS type_slug
+SELECT p.id, p.slug, p.name, p.tagline, t.slug AS type_slug, t.label AS type_label,
+       p.price_from, p.rating_avg, p.review_count,
+       m.storage_path AS logo_storage_path, m.storage_bucket AS logo_storage_bucket,
+       (SELECT count(*) FROM product_providers pp WHERE pp.product_id = p.id) AS provider_count
 FROM products p
 JOIN product_types t ON t.id = p.product_type_id
+LEFT JOIN media m ON m.id = p.logo_id
 WHERE p.deleted_at IS NULL
   AND ($1::text = '' OR t.slug = $1)
-  AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%')
+  AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%' ESCAPE '\')
 ORDER BY p.name, p.id
 LIMIT @limit_count OFFSET @offset_count;
 

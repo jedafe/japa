@@ -17,6 +17,7 @@ import type { PageServerLoad } from './$types';
 export interface ProductTypeChip {
 	slug: string;
 	label: string;
+	icon?: string;
 	entity_count: number;
 }
 
@@ -24,7 +25,14 @@ export interface ProductListItem {
 	id: string;
 	slug: string;
 	name: string;
+	tagline?: string;
 	discriminator?: string;
+	type_label?: string;
+	logo_url?: string;
+	price_from?: number;
+	rating_avg?: number;
+	review_count: number;
+	provider_count: number;
 	href: string;
 }
 

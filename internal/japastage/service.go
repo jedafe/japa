@@ -567,7 +567,7 @@ func (s *Service) resolveToolSlugs(ctx context.Context, stage, intent string) []
 // filters to that journey class (ADR-122). When both are empty, all public
 // profiles with a set stage are returned. destSpaceID, when non-empty,
 // further filters by destination (geo-aware ?dest= filter, §87).
-func (s *Service) ListByStage(ctx context.Context, stage, intent, q, sort, destSpaceID string, page, limit int32) ([]PublicProfileDTO, int64, error) {
+func (s *Service) ListByStage(ctx context.Context, stage, intent, q, sort, destSpaceID, gender string, page, limit int32) ([]PublicProfileDTO, int64, error) {
 	if stage != "" && !ValidStage(stage) {
 		return nil, 0, fmt.Errorf("invalid stage %q; must be one of: %s", stage, JoinStages())
 	}
@@ -578,6 +578,10 @@ func (s *Service) ListByStage(ctx context.Context, stage, intent, q, sort, destS
 
 	if sort != "" && !ValidDirectorySort(sort) {
 		return nil, 0, fmt.Errorf("invalid sort %q; must be one of: recent, stage_updated, name", sort)
+	}
+
+	if gender != "" && !ValidDirectoryGender(gender) {
+		return nil, 0, fmt.Errorf("invalid gender %q; must be one of: %s", gender, JoinDirectoryGenders())
 	}
 
 	if limit <= 0 {
@@ -601,7 +605,7 @@ func (s *Service) ListByStage(ctx context.Context, stage, intent, q, sort, destS
 		}
 	}
 
-	rows, total, err := s.store.ListByStage(ctx, stage, intent, q, sort, dest, limit, offset)
+	rows, total, err := s.store.ListByStage(ctx, stage, intent, q, sort, dest, gender, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("japastage: list by stage: %w", err)
 	}

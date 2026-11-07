@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -21,7 +22,9 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/docs"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/literals"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
@@ -64,6 +67,9 @@ var searchAttributesToRetrieve = []string{
 	"content_type", "slug", "avatar_url",
 	"username", "display_name", "name", "level",
 	"member_count", "content_count",
+	// §41: author_user_id feeds the post-cache mutual-block filter — it is
+	// fetched but never serialized (SearchResultItem.AuthorID is json:"-").
+	"author_user_id",
 }
 
 // indexesWithRelevantCountries is the set of search indexes that carry
@@ -79,6 +85,22 @@ var indexesWithRelevantCountries = map[string]bool{
 func hasRelevantCountries(indexUID string) bool {
 	return indexesWithRelevantCountries[indexUID]
 }
+
+// publicDocAudiences is the set of doc_pages audiences readable without
+// RBAC (§44 AudienceGates) — every audience except the gated admin and
+// superadmin sections. The shared search/autocomplete surfaces are public,
+// so doc_page hits must be limited to these audiences. Computed from the
+// docs package's canonical order and gate map so it stays correct when new
+// audiences are added.
+var publicDocAudiences = func() []string {
+	out := make([]string, 0, len(docs.AudienceOrder))
+	for _, aud := range docs.AudienceOrder {
+		if _, gated := docs.AudienceGates[aud]; !gated {
+			out = append(out, aud)
+		}
+	}
+	return out
+}()
 
 // searchSettingsReader is the subset of config.Settings the search handlers need.
 type searchSettingsReader interface {
@@ -98,6 +120,7 @@ type literalResolver interface {
 // from internal/features (same pattern as searchSettingsReader).
 type searchFeatureChecker interface {
 	IsEnabled(ctx context.Context, key string) bool
+	EvalFlag(ctx context.Context, key string, sc features.CallerScope) features.EvalResult
 }
 
 type Handlers struct {
@@ -164,11 +187,19 @@ func (h *Handlers) resolveLiterals(r *http.Request, v any) {
 // input in Valkey keys. geoCountry is included so visitors from different
 // countries don't share a cached result set (ADR-064 geo-boost). page and sort
 // are included so different pages/sort orders don't share a cached result set.
-func searchCacheKey(query, typeFilter, geoCountry string, limit, offset int, sortExpr string) string {
+func searchCacheKey(query, typeFilter, geoCountry string, limit, offset int, sortExpr string, authenticated bool) string {
 	h := sha256.Sum256([]byte(query))
 	queryHash := hex.EncodeToString(h[:16]) // 32-char hex, enough for uniqueness
 
-	return vkcache.MustKey("cache:search:%s:%s:%s:%s:%d:%d:%s", "", queryHash, typeFilter, geoCountry, limit, offset, sortExpr)
+	// authenticated feeds the key: authed queries include users-index hits
+	// while guest queries strip them, so sharing one entry would leak user
+	// results to guests (and hide people hits from logged-in users).
+	authBit := "0"
+	if authenticated {
+		authBit = "1"
+	}
+
+	return vkcache.MustKey("cache:search:%s:%s:%s:%s:%d:%d:%s:%s", "", queryHash, typeFilter, geoCountry, limit, offset, sortExpr, authBit)
 }
 
 // SearchResultItem holds the type-specific fields for a search result. Per
@@ -261,18 +292,9 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 
 	// §54 RBAC: the users index requires authentication (privacy). Guests
 	// can search content, spaces, tags, organizations, etc. but NOT users.
-	// When the user is nil (OptionalAuth fell through), strip the users
-	// index from the query set so a guest never receives user hits.
+	// Enforcement strips IndexUsers AFTER index resolution so a guest
+	// cannot smuggle it back via comma-separated types (e.g. ?type=content,user).
 	authenticated := user != nil && user.UserID != (pgtype.UUID{})
-	if !authenticated && typeFilter == "user" {
-		// Guest explicitly requested user-only search — return empty
-		// instead of silently broadening to all indexes.
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-			"data": SearchResponse{Results: []SearchResult{}},
-		})
-
-		return
-	}
 
 	// Graceful degradation: no search engine configured or reachable.
 	if h.engine == nil {
@@ -288,19 +310,19 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	// queries from the same platform are served from cache. Uses distributed
 	// lock stampede protection (BUG-008) to prevent thundering herd on
 	// popular queries.
-	cacheKey := searchCacheKey(query, typeFilter, geoCountry, limit, offset, r.URL.Query().Get("sort"))
+	cacheKey := searchCacheKey(query, typeFilter, geoCountry, limit, offset, r.URL.Query().Get("sort"), authenticated)
 
 	searchStart := time.Now()
 
 	results, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, searchCacheTTL, func(ctx context.Context) ([]SearchResult, error) {
-		// §54: guests cannot search the users index. When typeFilter is
-		// empty (all indexes), exclude IndexUsers from the query set.
-		effectiveFilter := typeFilter
-		if !authenticated && effectiveFilter == "" {
-			effectiveFilter = "all_no_users"
+		indexes := searchTypeIndexes(typeFilter)
+		// §54: guests cannot search the users index — strip it after type
+		// resolution so no ?type= combination can smuggle it back in.
+		if !authenticated {
+			indexes = slices.DeleteFunc(indexes, func(uid string) bool { return uid == IndexUsers })
 		}
 
-		return h.runMultiSearchFiltered(ctx, query, limit, offset, sortExprs, effectiveFilter, geoCountry, extraPostFilter)
+		return h.runMultiSearchFiltered(ctx, query, limit, offset, sortExprs, indexes, geoCountry, extraPostFilter)
 	})
 	if err != nil {
 		slog.Warn("search query failed", "query", query, "error", err)
@@ -319,7 +341,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	// §42: drop results belonging to disabled features — indexed content
 	// from a feature that was switched off must not keep surfacing in
 	// search (the routes it links to return 404).
-	results = h.filterDisabledFeatureResults(r.Context(), results)
+	results = h.filterDisabledFeatureResults(r.Context(), features.ScopeForRequest(h.flags, r), results)
 
 	tookMs := time.Since(searchStart).Milliseconds()
 
@@ -382,7 +404,7 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, offset, sortExprs, "space", "", nil)
+	results, err := h.runMultiSearchFiltered(r.Context(), query, limit, offset, sortExprs, []string{IndexSpaces}, "", nil)
 	if err != nil {
 		slog.Warn("space search query failed", "query", query, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
@@ -398,13 +420,6 @@ func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 	if user != nil && user.UserID != (pgtype.UUID{}) {
 		h.logSearchAsync(r.Context(), query, len(results), user.UserID, "space")
 	}
-}
-
-// runMultiSearch queries the posts, spaces, users, forum_threads, and tags
-// indexes in a single engine multi-search call, scoped to the given
-// platform. It returns the flattened, type-tagged results.
-func (h *Handlers) runMultiSearch(ctx context.Context, query string, limit int) ([]SearchResult, error) {
-	return h.runMultiSearchFiltered(ctx, query, limit, 0, nil, "", "", nil)
 }
 
 // buildPostFilter builds the extra posts-index filter for the §54
@@ -436,9 +451,7 @@ func buildPostFilter(contentType, spaceID, tagSlug string) FilterExpr {
 // (supports §54 ?content_type, ?space_id, ?tag_slug params). offset is the
 // zero-based pagination offset (§54 ?page=). sortExprs, when non-nil, is
 // passed to the engine as the sort expression (§54 ?sort=).
-func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit, offset int, sortExprs []string, typeFilter, geoCountry string, extraPostFilter FilterExpr) ([]SearchResult, error) {
-	indexes := searchTypeIndexes(typeFilter)
-
+func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, limit, offset int, sortExprs []string, indexes []string, geoCountry string, extraPostFilter FilterExpr) ([]SearchResult, error) {
 	// A type filter with no backing index (e.g. "organization" before its
 	// index is provisioned) yields no queries. Short-circuit to empty
 	// results instead of issuing a zero-query multi-search, which engines
@@ -456,6 +469,29 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 		// index attribute; non-public spaces are simply never indexed).
 		if idx == IndexSpaces {
 			filters = append(filters, Eq{Field: "status", Value: "active"})
+		}
+
+		// Posts index: never surface drafts, scheduled, archived, or
+		// auto-hidden content. Index-time gating keeps non-published rows
+		// out, but stale docs indexed before the gate must stay hidden.
+		if idx == IndexPosts {
+			filters = append(filters, Eq{Field: "status", Value: "published"})
+		}
+
+		// Organizations index: suspended and pending_verification orgs are
+		// removed at index time; the filter also hides stale docs.
+		if idx == IndexOrganizations {
+			filters = append(filters, Eq{Field: "status", Value: "active"})
+		}
+
+		// Doc pages index: gated audiences (admin/superadmin docs) are only
+		// readable with admin.panel.access — the shared search surface is
+		// public, so restrict to public audiences plus published status.
+		if idx == IndexDocPages {
+			filters = append(filters,
+				Eq{Field: "review_status", Value: "published"},
+				In{Field: "audience", Values: publicDocAudiences},
+			)
 		}
 
 		// §54: apply content_type / space_id / tag_slug filters to the
@@ -591,7 +627,9 @@ func mapHitToItem(resultType string, hit Hit) SearchResultItem {
 		}
 
 		item.Title = ""
-	case "academy_track":
+	case "course":
+		// indexTypeByUID maps the academy_tracks index to the "course"
+		// result type — this case must match that label.
 		item.Slug = stringField(hit, "slug")
 	}
 
@@ -734,8 +772,11 @@ const maxAutocompleteLimit = 8
 // AutocompleteSuggestion is a single autocomplete suggestion. Per §54,
 // each suggestion type exposes type-specific fields.
 type AutocompleteSuggestion struct {
-	Type         string `json:"type"`
-	ID           string `json:"id"`
+	Type string `json:"type"`
+	ID   string `json:"id"`
+	// AuthorID feeds the §41 mutual-block filter for content/forum_thread
+	// suggestions — fetched from the hit but never serialized.
+	AuthorID     string `json:"-"`
 	Title        string `json:"title,omitempty"`
 	Excerpt      string `json:"excerpt,omitempty"`
 	URL          string `json:"url,omitempty"`
@@ -794,7 +835,10 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	suggestions, err := h.runAutocomplete(r.Context(), query, limit, typeFilter)
+	autocompleteUser := auth.FromContext(r.Context())
+	authenticated := autocompleteUser != nil && autocompleteUser.UserID != (pgtype.UUID{})
+
+	suggestions, err := h.runAutocomplete(r.Context(), query, limit, typeFilter, authenticated)
 	if err != nil {
 		slog.Warn("autocomplete query failed", "query", query, "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Search is temporarily unavailable")
@@ -806,12 +850,13 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	// suggestions. A user should not see (and therefore @mention) someone
 	// who has blocked them or whom they have blocked. Best-effort: a
 	// database error degrades to unfiltered results.
-	if user := auth.FromContext(r.Context()); user != nil && h.queries != nil {
-		suggestions = h.filterBlockedUsers(r.Context(), user.UserID, suggestions)
+	if autocompleteUser != nil && h.queries != nil {
+		suggestions = h.filterBlockedUsers(r.Context(), autocompleteUser.UserID, suggestions)
+		suggestions = h.filterBlockedSuggestionAuthors(r.Context(), autocompleteUser.UserID, suggestions)
 	}
 
 	// §42: drop suggestions belonging to disabled features.
-	suggestions = h.filterDisabledFeatureSuggestions(r.Context(), suggestions)
+	suggestions = h.filterDisabledFeatureSuggestions(r.Context(), features.ScopeForRequest(h.flags, r), suggestions)
 
 	h.resolveLiterals(r, &suggestions)
 
@@ -844,31 +889,39 @@ var searchTypeFeatureFlag = map[string]string{
 }
 
 // featureResultDisabled reports whether a search hit should be suppressed
-// because its feature flag is off. Result-type gating wins over the
-// content-type gating (a forum thread is gated by feature.forum regardless
-// of content_type).
-func (h *Handlers) featureResultDisabled(ctx context.Context, resultType, contentType string) bool {
+// because its feature flag is off for this caller. Result-type gating wins
+// over the content-type gating (a forum thread is gated by feature.forum
+// regardless of content_type).
+func (h *Handlers) featureResultDisabled(ctx context.Context, sc features.CallerScope, resultType, contentType string) bool {
 	if h.flags == nil {
 		return false
 	}
-	if flag, ok := searchTypeFeatureFlag[resultType]; ok && !h.flags.IsEnabled(ctx, flag) {
+	if flag, ok := searchTypeFeatureFlag[resultType]; ok && !featureVisible(ctx, h.flags, flag, sc) {
 		return true
 	}
-	if flag, ok := contentTypeFeatureFlag[contentType]; ok && !h.flags.IsEnabled(ctx, flag) {
+	if flag, ok := contentTypeFeatureFlag[contentType]; ok && !featureVisible(ctx, h.flags, flag, sc) {
 		return true
 	}
 	return false
 }
 
+// featureVisible reports whether a flag is enabled AND visible for this
+// caller — the same contract menus and gamification use for entity-level
+// flag filtering (§42).
+func featureVisible(ctx context.Context, c searchFeatureChecker, key string, sc features.CallerScope) bool {
+	res := c.EvalFlag(ctx, key, sc)
+	return res.Enabled && res.Visible
+}
+
 // filterDisabledFeatureResults drops SearchResult entries whose feature flag
 // is off. Applied post-cache so flag changes take effect immediately.
-func (h *Handlers) filterDisabledFeatureResults(ctx context.Context, results []SearchResult) []SearchResult {
+func (h *Handlers) filterDisabledFeatureResults(ctx context.Context, sc features.CallerScope, results []SearchResult) []SearchResult {
 	if h.flags == nil || len(results) == 0 {
 		return results
 	}
 	filtered := results[:0]
 	for _, r := range results {
-		if h.featureResultDisabled(ctx, r.Type, r.Item.ContentType) {
+		if h.featureResultDisabled(ctx, sc, r.Type, r.Item.ContentType) {
 			continue
 		}
 		filtered = append(filtered, r)
@@ -877,13 +930,13 @@ func (h *Handlers) filterDisabledFeatureResults(ctx context.Context, results []S
 }
 
 // filterDisabledFeatureSuggestions is the Autocomplete variant.
-func (h *Handlers) filterDisabledFeatureSuggestions(ctx context.Context, suggestions []AutocompleteSuggestion) []AutocompleteSuggestion {
+func (h *Handlers) filterDisabledFeatureSuggestions(ctx context.Context, sc features.CallerScope, suggestions []AutocompleteSuggestion) []AutocompleteSuggestion {
 	if h.flags == nil || len(suggestions) == 0 {
 		return suggestions
 	}
 	filtered := suggestions[:0]
 	for _, s := range suggestions {
-		if h.featureResultDisabled(ctx, s.Type, s.ContentType) {
+		if h.featureResultDisabled(ctx, sc, s.Type, s.ContentType) {
 			continue
 		}
 		filtered = append(filtered, s)
@@ -955,21 +1008,9 @@ func (h *Handlers) filterBlockedAuthors(ctx context.Context, viewerID pgtype.UUI
 		candidates = append(candidates, uid)
 	}
 
-	if len(candidates) == 0 {
+	blockedSet := h.blockedAuthorSet(ctx, viewerID, candidates)
+	if blockedSet == nil {
 		return results
-	}
-
-	blockedIDs, err := h.queries.GetMutuallyBlockedUserIDs(ctx, gen.GetMutuallyBlockedUserIDsParams{
-		ViewerID:     viewerID,
-		CandidateIds: candidates,
-	})
-	if err != nil || len(blockedIDs) == 0 {
-		return results
-	}
-
-	blockedSet := make(map[string]struct{}, len(blockedIDs))
-	for _, id := range blockedIDs {
-		blockedSet[id.String()] = struct{}{}
 	}
 
 	filtered := results[:0]
@@ -986,10 +1027,76 @@ func (h *Handlers) filterBlockedAuthors(ctx context.Context, viewerID pgtype.UUI
 	return filtered
 }
 
+// filterBlockedSuggestionAuthors is the autocomplete counterpart of
+// filterBlockedAuthors — a blocked user's post or thread must not surface
+// as a ⌘K suggestion either (§41). Suggestions without an author id pass.
+func (h *Handlers) filterBlockedSuggestionAuthors(ctx context.Context, viewerID pgtype.UUID, suggestions []AutocompleteSuggestion) []AutocompleteSuggestion {
+	if h.queries == nil || len(suggestions) == 0 {
+		return suggestions
+	}
+
+	var candidates []pgtype.UUID
+
+	for _, s := range suggestions {
+		if s.AuthorID == "" {
+			continue
+		}
+
+		var uid pgtype.UUID
+		if err := uid.Scan(s.AuthorID); err != nil {
+			continue
+		}
+
+		candidates = append(candidates, uid)
+	}
+
+	blockedSet := h.blockedAuthorSet(ctx, viewerID, candidates)
+	if blockedSet == nil {
+		return suggestions
+	}
+
+	filtered := suggestions[:0]
+	for _, s := range suggestions {
+		if s.AuthorID != "" {
+			if _, isBlocked := blockedSet[s.AuthorID]; isBlocked {
+				continue
+			}
+		}
+
+		filtered = append(filtered, s)
+	}
+
+	return filtered
+}
+
+// blockedAuthorSet resolves which candidate user IDs have a mutual
+// user_blocks relationship with the viewer (§41). Returns nil when there
+// is nothing to check or the lookup fails — both degrade to unfiltered.
+func (h *Handlers) blockedAuthorSet(ctx context.Context, viewerID pgtype.UUID, candidates []pgtype.UUID) map[string]struct{} {
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	blockedIDs, err := h.queries.GetMutuallyBlockedUserIDs(ctx, gen.GetMutuallyBlockedUserIDsParams{
+		ViewerID:     viewerID,
+		CandidateIds: candidates,
+	})
+	if err != nil || len(blockedIDs) == 0 {
+		return nil
+	}
+
+	blockedSet := make(map[string]struct{}, len(blockedIDs))
+	for _, id := range blockedIDs {
+		blockedSet[id.String()] = struct{}{}
+	}
+
+	return blockedSet
+}
+
 // runAutocomplete queries the users, spaces, tags, and posts indexes with
 // a small limit for typeahead suggestions. typeFilter (§54: user|space|tag|
 // content) restricts which indexes are queried; empty means all four.
-func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int, typeFilter string) ([]AutocompleteSuggestion, error) {
+func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int, typeFilter string, authenticated bool) ([]AutocompleteSuggestion, error) {
 	// Build the index list from the type filter. Default: all four
 	// autocomplete indexes (users, spaces, tags, posts).
 	var indexes []string
@@ -1010,13 +1117,44 @@ func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int,
 		indexes = []string{IndexUsers, IndexSpaces, IndexTags, IndexPosts, IndexDocPages}
 	}
 
+	// The users index is authenticated-only (§54): strip it AFTER type
+	// resolution so a guest cannot reach it via ?type=user either.
+	if !authenticated {
+		indexes = slices.DeleteFunc(indexes, func(uid string) bool { return uid == IndexUsers })
+	}
+
+	// A type filter with no backing index after gating (guest ?type=user)
+	// yields no queries — short-circuit to empty instead of issuing a
+	// zero-query multi-search, which engines may reject.
+	if len(indexes) == 0 {
+		return []AutocompleteSuggestion{}, nil
+	}
+
 	queries := make([]Query, len(indexes))
 	for i, idx := range indexes {
+		// Per-index visibility filters: the omnibox must never surface
+		// drafts, suspended spaces, or unreviewed doc pages even if a stale
+		// document lingers in the index (same gating as runMultiSearchFiltered).
+		var filter FilterExpr
+		switch idx {
+		case IndexPosts:
+			filter = Eq{Field: "status", Value: "published"}
+		case IndexSpaces:
+			filter = Eq{Field: "status", Value: "active"}
+		case IndexDocPages:
+			// Same gating as the docs surface: published only, and never
+			// gated-audience (admin/superadmin) pages in the public omnibox.
+			filter = andAll(
+				Eq{Field: "review_status", Value: "published"},
+				In{Field: "audience", Values: publicDocAudiences},
+			)
+		}
+
 		queries[i] = Query{
 			IndexUID:             idx,
 			Text:                 query,
 			Limit:                limit,
-			Filter:               nil,
+			Filter:               filter,
 			AttributesToRetrieve: searchAttributesToRetrieve,
 		}
 	}
@@ -1041,9 +1179,10 @@ func mapAutocompleteResults(indexResults []IndexResult) []AutocompleteSuggestion
 
 		for _, hit := range sr.Hits {
 			s := AutocompleteSuggestion{
-				Type: resultType,
-				ID:   stringField(hit, "id"),
-				URL:  stringField(hit, "url"),
+				Type:     resultType,
+				ID:       stringField(hit, "id"),
+				URL:      stringField(hit, "url"),
+				AuthorID: stringField(hit, "author_user_id"),
 			}
 
 			// §54: populate type-specific fields per suggestion type.
@@ -1077,8 +1216,11 @@ func mapAutocompleteResults(indexResults []IndexResult) []AutocompleteSuggestion
 			case "organization":
 				s.Name = stringField(hit, "title")
 				s.Slug = stringField(hit, "slug")
+			case "course":
+				s.Title = stringField(hit, "title")
+				s.Slug = stringField(hit, "slug")
 			default:
-				// forum_thread, course, article, doc_page — use the uniform
+				// forum_thread, article, doc_page — use the uniform
 				// title/excerpt shape.
 				s.Title = stringField(hit, "title")
 				s.Excerpt = stringField(hit, "excerpt")
@@ -1219,7 +1361,7 @@ func (h *Handlers) filterContentHits(r *http.Request, hits []Hit) []Hit {
 		}
 		// §42: posts-index hits for disabled content types are dropped —
 		// space/tag-scoped searches must not surface gated content either.
-		if h.featureResultDisabled(r.Context(), "content", stringField(hit, "content_type")) {
+		if h.featureResultDisabled(r.Context(), features.ScopeForRequest(h.flags, r), "content", stringField(hit, "content_type")) {
 			continue
 		}
 		filtered = append(filtered, hit)

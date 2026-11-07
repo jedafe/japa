@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 )
 
 // ---------------------------------------------------------------------------
@@ -40,6 +41,47 @@ func (s *Service) leaderboardEnabled(ctx context.Context) bool {
 	}
 
 	return s.settings.GetBoolOr(ctx, "gamification.leaderboard_enabled", true)
+}
+
+// ---------------------------------------------------------------------------
+// Feature-flag helpers (§42) — badge_definitions.feature_flag and
+// challenge_definitions.feature_flag (migration 001086).
+// ---------------------------------------------------------------------------
+
+// featureAvailable reports whether an item carrying an optional feature_flag
+// may be evaluated. A NULL flag means the item is not tied to a gated feature
+// and is always available. A set flag resolves through the injected checker
+// and fails closed — unknown keys, disabled flags, and an unwired checker all
+// hide the item (same contract as menu_items.feature_flag). Evaluation runs
+// in background (wallet:process_activity_event) with no caller scope, so the
+// global toggle is the right semantics: a flag scoped to a subset of users
+// still legitimately emits events for the users who reach it.
+func (s *Service) featureAvailable(ctx context.Context, flag *string) bool {
+	if flag == nil || *flag == "" {
+		return true
+	}
+	if s.checker == nil {
+		return false
+	}
+	return s.checker.IsEnabled(ctx, *flag)
+}
+
+// featureVisible reports whether an item carrying an optional feature_flag
+// may be shown to THIS caller on public catalogue/collection surfaces —
+// surface/geo/audience rules apply on top of the global toggle, matching
+// menu_items.feature_flag pruning (menus.filterMenuItems). A flag enabled
+// globally but scoped away from this caller hides the item: an unactivated
+// or unreachable feature's badges must not surface. Fails closed on an
+// unwired checker.
+func (s *Service) featureVisible(ctx context.Context, flag *string, sc features.CallerScope) bool {
+	if flag == nil || *flag == "" {
+		return true
+	}
+	if s.checker == nil {
+		return false
+	}
+	res := s.checker.EvalFlag(ctx, *flag, sc)
+	return res.Enabled && res.Visible
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +262,10 @@ func (s *Service) badgeToInfo(ctx context.Context, b gen.BadgeDefinition) BadgeI
 		info.AvailableUntil = &s
 	}
 
+	if b.FeatureFlag != nil && *b.FeatureFlag != "" {
+		info.FeatureFlag = b.FeatureFlag
+	}
+
 	return info
 }
 
@@ -271,6 +317,10 @@ func (s *Service) challengeToInfo(ctx context.Context, c gen.ChallengeDefinition
 	if c.EndsAt.Valid {
 		ends := rfc3339(c.EndsAt)
 		info.EndsAt = &ends
+	}
+
+	if c.FeatureFlag != nil && *c.FeatureFlag != "" {
+		info.FeatureFlag = c.FeatureFlag
 	}
 
 	return info

@@ -18,7 +18,7 @@
 <div class="mx-auto max-w-3xl p-4">
 	<ProductForm
 		mode="create"
-		onsaved={(slug) => goto(`/products/${slug}`)}
+		onsaved={(slug: string) => goto(`/products/${slug}`)}
 		oncancel={() => goto('/products')}
 	/>
 </div>

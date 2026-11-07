@@ -24,6 +24,7 @@ export const load: PageServerLoad = async (event) => {
 	const stage = event.url.searchParams.get('stage') ?? '';
 	const intent = event.url.searchParams.get('intent') ?? '';
 	const dest = event.url.searchParams.get('dest') ?? '';
+	const gender = event.url.searchParams.get('gender') ?? '';
 	const q = (event.url.searchParams.get('q') ?? '').trim();
 	const sortParam = event.url.searchParams.get('sort') ?? '';
 	const sort = SORT_KEYS.has(sortParam) ? sortParam : 'recent';
@@ -33,6 +34,7 @@ export const load: PageServerLoad = async (event) => {
 	if (stage) params.set('stage', stage);
 	if (intent) params.set('intent', intent);
 	if (dest) params.set('dest', dest);
+	if (gender) params.set('gender', gender);
 	if (q) params.set('q', q);
 	if (sort !== 'recent') params.set('sort', sort);
 
@@ -88,6 +90,6 @@ export const load: PageServerLoad = async (event) => {
 		currentPage: page,
 		totalPages: membersResult.totalPages,
 		loadError: membersResult.loadError,
-		filters: { stage, intent, dest, q, sort }
+		filters: { stage, intent, dest, gender, q, sort }
 	};
 };

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { page } from '$app/state';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { goto } from '$app/navigation';
@@ -15,7 +16,6 @@
 	} from 'lucide-svelte';
 	import { EmptyState, ListPageBar, UrlTabs, AutocompleteSelect, type UrlTab } from '$lib/components/ui';
 	import { trendingWindowOptions, trendingTabs } from '$lib/enumOptions';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
 	import type { PageData } from './$types';
 	import type { TrendingWindow } from '$lib/types';
@@ -71,18 +71,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={title} />
-	<meta name="twitter:description" content={description} />
-	{@html safeJsonLdScript(jsonLd)}
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<!-- Header: title + description (kept) -->

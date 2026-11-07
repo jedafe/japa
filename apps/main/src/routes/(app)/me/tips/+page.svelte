@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// /me/tips — sent & received tip history (§125).
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { t } from '$lib/i18n';
@@ -40,7 +41,7 @@
 	}
 </script>
 
-<svelte:head><title>{t('tips.history_title')}</title></svelte:head>
+<SeoHead title={t('tips.history_title')} description={t('tips.description', 'Your tip history — tips sent and received.')} />
 
 <div class="mx-auto max-w-3xl px-4 py-8">
 	<h1 class="mb-4 text-2xl font-bold">{t('tips.history_title')}</h1>

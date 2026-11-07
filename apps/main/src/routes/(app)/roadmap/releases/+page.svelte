@@ -3,6 +3,7 @@
 	import { t, siteName } from '$lib/i18n';
 	import { Package, Rss, ArrowRight } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import type { RoadmapRelease } from '$lib/types';
 
 	/**
@@ -55,8 +56,9 @@
 	}
 </script>
 
+<SeoHead title={`${t('roadmap.releases.title', 'Releases')} — ${siteName()}`} description={t('roadmap.releases.description', 'Every shipped release — changelogs, fixes, and improvements to {site}.')} />
+
 <svelte:head>
-	<title>{t('roadmap.releases.title', 'Releases')} — {siteName()}</title>
 	<link
 		rel="alternate"
 		type="application/rss+xml"

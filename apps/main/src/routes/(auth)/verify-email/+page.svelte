@@ -1,9 +1,12 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n/store.svelte';
 	import { page } from '$app/state';
 
 	const status = $derived(page.data.status);
 </script>
+
+<SeoHead title={`${t('auth.verify_email.title', 'Verify your email')} — ${t('app.name')}`} description={t('auth.verify_email.description', 'Confirm your email address to activate your {site} account.')} />
 
 <div class="flex flex-col items-center gap-4 text-center">
 	{#if status === 'verifying'}

@@ -2,7 +2,7 @@
 	// §14 review content type — product picker + rating + providers repeater.
 	// field_values carries {product_slug, product_type_slug, rating, providers[]}
 	// through CreateShell → POST /content; the providers repeater auto-populates
-	// from GET /wiki/e/{type}/{slug}/providers on product select.
+	// from GET /products/{slug}/providers on product select.
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
@@ -24,8 +24,8 @@
 	let bodyHtml = $state('');
 
 	onMount(async () => {
-		const res = await api.get<{ kind: string; types?: { slug: string; label: string }[] }[]>('/wiki/entity-kinds');
-		types = res?.data?.find((k: { kind: string }) => k.kind === 'product')?.types ?? [];
+		const res = await api.get<{ items?: { slug: string; label: string }[] }>('/products/types');
+		types = res?.data?.items ?? [];
 	});
 
 	async function pickType() {
@@ -34,7 +34,7 @@
 		providers = [];
 		emit();
 		if (!typeSlug) return;
-		const res = await api.get<{ items?: Product[] }>(`/wiki/entity-kinds/${typeSlug}/entities?limit=100`);
+		const res = await api.get<{ items?: Product[] }>(`/products?type=${encodeURIComponent(typeSlug)}&limit=100`);
 		products = res?.data?.items ?? [];
 		emit();
 	}
@@ -44,7 +44,7 @@
 		picked = new Set();
 		emit();
 		if (!productSlug || !typeSlug) return;
-		const res = await api.get<{ items?: Provider[] }>(`/wiki/e/${typeSlug}/${productSlug}/providers`);
+		const res = await api.get<{ items?: Provider[] }>(`/products/${encodeURIComponent(productSlug)}/providers`);
 		providers = res?.data?.items ?? [];
 		// Default-check every provider — reviewer prunes to what they evaluated.
 		picked = new Set(providers.map((p) => p.provider_id));

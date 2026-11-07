@@ -1,5 +1,6 @@
 // Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t, siteName} from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -81,10 +82,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('planning_groups.edit_heading', 'Edit Planning Group')} — {siteName()}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={`${t('planning_groups.edit_heading', 'Edit Planning Group')} — ${siteName()}`} robots="`noindex, nofollow`" description={t('planning_groups.edit_description', 'Edit your planning group — members, milestones, and check-ins.')} />
 
 <div class="mx-auto max-w-2xl px-4 py-6">
 	<a

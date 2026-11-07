@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	// Public product roadmap board — Canny-style status columns fed entirely
 	// by GET /roadmap/board (Rule 16: categories, columns, and items all come
@@ -50,18 +51,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('roadmap.title', 'Product Roadmap')} — {siteName()}</title>
-	<meta name="description" content={t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')} />
-	<link rel="canonical" href="{page.url.origin}/roadmap" />
-	<meta property="og:title" content={t('roadmap.title', 'Product Roadmap')} />
-	<meta property="og:description" content={t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={t('roadmap.title', 'Product Roadmap')} />
-	<meta name="twitter:description" content={t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')} />
-</svelte:head>
+<SeoHead title={`${t('roadmap.title', 'Product Roadmap')} — ${siteName()}`} description={t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')} ogTitle={t('roadmap.title', 'Product Roadmap')} />
 
 <section class="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-10">
 	<header class="flex flex-wrap items-start justify-between gap-4">

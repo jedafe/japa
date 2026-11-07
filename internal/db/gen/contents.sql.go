@@ -2514,6 +2514,33 @@ func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagPara
 	return items, nil
 }
 
+const listContentIDsBySpace = `-- name: ListContentIDsBySpace :many
+SELECT id FROM contents WHERE space_id = $1
+`
+
+// Intentionally includes tombstoned rows — the search fan-out worker
+// (search:reindex_space_entities) needs deleted content's IDs so their
+// index documents get purged too.
+func (q *Queries) ListContentIDsBySpace(ctx context.Context, spaceID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listContentIDsBySpace, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listContentIDsScoredSince = `-- name: ListContentIDsScoredSince :many
 SELECT c.id
 FROM content_scores cs

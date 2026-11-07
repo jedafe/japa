@@ -427,7 +427,7 @@ func (q *Queries) GetNextActionRuleBySlug(ctx context.Context, slug string) (Nex
 
 const getUserForNextActionState = `-- name: GetUserForNextActionState :one
 SELECT u.id, u.created_at, u.email_verified_at,
-       p.display_name, p.avatar_url, p.bio
+       p.display_name, p.avatar_url, p.bio, p.japa_stage
 FROM users u
 LEFT JOIN user_profiles p ON p.user_id = u.id
 WHERE u.id = $1
@@ -440,6 +440,7 @@ type GetUserForNextActionStateRow struct {
 	DisplayName     *string            `json:"display_name"`
 	AvatarUrl       *string            `json:"avatar_url"`
 	Bio             *string            `json:"bio"`
+	JapaStage       *string            `json:"japa_stage"`
 }
 
 func (q *Queries) GetUserForNextActionState(ctx context.Context, userID pgtype.UUID) (GetUserForNextActionStateRow, error) {
@@ -452,6 +453,7 @@ func (q *Queries) GetUserForNextActionState(ctx context.Context, userID pgtype.U
 		&i.DisplayName,
 		&i.AvatarUrl,
 		&i.Bio,
+		&i.JapaStage,
 	)
 	return i, err
 }

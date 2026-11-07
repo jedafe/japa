@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { FileText, ArrowRight } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
@@ -21,10 +22,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{t('pages_list.title', 'Pages')}</title>
-	<meta name="description" content={t('pages_list.description', 'Browse all published pages on {site}.')} />
-</svelte:head>
+<SeoHead title={t('pages_list.title', 'Pages')} description={t('pages_list.description', 'Browse all published pages on {site}.')} />
 
 <div class="mx-auto max-w-3xl px-4 py-6">
 	<h1 class="mb-1 text-2xl font-bold text-[var(--color-text)]">{t('pages_list.heading')}</h1>

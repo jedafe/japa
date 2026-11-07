@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md — BUG-016/BUG-019
 	import { ArrowLeft, BellOff, TriangleAlert, Pin } from 'lucide-svelte';
 	import { t, i18n } from '$lib/i18n';
@@ -32,10 +33,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{t('scam_alerts.my_reports_title', 'My Scam Reports — {site}')}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={t('scam_alerts.my_reports_title', 'My Scam Reports — {site}')} robots="`noindex`" description={t('scam_alerts.mine_description', 'Scam reports you have filed — status and moderation outcomes.')} />
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6">
 	<div class="mb-5 flex items-center gap-3">

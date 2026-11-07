@@ -2,6 +2,7 @@
 <!-- Campaign stats page: impressions, clicks, CTR, spend, budget.
      Calls GET /org/{org_id}/ads/campaigns/{id}/stats (§61 API Routes). -->
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { ArrowLeft, BarChart3, MousePointer, Eye, TrendingUp, Wallet } from 'lucide-svelte';
 	import type { CampaignStats } from './+page.server';
@@ -86,9 +87,11 @@
 	]);
 </script>
 
-<svelte:head>
-	<title>{t('org_ads.stats_title', 'Campaign Stats')} — {campaign?.name ?? ''}</title>
-</svelte:head>
+<SeoHead
+	title={`${t('org_ads.stats_title', 'Campaign Stats')} — ${campaign?.name ?? ''}`}
+	description={t('org_ads.stats_description', 'Campaign performance — impressions, clicks, and conversions.')}
+	robots="noindex"
+/>
 
 <div class="space-y-6">
 	<!-- Header -->

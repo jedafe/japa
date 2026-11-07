@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { untrack, onMount } from 'svelte';
 	import { goto, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
@@ -212,13 +213,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={title} />
-	<meta property="og:title" content={title} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-</svelte:head>
+<SeoHead title={title} description={title} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="sticky top-0 z-10 border-b border-[var(--color-border)] bg-[var(--color-surface)]" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">

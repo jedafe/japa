@@ -703,10 +703,11 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 		return err
 	}
 
-	// Re-index the user in Meilisearch when display_name changes so the
-	// search index reflects the new name (§13/§19). Enqueued after commit
-	// so we don't index a row that might roll back.
-	if req.DisplayName != nil {
+	// Re-index the user in Meilisearch when any indexed field changes —
+	// display_name, avatar, and bio are all in the users index doc
+	// (§13/§19). Enqueued after commit so we don't index a row that might
+	// roll back.
+	if req.DisplayName != nil || req.AvatarURL != nil || req.AvatarMediaID != nil || req.Bio != nil {
 		s.enqueueUserSearchIndex(userID)
 	}
 
@@ -2009,7 +2010,13 @@ func (s *Service) DeactivateAccount(ctx context.Context, userID pgtype.UUID) err
 
 // SoftDeleteUser soft-deletes a user account (status = 'deleted').
 func (s *Service) SoftDeleteUser(ctx context.Context, userID pgtype.UUID) error {
-	return s.store.SoftDeleteUser(ctx, userID)
+	if err := s.store.SoftDeleteUser(ctx, userID); err != nil {
+		return err
+	}
+	// Re-sync the users search doc — a deleted account must drop out of
+	// search results (IndexUser gates on effective status).
+	s.enqueueUserSearchIndex(userID)
+	return nil
 }
 
 // UpdateProfileType changes a user's unified tier and syncs the denormalized

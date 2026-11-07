@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: docs/superpowers/specs/2026-09-24-agent-data-api-phase3-design.md
 	// Confirmation surface for the extension's save-to-account deep link.
 	import { t } from '$lib/i18n';
@@ -7,7 +8,7 @@
 	let { data } = $props();
 </script>
 
-<svelte:head><title>{t('save.title', 'Save — {site}')}</title></svelte:head>
+<SeoHead title={t('save.title', 'Save — {site}')} description={t('save.description', 'Save this page to your collections.')} />
 
 <div class="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">
 	{#if data.saved}

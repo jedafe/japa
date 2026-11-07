@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// §106 video — channel claim / takedown form.
 	// Authenticated users can claim a synthetic channel or request a takedown
 	// of a specific video source on a channel.
@@ -134,14 +135,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={pageDescription} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={pageDescription} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-</svelte:head>
+<SeoHead title={title} description={pageDescription} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">

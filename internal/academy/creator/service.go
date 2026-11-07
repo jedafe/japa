@@ -375,12 +375,15 @@ func (s *Service) UpdateTrack(ctx context.Context, trackID, instructorID pgtype.
 		row.IsPublished = false
 		row.IsPublishedToAcademy = false
 		row.AcademySubmissionStatus = "draft"
-
-		s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
-			"entity_id":   trackID.String(),
-			"entity_type": "academy_track",
-		})
 	}
+
+	// Re-sync on every edit, not only resets — indexed fields (title,
+	// category, difficulty…) can change without a publication reset, and
+	// the indexer's gate decides upsert vs. delete.
+	s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
+		"entity_id":   trackID.String(),
+		"entity_type": "academy_track",
+	})
 
 	return row, nil
 }

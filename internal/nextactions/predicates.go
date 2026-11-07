@@ -31,6 +31,10 @@ type EvalDeps interface {
 	// DraftExists reports whether the user has a form_drafts row of kind
 	// ("" = any) — feeds "resume your draft" reminder rules.
 	DraftExists(ctx context.Context, userID pgtype.UUID, kind string) (bool, error)
+	// FeatureEnabled resolves a feature_flags key (e.g. "mentorship.enabled",
+	// "feature.academy") — lets rules suppress themselves while the CTA's
+	// target feature is flag-disabled instead of nudging users into a 404.
+	FeatureEnabled(ctx context.Context, key string) (bool, error)
 }
 
 // EvalConditions evaluates a predicate group: every `all` clause must pass,
@@ -67,7 +71,7 @@ func evalPredicate(ctx context.Context, p Predicate, s *UserState, deps EvalDeps
 	case "profile_completeness":
 		return cmpInt(s.ProfilePct, p)
 	case "japa_stage":
-		return slices.Contains(p.In, s.VCtx.JapaStage)
+		return slices.Contains(p.In, s.JapaStage)
 	case "archetype":
 		return slices.Contains(p.In, s.VCtx.Archetype)
 	case "destination_country":
@@ -92,6 +96,8 @@ func evalPredicate(ctx context.Context, p Predicate, s *UserState, deps EvalDeps
 		return evalNegated(ctx, deps, func() (bool, error) { return deps.FeatureUsed(ctx, s, p.Slug, daysOr(p.WithinDays, 30)) })
 	case "feature_gate_hit":
 		return evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.GateHit(ctx, s, p.Feature, daysOr(p.WithinDays, 30)) })
+	case "feature_enabled":
+		return evalDepsBool(ctx, s, deps, func() (bool, error) { return deps.FeatureEnabled(ctx, p.Key) })
 	case "event_count":
 		return evalEventCount(ctx, p, s, deps)
 	case "has_draft":

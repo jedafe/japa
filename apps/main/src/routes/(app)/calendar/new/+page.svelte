@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -165,11 +166,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('calendar.new_title', 'Submit Event — {site}')}</title>
-	<meta name="description" content={t('calendar.new_description', 'Submit a community calendar event with a verifiable official source.')} />
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={t('calendar.new_title', 'Submit Event — {site}')} description={t('calendar.new_description', 'Submit a community calendar event with a verifiable official source.')} robots="`noindex`" />
 
 <div class="mx-auto w-full max-w-2xl pb-24">
 	<div class="mx-4 flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">

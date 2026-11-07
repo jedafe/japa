@@ -174,7 +174,7 @@ ORDER BY created_at DESC LIMIT 1;
 
 -- name: GetUserForNextActionState :one
 SELECT u.id, u.created_at, u.email_verified_at,
-       p.display_name, p.avatar_url, p.bio
+       p.display_name, p.avatar_url, p.bio, p.japa_stage
 FROM users u
 LEFT JOIN user_profiles p ON p.user_id = u.id
 WHERE u.id = @user_id;

@@ -59,6 +59,9 @@ var ToolUsageRoutes = []ToolRoute{
 	{Method: http.MethodGet, Prefix: "/processing-times", Slug: "processing-tracker"},
 	{Method: http.MethodGet, Prefix: "/visa-routes/", Slug: "visa-routes"},
 	{Method: http.MethodGet, Prefix: "/tax-calculator/", Slug: "tax-calculator"},
+	// Jobs board is public (no features.Gate) — it has no feature.* usage
+	// events, so its "already used" signal rides the tool.used feed instead.
+	{Method: http.MethodGet, Prefix: "/jobs", Slug: "jobs-board"},
 }
 
 // apiPrefix is the mount point the middleware strips before matching.

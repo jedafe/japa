@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -82,15 +83,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{pageTitle}</title>
-	<meta name="description" content={pageDescription} />
-	<meta property="og:title" content={pageTitle} />
-	<meta property="og:description" content={pageDescription} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={pageTitle} description={pageDescription} ogTitle={pageTitle} robots="`noindex, nofollow`" />
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Header -->

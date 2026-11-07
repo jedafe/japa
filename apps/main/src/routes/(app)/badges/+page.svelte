@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Achievement centre — gamification v2 catalogue (migration 001016).
 	// Shield-grid of every active badge grouped by category, with earned /
 	// locked / secret states and progress toward each goal (mockup-aligned).
@@ -90,14 +91,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6" style="--page-gutter: 1rem">
 	<!-- Hero — mirrors the "Your Journey. Your Badges." mockup header. -->

@@ -779,6 +779,8 @@ type BadgeDefinition struct {
 	AvailableUntil     pgtype.Timestamptz `json:"available_until"`
 	SeasonID           pgtype.UUID        `json:"season_id"`
 	AccentColor        *string            `json:"accent_color"`
+	// Optional feature flag key (feature_flags.key). If set, the badge is hidden from public catalogue/collection surfaces and its trigger is skipped while the flag is disabled. Earned awards stay visible.
+	FeatureFlag *string `json:"feature_flag"`
 }
 
 type BadgeProgress struct {
@@ -946,6 +948,8 @@ type ChallengeDefinition struct {
 	EndsAt        pgtype.Timestamptz `json:"ends_at"`
 	IsActive      bool               `json:"is_active"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	// Optional feature flag key (feature_flags.key). If set, the challenge is hidden from public challenge surfaces and progress is not incremented while the flag is disabled. Completed progress stays visible.
+	FeatureFlag *string `json:"feature_flag"`
 }
 
 type ChecklistProgress struct {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -22,7 +23,6 @@
 	import { formatMetric } from '$lib/components/hub/charts/format';
 	import { api } from '$lib/api/client';
 	import type { PageData, ActionData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
@@ -156,18 +156,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={title} />
-	<meta name="twitter:description" content={description} />
-	{@html safeJsonLdScript(jsonLd)}
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<!-- Header — EntityHero directory panel -->

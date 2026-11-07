@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 	// Create planning group form. Submits via the browser API client (POST
 	// /planning-groups), then redirects to the new group's detail page.
@@ -82,14 +83,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('planning_groups.new_title', 'Create Planning Group — {site}')}</title>
-	<meta
-		name="description"
-		content={t('planning_groups.new_description', 'Create a planning group to organize your japa journey with others.')}
-	/>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={t('planning_groups.new_title', 'Create Planning Group — {site}')} description={t('planning_groups.new_description', 'Create a planning group to organize your japa journey with others.')} robots="`noindex, nofollow`" />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">

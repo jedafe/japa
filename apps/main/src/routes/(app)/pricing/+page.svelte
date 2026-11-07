@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { Check, X } from 'lucide-svelte';
 	import type { PageData } from './$types';
@@ -17,10 +18,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{t('pricing.title', 'Pricing — {site}')}</title>
-	<meta name="description" content={t('pricing.description', 'Choose the plan that fits your journey.')} />
-</svelte:head>
+<SeoHead title={t('pricing.title', 'Pricing — {site}')} description={t('pricing.description', 'Choose the plan that fits your journey.')} />
 
 <div class="mx-auto max-w-3xl px-4 py-8">
 	<header class="mb-8 text-center">

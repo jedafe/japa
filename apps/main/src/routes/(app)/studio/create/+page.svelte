@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import CreateShell from '$lib/components/create/CreateShell.svelte';
 	import type { EditorMode } from '$lib/components/create/editors/PostEditor.svelte';
 	import { PenSquare } from 'lucide-svelte';
@@ -27,10 +28,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('create.title', 'Create')} — {t('app.name', '{site}')}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={`${t('create.title', 'Create')} — ${t('app.name', '{site}')}`} robots="`noindex, nofollow`" description={t('create.description', 'Create new content — stories, guides, and posts on {site}.')} />
 
 {#if data.loadError}
 	<div class="mx-auto w-full max-w-full py-10">

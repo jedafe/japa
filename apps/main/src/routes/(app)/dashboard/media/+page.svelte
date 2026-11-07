@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/34-media-system.md (user media library)
 	// Grid/list of the user's uploaded media with filter, search, pagination,
 	// bulk actions, upload, and per-item actions (edit, delete, copy URL, details).
@@ -360,6 +361,8 @@
 	let rangeStart = $derived(total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1);
 	let rangeEnd = $derived(Math.min(page * PAGE_SIZE, total));
 </script>
+
+<SeoHead title={`${t('dashboard.nav.media')} — ${t('app.name')}`} description={t('media.subtitle')} robots="noindex" />
 
 <section class="space-y-4">
 	<header class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

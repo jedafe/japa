@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t, siteName} from '$lib/i18n';
 	import RecommendationsWidget from '$lib/components/hub/dashboard/RecommendationsWidget.svelte';
 	import type { PageData } from './$types';
@@ -8,9 +9,7 @@
 	const resolvedCountry = $derived(data.recommendations?.context?.content_country ?? null);
 </script>
 
-<svelte:head>
-	<title>{t('dashboard.overview.recommendations')} — {siteName()}</title>
-</svelte:head>
+<SeoHead title={`${t('dashboard.overview.recommendations')} — ${siteName()}`} description={t('recommendations.description', 'Personalised picks — stories, spaces, and guides matched to your interests on {site}.')} />
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6">
 	<header class="mb-4">

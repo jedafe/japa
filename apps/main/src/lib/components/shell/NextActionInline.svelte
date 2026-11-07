@@ -78,7 +78,7 @@
 		<div class="flex items-start justify-between gap-3">
 			<div class="min-w-0">
 				<p class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
-					<Icon size={15} class="shrink-0 text-[var(--color-accent)]" />{action.title}
+					<Icon size={15} class="shrink-0 text-[var(--color-primary)]" />{action.title}
 				</p>
 				{#if action.body}
 					<p class="mt-1 text-sm text-[var(--color-text-muted)]">{action.body}</p>
@@ -86,7 +86,7 @@
 				<a
 					href={action.cta_url}
 					onclick={click}
-					class="mt-2 inline-block rounded-full bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white hover:opacity-90"
+					class="mt-2 inline-block rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-white transition hover:bg-[var(--color-primary-hover)]"
 				>{action.cta_label}</a>
 			</div>
 			<button

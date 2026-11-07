@@ -341,6 +341,10 @@ func (s *Service) CreateProductType(ctx context.Context, slug, label, icon strin
 	if slug == "" || label == "" {
 		return fmt.Errorf("product type requires slug and label")
 	}
+	var serr error
+	if slug, serr = normalizeSlug(slug); serr != nil {
+		return serr
+	}
 	var iconVal *string
 	if icon != "" {
 		iconVal = &icon
@@ -441,6 +445,10 @@ func (h *Handlers) HandleCreateProductType(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := h.service.CreateProductType(r.Context(), body.Slug, body.Label, body.Icon, body.Categories, body.Config); err != nil {
+		if errors.Is(err, errInvalidSlug) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", err.Error())
+			return
+		}
 		var pge *pgconn.PgError
 		if errors.As(err, &pge) && pge.Code == "23505" {
 			errpkg.WriteError(w, http.StatusConflict, "slug_conflict", "A product type with this slug already exists")

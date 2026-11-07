@@ -1512,6 +1512,12 @@ ORDER BY
  c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListContentIDsBySpace :many
+-- Intentionally includes tombstoned rows — the search fan-out worker
+-- (search:reindex_space_entities) needs deleted content's IDs so their
+-- index documents get purged too.
+SELECT id FROM contents WHERE space_id = @space_id;
+
 -- name: IsContentVisibleToUser :one
 -- Phase 3 (spec 2026-09-24-agent-data-api-phase3): per-subscriber content
 -- visibility check. Used by the personal-webhook delivery filter and the

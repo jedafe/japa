@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md
 	// Achievement Feed list page. Renders milestone cards from the SSR-loaded
@@ -148,14 +149,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('achievements.heading', 'Achievements')}</h1>

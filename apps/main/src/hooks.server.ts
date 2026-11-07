@@ -9,6 +9,7 @@ import {
 	setRefreshCookie
 } from '$lib/server/auth';
 import { buildThemeOverrides } from '@japaconnect/ui/theme';
+import { resolveString, GLOBAL_TOKENS } from '@japaconnect/landing-blocks';
 import { sanitizeCustomCss } from '$lib/utils/safeHtml';
 import { isRtl } from '$lib/i18n/rtl';
 import type { SessionUser } from '$lib/types';
@@ -108,6 +109,47 @@ function isRoadmapSurface(host: string, customDomainSetting?: unknown): boolean 
 		? customDomainSetting.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
 		: [];
 	return [canonical, ...configured, ...custom].includes(host.toLowerCase());
+}
+
+/**
+ * Inject the site-level fallback description metas (marked data-jc-fallback)
+ * when the rendered page does NOT supply its own description — otherwise the
+ * HTML ships duplicate <meta name="description"> / og:description /
+ * twitter:description tags and crawlers pick one arbitrarily.
+ *
+ * Owning either name="description" or og:description claims the whole slot,
+ * including twitter:description: Twitter falls back to og:description when
+ * the twitter tag is absent, so the generic site fallback must not shadow
+ * the page's better description.
+ *
+ * These metas are injected here rather than rendered by the layout's
+ * <svelte:head>: post-render removal of Svelte-claimed nodes breaks
+ * hydration (the if-block claims a comment anchor — "element.getAttribute
+ * is not a function"). Injected nodes sit outside Svelte's head ownership,
+ * so hydration never expects them; the layout's client-nav effect still
+ * owns their lifecycle via the data-jc-fallback marker.
+ *
+ * Runs inside transformPageChunk, so it sees each streamed chunk separately;
+ * the whole <head> renders synchronously in the first chunk, so a page-level
+ * tag is always visible when present. If a head ever did split across
+ * chunks, the fallback simply lands in a later chunk — same as today's
+ * behavior.
+ */
+const PAGE_DESC_RE = /<meta\b[^>]*(?:name="description"|property="og:description")[^>]*>/g;
+
+function injectFallbackMeta(html: string, description: string): string {
+	if (!description) return html;
+	const pageOwnsDesc = (html.match(PAGE_DESC_RE) ?? []).length > 0;
+	if (pageOwnsDesc) return html;
+	const esc = description
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/"/g, '&quot;');
+	const metas =
+		`<meta name="description" content="${esc}" data-jc-fallback />` +
+		`<meta property="og:description" content="${esc}" data-jc-fallback />` +
+		`<meta name="twitter:description" content="${esc}" data-jc-fallback />`;
+	return html.replace('</head>', () => `${metas}</head>`);
 }
 
 /**
@@ -418,6 +460,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 		(siteSettings['site.custom_css'] as string | undefined) ?? ''
 	);
 
+	// Site-level fallback description — injected when the page does not
+	// supply its own (see injectFallbackMeta). Same token resolution the
+	// root layout applies ({{country}}/{{country_adjective}} → GLOBAL_TOKENS).
+	const siteDescription = resolveString(
+		(siteSettings['general.site_description'] as string | undefined) ?? '',
+		GLOBAL_TOKENS
+	);
+
 	// §18/§26 — hreflang alternates for locale-prefixed URLs so /fr/{path}
 	// isn't treated as an indexable duplicate of /{path}. Each enabled locale
 	// gets an alternate plus an x-default pointing at the default-locale URL.
@@ -472,16 +522,19 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	const response = await resolve(event, {
 		transformPageChunk: ({ html }) =>
-			html
-				.replace('%jc.pwa-meta%', () => pwaMeta)
-				.replace('%jc.themevars%', () => themeVars)
-				.replace('%jc.customcss%', () => customCss)
-				.replace('%jc.theme%', () => event.locals.resolvedTheme)
-				.replace(
-					'lang="en"',
-					() => `lang="${event.locals.locale}" dir="${isRtl(event.locals.locale ?? '') ? 'rtl' : 'ltr'}"`
-				)
-				.replace('</head>', () => `${hreflangLinks}</head>`)
+			injectFallbackMeta(
+				html
+					.replace('%jc.pwa-meta%', () => pwaMeta)
+					.replace('%jc.themevars%', () => themeVars)
+					.replace('%jc.customcss%', () => customCss)
+					.replace('%jc.theme%', () => event.locals.resolvedTheme)
+					.replace(
+						'lang="en"',
+						() => `lang="${event.locals.locale}" dir="${isRtl(event.locals.locale ?? '') ? 'rtl' : 'ltr'}"`
+					)
+					.replace('</head>', () => `${hreflangLinks}</head>`),
+				siteDescription
+			)
 	});
 	// Re-emit edge cache tags captured from upstream API detail responses so
 	// the CDN can invalidate this HTML page by tag (ADR-134).

@@ -1187,7 +1187,7 @@
 				<a
 					href={na.cta_url}
 					onclick={() => { trackNextAction(na.id, 'clicked'); markNextActionPending(na.id); }}
-					class="rounded-full bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white hover:opacity-90"
+					class="rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-white transition hover:bg-[var(--color-primary-hover)]"
 				>{na.cta_label}</a>
 				<button
 					onclick={() => { void dismissNextAction(na.id); nextActions = nextActions.slice(1); if (nextActions[0]) claimNextAction(nextActions[0].id); }}

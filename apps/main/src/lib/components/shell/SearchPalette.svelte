@@ -53,10 +53,11 @@
 		loading = true;
 		debounceTimer = setTimeout(async () => {
 			try {
-				const res = await api.get<{ data: { suggestions: SearchSuggestion[] } }>(
+				// api.get already unwraps the {data: ...} envelope.
+				const res = await api.get<{ suggestions: SearchSuggestion[] }>(
 					`/search/autocomplete?q=${encodeURIComponent(q)}&limit=10`
 				);
-				suggestions = res.data?.data?.suggestions ?? [];
+				suggestions = res.data?.suggestions ?? [];
 			} catch {
 				suggestions = [];
 			} finally {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
 	// Two-pane bookings inbox — left list (BookingListPane) selects ?b=<id>,
 	// right detail (BookingDetailPane) carries the booker/provider actions.
@@ -60,10 +61,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={title} robots="`noindex, nofollow`" description={t('messages.bookings_description', 'Booking requests and conversations.')} />
 
 <!-- Exact-height column like /messages so the panes scroll internally;
      below md the shell's top bar + bottom tab bar are subtracted. -->

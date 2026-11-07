@@ -29,7 +29,7 @@ SELECT * FROM badge_definitions
 WHERE id = @id;
 
 -- name: CreateBadgeDefinition :one
-INSERT INTO badge_definitions (slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, accent_color) VALUES (@slug, @name, sqlc.narg(description), sqlc.narg(icon_media_id), @trigger_type, sqlc.narg(trigger_value), sqlc.narg(trigger_activity_key), @is_active, @is_system, @display_order, sqlc.narg(category), @rarity, sqlc.narg(tier), sqlc.narg(badge_group), @is_secret, @is_limited, @is_featured, @points_reward, sqlc.narg(available_from), sqlc.narg(available_until), sqlc.narg(accent_color))
+INSERT INTO badge_definitions (slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order, category, rarity, tier, badge_group, is_secret, is_limited, is_featured, points_reward, available_from, available_until, accent_color, feature_flag) VALUES (@slug, @name, sqlc.narg(description), sqlc.narg(icon_media_id), @trigger_type, sqlc.narg(trigger_value), sqlc.narg(trigger_activity_key), @is_active, @is_system, @display_order, sqlc.narg(category), @rarity, sqlc.narg(tier), sqlc.narg(badge_group), @is_secret, @is_limited, @is_featured, @points_reward, sqlc.narg(available_from), sqlc.narg(available_until), sqlc.narg(accent_color), sqlc.narg(feature_flag))
 
 RETURNING *;
 
@@ -54,7 +54,8 @@ SET
  is_featured = COALESCE(sqlc.narg(is_featured), is_featured),
  points_reward = COALESCE(sqlc.narg(points_reward), points_reward),
  available_from = CASE WHEN sqlc.narg(clear_available_from)::boolean THEN NULL ELSE COALESCE(sqlc.narg(available_from), available_from) END,
- available_until = CASE WHEN sqlc.narg(clear_available_until)::boolean THEN NULL ELSE COALESCE(sqlc.narg(available_until), available_until) END
+ available_until = CASE WHEN sqlc.narg(clear_available_until)::boolean THEN NULL ELSE COALESCE(sqlc.narg(available_until), available_until) END,
+ feature_flag = CASE WHEN sqlc.narg(clear_feature_flag)::boolean THEN NULL ELSE COALESCE(sqlc.narg(feature_flag), feature_flag) END
 WHERE id = @id
 RETURNING *;
 
@@ -138,7 +139,7 @@ SELECT * FROM challenge_definitions
 WHERE id = @id;
 
 -- name: CreateChallenge :one
-INSERT INTO challenge_definitions (slug, name, description, image_media_id, activity_key, target_count, reward_points, reward_badge_id, starts_at, ends_at, is_active) VALUES (@slug, @name, sqlc.narg(description), sqlc.narg(image_media_id), @activity_key, @target_count, @reward_points, sqlc.narg(reward_badge_id), @starts_at, sqlc.narg(ends_at), @is_active)
+INSERT INTO challenge_definitions (slug, name, description, image_media_id, activity_key, target_count, reward_points, reward_badge_id, starts_at, ends_at, is_active, feature_flag) VALUES (@slug, @name, sqlc.narg(description), sqlc.narg(image_media_id), @activity_key, @target_count, @reward_points, sqlc.narg(reward_badge_id), @starts_at, sqlc.narg(ends_at), @is_active, sqlc.narg(feature_flag))
 
 RETURNING *;
 
@@ -154,7 +155,8 @@ SET
  reward_badge_id = CASE WHEN sqlc.narg(clear_reward_badge_id)::boolean THEN NULL ELSE COALESCE(sqlc.narg(reward_badge_id), reward_badge_id) END,
  starts_at = COALESCE(sqlc.narg(starts_at), starts_at),
  ends_at = CASE WHEN sqlc.narg(clear_ends_at)::boolean THEN NULL ELSE COALESCE(sqlc.narg(ends_at), ends_at) END,
- is_active = COALESCE(sqlc.narg(is_active), is_active)
+ is_active = COALESCE(sqlc.narg(is_active), is_active),
+ feature_flag = CASE WHEN sqlc.narg(clear_feature_flag)::boolean THEN NULL ELSE COALESCE(sqlc.narg(feature_flag), feature_flag) END
 WHERE id = @id
 RETURNING *;
 
@@ -207,7 +209,8 @@ SELECT
  cd.description AS challenge_description,
  cd.target_count,
  cd.reward_points,
- cd.ends_at
+ cd.ends_at,
+ cd.feature_flag AS challenge_feature_flag
 FROM user_challenge_progress ucp
 JOIN challenge_definitions cd ON cd.id = ucp.challenge_id
 WHERE ucp.user_id = @user_id

@@ -18,6 +18,7 @@ type stubDeps struct {
 	assessScore int
 	pushSub     bool
 	draftExists bool
+	flagOn      bool
 }
 
 func (s stubDeps) CountEvents(_ context.Context, _ *UserState, _ string, _ int, _ bool) (int64, error) {
@@ -41,6 +42,9 @@ func (s stubDeps) HasPushSub(_ context.Context, _ pgtype.UUID) (bool, error) {
 func (s stubDeps) DraftExists(_ context.Context, _ pgtype.UUID, _ string) (bool, error) {
 	return s.draftExists, nil
 }
+func (s stubDeps) FeatureEnabled(_ context.Context, _ string) (bool, error) {
+	return s.flagOn, nil
+}
 
 func userState() *UserState {
 	return &UserState{
@@ -48,9 +52,9 @@ func userState() *UserState {
 		UserID:         pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true},
 		AccountAgeDays: 10,
 		EmailVerified:  true,
+		JapaStage:      "planning",
 		VCtx: visitor.VisitorContext{
 			DestinationCountry: "CA",
-			JapaStage:          "planning",
 		},
 		Surface: "main",
 	}
@@ -86,6 +90,9 @@ func TestEvalConditions(t *testing.T) {
 		{"tool_used", ConditionGroup{All: []Predicate{{Predicate: "tool_used", Slug: "crs-calculator"}}}, userState(), stubDeps{toolUsed: true}, true},
 		{"tool_not_used", ConditionGroup{All: []Predicate{{Predicate: "tool_not_used", Slug: "crs-calculator"}}}, userState(), stubDeps{toolUsed: false}, true},
 		{"gate_hit", ConditionGroup{All: []Predicate{{Predicate: "feature_gate_hit", WithinDays: 7}}}, userState(), stubDeps{gateHit: true}, true},
+		{"feature_enabled on", ConditionGroup{All: []Predicate{{Predicate: "feature_enabled", Key: "mentorship.enabled"}}}, userState(), stubDeps{flagOn: true}, true},
+		{"feature_enabled off suppresses", ConditionGroup{All: []Predicate{{Predicate: "feature_enabled", Key: "mentorship.enabled"}}}, userState(), stubDeps{flagOn: false}, false},
+		{"feature_enabled nil deps fails closed", ConditionGroup{All: []Predicate{{Predicate: "feature_enabled", Key: "mentorship.enabled"}}}, userState(), nil, false},
 		{"surface", ConditionGroup{All: []Predicate{{Predicate: "surface", In: []string{"tools"}}}}, userState(), stubDeps{}, false},
 		{"all AND fails on one", ConditionGroup{All: []Predicate{
 			{Predicate: "destination_country", In: []string{"CA"}},

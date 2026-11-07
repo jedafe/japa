@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/jedafe/japa/internal/features"
+	"github.com/jedafe/japa/internal/japastage"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // predicateRegistry is the code-registered predicate vocabulary (ADR-132 §2).
@@ -29,6 +33,7 @@ var predicateRegistry = map[string]bool{
 	"feature_not_used":      true,
 	"event_count":           true,
 	"feature_gate_hit":      true,
+	"feature_enabled":       true,
 	"has_draft":             true,
 	"has_push_subscription": true,
 	"surface":               true,
@@ -86,6 +91,10 @@ func PredicateSpecs() []PredicateSpec {
 		{Name: "feature_used", Args: []PredicateArg{{Key: "slug", Type: "string", Required: true}, {Key: "within_days", Type: "number"}}},
 		{Name: "feature_not_used", Args: []PredicateArg{{Key: "slug", Type: "string", Required: true}, {Key: "within_days", Type: "number"}}},
 		{Name: "feature_gate_hit", Args: []PredicateArg{{Key: "feature", Type: "string"}, {Key: "within_days", Type: "number"}}},
+		// Flag-key arg — the rule suppresses itself while the flag is off.
+		// Validated against the §42 registry so a typo'd key can't produce a
+		// silently-never-matching rule.
+		{Name: "feature_enabled", Args: []PredicateArg{{Key: "key", Type: "string", Required: true, Options: "feature_flags key, e.g. mentorship.enabled"}}},
 		{Name: "event_count", Args: []PredicateArg{{Key: "type", Type: "string", Required: true}, {Key: "lt", Type: "number"}, {Key: "gt", Type: "number"}, {Key: "gte", Type: "number"}, {Key: "window", Type: "string", Options: "session or Nd (e.g. 7d)"}}},
 		{Name: "has_push_subscription", Args: []PredicateArg{{Key: "eq", Type: "bool"}}},
 		// "resume your draft" reminders — slug narrows to a draft kind
@@ -133,6 +142,24 @@ func VocabSurfaces() []string {
 
 var surfaceSet = map[string]bool{
 	"main": true, "tools": true, "academy": true, "docs": true, "mobile": true,
+}
+
+// archetypeSet is the ADR-064 visitor-archetype vocabulary emitted by
+// visitor.VisitorContext — bounded so a typo'd audience/condition dies at
+// write time instead of silently never matching.
+var archetypeSet = map[string]bool{
+	visitor.ArchetypeOriginVisitor:  true,
+	visitor.ArchetypeDiaspora:       true,
+	visitor.ArchetypeGlobalTraveler: true,
+}
+
+// isoCountry reports whether v looks like an ISO-3166 alpha-2 code (the
+// VisitorContext country fields all normalise to alpha-2 uppercase).
+func isoCountry(v string) bool {
+	if len(v) != 2 {
+		return false
+	}
+	return v[0] >= 'A' && v[0] <= 'Z' && v[1] >= 'A' && v[1] <= 'Z'
 }
 
 var frequencyModeSet = map[string]bool{"once": true, "recurring": true}
@@ -190,6 +217,21 @@ func ValidateRule(r Rule, allowedOrigins []string) error {
 			return fmt.Errorf("unknown audience surface %q", sf)
 		}
 	}
+	for _, st := range r.Audience.JapaStage {
+		if st != "" && !japastage.ValidStage(st) {
+			return fmt.Errorf("unknown audience japa_stage %q", st)
+		}
+	}
+	for _, a := range r.Audience.Archetype {
+		if !archetypeSet[a] {
+			return fmt.Errorf("unknown audience archetype %q", a)
+		}
+	}
+	for _, c := range append(append([]string{}, r.Audience.DestinationCountry...), r.Audience.OriginCountry...) {
+		if !isoCountry(c) {
+			return fmt.Errorf("audience country %q is not an ISO alpha-2 code", c)
+		}
+	}
 	if slices.Contains(r.Audience.UserClass, ClassGuest) {
 		for _, ch := range r.Channels {
 			if slices.Contains(PushChannels, ch) {
@@ -242,16 +284,39 @@ func validatePredicateArgs(p Predicate) error {
 		// Bounded vocabularies — a typo'd value makes the rule silently
 		// never-match, same as the audience.user_class check above.
 		switch p.Predicate {
-		case "user_class":
+		case "user_class", "account_tier":
+			// account_tier reads the same resolved UserClass — the tier
+			// resolver emits regular/pro/business literals from the same
+			// vocabulary, so one set bounds both predicates.
 			for _, v := range p.In {
 				if !userClassSet[v] {
-					return fmt.Errorf("user_class: unknown value %q", v)
+					return fmt.Errorf("%s: unknown value %q", p.Predicate, v)
 				}
 			}
 		case "surface":
 			for _, v := range p.In {
 				if !surfaceSet[v] {
 					return fmt.Errorf("surface: unknown value %q", v)
+				}
+			}
+		case "japa_stage":
+			for _, v := range p.In {
+				// "" matches members with no declared stage (§87 NULL
+				// profile column + no VisitorContext fallback).
+				if v != "" && !japastage.ValidStage(v) {
+					return fmt.Errorf("japa_stage: unknown value %q", v)
+				}
+			}
+		case "archetype":
+			for _, v := range p.In {
+				if !archetypeSet[v] {
+					return fmt.Errorf("archetype: unknown value %q", v)
+				}
+			}
+		case "destination_country", "origin_country", "current_country":
+			for _, v := range p.In {
+				if !isoCountry(v) {
+					return fmt.Errorf("%s: %q is not an ISO alpha-2 code", p.Predicate, v)
 				}
 			}
 		}
@@ -262,6 +327,13 @@ func validatePredicateArgs(p Predicate) error {
 	case "event_count":
 		if p.Type == "" || (p.Lt == nil && p.Gt == nil && p.Gte == nil) {
 			return fmt.Errorf("event_count requires type and at least one of lt, gt, gte")
+		}
+	case "feature_enabled":
+		if p.Key == "" {
+			return fmt.Errorf("feature_enabled requires key")
+		}
+		if _, ok := features.RegistryLookup(p.Key); !ok {
+			return fmt.Errorf("feature_enabled: unknown feature_flags key %q", p.Key)
 		}
 	case "account_age_days", "profile_completeness", "assessment_score":
 		if p.Lt == nil && p.Gt == nil && p.Gte == nil {

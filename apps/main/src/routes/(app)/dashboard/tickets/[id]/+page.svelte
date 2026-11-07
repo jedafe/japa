@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/38-tickets.md (user portal)
 	// Single-ticket thread view: header (subject, status, priority, dates) +
 	// the original description as the first post + nested comments. The reply
@@ -89,6 +90,8 @@
 		}
 	}
 </script>
+
+<SeoHead title={`${ticket.subject} — ${t('tickets.list_title')} — ${t('app.name')}`} description={t('tickets.detail_description', 'Support ticket thread — replies and status updates.')} robots="noindex" />
 
 <section class="space-y-4">
 	<header>

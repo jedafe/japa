@@ -1,6 +1,5 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md (Entity Directory amendment)
 import { apiContext, apiGet } from '$lib/server/api';
-import { hasPerm } from '$lib/server/auth';
 import type { PageServerLoad } from './$types';
 
 export interface EntityKindType {
@@ -24,5 +23,5 @@ export const load: PageServerLoad = async (event) => {
 	} catch {
 		kinds = [];
 	}
-	return { kinds, canManage: hasPerm(event.locals.user?.permissions, 'wiki.manage'), canCreate: hasPerm(event.locals.user?.permissions, 'wiki.edit') };
+	return { kinds };
 };

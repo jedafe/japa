@@ -134,6 +134,26 @@ func TestSweepLockTTL(t *testing.T) {
 	}
 }
 
+func TestFeatureKeys(t *testing.T) {
+	t.Parallel()
+	cond := &ConditionGroup{All: []Predicate{
+		{Predicate: "feature_enabled", Key: "assessment.enabled"},
+		{Predicate: "japa_stage", In: []string{"planning"}},
+	}, Any: []Predicate{
+		{Predicate: "feature_enabled", Key: "feature.jce"},
+	}}
+	comp := &ConditionGroup{All: []Predicate{
+		{Predicate: "feature_enabled", Key: "feature.comparison"},
+	}}
+	got := featureKeys(cond, comp)
+	if len(got) != 3 || got[0] != "assessment.enabled" || got[1] != "feature.jce" || got[2] != "feature.comparison" {
+		t.Errorf("featureKeys = %v", got)
+	}
+	if got := featureKeys(nil, &ConditionGroup{All: []Predicate{{Predicate: "tool_used", Slug: "x"}}}); len(got) != 0 {
+		t.Errorf("expected no keys, got %v", got)
+	}
+}
+
 func TestParseUUID(t *testing.T) {
 	t.Parallel()
 	id := pgtype.UUID{Bytes: [16]byte{9}, Valid: true}

@@ -1606,12 +1606,15 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 		entityType = entityTypeContent
 	}
 
-	// Handle delete operation. The "contents" index is the default when the
-	// entity_type has no dedicated index.
+	// Handle delete operation. An unmapped entity_type is skipped with a
+	// warning rather than written to a fallback index — silently targeting
+	// a nonexistent index is how deleted content stayed searchable (the
+	// old "contents" fallback was never a real index).
 	if payload.Operation == "delete" {
 		indexName := entityTypeIndexNames[entityType]
 		if indexName == "" {
-			indexName = "contents"
+			slog.Warn("task:search:index_entity: delete for unmapped entity type, skipping", "entity_type", entityType)
+			return nil
 		}
 
 		return searchIndexer.DeleteDocument(ctx, indexName, entityID.Bytes)
@@ -1627,9 +1630,10 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 }
 
 // entityTypeIndexNames maps an entity_type value to the search index name
-// used for delete operations. Entity types not listed here fall back to the
-// "contents" index.
+// used for delete operations. Every entity type that enqueues a delete must
+// be listed here — unmapped types are skipped (fail-visible, not silent).
 var entityTypeIndexNames = map[string]string{
+	entityTypeContent:           "posts",
 	"forum_thread":              "forum_threads",
 	entityTypeSpace:             "spaces",
 	"user":                      "users",
@@ -1754,6 +1758,155 @@ func HandleSearchReindexEngagementScores(ctx context.Context, _ *asynq.Task) err
 
 	slog.Info("task:search:reindex_engagement_scores: completed", "reindexed", reindexed, "total", len(rows), "cursor", newest.Format(time.RFC3339Nano))
 
+	return nil
+}
+
+// HandleSearchReindexAll runs a full bulk resync of every managed search
+// index — the worker counterpart of `go run ./cmd/reindex`. Payload:
+// {"purge": bool}. With purge=true all documents in the managed indexes are
+// deleted first (schemas kept), so stale docs for rows the listing queries
+// no longer return — drafts, private content, soft-deleted threads — are
+// physically dropped instead of merely filtered at query time.
+func HandleSearchReindexAll(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:search:reindex_all")
+
+	if searchIndexer == nil {
+		slog.Warn("task:search:reindex_all: no search indexer registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		Purge bool `json:"purge"`
+	}
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		slog.Error("task:search:reindex_all: invalid payload", "error", err)
+		return fmt.Errorf("invalid payload: %w", err)
+	}
+
+	if payload.Purge {
+		if err := searchIndexer.PurgeAll(ctx); err != nil {
+			slog.Error("task:search:reindex_all: purge failed", "error", err)
+			return fmt.Errorf("purge: %w", err)
+		}
+	}
+
+	summary, err := searchIndexer.ReindexAll(ctx)
+	if err != nil {
+		slog.Error("task:search:reindex_all: reindex failed", "error", err)
+		return fmt.Errorf("reindex: %w", err)
+	}
+
+	summaryJSON, _ := json.Marshal(summary)
+	slog.Info("task:search:reindex_all: completed", "purge", payload.Purge, "summary", string(summaryJSON))
+
+	return nil
+}
+
+// HandleSearchReindexSpaceEntities resyncs every forum thread and content
+// row inside one space. Both inherit space visibility (§05): a space going
+// private, deleted, suspended, or back to public changes what its entities
+// may expose in the index, so the owning paths enqueue this fan-out and the
+// per-entity index gates decide upsert vs. delete. The ID listings
+// intentionally include tombstoned rows so their documents are purged too.
+func HandleSearchReindexSpaceEntities(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:search:reindex_space_entities")
+
+	if searchIndexer == nil {
+		slog.Warn("task:search:reindex_space_entities: no search indexer registered, skipping")
+		return nil
+	}
+	if dbPool == nil {
+		return fmt.Errorf("db pool not initialized")
+	}
+
+	// Two modes: {"space_id"} lists current entities (visibility/status
+	// changes — the space row still exists), or {"thread_ids","content_ids"}
+	// resyncs explicit sets (space deletion — space_id is SET NULL by the
+	// delete, so the caller must capture IDs beforehand).
+	var payload struct {
+		SpaceID    string   `json:"space_id"`
+		ThreadIDs  []string `json:"thread_ids"`
+		ContentIDs []string `json:"content_ids"`
+	}
+	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+		slog.Error("task:search:reindex_space_entities: invalid payload", "error", err)
+		return fmt.Errorf("invalid payload: %w", err)
+	}
+
+	parseIDs := func(raws []string, field string) ([]pgtype.UUID, error) {
+		ids := make([]pgtype.UUID, 0, len(raws))
+		for _, raw := range raws {
+			var id pgtype.UUID
+			if err := id.Scan(raw); err != nil || !id.Valid {
+				return nil, fmt.Errorf("invalid %s: %q", field, raw)
+			}
+			ids = append(ids, id)
+		}
+		return ids, nil
+	}
+
+	var threadIDs, contentIDs []pgtype.UUID
+	if len(payload.ThreadIDs) > 0 || len(payload.ContentIDs) > 0 {
+		var err error
+		threadIDs, err = parseIDs(payload.ThreadIDs, "thread_id")
+		if err != nil {
+			slog.Error("task:search:reindex_space_entities", "error", err)
+			return err
+		}
+		contentIDs, err = parseIDs(payload.ContentIDs, "content_id")
+		if err != nil {
+			slog.Error("task:search:reindex_space_entities", "error", err)
+			return err
+		}
+	} else {
+		var spaceID pgtype.UUID
+		if err := spaceID.Scan(payload.SpaceID); err != nil || !spaceID.Valid {
+			slog.Error("task:search:reindex_space_entities: invalid space_id", "space_id", payload.SpaceID)
+			return fmt.Errorf("invalid space_id: %q", payload.SpaceID)
+		}
+
+		q := gen.New(dbPool.Writer)
+		var err error
+		threadIDs, err = q.ListForumThreadIDsBySpace(ctx, spaceID)
+		if err != nil {
+			return fmt.Errorf("listing space threads: %w", err)
+		}
+		contentIDs, err = q.ListContentIDsBySpace(ctx, spaceID)
+		if err != nil {
+			return fmt.Errorf("listing space content: %w", err)
+		}
+	}
+
+	resynced, failed := 0, 0
+	var firstErr error
+	sync := func(kind string, id pgtype.UUID, index func(context.Context, [16]byte) error) {
+		if err := index(ctx, id.Bytes); err != nil {
+			slog.Error("task:search:reindex_space_entities: entity resync failed",
+				"space_id", payload.SpaceID, kind+"_id", id.String(), "error", err)
+			failed++
+			if firstErr == nil {
+				firstErr = err
+			}
+			return
+		}
+		resynced++
+	}
+
+	for _, id := range threadIDs {
+		sync("thread", id, searchIndexer.IndexForumThread)
+	}
+	for _, id := range contentIDs {
+		sync("content", id, searchIndexer.IndexContent)
+	}
+
+	slog.Info("task:search:reindex_space_entities: completed",
+		"space_id", payload.SpaceID,
+		"threads", len(threadIDs), "contents", len(contentIDs),
+		"resynced", resynced, "failed", failed)
+
+	if firstErr != nil {
+		return fmt.Errorf("resyncing %d/%d entities: %w", failed, len(threadIDs)+len(contentIDs), firstErr)
+	}
 	return nil
 }
 
@@ -2090,6 +2243,11 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 
 	scheduleScheduledPublishFanOut(ctx, contentID, payload.ContentID)
 	scheduleScholarshipSyncFromGuide(ctx, contentID, payload.ContentID)
+
+	// Scheduled content is excluded from the search index while
+	// status='scheduled' — re-index now that it has been published so the
+	// post becomes searchable. Fire-and-forget; failure is logged.
+	EnqueueSearchIndexSync(ctx, entityTypeContent, contentID)
 
 	return nil
 }
@@ -5620,6 +5778,10 @@ func archiveReportedEntity(ctx context.Context, entityType, entityIDStr string, 
 			// RSS-013: drop the auto-hidden item from cached feeds without
 			// waiting for the hourly cron.
 			scheduleRSSRegenerate(taskEnqueuer)
+			// The indexer's published+public gate removes the archived row
+			// from the posts index (its indexed status would otherwise stay
+			// 'published' and keep surfacing in search results).
+			EnqueueSearchIndexSync(ctx, entityTypeContent, entityID)
 		}
 
 	case "comment":

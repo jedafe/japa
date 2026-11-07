@@ -21,6 +21,12 @@ SELECT id, content_id, space_id, author_user_id, parent_reply_id,
 FROM forum_threads
 WHERE slug = @slug AND deleted_at IS NULL;
 
+-- name: ListForumThreadIDsBySpace :many
+-- Intentionally includes tombstoned rows — the search fan-out worker
+-- (search:reindex_space_entities) needs deleted threads' IDs so their
+-- index documents get purged too.
+SELECT id FROM forum_threads WHERE space_id = @space_id;
+
 -- name: ListForumThreadsBySpace :many
 SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
@@ -28,6 +34,7 @@ SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  is_edited, created_at, updated_at, deleted_at
 FROM forum_threads
 WHERE space_id = @space_id
+ AND deleted_at IS NULL
  AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;
@@ -39,6 +46,7 @@ SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  is_edited, created_at, updated_at, deleted_at
 FROM forum_threads
 WHERE author_user_id = @author_user_id
+ AND deleted_at IS NULL
  AND (created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY created_at DESC, id DESC
 LIMIT @page_limit;

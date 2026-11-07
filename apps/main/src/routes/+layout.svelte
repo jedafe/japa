@@ -13,6 +13,7 @@
 	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
 	import { syncPushSubscription } from '$lib/pwa/push-sync';
 	import { env } from '$env/dynamic/public';
+	import { resolveString, GLOBAL_TOKENS } from '@japaconnect/landing-blocks';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -116,14 +117,51 @@
 	// Site-level settings from GET /site/settings/public (general.*).
 	// Used for SEO meta tags and the maintenance banner.
 	let siteName = $derived(
-		(data.siteSettings?.['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME
+		resolveString(
+			(data.siteSettings?.['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME,
+			GLOBAL_TOKENS
+		)
 	);
+	// The admin-managed description may carry {{country}}/{{country_adjective}}
+	// geo tokens (Page Builder copy syntax). The layout has no per-visitor geo
+	// context, so resolve against GLOBAL_TOKENS — never emit a raw {{token}}.
 	let siteDescription = $derived(
-		(data.siteSettings?.['general.site_description'] as string | undefined) ?? ''
+		resolveString(
+			(data.siteSettings?.['general.site_description'] as string | undefined) ?? '',
+			GLOBAL_TOKENS
+		)
 	);
 	let maintenanceMode = $derived(
 		(data.siteSettings?.['general.maintenance_mode'] as boolean | undefined) ?? false
 	);
+
+	// Mirror the SSR dedupeFallbackMeta on client navigations: the layout's
+	// fallback metas persist across nav, so when the incoming page supplies
+	// its own description the marked fallbacks are removed, and restored when
+	// the page has none (Svelte won't recreate them — this effect owns their
+	// post-mount lifecycle).
+	$effect(() => {
+		void page.url.pathname;
+		const marked = [...document.head.querySelectorAll('meta[data-jc-fallback]')];
+		const pageOwns = document.head.querySelector(
+			'meta[name="description"]:not([data-jc-fallback]), meta[property="og:description"]:not([data-jc-fallback])'
+		);
+		if (pageOwns) {
+			for (const m of marked) m.remove();
+		} else if (siteDescription && marked.length === 0) {
+			for (const [attr, val] of [
+				['name', 'description'],
+				['property', 'og:description'],
+				['name', 'twitter:description']
+			] as const) {
+				const m = document.createElement('meta');
+				m.setAttribute(attr, val);
+				m.setAttribute('content', siteDescription);
+				m.setAttribute('data-jc-fallback', '');
+				document.head.appendChild(m);
+			}
+		}
+	});
 	// Admins bypass the maintenance banner.
 	let showMaintenanceBanner = $derived(
 		maintenanceMode && !(data.user?.groups?.some((g) => g === 'Super Admin' || g === 'Admin') ?? false)
@@ -291,11 +329,11 @@
 		title={t('forum.rss_title', '{site} Forum')}
 		href="/forum/feed.xml"
 	/>
-	{#if siteDescription}
-		<meta name="description" content={siteDescription} />
-		<meta property="og:description" content={siteDescription} />
-		<meta name="twitter:description" content={siteDescription} />
-	{/if}
+	<!-- Site-level fallback description metas are injected by hooks.server.ts
+	     (marked data-jc-fallback) when the page supplies no description —
+	     they are NOT rendered here: post-render removal of Svelte-claimed
+	     head nodes breaks hydration. The effect below owns their client-nav
+	     lifecycle (remove when a page owns its description, restore when not). -->
 	<meta property="og:site_name" content={siteName} />
 	{#if faviconUrl}
 		<!-- Override the default favicon with the control-panel uploaded favicon.

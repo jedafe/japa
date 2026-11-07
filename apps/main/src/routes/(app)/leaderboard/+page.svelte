@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
@@ -57,14 +58,7 @@
 	};
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-2xl" style="--page-gutter: 1rem">
 	<h1 class="sr-only">{t('leaderboard.heading', 'Leaderboard')}</h1>

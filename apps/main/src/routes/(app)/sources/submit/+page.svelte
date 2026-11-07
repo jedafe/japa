@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: docs/superpowers/plans/2026-09-11-sources-directory-v2-plan.md
 	// Public source proposal page — a standalone deep link for the same
 	// ProposeSourceForm that renders inside ProposeSourceModal on /sources.
@@ -12,10 +13,7 @@
 	const title = $derived(t('sources.submit.title', 'Propose a source'));
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={title} robots="`noindex, nofollow`" description={t('sources.submit.description', 'Propose a content source for the community feed.')} />
 
 <div class="mx-auto max-w-xl p-4">
 	<h1 class="flex items-center gap-2 text-xl font-bold">

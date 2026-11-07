@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/22-admin-panel.md (Appeals)
 	// Lists the user's submitted appeals (GET /me/appeals) with status pills
 	// and links to the linked staff ticket (the conversation thread).
@@ -84,9 +85,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{t('appeals.list_title', 'My appeals — {site}')}</title>
-</svelte:head>
+<SeoHead title={t('appeals.list_title', 'My appeals — {site}')} description={t('appeals.description', 'Track the status and outcomes of your appeals.')} />
 
 <section class="space-y-4">
 	<header class="flex flex-wrap items-center justify-between gap-3">

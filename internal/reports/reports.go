@@ -21,8 +21,9 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/rbac"
-	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/wallet"
+	"github.com/jedafe/japa/internal/worker"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -519,6 +520,10 @@ func (s *Service) BanUser(ctx context.Context, userID pgtype.UUID, reason string
 			slog.Error("ban user: failed to invalidate ban cache", "error", err, "user_id", userID.String())
 		}
 	}
+
+	// Re-sync the users search doc — a banned account must drop out of
+	// search results (IndexUser gates on effective status).
+	worker.EnqueueSearchIndexSync(ctx, EntityTypeUser, userID)
 
 	return nil
 }

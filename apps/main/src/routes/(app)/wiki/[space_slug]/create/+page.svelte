@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { confirmDialog } from '@japaconnect/ui';
@@ -311,11 +312,7 @@
 	const titleText = $derived(`${t('wiki.create_title', 'Create page')} — ${data.spaceSlug}`);
 </script>
 
-<svelte:head>
-	<title>{titleText}</title>
-	<meta name="description" content={t('wiki.create_description', 'Create a new wiki page')} />
-	<meta name="robots" content="noindex,nofollow" />
-</svelte:head>
+<SeoHead title={titleText} description={t('wiki.create_description', 'Create a new wiki page')} robots="`noindex,nofollow`" />
 
 <div class="mx-auto w-full max-w-3xl p-4">
 	<div class="mb-6 flex flex-col items-start gap-1">

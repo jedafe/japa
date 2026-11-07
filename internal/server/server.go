@@ -1461,6 +1461,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Settings: settingsService,
 		Resolver: nextActionsResolver,
 		Tracker:  analyticsService,
+		Checker:  featureChecker, // feature_enabled predicates suppress rules whose CTA feature is off
 	})
 	nextActionsHandlers := nextactions.NewHandlers(nextActionsSvc, settingsService)
 	nextActionsHandlers.SetAuditDB(database.Writer)
@@ -1541,6 +1542,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	gamificationStore := gamification.NewStore(database)
 	gamificationService := gamification.NewService(gamificationStore, settingsService)
 	gamificationService.SetCache(vkClient.Redis()) // §64: jc:leaderboard:{scope}:{period} 1h cache
+	// §42 conformance — badges/challenges linked to a feature_flag hide
+	// while that feature is disabled (migration 001086).
+	gamificationService.SetFeatureChecker(featureChecker)
 	gamificationHandlers := gamification.NewHandlers(gamificationService, settingsService)
 	gamificationHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in gamification responses
 	// Wire the wallet service as the gamification PointsAwarder so challenge
@@ -3403,10 +3407,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	}
 
 	// Search subsystem.
-	// The indexer syncs content rows into the posts index from the reader
-	// pool; it is registered with the worker so the search_index_sync task
-	// can upsert documents asynchronously.
+	// The indexer syncs content rows into the posts index. Bulk reindex
+	// sweeps read from the replica; per-entity fetches read from the
+	// writer pool so a write-triggered sync task can't hit replica lag
+	// and reindex (or resurrect) a stale row.
 	searchIndexer := search.NewIndexer(searchEngine, gen.New(database.Reader))
+	searchIndexer.SetLatestRead(gen.New(database.Writer))
 	searchIndexer.SetPool(database)
 	worker.RegisterSearchIndexer(searchIndexer)
 
@@ -7751,9 +7757,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// ──────────────────────────────────────────────────────────────
 			// V2 feature routes (Sections 61–76, ADRs 068, 070–085).
-			// Each feature's settings toggle (e.g. jobs.enabled, remittance.enabled)
-			// is enforced inside the handler via settingsService, not via the
-			// feature.* flag gate, matching the RAG pattern (Section 69).
+			// Each feature's toggle (e.g. jobs.enabled) is enforced inside the
+			// handler via the service's feature_flags checker — scoped per §42
+			// (surface/geo/audience/rollout), system_settings as fallback —
+			// not via the feature.* flag gate, matching the RAG pattern (Section 69).
 			// ──────────────────────────────────────────────────────────────
 
 			// Section 63 — Jobs Board (ADR-081)

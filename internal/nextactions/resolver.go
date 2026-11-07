@@ -25,7 +25,8 @@ type UserState struct {
 	AccountAgeDays int
 	OnboardingDone bool
 	EmailVerified  bool
-	ProfilePct     int // 0-100 — display_name + avatar + bio completeness proxy
+	ProfilePct     int    // 0-100 — display_name + avatar + bio completeness proxy
+	JapaStage      string // canonical §87 stage — profile column, else VCtx-normalized
 	VCtx           visitor.VisitorContext
 	Surface        string
 }
@@ -86,10 +87,14 @@ func (r *StateResolver) Resolve(ctx context.Context, req *http.Request, surface 
 			}
 			s.EmailVerified = row.EmailVerifiedAt.Valid
 			s.ProfilePct = profilePct(row)
+			s.JapaStage = canonicalStage(row.JapaStage, s.VCtx)
 		}
 		if ob, err := r.read.GetOnboardingState(ctx, u.UserID); err == nil {
 			s.OnboardingDone = ob.Completed
 		}
+	}
+	if s.JapaStage == "" {
+		s.JapaStage = s.VCtx.JourneyStage
 	}
 
 	if r.tiers != nil {
@@ -123,6 +128,7 @@ func (r *StateResolver) ResolveSweep(ctx context.Context, userID pgtype.UUID) *U
 
 			s.EmailVerified = row.EmailVerifiedAt.Valid
 			s.ProfilePct = profilePct(row)
+			s.JapaStage = canonicalStage(row.JapaStage, s.VCtx)
 		}
 
 		if ob, err := r.read.GetOnboardingState(ctx, userID); err == nil {
@@ -139,8 +145,25 @@ func (r *StateResolver) ResolveSweep(ctx context.Context, userID pgtype.UUID) *U
 	if r.visitor != nil {
 		s.VCtx = r.visitor.ResolveForUser(ctx, userID)
 	}
+	if s.JapaStage == "" {
+		s.JapaStage = s.VCtx.JourneyStage
+	}
 
 	return s
+}
+
+// canonicalStage resolves the member's §87 japa stage: the user_profiles
+// column (authoritative — /japa-stage/me writes it) normalised, falling back
+// to the VisitorContext journey stage when the column is unset (assessment
+// answers, legacy japa_status values and the journey cookie all normalise
+// into the same canonical vocabulary).
+func canonicalStage(profileStage *string, vc visitor.VisitorContext) string {
+	if profileStage != nil && strings.TrimSpace(*profileStage) != "" {
+		if st := visitor.NormalizeJourneyStage(*profileStage); st != "" {
+			return st
+		}
+	}
+	return vc.JourneyStage
 }
 
 // profilePct scores profile completeness from the three fields that make a

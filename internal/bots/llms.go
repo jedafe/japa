@@ -132,7 +132,7 @@ func topNavLinks(base string) []Link {
 		{Title: "Forum", URL: base + "/forum"},
 		{Title: "Spaces", URL: base + "/spaces"},
 		{Title: "Tags", URL: base + "/tags"},
-		{Title: "Deals", URL: base + "/deals"},
+		{Title: "Deals", URL: base + "/products/deals"},
 		{Title: "Tools", URL: base + "/tools"},
 		{Title: "Roadmap", URL: base + "/roadmap"},
 		{Title: "Academy", URL: base + "/academy"},

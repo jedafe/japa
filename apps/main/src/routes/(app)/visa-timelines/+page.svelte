@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -154,13 +155,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-4xl" style="--page-gutter: 1rem">
 	<ListPageBar title={t('visa_timelines.heading', 'Visa Timeline Tracker')}>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/38-tickets.md (user portal)
 	// Lists the user's submitted tickets with status/priority pills and links
 	// to the single-ticket thread view. The "New ticket" CTA routes to the
@@ -87,6 +88,8 @@
 		}
 	}
 </script>
+
+<SeoHead title={`${t('tickets.list_title')} — ${t('app.name')}`} description={t('tickets.list_description', 'Your support tickets — track replies, status, and resolution.')} robots="noindex" />
 
 <section class="space-y-4">
 	<header class="flex flex-wrap items-center justify-between gap-3">

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 )
 
 // ---------------------------------------------------------------------------
@@ -94,6 +95,30 @@ func validateBadgeTrigger(triggerType string, value *int32, activityKey *string)
 	return nil
 }
 
+// validateFeatureFlag checks an optional feature_flag link against the §42
+// registry — an unregistered key would resolve disabled forever and silently
+// hide the item, so it is rejected up front. NULL/empty is always valid
+// (item is not tied to a feature).
+func validateFeatureFlag(flag *string) error {
+	if flag == nil || *flag == "" {
+		return nil
+	}
+	if _, ok := features.RegistryLookup(*flag); !ok {
+		return invalidInput("unknown feature_flag %q", *flag)
+	}
+	return nil
+}
+
+// normalizeFeatureFlag collapses "" to nil — an empty flag means "not
+// linked", identical to NULL everywhere downstream; the column should not
+// accumulate ” next to NULL rows.
+func normalizeFeatureFlag(flag *string) *string {
+	if flag != nil && *flag == "" {
+		return nil
+	}
+	return flag
+}
+
 // validRarity reports whether s is a catalogue rarity value.
 func validRarity(s string) bool {
 	switch s {
@@ -119,6 +144,10 @@ func (s *Service) CreateBadge(ctx context.Context, in CreateBadgeInput) (BadgeIn
 	}
 
 	if err := validateBadgeTrigger(in.TriggerType, in.TriggerValue, in.TriggerActivityKey); err != nil {
+		return BadgeInfo{}, err
+	}
+
+	if err := validateFeatureFlag(in.FeatureFlag); err != nil {
 		return BadgeInfo{}, err
 	}
 
@@ -152,6 +181,7 @@ func (s *Service) CreateBadge(ctx context.Context, in CreateBadgeInput) (BadgeIn
 	arg.Category = in.Category
 	arg.BadgeGroup = in.BadgeGroup
 	arg.AccentColor = in.AccentColor
+	arg.FeatureFlag = normalizeFeatureFlag(in.FeatureFlag)
 
 	if in.IsSecret != nil {
 		arg.IsSecret = *in.IsSecret
@@ -325,6 +355,17 @@ func (s *Service) UpdateBadge(ctx context.Context, badgeID pgtype.UUID, in Updat
 		arg.AvailableUntil = ts
 	}
 	arg.ClearAvailableUntil = &in.ClearAvailableUntil
+
+	if err := validateFeatureFlag(in.FeatureFlag); err != nil {
+		return BadgeInfo{}, err
+	}
+	// An explicitly-sent empty string means "unlink" — same outcome as the
+	// documented clear_feature_flag mechanism.
+	if in.FeatureFlag != nil && *in.FeatureFlag == "" {
+		in.ClearFeatureFlag = true
+	}
+	arg.FeatureFlag = normalizeFeatureFlag(in.FeatureFlag)
+	arg.ClearFeatureFlag = &in.ClearFeatureFlag
 
 	// Validate the effective trigger combination — a partial update may
 	// change trigger_type while leaving the old value/key in place, or
@@ -501,6 +542,10 @@ func (s *Service) CreateChallenge(ctx context.Context, in CreateChallengeInput) 
 		return ChallengeInfo{}, invalidInput("target_count must be positive")
 	}
 
+	if err := validateFeatureFlag(in.FeatureFlag); err != nil {
+		return ChallengeInfo{}, err
+	}
+
 	startsAt, err := scanTimestamp(in.StartsAt)
 	if err != nil {
 		return ChallengeInfo{}, invalidInput("invalid starts_at: expected RFC 3339 timestamp")
@@ -519,6 +564,7 @@ func (s *Service) CreateChallenge(ctx context.Context, in CreateChallengeInput) 
 		RewardPoints: in.RewardPoints,
 		StartsAt:     startsAt,
 		IsActive:     true,
+		FeatureFlag:  normalizeFeatureFlag(in.FeatureFlag),
 	}
 
 	if in.ImageMediaID != nil {
@@ -651,6 +697,17 @@ func (s *Service) UpdateChallenge(ctx context.Context, challengeID pgtype.UUID, 
 	if in.IsActive != nil {
 		arg.IsActive = in.IsActive
 	}
+
+	if err := validateFeatureFlag(in.FeatureFlag); err != nil {
+		return ChallengeInfo{}, err
+	}
+	// An explicitly-sent empty string means "unlink" — same outcome as the
+	// documented clear_feature_flag mechanism.
+	if in.FeatureFlag != nil && *in.FeatureFlag == "" {
+		in.ClearFeatureFlag = true
+	}
+	arg.FeatureFlag = normalizeFeatureFlag(in.FeatureFlag)
+	arg.ClearFeatureFlag = &in.ClearFeatureFlag
 
 	// Validate the effective start/end ordering — a partial update may move
 	// ends_at before starts_at.

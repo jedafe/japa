@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/05-spaces.md (user's joined spaces)
 	import { page } from '$app/state';
 	import { goto, invalidate } from '$app/navigation';
@@ -117,9 +118,7 @@
 	const showPagination = $derived(pageNum > 1 || hasMore);
 </script>
 
-<svelte:head>
-	<title>{t('dashboard.nav.spaces')} — {t('app.name', '{site}')}</title>
-</svelte:head>
+<SeoHead title={`${t('dashboard.nav.spaces')} — ${t('app.name', '{site}')}`} description={t('dashboard.spaces.description', 'Spaces you have joined or manage — members, settings, and activity.')} />
 
 <section class="space-y-4">
 	<header class="space-y-3">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md
 	// Generic public form renderer for {SITE_URL}/forms/{slug}. Renders the
 	// fields from GET /forms/{slug}/embed (no hardcoded fields — Rule 16) and
@@ -85,10 +86,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{form?.name ?? t('feedback.title')} — {siteName()}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={`${form?.name ?? t('feedback.title')} — ${siteName()}`} robots="`noindex, nofollow`" description={form?.description ?? t('forms.description', 'Fill out this form on {site}.')} />
 
 <section class="mx-auto max-w-3xl space-y-6 px-4 py-8">
 	<header class="flex items-center gap-3">

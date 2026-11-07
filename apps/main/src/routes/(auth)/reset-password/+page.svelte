@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n/store.svelte';
 	import { page } from '$app/state';
 	import { validateResetPassword } from '$lib/auth/validation';
@@ -45,6 +46,8 @@
 		}
 	}
 </script>
+
+<SeoHead title={`${t('auth.reset_password.title')} — ${t('app.name')}`} description={t('auth.reset_password.subtitle')} />
 
 <form onsubmit={submit} class="flex flex-col gap-4" novalidate>
 	<HoneypotField bind:value={honeypot} />

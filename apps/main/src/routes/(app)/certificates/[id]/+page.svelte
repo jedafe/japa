@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t, i18n } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
@@ -36,13 +37,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={t('certificates.description', 'A verified certificate issued on {site}.')} />
-	<meta property="og:title" content={title} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-</svelte:head>
+<SeoHead title={title} description={t('certificates.description', 'A verified certificate issued on {site}.')} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-auto w-full max-w-3xl p-4">

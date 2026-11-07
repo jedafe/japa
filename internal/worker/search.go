@@ -4,7 +4,13 @@
 // RegisterSearchIndexer, mirroring the GDPR and analytics processor pattern.
 package worker
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 // SearchIndexer defines the contract for syncing documents into the
 // Meilisearch search index. The worker calls the appropriate method from
@@ -28,6 +34,13 @@ type SearchIndexer interface {
 	IndexEcaGuide(ctx context.Context, guideID [16]byte) error
 	IndexSopSample(ctx context.Context, sampleID [16]byte) error
 	DeleteDocument(ctx context.Context, indexName string, id [16]byte) error
+	// ReindexAll bulk-resyncs every managed entity type; the return is the
+	// indexer's summary struct exposed as `any` so this seam stays free of
+	// search-package types (the handler marshals it for logging).
+	ReindexAll(ctx context.Context) (any, error)
+	// PurgeAll clears all documents from the ReindexAll-managed indexes,
+	// keeping index schemas. Pair with ReindexAll for a clean rebuild.
+	PurgeAll(ctx context.Context) error
 }
 
 var searchIndexer SearchIndexer
@@ -37,4 +50,32 @@ var searchIndexer SearchIndexer
 // begins processing tasks.
 func RegisterSearchIndexer(ix SearchIndexer) {
 	searchIndexer = ix
+}
+
+// EnqueueSearchIndexSync enqueues a search:index_entity task so the entity's
+// search document is re-synced (upsert or delete, decided by the indexer
+// based on current row state). Mirrors EnqueueContentEmbedding — call it on
+// every lifecycle transition that changes indexability (publish, archive,
+// schedule, moderation hide) not just HTTP update routes. Fire-and-forget:
+// errors are logged but never propagated; a nil enqueuer is a no-op.
+func EnqueueSearchIndexSync(ctx context.Context, entityType string, entityID pgtype.UUID) {
+	if taskEnqueuer == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"entity_id":   entityID.String(),
+		"entity_type": entityType,
+		"operation":   "index",
+	})
+	if err != nil {
+		slog.Warn("worker: search index enqueue marshal failed",
+			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
+		return
+	}
+
+	if err := taskEnqueuer.Enqueue(TypeSearchIndexSync, payload); err != nil {
+		slog.Warn("worker: search index enqueue failed",
+			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
+	}
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md
 	// Create achievement form. Submits via the browser API client (POST /achievements,
 	// auth required). On success navigates to the new achievement's detail page.
@@ -132,15 +133,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{pageTitle}</title>
-	<meta name="description" content={pageDescription} />
-	<meta property="og:title" content={pageTitle} />
-	<meta property="og:description" content={pageDescription} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={pageTitle} description={pageDescription} ogTitle={pageTitle} robots="`noindex, nofollow`" />
 
 <div class="mx-auto w-full max-w-2xl px-4 py-6">
 	<!-- Header -->

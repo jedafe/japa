@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { MailX, CheckCircle2, AlertCircle } from 'lucide-svelte';
@@ -14,10 +15,7 @@
 	let autoSubmitted = $state(false);
 </script>
 
-<svelte:head>
-	<title>{t('newsletter.unsubscribe_title', 'Unsubscribe — {site}')}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={t('newsletter.unsubscribe_title', 'Unsubscribe — {site}')} robots="`noindex`" description={t('newsletter.unsubscribe_description', 'Unsubscribe from {site} emails.')} />
 
 <div class="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center px-4">
 	{#if unsubResult?.ok}

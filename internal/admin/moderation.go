@@ -24,6 +24,7 @@ import (
 	"github.com/jedafe/japa/internal/organizations"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/verification"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // ModerationItem represents a moderation queue item.
@@ -1002,6 +1003,8 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 	}
 	// Rule 6: invalidate caches after ban.
 	h.invalidateUserAccessCaches(ctx, uid, banCacheKey(uid))
+	// Re-sync the users search doc — a banned account drops out of search.
+	worker.EnqueueSearchIndexSync(ctx, "user", uid)
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"user_id": userID, "action": "banned"})
 }
 
@@ -1048,6 +1051,8 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	}
 	// Rule 6: invalidate caches after unban.
 	h.invalidateUserAccessCaches(r.Context(), uid, banCacheKey(uid))
+	// Re-sync the users search doc — a restored account re-enters search.
+	worker.EnqueueSearchIndexSync(r.Context(), "user", uid)
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
@@ -1265,6 +1270,9 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 	// Status gates session validity — drop cached access state so the new
 	// status takes effect immediately.
 	h.invalidateUserAccessCaches(r.Context(), uid, banCacheKey(uid), restrictionsCacheKey(uid))
+	// Re-sync the users search doc — suspended/banned/deleted accounts drop
+	// out of search; restored accounts re-enter.
+	worker.EnqueueSearchIndexSync(r.Context(), "user", uid)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"user_id": userID, "status": input.Status})
 }
@@ -2378,6 +2386,9 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 
 		h.auditContentAction(r, "admin.content.hard_delete", cid, body.Reason)
 
+		// Row is gone — the indexer's ErrNoRows path deletes the stale doc.
+		worker.EnqueueSearchIndexSync(r.Context(), "content", cid)
+
 		w.WriteHeader(http.StatusNoContent)
 
 		return
@@ -2411,6 +2422,10 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 	h.auditContentAction(r, "admin.content.remove", cid, body.Reason)
 
 	h.enqueueRSSRegenerate()
+
+	// Removed content (archived + auto-hidden + soft-deleted) must leave the
+	// posts index — the indexer deletes the doc on re-sync.
+	worker.EnqueueSearchIndexSync(r.Context(), "content", cid)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": "removed"})
 }
@@ -2454,6 +2469,10 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 	h.auditContentAction(r, "admin.content.restore", cid, "")
 
 	h.enqueueRSSRegenerate()
+
+	// Restore lands on status='draft' — not indexable, but re-sync anyway so
+	// the doc state always trails the row state.
+	worker.EnqueueSearchIndexSync(r.Context(), "content", cid)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": "restored"})
 }

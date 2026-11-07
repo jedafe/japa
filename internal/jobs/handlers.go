@@ -36,6 +36,7 @@ import (
 	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/literals"
 )
 
@@ -64,7 +65,7 @@ type updateJobListingRequest struct {
 // listingUpdater is the subset of Service methods used by the public job
 // update handler.
 type listingUpdater interface {
-	IsEnabled(ctx context.Context) bool
+	IsEnabledFor(ctx context.Context, sc features.CallerScope) bool
 	UpdateJobListing(ctx context.Context, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error)
 }
 
@@ -90,6 +91,15 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // SetLiteralResolver injects the template-literal catalog so job titles,
 // summaries, and bodies render {{...}} placeholders (§14).
 func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// callerScope returns the §42 caller scope for flag evaluation — nil-safe so
+// handler tests that stub only the updater still exercise the gate.
+func (h *Handlers) callerScope(r *http.Request) features.CallerScope {
+	if h.service == nil {
+		return features.CallerScope{}
+	}
+	return h.callerScope(r)
+}
 
 // resolveLiterals resolves {{...}} placeholders on a job DTO or slice.
 // Best-effort — failures are logged inside the resolver.
@@ -167,7 +177,7 @@ func parseBoolParam(r *http.Request, key string) *bool {
 // HandleFindJobs handles GET /api/v1/jobs — public job finder with server-side
 // filtering on custom_field_values.
 func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
-	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
@@ -226,7 +236,7 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 // select options for job_listing_fields (job_type, location_type, …) so the
 // finder filter UI can offer the full canonical set.
 func (h *Handlers) HandleFieldOptions(w http.ResponseWriter, r *http.Request) {
-	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
@@ -243,7 +253,7 @@ func (h *Handlers) HandleFieldOptions(w http.ResponseWriter, r *http.Request) {
 
 // HandleJobDetail handles GET /api/v1/jobs/:slug — public job detail.
 func (h *Handlers) HandleJobDetail(w http.ResponseWriter, r *http.Request) {
-	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
@@ -295,7 +305,7 @@ type applyRequest struct {
 // HandleApply handles POST /api/v1/jobs/:id/apply — submit an on-platform
 // application. Auth required.
 func (h *Handlers) HandleApply(w http.ResponseWriter, r *http.Request) {
-	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
@@ -351,6 +361,11 @@ func (h *Handlers) HandleApply(w http.ResponseWriter, r *http.Request) {
 // HandleMyApplications handles GET /api/v1/me/jobs/applications — the
 // authenticated user's application history. Auth required.
 func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -382,6 +397,11 @@ func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) 
 // — owner-only withdraw: the caller must own the application. Sets status
 // to withdrawn.
 func (h *Handlers) HandleWithdrawApplication(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -423,6 +443,11 @@ func (h *Handlers) HandleWithdrawApplication(w http.ResponseWriter, r *http.Requ
 // published job listings. Auth required (org admin / jobs.post). The caller
 // must be a member of the org with an editor-or-above role (JOBS-012).
 func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -475,6 +500,11 @@ func (h *Handlers) HandleListOrgJobs(w http.ResponseWriter, r *http.Request) {
 // jobs.post). The caller must be an editor-or-above member of the org
 // (JOBS-012).
 func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -545,7 +575,7 @@ func (h *Handlers) HandleUpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.updater == nil || !h.updater.IsEnabled(r.Context()) {
+	if h.updater == nil || !h.updater.IsEnabledFor(r.Context(), h.callerScope(r)) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
@@ -603,6 +633,11 @@ func (h *Handlers) HandleUpdateJob(w http.ResponseWriter, r *http.Request) {
 // — employer view of applications for a job. Auth required (org admin). The
 // caller must be an admin of the org that owns the job (JOBS-012).
 func (h *Handlers) HandleListJobApplications(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -659,6 +694,11 @@ type updateStatusRequest struct {
 // status. Auth required (org admin). The caller must be an admin of the org
 // that owns the job (JOBS-012).
 func (h *Handlers) HandleUpdateApplicationStatus(w http.ResponseWriter, r *http.Request) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
+		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
+		return
+	}
+
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -750,7 +790,7 @@ func requireOrgJobAdmin(w http.ResponseWriter, r *http.Request, h *Handlers, use
 // HandleAdminListJobs handles GET /api/v1/admin/jobs — admin view of all job
 // listings (Section 63: "all listings (admin)"). Admin only.
 func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
-	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
@@ -798,7 +838,7 @@ func (h *Handlers) HandleAdminListJobs(w http.ResponseWriter, r *http.Request) {
 // HandleAdminToggleFeature handles PATCH /api/v1/admin/jobs/:id/feature —
 // toggles the is_featured custom field value. Admin only.
 func (h *Handlers) HandleAdminToggleFeature(w http.ResponseWriter, r *http.Request) {
-	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
@@ -839,7 +879,7 @@ func (h *Handlers) HandleAdminToggleFeature(w http.ResponseWriter, r *http.Reque
 // PATCH /admin/jobs/{id}
 // Requires: jobs.manage.
 func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) {
-	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
@@ -896,7 +936,7 @@ func (h *Handlers) HandleAdminUpdateJob(w http.ResponseWriter, r *http.Request) 
 // ?status= and ?job_id= filters and pagination (§63: jobs.manage covers
 // listings and applications). Admin only.
 func (h *Handlers) HandleAdminListApplications(w http.ResponseWriter, r *http.Request) {
-	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}
@@ -939,7 +979,7 @@ func (h *Handlers) HandleAdminListApplications(w http.ResponseWriter, r *http.Re
 // DELETE /admin/jobs/{id}
 // Requires: jobs.manage.
 func (h *Handlers) HandleAdminDeleteJob(w http.ResponseWriter, r *http.Request) {
-	if h.service != nil && !h.service.IsEnabled(r.Context()) {
+	if h.service != nil && !h.service.IsEnabledFor(r.Context(), h.callerScope(r)) {
 		errpkg.WriteError(w, http.StatusNotFound, "jobs_disabled", "Jobs board is not available")
 		return
 	}

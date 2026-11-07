@@ -12,6 +12,10 @@ import type { DealPartnerRef } from '$lib/types';
  * schema is fetched client-side on selection.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features?.['feature.jce']) {
+		throw error(404, { code: 'feature_disabled', message: 'Products are not available' });
+	}
 	if (!event.locals.user) {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname)}`);
 	}

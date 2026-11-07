@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Service reviews index — /services/[slug]/reviews. Full paginated list
 	// backed by GET /services/{id}/reviews (§114); the detail page links
 	// here via the "View all reviews" footer when its embedded slice is
@@ -43,15 +44,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<link rel="canonical" href={canonical} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="article" />
-	<meta property="og:url" content={canonical} />
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} ogType="article" canonical={canonical} />
 
 <div class="mx-auto w-full max-w-full px-4 pt-4 pb-10">
 	{#if data.loadError}

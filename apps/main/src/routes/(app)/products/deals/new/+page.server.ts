@@ -1,6 +1,6 @@
 // Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 import type { PageServerLoad } from './$types';
-import { redirect } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import { apiContext, apiList } from '$lib/server/api';
 import { hasPerm } from '$lib/server/auth';
 import type { DealPartnerRef, MyOrganization } from '$lib/types';
@@ -14,6 +14,10 @@ import type { DealPartnerRef, MyOrganization } from '$lib/types';
  *   POST /organizations/{id}/deals where the server forces status=pending.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features?.['feature.products.deals']) {
+		throw error(404, { code: 'feature_disabled', message: 'Deals are not available' });
+	}
 	if (!event.locals.user) {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname)}`);
 	}

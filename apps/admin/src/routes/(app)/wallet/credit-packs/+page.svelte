@@ -42,7 +42,8 @@
 		{ key: 'credit_amount', label: t('app.wallet.credit_amount', 'Credit Amount'), type: 'number', min: 1, required: true },
 		{ key: 'bonus_credits', label: t('app.wallet.bonus_credits', 'Bonus Credits'), type: 'number', min: 0 },
 		{ key: 'min_user_level', label: t('app.wallet.min_user_level', 'Min User Level'), type: 'text', placeholder: 'e.g. pro (optional)' },
-		{ key: 'position', label: t('app.wallet.position', 'Position'), type: 'number', min: 0 }
+		{ key: 'position', label: t('app.wallet.position', 'Position'), type: 'number', min: 0 },
+		{ key: 'is_active', label: t('common.active', 'Active'), type: 'checkbox', defaultValue: true }
 	];
 
 	const config: EntityPageConfig = {
@@ -123,7 +124,10 @@
 				name: String(body.name ?? '').trim(),
 				credit_amount: Number(body.credit_amount ?? 0),
 				bonus_credits: Number(body.bonus_credits ?? 0),
-				position: Number(body.position ?? 0)
+				position: Number(body.position ?? 0),
+				// Send is_active explicitly — the backend treats an absent field
+				// as true, which silently reactivated deactivated packs on edit.
+				is_active: body.is_active === true || body.is_active === 'true'
 			};
 			if (body.description) payload.description = String(body.description).trim();
 			if (body.min_user_level) payload.min_user_level = String(body.min_user_level).trim();

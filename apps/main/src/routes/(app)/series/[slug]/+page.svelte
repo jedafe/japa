@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { BookOpen, FileText, ArrowLeft } from 'lucide-svelte';
@@ -25,15 +26,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<link rel="canonical" href={canonical} />
-	<meta property="og:url" content={canonical} />
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} canonical={canonical} />
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Series header -->

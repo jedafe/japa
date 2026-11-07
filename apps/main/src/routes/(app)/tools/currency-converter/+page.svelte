@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { untrack, onMount, onDestroy } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -130,18 +131,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{seoTitle}</title>
-	<meta name="description" content={seoDescription} />
-	<link rel="canonical" href={page.url.href} />
-	<meta property="og:title" content={seoTitle} />
-	<meta property="og:description" content={seoDescription} />
-	<meta property="og:url" content={page.url.href} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seoTitle} />
-	<meta name="twitter:description" content={seoDescription} />
-</svelte:head>
+<SeoHead title={seoTitle} description={seoDescription} ogTitle={seoTitle} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

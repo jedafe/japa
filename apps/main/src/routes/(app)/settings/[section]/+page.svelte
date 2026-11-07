@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { resolveSection } from '$lib/components/hub/settings/settingsSections';
 	import { t } from '$lib/i18n';
 	let { data } = $props();
@@ -7,10 +8,7 @@
 	const title = $derived(meta ? t(meta.labelKey) : '');
 </script>
 
-<svelte:head>
-	<title>{title} — {t('settings.nav.label')}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={`${title} — ${t('settings.nav.label')}`} robots="`noindex, nofollow`" description={t('settings.section_description', '{name} — account settings on {site}.').replace('{name}', title)} />
 
 {#if SectionComponent}
 	<SectionComponent data={data.sectionData} />

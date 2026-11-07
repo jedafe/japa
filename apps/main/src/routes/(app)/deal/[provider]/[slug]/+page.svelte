@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
 	import { t, i18n } from '$lib/i18n';
@@ -13,7 +14,7 @@
 	} from 'lucide-svelte';
 	import { api, apiBaseUrl } from '$lib/api/client';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript, safeHref } from '$lib/utils/safeHtml';
+	import { safeHref } from '$lib/utils/safeHtml';
 	import { currencySymbol } from '$lib/utils/currency';
 	import { dealPath, type Coupon } from '$lib/types';
 	import DealForm from '$lib/components/deals/DealForm.svelte';
@@ -167,27 +168,14 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<link rel="canonical" href={page.url.href} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={title} />
-	<meta name="twitter:description" content={description} />
-	{@html safeJsonLdScript(jsonLd)}
-	{@html safeJsonLdScript(faqJsonLd)}
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<div class="flex flex-wrap items-center justify-between gap-2">
 			<div class="flex items-center gap-1.5 text-sm">
 				<a
-					href="/deals"
+					href="/products/deals"
 					class="inline-flex items-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 				>
 					{t('deals.back', 'All deals')}

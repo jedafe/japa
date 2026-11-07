@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/102-mentorship-matching.md (000824)
 	// Two-pane mentorship inbox — kind=mentorship service_bookings rows for
 	// both roles. Sent = the caller's mentee requests; received = requests to
@@ -57,10 +58,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={title} robots="`noindex, nofollow`" description={t('messages.mentorship_description', 'Mentorship requests and conversations.')} />
 
 <div
 	class="mx-auto flex w-full max-w-full flex-col overflow-hidden h-[calc(100dvh-8.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] md:h-dvh"

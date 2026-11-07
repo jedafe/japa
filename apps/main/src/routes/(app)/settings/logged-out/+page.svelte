@@ -1,10 +1,9 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 </script>
 
-<svelte:head>
-	<title>{t('settings.danger.logged_out_title')}</title>
-</svelte:head>
+<SeoHead title={t('settings.danger.logged_out_title')} description={t('settings.logged_out_description', 'Your account has been signed out on other devices.')} />
 
 <div class="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6 text-center">
 	<h1 class="text-2xl font-medium text-[var(--color-text)]">{t('settings.danger.logged_out_title')}</h1>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { PenSquare, Tag, X } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -90,15 +91,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<link rel="canonical" href={page.url.origin + '/forum'} />
-	<meta property="og:url" content={page.url.origin + '/forum'} />
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} canonical={page.url.origin + '/forum'} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('forum.heading', 'Forum')}</h1>

@@ -327,6 +327,13 @@ func (h *Handlers) UpdateReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A "remove" on content archives the row inside the action transaction —
+	// re-sync search so the post leaves the index (the indexer deletes
+	// non-published/non-public docs). Fire-and-forget, post-commit.
+	if input.Action == "remove" && updated.EntityType == "content" {
+		worker.EnqueueSearchIndexSync(r.Context(), "content", updated.EntityID)
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 

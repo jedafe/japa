@@ -8,7 +8,7 @@ FROM products p
 JOIN product_types t ON t.id = p.product_type_id
 WHERE p.deleted_at IS NULL
   AND ($1::text = '' OR t.slug = $1)
-  AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%');
+  AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%' ESCAPE '\');
 
 -- name: ListProductTypesWithCounts :many
 SELECT t.slug, t.label, t.icon, count(p.id) AS entity_count

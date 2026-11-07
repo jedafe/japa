@@ -1,7 +1,7 @@
 <script lang="ts">
 	// /wallet/purchases — read-only transaction list with custom date/text filters.
-	// Not an EntityPage candidate (no CRUD); uses DataTable with built-in loading
-	// and a custom filter card (FilterPanel only supports select-based filters).
+	// Not an EntityPage candidate (no CRUD); uses DataTable serverSide with a
+	// custom filter card (FilterPanel only supports select-based filters).
 	// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
 	import { t } from '$lib/stores/i18n.svelte';
 	import { walletApi } from '$lib/api';
@@ -31,6 +31,11 @@
 	// §58 — managed currency list for symbol/name rendering.
 	let currencies = $state<CurrencyInfo[]>([]);
 
+	let page = $state(0);
+	let pageSize = $state(20);
+	let totalRows = $state(0);
+	let totalPages = $state(1);
+
 	let filters = $state({
 		user_id: '',
 		currency: '',
@@ -43,24 +48,33 @@
 		errorMessage = '';
 		try {
 			const params = new URLSearchParams();
+			params.set('page_size', String(pageSize));
+			params.set('page', String(page + 1)); // backend is 1-based
 			if (filters.user_id) params.set('user_id', filters.user_id);
 			if (filters.currency) params.set('currency', filters.currency);
 			if (filters.from) params.set('from', filters.from);
-			if (filters.to) params.set('to', filters.to);
+			// date-only `to` would parse as 00:00 and exclude that whole day —
+			// send end-of-day so the range is inclusive.
+			if (filters.to) params.set('to', `${filters.to}T23:59:59.999Z`);
 			const res = await walletApi.listCreditPurchases(params.toString());
 			if (res.ok) {
-				purchases = ((res.data as any) ?? []) as CreditPurchase[];
+				// apiRaw → res.data is the full body { data: [...], count: N }.
+				const payload = res.data as { data?: CreditPurchase[]; count?: number };
+				purchases = payload.data ?? [];
+				totalRows = payload.count ?? purchases.length;
+				totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
 			} else {
-				errorMessage = res.error ?? 'Failed to load purchases';
+				errorMessage = res.error ?? t('app.wallet.error_load_purchases', 'Failed to load purchases');
 			}
 		} catch (e) {
-			errorMessage = e instanceof Error ? e.message : 'Failed to load purchases';
+			errorMessage = e instanceof Error ? e.message : t('app.wallet.error_load_purchases', 'Failed to load purchases');
 		} finally {
 			loading = false;
 		}
 	}
 
 	function applyFilters() {
+		page = 0;
 		loadPurchases();
 	}
 
@@ -73,9 +87,9 @@
 	}
 
 	const purchaseColumns = [
-		{ key: 'created_at', label: 'Date', sortable: true, render: (v: string) => formatDate(v) },
-		{ key: 'display_name', label: t('app.wallet.filter_user', 'User'), render: (v: string, row: CreditPurchase) => `<span class="text-sm">${v || row.username || 'anonymous'}</span>` },
-		{ key: 'amount', label: t('app.wallet.fiat_amount', 'Fiat Amount'), sortable: true, render: (_: number, row: CreditPurchase) => formatAmount(row.amount, row.currency) },
+		{ key: 'created_at', label: t('app.wallet.col_date', 'Date'), render: (v: string) => formatDate(v) },
+		{ key: 'display_name', label: t('app.wallet.filter_user', 'User'), render: (v: string, row: CreditPurchase) => `<span class="text-sm">${v || row.username || t('app.wallet.anonymous', 'anonymous')}</span>` },
+		{ key: 'amount', label: t('app.wallet.fiat_amount', 'Fiat Amount'), render: (_: number, row: CreditPurchase) => formatAmount(row.amount, row.currency) },
 		{ key: 'currency', label: t('app.wallet.filter_currency', 'Currency'), render: (v: string) => currencyLabel(v, currencies) },
 		{ key: 'provider', label: t('app.wallet.provider', 'Provider'), render: (v: string) => v },
 		{
@@ -114,7 +128,7 @@
 			<div class="flex flex-wrap items-end gap-4">
 				<div>
 					<label class="mb-1 block text-sm font-medium" for="filter-user">{t('app.wallet.filter_user', 'User ID')}</label>
-					<input id="filter-user" type="text" bind:value={filters.user_id} class="w-48 rounded-md border border-input bg-surface px-3 py-2 text-sm" placeholder="UUID..." />
+					<input id="filter-user" type="text" bind:value={filters.user_id} class="w-48 rounded-md border border-input bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.ph_uuid', 'UUID...')} />
 				</div>
 				<div>
 					<label class="mb-1 block text-sm font-medium" for="filter-currency">{t('app.wallet.filter_currency', 'Currency')}</label>
@@ -142,7 +156,7 @@
 				</div>
 				<Button onclick={applyFilters}>
 					<Search class="size-4" />
-					Filter
+					{t('common.filter', 'Filter')}
 				</Button>
 			</div>
 		</CardContent>
@@ -153,10 +167,20 @@
 			<DataTable
 				columns={purchaseColumns}
 				data={purchases}
-				pageSize={20}
+				serverSide
+				bind:page
+				bind:pageSize
+				{totalRows}
+				{totalPages}
+				pageSizeOptions={[10, 20, 50, 100]}
+				onpagechange={(p) => { page = p; loadPurchases(); }}
+				onpagesizechange={(_s) => {
+					// Resetting page fires onpagechange (which reloads) — only
+					// reload directly when already on page 0 to avoid a double-fetch.
+					if (page === 0) loadPurchases(); else page = 0;
+				}}
 				{loading}
-				searchable
-				emptyMessage="No credit purchases found"
+				emptyMessage={t('app.wallet.empty_purchases', 'No credit purchases found')}
 			/>
 		</CardContent>
 	</Card>

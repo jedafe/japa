@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md
 	// Edit achievement form. Pre-fills from the SSR-loaded achievement and
 	// submits PATCH /achievements/{id} (by content id) via the browser API
@@ -127,14 +128,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{pageTitle}</title>
-	<meta name="description" content={pageTitle} />
-	<meta property="og:title" content={pageTitle} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={pageTitle} description={pageTitle} ogTitle={pageTitle} robots="`noindex, nofollow`" />
 
 <div class="mx-auto w-full max-w-2xl px-4 py-6">
 	<div class="mb-5 flex items-center gap-2">

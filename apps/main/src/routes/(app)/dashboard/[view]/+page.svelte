@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
@@ -19,9 +20,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{t(meta?.label ?? 'dashboard.nav.label', 'Dashboard')} — {t('app.name', '{site}')}</title>
-</svelte:head>
+<SeoHead title={`${t(meta?.label ?? 'dashboard.nav.label', 'Dashboard')} — ${t('app.name', '{site}')}`} description={t('dashboard.description', 'Your dashboard — overview, content, and activity on {site}.')} />
 
 {#if ViewComponent && page.data.user}
 	<ViewComponent data={data.viewData} />

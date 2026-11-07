@@ -18,8 +18,8 @@
 	import type { PageData } from './$types';
 	import { servedMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import { flagUrl, flagEmoji } from '$lib/utils/flags';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('radar.title', 'Japa Opportunities — {site}'));
@@ -390,15 +390,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let filtersModalOpen = $state(false);
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	{@html safeJsonLdScript(jsonLd)}
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<!-- Header — EntityHero directory panel -->

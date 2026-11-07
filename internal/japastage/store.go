@@ -323,6 +323,28 @@ func ValidDirectorySort(s string) bool {
 	return false
 }
 
+// validDirectoryGenders is the directory-filterable subset of the
+// user_profiles gender vocabulary (the values the profile settings UI
+// writes). The column is free text, so the filter list stays whitelisted
+// rather than reflecting arbitrary stored values.
+var validDirectoryGenders = []string{"male", "female", "non_binary", "other"}
+
+// ValidDirectoryGender reports whether s is a recognized gender filter.
+func ValidDirectoryGender(s string) bool {
+	for _, v := range validDirectoryGenders {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// JoinDirectoryGenders returns the valid gender filters as a
+// comma-separated string, useful for error messages.
+func JoinDirectoryGenders() string {
+	return strings.Join(validDirectoryGenders, ", ")
+}
+
 // directoryOrderBy maps a sort value to its ORDER BY clause. The user_id
 // tiebreaker keeps pagination stable across all orderings.
 func directoryOrderBy(sort string) string {
@@ -353,7 +375,7 @@ func likeEscape(s string) string {
 // by destination (geo-aware ?dest= filter, §87). q is a substring match over
 // username, display_name, profession and interests (§87 discovery hub).
 // sort selects the ORDER BY (recent|stage_updated|name; empty = recent).
-func (s *Store) ListByStage(ctx context.Context, stage, intent, q, sort string, destSpaceID pgtype.UUID, limit, offset int32) ([]DirectoryRow, int64, error) {
+func (s *Store) ListByStage(ctx context.Context, stage, intent, q, sort string, destSpaceID pgtype.UUID, gender string, limit, offset int32) ([]DirectoryRow, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -400,6 +422,15 @@ func (s *Store) ListByStage(ctx context.Context, stage, intent, q, sort string, 
 		countPredicates = append(countPredicates, fmt.Sprintf("up.japa_stage_dest_space_id = $%d", len(countArgs)+1))
 		listArgs = append(listArgs, destSpaceID)
 		countArgs = append(countArgs, destSpaceID)
+	}
+
+	if gender != "" {
+		// Free-text column — case-insensitive exact match so legacy casing
+		// still filters.
+		listPredicates = append(listPredicates, fmt.Sprintf("LOWER(up.gender) = $%d", len(listArgs)+1))
+		countPredicates = append(countPredicates, fmt.Sprintf("LOWER(up.gender) = $%d", len(countArgs)+1))
+		listArgs = append(listArgs, gender)
+		countArgs = append(countArgs, gender)
 	}
 
 	if term := strings.TrimSpace(q); term != "" {

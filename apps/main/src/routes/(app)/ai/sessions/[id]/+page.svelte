@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// /ai/sessions/[id] — single agent session detail. Shows the session
 	// metadata (prompt, status, cost, tokens, pre-search level) and the full
 	// tool-call audit log with arguments, results, latency, and HITL links.
@@ -122,10 +123,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{session ? truncate(session.prompt, 60) : 'Session'} — {t('ai.agent.session_history', 'Session History')} — {siteName()}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={`${session ? truncate(session.prompt, 60) : 'Session'} — ${t('ai.agent.session_history', 'Session History')} — ${siteName()}`} robots="`noindex, nofollow`" description={t('ai.session.description', 'A Japa AI session — answers grounded in community knowledge.')} />
 
 <div class="mx-auto max-w-4xl">
 	<!-- Back link -->

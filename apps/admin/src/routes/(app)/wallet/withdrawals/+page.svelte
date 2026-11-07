@@ -3,8 +3,10 @@
 	// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import type { ActionItem } from '$lib/components/ui/data-table/types';
-	import { walletApi, api } from '$lib/api';
+	import { walletApi, api, authApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { Check, Eye, X } from 'lucide-svelte';
 
 	type Withdrawal = {
@@ -26,7 +28,6 @@
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
-	let processing = $state(false);
 	let currencies = $state<Array<{ code: string; symbol: string; name?: string }>>([]);
 	let withdrawEnabled = $state<boolean | null>(null);
 
@@ -72,16 +73,57 @@
 		return c?.name ? `${code} — ${c.name}` : code;
 	}
 
-	async function processAction(row: Withdrawal, action: string) {
-		if (processing) return;
-		processing = true;
-		pageError = '';
-		const res = await walletApi.processWithdrawal(row.id, { action });
-		processing = false;
+	// Approve/reject are money-moving actions — the backend requires a fresh
+	// scoped step_up token (wallet.admin_approval_requires_step_up, SEC-W-015).
+	// The modal collects the admin's password or 2FA code and an optional note.
+	let stepUpOpen = $state(false);
+	let stepUpRow = $state<Withdrawal | null>(null);
+	let stepUpAction = $state<'approve' | 'reject'>('approve');
+	let stepUpPassword = $state('');
+	let stepUpCode = $state('');
+	let stepUpNote = $state('');
+	let stepUpError = $state('');
+	let stepUpBusy = $state(false);
+
+	function openStepUp(row: Withdrawal, action: 'approve' | 'reject') {
+		stepUpRow = row;
+		stepUpAction = action;
+		stepUpPassword = '';
+		stepUpCode = '';
+		stepUpNote = '';
+		stepUpError = '';
+		stepUpOpen = true;
+	}
+
+	async function confirmStepUp() {
+		if (!stepUpRow || stepUpBusy) return;
+		if (!stepUpPassword && !stepUpCode) {
+			stepUpError = t('app.wallet.step_up_required', 'Enter your password or 2FA code to continue');
+			return;
+		}
+		stepUpBusy = true;
+		stepUpError = '';
+		const su = await authApi.stepUp({
+			password: stepUpPassword || undefined,
+			code: stepUpCode || undefined
+		});
+		if (!su.ok || !su.data?.step_up_token) {
+			stepUpBusy = false;
+			stepUpError = su.ok ? t('app.wallet.step_up_failed', 'Verification failed') : (su.error ?? t('app.wallet.step_up_failed', 'Verification failed'));
+			return;
+		}
+		const res = await walletApi.processWithdrawal(stepUpRow.id, {
+			action: stepUpAction,
+			admin_note: stepUpNote || undefined,
+			step_up_token: su.data.step_up_token
+		});
+		stepUpBusy = false;
 		if (res.ok) {
+			stepUpOpen = false;
+			stepUpRow = null;
 			entityController?.reload();
 		} else {
-			pageError = res.error ?? t('app.wallet.error_process', 'Failed to process withdrawal');
+			stepUpError = res.error ?? t('app.wallet.error_process', 'Failed to process withdrawal');
 		}
 	}
 
@@ -96,7 +138,7 @@
 		icon: Check,
 		variant: 'default',
 		show: (row: Withdrawal) => row.status === 'pending_approval' || row.status === 'pending',
-		onclick: (row: Withdrawal) => processAction(row, 'approve')
+		onclick: (row: Withdrawal) => openStepUp(row, 'approve')
 	};
 
 	const rejectAction: ActionItem = {
@@ -104,7 +146,7 @@
 		icon: X,
 		variant: 'destructive',
 		show: (row: Withdrawal) => row.status === 'pending_approval' || row.status === 'pending',
-		onclick: (row: Withdrawal) => processAction(row, 'reject')
+		onclick: (row: Withdrawal) => openStepUp(row, 'reject')
 	};
 
 	const fields: FieldDef[] = [
@@ -139,14 +181,14 @@
 				key: 'status',
 				label: t('common.status', 'Status'),
 				options: [
-					{ value: 'pending', label: 'Pending' },
-					{ value: 'pending_approval', label: 'Pending Approval' },
-					{ value: 'approved', label: 'Approved' },
-					{ value: 'processing', label: 'Processing' },
-					{ value: 'completed', label: 'Completed' },
-					{ value: 'failed', label: 'Failed' },
-					{ value: 'rejected', label: 'Rejected' },
-					{ value: 'cancelled', label: 'Cancelled' }
+					{ value: 'pending', label: t('app.wallet.status_pending', 'Pending') },
+					{ value: 'pending_approval', label: t('app.wallet.status_pending_approval', 'Pending Approval') },
+					{ value: 'approved', label: t('app.wallet.status_approved', 'Approved') },
+					{ value: 'processing', label: t('app.wallet.status_processing', 'Processing') },
+					{ value: 'completed', label: t('app.wallet.status_completed', 'Completed') },
+					{ value: 'failed', label: t('app.wallet.status_failed', 'Failed') },
+					{ value: 'rejected', label: t('app.wallet.status_rejected', 'Rejected') },
+					{ value: 'cancelled', label: t('app.wallet.status_cancelled', 'Cancelled') }
 				]
 			}
 		],
@@ -157,7 +199,9 @@
 			params.set('page_size', String(pageSize));
 			params.set('page_offset', String(page * pageSize));
 			if (filter.status) params.set('status', filter.status);
-			if (q) params.set('q', q);
+			// The endpoint has no `q` param — map a UUID-shaped search to
+			// user_id so the DataTable search box actually filters.
+			if (q && /^[0-9a-fA-F-]{36}$/.test(q)) params.set('user_id', q);
 			const res = await walletApi.listWithdrawals(params.toString());
 			if (res.ok) {
 				const payload = res.data as { data: Withdrawal[]; count: number };
@@ -256,3 +300,43 @@
 		</div>
 	</div>
 {/snippet}
+
+<!-- Step-up verification modal — SEC-W-015 requires a fresh step_up token
+     before approving or rejecting a withdrawal. -->
+<Modal
+	bind:open={stepUpOpen}
+	title={stepUpAction === 'approve' ? t('app.wallet.step_up_title_approve', 'Verify identity to approve payout') : t('app.wallet.step_up_title_reject', 'Verify identity to reject withdrawal')}
+>
+	<div class="space-y-4">
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('app.wallet.step_up_help', 'For security, re-enter your password or 2FA code to confirm this action.')}
+		</p>
+		{#if stepUpError}
+			<div class="rounded-lg p-3 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+				{stepUpError}
+			</div>
+		{/if}
+		<div>
+			<label for="su-password" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">{t('app.wallet.step_up_password', 'Password')}</label>
+			<input id="su-password" type="password" autocomplete="current-password" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={stepUpPassword} />
+		</div>
+		<div>
+			<label for="su-code" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">{t('app.wallet.step_up_code', '2FA code (if enabled)')}</label>
+			<input id="su-code" type="text" inputmode="numeric" autocomplete="one-time-code" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={stepUpCode} />
+		</div>
+		{#if stepUpAction === 'reject'}
+			<div>
+				<label for="su-note" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">{t('app.wallet.admin_note', 'Admin Note')}</label>
+				<textarea id="su-note" rows="2" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={stepUpNote} placeholder={t('app.wallet.admin_note_ph', 'Reason shown to the user (optional)')}></textarea>
+			</div>
+		{/if}
+	</div>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (stepUpOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant={stepUpAction === 'reject' ? 'destructive' : 'default'} onclick={confirmStepUp} disabled={stepUpBusy || (!stepUpPassword && !stepUpCode)}>
+				{stepUpBusy ? t('common.processing', 'Processing...') : stepUpAction === 'approve' ? t('app.wallet.approve', 'Approve & Payout') : t('app.wallet.reject', 'Reject & Refund')}
+			</Button>
+		</div>
+	{/snippet}
+</Modal>

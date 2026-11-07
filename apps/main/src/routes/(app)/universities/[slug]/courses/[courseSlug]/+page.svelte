@@ -1,11 +1,11 @@
 <!-- Ref: japaconnect-engineering/sections/39-space-types-university.md
      (university_course_offerings — public offering detail) -->
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import { GraduationCap, ArrowLeft, GitCompare, CalendarDays, Clock, Globe, Award, ListChecks, Wallet, Building2 } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { formatMoney } from '$lib/utils/currency';
 
 	let { data }: { data: PageData } = $props();
@@ -59,16 +59,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<link rel="canonical" href={canonical} />
-	<meta property="og:url" content={canonical} />
-	{@html safeJsonLdScript(jsonLd)}
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} canonical={canonical} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<!-- Header -->

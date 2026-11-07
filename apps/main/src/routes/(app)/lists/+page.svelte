@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Lists hub at /lists — modeled on /guides minus categories, series, and
 	// roadmap (lists carry no taxonomy). GET /content?type=list drives all
 	// three tabs; popular paginates by offset (view_count order has no
@@ -113,14 +114,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title} — {t('app.name')}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-</svelte:head>
+<SeoHead title={`${title} — ${t('app.name')}`} description={description} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('lists.title', 'Lists')}</h1>

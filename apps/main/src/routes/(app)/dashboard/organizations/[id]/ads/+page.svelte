@@ -2,6 +2,7 @@
 <!-- Self-serve ads dashboard: list campaigns, create new campaigns, view stats.
      Calls /org/{org_id}/ads/* endpoints (§61 API Routes). -->
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -211,9 +212,11 @@
 	const estimatedCost = $derived(selectedSlot ? selectedSlot.flat_rate * formDurationDays : 0);
 </script>
 
-<svelte:head>
-	<title>{t('org_ads.title', 'Ad Campaigns')} — {org?.name ?? ''}</title>
-</svelte:head>
+<SeoHead
+	title={`${t('org_ads.title', 'Ad Campaigns')} — ${org?.name ?? ''}`}
+	description={t('org_ads.description', 'Ad campaigns for this organisation — status, budget, and performance.')}
+	robots="noindex"
+/>
 
 <div class="space-y-6">
 	<!-- Header -->

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { untrack, onMount, onDestroy } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
@@ -299,14 +300,7 @@
 	const filterLabelCls = 'mb-1 block text-xs font-medium text-[var(--color-muted)]';
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-4xl px-4 py-6">
 	<ToolHeader icon={PenLine} title={t('sop_generator.title', 'AI SOP Generator')} description={t('sop_generator.subtitle', 'Generate a tailored statement of purpose from proven templates — browse samples, refine, and export.')} />

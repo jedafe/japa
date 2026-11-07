@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (TOTP login challenge)
 	// Collects a 6-digit TOTP code (or a one-time backup code) and posts to the
 	// /api/auth/totp/verify or /api/auth/totp/backup proxy. On success the
@@ -140,6 +141,8 @@
 		}
 	}
 </script>
+
+<SeoHead title={`${t('auth.totp.title')} — ${t('app.name')}`} description={t('auth.totp.subtitle')} />
 
 <div class="flex flex-col gap-4">
 	<div class="flex items-center gap-3">

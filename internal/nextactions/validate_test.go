@@ -119,7 +119,7 @@ func TestValidateRuleAllPredicatesKnown(t *testing.T) {
 		"email_verified":        {Predicate: "email_verified"},
 		"profile_completeness":  {Predicate: "profile_completeness", Gte: intPtr(50)},
 		"japa_stage":            {Predicate: "japa_stage", In: []string{"planning"}},
-		"archetype":             {Predicate: "archetype", In: []string{"student"}},
+		"archetype":             {Predicate: "archetype", In: []string{"origin_visitor"}},
 		"destination_country":   {Predicate: "destination_country", In: []string{"CA"}},
 		"origin_country":        {Predicate: "origin_country", In: []string{"NG"}},
 		"current_country":       {Predicate: "current_country", In: []string{"NG"}},
@@ -131,6 +131,7 @@ func TestValidateRuleAllPredicatesKnown(t *testing.T) {
 		"feature_not_used":      {Predicate: "feature_not_used", Slug: "checklist"},
 		"event_count":           {Predicate: "event_count", Type: "content.viewed", Gte: intPtr(3)},
 		"feature_gate_hit":      {Predicate: "feature_gate_hit"},
+		"feature_enabled":       {Predicate: "feature_enabled", Key: "mentorship.enabled"},
 		"has_draft":             {Predicate: "has_draft", Slug: "readiness"},
 		"has_push_subscription": {Predicate: "has_push_subscription"},
 		"surface":               {Predicate: "surface", In: []string{"main"}},
@@ -160,6 +161,35 @@ func TestValidateRuleRejectsRemovedPredicates(t *testing.T) {
 		if err := ValidateRule(r, nil); err == nil {
 			t.Errorf("expected error for unimplemented predicate %q", name)
 		}
+	}
+}
+
+func TestValidateRuleRejectsUnknownStageValues(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []string{"applying", "visa_approved", "newly_japa", "bogus"} {
+		r := validRule()
+		r.Conditions = ConditionGroup{All: []Predicate{
+			{Predicate: "japa_stage", In: []string{bad}},
+		}}
+		if err := ValidateRule(r, nil); err == nil {
+			t.Errorf("expected error for non-canonical stage %q", bad)
+		}
+	}
+	// account_tier shares the user_class vocabulary — a typo dies here too.
+	r2 := validRule()
+	r2.Conditions = ConditionGroup{All: []Predicate{
+		{Predicate: "account_tier", In: []string{"enterprise"}},
+	}}
+	if err := ValidateRule(r2, nil); err == nil {
+		t.Error("expected error for unknown account_tier value")
+	}
+	// Canonical stages plus "" (undeclared) all pass.
+	r := validRule()
+	r.Conditions = ConditionGroup{All: []Predicate{
+		{Predicate: "japa_stage", In: []string{"", "considering", "planning", "preparing", "applied", "approved", "relocated", "settled", "traveled", "returned"}},
+	}}
+	if err := ValidateRule(r, nil); err != nil {
+		t.Fatalf("expected valid rule for canonical stages, got %v", err)
 	}
 }
 

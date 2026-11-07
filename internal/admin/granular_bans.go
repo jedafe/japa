@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/middleware"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // validOperations is the set of operations that can be restricted.
@@ -149,6 +150,8 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 
 	// Invalidate caches so the new restrictions take effect immediately.
 	h.invalidateUserAccessCaches(ctx, uid, restrictionsCacheKey(uid), banCacheKey(uid))
+	// Re-sync the users search doc — status may have flipped to 'restricted'.
+	worker.EnqueueSearchIndexSync(ctx, "user", uid)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"user_id":    uid.String(),
@@ -215,6 +218,9 @@ func (h *Handlers) LiftRestriction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.invalidateUserAccessCaches(r.Context(), uid, restrictionsCacheKey(uid))
+	// Re-sync the users search doc — lifting a restriction can restore the
+	// account to 'active', which re-enters search.
+	worker.EnqueueSearchIndexSync(r.Context(), "user", uid)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"user_id": uid.String(), "operation": op, "lifted": true})
 }
@@ -258,6 +264,9 @@ func (h *Handlers) LiftAllRestrictions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.invalidateUserAccessCaches(r.Context(), uid, restrictionsCacheKey(uid))
+	// Re-sync the users search doc — lifting all restrictions can restore
+	// the account to 'active', which re-enters search.
+	worker.EnqueueSearchIndexSync(r.Context(), "user", uid)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"user_id": uid.String(), "lifted_all": true})
 }
@@ -385,6 +394,9 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Invalidate all caches.
 	h.invalidateUserAccessCaches(ctx, uid, restrictionsCacheKey(uid), banCacheKey(uid))
+	// Re-sync the users search doc — a suspended account drops out of
+	// search (IndexUser gates on effective status).
+	worker.EnqueueSearchIndexSync(ctx, "user", uid)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"user_id": uid.String(),

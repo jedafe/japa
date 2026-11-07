@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	// Global wiki landing at /wiki — the root type's grid (countries today)
 	// plus a country-only search. Child-type exploration lives on each
@@ -141,15 +142,7 @@
 	]);
 </script>
 
-<svelte:head>
-	<title>{t('wiki.heading', 'Wiki')} — {siteName()}</title>
-	<meta name="description" content={t('wiki.landing_description', 'Explore destination wikis')} />
-	<meta property="og:title" content={t('wiki.heading', 'Wiki')} />
-	<meta property="og:description" content={t('wiki.landing_description', 'Explore destination wikis')} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<link rel="canonical" href={page.url.href} />
-</svelte:head>
+<SeoHead title={`${t('wiki.heading', 'Wiki')} — ${siteName()}`} description={t('wiki.landing_description', 'Explore destination wikis')} ogTitle={t('wiki.heading', 'Wiki')} />
 
 <!-- The map leads on every device — the title/description block stays
      hidden (the route's <svelte:head> still carries the page title). -->

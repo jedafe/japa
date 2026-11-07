@@ -46,6 +46,7 @@ var seedTaskAllowlist = map[string]bool{
 	worker.TypeMaintenanceRegenerateLLMsTxt:  true,
 	worker.TypeRSSRegenerate:                 true,
 	worker.TypeSearchReindexEngagementScores: true,
+	worker.TypeSearchReindexAll:              true,
 }
 
 type SeedParam struct {
@@ -157,6 +158,14 @@ var seedOps = []SeedOp{
 		Description: "Batched re-index of content whose engagement_score changed into Meilisearch.",
 		Enqueueable: true,
 	},
+	{
+		Kind:        "search_reindex_all",
+		TaskType:    worker.TypeSearchReindexAll,
+		Title:       "Reindex all search indexes",
+		Description: "Full Meilisearch resync across posts, forum threads, spaces, users, tags, academy tracks, doc pages, and organizations. With 'purge' checked, every managed index is emptied first — physically removing stale docs (drafts, private/deleted rows) that upsert-only reindexing cannot reach. Search results are empty between purge and reindex completion.",
+		Enqueueable: true,
+		Params:      seedTaskSchema[worker.TypeSearchReindexAll],
+	},
 }
 
 // seedTaskSchema declares the payload params each allowlisted task accepts —
@@ -194,6 +203,9 @@ var seedTaskSchema = map[string][]SeedParam{
 	worker.TypeMaintenanceRegenerateLLMsTxt:  {},
 	worker.TypeRSSRegenerate:                 {},
 	worker.TypeSearchReindexEngagementScores: {},
+	worker.TypeSearchReindexAll: {
+		{Key: "purge", Label: "Purge indexes first (clean rebuild — search is empty until reindex finishes)", Type: "checkbox"},
+	},
 }
 
 // seedOpsDefaultJSON is the serialized built-in catalog used as the

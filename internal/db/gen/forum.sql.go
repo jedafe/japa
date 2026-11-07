@@ -1418,6 +1418,33 @@ func (q *Queries) ListForumThreadBodiesByContentIDs(ctx context.Context, content
 	return items, nil
 }
 
+const listForumThreadIDsBySpace = `-- name: ListForumThreadIDsBySpace :many
+SELECT id FROM forum_threads WHERE space_id = $1
+`
+
+// Intentionally includes tombstoned rows — the search fan-out worker
+// (search:reindex_space_entities) needs deleted threads' IDs so their
+// index documents get purged too.
+func (q *Queries) ListForumThreadIDsBySpace(ctx context.Context, spaceID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listForumThreadIDsBySpace, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listForumThreadTags = `-- name: ListForumThreadTags :many
 
 
@@ -1575,6 +1602,7 @@ SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  is_edited, created_at, updated_at, deleted_at
 FROM forum_threads
 WHERE author_user_id = $1
+ AND deleted_at IS NULL
  AND (created_at < $2 OR ($2 IS NULL))
 ORDER BY created_at DESC, id DESC
 LIMIT $3
@@ -1814,6 +1842,7 @@ SELECT id, content_id, space_id, author_user_id, parent_reply_id,
  is_edited, created_at, updated_at, deleted_at
 FROM forum_threads
 WHERE space_id = $1
+ AND deleted_at IS NULL
  AND (created_at < $2 OR ($2 IS NULL))
 ORDER BY created_at DESC, id DESC
 LIMIT $3

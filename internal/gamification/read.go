@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -21,7 +22,7 @@ import (
 
 // ListBadges returns all active badge definitions for a platform. Returns
 // ErrGamificationDisabled when gamification.badges_enabled is off.
-func (s *Service) ListBadges(ctx context.Context) ([]BadgeInfo, error) {
+func (s *Service) ListBadges(ctx context.Context, sc features.CallerScope) ([]BadgeInfo, error) {
 	if !s.badgesEnabled(ctx) {
 		return nil, ErrGamificationDisabled
 	}
@@ -34,6 +35,12 @@ func (s *Service) ListBadges(ctx context.Context) ([]BadgeInfo, error) {
 	results := make([]BadgeInfo, 0, len(badges))
 	iconIDs := make([]pgtype.UUID, 0, len(badges))
 	for _, b := range badges {
+		// §42 conformance — a badge linked to a disabled feature flag is
+		// hidden from the public catalogue entirely (leaks nothing about
+		// the unactivated feature).
+		if !s.featureVisible(ctx, b.FeatureFlag, sc) {
+			continue
+		}
 		info := s.badgeToInfo(ctx, b)
 		// Public catalogue — unearned secret badges are masked the same way
 		// the collection endpoint masks them (name/icon hidden, ??? slot).
@@ -46,6 +53,8 @@ func (s *Service) ListBadges(ctx context.Context) ([]BadgeInfo, error) {
 			info.TriggerType = ""
 			info.TriggerValue = 0
 			info.TriggerActivityKey = ""
+			// feature_flag reveals which feature unlocks it — mask that too.
+			info.FeatureFlag = nil
 		} else if b.IconMediaID.Valid {
 			iconIDs = append(iconIDs, b.IconMediaID)
 		}
@@ -62,7 +71,7 @@ func (s *Service) ListBadges(ctx context.Context) ([]BadgeInfo, error) {
 
 // ListActiveChallenges returns active challenges within their date range.
 // Returns ErrGamificationDisabled when gamification.challenges_enabled is off.
-func (s *Service) ListActiveChallenges(ctx context.Context) ([]ChallengeInfo, error) {
+func (s *Service) ListActiveChallenges(ctx context.Context, sc features.CallerScope) ([]ChallengeInfo, error) {
 	if !s.challengesEnabled(ctx) {
 		return nil, ErrGamificationDisabled
 	}
@@ -75,6 +84,11 @@ func (s *Service) ListActiveChallenges(ctx context.Context) ([]ChallengeInfo, er
 	results := make([]ChallengeInfo, 0, len(challenges))
 	imgIDs := make([]pgtype.UUID, 0, len(challenges))
 	for _, c := range challenges {
+		// §42 conformance — challenges linked to a disabled feature flag
+		// are hidden from the public list.
+		if !s.featureVisible(ctx, c.FeatureFlag, sc) {
+			continue
+		}
 		if c.ImageMediaID.Valid {
 			imgIDs = append(imgIDs, c.ImageMediaID)
 		}
@@ -380,7 +394,7 @@ func (s *Service) ListUserBadgesByUsername(ctx context.Context, username string)
 // badges are masked — name/description and progress are hidden so the
 // member knows a slot exists without revealing what unlocks it.
 // Returns ErrGamificationDisabled when gamification.badges_enabled is off.
-func (s *Service) GetBadgeCollection(ctx context.Context, userID pgtype.UUID) (BadgeCollection, error) {
+func (s *Service) GetBadgeCollection(ctx context.Context, userID pgtype.UUID, sc features.CallerScope) (BadgeCollection, error) {
 	if !s.badgesEnabled(ctx) {
 		return BadgeCollection{}, ErrGamificationDisabled
 	}
@@ -402,6 +416,14 @@ func (s *Service) GetBadgeCollection(ctx context.Context, userID pgtype.UUID) (B
 	iconIDs := make([]pgtype.UUID, 0, len(rows))
 
 	for _, r := range rows {
+		// §42 conformance — definitions linked to a disabled feature flag
+		// are excluded from the collection entirely (earned or not), so
+		// category totals and stats only count attainable badges. Earned
+		// awards still appear via the /me/badges + profile badge lists.
+		if !s.featureVisible(ctx, r.FeatureFlag, sc) {
+			continue
+		}
+
 		category := ptrStr(r.Category)
 		if category == "" {
 			category = "general"
@@ -423,6 +445,7 @@ func (s *Service) GetBadgeCollection(ctx context.Context, userID pgtype.UUID) (B
 			IsFeatured:   r.IsFeatured,
 			PointsReward: int(r.PointsReward),
 			Earned:       r.UserBadgeID.Valid,
+			FeatureFlag:  r.FeatureFlag,
 		}
 
 		if r.UserAwardedAt.Valid {
@@ -452,6 +475,8 @@ func (s *Service) GetBadgeCollection(ctx context.Context, userID pgtype.UUID) (B
 			cb.IconMediaID = ""
 			cb.Progress = 0
 			cb.Goal = 0
+			// feature_flag reveals which feature unlocks it — mask that too.
+			cb.FeatureFlag = nil
 		} else if r.IconMediaID.Valid {
 			iconIDs = append(iconIDs, r.IconMediaID)
 		}
@@ -546,7 +571,7 @@ func (s *Service) liveBadgeProgress(ctx context.Context, userID pgtype.UUID, r g
 // ListUserChallengeProgress returns a user's challenge progress with
 // details. Returns ErrGamificationDisabled when
 // gamification.challenges_enabled is off.
-func (s *Service) ListUserChallengeProgress(ctx context.Context, userID pgtype.UUID) ([]ChallengeWithProgress, error) {
+func (s *Service) ListUserChallengeProgress(ctx context.Context, userID pgtype.UUID, sc features.CallerScope) ([]ChallengeWithProgress, error) {
 	if !s.challengesEnabled(ctx) {
 		return nil, ErrGamificationDisabled
 	}
@@ -559,6 +584,13 @@ func (s *Service) ListUserChallengeProgress(ctx context.Context, userID pgtype.U
 	results := make([]ChallengeWithProgress, 0, len(rows))
 
 	for _, r := range rows {
+		// §42 conformance — in-progress rows for challenges whose feature
+		// flag is disabled are hidden; completed rows stay visible as
+		// earned history.
+		if !r.Completed && !s.featureVisible(ctx, r.ChallengeFeatureFlag, sc) {
+			continue
+		}
+
 		var completedAt *string
 
 		if r.CompletedAt.Valid {

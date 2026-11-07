@@ -4087,6 +4087,9 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// space_id is an indexed attribute — keep the doc in sync.
+		h.enqueueSearchIndex(contentID, "index")
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
 			"cleared":    true,
 			"updated_at": updatedAt,
@@ -4131,6 +4134,9 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	// space_id is an indexed attribute — keep the doc in sync.
+	h.enqueueSearchIndex(contentID, "index")
 
 	// Return the stamped updated_at — the composer keeps its U1
 	// expected_updated_at in sync or the next content PATCH 409s.

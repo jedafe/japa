@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	// BUG-003: saved calendar entries dashboard page.
 	import { t, i18n } from '$lib/i18n';
@@ -50,11 +51,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={t('calendar.saved_description', 'Calendar entries you have saved.')} />
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={title} description={t('calendar.saved_description', 'Calendar entries you have saved.')} robots="`noindex`" />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">

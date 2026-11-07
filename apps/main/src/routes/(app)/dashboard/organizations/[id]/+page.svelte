@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/07-organizations.md (org admin dashboard)
 	// Org admin view: edit org fields (PATCH /organizations/{id}), manage
 	// members (list + remove + change role), invite members, revoke invitations,
@@ -300,6 +301,9 @@
 		}
 	}
 </script>
+
+<SeoHead title={`${org?.name ?? t('dashboard.nav.organizations')} — ${t('app.name')}`} description={org?.tagline ??
+			t('org_admin.description', 'Manage your organisation — settings, members, and campaigns.')} robots="noindex" />
 
 <section class="space-y-6">
 	<header>

@@ -73,18 +73,18 @@
 {#if action && !dismissed}
 	{@const Icon = nextActionIcon(action.icon)}
 	<div
-		class="flex items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-accent-subtle)] px-4 py-2 text-sm"
+		class="flex items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-primary)]/8 px-4 py-2 text-sm"
 		role="region"
 		aria-label={t('nextaction.suggestion', 'Suggestion')}
 	>
-		<Icon size={15} class="shrink-0 text-[var(--color-accent)]" />
+		<Icon size={15} class="shrink-0 text-[var(--color-primary)]" />
 		<span class="min-w-0 flex-1 truncate text-[var(--color-text)]">
 			<strong class="font-medium">{action.title}</strong>
 			{#if action.body}<span class="ms-1 hidden text-[var(--color-text-muted)] sm:inline">{action.body}</span>{/if}
 		</span>
 		<button
 			onclick={cta}
-			class="shrink-0 rounded-full bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white hover:opacity-90"
+			class="shrink-0 rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-white transition hover:bg-[var(--color-primary-hover)]"
 		>
 			{action.cta_label}
 		</button>

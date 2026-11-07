@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 	// Accepts an org invitation by POSTing the email token to
 	// POST /organizations/invitations/{token}/accept. The backend verifies the
@@ -39,10 +40,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{pageTitle}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={pageTitle} robots="`noindex`" description={t('org.invite_description', 'You have been invited to join an organisation on {site}.')} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-auto w-full max-w-3xl p-4">

@@ -23,7 +23,7 @@ const fallback = (origin: string) =>
 		`- [Forum](${origin}/forum)`,
 		`- [Spaces](${origin}/spaces)`,
 		`- [Tags](${origin}/tags)`,
-		`- [Deals](${origin}/deals)`,
+		`- [Deals](${origin}/products/deals)`,
 		`- [Tools](${origin}/tools)`,
 		`- [Roadmap](${origin}/roadmap)`,
 		`- [Academy](${origin}/academy)`,

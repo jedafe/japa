@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	// Submit-a-request form (auth required — guests are redirected to login by
 	// the server load). Posts to /roadmap/submissions which creates a
@@ -72,16 +73,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{t('roadmap.submit.title', 'Submit a request')} — {siteName()}</title>
-	<meta
-		name="description"
-		content={t('roadmap.submit.subtitle', 'Tell us what you would like to see on {site}.')}
-	/>
-	<!-- Auth-required form — excluded from /sitemap-roadmap.xml, so mark it
-	     noindex to match. -->
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={`${t('roadmap.submit.title', 'Submit a request')} — ${siteName()}`} description={t('roadmap.submit.subtitle', 'Tell us what you would like to see on {site}.')} robots="noindex" />
 
 <section class="mx-auto max-w-2xl space-y-6 px-4 py-8">
 	<header class="flex items-center gap-3">

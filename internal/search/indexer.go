@@ -26,22 +26,33 @@ import (
 // index stays small and result previews stay readable.
 const maxExcerptRunes = 200
 
-// Indexer syncs content documents into the posts index. It reads
-// from the reader pool and writes to the search engine — it never touches the
-// writer pool because indexing is a read of the source-of-truth row, not a
-// mutation of application state.
+// Indexer syncs content documents into the posts index. Bulk reindex
+// sweeps read from the replica (lag-tolerant), but per-entity fetches go
+// to `latest` — a write-triggered index task can run before the replica
+// catches up, and a stale read would reindex (or resurrect) the old row.
 type Indexer struct {
 	engine Engine
-	read   *gen.Queries
+	read   *gen.Queries // bulk listings (ReindexAll) — replica OK
+	latest *gen.Queries // per-entity fetches — primary when configured
 	pool   *db.DB
 }
 
 // NewIndexer creates an Indexer backed by the given search engine and
 // database read queries. Either may be nil: a nil engine makes IndexContent
 // a logged no-op, and a nil read set is a programming error that surfaces on
-// the first call.
+// the first call. Per-entity fetches default to the same `read` set — call
+// SetLatestRead with the writer pool to eliminate replica lag.
 func NewIndexer(engine Engine, read *gen.Queries) *Indexer {
-	return &Indexer{engine: engine, read: read}
+	return &Indexer{engine: engine, read: read, latest: read}
+}
+
+// SetLatestRead points per-entity IndexXxx fetches at the given query set —
+// pass the writer pool so a just-committed status/visibility change is
+// visible to the gate. Bulk ReindexAll listings stay on the replica.
+func (i *Indexer) SetLatestRead(q *gen.Queries) {
+	if q != nil {
+		i.latest = q
+	}
 }
 
 // SetPool injects the database pool for background reindex operations.
@@ -65,6 +76,7 @@ type contentDocument struct {
 	SpaceID           string   `json:"space_id"`
 	TagSlugs          []string `json:"tag_slugs"`
 	RelevantCountries []string `json:"relevant_countries"`
+	AuthorID          string   `json:"author_user_id"`   // §41 mutual-block filter (never serialized)
 	CreatedAt         int64    `json:"created_at"`       // unix timestamp for §54 ?sort=latest
 	EngagementScore   int64    `json:"engagement_score"` // weighted engagement for §54 ?sort=top
 }
@@ -79,7 +91,7 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID [16]byte) error {
 		return nil
 	}
 
-	row, err := ix.read.GetContentByID(ctx,
+	row, err := ix.latest.GetContentByID(ctx,
 		pgtype.UUID{Bytes: contentID, Valid: true},
 	)
 	if err != nil {
@@ -88,6 +100,37 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID [16]byte) error {
 		}
 
 		return fmt.Errorf("fetching content for index: %w", err)
+	}
+
+	// Only published + public + unmoderated content is searchable. Search has
+	// no per-viewer visibility filtering (results share a cache), so drafts,
+	// scheduled, archived, members-only, private, and auto-hidden rows must
+	// never reach the index (delete any stale doc). Mirrors the ListContents
+	// visibility gate used by ReindexAll.
+	if row.Status != "published" || row.Visibility != "public" || row.AutoHidden {
+		return ix.DeleteDocument(ctx, IndexPosts, contentID)
+	}
+
+	// §05 space-visibility cascade, mirrored for search from
+	// IsContentVisibleToUser: the parent space must be live and public —
+	// content inside members/private spaces requires membership, so the
+	// shared public index must never carry it. Deleted/non-active spaces
+	// evict their content too (same intent gate as IndexForumThread). A
+	// dangling space_id (LEFT JOIN miss in the read-path predicate)
+	// resolves to visible.
+	if row.SpaceID.Valid {
+		sp, serr := ix.latest.GetSpaceByID(ctx, row.SpaceID)
+		switch {
+		case errors.Is(serr, pgx.ErrNoRows):
+			// dangling space reference — treated as spaceless like the
+			// read-path LEFT JOIN.
+		case serr != nil:
+			return fmt.Errorf("fetching content's space for index: %w", serr)
+		default:
+			if sp.DeletedAt.Valid || sp.Status != "active" || sp.Visibility != "public" {
+				return ix.DeleteDocument(ctx, IndexPosts, contentID)
+			}
+		}
 	}
 
 	// Fetch tag slugs for the content so tag-scoped search works (§54
@@ -112,6 +155,7 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID [16]byte) error {
 		SpaceID:           spaceID,
 		TagSlugs:          tagSlugs,
 		RelevantCountries: ix.resolveRelevantCountries(ctx, row.GeoSpaceID),
+		AuthorID:          row.AuthorID.String(),
 		CreatedAt:         row.CreatedAt.Time.Unix(),
 		EngagementScore:   int64(row.ViewCount) + int64(row.CommentCount)*3 + int64(row.ShareCount)*5 + int64(row.ReshareCount)*2,
 	}
@@ -138,7 +182,7 @@ func (ix *Indexer) resolveRelevantCountries(ctx context.Context, geoSpaceID pgty
 
 	currentID := geoSpaceID
 	for range maxDepth {
-		space, err := ix.read.GetSpaceByID(ctx,
+		space, err := ix.latest.GetSpaceByID(ctx,
 			currentID,
 		)
 		if err != nil {
@@ -168,7 +212,7 @@ func (ix *Indexer) resolveContentTagSlugs(ctx context.Context, contentID pgtype.
 		return []string{}
 	}
 
-	tags, err := ix.read.ListContentTags(ctx, contentID)
+	tags, err := ix.latest.ListContentTags(ctx, contentID)
 	if err != nil {
 		slog.Warn("search:index: listing content tags failed", "content_id", contentID.String(), "error", err)
 		return []string{}
@@ -363,7 +407,7 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID [16]byte) erro
 		return nil
 	}
 
-	row, err := ix.read.GetForumThreadByID(ctx,
+	row, err := ix.latest.GetForumThreadByID(ctx,
 		pgtype.UUID{Bytes: threadID, Valid: true},
 	)
 	if err != nil {
@@ -374,16 +418,51 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID [16]byte) erro
 		return fmt.Errorf("fetching forum thread for index: %w", err)
 	}
 
-	bodyText := string(row.Body)
+	// §05 space-visibility cascade, mirrored for search: private-space
+	// threads are 404 to non-members and must never be indexed; members-
+	// space threads expose only the title to non-members, so the doc keeps
+	// the title but not the body preview; a deleted or non-active space
+	// hides its threads entirely. A missing space row resolves to 'public'
+	// (GetForumThreadSpaceAccess COALESCEs the same way).
+	spaceVisibility := "public"
+	if row.SpaceID.Valid {
+		sp, serr := ix.latest.GetSpaceByID(ctx, row.SpaceID)
+		switch {
+		case errors.Is(serr, pgx.ErrNoRows):
+			// dangling space reference — treated as 'public' like the
+			// read-path COALESCE.
+		case serr != nil:
+			return fmt.Errorf("fetching thread's space for index: %w", serr)
+		default:
+			spaceVisibility = sp.Visibility
+			if sp.DeletedAt.Valid || sp.Status != "active" || spaceVisibility == "private" {
+				return ix.DeleteDocument(ctx, IndexForumThreads, threadID)
+			}
+		}
+	}
+
+	bodyPreview := ""
+	if spaceVisibility != "members" {
+		bodyPreview = buildExcerpt(string(row.Body))
+	}
+
+	// Anonymous threads must not store the author id in the index — the
+	// raw document is queryable outside the API response shaping, so the
+	// field is left empty to preserve §08 anonymity.
+	authorID := ""
+	if !row.IsAnonymous {
+		authorID = row.AuthorUserID.String()
+	}
+
 	doc := forumThreadDocument{
 		ID: row.ID.String(),
 
 		Title:        row.Title,
 		Slug:         row.Slug,
-		BodyPreview:  buildExcerpt(bodyText),
+		BodyPreview:  bodyPreview,
 		SpaceID:      row.SpaceID.String(),
 		Solved:       row.Solved,
-		AuthorUserID: row.AuthorUserID.String(),
+		AuthorUserID: authorID,
 		URL:          "/forum/" + row.Slug,
 		CreatedAt:    row.CreatedAt.Time.Unix(),
 	}
@@ -423,7 +502,7 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID [16]byte) error {
 		return nil
 	}
 
-	row, err := ix.read.GetSpaceByID(ctx,
+	row, err := ix.latest.GetSpaceByID(ctx,
 		pgtype.UUID{Bytes: spaceID, Valid: true},
 	)
 	if err != nil {
@@ -480,6 +559,7 @@ type userDocument struct {
 	DisplayName string `json:"excerpt"`
 	Bio         string `json:"bio"`
 	AvatarURL   string `json:"avatar_url"` // §54 autocomplete type-specific field
+	Status      string `json:"status"`     // effective standing (GetUserProfile CASE)
 	URL         string `json:"url"`
 	CreatedAt   int64  `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
@@ -501,7 +581,7 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID [16]byte) error {
 	// has opted out of discoverability, remove them from the index so they
 	// don't appear in search results. Best-effort: if the privacy settings
 	// row is missing, default to indexable (COALESCE true in the query).
-	priv, err := ix.read.GetUserPrivacySettings(ctx,
+	priv, err := ix.latest.GetUserPrivacySettings(ctx,
 
 		uID,
 	)
@@ -513,7 +593,7 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID [16]byte) error {
 	// COALESCE default in the DB is true, so a missing row means
 	// indexable. A query error is logged but does not block indexing.
 
-	row, err := ix.read.GetUserProfile(ctx,
+	row, err := ix.latest.GetUserProfile(ctx,
 
 		uID,
 	)
@@ -523,6 +603,17 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID [16]byte) error {
 		}
 
 		return fmt.Errorf("fetching user profile for index: %w", err)
+	}
+
+	// GetUserProfile resolves the effective standing (users.status merged
+	// with active ban/suspension rows). Accounts not in good standing —
+	// banned, suspended, deleted, pending — must not be discoverable;
+	// remove any stale doc. 'restricted' (partial operation ban) stays
+	// searchable: the member still exists, some actions are just limited.
+	if row.Status != "active" && row.Status != "restricted" {
+		slog.Info("search:index: user not in good standing, removing from index",
+			"user_id", uID.String(), "status", row.Status)
+		return ix.DeleteDocument(ctx, IndexUsers, userID)
 	}
 
 	displayName := ""
@@ -547,6 +638,7 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID [16]byte) error {
 		DisplayName: displayName,
 		Bio:         bio,
 		AvatarURL:   avatarURL,
+		Status:      row.Status,
 		URL:         "/u/" + row.Username,
 		CreatedAt:   row.CreatedAt.Time.Unix(),
 	}
@@ -587,7 +679,7 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID [16]byte) error {
 		return nil
 	}
 
-	row, err := ix.read.GetTagByID(ctx,
+	row, err := ix.latest.GetTagByID(ctx,
 		pgtype.UUID{Bytes: tagID, Valid: true},
 	)
 	if err != nil {
@@ -634,7 +726,7 @@ func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID [16]byte) error 
 		return nil
 	}
 
-	row, err := ix.read.GetTagByID(ctx,
+	row, err := ix.latest.GetTagByID(ctx,
 		pgtype.UUID{Bytes: tagID, Valid: true},
 	)
 	if err != nil {
@@ -701,7 +793,7 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID [16]byte) error 
 		return nil
 	}
 
-	row, err := ix.read.GetOrganizationByID(ctx,
+	row, err := ix.latest.GetOrganizationByID(ctx,
 		pgtype.UUID{Bytes: orgID, Valid: true},
 	)
 	if err != nil {
@@ -715,6 +807,12 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID [16]byte) error 
 	// Soft-deleted orgs are removed from the index so they don't appear in
 	// search results (Rule 11 — soft-delete, and GDPR erasure safety).
 	if row.DeletedAt.Valid {
+		return ix.DeleteDocument(ctx, IndexOrganizations, orgID)
+	}
+
+	// Only active orgs are publicly searchable — suspended and
+	// pending_verification orgs must not surface (delete any stale doc).
+	if row.Status != "active" {
 		return ix.DeleteDocument(ctx, IndexOrganizations, orgID)
 	}
 
@@ -941,7 +1039,7 @@ func (ix *Indexer) IndexAcademyTrack(ctx context.Context, trackID [16]byte) erro
 
 	trID := pgtype.UUID{Bytes: trackID, Valid: true}
 
-	row, err := ix.read.GetInstructorTrackByID(ctx,
+	row, err := ix.latest.GetInstructorTrackByID(ctx,
 		trID,
 	)
 	if err != nil {
@@ -1023,7 +1121,7 @@ func (ix *Indexer) IndexDocPage(ctx context.Context, pageID [16]byte) error {
 		return nil
 	}
 
-	row, err := ix.read.GetDocPageByID(ctx,
+	row, err := ix.latest.GetDocPageByID(ctx,
 		pgtype.UUID{Bytes: pageID, Valid: true},
 	)
 	if err != nil {
@@ -1032,6 +1130,14 @@ func (ix *Indexer) IndexDocPage(ctx context.Context, pageID [16]byte) error {
 		}
 
 		return fmt.Errorf("fetching doc page for index: %w", err)
+	}
+
+	// Only published pages are searchable. /docs/search filters on
+	// review_status, but the omnibox autocomplete (DOC-016) queries this
+	// index unfiltered — drafts/in_review/rejected pages must never reach
+	// the index (delete any stale doc).
+	if row.ReviewStatus != "published" {
+		return ix.DeleteDocument(ctx, IndexDocPages, pageID)
 	}
 
 	doc := docPageDocument{
@@ -1079,6 +1185,21 @@ type ReindexSummary struct {
 	Errors       int `json:"errors"`
 }
 
+// reindexManagedIndexes is the set of indexes ReindexAll repopulates — and
+// therefore the set PurgeAll may safely clear. Indexes repopulated elsewhere
+// (knowledge_articles, the JapaBot RAG indexes) are deliberately absent:
+// purging them would leave them empty until their own reindex runs.
+var reindexManagedIndexes = []string{
+	IndexPosts,
+	IndexForumThreads,
+	IndexSpaces,
+	IndexUsers,
+	IndexTags,
+	IndexAcademyTracks,
+	IndexDocPages,
+	IndexOrganizations,
+}
+
 // ReindexAll iterates every entity for the given platform and upserts it into
 // the corresponding search index. This is the bootstrap/backfill path
 // for indexes that were provisioned after data already existed — the
@@ -1087,7 +1208,10 @@ type ReindexSummary struct {
 // // Each entity type is fetched in offset/cursor batches and delegated to the
 // existing per-entity IndexXxx method, which reuses the document-shaping
 // logic (excerpt, URL, relevant_countries, etc.).
-func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
+// // The return is `any` (always *ReindexSummary on success) so the worker
+// package's SearchIndexer seam can consume it without importing this
+// package's types — callers marshal it directly to JSON.
+func (ix *Indexer) ReindexAll(ctx context.Context) (any, error) {
 	if ix.engine == nil {
 		return nil, errors.New("search:reindex: no search engine")
 	}
@@ -1361,6 +1485,27 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 	purgeStaleIndexDocs(ctx, ix.engine, IndexOrganizations, keepOrgs)
 
 	return summary, nil
+}
+
+// PurgeAll deletes every document from the ReindexAll-managed indexes while
+// keeping each index and its schema settings. Upsert-only reindexing cannot
+// reach stale docs for rows that no longer appear in the listing queries
+// (drafts, private content, soft-deleted threads/orgs); purging first is the
+// only way to physically drop them. Run ReindexAll immediately after —
+// search results are empty in between.
+func (ix *Indexer) PurgeAll(ctx context.Context) error {
+	if ix.engine == nil {
+		return errors.New("search:purge: no search engine")
+	}
+
+	for _, uid := range reindexManagedIndexes {
+		if err := ix.engine.DeleteAllDocuments(ctx, uid); err != nil {
+			return fmt.Errorf("purging index %q: %w", uid, err)
+		}
+		slog.Info("search:purge: index cleared", "index", uid)
+	}
+
+	return nil
 }
 
 // purgeStaleIndexDocs removes index documents whose primary key is absent

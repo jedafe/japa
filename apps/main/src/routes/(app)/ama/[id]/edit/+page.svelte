@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/88-ask-an-expat.md
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -78,14 +79,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('ama.edit_title', 'Edit AMA — {site}')}</title>
-	<meta name="description" content={t('ama.edit_description', 'Update your AMA session title and introduction.')} />
-	<meta name="robots" content="noindex" />
-	<meta property="og:title" content={t('ama.edit_title', 'Edit AMA')} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-</svelte:head>
+<SeoHead title={t('ama.edit_title', 'Edit AMA — {site}')} description={t('ama.edit_description', 'Update your AMA session title and introduction.')} ogTitle={t('ama.edit_title', 'Edit AMA')} robots="`noindex`" />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-auto flex max-w-2xl items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">

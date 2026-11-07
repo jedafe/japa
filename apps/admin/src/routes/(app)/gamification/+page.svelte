@@ -13,7 +13,7 @@
 	import UserAutocomplete from '$lib/components/ui/UserAutocomplete.svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { Trophy, Target, Pencil, Award, Trash2, Eye, CalendarDays, Layers, ScrollText } from 'lucide-svelte';
-	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { api, apiRaw, adminCatalogApi, featureFlagsAdminApi, type CatalogOption } from '$lib/api';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
 
@@ -39,6 +39,7 @@
 		points_reward?: number;
 		available_from?: string;
 		available_until?: string;
+		feature_flag?: string | null;
 		created_at: string;
 	};
 
@@ -55,6 +56,7 @@
 		starts_at: string;
 		ends_at: string | null;
 		is_active: boolean;
+		feature_flag?: string | null;
 		created_at: string;
 	};
 
@@ -278,8 +280,48 @@
 		void refreshMeta();
 	}
 
+	// Feature-flag options for the feature_flag selects — same source the
+	// menu-item flag picker uses; falls back to the public details
+	// projection when the admin list is unavailable.
+	let flagOptions = $state<{ key: string; name?: string }[]>([]);
+	let flagOptionsLoaded = false;
+	async function loadFlagOptions() {
+		if (flagOptionsLoaded) return;
+		try {
+			const result = await featureFlagsAdminApi.list();
+			if (result.ok) {
+				flagOptions = result.data ?? [];
+				flagOptionsLoaded = true;
+				return;
+			}
+		} catch {
+			// fall through to the public projection
+		}
+		try {
+			const result = await featureFlagsAdminApi.listDetails();
+			if (result.ok) flagOptions = result.data ?? [];
+		} catch {
+			flagOptions = [];
+		}
+		flagOptionsLoaded = true;
+	}
+
+	// featureFlagSelectOptions always carries the current value so the
+	// select never renders blank when a flag was unset in the registry or
+	// the catalog fetch failed.
+	function featureFlagSelectOptions(current?: string | null): CatalogOption[] {
+		return [
+			{ value: '', label: t('gamification.no_feature_flag', 'None — always visible') },
+			...(current && !flagOptions.some((f) => f.key === current)
+				? [{ value: current, label: `${current} (custom)` }]
+				: []),
+			...flagOptions.map((f) => ({ value: f.key, label: f.name ? `${f.name} (${f.key})` : f.key }))
+		];
+	}
+
 	$effect(() => {
 		void refreshMeta();
+		void loadFlagOptions();
 	});
 
 	// primeMediaUrl resolves an existing media id to its file URL so the
@@ -365,6 +407,7 @@
 		{ key: 'is_featured', label: t('gamification.featured', 'Featured'), type: 'checkbox' },
 		{ key: 'available_from', label: t('gamification.available_from', 'Available From'), type: 'datetime-local' },
 		{ key: 'available_until', label: t('gamification.available_until', 'Available Until'), type: 'datetime-local' },
+		{ key: 'feature_flag', label: t('gamification.feature_flag', 'Feature Flag'), type: 'select', options: featureFlagSelectOptions() },
 		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox', defaultValue: true },
 		{ key: 'display_order', label: t('gamification.display_order', 'Display Order'), type: 'number' }
 	]);
@@ -520,6 +563,7 @@
 					is_featured: typeof body.is_featured === 'boolean' ? body.is_featured : undefined,
 					available_from: toISO(body.available_from),
 					available_until: toISO(body.available_until),
+					feature_flag: body.feature_flag?.trim() || undefined,
 					is_active: typeof body.is_active === 'boolean' ? body.is_active : undefined,
 					display_order: intOr(body.display_order)
 				}
@@ -547,6 +591,7 @@
 				is_featured: typeof body.is_featured === 'boolean' ? body.is_featured : undefined,
 				available_from: toISO(body.available_from),
 				available_until: toISO(body.available_until),
+				feature_flag: body.feature_flag?.trim() || undefined,
 				is_active: typeof body.is_active === 'boolean' ? body.is_active : undefined,
 				display_order: intOr(body.display_order)
 			};
@@ -561,6 +606,7 @@
 			if (payload.badge_group === undefined && row?.badge_group) payload.clear_badge_group = true;
 			if (payload.available_from === undefined && row?.available_from) payload.clear_available_from = true;
 			if (payload.available_until === undefined && row?.available_until) payload.clear_available_until = true;
+			if (payload.feature_flag === undefined && row?.feature_flag) payload.clear_feature_flag = true;
 			const res = await api(`/admin/gamification/badges/${id}`, { method: 'PATCH', body: payload });
 			if (res.ok) invalidateLists();
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -587,6 +633,7 @@
 		{ key: 'reward_badge_id', label: t('gamification.reward_badge', 'Reward Badge'), type: 'select', options: badgeOptions },
 		{ key: 'starts_at', label: t('gamification.starts', 'Start Date'), type: 'date', required: true },
 		{ key: 'ends_at', label: t('gamification.ends', 'End Date'), type: 'date' },
+		{ key: 'feature_flag', label: t('gamification.feature_flag', 'Feature Flag'), type: 'select', options: featureFlagSelectOptions() },
 		{ key: 'is_active', label: t('gamification.active', 'Active'), type: 'checkbox', defaultValue: true }
 	]);
 
@@ -724,6 +771,7 @@
 					reward_badge_id: body.reward_badge_id || undefined,
 					starts_at: toRFC3339(body.starts_at),
 					ends_at: toRFC3339(body.ends_at, true),
+					feature_flag: body.feature_flag?.trim() || undefined,
 					is_active: typeof body.is_active === 'boolean' ? body.is_active : undefined
 				}
 			});
@@ -748,12 +796,14 @@
 				reward_badge_id: body.reward_badge_id || undefined,
 				starts_at: startsAt,
 				ends_at: endsAt,
+				feature_flag: body.feature_flag?.trim() || undefined,
 				is_active: typeof body.is_active === 'boolean' ? body.is_active : undefined
 			};
 			if (body.image_media_id) payload.image_media_id = body.image_media_id;
 			else if (row?.image_media_id) payload.clear_image_media_id = true;
 			if (!payload.reward_badge_id && row?.reward_badge_id) payload.clear_reward_badge_id = true;
 			if (!payload.ends_at && row?.ends_at) payload.clear_ends_at = true;
+			if (!payload.feature_flag && row?.feature_flag) payload.clear_feature_flag = true;
 			const res = await api(`/admin/gamification/challenges/${id}`, { method: 'PATCH', body: payload });
 			if (res.ok) invalidateLists();
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -1184,6 +1234,10 @@
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.available_until ? new Date(row.available_until).toLocaleDateString(undefined, { timeZone: 'UTC' }) : '—'}</p>
 			</div>
 			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.feature_flag', 'Feature Flag')}</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.feature_flag || '—'}</p>
+			</div>
+			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.system', 'System')}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.is_system ? t('common.system', 'System') : t('common.custom', 'Custom')}</p>
 			</div>
@@ -1237,6 +1291,10 @@
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.ends', 'End Date')}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.ends_at ? new Date(row.ends_at).toLocaleDateString(undefined, { timeZone: 'UTC' }) : '—'}</p>
+			</div>
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.feature_flag', 'Feature Flag')}</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.feature_flag || '—'}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('gamification.active', 'Active')}</p>
@@ -1307,6 +1365,16 @@
 		<div>
 			<label for="badge-activity" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.activity_key', 'Activity Key')}</label>
 			<ActivityKeyAutocomplete id="badge-activity" bind:value={value.trigger_activity_key} placeholder="post.create" extraKeys={knownActivityKeys} />
+		</div>
+		<div>
+			<label for="badge-feature-flag" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.feature_flag', 'Feature Flag')}</label>
+			<AutocompleteSelect
+				id="badge-feature-flag"
+				bind:value={value.feature_flag}
+				options={featureFlagSelectOptions(value.feature_flag)}
+				class="w-full"
+			/>
+			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('gamification.feature_flag_hint', 'Optional. Item is hidden from public gamification surfaces and does not progress while this feature flag is disabled.')}</p>
 		</div>
 		<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
 			<div>
@@ -1429,6 +1497,16 @@
 				<label for="challenge-target" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.target', 'Target Count')}</label>
 				<input id="challenge-target" type="number" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.target_count} />
 			</div>
+		</div>
+		<div>
+			<label for="challenge-feature-flag" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.feature_flag', 'Feature Flag')}</label>
+			<AutocompleteSelect
+				id="challenge-feature-flag"
+				bind:value={value.feature_flag}
+				options={featureFlagSelectOptions(value.feature_flag)}
+				class="w-full"
+			/>
+			<p class="mt-0.5 text-xs" style="color: var(--color-muted)">{t('gamification.feature_flag_hint', 'Optional. Item is hidden from public gamification surfaces and does not progress while this feature flag is disabled.')}</p>
 		</div>
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<div>

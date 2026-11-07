@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
@@ -8,7 +9,6 @@
 	import AuthDialog from '$lib/components/auth/AuthDialog.svelte';
 	import { api } from '$lib/api/client';
 	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { ChecklistGuide, ChecklistItem, ChecklistSelector } from '$lib/types';
 	import type { PageData } from './$types';
 	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
@@ -316,17 +316,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<link rel="canonical" href="{page.url.origin}/tools/visa-checklist" />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-	{@html safeJsonLdScript(jsonLd)}
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import type { PageData } from './$types';
 	import { untrack } from 'svelte';
 	import { t, siteName } from '$lib/i18n';
@@ -45,9 +46,7 @@
 	let openCommitGroups = $state<string[]>(untrack(() => groups.map((g) => g.type)));
 </script>
 
-<svelte:head>
-	<title>{rel?.version ?? t('roadmap.releases.title', 'Release')} — {siteName()}</title>
-</svelte:head>
+<SeoHead title={`${rel?.version ?? t('roadmap.releases.title', 'Release')} — ${siteName()}`} description={t('roadmap.release.description', 'Release notes and changelog for {name} on {site}.').replace('{name}', rel?.version ?? t('roadmap.releases.title', 'Release'))} />
 
 <div class="wrap">
 	<a class="back muted" href="/roadmap/releases">

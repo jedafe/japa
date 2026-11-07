@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -114,14 +115,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('scam_alerts.edit_title', 'Edit Scam Alert — {site}')}</title>
-	<meta name="description" content={t('scam_alerts.edit_description', 'Update your scam report.')} />
-	<meta name="robots" content="noindex" />
-	<meta property="og:title" content={t('scam_alerts.edit_title', 'Edit Scam Alert')} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-</svelte:head>
+<SeoHead title={t('scam_alerts.edit_title', 'Edit Scam Alert — {site}')} description={t('scam_alerts.edit_description', 'Update your scam report.')} ogTitle={t('scam_alerts.edit_title', 'Edit Scam Alert')} robots="`noindex`" />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-auto flex max-w-2xl items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">

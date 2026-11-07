@@ -5,7 +5,7 @@
 	// the tab structure but uses DataTable `actions`/`bulkActionsList` props and
 	// Modal for the rule create/edit form.
 	import { t } from '$lib/stores/i18n.svelte';
-	import { walletApi, userManagementApi } from '$lib/api';
+	import { walletApi, userManagementApi, api } from '$lib/api';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Tabs } from '$lib/components/ui/tabs';
@@ -40,7 +40,7 @@
 	};
 
 	let rules = $state<ActivityRule[]>([]);
-				let pageSize = $state(20);
+	let pageSize = $state(20);
 	let rulesLoading = $state(true);
 	let searchQuery = $state('');
 	let selectedIds = $state<Set<string>>(new Set());
@@ -68,6 +68,15 @@
 	let errorMessage = $state('');
 	let successMessage = $state('');
 	let activeTab = $state('rules');
+	// All /admin/wallet/* endpoints sit behind the feature.wallet gate —
+	// show a friendly notice instead of per-tab API errors when it's off.
+	let walletEnabled = $state<boolean | null>(null);
+
+	$effect(() => {
+		api<Record<string, boolean>>('/feature-flags').then((res) => {
+			if (res.ok) walletEnabled = res.data['feature.wallet'] === true;
+		});
+	});
 
 	const tabs = [
 		{ value: 'rules', label: t('app.wallet.activity_point_rules', 'Activity Rules'), icon: Settings },
@@ -133,27 +142,38 @@
 			label: t('common.delete', 'Delete'),
 			icon: Trash2,
 			variant: 'destructive',
-			onclick: (row) => deleteRule(row)
+			onclick: (row) => { deleteRuleTarget = row; deleteRuleModalOpen = true; }
 		}
 	];
 
 	// ── Bulk actions via BulkBar ────────────────────────────────────────────
 	const ruleBulkActions: BulkAction[] = [
-		{ label: t('common.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }
+		{ label: t('common.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: (ids) => { bulkDeleteTarget = ids; bulkDeleteModalOpen = true; } }
 	];
 
 	async function loadRules() {
 		rulesLoading = true;
-		const result = await walletApi.getRules();
-		if (result.ok) {
-			const data = result.data;
-			let items: ActivityRule[] = Array.isArray(data) ? (data as ActivityRule[]) : (data as any)?.items ?? [];
-			if (searchQuery) {
-				const q = searchQuery.toLowerCase();
-				items = items.filter((r: any) => r.activity_key?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q));
+		// Fetch the full registry — the backend caps each page at MaxPageSize=100,
+		// so keep paging until a short page is returned.
+		let items: ActivityRule[] = [];
+		let offset = 0;
+		for (;;) {
+			const result = await walletApi.getRules(`page_size=100&page_offset=${offset}`);
+			if (!result.ok) {
+				if (offset === 0) errorMessage = result.error;
+				break;
 			}
-			rules = items;
+			const data = result.data;
+			const batch: ActivityRule[] = Array.isArray(data) ? (data as ActivityRule[]) : (data as any)?.items ?? [];
+			items = items.concat(batch);
+			if (batch.length < 100) break;
+			offset += 100;
 		}
+		if (searchQuery) {
+			const q = searchQuery.toLowerCase();
+			items = items.filter((r: any) => r.activity_key?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q));
+		}
+		rules = items;
 		rulesLoading = false;
 	}
 
@@ -162,8 +182,10 @@
 		settingsError = '';
 		const result = await walletApi.getSettings();
 		if (result.ok) {
-			const data = result.data as WalletSettings;
-			if (data) settings = data;
+			// GET /admin/wallet/settings returns { settings: {...} } — unwrap.
+			const data = result.data as { settings?: WalletSettings } | WalletSettings;
+			const s = (data as { settings?: WalletSettings })?.settings ?? (data as WalletSettings);
+			if (s && typeof s.daily_earning_cap === 'number') settings = s;
 		} else {
 			if (!result.error.includes('not_found')) {
 				settingsError = result.error;
@@ -211,7 +233,8 @@
 
 		const result = editingRule
 			? await walletApi.updateRule(editingRule.id, {
-				activity_key: ruleForm.activity_key.trim(),
+				// activity_key is intentionally omitted — the PATCH endpoint
+				// cannot rekey a rule (UpdateActivityRuleByID ignores it).
 				point_value: ruleForm.point_value,
 				description: ruleForm.description.trim(),
 				is_enabled: ruleForm.is_enabled,
@@ -250,14 +273,32 @@
 		}
 	}
 
-	async function deleteRule(rule: ActivityRule) {
+	// Destructive deletes go through confirm modals (Rule 13 — no window.confirm,
+	// no blind destructive row action).
+	let deleteRuleTarget = $state<ActivityRule | null>(null);
+	let deleteRuleModalOpen = $state(false);
+	let bulkDeleteTarget = $state<Set<string> | null>(null);
+	let bulkDeleteModalOpen = $state(false);
+
+	async function confirmDeleteRule() {
+		const rule = deleteRuleTarget;
+		if (!rule) return;
 		errorMessage = '';
 		const result = await walletApi.deleteRule(rule.id);
+		deleteRuleModalOpen = false;
+		deleteRuleTarget = null;
 		if (result.ok) {
 			loadRules();
 		} else {
 			errorMessage = result.error;
 		}
+	}
+
+	async function confirmBulkDelete() {
+		const ids = bulkDeleteTarget;
+		bulkDeleteModalOpen = false;
+		bulkDeleteTarget = null;
+		if (ids) await bulkDelete(ids);
 	}
 
 	async function bulkDelete(ids: Set<string>) {
@@ -266,11 +307,17 @@
 		bulkDeleting = true;
 		errorMessage = '';
 		try {
-			await Promise.all(Array.from(ids).map((id) => walletApi.deleteRule(id)));
+			const results = await Promise.all(Array.from(ids).map((id) => walletApi.deleteRule(id)));
+			const failed = results.filter((r) => !r.ok).length;
+			if (failed > 0) {
+				errorMessage = t('app.wallet.error_delete_rules', 'Failed to delete selected rules');
+			}
 		} catch {
 			errorMessage = t('app.wallet.error_delete_rules', 'Failed to delete selected rules');
 		} finally {
 			bulkDeleting = false;
+			selectedIds = new Set();
+			await loadRules();
 		}
 	}
 
@@ -278,7 +325,10 @@
 		settingsSaving = true;
 		errorMessage = '';
 		successMessage = '';
-		const result = await walletApi.updateSettings(settings);
+		const result = await walletApi.updateSettings({
+			daily_earning_cap: settings.daily_earning_cap,
+			enable_earning: settings.enable_earning
+		});
 		if (result.ok) {
 			successMessage = t('app.wallet.settings_saved', 'Settings saved successfully');
 		} else {
@@ -415,6 +465,13 @@
 		</div>
 	{/if}
 
+	{#if walletEnabled === false}
+		<Card>
+			<CardContent class="p-6">
+				<p class="text-sm text-muted">{t('app.wallet.wallet_feature_disabled', 'The wallet feature is currently disabled. Enable the feature.wallet flag to manage activity rules, settings, and balance adjustments.')}</p>
+			</CardContent>
+		</Card>
+	{:else}
 	<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
 
 	{#if activeTab === 'rules'}
@@ -434,7 +491,7 @@
 						columns={ruleColumns}
 						data={rules}
 						bind:pageSize
-					pageSizeOptions={[10, 25, 50, 100]}
+						pageSizeOptions={[10, 25, 50, 100]}
 						emptyMessage={t('app.wallet.empty_rules', 'No rules configured')}
 						searchable
 						onsearch={(q) => { searchQuery = q; loadRules(); }}
@@ -459,7 +516,8 @@
 					<div class="max-w-md space-y-4">
 						<div>
 							<label for="ws-cap" class="mb-1 block text-sm font-medium text-foreground-alt">{t('app.wallet.daily_earning_cap', 'Daily Earning Cap')}</label>
-							<input id="ws-cap" type="number" min="0" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={settings.daily_earning_cap} />
+							<input id="ws-cap" type="number" min="-1" step="1" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={settings.daily_earning_cap} />
+							<p class="mt-1 text-xs text-muted">{t('app.wallet.cap_unlimited_hint', 'Set to -1 for no daily limit.')}</p>
 						</div>
 						<div class="flex items-center gap-3">
 							<input id="ws-earning" type="checkbox" bind:checked={settings.enable_earning} class="h-4 w-4 rounded border" />
@@ -489,7 +547,7 @@
 						{/if}
 						{#if showSuggestions && userSuggestions.length > 0}
 							<div class="absolute start-0 end-0 top-full z-50 mt-1 rounded-lg border bg-surface shadow-lg">
-								{#each userSuggestions as user (user)}
+								{#each userSuggestions as user (user.id)}
 									<button type="button" class="flex w-full items-center gap-3 px-3 py-2 text-start text-sm hover:bg-accent" onmousedown={() => selectSuggestion(user)}>
 										<span class="font-medium text-foreground">{user.username}</span>
 										<span class="text-xs text-muted">{user.email}</span>
@@ -511,7 +569,7 @@
 					<div class="grid gap-3 sm:grid-cols-3">
 						<div>
 							<label for="adj-amount" class="mb-1 block text-sm font-medium">{t('app.wallet.amount', 'Amount')}</label>
-							<input id="adj-amount" type="number" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={adjustForm.amount} />
+							<input id="adj-amount" type="number" step="1" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={adjustForm.amount} />
 						</div>
 						<div>
 							<span class="mb-1 block text-sm font-medium">{t('app.wallet.type', 'Type')}</span>
@@ -531,6 +589,7 @@
 			</CardContent>
 		</Card>
 	{/if}
+	{/if}
 </div>
 
 <!-- Rule Create/Edit Modal -->
@@ -538,7 +597,10 @@
 	<div class="space-y-4">
 		<div>
 			<label for="rule-key" class="mb-1 block text-sm font-medium">{t('app.wallet.activity_key', 'Activity Key')}</label>
-			{#if activityKeyMode === 'select'}
+			{#if editingRule}
+				<!-- PATCH /rules/{id} can't rekey a rule — changing the key is delete+create. -->
+				<p class="rounded-lg border bg-surface px-3 py-2 font-mono text-sm text-muted">{ruleForm.activity_key}</p>
+			{:else if activityKeyMode === 'select'}
 				<Select options={activityKeyOptions} value={ruleForm.activity_key} onchange={handleActivityKeySelect} placeholder={t('app.wallet.ph_select_an_activity_key', 'Select an activity key...')} />
 			{:else}
 				<div class="flex gap-2">
@@ -551,16 +613,16 @@
 		</div>
 		<div>
 			<label for="rule-points" class="mb-1 block text-sm font-medium">{t('app.wallet.points', 'Points')}</label>
-			<input id="rule-points" type="number" min="1" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={ruleForm.point_value} />
+			<input id="rule-points" type="number" min="1" step="1" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={ruleForm.point_value} />
 		</div>
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="rule-cap-day" class="mb-1 block text-sm font-medium">{t('app.wallet.cap_per_day', 'Daily cap')}</label>
-				<input id="rule-cap-day" type="number" min="0" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={ruleForm.cap_per_day} placeholder={t('app.wallet.cap_none', 'No cap')} />
+				<input id="rule-cap-day" type="number" min="0" step="1" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={ruleForm.cap_per_day} placeholder={t('app.wallet.cap_none', 'No cap')} />
 			</div>
 			<div>
 				<label for="rule-cap-week" class="mb-1 block text-sm font-medium">{t('app.wallet.cap_per_week', 'Weekly cap')}</label>
-				<input id="rule-cap-week" type="number" min="0" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={ruleForm.cap_per_week} placeholder={t('app.wallet.cap_none', 'No cap')} />
+				<input id="rule-cap-week" type="number" min="0" step="1" class="w-full rounded-lg border bg-surface px-3 py-2 text-sm" bind:value={ruleForm.cap_per_week} placeholder={t('app.wallet.cap_none', 'No cap')} />
 			</div>
 		</div>
 		<div>
@@ -583,6 +645,32 @@
 		<div class="flex justify-end gap-2">
 			<Button variant="outline" onclick={() => (showRuleModal = false)}>{t('common.cancel', 'Cancel')}</Button>
 			<Button onclick={submitRule} disabled={ruleSaving}>{ruleSaving ? t('common.saving', 'Saving...') : editingRule ? t('common.save', 'Save') : t('app.wallet.add_rule', 'Add Rule')}</Button>
+		</div>
+	{/snippet}
+</Modal>
+
+<!-- Delete rule confirmation -->
+<Modal bind:open={deleteRuleModalOpen} title={t('app.wallet.delete_rule_title', 'Delete Activity Rule')}>
+	<p class="text-sm text-foreground">
+		{t('app.wallet.delete_rule_confirm', 'Delete the rule for "{key}"? Users will stop earning points for this activity.').replace('{key}', deleteRuleTarget?.activity_key ?? '')}
+	</p>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (deleteRuleModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant="destructive" onclick={confirmDeleteRule}>{t('common.delete', 'Delete')}</Button>
+		</div>
+	{/snippet}
+</Modal>
+
+<!-- Bulk delete rules confirmation -->
+<Modal bind:open={bulkDeleteModalOpen} title={t('app.wallet.delete_rules_title', 'Delete Selected Rules')}>
+	<p class="text-sm text-foreground">
+		{t('app.wallet.delete_rules_confirm', 'Delete {count} selected rules? Users will stop earning points for these activities.').replace('{count}', String(bulkDeleteTarget?.size ?? 0))}
+	</p>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (bulkDeleteModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant="destructive" onclick={confirmBulkDelete}>{t('common.delete_selected', 'Delete Selected')}</Button>
 		</div>
 	{/snippet}
 </Modal>

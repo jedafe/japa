@@ -3170,6 +3170,8 @@ export interface Badge {
 	is_limited?: boolean;
 	is_featured?: boolean;
 	points_reward?: number;
+	/** Feature flag key gating this badge's visibility (null = always shown). */
+	feature_flag?: string | null;
 	created_at: string;
 }
 
@@ -3209,6 +3211,7 @@ export interface CollectionBadge {
 	awarded_at?: string;
 	progress: number;
 	goal?: number;
+	feature_flag?: string | null;
 }
 
 export interface BadgeCollectionStats {
@@ -3250,6 +3253,8 @@ export interface Challenge {
 	/** Badge id granted on completion, when the challenge awards one. */
 	reward_badge_id?: string;
 	is_active: boolean;
+	/** Feature flag key gating this challenge's visibility (null = always shown). */
+	feature_flag?: string | null;
 	created_at?: string;
 }
 
@@ -5687,6 +5692,8 @@ export interface NextAction {
 	cta_label: string;
 	cta_url: string;
 	icon: string;
+	/** Optional eyebrow label (payload.badge) shown above the title. */
+	badge?: string;
 	channels: string[];
 	priority: number;
 	snooze_default_hours: number;

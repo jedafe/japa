@@ -11,6 +11,7 @@ import (
 	"html"
 	"log/slog"
 	"math"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/tiers"
@@ -76,6 +78,7 @@ type settingsReader interface {
 // the single source of truth for feature reachability.
 type FeatureChecker interface {
 	IsEnabled(ctx context.Context, key string) bool
+	EvalFlag(ctx context.Context, key string, sc features.CallerScope) features.EvalResult
 }
 
 // AIDispatcher is the subset of the AI Gateway the video service needs to
@@ -201,6 +204,24 @@ func (s *Service) IsEnabled(ctx context.Context) bool {
 	return s.settings.GetBoolOr(ctx, "video.enabled", true)
 }
 
+// CallerScope derives the §42 caller scope for a request so IsEnabledFor can
+// honour surface/geo/audience/rollout scoping — the same contract
+// features.Gate applies to gated route groups (§42).
+func (s *Service) CallerScope(r *http.Request) features.CallerScope {
+	return features.ScopeForRequest(s.checker, r)
+}
+
+// isEnabledForRequest honours caller-scoped flag state when the request
+// attached a §42 scope (features.WithScope — see Handlers.RegisterRoutes);
+// unattached contexts — workers, sweeps — get the global IsEnabled result.
+func (s *Service) isEnabledForRequest(ctx context.Context) bool {
+	if sc, ok := features.ScopeFrom(ctx); ok && s.checker != nil {
+		res := s.checker.EvalFlag(ctx, "video.enabled", sc)
+		return res.Enabled && res.Visible
+	}
+	return s.IsEnabled(ctx)
+}
+
 // isPlatformAllowed checks the platform's video.import.allowed_platforms setting.
 // An unparseable value is treated as the default allowlist.
 func (s *Service) isPlatformAllowed(ctx context.Context, platform string) bool {
@@ -224,7 +245,7 @@ func (s *Service) isPlatformAllowed(ctx context.Context, platform string) bool {
 // ResolveURL resolves a public video URL, ensures a synthetic channel user,
 // stores the thumbnail, and persists the canonical video source.
 func (s *Service) ResolveURL(ctx context.Context, rawURL string) (ResolveResult, error) {
-	if !s.IsEnabled(ctx) {
+	if !s.isEnabledForRequest(ctx) {
 		return ResolveResult{}, errpkg.ErrFeatureDisabled
 	}
 
@@ -375,7 +396,7 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, metadata *Metada
 // TipTap `video` node document. Unlike ResolveURL, the author is the real
 // (non-synthetic) uploading user.
 func (s *Service) UploadVideo(ctx context.Context, uploaderID pgtype.UUID, filename string, data []byte, title, description string) (ResolveResult, error) {
-	if !s.IsEnabled(ctx) {
+	if !s.isEnabledForRequest(ctx) {
 		return ResolveResult{}, errpkg.ErrFeatureDisabled
 	}
 
@@ -568,7 +589,7 @@ func (s *Service) CreateImportJob(ctx context.Context, arg gen.CreateVideoImport
 
 // ListImportJobsByUser lists a user's bulk import jobs.
 func (s *Service) ListImportJobsByUser(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.VideoImportJob, error) {
-	if !s.IsEnabled(ctx) {
+	if !s.isEnabledForRequest(ctx) {
 		return nil, errpkg.ErrFeatureDisabled
 	}
 
@@ -580,7 +601,7 @@ func (s *Service) ListImportJobsByUser(ctx context.Context, userID pgtype.UUID, 
 // For claim_type='takedown' a video_source_id must identify the offending source;
 // its author becomes the video_author_user_id of the claim.
 func (s *Service) SubmitClaim(ctx context.Context, claimantUserID pgtype.UUID, username, claimType, evidenceURL, notes, videoSourceID string) (gen.VideoChannelClaim, error) {
-	if !s.IsEnabled(ctx) {
+	if !s.isEnabledForRequest(ctx) {
 		return gen.VideoChannelClaim{}, errpkg.ErrFeatureDisabled
 	}
 
@@ -830,7 +851,7 @@ func executeApprovedClaimSideEffects(ctx context.Context, q *gen.Queries, existi
 
 // ListClaimsByUser lists the current user's submitted claims.
 func (s *Service) ListClaimsByUser(ctx context.Context, claimantUserID pgtype.UUID, limit, offset int32) ([]gen.VideoChannelClaim, error) {
-	if !s.IsEnabled(ctx) {
+	if !s.isEnabledForRequest(ctx) {
 		return nil, errpkg.ErrFeatureDisabled
 	}
 
@@ -1098,7 +1119,7 @@ func (s *Service) EnqueueGenerateSummary(ctx context.Context, userID, videoSourc
 		return fmt.Errorf("%w: video_source_id is required", errpkg.ErrRequired)
 	}
 
-	if !s.IsEnabled(ctx) {
+	if !s.isEnabledForRequest(ctx) {
 		return errpkg.ErrFeatureDisabled
 	}
 

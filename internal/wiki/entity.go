@@ -177,24 +177,6 @@ func (s *Store) ResolveEntityRef(ctx context.Context, kind, ref string) (EntityR
 		if err == nil {
 			out.ID, out.Name, out.ParentSpaceID = r.ID, r.Title, r.CountrySpaceID
 		}
-	case "product":
-		var r gen.GetProductForWikiRow
-		r, err = s.read.GetProductForWiki(ctx, ref)
-		if err == nil {
-			out.ID, out.Name, out.Discriminator = r.ID, r.Name, r.Discriminator
-		}
-	case "provider":
-		var r gen.GetProviderForWikiRow
-		r, err = s.read.GetProviderForWiki(ctx, ref)
-		if err == nil {
-			out.ID, out.Name = r.ID, r.Name
-		}
-	case "deal":
-		var r gen.GetDealForWikiRow
-		r, err = s.read.GetDealForWiki(ctx, ref)
-		if err == nil {
-			out.ID, out.Name = r.ID, r.Name
-		}
 	default:
 		return out, fmt.Errorf("wiki: unknown entity kind %q", kind)
 	}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md (Verification Requests)
 	// Renders the request form dynamically from the Form Builder (Section 06)
 	// — including multi-step forms (is_multi_step + steps[]) — plus a
@@ -446,10 +447,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{pageTitle}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={pageTitle} robots="`noindex, nofollow`" description={t('verification.description', 'Request a verification badge for your profile or organisation.')} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">

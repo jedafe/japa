@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/38-tickets.md (user portal)
 	// Full-page new-ticket form. Submits via the browser API client (POST /tickets),
 	// then redirects to the new ticket's thread view. The type selector is a
@@ -77,6 +78,8 @@
 		typeId ? types.find((tp) => tp.id === typeId)?.name ?? null : null
 	);
 </script>
+
+<SeoHead title={`${t('tickets.new_title')} — ${t('app.name')}`} description={t('tickets.new_subtitle')} robots="noindex" />
 
 <section class="space-y-4">
 	<header>

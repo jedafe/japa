@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 	// My Japa Stage. Server-preloaded via GET /me/japa-stage; updates go through
@@ -130,10 +131,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('japa_stage.my_stage_title', 'My Japa Stage')} — {siteName()}</title>
-	<meta name="description" content={t('japa_stage.my_stage_desc', 'Track and share your japa journey stage.')} />
-</svelte:head>
+<SeoHead title={`${t('japa_stage.my_stage_title', 'My Japa Stage')} — ${siteName()}`} description={t('japa_stage.my_stage_desc', 'Track and share your japa journey stage.')} />
 
 <section class="mx-auto max-w-2xl space-y-6 px-4 py-6">
 	<a

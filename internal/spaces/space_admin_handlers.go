@@ -181,6 +181,10 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 		h.Service.EnqueueSearchIndex(r.Context(), spaceID, "index")
 	}
 
+	// §05 cascade: a status change rewrites what the space's threads and
+	// content may expose in the index — fan out so each doc is re-evaluated.
+	h.Service.EnqueueSpaceEntitiesReindex(r.Context(), spaceID)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": spaceID.String(), "status": input.Status}})
 }
 

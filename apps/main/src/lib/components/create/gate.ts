@@ -56,9 +56,11 @@ export function isExceptionRoute(routeId: string | null): boolean {
 
 // Routes that render without the right sidebar but keep the left nav and
 // normal chrome — wide, self-contained workbenches like the readiness
-// assessment wizard. Kept separate from isExceptionRoute so the nav
-// collapse, compose suppression and ad-rail rules don't apply.
-const NO_RIGHT_SIDEBAR_ROUTES = new Set(['/(app)/tools/readiness']);
+// assessment wizard and the Japa Stage discovery hub (which renders its
+// trending/popular widgets inline in the page body per the §87 mockup).
+// Kept separate from isExceptionRoute so the nav collapse, compose
+// suppression and ad-rail rules don't apply.
+const NO_RIGHT_SIDEBAR_ROUTES = new Set(['/(app)/tools/readiness', '/(app)/japa-stage']);
 
 export function isNoRightSidebarRoute(routeId: string | null): boolean {
 	return routeId !== null && NO_RIGHT_SIDEBAR_ROUTES.has(routeId);

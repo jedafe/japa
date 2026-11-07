@@ -397,6 +397,49 @@ func (s *Service) EnqueueSearchIndex(ctx context.Context, spaceID pgtype.UUID, o
 	}
 }
 
+// EnqueueSpaceEntitiesReindex enqueues a search:reindex_space_entities
+// fan-out after a space visibility/status change — forum threads and
+// content both inherit space visibility (§05), so every doc must be
+// re-evaluated by the indexer's gate. Best-effort — never fails the
+// caller.
+func (s *Service) EnqueueSpaceEntitiesReindex(ctx context.Context, spaceID pgtype.UUID) {
+	if s.enqueuer == nil {
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]string{"space_id": spaceID.String()})
+	if err := s.enqueuer.Enqueue(worker.TypeSearchReindexSpaceEntities, payload); err != nil {
+		slog.Warn("spaces: failed to enqueue search:reindex_space_entities", "space_id", spaceID.String(), "error", err)
+	}
+}
+
+// EnqueueSpaceEntitiesReindexByIDs enqueues a search:reindex_space_entities
+// fan-out for explicit entity-ID sets. Used by the space-delete path: the
+// delete NULLs each entity's space_id (ON DELETE SET NULL), so the IDs
+// must be captured before the delete commits. Best-effort — never fails
+// the caller.
+func (s *Service) EnqueueSpaceEntitiesReindexByIDs(ctx context.Context, threadIDs, contentIDs []pgtype.UUID) {
+	if s.enqueuer == nil || (len(threadIDs) == 0 && len(contentIDs) == 0) {
+		return
+	}
+
+	toStrings := func(ids []pgtype.UUID) []string {
+		out := make([]string, 0, len(ids))
+		for _, id := range ids {
+			out = append(out, id.String())
+		}
+		return out
+	}
+	payload, _ := json.Marshal(map[string][]string{
+		"thread_ids":  toStrings(threadIDs),
+		"content_ids": toStrings(contentIDs),
+	})
+	if err := s.enqueuer.Enqueue(worker.TypeSearchReindexSpaceEntities, payload); err != nil {
+		slog.Warn("spaces: failed to enqueue search:reindex_space_entities",
+			"threads", len(threadIDs), "contents", len(contentIDs), "error", err)
+	}
+}
+
 var spaceKeywordStopWords = map[string]struct{}{
 	"a": {}, "an": {}, "the": {}, "in": {}, "of": {}, "for": {}, "and": {}, "or": {},
 	"community": {}, "global": {}, "world": {}, "university": {}, "college": {},

@@ -165,7 +165,7 @@ func (h *Handlers) HandleListBadges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	badges, err := h.service.ListBadges(r.Context())
+	badges, err := h.service.ListBadges(r.Context(), h.service.CallerScope(r))
 	if err != nil {
 		if writeDisabled(w, err) {
 			return
@@ -192,7 +192,7 @@ func (h *Handlers) HandleListChallenges(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	challenges, err := h.service.ListActiveChallenges(r.Context())
+	challenges, err := h.service.ListActiveChallenges(r.Context(), h.service.CallerScope(r))
 	if err != nil {
 		if writeDisabled(w, err) {
 			return
@@ -334,7 +334,7 @@ func (h *Handlers) HandleMyBadgeCollection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	collection, err := h.service.GetBadgeCollection(r.Context(), user.UserID)
+	collection, err := h.service.GetBadgeCollection(r.Context(), user.UserID, h.service.CallerScope(r))
 	if err != nil {
 		if writeDisabled(w, err) {
 			return
@@ -366,7 +366,7 @@ func (h *Handlers) HandleMyChallenges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progress, err := h.service.ListUserChallengeProgress(r.Context(), user.UserID)
+	progress, err := h.service.ListUserChallengeProgress(r.Context(), user.UserID, h.service.CallerScope(r))
 	if err != nil {
 		if writeDisabled(w, err) {
 			return

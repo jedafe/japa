@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	contentpkg "github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
@@ -65,6 +67,66 @@ type ProductInput struct {
 	ClearFields   []string                 `json:"clear_fields"`
 }
 
+// errInvalidSlug/errInvalidURL mark request-level validation failures so
+// handlers can map them to 400 instead of the generic 500.
+var errInvalidSlug = errors.New("invalid slug")
+var errInvalidURL = errors.New("invalid url")
+
+// normalizeSlug reduces a caller-supplied slug to its canonical URL-safe
+// form (content.Slugify convention — same as academy/courses). A value that
+// produces nothing usable ("", "untitled") is a 400, not a silent rewrite.
+func normalizeSlug(raw string) (string, error) {
+	s := contentpkg.Slugify(raw)
+	if s == "" || s == "untitled" {
+		return "", fmt.Errorf("%w: %q", errInvalidSlug, raw)
+	}
+	return s, nil
+}
+
+// sanitizeProductURL keeps only absolute http(s) URLs — website/offer URLs
+// render into <a href> on the public product pages, so javascript:/data:/
+// protocol-relative values must never reach the DB (Guide §5.1). Empty
+// input stays empty (field cleared/not provided).
+func sanitizeProductURL(raw string) (string, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "", nil
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", fmt.Errorf("%w: %q", errInvalidURL, raw)
+	}
+	return v, nil
+}
+
+// validateProductInput normalizes the slug and every URL on the input before
+// any write, so a bad value fails the whole request with a 400 instead of
+// persisting an unreachable product or an unsafe href.
+func validateProductInput(in *ProductInput) error {
+	if in.Slug != "" {
+		s, err := normalizeSlug(in.Slug)
+		if err != nil {
+			return err
+		}
+		in.Slug = s
+	}
+	if in.WebsiteURL != nil {
+		v, err := sanitizeProductURL(*in.WebsiteURL)
+		if err != nil {
+			return err
+		}
+		in.WebsiteURL = &v
+	}
+	for i := range in.Providers {
+		v, err := sanitizeProductURL(in.Providers[i].OfferURL)
+		if err != nil {
+			return err
+		}
+		in.Providers[i].OfferURL = v
+	}
+	return nil
+}
+
 func (s *Service) productTypeID(ctx context.Context, typeSlug string) (pgtype.UUID, error) {
 	pt, err := s.store.read.GetProductTypeBySlug(ctx, typeSlug)
 	if err != nil {
@@ -94,6 +156,9 @@ func uuidOf(id string) pgtype.UUID {
 func (s *Service) CreateProduct(ctx context.Context, in ProductInput) (string, error) {
 	if in.TypeSlug == "" || in.Slug == "" || in.Name == "" {
 		return "", fmt.Errorf("type_slug, slug and name are required")
+	}
+	if err := validateProductInput(&in); err != nil {
+		return "", err
 	}
 	typeID, err := s.productTypeID(ctx, in.TypeSlug)
 	if err != nil {
@@ -240,6 +305,9 @@ func (s *Service) writeProductFieldValues(ctx context.Context, q *gen.Queries, p
 
 // UpdateProduct patches mutable fields on a product (by slug).
 func (s *Service) UpdateProduct(ctx context.Context, slug string, in ProductInput) error {
+	if err := validateProductInput(&in); err != nil {
+		return err
+	}
 	var name *string
 	if in.Name != "" {
 		name = &in.Name
@@ -360,7 +428,11 @@ func (s *Service) SetProductProvider(ctx context.Context, productSlug string, pr
 	}
 	var ou *string
 	if offerURL != "" {
-		ou = &offerURL
+		v, err := sanitizeProductURL(offerURL)
+		if err != nil {
+			return err
+		}
+		ou = &v
 	}
 	return s.store.write.UpsertProductProvider(ctx, gen.UpsertProductProviderParams{
 		ProductID: p.ID, ProviderID: pid, PriceFrom: pf, OfferUrl: ou, Position: position,
@@ -708,6 +780,14 @@ func (h *Handlers) HandleCreateProduct(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 			return
 		}
+		if errors.Is(err, errInvalidSlug) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", err.Error())
+			return
+		}
+		if errors.Is(err, errInvalidURL) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_url", err.Error())
+			return
+		}
 		slog.Error("wiki: create product failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create product")
 		return
@@ -903,6 +983,14 @@ func writeErr(w http.ResponseWriter, err error, code, msg string) {
 	}
 	if errors.Is(err, errInvalidID) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", err.Error())
+		return
+	}
+	if errors.Is(err, errInvalidSlug) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_slug", err.Error())
+		return
+	}
+	if errors.Is(err, errInvalidURL) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_url", err.Error())
 		return
 	}
 	var pge *pgconn.PgError

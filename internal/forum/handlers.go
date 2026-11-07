@@ -1487,6 +1487,9 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// `solved` is an indexed, filterable attribute — keep the doc in sync.
+	h.enqueueSearchIndex("forum_thread", "index", id)
+
 	h.Service.deleteJSONLDCache(r.Context(), id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "solved"}})
@@ -1510,6 +1513,9 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// `solved` is an indexed, filterable attribute — keep the doc in sync.
+	h.enqueueSearchIndex("forum_thread", "index", id)
 
 	h.Service.deleteJSONLDCache(r.Context(), id)
 

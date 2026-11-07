@@ -1321,6 +1321,13 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	// Re-sync the Meilisearch index so search reflects the update (BL-004).
 	h.Service.EnqueueSearchIndex(r.Context(), spaceID, "index")
 
+	// §05 cascade: threads and content inherit space visibility — a
+	// visibility or status change rewrites what every entity in the space
+	// may expose in the index (private/deleted → doc removed).
+	if visibility != existing.Visibility || status != existing.Status {
+		h.Service.EnqueueSpaceEntitiesReindex(r.Context(), spaceID)
+	}
+
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix).
 	updDesc := ""
 	if description != nil {
@@ -1383,12 +1390,19 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// §05 cascade: capture the space's thread + content IDs BEFORE the
+		// delete — ON DELETE SET NULL orphans them, so a post-delete listing
+		// by space_id would find nothing.
+		threadIDs, _ := h.Service.write.ListForumThreadIDsBySpace(r.Context(), id)
+		contentIDs, _ := h.Service.write.ListContentIDsBySpace(r.Context(), id)
+
 		if err := h.Service.HardDeleteSpace(r.Context(), id); err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
 		h.Service.EnqueueSearchIndex(r.Context(), id, "delete")
+		h.Service.EnqueueSpaceEntitiesReindexByIDs(r.Context(), threadIDs, contentIDs)
 		h.purgeSpaceRAG(r.Context(), id)
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted", "force": "true"}})
 
@@ -1431,6 +1445,12 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// §05 cascade: capture the space's thread + content IDs BEFORE the
+	// delete — ON DELETE SET NULL orphans them, so a post-delete listing
+	// by space_id would find nothing.
+	threadIDs, _ := h.Service.write.ListForumThreadIDsBySpace(r.Context(), id)
+	contentIDs, _ := h.Service.write.ListContentIDsBySpace(r.Context(), id)
+
 	if err := h.Service.DeleteSpace(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
@@ -1438,6 +1458,7 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 
 	// Remove the space from the Meilisearch index (BL-004).
 	h.Service.EnqueueSearchIndex(r.Context(), id, "delete")
+	h.Service.EnqueueSpaceEntitiesReindexByIDs(r.Context(), threadIDs, contentIDs)
 
 	// RAG purge — fire-and-forget (§69/ADR-069 BUG-001 fix: deleted spaces
 	// must not be retrievable in RAG).

@@ -4,8 +4,11 @@
 // it after provisioning a fresh search engine instance or after schema/index
 // changes that require a full re-index:
 // //	source .env && go run ./cmd/reindex/
-// // An optional platform ID argument overrides the default platform:
-// //	go run ./cmd/reindex/ <platform-uuid>
+// // The sweep is platform-wide — the per-entity index gates decide per row
+// whether it is upserted or removed from its index. To also wipe stale
+// documents first, use Control → Seeds → "Reindex all search indexes"
+// with the purge option instead (this command never deletes documents
+// outside the entities it visits).
 package main
 
 import (
@@ -21,8 +24,6 @@ import (
 	"github.com/jedafe/japa/internal/search"
 )
 
-const defaultPlatformID = "00000000-0000-0000-0000-000000000001"
-
 func main() {
 	if err := run(); err != nil {
 		slog.Error("reindex failed", "error", err)
@@ -34,17 +35,6 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
-	}
-
-	platformStr := defaultPlatformID
-	if len(os.Args) > 1 {
-		platformStr = os.Args[1]
-	}
-
-	var ()
-
-	if err := (error)(nil); err != nil {
-		return fmt.Errorf("invalid platform UUID %q: %w", platformStr, err)
 	}
 
 	ctx := context.Background()
@@ -62,7 +52,7 @@ func run() error {
 
 	indexer := search.NewIndexer(searchEngine, gen.New(database.Reader))
 
-	fmt.Printf("reindex: starting bulk reindex for platform %s\n", platformStr)
+	fmt.Println("reindex: starting bulk reindex")
 
 	summary, err := indexer.ReindexAll(ctx)
 	if err != nil {

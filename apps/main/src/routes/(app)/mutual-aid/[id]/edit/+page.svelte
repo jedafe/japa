@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 	import { t, siteName} from '$lib/i18n';
 	import { goto } from '$app/navigation';
@@ -52,10 +53,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{t('mutual_aid.new_heading', 'Edit Mutual Aid Post')} — {siteName()}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={`${t('mutual_aid.new_heading', 'Edit Mutual Aid Post')} — ${siteName()}`} robots="`noindex`" description={t('mutual_aid.edit_description', 'Edit your mutual aid post.')} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-auto flex max-w-2xl items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">

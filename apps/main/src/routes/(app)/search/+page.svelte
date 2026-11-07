@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -113,11 +114,11 @@
 	}
 
 	async function autocompleteFetcher(q: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<{ data: { suggestions: { type: string; id: string; title?: string; excerpt?: string; url?: string; slug?: string; username?: string; display_name?: string; name?: string; content_type?: string }[] } }>(
+		const res = await api.get<{ suggestions: { type: string; id: string; title?: string; excerpt?: string; url?: string; slug?: string; username?: string; display_name?: string; name?: string; content_type?: string }[] }>(
 			`/search/autocomplete?q=${encodeURIComponent(q)}&limit=8`
 		);
 		if (res.error || !res.data) return [];
-		return (res.data.data?.suggestions ?? []).map((s) => ({
+		return (res.data.suggestions ?? []).map((s) => ({
 			id: s.id,
 			title: s.title ?? s.name ?? s.username ?? s.display_name ?? '',
 			url: autocompleteUrl(s),
@@ -182,11 +183,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{data.query ? `${data.query} — ${t('app.name')}` : t('search.title', 'Search — {site}')}</title>
-	<meta name="description" content={t('search.description', 'Search for posts, people, spaces, and discussions on {site}.')} />
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={data.query ? `${data.query} — ${t('app.name')}` : t('search.title', 'Search — {site}')} description={t('search.description', 'Search for posts, people, spaces, and discussions on {site}.')} robots="noindex, nofollow" />
 
 {#snippet resultCard(result: SearchResult, showTypeBadge = false)}
 	{@const item = result.item}

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -30,6 +31,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/media"
 )
 
@@ -245,6 +247,7 @@ type ApplicationResult struct {
 // the single source of truth for feature reachability.
 type FeatureChecker interface {
 	IsEnabled(ctx context.Context, key string) bool
+	EvalFlag(ctx context.Context, key string, sc features.CallerScope) features.EvalResult
 }
 
 // Service holds the business logic for the Jobs Board.
@@ -285,6 +288,30 @@ func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 func (s *Service) IsEnabled(ctx context.Context) bool {
 	if s.checker != nil {
 		return s.checker.IsEnabled(ctx, "jobs.enabled")
+	}
+
+	if s.settings == nil {
+		return true
+	}
+
+	return s.settings.GetBoolOr(ctx, "jobs.enabled", true)
+}
+
+// CallerScope derives the §42 caller scope for a request so IsEnabledFor can
+// honour surface/geo/audience/rollout scoping — the same contract
+// features.Gate applies to gated route groups (§42).
+func (s *Service) CallerScope(r *http.Request) features.CallerScope {
+	return features.ScopeForRequest(s.checker, r)
+}
+
+// IsEnabledFor is the request-path variant of IsEnabled: a flag that is
+// enabled globally but scoped away from this caller (surface, geo, audience,
+// rollout) reports unavailable — matching the Gate + menu contract so jobs
+// routes, nav items, and gamification badges agree.
+func (s *Service) IsEnabledFor(ctx context.Context, sc features.CallerScope) bool {
+	if s.checker != nil {
+		res := s.checker.EvalFlag(ctx, "jobs.enabled", sc)
+		return res.Enabled && res.Visible
 	}
 
 	if s.settings == nil {
@@ -941,14 +968,14 @@ const intelJobFieldsSQL = `SELECT ` + intelJobFieldsCols + ` FROM intel_jobs`
 // listing's field_values bag.
 type intelJobExtras struct {
 	city, employer, jobType, expLevel, remote *string
-	visaSponsor, relocation                     *bool
-	benefits, languages                         []string
-	eduRequired, workSchedule                   *string
-	postedDate                                  pgtype.Date
-	salaryMin, salaryMax                        pgtype.Numeric
-	currency                                    *string
-	appURL                                      *string
-	deadline                                    pgtype.Date
+	visaSponsor, relocation                   *bool
+	benefits, languages                       []string
+	eduRequired, workSchedule                 *string
+	postedDate                                pgtype.Date
+	salaryMin, salaryMax                      pgtype.Numeric
+	currency                                  *string
+	appURL                                    *string
+	deadline                                  pgtype.Date
 }
 
 func (x *intelJobExtras) scan(r interface {

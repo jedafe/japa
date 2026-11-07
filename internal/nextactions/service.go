@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/analytics"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -52,6 +53,7 @@ type Service struct {
 	settings *config.Settings
 	resolver *StateResolver
 	deps     EvalDeps
+	flags    FlagChecker  // scope-building on request paths; nil in tests
 	tracker  EventTracker // nil disables platform_events writes (tests)
 	notifier Notifier     // nil disables sweep dispatch (tests)
 }
@@ -65,6 +67,9 @@ type Deps struct {
 	Resolver *StateResolver
 	Tracker  EventTracker
 	Notifier Notifier
+	// Checker resolves feature_enabled predicates against feature_flags
+	// (*features.Checker). Nil → those predicates fail closed.
+	Checker FlagChecker
 }
 
 // New creates the engine.
@@ -72,7 +77,8 @@ func New(d Deps) *Service {
 	return &Service{
 		read: d.Read, write: d.Write, cache: d.Cache,
 		settings: d.Settings, resolver: d.Resolver,
-		deps: newQueryDeps(d.Read), tracker: d.Tracker, notifier: d.Notifier,
+		deps: newQueryDeps(d.Read, d.Checker), flags: d.Checker,
+		tracker: d.Tracker, notifier: d.Notifier,
 	}
 }
 
@@ -95,6 +101,11 @@ func (s *Service) settingInt(ctx context.Context, key string, fallback int) int 
 // suggestions. Guests and members share the path; member impressions write
 // user_next_actions rows, guest impressions accumulate in the Valkey hash.
 func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface string, limit int) ([]Suggestion, error) {
+	// §42: attach the caller scope so feature_enabled predicates evaluate
+	// against this caller's surface/geo/audience — not just the global
+	// toggle. Sweep/worker paths run unattached and stay global.
+	ctx = features.WithScope(ctx, features.ScopeForRequest(s.flags, r, surface))
+
 	state := s.resolver.Resolve(ctx, r, surface)
 
 	// One-shot guest→user state merge (see ensureMerged).
@@ -106,15 +117,21 @@ func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface stri
 			if b, err := s.cache.Get(ctx, cacheKey).Bytes(); err == nil {
 				var cached []Suggestion
 				if json.Unmarshal(b, &cached) == nil {
-					shown := sliceSuggestions(cached, limit)
-					s.markDelivered(ctx, state, shown)
-					return shown, nil
+					if !s.flagsStale(ctx, cached) {
+						shown := sliceSuggestions(cached, limit)
+						s.markDelivered(ctx, state, shown)
+						return shown, nil
+					}
+					s.bustCache(ctx, state) // a flag went off — re-evaluate now
 				}
 			}
 		} else if cached, ok := s.guestCacheRead(ctx, state.SessionKey, state.Surface); ok {
-			shown := sliceSuggestions(cached, limit)
-			s.markDelivered(ctx, state, shown)
-			return shown, nil
+			if !s.flagsStale(ctx, cached) {
+				shown := sliceSuggestions(cached, limit)
+				s.markDelivered(ctx, state, shown)
+				return shown, nil
+			}
+			s.bustCache(ctx, state)
 		}
 	}
 
@@ -198,6 +215,69 @@ func (s *Service) cacheKey(state *UserState) string {
 // guestCacheFieldName is the per-surface result-cache field inside the guest
 // state hash.
 func guestCacheFieldName(surface string) string { return "_cache:" + surface }
+
+// featureKeys collects the feature_enabled keys a rule's condition groups
+// depend on — used by flagsStale to re-verify cached suggestions.
+func featureKeys(gs ...*ConditionGroup) []string {
+	var out []string
+	for _, g := range gs {
+		if g == nil {
+			continue
+		}
+		for _, p := range g.All {
+			if p.Predicate == "feature_enabled" && p.Key != "" {
+				out = append(out, p.Key)
+			}
+		}
+		for _, p := range g.Any {
+			if p.Predicate == "feature_enabled" && p.Key != "" {
+				out = append(out, p.Key)
+			}
+		}
+	}
+	return out
+}
+
+// flagsStale reports whether any cached suggestion's rule now fails a
+// feature_enabled gate — i.e. the target feature was disabled since the list
+// was cached. Without this re-check a flag flip would keep nudging users into
+// 404'd features for the full cache TTL. The probes hit the flags L1/L2
+// cache (featureChecker), so a cache-hit path adds no DB reads. A probe error
+// counts as stale — the full eval will fail closed the same way.
+func (s *Service) flagsStale(ctx context.Context, cached []Suggestion) bool {
+	if len(cached) == 0 {
+		return false
+	}
+	need := map[string]bool{}
+	for _, sug := range cached {
+		need[sug.ID] = false
+	}
+	var keys []string
+	rules, err := s.loadRules(ctx)
+	if err != nil {
+		return false // can't verify — serve the TTL-bounded cache
+	}
+	for i := range rules {
+		if _, hit := need[rules[i].ID.String()]; !hit {
+			continue
+		}
+		need[rules[i].ID.String()] = true
+		keys = append(keys, featureKeys(&rules[i].Conditions, rules[i].CompletionSignal)...)
+	}
+	for _, found := range need {
+		if !found {
+			// The rule left the enabled set (disabled or deleted) since the
+			// list was cached — an absent rule is as stale as a dead flag.
+			return true
+		}
+	}
+	for _, k := range keys {
+		if ok, err := s.deps.FeatureEnabled(ctx, k); err != nil || !ok {
+			return true
+		}
+	}
+	return false
+}
 
 // servedMarkerTTL bounds how long after serving a rule the client may report
 // lifecycle events for it — long enough that a CTA click hours after a
@@ -339,7 +419,7 @@ func (s *Service) audienceMatch(rule Rule, state *UserState) bool {
 	if len(a.Archetype) > 0 && !slices.Contains(a.Archetype, state.VCtx.Archetype) {
 		return false
 	}
-	if len(a.JapaStage) > 0 && !slices.Contains(a.JapaStage, state.VCtx.JapaStage) {
+	if len(a.JapaStage) > 0 && !slices.Contains(a.JapaStage, state.JapaStage) {
 		return false
 	}
 	if len(a.DestinationCountry) > 0 && !slices.Contains(a.DestinationCountry, state.VCtx.DestinationCountry) {
@@ -364,7 +444,7 @@ func (s *Service) audienceMatchSweep(rule Rule, state *UserState) bool {
 		return false
 	}
 
-	if len(a.JapaStage) > 0 && !slices.Contains(a.JapaStage, state.VCtx.JapaStage) {
+	if len(a.JapaStage) > 0 && !slices.Contains(a.JapaStage, state.JapaStage) {
 		return false
 	}
 
@@ -385,7 +465,8 @@ func (s *Service) toSuggestion(rule Rule) Suggestion {
 		ID:     rule.ID.String(), RuleSlug: rule.Slug,
 		Title: rule.Payload.Title, Body: rule.Payload.Body,
 		CTALabel: rule.Payload.CTALabel, CTAURL: rule.Payload.CTAURL,
-		Icon: rule.Payload.Icon, Channels: rule.Channels, Priority: rule.Priority,
+		Icon: rule.Payload.Icon, Badge: rule.Payload.Badge,
+		Channels: rule.Channels, Priority: rule.Priority,
 		SnoozeDefaultHours: rule.Frequency.SnoozeDefaultHours,
 	}
 	return sug

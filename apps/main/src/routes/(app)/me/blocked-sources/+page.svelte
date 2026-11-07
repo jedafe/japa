@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import type { PageData } from './$types';
 	import SourceBlockButton from '$lib/components/source/SourceBlockButton.svelte';
@@ -16,10 +17,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{t('sources.blocked.title', 'Blocked sources — {site}')}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={t('sources.blocked.title', 'Blocked sources — {site}')} robots="`noindex, nofollow`" description={t('sources.blocked.description', 'Sources you have blocked from your feed.')} />
 
 <div class="flex flex-col gap-4 p-4">
 	<div>

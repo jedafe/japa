@@ -1861,6 +1861,13 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 		worker.PurgeRAGEntity(ctx, "content", id)
 	}
 
+	// Search index sync on every status transition — the indexer upserts
+	// published+public rows and deletes everything else, so drafts, archives,
+	// in_review holds, and moderation removals all reconcile through the one
+	// path (covers blog review, studio publish, agent draft approval, and
+	// direct /publish + /archive routes that skip the update handler).
+	worker.EnqueueSearchIndexSync(ctx, "content", id)
+
 	// Every status transition purges the edge cache — unpublishing must drop
 	// the cached copy just as publishing refreshes it (ADR-134).
 	s.purgeEdgeContent(ctx, content.ID, content.ContentType, content.Slug)
@@ -1896,6 +1903,11 @@ func (s *Service) ScheduleContent(ctx context.Context, id pgtype.UUID, publishAt
 	if err != nil {
 		return gen.ScheduleContentRow{}, fmt.Errorf("scheduling content: %w", err)
 	}
+
+	// status='scheduled' content is not indexable — re-sync removes any stale
+	// published doc until the scheduled_publish task fires (which re-indexes
+	// again on the published transition). Fire-and-forget.
+	worker.EnqueueSearchIndexSync(ctx, "content", id)
 
 	return content, nil
 }

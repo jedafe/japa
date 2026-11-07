@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t, siteName} from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -60,10 +61,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title} — {siteName()}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={`${title} — ${siteName()}`} robots="`noindex`" description={t('jobs.applications_inbox_description', 'Applications received for this job posting.')} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

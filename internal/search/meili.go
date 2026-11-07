@@ -143,6 +143,13 @@ func (e *meiliEngine) DeleteDocument(ctx context.Context, index, docID string) e
 	return err
 }
 
+// DeleteAllDocuments implements Engine.
+func (e *meiliEngine) DeleteAllDocuments(ctx context.Context, index string) error {
+	_, err := e.client.Index(e.ix(index)).DeleteAllDocumentsWithContext(ctx, nil)
+
+	return err
+}
+
 // toSearchRequest translates the neutral Query into a Meilisearch
 // SearchRequest. The Filter AST is rendered to Meilisearch filter syntax;
 // Sort passes through in the shared "field:dir" form.

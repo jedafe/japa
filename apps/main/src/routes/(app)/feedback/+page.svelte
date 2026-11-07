@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/06-custom-fields-forms.md (public form embed)
 	// Public feedback form. Renders the fields from GET /forms/feedback/embed
 	// (no hardcoded fields — Rule 16) and submits to POST /forms/{id}/submissions
@@ -67,11 +68,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{t('feedback.title')} — {siteName()}</title>
-	<meta name="description" content={t('feedback.subtitle')} />
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={`${t('feedback.title')} — ${siteName()}`} description={t('feedback.subtitle')} robots="`noindex, nofollow`" />
 
 <section class="mx-auto max-w-3xl space-y-6 px-4 py-8">
 	<header class="flex items-center gap-3">

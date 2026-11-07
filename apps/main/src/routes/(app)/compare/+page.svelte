@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { goto } from '$app/navigation';
 	import type { Component } from 'svelte';
 	import { onDestroy } from 'svelte';
@@ -756,12 +757,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('jce.compare.heading')} — {siteName()}</title>
-	<meta property="og:title" content="{t('jce.compare.heading')} — {siteName()}" />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-</svelte:head>
+<SeoHead title={`${t('jce.compare.heading')} — ${siteName()}`} description={t('jce.compare.description', 'Compare destinations, services, schools, and organisations side by side — features, costs, and community insights.')} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('jce.compare.heading')}</h1>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// /ai — unified Japa AI surface (ADR-130): a single chat view whose
 	// composer tools toggle switches between chat and agent turns.
 	// /ai/chat 308-redirects here.
@@ -23,10 +24,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('ai.page.title', 'Japa AI')} — {siteName()}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={`${t('ai.page.title', 'Japa AI')} — ${siteName()}`} robots="`noindex, nofollow`" description={t('ai.description', 'Ask Japa AI — relocation guidance grounded in community knowledge.')} />
 
 {#if !data.chatEnabled}
 	<div class="mx-auto flex h-[calc(100vh-8rem)] max-w-5xl flex-col items-center justify-center gap-4 text-center">

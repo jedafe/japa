@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { t, siteName} from '$lib/i18n';
 	import { goto } from '$app/navigation';
@@ -105,14 +106,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta name="robots" content="noindex,nofollow" />
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} robots="`noindex,nofollow`" />
 
 <SetSidebar>
 	<WikiSidebar

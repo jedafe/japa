@@ -166,3 +166,15 @@ Subtype filtering is `config.subtype` → `products.product_type_id` join — id
 4. JCE comparison types per product type + pool seed
 5. Product/type admin CRUD + `/wiki/e/{type}` create flow
 6. JEOS §80/§30/§14 amendments land before each step's code
+
+## Amendment (implemented 001080): product domain de-wikied
+
+Products, providers and deals no longer surface under `/wiki/e` — like
+mentors they are comparison entities only: `wiki_entity_kinds` rows and all
+product-type `space_types`/`wiki_type_configs`/categories/templates were
+removed; entity pages deleted. The public surface is `/products` +
+`/product/{slug}` served by dedicated endpoints (`GET /products`,
+`/products/types`, `/products/{slug}`, `/products/{slug}/providers`).
+`CreateProductType` provisions only product_types → field groups →
+comparison type → pool. JCE resolvers unchanged — everything stays
+comparable in /compare.

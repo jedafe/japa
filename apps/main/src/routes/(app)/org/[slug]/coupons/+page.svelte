@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/114-services-marketplace.md
 	// §114 — org coupon management: create/edit/suspend/delete plus
 	// redemption + attachment rollups. List mutations go through the
@@ -232,9 +233,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{t('coupons.title', 'Coupons — {site}')}</title>
-</svelte:head>
+<SeoHead title={t('coupons.title', 'Coupons — {site}')} description={org?.name ? t('coupons.description', 'Discount codes and member deals from {name} on {site}.').replace('{name}', org.name) : t('coupons.description_generic', 'Discount codes and member deals on {site}.')} />
 
 <div class="mx-auto w-full max-w-4xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

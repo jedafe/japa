@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n/store.svelte';
 	import { validateForgotPassword } from '$lib/auth/validation';
 	import { mapAuthError } from '$lib/auth/errors';
@@ -44,6 +45,8 @@
 		}
 	}
 </script>
+
+<SeoHead title={`${t('auth.forgot_password.title')} — ${t('app.name')}`} description={t('auth.forgot_password.subtitle')} />
 
 <form onsubmit={submit} class="flex flex-col gap-4" novalidate>
 	<HoneypotField bind:value={honeypot} />

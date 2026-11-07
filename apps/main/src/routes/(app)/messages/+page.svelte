@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { untrack, onMount, tick } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -411,14 +412,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={title} />
-	<meta property="og:title" content={title} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={title} description={title} ogTitle={title} robots="`noindex, nofollow`" />
 
 <!-- Exact-height column so the panes below scroll internally instead of
      growing the document. Below 768px the shell renders a sticky top bar

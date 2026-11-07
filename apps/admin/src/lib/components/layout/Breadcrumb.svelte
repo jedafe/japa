@@ -127,6 +127,15 @@
 				case 'wallet':
 					label = t('wallet.title');
 					break;
+				case 'credit-packs':
+					label = t('nav.credit_packs', 'Credit Packs');
+					break;
+				case 'purchases':
+					label = t('nav.credit_purchases', 'Credit Purchases');
+					break;
+				case 'withdrawals':
+					label = t('nav.withdrawals', 'Withdrawals');
+					break;
 				case 'spam':
 					label = t('spam.title');
 					break;

@@ -2,20 +2,50 @@ package nextactions
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 )
+
+// FlagChecker is the narrow features.Checker surface the engine needs —
+// satisfied by *features.Checker; nil disables feature_enabled predicates
+// (they fail closed, suppressing the suggestion).
+type FlagChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+	EvalFlag(ctx context.Context, key string, sc features.CallerScope) features.EvalResult
+}
+
+// errNoFlagChecker marks the "no flag checker wired" probe failure —
+// evalDepsBool folds it to false like any other deps error.
+var errNoFlagChecker = errors.New("nextactions: no flag checker configured")
 
 // queryDeps is the production EvalDeps — all probes backed by sqlc queries
 // against the read pool. Session-scoped counts key on session_id, user counts
 // on user_id; guests have no user-scoped probes (they return false).
 type queryDeps struct {
-	read *gen.Queries
+	read  *gen.Queries
+	flags FlagChecker
 }
 
-func newQueryDeps(read *gen.Queries) *queryDeps {
-	return &queryDeps{read: read}
+func newQueryDeps(read *gen.Queries, flags FlagChecker) *queryDeps {
+	return &queryDeps{read: read, flags: flags}
+}
+
+func (d *queryDeps) FeatureEnabled(ctx context.Context, key string) (bool, error) {
+	if d.flags == nil {
+		return false, errNoFlagChecker
+	}
+	// §42: request paths carry a caller scope (attached in Suggestions) —
+	// a flag enabled globally but scoped away from this caller must not
+	// nudge them into a feature that would 404. Unattached contexts
+	// (sweeps, worker replays) evaluate globally.
+	if sc, ok := features.ScopeFrom(ctx); ok {
+		res := d.flags.EvalFlag(ctx, key, sc)
+		return res.Enabled && res.Visible, nil
+	}
+	return d.flags.IsEnabled(ctx, key), nil
 }
 
 func (d *queryDeps) CountEvents(ctx context.Context, s *UserState, eventType string, days int, session bool) (int64, error) {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// /donate — platform donation page (§125). Loads GET /donate config and
 	// opens the TipDialog pointed at the platform recipient.
 	//
@@ -14,10 +15,7 @@
 	const authed = $derived(!!getAccessToken());
 </script>
 
-<svelte:head>
-	<title>{t('donate.title')}</title>
-	<meta name="description" content={t('donate.description')} />
-</svelte:head>
+<SeoHead title={t('donate.title')} description={t('donate.description')} />
 
 <div class="mx-auto max-w-lg px-4 py-16 text-center">
 	{#if !config.enabled}

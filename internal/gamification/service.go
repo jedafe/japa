@@ -15,12 +15,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/features"
 )
 
 // Trigger type constants — match the badge_definitions.trigger_type CHECK.
@@ -114,6 +116,18 @@ type MediaImageProcessor interface {
 	RemoveEdgeBackground(ctx context.Context, mediaID pgtype.UUID, maxDim int) error
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// implemented by *features.Checker (§42). Used to hide badge/challenge
+// definitions linked to a disabled feature (badge_definitions.feature_flag,
+// challenge_definitions.feature_flag — migration 001086). EvalFlag is used
+// for public reads so surface/geo/audience rules apply, not just the global
+// toggle (same contract as menu_items.feature_flag); IsEnabled is the right
+// semantics for background evaluation, which has no caller scope.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+	EvalFlag(ctx context.Context, key string, sc features.CallerScope) features.EvalResult
+}
+
 // Service holds the business logic for the gamification layer.
 type Service struct {
 	store           *Store
@@ -124,6 +138,7 @@ type Service struct {
 	activityEmitter ActivityEmitter      // nil = no challenge.completed events
 	mediaResolver   MediaResolver        // nil = icon_url omitted from responses
 	mediaProcessor  MediaImageProcessor  // nil = no artwork background knockout
+	checker         FeatureChecker       // nil = flagged items hidden (fail closed)
 }
 
 // NewService creates a gamification service.
@@ -160,6 +175,20 @@ func (s *Service) SetMediaResolver(r MediaResolver) { s.mediaResolver = r }
 // badge/challenge artwork gets its solid edge background knocked out.
 // Optional — when nil, attachments keep the original pixels.
 func (s *Service) SetMediaImageProcessor(p MediaImageProcessor) { s.mediaProcessor = p }
+
+// SetFeatureChecker injects the feature flag checker (§42) so badge and
+// challenge definitions linked to a feature flag hide while that flag is
+// disabled. When unset, flagged items stay hidden — fail closed, matching
+// the menu_items.feature_flag contract.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// CallerScope builds the request-scoped flag scope (validated X-JC-Surface,
+// geo context, RBAC audience) for feature-flagged item filtering. Returns a
+// zero scope — global flag behavior — when the checker can't build scopes.
+// Same pattern as menus.Service.CallerScope.
+func (s *Service) CallerScope(r *http.Request) features.CallerScope {
+	return features.ScopeForRequest(s.checker, r)
+}
 
 // emitActivity records a points activity event — fire-and-forget (Rule 8).
 // Nil-safe: no-op when no emitter is wired.

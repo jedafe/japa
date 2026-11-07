@@ -4,11 +4,13 @@
 	// products.create; submits POST /admin/products with providers, deals and
 	// the selected type's custom field values in one body.
 	import { goto } from '$app/navigation';
-	import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-svelte';
+	import { ArrowLeft, ImagePlus, Loader2, Plus, Trash2, X } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { MultiAutocomplete } from '@japaconnect/ui';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -98,13 +100,20 @@
 		return [];
 	}
 
+	let schemaErr = $state('');
+
 	async function loadSchema(ts: string) {
 		schema = [];
 		fieldValues = {};
+		schemaErr = '';
 		if (!ts) return;
 		schemaLoading = true;
 		const res = await api.get<{ groups: SchemaGroup[] }>(`/products/types/${ts}/field-schema`);
 		schemaLoading = false;
+		if (res.error) {
+			schemaErr = res.error.message || t('products.err_schema', 'Could not load the type fields');
+			return;
+		}
 		schema = res.data?.groups ?? [];
 	}
 
@@ -126,9 +135,19 @@
 		return scoped.length > 0 ? scoped : data.deals;
 	});
 
-	function toggleDeal(id: string) {
-		dealIds = dealIds.includes(id) ? dealIds.filter((x) => x !== id) : [...dealIds, id];
-	}
+	const typeOptions = $derived(data.types.map((tp) => ({ value: tp.slug, label: tp.label })));
+	const providerOptions = $derived(
+		data.providers.map((p) => ({ value: p.id, label: p.name }))
+	);
+	const dealItems = $derived(
+		dealOptions.map((d) => ({
+			id: d.id,
+			label: d.title,
+			sublabel: d.provider_name ?? undefined
+		}))
+	);
+	const dealFetcher = $derived(staticAutocompleteFetcher(dealItems));
+	const dealLabels = $derived(Object.fromEntries(dealOptions.map((d) => [d.id, d.title])));
 
 	async function submit() {
 		saveErr = '';
@@ -136,24 +155,65 @@
 		if (!name.trim()) { saveErr = t('products.err_name', 'Name is required'); return; }
 		if (!slug.trim()) { saveErr = t('products.err_slug', 'Slug is required'); return; }
 		saving = true;
-		const custom_fields: any[] = [];
-		for (const g of schema) {
-			for (const f of g.fields) {
-				const v = fieldValues[f.id];
-				if (v === undefined || v === null || v === '') continue;
-				const entry: any = { field_id: f.id };
-				switch (fieldKind(f)) {
-					case 'number': entry.value_number = Number(v); break;
-					case 'bool': entry.value_bool = !!v; break;
-					case 'date': entry.value_date = new Date(v).toISOString(); break;
-					case 'multiselect': case 'image_multi': case 'json':
-						entry.value_json = typeof v === 'string' ? JSON.parse(v || 'null') : v; break;
-					default: entry.value_text = String(v);
+		try {
+			const custom_fields: any[] = [];
+			for (const g of schema) {
+				for (const f of g.fields) {
+					const v = fieldValues[f.id];
+					const missing = v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0);
+					if (missing) {
+						if (f.is_required) {
+							saveErr = t('products.err_required_field', '{field} is required', {
+								field: f.label || f.key
+							});
+							return;
+						}
+						continue;
+					}
+					const entry: any = { field_id: f.id };
+					switch (fieldKind(f)) {
+						case 'number': {
+							const n = Number(v);
+							if (Number.isNaN(n)) {
+								saveErr = t('products.err_field_number', '{field} must be a number', {
+									field: f.label || f.key
+								});
+								return;
+							}
+							entry.value_number = n;
+							break;
+						}
+						case 'bool': entry.value_bool = !!v; break;
+						case 'date': {
+							const d = new Date(v);
+							if (Number.isNaN(d.getTime())) {
+								saveErr = t('products.err_field_date', '{field} must be a valid date', {
+									field: f.label || f.key
+								});
+								return;
+							}
+							entry.value_date = d.toISOString();
+							break;
+						}
+						case 'multiselect': case 'image_multi':
+							entry.value_json = v;
+							break;
+						case 'json':
+							try {
+								entry.value_json = typeof v === 'string' ? JSON.parse(v) : v;
+							} catch {
+								saveErr = t('products.err_field_json', '{field} must be valid JSON', {
+									field: f.label || f.key
+								});
+								return;
+							}
+							break;
+						default: entry.value_text = String(v);
+					}
+					custom_fields.push(entry);
 				}
-				custom_fields.push(entry);
 			}
-		}
-		const res = await api.post<{ slug?: string }>('/admin/products', {
+			const res = await api.post<{ slug?: string }>('/admin/products', {
 			type_slug: typeSlug,
 			name: name.trim(),
 			slug: slug.trim(),
@@ -176,13 +236,20 @@
 				.flatMap((g) => g.fields)
 				.filter((f) => !custom_fields.some((cf) => cf.field_id === f.id))
 				.map((f) => f.id)
-		});
-		saving = false;
-		if (res.error) {
-			saveErr = res.error.message || t('products.err_save', 'Save failed');
-			return;
+			});
+			if (res.error) {
+				saveErr = res.error.message || t('products.err_save', 'Save failed');
+				return;
+			}
+			goto(`/product/${encodeURIComponent(res.data?.slug ?? slug.trim())}`);
+		} catch {
+			// Any unexpected throw (serialization, navigation) must still
+			// surface an error and release the button — never leave `saving`
+			// stuck on a silent failure.
+			saveErr = t('products.err_save', 'Save failed');
+		} finally {
+			saving = false;
 		}
-		goto(`/product/${encodeURIComponent(res.data?.slug ?? slug.trim())}`);
 	}
 </script>
 
@@ -196,21 +263,47 @@
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">{t('products.new_product', 'New product')}</h1>
 	</div>
 
-	<div class="mx-auto max-w-2xl space-y-6 p-4">
+	{#if data.types.length === 0}
+		<div class="mx-auto max-w-2xl p-4">
+			<p class="rounded-[var(--radius)] border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-[var(--color-text)]">
+				{t('products.no_types', 'No product types are available yet — a product type must be provisioned before a product can be created.')}
+			</p>
+		</div>
+	{:else}
+	<form
+		class="mx-auto max-w-2xl space-y-6 p-4"
+		onsubmit={(e) => {
+			e.preventDefault();
+			submit();
+		}}
+	>
 		<section class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 			<div>
 				<label for="np-type" class={lbl}>{t('products.fld_type', 'Type')} *</label>
-				<select id="np-type" class={inp} bind:value={typeSlug}>
-					{#each data.types as tp (tp.slug)}<option value={tp.slug}>{tp.label}</option>{/each}
-				</select>
+				<AutocompleteSelect
+					id="np-type"
+					bind:value={typeSlug}
+					options={typeOptions}
+					placeholder={t('products.fld_type', 'Type')}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="np-name" class={lbl}>{t('products.fld_name', 'Name')} *</label>
-				<input id="np-name" class={inp} bind:value={name} oninput={onName} />
+				<input id="np-name" class={inp} bind:value={name} oninput={onName} required maxlength="200" />
 			</div>
 			<div>
 				<label for="np-slug" class={lbl}>{t('products.fld_slug', 'Slug')} *</label>
-				<input id="np-slug" class={inp} bind:value={slug} oninput={() => (slugTouched = true)} />
+				<input
+					id="np-slug"
+					class={inp}
+					bind:value={slug}
+					oninput={() => (slugTouched = true)}
+					required
+					pattern="[a-z0-9]+(-[a-z0-9]+)*"
+					title={t('products.slug_hint', 'Lowercase letters, numbers and hyphens only')}
+					maxlength="160"
+				/>
 			</div>
 			<div>
 				<label for="np-tagline" class={lbl}>{t('products.fld_tagline', 'Tagline')}</label>
@@ -238,8 +331,11 @@
 			<div class="flex items-center gap-2 text-sm text-[var(--color-text-subtle)]">
 				<Loader2 size={15} class="animate-spin" /> {t('common.loading', 'Loading')}
 			</div>
+		{:else if schemaErr}
+			<p class="text-sm text-red-500" role="alert">{schemaErr}</p>
 		{:else}
 			{#each schema as g (g.id)}
+				{#if g.fields.length > 0}
 				<section>
 					<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{g.name}</h2>
 					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -279,19 +375,18 @@
 								{:else if kind === 'image_single'}
 									<div class="flex items-center gap-2">
 										<button type="button" onclick={() => openPicker(f.id)}
-											class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50">
-											<Plus size={13} /> {fieldValues[f.id] ? t('products.change_image', 'Change image') : t('products.pick_image', 'Pick image')}
+											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)] disabled:opacity-50">
+											<ImagePlus size={14} /> {fieldValues[f.id] ? t('products.change_image', 'Change image') : t('products.pick_image', 'Pick image')}
 										</button>
 										{#if fieldValues[f.id]}
-											<span class="text-xs text-green-600">✓</span>
 											<button type="button" onclick={() => (fieldValues[f.id] = '')} class="text-xs text-red-500 hover:underline">{t('common.clear', 'Clear')}</button>
 										{/if}
 									</div>
 								{:else if kind === 'image_multi'}
 									<div class="flex items-center gap-2">
 										<button type="button" onclick={() => openPicker('multi:' + f.id)}
-											class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50">
-											<Plus size={13} /> {t('products.add_image', 'Add image')}
+											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)] disabled:opacity-50">
+											<ImagePlus size={14} /> {t('products.add_image', 'Add image')}
 										</button>
 										<span class="text-xs text-[var(--color-muted)]">{Array.isArray(fieldValues[f.id]) ? fieldValues[f.id].length : 0}</span>
 									</div>
@@ -315,6 +410,7 @@
 						{/each}
 					</div>
 				</section>
+				{/if}
 			{/each}
 		{/if}
 
@@ -323,14 +419,27 @@
 				<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('products.logo', 'Logo')}</h2>
 				<div class="flex items-center gap-3">
 					{#if logoUrl}
-						<img src={logoUrl} alt="" class="h-14 w-14 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
-					{/if}
-					<button type="button" onclick={() => openPicker('logo')}
-						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50">
-						<Plus size={13} /> {logoUrl ? t('products.change_image', 'Change image') : t('products.pick_image', 'Pick image')}
-					</button>
-					{#if logoUrl}
-						<button type="button" onclick={() => { logoId = null; logoUrl = null; }} class="text-xs text-red-500 hover:underline">{t('common.clear', 'Clear')}</button>
+						<div class="relative">
+							<img src={logoUrl} alt="" class="h-16 w-16 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
+							<button
+								type="button"
+								onclick={() => { logoId = null; logoUrl = null; }}
+								aria-label={t('common.clear', 'Clear')}
+								class="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] shadow-sm transition-colors hover:text-red-500"
+							>
+								<X size={11} />
+							</button>
+						</div>
+						<button type="button" onclick={() => openPicker('logo')}
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary)] disabled:opacity-50">
+							<ImagePlus size={13} /> {t('products.change_image', 'Change image')}
+						</button>
+					{:else}
+						<button type="button" onclick={() => openPicker('logo')}
+							class="flex h-16 w-full max-w-40 flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)] disabled:opacity-50">
+							<ImagePlus size={18} />
+							<span class="text-[11px] font-medium">{t('products.pick_image', 'Pick image')}</span>
+						</button>
 					{/if}
 				</div>
 			</div>
@@ -339,14 +448,19 @@
 				<div class="flex flex-wrap items-center gap-2">
 					{#each gallery as g, i (g.media_id)}
 						<div class="relative">
-							<img src={g.url} alt="" class="h-14 w-14 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
+							<img src={g.url} alt="" class="h-16 w-16 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
 							<button type="button" onclick={() => (gallery = gallery.filter((_, j) => j !== i))}
-								class="absolute -right-1 -top-1 rounded-full bg-[var(--color-surface)] p-0.5 text-[var(--color-muted)] hover:text-red-500">✕</button>
+								aria-label={t('common.remove', 'Remove')}
+								class="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] shadow-sm transition-colors hover:text-red-500">
+								<X size={11} />
+							</button>
 						</div>
 					{/each}
 					<button type="button" onclick={() => openPicker('gallery')}
-						class="inline-flex h-14 w-14 items-center justify-center rounded-[var(--radius)] border border-dashed border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)] disabled:opacity-50">
-						<Plus size={16} />
+						aria-label={t('products.add_image', 'Add image')}
+						class="flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)] disabled:opacity-50">
+						<ImagePlus size={16} />
+						<span class="text-[10px] font-medium">{t('products.add_image', 'Add image')}</span>
 					</button>
 				</div>
 			</div>
@@ -362,24 +476,28 @@
 			</div>
 			<div class="space-y-2">
 				{#each providerRows as row, i (i)}
-					<div class="grid grid-cols-[1fr_110px_1fr_auto] items-end gap-2">
-						<div>
+					<div class="grid grid-cols-[1fr_auto] items-end gap-2 sm:grid-cols-[1fr_110px_1fr_auto]">
+						<div class="col-span-2 sm:col-span-1">
 							<label class={lbl} for="np-pv-{i}">{t('products.provider', 'Provider')}</label>
-							<select id="np-pv-{i}" class={inp} bind:value={row.provider_id}>
-								<option value="">—</option>
-								{#each data.providers as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-							</select>
+							<AutocompleteSelect
+								id="np-pv-{i}"
+								bind:value={row.provider_id}
+								options={providerOptions}
+								placeholder="—"
+								clearable
+								class="w-full"
+							/>
 						</div>
 						<div>
 							<label class={lbl} for="np-pp-{i}">{t('products.fld_price_from', 'Price from')}</label>
-							<input id="np-pp-{i}" class={inp} bind:value={row.price_from} placeholder="0.00" />
+							<input id="np-pp-{i}" class={inp} type="number" step="0.01" min="0" inputmode="decimal" bind:value={row.price_from} placeholder="0.00" />
 						</div>
 						<div>
 							<label class={lbl} for="np-po-{i}">{t('products.offer_url', 'Offer URL')}</label>
 							<input id="np-po-{i}" class={inp} type="url" bind:value={row.offer_url} />
 						</div>
 						<button type="button" onclick={() => (providerRows = providerRows.filter((_, j) => j !== i))}
-							class="rounded-[var(--radius)] p-2 text-[var(--color-muted)] hover:text-red-500" aria-label={t('common.remove', 'Remove')}>
+							class="justify-self-end rounded-[var(--radius)] p-2 text-[var(--color-muted)] hover:text-red-500 sm:justify-self-auto" aria-label={t('common.remove', 'Remove')}>
 							<Trash2 size={15} />
 						</button>
 					</div>
@@ -392,19 +510,19 @@
 			{#if dealOptions.length === 0}
 				<p class="text-xs text-[var(--color-text-subtle)]">{t('products.no_deals', 'No active deals available.')}</p>
 			{:else}
-				<ul class="max-h-48 space-y-1 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] p-2">
-					{#each dealOptions as d (d.id)}
-						<li>
-							<label class="flex items-center gap-2 px-1 py-1 text-sm text-[var(--color-text)]">
-								<input type="checkbox" checked={dealIds.includes(d.id)} onchange={() => toggleDeal(d.id)} class="h-4 w-4" />
-								<span class="min-w-0 flex-1 truncate">{d.title}</span>
-								{#if d.provider_name}
-									<span class="shrink-0 text-xs text-[var(--color-muted)]">{d.provider_name}</span>
-								{/if}
-							</label>
-						</li>
-					{/each}
-				</ul>
+				<MultiAutocomplete
+					id="np-deals"
+					placeholder={t('products.deals_placeholder', 'Search deals…')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={dealFetcher}
+					initialFetcher={dealFetcher}
+					values={dealIds}
+					labels={dealLabels}
+					onchange={(v) => (dealIds = v)}
+					clearLabel={t('common.clear', 'Clear')}
+					loadingLabel={t('common.loading', 'Loading...')}
+					removeLabel={t('common.remove', 'Remove')}
+				/>
 			{/if}
 		</section>
 
@@ -417,11 +535,12 @@
 		{/if}
 
 		<div class="flex justify-end">
-			<button type="button" onclick={submit} disabled={saving}
+			<button type="submit" disabled={saving}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50">
 				{#if saving}<Loader2 size={14} class="animate-spin" />{/if}
 				{t('common.create', 'Create')}
 			</button>
 		</div>
-	</div>
+	</form>
+	{/if}
 </div>

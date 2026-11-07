@@ -92,6 +92,8 @@ var idempotentTasks = map[string]bool{
 	TypeTipsOCSync:                      true, // §125 — collapse duplicate sweep enqueues
 	TypeTipsStaleSweep:                  true, // §125 — collapse duplicate stale sweeps
 	TypeWikiPopulateFacts:               true, // enrichment — collapse repeat fact-fetches for the same space_id
+	TypeSearchReindexAll:                true, // collapse repeat full-resync enqueues (same payload)
+	TypeSearchReindexSpaceEntities:      true, // collapse repeat fan-outs for the same space_id
 }
 
 func taskDefaults(taskType string) []asynq.Option {
@@ -169,6 +171,16 @@ func taskDefaults(taskType string) []asynq.Option {
 	// space:auto_populate against sustained upstream 429s.
 	case TypeWikiPopulateFacts:
 		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(10))
+	// Full search reindex (optionally purge-first): iterates every managed
+	// entity type — generous timeout; a single retry since a second full
+	// sweep is expensive and a persistent failure won't self-heal.
+	case TypeSearchReindexAll:
+		opts = append(opts, asynq.Timeout(30*time.Minute), asynq.MaxRetry(1))
+	// Per-space entity resync — ID listings plus an index op per
+	// thread/content; bounded timeout, retries so a transient Meilisearch
+	// blip doesn't leave docs stale after a space visibility change.
+	case TypeSearchReindexSpaceEntities:
+		opts = append(opts, asynq.Timeout(10*time.Minute), asynq.MaxRetry(3))
 	// ADR-130 Phase 4 conversation backfill: one Honcho HTTP fetch plus a
 	// transaction per thread group — bounded timeout, few retries since a
 	// persistent Honcho/DB failure won't self-heal faster than that.
@@ -304,6 +316,8 @@ var taskTier = func() map[string]string {
 		TypeMaintenanceRegenerateLLMsTxt, TypeAcademyIssueCertificate,
 		TypeDBManualVacuum, TypeNewsletterDigest, TypeVideoGenerateSummary,
 		TypeComputeTrending, TypeComputeSuggestions,
+		// Full Meilisearch resync — heavy sweep, low tier.
+		TypeSearchReindexAll,
 		TypeMaintenanceCheckExpiredBans, TypeMaintenanceCheckExpiredBoosts,
 		TypeMaintenancePruneOAuthRecords,
 		TypeMaintenancePruneOldFeeds, TypeMaintenancePruneAuditLogs,
@@ -415,6 +429,8 @@ var taskTypeCatalog = []struct {
 	// Default tier
 	{TypeEmailSend, "default", "Send transactional email"},
 	{TypeSearchIndexSync, "default", "Index entity in Meilisearch"},
+	{TypeSearchReindexAll, "low", "Full bulk resync of every managed Meilisearch index (optional purge-first)"},
+	{TypeSearchReindexSpaceEntities, "default", "Resync all threads + content in one space after a visibility/status change"},
 	{TypeSearchReindexEngagementScores, "default", "Batched re-index of content whose engagement_score changed (§13)"},
 	{TypeImageProcessing, "default", "Resize/optimize uploaded images"},
 	{TypeAITaskProcessing, "default", "Process AI task"},

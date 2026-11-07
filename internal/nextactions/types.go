@@ -49,6 +49,7 @@ type Predicate struct {
 	Slug       string   `json:"slug,omitempty"`
 	Type       string   `json:"type,omitempty"`
 	Feature    string   `json:"feature,omitempty"`
+	Key        string   `json:"key,omitempty"` // feature_enabled: feature_flags key
 	WithinDays int      `json:"within_days,omitempty"`
 	Window     string   `json:"window,omitempty"` // "session" or "Nd"
 }
@@ -60,6 +61,11 @@ type Payload struct {
 	CTALabel string `json:"cta_label"`
 	CTAURL   string `json:"cta_url"`
 	Icon     string `json:"icon"`
+	// Badge is an optional short eyebrow label rendered above the title
+	// ("Canada Express Entry", "Community", "Getting started"). Empty =
+	// renderer shows its generic fallback. Additive key — renderers that
+	// predate it ignore it.
+	Badge string `json:"badge,omitempty"`
 }
 
 // Frequency bounds how often a rule may surface to one user.
@@ -107,6 +113,7 @@ type Suggestion struct {
 	CTALabel string   `json:"cta_label"`
 	CTAURL   string   `json:"cta_url"`
 	Icon     string   `json:"icon"`
+	Badge    string   `json:"badge,omitempty"`
 	Channels []string `json:"channels"`
 	Priority int32    `json:"priority"`
 	// SnoozeDefaultHours carries frequency.snooze_default_hours so renderers

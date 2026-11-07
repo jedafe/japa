@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/07-organizations.md (my organizations)
 	// Lists the orgs the current user is a member of, with a role badge and a
 	// link to the per-org admin dashboard at /dashboard/organizations/{id}.
@@ -137,9 +138,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{t('dashboard.nav.organizations')} — {siteName()}</title>
-</svelte:head>
+<SeoHead title={`${t('dashboard.nav.organizations')} — ${siteName()}`} description={t('dashboard.organizations.description', 'Organisations you manage — settings, members, and campaigns.')} />
 
 <section class="space-y-4">
 	<header class="flex items-center justify-between">

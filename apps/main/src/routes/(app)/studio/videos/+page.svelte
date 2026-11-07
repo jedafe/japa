@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { Clapperboard, CheckCircle2, AlertCircle, Loader2, Video, Search, ListVideo, RefreshCw } from 'lucide-svelte';
 	import { EmptyState, RelativeTime } from '$lib/components/ui';
@@ -155,10 +156,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{t('studio.tabs.videos', 'Videos')} — {t('studio.title', 'Studio — {site}')}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={`${t('studio.tabs.videos', 'Videos')} — ${t('studio.title', 'Studio — {site}')}`} robots="`noindex`" description={t('studio.videos_description', 'Generated and uploaded video content.')} />
 
 <div class="w-full">
 	<p class="mb-4 text-sm text-[var(--color-muted)]">

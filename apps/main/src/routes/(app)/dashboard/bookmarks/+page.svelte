@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (bookmarks)
 	// Lists the user's bookmarks with folder management. The backend returns
 	// bookmark records enriched with the entity's title + slug (joined
@@ -297,6 +298,8 @@
 		removingBookmarkId = null;
 	}
 </script>
+
+<SeoHead title={`${t('dashboard.nav.bookmarks')} — ${t('app.name')}`} description={t('bookmarks.subtitle', 'Organize your saved items into folders')} robots="noindex" />
 
 <section class="space-y-4">
 	<header>

@@ -275,9 +275,15 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	gender := r.URL.Query().Get("gender")
+	if gender != "" && !ValidDirectoryGender(gender) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_gender", "Invalid gender; must be one of: "+JoinDirectoryGenders())
+		return
+	}
+
 	page, limit := parsePageParams(r)
 
-	members, total, err := h.service.ListByStage(r.Context(), stage, intent, q, sort, dest, page, limit)
+	members, total, err := h.service.ListByStage(r.Context(), stage, intent, q, sort, dest, gender, page, limit)
 	if err != nil {
 		slog.Error("japastage: list by stage failed", "stage", stage, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list members by stage")

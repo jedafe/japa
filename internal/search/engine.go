@@ -43,6 +43,12 @@ type Engine interface {
 
 	// DeleteDocument removes a document by primary key.
 	DeleteDocument(ctx context.Context, index, docID string) error
+
+	// DeleteAllDocuments removes every document from the index while
+	// keeping the index and its schema settings. Used by the control-panel
+	// purge+reindex sweep to physically drop stale docs (drafts, soft-deleted
+	// rows) that upsert-only reindexing cannot reach.
+	DeleteAllDocuments(ctx context.Context, index string) error
 }
 
 // IndexSchema declares an index's shape in engine-neutral terms. Engines map

@@ -10,8 +10,8 @@
 	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('planning_groups.title', 'Planning Groups — {site}'));
@@ -96,18 +96,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	);
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={title} />
-	<meta name="twitter:description" content={description} />
-	{@html safeJsonLdScript(jsonLd)}
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('planning_groups.heading', 'Planning Groups')}</h1>

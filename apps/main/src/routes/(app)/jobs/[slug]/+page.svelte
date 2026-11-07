@@ -19,7 +19,8 @@
 	import { relativeTime } from '$lib/feed/time';
 	import type { JobDetail, MediaAsset } from '$lib/types';
 	import type { PageData } from './$types';
-	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { safeHttpUrl } from '$lib/utils/safeUrl';
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import { salaryPeriodLabel } from '$lib/utils/jobs';
@@ -79,7 +80,7 @@
 		return map[code] ?? t('jobs.apply_failed', 'Could not submit your application.');
 	});
 
-	const title = $derived(job ? `${job.title} — ${siteName()}` : 'Job — ${siteName()}');
+	const title = $derived(job ? `${job.title} — ${siteName()}` : `Job — ${siteName()}`);
 	// Section 26 — self-referencing canonical on the clean slug URL (never
 	// the query-string form) so filtered/paginated hits consolidate.
 	const canonical = $derived(job ? `${page.url.origin}/jobs/${job.slug}` : `${page.url.origin}/jobs`);
@@ -418,23 +419,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	{#if fallbackDescription}
-		<meta name="description" content={fallbackDescription} />
-	{/if}
-	<meta property="og:title" content={job?.title ?? 'Job'} />
-	{#if fallbackDescription}<meta property="og:description" content={fallbackDescription} />{/if}
-	<meta property="og:type" content="article" />
-	<link rel="canonical" href={canonical} />
-	<meta property="og:url" content={canonical} />
-	{#if jsonLd}
-		{@html safeJsonLdScript(jsonLd)}
-	{/if}
-	{#if job?.seo_indexable === false || job?.indexable === false}
-		<meta name="robots" content="noindex,nofollow" />
-	{/if}
-</svelte:head>
+<SeoHead title={title} description={fallbackDescription} ogTitle={job?.title ?? 'Job'} ogType="article" canonical={canonical} jsonLd={jsonLd} robots={job?.seo_indexable === false || job?.indexable === false ? 'noindex,nofollow' : ''} />
 
 <div class="mx-auto w-full max-w-3xl px-4 py-4">
 	{#if !job}

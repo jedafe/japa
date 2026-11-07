@@ -1,4 +1,5 @@
 import type { PageServerLoad } from './$types';
+import { error } from '@sveltejs/kit';
 import { apiContext, apiList } from '$lib/server/api';
 import { hasPerm } from '$lib/server/auth';
 import type { Coupon, DealPartnerRef, MyOrganization } from '$lib/types';
@@ -19,6 +20,12 @@ const PAGE_SIZE = 48;
 const VALID_SORTS = new Set(['newest', 'expiring', 'popular']);
 
 export const load: PageServerLoad = async (event) => {
+	// Deals tab is gated by feature.products.deals (routeFeatureFlags);
+	// a disabled flag 404s like the sibling /products surface (ADR-042).
+	const { features } = await event.parent();
+	if (!features?.['feature.products.deals']) {
+		throw error(404, { code: 'feature_disabled', message: 'Deals are not available' });
+	}
 	const ctx = apiContext(event);
 	const params = event.url.searchParams;
 

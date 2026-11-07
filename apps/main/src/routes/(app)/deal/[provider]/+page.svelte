@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { t } from '$lib/i18n';
@@ -15,7 +16,6 @@
 	import { EmptyState } from '$lib/components/ui';
 	import { api, apiBaseUrl } from '$lib/api/client';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { dealPath, type AffiliateProviderAdmin, type Coupon } from '$lib/types';
 	import { currencySymbol } from '$lib/utils/currency';
 
@@ -164,7 +164,7 @@
 				// the page instead of invalidating into a not-found reload.
 				if (!pf.is_active) {
 					providerSaving = false;
-					await goto('/deals');
+					await goto('/products/deals');
 					return;
 				}
 				await invalidateAll();
@@ -234,24 +234,12 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<link rel="canonical" href={page.url.href} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={title} />
-	<meta name="twitter:description" content={description} />
-	{@html safeJsonLdScript(jsonLd)}
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-full">
 	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 		<a
-			href="/deals"
+			href="/products/deals"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		>
 			{t('deals.back', 'All deals')}

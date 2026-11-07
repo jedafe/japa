@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -264,10 +265,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={title} robots="`noindex`" description={t('visa_timelines.my_description', 'Your visa timelines — milestones, dates, and progress.')} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">

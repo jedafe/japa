@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// /ai/sessions — agent session history list. Displays the user's past
 	// agent sessions with status, tool-call count, cost, and a link to the
 	// detail view. Data comes from the server load (no client fetch needed
@@ -117,10 +118,7 @@
 	}}
 />
 
-<svelte:head>
-	<title>{t('ai.agent.session_history', 'Session History')} — {siteName()}</title>
-	<meta name="robots" content="noindex, nofollow" />
-</svelte:head>
+<SeoHead title={`${t('ai.agent.session_history', 'Session History')} — ${siteName()}`} robots="`noindex, nofollow`" description={t('ai.sessions.description', 'Your Japa AI session history — revisit past answers and conversations.')} />
 
 <div class="mx-auto max-w-4xl">
 	<header class="mb-6 flex items-center justify-between gap-3">

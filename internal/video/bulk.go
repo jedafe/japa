@@ -75,7 +75,7 @@ func normalizeBulkSourceType(sourceType string) (string, error) {
 // StartBulkImport validates the request, creates a pending import job, and
 // enqueues the background worker.
 func (s *Service) StartBulkImport(ctx context.Context, userID pgtype.UUID, req BulkImportRequest) (gen.VideoImportJob, error) {
-	if !s.IsEnabled(ctx) {
+	if !s.isEnabledForRequest(ctx) {
 		return gen.VideoImportJob{}, errpkg.ErrFeatureDisabled
 	}
 
@@ -407,7 +407,7 @@ type BulkImportPreview struct {
 // the first video so the user can confirm before starting.
 // Ref: .jeos/sections/106-video-content-and-import.md.
 func (s *Service) PreviewBulkImport(ctx context.Context, userID pgtype.UUID, req BulkImportRequest) (BulkImportPreview, error) {
-	if !s.IsEnabled(ctx) {
+	if !s.isEnabledForRequest(ctx) {
 		return BulkImportPreview{}, errpkg.ErrFeatureDisabled
 	}
 
@@ -476,7 +476,7 @@ func (s *Service) PreviewBulkImport(ctx context.Context, userID pgtype.UUID, req
 // that is not currently running or pending.
 // Ref: .jeos/sections/106-video-content-and-import.md.
 func (s *Service) RetryMyImportJob(ctx context.Context, userID, id pgtype.UUID) (gen.VideoImportJob, error) {
-	if !s.IsEnabled(ctx) {
+	if !s.isEnabledForRequest(ctx) {
 		return gen.VideoImportJob{}, errpkg.ErrFeatureDisabled
 	}
 
@@ -494,7 +494,7 @@ func (s *Service) RetryMyImportJob(ctx context.Context, userID, id pgtype.UUID) 
 
 // GetImportJob returns a single import job scoped to the user and platform.
 func (s *Service) GetImportJob(ctx context.Context, userID, id pgtype.UUID) (gen.VideoImportJob, error) {
-	if !s.IsEnabled(ctx) {
+	if !s.isEnabledForRequest(ctx) {
 		return gen.VideoImportJob{}, errpkg.ErrFeatureDisabled
 	}
 

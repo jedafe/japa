@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { afterNavigate } from '$app/navigation';
@@ -32,7 +33,6 @@
 		TravelAirlineDirectoryResponse
 	} from '$lib/types';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -560,16 +560,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<meta property="og:type" content="website" />
-	<link rel="canonical" href={page.url.href} />
-	<meta property="og:url" content={canonical} />
-	{@html safeJsonLdScript(travelJsonLd)}
-</svelte:head>
+<SeoHead title={title} description={description} ogTitle={title} canonical={canonical} jsonLd={travelJsonLd} />
 
 <div class="mx-auto w-full max-w-4xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

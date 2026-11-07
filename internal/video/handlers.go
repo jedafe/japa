@@ -13,6 +13,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/rbac"
@@ -101,21 +102,33 @@ func (h *Handlers) SetAuthMiddleware(mw func(http.Handler) http.Handler) {
 	h.authMW = mw
 }
 
+// attachScope stamps the §42 caller scope on the request context so
+// service-internal video.enabled checks honour surface/geo/audience/rollout
+// scoping — the same contract features.Gate applies to gated route groups.
+func (h *Handlers) attachScope(fn http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if h.Service != nil {
+			r = r.WithContext(features.WithScope(r.Context(), h.Service.CallerScope(r)))
+		}
+		fn(w, r)
+	}
+}
+
 // RegisterRoutes wires the video routes into the router. Callers should call
 // this inside an /api/v1 route group.
 func (h *Handlers) RegisterRoutes(r chi.Router) {
-	h.postAuth(r, "/videos/resolve", h.Resolve)
-	h.postAuth(r, "/videos/upload", h.Upload)
+	h.postAuth(r, "/videos/resolve", h.attachScope(h.Resolve))
+	h.postAuth(r, "/videos/upload", h.attachScope(h.Upload))
 	r.Get("/videos/{id}", h.GetByID)
-	h.postAuth(r, "/videos/{id}/summarize", h.Summarize)
+	h.postAuth(r, "/videos/{id}/summarize", h.attachScope(h.Summarize))
 	r.Get("/u/{username}/videos", h.ListChannelVideos)
-	h.postAuth(r, "/video-channels/{username}/claims", h.SubmitChannelClaim)
-	h.getAuth(r, "/me/video-claims", h.ListMyVideoClaims)
-	h.postAuth(r, "/me/video-imports/preview", h.PreviewBulkImport)
-	h.postAuth(r, "/me/video-imports", h.CreateImportJob)
-	h.getAuth(r, "/me/video-imports", h.ListImportJobs)
-	h.getAuth(r, "/me/video-imports/{id}", h.GetImportJob)
-	h.postAuth(r, "/me/video-imports/{id}/retry", h.RetryMyImportJob)
+	h.postAuth(r, "/video-channels/{username}/claims", h.attachScope(h.SubmitChannelClaim))
+	h.getAuth(r, "/me/video-claims", h.attachScope(h.ListMyVideoClaims))
+	h.postAuth(r, "/me/video-imports/preview", h.attachScope(h.PreviewBulkImport))
+	h.postAuth(r, "/me/video-imports", h.attachScope(h.CreateImportJob))
+	h.getAuth(r, "/me/video-imports", h.attachScope(h.ListImportJobs))
+	h.getAuth(r, "/me/video-imports/{id}", h.attachScope(h.GetImportJob))
+	h.postAuth(r, "/me/video-imports/{id}/retry", h.attachScope(h.RetryMyImportJob))
 }
 
 func (h *Handlers) postAuth(r chi.Router, pattern string, fn http.HandlerFunc) {

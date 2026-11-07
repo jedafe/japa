@@ -4,37 +4,35 @@
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 	// Japa Stage discovery hub. SSR member directory from GET /members/by-stage
 	// enriched with stats (GET /japa-stage/stats), a GuideSlideOver fed by the
-	// japa_stage.guide public setting, and routeSidebar widgets (ADR-058).
+	// japa_stage.guide public setting, and inline trending/popular sections
+	// (wide no-right-sidebar route — see gate.isNoRightSidebarRoute).
 	import { t } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import MessageUserDialog from '$lib/components/profile/MessageUserDialog.svelte';
-	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
 	import {
-		Compass, Users, BadgeCheck, ChevronRight, Search, Filter, Check,
-		MapPin, MessageCircle, TrendingUp, MessagesSquare, UserPlus,
-		ClipboardList, BookOpen, Send, CheckCircle2, Plane, Home,
-		Luggage, RotateCcw, CircleDot, ArrowRight
+		Compass, Users, UserPlus, BadgeCheck, Check,
+		MapPin, MessageCircle, MessagesSquare, Bookmark,
+		ClipboardList, BookOpen, Send, CheckCircle2, Home,
+		Luggage, RotateCcw, CircleQuestionMark, Camera, ArrowRight,
+		SlidersHorizontal, Lightbulb, CirclePlay, Eye, Earth
 	} from 'lucide-svelte';
 	import {
-		EntityHero,
 		FollowButton,
 		GuideSlideOver,
-		ListPageBar,
 		Modal,
 		SearchInput,
-		UrlTabs,
-		FilterToggle,
 		type GuideContent,
-		type SearchSuggestion,
-		type UrlTab
+		type SearchSuggestion
 	} from '$lib/components/ui';
 	import HeroArtJapaStage from '$lib/components/heroes/HeroArtJapaStage.svelte';
 	import { formatMetric } from '$lib/components/hub/charts/format';
@@ -51,12 +49,14 @@
 	// Local filter state, seeded from SSR-passed filters.
 	let destFilter = $state(untrack(() => data.filters.dest));
 	let intentFilter = $state(untrack(() => data.filters.intent));
+	let genderFilter = $state(untrack(() => data.filters.gender));
 	let query = $state(untrack(() => data.filters.q));
 	let sort = $state(untrack(() => data.filters.sort));
 
 	$effect(() => {
 		destFilter = data.filters.dest;
 		intentFilter = data.filters.intent;
+		genderFilter = data.filters.gender;
 		query = data.filters.q;
 		sort = data.filters.sort;
 	});
@@ -66,11 +66,13 @@
 		const stage = over.stage ?? data.filters.stage;
 		const intent = over.intent ?? intentFilter;
 		const dest = over.dest ?? destFilter;
+		const gender = over.gender ?? genderFilter;
 		const q = (over.q ?? query).trim();
 		const s = over.sort ?? sort;
 		if (stage) params.set('stage', stage);
 		if (intent) params.set('intent', intent);
 		if (dest) params.set('dest', dest);
+		if (gender) params.set('gender', gender);
 		if (q) params.set('q', q);
 		if (s && s !== 'recent') params.set('sort', s);
 		return params;
@@ -83,10 +85,10 @@
 	function applyFilters() { goWith(buildParams()); }
 	function clearFilters() { goto('/japa-stage'); }
 	function selectStage(v: string) {
-		goWith(buildParams({ stage: v === 'all' ? '' : v, intent: data.filters.intent, dest: data.filters.dest }));
+		goWith(buildParams({ stage: v === 'all' ? '' : v, intent: data.filters.intent, dest: data.filters.dest, gender: data.filters.gender }));
 	}
 	function changePage(p: number) {
-		const params = buildParams({ intent: data.filters.intent, dest: data.filters.dest });
+		const params = buildParams({ intent: data.filters.intent, dest: data.filters.dest, gender: data.filters.gender });
 		params.set('page', String(p));
 		goWith(params);
 	}
@@ -96,29 +98,24 @@
 		t('japa_stage.directory_description', 'Discover diaspora members by where they are in their japa journey.')
 	);
 
-	const hasFilters = $derived(!!data.filters.dest || !!data.filters.intent || !!data.filters.q || data.filters.sort !== 'recent');
+	const hasFilters = $derived(!!data.filters.dest || !!data.filters.intent || !!data.filters.gender || !!data.filters.q || data.filters.sort !== 'recent');
 
-	// Stage tabs narrow to the selected journey class — a stage outside the
+	// Stage strip narrows to the selected journey class — a stage outside the
 	// class's applicable set can never match (ADR-122 class-scoped terminals).
 	const stageOpts = $derived(
 		japaStageOptions(t, japaStagesForIntent(data.stages, (data.filters.intent || intentFilter) as JapaIntent | ''))
 	);
 
-	const tabs = $derived<UrlTab[]>([
-		{ value: 'all', label: t('japa_stage.all_stages', 'All stages') },
-		...stageOpts.map((o) => ({ value: o.value, label: o.label }))
-	]);
-
 	// Stage strip icons — presentation-only map (icons are not data).
 	const stageIcons: Record<string, typeof Compass> = {
-		considering: CircleDot,
+		considering: CircleQuestionMark,
 		planning: ClipboardList,
 		preparing: BookOpen,
 		applied: Send,
 		approved: CheckCircle2,
-		relocated: Plane,
+		relocated: Luggage,
 		settled: Home,
-		traveled: Luggage,
+		traveled: Camera,
 		returned: RotateCcw
 	};
 	const stageCount = $derived.by(() => {
@@ -133,12 +130,15 @@
 		{ value: 'name', label: t('japa_stage.sort.name', 'Name A–Z') }
 	]);
 
-	let showFilters = $state(false);
-	let sortModalOpen = $state(false);
-	let searchModalOpen = $state(false);
-	$effect(() => {
-		if (hasFilters) showFilters = true;
-	});
+	const genderOptions = $derived<{ value: string; label: string }[]>([
+		{ value: '', label: t('japa_stage.all_genders', 'All genders') },
+		{ value: 'male', label: t('settings.profile.gender_male', 'Male') },
+		{ value: 'female', label: t('settings.profile.gender_female', 'Female') },
+		{ value: 'non_binary', label: t('settings.profile.gender_non_binary', 'Non-binary') },
+		{ value: 'other', label: t('settings.profile.gender_other', 'Other') }
+	]);
+
+	let filtersModalOpen = $state(false);
 
 	// Message dialog — same pattern as the profile page.
 	let messageOpen = $state(false);
@@ -211,213 +211,346 @@
 		if (item.content_type === 'blog_post') return `/blog/${item.slug}`;
 		return `/content/${item.slug}`;
 	}
+
+	// Discussion bookmark state — hydrated from the batched viewer-states
+	// endpoint (authed only), optimistic toggle with rollback.
+	let bookmarkedIds = $state<Set<string>>(new Set());
+	let bookmarkPending = $state<Set<string>>(new Set());
+
+	$effect(() => {
+		if (!data.authed) return;
+		for (const d of data.discussions) {
+			void getViewerState(d.id_2).then((s) => {
+				if (s.bookmarked) bookmarkedIds = new Set([...bookmarkedIds, d.id_2]);
+			});
+		}
+	});
+
+	async function toggleDiscussionBookmark(item: TrendingContent) {
+		if (!(await requireAuthOrRedirect())) return;
+		const id = item.id_2;
+		if (bookmarkPending.has(id)) return;
+		const was = bookmarkedIds.has(id);
+		bookmarkPending = new Set([...bookmarkPending, id]);
+		bookmarkedIds = was ? new Set([...bookmarkedIds].filter((x) => x !== id)) : new Set([...bookmarkedIds, id]);
+		const res = was ? await api.delete(`/content/${id}/bookmark`) : await api.post(`/content/${id}/bookmark`, {});
+		if (res.error) {
+			bookmarkedIds = was ? new Set([...bookmarkedIds, id]) : new Set([...bookmarkedIds].filter((x) => x !== id));
+		} else {
+			updateViewerState(id, { bookmarked: !was });
+		}
+		bookmarkPending = new Set([...bookmarkPending].filter((x) => x !== id));
+	}
+
+	// Hero member-count card — avatar stack from real directory members.
+	const heroAvatars = $derived(
+		data.members
+			.filter((m) => m.avatar_url)
+			.slice(0, 4)
+	);
+	const totalMembers = $derived(data.stats?.total ?? data.total);
+
+	// Member-card chip palette — decorative tints only (mockup's pastel tags).
+	const chipPalette = ['#8b5cf6', '#0d9488', '#d97706', '#2563eb', '#db2777', '#16a34a'];
+	function chipStyle(i: number) {
+		const c = chipPalette[i % chipPalette.length];
+		return `background-color: color-mix(in srgb, ${c} 14%, transparent); color: ${c};`;
+	}
 </script>
 
 <SeoHead title={title} description={description} ogTitle={title} />
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
+<div class="mx-auto w-full max-w-7xl px-4 pb-10 sm:px-6">
 	<h1 class="sr-only">{t('japa_stage.heading', 'Japa Stage — Find Members by Stage')}</h1>
 
-	<!-- Header — EntityHero directory panel -->
-	<EntityHero
-		class="mt-4"
-		icon={Compass}
-		accent="var(--color-primary)"
-		heading={t('japa_stage.heading', 'Japa Stage')}
-		description={t('japa_stage.hero_desc', 'Discover members at every step of their relocation journey. Connect. Learn. Grow.')}
-		crumbs={[
-			{ label: t('common.home', 'Home'), href: '/' },
-			{ label: t('japa_stage.heading', 'Japa Stage') }
-		]}
-		stats={[
-			{ icon: Users, value: formatMetric(data.stats?.total ?? data.total), label: t('japa_stage.stats_members', 'Members on their journey') }
-		]}
+	<!-- Hero — headline, feature bullets, CTAs + map/team art and the live
+	     member-count card. -->
+	<section
+		class="japa-hero relative mt-4 overflow-hidden rounded-2xl border border-[var(--color-border)]"
+		aria-labelledby="japa-hero-heading"
 	>
-		{#snippet art()}
-			<HeroArtJapaStage accent="var(--color-primary)" />
-		{/snippet}
-		{#snippet actions(c)}
-			<div class="grid w-full grid-cols-2 gap-3 sm:flex sm:items-center">
+		<!-- Full-bleed decorative scene (desktop): the dotted world map,
+		     flight arc and pins span the whole panel, the team photo
+		     anchors the panel's bottom-right, and the member-count card
+		     floats over the photo's lower edge — desktop only. -->
+		<div class="pointer-events-none absolute inset-0 hidden lg:block" aria-hidden="true">
+			<HeroArtJapaStage />
+			<div class="absolute bottom-5 flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-md" style="right: 3%;">
+				{#if heroAvatars.length > 0}
+					<span class="flex -space-x-3.5">
+						{#each heroAvatars as m (m.user_id)}
+							<img
+								src={m.avatar_url}
+								alt=""
+								class="h-8 w-8 rounded-full border-2 border-[var(--color-surface)] object-cover"
+								loading="lazy"
+							/>
+						{/each}
+					</span>
+				{:else}
+					<span class="grid h-8 w-8 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+						<Users size={15} />
+					</span>
+				{/if}
+				<span class="text-xs leading-snug text-[var(--color-text)]">
+					<strong class="block font-semibold">{formatMetric(totalMembers)}+ {t('japa_stage.members_word', 'members')}</strong>
+					{t('japa_stage.on_their_journey', 'on their Japa journey')}
+				</span>
+			</div>
+		</div>
+
+		<div class="relative px-6 py-9 sm:px-12 sm:py-12 lg:max-w-[60%]">
+			<h2 id="japa-hero-heading" class="text-4xl font-bold tracking-tight text-[var(--color-text)] sm:text-5xl lg:text-7xl lg:leading-[1.05]">
+				{t('japa_stage.heading', 'Japa Stage')}
+			</h2>
+			<p class="mt-3 max-w-md text-base leading-relaxed text-[var(--color-text-subtle)]">
+				{t('japa_stage.hero_desc', 'Discover members at every step of their relocation journey. Connect. Learn. Grow.')}
+			</p>
+
+			<ul class="mt-7 flex flex-wrap gap-x-6 gap-y-3" role="list">
+				<li class="flex items-center gap-2.5">
+					<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full" style="background-color: color-mix(in srgb, var(--color-primary) 12%, transparent); color: var(--color-primary);">
+						<Users size={17} />
+					</span>
+					<span class="w-40 shrink-0 text-xs font-medium leading-snug text-[var(--color-text)]">{t('japa_stage.feature_find', 'Find people on the same journey as you')}</span>
+				</li>
+				<li class="flex items-center gap-2.5">
+					<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full" style="background-color: color-mix(in srgb, #16a34a 12%, transparent); color: #16a34a;">
+						<Lightbulb size={17} />
+					</span>
+					<span class="w-40 shrink-0 text-xs font-medium leading-snug text-[var(--color-text)]">{t('japa_stage.feature_learn', 'Learn from real experiences')}</span>
+				</li>
+				<li class="flex items-center gap-2.5">
+					<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full" style="background-color: color-mix(in srgb, #d97706 12%, transparent); color: #d97706;">
+						<Send size={17} />
+					</span>
+					<span class="w-40 shrink-0 text-xs font-medium leading-snug text-[var(--color-text)]">{t('japa_stage.feature_move', 'Get inspired and move forward')}</span>
+				</li>
+			</ul>
+
+			<div class="mt-7 flex flex-wrap items-center gap-4">
 				<a
 					href={data.authed ? '/japa-stage/me' : '/login?redirect=/japa-stage/me'}
-					class="{c.primary} flex-1 justify-center whitespace-nowrap"
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-3 text-sm font-medium text-[var(--color-primary-contrast)] shadow-sm transition-colors hover:bg-[var(--color-primary-hover)]"
 				>
-					<Compass size={15} />
 					{data.authed ? t('japa_stage.update_my_stage', 'Update My Japa Stage') : t('japa_stage.set_my_stage', 'Set my stage')}
+					<ArrowRight size={15} />
 				</a>
-				<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} flex-1 justify-center whitespace-nowrap col-span-2 sm:col-span-1">
+				<button
+					type="button"
+					onclick={() => (guideOpen = true)}
+					class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)] transition-opacity hover:opacity-75"
+				>
+					<CirclePlay size={17} class="text-[var(--color-primary)]" />
 					{t('common.how_it_works', 'How it works')}
-					<ChevronRight size={14} class="rtl:-scale-x-100" />
 				</button>
 			</div>
-		{/snippet}
-	</EntityHero>
+		</div>
+	</section>
 
-	<!-- Stage strip — live counts from GET /japa-stage/stats. -->
-	<div class="mt-4 overflow-x-auto">
-		<ul class="flex min-w-max items-stretch gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1" role="list">
+	<!-- Stage strip — live counts from GET /japa-stage/stats; each tile
+	     filters the directory. -->
+	<div class="mt-3 overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+		<ul class="flex min-w-max items-stretch" role="list">
 			{#each stageOpts as o (o.value)}
 				{@const Icon = stageIcons[o.value] ?? Compass}
 				{@const active = data.filters.stage === o.value}
 				{@const color = japaStageColors[o.value as JapaStage]}
 				{@const count = stageCount.get(o.value)}
-				<li>
+				<li class="flex-1">
 					<button
 						type="button"
-						onclick={() => selectStage(o.value)}
+						onclick={() => selectStage(active ? 'all' : o.value)}
 						aria-pressed={active}
-						class="flex h-full flex-col items-center gap-1 rounded-[var(--radius)] px-3.5 py-2 text-center transition-colors {active ? 'bg-[var(--color-surface-subtle)]' : 'hover:bg-[var(--color-surface-subtle)]'}"
+						class="flex h-full w-full flex-col items-center gap-1.5 rounded-xl px-4 py-3 text-center transition-colors {active ? 'bg-[var(--color-surface-subtle)]' : 'hover:bg-[var(--color-surface-subtle)]'}"
 						style={active ? `box-shadow: inset 0 -2px 0 ${color}` : ''}
 					>
-						<span class="grid h-7 w-7 place-items-center rounded-full" style="background-color: {color}1a; color: {color};">
-							<Icon size={15} />
+						<span class="grid h-11 w-11 place-items-center rounded-full" style="background-color: color-mix(in srgb, {color} 14%, transparent); color: {color};">
+							<Icon size={18} />
 						</span>
-						<span class="text-xs font-medium text-[var(--color-text)]">{o.label}</span>
-						{#if count != null}
-							<span class="text-[11px] tabular-nums text-[var(--color-muted)]">{formatMetric(count)}</span>
-						{/if}
+						<span class="text-sm font-semibold text-[var(--color-text)]">{o.label}</span>
+						<span class="text-xs tabular-nums text-[var(--color-muted)]">{formatMetric(count ?? 0)}</span>
 					</button>
 				</li>
 			{/each}
 		</ul>
 	</div>
 
-	<ListPageBar>
-		<UrlTabs
-			{tabs}
-			value={data.filters.stage || 'all'}
-			onValueChange={(v) => selectStage(v)}
-			class="!border-b-0 !bg-transparent"
-		/>
-		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasFilters} controls="japa-stage-filter-panel" />
-			<button
-				type="button"
-				onclick={() => (sortModalOpen = true)}
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-			>
-				{t('japa_stage.sort.label', 'Sort')}
-				{#if sort !== 'recent'}
-					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
-				{/if}
-				<Filter size={16} />
-			</button>
-			<button
-				type="button"
-				onclick={() => (searchModalOpen = true)}
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-			>
-				{t('common.search', 'Search')}
-				{#if query.trim()}
-					<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
-				{/if}
-				<Search size={16} />
-			</button>
-		{/snippet}
-	</ListPageBar>
+	<!-- Filter bar — search + stage/destination/purpose/gender selects; the
+	     "More filters" button opens a modal holding the same controls for
+	     narrow viewports. -->
+	<div class="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+		<form action="/japa-stage" method="get" role="search" class="min-w-48 flex-1">
+			<SearchInput
+				bind:value={query}
+				placeholder={t('japa_stage.search_placeholder', 'Search members, skills, countries…')}
+				ariaLabel={t('japa_stage.heading', 'Japa Stage')}
+				fetcher={memberSearchFetcher}
+			/>
+			{#if data.filters.stage}
+				<input type="hidden" name="stage" value={data.filters.stage} />
+			{/if}
+			{#if intentFilter}
+				<input type="hidden" name="intent" value={intentFilter} />
+			{/if}
+			{#if destFilter}
+				<input type="hidden" name="dest" value={destFilter} />
+			{/if}
+			{#if genderFilter}
+				<input type="hidden" name="gender" value={genderFilter} />
+			{/if}
+			{#if sort !== 'recent'}
+				<input type="hidden" name="sort" value={sort} />
+			{/if}
+		</form>
 
-	<!-- Sort picker modal — same pattern as /users. -->
-	<Modal bind:open={sortModalOpen} title={t('japa_stage.sort.label', 'Sort')} icon={Filter} size="sm">
+		<div class="hidden w-40 shrink-0 lg:block">
+			<AutocompleteSelect
+				value={data.filters.stage}
+				options={[
+					{ value: '', label: t('japa_stage.filter_stages', 'Stages') },
+					...stageOpts
+				]}
+				onValueChange={(v) => selectStage(v)}
+				ariaLabel={t('japa_stage.filter_stage', 'Stage')}
+				compact
+			/>
+		</div>
+		<div class="hidden w-48 shrink-0 lg:block">
+			<Autocomplete
+				placeholder={t('japa_stage.all_destinations', 'All destinations')}
+				ariaLabel={t('japa_stage.filter_dest', 'Destination')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchDestinationCountries}
+				initialFetcher={fetchDestinationCountriesInitial}
+				selectedId={destFilter || null}
+				selectedLabel={selectedDestinationLabel}
+				onSelect={(item) => { destFilter = item.id; applyFilters(); }}
+				onClear={() => { destFilter = ''; applyFilters(); }}
+				compact
+			/>
+		</div>
+		<div class="hidden w-44 shrink-0 lg:block">
+			<AutocompleteSelect
+				value={intentFilter}
+				options={[
+					{ value: '', label: t('japa_stage.all_purposes', 'All purposes') },
+					...intentOpts
+				]}
+				onValueChange={(v) => { intentFilter = v; applyFilters(); }}
+				ariaLabel={t('japa_intent.filter', 'Journey type')}
+				compact
+			/>
+		</div>
+		<div class="hidden w-40 shrink-0 lg:block">
+			<AutocompleteSelect
+				value={genderFilter}
+				options={genderOptions}
+				onValueChange={(v) => { genderFilter = v; applyFilters(); }}
+				ariaLabel={t('japa_stage.all_genders', 'All genders')}
+				compact
+			/>
+		</div>
+
+		<button
+			type="button"
+			onclick={() => (filtersModalOpen = true)}
+			class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+		>
+			<SlidersHorizontal size={15} />
+			{t('japa_stage.more_filters', 'More filters')}
+			{#if hasFilters}
+				<span class="h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>
+			{/if}
+		</button>
+	</div>
+
+	<!-- More-filters modal — the full control set for narrow screens, plus
+	     sort and clear-all. -->
+	<Modal bind:open={filtersModalOpen} title={t('japa_stage.more_filters', 'More filters')} icon={SlidersHorizontal} size="sm">
 		{#snippet children(close)}
-			<div role="listbox" aria-label={t('japa_stage.sort.label', 'Sort')} class="-m-1">
-				{#each sortOptions as opt (opt.value)}
+			<div class="flex flex-col gap-3">
+				<div>
+					<label for="modal-stage-filter" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('japa_stage.filter_stages', 'Stages')}</label>
+					<AutocompleteSelect
+						id="modal-stage-filter"
+						value={data.filters.stage}
+						options={[
+							{ value: '', label: t('japa_stage.all_stages', 'All stages') },
+							...stageOpts
+						]}
+						onValueChange={(v) => { selectStage(v); close(); }}
+					/>
+				</div>
+				<div>
+					<label for="modal-dest-filter" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('japa_stage.filter_dest', 'Destination')}</label>
+					<Autocomplete
+						id="modal-dest-filter"
+						placeholder={t('japa_stage.all_destinations', 'All destinations')}
+						ariaLabel={t('japa_stage.filter_dest', 'Destination')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchDestinationCountries}
+						initialFetcher={fetchDestinationCountriesInitial}
+						selectedId={destFilter || null}
+						selectedLabel={selectedDestinationLabel}
+						onSelect={(item) => { destFilter = item.id; applyFilters(); close(); }}
+						onClear={() => { destFilter = ''; applyFilters(); }}
+					/>
+				</div>
+				<div>
+					<label for="modal-intent-filter" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('japa_stage.all_purposes', 'All purposes')}</label>
+					<AutocompleteSelect
+						id="modal-intent-filter"
+						value={intentFilter}
+						options={[
+							{ value: '', label: t('japa_stage.all_purposes', 'All purposes') },
+							...intentOpts
+						]}
+						onValueChange={(v) => { intentFilter = v; applyFilters(); close(); }}
+					/>
+				</div>
+				<div>
+					<label for="modal-gender-filter" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('japa_stage.all_genders', 'All genders')}</label>
+					<AutocompleteSelect
+						id="modal-gender-filter"
+						value={genderFilter}
+						options={genderOptions}
+						onValueChange={(v) => { genderFilter = v; applyFilters(); close(); }}
+					/>
+				</div>
+				<div>
+					<label for="modal-sort" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('japa_stage.sort_by', 'Sort by')}</label>
+					<AutocompleteSelect
+						id="modal-sort"
+						value={sort}
+						options={sortOptions}
+						onValueChange={(v) => { sort = v; applyFilters(); close(); }}
+					/>
+				</div>
+				{#if hasFilters}
 					<button
 						type="button"
-						role="option"
-						aria-selected={sort === opt.value}
-						onclick={() => { sort = opt.value; applyFilters(); close(); }}
-						class="flex w-full items-center justify-between gap-2 rounded-[var(--radius)] px-3 py-2.5 text-sm font-medium transition-colors {sort === opt.value
-							? 'text-[var(--color-text)]'
-							: 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
+						onclick={() => { clearFilters(); close(); }}
+						class="mt-1 self-start text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-text)]"
 					>
-						{opt.label}
-						{#if sort === opt.value}
-							<Check size={16} class="text-[var(--color-primary)]" />
-						{/if}
+						{t('common.clear', 'Clear')}
 					</button>
-				{/each}
+				{/if}
 			</div>
 		{/snippet}
 	</Modal>
 
-	<!-- Search modal — GET form preserving active filters. -->
-	<Modal bind:open={searchModalOpen} title={t('common.search', 'Search')} icon={Search} size="sm">
-		{#snippet children()}
-			<form action="/japa-stage" method="get" role="search" onsubmit={() => (searchModalOpen = false)}>
-				<SearchInput
-					bind:value={query}
-					placeholder={t('japa_stage.search_placeholder', 'Search members, skills, countries…')}
-					ariaLabel={t('japa_stage.heading', 'Japa Stage')}
-					fetcher={memberSearchFetcher}
-				/>
-				{#if data.filters.stage}
-					<input type="hidden" name="stage" value={data.filters.stage} />
-				{/if}
-				{#if intentFilter}
-					<input type="hidden" name="intent" value={intentFilter} />
-				{/if}
-				{#if destFilter}
-					<input type="hidden" name="dest" value={destFilter} />
-				{/if}
-				{#if sort !== 'recent'}
-					<input type="hidden" name="sort" value={sort} />
-				{/if}
-			</form>
-		{/snippet}
-	</Modal>
-
-	<div class="mx-auto w-full max-w-3xl p-4">
-		{#if showFilters}
-		<!-- Filter panel -->
-		<div id="japa-stage-filter-panel" class="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-			<div class="w-44">
-				<label for="intent-filter" class="sr-only">{t('japa_intent.filter', 'Journey type')}</label>
-				<AutocompleteSelect
-					id="intent-filter"
-					value={intentFilter}
-					options={[
-						{ value: '', label: t('japa_intent.all', 'All journey types') },
-						...intentOpts
-					]}
-					onValueChange={(v) => {
-						intentFilter = v;
-						applyFilters();
-					}}
-				/>
-			</div>
-			<div class="w-52">
-				<Autocomplete
-					placeholder={t('japa_stage.filter_dest', 'Destination')}
-					ariaLabel={t('japa_stage.filter_dest', 'Destination')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={fetchDestinationCountries}
-					initialFetcher={fetchDestinationCountriesInitial}
-					selectedId={destFilter || null}
-					selectedLabel={selectedDestinationLabel}
-					onSelect={(item) => { destFilter = item.id; applyFilters(); }}
-					onClear={() => { destFilter = ''; applyFilters(); }}
-				/>
-			</div>
-			{#if hasFilters}
-				<button
-					type="button"
-					onclick={clearFilters}
-					class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-				>
-					{t('common.clear', 'Clear')}
-				</button>
-			{/if}
-		</div>
-		{/if}
-
-		<!-- Content -->
-		{#if data.loadError}
+	<!-- Members -->
+	{#if data.loadError}
+		<div class="mt-8">
 			<EmptyState
 				icon={Users}
 				title={t('japa_stage.load_error', 'Could not load members')}
 				body={t('japa_stage.load_error_body', 'Please try again later.')}
 			/>
-		{:else if data.members.length === 0}
+		</div>
+	{:else if data.members.length === 0}
+		<div class="mt-8">
 			<EmptyState
 				icon={Users}
 				title={t('japa_stage.empty', 'No members found')}
@@ -426,190 +559,237 @@
 					? { label: t('japa_stage.set_my_stage', 'Set my stage'), href: '/japa-stage/me' }
 					: undefined}
 			/>
-		{:else}
-			<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">
-				{t('japa_stage.members_heading', 'Members on their Japa Journey')}
+		</div>
+	{:else}
+		<div class="mt-8 flex flex-wrap items-end justify-between gap-3">
+			<div>
+				<h2 class="text-lg font-semibold text-[var(--color-text)]">
+					{t('japa_stage.members_heading', 'Members on their Japa Journey')}
+				</h2>
 				{#if data.total > 0}
-					<span class="font-normal text-[var(--color-muted)]">— {t('japa_stage.showing', 'Showing {shown} of {total}').replace('{shown}', String(data.members.length)).replace('{total}', formatMetric(data.total))}</span>
+					<p class="mt-0.5 text-sm text-[var(--color-muted)]">
+						{t('japa_stage.showing', 'Showing {shown} of {total}').replace('{shown}', String(data.members.length)).replace('{total}', formatMetric(data.total))} {t('japa_stage.members_word', 'members')}
+					</p>
 				{/if}
-			</h2>
-			<ul class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				{#each data.members as m (m.user_id)}
-					{@render memberCard(m)}
-				{/each}
-			</ul>
-
-			{#if data.totalPages > 1}
-				<div class="mt-4 flex justify-center">
-					<PaginationControls
-						page={data.currentPage}
-						totalPages={data.totalPages}
-						onPageChange={changePage}
+			</div>
+			<div class="flex items-center gap-2">
+				<span class="text-sm text-[var(--color-muted)]">{t('japa_stage.sort_by', 'Sort by')}</span>
+				<div class="w-44">
+					<AutocompleteSelect
+						value={sort}
+						options={sortOptions}
+						onValueChange={(v) => { sort = v; applyFilters(); }}
+						ariaLabel={t('japa_stage.sort_by', 'Sort by')}
+						compact
 					/>
 				</div>
-			{/if}
+			</div>
+		</div>
+
+		<ul class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+			{#each data.members as m (m.user_id)}
+				{@render memberCard(m)}
+			{/each}
+		</ul>
+
+		{#if data.totalPages > 1}
+			<div class="mt-6 flex justify-center">
+				<PaginationControls
+					page={data.currentPage}
+					totalPages={data.totalPages}
+					onPageChange={changePage}
+				/>
+			</div>
 		{/if}
 
-		<!-- Bottom CTA -->
-		<div class="mt-6 flex flex-col items-start gap-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 sm:flex-row sm:items-center sm:justify-between">
-			<div>
-				<h2 class="text-base font-semibold text-[var(--color-text)]">{t('japa_stage.cta_title', 'Where are you on your Japa Journey?')}</h2>
-				<p class="mt-1 text-sm text-[var(--color-muted)]">{t('japa_stage.cta_body', 'Update your stage and help others find and connect with you.')}</p>
-				<ul class="mt-2 space-y-1 text-sm text-[var(--color-text-subtle)]">
-					<li class="flex items-center gap-2"><Check size={14} class="text-[var(--color-primary)]" />{t('japa_stage.cta_point_match', 'Get matched with the right people')}</li>
-					<li class="flex items-center gap-2"><Check size={14} class="text-[var(--color-primary)]" />{t('japa_stage.cta_point_opps', 'Receive relevant opportunities')}</li>
-					<li class="flex items-center gap-2"><Check size={14} class="text-[var(--color-primary)]" />{t('japa_stage.cta_point_progress', 'Track your progress')}</li>
-				</ul>
-			</div>
+		<div class="mt-6 flex justify-center">
+			<a href="/users" class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline">
+				{t('japa_stage.view_all_members', 'View all members')}
+				<ArrowRight size={14} class="rtl:-scale-x-100" />
+			</a>
+		</div>
+	{/if}
+
+	<!-- Trending destinations + popular discussions — rendered inline on
+	     this wide route (was: right-sidebar widgets). -->
+	{#if (data.stats?.destinations?.length ?? 0) > 0 || data.discussions.length > 0}
+		<div class="mt-10 grid gap-4 lg:grid-cols-2">
+			{#if (data.stats?.destinations?.length ?? 0) > 0}
+				{@const maxCount = Math.max(...(data.stats?.destinations ?? []).map((x) => x.count), 1)}
+				<section class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 {data.discussions.length === 0 ? 'lg:col-span-2' : ''}">
+					<div class="mb-4 flex items-center justify-between">
+						<h2 class="text-base font-semibold text-[var(--color-text)]">{t('japa_stage.trending_destinations', 'Trending destinations')}</h2>
+						<a href="/radar?tab=countries" class="text-sm font-medium text-[var(--color-primary)] hover:underline">{t('common.view_all', 'View all')}</a>
+					</div>
+					<ul class="space-y-4">
+						{#each data.stats?.destinations ?? [] as d (d.space_id)}
+							<li>
+								<a href="/japa-stage?dest={d.space_id}" class="group flex items-center gap-3">
+									<span class="w-7 shrink-0 text-xl leading-none" aria-hidden="true">{flagEmoji(d.geo_code)}</span>
+									<span class="w-32 shrink-0 truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]">{d.name}</span>
+									<span class="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
+										<span
+											class="block h-full rounded-full"
+											style="width: {Math.max(6, Math.round((d.count / maxCount) * 100))}%; background: linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 55%, transparent), var(--color-primary));"
+										></span>
+									</span>
+									<span class="w-10 shrink-0 text-right text-sm tabular-nums text-[var(--color-muted)]">{formatMetric(d.count)}</span>
+								</a>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+			{#if data.discussions.length > 0}
+				<section class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 {(data.stats?.destinations?.length ?? 0) === 0 ? 'lg:col-span-2' : ''}">
+					<div class="mb-4 flex items-center justify-between">
+						<h2 class="text-base font-semibold text-[var(--color-text)]">{t('japa_stage.popular_discussions', 'Popular discussions')}</h2>
+						<a href="/forum" class="text-sm font-medium text-[var(--color-primary)] hover:underline">{t('common.view_all', 'View all')}</a>
+					</div>
+					<ul class="divide-y divide-[var(--color-border)]">
+						{#each data.discussions.slice(0, 5) as item (item.id)}
+							<li class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+								<a href={discussionUrl(item)} class="group flex min-w-0 flex-1 items-center gap-3">
+									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+										<MessagesSquare size={17} />
+									</span>
+									<span class="min-w-0">
+										<span class="line-clamp-1 text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]">{item.title}</span>
+										<span class="mt-1 flex items-center gap-2 text-xs text-[var(--color-muted)]">
+											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-medium capitalize text-[var(--color-text-subtle)]">{item.content_type.replaceAll('_', ' ')}</span>
+											{#if item.view_count > 0}
+												<span class="inline-flex items-center gap-1"><Eye size={12} /> {formatMetric(item.view_count)}</span>
+											{/if}
+										</span>
+									</span>
+								</a>
+								<button
+									type="button"
+									onclick={() => toggleDiscussionBookmark(item)}
+									aria-label={t('feed.card.bookmark', 'Bookmark')}
+									aria-pressed={bookmarkedIds.has(item.id_2)}
+									disabled={bookmarkPending.has(item.id_2)}
+									class="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)] disabled:opacity-50 {bookmarkedIds.has(item.id_2) ? 'text-[var(--color-primary)]' : ''}"
+								>
+									<Bookmark size={16} fill={bookmarkedIds.has(item.id_2) ? 'currentColor' : 'none'} />
+								</button>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Bottom CTA -->
+	<div class="japa-cta mt-10 grid items-center gap-6 overflow-hidden rounded-2xl border border-[var(--color-border)] p-6 sm:p-8 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
+		<div class="relative hidden h-28 w-32 sm:block" aria-hidden="true">
+			<span class="grid h-24 w-24 place-items-center rounded-full text-[var(--color-primary-contrast)] shadow-md" style="background: linear-gradient(135deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 60%, #9333ea));">
+				<Earth size={44} strokeWidth={1.4} />
+			</span>
+			<span class="absolute bottom-0 right-2 grid h-11 w-11 place-items-center rounded-2xl bg-[var(--color-surface)] text-[var(--color-primary)] shadow-md">
+				<Luggage size={20} />
+			</span>
+			<span class="absolute left-1 top-0 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-surface)] text-[#e11d48] shadow-sm">
+				<MapPin size={14} />
+			</span>
+		</div>
+		<div class="min-w-0">
+			<h2 class="text-xl font-semibold text-[var(--color-text)]">{t('japa_stage.cta_title', 'Where are you on your Japa Journey?')}</h2>
+			<p class="mt-1.5 text-sm text-[var(--color-muted)]">{t('japa_stage.cta_body', 'Update your stage and help others find and connect with you.')}</p>
 			<a
 				href={data.authed ? '/japa-stage/me' : '/login?redirect=/japa-stage/me'}
-				class="inline-flex shrink-0 items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+				class="mt-4 inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 			>
 				{t('japa_stage.update_my_stage', 'Update My Japa Stage')}
 				<ArrowRight size={15} />
 			</a>
 		</div>
+		<ul class="space-y-2.5 text-sm text-[var(--color-text-subtle)]">
+			<li class="flex items-center gap-2.5">
+				<span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/12 text-[var(--color-primary)]"><Check size={12} /></span>
+				{t('japa_stage.cta_point_match', 'Get matched with the right people')}
+			</li>
+			<li class="flex items-center gap-2.5">
+				<span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/12 text-[var(--color-primary)]"><Check size={12} /></span>
+				{t('japa_stage.cta_point_opps', 'Receive relevant opportunities')}
+			</li>
+			<li class="flex items-center gap-2.5">
+				<span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/12 text-[var(--color-primary)]"><Check size={12} /></span>
+				{t('japa_stage.cta_point_progress', 'Track your progress')}
+			</li>
+		</ul>
 	</div>
 </div>
 
-<!-- Right-sidebar widgets (ADR-058 routeSidebar). -->
-<SetSidebar>
-	{#if (data.stats?.destinations?.length ?? 0) > 0}
-		<section class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-				<TrendingUp size={15} class="text-[var(--color-primary)]" />
-				{t('japa_stage.trending_destinations', 'Trending destinations')}
-			</h2>
-			<ul class="space-y-2.5">
-				{#each data.stats?.destinations ?? [] as d (d.space_id)}
-					{@const maxCount = Math.max(...(data.stats?.destinations ?? []).map((x) => x.count), 1)}
-					<li>
-						<a href="/japa-stage?dest={d.space_id}" class="group block">
-							<span class="flex items-center justify-between gap-2 text-sm">
-								<span class="flex min-w-0 items-center gap-2">
-									<span aria-hidden="true">{flagEmoji(d.geo_code)}</span>
-									<span class="truncate font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]">{d.name}</span>
-								</span>
-								<span class="shrink-0 text-xs tabular-nums text-[var(--color-muted)]">{formatMetric(d.count)}</span>
-							</span>
-							<span class="mt-1 block h-1 overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
-								<span class="block h-full rounded-full bg-[var(--color-primary)]" style="width: {Math.max(6, Math.round((d.count / maxCount) * 100))}%"></span>
-							</span>
-						</a>
-					</li>
-				{/each}
-			</ul>
-		</section>
-	{/if}
-	{#if data.discussions.length > 0}
-		<section class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-				<MessagesSquare size={15} class="text-[var(--color-primary)]" />
-				{t('japa_stage.popular_discussions', 'Popular discussions')}
-			</h2>
-			<ul class="space-y-3">
-				{#each data.discussions as item (item.id)}
-					<li>
-						<a href={discussionUrl(item)} class="group block">
-							<span class="line-clamp-2 text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]">{item.title}</span>
-							<span class="mt-0.5 flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
-								<span class="capitalize">{item.content_type.replaceAll('_', ' ')}</span>
-								{#if item.view_count > 0}
-									· {formatMetric(item.view_count)} {t('japa_stage.views', 'views')}
-								{/if}
-							</span>
-						</a>
-					</li>
-				{/each}
-			</ul>
-			<a href="/forum" class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline">
-				{t('common.view_all', 'View all')}
-				<ArrowRight size={12} />
-			</a>
-		</section>
-	{/if}
-</SetSidebar>
-
 {#snippet memberCard(m: MemberStage)}
 	{@const color = m.stage ? japaStageColors[m.stage as JapaStage] : undefined}
-	<li class="overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:bg-[var(--color-surface-subtle)]">
+	<li class="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] transition-shadow hover:shadow-md">
 		<!-- Cover -->
-		<div class="relative h-16 w-full" style="background: {color ? `linear-gradient(120deg, ${color}26, ${color}0d)` : 'var(--color-surface-subtle)'}">
+		<div class="relative h-24 w-full" style="background: {color ? `linear-gradient(120deg, color-mix(in srgb, ${color} 24%, transparent), color-mix(in srgb, ${color} 8%, transparent))` : 'var(--color-surface-subtle)'}">
 			{#if m.cover_url}
 				<img src={m.cover_url} alt="" class="h-full w-full object-cover" loading="lazy" />
 			{/if}
 			{#if m.stage}
 				<span
-					class="absolute right-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface)]/90 px-2 py-0.5 text-xs font-medium"
-					style={`color: ${color};`}
+					class="absolute right-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur-sm"
+					style="color: {color}; background-color: color-mix(in srgb, {color} 14%, var(--color-surface));"
 				>
-					<span class="inline-block h-1.5 w-1.5 rounded-full" style={`background-color: ${color};`}></span>
 					{japaStageLabel(t, m.stage as JapaStage)}
 				</span>
 			{/if}
 		</div>
 
-		<div class="px-3 pb-3">
-			<!-- Avatar + name -->
-			<div class="-mt-6 flex items-end gap-2.5">
-				<UserHoverCard
-					id={m.user_id}
-					slug={m.username}
-					name={m.display_name ?? m.username ?? ''}
-					avatar={m.avatar_url}
-					class="shrink-0"
-				>
-					{#snippet trigger()}
-						<span class="grid h-12 w-12 place-items-center overflow-hidden rounded-full border-2 border-[var(--color-surface)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
-							{#if m.avatar_url}
-								<img src={m.avatar_url} alt={m.username} class="h-full w-full object-cover" loading="lazy" />
-							{:else}
-								<Users size={20} />
-							{/if}
-						</span>
-					{/snippet}
-				</UserHoverCard>
-				<div class="min-w-0 pb-0.5">
-					<a href="/u/{m.username}" class="flex items-center gap-1 truncate text-sm font-semibold text-[var(--color-text)] hover:underline">
-						<span class="truncate">{m.display_name ?? `@${m.username}`}</span>
-						{#if m.verified}
-							<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" aria-label={t('japa_stage.verified', 'Verified')} />
+		<div class="px-4 pb-3.5">
+			<!-- Avatar overlapping the cover; name + location stacked below it. -->
+			<UserHoverCard
+				id={m.user_id}
+				slug={m.username}
+				name={m.display_name ?? m.username ?? ''}
+				avatar={m.avatar_url}
+				class="-mt-8 block w-fit"
+			>
+				{#snippet trigger()}
+					<span class="grid h-16 w-16 place-items-center overflow-hidden rounded-full border-[3px] border-[var(--color-surface)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)] shadow-sm">
+						{#if m.avatar_url}
+							<img src={m.avatar_url} alt={m.username} class="h-full w-full object-cover" loading="lazy" />
+						{:else}
+							<Users size={26} />
 						{/if}
-					</a>
-					{#if m.display_name && m.username}
-						<p class="truncate text-xs text-[var(--color-muted)]">@{m.username}</p>
-					{/if}
-				</div>
-			</div>
-
-			<!-- Destination + bio -->
+					</span>
+				{/snippet}
+			</UserHoverCard>
+			<a href="/u/{m.username}" class="mt-2 flex items-center gap-1.5 truncate text-base font-semibold text-[var(--color-text)] hover:underline">
+				<span class="truncate">{m.display_name ?? `@${m.username}`}</span>
+				{#if m.verified}
+					<BadgeCheck size={16} class="shrink-0 text-[var(--color-primary)]" aria-label={t('japa_stage.verified', 'Verified')} />
+				{/if}
+			</a>
 			{#if m.destination_space_name}
-				<p class="mt-2 flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)]">
+				<p class="mt-1 flex items-center gap-1.5 truncate text-sm text-[var(--color-muted)]">
 					<span aria-hidden="true">{flagEmoji(m.destination_space_code)}</span>
-					<MapPin size={12} class="shrink-0" />
-					{m.destination_space_name}
+					<span class="truncate">{m.destination_space_name}</span>
 				</p>
+			{:else if m.display_name && m.username}
+				<p class="mt-1 truncate text-sm text-[var(--color-muted)]">@{m.username}</p>
 			{/if}
+
+			<!-- Bio -->
 			{#if m.bio}
-				<p class="mt-1.5 line-clamp-2 text-xs text-[var(--color-text-subtle)]">{m.bio}</p>
+				<p class="mt-2.5 line-clamp-2 text-sm leading-relaxed text-[var(--color-text-subtle)]">{m.bio}</p>
 			{/if}
 
 			<!-- Profession + interest chips -->
-			{#if m.profession || (m.interests && m.interests.length > 0) || m.intent}
-				<div class="mt-2 flex flex-wrap items-center gap-1.5">
+			{#if m.profession || (m.interests && m.interests.length > 0)}
+				<div class="mt-2.5 flex flex-wrap items-center gap-1.5">
 					{#if m.profession}
-						<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">{m.profession}</span>
+						<span class="rounded-full px-2 py-0.5 text-xs font-medium" style={chipStyle(0)}>{m.profession}</span>
 					{/if}
-					{#each (m.interests ?? []).slice(0, 2) as interest (interest)}
-						<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]">{interest}</span>
+					{#each (m.interests ?? []).slice(0, 2) as interest, i (interest)}
+						<span class="rounded-full px-2 py-0.5 text-xs font-medium" style={chipStyle(i + 1)}>{interest}</span>
 					{/each}
 					{#if (m.interests?.length ?? 0) > 2}
 						<span class="text-xs text-[var(--color-muted)]">+{(m.interests?.length ?? 0) - 2}</span>
-					{/if}
-					{#if m.intent}
-						<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]">
-							{japaIntentLabel(t, m.intent as JapaIntent)}
-						</span>
 					{/if}
 				</div>
 			{/if}
@@ -624,16 +804,17 @@
 					{/if}
 				</span>
 				{#if data.authed && page.data.user?.id !== m.user_id}
-					<span class="flex items-center gap-1">
+					<span class="flex items-center gap-1.5">
 						<button
 							type="button"
 							onclick={() => openMessage(m)}
 							aria-label={t('japa_stage.message', 'Message')}
-							class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-primary)]"
+							title={t('japa_stage.message', 'Message')}
+							class="grid h-8 w-8 place-items-center rounded-full border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
 						>
 							<MessageCircle size={15} />
 						</button>
-						<FollowButton entityType="user" entityId={m.user_id} compact />
+						<FollowButton entityType="user" entityId={m.user_id} iconOnly />
 					</span>
 				{:else if !data.authed}
 					<a href="/login?redirect=/japa-stage" class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline">
@@ -657,3 +838,34 @@
 />
 
 <MessageUserDialog bind:open={messageOpen} recipientId={messageRecipient.id} recipientName={messageRecipient.name} authed={data.authed} />
+
+<style>
+	.japa-hero {
+		background:
+			radial-gradient(
+				75% 100% at 88% 0%,
+				color-mix(in srgb, var(--color-primary) 9%, transparent),
+				transparent 65%
+			),
+			linear-gradient(
+				115deg,
+				var(--color-surface) 0%,
+				color-mix(in srgb, var(--color-primary) 3%, var(--color-surface)) 55%,
+				color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)) 100%
+			);
+	}
+
+	.japa-cta {
+		background:
+			radial-gradient(
+				90% 160% at 100% 0%,
+				color-mix(in srgb, var(--color-primary) 10%, transparent),
+				transparent 60%
+			),
+			linear-gradient(
+				115deg,
+				color-mix(in srgb, var(--color-primary) 7%, var(--color-surface)) 0%,
+				color-mix(in srgb, var(--color-primary) 4%, var(--color-surface)) 100%
+			);
+	}
+</style>

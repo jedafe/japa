@@ -10,6 +10,9 @@
 	import { api } from '$lib/api/client';
 	import { invalidateAll } from '$app/navigation';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { MultiAutocomplete } from '@japaconnect/ui';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
+	import { loadCurrencies, type CurrencyInfo } from '$lib/utils/currency';
 	import { ChevronRight, Plus, Search, Table2, X } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
@@ -22,13 +25,19 @@
 	let showCreate = $state(false);
 	let creating = $state(false);
 	let createErr = $state('');
+	let createNote = $state('');
 	let form = $state<Record<string, string>>({});
 	let uniPicks = $state<Set<string>>(new Set());
 	let uniLabels = $state<Record<string, string>>({});
 	let programLabel = $state('');
 	let countries = $state<{ slug: string; name: string }[]>([]);
+	let currencies = $state<CurrencyInfo[]>([]);
+	// Per-university offering field sets — each picked uni gets its own
+	// tuition/mode/etc. (mirrors admin course-offerings per-row fields).
+	let uniFieldVals = $state<Record<string, Record<string, string>>>({});
+	let uniMonthVals = $state<Record<string, string[]>>({});
 
-	const isProduct = $derived(data.kind === 'product');
+	const isProgram = $derived(data.kind === 'program');
 	const isCourse = $derived(data.kind === 'course');
 	const isEmbassy = $derived(data.kind === 'embassy');
 	const isBank = $derived(data.kind === 'bank');
@@ -36,11 +45,59 @@
 	const isScholar = $derived(data.kind === 'scholarship');
 	const needsCountry = $derived(isEmbassy || isVisa || isScholar || isBank);
 
+	// Canonical suggestion lists — the same academic vocabulary the admin
+	// /universities/course-catalog and course-offerings forms use (§39).
+	// Suggestions only: fields stay freeText so non-canonical values work.
+	const DEGREE_TYPES = [
+		'Associate', 'BSc', 'BA', 'BEng', 'BEd', 'BBA', 'BCom', 'BPharm', 'LLB',
+		'MBBS', 'ND', 'HND', 'Diploma', 'Certificate',
+		'MSc', 'MA', 'MEng', 'MEd', 'MBA', 'MCom', 'LLM', 'MPhil', 'MPH',
+		'PharmD', 'DVM', 'DDS', 'PhD', 'EdD', 'DBA'
+	];
+	const STUDY_FIELDS = [
+		'Computer Science', 'Engineering', 'Medicine', 'Law',
+		'Business Administration', 'Economics', 'Accounting', 'Nursing',
+		'Pharmacy', 'Architecture', 'Agriculture', 'Education', 'Mathematics',
+		'Physics', 'Chemistry', 'Biology', 'Political Science', 'Sociology',
+		'Psychology', 'Arts'
+	];
+	const LANGUAGES = [
+		'English', 'French', 'Arabic', 'German', 'Spanish', 'Italian',
+		'Dutch', 'Portuguese', 'Yoruba', 'Chinese'
+	];
+	const ACCREDITORS = [
+		'NUC accredited', 'NMCN accredited', 'COREN accredited',
+		'AACSB', 'ABET', 'EQUIS', 'AMBA', 'QAA', 'NAAC',
+		'WASC', 'SACSCOC', 'TEQSA', 'HLC', 'CAA'
+	];
+	const STUDY_MODES = ['Full-time', 'Part-time', 'Distance', 'Online', 'Hybrid'];
+	const MONTHS = [
+		'January', 'February', 'March', 'April', 'May', 'June',
+		'July', 'August', 'September', 'October', 'November', 'December'
+	];
+
+	const suggFetcher = (options: string[]) =>
+		staticAutocompleteFetcher(options.map((o) => ({ id: o, label: o })));
+	const degreeFetcher = suggFetcher(DEGREE_TYPES);
+	const studyFieldFetcher = suggFetcher(STUDY_FIELDS);
+	const languageFetcher = suggFetcher(LANGUAGES);
+	const accreditorFetcher = suggFetcher(ACCREDITORS);
+	const monthFetcher = suggFetcher(MONTHS);
+	const currencyFetcher = $derived(
+		staticAutocompleteFetcher(
+			currencies.map((c) => ({ id: c.code, label: c.code, sublabel: c.name }))
+		)
+	);
+
 	async function openCreate() {
 		showCreate = true;
+		createNote = '';
 		if (needsCountry && countries.length === 0) {
 			const cs = await api.get<{ items: { slug: string; name: string }[] }>('/wiki/pickers/spaces?type=country');
 			countries = cs.data?.items ?? [];
+		}
+		if (isCourse && currencies.length === 0) {
+			currencies = await loadCurrencies();
 		}
 	}
 
@@ -66,23 +123,68 @@
 		next.add(item.id);
 		uniPicks = next;
 		uniLabels = { ...uniLabels, [item.id]: item.label };
+		if (!uniFieldVals[item.id]) uniFieldVals[item.id] = {};
+		if (!uniMonthVals[item.id]) uniMonthVals[item.id] = [];
 	}
 
 	function removeUniversity(slug: string) {
 		const next = new Set(uniPicks);
 		next.delete(slug);
 		uniPicks = next;
+		delete uniFieldVals[slug];
+		delete uniMonthVals[slug];
 	}
+
+	// Per-uni field accessors — offerings' editable fields live in
+	// uniFieldVals[uslug]/uniMonthVals[uslug], not the shared form.
+	const uf = (u: string, k: string) => uniFieldVals[u]?.[k] ?? '';
+	const uset = (u: string, k: string, v: string) => {
+		uniFieldVals[u] = { ...(uniFieldVals[u] ?? {}), [k]: v };
+	};
+	const um = (u: string) => uniMonthVals[u] ?? [];
+	const umset = (u: string, v: string[]) => {
+		uniMonthVals[u] = v;
+	};
 
 	async function submitCreate() {
 		createErr = '';
-		if (!form.slug?.trim()) { createErr = t('wiki.entities.err_slug', 'Slug is required'); return; }
+		// Slug is optional for program (auto from name) and course (auto
+		// {university}-{program}) — other kinds still require it.
+		if (!isProgram && !isCourse && !form.slug?.trim()) { createErr = t('wiki.entities.err_slug', 'Slug is required'); return; }
+		if (isProgram && !form.name?.trim()) { createErr = t('wiki.entities.err_name', 'Name is required'); return; }
+		if (isCourse && (uniPicks.size === 0 || !form.program_slug)) {
+			createErr = t('wiki.entities.err_course_parents', 'University and program are required');
+			return;
+		}
 		creating = true;
-		const body: Record<string, unknown> = { slug: form.slug.trim() };
-		if (isProduct) body.name = form.name ?? form.slug;
-		else if (isCourse) {
-			body.university_slugs = [...uniPicks];
+		const body: Record<string, unknown> = {};
+		if (form.slug?.trim()) body.slug = form.slug.trim();
+		if (isProgram) {
+			// Same field set as admin /universities/course-catalog.
+			body.title = form.name ?? form.slug;
+			if (form.description) body.description = form.description;
+			if (form.degree_type) body.degree_type = form.degree_type;
+			if (form.department) body.department = form.department;
+			if (form.field_of_study) body.field_of_study = form.field_of_study;
+			if (form.language) body.language = form.language;
+			if (form.default_duration_years) body.default_duration_years = Number(form.default_duration_years);
+		} else if (isCourse) {
+			// Same field set as admin /universities/course-offerings —
+			// per university, so values can differ across unis.
 			body.program_slug = form.program_slug;
+			body.offerings = [...uniPicks].map((u) => {
+				const f = uniFieldVals[u] ?? {};
+				const months = uniMonthVals[u] ?? [];
+				const o: Record<string, unknown> = { university_slug: u };
+				if (f.tuition) o.tuition = Number(f.tuition);
+				if (f.currency) o.currency = f.currency;
+				if (f.duration_years) o.duration_years = Number(f.duration_years);
+				if (f.study_mode) o.study_mode = f.study_mode;
+				if (months.length > 0) o.intake_months = months;
+				if (f.entry_requirements) o.entry_requirements = f.entry_requirements;
+				if (f.accreditation) o.accreditation = f.accreditation;
+				return o;
+			});
 		} else if (isEmbassy) {
 			body.name = form.name;
 			body.host_slug = form.country;
@@ -103,11 +205,22 @@
 			body.title = form.name ?? form.slug;
 			body.language = form.language || 'en';
 		}
-		const res = await api.post<{ slug?: string; href?: string }>(`/wiki/e/${data.slug}`, body);
+		const res = await api.post<{ slug?: string; href?: string; skipped?: string[] }>(`/wiki/e/${data.slug}`, body);
 		creating = false;
 		if (res.error) { createErr = res.error.message || t('wiki.entities.err_create', 'Create failed'); return; }
+		// Some universities may be skipped (unknown slug or slug conflict) —
+		// surface the count instead of silently dropping them.
+		const skipped = res.data?.skipped ?? [];
+		if (skipped.length > 0) {
+			createNote = t('wiki.entities.skipped_notice', '{n} university offering(s) skipped — slug conflict or university not found').replace('{n}', String(skipped.length));
+		}
 		showCreate = false;
 		form = {};
+		uniPicks = new Set();
+		uniLabels = {};
+		uniFieldVals = {};
+		uniMonthVals = {};
+		programLabel = '';
 		await invalidateAll();
 	}
 
@@ -155,6 +268,9 @@
 				>
 					<Plus size={13} /> {t('wiki.entities.new_entry', 'New {label}').replace('{label}', label)}
 				</button>
+				{#if createNote}
+					<p class="mt-2 text-xs text-[var(--color-muted)]">{createNote}</p>
+				{/if}
 			{:else}
 				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 					<div class="mb-3 flex items-center justify-between">
@@ -164,7 +280,15 @@
 					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 						<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
 							{t('wiki.entities.fld_slug', 'Slug')}
-							<input bind:value={form.slug} class="inp" placeholder="my-{data.slug}" />
+							<input
+								bind:value={form.slug}
+								class="inp"
+								placeholder={isProgram
+									? t('wiki.entities.slug_auto_program', 'Auto-generated from name if empty')
+									: isCourse
+										? t('wiki.entities.slug_auto_course', 'Auto: {university}-{program} if empty')
+										: `my-${data.slug}`}
+							/>
 						</label>
 						{#if !isCourse}
 							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
@@ -207,6 +331,149 @@
 									onClear={() => { form.program_slug = ''; programLabel = ''; }}
 								/>
 							</div>
+							{#if uniPicks.size === 0}
+								<p class="text-xs text-[var(--color-muted)] sm:col-span-2">{t('wiki.entities.pick_uni_hint', 'Pick a university to set offering details — each university gets its own values.')}</p>
+							{:else}
+								{#each [...uniPicks] as u (u)}
+									<div class="flex flex-col gap-3 rounded-[var(--radius)] border border-[var(--color-border)] p-3 sm:col-span-2">
+										{#if uniPicks.size > 1}
+											<p class="text-xs font-semibold text-[var(--color-text)]">{uniLabels[u] ?? u}</p>
+										{/if}
+										<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+											<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+												{t('wiki.entities.fld_tuition', 'Tuition')}
+												<input type="number" min="0" step="any" value={uf(u, 'tuition')} oninput={(e) => uset(u, 'tuition', e.currentTarget.value)} class="inp" />
+											</label>
+											<div class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+												<span>{t('wiki.entities.fld_currency', 'Currency')}</span>
+												{#if currencies.length > 0}
+													<Autocomplete
+														placeholder="USD"
+														emptyMessage={t('common.no_results', 'No results found')}
+														fetcher={currencyFetcher}
+														initialFetcher={currencyFetcher}
+														selectedId={uf(u, 'currency') || null}
+														selectedLabel={uf(u, 'currency') || null}
+														onSelect={(item) => uset(u, 'currency', item.id)}
+														onClear={() => uset(u, 'currency', '')}
+													/>
+												{:else}
+													<input value={uf(u, 'currency')} oninput={(e) => uset(u, 'currency', e.currentTarget.value)} class="inp" placeholder="USD" />
+												{/if}
+											</div>
+											<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+												{t('wiki.entities.fld_duration', 'Duration (years)')}
+												<input type="number" min="0" step="any" value={uf(u, 'duration_years')} oninput={(e) => uset(u, 'duration_years', e.currentTarget.value)} class="inp" />
+											</label>
+											<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+												{t('wiki.entities.fld_study_mode', 'Study Mode')}
+												<select value={uf(u, 'study_mode')} onchange={(e) => uset(u, 'study_mode', e.currentTarget.value)} class="inp">
+													<option value="">—</option>
+													{#each STUDY_MODES as m}<option value={m}>{m}</option>{/each}
+												</select>
+											</label>
+											<div class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)] sm:col-span-2">
+												<span>{t('wiki.entities.fld_intake_months', 'Intake Months')}</span>
+												<MultiAutocomplete
+													placeholder={t('wiki.entities.intake_placeholder', 'Select intake months…')}
+													emptyMessage={t('common.no_results', 'No results found')}
+													fetcher={monthFetcher}
+													initialFetcher={monthFetcher}
+													values={um(u)}
+													onchange={(v) => umset(u, v)}
+													clearLabel={t('common.clear', 'Clear')}
+													loadingLabel={t('common.loading', 'Loading...')}
+													removeLabel={t('common.remove', 'Remove')}
+												/>
+											</div>
+											<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)] sm:col-span-2">
+												{t('wiki.entities.fld_entry_requirements', 'Entry Requirements')}
+												<textarea value={uf(u, 'entry_requirements')} oninput={(e) => uset(u, 'entry_requirements', e.currentTarget.value)} class="inp" rows="2"></textarea>
+											</label>
+											<div class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+												<span>{t('wiki.entities.fld_accreditation', 'Accreditation')}</span>
+												<Autocomplete
+													freeText
+													placeholder={t('wiki.entities.accreditation_placeholder', 'Search accreditors…')}
+													emptyMessage={t('common.no_results', 'No results found')}
+													fetcher={accreditorFetcher}
+													initialFetcher={accreditorFetcher}
+													selectedId={null}
+													selectedLabel={uf(u, 'accreditation')}
+													onSelect={(item) => uset(u, 'accreditation', item.id)}
+													onFreeTextBlur={(q) => uset(u, 'accreditation', q)}
+												/>
+											</div>
+										</div>
+									</div>
+								{/each}
+							{/if}
+						{/if}
+						{#if isProgram}
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)] sm:col-span-2">
+								{t('wiki.entities.fld_description', 'Description')}
+								<textarea bind:value={form.description} class="inp" rows="2"></textarea>
+							</label>
+							<div class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								<span>{t('wiki.entities.fld_degree_type', 'Degree Type')}</span>
+								<Autocomplete
+									freeText
+									placeholder="BSc / MSc / MBA / PhD"
+									emptyMessage={t('common.no_results', 'No results found')}
+									fetcher={degreeFetcher}
+									initialFetcher={degreeFetcher}
+									selectedId={null}
+									selectedLabel={form.degree_type}
+									onSelect={(item) => (form.degree_type = item.id)}
+									onFreeTextBlur={(q) => (form.degree_type = q)}
+								/>
+							</div>
+							<div class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								<span>{t('wiki.entities.fld_department', 'Department')}</span>
+								<Autocomplete
+									freeText
+									placeholder={t('wiki.entities.department_placeholder', 'Search departments…')}
+									emptyMessage={t('common.no_results', 'No results found')}
+									fetcher={studyFieldFetcher}
+									initialFetcher={studyFieldFetcher}
+									selectedId={null}
+									selectedLabel={form.department}
+									onSelect={(item) => (form.department = item.id)}
+									onFreeTextBlur={(q) => (form.department = q)}
+								/>
+							</div>
+							<div class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								<span>{t('wiki.entities.fld_field_of_study', 'Field of Study')}</span>
+								<Autocomplete
+									freeText
+									placeholder={t('wiki.entities.field_placeholder', 'Search fields of study…')}
+									emptyMessage={t('common.no_results', 'No results found')}
+									fetcher={studyFieldFetcher}
+									initialFetcher={studyFieldFetcher}
+									selectedId={null}
+									selectedLabel={form.field_of_study}
+									onSelect={(item) => (form.field_of_study = item.id)}
+									onFreeTextBlur={(q) => (form.field_of_study = q)}
+								/>
+							</div>
+							<div class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								<span>{t('wiki.entities.fld_language', 'Language')}</span>
+								<Autocomplete
+									freeText
+									placeholder="English"
+									emptyMessage={t('common.no_results', 'No results found')}
+									fetcher={languageFetcher}
+									initialFetcher={languageFetcher}
+									selectedId={null}
+									selectedLabel={form.language}
+									onSelect={(item) => (form.language = item.id)}
+									onFreeTextBlur={(q) => (form.language = q)}
+								/>
+							</div>
+							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
+								{t('wiki.entities.fld_default_duration', 'Default Duration (years)')}
+								<input type="number" min="0" step="any" bind:value={form.default_duration_years} class="inp" />
+							</label>
 						{/if}
 						{#if needsCountry && !isBank}
 							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
@@ -248,7 +515,7 @@
 								<input bind:value={form.source_url} class="inp" placeholder="https://…" />
 							</label>
 						{/if}
-						{#if !isProduct && !isCourse && !isEmbassy && !isBank && !isVisa && !isScholar}
+						{#if !isProgram && !isCourse && !isEmbassy && !isBank && !isVisa && !isScholar}
 							<label class="flex flex-col gap-1 text-xs font-medium text-[var(--color-muted)]">
 								{t('wiki.entities.fld_language', 'Language')}
 								<input bind:value={form.language} class="inp" placeholder="en" />

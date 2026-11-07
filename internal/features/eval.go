@@ -63,6 +63,47 @@ func SurfaceFrom(r *http.Request) string {
 	return s
 }
 
+// ScopeForRequest builds the caller scope for r via the checker's
+// BuildScope method, using the request's validated surface — or the
+// explicitly supplied surface when a caller already resolved one (e.g.
+// surface-parameterised endpoints). Services hold narrow checker
+// interfaces, so this is the shared type-assert behind each service's
+// CallerScope helper. A checker without BuildScope yields the zero scope —
+// anonymous/global behavior.
+func ScopeForRequest(checker any, r *http.Request, surface ...string) CallerScope {
+	s := SurfaceFrom(r)
+	if len(surface) > 0 {
+		s = surface[0]
+	}
+	type scopeBuilder interface {
+		BuildScope(*http.Request, string) CallerScope
+	}
+	if sb, ok := checker.(scopeBuilder); ok {
+		return sb.BuildScope(r, s)
+	}
+	return CallerScope{}
+}
+
+// scopeCtxKey carries a request-derived CallerScope through ctx so
+// service-internal flag checks can evaluate against the caller without
+// signature changes. Only request entry points attach it — worker/sweep
+// paths run unattached and evaluate globally.
+type scopeCtxKey struct{}
+
+// WithScope attaches sc to ctx; ScopeFrom retrieves it.
+func WithScope(ctx context.Context, sc CallerScope) context.Context {
+	return context.WithValue(ctx, scopeCtxKey{}, sc)
+}
+
+// ScopeFrom returns the CallerScope attached by WithScope. The bool reports
+// whether a scope was attached at all — callers must distinguish "request
+// with an anonymous scope" (attached → scoped EvalFlag) from "no request
+// context" (unattached → global IsEnabled semantics).
+func ScopeFrom(ctx context.Context) (CallerScope, bool) {
+	sc, ok := ctx.Value(scopeCtxKey{}).(CallerScope)
+	return sc, ok
+}
+
 // BuildScope assembles the CallerScope for a request: the validated surface,
 // the GeoContext populated by geoip.Middleware, and — when a user is
 // authenticated and an AudienceResolver is wired — the caller's groups,

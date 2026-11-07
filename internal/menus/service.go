@@ -77,13 +77,7 @@ func (s *Service) SetFeatureChecker(f FeatureChecker) {
 // geo context, RBAC audience) for menu item filtering. Returns a zero scope —
 // global flag behavior — when the checker can't build scopes.
 func (s *Service) CallerScope(r *http.Request) features.CallerScope {
-	type scopeBuilder interface {
-		BuildScope(*http.Request, string) features.CallerScope
-	}
-	if sb, ok := s.features.(scopeBuilder); ok {
-		return sb.BuildScope(r, features.SurfaceFrom(r))
-	}
-	return features.CallerScope{}
+	return features.ScopeForRequest(s.features, r)
 }
 
 // SetSettings wires a system_settings reader for the

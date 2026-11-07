@@ -34,42 +34,49 @@ const (
 	TypeEmailSend                     = "email:send"
 	TypeSearchIndexSync               = "search:index_entity"
 	TypeSearchReindexEngagementScores = "search:reindex_engagement_scores"
-	TypeImageProcessing               = "content:process_image"
-	TypeAITaskProcessing              = "ai:process_task"
-	TypeAIMigrateConversations        = "ai:migrate_conversations" // ADR-130 Phase 4: Honcho → ai_conversations backfill for one user
-	TypeEngagementCountUpdate         = "content:update_engagement"
-	TypeModerationScan                = "content:scan_moderation"
-	TypeScheduledPublish              = "content:publish_scheduled"
-	TypeLinkPreviewFetch              = "content:fetch_link_preview"
-	TypeLanguagePackAITranslate       = "i18n:translate_language_pack"
-	TypeMediaScan                     = "content:scan_media"
-	TypeMediaCleanupDeleted           = "media:cleanup_deleted"
-	TypeMediaReconcileMissing         = "media:reconcile_missing"
-	TypeContentFanOutToFeeds          = "content:fan_out_to_feeds"
-	TypeAIGenerateContentEmbedding    = "content:generate_embedding"
-	TypeRAGReindexSpecs               = "rag:reindex_specs"
-	TypeContentGenerateDraft          = "content:generate_draft"
-	TypeContentRegenerateFromSource   = "content:regenerate_from_source"
-	TypeAgentCreateDraftRequest       = "agent:create_draft_request"
-	TypeReviewAggregateRecalc         = "content:recalc_review_aggregate"
-	TypeTicketSendStatusUpdate        = "ticket:send_status_update"
-	TypeAcademyUpdateTrackCompletion  = "academy:update_track_completion"
-	TypeJCERefreshValues              = "jce:refresh_values"
-	TypeVideoProcessing               = "content:process_video"
-	TypeVideoImportBulk               = "video:import_bulk"
-	TypeVideoGenerateSummary          = "video:generate_summary"
-	TypeVideoSyncChannels             = "video:sync_channels"
-	TypeWalletProcessActivityEvent    = "wallet:process_activity_event"
-	TypeWalletProcessCreditPurchase   = "wallet:process_credit_purchase"
-	TypeWalletAwardPoints             = "wallet:award_points"
-	TypeWalletDeductCredits           = "wallet:deduct_credits" // #nosec
-	TypeWalletReconcilePayouts        = "wallet:reconcile_payouts"
-	TypeWalletReconcileSolvency       = "wallet:reconcile_solvency"
-	TypeWalletReprocessEvents         = "wallet:reprocess_events"
-	TypeNewsletterSend                = "newsletter:send"
-	TypeScholarshipSyncFromGuide      = "scholarship:sync_from_guide"
-	TypeDocsGeneratePage              = "docs:generate_page"
-	TypeFormFireSubmissionTriggers    = "form:fire_submission_triggers"
+	// search:reindex_all — full bulk resync of every managed index; payload
+	// {"purge": true} clears the indexes' documents first (clean rebuild).
+	TypeSearchReindexAll = "search:reindex_all"
+	// search:reindex_space_entities — fan-out resync of every forum thread
+	// and content row in one space (both inherit space visibility, §05);
+	// payload {"space_id"} or explicit {"thread_ids","content_ids"}.
+	TypeSearchReindexSpaceEntities   = "search:reindex_space_entities"
+	TypeImageProcessing              = "content:process_image"
+	TypeAITaskProcessing             = "ai:process_task"
+	TypeAIMigrateConversations       = "ai:migrate_conversations" // ADR-130 Phase 4: Honcho → ai_conversations backfill for one user
+	TypeEngagementCountUpdate        = "content:update_engagement"
+	TypeModerationScan               = "content:scan_moderation"
+	TypeScheduledPublish             = "content:publish_scheduled"
+	TypeLinkPreviewFetch             = "content:fetch_link_preview"
+	TypeLanguagePackAITranslate      = "i18n:translate_language_pack"
+	TypeMediaScan                    = "content:scan_media"
+	TypeMediaCleanupDeleted          = "media:cleanup_deleted"
+	TypeMediaReconcileMissing        = "media:reconcile_missing"
+	TypeContentFanOutToFeeds         = "content:fan_out_to_feeds"
+	TypeAIGenerateContentEmbedding   = "content:generate_embedding"
+	TypeRAGReindexSpecs              = "rag:reindex_specs"
+	TypeContentGenerateDraft         = "content:generate_draft"
+	TypeContentRegenerateFromSource  = "content:regenerate_from_source"
+	TypeAgentCreateDraftRequest      = "agent:create_draft_request"
+	TypeReviewAggregateRecalc        = "content:recalc_review_aggregate"
+	TypeTicketSendStatusUpdate       = "ticket:send_status_update"
+	TypeAcademyUpdateTrackCompletion = "academy:update_track_completion"
+	TypeJCERefreshValues             = "jce:refresh_values"
+	TypeVideoProcessing              = "content:process_video"
+	TypeVideoImportBulk              = "video:import_bulk"
+	TypeVideoGenerateSummary         = "video:generate_summary"
+	TypeVideoSyncChannels            = "video:sync_channels"
+	TypeWalletProcessActivityEvent   = "wallet:process_activity_event"
+	TypeWalletProcessCreditPurchase  = "wallet:process_credit_purchase"
+	TypeWalletAwardPoints            = "wallet:award_points"
+	TypeWalletDeductCredits          = "wallet:deduct_credits" // #nosec
+	TypeWalletReconcilePayouts       = "wallet:reconcile_payouts"
+	TypeWalletReconcileSolvency      = "wallet:reconcile_solvency"
+	TypeWalletReprocessEvents        = "wallet:reprocess_events"
+	TypeNewsletterSend               = "newsletter:send"
+	TypeScholarshipSyncFromGuide     = "scholarship:sync_from_guide"
+	TypeDocsGeneratePage             = "docs:generate_page"
+	TypeFormFireSubmissionTriggers   = "form:fire_submission_triggers"
 	// §06 Paid Form Submissions — expires submissions stuck at
 	// 'pending_payment' past forms.pending_payment_ttl_hours (abandoned
 	// checkouts), so they can never be consumed by a late business record.
@@ -225,6 +232,8 @@ var handlerRegistry = []struct {
 	{TypeEmailSend, HandleEmailSend},
 	{TypeSearchIndexSync, HandleSearchIndexSync},
 	{TypeSearchReindexEngagementScores, HandleSearchReindexEngagementScores},
+	{TypeSearchReindexAll, HandleSearchReindexAll},
+	{TypeSearchReindexSpaceEntities, HandleSearchReindexSpaceEntities},
 	{TypeImageProcessing, HandleImageProcessing},
 	{TypeAITaskProcessing, HandleAITaskProcessing},
 	{TypeAIMigrateConversations, HandleAIMigrateConversations},

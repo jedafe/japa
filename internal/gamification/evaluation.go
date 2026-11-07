@@ -82,6 +82,13 @@ func (s *Service) evaluateCountBadges(ctx context.Context, userID pgtype.UUID, a
 			continue
 		}
 
+		// §42 belt-and-braces — a badge linked to a disabled feature flag
+		// must not progress or award even if a stray event for its
+		// activity key lands.
+		if !s.featureAvailable(ctx, b.FeatureFlag) {
+			continue
+		}
+
 		// Track progress toward locked badges for the achievement centre.
 		// Best-effort — a failure must not block evaluation.
 		if err := s.store.UpsertBadgeProgress(ctx, userID, b.ID, int32(min64(currentCount, int64(*b.TriggerValue)))); err != nil {
@@ -124,6 +131,10 @@ func (s *Service) evaluateStreakBadges(ctx context.Context, userID pgtype.UUID, 
 
 	for _, b := range badges {
 		if b.TriggerValue == nil {
+			continue
+		}
+
+		if !s.featureAvailable(ctx, b.FeatureFlag) {
 			continue
 		}
 
@@ -224,6 +235,12 @@ func (s *Service) incrementChallengeProgress(ctx context.Context, userID pgtype.
 	}
 
 	for _, c := range challenges {
+		// §42 — challenges linked to a disabled feature flag do not
+		// accrue progress.
+		if !s.featureAvailable(ctx, c.FeatureFlag) {
+			continue
+		}
+
 		// Read the prior progress row so a fresh completion can be told apart
 		// from increments that land after the challenge already completed —
 		// without this the reward would fire on every subsequent event.
@@ -282,10 +299,24 @@ func (s *Service) grantChallengeReward(ctx context.Context, userID pgtype.UUID, 
 	rewardGranted := false
 
 	if c.RewardBadgeID.Valid {
+		// §42 — skip the badge grant when the reward badge itself is linked
+		// to a disabled feature flag. Fail closed when the definition can't
+		// be read: an unchecked badge is never auto-granted (a missing def
+		// would FK-fail the award anyway).
+		rewardBadgeFlaggedOff := false
+		if def, derr := s.store.GetBadgeDefinitionByID(ctx, c.RewardBadgeID); derr == nil {
+			rewardBadgeFlaggedOff = !s.featureAvailable(ctx, def.FeatureFlag)
+		} else {
+			rewardBadgeFlaggedOff = true
+			slog.Warn("gamification: challenge reward badge lookup failed",
+				"challenge_id", uuidStr(c.ID), "badge_id", uuidStr(c.RewardBadgeID), "error", derr)
+		}
 		// Skip when the user already holds the reward badge.
 		_, err := s.store.GetUserBadge(ctx, userID, c.RewardBadgeID)
 
 		switch {
+		case rewardBadgeFlaggedOff:
+			// reward badge hidden by its feature flag — skip grant
 		case err == nil:
 			// already held
 		case !errors.Is(err, pgx.ErrNoRows):
@@ -359,6 +390,10 @@ func (s *Service) EvaluatePointsBadges(ctx context.Context, userID pgtype.UUID, 
 
 	for _, b := range badges {
 		if b.TriggerValue == nil {
+			continue
+		}
+
+		if !s.featureAvailable(ctx, b.FeatureFlag) {
 			continue
 		}
 

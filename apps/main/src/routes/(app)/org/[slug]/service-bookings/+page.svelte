@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
 	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -119,10 +120,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={title} robots="`noindex`" description={t('bookings.inbox_description', 'Service bookings inbox for your organisation.')} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

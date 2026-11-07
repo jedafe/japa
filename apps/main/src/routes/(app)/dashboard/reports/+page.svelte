@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// /dashboard/reports — the user's own submitted content reports and their
 	// current status (pending / reviewing / actioned / dismissed). Read-only;
 	// users cannot edit or withdraw reports after submission.
@@ -112,10 +113,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={title} robots="`noindex`" description={t('my_reports.description', 'Content reports you have filed — status and moderation outcomes.')} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

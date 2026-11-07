@@ -3672,9 +3672,13 @@ func (q *Queries) SearchDeals(ctx context.Context, arg SearchDealsParams) ([]Sea
 }
 
 const searchProducts = `-- name: SearchProducts :many
-SELECT p.id, p.slug, p.name, p.tagline, t.slug AS type_slug
+SELECT p.id, p.slug, p.name, p.tagline, t.slug AS type_slug, t.label AS type_label,
+       p.price_from, p.rating_avg, p.review_count,
+       m.storage_path AS logo_storage_path, m.storage_bucket AS logo_storage_bucket,
+       (SELECT count(*) FROM product_providers pp WHERE pp.product_id = p.id) AS provider_count
 FROM products p
 JOIN product_types t ON t.id = p.product_type_id
+LEFT JOIN media m ON m.id = p.logo_id
 WHERE p.deleted_at IS NULL
   AND ($1::text = '' OR t.slug = $1)
   AND ($2::text = '' OR p.name ILIKE '%' || $2 || '%' ESCAPE '\')
@@ -3690,11 +3694,18 @@ type SearchProductsParams struct {
 }
 
 type SearchProductsRow struct {
-	ID       pgtype.UUID `json:"id"`
-	Slug     string      `json:"slug"`
-	Name     string      `json:"name"`
-	Tagline  *string     `json:"tagline"`
-	TypeSlug string      `json:"type_slug"`
+	ID                pgtype.UUID    `json:"id"`
+	Slug              string         `json:"slug"`
+	Name              string         `json:"name"`
+	Tagline           *string        `json:"tagline"`
+	TypeSlug          string         `json:"type_slug"`
+	TypeLabel         string         `json:"type_label"`
+	PriceFrom         pgtype.Numeric `json:"price_from"`
+	RatingAvg         pgtype.Numeric `json:"rating_avg"`
+	ReviewCount       int32          `json:"review_count"`
+	LogoStoragePath   *string        `json:"logo_storage_path"`
+	LogoStorageBucket *string        `json:"logo_storage_bucket"`
+	ProviderCount     int64          `json:"provider_count"`
 }
 
 func (q *Queries) SearchProducts(ctx context.Context, arg SearchProductsParams) ([]SearchProductsRow, error) {
@@ -3717,6 +3728,13 @@ func (q *Queries) SearchProducts(ctx context.Context, arg SearchProductsParams) 
 			&i.Name,
 			&i.Tagline,
 			&i.TypeSlug,
+			&i.TypeLabel,
+			&i.PriceFrom,
+			&i.RatingAvg,
+			&i.ReviewCount,
+			&i.LogoStoragePath,
+			&i.LogoStorageBucket,
+			&i.ProviderCount,
 		); err != nil {
 			return nil, err
 		}

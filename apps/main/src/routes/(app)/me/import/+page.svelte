@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { untrack } from 'svelte';
 	import { Download, FileUp, CheckCircle2, AlertCircle, Loader2 } from 'lucide-svelte';
@@ -50,10 +51,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('import.title', 'Import Content — {site}')}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={t('import.title', 'Import Content — {site}')} robots="`noindex`" description={t('import.description', 'Import your existing content into {site}.')} />
 
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">

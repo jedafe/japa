@@ -159,7 +159,7 @@ func InvalidateSitemapCache(ctx context.Context, rdb sitemapCacheInvalidator) {
 	}
 
 	types := []string{
-		"index", "content", "spaces", "tags", "users", "images", "deals", "roadmap",
+		"index", "content", "spaces", "tags", "users", "images", "deals", "products", "roadmap",
 		"universities", "university-courses", "jobs", "scholarships", "services", "wiki", "calendar", "scam-alerts", "comparisons", "tools",
 	}
 	// Chunked content sub-sitemaps cache per-chunk keys — drop the bounded
@@ -259,6 +259,9 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.flagOn(r.Context(), "service_coupons.enabled") {
 		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-deals.xml", LastMod: h.latestDealsLastMod(r.Context())})
+	}
+	if h.flagOn(r.Context(), "feature.jce") {
+		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-products.xml", LastMod: h.latestSimpleLastMod(r.Context(), `SELECT updated_at FROM products ORDER BY updated_at DESC LIMIT 1`)})
 	}
 	if h.flagOn(r.Context(), "roadmap.enabled") {
 		entries = append(entries, sitemapEntry{Loc: base + "/sitemap-roadmap.xml", LastMod: h.latestRoadmapLastMod(r.Context())})
@@ -622,9 +625,9 @@ func (h *SitemapHandler) ServeDealsSitemap(w http.ResponseWriter, r *http.Reques
 	base := h.baseURL(r)
 	entries := make([]urlEntry, 0)
 
-	// Deals index page (/deals) — canonical listing of all live deals.
+	// Deals index page (/products/deals) — canonical listing of all live deals.
 	entries = append(entries, urlEntry{
-		Loc:        base + "/deals",
+		Loc:        base + "/products/deals",
 		LastMod:    h.latestDealsLastMod(r.Context()),
 		ChangeFreq: "daily",
 		Priority:   "0.6",
@@ -691,6 +694,50 @@ func (h *SitemapHandler) ServeDealsSitemap(w http.ResponseWriter, r *http.Reques
 	}
 
 	h.serveSitemapBytes(w, r, "deals", renderURLSetXML(entries))
+}
+
+// ServeProductsSitemap serves /sitemap-products.xml — the /products index
+// plus every live /product/{slug} detail page (§80 Product Domain, the
+// de-wikied surface). Gated by feature.jce like the frontend routes.
+func (h *SitemapHandler) ServeProductsSitemap(w http.ResponseWriter, r *http.Request) {
+	if h.cachedSitemapXML(w, r, "products") {
+		return
+	}
+
+	base := h.baseURL(r)
+	entries := []urlEntry{{
+		Loc:        base + "/products",
+		LastMod:    h.latestSimpleLastMod(r.Context(), `SELECT updated_at FROM products ORDER BY updated_at DESC LIMIT 1`),
+		ChangeFreq: "daily",
+		Priority:   "0.6",
+	}}
+
+	rows, err := h.reader.Query(r.Context(), `SELECT slug, updated_at
+		 FROM products
+		 WHERE deleted_at IS NULL AND slug <> ''
+		 ORDER BY updated_at DESC
+		 LIMIT 50000`)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var slug string
+		var updatedAt time.Time
+		if err := rows.Scan(&slug, &updatedAt); err != nil {
+			continue
+		}
+		entries = append(entries, urlEntry{
+			Loc:        fmt.Sprintf("%s/product/%s", base, slug),
+			LastMod:    updatedAt.Format(time.RFC3339),
+			ChangeFreq: "weekly",
+			Priority:   "0.5",
+		})
+	}
+
+	h.serveSitemapBytes(w, r, "products", renderURLSetXML(entries))
 }
 
 // latestRoadmapLastMod returns the most recent updated_at among public-status

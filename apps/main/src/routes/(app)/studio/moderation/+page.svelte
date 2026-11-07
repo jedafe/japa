@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: .jeos/specs/2026-09-23-studio-moderation-tab.md — Moderation tab:
 	// scoped report queue for space/tag moderators, assignees, and platform
 	// moderators. Actions hit PATCH /me/moderation/queue/{id} and the list
@@ -342,10 +343,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{t('studio.tabs.moderation', 'Moderation')} — {t('studio.title', 'Studio — {site}')}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={`${t('studio.tabs.moderation', 'Moderation')} — ${t('studio.title', 'Studio — {site}')}`} robots="`noindex`" description={t('studio.moderation_description', 'Review flagged and pending content.')} />
 
 <section class="space-y-4">
 	{#if actionError}

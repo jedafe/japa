@@ -16,6 +16,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/features"
 )
 
 type fakeJobUpdater struct {
@@ -24,7 +25,9 @@ type fakeJobUpdater struct {
 	err     error
 }
 
-func (f *fakeJobUpdater) IsEnabled(ctx context.Context) bool { return f.enabled }
+func (f *fakeJobUpdater) IsEnabledFor(_ context.Context, _ features.CallerScope) bool {
+	return f.enabled
+}
 
 func (f *fakeJobUpdater) UpdateJobListing(ctx context.Context, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error) {
 	return f.detail, f.err

@@ -44,6 +44,7 @@ type BadgeInfo struct {
 	PointsReward       int     `json:"points_reward"`
 	AvailableFrom      *string `json:"available_from,omitempty"`
 	AvailableUntil     *string `json:"available_until,omitempty"`
+	FeatureFlag        *string `json:"feature_flag,omitempty"`
 	CreatedAt          string  `json:"created_at"`
 }
 
@@ -87,6 +88,7 @@ type CollectionBadge struct {
 	AwardedAt    *string `json:"awarded_at,omitempty"`
 	Progress     int     `json:"progress"`
 	Goal         int     `json:"goal,omitempty"`
+	FeatureFlag  *string `json:"feature_flag,omitempty"`
 }
 
 // BadgeCollectionStats summarises the user's collection progress.
@@ -126,6 +128,7 @@ type ChallengeInfo struct {
 	StartsAt      string  `json:"starts_at"`
 	EndsAt        *string `json:"ends_at,omitempty"`
 	IsActive      bool    `json:"is_active"`
+	FeatureFlag   *string `json:"feature_flag,omitempty"`
 	CreatedAt     string  `json:"created_at"`
 }
 
@@ -174,6 +177,7 @@ type CreateBadgeInput struct {
 	PointsReward       *int32  `json:"points_reward,omitempty"`
 	AvailableFrom      *string `json:"available_from,omitempty"`
 	AvailableUntil     *string `json:"available_until,omitempty"`
+	FeatureFlag        *string `json:"feature_flag,omitempty"`
 }
 
 // UpdateBadgeInput is the admin request body for updating a badge.
@@ -208,6 +212,8 @@ type UpdateBadgeInput struct {
 	ClearAvailableFrom      bool    `json:"clear_available_from,omitempty"`
 	AvailableUntil          *string `json:"available_until,omitempty"`
 	ClearAvailableUntil     bool    `json:"clear_available_until,omitempty"`
+	FeatureFlag             *string `json:"feature_flag,omitempty"`
+	ClearFeatureFlag        bool    `json:"clear_feature_flag,omitempty"`
 }
 
 // CreateChallengeInput is the admin request body for creating a challenge.
@@ -223,6 +229,7 @@ type CreateChallengeInput struct {
 	StartsAt      string  `json:"starts_at"`
 	EndsAt        *string `json:"ends_at,omitempty"`
 	IsActive      *bool   `json:"is_active,omitempty"`
+	FeatureFlag   *string `json:"feature_flag,omitempty"`
 }
 
 // UpdateChallengeInput is the admin request body for updating a challenge.
@@ -242,6 +249,8 @@ type UpdateChallengeInput struct {
 	EndsAt             *string `json:"ends_at,omitempty"`
 	ClearEndsAt        bool    `json:"clear_ends_at,omitempty"`
 	IsActive           *bool   `json:"is_active,omitempty"`
+	FeatureFlag        *string `json:"feature_flag,omitempty"`
+	ClearFeatureFlag   bool    `json:"clear_feature_flag,omitempty"`
 }
 
 // --- Admin management surfaces (v2): award events, seasons, tiers ---

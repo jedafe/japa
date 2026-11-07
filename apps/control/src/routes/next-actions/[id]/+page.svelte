@@ -25,6 +25,7 @@
 	let body = $state('');
 	let ctaLabel = $state('');
 	let ctaUrl = $state('');
+	let badge = $state('');
 	let channelsSel = $state<string[]>([]);
 	let upsell = $state(false);
 	let icon = $state('');
@@ -54,7 +55,7 @@
 
 	function resetForm() {
 		slug = ''; name = ''; description = ''; enabled = false; priority = 100;
-		title = ''; body = ''; ctaLabel = ''; ctaUrl = ''; channelsSel = [];
+		title = ''; body = ''; ctaLabel = ''; ctaUrl = ''; badge = ''; channelsSel = [];
 		upsell = false; icon = ''; validFrom = ''; validUntil = '';
 		audienceObj = { user_class: ['regular'] };
 		conditionsObj = { all: [] };
@@ -85,6 +86,7 @@
 			upsell = d.upsell ?? false;
 			title = d.payload.title; body = d.payload.body;
 			ctaLabel = d.payload.cta_label; ctaUrl = d.payload.cta_url;
+			badge = d.payload.badge ?? '';
 			icon = d.payload.icon ?? '';
 			validFrom = toLocalInput(d.valid_from);
 			validUntil = toLocalInput(d.valid_until);
@@ -124,7 +126,7 @@
 				slug, name, description, enabled, priority, upsell,
 				audience: audienceObj,
 				conditions: conditionsObj,
-				payload: { title, body, cta_label: ctaLabel, cta_url: ctaUrl, icon },
+				payload: { title, body, cta_label: ctaLabel, cta_url: ctaUrl, icon, ...(badge.trim() ? { badge: badge.trim() } : {}) },
 				channels: channelsSel,
 				completion_signal: completionEnabled ? completionObj : null,
 				frequency: frequencyObj,
@@ -207,6 +209,7 @@
 			<label class="block text-sm">{t('nextactions.f_cta_url', 'CTA URL')} <input bind:value={ctaUrl} required placeholder="/pricing" class="border-border bg-background mt-1 w-full rounded-[var(--radius)] border px-3 py-1.5 font-mono text-xs" /></label>
 			<label class="block text-sm">{t('nextactions.f_body', 'Body')} <input bind:value={body} class="border-border bg-background mt-1 w-full rounded-[var(--radius)] border px-3 py-1.5" /></label>
 			<label class="block text-sm">{t('nextactions.f_icon', 'Icon')} <input bind:value={icon} placeholder={t('nextactions.f_icon_ph', 'lucide name, e.g. zap')} class="border-border bg-background mt-1 w-full rounded-[var(--radius)] border px-3 py-1.5" /></label>
+			<label class="block text-sm">{t('nextactions.f_badge', 'Badge (optional)')} <input bind:value={badge} placeholder={t('nextactions.f_badge_ph', 'eyebrow label, e.g. Getting started')} class="border-border bg-background mt-1 w-full rounded-[var(--radius)] border px-3 py-1.5" /></label>
 		</div>
 	</fieldset>
 

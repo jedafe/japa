@@ -12,7 +12,7 @@ export interface NextActionRule {
 	upsell: boolean;
 	audience: Record<string, unknown>;
 	conditions: Record<string, unknown>;
-	payload: { title: string; body: string; cta_label: string; cta_url: string; icon: string };
+	payload: { title: string; body: string; cta_label: string; cta_url: string; icon: string; badge?: string };
 	channels: string[];
 	completion_signal: Record<string, unknown> | null;
 	frequency: Record<string, unknown>;

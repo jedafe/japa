@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md — Prompts tab in
 	// the composer idiom: content type / guide category / title / generated
 	// prompt / import panel in the main column, the Prompt|Structure|Journey|
@@ -68,10 +69,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{t('studio.tabs.prompts', 'Prompts')} — {t('studio.title', 'Studio — {site}')}</title>
-	<meta name="robots" content="noindex" />
-</svelte:head>
+<SeoHead title={`${t('studio.tabs.prompts', 'Prompts')} — ${t('studio.title', 'Studio — {site}')}`} robots="`noindex`" description={t('studio.prompts_description', 'Reusable generation prompts for your content pipeline.')} />
 
 <div class="composer-grid" data-mobile-section={studioMobile.section}>
 	<div class="composer-main">
