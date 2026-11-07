@@ -112,7 +112,7 @@
 		internship: 'bg-rose-500/10 text-rose-600'
 	};
 	function jobTypeBadge(v: string): string {
-		return JOB_TYPE_BADGES[v] ?? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]';
+		return JOB_TYPE_BADGES[v] ?? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]';
 	}
 	function jobTypeLabel(v: string): string {
 		return t(`jobs.type_${v}`, v.replace(/_/g, '-').replace(/^./, (c) => c.toUpperCase()));
@@ -553,7 +553,7 @@
 												<span class="min-w-0">
 													<span class="flex items-center gap-1 text-sm font-semibold text-[var(--color-text)]">
 														<span class="truncate">{company || source.name}</span>
-														<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
+														<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary-text)]" />
 													</span>
 													{#if secondary}
 														<span class="block truncate text-xs text-[var(--color-muted)]">{secondary}</span>
@@ -575,7 +575,7 @@
 												<span class="min-w-0">
 													<span class="flex items-center gap-1 text-sm font-semibold text-[var(--color-text)]">
 														<span class="truncate">{company || poster.name}</span>
-														{#if poster.verified}<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />{/if}
+														{#if poster.verified}<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary-text)]" />{/if}
 													</span>
 													{#if secondary}
 														<span class="block truncate text-xs text-[var(--color-muted)]">{secondary}</span>
@@ -614,7 +614,7 @@
 								<!-- Title + type badge -->
 								<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
 									<a href="/jobs/{job.slug}" class="min-w-0">
-										<h3 class="text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)] transition-colors group-hover:text-[var(--color-primary)]">
+										<h3 class="text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)] transition-colors group-hover:text-[var(--color-primary-text)]">
 											{job.title}
 										</h3>
 									</a>
@@ -629,7 +629,7 @@
 										</span>
 									{/if}
 									{#if field(job, 'is_featured') === 'true'}
-										<span class="inline-flex items-center rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+										<span class="inline-flex items-center rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary-text)]">
 											{t('jobs.featured', 'Featured')}
 										</span>
 									{/if}
@@ -677,7 +677,7 @@
 								<div class="flex items-center justify-between gap-3">
 									<a
 										href="/jobs/{job.slug}"
-										class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
+										class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 									>
 										{t('jobs.view_details', 'View Details')}
 										<ChevronRight class="rtl:-scale-x-100" size={15} />
@@ -687,7 +687,7 @@
 											href={safeHttpUrl(field(job, 'application_url'))}
 											target="_blank"
 											rel="noopener noreferrer"
-											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)]/10 px-4 py-2 text-sm font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/20"
+											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)]/10 px-4 py-2 text-sm font-medium text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary)]/20"
 										>
 											{t('jobs.quick_apply', 'Quick Apply')}
 											<ArrowRight class="rtl:-scale-x-100" size={15} />
@@ -695,7 +695,7 @@
 									{:else}
 										<a
 											href="/jobs/{job.slug}#apply"
-											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)]/10 px-4 py-2 text-sm font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/20"
+											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)]/10 px-4 py-2 text-sm font-medium text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary)]/20"
 										>
 											{t('jobs.quick_apply', 'Quick Apply')}
 											<ArrowRight class="rtl:-scale-x-100" size={15} />

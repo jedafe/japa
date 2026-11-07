@@ -615,7 +615,7 @@
 								href={activeConversation?.conversation_type === 'org'
 									? `/org/${activeConversation.other_username}`
 									: `/u/${activeConversation.other_username}`}
-								class="truncate text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+								class="truncate text-xs text-[var(--color-muted)] hover:text-[var(--color-primary-text)]"
 								>@{activeConversation.other_username}</a
 							>
 						{/if}
@@ -683,7 +683,7 @@
 													href="/services/{msg.context_slug}"
 													class="mb-1.5 flex items-center gap-2 rounded-[var(--radius)] border px-2.5 py-1.5 text-xs {mine
 														? 'border-[var(--color-primary-contrast)]/30 text-[var(--color-primary-contrast)]'
-														: 'border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]'}"
+														: 'border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]'}"
 												>
 													<Package size={13} aria-hidden="true" />
 													<span class="truncate font-medium"

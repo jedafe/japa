@@ -30,6 +30,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -103,8 +104,11 @@ type safeTransport struct {
 // newSafeTransport returns a safeTransport. When allowPrivate is false the
 // underlying transport's DialContext is wrapped with the private-IP dial
 // guard; when true (test-only opt-out) the plain cloned transport is used
-// so httptest servers bound to 127.0.0.1 stay reachable.
-func newSafeTransport(allowPrivate bool) *safeTransport {
+// so httptest servers bound to 127.0.0.1 stay reachable. A non-nil proxy
+// func becomes the transport's per-request Proxy hook (egress pools);
+// with a proxy engaged the dial guard validates the PROXY dial while the
+// target's private-IP-literal check happens in the picker.
+func newSafeTransport(allowPrivate bool, proxy func(*http.Request) (*url.URL, error)) *safeTransport {
 	t := http.DefaultTransport.(*http.Transport).Clone() //nolint:forcetypeassert // stdlib guarantees the concrete type
 	if !allowPrivate {
 		base := t.DialContext
@@ -114,6 +118,10 @@ func newSafeTransport(allowPrivate bool) *safeTransport {
 		}
 
 		t.DialContext = guardedDialContext(base)
+	}
+
+	if proxy != nil {
+		t.Proxy = proxy
 	}
 
 	return &safeTransport{base: t}
@@ -321,10 +329,15 @@ func checkRedirectURL(req *http.Request, via []*http.Request, allowPrivate bool)
 // configuration — every guard on.
 type SafeClientOpts struct {
 	// AllowPrivate disables the private-IP guards (dial-time and redirect).
-	// It exists ONLY for tests: httptest servers bind to 127.0.0.1, which the
+	// It exists ONLY for tests: httptest servers bound to 127.0.0.1, which the
 	// guard would otherwise reject. Never set it in production wiring —
 	// server.go and the worker use NewSafeClient (guard on).
 	AllowPrivate bool
+	// Proxy is the transport's per-request proxy hook (egress pools —
+	// see egress.go). Nil means direct egress, the production default;
+	// the picker returns nil itself for unmapped domains, so wiring it
+	// unconditionally still leaves non-listed hosts on the host's own IP.
+	Proxy func(*http.Request) (*url.URL, error)
 }
 
 // NewSafeClient returns an *http.Client hardened against first-hop and
@@ -350,7 +363,7 @@ func NewSafeClient(timeout time.Duration, maxBody int64) *http.Client {
 // httptest targets on loopback.
 func NewSafeClientOpts(timeout time.Duration, _ int64, opts SafeClientOpts) *http.Client {
 	return &http.Client{
-		Transport: newSafeTransport(opts.AllowPrivate),
+		Transport: newSafeTransport(opts.AllowPrivate, opts.Proxy),
 		Timeout:   timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return checkRedirectURL(req, via, opts.AllowPrivate)

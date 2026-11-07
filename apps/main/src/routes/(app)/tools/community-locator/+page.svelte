@@ -465,7 +465,7 @@
 
 				{#if submitSuccess}
 					<div class="mb-6 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3 text-sm text-[var(--color-text)] flex items-center gap-2">
-						<CheckCircle2 size={16} class="text-[var(--color-primary)]" />
+						<CheckCircle2 size={16} class="text-[var(--color-primary-text)]" />
 						{t('community_locator.submit_success', 'Organisation submitted — it will appear here once reviewed by our moderators.')}
 					</div>
 				{/if}
@@ -676,7 +676,7 @@
 										<div class="flex items-center gap-2 flex-wrap">
 											<span class="text-sm font-semibold text-[var(--color-text)]">{org.name}</span>
 											{#if org.is_verified}
-												<span class="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded">
+												<span class="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-[var(--color-primary)]/10 text-[var(--color-primary-text)] rounded">
 													<BadgeCheck size={12} />
 													{t('community_locator.verified', 'Verified')}
 												</span>
@@ -725,7 +725,7 @@
 													href={org.website_url}
 													target="_blank"
 													rel="noopener noreferrer"
-													class="text-[var(--color-primary)] hover:underline"
+													class="text-[var(--color-primary-text)] hover:underline"
 												>
 													{org.website_url}
 												</a>
@@ -744,7 +744,7 @@
 													href={mapsUrl(org.latitude, org.longitude)}
 													target="_blank"
 													rel="noopener noreferrer"
-													class="text-[var(--color-primary)] hover:underline"
+													class="text-[var(--color-primary-text)] hover:underline"
 												>
 													{t('community_locator.view_on_map', 'View on map')}
 												</a>
@@ -757,7 +757,7 @@
 										</div>
 										<a
 											href="/tools/community-locator/{org.slug}"
-											class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+											class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
 										>
 											{t('common.view_details', 'View details')}
 										</a>
@@ -769,7 +769,7 @@
 											</p>
 											<a
 												href={`/spaces/${org.japaconnect_space_slug || org.japaconnect_space_id}`}
-												class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+												class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
 											>
 												<Users size={14} />
 												{t('community_locator.view_space', 'View Space — posts, members & events')}
@@ -780,7 +780,7 @@
 										<!-- Claim action — only meaningful while unclaimed -->
 										<div class="pt-2">
 											{#if claimedIds.has(org.id)}
-												<span class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)]">
+												<span class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)]">
 													<CheckCircle2 size={16} />
 													{t('community_locator.claimed_locally', 'Claim submitted — pending review')}
 												</span>
@@ -799,7 +799,7 @@
 													type="button"
 													onclick={() => claimOrg(org.id)}
 													disabled={claimingId === org.id}
-													class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[var(--color-border)] rounded-[var(--radius)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors disabled:opacity-50"
+													class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[var(--color-border)] rounded-[var(--radius)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] transition-colors disabled:opacity-50"
 												>
 													{#if claimingId === org.id}
 														<Loader2 size={14} class="animate-spin" />
@@ -816,7 +816,7 @@
 												<button
 													type="button"
 													onclick={() => (showRegisterPrompt = true)}
-													class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[var(--color-border)] rounded-[var(--radius)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors"
+													class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[var(--color-border)] rounded-[var(--radius)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] transition-colors"
 												>
 													<Hand size={14} />
 													{t('community_locator.claim', 'Claim this organisation')}

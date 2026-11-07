@@ -395,7 +395,7 @@
 														href={embassy.booking_url}
 														target="_blank"
 														rel="noopener noreferrer"
-														class="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline"
+														class="inline-flex items-center gap-1 text-[var(--color-primary-text)] hover:underline"
 													>
 														<ExternalLink class="rtl:-scale-x-100" size={12} />
 														{t('embassy_alerter.booking_page', 'Booking page')}
@@ -705,7 +705,7 @@
 				class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]"
 			>
 				{t('register.create_alerts_desc', 'Create a free account to set embassy appointment alerts and get notified when slots open.')}
-				<a href="/login" class="ms-1 text-[var(--color-primary)] hover:underline"
+				<a href="/login" class="ms-1 text-[var(--color-primary-text)] hover:underline"
 					>{t('common.sign_in', 'Sign in')}</a
 				>.
 			</div>

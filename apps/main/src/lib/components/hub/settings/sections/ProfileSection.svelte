@@ -178,7 +178,7 @@
 				{/if}
 				{#if profileSaving}
 					<div class="absolute inset-0 grid h-16 w-16 place-items-center rounded-full bg-[var(--color-surface)]/60">
-						<Loader2 size={16} class="animate-spin text-[var(--color-primary)]" />
+						<Loader2 size={16} class="animate-spin text-[var(--color-primary-text)]" />
 					</div>
 				{/if}
 				<button type="button" disabled={profileSaving} aria-label={t('settings.profile.change_avatar', 'Change avatar')} class="absolute -bottom-1 -end-1 grid h-6 w-6 cursor-pointer place-items-center rounded-full bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50" onclick={() => (avatarPickerOpen = true)}>
@@ -203,7 +203,7 @@
 				{/if}
 				{#if profileSaving}
 					<div class="absolute inset-0 grid place-items-center bg-[var(--color-surface)]/60">
-						<Loader2 size={18} class="animate-spin text-[var(--color-primary)]" />
+						<Loader2 size={18} class="animate-spin text-[var(--color-primary-text)]" />
 					</div>
 				{/if}
 				<button type="button" disabled={profileSaving} class="absolute bottom-2 end-2 inline-flex cursor-pointer items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-2 py-1 text-xs text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-50" onclick={() => (coverPickerOpen = true)}>

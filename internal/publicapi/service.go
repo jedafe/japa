@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/tiers"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -333,6 +334,37 @@ type Service struct {
 	intelReader      IntelReader
 	queries          *gen.Queries
 	adminChecker     adminChecker
+	flags            FeatureChecker
+}
+
+// FeatureChecker resolves feature flag state from feature_flags (§42).
+// *features.Checker satisfies it structurally.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+	EvalFlag(ctx context.Context, key string, sc features.CallerScope) features.EvalResult
+}
+
+// SetFeatureChecker injects the feature flag resolver so content reads
+// prune disabled/scoped-away feature content types.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.flags = c }
+
+// contentTypeUnreachable reports whether a contents.content_type's feature
+// flag makes it unreachable for this caller (§42) — the same .Enabled
+// contract features.Gate applies, so a hidden-but-enabled type still
+// serves. Used by single-item reads, parent checks, and draft creation.
+// Caller scope rides the ctx attached by features.ScopeMiddleware on the
+// /public/ group; unattached contexts evaluate globally.
+func (s *Service) contentTypeUnreachable(ctx context.Context, contentType string) bool {
+	res, ok := features.EvalContentType(ctx, s.flags, contentType)
+	return ok && !res.Enabled
+}
+
+// contentTypeHidden reports whether a contents.content_type's flag is
+// disabled OR merely hidden for this caller (§42) — the Enabled && Visible
+// projection contract. Used by listing/search surfaces.
+func (s *Service) contentTypeHidden(ctx context.Context, contentType string) bool {
+	res, ok := features.EvalContentType(ctx, s.flags, contentType)
+	return ok && !(res.Enabled && res.Visible)
 }
 
 // NewService creates a Service with the given store.
@@ -1060,6 +1092,11 @@ func (s *Service) ListPublishedContent(ctx context.Context, limit, offset int32)
 			&publishedAt, &createdAt,
 			&authorUsername, &spaceName); err != nil {
 			return nil, fmt.Errorf("list published content scan: %w", err)
+		}
+
+		// §42: skip content types hidden or disabled for this caller.
+		if s.contentTypeHidden(ctx, contentType) {
+			continue
 		}
 
 		item := map[string]any{

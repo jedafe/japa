@@ -125,7 +125,7 @@
 							>
 								{#if 'href' in row && row.href}
 									<a
-										class="text-[var(--color-primary)] hover:underline"
+										class="text-[var(--color-primary-text)] hover:underline"
 										href={row.href}
 										target="_blank"
 										rel="noopener noreferrer nofollow">{row.value}</a>
@@ -189,7 +189,7 @@
 			<span
 				class="mx-auto grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary)]/10"
 			>
-				<MessageSquare size={16} class="text-[var(--color-primary)]" aria-hidden="true" />
+				<MessageSquare size={16} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 			</span>
 			<h3 class="mt-2 text-sm font-bold text-[var(--color-text)]">
 				{t('services.mentor_questions', 'Questions?')}

@@ -148,7 +148,7 @@
 				aria-selected={activeTab === cat}
 				onclick={() => (activeTab = cat)}
 				class="inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === cat
-					? 'border-[var(--color-primary)] text-[var(--color-primary)]'
+					? 'border-[var(--color-primary)] text-[var(--color-primary-text)]'
 					: 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 			>
 				<Icon size={14} />

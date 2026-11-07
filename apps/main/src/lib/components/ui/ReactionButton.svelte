@@ -229,8 +229,8 @@
 		classProp ??
 			'inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]'
 	);
-	const triggerClass = $derived(baseClass + (triggerActive ? ' text-[var(--color-primary)]' : ''));
-	const simpleClass = $derived(baseClass + (simpleActive ? ' text-[var(--color-primary)]' : ''));
+	const triggerClass = $derived(baseClass + (triggerActive ? ' text-[var(--color-primary-text)]' : ''));
+	const simpleClass = $derived(baseClass + (simpleActive ? ' text-[var(--color-primary-text)]' : ''));
 </script>
 
 {#if reactionsEnabled}

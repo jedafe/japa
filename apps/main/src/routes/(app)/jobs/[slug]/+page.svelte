@@ -449,7 +449,7 @@
 					disabled={bookmarkPending}
 					aria-pressed={isBookmarked}
 					title={isBookmarked ? t('jobs.unsave', 'Remove from saved jobs') : t('jobs.save', 'Save this job')}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50 {isBookmarked ? 'border-[var(--color-primary)]/40 text-[var(--color-primary)]' : 'text-[var(--color-text)]'}"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50 {isBookmarked ? 'border-[var(--color-primary)]/40 text-[var(--color-primary-text)]' : 'text-[var(--color-text)]'}"
 				>
 					<Bookmark size={13} fill={isBookmarked ? 'currentColor' : 'none'} />
 					{isBookmarked ? t('jobs.saved', 'Saved') : t('common.save', 'Save')}
@@ -488,7 +488,7 @@
 							</span>
 						{/if}
 						{#if field('is_featured') === 'true'}
-							<span class="rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-[11px] font-medium text-[var(--color-primary)]">
+							<span class="rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-[11px] font-medium text-[var(--color-primary-text)]">
 								{t('jobs.featured', 'Featured')}
 							</span>
 						{/if}
@@ -497,12 +497,12 @@
 					{#if companyName}
 						<div class="mt-0.5 flex items-center gap-1 text-sm">
 							{#if orgHref}
-								<a href={orgHref} class="font-medium text-[var(--color-primary)] hover:underline">{companyName}</a>
+								<a href={orgHref} class="font-medium text-[var(--color-primary-text)] hover:underline">{companyName}</a>
 							{:else}
 								<span class="font-medium text-[var(--color-text)]">{companyName}</span>
 							{/if}
 							{#if companyVerified}
-								<BadgeCheck size={15} class="text-[var(--color-primary)]" />
+								<BadgeCheck size={15} class="text-[var(--color-primary-text)]" />
 							{/if}
 						</div>
 					{/if}
@@ -529,7 +529,7 @@
 								slug={source.slug}
 								name={source.name}
 								avatar={source.logo_url}
-								class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
+								class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary-text)] hover:underline"
 							>
 								{#snippet trigger()}
 									{t('jobs.source', 'Source')}: {source.name}
@@ -540,7 +540,7 @@
 									href={safeHttpUrl(source.source_url)}
 									target="_blank"
 									rel="noopener noreferrer"
-									class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+									class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary-text)]"
 									aria-label={t('jobs.original_source', 'View original source')}
 								>
 									<ExternalLink class="rtl:-scale-x-100" size={13} />
@@ -558,7 +558,7 @@
 						<div class="inline-flex items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-success)]/10 px-4 py-2.5 text-sm font-medium text-[var(--color-success)]">
 							<CheckCircle2 size={16} /> {t('jobs.status_applied', 'Applied')}
 						</div>
-						<a href="/me/applications" class="text-center text-xs text-[var(--color-primary)] hover:underline">
+						<a href="/me/applications" class="text-center text-xs text-[var(--color-primary-text)] hover:underline">
 							{t('jobs.my_applications_link', 'My applications')} →
 						</a>
 					{:else if externalApplyUrl}
@@ -588,7 +588,7 @@
 				<a
 					href="#{tab.id}"
 					onclick={() => (activeTab = tab.id)}
-					class="border-b-2 pb-2.5 pt-2 text-sm font-medium whitespace-nowrap transition-colors {activeTab === tab.id ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+					class="border-b-2 pb-2.5 pt-2 text-sm font-medium whitespace-nowrap transition-colors {activeTab === tab.id ? 'border-[var(--color-primary)] text-[var(--color-primary-text)]' : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 				>
 					{tab.label}
 				</a>
@@ -629,7 +629,7 @@
 								{#each benefits() as benefit (benefit.label)}
 									{@const BIcon = benefit.icon}
 									<li class="flex items-start gap-2.5 text-sm text-[var(--color-text)]">
-										<BIcon size={17} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+										<BIcon size={17} class="mt-0.5 shrink-0 text-[var(--color-primary-text)]" />
 										<span>{benefit.label}</span>
 									</li>
 								{/each}
@@ -663,7 +663,7 @@
 						</a>
 					{:else if !authed}
 						<p class="text-sm text-[var(--color-muted)]">
-							<a href="/login?redirect={encodeURIComponent(page.url.pathname)}" class="text-[var(--color-primary)] hover:underline">
+							<a href="/login?redirect={encodeURIComponent(page.url.pathname)}" class="text-[var(--color-primary-text)] hover:underline">
 								{t('common.sign_in', 'Sign in')}
 							</a>
 							{t('jobs.apply_auth_required', ' to apply for this job.')}
@@ -675,7 +675,7 @@
 								{t('jobs.applied_state', 'You have applied to this job.')}
 								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs capitalize">{myApplication.status}</span>
 							</div>
-							<a href="/me/applications" class="text-xs text-[var(--color-primary)] hover:underline">
+							<a href="/me/applications" class="text-xs text-[var(--color-primary-text)] hover:underline">
 								{t('jobs.my_applications_link', 'My applications')} →
 							</a>
 						</div>
@@ -721,7 +721,7 @@
 								<p class="text-xs text-[var(--color-muted)]">
 									{t('jobs.cv_formats', 'PDF, DOC, DOCX, ODT, RTF, TXT or MD')} ·
 									{t('jobs.cv_formatter_hint', 'Need a polished CV?')}
-									<a href="/tools/cv-formatter" target="_blank" rel="noopener" class="text-[var(--color-primary)] hover:underline">
+									<a href="/tools/cv-formatter" target="_blank" rel="noopener" class="text-[var(--color-primary-text)] hover:underline">
 										{t('jobs.cv_formatter_link', 'Open the CV formatter')}
 									</a>
 								</p>
@@ -859,7 +859,7 @@
 								<div class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
 									<span class="truncate">{companyName}</span>
 									{#if companyVerified}
-										<BadgeCheck size={13} class="shrink-0 text-[var(--color-primary)]" />
+										<BadgeCheck size={13} class="shrink-0 text-[var(--color-primary-text)]" />
 									{/if}
 								</div>
 							</div>
@@ -868,11 +868,11 @@
 							<p class="mt-3 text-xs leading-relaxed text-[var(--color-muted)]">{data.org.description ?? data.org.tagline}</p>
 						{/if}
 						{#if orgHref}
-							<a href={orgHref} class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline">
+							<a href={orgHref} class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)] hover:underline">
 								{t('jobs.visit_company', 'Visit company page')} <ChevronRight class="rtl:-scale-x-100" size={13} />
 							</a>
 						{:else if safeHttpUrl(field('company_website'))}
-							<a href={safeHttpUrl(field('company_website'))} target="_blank" rel="noopener noreferrer" class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline">
+							<a href={safeHttpUrl(field('company_website'))} target="_blank" rel="noopener noreferrer" class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)] hover:underline">
 								{t('jobs.visit_company', 'Visit company page')} <ExternalLink class="rtl:-scale-x-100" size={12} />
 							</a>
 						{/if}
@@ -888,7 +888,7 @@
 						<ul class="space-y-3">
 							{#each data.moreJobs as item (item.id)}
 								<li>
-									<a href="/jobs/{item.slug}" class="block text-sm font-medium text-[var(--color-primary)] hover:underline">
+									<a href="/jobs/{item.slug}" class="block text-sm font-medium text-[var(--color-primary-text)] hover:underline">
 										{item.title}
 									</a>
 									{#if item.published_at}
@@ -898,7 +898,7 @@
 							{/each}
 						</ul>
 						{#if orgHref}
-							<a href="{orgHref}?tab=jobs" class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline">
+							<a href="{orgHref}?tab=jobs" class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)] hover:underline">
 								{t('jobs.view_all_jobs', 'View all jobs')} <ChevronRight class="rtl:-scale-x-100" size={13} />
 							</a>
 						{/if}

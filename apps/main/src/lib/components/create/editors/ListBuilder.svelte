@@ -608,7 +608,7 @@
 	}
 	.mode-btn.active {
 		background: var(--color-surface);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
 	}
 
@@ -636,7 +636,7 @@
 		padding: 0 6px;
 		border-radius: 999px;
 		background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		font-size: 0.75rem;
 		font-weight: 700;
 		flex-shrink: 0;
@@ -796,7 +796,7 @@
 	.add-btn:hover:not(:disabled) {
 		background: var(--color-surface-subtle);
 		border-color: var(--color-primary);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 	.add-btn:disabled {
 		opacity: 0.5;

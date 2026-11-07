@@ -244,7 +244,7 @@
 		{#if errorCode === 'ama_active_exists' && activeSessionId}
 			<a
 				href={`/ama/${activeSessionId}`}
-				class="block rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-primary)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				class="block rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 			>
 				{t('ama.view_active_session', 'View your active session')}
 			</a>

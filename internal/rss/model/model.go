@@ -188,6 +188,28 @@ func TypeFeeds() []TypeFeed {
 	return out
 }
 
+// ContentTypeFeatureFlag maps a contents.content_type value to the
+// feature_flags key that gates content of that type (§42). Canonical
+// registry shared by feed, search, RSS (handlers + rss:regenerate worker),
+// and trending so every public projection prunes the same set. Ungated core
+// types (guide, page, news…) are intentionally absent — they are never
+// pruned. Lives here — a leaf package — so both internal/features and
+// internal/worker importers can read it without an import cycle.
+var ContentTypeFeatureFlag = map[string]string{
+	"story":           "story.enabled",
+	"video":           "video.enabled",
+	"list":            "list.enabled",
+	"comparison":      "feature.comparison",
+	"blog_post":       "feature.blog",
+	"discussion":      "feature.forum",
+	"forum_thread":    "feature.forum",
+	"job_listing":     "jobs.enabled",
+	"service_listing": "service_directory.enabled",
+	"wiki_page":       "wiki.enabled",
+	"event":           "calendar.enabled",
+	"achievement":     "achievement.enabled",
+}
+
 // TypeFeedForPrefix resolves a route prefix to its TypeFeed, or false.
 func TypeFeedForPrefix(prefix string) (TypeFeed, bool) {
 	for _, tf := range typeFeeds {

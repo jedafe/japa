@@ -100,8 +100,8 @@
 				? t('roadmap.unvote', 'Remove vote')
 				: t('roadmap.vote', 'Vote')}
 	class="inline-flex w-12 shrink-0 flex-col items-center justify-center gap-0.5 rounded-[var(--radius)] border px-2 py-1.5 text-xs font-semibold transition-colors [font-variant-numeric:tabular-nums] disabled:opacity-60 {voted
-		? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-		: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-subtle)] hover:border-[var(--color-primary)]/50 hover:text-[var(--color-primary)]'}"
+		? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
+		: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-subtle)] hover:border-[var(--color-primary)]/50 hover:text-[var(--color-primary-text)]'}"
 >
 	<ChevronUp size={16} strokeWidth={2.5} />
 	<span>{count}</span>

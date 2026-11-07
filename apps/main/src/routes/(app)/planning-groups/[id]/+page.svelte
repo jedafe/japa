@@ -413,7 +413,7 @@
 							<li class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1 text-xs text-[var(--color-text)]">
 								{m.username}
 								{#if m.user_id === group.owner_id}
-									<span class="font-medium text-[var(--color-primary)]">★</span>
+									<span class="font-medium text-[var(--color-primary-text)]">★</span>
 								{/if}
 							</li>
 						{/each}

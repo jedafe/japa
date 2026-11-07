@@ -22,7 +22,7 @@
 		aria-label={t('ai.body.button_label', 'japa AI')}
 		title={t('ai.body.button_label', 'japa AI')}
 	>
-		<Sparkles size={22} class="text-[var(--color-primary)]" />
+		<Sparkles size={22} class="text-[var(--color-primary-text)]" />
 	</button>
 {:else}
 	<button
@@ -31,7 +31,7 @@
 		onclick={() => onclick?.()}
 		class="inline-flex min-h-11 min-w-11 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50 {klass}"
 	>
-		<Sparkles size={16} class="text-[var(--color-primary)]" />
+		<Sparkles size={16} class="text-[var(--color-primary-text)]" />
 		{t('ai.body.button_label', 'japa AI')}
 	</button>
 {/if}

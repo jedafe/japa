@@ -253,6 +253,10 @@ func (s *Service) TagFeed(ctx context.Context, tagSlug, cursor string, limit int
 
 	items := make([]PublicFeedItem, 0, len(rows))
 	for _, r := range rows {
+		// §42: drop content types hidden or disabled for this caller.
+		if s.contentTypeHidden(ctx, r.ContentType) {
+			continue
+		}
 		items = append(items, tagRowToFeedItem(r))
 	}
 
@@ -417,6 +421,9 @@ func (s *Service) SemanticSearch(ctx context.Context, viewerID pgtype.UUID, quer
 			var cached SemanticSearchResult
 			if json.Unmarshal(raw, &cached) == nil {
 				cached.Cached = true
+				// §42: cached sets are flag-agnostic — prune gated content
+				// types per caller before truncating.
+				s.filterGatedSemanticHits(ctx, &cached)
 				sliceSemanticHits(&cached, limit)
 
 				return &cached, nil
@@ -458,9 +465,25 @@ func (s *Service) SemanticSearch(ctx context.Context, viewerID pgtype.UUID, quer
 		}
 	}
 
+	// §42: prune gated content types per caller — the cache stores the
+	// flag-agnostic set so scope is never baked in.
+	s.filterGatedSemanticHits(ctx, result)
 	sliceSemanticHits(result, limit)
 
 	return result, nil
+}
+
+// filterGatedSemanticHits drops hits whose content_type's feature flag is
+// off for this caller, in place.
+func (s *Service) filterGatedSemanticHits(ctx context.Context, result *SemanticSearchResult) {
+	filtered := result.Data[:0]
+	for _, hit := range result.Data {
+		if s.contentTypeHidden(ctx, hit.ContentType) {
+			continue
+		}
+		filtered = append(filtered, hit)
+	}
+	result.Data = filtered
 }
 
 // sliceSemanticHits truncates result.Data to limit (no-op when limit <= 0).

@@ -64,6 +64,10 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: prune items whose content_type is hidden or disabled for this
+	// caller — a gated feature's posts must not surface on public profiles.
+	items = filterRowsByFlag(items, func(r gen.ListPublishedContentByAuthorRow) string { return r.ContentType }, h.flagged(r.Context()))
+
 	// Resolve template literals in card titles/bodies before the excerpt is
 	// derived from body_html (best-effort).
 	rc := buildRenderContext(r, "")
@@ -341,6 +345,10 @@ func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list content")
 		return
 	}
+
+	// §42: prune items whose content_type is hidden or disabled for this
+	// caller — a gated feature's posts must not surface on org profiles.
+	items = filterRowsByFlag(items, func(r gen.ListPublishedContentByOrganizationRow) string { return r.ContentType }, h.flagged(r.Context()))
 
 	// Resolve template literals in card titles/bodies before the excerpt is
 	// derived from body_html (best-effort).

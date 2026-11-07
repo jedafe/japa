@@ -91,7 +91,7 @@
 						/>
 					{:else}
 						<span
-							class="grid h-24 w-24 place-items-center rounded-full border-4 border-[var(--color-surface)] bg-[var(--color-primary)]/10 text-3xl font-bold text-[var(--color-primary)] sm:h-32 sm:w-32"
+							class="grid h-24 w-24 place-items-center rounded-full border-4 border-[var(--color-surface)] bg-[var(--color-primary)]/10 text-3xl font-bold text-[var(--color-primary-text)] sm:h-32 sm:w-32"
 						>
 							{initials}
 						</span>

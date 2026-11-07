@@ -1554,6 +1554,8 @@ ORDER BY
 -- Returns live member, post, and follower counts for a set of spaces.
 -- post_count counts published content assigned via the authoritative
 -- content_spaces junction (not just the backward-compat geo_space_id).
+-- §42: gated_types excludes feature-flagged content from post_count and
+-- discussion_count so public space cards never advertise gated totals.
 SELECT
  s.id,
  GREATEST(0, (
@@ -1568,6 +1570,7 @@ SELECT
  AND c.deleted_at IS NULL
  AND c.auto_hidden = false
  AND c.status = 'published'
+ AND NOT (c.content_type = ANY(COALESCE(@gated_types::text[], '{}'::text[])))
  )::int AS post_count,
  (
  SELECT COUNT(*) FROM follows f
@@ -1578,6 +1581,7 @@ SELECT
  JOIN forum_threads ft ON ft.content_id = c.id
  WHERE c.space_id = s.id
  AND c.status = 'published' AND c.deleted_at IS NULL AND c.visibility = 'public'
+ AND NOT (c.content_type = ANY(COALESCE(@gated_types::text[], '{}'::text[])))
  )::int AS discussion_count
 FROM spaces s
 WHERE s.id = ANY(@space_ids::uuid[]);

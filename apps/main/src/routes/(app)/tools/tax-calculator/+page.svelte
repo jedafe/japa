@@ -340,14 +340,14 @@
 															<ul class="space-y-1">
 																{#each items as item, i (i)}
 																	<li class="flex items-start gap-2 text-sm text-[var(--color-text)]">
-																		<CheckCircle2 size={14} class="text-[var(--color-primary)] flex-shrink-0 mt-0.5" />
+																		<CheckCircle2 size={14} class="text-[var(--color-primary-text)] flex-shrink-0 mt-0.5" />
 																		<span>
 																			{item.action}
 																			{#if item.deadline}
 																				<span class="text-[var(--color-muted)]">— {item.deadline}</span>
 																			{/if}
 																			{#if item.url}
-																				<a href={item.url} target="_blank" rel="noopener noreferrer" class="ms-1 text-[var(--color-primary)] hover:underline inline-flex items-center gap-0.5">
+																				<a href={item.url} target="_blank" rel="noopener noreferrer" class="ms-1 text-[var(--color-primary-text)] hover:underline inline-flex items-center gap-0.5">
 																					<ExternalLink class="rtl:-scale-x-100" size={12} />
 																				</a>
 																			{/if}
@@ -397,7 +397,7 @@
 										href={treaty.treaty_source_url}
 										target="_blank"
 										rel="noopener noreferrer"
-										class="mt-3 inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+										class="mt-3 inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
 									>
 										<ExternalLink class="rtl:-scale-x-100" size={14} />
 										{t('tax_calculator.treaty_source', 'Treaty source')}

@@ -113,13 +113,13 @@
 							onclick={() => goto(categoryHref(cat.value))}
 							class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-start text-xs data-[highlighted]:bg-[var(--color-surface-subtle)] {active ===
 							cat.value
-								? 'font-medium text-[var(--color-primary)]'
+								? 'font-medium text-[var(--color-primary-text)]'
 								: 'text-[var(--color-text-subtle)]'}"
 						>
 							<Icon size={13} class={ac.icon} />
 							<span class="flex-1 truncate">{cat.label}</span>
 							{#if active === cat.value}
-								<Check size={13} class="text-[var(--color-primary)]" />
+								<Check size={13} class="text-[var(--color-primary-text)]" />
 							{/if}
 						</DropdownMenu.Item>
 					{/each}

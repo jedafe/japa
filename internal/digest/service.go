@@ -23,6 +23,7 @@ import (
 	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/email"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/literals"
 	valkeycompat "github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -55,12 +56,10 @@ type EmailDispatcher interface {
 	Dispatch(ctx context.Context, req email.EmailRequest) (email.EmailResponse, error)
 }
 
-// FeatureChecker checks whether a feature flag is enabled for a platform.
-// Satisfied by *features.Checker via structural typing — defined locally to
-// avoid importing the features package (keeps the dependency graph clean).
-type FeatureChecker interface {
-	IsEnabled(ctx context.Context, key string) bool
-}
+// FeatureChecker is the feature-flag surface digest needs (§42) — scoped
+// EvalFlag for section pruning plus IsEnabled for the master toggle.
+// Satisfied by *features.Checker.
+type FeatureChecker = features.FlagEvaluator
 
 // DigestEditionDTO is the API response shape for a digest edition (listing).
 // //nolint:revive // exported: stutter naming is intentional.
@@ -148,6 +147,46 @@ func (s *Service) resolveContent(ctx context.Context, raw json.RawMessage) json.
 	return s.lit.ResolveJSON(ctx, raw, literals.NewContext(ctx, ""))
 }
 
+// filterGatedContent re-filters a stored edition's sections against the
+// CURRENT flag state (§42): an edition generated before a flag flip must not
+// keep serving gated content until the next generation. Sections map to
+// content types via rssmodel.ContentTypeFeatureFlag (top_threads →
+// forum_thread, events → event, story → story); members and polls are
+// entity data and pass through. Unattached contexts evaluate globally.
+// Key-level filtering preserves unknown/future section keys verbatim —
+// unmapped fields must not be dropped when one section is stripped.
+func (s *Service) filterGatedContent(ctx context.Context, raw json.RawMessage) json.RawMessage {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return raw
+	}
+
+	changed := false
+	for _, k := range [][2]string{
+		{"top_threads", "forum_thread"},
+		{"upcoming_threads", "forum_thread"},
+		{"events", "event"},
+		{"upcoming_events", "event"},
+		{"story", "story"},
+		{"featured_story", "story"},
+	} {
+		if _, ok := doc[k[0]]; ok && features.ContentTypeHidden(ctx, s.checker, k[1]) {
+			delete(doc, k[0])
+			changed = true
+		}
+	}
+	if !changed {
+		return raw
+	}
+
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return raw
+	}
+
+	return out
+}
+
 // Enabled checks whether the digest feature is enabled for the given platform.
 // Delegates to the features.Checker (feature_flags table) when available,
 // falling back to system_settings for backward compatibility.
@@ -185,7 +224,7 @@ func (s *Service) GetLatest(ctx context.Context, spaceID pgtype.UUID) (DigestEdi
 	}
 
 	dto := editionToDetailDTO(edition)
-	dto.Content = s.resolveContent(ctx, dto.Content)
+	dto.Content = s.resolveContent(ctx, s.filterGatedContent(ctx, dto.Content))
 
 	return dto, nil
 }
@@ -206,7 +245,7 @@ func (s *Service) Get(ctx context.Context, id pgtype.UUID) (DigestEditionDetailD
 	}
 
 	dto := editionToDetailDTO(edition)
-	dto.Content = s.resolveContent(ctx, dto.Content)
+	dto.Content = s.resolveContent(ctx, s.filterGatedContent(ctx, dto.Content))
 
 	return dto, nil
 }
@@ -378,7 +417,15 @@ func (s *Service) generateForPlatform(ctx context.Context, spaceID pgtype.UUID) 
 		return nil
 	}
 
-	content, err := s.store.AssembleDigestContent(ctx, spaceID)
+	// §42: sections backed by feature-flagged content types are skipped
+	// entirely — a disabled feature must not keep advertising its content
+	// inside an edition (worker path → global flag state).
+	gated := map[string]bool{}
+	for _, ct := range features.GatedContentTypes(ctx, s.checker) {
+		gated[ct] = true
+	}
+
+	content, err := s.store.AssembleDigestContent(ctx, spaceID, gated)
 	if err != nil {
 		return fmt.Errorf("digest: generate: assemble content: %w", err)
 	}
@@ -493,7 +540,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) e
 	subject := s.emailSubject(ctx)
 	// §14: resolve {{...}} placeholders before HTML render so outbound
 	// email never contains raw literals.
-	htmlBody := renderDigestEmail(s.resolveContent(ctx, edition.Content), baseURL)
+	htmlBody := renderDigestEmail(s.resolveContent(ctx, s.filterGatedContent(ctx, edition.Content)), baseURL)
 
 	sent, failed := 0, 0
 

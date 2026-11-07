@@ -211,7 +211,7 @@
 				{#if topThreads.length > 0}
 					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
 						<h2 class="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
-							<MessageSquare size={16} class="text-[var(--color-primary)]" />
+							<MessageSquare size={16} class="text-[var(--color-primary-text)]" />
 							{sectionTitles.top_threads}
 						</h2>
 						<ul class="space-y-2">
@@ -219,7 +219,7 @@
 								{@const href = threadHref(thread)}
 								<li>
 									{#if href}
-										<a href={href} class="text-sm text-[var(--color-primary)] hover:underline">
+										<a href={href} class="text-sm text-[var(--color-primary-text)] hover:underline">
 											{thread.title ?? t('digest.untitled_thread', 'Untitled thread')}
 										</a>
 									{:else}
@@ -236,7 +236,7 @@
 				{#if newMembers.length > 0}
 					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
 						<h2 class="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
-							<UserPlus size={16} class="text-[var(--color-primary)]" />
+							<UserPlus size={16} class="text-[var(--color-primary-text)]" />
 							{sectionTitles.new_members}
 						</h2>
 						<ul class="flex flex-wrap gap-2">
@@ -265,7 +265,7 @@
 				{#if events.length > 0}
 					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
 						<h2 class="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
-							<CalendarDays size={16} class="text-[var(--color-primary)]" />
+							<CalendarDays size={16} class="text-[var(--color-primary-text)]" />
 							{sectionTitles.events}
 						</h2>
 						<ul class="space-y-2">
@@ -278,7 +278,7 @@
 										</span>
 									{/if}
 									{#if href}
-										<a href={href} class="text-[var(--color-primary)] hover:underline">
+										<a href={href} class="text-[var(--color-primary-text)] hover:underline">
 											{ev.title ?? t('digest.untitled_event', 'Untitled event')}
 										</a>
 									{:else}
@@ -295,11 +295,11 @@
 				{#if story}
 					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
 						<h2 class="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
-							<BookOpen size={16} class="text-[var(--color-primary)]" />
+							<BookOpen size={16} class="text-[var(--color-primary-text)]" />
 							{sectionTitles.story}
 						</h2>
 						{#if storyHref(story)}
-							<a href={storyHref(story)} class="text-sm text-[var(--color-primary)] hover:underline">
+							<a href={storyHref(story)} class="text-sm text-[var(--color-primary-text)] hover:underline">
 								{story.title ?? t('digest.untitled_story', 'Untitled story')}
 							</a>
 						{:else}
@@ -313,14 +313,14 @@
 				{#if poll}
 					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
 						<h2 class="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
-							<Vote size={16} class="text-[var(--color-primary)]" />
+							<Vote size={16} class="text-[var(--color-primary-text)]" />
 							{sectionTitles.poll}
 						</h2>
 						<p class="text-sm text-[var(--color-text)]">
 							{poll.question ?? t('digest.no_poll_question', 'Community poll')}
 						</p>
 						{#if poll.url}
-							<a href={poll.url} class="mt-2 inline-block text-sm text-[var(--color-primary)] hover:underline">
+							<a href={poll.url} class="mt-2 inline-block text-sm text-[var(--color-primary-text)] hover:underline">
 								{t('digest.vote_now', 'Vote now')} →
 							</a>
 						{/if}

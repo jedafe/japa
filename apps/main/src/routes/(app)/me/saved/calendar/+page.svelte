@@ -91,7 +91,7 @@
 					<div class="flex items-start gap-3 px-4 py-3">
 						<a href="/calendar/{entry.id}" class="min-w-0 flex-1">
 							<div class="flex items-start justify-between gap-2">
-								<h2 class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)]">
+								<h2 class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary-text)]">
 									{entry.title}
 								</h2>
 								<span class="shrink-0 rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]">

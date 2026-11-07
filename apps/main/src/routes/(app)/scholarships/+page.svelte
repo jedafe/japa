@@ -509,7 +509,7 @@ const hasActiveFilters = $derived(
 						type="checkbox"
 						bind:checked={includeExpired}
 						onchange={applyFilters}
-						class="rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+						class="rounded border-[var(--color-border)] text-[var(--color-primary-text)] focus:ring-[var(--color-primary)]"
 					/>
 					{t('scholarships.include_expired', 'Include expired')}
 				</label>
@@ -537,7 +537,7 @@ const hasActiveFilters = $derived(
 					</h2>
 					<a
 						href="/scholarships/saved"
-						class="text-xs text-[var(--color-primary)] hover:underline"
+						class="text-xs text-[var(--color-primary-text)] hover:underline"
 					>
 						{t('scholarships.view_saved', 'View saved')}
 					</a>
@@ -549,7 +549,7 @@ const hasActiveFilters = $derived(
 								<div class="min-w-0 flex-1">
 									<a
 										href="/scholarships/{saved.guide_id}"
-										class="truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+										class="truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]"
 									>
 										{saved.title}
 									</a>
@@ -602,10 +602,10 @@ const hasActiveFilters = $derived(
 							<div class="flex items-start justify-between gap-3">
 								<div class="min-w-0 flex-1">
 									<div class="flex items-center gap-2">
-										<GraduationCap size={16} class="shrink-0 text-[var(--color-primary)]" />
+										<GraduationCap size={16} class="shrink-0 text-[var(--color-primary-text)]" />
 										<a
 											href="/scholarships/{s.guide_id}"
-											class="truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+											class="truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]"
 										>
 											{s.title}
 										</a>
@@ -653,7 +653,7 @@ const hasActiveFilters = $derived(
 											aria-label={savedIds.has(s.guide_id) ? t('common.saved', 'Saved') : t('common.save', 'Save')}
 										>
 											{#if savedIds.has(s.guide_id)}
-												<BookmarkCheck size={16} class="text-[var(--color-primary)]" />
+												<BookmarkCheck size={16} class="text-[var(--color-primary-text)]" />
 											{:else}
 												<Bookmark size={16} />
 											{/if}
@@ -688,7 +688,7 @@ const hasActiveFilters = $derived(
 												slug={source.slug}
 												name={source.name}
 												avatar={source.logo_url}
-												class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
+												class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary-text)] hover:underline"
 											>
 												{#snippet trigger()}
 													{t('scholarships.source', 'Source')}: {source.name}
@@ -699,7 +699,7 @@ const hasActiveFilters = $derived(
 													href={source.source_url}
 													target="_blank"
 													rel="noopener noreferrer"
-													class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+													class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary-text)]"
 													aria-label={t('scholarships.original_source', 'View original source')}
 												>
 													<ExternalLink class="rtl:-scale-x-100" size={12} />

@@ -318,7 +318,7 @@
 												{t('visa_routes.source', 'Source')}</a>
 									<a
 										href="/tools/visa-routes/{route.id}"
-										class="text-[var(--color-primary)] hover:underline"
+										class="text-[var(--color-primary-text)] hover:underline"
 										onclick={(e) => e.stopPropagation()}
 									>
 										{t('common.view', 'View')}
@@ -403,7 +403,7 @@
 															href={route.gov_source_url}
 															target="_blank"
 															rel="noopener noreferrer"
-															class="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline"
+															class="inline-flex items-center gap-1 text-[var(--color-primary-text)] hover:underline"
 														>
 															<ExternalLink class="rtl:-scale-x-100" size={12} />
 															{t('visa_routes.view_source', 'View')}

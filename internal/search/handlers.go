@@ -26,6 +26,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/literals"
+	rssmodel "github.com/jedafe/japa/internal/rss/model"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -866,19 +867,9 @@ func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 }
 
 // contentTypeFeatureFlag maps posts-index content_type values to the
-// feature_flags key that gates them (§42). Ungated core types (guide, page,
-// news…) are intentionally absent — they are never pruned.
-var contentTypeFeatureFlag = map[string]string{
-	"story":           "story.enabled",
-	"video":           "video.enabled",
-	"list":            "list.enabled",
-	"comparison":      "feature.comparison",
-	"blog_post":       "feature.blog",
-	"discussion":      "feature.forum",
-	"job_listing":     "jobs.enabled",
-	"service_listing": "service_directory.enabled",
-	"wiki_page":       "wiki.enabled",
-}
+// feature_flags key that gates them — canonical map lives in
+// rssmodel.ContentTypeFeatureFlag (§42).
+var contentTypeFeatureFlag = rssmodel.ContentTypeFeatureFlag
 
 // searchTypeFeatureFlag maps whole search result types (index-level) to
 // their feature flag — gated indexes drop out entirely when the flag is off.

@@ -371,7 +371,7 @@
 		<!-- Guests get a login prompt — bookings require an account (the
 		     price-preview endpoint itself accepts anonymous quotes). -->
 		<p class="text-sm text-[var(--color-muted)]">
-			<a href={loginHref} class="text-[var(--color-primary)] hover:underline">
+			<a href={loginHref} class="text-[var(--color-primary-text)] hover:underline">
 				{isPaid
 					? t('services.book_login_reserve', 'Log in to reserve')
 					: t('services.book_login_inquiry', 'Log in to send an inquiry')}

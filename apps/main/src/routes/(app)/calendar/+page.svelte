@@ -598,7 +598,7 @@
 									{#each dayEntries.slice(0, 3) as entry (entry.id)}
 										<a
 											href="/calendar/{entry.id}"
-											class="block truncate rounded px-1 py-0.5 text-[11px] font-medium transition-colors {isStale(entry) ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500/25' : 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20'}"
+											class="block truncate rounded px-1 py-0.5 text-[11px] font-medium transition-colors {isStale(entry) ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500/25' : 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)] hover:bg-[var(--color-primary)]/20'}"
 											title={entry.title}
 										>
 											{entry.title}
@@ -654,7 +654,7 @@
 								{#each dayEntries as entry (entry.id)}
 									<a
 										href="/calendar/{entry.id}"
-										class="block truncate rounded px-1.5 py-1 text-xs font-medium transition-colors {isStale(entry) ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500/25' : 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20'}"
+										class="block truncate rounded px-1.5 py-1 text-xs font-medium transition-colors {isStale(entry) ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500/25' : 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)] hover:bg-[var(--color-primary)]/20'}"
 										title={entry.title}
 									>
 										{entry.title}
@@ -707,7 +707,7 @@
 	<div class="flex items-start gap-3 px-4 py-3">
 		<a href="/calendar/{entry.id}" class="min-w-0 flex-1">
 			<div class="flex items-start justify-between gap-2">
-				<h2 class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)]">
+				<h2 class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary-text)]">
 					{entry.title}
 				</h2>
 				<span class="shrink-0 rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]">
@@ -732,7 +732,7 @@
 				{/if}
 
 				{#if entry.is_recurring}
-					<span class="inline-flex items-center gap-1 text-[var(--color-primary)]">
+					<span class="inline-flex items-center gap-1 text-[var(--color-primary-text)]">
 						<Repeat size={12} />
 						{entry.recurrence_pattern ?? t('calendar.recurring', 'Recurring')}
 					</span>
@@ -770,7 +770,7 @@
 					{#if savingId === entry.id}
 						<Loader2 size={14} class="animate-spin" />
 					{:else if savedIds.has(entry.id)}
-						<BookmarkCheck size={14} class="text-[var(--color-primary)]" />
+						<BookmarkCheck size={14} class="text-[var(--color-primary-text)]" />
 					{:else}
 						<Bookmark size={14} />
 					{/if}

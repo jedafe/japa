@@ -125,7 +125,7 @@
 							href={campaign.target_url}
 							target="_blank"
 							rel="noopener noreferrer"
-							class="text-xs text-[var(--color-primary)] hover:underline"
+							class="text-xs text-[var(--color-primary-text)] hover:underline"
 						>
 							{campaign.target_url}
 						</a>

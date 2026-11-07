@@ -48,7 +48,7 @@ const TINTS: Array<{ bg: string; fg: string }> = [
 	{ bg: 'color-mix(in srgb, var(--chart-3) 14%, var(--color-surface))', fg: 'var(--chart-3)' },
 	{ bg: 'color-mix(in srgb, var(--chart-4) 14%, var(--color-surface))', fg: 'var(--chart-4)' },
 	{ bg: 'color-mix(in srgb, var(--chart-5) 14%, var(--color-surface))', fg: 'var(--chart-5)' },
-	{ bg: 'color-mix(in srgb, var(--color-primary) 12%, var(--color-surface))', fg: 'var(--color-primary)' }
+	{ bg: 'color-mix(in srgb, var(--color-primary) 12%, var(--color-surface))', fg: 'var(--color-primary-text)' }
 ];
 
 const TINT_BY_SLUG: Record<string, number> = {

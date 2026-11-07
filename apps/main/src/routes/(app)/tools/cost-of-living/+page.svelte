@@ -447,7 +447,7 @@
 									type="submit"
 									disabled={savingJCE}
 									title={t('col.compare_in_jce_hint', 'Open in JCE comparison')}
-									class="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline disabled:opacity-50"
+									class="flex items-center gap-1 text-xs text-[var(--color-primary-text)] hover:underline disabled:opacity-50"
 								>
 									{#if savingJCE}
 										<Loader2 size={12} class="animate-spin" />
@@ -464,7 +464,7 @@
 							<a
 								href="/login?redirect={encodeURIComponent(page.url.pathname + page.url.search)}"
 								title={t('col.compare_in_jce_hint', 'Open in JCE comparison')}
-								class="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+								class="flex items-center gap-1 text-xs text-[var(--color-primary-text)] hover:underline"
 							>
 								<GitCompare size={12} />
 								{t('col.sign_in_to_compare', 'Sign in to compare')}
@@ -473,7 +473,7 @@
 						<button
 							type="button"
 							onclick={shareUrl}
-							class="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+							class="flex items-center gap-1 text-xs text-[var(--color-primary-text)] hover:underline"
 						>
 							<Share2 size={12} />
 							{copied ? t('common.copied', 'Copied!') : t('common.share', 'Share')}

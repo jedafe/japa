@@ -535,9 +535,9 @@
 		     specific country's opportunities. BUG-012 fix. -->
 		<div class="border-b border-[var(--color-border)] px-4 py-4">
 			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-				<Globe size={16} class="text-[var(--color-primary)]" />
+				<Globe size={16} class="text-[var(--color-primary-text)]" />
 				{#if selectedSpace?.slug}
-					<a href={`/spaces/${selectedSpace.slug}?tab=opportunities`} class="hover:text-[var(--color-primary)] hover:underline">{selectedCountryName}</a>
+					<a href={`/spaces/${selectedSpace.slug}?tab=opportunities`} class="hover:text-[var(--color-primary-text)] hover:underline">{selectedCountryName}</a>
 				{:else}
 					{selectedCountryName}
 				{/if}
@@ -615,7 +615,7 @@
 		{:else if activeTab === 'following'}
 			<div class="p-4">
 				<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-					<Pin size={16} class="text-[var(--color-primary)]" />
+					<Pin size={16} class="text-[var(--color-primary-text)]" />
 					{t('radar.followed', 'Following')}
 					{#if followedCountries.length > 0}
 						<span class="text-xs font-normal text-[var(--color-muted)]">({followedCountries.length})</span>

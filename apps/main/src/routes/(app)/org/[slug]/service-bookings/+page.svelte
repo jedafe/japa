@@ -140,7 +140,7 @@
 					<a
 						href={filterHref({ status: f.id })}
 						class="rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {data.status === f.id
-							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 							: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 					>{f.label}</a>
 				{/each}
@@ -151,7 +151,7 @@
 					<a
 						href={filterHref({ intent: f.id })}
 						class="rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {data.intent === f.id
-							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 							: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 					>{f.label}</a>
 				{/each}
@@ -208,7 +208,7 @@
 										<span class="inline-flex items-center gap-1"><Layers size={12} /> {b.tier_name}</span>
 									{/if}
 									{#if b.coupon_code}
-										<span class="inline-flex items-center gap-1 text-[var(--color-primary)]">
+										<span class="inline-flex items-center gap-1 text-[var(--color-primary-text)]">
 											<BadgePercent size={12} /> {b.coupon_code}{#if b.discount_amount != null}
 												&nbsp;−{formatMoney(b.discount_amount, b.fee_currency, null, { minor: true })}{/if}
 										</span>
@@ -242,7 +242,7 @@
 										onclick={() => { noteFor = { booking: b, status: tr.status }; noteText = ''; }}
 										class="rounded-[var(--radius)] border px-3 py-1.5 text-xs font-medium disabled:opacity-50 {tr.danger
 											? 'border-[var(--color-border)] text-[var(--color-danger)] hover:bg-red-500/10'
-											: 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20'}"
+											: 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)] hover:bg-[var(--color-primary)]/20'}"
 									>{tr.label}</button>
 								{/each}
 							</div>

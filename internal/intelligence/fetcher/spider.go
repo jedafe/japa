@@ -110,6 +110,12 @@ func (c *Composite) fetchSpider(ctx context.Context, eff sources.Source) (FetchR
 		return FetchResult{}, err
 	}
 
+	// A conditional-GET 304 carries no body — pass it through untouched
+	// instead of walking empty HTML for links.
+	if res.NotModified {
+		return res, nil
+	}
+
 	if !isHTMLDoc(res.ContentType) {
 		return FetchResult{}, fmt.Errorf("fetcher: spider: entry URL served %q, expected HTML", res.ContentType)
 	}

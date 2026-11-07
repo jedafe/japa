@@ -34,7 +34,7 @@
 		<button
 			type="button"
 			onclick={refresh}
-			class="inline-flex items-center gap-1.5 font-medium text-[var(--color-primary)] hover:underline"
+			class="inline-flex items-center gap-1.5 font-medium text-[var(--color-primary-text)] hover:underline"
 		>
 			<ArrowUp size={14} />
 			{t('feed.new_posts', '{n} new posts').replace('{n}', String(count))}

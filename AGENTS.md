@@ -17,3 +17,9 @@
 | apps/docs | 3004 |
 
 Start per app: `cd apps/<app> && bunx vite dev --port <port>`. Backend API target for dev proxies: `http://localhost:8080`.
+
+## Git / committing
+
+- After every fix, implementation, or pass, agents must always commit their work to `main`.
+- Commit on `main` only; do not leave changes uncommitted or on feature branches.
+- Write concise commit messages matching the repo style (see recent `git log --oneline`).

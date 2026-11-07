@@ -152,7 +152,7 @@
 	}
 	.cover-empty-btn:hover:not(:disabled) {
 		border-color: var(--color-primary);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 	.cover-empty-btn:disabled {
 		opacity: 0.6;

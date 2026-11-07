@@ -727,7 +727,7 @@
 						type="button"
 						class="flex items-center justify-between gap-3 rounded-[var(--radius)] border px-3 py-2.5 text-start text-sm {statusParam ===
 						tab.key
-							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary)]'
+							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary-text)]'
 							: 'border-transparent text-[var(--color-text)] hover:bg-[var(--color-surface-elevated)]'}"
 						onclick={() => {
 							applyFilter({ status: tab.key === 'pending' ? undefined : tab.key });
@@ -743,7 +743,7 @@
 				<button
 					type="button"
 					class="mt-1 flex items-center justify-between gap-3 rounded-[var(--radius)] border px-3 py-2.5 text-start text-sm {assignedParam
-						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary)]'
+						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 font-medium text-[var(--color-primary-text)]'
 						: 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-elevated)]'}"
 					onclick={() => {
 						applyFilter({ assigned: assignedParam ? undefined : 'me' });

@@ -206,7 +206,7 @@
 	.video-tab.active {
 		border-color: var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 	.video-row {
 		display: flex;

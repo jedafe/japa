@@ -161,7 +161,7 @@
 
 <div class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
 	<div class="mb-3 flex items-center gap-2">
-		<BarChart3 size={16} class="text-[var(--color-primary)]" />
+		<BarChart3 size={16} class="text-[var(--color-primary-text)]" />
 		<h3 class="text-sm font-semibold text-[var(--color-text)]">{poll.question}</h3>
 		{#if voting}
 			<Loader2 size={14} class="animate-spin text-[var(--color-muted)]" />

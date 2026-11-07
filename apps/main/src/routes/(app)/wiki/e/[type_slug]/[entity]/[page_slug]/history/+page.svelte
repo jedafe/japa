@@ -46,7 +46,7 @@
 			</ol>
 		</nav>
 		<h1 class="text-2xl font-bold text-[var(--color-text)]">{t('wiki.history', 'History')} — {page.title}</h1>
-		<a href={backHref} class="inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline">
+		<a href={backHref} class="inline-flex items-center gap-1 text-sm text-[var(--color-primary-text)] hover:underline">
 			<ArrowLeft class="rtl:-scale-x-100" size={14} />{t('wiki.back_to_page', 'Back to page')}
 		</a>
 	</header>

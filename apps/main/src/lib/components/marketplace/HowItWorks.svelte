@@ -34,7 +34,7 @@
 				<span
 					class="relative grid h-16 w-16 place-items-center rounded-full bg-[var(--color-primary)]/5 ring-1 ring-[var(--color-primary)]/15"
 				>
-					<Icon size={22} class="text-[var(--color-primary)]" aria-hidden="true" />
+					<Icon size={22} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 					<span
 						class="absolute -bottom-1 grid h-6 w-6 place-items-center rounded-full bg-[var(--color-primary)] text-[11px] font-bold text-[var(--color-primary-contrast)]"
 						aria-hidden="true"

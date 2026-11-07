@@ -57,7 +57,7 @@
 					>
 						{t(`settings.group.${item.group}`)}
 						{#if activeGroup === item.group}
-							<Check size={16} class="text-[var(--color-primary)]" />
+							<Check size={16} class="text-[var(--color-primary-text)]" />
 						{/if}
 					</a>
 				{/each}

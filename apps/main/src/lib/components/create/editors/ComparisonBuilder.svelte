@@ -592,7 +592,7 @@
 	.add-btn:hover {
 		background: var(--color-surface-subtle);
 		border-color: var(--color-primary);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 
 	.matrix-wrapper {

@@ -95,7 +95,7 @@
 						<dt class="text-xs text-[var(--color-muted)]">{fact.label}</dt>
 						<dd class="text-sm font-medium text-[var(--color-text)]">
 							{#if fact.href}
-								<a href={fact.href} class="text-[var(--color-primary)] hover:underline" data-sveltekit-preload-data="hover">{fact.value}</a>
+								<a href={fact.href} class="text-[var(--color-primary-text)] hover:underline" data-sveltekit-preload-data="hover">{fact.value}</a>
 							{:else}
 								{fact.value}
 							{/if}

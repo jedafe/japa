@@ -387,7 +387,7 @@
 	}
 	.og-empty:hover {
 		border-color: var(--color-primary);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 
 	.og-preview {

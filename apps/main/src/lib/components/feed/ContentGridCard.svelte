@@ -187,7 +187,7 @@
 		<button
 			type="button"
 			class="absolute end-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
-			class:text-[var(--color-primary)]={bookmarked}
+			class:text-[var(--color-primary-text)]={bookmarked}
 			aria-label={bookmarked ? t('feed.card.bookmarked', 'Bookmarked') : t('feed.card.bookmark', 'Bookmark')}
 			aria-pressed={bookmarked}
 			disabled={bookmarkPending}
@@ -204,7 +204,7 @@
 		     gave none of that (SEO/a11y). navigate() ignores clicks that
 		     land on an <a>, so no double navigation. -->
 		<h2 class="line-clamp-2 text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
-			<a href={canonicalHref} class="transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
+			<a href={canonicalHref} class="transition-colors hover:text-[var(--color-primary-text)]">{item.title}</a>
 		</h2>
 
 		{#if item.excerpt}
@@ -230,7 +230,7 @@
 					contentId={item.id}
 					count={item.reaction_count ?? 0}
 					ariaLabel={t('feed.card.like', 'Like')}
-					class="group/btn flex items-center gap-1.5 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+					class="group/btn flex items-center gap-1.5 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 					side="top"
 					align="center"
 				/>
@@ -240,7 +240,7 @@
 					url={shareUrl}
 					title={item.title}
 					size={18}
-					class="group/btn flex shrink-0 items-center justify-center rounded-full p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
+					class="group/btn flex shrink-0 items-center justify-center rounded-full p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary-text)]"
 				/>
 
 				{#if item.author_username && tipsEnabled && item.author_id !== viewerId}

@@ -201,8 +201,59 @@ func (p *PreflightChecker) check(ctx context.Context, lockKey, domain, checkURL 
 		return err
 	}
 
-	// 4. Robots.txt check (INTEL-006 fix).
+	// 4. Upstream cool-off: a domain the SITE just throttled (429) rejects
+	// new crawls until the window expires — checked after our own budget so
+	// a cooled-off domain does not also spend it.
+	if err := p.checkDomainCooloff(ctx, domain, releaseLock); err != nil {
+		return err
+	}
+
+	// 5. Robots.txt check (INTEL-006 fix).
 	return p.checkRobots(ctx, checkURL, releaseLock)
+}
+
+// domainCooloffKey is the Valkey key for an upstream-imposed cool-off —
+// stamped when a site answers 429 (jc:intel:domain_cooloff::{domain}) so
+// every channel on the host shares the penalty instead of each discovering
+// it independently. See valkey-keys-catalog Section INTEL.
+func domainCooloffKey(domain string) string {
+	return "jc:intel:domain_cooloff::" + domain
+}
+
+// checkDomainCooloff rejects the pre-flight while the domain's cool-off
+// key is present, returning ErrRateLimited so the worker backs off through
+// the existing upstream-limit retry path rather than retry-storming a site
+// that asked us to slow down. The lock is released on rejection.
+func (p *PreflightChecker) checkDomainCooloff(ctx context.Context, domain string, releaseLock func()) error {
+	if domain == "" {
+		return nil
+	}
+
+	n, err := p.rdb.Exists(ctx, domainCooloffKey(domain)).Result()
+	if err != nil {
+		releaseLock()
+		return fmt.Errorf("fetcher: domain cooloff: %w", err)
+	}
+
+	if n > 0 {
+		releaseLock()
+		return ErrRateLimited
+	}
+
+	return nil
+}
+
+// SetDomainCooloff stamps the upstream-imposed cool-off for a domain —
+// called by the worker when a site answers 429, with the TTL sized from
+// the site's own Retry-After hint when present. Best-effort: a Valkey
+// failure only loses the shared pacing, not correctness, so the error is
+// swallowed.
+func (p *PreflightChecker) SetDomainCooloff(ctx context.Context, domain string, ttl time.Duration) {
+	if p.rdb == nil || domain == "" || ttl <= 0 {
+		return
+	}
+
+	_ = p.rdb.Set(ctx, domainCooloffKey(domain), "1", ttl).Err()
 }
 
 // checkRateLimit enforces the per-domain sliding-window rate limit via the

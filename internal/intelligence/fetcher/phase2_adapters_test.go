@@ -137,6 +137,93 @@ func TestRenderFetcher_Fetch(t *testing.T) {
 	}
 }
 
+// TestRenderFetcher_BypassPolicy covers the anti-bot escalation gate:
+// stealth/solve/proxy_group/session_id reach the render service ONLY when
+// provider_config.bypass_policy = "auto" — an explicit per-source opt-in.
+// Under "never" or an unset policy the fields are stripped even when the
+// config tries to set them, so a channel cannot smuggle CAPTCHA solving
+// into a request without the operator's posture decision.
+func TestRenderFetcher_BypassPolicy(t *testing.T) {
+	t.Parallel()
+
+	var gotReq renderRequest
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotReq)
+
+		_, _ = w.Write([]byte(`{"html":"<html><body>rendered</body></html>","final_url":"https://example.com"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	f := NewRenderFetcher(srv.Client(), mockAdapterSettings{
+		"intel.render.service_url": srv.URL,
+	}, nil)
+
+	tests := []struct {
+		name        string
+		config      string
+		wantStealth bool
+		wantSolve   string
+		wantProxy   string
+	}{
+		{
+			name:        "auto forwards escalation fields",
+			config:      `{"bypass_policy":"auto","stealth":true,"solve":"auto","proxy_group":"residential-eu","session_id":"src_1"}`,
+			wantStealth: true, wantSolve: "auto", wantProxy: "residential-eu",
+		},
+		{
+			name:   "never strips them",
+			config: `{"bypass_policy":"never","stealth":true,"solve":"auto","proxy_group":"residential-eu"}`,
+		},
+		{
+			name:   "unset strips them",
+			config: `{"stealth":true,"solve":"auto","proxy_group":"residential-eu"}`,
+		},
+		{
+			name:   "typo value strips them",
+			config: `{"bypass_policy":"on","stealth":true,"solve":"auto"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotReq = renderRequest{}
+
+			if _, err := f.Fetch(t.Context(), sources.Source{
+				SourceUrl:      "https://example.com/spa",
+				ProviderConfig: []byte(tt.config),
+			}); err != nil {
+				t.Fatalf("Fetch: %v", err)
+			}
+
+			if gotReq.Stealth != tt.wantStealth || gotReq.Solve != tt.wantSolve || gotReq.ProxyGroup != tt.wantProxy {
+				t.Errorf("request = %+v, want stealth=%v solve=%q proxy=%q", gotReq, tt.wantStealth, tt.wantSolve, tt.wantProxy)
+			}
+		})
+	}
+}
+
+// TestRenderFetcher_WallDetected: a render service that flags
+// wall_detected (solver declined, partial challenge pass) must surface as
+// ErrBotWalled — not a thin body quietly baselined as content.
+func TestRenderFetcher_WallDetected(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"html":"<html><body>partial content</body></html>","final_url":"https://example.com","wall_detected":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	f := NewRenderFetcher(srv.Client(), mockAdapterSettings{
+		"intel.render.service_url": srv.URL,
+	}, nil)
+
+	_, err := f.Fetch(t.Context(), sources.Source{SourceUrl: "https://example.com/spa"})
+	if !errors.Is(err, ErrBotWalled) {
+		t.Fatalf("wall_detected fetch: err = %v, want ErrBotWalled", err)
+	}
+}
+
 func TestRenderFetcher_Circuit(t *testing.T) {
 	t.Parallel()
 

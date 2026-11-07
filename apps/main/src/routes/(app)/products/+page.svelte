@@ -353,7 +353,7 @@
 								aria-pressed={selectedType === ''}
 								class="flex w-20 flex-col items-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium transition-colors {selectedType ===
 								''
-									? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+									? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 									: 'text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
 							>
 								<Tag size={20} />
@@ -372,7 +372,7 @@
 									aria-pressed={selectedType === tp.slug}
 									class="flex w-20 flex-col items-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium transition-colors {selectedType ===
 									tp.slug
-										? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+										? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 										: 'text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
 								>
 									<TabIcon size={20} />
@@ -460,7 +460,7 @@
 								</p>
 								<a
 									href={productPath(it)}
-									class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border-2 border-dashed border-[var(--color-primary)]/60 px-3 py-2 text-sm font-bold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/5"
+									class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border-2 border-dashed border-[var(--color-primary)]/60 px-3 py-2 text-sm font-bold text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary)]/5"
 								>
 									{t('products.view_product', 'View product')}
 								</a>
@@ -505,7 +505,7 @@
 											</div>
 											<a
 												href={productPath(it)}
-												class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary)] hover:underline"
+												class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)] hover:underline"
 											>
 												{it.name}
 											</a>
@@ -557,7 +557,7 @@
 									<td class="px-3 py-3">
 										<a
 											href={productPath(it)}
-											class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)]"
+											class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)]"
 										>
 											{t('products.view_product', 'View product')}
 										</a>
@@ -589,7 +589,7 @@
 									</p>
 								{/if}
 							</a>
-							<div class="flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--color-primary)]">
+							<div class="flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--color-primary-text)]">
 								{#if it.price_from != null}
 									{t('product.from_price', 'From {price}', { price: String(it.price_from) })}
 								{:else if it.rating_avg != null}

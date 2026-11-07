@@ -408,7 +408,7 @@
 									<code class="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2 py-0.5 font-mono text-sm font-semibold text-[var(--color-text)]">{c.code}</code>
 								{/if}
 								<span class="text-sm font-medium text-[var(--color-text)]">{c.title}</span>
-								<span class="text-xs font-semibold text-[var(--color-primary)]">{discountLabel(c, currencies)}</span>
+								<span class="text-xs font-semibold text-[var(--color-primary-text)]">{discountLabel(c, currencies)}</span>
 								<span class="rounded-full px-2 py-0.5 text-xs font-medium {statusChip(c.status)}">
 									{t(`coupons.status_${c.status}`, c.status)}
 								</span>

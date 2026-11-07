@@ -54,7 +54,7 @@
 	<div class="mb-3 flex flex-wrap items-center justify-between gap-2">
 		<a
 			href={`${seriesBasePath}/${slug}`}
-			class="text-sm font-semibold text-[var(--color-primary)] transition-colors hover:underline"
+			class="text-sm font-semibold text-[var(--color-primary-text)] transition-colors hover:underline"
 		>
 			{title}
 			<span class="ms-1 text-xs font-normal text-[var(--color-text-subtle)]">

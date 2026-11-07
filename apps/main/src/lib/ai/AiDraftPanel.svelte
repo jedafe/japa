@@ -540,7 +540,7 @@
 		<div class="flex h-full flex-col">
 			<div class="flex shrink-0 items-center justify-between p-4 pb-2">
 				<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-					<Sparkles size={16} class="text-[var(--color-primary)]" />
+					<Sparkles size={16} class="text-[var(--color-primary-text)]" />
 					{t('ai.body.panel_title')}
 				</h2>
 				<button
@@ -560,7 +560,7 @@
 					role="tab"
 					aria-selected={panelTab === 'draft'}
 					onclick={() => (panelTab = 'draft')}
-					class="rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium transition-colors {panelTab === 'draft' ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'}"
+					class="rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium transition-colors {panelTab === 'draft' ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]' : 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'}"
 				>
 					{t('ai.body.tab_draft', 'Draft')}
 				</button>
@@ -569,7 +569,7 @@
 					role="tab"
 					aria-selected={panelTab === 'assist'}
 					onclick={() => (panelTab = 'assist')}
-					class="rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium transition-colors {panelTab === 'assist' ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'}"
+					class="rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium transition-colors {panelTab === 'assist' ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]' : 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'}"
 				>
 					{t('ai.assist.tab', 'Assist')}
 				</button>

@@ -123,7 +123,7 @@
 <Modal bind:open title={t('services.message_title', 'Message {name}', { name: recipientName })}>
 	{#if !authed}
 		<p class="text-sm text-[var(--color-muted)]">
-			<a href={loginHref} class="text-[var(--color-primary)] hover:underline">
+			<a href={loginHref} class="text-[var(--color-primary-text)] hover:underline">
 				{t('services.message_login', 'Log in to send a message')}
 			</a>
 		</p>

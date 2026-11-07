@@ -780,6 +780,15 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 		priorHash, _ = intelStores.GetLatestIntelRawDocHashForChannel(ctx, ch.ID)
 	}
 
+	// Conditional-GET validators from the previous capture: forwarding
+	// ETag/Last-Modified lets an unchanged upstream answer 304 instead of
+	// re-shipping the page — fewer upstream hits (fewer wall/429 triggers)
+	// and no document churn. Top-level fetches only; derived children
+	// compare per-URL and rarely repeat within a crawl window.
+	if opts.URLOverride == "" {
+		ctx = intelWithConditionalHeaders(ctx, ch.ID)
+	}
+
 	// Dispatch to the composite fetcher (selects adapter by channel crawl_method).
 	result, err := intelFetcher.Fetch(ctx, src, effCh)
 	if err != nil {
@@ -805,16 +814,56 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 			return fmt.Errorf("%s: derived fetch: %w", logPrefix, err)
 		}
 
-		handleChannelFetchFailure(ctx, ch, err)
-
 		if errors.Is(err, fetcher.ErrMethodNotImplemented) {
 			// A method with no fetch adapter: the failure is recorded so
 			// the channel still auto-disables, but retrying cannot change
 			// the outcome — no adapter is coming mid-flight.
+			handleChannelFetchFailure(ctx, ch, err)
 			return nil
 		}
 
-		return fmt.Errorf("%s: fetch: %w", logPrefix, err)
+		return classifyChannelFetchFailure(ctx, logPrefix, ch, err)
+	}
+
+	// 304 Not Modified: a successful crawl producing no document — release
+	// the lock, stamp the channel's success, and skip persistence +
+	// detect_changes entirely.
+	if result.NotModified {
+		intelReleaseChannelLock(ctx, channelIDStr, opts.URLOverride)
+
+		if opts.URLOverride == "" {
+			_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+				ID:      ch.ID,
+				Success: true,
+			})
+		}
+
+		slog.Info(logPrefix+": not modified", "channel_id", channelIDStr)
+
+		return nil
+	}
+
+	// Content-collapse poison guard (top-level fetches with a prior HTML
+	// baseline): a page that shrank past the collapse bounds is most
+	// likely a wall variant the signature scan can't see — persist nothing
+	// and flag the channel blocked rather than poisoning the raw-doc
+	// baseline and the extraction queue. When the render adapter is
+	// configured the page is re-fetched once through the headless path
+	// first: a legitimately thin page renders thin again, a wall renders
+	// its real DOM.
+	if opts.URLOverride == "" && intelLooksCollapsed(ctx, ch.ID, result) {
+		if rendered, rerr := intelRenderRefetch(ctx, src, ch); rerr == nil && !intelLooksCollapsed(ctx, ch.ID, rendered) {
+			result = rendered
+			slog.Info(logPrefix+": collapse refetch via render succeeded", "channel_id", channelIDStr)
+		} else {
+			intelReleaseChannelLock(ctx, channelIDStr, opts.URLOverride)
+
+			msg := fmt.Sprintf("content collapsed vs prior capture (%d bytes — suspected bot wall)", len(result.Body))
+			_ = intelSourcesStore.NoteChannelWall(ctx, ch.ID, msg, int32(appSettings.GetIntOr(ctx, "intel.wall_episode_secs", 21600)))
+			slog.Warn(logPrefix+": "+msg, "channel_id", channelIDStr)
+
+			return fmt.Errorf("%s: fetch: %w: %w", logPrefix, fetcher.ErrContentCollapsed, asynq.SkipRetry)
+		}
 	}
 
 	// Release the crawl lock after a successful fetch.
@@ -890,6 +939,13 @@ func resolveIntelFetchSource(ctx context.Context, p intelSourcePayload) (sourceI
 		return sourceID, src, false, nil
 	}
 
+	// Same active-status gate HandleIntelFetchChannel applies — a stray
+	// enqueue on a proposed/rejected source must not crawl it.
+	if src.Status != "active" {
+		slog.Info("task:intel:fetch_source: source not active, skipping", "source_id", sourceID.String(), "status", src.Status)
+		return sourceID, src, false, nil
+	}
+
 	// Manual sources (§106 video channels, entity-linked rows) carry no
 	// crawlable config — a stray enqueue must skip cleanly instead of
 	// erroring and tripping the consecutive-failures circuit-breaker.
@@ -950,6 +1006,22 @@ func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, 
 	if err != nil {
 		licenseBlocked := errors.Is(err, fetcher.ErrLicenseRepublish)
 
+		// Rate-limit is self-imposed pacing — the per-domain budget or the
+		// upstream cool-off stamped after a 429 — not a source failure.
+		// Note it for observability but never let it burn the
+		// consecutive_failures circuit-breaker. The error is tagged so
+		// RetryDelayFunc backs off to the upstream-rate-limit delay.
+		if errors.Is(err, fetcher.ErrRateLimited) {
+			if opts.URLOverride == "" {
+				_ = intelSourcesStore.NoteChannelError(ctx, gen.NoteIntelChannelErrorParams{
+					ID:               ch.ID,
+					LastErrorMessage: strPtr(err.Error()),
+				})
+			}
+
+			return fmt.Errorf("task:intel:fetch_channel: preflight: %w: %w", err, ErrUpstreamRateLimited)
+		}
+
 		if !errors.Is(err, fetcher.ErrCrawlLocked) && opts.URLOverride == "" {
 			// Derived-child preflight failures (robots, rate limit) are the
 			// child URL's problem — recording them on the channel row would
@@ -964,8 +1036,10 @@ func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, 
 				// The source's republish license is a legal fact — it
 				// cannot change mid-retry, so the channel can never crawl.
 				// Disable immediately instead of waiting out the
-				// consecutive-failure threshold.
-				if disableErr := intelSourcesStore.UpdateChannelEnabled(ctx, ch.ID, false); disableErr != nil {
+				// consecutive-failure threshold. disabled_by='license'
+				// keeps the channel out of the re-probe sweep — a legal
+				// block must not be re-fetched on a schedule.
+				if disableErr := intelSourcesStore.DisableChannelMarked(ctx, ch.ID, "license"); disableErr != nil {
 					slog.Warn("task:intel:fetch_channel: failed to disable license-blocked channel", "channel_id", ch.ID.String(), "error", disableErr)
 				} else {
 					slog.Warn("task:intel:fetch_channel: disabled license-blocked channel", "channel_id", ch.ID.String())
@@ -979,14 +1053,6 @@ func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, 
 			// Permanent gating failures — the crawl schedule, not asynq
 			// retries, is the right re-check cadence.
 			return fmt.Errorf("task:intel:fetch_channel: preflight: %w: %w", err, asynq.SkipRetry)
-		}
-
-		if errors.Is(err, fetcher.ErrRateLimited) {
-			// Per-domain rate limit — transient but must not retry at the
-			// default exponential cadence (a burst of same-domain channels
-			// keeps the limiter hot). Tag it so RetryDelayFunc backs off
-			// to the upstream-rate-limit delay.
-			return fmt.Errorf("task:intel:fetch_channel: preflight: %w: %w", err, ErrUpstreamRateLimited)
 		}
 
 		return fmt.Errorf("task:intel:fetch_channel: preflight: %w", err)
@@ -1014,8 +1080,9 @@ func intelReleaseChannelLock(ctx context.Context, channelID, urlOverride string)
 // handleChannelFetchFailure is the channel-scoped counterpart of the retired
 // source-level handleFetchFailure: releases the channel crawl lock, records
 // the failure on the channel row so consecutive_failures increments, and
-// auto-disables the channel via UpdateIntelChannelEnabled once it crosses
-// the intel.consecutive_failure_disable_threshold (default 5).
+// auto-disables the channel via DisableChannelMarked('circuit_breaker')
+// once it crosses the intel.consecutive_failure_disable_threshold
+// (default 5).
 func handleChannelFetchFailure(ctx context.Context, ch gen.IntelSourceChannel, fetchErr error) {
 	channelIDStr := ch.ID.String()
 
@@ -1031,14 +1098,189 @@ func handleChannelFetchFailure(ctx context.Context, ch gen.IntelSourceChannel, f
 	maybeAutoDisableChannel(ctx, ch)
 }
 
+// classifyChannelFetchFailure routes a primary-channel fetch failure by
+// FailureClass — the taxonomy that decides whether the failure counts
+// against consecutive_failures. In every case the crawl lock is released;
+// the class decides the rest:
+//
+//	throttled (HTTP 429): stamps the shared domain cool-off (sized by the
+//	  site's Retry-After when sent), notes the error, and returns tagged
+//	  ErrUpstreamRateLimited so RetryDelayFunc backs off hard instead of
+//	  retry-storming a site that asked us to slow down.
+//	blocked (bot wall / access denied): notes the error for ops triage
+//	  and waits for the next schedule — the implicit render/wayback
+//	  escalation already ran inside the fetch; retries can't beat a wall
+//	  and a wall is not a source-content failure, so the counter is
+//	  untouched.
+//	gone (404/410/other-4xx/DNS NXDOMAIN): counts toward auto-disable at
+//	  the tighter intel.gone_failure_disable_threshold — a dead URL does
+//	  not deserve the full five strikes; no retry mid-flight.
+//	transient (network/5xx/timeout): notes the error and returns the raw
+//	  failure for asynq retry — consecutive_failures stays untouched; a
+//	  flap cannot burn a channel toward auto-disable.
+func classifyChannelFetchFailure(ctx context.Context, logPrefix string, ch gen.IntelSourceChannel, fetchErr error) error {
+	channelIDStr := ch.ID.String()
+
+	intelReleaseChannelLock(ctx, channelIDStr, "")
+
+	noteErr := func() {
+		_ = intelSourcesStore.NoteChannelError(ctx, gen.NoteIntelChannelErrorParams{
+			ID:               ch.ID,
+			LastErrorMessage: strPtr(fetchErr.Error()),
+		})
+	}
+
+	switch fetcher.ClassifyFetchError(fetchErr) {
+	case fetcher.FailureThrottled:
+		noteErr()
+
+		cooloffSecs := 600
+		if appSettings != nil {
+			cooloffSecs = appSettings.GetIntOr(ctx, "intel.domain_cooloff_secs", 600)
+		}
+
+		var throttled *fetcher.ThrottledError
+		// A parsed Retry-After overrides the default only when it resolves
+		// to at least one second — a sub-second/zero hint (HTTP-date ~now)
+		// must not erase the cool-off entirely.
+		if errors.As(fetchErr, &throttled) && throttled.RetryAfter > 0 {
+			if secs := int(throttled.RetryAfter / time.Second); secs > 0 {
+				cooloffSecs = secs
+			}
+		}
+
+		if intelPreflight != nil {
+			intelPreflight.SetDomainCooloff(ctx, intelEntryURLHost(ch.EntryUrl), time.Duration(cooloffSecs)*time.Second)
+		}
+
+		slog.Warn(logPrefix+": upstream throttled, domain cool-off set", "channel_id", channelIDStr, "cooloff_secs", cooloffSecs)
+
+		return fmt.Errorf("%s: fetch: %w: %w", logPrefix, fetchErr, ErrUpstreamRateLimited)
+
+	case fetcher.FailureBlocked:
+		// Stamp the wall sighting (blocked_reason + wall_seen_count) so the
+		// control panel can distinguish "walled" from "erroring" channels —
+		// noteErr alone would flatten the wall into a generic error string.
+		wallEpisodeSecs := int32(appSettings.GetIntOr(ctx, "intel.wall_episode_secs", 21600))
+		_ = intelSourcesStore.NoteChannelWall(ctx, ch.ID, fetchErr.Error(), wallEpisodeSecs)
+		slog.Warn(logPrefix+": fetch blocked (bot wall/access denied), waiting for next schedule", "channel_id", channelIDStr, "error", fetchErr)
+
+		return fmt.Errorf("%s: fetch: %w: %w", logPrefix, fetchErr, asynq.SkipRetry)
+
+	case fetcher.FailureGone:
+		// Gone counts on the channel row like any content failure — but
+		// at the tighter gone threshold a dead URL disables fast.
+		_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+			ID:               ch.ID,
+			Success:          false,
+			LastErrorMessage: strPtr(fetchErr.Error()),
+		})
+		maybeAutoDisableChannelThreshold(ctx, ch, "intel.gone_failure_disable_threshold", 2)
+		slog.Warn(logPrefix+": fetch gone, channel counted toward disable", "channel_id", channelIDStr, "error", fetchErr)
+
+		return fmt.Errorf("%s: fetch: %w: %w", logPrefix, fetchErr, asynq.SkipRetry)
+
+	default: // FailureTransient
+		noteErr()
+		slog.Warn(logPrefix+": transient fetch failure, retrying", "channel_id", channelIDStr, "error", fetchErr)
+
+		return fmt.Errorf("%s: fetch: %w", logPrefix, fetchErr)
+	}
+}
+
+// intelLooksCollapsed applies the fetcher.CollapseConfig guard against the
+// channel's previous top-level HTML capture: a body that shrank below the
+// bounds reads as a wall stub, not editorial change. Only HTMLish captures
+// can collapse — a manifest, feed, or JSON body is legitimately small —
+// and only when a substantial baseline exists. Bounds come from
+// system_settings (intel.collapse_min_prev_bytes / collapse_ratio_pct /
+// collapse_max_bytes).
+func intelLooksCollapsed(ctx context.Context, channelID pgtype.UUID, result fetcher.FetchResult) bool {
+	// Cheap pre-filter before the baseline query: a capture whose content
+	// type can never be HTML skips the DB read entirely.
+	ct := strings.ToLower(result.ContentType)
+	if ct != "" && !strings.Contains(ct, "html") && !strings.Contains(ct, "text/plain") {
+		return false
+	}
+
+	prevLen, err := intelStores.GetLatestIntelRawDocBodyLenByChannel(ctx, channelID)
+	if err != nil || prevLen <= 0 {
+		return false
+	}
+
+	cfg := fetcher.DefaultCollapseConfig
+	if appSettings != nil {
+		cfg.MinPrevBytes = int64(appSettings.GetIntOr(ctx, "intel.collapse_min_prev_bytes", int(cfg.MinPrevBytes)))
+		cfg.RatioPct = int64(appSettings.GetIntOr(ctx, "intel.collapse_ratio_pct", int(cfg.RatioPct)))
+		cfg.MaxBytes = int64(appSettings.GetIntOr(ctx, "intel.collapse_max_bytes", int(cfg.MaxBytes)))
+	}
+
+	return cfg.LooksCollapsed(prevLen, result.ContentType, result.Body)
+}
+
+// intelRenderRefetch retries a collapse-suspect capture through the render
+// adapter — the headless DOM proves whether the thin body was a wall
+// (renders real content) or a legitimately thin page (renders thin again).
+// The render adapter answers ErrAdapterDisabled when no render service is
+// configured; the caller treats any error as "still collapsed".
+func intelRenderRefetch(ctx context.Context, src gen.IntelSource, ch gen.IntelSourceChannel) (fetcher.FetchResult, error) {
+	effCh := ch
+	effCh.CrawlMethod = string(sources.CrawlMethodRender)
+
+	return intelFetcher.Fetch(ctx, src, effCh)
+}
+
+// intelWithConditionalHeaders loads the channel's previous top-level
+// capture headers and attaches ETag/Last-Modified to the fetch context so
+// plain-GET adapters send If-None-Match/If-Modified-Since. Missing prior
+// docs, absent validators, or a lookup error all degrade to "send an
+// unconditional request" — the conditional is an optimization, never a
+// hard requirement.
+func intelWithConditionalHeaders(ctx context.Context, channelID pgtype.UUID) context.Context {
+	headers, err := intelStores.GetLatestIntelRawDocHTTPHeadersByChannel(ctx, channelID)
+	if err != nil || len(headers) == 0 {
+		return ctx
+	}
+
+	var etag, lastModified string
+	for k, v := range headers {
+		switch strings.ToLower(k) {
+		case "etag":
+			etag = v
+		case "last-modified":
+			lastModified = v
+		}
+	}
+
+	return fetcher.WithConditionals(ctx, etag, lastModified)
+}
+
+// intelEntryURLHost returns the entry URL's host — the domain scope the
+// shared cool-off keys on (matching CheckChannel's domain derivation).
+func intelEntryURLHost(entryURL string) string {
+	if u, err := url.Parse(entryURL); err == nil && u.Host != "" {
+		return u.Host
+	}
+
+	return ""
+}
+
 // maybeAutoDisableChannel auto-disables a channel once consecutive_failures
 // crosses the intel.consecutive_failure_disable_threshold (default 5).
 // Called after the failure has been recorded on the channel row — the row
 // value stashed on `ch` is the pre-increment count, hence the +1.
 func maybeAutoDisableChannel(ctx context.Context, ch gen.IntelSourceChannel) {
-	threshold := 5
+	maybeAutoDisableChannelThreshold(ctx, ch, "intel.consecutive_failure_disable_threshold", 5)
+}
+
+// maybeAutoDisableChannelThreshold is maybeAutoDisableChannel with a
+// caller-chosen threshold key — gone-class failures (404/410/DNS) disable
+// at the tighter intel.gone_failure_disable_threshold since a dead URL
+// does not deserve the full five strikes.
+func maybeAutoDisableChannelThreshold(ctx context.Context, ch gen.IntelSourceChannel, settingKey string, fallback int) {
+	threshold := fallback
 	if appSettings != nil {
-		threshold = appSettings.GetIntOr(ctx, "intel.consecutive_failure_disable_threshold", 5)
+		threshold = appSettings.GetIntOr(ctx, settingKey, fallback)
 	}
 
 	if threshold <= 0 || int64(ch.ConsecutiveFailures+1) < int64(threshold) {
@@ -1047,7 +1289,10 @@ func maybeAutoDisableChannel(ctx context.Context, ch gen.IntelSourceChannel) {
 
 	slog.Warn("task:intel:fetch_channel: disabling channel after consecutive failures", "channel_id", ch.ID.String(), "consecutive_failures", ch.ConsecutiveFailures+1, "threshold", threshold)
 
-	if disableErr := intelSourcesStore.UpdateChannelEnabled(ctx, ch.ID, false); disableErr != nil {
+	// disabled_by='circuit_breaker' marks the row as an automatic disable —
+	// the intel:reprobe_dead_channels sweep re-checks exactly this class,
+	// while 'admin' and 'license' disables stay off until an operator acts.
+	if disableErr := intelSourcesStore.DisableChannelMarked(ctx, ch.ID, "circuit_breaker"); disableErr != nil {
 		slog.Warn("task:intel:fetch_channel: failed to disable channel", "channel_id", ch.ID.String(), "error", disableErr)
 	}
 }
@@ -1235,6 +1480,21 @@ func intelManifestMethod(method string) bool {
 	m := sources.CrawlMethod(method)
 	return m == sources.CrawlMethodSitemap || m == sources.CrawlMethodWayback ||
 		m == sources.CrawlMethodSpider
+}
+
+// intelSchedulableMethod mirrors the method exclusion in
+// ListDueIntelChannels — manual, inbound (email/webhook), oneshot, and
+// xhr_sniff channels are never scheduled crawls, so an enabled channel of
+// those types doesn't count as a live crawlable surface when the
+// re-probe sweep decides whether a source is fully dead.
+func intelSchedulableMethod(method string) bool {
+	m := sources.CrawlMethod(method)
+	switch m {
+	case sources.CrawlMethodManual, sources.CrawlMethodOneshot, sources.CrawlMethodXHRSniff:
+		return false
+	}
+
+	return !sources.InboundMethod(m)
 }
 
 // intelIsManifestDoc reports whether a raw document is a sitemap/wayback
@@ -3421,6 +3681,165 @@ func HandleIntelRetryFailedSource(ctx context.Context, t *asynq.Task) error {
 	if payload != nil {
 		enqueueIntel(TypeIntelFetchSource, payload)
 	}
+
+	return nil
+}
+
+// HandleIntelReprobeDeadChannels is the periodic dead-channel re-check
+// (Section 11, intel:reprobe_dead_channels — every 6h). It selects
+// circuit-breaker-disabled channels (enabled=false AND
+// disabled_by='circuit_breaker' — operator ('admin') and legal ('license')
+// disables are never touched), re-runs the real fetch path under the
+// standard preflight gate, and re-enables the channel on success. A lifted
+// bot wall, a restored feed, or a revived endpoint resurrects the channel
+// instead of leaving it dead until manual resubmission; a still-dead
+// channel is left disabled with its error noted.
+// // The re-check is a health probe, not a crawl — no raw document is
+// persisted, so the changed-content baseline and next scheduled crawl are
+// untouched. Batch bounded by intel.reprobe_dead_channels_batch (default
+// 10); 0 disables the sweep.
+func HandleIntelReprobeDeadChannels(ctx context.Context, _ *asynq.Task) error {
+	defer recoverPanic("TypeIntelReprobeDeadChannels")
+	slog.Info("task:intel:reprobe_dead_channels")
+
+	if intelSourcesStore == nil || intelFetcher == nil || intelPreflight == nil {
+		slog.Warn("task:intel:reprobe_dead_channels: dependencies not wired, skipping")
+		return nil
+	}
+
+	batchSize := 10
+	if appSettings != nil {
+		batchSize = appSettings.GetIntOr(ctx, "intel.reprobe_dead_channels_batch", 10)
+	}
+	if batchSize <= 0 {
+		return nil
+	}
+
+	dead, err := intelSourcesStore.ListDisabledChannels(ctx, int32(batchSize)) // #nosec
+	if err != nil {
+		return fmt.Errorf("task:intel:reprobe_dead_channels: list disabled: %w", err)
+	}
+
+	revived, stillDead := 0, 0
+	deadSources := make(map[string]bool)
+
+	for _, ch := range dead {
+		src, err := intelSourcesStore.Get(ctx, ch.SourceID)
+		if err != nil || !src.Enabled || src.Status != "active" || verifySkipSource(src) {
+			// Same gate as ListDueChannels + probe_verify: the channel's
+			// fate follows its parent. Inactive/disabled sources stay
+			// out of the crawl set entirely; verify-exempt types
+			// (video_channel, non-auto manual) own their channels'
+			// lifecycle outside the intel fetch path.
+			continue
+		}
+
+		if !intelChannelConfigured(ctx, ch, src) {
+			// A breaker-disabled channel whose provider_config can't produce
+			// a working fetch can't prove liveness either way — mark the
+			// source so a fully-dead source still gets probe_verify, which
+			// materializes a correctly-configured replacement channel.
+			deadSources[ch.SourceID.String()] = true
+			continue
+		}
+
+		// Health probe through the same gate a scheduled crawl would hit:
+		// crawl lock, rate limit, license, robots.txt. Preflight records
+		// its own failures on the channel row; the fetch failure is noted
+		// via classifyChannelFetchFailure's no-counter branches — the
+		// channel stays disabled but keeps a fresh last_error_message.
+		if err := intelChannelPreflightCheck(ctx, ch, src, intelFetchOpts{}); err != nil {
+			// Preflight blocks (rate limit, robots, license) are "couldn't
+			// try", not proof of death — they don't feed the source-level
+			// re-probe set.
+			stillDead++
+			slog.Info("task:intel:reprobe_dead_channels: preflight blocked", "channel_id", ch.ID.String(), "error", err)
+			continue
+		}
+
+		result, err := intelFetcher.Fetch(ctx, src, ch)
+		if err != nil {
+			stillDead++
+			deadSources[ch.SourceID.String()] = true
+			intelReleaseChannelLock(ctx, ch.ID.String(), "")
+			if fetcher.ClassifyFetchError(err) == fetcher.FailureBlocked {
+				_ = intelSourcesStore.NoteChannelWall(ctx, ch.ID, "reprobe: "+err.Error(), int32(appSettings.GetIntOr(ctx, "intel.wall_episode_secs", 21600)))
+			} else {
+				_ = intelSourcesStore.NoteChannelError(ctx, gen.NoteIntelChannelErrorParams{
+					ID:               ch.ID,
+					LastErrorMessage: strPtr(fmt.Sprintf("reprobe: %v", err)),
+				})
+			}
+			slog.Info("task:intel:reprobe_dead_channels: still dead", "channel_id", ch.ID.String(), "error", err)
+			continue
+		}
+
+		intelReleaseChannelLock(ctx, ch.ID.String(), "")
+
+		// Any completed fetch — including a conditional-GET 304 — proves
+		// the endpoint is alive. Stamp the success first (resets the
+		// circuit-breaker, clears blocked_reason), then flip enabled — a
+		// crash between the two leaves a disabled-but-healthy row the next
+		// sweep retries, not an enabled row carrying stale failure state.
+		_ = intelSourcesStore.UpdateChannelCrawlStatus(ctx, gen.UpdateIntelChannelCrawlStatusParams{
+			ID:      ch.ID,
+			Success: true,
+		})
+
+		if err := intelSourcesStore.UpdateChannelEnabled(ctx, ch.ID, true); err != nil {
+			slog.Warn("task:intel:reprobe_dead_channels: re-enable failed", "channel_id", ch.ID.String(), "error", err)
+			continue
+		}
+
+		revived++
+		slog.Info("task:intel:reprobe_dead_channels: channel revived", "channel_id", ch.ID.String(), "via", result.ViaMethod)
+	}
+
+	// Self-heal, second stage: a still-dead channel re-checks its *existing*
+	// method — but a dead RSS channel whose site now serves JSON-LD (or a
+	// sitemap, or a feed under a new path) needs method re-detection, which
+	// only the probe knows. When a source has zero enabled channels left,
+	// enqueue intel:probe_verify: the deep verify re-detects what the site
+	// offers and materializes replacement channels (deduped on entry_url —
+	// idempotent, so re-runs create nothing).
+	for sourceIDStr := range deadSources {
+		sourceID, err := scanUUID(sourceIDStr)
+		if err != nil {
+			continue
+		}
+
+		siblings, err := intelSourcesStore.ListChannels(ctx, sourceID)
+		if err != nil {
+			slog.Warn("task:intel:reprobe_dead_channels: list siblings failed", "source_id", sourceIDStr, "error", err)
+			continue
+		}
+
+		enabled := 0
+		for _, s := range siblings {
+			// Only schedulable channels count — an enabled manual/email/
+			// oneshot channel ingests nothing by itself, so a source whose
+			// only live channel is manual still has a dead crawlable
+			// surface and deserves the method re-detection probe. Same
+			// method exclusion as ListDueIntelChannels.
+			if s.Enabled && intelSchedulableMethod(s.CrawlMethod) {
+				enabled++
+			}
+		}
+		if enabled > 0 {
+			continue
+		}
+
+		payload := marshalPayload(intelSourcePayload{
+			Version:  intelPayloadVersion,
+			SourceID: sourceIDStr,
+		})
+		if payload != nil {
+			enqueueIntel(TypeIntelProbeVerify, payload)
+			slog.Info("task:intel:reprobe_dead_channels: enqueued source re-probe", "source_id", sourceIDStr)
+		}
+	}
+
+	slog.Info("task:intel:reprobe_dead_channels: done", "candidates", len(dead), "revived", revived, "still_dead", stillDead, "reprobed_sources", len(deadSources))
 
 	return nil
 }

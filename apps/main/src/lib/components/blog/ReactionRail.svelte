@@ -452,7 +452,7 @@
 				disabled={reactionPending !== null}
 			>
 				<span
-					class="grid h-9 w-9 place-items-center rounded-full text-lg transition-colors {primaryActive ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
+					class="grid h-9 w-9 place-items-center rounded-full text-lg transition-colors {primaryActive ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]'}"
 				>
 					{#if triggerEmoji}
 						<span class="text-lg leading-none">{triggerEmoji}</span>
@@ -496,7 +496,7 @@
 									<span
 										role="button"
 										tabindex="0"
-										class="text-xs text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums] hover:text-[var(--color-primary)] hover:underline"
+										class="text-xs text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums] hover:text-[var(--color-primary-text)] hover:underline"
 										onclick={(e) => toggleReactorList(r.key, e)}
 										onkeydown={(e) => e.key === 'Enter' && toggleReactorList(r.key, e)}
 										title={t('blog.who_reacted', 'Who reacted')}
@@ -532,7 +532,7 @@
 		class="flex {isHorizontal ? 'flex-1 flex-row items-center justify-center gap-1.5' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		aria-label={t('blog.comments', 'Comments')}
 	>
-		<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+		<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]">
 			<MessageCircle size={18} />
 		</span>
 		<span class="{isHorizontal ? 'text-sm' : 'text-[11px]'} font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{commentCount}</span>
@@ -550,7 +550,7 @@
 			aria-pressed={isBookmarked}
 		>
 			<span
-				class="grid h-9 w-9 place-items-center rounded-full transition-colors {isBookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
+				class="grid h-9 w-9 place-items-center rounded-full transition-colors {isBookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]'}"
 			>
 				<Bookmark size={18} fill={isBookmarked ? 'currentColor' : 'none'} />
 			</span>
@@ -567,7 +567,7 @@
 			aria-expanded={showShareMenu}
 		>
 			<span
-				class="grid h-9 w-9 place-items-center rounded-full text-[var(--share-color,var(--color-primary))] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]"
+				class="grid h-9 w-9 place-items-center rounded-full text-[var(--share-color,var(--color-primary))] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]"
 				style:--share-color={shareIconColor}
 			>
 				{#if shared}
@@ -630,7 +630,7 @@
 					aria-label={t('comments.options', 'More options')}
 					title={t('comments.options', 'More options')}
 				>
-					<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+					<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]">
 						<MoreVertical size={18} />
 					</span>
 				</button>
@@ -660,7 +660,7 @@
 			aria-label={t('report.action', 'Report')}
 			title={t('report.action', 'Report')}
 		>
-			<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+			<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]">
 				<Flag size={18} />
 			</span>
 		</button>

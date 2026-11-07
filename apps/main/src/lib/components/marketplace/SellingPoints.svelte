@@ -20,7 +20,7 @@
 				<span
 					class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10"
 				>
-					<Icon size={16} class="text-[var(--color-primary)]" aria-hidden="true" />
+					<Icon size={16} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 				</span>
 				<span class="min-w-0">
 					<span class="block text-sm font-semibold text-[var(--color-text)]">{point.title}</span>

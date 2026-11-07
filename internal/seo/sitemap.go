@@ -18,6 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	rssmodel "github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -439,6 +440,12 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 	entries := make([]urlEntry, 0, len(rows))
 
 	for _, c := range rows {
+		// §42: a disabled feature's content type 404s — its URLs must not
+		// be advertised to crawlers (shared doc → global flag state).
+		if flag, ok := rssmodel.ContentTypeFeatureFlag[c.ContentType]; ok && !h.flagOn(r.Context(), flag) {
+			continue
+		}
+
 		isQuestion := c.IsQuestion != nil && *c.IsQuestion
 		if !bots.IsContentIndexableByType(bots.ContentIndexableInput{
 			ContentType:   c.ContentType,
@@ -966,6 +973,12 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 
 		var updatedAt time.Time
 		if err := rows.Scan(&slug, &contentType, &updatedAt, &title, &storageBucket, &storagePath, &altText); err != nil {
+			continue
+		}
+
+		// §42: a disabled feature's content type 404s — its image URLs must
+		// not be advertised to crawlers (shared doc → global flag state).
+		if flag, ok := rssmodel.ContentTypeFeatureFlag[contentType]; ok && !h.flagOn(r.Context(), flag) {
 			continue
 		}
 

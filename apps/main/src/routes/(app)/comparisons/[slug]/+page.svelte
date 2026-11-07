@@ -189,7 +189,7 @@
 				{#if data.canEdit}
 					<a
 						href="/studio/create?draft={comparison.content.id}&type=comparison"
-						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]"
 					>
 						<Pencil size={14} /> {t('common.edit', 'Edit')}
 					</a>
@@ -225,7 +225,7 @@
 						{#if comparison.content.author_avatar_url}
 							<img src={comparison.content.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
 						{:else}
-							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorName.charAt(0)}</span>
+							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary-text)]">{authorName.charAt(0)}</span>
 						{/if}
 						<span class="font-medium text-[var(--color-text)]">{authorName}</span>
 					{/snippet}

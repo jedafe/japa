@@ -55,7 +55,7 @@
 			{#if compareHref}
 				<a
 					href={compareHref}
-					class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline"
+					class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 				>
 					<Scale size={14} aria-hidden="true" />
 					{t('services.tiers_compare', 'Compare Packages')}
@@ -79,7 +79,7 @@
 					{#if tier.icon}
 						{@const TierIcon = marketplaceIcon(tier.icon)}
 						<span
-							class="mb-3 grid h-10 w-10 place-items-center rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+							class="mb-3 grid h-10 w-10 place-items-center rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"
 							aria-hidden="true"
 						>
 							<TierIcon size={18} />
@@ -89,7 +89,7 @@
 						<h3 class="text-base font-bold text-[var(--color-text)]">{tier.name}</h3>
 						{#if tier.badge && !tier.is_featured}
 							<span
-								class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-primary)]"
+								class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-primary-text)]"
 							>
 								{tier.badge}
 							</span>
@@ -114,7 +114,7 @@
 								<li class="flex items-start gap-2.5 text-sm text-[var(--color-text-subtle)]">
 									<Check
 										size={15}
-										class="mt-0.5 shrink-0 text-[var(--color-primary)]"
+										class="mt-0.5 shrink-0 text-[var(--color-primary-text)]"
 										aria-hidden="true"
 									/>
 									<span>{feature}</span>

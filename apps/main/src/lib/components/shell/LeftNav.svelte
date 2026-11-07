@@ -111,7 +111,7 @@
 			'my-0.5 flex items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-sm transition-colors',
 			collapsed && 'justify-center',
 			active
-				? 'bg-[var(--color-surface-subtle)] font-medium text-[var(--color-primary)]'
+				? 'bg-[var(--color-surface-subtle)] font-medium text-[var(--color-primary-text)]'
 				: 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'
 		);
 	}
@@ -202,7 +202,7 @@
 					onclick={onToggle}
 					class={clsx(
 						'grid h-8 w-8 place-items-center rounded-[var(--radius)] transition-colors hover:bg-[var(--color-surface-subtle)]',
-						pinned ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]',
+						pinned ? 'text-[var(--color-primary-text)]' : 'text-[var(--color-muted)]',
 						showBrand && 'ms-auto'
 					)}
 					aria-label={pinned ? t('nav.collapse') : t('nav.pin', 'Pin navigation open')}
@@ -372,7 +372,7 @@
 						)}
 						aria-label={t('nav.space_switcher')}
 					>
-						<Hash size={18} class="shrink-0 text-[var(--color-primary)]" />
+						<Hash size={18} class="shrink-0 text-[var(--color-primary-text)]" />
 						{#if !collapsed}
 							<span class="min-w-0 flex-1 truncate">{t('nav.space_switcher')}</span>
 							<ChevronsUpDown size={14} class="shrink-0 text-[var(--color-muted)]" />
@@ -387,7 +387,7 @@
 					{/each}
 				</div>
 				<UiMenuSeparator />
-				<UiMenuItem href="/discover?tab=spaces" icon={ExternalLink} iconClass="rtl:-scale-x-100" class="font-medium text-[var(--color-primary)]">
+				<UiMenuItem href="/discover?tab=spaces" icon={ExternalLink} iconClass="rtl:-scale-x-100" class="font-medium text-[var(--color-primary-text)]">
 					{t('nav.space_switcher_browse')}
 				</UiMenuItem>
 			</UiMenu>

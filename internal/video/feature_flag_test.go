@@ -35,15 +35,22 @@ func TestIsEnabledForRequest(t *testing.T) {
 		}
 	})
 
-	t.Run("attached scope uses EvalFlag — enabled but invisible denied", func(t *testing.T) {
-		s := newSvc(stubVideoChecker{enabled: true, eval: features.EvalResult{Enabled: true, Visible: false}})
+	t.Run("attached scope honours surface-disabled eval", func(t *testing.T) {
+		s := newSvc(stubVideoChecker{enabled: true, eval: features.EvalResult{Enabled: false, Visible: false}})
 		if s.isEnabledForRequest(scopedCtx()) {
-			t.Error("global-enabled but scope-invisible must deny on request paths")
+			t.Error("scoped-disabled must deny on request paths")
+		}
+	})
+
+	t.Run("attached scope — hidden-but-enabled still serves (Gate parity)", func(t *testing.T) {
+		s := newSvc(stubVideoChecker{enabled: true, eval: features.EvalResult{Enabled: true, Visible: false}})
+		if !s.isEnabledForRequest(scopedCtx()) {
+			t.Error("a hidden-but-enabled flag must serve routes, matching features.Gate")
 		}
 	})
 
 	t.Run("unattached ctx falls back to global IsEnabled (worker semantics)", func(t *testing.T) {
-		s := newSvc(stubVideoChecker{enabled: true, eval: features.EvalResult{Enabled: true, Visible: false}})
+		s := newSvc(stubVideoChecker{enabled: true, eval: features.EvalResult{Enabled: false, Visible: false}})
 		if !s.isEnabledForRequest(context.Background()) {
 			t.Error("unattached ctx must use the global toggle")
 		}

@@ -338,7 +338,7 @@
 							type="button"
 							onclick={() => confirmRename(folder.id)}
 							disabled={renamingFolder || !editFolderName.trim()}
-							class="shrink-0 rounded p-1 text-[var(--color-primary)] disabled:opacity-50"
+							class="shrink-0 rounded p-1 text-[var(--color-primary-text)] disabled:opacity-50"
 							aria-label={t('bookmarks.confirm_rename', 'Confirm rename')}
 						>
 							{#if renamingFolder}
@@ -373,7 +373,7 @@
 						<button
 							type="button"
 							onclick={() => startRename(folder)}
-							class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-primary)] group-hover:opacity-100"
+							class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-primary-text)] group-hover:opacity-100"
 							aria-label={t('bookmarks.rename_folder', 'Rename folder')}
 						>
 							<Pencil size={12} />
@@ -423,7 +423,7 @@
 				<button
 					type="submit"
 					disabled={creatingFolder || !newFolderName.trim()}
-					class="shrink-0 rounded p-1.5 text-[var(--color-muted)] hover:text-[var(--color-primary)] disabled:opacity-50"
+					class="shrink-0 rounded p-1.5 text-[var(--color-muted)] hover:text-[var(--color-primary-text)] disabled:opacity-50"
 					aria-label={t('bookmarks.create_folder', 'Create folder')}
 				>
 					{#if creatingFolder}
@@ -487,7 +487,7 @@
 										{new Date(b.created_at).toLocaleDateString()}
 									</p>
 								</div>
-								<ExternalLink class="h-4 w-4 shrink-0 text-[var(--color-muted)] group-hover:text-[var(--color-primary)] rtl:-scale-x-100" />
+								<ExternalLink class="h-4 w-4 shrink-0 text-[var(--color-muted)] group-hover:text-[var(--color-primary-text)] rtl:-scale-x-100" />
 							</a>
 							<button
 								type="button"

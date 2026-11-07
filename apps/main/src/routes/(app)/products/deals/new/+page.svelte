@@ -223,7 +223,7 @@
 									{#if coupon.status === 'active' && coupon.slug}
 										<a
 											href={dealPath(coupon)}
-											class="truncate text-sm font-medium text-[var(--color-primary)] hover:underline"
+											class="truncate text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 										>
 											{coupon.title}
 										</a>

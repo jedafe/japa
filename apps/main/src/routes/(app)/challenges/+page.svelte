@@ -118,13 +118,13 @@
 							<div class="flex shrink-0 flex-col items-end gap-1">
 								{#if ch.reward_points > 0}
 									<span class="flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)]">
-										<Gift size={12} class="text-[var(--color-primary)]" />
+										<Gift size={12} class="text-[var(--color-primary-text)]" />
 										{ch.reward_points} {t('gamification.points', 'pts')}
 									</span>
 								{/if}
 								{#if ch.reward_badge_id}
 									<span class="flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)]">
-										<Award size={12} class="text-[var(--color-primary)]" />
+										<Award size={12} class="text-[var(--color-primary-text)]" />
 										{rewardBadgeName(ch)}
 									</span>
 								{/if}

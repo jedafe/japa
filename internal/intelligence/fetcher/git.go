@@ -14,11 +14,16 @@ import (
 	"strconv"
 	"strings"
 
+	"net/http"
+	"sync"
+
 	"github.com/go-git/go-billy/v5/memfs"
 	git "github.com/go-git/go-git/v5"
 	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	gitobject "github.com/go-git/go-git/v5/plumbing/object"
+	gitclient "github.com/go-git/go-git/v5/plumbing/transport/client"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/storage/memory"
 
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -27,11 +32,10 @@ import (
 // GitFetcher is the Phase-2 git adapter (channel design §3): it shallow-
 // clones a repository into memory and turns its tracked state into a raw
 // document — either the configured file contents (via:"files") or a tag
-// manifest (via:"tags"). go-git speaks its own transport, not the shared
-// safetransport — SSRF protection is the host check below (private/loopback
-// literals are rejected before any connection; DNS-rebinding between the
-// check and go-git's own resolution is a residual risk accepted for
-// operator/admin-configured channels only).
+// manifest (via:"tags"). go-git's http(s) transports are re-pinned to the
+// shared SafeClient by InstallGitTransport, so clones get the same dial
+// guard, redirect re-checks, body cap, and egress-pool routing as every
+// other fetcher; validateGitRemote stays as a cheap first-hop guard.
 //
 // provider_config keys:
 //
@@ -50,6 +54,22 @@ type GitFetcher struct{}
 
 // NewGitFetcher returns a GitFetcher.
 func NewGitFetcher() *GitFetcher { return &GitFetcher{} }
+
+var gitTransportOnce sync.Once
+
+// InstallGitTransport pins go-git's http and https protocol handlers to the
+// given client, once per process — NewComposite calls it with the egress
+// client so remote clones inherit the SafeClient dial guard (private-IP
+// literal + resolved-answer rejection), redirect re-checks, the body-size
+// cap, and configured egress-proxy routing. The registration is global to
+// go-git, so it is not re-installable per fetcher instance.
+func InstallGitTransport(httpClient *http.Client) {
+	gitTransportOnce.Do(func() {
+		t := githttp.NewClient(httpClient)
+		gitclient.InstallProtocol("http", t)
+		gitclient.InstallProtocol("https", t)
+	})
+}
 
 const (
 	gitDefaultMaxFileBytes = 256 * 1024
@@ -110,12 +130,11 @@ func (f *GitFetcher) Fetch(ctx context.Context, src sources.Source) (FetchResult
 }
 
 // validateGitRemote rejects non-http(s) schemes, embedded userinfo, and
-// private-literal hosts — the insert-time SSRF guard since go-git does its
-// own dial (no SafeTransport Control hook). Hostnames that resolve to
-// private IPs at clone time remain a residual: go-git cannot take a custom
-// dialer, so operator-supplied repo URLs are trusted past the literal
-// check. Alt-IP decimal/hex/octal forms bypass net.ParseIP and are
-// normalized before the literal check.
+// private-literal hosts — a cheap first-hop guard before go-git dials. The
+// deeper SSRF posture (resolved-answer checks, redirect re-checks) lives in
+// the SafeClient transport installed by InstallGitTransport. Alt-IP
+// decimal/hex/octal forms bypass net.ParseIP and are normalized before the
+// literal check.
 func validateGitRemote(repoURL string) error {
 	u, err := url.Parse(repoURL)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {

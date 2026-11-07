@@ -807,7 +807,7 @@
 		padding: 2px 6px;
 		border-radius: 9999px;
 		background: color-mix(in srgb, var(--color-accent, var(--accent, var(--color-primary))) 10%, transparent);
-		color: var(--color-accent-foreground, var(--color-primary));
+		color: var(--color-primary-text, var(--color-accent-foreground, var(--color-primary)));
 		font-size: 0.8125rem;
 		font-weight: 500;
 		white-space: nowrap;
@@ -838,7 +838,7 @@
 		border: none;
 		border-radius: 50%;
 		background: transparent;
-		color: var(--color-accent-foreground, var(--color-primary));
+		color: var(--color-primary-text, var(--color-accent-foreground, var(--color-primary)));
 		cursor: pointer;
 		pointer-events: all;
 		transition: background 0.1s, color 0.1s;
@@ -923,7 +923,7 @@
 	}
 	:global(.autocomplete-option.selected) {
 		background: color-mix(in srgb, var(--color-primary, var(--color-accent)) 10%, transparent);
-		color: var(--color-primary, var(--color-accent));
+		color: var(--color-primary-text, var(--color-primary, var(--color-accent)));
 		font-weight: 500;
 	}
 	:global(.autocomplete-option-label) {

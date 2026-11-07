@@ -119,7 +119,7 @@
 				aria-current={role === f.id ? 'true' : undefined}
 				class="flex-1 rounded-full border px-3 py-1 text-center text-xs font-medium transition-colors {role ===
 				f.id
-					? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+					? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 					: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 			>{f.label}</a>
 		{/each}
@@ -136,7 +136,7 @@
 					aria-current={intent === f.id ? 'true' : undefined}
 					class="rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {intent ===
 					f.id
-						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 				>{f.label}</a>
 			{/each}
@@ -148,7 +148,7 @@
 				href={filterHref({ status: f.id })}
 				aria-current={status === f.id ? 'true' : undefined}
 				class="rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {status === f.id
-					? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+					? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 					: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 			>{f.label}</a>
 		{/each}

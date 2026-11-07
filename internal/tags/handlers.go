@@ -22,6 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/media"
@@ -50,6 +51,9 @@ type Handlers struct {
 	permCache   PermCacheInvalidator
 	asynqClient *asynq.Client // nil disables search index enqueue (test-only)
 	fieldDefs   TagFieldDefLister
+	// flags gates tag content listings on each row's content_type feature
+	// flag (§42); nil disables filtering.
+	flags features.FlagEvaluator
 }
 
 // TagFieldDefLister supplies custom field definitions for the tag entity
@@ -72,6 +76,19 @@ func NewHandlers(service *Service, contentService *content.Service, followsServi
 // search:index_entity tasks (§12 stale-index fix, entity_type
 // "directory_tag"). nil disables enqueue (test-only).
 func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.asynqClient = c }
+
+// SetFeatureChecker injects the feature flag evaluator so tag content
+// listings prune rows whose content_type is hidden or disabled for the
+// caller (§42). Optional — nil-safe.
+func (h *Handlers) SetFeatureChecker(c features.FlagEvaluator) { h.flags = c }
+
+// contentTypeHidden reports whether a content_type's feature flag is
+// disabled or hidden for this caller (§42) — the Enabled && Visible
+// projection contract.
+func (h *Handlers) contentTypeHidden(ctx context.Context, contentType string) bool {
+	res, ok := features.EvalContentType(ctx, h.flags, contentType)
+	return ok && !(res.Enabled && res.Visible)
+}
 
 // SetFieldDefLister injects the custom-fields service so tag responses can
 // embed field definitions for the "tag" entity class.
@@ -134,6 +151,15 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 	}
 
 	return user, true
+}
+
+// tagIDsOf collects tag IDs for the batched gated-count lookup (§42).
+func tagIDsOf(tags []gen.AdminListTagsRow) []pgtype.UUID {
+	ids := make([]pgtype.UUID, len(tags))
+	for i, t := range tags {
+		ids[i] = t.ID
+	}
+	return ids
 }
 
 // parseUUIDParam reads a UUID URL param, writing a 400 and returning the zero
@@ -228,6 +254,10 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		totalPages = (int32(count) + limit - 1) / limit
 	}
 
+	// §42: subtract gated-type content from each tag's stored content_count —
+	// the denormalized counter includes content the caller can't reach.
+	gatedCounts := h.service.GatedContentCounts(r.Context(), tagIDsOf(tags), features.HiddenContentTypes(r.Context(), h.flags))
+
 	// Enrich each tag with resolved logo_url and cover_url from the joined media columns.
 	enriched := make([]map[string]any, 0, len(tags))
 
@@ -235,6 +265,14 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		row := structToMap(t)
 		row["logo_url"] = resolveLogoURL(t.LogoStoragePath, t.LogoStorageBucket)
 		row["cover_url"] = resolveLogoURL(t.CoverStoragePath, t.CoverStorageBucket)
+		if n := gatedCounts[t.ID]; n > 0 {
+			if cc, ok := row["content_count"].(int32); ok {
+				if cc -= n; cc < 0 {
+					cc = 0
+				}
+				row["content_count"] = cc
+			}
+		}
 		enriched = append(enriched, row)
 	}
 
@@ -256,6 +294,16 @@ func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
 	row := structToMap(tag)
 	row["logo_url"] = resolveLogoURL(tag.LogoStoragePath, tag.LogoStorageBucket)
 	row["cover_url"] = resolveLogoURL(tag.CoverStoragePath, tag.CoverStorageBucket)
+	// §42: subtract gated-type content from the stored count (same fix as
+	// the listing — one tag, one query).
+	if gated := h.service.GatedContentCounts(r.Context(), []pgtype.UUID{tag.ID}, features.HiddenContentTypes(r.Context(), h.flags)); gated[tag.ID] > 0 {
+		if cc, ok := row["content_count"].(int32); ok {
+			if cc -= gated[tag.ID]; cc < 0 {
+				cc = 0
+			}
+			row["content_count"] = cc
+		}
+	}
 	// Embed the tag entity-class field definitions so guests can render
 	// labeled field_values — /custom-field-groups is auth-gated. Best-effort:
 	// nil lister or an error degrades to an empty array.
@@ -383,6 +431,17 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tagged content")
 		return
 	}
+
+	// §42: prune items whose content_type is hidden or disabled for this
+	// caller — a gated feature's posts must not surface on tag pages.
+	filtered := items[:0]
+	for _, c := range items {
+		if h.contentTypeHidden(r.Context(), c.ContentType) {
+			continue
+		}
+		filtered = append(filtered, c)
+	}
+	items = filtered
 
 	// Resolve template literals ({{...}}) in item titles/bodies — same
 	// best-effort resolution the content list handler applies.

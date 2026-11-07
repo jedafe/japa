@@ -202,7 +202,7 @@
 			rel={tab.nofollow ? 'nofollow' : undefined}
 			aria-current={isCurrent(tab) ? 'page' : undefined}
 			class="{TAB_CLASSES} {tab.slug === active
-				? 'text-[var(--color-primary)] after:bg-[var(--color-primary)]'
+				? 'text-[var(--color-primary-text)] after:bg-[var(--color-primary)]'
 				: 'text-[var(--color-muted)] after:bg-transparent hover:text-[var(--color-text)]'}"
 		>
 			<Icon size={15} class="shrink-0" aria-hidden="true" />
@@ -217,7 +217,7 @@
 					type="button"
 					{...props}
 					class="{TAB_CLASSES} cursor-pointer {overflowActive
-						? 'text-[var(--color-primary)] after:bg-[var(--color-primary)]'
+						? 'text-[var(--color-primary-text)] after:bg-[var(--color-primary)]'
 						: 'text-[var(--color-muted)] after:bg-transparent hover:text-[var(--color-text)]'}"
 				>
 					{t('wiki.more_tab', 'More')}
@@ -230,7 +230,7 @@
 					href={tab.href}
 					rel={tab.nofollow ? 'nofollow' : undefined}
 					icon={Icon}
-					class={tab.slug === active ? 'font-medium text-[var(--color-primary)]' : ''}
+					class={tab.slug === active ? 'font-medium text-[var(--color-primary-text)]' : ''}
 				>
 					{tab.label}
 				</MenuItem>

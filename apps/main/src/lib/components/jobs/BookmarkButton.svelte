@@ -85,7 +85,7 @@
 >
 	<Bookmark
 		size={16}
-		class={isOn ? 'fill-[var(--color-primary)] text-[var(--color-primary)]' : ''}
+		class={isOn ? 'fill-[var(--color-primary)] text-[var(--color-primary-text)]' : ''}
 	/>
 	{#if currentCount !== undefined}
 		<span class="tabular-nums">{currentCount}</span>

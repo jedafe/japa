@@ -42,6 +42,11 @@ UPDATE intel_source_channels SET
   provider_config = COALESCE(sqlc.narg(provider_config), provider_config),
   crawl_frequency_mins = COALESCE(sqlc.narg(crawl_frequency_mins), crawl_frequency_mins),
   enabled = COALESCE(sqlc.narg(enabled), enabled),
+  disabled_by = CASE
+    WHEN sqlc.narg(enabled)::boolean IS NULL THEN disabled_by
+    WHEN sqlc.narg(enabled)::boolean THEN NULL
+    ELSE 'admin'
+  END,
   updated_at = now()
 WHERE id = $1 RETURNING *;
 
@@ -66,16 +71,37 @@ ORDER BY created_at ASC LIMIT 1;
 DELETE FROM intel_source_channels WHERE id = $1;
 
 -- name: UpdateIntelChannelCrawlStatus :exec
+-- blocked_reason clears on EVERY recorded outcome, not just success: this
+-- query only ever records non-wall results — wall sightings go through
+-- NoteIntelChannelWall — so a surviving blocked_reason here would be a
+-- stale claim that the channel is currently walled.
 UPDATE intel_source_channels SET
   last_crawled_at = now(),
   last_success_at = CASE WHEN sqlc.arg(success)::boolean THEN now() ELSE last_success_at END,
   last_error_at   = CASE WHEN sqlc.arg(success) THEN last_error_at ELSE now() END,
   last_error_message = sqlc.narg(last_error_message),
-  consecutive_failures = CASE WHEN sqlc.arg(success) THEN 0 ELSE consecutive_failures + 1 END
+  consecutive_failures = CASE WHEN sqlc.arg(success) THEN 0 ELSE consecutive_failures + 1 END,
+  blocked_reason = NULL,
+  disabled_by = CASE WHEN sqlc.arg(success) THEN NULL ELSE disabled_by END
 WHERE id = sqlc.arg(id);
 
 -- name: UpdateIntelChannelEnabled :exec
-UPDATE intel_source_channels SET enabled = $2, updated_at = now()
+-- Enabling clears the disable attribution; disabling through this generic
+-- toggle defaults the attribution to 'admin' (the worker's automatic
+-- disable paths stamp 'circuit_breaker'/'license' via
+-- DisableIntelChannelMarked instead).
+UPDATE intel_source_channels SET
+  enabled = $2,
+  disabled_by = CASE WHEN $2 THEN NULL ELSE COALESCE(disabled_by, 'admin') END,
+  updated_at = now()
+WHERE id = $1;
+
+-- name: DisableIntelChannelMarked :exec
+-- Automatic disable with attribution: the consecutive-failures breaker
+-- stamps 'circuit_breaker' (eligible for intel:reprobe_dead_channels),
+-- the license preflight gate stamps 'license' (a legal fact — never
+-- re-checked by the sweep).
+UPDATE intel_source_channels SET enabled = false, disabled_by = $2, updated_at = now()
 WHERE id = $1;
 
 -- name: CreateIntelInboundEvent :one
@@ -149,6 +175,27 @@ WHERE sqlc.arg(retention_days)::int > 0
 UPDATE intel_source_channels SET last_error_message = $2, last_error_at = now()
 WHERE id = $1;
 
+-- name: NoteIntelChannelWall :exec
+-- Stamp a bot-wall sighting on the channel row: records the wall class as
+-- blocked_reason and mirrors the message into last_error_* (a flag, not a
+-- crawl result — consecutive_failures, last_crawled_at, and updated_at are
+-- untouched, same contract as NoteIntelChannelError). wall_seen_count
+-- counts wall EPISODES, not sightings: a continuously-walled channel
+-- increments once per intel.wall_episode_secs window rather than once per
+-- crawl, so the count means "distinct block events" instead of "schedule
+-- ticks". A later successful crawl clears blocked_reason via
+-- UpdateIntelChannelCrawlStatus.
+UPDATE intel_source_channels SET
+  blocked_reason = $2,
+  last_wall_at = now(),
+  wall_seen_count = wall_seen_count + CASE
+    WHEN last_wall_at IS NULL OR last_wall_at < now() - make_interval(secs => sqlc.arg(episode_window_secs)::int) THEN 1
+    ELSE 0
+  END,
+  last_error_message = $2,
+  last_error_at = now()
+WHERE id = $1;
+
 -- name: GetIntelEmailChannelByAddress :one
 -- Inbound-email routing (Phase 3): resolve the delivery's recipient to the
 -- enabled email channel carrying it in provider_config.inbound_address.
@@ -174,9 +221,13 @@ WHERE id = $1 RETURNING *;
 -- source must not cross-contaminate each other's hash comparison. Derived
 -- (manifest child) docs are excluded — a sitemap/wayback manifest must
 -- compare against the previous manifest, not a child's page hash, or every
--- crawl after fan-out would read as "changed" (Phase 2).
+-- crawl after fan-out would read as "changed" (Phase 2). Manifest-TYPE
+-- top-level docs are excluded for the mirror-image reason: a wayback
+-- manifest persisted by a fallback hop must not become a content
+-- channel's baseline or every later crawl reads "changed".
 SELECT content_hash FROM intel_raw_documents WHERE channel_id = $1
   AND parent_document_id IS NULL
+  AND COALESCE(content_type, '') <> 'application/x-intel-manifest'
 ORDER BY retrieved_at DESC LIMIT 1;
 
 -- name: GetLatestIntelManifestDocHashByChannel :one
@@ -187,6 +238,41 @@ ORDER BY retrieved_at DESC LIMIT 1;
 SELECT content_hash FROM intel_raw_documents WHERE channel_id = $1
   AND parent_document_id IS NULL
   AND content_type = 'application/x-intel-manifest'
+ORDER BY retrieved_at DESC LIMIT 1;
+
+-- name: GetLatestIntelRawDocBodyLenByChannel :one
+-- Content-collapse guard baseline (bot-wall hardening): the previous
+-- top-level HTML capture's body size — intelFetchChannel compares a new
+-- capture against it to tell a walled/thin response (a fraction of the
+-- prior size) from real content. Derived children are excluded (a child
+-- is a different page's bytes) and non-HTML docs are excluded so a
+-- manifest or fallback document never becomes the HTML baseline.
+SELECT COALESCE(octet_length(body), 0)::int FROM intel_raw_documents
+WHERE channel_id = $1
+  AND parent_document_id IS NULL
+  AND content_type LIKE 'text/html%'
+ORDER BY retrieved_at DESC LIMIT 1;
+
+-- name: ListDisabledIntelChannels :many
+-- Re-probe candidates for intel:reprobe_dead_channels: channels the
+-- failure circuit-breakers auto-disabled (disabled_by='circuit_breaker').
+-- Deliberate operator disables ('admin') and legal blocks ('license')
+-- are never re-checked — only the breaker can have been wrong about an
+-- endpoint's death. Oldest errors first so long-dead channels get the
+-- first re-check slots.
+SELECT * FROM intel_source_channels
+WHERE enabled = false
+  AND disabled_by = 'circuit_breaker'
+ORDER BY last_error_at ASC NULLS LAST, updated_at ASC
+LIMIT $1;
+
+-- name: GetLatestIntelRawDocHTTPHeadersByChannel :one
+-- Conditional-GET validators: the stored response headers of the channel's
+-- previous top-level capture — intelFetchChannel forwards
+-- ETag/Last-Modified as If-None-Match/If-Modified-Since so an unchanged
+-- upstream answers 304 (no body) instead of re-shipping the page.
+SELECT http_headers FROM intel_raw_documents
+WHERE channel_id = $1 AND parent_document_id IS NULL
 ORDER BY retrieved_at DESC LIMIT 1;
 
 -- name: MarkIntelChannelChanged :exec

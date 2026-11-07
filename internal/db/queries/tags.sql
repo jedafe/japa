@@ -176,3 +176,25 @@ SELECT t.name, t.slug, COALESCE(t.description, '') AS description
 FROM tags t
 ORDER BY t.content_count DESC, t.name ASC
 LIMIT 100;
+
+-- name: CountTagContentByTypes :one
+-- §42: counts content_tags rows whose content is one of the given
+-- content_types — the search indexer subtracts it from the stored
+-- tags.content_count so autocomplete and indexed docs never advertise
+-- totals that include feature-gated content.
+SELECT COUNT(*)::int AS count
+FROM content_tags ct
+JOIN contents c ON c.id = ct.content_id
+WHERE ct.tag_id = @tag_id
+  AND c.content_type = ANY(COALESCE(@content_types::text[], '{}'::text[]));
+
+-- name: CountTagContentByTypesForTags :many
+-- §42: batched counterpart of CountTagContentByTypes — one round trip for
+-- a page of tags so listing endpoints can subtract gated-feature content
+-- from each tag's stored content_count without N+1 queries.
+SELECT ct.tag_id, COUNT(*)::int AS count
+FROM content_tags ct
+JOIN contents c ON c.id = ct.content_id
+WHERE ct.tag_id = ANY(@tag_ids::uuid[])
+  AND c.content_type = ANY(COALESCE(@content_types::text[], '{}'::text[]))
+GROUP BY ct.tag_id;

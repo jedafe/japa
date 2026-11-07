@@ -388,7 +388,7 @@
 														type="button"
 														onclick={() => toggleItem(item.item_id, !item.completed)}
 														disabled={saving[item.item_id]}
-														class="mt-0.5 shrink-0 text-[var(--color-primary)] disabled:opacity-50"
+														class="mt-0.5 shrink-0 text-[var(--color-primary-text)] disabled:opacity-50"
 														aria-label={item.completed ? t('common.mark_incomplete', 'Mark incomplete') : t('common.mark_complete', 'Mark complete')}
 													>
 														{#if item.completed}
@@ -410,7 +410,7 @@
 															href={item.official_link}
 															target="_blank"
 															rel="noopener noreferrer"
-															class="mt-1 inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+															class="mt-1 inline-flex items-center gap-1 text-xs text-[var(--color-primary-text)] hover:underline"
 														>
 															<ExternalLink class="rtl:-scale-x-100" size={12} />
 															{t('arrival_checklist.official_link', 'Official info')}

@@ -32,7 +32,7 @@
 			<button
 				type="button"
 				{...props}
-				class="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] {active ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}"
+				class="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] {active ? 'text-[var(--color-primary-text)]' : 'text-[var(--color-muted)]'}"
 				aria-label={t('nav.account', 'Account')}
 			>
 				{#if user?.avatar_url}

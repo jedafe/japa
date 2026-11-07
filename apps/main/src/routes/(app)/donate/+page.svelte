@@ -22,7 +22,7 @@
 		<h1 class="mb-2 text-2xl font-bold">{t('donate.title')}</h1>
 		<p class="text-muted-foreground">{t('donate.unavailable')}</p>
 	{:else}
-		<Heart class="mx-auto mb-4 size-10 text-primary" />
+		<Heart class="mx-auto mb-4 size-10 text-[var(--color-primary-text)]" />
 		<h1 class="mb-2 text-3xl font-bold">{t('donate.title')}</h1>
 		<p class="mb-8 text-muted-foreground">
 			{config.thank_you_message || t('donate.description')}

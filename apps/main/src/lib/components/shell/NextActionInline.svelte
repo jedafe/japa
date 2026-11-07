@@ -78,7 +78,7 @@
 		<div class="flex items-start justify-between gap-3">
 			<div class="min-w-0">
 				<p class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
-					<Icon size={15} class="shrink-0 text-[var(--color-primary)]" />{action.title}
+					<Icon size={15} class="shrink-0 text-[var(--color-primary-text)]" />{action.title}
 				</p>
 				{#if action.body}
 					<p class="mt-1 text-sm text-[var(--color-text-muted)]">{action.body}</p>

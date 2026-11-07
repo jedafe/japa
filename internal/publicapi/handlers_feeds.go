@@ -187,6 +187,12 @@ func (h *Handlers) GetContentMarkdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: feature-flagged-off content types 404 like unpublished content.
+	if h.contentTypeUnreachable(r.Context(), content.ContentType) {
+		handleServiceError(w, pgx.ErrNoRows)
+		return
+	}
+
 	h.writeContentMarkdown(w, r, content)
 }
 

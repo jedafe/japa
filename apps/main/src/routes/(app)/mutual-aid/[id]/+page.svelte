@@ -86,7 +86,7 @@
 			case 'active':
 				return `${base} bg-green-500/10 text-green-600`;
 			case 'fulfilled':
-				return `${base} bg-[var(--color-primary)]/10 text-[var(--color-primary)]`;
+				return `${base} bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]`;
 			case 'expired':
 				return `${base} bg-[var(--color-surface-subtle)] text-[var(--color-muted)]`;
 			default:

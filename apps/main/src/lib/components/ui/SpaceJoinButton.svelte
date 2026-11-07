@@ -170,7 +170,7 @@
 				: t('spaces.follow_title', 'Follow this space')}
 			class="flex items-center gap-1 rounded-full border border-[var(--color-border)] font-medium transition-colors disabled:opacity-50 {sizeClass} {following
 				? 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
-				: 'text-[var(--color-primary)] hover:border-[var(--color-primary)]/40'}"
+				: 'text-[var(--color-primary-text)] hover:border-[var(--color-primary)]/40'}"
 		>
 			{#if followPending}
 				<Loader2 size={iconSize} class="animate-spin" />

@@ -285,7 +285,7 @@
 		{#if subscribablePlans.length > 0}
 			<div class="mb-4 flex items-center justify-between">
 				<h2 class="text-sm font-medium text-[var(--color-text)]">{t('settings.subscription.choose_plan')}</h2>
-				<a href="/pricing" class="text-xs text-[var(--color-primary)] hover:underline">
+				<a href="/pricing" class="text-xs text-[var(--color-primary-text)] hover:underline">
 					{t('settings.subscription.subscribe')}
 				</a>
 			</div>

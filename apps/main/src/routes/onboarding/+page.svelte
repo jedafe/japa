@@ -327,16 +327,16 @@
 					<circle cx="255" cy="45" r="4.5" fill="var(--color-primary)" opacity="0.5" />
 				</svg>
 				<div class="onb-focal">
-					<Globe size={64} strokeWidth={1.1} class="text-[var(--color-primary)]" />
+					<Globe size={64} strokeWidth={1.1} class="text-[var(--color-primary-text)]" />
 				</div>
-				<div class="onb-chip" style="top: 8%; inset-inline-start: 12%;"><Landmark size={18} class="text-[var(--color-primary)]" /></div>
-				<div class="onb-chip" style="top: 30%; inset-inline-end: 8%;"><Luggage size={18} class="text-[var(--color-primary)]" /></div>
-				<div class="onb-chip" style="bottom: 22%; inset-inline-start: 6%;"><MapPin size={18} class="text-[var(--color-primary)]" /></div>
-				<div class="onb-plane"><Plane size={20} class="text-[var(--color-primary)]" /></div>
+				<div class="onb-chip" style="top: 8%; inset-inline-start: 12%;"><Landmark size={18} class="text-[var(--color-primary-text)]" /></div>
+				<div class="onb-chip" style="top: 30%; inset-inline-end: 8%;"><Luggage size={18} class="text-[var(--color-primary-text)]" /></div>
+				<div class="onb-chip" style="bottom: 22%; inset-inline-start: 6%;"><MapPin size={18} class="text-[var(--color-primary-text)]" /></div>
+				<div class="onb-plane"><Plane size={20} class="text-[var(--color-primary-text)]" /></div>
 			</div>
 
 			<div class="mt-auto flex items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]/80 px-4 py-3 backdrop-blur-sm">
-				<ShieldCheck size={18} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+				<ShieldCheck size={18} class="mt-0.5 shrink-0 text-[var(--color-primary-text)]" />
 				<p class="text-xs leading-relaxed text-[var(--color-text-subtle)]">
 					<span class="block font-semibold text-[var(--color-text)]">{t('onboarding.privacy_title', 'Your data is safe with us.')}</span>
 					{t('onboarding.privacy_body', 'We respect your privacy and never share your data.')}
@@ -356,7 +356,7 @@
 								class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-semibold transition-colors {n === currentStep
 									? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
 									: n < currentStep
-										? 'bg-[var(--color-primary)]/15 text-[var(--color-primary)]'
+										? 'bg-[var(--color-primary)]/15 text-[var(--color-primary-text)]'
 										: 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)]'}"
 								aria-current={n === currentStep ? 'step' : undefined}
 							>
@@ -364,14 +364,14 @@
 							</span>
 							{#if i < totalSteps - 1}<span class="h-px flex-1 {n < currentStep ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"></span>{/if}
 						</div>
-						<span class="hidden text-[11px] font-medium sm:block {n === currentStep ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}">{label}</span>
+						<span class="hidden text-[11px] font-medium sm:block {n === currentStep ? 'text-[var(--color-primary-text)]' : 'text-[var(--color-muted)]'}">{label}</span>
 					</div>
 				{/each}
 			</nav>
 			<!-- Step 1: Welcome & Core Identity -->
 			{#if currentStep === 1}
 				<div class="mb-6 flex items-center gap-3">
-					<Sparkles class="text-[var(--color-primary)]" size={24} />
+					<Sparkles class="text-[var(--color-primary-text)]" size={24} />
 					<h1 class="text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step1_title', 'Welcome! Tell us about yourself')}</h1>
 				</div>
 				<div class="space-y-4">
@@ -535,7 +535,7 @@
 								<span class="block text-xs text-[var(--color-muted)]">{t('onboarding.reason_' + rec.reason, rec.reason.replace(/_/g, ' '))}</span>
 							</span>
 							{#if selectedUsers.includes(rec.id)}
-								<Check size={18} class="shrink-0 text-[var(--color-primary)]" />
+								<Check size={18} class="shrink-0 text-[var(--color-primary-text)]" />
 							{/if}
 						</button>
 					{/each}
@@ -566,7 +566,7 @@
 								<span class="block text-xs text-[var(--color-muted)]">{t('onboarding.reason_' + rec.reason, rec.reason.replace(/_/g, ' '))}</span>
 							</span>
 							{#if selectedSpaces.includes(rec.id)}
-								<Check size={18} class="shrink-0 text-[var(--color-primary)]" />
+								<Check size={18} class="shrink-0 text-[var(--color-primary-text)]" />
 							{/if}
 						</button>
 					{/each}
@@ -597,7 +597,7 @@
 								<span class="block truncate text-xs text-[var(--color-muted)]">{source.domain}{source.category ? ' · ' + t('sources.category_' + source.category, source.category.replace(/_/g, ' ')) : ''}</span>
 							</span>
 							{#if selectedSources.includes(source.id)}
-								<Check size={18} class="shrink-0 text-[var(--color-primary)]" />
+								<Check size={18} class="shrink-0 text-[var(--color-primary-text)]" />
 							{/if}
 						</button>
 					{/each}
@@ -622,7 +622,7 @@
 				{#if data.achievements.length > 0}
 					<div class="mt-8 border-t border-[var(--color-border)] pt-6">
 						<h2 class="mb-4 flex items-center justify-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-							<Trophy size={16} class="text-[var(--color-primary)]" />
+							<Trophy size={16} class="text-[var(--color-primary-text)]" />
 							{t('onboarding.achievements_preview_heading', 'Recent wins from the community')}
 						</h2>
 						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -635,7 +635,7 @@
 									<div class="mt-1.5 flex items-center gap-2 text-xs text-[var(--color-text-subtle)]">
 										{#if a.milestone_type}
 											<span class="inline-flex items-center gap-0.5">
-												<Trophy size={11} class="text-[var(--color-primary)]" />
+												<Trophy size={11} class="text-[var(--color-primary-text)]" />
 												{milestoneLabel(a.milestone_type)}
 											</span>
 										{/if}
@@ -647,7 +647,7 @@
 										{/if}
 										{#if a.reaction_count > 0}
 											<span class="inline-flex items-center gap-0.5">
-												<Heart size={11} class="text-[var(--color-primary)]" fill="currentColor" />
+												<Heart size={11} class="text-[var(--color-primary-text)]" fill="currentColor" />
 												{a.reaction_count}
 											</span>
 										{/if}
@@ -657,7 +657,7 @@
 						</div>
 						<a
 							href="/achievements"
-							class="mt-4 block text-center text-xs font-medium text-[var(--color-primary)] hover:underline"
+							class="mt-4 block text-center text-xs font-medium text-[var(--color-primary-text)] hover:underline"
 						>
 							{t('onboarding.achievements_preview_view_all', 'See more achievements →')}
 						</a>
@@ -711,7 +711,7 @@
 			<!-- Footer: hint + progress dots -->
 			<div class="mt-auto flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-5">
 				<p class="flex min-w-0 items-center gap-1.5 text-xs text-[var(--color-muted)]">
-					<Lightbulb size={14} class="shrink-0 text-[var(--color-primary)]" />
+					<Lightbulb size={14} class="shrink-0 text-[var(--color-primary-text)]" />
 					<span class="truncate">
 						<span class="font-medium">{t('onboarding.why_ask', 'Why we ask this?')}</span>
 						{t('onboarding.why_ask_body', 'It helps us show you relevant scholarships, jobs, and opportunities.')}
@@ -762,7 +762,7 @@
 		position: absolute;
 		top: 10%;
 		inset-inline-end: 18%;
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		opacity: 0.8;
 	}
 	@media (prefers-reduced-motion: no-preference) {

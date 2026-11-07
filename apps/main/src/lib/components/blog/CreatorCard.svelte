@@ -43,16 +43,16 @@
 		{#if authorAvatarUrl}
 			<img src={authorAvatarUrl} alt={authorName ?? ''} class="h-20 w-20 rounded-full object-cover" />
 		{:else}
-			<span class="grid h-20 w-20 place-items-center rounded-full bg-[var(--color-primary)]/10 text-2xl font-bold text-[var(--color-primary)]">
+			<span class="grid h-20 w-20 place-items-center rounded-full bg-[var(--color-primary)]/10 text-2xl font-bold text-[var(--color-primary-text)]">
 				{authorName?.charAt(0) ?? '?'}
 			</span>
 		{/if}
-		<h3 class="mt-3 font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary)]">{authorName ?? t('blog.anonymous', 'Anonymous')}</h3>
+		<h3 class="mt-3 font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]">{authorName ?? t('blog.anonymous', 'Anonymous')}</h3>
 	{/snippet}
 
 	<div class="flex flex-col items-center text-center">
 		{#if authorUsername}
-			<a href="/u/{authorUsername}" class="group flex flex-col items-center transition-colors hover:text-[var(--color-primary)]">
+			<a href="/u/{authorUsername}" class="group flex flex-col items-center transition-colors hover:text-[var(--color-primary-text)]">
 				{@render authorIdentity()}
 			</a>
 		{:else}
@@ -62,7 +62,7 @@
 		{/if}
 		{#if spaceName}
 			{#if spaceSlug}
-				<a href="/spaces/{spaceSlug}" class="mt-1 block text-sm text-[var(--color-primary)] hover:underline">
+				<a href="/spaces/{spaceSlug}" class="mt-1 block text-sm text-[var(--color-primary-text)] hover:underline">
 					{t('blog.writing_in', 'Writing in')} {spaceName}
 				</a>
 			{:else}

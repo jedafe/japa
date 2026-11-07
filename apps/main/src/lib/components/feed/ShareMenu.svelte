@@ -30,7 +30,7 @@
 			aria-label={t('feed.card.share', 'Share')}
 		>
 			<span
-				class="rounded-full p-2 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]"
+				class="rounded-full p-2 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary-text)]"
 			>
 				{#if shared}
 					<Check {size} class="text-[var(--color-success)]" />

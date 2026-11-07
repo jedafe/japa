@@ -45,7 +45,7 @@
 					{#if service.is_verified}
 						<BadgeCheck
 							size={15}
-							class="shrink-0 text-[var(--color-primary)]"
+							class="shrink-0 text-[var(--color-primary-text)]"
 							aria-label={t('services.verified', 'Verified')}
 						/>
 					{/if}

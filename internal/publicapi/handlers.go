@@ -1,6 +1,7 @@
 package publicapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -32,6 +34,38 @@ type Handlers struct {
 // NewHandlers creates Handlers with the given Service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{Service: service}
+}
+
+// contentTypeUnreachable reports whether a contents.content_type is
+// feature-flagged unreachable for this caller (§42) — the .Enabled Gate
+// contract. Nil-safe — an unwired Service gates nothing.
+func (h *Handlers) contentTypeUnreachable(ctx context.Context, contentType string) bool {
+	if h.Service == nil {
+		return false
+	}
+	return h.Service.contentTypeUnreachable(ctx, contentType)
+}
+
+// contentTypeHidden is the projection-side predicate (§42) — disabled OR
+// surface-hidden. Nil-safe like contentTypeUnreachable.
+func (h *Handlers) contentTypeHidden(ctx context.Context, contentType string) bool {
+	if h.Service == nil {
+		return false
+	}
+	return h.Service.contentTypeHidden(ctx, contentType)
+}
+
+// gatedParentContent reports whether a published parent's content_type is
+// feature-flagged unreachable (§42) — comments and reactions on a
+// gated-off item must not leak through their own routes. Missing/
+// unpublished parents fall through to each downstream service's existing
+// not-found behavior.
+func (h *Handlers) gatedParentContent(ctx context.Context, contentID pgtype.UUID) bool {
+	if h.Queries == nil {
+		return false
+	}
+	parent, err := h.Queries.GetPublishedContentByID(ctx, contentID)
+	return err == nil && h.contentTypeUnreachable(ctx, parent.ContentType)
 }
 
 // SetQueries injects the sqlc queries for public API data access.
@@ -706,6 +740,13 @@ func (h *Handlers) GetContentByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: a feature-flagged-off content type is unreachable like an
+	// unpublished one — same 404 envelope, no flag names leak.
+	if h.contentTypeUnreachable(r.Context(), content.ContentType) {
+		handleServiceError(w, pgx.ErrNoRows)
+		return
+	}
+
 	// Content negotiation: agents may request the markdown representation
 	// directly on the JSON route (the /markdown route is the primary surface).
 	if strings.Contains(r.Header.Get("Accept"), "text/markdown") {
@@ -961,6 +1002,14 @@ func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: a parent whose content type is feature-flagged off 404s its
+	// comment thread too — replies on a gated-off item must not leak.
+	// Missing/unpublished parents keep the query's existing empty result.
+	if h.gatedParentContent(r.Context(), contentID) {
+		handleServiceError(w, pgx.ErrNoRows)
+		return
+	}
+
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
 
@@ -1167,11 +1216,20 @@ func (h *Handlers) GetTrendingContentHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if rows == nil {
-		rows = []gen.GetTrendingContentRow{}
+	// §42: prune rows whose content_type's feature flag is hidden or
+	// disabled for this caller — snapshots are scope-agnostic.
+	filtered := rows[:0]
+	for _, row := range rows {
+		if h.contentTypeHidden(r.Context(), row.ContentType) {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	if filtered == nil {
+		filtered = []gen.GetTrendingContentRow{}
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": filtered})
 }
 
 // GetTrendingTagsHandler handles GET /api/v1/trending/tags.

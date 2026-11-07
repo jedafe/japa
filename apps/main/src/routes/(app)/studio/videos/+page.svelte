@@ -279,7 +279,7 @@
 						type="checkbox"
 						name="auto_publish"
 						bind:checked={autoPublish}
-						class="rounded border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]"
+						class="rounded border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary-text)]"
 					/>
 					{t('studio.auto_publish', 'Publish videos as public content automatically')}
 				</label>
@@ -415,7 +415,7 @@
 										type="button"
 										disabled={retryingId === job.id}
 										onclick={() => retryJob(job)}
-										class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline disabled:opacity-50"
+										class="inline-flex items-center gap-1 text-xs text-[var(--color-primary-text)] hover:underline disabled:opacity-50"
 									>
 										<RefreshCw size={12} class={retryingId === job.id ? 'animate-spin' : ''} />
 										{t('studio.retry', 'Retry')}

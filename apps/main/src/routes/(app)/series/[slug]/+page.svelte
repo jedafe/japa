@@ -46,7 +46,7 @@
 				/>
 			{:else}
 				<span
-					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]"
 				>
 					<BookOpen size={24} />
 				</span>

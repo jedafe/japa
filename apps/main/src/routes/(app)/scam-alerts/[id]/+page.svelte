@@ -122,7 +122,7 @@
 				type="button"
 				onclick={copyLink}
 				aria-label={t('scam_alerts.copy_link', 'Copy link')}
-				class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+				class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]"
 			>
 				{#if copied}<Check size={14} class="text-emerald-600" />{:else}<Link2 size={14} />{/if}
 				{copied ? t('scam_alerts.link_copied', 'Copied') : t('scam_alerts.copy_link', 'Copy link')}
@@ -130,7 +130,7 @@
 			{#if data.canEdit && alert}
 				<a
 					href="/scam-alerts/{alert.id}/edit"
-					class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+					class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]"
 				>
 					<Pencil size={14} /> {t('common.edit', 'Edit')}
 				</a>
@@ -148,7 +148,7 @@
 		<article class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-6">
 			<!-- Badges -->
 			<div class="flex flex-wrap items-center gap-2">
-				<span class="rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-primary)]">
+				<span class="rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-xs font-semibold text-[var(--color-primary-text)]">
 					{scamTypeLabel(t, alert.scam_type as ScamType)}
 				</span>
 				{#if alert.is_pinned}

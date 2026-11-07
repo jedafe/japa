@@ -132,7 +132,7 @@
 	<div class="mb-3">
 		<a
 			href={allHref}
-			class="text-xs font-medium text-[var(--color-primary)] hover:underline"
+			class="text-xs font-medium text-[var(--color-primary-text)] hover:underline"
 		>
 			← {t('wiki.all_sections', 'All sections')}
 		</a>
@@ -154,7 +154,7 @@
 						{#if moreHref?.(section)}
 							<a
 								href={moreHref(section)}
-								class="shrink-0 text-xs font-medium text-[var(--color-primary)] hover:underline"
+								class="shrink-0 text-xs font-medium text-[var(--color-primary-text)] hover:underline"
 							>
 								{t('wiki.view_more_prices', 'View more {section} prices', { section: sectionLabel(section).toLowerCase() })} →
 							</a>

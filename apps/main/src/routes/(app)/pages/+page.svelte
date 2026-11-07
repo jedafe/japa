@@ -49,7 +49,7 @@
 						{/if}
 						<div class="flex items-center justify-between text-xs text-[var(--color-muted)]">
 							<span>{formatDate(p.created_at)}</span>
-							<span class="flex items-center gap-1 text-[var(--color-primary)] opacity-0 transition group-hover:opacity-100">
+							<span class="flex items-center gap-1 text-[var(--color-primary-text)] opacity-0 transition group-hover:opacity-100">
 								{t('pages_list.view')}
 								<ArrowRight class="rtl:-scale-x-100" size={14} />
 							</span>

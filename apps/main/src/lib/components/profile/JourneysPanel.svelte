@@ -354,7 +354,7 @@
 								<button
 									type="button"
 									onclick={() => transition(j, 'active')}
-									class="rounded-[var(--radius)] px-2 py-1 text-xs font-medium text-[var(--color-primary)] transition hover:bg-[var(--color-primary)]/10"
+									class="rounded-[var(--radius)] px-2 py-1 text-xs font-medium text-[var(--color-primary-text)] transition hover:bg-[var(--color-primary)]/10"
 								>
 									{t('journeys.start', 'Start')}
 								</button>
@@ -369,7 +369,7 @@
 								<button
 									type="button"
 									onclick={() => transition(j, 'completed')}
-									class="rounded-[var(--radius)] px-2 py-1 text-xs font-medium text-[var(--color-primary)] transition hover:bg-[var(--color-primary)]/10"
+									class="rounded-[var(--radius)] px-2 py-1 text-xs font-medium text-[var(--color-primary-text)] transition hover:bg-[var(--color-primary)]/10"
 								>
 									{t('journeys.complete', 'Complete')}
 								</button>
@@ -384,7 +384,7 @@
 								<button
 									type="button"
 									onclick={() => transition(j, 'planned')}
-									class="rounded-[var(--radius)] px-2 py-1 text-xs font-medium text-[var(--color-primary)] transition hover:bg-[var(--color-primary)]/10"
+									class="rounded-[var(--radius)] px-2 py-1 text-xs font-medium text-[var(--color-primary-text)] transition hover:bg-[var(--color-primary)]/10"
 								>
 									{t('journeys.reopen', 'Reopen')}
 								</button>

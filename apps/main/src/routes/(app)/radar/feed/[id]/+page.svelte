@@ -133,7 +133,7 @@
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 			>
 				{#if saved}
-					<BookmarkCheck size={14} class="text-[var(--color-primary)]" />
+					<BookmarkCheck size={14} class="text-[var(--color-primary-text)]" />
 					{t('radar.detail.saved', 'Saved')}
 				{:else}
 					<Bookmark size={14} />
@@ -146,7 +146,7 @@
 	<article class="mt-5 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 		<!-- Header band: type pill + country + verified status -->
 		<div class="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-5 py-3">
-			<span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-medium capitalize text-[var(--color-primary)]">
+			<span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-medium capitalize text-[var(--color-primary-text)]">
 				<Radar size={12} />
 				{t(`radar.type.${item.type}`, item.type.replaceAll('_', ' '))}
 			</span>
@@ -182,7 +182,7 @@
 				>
 					<CalendarClock
 						size={18}
-						class={deadlinePassed ? 'text-[var(--color-danger)]' : 'text-[var(--color-primary)]'}
+						class={deadlinePassed ? 'text-[var(--color-danger)]' : 'text-[var(--color-primary-text)]'}
 					/>
 					<div class="min-w-0 flex-1">
 						<p class="text-xs text-[var(--color-muted)]">{t('radar.detail.deadline')}</p>
@@ -194,7 +194,7 @@
 						<span
 							class="shrink-0 text-xs font-medium {deadlinePassed
 								? 'text-[var(--color-danger)]'
-								: 'text-[var(--color-primary)]'}"
+								: 'text-[var(--color-primary-text)]'}"
 						>
 							{#if deadlinePassed}
 								{t('radar.detail.deadline_passed')}

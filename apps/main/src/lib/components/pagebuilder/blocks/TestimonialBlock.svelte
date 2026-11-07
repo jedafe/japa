@@ -12,7 +12,7 @@
 		{#if props.rating}
 			<div class="mb-3 flex gap-0.5">
 				{#each Array(5) as _, i (i)}
-					<Star size={16} class={i < (props.rating ?? 0) ? 'fill-[var(--color-primary)] text-[var(--color-primary)]' : 'text-[var(--color-muted)]'} />
+					<Star size={16} class={i < (props.rating ?? 0) ? 'fill-[var(--color-primary)] text-[var(--color-primary-text)]' : 'text-[var(--color-muted)]'} />
 				{/each}
 			</div>
 		{/if}

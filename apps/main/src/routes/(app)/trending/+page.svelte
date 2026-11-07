@@ -126,7 +126,7 @@
 								</span>
 								<span class="min-w-0 flex-1">
 									<span
-										class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+										class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]"
 									>
 										{item.title}
 									</span>
@@ -140,7 +140,7 @@
 									</span>
 								</span>
 								<span
-									class="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[var(--color-primary)]"
+									class="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[var(--color-primary-text)]"
 								>
 									<ArrowUp size={12} /> {score(item.score)}
 								</span>
@@ -171,7 +171,7 @@
 								</span>
 								<span class="min-w-0 flex-1">
 									<span
-										class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+										class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]"
 									>
 										#{item.name}
 									</span>
@@ -181,7 +181,7 @@
 									</span>
 								</span>
 								<span
-									class="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[var(--color-primary)]"
+									class="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[var(--color-primary-text)]"
 								>
 									<ArrowUp size={12} /> {score(item.score)}
 								</span>
@@ -212,7 +212,7 @@
 								</span>
 								<span class="min-w-0 flex-1">
 									<span
-										class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+										class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]"
 									>
 										{item.name}
 									</span>
@@ -226,7 +226,7 @@
 									</span>
 								</span>
 								<span
-									class="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[var(--color-primary)]"
+									class="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[var(--color-primary-text)]"
 								>
 									<ArrowUp size={12} /> {score(item.score)}
 								</span>
@@ -273,7 +273,7 @@
 									</span>
 									<span class="min-w-0 flex-1">
 										<span
-											class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+											class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]"
 										>
 											{item.display_name ?? item.username}
 										</span>
@@ -282,7 +282,7 @@
 										</span>
 									</span>
 									<span
-										class="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[var(--color-primary)]"
+										class="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[var(--color-primary-text)]"
 									>
 										<ArrowUp size={12} /> {score(item.score)}
 									</span>

@@ -14,6 +14,7 @@ package stores
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -167,6 +168,44 @@ func (s *Store) GetLatestIntelManifestDocHashByChannel(ctx context.Context, chan
 	}
 
 	return hash, nil
+}
+
+// GetLatestIntelRawDocBodyLenByChannel returns the byte size of the
+// channel's previous top-level HTML capture — the content-collapse guard's
+// baseline (bot-wall hardening). intelFetchChannel compares a new capture
+// against it: a body that shrank past the collapse bounds reads as a wall
+// stub, not editorial change.
+func (s *Store) GetLatestIntelRawDocBodyLenByChannel(ctx context.Context, channelID pgtype.UUID) (int64, error) {
+	n, err := s.queries.GetLatestIntelRawDocBodyLenByChannel(ctx, channelID)
+	if err != nil {
+		return 0, fmt.Errorf("stores: get latest intel raw doc body len by channel: %w", err)
+	}
+
+	return int64(n), nil
+}
+
+// GetLatestIntelRawDocHTTPHeadersByChannel returns the stored response
+// headers of the channel's previous top-level capture — the validators
+// the worker forwards as conditional-GET headers so an unchanged upstream
+// can answer 304 instead of re-shipping the body. Keys keep the flattened
+// http.Header form ("Etag", "Last-Modified"); nil map when no prior doc
+// or no stored headers exist.
+func (s *Store) GetLatestIntelRawDocHTTPHeadersByChannel(ctx context.Context, channelID pgtype.UUID) (map[string]string, error) {
+	raw, err := s.queries.GetLatestIntelRawDocHTTPHeadersByChannel(ctx, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("stores: get latest intel raw doc headers by channel: %w", err)
+	}
+
+	if len(raw) == 0 {
+		return nil, nil
+	}
+
+	var headers map[string]string
+	if err := json.Unmarshal(raw, &headers); err != nil {
+		return nil, fmt.Errorf("stores: decode latest intel raw doc headers: %w", err)
+	}
+
+	return headers, nil
 }
 
 // GetPrevIntelRawDocByChannel returns the newest manifest document for a

@@ -57,7 +57,7 @@
 {#if !disabled}
 	<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-			<Gift size={16} class="text-[var(--color-primary)]" />
+			<Gift size={16} class="text-[var(--color-primary-text)]" />
 			{t('referral.title', 'Refer & earn')}
 		</h2>
 

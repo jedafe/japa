@@ -102,7 +102,7 @@
 					>
 						<Quote
 							size={26}
-							class="absolute end-4 top-4 text-[var(--color-primary)]/15"
+							class="absolute end-4 top-4 text-[var(--color-primary-text)]/15"
 							aria-hidden="true"
 						/>
 						<!-- Mockup card header: avatar + name, review title as the
@@ -116,7 +116,7 @@
 								/>
 							{:else}
 								<span
-									class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary)]"
+									class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary-text)]"
 									aria-hidden="true"
 								>
 									{authorName(review).slice(0, 1).toUpperCase()}
@@ -170,7 +170,7 @@
 	{#if viewAllHref && aggregate.count > reviews.length}
 		<a
 			href={viewAllHref}
-			class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] transition-colors hover:underline"
+			class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] transition-colors hover:underline"
 		>
 			{t('services.reviews_view_all', 'View all {count} reviews', { count: aggregate.count })}
 			<ArrowRight class="rtl:-scale-x-100" size={14} aria-hidden="true" />

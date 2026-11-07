@@ -214,10 +214,11 @@ func (s *Service) CallerScope(r *http.Request) features.CallerScope {
 // isEnabledForRequest honours caller-scoped flag state when the request
 // attached a §42 scope (features.WithScope — see Handlers.RegisterRoutes);
 // unattached contexts — workers, sweeps — get the global IsEnabled result.
+// The .Enabled contract matches features.Gate: a flag hidden-but-enabled on
+// this surface still serves — hiding from nav is not disabling.
 func (s *Service) isEnabledForRequest(ctx context.Context) bool {
 	if sc, ok := features.ScopeFrom(ctx); ok && s.checker != nil {
-		res := s.checker.EvalFlag(ctx, "video.enabled", sc)
-		return res.Enabled && res.Visible
+		return s.checker.EvalFlag(ctx, "video.enabled", sc).Enabled
 	}
 	return s.IsEnabled(ctx)
 }

@@ -58,6 +58,13 @@ func (c *Composite) fetchJSONLD(ctx context.Context, src sources.Source) (FetchR
 		return FetchResult{}, err
 	}
 
+	// A conditional-GET 304 carries no body — pass it through untouched
+	// instead of extracting zero blocks from empty HTML and reporting a
+	// spurious fetch failure.
+	if res.NotModified {
+		return res, nil
+	}
+
 	blocks, err := extractLDJSONBlocks(res.Body)
 	if err != nil {
 		return FetchResult{}, err
@@ -150,6 +157,13 @@ func (c *Composite) fetchSitemapManifest(ctx context.Context, src sources.Source
 	res, err := c.static.Fetch(ctx, src)
 	if err != nil {
 		return FetchResult{}, err
+	}
+
+	// A conditional-GET 304 carries no body — pass it through untouched
+	// instead of rewriting an empty sitemap into an empty manifest that
+	// would persist as "changed" content.
+	if res.NotModified {
+		return res, nil
 	}
 
 	manifest, kind, err := sitemapManifest(res.Body)

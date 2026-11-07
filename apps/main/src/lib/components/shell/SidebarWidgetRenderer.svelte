@@ -1028,7 +1028,7 @@
 			{#each langList as lang (lang)}
 				<MenuItem onSelect={() => switchLanguage(lang)}>
 					<span class="flex-1">{localeLabel(lang)}</span>
-					{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary)]" />{/if}
+					{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary-text)]" />{/if}
 				</MenuItem>
 			{/each}
 		</Menu>
@@ -1058,7 +1058,7 @@
 					<li>
 						<a
 							href={`/tags/${tag.slug}`}
-							class="inline-block rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
+							class="inline-block rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-primary-text)]"
 							>#{tag.name}</a
 						>
 					</li>
@@ -1138,7 +1138,7 @@
 			<ul class="space-y-2">
 				{#each recentContent.slice(0, limit) as item (item.id)}
 					<li>
-						<a href={contentHref(item)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{item.title}</a>
+						<a href={contentHref(item)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{item.title}</a>
 					</li>
 				{/each}
 			</ul>
@@ -1161,7 +1161,7 @@
 			<ul class="space-y-2">
 				{#each suggestedContent.slice(0, limit) as item (item.id)}
 					<li>
-						<a href={contentHref(item)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{item.title}</a>
+						<a href={contentHref(item)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{item.title}</a>
 					</li>
 				{/each}
 			</ul>
@@ -1243,7 +1243,7 @@
 	{#if newsletterEnabled}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
-			<Mail size={18} class="text-[var(--color-primary)]" />
+			<Mail size={18} class="text-[var(--color-primary-text)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.newsletter')}</h2>
 		</div>
 		{#if typeof widgetProps.description === 'string' && widgetProps.description}
@@ -1314,7 +1314,7 @@
 			class="flex w-full items-center justify-center gap-2 rounded-[var(--radius)] px-4 py-2.5 text-sm font-semibold transition-colors {ctaVariant === 'secondary'
 				? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)] hover:bg-[var(--color-border)]'
 				: ctaVariant === 'outline'
-					? 'border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-contrast)]'
+					? 'border border-[var(--color-primary)] text-[var(--color-primary-text)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-contrast)]'
 					: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
 		>
 			<MousePointerClick size={16} />
@@ -1330,7 +1330,7 @@
 				{#each popularTags.slice(0, limit) as tag, i (tag.id)}
 					<a
 						href={`/tags/${tag.slug}`}
-						class="inline-block rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
+						class="inline-block rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-[var(--color-text-subtle)] hover:text-[var(--color-primary-text)]"
 						style="font-size: {0.7 + (i < 5 ? 0.3 : 0)}rem"
 					>#{tag.name}</a>
 				{/each}
@@ -1344,7 +1344,7 @@
 	{#if leaderboard.length > 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
-			<Trophy size={18} class="text-[var(--color-primary)]" />
+			<Trophy size={18} class="text-[var(--color-primary-text)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.top_contributors')}</h2>
 		</div>
 		<ul class="space-y-2">
@@ -1376,13 +1376,13 @@
 	{#if featuredPosts.length > 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
-			<Star size={18} class="text-[var(--color-primary)]" />
+			<Star size={18} class="text-[var(--color-primary-text)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured', 'Featured')}</h2>
 		</div>
 		<ul class="space-y-2">
 			{#each featuredPosts.slice(0, limit) as post (post.id)}
 				<li>
-					<a href={contentHref(post)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{post.title}</a>
+					<a href={contentHref(post)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{post.title}</a>
 				</li>
 			{/each}
 		</ul>
@@ -1401,7 +1401,7 @@
 		<ul class="space-y-2">
 			{#each relatedDiscussions as disc (disc.id)}
 				<li>
-					<a href={`/forum/${disc.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{disc.title}</a>
+					<a href={`/forum/${disc.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{disc.title}</a>
 				</li>
 			{/each}
 		</ul>
@@ -1420,7 +1420,7 @@
 			<ul class="space-y-2">
 				{#each events.slice(0, limit) as event (event.id)}
 					<li>
-						<a href={safeHref(event.url) || '#'} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+						<a href={safeHref(event.url) || '#'} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary-text)]">
 							<span class="block truncate">{event.title}</span>
 							{#if event.starts_at}
 								<span class="mt-0.5 block text-xs text-[var(--color-muted)]">{new Date(event.starts_at).toLocaleDateString(i18n.locale)}</span>
@@ -1449,7 +1449,7 @@
 				<ul class="space-y-1.5">
 					{#each nonEmptyBookmarkFolders.slice(0, limit) as folder (folder.id)}
 						<li>
-							<a href={`/dashboard/bookmarks?folder=${folder.id}`} class="flex items-center justify-between text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+							<a href={`/dashboard/bookmarks?folder=${folder.id}`} class="flex items-center justify-between text-sm text-[var(--color-text)] hover:text-[var(--color-primary-text)]">
 								<span class="truncate">{folder.name}</span>
 								{#if folder.bookmark_count != null}
 									<span class="text-xs text-[var(--color-muted)]">{folder.bookmark_count}</span>
@@ -1519,7 +1519,7 @@
 					<li>
 						<a
 							href={`/spaces?type=${st.slug}`}
-							class="inline-block rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"
+							class="inline-block rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-primary-text)]"
 						>
 							{st.name}
 						</a>
@@ -1535,9 +1535,9 @@
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<div class="mb-3 flex items-center gap-2">
 				{#if widget.widget_type === 'continue_learning'}
-					<PlayCircle size={18} class="text-[var(--color-primary)]" />
+					<PlayCircle size={18} class="text-[var(--color-primary-text)]" />
 				{:else}
-					<GraduationCap size={18} class="text-[var(--color-primary)]" />
+					<GraduationCap size={18} class="text-[var(--color-primary-text)]" />
 				{/if}
 				<h2 class="text-sm font-medium text-[var(--color-text)]">
 					{title || t(widget.widget_type === 'continue_learning' ? 'sidebar.continue_learning' : 'sidebar.my_learning')}
@@ -1555,7 +1555,7 @@
 						{@const enrHref = safeAcademyUrl(`/tracks/${encodeURIComponent(enr.track_slug)}`)}
 						<li>
 							<!-- academyUrl unset → render non-link rather than a dead '#'. -->
-							<svelte:element this={enrHref ? 'a' : 'div'} href={enrHref || undefined} class="block text-sm text-[var(--color-text)] {enrHref ? 'hover:text-[var(--color-primary)]' : ''}">
+							<svelte:element this={enrHref ? 'a' : 'div'} href={enrHref || undefined} class="block text-sm text-[var(--color-text)] {enrHref ? 'hover:text-[var(--color-primary-text)]' : ''}">
 								<span class="block truncate">{enr.track_title}</span>
 								{#if (enr.lessons_total ?? 0) > 0}
 									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
@@ -1608,7 +1608,7 @@
 {:else if widget.widget_type === 'track_card'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center gap-2">
-			<BookOpen size={18} class="text-[var(--color-primary)]" />
+			<BookOpen size={18} class="text-[var(--color-primary-text)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.featured_track', 'Featured Track')}</h2>
 		</div>
 		{#if !dataLoaded['track_card'] || featuredTrackLoading}
@@ -1688,7 +1688,7 @@
 					{#each configuredItems as item, i (String(item.id ?? item.slug ?? item.username ?? i))}
 						{@const itemHref = configuredItemHref(item)}
 						<li>
-							<svelte:element this={itemHref ? 'a' : 'div'} href={itemHref || undefined} class="block truncate text-sm text-[var(--color-text)] {itemHref ? 'hover:text-[var(--color-primary)]' : ''}">
+							<svelte:element this={itemHref ? 'a' : 'div'} href={itemHref || undefined} class="block truncate text-sm text-[var(--color-text)] {itemHref ? 'hover:text-[var(--color-primary-text)]' : ''}">
 								{(item.title ?? item.name ?? item.tag ?? item.username) as string}
 							</svelte:element>
 						</li>

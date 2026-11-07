@@ -122,7 +122,7 @@
 					{#if result.comparison?.comparison?.slug}
 						<a
 							href="/compare/{result.comparison.comparison.slug}"
-							class="text-[var(--color-primary)] underline"
+							class="text-[var(--color-primary-text)] underline"
 						>
 							{result.comparison.comparison.title}
 						</a>

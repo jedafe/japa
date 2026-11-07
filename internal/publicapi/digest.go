@@ -98,6 +98,10 @@ func (s *Service) Digest(ctx context.Context, viewerID pgtype.UUID) (*PublicDige
 		if raw, err := s.cache.Get(ctx, cacheKey).Bytes(); err == nil {
 			var cached PublicDigest
 			if json.Unmarshal(raw, &cached) == nil {
+				// §42: re-filter post-cache — the cached digest was rendered
+				// under whatever flag state/scope applied then; a flag hidden
+				// or disabled for THIS caller must not leak through it.
+				s.filterGatedDigest(ctx, &cached)
 				cached.Cached = true
 				return &cached, nil
 			}
@@ -151,6 +155,32 @@ func (s *Service) Digest(ctx context.Context, viewerID pgtype.UUID) (*PublicDige
 	}
 
 	return digest, nil
+}
+
+// filterGatedDigest drops feed items whose content_type's feature flag is
+// hidden or disabled for this caller (§42) — applied to cached digests so
+// flag changes and caller scopes take effect without waiting out the TTL.
+// Cached scam alerts are re-checked against scam_alert.enabled the same way
+// the live aggregate reads them.
+func (s *Service) filterGatedDigest(ctx context.Context, d *PublicDigest) {
+	d.ForYou.Items = filterPublicFeedItems(s, ctx, d.ForYou.Items)
+	d.Community.Popular = filterPublicFeedItems(s, ctx, d.Community.Popular)
+
+	if d.Destination != nil && (s.safetyReader == nil || !s.safetyReader.Enabled(ctx)) {
+		d.Destination.ScamAlerts = []PublicScamReport{}
+	}
+}
+
+// filterPublicFeedItems keeps items whose content_type is not gated.
+func filterPublicFeedItems(s *Service, ctx context.Context, items []PublicFeedItem) []PublicFeedItem {
+	out := items[:0]
+	for _, it := range items {
+		if s.contentTypeHidden(ctx, it.ContentType) {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
 }
 
 // digestDestination resolves the owner's destination_country custom field

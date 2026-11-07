@@ -484,6 +484,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	spaceService := spaces.NewService(database)
 	spaceUnread := spaces.NewUnreadCounter(vkClient)
 	spaceHandlers := spaces.NewHandlers(spaceService, spaceUnread, contentService)
+	spaceHandlers.SetFeatureChecker(featureChecker) // §42: space content listings prune gated types
 
 	// Register space auto-populate processor for the worker's space:auto_populate task.
 	spaceAutoPopulateAdapter := spaces.NewProcessorAdapter(spaceService)
@@ -510,6 +511,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Universities subsystem (Section 39) — read-view over spaces of the
 	// University space-type + their custom field values, no dedicated table.
 	universitiesHandlers := universities.NewHandlers(spaceService, cfService)
+	universitiesHandlers.SetFeatureChecker(featureChecker) // §42: gated types excluded from space counts
 	// Intel editorial-override marking for space-column edits (name,
 	// country, initials) on intel-linked universities.
 	universitiesHandlers.SetIntelOverrideMarker(&intelOverrideMarker{store: intelStores})
@@ -649,6 +651,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// materialize their directory tags there too, not only on propose/approve.
 	worker.RegisterSourceTagEnsurer(sourceTagEnsurerAdapter{svc: tagsService})
 	tagsHandlers := tags.NewHandlers(tagsService, contentService, followService)
+	tagsHandlers.SetFeatureChecker(featureChecker) // §42: tag content listings prune gated types
 	// Wire the RBAC resolver so AddTagModerator/RemoveTagModerator can flush
 	// the TARGET user's permission cache after the mutation (Rule 6).
 	tagsHandlers.SetPermCacheInvalidator(rbacResolver)
@@ -686,7 +689,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Comments subsystem (Section 49 — Unified Comments).
 	commentsService := comments.NewService(database)
-	commentsService.SetSettings(settingsService) // BL-009: configurable comment edit window
+	commentsService.SetSettings(settingsService)      // BL-009: configurable comment edit window
+	commentsService.SetFeatureChecker(featureChecker) // §42: parents on flagged-off types are unreachable
 	commentsHandlers := comments.NewHandlers(commentsService)
 	commentsHandlers.SetSpamPipeline(spamPipeline)
 	// BL-001: wire comment notification dispatcher (fire-and-forget, Rule 8).
@@ -803,10 +807,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	trendingHandlers := trending.NewHandlers(trendingStore)
 	trendingHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in trending titles
 	trendingHandlers.SetCache(vkClient.Valkey())
-	trendingHandlers.SetSettings(settingsService) // ADR-128: intent_matrix space-type demotion
+	trendingHandlers.SetSettings(settingsService)      // ADR-128: intent_matrix space-type demotion
+	trendingHandlers.SetFeatureChecker(featureChecker) // §42: prune disabled-feature content types
 
 	// Recommendation engine (ADR-064a) — geo-aware tool/feature suggestions.
 	recommendationsHandlers := recommendations.NewHandlers(settingsService, vkClient.Redis(), trendingStore)
+	recommendationsHandlers.SetFeatureChecker(featureChecker) // §42: prune gated content types
 
 	// Register trending processor with worker for background tasks.
 	trendingProc := trending.NewProcessor(database, slog.Default())
@@ -816,6 +822,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Blog Extension subsystem (Section 24 — Blog Extension).
 	blogService := blog.NewService(database)
+	blogService.SetFeatureChecker(featureChecker) // §42: cross-type series posts prune gated types
 	blogHandlers := blog.NewHandlers(blogService, contentService, cfg.SiteURL, cfg.SiteName)
 	// §43 indexability thresholds — honor seo.sitemap.* Control → Settings.
 	blogHandlers.SetSettings(settingsService)
@@ -3000,7 +3007,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Register the intelligence spine dependencies with the worker package
 	// so the 11 Asynq task handlers (schedule_crawls → notify_discoveries)
 	// can dispatch to the concrete services.
-	intelRobotsChecker := intel_fetcher.NewRobotsChecker(vkClient.Redis())
+	// Egress-pool client for robots.txt — a mapped domain's policy fetch
+	// must egress through the same proxy as its content, else the upstream
+	// sees two origin IPs and can correlate them. NewEgressClient is a
+	// no-op while intel.egress.proxy_domains is unconfigured.
+	intelRobotsChecker := intel_fetcher.NewRobotsCheckerWithClient(
+		vkClient.Redis(),
+		intel_fetcher.NewEgressClient(10*time.Second, 1*1024*1024, settingsService, vkClient.Redis()),
+	)
 	intelPreflightChecker := intel_fetcher.NewPreflightChecker(vkClient.Redis(), intelRobotsChecker, settingsService)
 	worker.RegisterIntelDependencies(
 		intelSourcesStore,
@@ -3017,10 +3031,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		intelPreflightChecker, // pre-flight: crawl lock, rate limit, robots.txt (INTEL-001/006 fix)
 		asynqClient,
 		// intel-channels §2 verify prober for intel:probe_verify — same
-		// safetransport client as the preview prober, larger request
-		// budget (sitemap walk + category-path probes + feed re-checks).
+		// egress-pool client as the fetchers (a mapped domain probed
+		// direct would leak the host IP the pool exists to hide);
+		// larger request budget (sitemap walk + category-path probes +
+		// feed re-checks).
 		intel_probe.NewProber(
-			intel_fetcher.NewSafeClient(10*time.Second, 0),
+			intel_fetcher.NewEgressClient(10*time.Second, 0, settingsService, vkClient.Redis()),
 			settingsService.GetIntOr(context.Background(), "intel.probe.verify_max_requests", intel_probe.DefaultVerifyMaxRequests),
 		),
 	)
@@ -3075,6 +3091,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicAPIService := publicapi.NewService(publicAPIStore)
 	publicAPIService.SetKeyCountReader(settingsService) // api.keys.max_per_user (Rule 3)
 	publicAPIService.SetTierResolver(tierService)       // cap rate limits by user tier
+	publicAPIService.SetFeatureChecker(featureChecker)  // §42: prune flagged-off content types
 
 	// §120 OAuth 2.1 authorization server (ADR-126): web agents (claude.ai,
 	// ChatGPT connectors) obtain per-user bearer tokens for /api/v1/mcp via
@@ -3414,6 +3431,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	searchIndexer := search.NewIndexer(searchEngine, gen.New(database.Reader))
 	searchIndexer.SetLatestRead(gen.New(database.Writer))
 	searchIndexer.SetPool(database)
+	searchIndexer.SetFeatureChecker(featureChecker) // §42: gated types excluded from indexed counts
 	worker.RegisterSearchIndexer(searchIndexer)
 
 	// §102: wire the search indexer into the mentorship service and
@@ -3565,6 +3583,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		rssHandlers := rsspkg.NewHandlers(gen.New(database.Reader), cfg.SiteURL, cfg.SiteName)
 		rssHandlers.SetRedis(vkClient.Redis())
 		rssHandlers.SetLiteralCatalog(literalsCatalog) // §14: resolve {{...}} before feed XML render
+		rssHandlers.SetFeatureChecker(featureChecker)  // §42: prune disabled-feature content types
 		r.Get("/feed.xml", rssHandlers.HandleFeed)
 		r.Get("/spaces/{slug}/feed.xml", rssHandlers.HandleSpaceFeed)
 		r.Get("/tags/{slug}/feed.xml", rssHandlers.HandleTagFeed)
@@ -4101,7 +4120,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// OptionalPermission lets admins revoke directory.spaces.view from a
 			// group to hide /spaces from that group's authed members.
 			// Ref: japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.spaces.view")).Get("/spaces", spaceHandlers.ListSpaces)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), rbac.OptionalPermission(rbacResolver, "directory.spaces.view")).Get("/spaces", spaceHandlers.ListSpaces)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.spaces.view")).Get("/spaces/regions", spaceHandlers.ListDistinctRegions)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.spaces.view")).Get("/spaces/subregions", spaceHandlers.ListSubregionsByRegion)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces", spaceHandlers.ListMySpaces)
@@ -4110,7 +4129,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// space_members.role='owner' (migration 000033), not a spaces
 			// column. The ListMyOwnedSpaces handler queries that join.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/spaces/owned", spaceHandlers.ListMyOwnedSpaces)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}", spaceHandlers.GetSpace)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.create")).
 				Post("/spaces", spaceHandlers.CreateSpace)
@@ -4156,9 +4175,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/spaces/{slug}/mute-status", spaceHandlers.GetMuteStatus)
 
 			// Space content & pinned posts
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			// §42: ScopeMiddleware attaches the caller scope so gated content
+			// types are pruned per-caller.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/content", spaceHandlers.ListSpaceContent)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService)).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), spaces.SpaceResolver(spaceService)).
 				Get("/spaces/{slug}/pinned", spaceHandlers.ListPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), spaces.SpaceResolver(spaceService), rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
 				Post("/spaces/{slug}/pinned", spaceHandlers.AddPinned)
@@ -4217,19 +4238,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Content routes (Section 14 — Content Type System)
 			// Create (require auth + moderate rate limit + censor check + permission)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpPost), opBanEnforce, rbac.RequirePermission(rbacResolver, "content.create")).
+			// §42: ScopeMiddleware attaches the caller scope so creating a
+			// scoped-away content type is unreachable per-caller.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpPost), opBanEnforce, rbac.RequirePermission(rbacResolver, "content.create")).
 				Post("/content", contentHandlers.CreateContent)
 			// Read (require auth for list; single content is public for
 			// published items — Section 14 public content SSR).
 			// OptionalAuth: guests may list published+public content — the
 			// visibility filter restricts anonymous callers (§14 public read).
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content", contentHandlers.ListContent)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content/{slug}", contentHandlers.GetContent)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/post/{content_type}/{slug}", contentHandlers.GetPost)
+			// §42: ScopeMiddleware attaches the caller scope so gated content
+			// types are filtered/denied for geo-, audience-, and
+			// surface-scoped callers, not just globally-disabled flags.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/content", contentHandlers.ListContent)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/content/{slug}", contentHandlers.GetContent)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/post/{content_type}/{slug}", contentHandlers.GetPost)
 			// Content types (public — for frontend content type selection)
 			// OptionalAuth: static type metadata + guide category labels are
 			// public (needed by the guest-facing /guides hub filter — §14).
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content-types", contentHandlers.ListContentTypes)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/content-types", contentHandlers.ListContentTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/visibility-options", contentHandlers.GetVisibilityOptions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/status-options", contentHandlers.GetStatusOptions)
 			// Update/Delete (require auth + edit lock + censor check + permission)
@@ -4249,14 +4275,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Lifecycle: publish/archive/schedule are status transitions.
 			// BUG-003: routes now use the dedicated content.publish and
 			// content.schedule nodes; authorship is verified in the handler.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.publish")).
+			// §42: ScopeMiddleware attaches the caller scope so gated content
+			// types are unreachable per-caller on the publish/schedule/view
+			// interaction paths, not just globally disabled.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), rbac.RequirePermission(rbacResolver, "content.publish")).
 				Post("/content/{id}/publish", contentHandlers.PublishContent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.publish")).
 				Post("/content/{id}/archive", contentHandlers.ArchiveContent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.schedule")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), rbac.RequirePermission(rbacResolver, "content.schedule")).
 				Post("/content/{id}/schedule", contentHandlers.ScheduleContent)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "loose")).Post("/content/{id}/view", contentHandlers.RecordContentView)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/share-count", contentHandlers.GetContentShareCount)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), mw.RateLimit(vkClient.Redis(), "loose")).Post("/content/{id}/view", contentHandlers.RecordContentView)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/content/{id}/share-count", contentHandlers.GetContentShareCount)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/content/{id}/report", reportsHandlers.ReportContent)
 			// Revisions (require auth + permission to view)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.revisions.view")).
@@ -4267,7 +4296,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.pin")).
 				Delete("/content/{id}/pin", contentHandlers.UnpinContent)
 			// Reactions (require auth + permission)
-			r.With(features.Gate(featureChecker, "feature.reactions")).Group(func(r chi.Router) {
+			// §42: ScopeMiddleware attaches the caller scope so parent-type
+			// flag checks inside the reaction handlers are caller-scoped.
+			r.With(features.Gate(featureChecker, "feature.reactions"), auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Group(func(r chi.Router) {
 				// E-007: reaction writes are DB writes — throttle per-user like
 				// forum votes to stop reaction spam / count manipulation.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/content/{id}/reactions", contentHandlers.AddReaction)
@@ -4286,7 +4317,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 			// Content → series lookup (auth-required). Returns the series_id
 			// for a content item so the editor can restore the series selector.
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/series", blogHandlers.GetContentSeries)
+			// §42: series are a blog-extension concept — gated like /series*.
+			r.With(features.Gate(featureChecker, "feature.blog"), auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/series", blogHandlers.GetContentSeries)
 
 			// Reaction type routes (admin-configurable emoji set). The public
 			// GET lives inside the feature.reactions gate above (E-007
@@ -4345,7 +4377,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "link_preview.fetch"), mw.RateLimit(vkClient.Redis(), "tight")).Get("/link-preview", linkPreviewHandlers.Fetch)
 
 			// Content Bookmarks (Section 14 — Content System API)
-			r.With(features.Gate(featureChecker, "feature.bookmarks")).Group(func(r chi.Router) {
+			// §42: ScopeMiddleware attaches the caller scope so parent-type
+			// flag checks inside bookmark handlers are caller-scoped.
+			r.With(features.Gate(featureChecker, "feature.bookmarks"), auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Group(func(r chi.Router) {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Post("/content/{id}/bookmark", contentHandlers.AddBookmark)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "bookmarks.create")).Delete("/content/{id}/bookmark", contentHandlers.RemoveBookmark)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/content/{id}/bookmark", contentHandlers.GetBookmarkStatus)
@@ -4355,7 +4389,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Content Tags (Section 14 — Content System API)
 			// Listing is public (tags render on public content pages); attach
 			// and detach stay auth+permission gated.
-			r.Get("/content/{id}/tags", contentHandlers.ListContentTags)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/content/{id}/tags", contentHandlers.ListContentTags)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_own")).
 				Post("/content/{id}/tags", contentHandlers.AddContentTag)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.edit_own")).
@@ -4369,21 +4403,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.feature")).Delete("/content/{id}/feature", contentHandlers.UnfeatureContent)
 
 			// Content Shares (Section 14 — Content System API)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.share")).Post("/content/{id}/share", contentHandlers.ShareContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), rbac.RequirePermission(rbacResolver, "content.share")).Post("/content/{id}/share", contentHandlers.ShareContent)
 
 			// Related Content (Section 14 — Content System API, pgvector cosine similarity)
 			// BUG-FIX: public read so the /blog/[slug] "Related" section renders
 			// for guest visitors. The handler only requires a platform.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content/{id}/related", contentHandlers.GetRelatedContent)
+			// §42: scope attached so related-item pruning is caller-scoped.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/content/{id}/related", contentHandlers.GetRelatedContent)
 
 			// Singular reaction action routes (catalog lines 259-260). The
 			// plural /content/{id}/reactions collection routes are registered
 			// above; these singular aliases are required by the route catalog
 			// for non-admin callers. POST reads reaction_key from the body;
 			// DELETE reads key from the query string (no {key} path param).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.add"), mw.RateLimit(vkClient.Redis(), "tight")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), rbac.RequirePermission(rbacResolver, "content.reactions.add"), mw.RateLimit(vkClient.Redis(), "tight")).
 				Post("/content/{id}/react", contentHandlers.AddReaction)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "content.reactions.remove"), mw.RateLimit(vkClient.Redis(), "tight")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), rbac.RequirePermission(rbacResolver, "content.reactions.remove"), mw.RateLimit(vkClient.Redis(), "tight")).
 				Delete("/content/{id}/react", contentHandlers.RemoveReaction)
 
 			// Content space assignment (catalog line 261). Multi-space read + update
@@ -4394,9 +4429,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/content/{id}/spaces", contentHandlers.UpdateContentSpaces)
 
 			// Comments (Section 49 — Unified Comment System)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comments/{id}", commentsHandlers.GetComment)
-			r.Get("/content/{id}/comments", commentsHandlers.ListComments)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpComment), opBanEnforce, rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
+			// §42: ScopeMiddleware attaches the caller scope so comments on a
+			// flagged-off content type's parent are scoped away, not just
+			// globally gated.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/comments/{id}", commentsHandlers.GetComment)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/content/{id}/comments", commentsHandlers.ListComments)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpComment), opBanEnforce, rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
 			// No EditLockMiddleware on owner comment edit/delete — the same
 			// false "another user" blocks hit sole authors here; concurrent
 			// edits resolve last-write-wins, ownership-checked in the handler.
@@ -4415,11 +4453,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
 			// Section 49 — optional reply view tracking (Section 08 parity
 			// with /forum/replies/{id}/view): guests 204 without a record.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+			// §42: scope attached so gated-parent comments accrue no views.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).
 				Post("/comments/{id}/view", commentsHandlers.RecordCommentView)
 			// Batch counterpart — the frontend flushes all rendered comment
 			// views in one call (Guide §4.3 N+1 fix).
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).
 				Post("/comments/views", commentsHandlers.RecordCommentViews)
 			// BL-003: pin/unpin route is RequireAuth only; the handler resolves
 			// moderator (comments.pin) vs content-author at request time so a
@@ -4499,26 +4538,29 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Feed routes (Section 32 — Activity Feed / Timeline)
-			r.Get("/feed/card-style", feedHandlers.GetCardStyle)                                             // public — no auth required
-			r.Get("/feed/context", feedHandlers.GetFeedContext)                                              // public — returns resolved VisitorContext
-			r.Get("/feed/journey-options", feedHandlers.GetJourneyOptions)                                   // public — option lists for guest onboarding
-			r.Post("/feed/context", feedHandlers.SetFeedContext)                                             // public — set guest journey context cookie
-			r.Get("/explore", feedHandlers.GetExploreFeed)                                                   // public — no auth required (catalog: /explore)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed", feedHandlers.GetPrimaryFeed)         // catalog: /feed (primary timeline)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/for-you", feedHandlers.GetForYouFeed)  // catalog: /feed/for-you (personalized ranked)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/roadmap", feedHandlers.GetRoadmapFeed) // catalog: /feed/roadmap (readiness roadmap)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/feed/space/{space_id}", feedHandlers.GetSpaceFeed)
+			r.Get("/feed/card-style", feedHandlers.GetCardStyle)           // public — no auth required
+			r.Get("/feed/context", feedHandlers.GetFeedContext)            // public — returns resolved VisitorContext
+			r.Get("/feed/journey-options", feedHandlers.GetJourneyOptions) // public — option lists for guest onboarding
+			r.Post("/feed/context", feedHandlers.SetFeedContext)           // public — set guest journey context cookie
+			// §42: ScopeMiddleware attaches the caller scope so feed item
+			// filtering evaluates scoped flag visibility per request.
+			feedScope := features.ScopeMiddleware(featureChecker)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), feedScope).Get("/explore", feedHandlers.GetExploreFeed)     // public — OptionalAuth so member scopes resolve (catalog: /explore)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), feedScope).Get("/feed", feedHandlers.GetPrimaryFeed)         // catalog: /feed (primary timeline)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), feedScope).Get("/feed/for-you", feedHandlers.GetForYouFeed)  // catalog: /feed/for-you (personalized ranked)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), feedScope).Get("/feed/roadmap", feedHandlers.GetRoadmapFeed) // catalog: /feed/roadmap (readiness roadmap)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), feedScope).Get("/feed/space/{space_id}", feedHandlers.GetSpaceFeed)
 			// catalog: GET /spaces/:id/feed — same handler, param name matches (space_id).
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/{space_id}/feed", feedHandlers.GetSpaceFeed)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), feedScope).Get("/spaces/{space_id}/feed", feedHandlers.GetSpaceFeed)
 			// Public per Section 32:12 (profile timeline audience = "Anyone"), but
 			// gated so a banned/suspended/deleted user's timeline 404s like the rest
 			// of their profile (governing decision: "the whole profile 404s for
 			// non-active users"). The feed route's param is {user_id}, not {id}.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "user_id")).Get("/feed/profile/{user_id}", feedHandlers.GetProfileFeed)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "user_id"), feedScope).Get("/feed/profile/{user_id}", feedHandlers.GetProfileFeed)
 
 			// Trending & Discovery routes (Phase 28)
 			// Public trending endpoints (no auth required)
-			r.Get("/trending/content", trendingHandlers.GetTrendingContent)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/trending/content", trendingHandlers.GetTrendingContent)
 			r.Get("/trending/tags", trendingHandlers.GetTrendingTags)
 			// Catalog alias: /tags/trending
 			r.Get("/tags/trending", trendingHandlers.GetTrendingTags)
@@ -4532,7 +4574,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Recommendation engine (ADR-064a) — public, works for guests and
 			// authenticated users. Uses VisitorContext for geo-aware ranking.
-			r.Get("/recommendations", recommendationsHandlers.GetRecommendations)
+			// §42: scope attached so content pruning is caller-scoped.
+			r.With(features.ScopeMiddleware(featureChecker)).
+				Get("/recommendations", recommendationsHandlers.GetRecommendations)
 
 			// Next-Action Suggestions (§122, ADR-132) — public, guests + members.
 			r.With(features.Gate(featureChecker, "next_actions.enabled")).Group(func(r chi.Router) {
@@ -4567,8 +4611,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/geo/states/{id}/cities", geoHandlers.CreateCity)
 
 			// Universities (Section 39 — read-view over University-type spaces)
-			r.Get("/universities", universitiesHandlers.ListUniversities)
-			r.Get("/universities/{slug}", universitiesHandlers.GetUniversity)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/universities", universitiesHandlers.ListUniversities)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/universities/{slug}", universitiesHandlers.GetUniversity)
 			// Section 39 line 152: comparison matrix link redirects to the
 			// /compare/universities picker with this university pre-selected.
 			r.Get("/universities/{slug}/compare", universitiesHandlers.CompareUniversities)
@@ -5028,7 +5072,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
 					Patch("/series/{id}/posts/reorder", blogHandlers.ReorderSeriesPosts)
 				// List posts in a series (public — server-side fetched by frontend)
-				r.Get("/series/{id}/posts", blogHandlers.ListSeriesPosts)
+				// §42: scope attached so cross-type member posts are pruned per-caller.
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/series/{id}/posts", blogHandlers.ListSeriesPosts)
 
 				// Review routes (admin workflow — keep auth-required)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.create")).
@@ -5184,7 +5229,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.edit_own")).Patch("/organizations/{id}", orgHandlers.UpdateOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "organizations.delete_own")).Delete("/organizations/{id}", orgHandlers.DeleteOrganization)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/members", orgHandlers.ListPublicMembers)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/content", contentHandlers.ListByOrganization)
+			// §42: ScopeMiddleware attaches the caller scope so gated content
+			// types are pruned from the public org Posts tab per-caller.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), requireActiveOrgByID(orgService)).Get("/organizations/{id}/content", contentHandlers.ListByOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/analytics", orgHandlers.GetOrganizationAnalytics)
 			if umamiProxy := umami.NewProxy(); umamiProxy.Enabled() {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.analytics.view")).Get("/analytics/umami/*", umamiProxy.ServeHTTP)
@@ -5978,6 +6025,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// resolve to the same synthetic key context as X-API-Key.
 				r.Use(publicapi.APIKeyMiddleware(publicAPIService, mcpOAuthService.ResolveBearer))
 				r.Use(publicapi.SlidingWindowRateLimitWithSettings(vkClient.Redis(), settingsService, publicAPIService))
+				// §42: caller scope for scoped flag evaluation inside public
+				// API reads (feed readers, content listings).
+				r.Use(features.ScopeMiddleware(featureChecker))
 
 				// Scope enforcement (Section 47 lines 169-182, BUG-003 fix:
 				// RequireScope was defined but never wired — all public
@@ -6240,9 +6290,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public profile Certificates tab — earned-certificate badges; gated to 404 non-active users.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/certificates", academyHandlers.ListCertificatesByUser)
 			// Public profile Likes tab — published+public content the user reacted to; gated to 404 non-active users.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/likes", contentHandlers.ListLikedByUser)
+			// §42: ScopeMiddleware attaches the caller scope so gated content
+			// types are pruned per-caller.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/likes", contentHandlers.ListLikedByUser)
 			// Public profile Replies tab — user's comments on published+public content; gated to 404 non-active users.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/replies", commentsHandlers.ListByAuthor)
+			// §42: ScopeMiddleware attaches the caller scope so replies on
+			// gated content types are pruned per-caller.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/replies", commentsHandlers.ListByAuthor)
 			// Admin user routes (catalog: /admin/users)
 			// BUG-017 through BUG-021: config endpoint surfacing valid user
 			// statuses, profile types, violation types, restriction operations,
@@ -6284,6 +6338,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// published content (Phase 10.01 specifies public SSR search). The
 			// handler degrades gracefully when no user is present (skips
 			// user-scoped analytics logging). Ref: sections/13-search.md
+			// §42: handlers build the caller scope via features.ScopeForRequest —
+			// OptionalAuth must precede it so BuildScope sees the user.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/search", searchHandlers.Search)
 			// Rate-limit autocomplete to prevent enumeration/abuse (SEC-010).
 			// OptionalAuth so §41 blocked-user filtering applies for
@@ -6305,9 +6361,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// OptionalPermission lets admins revoke directory.tags.view from a
 			// group to hide /tags from that group's authed members.
 			// Ref: japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.tags.view")).Get("/tags", tagsHandlers.ListTags)
-			r.Get("/tags/{slug}", tagsHandlers.GetTag)
-			r.Get("/tags/{slug}/content", tagsHandlers.GetTagContent)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), rbac.OptionalPermission(rbacResolver, "directory.tags.view")).Get("/tags", tagsHandlers.ListTags)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/tags/{slug}", tagsHandlers.GetTag)
+			// §42: ScopeMiddleware attaches the caller scope so gated content
+			// types are pruned per-caller on tag pages.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).Get("/tags/{slug}/content", tagsHandlers.GetTagContent)
 			r.Get("/tags/{slug}/moderators", tagsHandlers.GetTagModerators)
 			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
 			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Delete("/tags/{slug}/follow", tagsHandlers.ToggleTagFollow)
@@ -7743,7 +7801,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public profile Posts tab — author-scoped published+public content (was
 			// wired to ListContent, which ignored {id} and returned all platform content).
 			// Public per Section 32; gated to 404 non-active users.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).
+			// §42: ScopeMiddleware attaches the caller scope so gated content
+			// types are pruned from the public profile Posts tab per-caller.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker), requireActiveProfileUser(usersService, "id")).
 				Get("/users/{id}/content", contentHandlers.ListByAuthor)
 			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/users/{id}/follow", followHandlers.ToggleFollow)
@@ -7752,7 +7812,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Task 35: Suggestions/content — BUG-003: now uses pgvector similarity
 			// (Section 53 "You might also like") instead of returning trending content.
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.ScopeMiddleware(featureChecker)).
 				Get("/suggestions/content", trendingHandlers.GetSuggestedContent)
 
 			// ──────────────────────────────────────────────────────────────
@@ -8656,27 +8716,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// browse; follow/unfollow, saved, and save/unsave require auth.
 			// The scholarship search + detail routes mirror the §73 browse
 			// pattern (OptionalAuth). The source directory is public.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
 				Get("/intel/radar", intelHandlers.HandleRadarFeed)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
 				Get("/intel/radar/counts", intelHandlers.HandleRadarCounts)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
 				Get("/intel/radar/followed", intelHandlers.HandleRadarFollowed)
-			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/intel/radar/follow", intelHandlers.HandleRadarFollow)
-			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Delete("/intel/radar/follow", intelHandlers.HandleRadarUnfollow)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
 				Get("/intel/radar/feed/{item_id}", intelHandlers.HandleRadarItemDetail)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
 				Get("/intel/radar/saved", intelHandlers.HandleRadarSaved)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
 				Post("/intel/radar/save", intelHandlers.HandleRadarSave)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.radar.view")).
 				Delete("/intel/radar/save/{item_id}", intelHandlers.HandleRadarUnsave)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
 				Get("/intel/scholarships", intelHandlers.HandleSearchScholarships)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
 				Get("/intel/scholarships/{id}", intelHandlers.HandleScholarshipDetail)
 			// Sources directory — readable with intel.sources.view or
 			// intel.sources.manage so view-only reviewers can browse the
@@ -8706,25 +8766,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public source directory and source detail.
 			// These are intentionally not under /intel/ and are public so they can
 			// be linked from tools and external surfaces (Rule 16).
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/sources", intelHandlers.HandlePublicSourcesDirectory)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/sources/collections", intelHandlers.HandleListSourceCollections)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/sources/meta", intelHandlers.HandleGetSourcesMeta)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/sources/{slug}", intelHandlers.HandleGetSource)
-			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/sources/{slug}/items", intelHandlers.HandleListSourceItems)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/sources/propose", intelHandlers.HandleProposeSource)
 			// Live preview probe for the propose form — authenticated and
 			// per-user rate-limited inside the handler (intel-channels §2).
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/sources/probe", intelHandlers.HandleProbeSource)
 			// User-submitted single-URL fetch (share-target/bookmarklet;
 			// intel-channels Phase 2 §3 oneshot). Shares the probe quota.
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(features.Gate(featureChecker, "intel.enabled"), auth.RequireAuth(kr, vkClient.Redis())).
 				Post("/sources/oneshot", intelHandlers.HandleOneshotSource)
 
 			// Inbound push endpoints (intel-channels Phase 3) —
@@ -8744,9 +8804,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/sources/{slug}/report", intelHandlers.HandleReportSource)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/me/blocked-sources", intelHandlers.HandleListBlockedSources)
-			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/sources/{slug}/follow", intelHandlers.HandleToggleSourceFollow)
-			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(features.Gate(featureChecker, "intel.enabled"), features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Delete("/sources/{slug}/follow", intelHandlers.HandleToggleSourceFollow)
 
 			// Crawl-now — triggers an immediate fetch of a source (INTEL-011 fix).

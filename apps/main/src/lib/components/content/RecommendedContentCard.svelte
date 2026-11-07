@@ -30,7 +30,7 @@
 		<ul class="space-y-2">
 			{#each items as item (item.id)}
 				<li>
-					<a href={contentHref(item)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">{item.title}</a>
+					<a href={contentHref(item)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{item.title}</a>
 				</li>
 			{/each}
 		</ul>

@@ -1,10 +1,10 @@
 package fetcher
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -28,8 +28,11 @@ func TestRSSFetche__FetchRejectsHTML(t *testing.T) {
 		t.Fatal("expected error for HTML response, got nil")
 	}
 
-	if !contains(err.Error(), "not a valid RSS feed") {
-		t.Fatalf("expected 'not a valid RSS feed' error, got %q", err.Error())
+	// Plain HTML on a feed URL is gone-class — the endpoint no longer
+	// serves a feed. (A challenge signature would classify blocked
+	// instead — covered by the wall detector tests.)
+	if !errors.Is(err, ErrContentGone) {
+		t.Fatalf("expected ErrContentGone for HTML response, got %q", err.Error())
 	}
 }
 
@@ -51,9 +54,7 @@ func TestRSSFetcher_FetchRejects4xx(t *testing.T) {
 		t.Fatal("expected error for 410 response, got nil")
 	}
 
-	if !contains(err.Error(), "unexpected HTTP status 410") {
-		t.Fatalf("expected 'unexpected HTTP status 410' error, got %q", err.Error())
+	if !errors.Is(err, ErrContentGone) {
+		t.Fatalf("expected ErrContentGone for 410 response, got %q", err.Error())
 	}
 }
-
-func contains(s, substr string) bool { return strings.Contains(s, substr) }

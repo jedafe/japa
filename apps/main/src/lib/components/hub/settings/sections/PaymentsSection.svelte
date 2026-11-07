@@ -130,7 +130,7 @@
 							<button
 								type="button"
 								onclick={() => viewDetail(p)}
-								class="text-xs text-[var(--color-primary)] hover:underline"
+								class="text-xs text-[var(--color-primary-text)] hover:underline"
 							>
 								{t('settings.payments.view')}
 							</button>
@@ -199,7 +199,7 @@
 									href={selected.checkout_url}
 									target="_blank"
 									rel="noopener noreferrer"
-									class="text-xs text-[var(--color-primary)] hover:underline"
+									class="text-xs text-[var(--color-primary-text)] hover:underline"
 								>
 									{t('settings.payments.checkout_link')}
 								</a>

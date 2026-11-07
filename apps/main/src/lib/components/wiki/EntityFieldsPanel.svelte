@@ -211,7 +211,7 @@
 													<button
 														type="button"
 														onclick={() => (editOpen = true)}
-														class="shrink-0 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+														class="shrink-0 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 														aria-label={t('wiki.suggest_edit', 'Suggest an edit')}
 														title={t('wiki.suggest_edit', 'Suggest an edit')}
 													>
@@ -247,7 +247,7 @@
 											<button
 												type="button"
 												onclick={() => (editOpen = true)}
-												class="shrink-0 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+												class="shrink-0 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 												aria-label={t('wiki.suggest_edit', 'Suggest an edit')}
 												title={t('wiki.suggest_edit', 'Suggest an edit')}
 											>

@@ -18,7 +18,9 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/literals"
+	rssmodel "github.com/jedafe/japa/internal/rss/model"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go"
@@ -54,6 +56,30 @@ type Handlers struct {
 	cache    valkey.Client        // nil disables caching (tests)
 	lit      literalResolver      // nil disables literal resolution (§14)
 	settings stringSettingsReader // nil disables intent-based demotion (ADR-128)
+	flags    FeatureChecker       // nil disables feature-flag pruning
+}
+
+// FeatureChecker resolves feature flag state from feature_flags (§42).
+// *features.Checker satisfies it structurally.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+	EvalFlag(ctx context.Context, key string, sc features.CallerScope) features.EvalResult
+}
+
+// SetFeatureChecker injects the feature flag resolver so trending content
+// prunes disabled/scoped-away feature content types.
+func (h *Handlers) SetFeatureChecker(c FeatureChecker) { h.flags = c }
+
+// featureVisible reports whether a content-gating flag is enabled AND
+// visible for the caller when a §42 scope is attached
+// (features.ScopeMiddleware — public projection semantics, matching
+// search/feed), or globally enabled otherwise.
+func (h *Handlers) featureVisible(ctx context.Context, flag string) bool {
+	if h.flags == nil {
+		return true
+	}
+	res := features.EvalFlagScoped(ctx, h.flags, flag)
+	return res.Enabled && res.Visible
 }
 
 // NewHandlers creates Handlers with the given Store.
@@ -277,6 +303,18 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// §42: prune rows whose content_type's feature flag is off — applied
+	// post-cache (the cached pool is scope-agnostic) so a disabled or
+	// scoped-away feature stops advertising content whose routes 404.
+	filtered := data[:0]
+	for _, item := range data {
+		if flag, ok := rssmodel.ContentTypeFeatureFlag[item.ContentType]; ok && !h.featureVisible(r.Context(), flag) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	data = filtered
 
 	// Truncate the cached pool to the requested limit (per-request).
 	//nolint:gosec // G115: bounded
@@ -619,6 +657,19 @@ func (h *Handlers) GetSuggestedContent(w http.ResponseWriter, r *http.Request) {
 	if data == nil {
 		data = []gen.GetSuggestedContentRow{}
 	}
+
+	// §42: prune rows whose content_type's feature flag is off — the
+	// suggestions pool is computed from trending snapshots that predate any
+	// scope, so a disabled or scoped-away feature must not advertise content
+	// whose routes 404.
+	filtered := data[:0]
+	for _, item := range data {
+		if flag, ok := rssmodel.ContentTypeFeatureFlag[item.ContentType]; ok && !h.featureVisible(r.Context(), flag) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	data = filtered
 
 	h.resolveLiterals(r, &data)
 

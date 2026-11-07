@@ -552,7 +552,7 @@
 						<a
 							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(parentPage.slug)}"
 							rel={stubRel(parentPage.slug)}
-							class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+							class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 						>
 							<ChevronLeft size={13} class="shrink-0 rtl:-scale-x-100" />
 							{t('wiki.back_to_parent', 'Back to {title}', { title: parentPage.title })}
@@ -767,8 +767,8 @@
 									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(item.slug)}"
 									rel={stubRel(item.slug)}
 									class={item.dashed
-										? 'inline-flex items-center rounded-full border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]'
-										: 'inline-flex items-center rounded-full bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]'}
+										? 'inline-flex items-center rounded-full border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]'
+										: 'inline-flex items-center rounded-full bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:text-[var(--color-primary-text)]'}
 								>
 									{item.label}
 								</a>
@@ -780,7 +780,7 @@
 											<a
 												href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(child.slug)}"
 												rel={stubRel(child.slug)}
-												class="inline-flex items-center rounded-full border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+												class="inline-flex items-center rounded-full border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 											>
 												{child.label}
 											</a>
@@ -836,7 +836,7 @@
 								<a
 									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(prevSibling.slug)}"
 									rel={stubRel(prevSibling.slug)}
-									class="inline-flex min-w-0 items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+									class="inline-flex min-w-0 items-center gap-1.5 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 								>
 									<ChevronLeft size={14} class="shrink-0 rtl:-scale-x-100" />
 									<span class="truncate">{prevSibling.title}</span>
@@ -848,7 +848,7 @@
 								<a
 									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(nextSibling.slug)}"
 									rel={stubRel(nextSibling.slug)}
-									class="inline-flex min-w-0 items-center justify-end gap-1.5 text-end text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+									class="inline-flex min-w-0 items-center justify-end gap-1.5 text-end text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 								>
 									<span class="truncate">{nextSibling.title}</span>
 									<ChevronRight size={14} class="shrink-0 rtl:-scale-x-100" />
@@ -885,7 +885,7 @@
 													suggestTarget = item;
 													suggestOpen = true;
 												}}
-												class="shrink-0 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+												class="shrink-0 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 												aria-label={t('wiki.suggest_edit', 'Suggest an edit')}
 												title={t('wiki.suggest_edit', 'Suggest an edit')}
 											>

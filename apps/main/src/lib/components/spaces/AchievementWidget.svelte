@@ -74,7 +74,7 @@
 {#if enabled && !loading && achievements.length > 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-			<Trophy size={16} class="text-[var(--color-primary)]" />
+			<Trophy size={16} class="text-[var(--color-primary-text)]" />
 			{t('achievements.widget_heading', 'Recent Achievements')}
 		</h2>
 		<ul class="space-y-2.5">
@@ -94,7 +94,7 @@
 							{/if}
 							{#if a.reaction_count > 0}
 								<span class="inline-flex items-center gap-0.5">
-									<Heart size={11} class="text-[var(--color-primary)]" fill="currentColor" />
+									<Heart size={11} class="text-[var(--color-primary-text)]" fill="currentColor" />
 									{a.reaction_count}
 								</span>
 							{/if}
@@ -114,7 +114,7 @@
 {:else if enabled && !loading && !hideWhenEmpty && !loadError && achievements.length === 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-2 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-			<Trophy size={16} class="text-[var(--color-primary)]" />
+			<Trophy size={16} class="text-[var(--color-primary-text)]" />
 			{t('achievements.widget_heading', 'Recent Achievements')}
 		</h2>
 		<p class="text-xs text-[var(--color-muted)]">{t('achievements.widget_empty', 'No achievements yet for this destination.')}</p>

@@ -608,7 +608,7 @@
 			{@const Icon = item.icon}
 			<div class="flex items-start gap-3">
 				<span
-					class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+					class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"
 				>
 					<Icon size={18} />
 				</span>

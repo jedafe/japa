@@ -369,7 +369,7 @@
 									if (tplOpen) tplError = null;
 								}}
 								aria-expanded={tplOpen}
-								class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] transition hover:opacity-80"
+								class="inline-flex items-center gap-1 text-xs text-[var(--color-primary-text)] transition hover:opacity-80"
 							>
 								<Plus size={12} />
 								{t('wiki.new_template', 'New template')}

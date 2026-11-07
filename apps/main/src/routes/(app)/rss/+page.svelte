@@ -80,7 +80,7 @@
 
 <div class="mx-auto w-full max-w-3xl px-4 py-8">
 	<header class="mb-6 flex items-start gap-3">
-		<div class="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+		<div class="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 			<Rss size={20} />
 		</div>
 		<div>
@@ -152,7 +152,7 @@
 					{@render feedRow({ name: space.name, desc: '', path: `/spaces/${space.slug}/feed.xml` })}
 				{/each}
 			</div>
-			<a href="/spaces" class="mt-3 inline-block text-sm font-medium text-[var(--color-primary)] hover:underline">
+			<a href="/spaces" class="mt-3 inline-block text-sm font-medium text-[var(--color-primary-text)] hover:underline">
 				{t('rss.section.browse_spaces', 'Browse all spaces →')}
 			</a>
 		{:else if !data.loadError}
@@ -174,7 +174,7 @@
 					{@render feedRow({ name: `#${tag.name}`, desc: '', path: `/tags/${tag.slug}/feed.xml` })}
 				{/each}
 			</div>
-			<a href="/tags" class="mt-3 inline-block text-sm font-medium text-[var(--color-primary)] hover:underline">
+			<a href="/tags" class="mt-3 inline-block text-sm font-medium text-[var(--color-primary-text)] hover:underline">
 				{t('rss.section.browse_tags', 'Browse all tags →')}
 			</a>
 		{:else if !data.loadError}
@@ -191,7 +191,7 @@
 
 {#snippet feedRow(feed: FeedLink)}
 	<div class="flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-		<Rss size={16} class="shrink-0 text-[var(--color-primary)]" />
+		<Rss size={16} class="shrink-0 text-[var(--color-primary-text)]" />
 		<div class="min-w-0 flex-1">
 			<div class="truncate text-sm font-medium text-[var(--color-text)]">{feed.name}</div>
 			{#if feed.desc}
@@ -201,7 +201,7 @@
 		</div>
 		<button
 			type="button"
-			class="flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+			class="flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 			title={t('rss.copy', 'Copy feed URL')}
 			onclick={() => copyFeed(feed.path)}
 		>
@@ -217,7 +217,7 @@
 			href={feed.path}
 			target="_blank"
 			rel="noopener"
-			class="flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+			class="flex shrink-0 items-center gap-1 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 			title={t('rss.open', 'Open feed')}
 		>
 			<ExternalLink size={14} />

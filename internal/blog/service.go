@@ -174,8 +174,22 @@ func (s *Service) RemovePostFromSeries(ctx context.Context, seriesID, contentID 
 
 // ListPostsInSeries returns all posts in a series ordered by position.
 // H5: now platform-scoped and filters soft-deleted contents.
+// §42: member posts whose content_type is hidden/disabled for this caller
+// are pruned — a series is cross-type (§14), so the blog flag alone does
+// not cover every row it may join.
 func (s *Service) ListPostsInSeries(ctx context.Context, seriesID pgtype.UUID) ([]gen.ListPostsInSeriesRow, error) {
-	return s.store.listPostsInSeries(ctx, seriesID)
+	rows, err := s.store.listPostsInSeries(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	out := rows[:0]
+	for _, row := range rows {
+		if s.contentTypeHidden(ctx, row.ContentType) {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out, nil
 }
 
 // GetSeriesForContent returns the series_id for a given content_id, or

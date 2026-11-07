@@ -25,7 +25,7 @@
 		{#if viewAllHref}
 			<a
 				href={viewAllHref}
-				class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline"
+				class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)] hover:underline"
 			>
 				{t('services.faq_view_all', 'View all FAQs')}
 				<ArrowRight class="rtl:-scale-x-100" size={12} aria-hidden="true" />

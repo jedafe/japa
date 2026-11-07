@@ -62,13 +62,22 @@
 		<circle cx="12" cy="9" r="2.4" fill="var(--color-surface)" />
 	</svg>
 
-	<img
-		src="/illustrations/japa-stage-hero.webp"
-		alt=""
-		class="absolute right-[1%] bottom-[-15%] h-[86%] w-auto object-contain object-bottom"
-		loading="eager"
-		decoding="async"
-	/>
+	<!-- The whole scene sits inside a `hidden lg:block` container, but a
+	     plain <img> would still be fetched on mobile — the media-gated
+	     source means the ~145 KB webp is only requested at lg+ viewports;
+	     the 1px data-URI fallback keeps the img element valid elsewhere. -->
+	<picture>
+		<source srcset="/illustrations/japa-stage-hero.webp" media="(min-width: 1024px)" />
+		<img
+			src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+			alt=""
+			class="absolute right-[1%] bottom-[-15%] h-[86%] w-auto object-contain object-bottom"
+			width="1120"
+			height="640"
+			decoding="async"
+			fetchpriority="low"
+		/>
+	</picture>
 </div>
 
 <style>

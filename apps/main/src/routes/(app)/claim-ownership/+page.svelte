@@ -447,7 +447,7 @@
 						<li class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 							<div class="flex items-start justify-between gap-3">
 								<div class="min-w-0">
-									<a href="/org/{claim.org_slug}" class="block truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]">
+									<a href="/org/{claim.org_slug}" class="block truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]">
 										{claim.org_name}
 									</a>
 									<p class="mt-0.5 text-xs text-[var(--color-muted)]">
@@ -499,7 +499,7 @@
 				body={t('claim_ownership.pending_exists_body', 'You already have a pending claim for this organization. You can track or withdraw it from My claims.')}
 			/>
 			<p class="mt-3 text-center">
-				<a href="/claim-ownership" class="text-sm text-[var(--color-primary)] hover:underline">{t('claim_ownership.my_claims_link', 'My claims')}</a>
+				<a href="/claim-ownership" class="text-sm text-[var(--color-primary-text)] hover:underline">{t('claim_ownership.my_claims_link', 'My claims')}</a>
 			</p>
 		{:else if blocked === 'no_permission'}
 			<EmptyState
@@ -509,7 +509,7 @@
 			/>
 		{:else if phase === 'processing'}
 			<div class="flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center">
-				<Clock size={28} class="text-[var(--color-primary)]" />
+				<Clock size={28} class="text-[var(--color-primary-text)]" />
 				<p class="text-base font-medium text-[var(--color-text)]">{t('claim_ownership.processing_title', 'Confirming your payment')}</p>
 				<p class="max-w-md text-sm text-[var(--color-text-subtle)]">{t('claim_ownership.processing_body', "We're still confirming your payment. Your claim will appear under My claims once it completes.")}</p>
 				{#if errorKey}
@@ -540,14 +540,14 @@
 					<a href="/org/{org.slug}" class="rounded-full border border-[var(--color-border)] px-5 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 						{t('claim_ownership.back', 'Back to organization')}
 					</a>
-					<a href="/claim-ownership" class="text-sm font-medium text-[var(--color-primary)] hover:underline">
+					<a href="/claim-ownership" class="text-sm font-medium text-[var(--color-primary-text)] hover:underline">
 						{t('claim_ownership.my_claims_link', 'My claims')}
 					</a>
 				</div>
 			</div>
 		{:else if phase === 'redirecting' || phase === 'creating_claim'}
 			<div class="flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center">
-				<Loader2 size={24} class="animate-spin text-[var(--color-primary)]" />
+				<Loader2 size={24} class="animate-spin text-[var(--color-primary-text)]" />
 				<p class="text-sm text-[var(--color-text)]">
 					{phase === 'redirecting'
 						? t('claim_ownership.redirecting_payment', 'Redirecting to payment provider…')
@@ -581,15 +581,15 @@
 							<circle cx="210" cy="160" r="4.5" fill="var(--color-primary)" opacity="0.5" />
 						</svg>
 						<div class="co-focal">
-							<KeyRound size={56} strokeWidth={1.1} class="text-[var(--color-primary)]" />
+							<KeyRound size={56} strokeWidth={1.1} class="text-[var(--color-primary-text)]" />
 						</div>
-						<div class="co-chip" style="top: 8%; inset-inline-start: 10%;"><Building2 size={17} class="text-[var(--color-primary)]" /></div>
-						<div class="co-chip" style="top: 30%; inset-inline-end: 8%;"><ScrollText size={17} class="text-[var(--color-primary)]" /></div>
-						<div class="co-chip" style="bottom: 14%; inset-inline-start: 12%;"><Handshake size={17} class="text-[var(--color-primary)]" /></div>
+						<div class="co-chip" style="top: 8%; inset-inline-start: 10%;"><Building2 size={17} class="text-[var(--color-primary-text)]" /></div>
+						<div class="co-chip" style="top: 30%; inset-inline-end: 8%;"><ScrollText size={17} class="text-[var(--color-primary-text)]" /></div>
+						<div class="co-chip" style="bottom: 14%; inset-inline-start: 12%;"><Handshake size={17} class="text-[var(--color-primary-text)]" /></div>
 					</div>
 
 					<div class="mt-auto flex items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]/80 px-4 py-3 backdrop-blur-sm">
-						<ShieldQuestion size={18} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+						<ShieldQuestion size={18} class="mt-0.5 shrink-0 text-[var(--color-primary-text)]" />
 						<p class="text-xs leading-relaxed text-[var(--color-text-subtle)]">
 							<span class="block font-semibold text-[var(--color-text)]">{t('claim_ownership.privacy_title', 'Claims are reviewed, not published.')}</span>
 							{t('claim_ownership.privacy_body', 'Your evidence is only visible to our review team while they decide.')}
@@ -612,7 +612,7 @@
 										class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-semibold transition-colors disabled:cursor-default {i === step
 											? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
 											: i < step
-												? 'bg-[var(--color-primary)]/15 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/25'
+												? 'bg-[var(--color-primary)]/15 text-[var(--color-primary-text)] hover:bg-[var(--color-primary)]/25'
 												: 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)]'}"
 										aria-current={i === step ? 'step' : undefined}
 										aria-label={s.title}
@@ -621,7 +621,7 @@
 									</button>
 									{#if i < totalSteps - 1}<span class="h-px flex-1 {n <= step ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"></span>{:else}<span class="flex-1" aria-hidden="true"></span>{/if}
 								</div>
-								<span class="hidden text-center text-[11px] font-medium sm:block {i === step ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}">{s.title}</span>
+								<span class="hidden text-center text-[11px] font-medium sm:block {i === step ? 'text-[var(--color-primary-text)]' : 'text-[var(--color-muted)]'}">{s.title}</span>
 							</div>
 						{/each}
 					</nav>
@@ -634,7 +634,7 @@
 						</p>
 
 						<div class="mt-5 flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-							<span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+							<span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface)] text-[var(--color-primary-text)]">
 								<Building2 size={18} />
 							</span>
 							<div class="min-w-0">
@@ -667,7 +667,7 @@
 								<div class="flex flex-col gap-2" role="radiogroup" aria-label={t('claim_ownership.payment_required', 'Submission fee')}>
 									<label class="flex items-center gap-2 rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors {paymentMethod === 'credit' ? 'border-[var(--color-primary)] bg-[var(--color-surface)]' : 'border-[var(--color-border)]'} {creditsShort ? 'opacity-60' : 'cursor-pointer'}">
 										<input type="radio" name="payment_method" value="credit" checked={paymentMethod === 'credit'} disabled={creditsShort} onchange={() => (paymentMethod = 'credit')} class="h-4 w-4 accent-[var(--color-primary)]" />
-										<Wallet size={16} class="shrink-0 text-[var(--color-primary)]" />
+										<Wallet size={16} class="shrink-0 text-[var(--color-primary-text)]" />
 										<span class="flex-1 text-[var(--color-text)]">{t('claim_ownership.pay_with_credits', 'Pay with credits ({credits})').replace('{credits}', String(feeCredits))}</span>
 										<span class="text-xs {creditsShort ? 'text-[var(--color-danger)]' : 'text-[var(--color-muted)]'}">
 											{t('claim_ownership.pay_balance', 'Balance: {credits}').replace('{credits}', String(credits))}
@@ -675,12 +675,12 @@
 									</label>
 									<label class="flex cursor-pointer items-center gap-2 rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors {paymentMethod === 'paystack' ? 'border-[var(--color-primary)] bg-[var(--color-surface)]' : 'border-[var(--color-border)]'}">
 										<input type="radio" name="payment_method" value="paystack" checked={paymentMethod === 'paystack'} onchange={() => (paymentMethod = 'paystack')} class="h-4 w-4 accent-[var(--color-primary)]" />
-										<CreditCard size={16} class="shrink-0 text-[var(--color-primary)]" />
+										<CreditCard size={16} class="shrink-0 text-[var(--color-primary-text)]" />
 										<span class="text-[var(--color-text)]">{t('claim_ownership.pay_with_gateway', 'Pay with card (Paystack)')}</span>
 									</label>
 									<label class="flex cursor-pointer items-center gap-2 rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors {paymentMethod === 'stripe' ? 'border-[var(--color-primary)] bg-[var(--color-surface)]' : 'border-[var(--color-border)]'}">
 										<input type="radio" name="payment_method" value="stripe" checked={paymentMethod === 'stripe'} onchange={() => (paymentMethod = 'stripe')} class="h-4 w-4 accent-[var(--color-primary)]" />
-										<CreditCard size={16} class="shrink-0 text-[var(--color-primary)]" />
+										<CreditCard size={16} class="shrink-0 text-[var(--color-primary-text)]" />
 										<span class="text-[var(--color-text)]">{t('claim_ownership.pay_with_stripe', 'Pay with card (Stripe)')}</span>
 									</label>
 								</div>
@@ -740,7 +740,7 @@
 											<button
 												type="button"
 												onclick={() => (mediaField = { id: field.id, type: field.type })}
-												class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+												class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 											>
 												<Upload size={14} />
 												{field.type === 'image_single' && single ? t('claim_ownership.media_replace', 'Replace image') : field.type === 'image_single' ? t('claim_ownership.media_pick_image', 'Upload image') : t('claim_ownership.media_add', 'Upload file')}
@@ -766,7 +766,7 @@
 					{#if errorKey}
 						<p class="mt-4 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">{t(errorKey)}</p>
 						{#if submissionId && errorKey === 'claim_ownership.errors.payment_not_completed'}
-							<button type="button" onclick={discardPendingSubmission} class="mt-2 text-sm font-medium text-[var(--color-primary)] hover:underline">
+							<button type="button" onclick={discardPendingSubmission} class="mt-2 text-sm font-medium text-[var(--color-primary-text)] hover:underline">
 								{t('claim_ownership.start_over', 'Discard it and start a new submission')}
 							</button>
 						{/if}

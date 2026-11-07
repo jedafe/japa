@@ -170,7 +170,7 @@
 		<!-- Guests can see the dialog surface but must sign in to transact —
 		     POST /tips requires auth (BUG-014). -->
 		<div class="flex flex-col items-center gap-3 py-6 text-center">
-			<LogIn class="size-10 text-primary" />
+			<LogIn class="size-10 text-[var(--color-primary-text)]" />
 			<p class="text-sm text-muted-foreground">{t('tips.sign_in_hint', 'Sign in to send a tip.')}</p>
 			<a href={returnUrl}
 				class="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90">

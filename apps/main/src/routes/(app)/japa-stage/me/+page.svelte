@@ -142,7 +142,7 @@
 	</a>
 
 	<header class="flex items-center gap-3">
-		<div class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+		<div class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 			<Compass class="h-5 w-5" />
 		</div>
 		<div>

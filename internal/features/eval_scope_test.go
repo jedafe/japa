@@ -20,7 +20,7 @@ func (s *stubScopeBuilder) BuildScope(_ *http.Request, surface string) CallerSco
 }
 
 func TestScopeForRequest(t *testing.T) {
-	t.Run("header surface is used when no override given", func(t *testing.T) {
+	t.Run("scope built from the request's header surface", func(t *testing.T) {
 		sb := &stubScopeBuilder{scope: CallerScope{Surface: "main"}}
 		r := httptest.NewRequest("GET", "/", nil)
 		r.Header.Set(SurfaceHeader, "main")
@@ -30,13 +30,15 @@ func TestScopeForRequest(t *testing.T) {
 		}
 	})
 
-	t.Run("explicit surface overrides the header", func(t *testing.T) {
-		sb := &stubScopeBuilder{scope: CallerScope{Surface: "admin"}}
+	t.Run("absent surface header yields anonymous scope", func(t *testing.T) {
+		sb := &stubScopeBuilder{scope: CallerScope{}}
 		r := httptest.NewRequest("GET", "/", nil)
-		r.Header.Set(SurfaceHeader, "main")
-		sc := ScopeForRequest(sb, r, "admin")
-		if sb.gotSurface != "admin" || sc.Surface != "admin" {
-			t.Fatalf("expected explicit surface to win; got %+v", sc)
+		sc := ScopeForRequest(sb, r)
+		if !sb.called || sb.gotSurface != "" {
+			t.Fatalf("expected BuildScope called with empty surface; got %q", sb.gotSurface)
+		}
+		if sc.Surface != "" {
+			t.Fatalf("expected anonymous scope; got %+v", sc)
 		}
 	})
 
@@ -46,6 +48,27 @@ func TestScopeForRequest(t *testing.T) {
 			t.Fatalf("expected zero scope; got %+v", sc)
 		}
 	})
+}
+
+func TestScopeMiddleware(t *testing.T) {
+	sb := &stubScopeBuilder{scope: CallerScope{Surface: "main"}}
+
+	var got CallerScope
+	var attached bool
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, attached = ScopeFrom(r.Context())
+	})
+
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set(SurfaceHeader, "main")
+	ScopeMiddleware(sb)(next).ServeHTTP(httptest.NewRecorder(), r)
+
+	if !attached || got.Surface != "main" {
+		t.Fatalf("middleware must attach the request scope; got %+v attached=%v", got, attached)
+	}
+	if !sb.called || sb.gotSurface != "main" {
+		t.Fatalf("expected BuildScope with header surface; called=%v surface=%q", sb.called, sb.gotSurface)
+	}
 }
 
 func TestWithScopeScopeFrom(t *testing.T) {

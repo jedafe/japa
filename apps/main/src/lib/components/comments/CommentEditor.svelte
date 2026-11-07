@@ -196,7 +196,7 @@
 	}
 
 	const btnBase = 'grid place-items-center rounded p-1 transition-colors';
-	const btnOn = 'text-[var(--color-primary)] bg-[var(--color-primary)]/10';
+	const btnOn = 'text-[var(--color-primary-text)] bg-[var(--color-primary)]/10';
 	const btnOff = 'text-[var(--color-muted)] hover:text-[var(--color-text)]';
 </script>
 
@@ -266,7 +266,7 @@
 		height: 0;
 	}
 	:global(.tiptap-comment-editor .mention) {
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		font-weight: 500;
 	}
 </style>

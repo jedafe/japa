@@ -29,7 +29,7 @@
 				<li class="flex items-start gap-2.5 text-sm text-[var(--color-text-subtle)]">
 					<CheckCircle2
 						size={16}
-						class="mt-0.5 shrink-0 text-[var(--color-primary)]"
+						class="mt-0.5 shrink-0 text-[var(--color-primary-text)]"
 						aria-hidden="true"
 					/>
 					<span>{line}</span>

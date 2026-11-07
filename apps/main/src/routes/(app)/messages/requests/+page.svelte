@@ -187,7 +187,7 @@
 							</p>
 							<a
 								href="/u/{req.requester_username}"
-								class="truncate text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+								class="truncate text-xs text-[var(--color-muted)] hover:text-[var(--color-primary-text)]"
 							>
 								@{req.requester_username}
 							</a>

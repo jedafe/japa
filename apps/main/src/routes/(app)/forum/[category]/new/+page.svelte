@@ -117,7 +117,7 @@
 		class="space-y-5 p-4"
 	>
 		{#if errorMsg}
-			<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary)]">
+			<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary-text)]">
 				{errorMsg}
 			</p>
 		{/if}
@@ -250,7 +250,7 @@
 					<button
 						type="button"
 						onclick={addPollOption}
-						class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+						class="inline-flex items-center gap-1 text-xs text-[var(--color-primary-text)] hover:underline"
 					>
 						<Plus size={13} /> {t('forum.new.poll_add_option', 'Add option')}
 					</button>

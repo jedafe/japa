@@ -81,6 +81,10 @@ CREATE TABLE intel_source_channels (
   last_error_message   text,
   last_changed_at      timestamptz,
   consecutive_failures int NOT NULL DEFAULT 0,
+  disabled_by          text,                  -- circuit_breaker | license | admin; NULL when enabled
+  blocked_reason       text,                  -- wall class of the latest bot-wall sighting
+  last_wall_at         timestamptz,
+  wall_seen_count      int NOT NULL DEFAULT 0, -- wall episodes (one count per intel.wall_episode_secs window)
   created_at           timestamptz NOT NULL DEFAULT now(),
   updated_at           timestamptz NOT NULL DEFAULT now(),
   UNIQUE(source_id, entry_url, entity_types)
@@ -222,6 +226,57 @@ All implement `Fetch(ctx, channel) → FetchResult` (signature gains the channel
 
 **Hardening applying to all adapters:** per-channel circuit breaker (`consecutive_failures` → auto-disable at channel level), per-method timeout budgets, response size caps, `safetransport` on every outbound request, and a `provider_config.fallback_methods` degradation ladder (e.g. `rss` → `jsonld` → `render` → `static`).
 
+#### Render service (`services/render/`)
+
+The `render` adapter's upstream is a standalone Bun+Playwright (chromium)
+service implementing the `RenderFetcher` contract:
+
+```
+POST /render  {url, wait_selector?, timeout_ms?, a11y?, stealth?,
+               solve?, proxy_group?, session_id?}
+→ 200 {html, a11y_text?, final_url, wall_detected}
+→ 400 bad request · 500/503/504 render failure · GET /healthz
+```
+
+- **Auth**: optional `RENDER_AUTH_TOKEN` Bearer check (channel-side
+  `provider_config.auth_token`).
+- **Sessions**: `session_id` maps to a persistent browser context
+  (TTL `RENDER_SESSION_TTL_MS`, LRU-bounded) so a challenge-set cookie
+  (e.g. `cf_clearance`) carries into the next render.
+- **Stealth**: `stealth:true` applies a realistic UA + webdriver-evasion
+  init script — basic evasion, not fingerprint spoofing.
+- **Solve**: `solve:"auto"` grants a bounded settle wait
+  (`RENDER_SOLVE_WAIT_MS`) for non-interactive challenges; a page still
+  matching the wall-signature list afterward returns
+  `wall_detected:true` — the service never fabricates a pass, and real
+  CAPTCHA solving requires an external provider (not wired).
+- **Proxies**: `proxy_group` resolves to `RENDER_PROXY_<GROUP>` env URLs
+  — credentials live on the service, never on the wire.
+- **Bounded**: `RENDER_MAX_CONCURRENCY` semaphore + bounded wait queue,
+  120s timeout cap, `RENDER_MAX_SESSIONS` context cap.
+- **SSRF**: entry-URL private-literal refusal + per-request route
+  interception (redirects and subresources) + DNS layer resolving every
+  hostname and rejecting any private answer — literal, resolved, and
+  numeric-spelling targets all fail closed (resolve-then-connect TOCTOU
+  is the documented residual; full closure is a validating CONNECT
+  forward proxy as `RENDER_PROXY_<GROUP>` — dial-time checks, no
+  resolve-vs-connect gap).
+
+Deploy via the `render` service in `docker-compose.yml`; point
+`intel.render.service_url` at `http://render:8300`.
+
+#### Egress proxy pools
+
+`safetransport` accepts an optional per-request `Proxy` hook:
+`intel.egress.proxy_domains` (JSON `{domain: group}`, suffix-matched)
+routes only listed domains through `intel.egress.proxy_pools`
+(`{group: [proxy-url, ...]}`). Assignment is sticky per domain via
+`jc:intel:egress_proxy:{domain}` (SET NX, `intel.egress.proxy_sticky_secs`)
+so a host's egress IP does not rotate mid-session. Unmapped domains and
+an unset pool are byte-identical direct egress; the hook is wired only
+into the direct-origin adapters (static/rss/api) — render, wayback,
+social, and search keep their own transport posture.
+
 ---
 
 ## 4. Curator path & category routing
@@ -354,6 +409,9 @@ POST   /api/v1/intel/inbound/websub/:channel_id    — WebSub push delivery
 intel.category_method_map          jsonb   category → {entity_types, methods, pipeline}
 intel.render.service_url           string  headless renderer endpoint (empty = disabled)
 intel.render.timeout_ms            int
+intel.egress.proxy_pools           jsonb   {group: [proxy-url, ...]} forward-proxy pools
+intel.egress.proxy_domains         jsonb   {domain: group} — only listed domains egress via pool
+intel.egress.proxy_sticky_secs     int     sticky assignment TTL (default 86400)
 intel.search.provider              string  brave | google_cse | serpapi
 intel.search.api_key               string  encrypted at rest (payment-secret pattern)
 intel.email.inbound_domain         string

@@ -170,6 +170,36 @@ func (s *Store) UpdateChannelRelevance(ctx context.Context, arg gen.UpdateIntelC
 	return row, nil
 }
 
+// ListDisabledChannels returns up to limit auto-disabled channels eligible
+// for the periodic re-probe sweep (intel:reprobe_dead_channels): channels the
+// failure circuit-breakers switched off (consecutive_failures > 0 with a
+// stamped last_error_message). Deliberate admin disables carry neither and
+// are not touched by the sweep.
+func (s *Store) ListDisabledChannels(ctx context.Context, limit int32) ([]Channel, error) {
+	rows, err := s.queries.ListDisabledIntelChannels(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("sources: list disabled channels: %w", err)
+	}
+
+	return rows, nil
+}
+
+// DisableChannelMarked disables a channel with an attribution: the
+// consecutive-failures breaker stamps 'circuit_breaker' (eligible for the
+// intel:reprobe_dead_channels sweep), the license preflight gate stamps
+// 'license'. Operator disables go through UpdateChannelEnabled /
+// UpdateChannel and record 'admin'.
+func (s *Store) DisableChannelMarked(ctx context.Context, id ChannelID, disabledBy string) error {
+	if err := s.queries.DisableIntelChannelMarked(ctx, gen.DisableIntelChannelMarkedParams{
+		ID:         id,
+		DisabledBy: &disabledBy,
+	}); err != nil {
+		return fmt.Errorf("sources: disable channel marked: %w", err)
+	}
+
+	return nil
+}
+
 // UpdateChannelEnabled toggles the enabled flag for a channel.
 func (s *Store) UpdateChannelEnabled(ctx context.Context, id ChannelID, enabled bool) error {
 	if err := s.queries.UpdateIntelChannelEnabled(ctx, gen.UpdateIntelChannelEnabledParams{
@@ -297,6 +327,23 @@ func (s *Store) RedriveInboundEvent(ctx context.Context, id pgtype.UUID, stuckSe
 func (s *Store) NoteChannelError(ctx context.Context, arg gen.NoteIntelChannelErrorParams) error {
 	if err := s.queries.NoteIntelChannelError(ctx, arg); err != nil {
 		return fmt.Errorf("sources: note channel error: %w", err)
+	}
+
+	return nil
+}
+
+// NoteChannelWall stamps a bot-wall sighting on the channel row
+// (blocked_reason + last_wall_at + wall_seen_count, mirrored into
+// last_error_*). Like NoteChannelError it is a flag, not a crawl result —
+// failure counters are untouched. The next successful crawl clears
+// blocked_reason; the count remains as history.
+func (s *Store) NoteChannelWall(ctx context.Context, id ChannelID, reason string, episodeWindowSecs int32) error {
+	if err := s.queries.NoteIntelChannelWall(ctx, gen.NoteIntelChannelWallParams{
+		ID:                id,
+		BlockedReason:     &reason,
+		EpisodeWindowSecs: episodeWindowSecs,
+	}); err != nil {
+		return fmt.Errorf("sources: note channel wall: %w", err)
 	}
 
 	return nil

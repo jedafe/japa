@@ -175,7 +175,7 @@
 	{#if !authed}
 		<!-- Guests get a login prompt — mentorship requests require an account. -->
 		<p class="text-sm text-[var(--color-muted)]">
-			<a href={loginHref} class="text-[var(--color-primary)] hover:underline">
+			<a href={loginHref} class="text-[var(--color-primary-text)] hover:underline">
 				{t('services.mentor_login', 'Log in to request mentorship')}
 			</a>
 		</p>
@@ -229,7 +229,7 @@
 			<div class="min-w-0">
 				<a
 					href="/u/{mentor?.username ?? service.author_name}"
-					class="block truncate text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)] hover:underline"
+					class="block truncate text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary-text)] hover:underline"
 				>
 					{mentorName}
 				</a>

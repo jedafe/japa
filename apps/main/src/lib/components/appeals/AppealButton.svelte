@@ -149,13 +149,13 @@
 							class="grid h-9 w-9 place-items-center rounded-full transition-colors {n === step
 								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
 								: n < step
-									? 'bg-[var(--color-surface-subtle)] text-[var(--color-primary)]'
+									? 'bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]'
 									: 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)]'}"
 							aria-current={n === step ? 'step' : undefined}
 						>
 							{#if n < step}<Check size={15} />{:else}<s.icon size={16} />{/if}
 						</span>
-						<span class="hidden text-[11px] font-medium sm:block {n === step ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}">{s.label}</span>
+						<span class="hidden text-[11px] font-medium sm:block {n === step ? 'text-[var(--color-primary-text)]' : 'text-[var(--color-muted)]'}">{s.label}</span>
 					</span>
 					{#if i < steps.length - 1}
 						<span class="mx-2 mb-0 h-px w-8 sm:mb-5 sm:w-12 {n < step ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"></span>
@@ -181,16 +181,16 @@
 					<circle cx="160" cy="40" r="4" fill="var(--color-primary)" opacity="0.5" />
 				</svg>
 				<div class="appeal-focal">
-					<Scale size={52} strokeWidth={1.2} class="text-[var(--color-primary)]" />
+					<Scale size={52} strokeWidth={1.2} class="text-[var(--color-primary-text)]" />
 				</div>
 				<div class="appeal-chip" style="top: 14%; inset-inline-start: 10%;">
-					<Gavel size={18} class="text-[var(--color-primary)]" />
+					<Gavel size={18} class="text-[var(--color-primary-text)]" />
 				</div>
 				<div class="appeal-chip" style="top: 44%; inset-inline-start: 6%;">
-					<FileText size={18} class="text-[var(--color-primary)]" />
+					<FileText size={18} class="text-[var(--color-primary-text)]" />
 				</div>
 				<div class="appeal-chip" style="bottom: 16%; inset-inline-end: 12%;">
-					<MessageSquare size={18} class="text-[var(--color-primary)]" />
+					<MessageSquare size={18} class="text-[var(--color-primary-text)]" />
 				</div>
 			</aside>
 
@@ -202,7 +202,7 @@
 
 					{#if subject}
 						<div class="mt-5 flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3">
-							<Gavel size={16} class="shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
+							<Gavel size={16} class="shrink-0 text-[var(--color-primary-text)]" aria-hidden="true" />
 							<div class="min-w-0">
 								<p class="text-xs font-medium uppercase tracking-wider text-[var(--color-muted)]">{t('appeals.entity_type', 'Decision')}</p>
 								<p class="truncate text-sm font-medium text-[var(--color-text)]">{subject}</p>
@@ -244,7 +244,7 @@
 						{#if done?.ticket_id}
 							<a
 								href="/dashboard/tickets/{done.ticket_number ? `JC-${done.ticket_number}` : done.ticket_id}"
-								class="text-sm font-medium text-[var(--color-primary)] hover:underline"
+								class="text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 							>
 								{t('appeals.track_ticket', 'Track it in your support tickets')}
 							</a>
@@ -260,7 +260,7 @@
 
 				{#if step !== 3}
 					<div class="mt-6 flex items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3">
-						<ShieldCheck size={20} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+						<ShieldCheck size={20} class="mt-0.5 shrink-0 text-[var(--color-primary-text)]" />
 						<p class="text-xs leading-relaxed text-[var(--color-text-subtle)]">
 							<span class="font-semibold text-[var(--color-text)]">{t('appeals.fair_title', 'Every appeal gets a human review.')}</span>
 							{t('appeals.fair_body', 'A staff member reads each case; you can follow the conversation on the linked ticket.')}

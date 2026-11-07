@@ -16,6 +16,7 @@ package tags
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -241,6 +242,29 @@ func (s *Service) CountContentByTag(ctx context.Context, tagID pgtype.UUID) (int
 	}
 
 	return int(count), nil
+}
+
+// GatedContentCounts returns tag_id → count of linked content whose
+// content_type is in types — §42: listing endpoints subtract it from the
+// stored content_count so tag cards never advertise gated totals. Empty
+// result on error (fail-open to the stored count).
+func (s *Service) GatedContentCounts(ctx context.Context, tagIDs []pgtype.UUID, types []string) map[pgtype.UUID]int32 {
+	out := map[pgtype.UUID]int32{}
+	if len(tagIDs) == 0 || len(types) == 0 {
+		return out
+	}
+	rows, err := s.read.CountTagContentByTypesForTags(ctx, gen.CountTagContentByTypesForTagsParams{
+		TagIds:       tagIDs,
+		ContentTypes: types,
+	})
+	if err != nil {
+		slog.Warn("tags: gated content-count lookup failed", "error", err)
+		return out
+	}
+	for _, r := range rows {
+		out[r.TagID] = r.Count
+	}
+	return out
 }
 
 // CreateTagInput holds parameters for creating a tag (catalog: POST /admin/tags).

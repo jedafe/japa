@@ -2440,6 +2440,10 @@ type IntelSourceChannel struct {
 	ConsecutiveFailures  int32              `json:"consecutive_failures"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	BlockedReason        *string            `json:"blocked_reason"`
+	LastWallAt           pgtype.Timestamptz `json:"last_wall_at"`
+	WallSeenCount        int32              `json:"wall_seen_count"`
+	DisabledBy           *string            `json:"disabled_by"`
 }
 
 type IpBlock struct {

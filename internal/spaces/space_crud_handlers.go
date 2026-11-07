@@ -16,6 +16,7 @@ import (
 	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/rbac"
 )
@@ -322,7 +323,8 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UU
 		}
 	}
 
-	stats, err := h.Service.CountSpaceStats(ctx, ids)
+	// §42: post/discussion counts exclude gated content types for this caller.
+	stats, err := h.Service.CountSpaceStats(ctx, ids, features.HiddenContentTypes(ctx, h.flags))
 	if err != nil {
 		slog.Warn("spaces: failed to load space stats", "error", err)
 
@@ -682,7 +684,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 
 	// Replace drifted/negative denormalised counts with live computed values.
 	var discussionCount int32
-	if stats, err := h.Service.CountSpaceStats(r.Context(), []pgtype.UUID{space.ID}); err == nil {
+	if stats, err := h.Service.CountSpaceStats(r.Context(), []pgtype.UUID{space.ID}, features.HiddenContentTypes(r.Context(), h.flags)); err == nil {
 		if st, ok := stats[space.ID.String()]; ok {
 			space.MemberCount = st.MemberCount
 			space.PostCount = st.PostCount

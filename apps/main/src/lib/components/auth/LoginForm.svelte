@@ -86,7 +86,7 @@
 		{#if showSwitchLink}
 			<a
 				href="/signup"
-				class="text-sm text-[var(--color-primary)] transition hover:underline"
+				class="text-sm text-[var(--color-primary-text)] transition hover:underline"
 			>
 				{t('auth.login.switch_to_signup')}
 			</a>
@@ -124,7 +124,7 @@
 	/>
 
 	<div class="flex justify-end">
-		<a href="/forgot-password" class="text-sm text-[var(--color-primary)] hover:underline">
+		<a href="/forgot-password" class="text-sm text-[var(--color-primary-text)] hover:underline">
 			{t('auth.forgot_password.title')}
 		</a>
 	</div>

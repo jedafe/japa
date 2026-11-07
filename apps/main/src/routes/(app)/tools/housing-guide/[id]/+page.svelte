@@ -63,7 +63,7 @@
 	<div class="p-4 space-y-4">
 		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
 			<div class="flex items-start gap-3">
-				<div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+				<div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 					<Home size={20} />
 				</div>
 				<div class="min-w-0 flex-1">
@@ -149,7 +149,7 @@
 				{#if page.data.features?.['scam_alert.enabled']}
 					<a
 						href="/scam-alerts?scam_type=housing_fraud&dest={guide.destination_space_id}"
-						class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
+						class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 					>
 						{t('scam_alerts.see_alerts', 'See housing scam alerts for this destination')} →
 					</a>

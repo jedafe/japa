@@ -351,7 +351,7 @@
 			<div class="border-t border-[var(--color-border)] px-3 py-2">
 				<a
 					href="/notifications"
-					class="block text-center text-xs font-medium text-[var(--color-primary)] hover:underline"
+					class="block text-center text-xs font-medium text-[var(--color-primary-text)] hover:underline"
 					onclick={() => (open = false)}
 				>
 					{t('notifications.view_all', 'View all notifications')}

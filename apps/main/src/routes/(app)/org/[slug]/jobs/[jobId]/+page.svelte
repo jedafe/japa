@@ -115,7 +115,7 @@
 										href={safeHttpUrl(app.submission.resume_url)}
 										target="_blank"
 										rel="noopener noreferrer"
-										class="inline-flex items-center gap-1.5 text-[var(--color-primary)] hover:underline"
+										class="inline-flex items-center gap-1.5 text-[var(--color-primary-text)] hover:underline"
 									>
 										<FileText size={12} />
 										{typeof app.submission.resume_filename === 'string' && app.submission.resume_filename

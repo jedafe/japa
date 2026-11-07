@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
@@ -71,6 +72,12 @@ func (h *Handlers) ListPublicReactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: a feature-flagged-off parent content type 404s its reactions too.
+	if h.gatedParentContent(r.Context(), contentID) {
+		handleServiceError(w, pgx.ErrNoRows)
+		return
+	}
+
 	counts, err := h.reactions.ListReactions(r.Context(), contentID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -114,6 +121,12 @@ func (h *Handlers) CreatePublicReaction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// §42: reactions on a feature-flagged-off parent 404 like the parent.
+	if h.gatedParentContent(r.Context(), contentID) {
+		handleServiceError(w, pgx.ErrNoRows)
+		return
+	}
+
 	reaction, err := h.reactions.AddReaction(r.Context(), keyCtx.UserID, contentID, input.ReactionKey)
 	if err != nil {
 		handleServiceError(w, err)
@@ -148,6 +161,12 @@ func (h *Handlers) DeletePublicReaction(w http.ResponseWriter, r *http.Request) 
 	}
 	if key == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Reaction key is required")
+		return
+	}
+
+	// §42: reactions on a feature-flagged-off parent 404 like the parent.
+	if h.gatedParentContent(r.Context(), contentID) {
+		handleServiceError(w, pgx.ErrNoRows)
 		return
 	}
 

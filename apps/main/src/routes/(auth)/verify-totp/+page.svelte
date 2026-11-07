@@ -146,7 +146,7 @@
 
 <div class="flex flex-col gap-4">
 	<div class="flex items-center gap-3">
-		<div class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+		<div class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 			<ShieldCheck class="h-5 w-5" />
 		</div>
 		<div>
@@ -199,7 +199,7 @@
 		<button
 			type="button"
 			onclick={() => { showBackup = true; errorKey = ''; }}
-			class="text-center text-sm text-[var(--color-primary)] hover:underline"
+			class="text-center text-sm text-[var(--color-primary-text)] hover:underline"
 		>
 			{t('auth.totp.use_backup')}
 		</button>
@@ -237,7 +237,7 @@
 		<button
 			type="button"
 			onclick={() => { showBackup = false; errorKey = ''; }}
-			class="text-center text-sm text-[var(--color-primary)] hover:underline"
+			class="text-center text-sm text-[var(--color-primary-text)] hover:underline"
 		>
 			{t('auth.totp.back_to_code')}
 		</button>

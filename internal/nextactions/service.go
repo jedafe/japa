@@ -103,8 +103,10 @@ func (s *Service) settingInt(ctx context.Context, key string, fallback int) int 
 func (s *Service) Suggestions(ctx context.Context, r *http.Request, surface string, limit int) ([]Suggestion, error) {
 	// §42: attach the caller scope so feature_enabled predicates evaluate
 	// against this caller's surface/geo/audience — not just the global
-	// toggle. Sweep/worker paths run unattached and stay global.
-	ctx = features.WithScope(ctx, features.ScopeForRequest(s.flags, r, surface))
+	// toggle. The caller's real scope applies even when ?surface selects a
+	// different rule catalog — a CTA to a feature this caller can't reach
+	// must not render. Sweep/worker paths run unattached and stay global.
+	ctx = features.WithScope(ctx, features.ScopeForRequest(s.flags, r))
 
 	state := s.resolver.Resolve(ctx, r, surface)
 

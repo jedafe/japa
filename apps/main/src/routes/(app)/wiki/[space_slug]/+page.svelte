@@ -454,7 +454,7 @@
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 			>
 				{#if saved}
-					<BookmarkCheck size={14} class="text-[var(--color-primary)]" />
+					<BookmarkCheck size={14} class="text-[var(--color-primary-text)]" />
 					{t('wiki.saved', 'Saved')}
 				{:else}
 					<Bookmark size={14} />
@@ -474,7 +474,7 @@
 	{#if data.fromSpace && data.spaceDetail?.wiki_only && showWikiOnlyBanner}
 		<div class="mt-4 flex items-start gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4" style="margin-inline: max(1rem, calc((100% - 48rem)/2))">
 			<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)]">
-				<BookOpen size={18} class="text-[var(--color-primary)]" aria-hidden="true" />
+				<BookOpen size={18} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 			</span>
 			<span class="min-w-0 flex-1">
 				<span class="block text-sm font-semibold text-[var(--color-text)]">
@@ -653,7 +653,7 @@
 									<a
 										href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(p.slug)}"
 										rel={p.indexable === false ? 'nofollow' : undefined}
-										class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]"
+										class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs text-[var(--color-text)] transition-colors hover:text-[var(--color-primary-text)]"
 									>
 										{p.title}
 										{#if p.is_locked}
@@ -666,7 +666,7 @@
 									<a
 										href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(tm.slug)}"
 										rel="nofollow"
-										class="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+										class="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 									>
 										{tm.label}
 									</a>
@@ -686,7 +686,7 @@
 			{#if !data.spaceDetail?.wiki_only}
 			<div class="mt-6 flex flex-wrap items-center gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)]">
-					<CircleHelp size={18} class="text-[var(--color-primary)]" aria-hidden="true" />
+					<CircleHelp size={18} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 				</span>
 				<span class="min-w-0 flex-1">
 					<span class="block text-sm font-semibold text-[var(--color-text)]">
@@ -729,7 +729,7 @@
 					{@const meta = entityTypeMeta(typeSlug)}
 					<div class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<h3 class="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-							<meta.icon size={14} class="text-[var(--color-primary)]" />
+							<meta.icon size={14} class="text-[var(--color-primary-text)]" />
 							{t(`wiki.related_${typeSlug}`, meta.label)}
 							<span class="rounded-full bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] font-medium normal-case text-[var(--color-muted)]">{items.length}</span>
 						</h3>
@@ -741,7 +741,7 @@
 										rel={child.indexable === false ? 'nofollow' : undefined}
 										class="group flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2.5 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 									>
-										<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+										<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 											<meta.icon size={15} />
 										</span>
 										<span class="min-w-0 flex-1">
@@ -750,7 +750,7 @@
 												<span class="block truncate text-xs capitalize text-[var(--color-muted)]">{child.discriminator.replaceAll('_', ' ')}</span>
 											{/if}
 										</span>
-										<ArrowRight size={14} class="shrink-0 text-[var(--color-muted)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--color-primary)] rtl:-scale-x-100 rtl:group-hover:-translate-x-0.5" />
+										<ArrowRight size={14} class="shrink-0 text-[var(--color-muted)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--color-primary-text)] rtl:-scale-x-100 rtl:group-hover:-translate-x-0.5" />
 									</a>
 								</li>
 							{/each}

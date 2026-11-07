@@ -1054,7 +1054,7 @@ profile is private, or no stage is set. -->
 			href={`/japa-stage?stage=${data.japaStage.stage}`}
 			class="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
-			<Compass class="h-4 w-4 text-[var(--color-primary)]" />
+			<Compass class="h-4 w-4 text-[var(--color-primary-text)]" />
 			<span class="font-medium text-[var(--color-text)]">
 				{t(`japa_stage.${data.japaStage.stage}`, data.japaStage.stage)}
 			</span>
@@ -1186,7 +1186,7 @@ profile is private, or no stage is set. -->
 								layout="stream"
 							/>
 							{#if post.is_pinned}
-								<span class="pointer-events-none absolute start-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+								<span class="pointer-events-none absolute start-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary-text)]">
 									<Pin size={10} /> {t('profile.pinned', 'Pinned')}
 								</span>
 							{/if}
@@ -1203,11 +1203,11 @@ profile is private, or no stage is set. -->
 				<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 					<div class="mb-3 flex items-center justify-between gap-2">
 						<h2 class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
-							<User size={15} class="text-[var(--color-primary)]" />
+							<User size={15} class="text-[var(--color-primary-text)]" />
 							{t('profile.about_me', 'About Me')}
 						</h2>
 						{#if isOwnProfile}
-							<a href="/settings/profile" class="text-xs font-medium text-[var(--color-primary)] hover:underline">
+							<a href="/settings/profile" class="text-xs font-medium text-[var(--color-primary-text)] hover:underline">
 								{t('profile.edit', 'Edit')}
 							</a>
 						{/if}
@@ -1222,7 +1222,7 @@ profile is private, or no stage is set. -->
 							href={user.website_url}
 							target="_blank"
 							rel="noopener noreferrer nofollow"
-							class="mt-1 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
+							class="mt-1 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 						>
 							<Globe size={13} /> {user.website_url.replace(/^https?:\/\//, '')}
 						</a>
@@ -1248,10 +1248,10 @@ profile is private, or no stage is set. -->
 					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<div class="mb-4 flex items-center justify-between gap-2">
 							<h2 class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
-								<Plane size={15} class="text-[var(--color-primary)]" />
+								<Plane size={15} class="text-[var(--color-primary-text)]" />
 								{isOwnProfile ? t('profile.journey.title', 'My Japa Journey') : t('profile.journey.label', 'Japa Journey')}
 							</h2>
-							<a href="/japa-stage" class="text-xs font-medium text-[var(--color-primary)] hover:underline">
+							<a href="/japa-stage" class="text-xs font-medium text-[var(--color-primary-text)] hover:underline">
 								{t('profile.view_all', 'View all')}
 							</a>
 						</div>
@@ -1264,11 +1264,11 @@ profile is private, or no stage is set. -->
 					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<div class="mb-3 flex items-center justify-between gap-2">
 							<h2 class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
-								<Tag size={15} class="text-[var(--color-primary)]" />
+								<Tag size={15} class="text-[var(--color-primary-text)]" />
 								{t('profile.interests', 'Top Interests')}
 							</h2>
 							{#if isOwnProfile}
-								<a href="/tags?sort=popular" class="text-xs font-medium text-[var(--color-primary)] hover:underline">
+								<a href="/tags?sort=popular" class="text-xs font-medium text-[var(--color-primary-text)] hover:underline">
 									{t('profile.edit_interests', 'Edit Interests')}
 								</a>
 							{/if}
@@ -1292,12 +1292,12 @@ profile is private, or no stage is set. -->
 					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<div class="mb-3 flex items-center justify-between gap-2">
 							<h2 class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
-								<Award size={15} class="text-[var(--color-primary)]" />
+								<Award size={15} class="text-[var(--color-primary-text)]" />
 								{t('profile.earned_badges', 'Earned Badges')}
 							</h2>
 							<button
 								onclick={() => (activeTab = 'badges')}
-								class="text-xs font-semibold text-[var(--color-primary)] hover:underline"
+								class="text-xs font-semibold text-[var(--color-primary-text)] hover:underline"
 							>
 								{t('profile.view_all', 'View all')} ({data.badges.length})
 							</button>
@@ -1331,7 +1331,7 @@ profile is private, or no stage is set. -->
 				<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 					<div class="mb-3 flex items-center justify-between gap-2">
 						<h2 class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
-							<Activity size={15} class="text-[var(--color-primary)]" />
+							<Activity size={15} class="text-[var(--color-primary-text)]" />
 							{t('profile.recent_activity', 'Recent Activity')}
 						</h2>
 					</div>
@@ -1342,13 +1342,13 @@ profile is private, or no stage is set. -->
 							{#each recentActivity as item (`${item.kind}-${item.href}-${item.when}`)}
 								{@const Icon = activityIcons[item.kind]}
 								<li class="flex items-start gap-3">
-									<span class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+									<span class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 										<Icon size={14} />
 									</span>
 									<div class="min-w-0 flex-1">
 										<p class="text-sm text-[var(--color-text)]">
 											{activityLabel(item)}
-											<a href={item.href} class="font-medium hover:text-[var(--color-primary)] hover:underline">{item.title}</a>
+											<a href={item.href} class="font-medium hover:text-[var(--color-primary-text)] hover:underline">{item.title}</a>
 										</p>
 									</div>
 									<span class="shrink-0 text-xs text-[var(--color-muted)]"><RelativeTime iso={item.when} /></span>
@@ -1369,7 +1369,7 @@ profile is private, or no stage is set. -->
 					{#each repliesView.items as reply (reply.id)}
 						<li class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 							<p class="text-sm text-[var(--color-text)]">{tiptapExcerpt(reply.body)}</p>
-							<a href="/content/{reply.content_slug}" class="mt-2 block text-xs text-[var(--color-primary)] hover:underline">
+							<a href="/content/{reply.content_slug}" class="mt-2 block text-xs text-[var(--color-primary-text)] hover:underline">
 								{t('profile.in_reply_to', 'In reply to')}: {reply.content_title}
 							</a>
 						</li>
@@ -1587,7 +1587,7 @@ profile is private, or no stage is set. -->
 				<div class="mb-3 flex justify-end">
 					<a
 						href="/badges"
-						class="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-primary)] hover:underline"
+						class="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-primary-text)] hover:underline"
 					>
 						<Award size={12} /> {t('profile.view_badge_collection', 'View badge collection')}
 					</a>
@@ -1747,7 +1747,7 @@ profile is private, or no stage is set. -->
 								{#each topPostsSeries as point (point.id)}
 									<div class="flex items-center justify-between">
 										{#if point.href}
-											<a href={point.href} title={point.title} class="truncate hover:text-[var(--color-primary)] hover:underline">{point.label}</a>
+											<a href={point.href} title={point.title} class="truncate hover:text-[var(--color-primary-text)] hover:underline">{point.label}</a>
 										{:else}
 											<span class="truncate" title={point.title}>{point.label}</span>
 										{/if}

@@ -246,7 +246,7 @@
 		</a>
 		<div class="flex items-center gap-3">
 			<span
-				class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+				class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]"
 			>
 				<Handshake size={24} />
 			</span>
@@ -268,7 +268,7 @@
 			</div>
 			{#if provider.is_featured}
 				<span
-					class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-primary)]"
+					class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-primary-text)]"
 				>
 					<BadgeCheck size={14} />
 					{t('deal.featured', 'Featured partner')}
@@ -423,14 +423,14 @@
 							<div class="flex items-start justify-between gap-2">
 								<div class="min-w-0">
 									<h2
-										class="truncate text-sm font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+										class="truncate text-sm font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]"
 									>
 										{coupon.title}
 									</h2>
 								</div>
 								{#if coupon.is_verified}
 									<span
-										class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-primary)]"
+										class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-primary-text)]"
 									>
 										<BadgeCheck size={12} />
 										{t('coupons.verified', 'Verified')}
@@ -447,7 +447,7 @@
 									</code>
 								{/if}
 								{#if discountLabel(coupon)}
-									<span class="text-xs font-medium text-[var(--color-primary)]">
+									<span class="text-xs font-medium text-[var(--color-primary-text)]">
 										{discountLabel(coupon)}
 									</span>
 								{/if}
@@ -473,7 +473,7 @@
 										href={goUrl(coupon)}
 										target="_blank"
 										rel="noopener noreferrer nofollow"
-										class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-primary)]"
+										class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-primary-text)]"
 									>
 										<ExternalLink class="rtl:-scale-x-100" size={12} />
 										{t('coupons.visit', 'Visit site')}

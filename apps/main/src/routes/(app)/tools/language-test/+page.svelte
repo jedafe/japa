@@ -379,7 +379,7 @@
 					<div class="flex items-center gap-2 flex-wrap">
 						<h2 class="text-xl font-semibold text-[var(--color-text)]">{testDetail.name}</h2>
 						{#if testDetail.validity_months}
-							<span class="text-xs px-2 py-0.5 bg-[var(--color-surface-subtle)] text-[var(--color-primary)] rounded-full font-medium">
+							<span class="text-xs px-2 py-0.5 bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)] rounded-full font-medium">
 								{t('language_test.valid_for', 'Valid for')} {testDetail.validity_months} {t('language_test.months', 'months')}
 							</span>
 						{/if}
@@ -389,7 +389,7 @@
 							href={testDetail.official_url}
 							target="_blank"
 							rel="noopener noreferrer"
-							class="mt-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+							class="mt-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
 						>
 							<ExternalLink class="rtl:-scale-x-100" size={14} />
 							{t('language_test.official_website', 'Official website')}
@@ -420,7 +420,7 @@
 											href={resource.resource_url}
 											target="_blank"
 											rel="noopener noreferrer"
-											class="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors"
+											class="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)] transition-colors"
 										>
 											{resource.title}
 										</a>
@@ -579,7 +579,7 @@
 										{#if story.author_name}
 											<span class="text-sm font-medium text-[var(--color-text)]">{story.author_name}</span>
 										{/if}
-										<span class="text-xs px-2 py-0.5 bg-[var(--color-surface-subtle)] text-[var(--color-primary)] rounded-full font-semibold">
+										<span class="text-xs px-2 py-0.5 bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)] rounded-full font-semibold">
 											{t('language_test.score', 'Score:')} {story.final_score}
 										</span>
 										{#if story.starting_level}
@@ -763,12 +763,12 @@
 								<button
 									type="button"
 									onclick={() => selectTest(req.test_slug)}
-									class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors text-start"
+									class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary-text)] transition-colors text-start"
 								>
 									{req.test_name}
 								</button>
 								<div class="flex items-center gap-2 flex-wrap mt-1">
-									<span class="text-xs px-2 py-0.5 bg-[var(--color-surface-subtle)] text-[var(--color-primary)] rounded-full font-semibold">
+									<span class="text-xs px-2 py-0.5 bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)] rounded-full font-semibold">
 										{t('language_test.min_score', 'Min score:')} {req.minimum_score}
 									</span>
 									{#if req.visa_category}
@@ -806,7 +806,7 @@
 								href={req.source_url}
 								target="_blank"
 								rel="noopener noreferrer"
-								class="mt-2 inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+								class="mt-2 inline-flex items-center gap-1 text-xs text-[var(--color-primary-text)] hover:underline"
 							>
 								<ExternalLink class="rtl:-scale-x-100" size={12} />
 								{t('language_test.source', 'Source')}
@@ -872,7 +872,7 @@
 					{#each tests as test (test.slug)}
 						<div class="inline-flex items-center">
 							<label
-								class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-s-[var(--radius)] border-e-0 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors cursor-pointer {selectedTestSlugs.has(test.slug) ? 'border-[var(--color-primary)] ring-1 ring-[var(--color-primary)]' : ''}"
+								class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-s-[var(--radius)] border-e-0 hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] transition-colors cursor-pointer {selectedTestSlugs.has(test.slug) ? 'border-[var(--color-primary)] ring-1 ring-[var(--color-primary)]' : ''}"
 							>
 								<input
 									type="checkbox"
@@ -902,7 +902,7 @@
 		<div class="p-4">
 			<div class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]">
 				{t('language_test.sign_in_to_save', 'Create a free account to share your score story or save comparisons.')}
-				<a href="/login" class="ms-1 text-[var(--color-primary)] hover:underline"
+				<a href="/login" class="ms-1 text-[var(--color-primary-text)] hover:underline"
 					>{t('common.sign_in', 'Sign in')}</a
 				>.
 			</div>

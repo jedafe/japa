@@ -95,12 +95,12 @@
 	>
 		<header class="mb-3 flex items-center justify-between">
 			<h2 class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-				<Radar size={16} class="text-[var(--color-primary)]" />
+				<Radar size={16} class="text-[var(--color-primary-text)]" />
 				{t('radar.widget.title')}
 			</h2>
 			<a
 				href="/radar"
-				class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+				class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 				aria-label={t('radar.widget.view_all')}
 			>
 				{t('radar.widget.view_all')}
@@ -119,7 +119,7 @@
 			<!-- Headline count -->
 			<p class="mb-3 text-sm text-[var(--color-text)]">
 				{#if hasFollowed}
-					<span class="text-lg font-medium text-[var(--color-primary)]">{followedTotal}</span>
+					<span class="text-lg font-medium text-[var(--color-primary-text)]">{followedTotal}</span>
 					{t('radar.widget.new_opportunities')}
 				{:else if allTotal > 0}
 					<span class="text-lg font-medium text-[var(--color-text)]">{allTotal}</span>

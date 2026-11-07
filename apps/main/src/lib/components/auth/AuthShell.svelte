@@ -167,7 +167,7 @@
 			<div class="mb-6 flex items-center justify-center lg:hidden">
 				<a
 					href="/"
-					class="flex items-center gap-2 text-base font-semibold text-[var(--color-primary)] no-underline"
+					class="flex items-center gap-2 text-base font-semibold text-[var(--color-primary-text)] no-underline"
 				>
 					<ThemeLogo {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} alt={t('app.name')} class="h-8 w-auto max-w-[140px] object-contain" />
 				</a>

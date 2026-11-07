@@ -55,7 +55,7 @@
 			case 'in_progress':
 				return 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]';
 			case 'waiting_on_user':
-				return 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]';
+				return 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]';
 			case 'resolved':
 			case 'closed':
 				return 'bg-[var(--color-success)]/10 text-[var(--color-success)]';

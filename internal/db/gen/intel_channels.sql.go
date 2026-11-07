@@ -72,7 +72,7 @@ INSERT INTO intel_source_channels
    pipeline, provider_config, crawl_frequency_mins, enabled, origin,
    relevance_mode, relevance_topics, relevance_url_patterns)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-RETURNING id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at
+RETURNING id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, blocked_reason, last_wall_at, wall_seen_count, disabled_by
 `
 
 type CreateIntelSourceChannelParams struct {
@@ -137,6 +137,10 @@ func (q *Queries) CreateIntelSourceChannel(ctx context.Context, arg CreateIntelS
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BlockedReason,
+		&i.LastWallAt,
+		&i.WallSeenCount,
+		&i.DisabledBy,
 	)
 	return i, err
 }
@@ -150,8 +154,27 @@ func (q *Queries) DeleteIntelSourceChannel(ctx context.Context, id pgtype.UUID) 
 	return err
 }
 
+const disableIntelChannelMarked = `-- name: DisableIntelChannelMarked :exec
+UPDATE intel_source_channels SET enabled = false, disabled_by = $2, updated_at = now()
+WHERE id = $1
+`
+
+type DisableIntelChannelMarkedParams struct {
+	ID         pgtype.UUID `json:"id"`
+	DisabledBy *string     `json:"disabled_by"`
+}
+
+// Automatic disable with attribution: the consecutive-failures breaker
+// stamps 'circuit_breaker' (eligible for intel:reprobe_dead_channels),
+// the license preflight gate stamps 'license' (a legal fact — never
+// re-checked by the sweep).
+func (q *Queries) DisableIntelChannelMarked(ctx context.Context, arg DisableIntelChannelMarkedParams) error {
+	_, err := q.db.Exec(ctx, disableIntelChannelMarked, arg.ID, arg.DisabledBy)
+	return err
+}
+
 const getIntelEmailChannelByAddress = `-- name: GetIntelEmailChannelByAddress :one
-SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_source_channels
+SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, blocked_reason, last_wall_at, wall_seen_count, disabled_by FROM intel_source_channels
 WHERE crawl_method = 'email' AND enabled
   AND lower(provider_config->>'inbound_address') = lower($1)
 ORDER BY created_at ASC
@@ -186,6 +209,10 @@ func (q *Queries) GetIntelEmailChannelByAddress(ctx context.Context, lower strin
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BlockedReason,
+		&i.LastWallAt,
+		&i.WallSeenCount,
+		&i.DisabledBy,
 	)
 	return i, err
 }
@@ -213,7 +240,7 @@ func (q *Queries) GetIntelInboundEvent(ctx context.Context, id pgtype.UUID) (Int
 }
 
 const getIntelSourceChannel = `-- name: GetIntelSourceChannel :one
-SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_source_channels WHERE id = $1
+SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, blocked_reason, last_wall_at, wall_seen_count, disabled_by FROM intel_source_channels WHERE id = $1
 `
 
 func (q *Queries) GetIntelSourceChannel(ctx context.Context, id pgtype.UUID) (IntelSourceChannel, error) {
@@ -242,12 +269,16 @@ func (q *Queries) GetIntelSourceChannel(ctx context.Context, id pgtype.UUID) (In
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BlockedReason,
+		&i.LastWallAt,
+		&i.WallSeenCount,
+		&i.DisabledBy,
 	)
 	return i, err
 }
 
 const getIntelSourceDefaultChannel = `-- name: GetIntelSourceDefaultChannel :one
-SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_source_channels
+SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, blocked_reason, last_wall_at, wall_seen_count, disabled_by FROM intel_source_channels
 WHERE source_id = $1 AND enabled
 ORDER BY created_at ASC LIMIT 1
 `
@@ -280,6 +311,10 @@ func (q *Queries) GetIntelSourceDefaultChannel(ctx context.Context, sourceID pgt
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BlockedReason,
+		&i.LastWallAt,
+		&i.WallSeenCount,
+		&i.DisabledBy,
 	)
 	return i, err
 }
@@ -302,9 +337,48 @@ func (q *Queries) GetLatestIntelManifestDocHashByChannel(ctx context.Context, ch
 	return content_hash, err
 }
 
+const getLatestIntelRawDocBodyLenByChannel = `-- name: GetLatestIntelRawDocBodyLenByChannel :one
+SELECT COALESCE(octet_length(body), 0)::int FROM intel_raw_documents
+WHERE channel_id = $1
+  AND parent_document_id IS NULL
+  AND content_type LIKE 'text/html%'
+ORDER BY retrieved_at DESC LIMIT 1
+`
+
+// Content-collapse guard baseline (bot-wall hardening): the previous
+// top-level HTML capture's body size — intelFetchChannel compares a new
+// capture against it to tell a walled/thin response (a fraction of the
+// prior size) from real content. Derived children are excluded (a child
+// is a different page's bytes) and non-HTML docs are excluded so a
+// manifest or fallback document never becomes the HTML baseline.
+func (q *Queries) GetLatestIntelRawDocBodyLenByChannel(ctx context.Context, channelID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, getLatestIntelRawDocBodyLenByChannel, channelID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const getLatestIntelRawDocHTTPHeadersByChannel = `-- name: GetLatestIntelRawDocHTTPHeadersByChannel :one
+SELECT http_headers FROM intel_raw_documents
+WHERE channel_id = $1 AND parent_document_id IS NULL
+ORDER BY retrieved_at DESC LIMIT 1
+`
+
+// Conditional-GET validators: the stored response headers of the channel's
+// previous top-level capture — intelFetchChannel forwards
+// ETag/Last-Modified as If-None-Match/If-Modified-Since so an unchanged
+// upstream answers 304 (no body) instead of re-shipping the page.
+func (q *Queries) GetLatestIntelRawDocHTTPHeadersByChannel(ctx context.Context, channelID pgtype.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getLatestIntelRawDocHTTPHeadersByChannel, channelID)
+	var http_headers []byte
+	err := row.Scan(&http_headers)
+	return http_headers, err
+}
+
 const getLatestIntelRawDocHashByChannel = `-- name: GetLatestIntelRawDocHashByChannel :one
 SELECT content_hash FROM intel_raw_documents WHERE channel_id = $1
   AND parent_document_id IS NULL
+  AND COALESCE(content_type, '') <> 'application/x-intel-manifest'
 ORDER BY retrieved_at DESC LIMIT 1
 `
 
@@ -312,7 +386,10 @@ ORDER BY retrieved_at DESC LIMIT 1
 // source must not cross-contaminate each other's hash comparison. Derived
 // (manifest child) docs are excluded — a sitemap/wayback manifest must
 // compare against the previous manifest, not a child's page hash, or every
-// crawl after fan-out would read as "changed" (Phase 2).
+// crawl after fan-out would read as "changed" (Phase 2). Manifest-TYPE
+// top-level docs are excluded for the mirror-image reason: a wayback
+// manifest persisted by a fallback hop must not become a content
+// channel's baseline or every later crawl reads "changed".
 func (q *Queries) GetLatestIntelRawDocHashByChannel(ctx context.Context, channelID pgtype.UUID) (string, error) {
 	row := q.db.QueryRow(ctx, getLatestIntelRawDocHashByChannel, channelID)
 	var content_hash string
@@ -320,8 +397,69 @@ func (q *Queries) GetLatestIntelRawDocHashByChannel(ctx context.Context, channel
 	return content_hash, err
 }
 
+const listDisabledIntelChannels = `-- name: ListDisabledIntelChannels :many
+SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, blocked_reason, last_wall_at, wall_seen_count, disabled_by FROM intel_source_channels
+WHERE enabled = false
+  AND disabled_by = 'circuit_breaker'
+ORDER BY last_error_at ASC NULLS LAST, updated_at ASC
+LIMIT $1
+`
+
+// Re-probe candidates for intel:reprobe_dead_channels: channels the
+// failure circuit-breakers auto-disabled (disabled_by='circuit_breaker').
+// Deliberate operator disables ('admin') and legal blocks ('license')
+// are never re-checked — only the breaker can have been wrong about an
+// endpoint's death. Oldest errors first so long-dead channels get the
+// first re-check slots.
+func (q *Queries) ListDisabledIntelChannels(ctx context.Context, limit int32) ([]IntelSourceChannel, error) {
+	rows, err := q.db.Query(ctx, listDisabledIntelChannels, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntelSourceChannel
+	for rows.Next() {
+		var i IntelSourceChannel
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceID,
+			&i.Label,
+			&i.EntryUrl,
+			&i.CrawlMethod,
+			&i.EntityTypes,
+			&i.Pipeline,
+			&i.ProviderConfig,
+			&i.CrawlFrequencyMins,
+			&i.Enabled,
+			&i.Origin,
+			&i.RelevanceMode,
+			&i.RelevanceTopics,
+			&i.RelevanceUrlPatterns,
+			&i.LastCrawledAt,
+			&i.LastSuccessAt,
+			&i.LastErrorAt,
+			&i.LastErrorMessage,
+			&i.LastChangedAt,
+			&i.ConsecutiveFailures,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.BlockedReason,
+			&i.LastWallAt,
+			&i.WallSeenCount,
+			&i.DisabledBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDueIntelChannels = `-- name: ListDueIntelChannels :many
-SELECT c.id, c.source_id, c.label, c.entry_url, c.crawl_method, c.entity_types, c.pipeline, c.provider_config, c.crawl_frequency_mins, c.enabled, c.origin, c.relevance_mode, c.relevance_topics, c.relevance_url_patterns, c.last_crawled_at, c.last_success_at, c.last_error_at, c.last_error_message, c.last_changed_at, c.consecutive_failures, c.created_at, c.updated_at FROM intel_source_channels c
+SELECT c.id, c.source_id, c.label, c.entry_url, c.crawl_method, c.entity_types, c.pipeline, c.provider_config, c.crawl_frequency_mins, c.enabled, c.origin, c.relevance_mode, c.relevance_topics, c.relevance_url_patterns, c.last_crawled_at, c.last_success_at, c.last_error_at, c.last_error_message, c.last_changed_at, c.consecutive_failures, c.created_at, c.updated_at, c.blocked_reason, c.last_wall_at, c.wall_seen_count, c.disabled_by FROM intel_source_channels c
 JOIN intel_sources s ON s.id = c.source_id
 WHERE c.enabled AND s.enabled AND s.status = 'active'
   AND c.crawl_method NOT IN ('manual','email','webhook','oneshot','xhr_sniff')
@@ -362,6 +500,10 @@ func (q *Queries) ListDueIntelChannels(ctx context.Context, limit int32) ([]Inte
 			&i.ConsecutiveFailures,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BlockedReason,
+			&i.LastWallAt,
+			&i.WallSeenCount,
+			&i.DisabledBy,
 		); err != nil {
 			return nil, err
 		}
@@ -374,7 +516,7 @@ func (q *Queries) ListDueIntelChannels(ctx context.Context, limit int32) ([]Inte
 }
 
 const listIntelSourceChannels = `-- name: ListIntelSourceChannels :many
-SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at FROM intel_source_channels
+SELECT id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, blocked_reason, last_wall_at, wall_seen_count, disabled_by FROM intel_source_channels
 WHERE source_id = $1 ORDER BY created_at
 `
 
@@ -410,6 +552,10 @@ func (q *Queries) ListIntelSourceChannels(ctx context.Context, sourceID pgtype.U
 			&i.ConsecutiveFailures,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.BlockedReason,
+			&i.LastWallAt,
+			&i.WallSeenCount,
+			&i.DisabledBy,
 		); err != nil {
 			return nil, err
 		}
@@ -467,6 +613,39 @@ type NoteIntelChannelErrorParams struct {
 // last_crawled_at, or last_success_at — it is a flag, not a crawl result.
 func (q *Queries) NoteIntelChannelError(ctx context.Context, arg NoteIntelChannelErrorParams) error {
 	_, err := q.db.Exec(ctx, noteIntelChannelError, arg.ID, arg.LastErrorMessage)
+	return err
+}
+
+const noteIntelChannelWall = `-- name: NoteIntelChannelWall :exec
+UPDATE intel_source_channels SET
+  blocked_reason = $2,
+  last_wall_at = now(),
+  wall_seen_count = wall_seen_count + CASE
+    WHEN last_wall_at IS NULL OR last_wall_at < now() - make_interval(secs => $3::int) THEN 1
+    ELSE 0
+  END,
+  last_error_message = $2,
+  last_error_at = now()
+WHERE id = $1
+`
+
+type NoteIntelChannelWallParams struct {
+	ID                pgtype.UUID `json:"id"`
+	BlockedReason     *string     `json:"blocked_reason"`
+	EpisodeWindowSecs int32       `json:"episode_window_secs"`
+}
+
+// Stamp a bot-wall sighting on the channel row: records the wall class as
+// blocked_reason and mirrors the message into last_error_* (a flag, not a
+// crawl result — consecutive_failures, last_crawled_at, and updated_at are
+// untouched, same contract as NoteIntelChannelError). wall_seen_count
+// counts wall EPISODES, not sightings: a continuously-walled channel
+// increments once per intel.wall_episode_secs window rather than once per
+// crawl, so the count means "distinct block events" instead of "schedule
+// ticks". A later successful crawl clears blocked_reason via
+// UpdateIntelChannelCrawlStatus.
+func (q *Queries) NoteIntelChannelWall(ctx context.Context, arg NoteIntelChannelWallParams) error {
+	_, err := q.db.Exec(ctx, noteIntelChannelWall, arg.ID, arg.BlockedReason, arg.EpisodeWindowSecs)
 	return err
 }
 
@@ -546,7 +725,9 @@ UPDATE intel_source_channels SET
   last_success_at = CASE WHEN $1::boolean THEN now() ELSE last_success_at END,
   last_error_at   = CASE WHEN $1 THEN last_error_at ELSE now() END,
   last_error_message = $2,
-  consecutive_failures = CASE WHEN $1 THEN 0 ELSE consecutive_failures + 1 END
+  consecutive_failures = CASE WHEN $1 THEN 0 ELSE consecutive_failures + 1 END,
+  blocked_reason = NULL,
+  disabled_by = CASE WHEN $1 THEN NULL ELSE disabled_by END
 WHERE id = $3
 `
 
@@ -556,13 +737,20 @@ type UpdateIntelChannelCrawlStatusParams struct {
 	ID               pgtype.UUID `json:"id"`
 }
 
+// blocked_reason clears on EVERY recorded outcome, not just success: this
+// query only ever records non-wall results — wall sightings go through
+// NoteIntelChannelWall — so a surviving blocked_reason here would be a
+// stale claim that the channel is currently walled.
 func (q *Queries) UpdateIntelChannelCrawlStatus(ctx context.Context, arg UpdateIntelChannelCrawlStatusParams) error {
 	_, err := q.db.Exec(ctx, updateIntelChannelCrawlStatus, arg.Success, arg.LastErrorMessage, arg.ID)
 	return err
 }
 
 const updateIntelChannelEnabled = `-- name: UpdateIntelChannelEnabled :exec
-UPDATE intel_source_channels SET enabled = $2, updated_at = now()
+UPDATE intel_source_channels SET
+  enabled = $2,
+  disabled_by = CASE WHEN $2 THEN NULL ELSE COALESCE(disabled_by, 'admin') END,
+  updated_at = now()
 WHERE id = $1
 `
 
@@ -571,6 +759,10 @@ type UpdateIntelChannelEnabledParams struct {
 	Enabled bool        `json:"enabled"`
 }
 
+// Enabling clears the disable attribution; disabling through this generic
+// toggle defaults the attribution to 'admin' (the worker's automatic
+// disable paths stamp 'circuit_breaker'/'license' via
+// DisableIntelChannelMarked instead).
 func (q *Queries) UpdateIntelChannelEnabled(ctx context.Context, arg UpdateIntelChannelEnabledParams) error {
 	_, err := q.db.Exec(ctx, updateIntelChannelEnabled, arg.ID, arg.Enabled)
 	return err
@@ -578,7 +770,7 @@ func (q *Queries) UpdateIntelChannelEnabled(ctx context.Context, arg UpdateIntel
 
 const updateIntelChannelEntityTypes = `-- name: UpdateIntelChannelEntityTypes :one
 UPDATE intel_source_channels SET entity_types = $2, updated_at = now()
-WHERE id = $1 RETURNING id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at
+WHERE id = $1 RETURNING id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, blocked_reason, last_wall_at, wall_seen_count, disabled_by
 `
 
 type UpdateIntelChannelEntityTypesParams struct {
@@ -612,6 +804,10 @@ func (q *Queries) UpdateIntelChannelEntityTypes(ctx context.Context, arg UpdateI
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BlockedReason,
+		&i.LastWallAt,
+		&i.WallSeenCount,
+		&i.DisabledBy,
 	)
 	return i, err
 }
@@ -620,7 +816,7 @@ const updateIntelChannelRelevance = `-- name: UpdateIntelChannelRelevance :one
 UPDATE intel_source_channels SET
   relevance_mode = $2, relevance_topics = $3, relevance_url_patterns = $4,
   updated_at = now()
-WHERE id = $1 RETURNING id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at
+WHERE id = $1 RETURNING id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, blocked_reason, last_wall_at, wall_seen_count, disabled_by
 `
 
 type UpdateIntelChannelRelevanceParams struct {
@@ -661,6 +857,10 @@ func (q *Queries) UpdateIntelChannelRelevance(ctx context.Context, arg UpdateInt
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BlockedReason,
+		&i.LastWallAt,
+		&i.WallSeenCount,
+		&i.DisabledBy,
 	)
 	return i, err
 }
@@ -738,8 +938,13 @@ UPDATE intel_source_channels SET
   provider_config = COALESCE($6, provider_config),
   crawl_frequency_mins = COALESCE($7, crawl_frequency_mins),
   enabled = COALESCE($8, enabled),
+  disabled_by = CASE
+    WHEN $8::boolean IS NULL THEN disabled_by
+    WHEN $8::boolean THEN NULL
+    ELSE 'admin'
+  END,
   updated_at = now()
-WHERE id = $1 RETURNING id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at
+WHERE id = $1 RETURNING id, source_id, label, entry_url, crawl_method, entity_types, pipeline, provider_config, crawl_frequency_mins, enabled, origin, relevance_mode, relevance_topics, relevance_url_patterns, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, blocked_reason, last_wall_at, wall_seen_count, disabled_by
 `
 
 type UpdateIntelSourceChannelParams struct {
@@ -792,6 +997,10 @@ func (q *Queries) UpdateIntelSourceChannel(ctx context.Context, arg UpdateIntelS
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.BlockedReason,
+		&i.LastWallAt,
+		&i.WallSeenCount,
+		&i.DisabledBy,
 	)
 	return i, err
 }

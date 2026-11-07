@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -37,10 +38,20 @@ type Composite struct {
 // social provider allowlist) — nil leaves them disabled; rdb backs the
 // shared render circuit breaker (nil = no circuit).
 func NewComposite(settings AdapterSettings, rdb valkeycompat.Cmdable) *Composite {
+	// Egress pools (intel.egress.proxy_domains) apply to the direct-origin
+	// adapters only — render targets the operator's internal service,
+	// wayback/archive.org is a public utility, and social/search hit
+	// provider APIs. Unmapped domains return a nil proxy = direct egress,
+	// so NewEgressClient is a no-op until the pools are configured.
+	// go-git owns its transports — pin them to the egress client so remote
+	// clones get the dial guard and configured pool routing too. 60s: a
+	// depth-1 clone still downloads every blob in the tip tree.
+	InstallGitTransport(NewEgressClient(60*time.Second, defaultMaxBodySize, settings, rdb))
+
 	return &Composite{
-		static: NewStaticFetcher(),
-		rss:    NewRSSFetcher(),
-		api:    NewAPIFetcher(),
+		static: &StaticFetcher{client: NewEgressClient(30*time.Second, defaultMaxBodySize, settings, rdb)},
+		rss:    &RSSFetcher{client: NewEgressClient(30*time.Second, defaultMaxBodySize, settings, rdb)},
+		api:    &APIFetcher{client: NewEgressClient(30*time.Second, defaultMaxBodySize, settings, rdb)},
 		// The render service is operator-deployed infra — typically a
 		// private/internal host — so its client skips the private-IP dial
 		// guard (AllowPrivate); the service URL is admin-configured, not
@@ -132,14 +143,16 @@ func (c *Composite) Fetch(ctx context.Context, src sources.Source, ch sources.Ch
 	// Wayback incremental window (spec §3): when neither the channel's nor
 	// the source's provider_config sets `since`, inject the channel's
 	// last_success_at so the CDX manifest lists only captures newer than
-	// the last successful crawl. Applies when wayback is the primary
-	// method or any hop of the fallback ladder.
-	if ch.LastSuccessAt.Valid && waybackInPlay(ch.CrawlMethod, eff.ProviderConfig) {
+	// the last successful crawl. Injected unconditionally once a channel
+	// has crawled — wayback is always reachable as an implicit escalation
+	// hop on a blocked failure, even when it is not a configured hop.
+	if ch.LastSuccessAt.Valid {
 		eff.ProviderConfig = injectWaybackSince(eff.ProviderConfig, ch.LastSuccessAt.Time)
 	}
 
 	result, err := c.fetchMethod(ctx, eff, sources.CrawlMethod(ch.CrawlMethod))
 	if err == nil {
+		result.ViaMethod = ch.CrawlMethod
 		return result, nil
 	}
 
@@ -153,10 +166,31 @@ func (c *Composite) Fetch(ctx context.Context, src sources.Source, ch sources.Ch
 	// designed degradation; if every hop is disabled/fails the ORIGINAL
 	// error is returned, preserving its ErrAdapterDisabled benign-skip
 	// semantics.
+	//
+	// A blocked-class primary failure (bot wall / access denied)
+	// implicitly extends the ladder with render + wayback: a walled page
+	// is the render adapter's designed case, and the Wayback Machine
+	// often holds the content the live site walls. Configured hops keep
+	// their order; the implicit pair appends only when absent, and the
+	// same 3-hop bound applies.
+	ladder := fallbackMethods(eff.ProviderConfig)
+	switch ClassifyFetchError(err) {
+	case FailureBlocked:
+		ladder = appendWallEscalation(ladder)
+	case FailureGone:
+		// Wayback on a dead endpoint is opt-in: provider_config
+		// archive_on_gone must be set explicitly, because archived content
+		// served indefinitely would mask a dead channel — dangerous for
+		// time-sensitive intel (deadlines). Evergreen sources may opt in.
+		if cfgFlag(eff.ProviderConfig, "archive_on_gone") {
+			ladder = appendMissingMethod(ladder, string(sources.CrawlMethodWayback))
+		}
+	}
+
 	seen := map[string]bool{ch.CrawlMethod: true}
 
 	hops := 0
-	for _, m := range fallbackMethods(eff.ProviderConfig) {
+	for _, m := range ladder {
 		if hops >= 3 {
 			break
 		}
@@ -172,6 +206,7 @@ func (c *Composite) Fetch(ctx context.Context, src sources.Source, ch sources.Ch
 
 		result, ferr := c.fetchMethod(ctx, eff, sources.CrawlMethod(m))
 		if ferr == nil {
+			result.ViaMethod = m
 			return result, nil
 		}
 
@@ -260,20 +295,45 @@ func fetchableMethod(m sources.CrawlMethod) bool {
 	return true
 }
 
-// waybackInPlay reports whether the wayback adapter can be reached on this
-// fetch — as the primary method or via the validated fallback ladder.
-func waybackInPlay(primary string, providerConfig []byte) bool {
-	if sources.CrawlMethod(primary) == sources.CrawlMethodWayback {
-		return true
+// wallEscalationMethods are appended to the fallback ladder on
+// blocked-class failures: render first (a headless DOM passes the JS
+// challenges that wall a static fetch), wayback last (archived content
+// beats none for freshness-tolerant channels).
+var wallEscalationMethods = []string{
+	string(sources.CrawlMethodRender),
+	string(sources.CrawlMethodWayback),
+}
+
+// appendWallEscalation extends the configured ladder with the implicit
+// escalation pair, skipping methods already present (order is preserved —
+// an operator who configured "wayback, render" keeps that priority).
+func appendWallEscalation(ladder []string) []string {
+	for _, m := range wallEscalationMethods {
+		ladder = appendMissingMethod(ladder, m)
 	}
 
-	for _, m := range fallbackMethods(providerConfig) {
-		if m == string(sources.CrawlMethodWayback) {
-			return true
-		}
+	return ladder
+}
+
+// appendMissingMethod appends m to the ladder when absent.
+func appendMissingMethod(ladder []string, m string) []string {
+	if slices.Contains(ladder, m) {
+		return ladder
 	}
 
-	return false
+	return append(ladder, m)
+}
+
+// cfgFlag reads a boolean flag from a provider_config JSON blob.
+func cfgFlag(providerConfig []byte, key string) bool {
+	var cfg map[string]any
+	if err := json.Unmarshal(providerConfig, &cfg); err != nil {
+		return false
+	}
+
+	v, _ := cfg[key].(bool)
+
+	return v
 }
 
 // injectWaybackSince merges "since" (CDX timestamp) into a provider_config

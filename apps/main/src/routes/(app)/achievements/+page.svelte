@@ -248,7 +248,7 @@
 						class="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40"
 					>
 						<div class="flex items-center gap-2">
-							<span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-semibold text-[var(--color-primary)]">
+							<span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-semibold text-[var(--color-primary-text)]">
 								<Icon size={13} />
 								{milestoneLabel(item.milestone_type as AchievementMilestoneType)}
 							</span>
@@ -269,7 +269,7 @@
 									{#if item.author_avatar}
 										<img src={item.author_avatar} alt="" class="h-5 w-5 rounded-full object-cover" />
 									{:else}
-										<span class="grid h-5 w-5 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[10px] font-bold text-[var(--color-primary)]">
+										<span class="grid h-5 w-5 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[10px] font-bold text-[var(--color-primary-text)]">
 											{(item.author_name ?? 'M').charAt(0)}
 										</span>
 									{/if}
@@ -285,7 +285,7 @@
 							{#if item.reaction_count > 0}
 								<span>·</span>
 								<span class="inline-flex items-center gap-0.5" title={t('achievements.reactions', 'Reactions')}>
-									<Heart size={12} class="text-[var(--color-primary)]" fill="currentColor" />
+									<Heart size={12} class="text-[var(--color-primary-text)]" fill="currentColor" />
 									{item.reaction_count}
 								</span>
 							{/if}

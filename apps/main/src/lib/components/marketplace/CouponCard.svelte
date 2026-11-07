@@ -94,7 +94,7 @@
 				href={coupon.referral_url}
 				target="_blank"
 				rel="noopener sponsored"
-				class="inline-flex items-center gap-1 font-medium text-[var(--color-primary)] hover:underline"
+				class="inline-flex items-center gap-1 font-medium text-[var(--color-primary-text)] hover:underline"
 			>
 				{t('services.coupon_go_provider', 'Go to provider')}
 				<ExternalLink class="rtl:-scale-x-100" size={12} aria-hidden="true" />

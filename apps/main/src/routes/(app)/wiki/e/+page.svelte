@@ -68,7 +68,7 @@
 						href="/wiki/e/{k.kind}"
 						class="group flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
 					>
-						<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-primary)]">
+						<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-primary-text)]">
 							<Icon size={18} />
 						</span>
 						<span class="min-w-0 flex-1">
@@ -77,14 +77,14 @@
 								{t('wiki.entities.count', '{count} entries').replace('{count}', String(k.entity_count))}
 							</span>
 						</span>
-						<ArrowRight size={16} class="shrink-0 text-[var(--color-muted)] transition-all group-hover:translate-x-0.5 group-hover:text-[var(--color-primary)]" />
+						<ArrowRight size={16} class="shrink-0 text-[var(--color-muted)] transition-all group-hover:translate-x-0.5 group-hover:text-[var(--color-primary-text)]" />
 					</a>
 					{#if k.types?.length}
 						<div class="flex flex-wrap gap-1.5 ps-1">
 							{#each k.types as ty (ty.slug)}
 								<a
 									href="/wiki/e/{ty.slug}"
-									class="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2.5 py-1 text-[11px] font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary)]"
+									class="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2.5 py-1 text-[11px] font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary-text)]"
 								>
 									{ty.label}
 									<span class="tabular-nums opacity-70">{ty.entity_count}</span>

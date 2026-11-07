@@ -198,7 +198,7 @@
 				<div class="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)]">
 					<a
 						href={entityPageHref(typeSlug, child.slug)}
-						class="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+						class="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]"
 						data-sveltekit-preload-data="hover"
 					>
 						{child.name}
@@ -206,7 +206,7 @@
 					{#if child.program_slug}
 						<a
 							href={entityPageHref('program', child.program_slug)}
-							class="text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+							class="text-xs text-[var(--color-muted)] hover:text-[var(--color-primary-text)]"
 						>
 							{t('wiki.view_canonical_program', 'Canonical program')}
 						</a>

@@ -162,7 +162,7 @@
 				<span class="text-xs text-[var(--color-muted)]">{t('settings.security.totp_secret')}</span>
 				<button
 					type="button"
-					class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+					class="inline-flex items-center gap-1 text-xs text-[var(--color-primary-text)] hover:underline"
 					onclick={copySecret}
 				>
 					{#if copiedSecret}

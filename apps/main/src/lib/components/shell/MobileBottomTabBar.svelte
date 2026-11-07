@@ -125,7 +125,7 @@
 					data-tour="compose"
 					type="button"
 					onclick={() => compose.openMenu()}
-					class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--color-primary)]"
+					class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--color-primary-text)]"
 					aria-label={t('nav.compose', 'Compose')}
 				>
 					<span
@@ -139,7 +139,7 @@
 				<a
 					data-tour="compose"
 					href="/login?redirect=/create"
-					class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--color-primary)]"
+					class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--color-primary-text)]"
 					aria-label={t('nav.compose', 'Compose')}
 				>
 					<span
@@ -157,7 +157,7 @@
 				class="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] {isActive(
 					entry.href
 				)
-					? 'text-[var(--color-primary)]'
+					? 'text-[var(--color-primary-text)]'
 					: 'text-[var(--color-muted)]'}"
 				aria-current={isActive(entry.href) ? 'page' : undefined}
 			>

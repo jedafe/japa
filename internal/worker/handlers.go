@@ -3818,6 +3818,12 @@ func generateRSSForPlatform(ctx context.Context, baseURL string) {
 
 	items := make([]rssmodel.Item, 0, len(rows))
 	for _, row := range rows {
+		// §42: drop content types whose feature flag is off — the cached
+		// universal feed is a shared document, so a disabled feature must
+		// not keep advertising content whose routes 404.
+		if flag, ok := rssmodel.ContentTypeFeatureFlag[row.ContentType]; ok && featureChecker != nil && !featureChecker.IsEnabled(ctx, flag) {
+			continue
+		}
 		items = append(items, rssmodel.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
 			row.Username, row.PublishedAt, row.CreatedAt, baseURL, rssmodel.LinkPathFor(row.ContentType),

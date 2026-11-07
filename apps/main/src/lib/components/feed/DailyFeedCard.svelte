@@ -273,7 +273,7 @@
 		<div class="ms-auto flex shrink-0 items-center gap-3">
 			<a
 				href={canonicalHref}
-				class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-[var(--color-primary)]/10 px-3 py-1.5 text-[13px] font-semibold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/20"
+				class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-[var(--color-primary)]/10 px-3 py-1.5 text-[13px] font-semibold text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary)]/20"
 				aria-label={actionLabel}
 			>
 				<Icon size={15} />
@@ -303,7 +303,7 @@
 		<div class="flex min-w-0 flex-1 flex-col gap-3">
 			<!-- Title -->
 			<h2 class="text-balance text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
-				<a href={canonicalHref} class="transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
+				<a href={canonicalHref} class="transition-colors hover:text-[var(--color-primary-text)]">{item.title}</a>
 			</h2>
 
 			{#if item.excerpt}
@@ -349,10 +349,10 @@
 					onclick={openPost}
 					aria-label={t('feed.card.comments', 'Comments')}
 				>
-					<span class="rounded-full p-2 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
+					<span class="rounded-full p-2 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary-text)]">
 						<MessageSquare size={16} />
 					</span>
-					<span class="transition-colors group-hover/btn:text-[var(--color-primary)]">{item.comment_count ?? 0}</span>
+					<span class="transition-colors group-hover/btn:text-[var(--color-primary-text)]">{item.comment_count ?? 0}</span>
 				</button>
 				{#if isForum}
 					<VoteRail
@@ -368,20 +368,20 @@
 						contentId={item.id}
 						count={item.reaction_count ?? 0}
 						ariaLabel={t('feed.card.like', 'Like')}
-						class="group/btn flex items-center gap-1.5 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+						class="group/btn flex items-center gap-1.5 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 						side="top"
 						align="center"
 					/>
 				{/if}
 				<button
 					type="button"
-					class="group/btn flex items-center transition-colors {bookmarked ? 'text-[var(--color-primary)]' : ''}"
+					class="group/btn flex items-center transition-colors {bookmarked ? 'text-[var(--color-primary-text)]' : ''}"
 					onclick={toggleBookmark}
 					disabled={bookmarkPending}
 					aria-label={t('feed.card.bookmark', 'Bookmark')}
 					aria-pressed={bookmarked}
 				>
-					<span class="rounded-full p-2 transition-colors {bookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]'}">
+					<span class="rounded-full p-2 transition-colors {bookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]' : 'group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary-text)]'}">
 						<Bookmark size={16} fill={bookmarked ? 'currentColor' : 'none'} />
 					</span>
 				</button>
@@ -390,7 +390,7 @@
 					url={shareUrl}
 					title={item.title}
 					size={18}
-					class="group/btn flex shrink-0 items-center justify-center rounded-full p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
+					class="group/btn flex shrink-0 items-center justify-center rounded-full p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary-text)]"
 				/>
 			</div>
 		</div>

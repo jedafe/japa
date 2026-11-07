@@ -32,7 +32,7 @@
 			<p class="text-sm text-[var(--color-text-muted)]">
 				{t('sources.blocked.empty', 'You have not blocked any sources.')}
 			</p>
-			<a href="/sources" class="text-sm text-[var(--color-primary)] hover:underline">
+			<a href="/sources" class="text-sm text-[var(--color-primary-text)] hover:underline">
 				{t('sources.blocked.browse', 'Browse sources')}
 			</a>
 		</div>
@@ -43,7 +43,7 @@
 					class="flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
 				>
 					<div class="flex flex-col gap-1">
-						<a href="/sources/{source.slug}" class="font-medium hover:text-[var(--color-primary)] hover:underline">
+						<a href="/sources/{source.slug}" class="font-medium hover:text-[var(--color-primary-text)] hover:underline">
 							{source.name}
 						</a>
 						{#if source.domain}

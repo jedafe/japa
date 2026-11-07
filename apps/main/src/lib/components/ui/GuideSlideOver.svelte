@@ -114,7 +114,7 @@
 				     title, markdown body, and the CTA repeater. -->
 				<div class="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
 					<Dialog.Title class="flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
-						<Pencil size={16} class="text-[var(--color-primary)]" />
+						<Pencil size={16} class="text-[var(--color-primary-text)]" />
 						{t('guide_panel.edit_title', 'Edit panel')}
 					</Dialog.Title>
 					<Dialog.Close
@@ -214,7 +214,7 @@
 			{:else}
 				<div class="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
 					<Dialog.Title class="flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
-						<BookOpen size={18} class="text-[var(--color-primary)]" />
+						<BookOpen size={18} class="text-[var(--color-primary-text)]" />
 						{title}
 					</Dialog.Title>
 					<Dialog.Close
@@ -271,7 +271,7 @@
 		margin-block: 0.5rem;
 	}
 	.guide-body :global(a) {
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 	.guide-body :global(ol),
 	.guide-body :global(ul) {

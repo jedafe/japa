@@ -24,7 +24,7 @@
 							<Icon size={16} class="shrink-0 text-[var(--color-muted)]" aria-hidden="true" />
 							<span class="truncate">{fact.label}</span>
 						</dt>
-						<dd class="shrink-0 text-end text-sm font-semibold text-[var(--color-primary)]">
+						<dd class="shrink-0 text-end text-sm font-semibold text-[var(--color-primary-text)]">
 							{fact.value}
 						</dd>
 					</div>
@@ -37,7 +37,7 @@
 				{#each facts as fact, i (i)}
 					{@const Icon = marketplaceIcon(fact.icon)}
 					<div class="flex min-w-0 flex-col items-center gap-1 text-center">
-						<Icon size={16} class="text-[var(--color-primary)]" aria-hidden="true" />
+						<Icon size={16} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 						<dt class="text-[11px] text-[var(--color-muted)]">{fact.label}</dt>
 						<dd class="truncate text-sm font-semibold text-[var(--color-text)]">{fact.value}</dd>
 					</div>

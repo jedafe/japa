@@ -365,7 +365,7 @@
 			<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<div class="flex flex-col gap-3">
 					<div class="flex items-start gap-3">
-						<span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+						<span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 							<GitCompare size={20} />
 						</span>
 						<div class="flex-1">

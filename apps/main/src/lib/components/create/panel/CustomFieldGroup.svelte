@@ -869,7 +869,7 @@
 	}
 	.cf-repeater-add:hover {
 		border-color: var(--color-primary);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 	.cf-group-label {
 		font-size: 0.8125rem;
@@ -945,6 +945,6 @@
 	}
 	.cf-media-add:hover {
 		border-color: var(--color-primary);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 </style>

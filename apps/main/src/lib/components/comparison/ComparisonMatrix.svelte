@@ -97,7 +97,7 @@
 							{:else if dv.type === 'rating'}
 								{#if dv.value_rating != null}
 									<span class="inline-flex items-center gap-1">
-										<Star size={14} class="fill-[var(--color-primary)] text-[var(--color-primary)]" />
+										<Star size={14} class="fill-[var(--color-primary)] text-[var(--color-primary-text)]" />
 										<span class="font-medium text-[var(--color-text)]">{dv.value_rating.toFixed(1)}</span>
 									</span>
 								{:else}

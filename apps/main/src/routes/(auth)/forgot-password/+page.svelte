@@ -63,7 +63,7 @@
 		<p class="rounded-[var(--radius)] bg-green-500/10 px-3 py-2 text-sm text-green-600" role="status">
 			{t('auth.forgot_password.sent_confirmation')}
 		</p>
-		<a href="/login" class="text-sm text-[var(--color-primary)] hover:underline">
+		<a href="/login" class="text-sm text-[var(--color-primary-text)] hover:underline">
 			{t('auth.forgot_password.back_to_login')}
 		</a>
 	{:else}
@@ -89,7 +89,7 @@
 			{loading ? '...' : t('auth.forgot_password.submit')}
 		</button>
 
-		<a href="/login" class="text-center text-sm text-[var(--color-primary)] hover:underline">
+		<a href="/login" class="text-center text-sm text-[var(--color-primary-text)] hover:underline">
 			{t('auth.forgot_password.back_to_login')}
 		</a>
 	{/if}

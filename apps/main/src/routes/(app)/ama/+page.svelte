@@ -274,7 +274,7 @@
 						class={`block rounded-[var(--radius-card)] border p-4 transition-colors hover:border-[var(--color-primary)]/40 ${live ? 'border-[var(--color-primary)]/30 bg-[var(--color-primary)]/[0.03]' : 'border-[var(--color-border)] bg-[var(--color-surface)]'}`}
 					>
 						<div class="flex flex-wrap items-center gap-2">
-							<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--color-primary)]">
+							<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--color-primary-text)]">
 								{t('ama.badge', 'AMA')}
 							</span>
 							{#if live}

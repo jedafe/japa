@@ -269,7 +269,7 @@
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 			>
 				{#if savedItem}
-					<BookmarkCheck size={14} class="text-[var(--color-primary)]" />
+					<BookmarkCheck size={14} class="text-[var(--color-primary-text)]" />
 					{t('scholarships.saved', 'Saved')}
 				{:else}
 					<Bookmark size={14} />
@@ -281,7 +281,7 @@
 		<article class="mt-5 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 			<!-- Header band: type pill + country + verified status -->
 			<div class="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-5 py-3">
-				<span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-medium capitalize text-[var(--color-primary)]">
+				<span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-medium capitalize text-[var(--color-primary-text)]">
 					<GraduationCap size={12} />
 					{t('scholarships.type_label', 'Scholarship')}
 				</span>
@@ -322,7 +322,7 @@
 					>
 						<CalendarClock
 							size={18}
-							class={deadlinePassed ? 'text-[var(--color-danger)]' : 'text-[var(--color-primary)]'}
+							class={deadlinePassed ? 'text-[var(--color-danger)]' : 'text-[var(--color-primary-text)]'}
 						/>
 						<div class="min-w-0 flex-1">
 							<p class="text-xs text-[var(--color-muted)]">{t('scholarships.deadline', 'Deadline')}</p>
@@ -334,7 +334,7 @@
 							<span
 								class="shrink-0 text-xs font-medium {deadlinePassed
 									? 'text-[var(--color-danger)]'
-									: 'text-[var(--color-primary)]'}"
+									: 'text-[var(--color-primary-text)]'}"
 							>
 								{#if deadlinePassed}
 									{t('scholarships.deadline_passed', 'Deadline passed')}
@@ -455,7 +455,7 @@
 						</h2>
 						<a
 							href={`mailto:${scholarship.contact_email}`}
-							class="text-sm text-[var(--color-primary)] hover:underline"
+							class="text-sm text-[var(--color-primary-text)] hover:underline"
 						>
 							{scholarship.contact_email}
 						</a>
@@ -494,7 +494,7 @@
 									slug={source.slug}
 									name={source.name}
 									avatar={source.logo_url}
-									class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
+									class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary-text)] hover:underline"
 								>
 									{#snippet trigger()}
 										{t('scholarships.source', 'Source')}: {source.name}
@@ -505,7 +505,7 @@
 										href={source.source_url}
 										target="_blank"
 										rel="noopener noreferrer"
-										class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+										class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary-text)]"
 										aria-label={t('scholarships.original_source', 'View original source')}
 									>
 										<ExternalLink class="rtl:-scale-x-100" size={14} />
@@ -545,7 +545,7 @@
 					{/if}
 					<a
 						href={`/guide/${scholarship.slug}`}
-						class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline"
+						class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 					>
 						<BookOpen size={15} />
 						{t('scholarships.read_more_details', 'Read more details')}
@@ -564,7 +564,7 @@
 			<div class="flex items-center justify-between">
 				<button
 					onclick={toggleSave}
-					class="inline-flex items-center gap-2 rounded-[var(--radius)] px-4 py-2 text-sm font-medium transition-colors {savedItem ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'border border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-primary)]'}"
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] px-4 py-2 text-sm font-medium transition-colors {savedItem ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]' : 'border border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-primary)]'}"
 				>
 					{#if savedItem}
 						<BookmarkCheck size={18} />
@@ -683,7 +683,7 @@
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
 		<div class="w-full max-w-sm rounded-[var(--radius-card)] bg-[var(--color-surface)] p-5">
 			<div class="mb-4 flex justify-center">
-				<div class="grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+				<div class="grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 					<GraduationCap size={24} />
 				</div>
 			</div>

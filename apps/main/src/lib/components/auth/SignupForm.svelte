@@ -85,7 +85,7 @@
 		{#if showSwitchLink}
 			<a
 				href="/login"
-				class="text-sm text-[var(--color-primary)] transition hover:underline"
+				class="text-sm text-[var(--color-primary-text)] transition hover:underline"
 			>
 				{t('auth.signup.switch_to_login')}
 			</a>

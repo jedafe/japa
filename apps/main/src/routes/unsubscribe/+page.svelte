@@ -27,7 +27,7 @@
 			<p class="mt-2 text-sm text-[var(--color-muted)]">
 				{t('newsletter.unsubscribed_body', 'You will no longer receive emails from us. You can resubscribe at any time.')}
 			</p>
-			<a href="/" class="mt-4 inline-block text-sm text-[var(--color-primary)] hover:underline">
+			<a href="/" class="mt-4 inline-block text-sm text-[var(--color-primary-text)] hover:underline">
 				{t('common.back_home', 'Back to home')}
 			</a>
 		</div>

@@ -429,7 +429,7 @@
 						<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
 							{#if pinned}
 								<span
-									class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary)]"
+									class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary-text)]"
 								>
 									<Pin size={10} /> {t('comments.pinned')}
 								</span>
@@ -465,7 +465,7 @@
 				<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
 					{#if pinned}
 						<span
-							class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary)]"
+							class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary-text)]"
 						>
 							<Pin size={10} /> {t('comments.pinned')}
 						</span>
@@ -664,9 +664,9 @@
 					type="button"
 					bind:this={railEndEl}
 					onclick={() => (collapsed = false)}
-					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)]"
+					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary-text)] transition-colors hover:text-[var(--color-primary-hover)]"
 				>
-					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary-text)]">
 						<Plus size={14} />
 					</span>
 					{collapsedLabel}
@@ -702,9 +702,9 @@
 						bind:this={railEndEl}
 						onclick={loadReplies}
 						disabled={repliesLoading}
-						class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
+						class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary-text)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
 					>
-						<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+						<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary-text)]">
 							<Plus size={14} />
 						</span>
 						{repliesLoading ? t('common.loading') : viewRepliesLabel}
@@ -714,9 +714,9 @@
 						type="button"
 						onclick={loadMoreReplies}
 						disabled={repliesLoading}
-						class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
+						class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary-text)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
 					>
-						<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+						<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary-text)]">
 							<Plus size={14} />
 						</span>
 						{repliesLoading ? t('common.loading') : t('comments.load_more_replies', 'Load more replies')}
@@ -726,9 +726,9 @@
 				<a
 					href={`#comment-${allReplies[0].id}`}
 					bind:this={railEndEl}
-					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
+					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary-text)] hover:underline"
 				>
-					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary-text)]">
 						<Plus size={14} />
 					</span>
 					{t('comments.continue_thread')}
@@ -751,7 +751,7 @@
 		margin-bottom: 0;
 	}
 	:global(.prose-comment a) {
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		text-decoration: underline;
 		text-underline-offset: 2px;
 	}

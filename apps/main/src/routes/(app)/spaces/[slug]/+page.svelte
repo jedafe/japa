@@ -616,7 +616,7 @@ import { flagUrl } from '$lib/utils/flags';
 				/>
 			{:else}
 				<span
-					class="grid h-24 w-24 shrink-0 place-items-center rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-surface-subtle)] text-3xl font-bold text-[var(--color-primary)] shadow-lg sm:h-28 sm:w-28"
+					class="grid h-24 w-24 shrink-0 place-items-center rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-surface-subtle)] text-3xl font-bold text-[var(--color-primary-text)] shadow-lg sm:h-28 sm:w-28"
 				>
 					{space.name.charAt(0).toUpperCase()}
 				</span>
@@ -625,7 +625,7 @@ import { flagUrl } from '$lib/utils/flags';
 			<div class="flex-1 pb-1">
 				<div class="-translate-y-2">
 					<h1 class="text-xl font-bold text-white">{space.name}</h1>
-					<p class="text-sm font-medium capitalize text-white/80 dark:text-[var(--color-primary)]">{space.level} · {space.visibility}</p>
+					<p class="text-sm font-medium capitalize text-white/80 dark:text-[var(--color-primary-text)]">{space.level} · {space.visibility}</p>
 				</div>
 				{#if space.description}
 					<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{space.description}</p>
@@ -743,7 +743,7 @@ import { flagUrl } from '$lib/utils/flags';
 								layout="stream"
 							/>
 							{#if item.is_pinned}
-								<span class="pointer-events-none absolute start-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+								<span class="pointer-events-none absolute start-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary-text)]">
 									<Pin size={10} /> {t('space.pinned', 'Pinned')}
 								</span>
 							{/if}
@@ -818,7 +818,7 @@ import { flagUrl } from '$lib/utils/flags';
 								style="daily"
 								layout="stream"
 							/>
-							<span class="pointer-events-none absolute start-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
+							<span class="pointer-events-none absolute start-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary-text)]">
 								<Pin size={10} /> {t('space.pinned', 'Pinned')}
 							</span>
 							{#if canManage}
@@ -928,7 +928,7 @@ import { flagUrl } from '$lib/utils/flags';
 					<div class="mt-4 flex justify-center">
 						<a
 							href={`/radar?space_id=${space.id}`}
-							class="text-sm font-medium text-[var(--color-primary)] hover:underline"
+							class="text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 						>
 							{t('space.opportunities_view_all', 'View all in Japa Opportunities')} →
 						</a>
@@ -970,7 +970,7 @@ import { flagUrl } from '$lib/utils/flags';
 										{:else if group.pageSlug}
 											<a
 												href="/wiki/{encodeURIComponent(space.slug)}/{encodeURIComponent(group.pageSlug)}"
-												class="mt-1.5 inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
+												class="mt-1.5 inline-flex items-center gap-1 text-sm text-[var(--color-primary-text)] hover:underline"
 											>
 												{t('space.view_wiki_category', 'Browse {label}', { label: group.label })}
 												<span aria-hidden="true"><span class="inline-block rtl:-scale-x-100">→</span></span>
@@ -984,7 +984,7 @@ import { flagUrl } from '$lib/utils/flags';
 						{/if}
 						<a
 							href="/wiki/{encodeURIComponent(space.slug)}"
-							class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
+							class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 						>
 							{t('space.view_wiki', 'View wiki')}
 							<span aria-hidden="true"><span class="inline-block rtl:-scale-x-100">→</span></span>
@@ -1006,7 +1006,7 @@ import { flagUrl } from '$lib/utils/flags';
 						{/if}
 						{#if wikiData.content_url}
 							<p class="mt-3 text-xs">
-								<a href={wikiData.content_url} target="_blank" rel="noopener noreferrer" class="text-[var(--color-primary)] hover:underline">
+								<a href={wikiData.content_url} target="_blank" rel="noopener noreferrer" class="text-[var(--color-primary-text)] hover:underline">
 									{t('space.wiki_source', 'Read more on Wikipedia →')}
 								</a>
 							</p>

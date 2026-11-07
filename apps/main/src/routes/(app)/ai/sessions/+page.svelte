@@ -195,7 +195,7 @@
 								{#if session.project_id}
 									<span
 										class="mt-2 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
-										style="background-color: var(--color-primary-subtle); color: var(--color-primary)"
+										style="background-color: var(--color-primary-subtle); color: var(--color-primary-text)"
 									>
 										<Folder size={10} />
 										{projectName(session.project_id) || t('ai.projects.title', 'Projects')}
@@ -236,7 +236,7 @@
 								<button
 									type="button"
 									class="w-full rounded px-2 py-1 text-start text-xs hover:bg-[var(--color-surface-elevated)] {!session.project_id
-										? 'text-[var(--color-primary)]'
+										? 'text-[var(--color-primary-text)]'
 										: 'text-[var(--color-text)]'}"
 									onclick={() => assignSessionProject(session.id, null)}
 								>
@@ -246,7 +246,7 @@
 									<button
 										type="button"
 										class="w-full rounded px-2 py-1 text-start text-xs hover:bg-[var(--color-surface-elevated)] {session.project_id === p.id
-											? 'text-[var(--color-primary)]'
+											? 'text-[var(--color-primary-text)]'
 											: 'text-[var(--color-text)]'}"
 										onclick={() => assignSessionProject(session.id, p.id)}
 									>

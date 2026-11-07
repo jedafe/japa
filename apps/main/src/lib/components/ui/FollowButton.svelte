@@ -99,7 +99,7 @@
 		title={label}
 		class="grid h-8 w-8 shrink-0 place-items-center rounded-full border transition-colors disabled:opacity-50 {following
 			? 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
-			: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]'}"
+			: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]'}"
 	>
 		{#if pending}
 			<Loader2 size={iconSize} class="animate-spin" />

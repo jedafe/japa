@@ -24,7 +24,7 @@
 			case 'done':
 				return 'bg-[var(--color-primary)] text-white';
 			case 'current':
-				return 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]';
+				return 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]';
 			default:
 				return 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)]';
 		}
@@ -54,7 +54,7 @@
 					'done'
 						? 'bg-[var(--color-primary)] text-white'
 						: step.status === 'current'
-							? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+							? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 							: 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)]'}"
 				>
 					{#if step.status === 'done'}

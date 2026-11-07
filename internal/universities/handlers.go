@@ -27,6 +27,7 @@ import (
 	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/spaces"
@@ -60,7 +61,7 @@ type SpacesService interface {
 	// for a page of space ids — used to stamp is_member/is_pending/is_following
 	// on university cards so follow/join toggles render the correct state.
 	ListViewerSpaceRelations(ctx context.Context, viewerUserID pgtype.UUID, spaceIDs []pgtype.UUID) (map[string]spaces.ViewerSpaceRelations, error)
-	CountSpaceStats(ctx context.Context, spaceIDs []pgtype.UUID) (map[string]spaces.SpaceStat, error)
+	CountSpaceStats(ctx context.Context, spaceIDs []pgtype.UUID, gatedTypes []string) (map[string]spaces.SpaceStat, error)
 }
 
 // CustomFieldsService is the subset of customfields.Service the university
@@ -107,6 +108,9 @@ type Handlers struct {
 	// settings provides system settings for the §43 indexability gate
 	// (sitemap quality thresholds); nil falls back to defaults.
 	settings settingsReader
+	// flags evaluates content-type feature flags so space-derived counts
+	// exclude gated content (§42); nil falls back to global/unfiltered.
+	flags features.FlagEvaluator
 }
 
 // settingsReader is the subset of config.Settings needed by the
@@ -118,6 +122,10 @@ type settingsReader interface {
 // SetSettings injects the system settings reader used by the §43
 // indexability gate (wired during server setup).
 func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
+
+// SetFeatureChecker injects the flag evaluator so space-derived counts
+// exclude feature-gated content types (§42).
+func (h *Handlers) SetFeatureChecker(c features.FlagEvaluator) { h.flags = c }
 
 // literalResolver resolves {{...}} template literals in user-facing text
 // fields (§14). Implemented by *literals.Catalog; nil disables resolution.
@@ -604,7 +612,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var discussionCount int32
-	if stats, serr := h.spaces.CountSpaceStats(r.Context(), []pgtype.UUID{space.ID}); serr == nil {
+	if stats, serr := h.spaces.CountSpaceStats(r.Context(), []pgtype.UUID{space.ID}, features.HiddenContentTypes(r.Context(), h.flags)); serr == nil {
 		discussionCount = stats[space.ID.String()].DiscussionCount
 	}
 

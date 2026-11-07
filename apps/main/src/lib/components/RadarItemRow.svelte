@@ -82,8 +82,8 @@
 	<div class="flex items-start justify-between gap-3">
 		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-2">
-				<GraduationCap size={16} class="shrink-0 text-[var(--color-primary)]" />
-				<h3 class="truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]">
+				<GraduationCap size={16} class="shrink-0 text-[var(--color-primary-text)]" />
+				<h3 class="truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]">
 					{item.title}
 				</h3>
 			</div>

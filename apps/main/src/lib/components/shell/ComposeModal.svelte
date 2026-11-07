@@ -107,7 +107,7 @@
 							onclick={() => compose.openDiscussion(false)}
 							class="flex flex-1 items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-start text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
 						>
-							<MessageSquare size={20} class="text-[var(--color-primary)]" />
+							<MessageSquare size={20} class="text-[var(--color-primary-text)]" />
 							<span>{t('create.discussion', 'Discussion')}</span>
 						</button>
 						<button
@@ -116,7 +116,7 @@
 							class="flex flex-1 items-center justify-end gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-end text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
 						>
 							<span>{t('create.question', 'Question')}</span>
-							<HelpCircle size={20} class="text-[var(--color-primary)]" />
+							<HelpCircle size={20} class="text-[var(--color-primary-text)]" />
 						</button>
 					</div>
 					<!-- Paired rows that route to the create flows -->
@@ -128,7 +128,7 @@
 								onclick={() => selectRoute(row[0])}
 								class="flex flex-1 items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-start text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
 							>
-								<LeftIcon size={20} class="text-[var(--color-primary)]" />
+								<LeftIcon size={20} class="text-[var(--color-primary-text)]" />
 								<span>{row[0].label}</span>
 							</button>
 							{#if row[1]}
@@ -139,7 +139,7 @@
 									class="flex flex-1 items-center justify-end gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-end text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
 								>
 									<span>{row[1].label}</span>
-									<RightIcon size={20} class="text-[var(--color-primary)]" />
+									<RightIcon size={20} class="text-[var(--color-primary-text)]" />
 								</button>
 							{/if}
 						</div>

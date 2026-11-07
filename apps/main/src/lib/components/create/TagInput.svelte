@@ -270,7 +270,7 @@
 		padding: 3px 8px;
 		border-radius: 9999px;
 		background: var(--color-surface-subtle);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		font-size: 0.75rem;
 		font-weight: 500;
 	}
@@ -351,7 +351,7 @@
 		background: var(--color-surface-subtle);
 	}
 	.tag-suggestion.active {
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 	.tag-suggestion-name {
 		font-weight: 500;
@@ -361,7 +361,7 @@
 		font-size: 0.75rem;
 	}
 	.tag-suggestion-create {
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		border-top: 1px solid var(--color-border);
 		border-radius: 0 0 calc(var(--radius) - 2px) calc(var(--radius) - 2px);
 		margin-top: 2px;

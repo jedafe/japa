@@ -57,7 +57,7 @@
 	<header class="flex flex-wrap items-start justify-between gap-4">
 		<div class="flex items-center gap-3">
 			<div
-				class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+				class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"
 			>
 				<MapIcon class="h-5 w-5" />
 			</div>
@@ -134,7 +134,7 @@
 						</div>
 						<a
 							href="/roadmap/{flagship.slug}"
-							class="mt-1 block text-lg font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)]"
+							class="mt-1 block text-lg font-semibold text-[var(--color-text)] hover:text-[var(--color-primary-text)]"
 						>
 							{flagship.title}
 						</a>
@@ -157,7 +157,7 @@
 				<a
 					href="/roadmap"
 					class="rounded-full border px-3 py-1 text-xs font-medium transition-colors {data.category === ''
-						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 				>
 					{t('roadmap.filter_all', 'All')}
@@ -166,7 +166,7 @@
 					<a
 						href="/roadmap?category={encodeURIComponent(cat.slug)}"
 						class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors {data.category === cat.slug
-							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+							? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 							: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 					>
 						{#if cat.color}

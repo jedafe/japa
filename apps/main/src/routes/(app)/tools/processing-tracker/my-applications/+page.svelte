@@ -227,7 +227,7 @@
 					</a>
 					<a
 						href="/signup"
-						class="px-4 py-2.5 text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors text-center"
+						class="px-4 py-2.5 text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)] transition-colors text-center"
 					>
 						{t('common.create_account', 'Create free account')}
 					</a>
@@ -368,7 +368,7 @@
 									</span>
 								{/if}
 								{#if tl.is_shared}
-									<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+									<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 										{t('processing_tracker.shared', 'Shared')}
 									</span>
 								{/if}
@@ -512,7 +512,7 @@
 									{:else}
 										<button
 											onclick={() => (addingTo = tl.id)}
-											class="mt-3 inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+											class="mt-3 inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
 										>
 											<Plus size={14} />
 											{t('processing_tracker.add_milestone', 'Add milestone')}

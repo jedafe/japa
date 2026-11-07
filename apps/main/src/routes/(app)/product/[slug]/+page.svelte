@@ -120,7 +120,7 @@
 			{/if}
 			<a
 				href={compareHref}
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary)]"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary-text)]"
 			>
 				<GitCompareArrows size={14} /> {t('product.compare', 'Compare')}
 			</a>
@@ -150,7 +150,7 @@
 								{#if p.provider_slug}
 									<a
 										href="/deal/{encodeURIComponent(p.provider_slug)}"
-										class="truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+										class="truncate text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]"
 									>{p.name}</a>
 								{:else}
 									<span class="truncate text-sm font-medium text-[var(--color-text)]">{p.name}</span>
@@ -167,7 +167,7 @@
 									href={safeHttpUrl(p.offer_url)}
 									target="_blank"
 									rel="noopener noreferrer"
-									class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary)]"
+									class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary-text)]"
 								>
 									{t('product.get_it', 'Get it')} <ExternalLink size={12} />
 								</a>

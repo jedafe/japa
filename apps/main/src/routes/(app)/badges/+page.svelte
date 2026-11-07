@@ -96,7 +96,7 @@
 <div class="mx-auto w-full max-w-3xl px-4 py-6" style="--page-gutter: 1rem">
 	<!-- Hero — mirrors the "Your Journey. Your Badges." mockup header. -->
 	<header class="mb-6">
-		<p class="text-xs font-bold tracking-widest text-[var(--color-primary)] uppercase">japa.to</p>
+		<p class="text-xs font-bold tracking-widest text-[var(--color-primary-text)] uppercase">japa.to</p>
 		<h1 class="mt-1 text-2xl font-extrabold text-[var(--color-text)] sm:text-3xl">
 			{t('badges.heading_a', 'Your Journey.')}<br />{t('badges.heading_b', 'Your Badges.')}
 		</h1>
@@ -125,7 +125,7 @@
 			<section class="mb-8 mt-6">
 				<div class="mb-3 flex items-center justify-between">
 					<h2 class="flex items-center gap-2 text-sm font-bold capitalize text-[var(--color-text)]">
-						<CatIcon size={15} class="text-[var(--color-primary)]" />
+						<CatIcon size={15} class="text-[var(--color-primary-text)]" />
 						{categoryLabel(cat.category)}
 					</h2>
 					<span class="text-xs font-medium text-[var(--color-muted)]">0/{cat.badges.length}</span>
@@ -140,7 +140,7 @@
 							title={badge.is_secret ? '' : badge.description}
 						>
 							{#if badge.is_limited}
-								<span class="absolute top-2 right-2 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-[var(--color-primary)]">
+								<span class="absolute top-2 right-2 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-[var(--color-primary-text)]">
 									{t('badges.limited', 'Ltd')}
 								</span>
 							{/if}
@@ -173,7 +173,7 @@
 		<!-- Collection stats -->
 		<div class="mb-8 grid grid-cols-3 gap-3">
 			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-center">
-				<div class="text-2xl font-extrabold text-[var(--color-primary)]">{stats.earned}</div>
+				<div class="text-2xl font-extrabold text-[var(--color-primary-text)]">{stats.earned}</div>
 				<div class="text-xs font-medium text-[var(--color-text-subtle)]">{t('badges.stat_earned', 'Earned')}</div>
 			</div>
 			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-center">
@@ -192,7 +192,7 @@
 			<section class="mb-8">
 				<div class="mb-3 flex items-center justify-between">
 					<h2 class="flex items-center gap-2 text-sm font-bold text-[var(--color-text)] capitalize">
-						<CatIcon size={15} class="text-[var(--color-primary)]" />
+						<CatIcon size={15} class="text-[var(--color-primary-text)]" />
 						{categoryLabel(cat.category)}
 					</h2>
 					<span class="text-xs font-medium text-[var(--color-muted)]">{cat.earned}/{cat.total}</span>
@@ -217,7 +217,7 @@
 							title={badge.earned ? badge.description : badge.is_secret ? '' : (badge.description ?? '')}
 						>
 							{#if badge.is_limited}
-								<span class="absolute top-2 right-2 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-[9px] font-bold text-[var(--color-primary)] uppercase">
+								<span class="absolute top-2 right-2 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-[9px] font-bold text-[var(--color-primary-text)] uppercase">
 									{t('badges.limited', 'Ltd')}
 								</span>
 							{/if}
@@ -281,7 +281,7 @@
 
 		<!-- Footer note (mockup strip) -->
 		<p class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-xs text-[var(--color-text-subtle)]">
-			<Sparkles size={12} class="mr-1 inline text-[var(--color-primary)]" />
+			<Sparkles size={12} class="mr-1 inline text-[var(--color-primary-text)]" />
 			{t('badges.more_coming', 'More badges coming soon! Keep engaging and level up your journey with japa.to')}
 		</p>
 	{/if}

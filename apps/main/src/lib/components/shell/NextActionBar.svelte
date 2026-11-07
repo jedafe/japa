@@ -77,7 +77,7 @@
 		role="region"
 		aria-label={t('nextaction.suggestion', 'Suggestion')}
 	>
-		<Icon size={15} class="shrink-0 text-[var(--color-primary)]" />
+		<Icon size={15} class="shrink-0 text-[var(--color-primary-text)]" />
 		<span class="min-w-0 flex-1 truncate text-[var(--color-text)]">
 			<strong class="font-medium">{action.title}</strong>
 			{#if action.body}<span class="ms-1 hidden text-[var(--color-text-muted)] sm:inline">{action.body}</span>{/if}

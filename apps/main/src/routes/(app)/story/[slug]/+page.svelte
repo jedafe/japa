@@ -239,7 +239,7 @@
 					<div class="flex shrink-0 items-center gap-1">
 						<a
 							href="/studio/create?draft={story.id}&type=story"
-							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]"
 						>
 							<Pencil size={14} /> {t('stories.edit', 'Edit')}
 						</a>
@@ -265,7 +265,7 @@
 			<div class="flex items-start gap-2">
 				<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] md:text-5xl" style="font-family: var(--font-heading, var(--font-serif));">{story.title}</h1>
 				{#if story.verified}
-					<BadgeCheck size={22} class="mt-2 shrink-0 text-[var(--color-primary)]" />
+					<BadgeCheck size={22} class="mt-2 shrink-0 text-[var(--color-primary-text)]" />
 				{/if}
 			</div>
 
@@ -298,7 +298,7 @@
 							{#if story.author_avatar}
 								<img src={story.author_avatar} alt="" class="h-9 w-9 rounded-full object-cover" />
 							{:else}
-								<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorDisplay.charAt(0)}</span>
+								<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary-text)]">{authorDisplay.charAt(0)}</span>
 							{/if}
 							<span class="font-medium text-[var(--color-text)]">{authorDisplay}</span>
 						{/snippet}
@@ -338,7 +338,7 @@
 				{#if story?.biggest_challenge}
 					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-							<Lightbulb size={16} class="text-[var(--color-primary)]" />
+							<Lightbulb size={16} class="text-[var(--color-primary-text)]" />
 							{t('stories.biggest_challenge', 'Biggest Challenge')}
 						</h2>
 						<p class="mt-2 whitespace-pre-wrap text-sm text-[var(--color-text-subtle)]">{story.biggest_challenge}</p>
@@ -348,7 +348,7 @@
 				{#if usefulResources.length > 0}
 					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-							<BookMarked size={16} class="text-[var(--color-primary)]" />
+							<BookMarked size={16} class="text-[var(--color-primary-text)]" />
 							{t('stories.most_useful_resource', 'Most Useful Resource')}
 						</h2>
 						<ul class="mt-2 space-y-2">
@@ -359,7 +359,7 @@
 											href={resource.url}
 											target="_blank"
 											rel="noopener noreferrer"
-											class="inline-flex items-center gap-1.5 text-[var(--color-primary)] transition-colors hover:underline"
+											class="inline-flex items-center gap-1.5 text-[var(--color-primary-text)] transition-colors hover:underline"
 										>
 											{resource.name}
 											<ExternalLink class="rtl:-scale-x-100" size={12} />
@@ -376,7 +376,7 @@
 				{#if story?.best_advice}
 					<div class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 p-4">
 						<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-							<Quote size={16} class="text-[var(--color-primary)]" />
+							<Quote size={16} class="text-[var(--color-primary-text)]" />
 							{t('stories.best_advice', 'Best Advice')}
 						</h2>
 						<p class="mt-2 whitespace-pre-wrap text-sm text-[var(--color-text-subtle)]">{story.best_advice}</p>
@@ -395,7 +395,7 @@
 						{#each relatedTools as tool (tool.href)}
 							<a
 								href={tool.href}
-								class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+								class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]"
 							>
 								<ExternalLink class="rtl:-scale-x-100" size={12} /> {tool.label}
 							</a>

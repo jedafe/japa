@@ -311,7 +311,7 @@
 			← {t('org_admin.back')}
 		</a>
 		<div class="mt-2 flex items-center gap-3">
-			<div class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+			<div class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 				<Building2 class="h-5 w-5" />
 			</div>
 			<div class="flex-1">
@@ -644,7 +644,7 @@
 							{#if m.user.avatar_url}
 								<img src={m.user.avatar_url} alt="" class="h-8 w-8 rounded-full object-cover" />
 							{:else}
-								<div class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-medium text-[var(--color-primary)]">
+								<div class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-medium text-[var(--color-primary-text)]">
 									{(m.user.display_name ?? m.user.username).slice(0, 1).toUpperCase()}
 								</div>
 							{/if}

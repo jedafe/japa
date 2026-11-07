@@ -63,7 +63,7 @@
 			class="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]"
 			aria-hidden="true"
 		>
-			<Preview size={14} class="text-[var(--color-primary)]" />
+			<Preview size={14} class="text-[var(--color-primary-text)]" />
 		</span>
 		<SelectField
 			{value}

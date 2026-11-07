@@ -69,7 +69,7 @@
 	<div class="p-4 space-y-4">
 		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
 			<div class="flex items-start gap-3">
-				<div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+				<div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 					<Stamp size={20} />
 				</div>
 				<div class="min-w-0 flex-1">
@@ -81,7 +81,7 @@
 					</p>
 					{#if pathway.apostille_required}
 						<span
-							class="mt-2 inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]"
+							class="mt-2 inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary-text)]"
 						>
 							{t('attestation_guide.apostille_required', 'Apostille required')}
 						</span>
@@ -122,7 +122,7 @@
 					{#each pathway.pathway_steps as step, i (i)}
 						<li class="flex items-start gap-3">
 							<span
-								class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary)]"
+								class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary-text)]"
 							>
 								{i + 1}
 							</span>
@@ -136,7 +136,7 @@
 													href={val}
 													target="_blank"
 													rel="noopener noreferrer"
-													class="break-all text-[var(--color-primary)] hover:underline"
+													class="break-all text-[var(--color-primary-text)] hover:underline"
 												>
 													{val}
 												</a>
@@ -160,7 +160,7 @@
 				href={buildApiUrl(`/attestation/${pathway.id}/export/pdf`, PUBLIC_JC_API_URL)}
 				target="_blank"
 				rel="noopener noreferrer"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 			>
 				<Download size={16} />
 				{t('attestation_guide.download_pdf', 'Export pathway')}

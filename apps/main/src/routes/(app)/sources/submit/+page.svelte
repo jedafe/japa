@@ -17,7 +17,7 @@
 
 <div class="mx-auto max-w-xl p-4">
 	<h1 class="flex items-center gap-2 text-xl font-bold">
-		<Rss size={20} class="text-[var(--color-primary)]" />
+		<Rss size={20} class="text-[var(--color-primary-text)]" />
 		{title}
 	</h1>
 	<p class="mt-1 text-sm text-[var(--color-text-muted)]">

@@ -794,7 +794,7 @@
 				>
 					<a
 						href="/login?redirect={encodeURIComponent(page.url.pathname + page.url.search)}"
-						class="font-medium text-[var(--color-primary)] hover:underline"
+						class="font-medium text-[var(--color-primary-text)] hover:underline"
 						>{t('services.reviews_login', 'Log in to write a review')}</a
 					>
 				</p>
@@ -840,7 +840,7 @@
 				<div>
 					<div class="flex flex-wrap items-center gap-2">
 						<span
-							class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-semibold text-[var(--color-primary)]"
+							class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-semibold text-[var(--color-primary-text)]"
 						>
 							<GraduationCap size={13} aria-hidden="true" />
 							{t('services.mentor_pill', 'Mentorship Service')}
@@ -967,7 +967,7 @@
 							<button
 								type="button"
 								onclick={() => (messageOpen = true)}
-								class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-primary)]/40 bg-[var(--color-surface)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/5"
+								class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-primary)]/40 bg-[var(--color-surface)] px-5 py-2.5 text-sm font-semibold text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary)]/5"
 							>
 								<MessageSquare size={15} aria-hidden="true" />
 								{secondaryCta.label}
@@ -1047,7 +1047,7 @@
 												/>
 											{:else}
 												<div
-													class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+													class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"
 												>
 													<GraduationCap size={20} aria-hidden="true" />
 												</div>
@@ -1058,7 +1058,7 @@
 												>
 													{mentorName}
 													{#if service.is_verified}
-														<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary)]" />
+														<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary-text)]" />
 													{/if}
 												</span>
 												{#if mentor.title}
@@ -1087,7 +1087,7 @@
 										/>
 									{:else}
 										<div
-											class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+											class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"
 										>
 											<GraduationCap size={20} aria-hidden="true" />
 										</div>
@@ -1098,7 +1098,7 @@
 										>
 											{mentorName}
 											{#if service.is_verified}
-												<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary)]" />
+												<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary-text)]" />
 											{/if}
 										</p>
 										{#if mentor.title}
@@ -1185,7 +1185,7 @@
 											{@const Icon = stat.icon}
 											<div class="min-w-0">
 												<dt class="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
-													<Icon size={13} class="shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
+													<Icon size={13} class="shrink-0 text-[var(--color-primary-text)]" aria-hidden="true" />
 													{stat.label}
 												</dt>
 												<dd class="mt-1 truncate text-sm font-medium text-[var(--color-text)]">
@@ -1358,14 +1358,14 @@
 					<div class="flex flex-wrap items-center gap-2">
 						{#if catLabel}
 							<span
-								class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-semibold text-[var(--color-primary)]"
+								class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-semibold text-[var(--color-primary-text)]"
 							>
 								<CategoryIcon size={13} aria-hidden="true" />
 								{catLabel}
 							</span>
 						{/if}
 						{#if service.is_verified && service.verification_type}
-							<span class="flex items-center gap-1 text-xs text-[var(--color-primary)]">
+							<span class="flex items-center gap-1 text-xs text-[var(--color-primary-text)]">
 								<BadgeCheck size={13} aria-hidden="true" />
 								{t('services.verified', 'Verified')} · {service.verification_type}
 							</span>
@@ -1384,7 +1384,7 @@
 					>
 						{service.title}
 						{#if service.is_verified}
-							<BadgeCheck size={26} class="mt-1.5 shrink-0 text-[var(--color-primary)]" />
+							<BadgeCheck size={26} class="mt-1.5 shrink-0 text-[var(--color-primary-text)]" />
 						{/if}
 					</h1>
 
@@ -1894,7 +1894,7 @@
 							{/if}
 							<div class="flex flex-1 flex-col gap-1.5 p-4">
 								<h3
-									class="line-clamp-2 text-sm font-semibold leading-snug text-[var(--color-text)] transition-colors group-hover:text-[var(--color-primary)]"
+									class="line-clamp-2 text-sm font-semibold leading-snug text-[var(--color-text)] transition-colors group-hover:text-[var(--color-primary-text)]"
 								>
 									{item.title}
 								</h3>
@@ -1904,7 +1904,7 @@
 									</p>
 								{/if}
 								<span
-									class="mt-auto inline-flex items-center gap-1 pt-2 text-xs font-medium text-[var(--color-primary)]"
+									class="mt-auto inline-flex items-center gap-1 pt-2 text-xs font-medium text-[var(--color-primary-text)]"
 								>
 									{t('services.card_view', 'View')}
 									<ArrowRight class="rtl:-scale-x-100" size={12} aria-hidden="true" />

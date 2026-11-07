@@ -42,11 +42,16 @@
 	const lh = $derived(logoHeight || Number(site?.['appearance.logo_height']) || 0);
 	const ldw = $derived(logoDarkWidth || Number(site?.['appearance.logo_dark_width']) || 0);
 	const ldh = $derived(logoDarkHeight || Number(site?.['appearance.logo_dark_height']) || 0);
+	// Custom logos uploaded before resolveLogoDims existed may have no
+	// recorded intrinsic dims — emit the rendered display box (the
+	// `h-9 w-auto max-w-[120px]` topbar slot) so the img still carries
+	// explicit width/height for CLS + Lighthouse instead of none.
+	const fallbackDims = { width: 120, height: 36 };
 	const lightDims = $derived(
 		logoUrl
 			? lw && lh
 				? { width: lw, height: lh }
-				: {}
+				: fallbackDims
 			: { width: 590, height: 384 }
 	);
 	// A custom dark logo only emits dims when ITS OWN are known — borrowing
@@ -56,11 +61,11 @@
 		logoDarkUrl
 			? ldw && ldh
 				? { width: ldw, height: ldh }
-				: {}
+				: fallbackDims
 			: logoUrl
 				? lw && lh
 					? { width: lw, height: lh }
-					: {}
+					: fallbackDims
 				: { width: 794, height: 384 }
 	);
 </script>

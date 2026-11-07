@@ -11,6 +11,7 @@ import (
 
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 )
 
 // ListByAuthor returns the user's comments on published+public content (with
@@ -18,19 +19,25 @@ import (
 // Powers the public profile Replies tab. Public-safe: comments on draft/private
 // content and soft-deleted comments are excluded by the query.
 func (s *Service) ListByAuthor(ctx context.Context, authorID pgtype.UUID, limit, offset int32) ([]gen.ListCommentsByAuthorRow, int32, error) {
+	// §42: hidden types are filtered in SQL so rows and total agree —
+	// post-fetch filtering would leak the gated count via meta.total and
+	// leave empty pages mid-pagination.
+	hidden := features.HiddenContentTypes(ctx, s.flags)
+
 	rows, err := s.read.ListCommentsByAuthor(ctx, gen.ListCommentsByAuthorParams{
 		AuthorUserID: authorID,
 		PageLimit:    limit,
 		PageOffset:   offset,
+		GatedTypes:   hidden,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing comments by author: %w", err)
 	}
 
-	total, err := s.read.CountCommentsByAuthor(ctx,
-
-		authorID,
-	)
+	total, err := s.read.CountCommentsByAuthor(ctx, gen.CountCommentsByAuthorParams{
+		AuthorUserID: authorID,
+		GatedTypes:   hidden,
+	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting comments by author: %w", err)
 	}
@@ -64,6 +71,9 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: hidden-parent replies are excluded in SQL (rows + total) so the
+	// gated feature's threads leak neither titles/slugs nor a count through
+	// the public profile surface.
 	h.resolveLiterals(r, &items)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{

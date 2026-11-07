@@ -212,7 +212,7 @@
 	}
 	.space-create-btn:hover {
 		border-color: var(--color-primary);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
 	}
 	.limit-hint {
@@ -250,7 +250,7 @@
 		border: none;
 		border-radius: 50%;
 		background: transparent;
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		cursor: pointer;
 	}
 	.primary-toggle :global(svg) {

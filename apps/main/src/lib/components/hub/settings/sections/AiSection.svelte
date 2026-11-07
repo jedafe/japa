@@ -58,7 +58,7 @@
 				aria-selected={activeTab === tab.key}
 				onclick={() => selectTab(tab.key)}
 				class="inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === tab.key
-					? 'border-[var(--color-primary)] text-[var(--color-primary)]'
+					? 'border-[var(--color-primary)] text-[var(--color-primary-text)]'
 					: 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 			>
 				{t(tab.labelKey, tab.default)}

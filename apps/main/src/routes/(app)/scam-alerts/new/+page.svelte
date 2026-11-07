@@ -215,14 +215,14 @@
 		{#if !data.user}
 			<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text-subtle)]">
 				{t('scam_alerts.anonymous_note', 'You are reporting anonymously. Sign in to track and edit your report after submission.')}
-				<a href="/login?redirect=/scam-alerts/new" class="font-medium text-[var(--color-primary)] hover:underline">{t('common.sign_in', 'Sign in')}</a>
+				<a href="/login?redirect=/scam-alerts/new" class="font-medium text-[var(--color-primary-text)] hover:underline">{t('common.sign_in', 'Sign in')}</a>
 			</div>
 		{/if}
 
 		{#if anonymousBlocked}
 			<div class="rounded-[var(--radius)] border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700" role="alert">
 				{t('scam_alerts.anonymous_disabled', 'Anonymous reporting is currently disabled.')}
-				<a href="/login?redirect=/scam-alerts/new" class="font-medium text-[var(--color-primary)] hover:underline">{t('scam_alerts.sign_in_to_report', 'Sign in to report')}</a>
+				<a href="/login?redirect=/scam-alerts/new" class="font-medium text-[var(--color-primary-text)] hover:underline">{t('scam_alerts.sign_in_to_report', 'Sign in to report')}</a>
 			</div>
 		{/if}
 

@@ -364,7 +364,7 @@
 							{/if}
 							{#if isHostReply}
 								<span
-									class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary)]"
+									class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary-text)]"
 								>
 									{t('ama.host_badge', 'Host')}
 								</span>
@@ -425,7 +425,7 @@
 			{#if editing}
 				<div class="mt-2 space-y-2">
 					{#if editError}
-						<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary)]">
+						<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary-text)]">
 							{editError}
 						</p>
 					{/if}
@@ -584,9 +584,9 @@
 					type="button"
 					bind:this={railEndEl}
 					onclick={() => (collapsed = false)}
-					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)]"
+					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary-text)] transition-colors hover:text-[var(--color-primary-hover)]"
 				>
-					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary-text)]">
 						<Plus size={14} />
 					</span>
 					{viewRepliesLabel}
@@ -623,9 +623,9 @@
 					type="button"
 					bind:this={railEndEl}
 					onclick={() => (deepExpanded = true)}
-					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
+					class="relative -start-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary-text)] hover:underline"
 				>
-					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary-text)]">
 						<Plus size={14} />
 					</span>
 					{t('forum.continue_thread', 'Continue this thread →')}
@@ -646,7 +646,7 @@
 		margin-bottom: 0;
 	}
 	:global(.prose-comment a) {
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		text-decoration: underline;
 		text-underline-offset: 2px;
 	}

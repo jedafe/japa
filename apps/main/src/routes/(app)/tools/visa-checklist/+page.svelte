@@ -417,7 +417,7 @@
 		{#if selectedOrigin && (destinations.length === 0 || (selectedDestination && visaTypes.length === 0))}
 			<div class="px-4 pb-3">
 				{#if requestSubmitted}
-					<p class="text-sm text-[var(--color-primary)]">
+					<p class="text-sm text-[var(--color-primary-text)]">
 						{t('checklist.request_success', 'Your request has been submitted. Our team will prioritize this route.')}
 					</p>
 				{:else}
@@ -425,7 +425,7 @@
 						type="button"
 						disabled={!selectedOrigin || !selectedDestination || requestLoading}
 						onclick={submitGuideRequest}
-						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-50"
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] disabled:opacity-50"
 					>
 						<MessageSquarePlus size={16} />
 						{requestLoading

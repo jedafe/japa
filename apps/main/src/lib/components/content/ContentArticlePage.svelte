@@ -258,7 +258,7 @@
 			{#if data.canEdit}
 				<a
 					href={`/studio/create?draft=${article.id}`}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]"
 				>
 					<Pencil size={14} /> {t('content.edit', 'Edit')}
 				</a>
@@ -292,7 +292,7 @@
 				{#if article.content_type === 'guide' && article.guide_category}
 					<a
 						href="/guides?category={article.guide_category}"
-						class="rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/20"
+						class="rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary)]/20"
 					>
 						{article.guide_category_label ?? humanizeKey(article.guide_category)}
 					</a>
@@ -329,7 +329,7 @@
 						{#if article.author_avatar_url}
 							<img src={article.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
 						{:else}
-							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorName.charAt(0)}</span>
+							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary-text)]">{authorName.charAt(0)}</span>
 						{/if}
 						<span class="font-medium text-[var(--color-text)]">{authorName}</span>
 					{/snippet}
@@ -358,7 +358,7 @@
 						slug={source.slug}
 						name={source.name}
 						avatar={source.logo_url}
-						class="inline-flex items-center gap-1 font-medium text-[var(--color-primary)] hover:underline"
+						class="inline-flex items-center gap-1 font-medium text-[var(--color-primary-text)] hover:underline"
 					>
 						{#snippet trigger()}
 							{t('content.source', 'Source')}: {source.name}
@@ -369,7 +369,7 @@
 							href={source.source_url}
 							target="_blank"
 							rel="noopener noreferrer"
-							class="inline-flex items-center gap-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+							class="inline-flex items-center gap-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-primary-text)]"
 							aria-label={t('content.original_source', 'View original source')}
 						>
 							<ExternalLink class="rtl:-scale-x-100" size={12} />
@@ -382,7 +382,7 @@
 		{#if article.tags && article.tags.length > 0}
 			<div class="mt-4 flex flex-wrap gap-2">
 				{#each article.tags as tag (tag)}
-					<a href={`/tags/${tag}`} class="rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]">#{tag}</a>
+					<a href={`/tags/${tag}`} class="rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary-text)]">#{tag}</a>
 				{/each}
 			</div>
 		{/if}

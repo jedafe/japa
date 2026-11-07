@@ -156,7 +156,7 @@
 			<div class="flex items-start gap-2">
 				<h1 class="text-2xl font-bold text-[var(--color-text)]">{entry.title}</h1>
 				{#if entry.status === 'published'}
-					<BadgeCheck size={22} class="mt-1 shrink-0 text-[var(--color-primary)]" />
+					<BadgeCheck size={22} class="mt-1 shrink-0 text-[var(--color-primary-text)]" />
 				{/if}
 			</div>
 
@@ -168,7 +168,7 @@
 					{statusLabels[entry.status ?? 'pending'] ?? entry.status}
 				</span>
 				{#if entry.is_recurring}
-					<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">
+					<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary-text)]">
 						<Repeat size={12} />
 						{entry.recurrence_pattern ?? t('calendar.recurring', 'Recurring')}
 					</span>
@@ -244,7 +244,7 @@
 						{#if saving}
 							<Loader2 size={16} class="animate-spin" />
 						{:else if saved}
-							<BookmarkCheck size={16} class="text-[var(--color-primary)]" />
+							<BookmarkCheck size={16} class="text-[var(--color-primary-text)]" />
 						{:else}
 							<Bookmark size={16} />
 						{/if}

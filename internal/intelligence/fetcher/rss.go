@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -47,6 +46,7 @@ func (f *RSSFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 	}
 
 	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japa.to)")
+	applyConditionals(ctx, req)
 
 	resp, err := f.client.Do(req)
 	if err != nil {
@@ -60,17 +60,50 @@ func (f *RSSFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 		return FetchResult{}, fmt.Errorf("rss: read body: %w", err)
 	}
 
-	if resp.StatusCode >= 400 {
-		return FetchResult{}, fmt.Errorf("rss: unexpected HTTP status %d", resp.StatusCode)
+	contentType := resp.Header.Get("Content-Type")
+
+	// 304: the upstream confirmed our validators are current — the feed
+	// is unchanged, the crawl counts as a success, nothing is persisted.
+	if resp.StatusCode == http.StatusNotModified {
+		return FetchResult{HTTPStatus: resp.StatusCode, ContentType: contentType, NotModified: true}, nil
 	}
 
-	contentType := resp.Header.Get("Content-Type")
-	if strings.Contains(contentType, "text/html") || looksLikeHTML(body) {
-		return FetchResult{}, errors.New("rss: response is not a valid RSS feed (got HTML/Cloudflare challenge)")
+	// Error responses are fetch failures, not documents — an error page is
+	// not feed content and must not reset consecutive_failures or feed the
+	// pipeline. httpFailureError classifies the failure (throttled /
+	// bot-walled / denied / gone) so the worker routes it correctly.
+	if resp.StatusCode >= 400 {
+		return FetchResult{}, httpFailureError("rss", resp, body, contentType)
+	}
+
+	// Feeds are XML; an html-ish response here is a bot-wall challenge, a
+	// login wall, or a misconfigured feed_url. A recognized challenge is
+	// blocked-class (escalation runs).
+	htmlish := strings.Contains(contentType, "text/html") || looksLikeHTML(body)
+	if htmlish {
+		if sig, ok := DetectWall(resp.StatusCode, resp.Header, body, contentType); ok {
+			return FetchResult{}, &WallError{Method: "rss", Status: resp.StatusCode, Signature: sig}
+		}
+	}
+
+	// A body that literally opens with <html>/<!doctype is a page, not a
+	// feed — XHTML parses as XML, so the parse below cannot rescue it —
+	// gone-class, so the channel disables fast instead of retrying a
+	// dead URL.
+	if looksLikeHTML(body) {
+		return FetchResult{}, fmt.Errorf("rss: %w: endpoint returned HTML, expected feed XML", ErrContentGone)
 	}
 
 	var feed rssFeed
 	if err := xml.Unmarshal(body, &feed); err != nil {
+		// The Content-Type label alone is not authoritative — mislabeled
+		// feeds (WordPress serving XML as text/html) are common, so
+		// non-XML garbage only goes gone-class when the label claimed
+		// HTML. A mislabeled VALID feed parses fine and is accepted.
+		if htmlish {
+			return FetchResult{}, fmt.Errorf("rss: %w: endpoint returned HTML, expected feed XML", ErrContentGone)
+		}
+
 		return FetchResult{}, fmt.Errorf("rss: parse: %w", err)
 	}
 

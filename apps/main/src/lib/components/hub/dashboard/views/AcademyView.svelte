@@ -159,7 +159,7 @@
 						{#if en.thumbnail_url}
 							<img src={en.thumbnail_url} alt="" class="h-12 w-12 rounded object-cover" />
 						{:else}
-							<span class="grid h-12 w-12 shrink-0 place-items-center rounded bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+							<span class="grid h-12 w-12 shrink-0 place-items-center rounded bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 								<GraduationCap size={20} />
 							</span>
 						{/if}

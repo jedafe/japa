@@ -279,14 +279,14 @@
 						class="group flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
 					>
 						<div class="flex min-w-0 items-center gap-3">
-							<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+							<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 								<Building2 class="h-5 w-5" />
 							</div>
 							<div class="min-w-0">
 								<p class="truncate text-sm font-medium text-[var(--color-text)]">
 									{o.name}
 									{#if o.verified}
-										<ShieldCheck class="ms-1 inline h-3.5 w-3.5 text-[var(--color-primary)]" />
+										<ShieldCheck class="ms-1 inline h-3.5 w-3.5 text-[var(--color-primary-text)]" />
 									{/if}
 								</p>
 								<p class="truncate text-xs text-[var(--color-muted)]">

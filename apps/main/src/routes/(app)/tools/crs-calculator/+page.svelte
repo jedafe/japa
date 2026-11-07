@@ -505,7 +505,7 @@
 					<div class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 						{t('crs_calculator.your_score', 'Your CRS score')}
 					</div>
-					<div class="mt-1 text-4xl font-bold tabular-nums text-[var(--color-primary)]">{result.score}</div>
+					<div class="mt-1 text-4xl font-bold tabular-nums text-[var(--color-primary-text)]">{result.score}</div>
 				</div>
 				{#if latestDraw}
 					<div class="text-sm text-[var(--color-muted)]">
@@ -624,7 +624,7 @@
 			</p>
 			<a
 				href="/login?redirect={encodeURIComponent(page.url.pathname)}"
-				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 			>
 				{t('crs_calculator.signin', 'Sign in')}
 			</a>

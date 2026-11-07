@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/geoip"
+	rssmodel "github.com/jedafe/japa/internal/rss/model"
 )
 
 // SurfaceHeader is the request header identifying the caller's client surface
@@ -64,24 +65,30 @@ func SurfaceFrom(r *http.Request) string {
 }
 
 // ScopeForRequest builds the caller scope for r via the checker's
-// BuildScope method, using the request's validated surface — or the
-// explicitly supplied surface when a caller already resolved one (e.g.
-// surface-parameterised endpoints). Services hold narrow checker
-// interfaces, so this is the shared type-assert behind each service's
-// CallerScope helper. A checker without BuildScope yields the zero scope —
-// anonymous/global behavior.
-func ScopeForRequest(checker any, r *http.Request, surface ...string) CallerScope {
-	s := SurfaceFrom(r)
-	if len(surface) > 0 {
-		s = surface[0]
-	}
+// BuildScope method, using the request's validated X-JC-Surface header.
+// Services hold narrow checker interfaces, so this is the shared
+// type-assert behind each service's CallerScope helper. A checker without
+// BuildScope yields the zero scope — anonymous/global behavior.
+func ScopeForRequest(checker any, r *http.Request) CallerScope {
 	type scopeBuilder interface {
 		BuildScope(*http.Request, string) CallerScope
 	}
 	if sb, ok := checker.(scopeBuilder); ok {
-		return sb.BuildScope(r, s)
+		return sb.BuildScope(r, SurfaceFrom(r))
 	}
 	return CallerScope{}
+}
+
+// ScopeMiddleware attaches the caller scope to ctx for every request that
+// passes through it, so any downstream service check reading ScopeFrom
+// evaluates caller-scoped. Place it AFTER auth middleware — BuildScope
+// reads the authenticated user, geo, and surface from the request context.
+func ScopeMiddleware(checker any) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(WithScope(r.Context(), ScopeForRequest(checker, r))))
+		})
+	}
 }
 
 // scopeCtxKey carries a request-derived CallerScope through ctx so
@@ -102,6 +109,95 @@ func WithScope(ctx context.Context, sc CallerScope) context.Context {
 func ScopeFrom(ctx context.Context) (CallerScope, bool) {
 	sc, ok := ctx.Value(scopeCtxKey{}).(CallerScope)
 	return sc, ok
+}
+
+// FlagEvaluator is the minimal checker contract every per-package
+// FeatureChecker iface shares — the two flag reads a request path needs.
+// *Checker satisfies it.
+type FlagEvaluator interface {
+	IsEnabled(ctx context.Context, key string) bool
+	EvalFlag(ctx context.Context, key string, sc CallerScope) EvalResult
+}
+
+// EvalFlagScoped evaluates a flag for this caller: scoped EvalFlag when a
+// request scope is attached (ScopeMiddleware), global IsEnabled otherwise.
+// Global results carry Visible=Enabled — surface hiding is per-scope only.
+// Callers pick .Enabled (reachability, Gate parity) or Enabled && Visible
+// (projection, menu parity). Nil evaluator reports {false,false}.
+func EvalFlagScoped(ctx context.Context, c FlagEvaluator, flag string) EvalResult {
+	if c == nil {
+		return EvalResult{}
+	}
+	if sc, ok := ScopeFrom(ctx); ok {
+		return c.EvalFlag(ctx, flag, sc)
+	}
+	enabled := c.IsEnabled(ctx, flag)
+	return EvalResult{Enabled: enabled, Visible: enabled}
+}
+
+// EvalContentType evaluates the feature flag mapped to a
+// contents.content_type for this caller (§42): scoped EvalFlag when a
+// request scope is attached (ScopeMiddleware), global IsEnabled otherwise.
+// ok=false when the type has no mapped flag or no evaluator is supplied.
+// Global results carry Visible=Enabled — surface hiding is per-scope only.
+// Callers then pick .Enabled (reachability, Gate parity) or
+// Enabled && Visible (projection, menu parity).
+func EvalContentType(ctx context.Context, c FlagEvaluator, contentType string) (EvalResult, bool) {
+	flag, ok := rssmodel.ContentTypeFeatureFlag[contentType]
+	if !ok || c == nil {
+		return EvalResult{}, false
+	}
+	return EvalFlagScoped(ctx, c, flag), true
+}
+
+// ContentTypeUnreachable reports whether a content_type's feature flag is
+// disabled for this caller — the reachability predicate (Gate parity).
+// Unmapped types and nil evaluators report reachable.
+func ContentTypeUnreachable(ctx context.Context, c FlagEvaluator, contentType string) bool {
+	res, ok := EvalContentType(ctx, c, contentType)
+	return ok && !res.Enabled
+}
+
+// ContentTypeHidden reports whether a content_type's feature flag is
+// disabled or surface-hidden for this caller — the projection predicate
+// used by mixed listings, feeds, and search results (menu parity).
+func ContentTypeHidden(ctx context.Context, c FlagEvaluator, contentType string) bool {
+	res, ok := EvalContentType(ctx, c, contentType)
+	return ok && !(res.Enabled && res.Visible)
+}
+
+// GatedContentTypes returns every content_type whose feature flag is
+// unreachable for the caller scope in ctx. SQL EXISTS/NOT IN guards use it
+// to skip gated parents in one round trip instead of per-row Go checks.
+func GatedContentTypes(ctx context.Context, c FlagEvaluator) []string {
+	if c == nil {
+		return nil
+	}
+	out := make([]string, 0, len(rssmodel.ContentTypeFeatureFlag))
+	for ct, flag := range rssmodel.ContentTypeFeatureFlag {
+		if !EvalFlagScoped(ctx, c, flag).Enabled {
+			out = append(out, ct)
+		}
+	}
+	return out
+}
+
+// HiddenContentTypes returns every content_type whose feature flag is
+// disabled OR hidden for the caller scope in ctx — the projection predicate
+// for SQL-driven public listings where rows and their COUNT must agree
+// (e.g. the paginated Replies tab).
+func HiddenContentTypes(ctx context.Context, c FlagEvaluator) []string {
+	if c == nil {
+		return nil
+	}
+	out := make([]string, 0, len(rssmodel.ContentTypeFeatureFlag))
+	for ct, flag := range rssmodel.ContentTypeFeatureFlag {
+		res := EvalFlagScoped(ctx, c, flag)
+		if !(res.Enabled && res.Visible) {
+			out = append(out, ct)
+		}
+	}
+	return out
 }
 
 // BuildScope assembles the CallerScope for a request: the validated surface,

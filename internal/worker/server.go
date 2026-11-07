@@ -425,6 +425,11 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// other 04:xx tasks): deletes intel_records rows in status='rejected'
 	// older than intel.rejected_retention_days (default 7). Low queue.
 	schedule("50 4 * * *", TypeIntelPruneRejectedRecords, 24*time.Hour)
+	// Dead-channel re-probe (intel bot-wall hardening): every 6h at :25,
+	// re-checks auto-disabled channels through the real fetch path and
+	// re-enables those whose wall lifted or endpoint revived. Bounded by
+	// intel.reprobe_dead_channels_batch. Low queue.
+	schedule("25 */6 * * *", TypeIntelReprobeDeadChannels, 6*time.Hour)
 
 	// §106 channel-sync amendment — hourly YouTube Atom-feed poll for
 	// video_channel directory sources. Runs at :20 to avoid the top-of-hour

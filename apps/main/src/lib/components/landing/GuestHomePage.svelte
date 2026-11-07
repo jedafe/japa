@@ -135,7 +135,7 @@
 			case 'teal':
 				return 'text-[#0d9488] bg-[#ccfbf1]';
 			default:
-				return 'text-[var(--color-primary)] bg-[var(--color-surface-subtle)]';
+				return 'text-[var(--color-primary-text)] bg-[var(--color-surface-subtle)]';
 		}
 	}
 
@@ -825,7 +825,7 @@
 		height: 2.5rem;
 		border-radius: var(--radius);
 		background: var(--color-surface);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		box-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
 	}
 
@@ -983,7 +983,7 @@
 		margin-top: 0.75rem;
 		font-size: 0.8125rem;
 		font-weight: 500;
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 
 	.community-avatars {
@@ -1088,7 +1088,7 @@
 		gap: 0.25rem;
 		font-size: 0.875rem;
 		font-weight: 500;
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		white-space: nowrap;
 	}
 
@@ -1160,7 +1160,7 @@
 		gap: 0.25rem;
 		font-size: 0.875rem;
 		font-weight: 500;
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 
 	.carousel-wrap {

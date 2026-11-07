@@ -11,6 +11,7 @@ import (
 
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 )
 
 // Sort mode constants for GetFeed.
@@ -56,6 +57,7 @@ type feedSettingsReader interface {
 // graph clean; *features.Checker satisfies it structurally.
 type FeatureChecker interface {
 	IsEnabled(ctx context.Context, key string) bool
+	EvalFlag(ctx context.Context, key string, sc features.CallerScope) features.EvalResult
 }
 
 // feedEnqueuer is the subset of worker.Enqueuer that feed needs.

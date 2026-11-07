@@ -130,6 +130,30 @@ services:
       - "127.0.0.1:8099:8080"
     restart: unless-stopped
 
+  # render — headless chromium service behind the intel RenderFetcher
+  # contract (POST /render; internal/intelligence/fetcher/render.go).
+  # Point system_settings intel.render.service_url at
+  # http://render:8300 to enable render-method channels, blocked-class
+  # escalation, and the xhr_sniff HAR capture. Optional: set
+  # RENDER_AUTH_TOKEN and the matching provider_config.auth_token.
+  render:
+    build:
+      context: .
+      dockerfile: services/render/Dockerfile
+    environment:
+      RENDER_PORT: "8300"
+      RENDER_AUTH_TOKEN: ${JC_RENDER_AUTH_TOKEN:-}
+      RENDER_MAX_CONCURRENCY: "4"
+      RENDER_SESSION_TTL_MS: "900000"
+    ports:
+      - "127.0.0.1:8300:8300"
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:8300/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
   # Honcho (AI agent memory) is intentionally NOT part of the compose stack —
   # its image is not published to a registry. The API degrades gracefully when
   # JC_HONCHO_URL is unset; point it at an external Honcho deployment to enable

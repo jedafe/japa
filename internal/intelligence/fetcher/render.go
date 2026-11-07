@@ -25,14 +25,26 @@ import (
 // Render-service contract (internal):
 //
 //	POST {service_url}/render
-//	{"url": "...", "wait_selector": "...", "timeout_ms": 30000, "a11y": false}
-//	→ 200 {"html": "...", "final_url": "..."}        (a11y → {"a11y_text": "..."})
+//	{"url": "...", "wait_selector": "...", "timeout_ms": 30000, "a11y": false,
+//	 "stealth": true, "solve": "auto", "proxy_group": "...", "session_id": "..."}
+//	→ 200 {"html": "...", "final_url": "...", "wall_detected": false}
+//	                                         (a11y → {"a11y_text": "..."})
 //	→ 4xx = bad request (fetch failure, does not count toward the circuit)
 //	→ 5xx/timeout = service failure (fetch failure; renderCircuitThreshold
 //	  consecutive failures open the breaker)
 //
 // provider_config keys: wait_selector, timeout_ms (overrides
 // intel.render.timeout_ms), a11y, auth_token (Bearer auth to the service).
+//
+// Anti-bot escalation keys — stealth, solve, proxy_group, session_id — are
+// policy-gated: they are forwarded to the render service ONLY when
+// provider_config.bypass_policy = "auto". The default ("never" or unset)
+// strips them, so an operator cannot smuggle CAPTCHA solving or stealth
+// flags into a render request without an explicit per-source opt-in.
+// The Go side never solves CAPTCHAs itself — it only relays the opt-in;
+// whether the service honors solve:"auto" is the service's policy. A
+// wall_detected response flag is surfaced as a WallError so repeated
+// walls route through the blocked failure class, not the baseline.
 //
 // jc:intel:render:circuit (5m) is set after renderCircuitThreshold
 // consecutive transport/5xx failures — while present the adapter reports
@@ -68,12 +80,17 @@ type renderRequest struct {
 	WaitSelector string `json:"wait_selector,omitempty"`
 	TimeoutMs    int    `json:"timeout_ms,omitempty"`
 	A11y         bool   `json:"a11y,omitempty"`
+	Stealth      bool   `json:"stealth,omitempty"`
+	Solve        string `json:"solve,omitempty"`
+	ProxyGroup   string `json:"proxy_group,omitempty"`
+	SessionID    string `json:"session_id,omitempty"`
 }
 
 type renderResponse struct {
-	HTML     string `json:"html"`
-	A11yText string `json:"a11y_text"`
-	FinalURL string `json:"final_url"`
+	HTML         string `json:"html"`
+	A11yText     string `json:"a11y_text"`
+	FinalURL     string `json:"final_url"`
+	WallDetected bool   `json:"wall_detected"`
 }
 
 // Fetch implements Fetcher.
@@ -114,12 +131,26 @@ func (f *RenderFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 		timeoutMs = 30000
 	}
 
-	reqBody, err := json.Marshal(renderRequest{
+	renderReq := renderRequest{
 		URL:          src.SourceUrl,
 		WaitSelector: stringFromCfg(cfg, "wait_selector"),
 		TimeoutMs:    timeoutMs,
 		A11y:         a11y,
-	})
+	}
+
+	// Anti-bot escalation fields forward only under an explicit
+	// bypass_policy:"auto" opt-in — "never" (default) and every other
+	// value strip them. JapaConnect is a polite self-identifying crawler;
+	// CAPTCHA solving and stealth flags are a per-source posture decision,
+	// not something a config can sneak into the request.
+	if bypassPolicyAuto(cfg) {
+		renderReq.Stealth, _ = cfg["stealth"].(bool)
+		renderReq.Solve = stringFromCfg(cfg, "solve")
+		renderReq.ProxyGroup = stringFromCfg(cfg, "proxy_group")
+		renderReq.SessionID = stringFromCfg(cfg, "session_id")
+	}
+
+	reqBody, err := json.Marshal(renderReq)
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("fetcher: render request: %w", err)
 	}
@@ -171,6 +202,21 @@ func (f *RenderFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 	if a11y && out.A11yText != "" {
 		content = out.A11yText
 		contentType = "text/plain"
+	}
+
+	// The service flagged the page as a wall even though it produced
+	// content — solver declined or challenge only partially passed.
+	// Surface it as a wall so the channel records the sighting instead of
+	// baselining challenge HTML.
+	if out.WallDetected {
+		return FetchResult{}, &WallError{Method: "render", Status: http.StatusOK, Signature: "render:wall_detected"}
+	}
+
+	// A rendered bot-wall challenge is still a wall — the service passed a
+	// challenge page back as if it were content. Catch it before the body
+	// poisons the channel's change-detection baseline.
+	if sig, ok := DetectWall(http.StatusOK, nil, []byte(content), contentType); ok {
+		return FetchResult{}, &WallError{Method: "render", Status: http.StatusOK, Signature: sig}
 	}
 
 	if content == "" {
@@ -266,6 +312,14 @@ func stringFromCfg(cfg map[string]any, key string) string {
 	}
 
 	return ""
+}
+
+// bypassPolicyAuto reports whether provider_config.bypass_policy is the
+// explicit "auto" opt-in that unlocks anti-bot escalation fields
+// (stealth/solve/proxy_group/session_id) on render requests. Anything
+// else — unset, "never", or a typo — is treated as never.
+func bypassPolicyAuto(cfg map[string]any) bool {
+	return stringFromCfg(cfg, "bypass_policy") == "auto"
 }
 
 // validateRenderTarget constrains the delegated render target: http(s)

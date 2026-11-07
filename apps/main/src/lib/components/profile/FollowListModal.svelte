@@ -233,7 +233,7 @@
 										/>
 									{:else}
 										<span
-											class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]"
+											class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary-text)]"
 										>
 											{initials(item.display_name, item.username)}
 										</span>

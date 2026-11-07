@@ -928,7 +928,7 @@
 								<div class="min-w-0 flex-1">
 									<span class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
 										{#if a.iata_code}
-											<span class="rounded-[var(--radius)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-mono text-xs font-semibold text-[var(--color-primary)]">{a.iata_code}</span>
+											<span class="rounded-[var(--radius)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-mono text-xs font-semibold text-[var(--color-primary-text)]">{a.iata_code}</span>
 										{/if}
 										{a.name}
 									</span>

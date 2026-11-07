@@ -55,7 +55,7 @@
 			{#each reports as alert (alert.id)}
 				<a href="/scam-alerts/{alert.id}" class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40">
 					<div class="flex flex-wrap items-center gap-2">
-						<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--color-primary)]">{scamTypeLabel(t, alert.scam_type as ScamType)}</span>
+						<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--color-primary-text)]">{scamTypeLabel(t, alert.scam_type as ScamType)}</span>
 						{#if alert.is_pinned}<span class="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600"><Pin size={11} /> {t('scam_alerts.pinned', 'Pinned')}</span>{/if}
 						<span class={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusClass(alert.status as ScamStatus)}`}>{t(`scam_alerts.status.${alert.status}`, alert.status.replace(/_/g, ' '))}</span>
 						<span class="ms-auto text-xs text-[var(--color-muted)]">{relativeTime(alert.created_at, new Date(), i18n.locale)}</span>

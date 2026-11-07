@@ -272,7 +272,7 @@
 					>
 						{opt.label}
 						{#if sort === opt.value}
-							<Check size={16} class="text-[var(--color-primary)]" />
+							<Check size={16} class="text-[var(--color-primary-text)]" />
 						{/if}
 					</button>
 				{/each}

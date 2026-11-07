@@ -253,7 +253,7 @@
 				type="button"
 				onclick={loadMore}
 				disabled={moreLoading}
-				class="mt-4 inline-flex items-center gap-2 text-sm font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
+				class="mt-4 inline-flex items-center gap-2 text-sm font-medium text-[var(--color-primary-text)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
 			>
 				{moreLoading ? t('common.loading') : t('comments.load_more', 'Load more comments')}
 			</button>

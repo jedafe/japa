@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -628,5 +629,151 @@ func TestHandleIntelDetectChanges_PropagatesChannel(t *testing.T) {
 
 	if ep.ChannelID != ch.ID.String() {
 		t.Errorf("extract channel_id = %q, want %q", ep.ChannelID, ch.ID.String())
+	}
+}
+
+// TestHandleIntelReprobeDeadChannels exercises the dead-channel sweep end
+// to end: an auto-disabled channel whose endpoint is back gets re-enabled
+// with its failure counter reset; a still-dead endpoint stays disabled
+// (error noted, not counted); a deliberately admin-disabled channel — no
+// failures, no error message — is left untouched.
+func TestHandleIntelReprobeDeadChannels(t *testing.T) {
+	database, srcStore, _, inspector := wireIntelChannelDeps(t)
+	srv := staticFixture(t)
+
+	src := mkIntelTestSource(t, srcStore, "reprobe-src", nil)
+
+	// Auto-disabled look-alike: circuit-breaker stamps a failure + error,
+	// then disables with the 'circuit_breaker' attribution the sweep
+	// selects on.
+	mkDead := func(mutate func(*gen.CreateIntelSourceChannelParams)) gen.IntelSourceChannel {
+		ch := mkIntelTestChannel(t, srcStore, src, mutate)
+		if err := srcStore.UpdateChannelCrawlStatus(t.Context(), gen.UpdateIntelChannelCrawlStatusParams{
+			ID:               ch.ID,
+			Success:          false,
+			LastErrorMessage: strPtr("gone: 404"),
+		}); err != nil {
+			t.Fatalf("stamp failure: %v", err)
+		}
+		if err := srcStore.DisableChannelMarked(t.Context(), ch.ID, "circuit_breaker"); err != nil {
+			t.Fatalf("disable channel: %v", err)
+		}
+		return ch
+	}
+
+	revivedCh := mkDead(func(a *gen.CreateIntelSourceChannelParams) {
+		a.Label = "revived"
+		a.EntryUrl = srv.URL + "/revived"
+	})
+
+	deadSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "gone", http.StatusNotFound)
+	}))
+	t.Cleanup(deadSrv.Close)
+
+	stillDeadCh := mkDead(func(a *gen.CreateIntelSourceChannelParams) {
+		a.Label = "still dead"
+		a.EntryUrl = deadSrv.URL + "/gone"
+	})
+
+	// Operator disable: the generic toggle stamps disabled_by='admin',
+	// which must keep the channel out of the re-probe set entirely.
+	manualCh := mkIntelTestChannel(t, srcStore, src, func(a *gen.CreateIntelSourceChannelParams) {
+		a.Label = "manual disable"
+	})
+	if err := srcStore.UpdateChannelEnabled(t.Context(), manualCh.ID, false); err != nil {
+		t.Fatalf("manual disable channel: %v", err)
+	}
+
+	// Second source whose only channel is dead — the sweep must enqueue
+	// intel:probe_verify so the site gets re-probed for new methods.
+	deadSrc := mkIntelTestSource(t, srcStore, "reprobe-dead-src", nil)
+	loneDeadCh := mkIntelTestChannel(t, srcStore, deadSrc, func(a *gen.CreateIntelSourceChannelParams) {
+		a.Label = "lone dead"
+		a.EntryUrl = deadSrv.URL + "/only-channel"
+	})
+	if err := srcStore.UpdateChannelCrawlStatus(t.Context(), gen.UpdateIntelChannelCrawlStatusParams{
+		ID:               loneDeadCh.ID,
+		Success:          false,
+		LastErrorMessage: strPtr("gone: 404"),
+	}); err != nil {
+		t.Fatalf("stamp lone channel failure: %v", err)
+	}
+	if err := srcStore.DisableChannelMarked(t.Context(), loneDeadCh.ID, "circuit_breaker"); err != nil {
+		t.Fatalf("disable lone channel: %v", err)
+	}
+
+	if err := HandleIntelReprobeDeadChannels(t.Context(), asynq.NewTask(TypeIntelReprobeDeadChannels, []byte("{}"))); err != nil {
+		t.Fatalf("HandleIntelReprobeDeadChannels: %v", err)
+	}
+
+	got, err := srcStore.GetChannel(t.Context(), revivedCh.ID)
+	if err != nil {
+		t.Fatalf("reload revived channel: %v", err)
+	}
+	if !got.Enabled {
+		t.Error("revived channel still disabled")
+	}
+	if got.ConsecutiveFailures != 0 {
+		t.Errorf("revived channel consecutive_failures = %d, want 0", got.ConsecutiveFailures)
+	}
+	if !got.LastSuccessAt.Valid {
+		t.Error("revived channel last_success_at not stamped")
+	}
+	// Health probe, not a crawl — no raw document churn.
+	if n := countChannelRawDocs(t, database, revivedCh.ID); n != 0 {
+		t.Errorf("re-probe persisted %d raw docs, want 0", n)
+	}
+
+	got, err = srcStore.GetChannel(t.Context(), stillDeadCh.ID)
+	if err != nil {
+		t.Fatalf("reload still-dead channel: %v", err)
+	}
+	if got.Enabled {
+		t.Error("still-dead channel re-enabled")
+	}
+	if got.LastErrorMessage == nil || !strings.Contains(*got.LastErrorMessage, "reprobe") {
+		t.Errorf("still-dead channel error = %v, want a stamped reprobe note", got.LastErrorMessage)
+	}
+
+	got, err = srcStore.GetChannel(t.Context(), manualCh.ID)
+	if err != nil {
+		t.Fatalf("reload manual-disable channel: %v", err)
+	}
+	if got.Enabled {
+		t.Error("admin-disabled channel touched by the sweep")
+	}
+	if got.LastErrorMessage != nil {
+		t.Errorf("admin-disabled channel gained error message %q, want none", *got.LastErrorMessage)
+	}
+	if got.DisabledBy == nil || *got.DisabledBy != "admin" {
+		t.Errorf("manual disable attribution = %v, want 'admin'", got.DisabledBy)
+	}
+
+	// The revived channel's attribution is cleared by the re-enable.
+	if got, err := srcStore.GetChannel(t.Context(), revivedCh.ID); err == nil && got.DisabledBy != nil {
+		t.Errorf("revived channel disabled_by = %q, want cleared", *got.DisabledBy)
+	}
+
+	// Fully-dead source → intel:probe_verify enqueued for method
+	// re-detection. The first source's revived channel keeps it out of
+	// the reprobe set.
+	infos := pendingTasks(t, inspector, TypeIntelProbeVerify)
+
+	var reprobed bool
+	for _, info := range infos {
+		var p intelSourcePayload
+		if err := json.Unmarshal(info.Payload, &p); err != nil {
+			t.Fatalf("probe_verify payload: %v", err)
+		}
+		if p.SourceID == deadSrc.ID.String() {
+			reprobed = true
+		}
+		if p.SourceID == src.ID.String() {
+			t.Error("probe_verify enqueued for a source that still has an enabled channel")
+		}
+	}
+	if !reprobed {
+		t.Error("no probe_verify enqueued for the fully-dead source")
 	}
 }

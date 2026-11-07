@@ -107,7 +107,7 @@
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<div class="flex items-center gap-2">
-			<ClipboardList size={18} class="text-[var(--color-primary)]" />
+			<ClipboardList size={18} class="text-[var(--color-primary-text)]" />
 			<h1 class="text-lg font-semibold text-[var(--color-text)]">{t('scholarships.saved_title', 'Saved Scholarships')}</h1>
 		</div>
 		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
@@ -176,7 +176,7 @@
 							<div class="min-w-0 flex-1">
 								<a
 									href="/scholarships/{s.guide_id}"
-									class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)]"
+									class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary-text)]"
 								>
 									{s.title}
 								</a>
@@ -256,7 +256,7 @@
 								href={s.application_url}
 								target="_blank"
 								rel="noopener noreferrer"
-								class="mt-3 inline-flex items-center gap-1.5 text-xs text-[var(--color-primary)] hover:underline"
+								class="mt-3 inline-flex items-center gap-1.5 text-xs text-[var(--color-primary-text)] hover:underline"
 							>
 								{t('scholarships.apply', 'Apply')}
 								<ExternalLink class="rtl:-scale-x-100" size={12} />

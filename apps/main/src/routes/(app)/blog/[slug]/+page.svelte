@@ -204,7 +204,7 @@
 				{#if data.canEdit}
 					<a
 						href={`/studio/create?draft=${article.id}`}
-						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)]"
 					>
 						<Pencil size={14} /> {t('content.edit', 'Edit')}
 					</a>
@@ -214,7 +214,7 @@
 						type="button"
 						onclick={submitForReview}
 						disabled={submittingForReview || reviewSubmitted}
-						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)] disabled:opacity-50"
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary-text)] disabled:opacity-50"
 					>
 						{#if reviewSubmitted}
 							<Check size={14} /> {t('blog.submitted', 'Submitted')}
@@ -267,7 +267,7 @@
 						{#if article.author_avatar_url}
 							<img src={article.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
 						{:else}
-							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorName.charAt(0)}</span>
+							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary-text)]">{authorName.charAt(0)}</span>
 						{/if}
 						<span class="font-medium text-[var(--color-text)]">{authorName}</span>
 					{/snippet}
@@ -284,7 +284,7 @@
 					article.status === 'draft'
 						? 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]'
 						: article.status === 'submitted' || article.status === 'in_review'
-							? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+							? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 							: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'}
 				<span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize {statusClass}">
 					{article.status.replace('_', ' ')}
@@ -295,7 +295,7 @@
 		{#if article.tags && article.tags.length > 0}
 			<div class="mt-4 flex flex-wrap gap-2">
 				{#each article.tags as tag (tag)}
-					<a href={`/tags/${tag}`} class="rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]">#{tag}</a>
+					<a href={`/tags/${tag}`} class="rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary-text)]">#{tag}</a>
 				{/each}
 			</div>
 		{/if}

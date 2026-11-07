@@ -347,14 +347,14 @@
 										<a
 											href="/wiki/{encodeURIComponent(row.space.slug)}/{encodeURIComponent(row.page.slug)}"
 											rel="nofollow"
-											class="font-medium text-[var(--color-primary)] hover:underline"
+											class="font-medium text-[var(--color-primary-text)] hover:underline"
 										>
 											{row.page.title}
 										</a>
 									{:else}
 										<a
 											href="/wiki/{encodeURIComponent(row.space.slug)}"
-											class="font-medium text-[var(--color-primary)] hover:underline"
+											class="font-medium text-[var(--color-primary-text)] hover:underline"
 										>
 											{row.space.name}
 										</a>
@@ -414,7 +414,7 @@
 							aria-disabled={compareIds.length < 2}
 							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-1.5 text-xs font-medium transition-colors {compareIds.length >=
 							2
-								? 'border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10'
+								? 'border-[var(--color-primary)] text-[var(--color-primary-text)] hover:bg-[var(--color-primary)]/10'
 								: 'pointer-events-none border-[var(--color-border)] text-[var(--color-muted)] opacity-60'}"
 						>
 							<GitCompareArrows size={14} />

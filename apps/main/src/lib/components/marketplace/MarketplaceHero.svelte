@@ -50,7 +50,7 @@
 	>
 		<div>
 			<span
-				class="mb-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-semibold text-[var(--color-primary)]"
+				class="mb-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-semibold text-[var(--color-primary-text)]"
 			>
 				<Sparkles size={13} />
 				{t('services.hero_eyebrow', '{site} Services Marketplace')}
@@ -92,7 +92,7 @@
 					class="flex flex-col gap-2.5 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 				>
 					<span
-						class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+						class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"
 					>
 						<Icon size={18} />
 					</span>

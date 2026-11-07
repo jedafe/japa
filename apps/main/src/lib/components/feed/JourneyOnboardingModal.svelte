@@ -241,12 +241,12 @@
 							class="grid h-9 w-9 place-items-center rounded-full transition-colors {n === step
 								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
 								: n < step
-									? 'bg-[var(--color-surface-subtle)] text-[var(--color-primary)]'
+									? 'bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]'
 									: 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)]'}"
 						>
 							<s.icon size={16} />
 						</span>
-						<span class="hidden text-[11px] font-medium sm:block {n === step ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}">{s.label}</span>
+						<span class="hidden text-[11px] font-medium sm:block {n === step ? 'text-[var(--color-primary-text)]' : 'text-[var(--color-muted)]'}">{s.label}</span>
 					</button>
 					{#if i < steps.length - 1}
 						<span class="mx-2 mb-0 h-px w-8 sm:mb-5 sm:w-12 {n < step ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"></span>
@@ -272,19 +272,19 @@
 					<circle cx="160" cy="40" r="4" fill="var(--color-primary)" opacity="0.5" />
 				</svg>
 				<div class="journey-globe">
-					<Globe size={56} strokeWidth={1.2} class="text-[var(--color-primary)]" />
+					<Globe size={56} strokeWidth={1.2} class="text-[var(--color-primary-text)]" />
 				</div>
 				<div class="journey-chip" style="top: 14%; inset-inline-start: 10%;">
-					<GraduationCap size={18} class="text-[var(--color-primary)]" />
+					<GraduationCap size={18} class="text-[var(--color-primary-text)]" />
 				</div>
 				<div class="journey-chip" style="top: 44%; inset-inline-start: 6%;">
-					<Briefcase size={18} class="text-[var(--color-primary)]" />
+					<Briefcase size={18} class="text-[var(--color-primary-text)]" />
 				</div>
 				<div class="journey-chip" style="bottom: 16%; inset-inline-end: 12%;">
-					<MapPin size={18} class="text-[var(--color-primary)]" />
+					<MapPin size={18} class="text-[var(--color-primary-text)]" />
 				</div>
 				<div class="journey-plane">
-					<Plane size={20} class="text-[var(--color-primary)]" />
+					<Plane size={20} class="text-[var(--color-primary-text)]" />
 				</div>
 			</aside>
 
@@ -410,7 +410,7 @@
 				{/if}
 
 				<div class="mt-6 flex items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3">
-					<ShieldCheck size={20} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+					<ShieldCheck size={20} class="mt-0.5 shrink-0 text-[var(--color-primary-text)]" />
 					<p class="text-xs leading-relaxed text-[var(--color-text-subtle)]">
 						<span class="font-semibold text-[var(--color-text)]">{t('journey.privacy_title', 'Your information helps us personalize your experience.')}</span>
 						{t('journey.privacy_body', 'You can update these details anytime in your profile.')}
@@ -481,7 +481,7 @@
 		position: absolute;
 		top: 10%;
 		inset-inline-end: 16%;
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		opacity: 0.8;
 	}
 	@media (prefers-reduced-motion: no-preference) {

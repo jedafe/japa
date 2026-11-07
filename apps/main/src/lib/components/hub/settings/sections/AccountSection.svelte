@@ -102,7 +102,7 @@
 				{t('settings.account.verified', 'Your profile is verified.')}
 			</p>
 		{:else}
-			<a href="/verification-request?self=1" class="text-sm font-medium text-[var(--color-primary)] hover:underline">
+			<a href="/verification-request?self=1" class="text-sm font-medium text-[var(--color-primary-text)] hover:underline">
 				{t('settings.account.request_verification', 'Request verification')}
 			</a>
 			<p class="mt-1 text-xs text-[var(--color-muted)]">
@@ -120,7 +120,7 @@
 		<button
 			type="button"
 			onclick={() => goto('/?tour=replay')}
-			class="text-sm font-medium text-[var(--color-primary)] hover:underline"
+			class="text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 		>
 			{t('settings.account.replay_tour', 'Replay product tour')}
 		</button>

@@ -34,6 +34,13 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: the disambiguating content_type is a reachability check — a
+	// feature-flagged-off type 404s like it does on GET /content/{slug}.
+	if h.contentTypeUnreachable(r.Context(), contentType) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
 	// Enriched detail row, disambiguated by both content_type and slug.
 	content, err := h.Service.GetContentDetailBySlugAndType(r.Context(), contentType, slug)
 	if err != nil {

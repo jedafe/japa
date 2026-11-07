@@ -243,7 +243,7 @@
 						{#if activeRegion}
 							<a
 								href="/wiki"
-								class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+								class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 							>
 								{t('wiki.region_all', 'All regions')}
 							</a>
@@ -254,8 +254,8 @@
 								href={active ? '/wiki' : `/wiki?region=${encodeURIComponent(hub.name)}`}
 								aria-current={active ? 'true' : undefined}
 								class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {active
-									? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-									: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary)]'}"
+									? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
+									: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary-text)]'}"
 							>
 								<Globe size={13} class={active ? '' : 'text-[var(--color-muted)]'} />
 								{hub.name}
@@ -264,7 +264,7 @@
 						{#if activeHub}
 							<a
 								href="/wiki/{encodeURIComponent(activeHub.slug)}"
-								class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-[var(--color-primary)] transition-colors hover:underline"
+								class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-[var(--color-primary-text)] transition-colors hover:underline"
 							>
 								{t('wiki.region_hub_link', 'Open the {name} wiki →', {
 									name: activeHub.name
@@ -343,7 +343,7 @@
 			</div>
 			<a
 				href="/feedback"
-				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 			>
 				<MessageSquarePlus size={15} />
 				{t('wiki.request_guide_cta', 'Request a guide')}

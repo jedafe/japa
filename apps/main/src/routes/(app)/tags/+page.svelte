@@ -160,7 +160,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					type="button"
 					onclick={() => { selectedSort = so.value; onFilterChange(); }}
 					class="rounded-full border px-3 py-1 text-xs transition-colors {selectedSort === so.value
-						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-primary)]/40'}"
 				>
 					{so.label}

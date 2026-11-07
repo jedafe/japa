@@ -652,7 +652,7 @@
 			<span class="flex items-center gap-1.5">
 				<span class="truncate">{tpl.name}</span>
 				{#if activeId === tpl.id && active}
-					<Check size={12} class="shrink-0 text-[var(--color-primary)]" />
+					<Check size={12} class="shrink-0 text-[var(--color-primary-text)]" />
 				{/if}
 			</span>
 		</button>
@@ -829,7 +829,7 @@
 			<button
 				type="button"
 				onclick={newTemplate}
-				class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+				class="inline-flex items-center gap-1 text-xs text-[var(--color-primary-text)] hover:underline"
 			>
 				<Plus size={13} />
 				{t('ai.templates.new', 'New')}
@@ -861,7 +861,7 @@
 			onclick={() => (surface = 'list')}
 			class="flex-1 rounded-full border px-3 py-1 text-center text-xs font-medium transition-colors {surface ===
 			'list'
-				? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+				? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 				: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 		>
 			{t('ai.templates.tab_list', 'Chat templates')}
@@ -872,7 +872,7 @@
 			onclick={() => (surface = 'edit')}
 			class="flex-1 rounded-full border px-3 py-1 text-center text-xs font-medium transition-colors {surface ===
 			'edit'
-				? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+				? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 				: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 		>
 			{t('ai.templates.tab_edit', 'Edit template')}
@@ -932,7 +932,7 @@
 			<button
 				type="button"
 				onclick={newTemplate}
-				class="flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-2 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+				class="flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-2 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 			>
 				<Plus size={13} />
 				{t('ai.templates.new_template', 'New template')}
@@ -1322,7 +1322,7 @@
 				type="button"
 				onclick={saveAsNew}
 				disabled={saving}
-				class="w-full text-center text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)] disabled:opacity-50"
+				class="w-full text-center text-xs text-[var(--color-muted)] hover:text-[var(--color-primary-text)] disabled:opacity-50"
 			>
 				{t('ai.templates.save_as_new', 'Save as new template')}
 			</button>

@@ -95,7 +95,7 @@
 {#snippet badge()}
 	<span class="inline-block rounded border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">{typeLabel(item.content_type)}</span>
 	{#if item.content_type === 'guide' && item.guide_category}
-		<span class="inline-block rounded border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-primary)]">{item.guide_category.replace(/_/g, ' ')}</span>
+		<span class="inline-block rounded border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-primary-text)]">{item.guide_category.replace(/_/g, ' ')}</span>
 	{/if}
 {/snippet}
 
@@ -103,7 +103,7 @@
 	{#if item.tags?.length}
 		<div class="flex flex-wrap gap-1.5">
 			{#each item.tags.slice(0, 3) as tag, i (i)}
-				<span class="text-xs font-medium text-[var(--color-primary)]">#{tag}</span>
+				<span class="text-xs font-medium text-[var(--color-primary-text)]">#{tag}</span>
 			{/each}
 		</div>
 	{/if}
@@ -162,7 +162,7 @@
 		{#if item.space_name}
 			{#if item.space_slug}
 				<span
-					class="font-semibold text-[var(--color-text-subtle)] hover:text-[var(--color-primary)] hover:underline cursor-pointer"
+					class="font-semibold text-[var(--color-text-subtle)] hover:text-[var(--color-primary-text)] hover:underline cursor-pointer"
 					onclick={(e) => { e.preventDefault(); e.stopPropagation(); goto('/spaces/' + item.space_slug); }}
 					onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); goto('/spaces/' + item.space_slug); } }}
 					role="link"
@@ -197,7 +197,7 @@
 				slug={source.slug}
 				name={source.name}
 				avatar={source.logo_url}
-				class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
+				class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary-text)] hover:underline"
 			>
 				{#snippet trigger()}
 					{t('feed.source', 'Source')}: {source.name}
@@ -208,7 +208,7 @@
 					href={source.source_url}
 					target="_blank"
 					rel="noopener noreferrer"
-					class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+					class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary-text)]"
 					onclick={(e) => { e.stopPropagation(); }}
 					aria-label={t('feed.original_source', 'View original source')}
 				>
@@ -246,7 +246,7 @@
 		<div class="flex flex-1 flex-col gap-2 p-3">
 			{@render badge()}
 			<h2 class="line-clamp-2 text-[18px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
-				<a href={itemHref} class="transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
+				<a href={itemHref} class="transition-colors hover:text-[var(--color-primary-text)]">{item.title}</a>
 			</h2>
 			{#if item.space_name}
 				<span class="text-xs font-medium text-[var(--color-text-subtle)]">{item.space_name}</span>
@@ -297,7 +297,7 @@
 			<span class="flex w-11 shrink-0 items-center gap-1 text-xs font-semibold text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]"><ArrowUp size={13} class="text-[var(--color-muted)]" /> {item.vote_score ?? 0}</span>
 		{/if}
 		<span class="min-w-0 flex-1 flex flex-col justify-center">
-			<a href={itemHref} class="truncate text-sm font-medium text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
+			<a href={itemHref} class="truncate text-sm font-medium text-[var(--color-text)] transition-colors hover:text-[var(--color-primary-text)]">{item.title}</a>
 			{@render journeyBadges()}
 		</span>
 		{#if item.space_name}<span class="hidden shrink-0 text-xs text-[var(--color-muted)] sm:inline">{item.space_name}{#if time} · {time}{/if}</span>{/if}
@@ -343,7 +343,7 @@
 		{/if}
 		{@render badge()}
 		<h2 class="mt-2 mb-2 text-balance font-serif text-[25px] font-medium leading-tight tracking-tight text-[var(--color-text)]">
-			<a href={itemHref} class="transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
+			<a href={itemHref} class="transition-colors hover:text-[var(--color-primary-text)]">{item.title}</a>
 		</h2>
 		{#if item.excerpt}<p class="mb-3.5 line-clamp-2 text-[15px] leading-relaxed text-[var(--color-text-subtle)]">{item.excerpt}</p>{/if}
 		{@render journeyBadges()}
@@ -377,7 +377,7 @@
 		<span class="min-w-0 flex-1">
 			{@render metaLine()}
 			<h2 class="mb-0.5 mt-1 text-[15.5px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
-				<a href={itemHref} class="transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
+				<a href={itemHref} class="transition-colors hover:text-[var(--color-primary-text)]">{item.title}</a>
 			</h2>
 			{#if item.excerpt}<p class="mb-2 line-clamp-1 text-[13.5px] text-[var(--color-text-subtle)]">{item.excerpt}{#if item.reading_time_minutes} · {item.reading_time_minutes} {t('feed.min_read', 'min read')}{/if}</p>{/if}
 			<div class="flex items-center justify-between gap-3">{@render tags()}{@render metrics()}</div>

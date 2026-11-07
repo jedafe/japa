@@ -80,8 +80,8 @@
 			aria-pressed={selected === 'up'}
 			class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 {selected ===
 			'up'
-				? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-				: 'border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]'}"
+				? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
+				: 'border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]'}"
 		>
 			<ThumbsUp size={14} />
 			{t('wiki.helpful_yes', 'Yes')}
@@ -96,8 +96,8 @@
 			aria-pressed={selected === 'down'}
 			class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 {selected ===
 			'down'
-				? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-				: 'border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]'}"
+				? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
+				: 'border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]'}"
 		>
 			<ThumbsDown size={14} />
 			{t('wiki.helpful_no', 'No')}
@@ -107,7 +107,7 @@
 		</button>
 	</div>
 	{#if !authed || sessionLost}
-		<a href="/login" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]">
+		<a href="/login" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-primary-text)]">
 			{t('wiki.helpful_signin', 'Sign in to vote')}
 		</a>
 	{:else if errorKey}

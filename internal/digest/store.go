@@ -676,52 +676,54 @@ type DigestPoll struct {
 // When spaceID is valid, results are scoped to that Space; otherwise the
 // platform-wide digest is assembled.
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
-func (s *Store) AssembleDigestContent(ctx context.Context, spaceID pgtype.UUID) (json.RawMessage, error) {
+func (s *Store) AssembleDigestContent(ctx context.Context, spaceID pgtype.UUID, gated map[string]bool) (json.RawMessage, error) {
 	content := DigestContent{}
 
 	// 1. Top threads: top 5 forum threads by (vote_score × 3 + reply_count × 5)
-	// in the past 7 days (§84).
-	var (
-		threadsQ strings.Builder
-		tArgs    []any
-	)
+	// in the past 7 days (§84). §42: skipped when the forum feature is off.
+	if !gated["forum_thread"] {
+		var (
+			threadsQ strings.Builder
+			tArgs    []any
+		)
 
-	threadsQ.WriteString(`
+		threadsQ.WriteString(`
 SELECT ft.title, ft.slug, ft.vote_score, ft.reply_count
 FROM forum_threads ft
 WHERE ft.deleted_at IS NULL
   AND ft.created_at >= now() - interval '7 days'
 `)
 
-	argIdx := 1
-	if spaceID.Valid {
-		threadsQ.WriteString(fmt.Sprintf(" AND ft.space_id = $%d", argIdx))
+		argIdx := 1
+		if spaceID.Valid {
+			threadsQ.WriteString(fmt.Sprintf(" AND ft.space_id = $%d", argIdx))
 
-		tArgs = append(tArgs, spaceID)
-		argIdx++
-	}
-
-	threadsQ.WriteString(" ORDER BY (ft.vote_score * 3 + ft.reply_count * 5) DESC LIMIT 5")
-
-	trows, err := s.pool.Reader.Query(ctx, threadsQ.String(), tArgs...)
-	if err != nil {
-		return nil, fmt.Errorf("digest: assemble: top threads: %w", err)
-	}
-
-	for trows.Next() {
-		var t DigestThread
-		if err := trows.Scan(&t.Title, &t.Slug, &t.VoteScore, &t.ReplyCount); err != nil {
-			trows.Close()
-			return nil, fmt.Errorf("digest: assemble: scan thread: %w", err)
+			tArgs = append(tArgs, spaceID)
+			argIdx++
 		}
 
-		content.TopThreads = append(content.TopThreads, t)
-	}
+		threadsQ.WriteString(" ORDER BY (ft.vote_score * 3 + ft.reply_count * 5) DESC LIMIT 5")
 
-	trows.Close()
+		trows, err := s.pool.Reader.Query(ctx, threadsQ.String(), tArgs...)
+		if err != nil {
+			return nil, fmt.Errorf("digest: assemble: top threads: %w", err)
+		}
 
-	if err := trows.Err(); err != nil {
-		return nil, fmt.Errorf("digest: assemble: iterate threads: %w", err)
+		for trows.Next() {
+			var t DigestThread
+			if err := trows.Scan(&t.Title, &t.Slug, &t.VoteScore, &t.ReplyCount); err != nil {
+				trows.Close()
+				return nil, fmt.Errorf("digest: assemble: scan thread: %w", err)
+			}
+
+			content.TopThreads = append(content.TopThreads, t)
+		}
+
+		trows.Close()
+
+		if err := trows.Err(); err != nil {
+			return nil, fmt.Errorf("digest: assemble: iterate threads: %w", err)
+		}
 	}
 
 	// 2. New members: users created in the past 7 days who completed onboarding
@@ -759,12 +761,14 @@ LIMIT 10
 
 	// 3. Upcoming events: next 5 published events (content_type='event'),
 	// geo-filtered to the digest's Space where applicable (§84).
-	var (
-		eventsQ strings.Builder
-		eArgs   []any
-	)
+	// §42: skipped when the calendar feature is off.
+	if !gated["event"] {
+		var (
+			eventsQ strings.Builder
+			eArgs   []any
+		)
 
-	eventsQ.WriteString(`
+		eventsQ.WriteString(`
 SELECT c.title, c.slug, c.publish_at
 FROM contents c
 WHERE c.content_type = 'event'
@@ -773,53 +777,55 @@ WHERE c.content_type = 'event'
   AND c.publish_at >= now()
 `)
 
-	argIdx = 1
-	if spaceID.Valid {
-		eventsQ.WriteString(fmt.Sprintf(" AND c.space_id = $%d", argIdx))
+		argIdx := 1
+		if spaceID.Valid {
+			eventsQ.WriteString(fmt.Sprintf(" AND c.space_id = $%d", argIdx))
 
-		eArgs = append(eArgs, spaceID)
-		argIdx++
-	}
-
-	eventsQ.WriteString(" ORDER BY c.publish_at ASC LIMIT 5")
-
-	erows, err := s.pool.Reader.Query(ctx, eventsQ.String(), eArgs...)
-	if err != nil {
-		return nil, fmt.Errorf("digest: assemble: upcoming events: %w", err)
-	}
-
-	for erows.Next() {
-		var e DigestEvent
-
-		var startsAt pgtype.Timestamptz
-		if err := erows.Scan(&e.Title, &e.Slug, &startsAt); err != nil {
-			erows.Close()
-			return nil, fmt.Errorf("digest: assemble: scan event: %w", err)
+			eArgs = append(eArgs, spaceID)
+			argIdx++
 		}
 
-		if startsAt.Valid {
-			e.StartsAt = startsAt.Time.UTC().Format(time.RFC3339)
+		eventsQ.WriteString(" ORDER BY c.publish_at ASC LIMIT 5")
+
+		erows, err := s.pool.Reader.Query(ctx, eventsQ.String(), eArgs...)
+		if err != nil {
+			return nil, fmt.Errorf("digest: assemble: upcoming events: %w", err)
 		}
 
-		content.UpcomingEvents = append(content.UpcomingEvents, e)
-	}
+		for erows.Next() {
+			var e DigestEvent
 
-	erows.Close()
+			var startsAt pgtype.Timestamptz
+			if err := erows.Scan(&e.Title, &e.Slug, &startsAt); err != nil {
+				erows.Close()
+				return nil, fmt.Errorf("digest: assemble: scan event: %w", err)
+			}
 
-	if err := erows.Err(); err != nil {
-		return nil, fmt.Errorf("digest: assemble: iterate events: %w", err)
+			if startsAt.Valid {
+				e.StartsAt = startsAt.Time.UTC().Format(time.RFC3339)
+			}
+
+			content.UpcomingEvents = append(content.UpcomingEvents, e)
+		}
+
+		erows.Close()
+
+		if err := erows.Err(); err != nil {
+			return nil, fmt.Errorf("digest: assemble: iterate events: %w", err)
+		}
 	}
 
 	// 4. Featured story: highest engagement story (content_type='story') in the
 	// past 30 days (§84). Engagement proxy: comment_count + share_count +
 	// reshare_count (content_scores not reliably maintained for all content
-	// types).
-	var (
-		storyQ strings.Builder
-		sArgs  []any
-	)
+	// types). §42: skipped when the stories feature is off.
+	if !gated["story"] {
+		var (
+			storyQ strings.Builder
+			sArgs  []any
+		)
 
-	storyQ.WriteString(`
+		storyQ.WriteString(`
 SELECT c.title, c.slug
 FROM contents c
 WHERE c.content_type = 'story'
@@ -827,23 +833,24 @@ WHERE c.content_type = 'story'
   AND c.created_at >= now() - interval '30 days'
 `)
 
-	argIdx = 1
-	if spaceID.Valid {
-		storyQ.WriteString(fmt.Sprintf(" AND c.space_id = $%d", argIdx))
+		argIdx := 1
+		if spaceID.Valid {
+			storyQ.WriteString(fmt.Sprintf(" AND c.space_id = $%d", argIdx))
 
-		sArgs = append(sArgs, spaceID)
-		argIdx++
-	}
+			sArgs = append(sArgs, spaceID)
+			argIdx++
+		}
 
-	storyQ.WriteString(" ORDER BY (c.comment_count + c.share_count + c.reshare_count) DESC LIMIT 1")
+		storyQ.WriteString(" ORDER BY (c.comment_count + c.share_count + c.reshare_count) DESC LIMIT 1")
 
-	var story DigestStory
+		var story DigestStory
 
-	err = s.pool.Reader.QueryRow(ctx, storyQ.String(), sArgs...).Scan(&story.Title, &story.Slug)
-	if err == nil {
-		content.FeaturedStory = &story
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("digest: assemble: featured story: %w", err)
+		err = s.pool.Reader.QueryRow(ctx, storyQ.String(), sArgs...).Scan(&story.Title, &story.Slug)
+		if err == nil {
+			content.FeaturedStory = &story
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("digest: assemble: featured story: %w", err)
+		}
 	}
 
 	raw, err := json.Marshal(content)

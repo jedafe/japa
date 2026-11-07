@@ -314,24 +314,24 @@
 							<div class="flex flex-wrap gap-1.5">
 								{#each probeMethods as m (m.method)}
 									<span
-										class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]"
+										class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary-text)]"
 										title="{m.evidence} ({Math.round(m.confidence * 100)}%)"
 									>
 										{methodLabel(m.method)}
 									</span>
 								{/each}
 								{#each probeJsonldTypes as jt (jt)}
-									<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">
+									<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary-text)]">
 										{t('sources.submit.probe.jsonld_chip', '{type} schema', { type: jt })}
 									</span>
 								{/each}
 								{#if probeReport.has_websub && !probeMethods.some((m) => m.method === 'webhook')}
-									<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">
+									<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary-text)]">
 										{t('sources.submit.probe.websub_chip', 'WebSub')}
 									</span>
 								{/if}
 								{#if probeReport.requires_js && !probeMethods.some((m) => m.method === 'render')}
-									<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]">
+									<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary-text)]">
 										{t('sources.submit.method.render', 'Requires JS rendering')}
 									</span>
 								{/if}
@@ -429,7 +429,7 @@
 					<div class="mb-1.5 flex flex-wrap gap-1.5" role="group" aria-labelledby="psf-categories-label">
 						{#each categories as c (c)}
 							<span
-								class="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)] bg-[var(--color-primary)]/10 py-1 ps-2.5 pe-1 text-xs font-medium text-[var(--color-primary)]"
+								class="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)] bg-[var(--color-primary)]/10 py-1 ps-2.5 pe-1 text-xs font-medium text-[var(--color-primary-text)]"
 							>
 								{sourceCategoryLabel(c)}
 								<button

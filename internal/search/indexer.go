@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 )
 
 // maxExcerptRunes caps the excerpt stored in the search document so the
@@ -35,6 +36,10 @@ type Indexer struct {
 	read   *gen.Queries // bulk listings (ReindexAll) — replica OK
 	latest *gen.Queries // per-entity fetches — primary when configured
 	pool   *db.DB
+	// flags evaluates feature-flag state for indexed content types (§42) —
+	// globally-disabled types are subtracted from denormalized counts baked
+	// into shared index documents.
+	flags features.FlagEvaluator
 }
 
 // NewIndexer creates an Indexer backed by the given search engine and
@@ -701,7 +706,7 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID [16]byte) error {
 		Name:         row.Name,
 		Slug:         row.Slug,
 		Description:  desc,
-		ContentCount: row.ContentCount,
+		ContentCount: ix.gatedAdjustedCount(ctx, row.ID, row.ContentCount),
 		URL:          "/tags/" + row.Slug,
 		CreatedAt:    row.CreatedAt.Time.Unix(),
 	}
@@ -713,6 +718,35 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID [16]byte) error {
 	slog.Info("search:index: tag indexed", "tag_id", doc.ID, "name", doc.Name)
 
 	return nil
+}
+
+// SetFeatureChecker injects the flag evaluator so indexed denormalized
+// counts exclude globally-disabled content types (§42). Worker path —
+// unattached ctx evaluates globally, matching the shared-document contract.
+func (ix *Indexer) SetFeatureChecker(c features.FlagEvaluator) { ix.flags = c }
+
+// gatedAdjustedCount subtracts content under globally-gated types from a
+// tag's trigger-maintained content_count so indexed docs and the autocomplete
+// counts never advertise totals a gated feature inflates (§42). Index docs
+// are shared across callers, so only the global predicate applies — surface
+// hiding stays per-request in the handlers.
+func (ix *Indexer) gatedAdjustedCount(ctx context.Context, tagID pgtype.UUID, count int32) int32 {
+	gated := features.GatedContentTypes(ctx, ix.flags)
+	if len(gated) == 0 {
+		return count
+	}
+	n, err := ix.latest.CountTagContentByTypes(ctx, gen.CountTagContentByTypesParams{
+		TagID:        tagID,
+		ContentTypes: gated,
+	})
+	if err != nil {
+		slog.Warn("search:index: gated tag-count lookup failed, indexing raw count", "tag_id", tagID, "error", err)
+		return count
+	}
+	if count -= n; count < 0 {
+		return 0
+	}
+	return count
 }
 
 // IndexDirectoryTag fetches a tag (the /tags surface, backed by the shared
@@ -748,7 +782,7 @@ func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID [16]byte) error 
 		Name:         row.Name,
 		Slug:         row.Slug,
 		Description:  desc,
-		ContentCount: row.ContentCount,
+		ContentCount: ix.gatedAdjustedCount(ctx, row.ID, row.ContentCount),
 		URL:          "/tags/" + row.Slug,
 		CreatedAt:    row.CreatedAt.Time.Unix(),
 	}

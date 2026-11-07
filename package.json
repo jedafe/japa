@@ -22,5 +22,5 @@
     "cline": "^3.0.72"
   },
   "trustedDependencies": ["@sentry/cli"],
-  "workspaces": ["apps/*", "packages/*"]
+  "workspaces": ["apps/*", "packages/*", "services/*"]
 }

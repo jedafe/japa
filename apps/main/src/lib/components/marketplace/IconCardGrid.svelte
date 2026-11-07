@@ -47,7 +47,7 @@
 					<span
 						class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[var(--color-primary)]/10"
 					>
-						<Icon size={18} class="text-[var(--color-primary)]" aria-hidden="true" />
+						<Icon size={18} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 					</span>
 					<p class="mt-3 text-sm font-semibold text-[var(--color-text)]">{card.title}</p>
 					{#if card.description}
@@ -62,7 +62,7 @@
 			<button
 				type="button"
 				onclick={() => (expanded = !expanded)}
-				class="mx-auto mt-5 flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] transition-colors hover:underline"
+				class="mx-auto mt-5 flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary-text)] transition-colors hover:underline"
 			>
 				{#if expanded}
 					{t('services.included_show_less', 'Show less')}

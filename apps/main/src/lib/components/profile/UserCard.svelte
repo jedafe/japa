@@ -110,7 +110,7 @@
 
 		{#if user.location}
 			<span
-				class="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)]"
+				class="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)]"
 			>
 				<MapPin size={12} />{user.location}
 			</span>
@@ -130,20 +130,20 @@
 			class="mt-4 flex w-full divide-x divide-[var(--color-border)] border-t border-[var(--color-border)] pt-3"
 		>
 			<div class="flex-1">
-				<p class="text-lg font-bold text-[var(--color-primary)]">{user.follower_count}</p>
+				<p class="text-lg font-bold text-[var(--color-primary-text)]">{user.follower_count}</p>
 				<p class="text-[11px] text-[var(--color-muted)]">
 					{t('profile.followers_label', 'Followers')}
 				</p>
 			</div>
 			<div class="flex-1">
-				<p class="text-lg font-bold text-[var(--color-primary)]">{user.following_count}</p>
+				<p class="text-lg font-bold text-[var(--color-primary-text)]">{user.following_count}</p>
 				<p class="text-[11px] text-[var(--color-muted)]">
 					{t('profile.following_label', 'Following')}
 				</p>
 			</div>
 			{#if user.points != null}
 				<div class="flex-1">
-					<p class="text-lg font-bold text-[var(--color-primary)]">{user.points}</p>
+					<p class="text-lg font-bold text-[var(--color-primary-text)]">{user.points}</p>
 					<p class="text-[11px] text-[var(--color-muted)]">
 						{t('profile.points_label', 'Points')}
 					</p>

@@ -571,7 +571,7 @@ import { contentHref } from '$lib/utils/contentLink';
 							>
 								<a
 									href="/tags/{tag.slug}"
-									class="transition-colors hover:text-[var(--color-primary)]"
+									class="transition-colors hover:text-[var(--color-primary-text)]"
 								>
 									{tag.name}
 								</a>
@@ -580,7 +580,7 @@ import { contentHref } from '$lib/utils/contentLink';
 										type="button"
 										onclick={() => removeTag(tag.id)}
 										disabled={removingTagId === tag.id}
-										class="rounded-full text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)] disabled:opacity-50"
+										class="rounded-full text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)] disabled:opacity-50"
 										aria-label={t('forum.tags.remove', 'Remove tag')}
 									>
 										{#if removingTagId === tag.id}
@@ -596,7 +596,7 @@ import { contentHref } from '$lib/utils/contentLink';
 							<button
 								type="button"
 								onclick={() => { addingTags = true; tagError = null; }}
-								class="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+								class="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 							>
 								<Plus size={12} />
 								{t('forum.tags.add', 'Add tag')}
@@ -627,7 +627,7 @@ import { contentHref } from '$lib/utils/contentLink';
 						</div>
 					{/if}
 					{#if tagError}
-						<p class="mt-1.5 text-xs text-[var(--color-primary)]">{tagError}</p>
+						<p class="mt-1.5 text-xs text-[var(--color-primary-text)]">{tagError}</p>
 					{/if}
 				{/if}
 			</div>
@@ -637,7 +637,7 @@ import { contentHref } from '$lib/utils/contentLink';
 		{#if editing}
 			<div class="mt-5 space-y-3">
 				{#if editError}
-					<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary)]">
+					<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary-text)]">
 						{editError}
 					</p>
 				{/if}
@@ -711,7 +711,7 @@ import { contentHref } from '$lib/utils/contentLink';
 									{/if}
 								</div>
 							{/each}
-							<button type="button" onclick={() => pollOptions = [...pollOptions, '']} class="inline-flex items-center gap-1 text-sm text-[var(--color-primary)]">
+							<button type="button" onclick={() => pollOptions = [...pollOptions, '']} class="inline-flex items-center gap-1 text-sm text-[var(--color-primary-text)]">
 								<Plus size={14} /> {t('forum.poll_add_option', 'Add option')}
 							</button>
 						</div>
@@ -727,7 +727,7 @@ import { contentHref } from '$lib/utils/contentLink';
 						</div>
 					</form>
 				{:else}
-					<button type="button" onclick={() => showPollForm = true} class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline">
+					<button type="button" onclick={() => showPollForm = true} class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline">
 						<Plus size={14} /> {t('forum.add_poll', 'Add poll')}
 					</button>
 				{/if}
@@ -755,7 +755,7 @@ import { contentHref } from '$lib/utils/contentLink';
 				class="flex flex-1 items-center justify-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 				aria-label={t('forum.replies', 'Replies')}
 			>
-				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]">
 					<MessageSquare size={18} />
 				</span>
 				<span class="text-sm font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{thread.reply_count}</span>
@@ -771,7 +771,7 @@ import { contentHref } from '$lib/utils/contentLink';
 				aria-pressed={bookmarked}
 				title={data.authed ? (bookmarked ? t('forum.remove_bookmark', 'Remove bookmark') : t('forum.add_bookmark', 'Bookmark this discussion')) : t('forum.login_to_bookmark', 'Log in to bookmark')}
 			>
-				<span class="grid h-9 w-9 place-items-center rounded-full transition-colors {bookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}">
+				<span class="grid h-9 w-9 place-items-center rounded-full transition-colors {bookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]'}">
 					<Bookmark size={18} fill={bookmarked ? 'currentColor' : 'none'} />
 				</span>
 				<span class="text-sm font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{bookmarkCount > 0 ? bookmarkCount : ''}</span>
@@ -782,7 +782,7 @@ import { contentHref } from '$lib/utils/contentLink';
 				class="flex flex-1 items-center justify-center text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 				aria-label={t('forum.share', 'Share')}
 			>
-				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]">
 					<Share2 size={18} />
 				</span>
 				{#if shared}<span class="text-sm text-[var(--color-success)]">{t('forum.shared', 'Copied!')}</span>{/if}
@@ -801,7 +801,7 @@ import { contentHref } from '$lib/utils/contentLink';
 							aria-label={t('comments.options', 'More options')}
 							title={t('comments.options', 'More options')}
 						>
-							<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+							<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]">
 								<MoreVertical size={18} />
 							</span>
 						</button>

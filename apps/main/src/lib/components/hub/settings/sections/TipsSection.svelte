@@ -161,10 +161,10 @@
 		{/if}
 
 		<div class="flex items-center gap-4">
-			<a href="/me/tips" class="inline-flex items-center gap-1 text-sm text-primary hover:underline">
+			<a href="/me/tips" class="inline-flex items-center gap-1 text-sm text-[var(--color-primary-text)] hover:underline">
 				{t('tips.view_history', 'View tip history')} →
 			</a>
-			<a href="/donate" class="inline-flex items-center gap-1 text-sm text-primary hover:underline">
+			<a href="/donate" class="inline-flex items-center gap-1 text-sm text-[var(--color-primary-text)] hover:underline">
 				{t('tips.support_platform', 'Support the platform')} →
 			</a>
 		</div>
@@ -245,7 +245,7 @@
 				{#if settings.oc_webhook_url}
 					<div class="mb-2 flex items-center gap-2 rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
 						<span class="min-w-0 flex-1 truncate">{t('tips.oc_webhook')}: …{settings.oc_webhook_url.slice(-12)}</span>
-						<button type="button" class="shrink-0 text-primary hover:opacity-70"
+						<button type="button" class="shrink-0 text-[var(--color-primary-text)] hover:opacity-70"
 							onclick={() => navigator.clipboard.writeText(settings?.oc_webhook_url ?? '')}>
 							{t('tips.oc_webhook_copy', 'Copy')}
 						</button>

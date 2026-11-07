@@ -149,7 +149,7 @@
 				>
 					<a
 						href="/login?redirect={encodeURIComponent(page.url.pathname)}"
-						class="font-medium text-[var(--color-primary)] hover:underline"
+						class="font-medium text-[var(--color-primary-text)] hover:underline"
 						>{t('services.reviews_login', 'Log in to write a review')}</a
 					>
 				</p>

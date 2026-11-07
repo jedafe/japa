@@ -17,7 +17,7 @@
 			case 'planned':
 				return 'bg-sky-500/10 text-sky-600 border-sky-500/30';
 			case 'in_progress':
-				return 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/30';
+				return 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)] border-[var(--color-primary)]/30';
 			case 'testing':
 				return 'bg-violet-500/10 text-violet-600 border-violet-500/30';
 			case 'shipped':

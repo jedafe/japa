@@ -141,7 +141,7 @@
 	<article class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-6">
 		<!-- Milestone badge -->
 		<div class="flex flex-wrap items-center gap-2">
-			<span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-sm font-semibold text-[var(--color-primary)]">
+			<span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-sm font-semibold text-[var(--color-primary-text)]">
 				<Icon size={15} />
 				{milestoneLabels[achievement.milestone_type as AchievementMilestoneType]}
 			</span>
@@ -165,7 +165,7 @@
 					{#if achievement.author_avatar}
 						<img src={achievement.author_avatar} alt="" class="h-8 w-8 rounded-full object-cover" />
 					{:else}
-						<span class="grid h-8 w-8 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">
+						<span class="grid h-8 w-8 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary-text)]">
 							{(achievement.author_name ?? 'M').charAt(0)}
 						</span>
 					{/if}
@@ -187,7 +187,7 @@
 		<!-- Engagement stats (reactions / comments / views) -->
 		<div class="mt-3 flex flex-wrap items-center gap-4 text-xs text-[var(--color-text-subtle)]">
 			<span class="inline-flex items-center gap-1" title={t('achievements.reactions', 'Reactions')}>
-				<Heart size={14} class="text-[var(--color-primary)]" fill={achievement.reaction_count > 0 ? 'currentColor' : 'none'} />
+				<Heart size={14} class="text-[var(--color-primary-text)]" fill={achievement.reaction_count > 0 ? 'currentColor' : 'none'} />
 				{achievement.reaction_count}
 			</span>
 			<span class="inline-flex items-center gap-1" title={t('achievements.comments', 'Comments')}>
@@ -220,7 +220,7 @@
 				{#if !data.authed}
 					<a
 						href={`/login?redirect=${encodeURIComponent(page.url.pathname + page.url.search)}`}
-						class="text-xs font-medium text-[var(--color-primary)] hover:underline"
+						class="text-xs font-medium text-[var(--color-primary-text)] hover:underline"
 					>
 						{t('achievements.login_to_react', 'Log in to react')}
 					</a>

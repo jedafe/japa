@@ -34,6 +34,7 @@ func (f *StaticFetcher) Fetch(ctx context.Context, source sources.Source) (Fetch
 	}
 
 	req.Header.Set("User-Agent", "JapaConnect-Intelligence/1.0 (+https://japa.to)")
+	applyConditionals(ctx, req)
 
 	resp, err := f.client.Do(req)
 	if err != nil {
@@ -42,19 +43,34 @@ func (f *StaticFetcher) Fetch(ctx context.Context, source sources.Source) (Fetch
 
 	defer func() { _ = resp.Body.Close() }()
 
-	// Error responses are fetch failures, not documents — an error page is
-	// not channel content and must not reset consecutive_failures or feed
-	// the pipeline. Same convention as rss/social/wayback.
-	if resp.StatusCode >= 400 {
-		return FetchResult{}, fmt.Errorf("static: unexpected HTTP status %d", resp.StatusCode)
-	}
-
 	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("static: read body: %w", err)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
+
+	// 304: the upstream confirmed our validators are current — no body
+	// follows, the crawl counts as a success, and nothing is persisted.
+	if resp.StatusCode == http.StatusNotModified {
+		return FetchResult{HTTPStatus: resp.StatusCode, ContentType: contentType, NotModified: true}, nil
+	}
+
+	// Error responses are fetch failures, not documents — an error page is
+	// not channel content and must not reset consecutive_failures or feed
+	// the pipeline. httpFailureError classifies the failure (throttled /
+	// bot-walled / denied / gone) so the worker routes it correctly.
+	if resp.StatusCode >= 400 {
+		return FetchResult{}, httpFailureError("static", resp, body, contentType)
+	}
+
+	// A 2xx whose body is a bot-wall challenge is a wall, not content —
+	// the deceptive case that would otherwise poison the channel's
+	// change-detection baseline.
+	if sig, ok := DetectWall(resp.StatusCode, resp.Header, body, contentType); ok {
+		return FetchResult{}, &WallError{Method: "static", Status: resp.StatusCode, Signature: sig}
+	}
+
 	hash := NormalizeForHash(body, contentType)
 
 	return FetchResult{

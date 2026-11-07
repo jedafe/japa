@@ -144,7 +144,7 @@
 		<div class="mb-2 flex flex-wrap gap-1.5">
 			{#each selectedIds as id (id)}
 				{@const space = results.find((r) => r.id === id)}
-				<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs text-[var(--color-primary)]">
+				<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs text-[var(--color-primary-text)]">
 					<Check size={11} />
 					{space?.name ?? selectedLabels[id] ?? id}
 					<button

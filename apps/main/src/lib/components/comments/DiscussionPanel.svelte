@@ -118,7 +118,7 @@
 				{#each visibleDiscussions as disc (disc.id)}
 					<li>
 						<a href="/forum/{disc.thread_slug}" class="group flex items-baseline justify-between gap-2 text-sm">
-							<span class="truncate text-[var(--color-text)] group-hover:text-[var(--color-primary)] group-hover:underline">{disc.thread_title}</span>
+							<span class="truncate text-[var(--color-text)] group-hover:text-[var(--color-primary-text)] group-hover:underline">{disc.thread_title}</span>
 							<span class="shrink-0 text-xs text-[var(--color-muted)]">
 								{t('comments.discussion_replies', '{count} replies').replace('{count}', String(disc.thread_comment_count))}
 							</span>
@@ -133,7 +133,7 @@
 							{#if c.avatar_url && !c.is_anonymous}
 								<img src={c.avatar_url} alt="" class="h-6 w-6 shrink-0 rounded-full object-cover" loading="lazy" />
 							{:else}
-								<span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[0.65rem] font-bold text-[var(--color-primary)]">
+								<span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[0.65rem] font-bold text-[var(--color-primary-text)]">
 									{(c.is_anonymous ? 'A' : (c.display_name || c.username || '?')).charAt(0).toUpperCase()}
 								</span>
 							{/if}
@@ -148,7 +148,7 @@
 				</ul>
 			{/if}
 			{#if primary}
-				<a href="/forum/{primary.thread_slug}" class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)]">
+				<a href="/forum/{primary.thread_slug}" class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] transition-colors hover:text-[var(--color-primary-hover)]">
 					{t('comments.join_conversation', 'Join this Conversation')}
 					<ArrowRight size={14} class="rtl:-scale-x-100" />
 				</a>
@@ -157,7 +157,7 @@
 				<button
 					type="button"
 					onclick={() => (expanded = true)}
-					class="ms-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)]"
+					class="ms-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)] transition-colors hover:text-[var(--color-primary-hover)]"
 				>
 					{t('comments.view_all_discussions', 'View all {count} discussions').replace('{count}', String(total))}
 					<ChevronDown size={12} />

@@ -35,9 +35,17 @@ type RobotsChecker struct {
 // NewRobotsChecker returns a RobotsChecker backed by the given Valkey
 // client. HTTP fetches use a 10s timeout (robots.txt is small).
 func NewRobotsChecker(rdb valkeycompat.Cmdable) *RobotsChecker {
+	return NewRobotsCheckerWithClient(rdb, NewSafeClient(10*time.Second, 1*1024*1024))
+}
+
+// NewRobotsCheckerWithClient is NewRobotsChecker with an explicit HTTP
+// client — production wiring passes the egress-pool client so a mapped
+// domain's robots.txt egress matches its content egress (one origin IP
+// seen by the upstream, not two the vendor can correlate).
+func NewRobotsCheckerWithClient(rdb valkeycompat.Cmdable, client *http.Client) *RobotsChecker {
 	return &RobotsChecker{
 		rdb:    rdb,
-		client: NewSafeClient(10*time.Second, 1*1024*1024), // robots.txt is tiny
+		client: client,
 	}
 }
 

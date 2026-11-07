@@ -656,7 +656,7 @@
 															href={p.website_url}
 															target="_blank"
 															rel="noopener noreferrer"
-															class="text-xs text-[var(--color-primary)] hover:underline"
+															class="text-xs text-[var(--color-primary-text)] hover:underline"
 														>
 															{p.website_url}
 														</a>
@@ -776,7 +776,7 @@
 												<button
 													type="button"
 													onclick={() => toggleAlertActive(a)}
-													class="text-xs {a.is_active ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'} hover:text-[var(--color-text)]"
+													class="text-xs {a.is_active ? 'text-[var(--color-primary-text)]' : 'text-[var(--color-muted)]'} hover:text-[var(--color-text)]"
 													aria-label={a.is_active ? t('remittance.pause_alert', 'Pause alert') : t('remittance.activate_alert', 'Activate alert')}
 												>
 													{#if a.is_active}

@@ -63,7 +63,7 @@
 				/>
 			{:else}
 				<span
-					class="grid h-20 w-20 place-items-center rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-primary)]/10 text-2xl font-bold text-[var(--color-primary)] sm:h-28 sm:w-28"
+					class="grid h-20 w-20 place-items-center rounded-[var(--radius-card)] border-4 border-[var(--color-surface)] bg-[var(--color-primary)]/10 text-2xl font-bold text-[var(--color-primary-text)] sm:h-28 sm:w-28"
 				>
 					{initials}
 				</span>
@@ -96,7 +96,7 @@
 			<span class="flex items-center gap-1"><Users size={14} /> {(org.member_count === 1 ? t('profile.members_one', '{n} member') : t('profile.members', '{n} members')).replace('{n}', String(org.member_count))}</span>
 			<span>{(org.follower_count === 1 ? t('profile.followers_one', '{n} follower') : t('profile.followers', '{n} followers')).replace('{n}', String(org.follower_count))}</span>
 			{#if safeHref(org.website_url)}
-				<a href={safeHref(org.website_url)} target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 text-[var(--color-primary)] hover:underline">
+				<a href={safeHref(org.website_url)} target="_blank" rel="noopener noreferrer" class="flex items-center gap-1 text-[var(--color-primary-text)] hover:underline">
 					<Globe size={14} /> {t('profile.website', 'Website')}
 				</a>
 			{/if}

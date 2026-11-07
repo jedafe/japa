@@ -246,7 +246,7 @@
 					<span class="ms-2 text-xs">· {t('wiki.submitted_by', 'by {name}', { name: page.submitted_by })}</span>
 				{/if}
 				{#if page.id}
-					<a href={entityEndpoint + '/history'} class="ms-2 text-xs text-[var(--color-primary)] hover:underline">{t('wiki.history', 'History')}</a>
+					<a href={entityEndpoint + '/history'} class="ms-2 text-xs text-[var(--color-primary-text)] hover:underline">{t('wiki.history', 'History')}</a>
 				{/if}
 			</p>
 			<!-- Same affordance as space-bound pages — field-op suggestions on the
@@ -372,12 +372,12 @@
 	{#if !editing && (prevSibling || nextSibling)}
 		<nav class="flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4" aria-label={t('wiki.page_nav', 'Page navigation')}>
 			{#if prevSibling}
-				<a href={entityPageHref(page.type_slug, page.entity_slug, prevSibling.slug)} rel="nofollow" class="min-w-0 flex-1 truncate text-sm text-[var(--color-primary)] hover:underline">← {prevSibling.title}</a>
+				<a href={entityPageHref(page.type_slug, page.entity_slug, prevSibling.slug)} rel="nofollow" class="min-w-0 flex-1 truncate text-sm text-[var(--color-primary-text)] hover:underline">← {prevSibling.title}</a>
 			{:else}
 				<span class="flex-1"></span>
 			{/if}
 			{#if nextSibling}
-				<a href={entityPageHref(page.type_slug, page.entity_slug, nextSibling.slug)} rel="nofollow" class="min-w-0 flex-1 truncate text-end text-sm text-[var(--color-primary)] hover:underline">{nextSibling.title} →</a>
+				<a href={entityPageHref(page.type_slug, page.entity_slug, nextSibling.slug)} rel="nofollow" class="min-w-0 flex-1 truncate text-end text-sm text-[var(--color-primary-text)] hover:underline">{nextSibling.title} →</a>
 			{/if}
 		</nav>
 	{/if}
@@ -392,7 +392,7 @@
 					<div class="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)]">
 						<a
 							href="/wiki/{encodeURIComponent(uni.slug)}"
-							class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+							class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]"
 							data-sveltekit-preload-data="hover"
 						>
 							{uni.name}
@@ -404,7 +404,7 @@
 							<a
 								href={entityPageHref('course', uni.offering_slug)}
 								rel="nofollow"
-								class="text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+								class="text-xs text-[var(--color-muted)] hover:text-[var(--color-primary-text)]"
 							>
 								{t('wiki.view_at_university', 'View at {name}', { name: uni.name })}
 							</a>

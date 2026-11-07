@@ -117,7 +117,7 @@
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<a href={journey.href} class="block">
 			<span class="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-				<Plane size={12} class="text-[var(--color-primary)]" />
+				<Plane size={12} class="text-[var(--color-primary-text)]" />
 				{t('profile.journey.label', 'Japa Journey')}
 			</span>
 			<span class="mt-1.5 block truncate text-sm font-semibold text-[var(--color-text)]">{journey.title}</span>
@@ -125,10 +125,10 @@
 				<span class="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
 					<span class="block h-full rounded-full bg-[var(--color-primary)]" style="width: {journey.percent}%"></span>
 				</span>
-				<span class="text-xs font-semibold text-[var(--color-primary)]">{journey.percent}%</span>
+				<span class="text-xs font-semibold text-[var(--color-primary-text)]">{journey.percent}%</span>
 			</span>
 			<span class="mt-1.5 block text-xs leading-snug text-[var(--color-muted)]">{journey.subtitle}</span>
-			<span class="mt-2 block text-xs font-medium text-[var(--color-primary)]">
+			<span class="mt-2 block text-xs font-medium text-[var(--color-primary-text)]">
 				{t('profile.journey.view', 'View Journey')} →
 			</span>
 		</a>
@@ -143,15 +143,15 @@
 		</h2>
 		<div class="grid grid-cols-3 text-center">
 			<div>
-				<p class="text-lg font-bold text-[var(--color-primary)]">{stats.posts.toLocaleString()}</p>
+				<p class="text-lg font-bold text-[var(--color-primary-text)]">{stats.posts.toLocaleString()}</p>
 				<p class="text-xs text-[var(--color-muted)]">{t('profile.stats.posts', 'Posts')}</p>
 			</div>
 			<div>
-				<p class="text-lg font-bold text-[var(--color-primary)]">{stats.connections.toLocaleString()}</p>
+				<p class="text-lg font-bold text-[var(--color-primary-text)]">{stats.connections.toLocaleString()}</p>
 				<p class="text-xs text-[var(--color-muted)]">{t('profile.stats.connections', 'Connections')}</p>
 			</div>
 			<div>
-				<p class="text-lg font-bold text-[var(--color-primary)]">{stats.saved.toLocaleString()}</p>
+				<p class="text-lg font-bold text-[var(--color-primary-text)]">{stats.saved.toLocaleString()}</p>
 				<p class="text-xs text-[var(--color-muted)]">{savedLabel}</p>
 			</div>
 		</div>
@@ -208,7 +208,7 @@
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center justify-between">
 			<h2 class="text-sm font-semibold text-[var(--color-text)]">{t('profile.sidebar.recent_posts', 'Recent Posts')}</h2>
-			<a href="?tab=posts" class="text-xs font-medium text-[var(--color-primary)] hover:underline">{t('profile.view_all', 'View all')}</a>
+			<a href="?tab=posts" class="text-xs font-medium text-[var(--color-primary-text)] hover:underline">{t('profile.view_all', 'View all')}</a>
 		</div>
 		<ul class="space-y-3">
 			{#each visiblePosts as post (post.id)}
@@ -245,7 +245,7 @@
 				{isOwnProfile ? t('profile.sidebar.top_connections', 'Top Connections') : t('profile.sidebar.connections', 'Connections')}
 				<span class="font-normal text-[var(--color-muted)]">({stats.connections.toLocaleString()})</span>
 			</h2>
-			<a href="?tab=connections" class="text-xs font-medium text-[var(--color-primary)] hover:underline">{t('profile.view_all', 'View all')}</a>
+			<a href="?tab=connections" class="text-xs font-medium text-[var(--color-primary-text)] hover:underline">{t('profile.view_all', 'View all')}</a>
 		</div>
 		<ul class="space-y-2.5">
 			{#each visibleConnections as c (c.id)}
@@ -267,7 +267,7 @@
 						<button
 							type="button"
 							onclick={() => onMessage({ id: c.id, name: c.display_name ?? c.username })}
-							class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/10"
+							class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary)]/10"
 						>
 							{t('profile.message', 'Message')}
 						</button>
@@ -276,7 +276,7 @@
 			{/each}
 		</ul>
 		{#if connections.length > visibleConnections.length}
-			<a href="?tab=connections" class="mt-2 block text-xs font-medium text-[var(--color-primary)] hover:underline">
+			<a href="?tab=connections" class="mt-2 block text-xs font-medium text-[var(--color-primary-text)] hover:underline">
 				{t('profile.view_all_connections', 'View all connections')} →
 			</a>
 		{/if}
@@ -291,13 +291,13 @@
 				{t('profile.sidebar.saved', 'Saved Items')}
 				<span class="font-normal text-[var(--color-muted)]">({stats.saved.toLocaleString()})</span>
 			</h2>
-			<a href="?tab=saved" class="text-xs font-medium text-[var(--color-primary)] hover:underline">{t('profile.view_all', 'View all')}</a>
+			<a href="?tab=saved" class="text-xs font-medium text-[var(--color-primary-text)] hover:underline">{t('profile.view_all', 'View all')}</a>
 		</div>
 		<ul class="space-y-2.5">
 			{#each visibleSaved as b (b.id)}
 				<li>
 					<a href={bookmarkUrl(b)} class="flex items-center gap-2.5">
-						<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+						<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 							<BookmarkIcon size={15} />
 						</span>
 						<span class="min-w-0 flex-1">
@@ -320,7 +320,7 @@
 				{t('profile.sidebar.liked', 'Liked Items')}
 				<span class="font-normal text-[var(--color-muted)]">({likes.length.toLocaleString()})</span>
 			</h2>
-			<a href="?tab=saved" class="text-xs font-medium text-[var(--color-primary)] hover:underline">{t('profile.view_all', 'View all')}</a>
+			<a href="?tab=saved" class="text-xs font-medium text-[var(--color-primary-text)] hover:underline">{t('profile.view_all', 'View all')}</a>
 		</div>
 		<ul class="space-y-2.5">
 			{#each visibleLikes as item (item.id)}
@@ -344,7 +344,7 @@
 		<ul class="divide-y divide-[var(--color-border)]">
 			<li>
 				<a href="/forum" class="flex items-center gap-3 py-2.5">
-					<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]"><HelpCircle size={16} /></span>
+					<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"><HelpCircle size={16} /></span>
 					<span class="min-w-0 flex-1">
 						<span class="block text-sm font-medium text-[var(--color-text)]">{t('profile.qa.ask', 'Ask a Question')}</span>
 						<span class="block text-xs text-[var(--color-muted)]">{t('profile.qa.ask_desc', 'Get help from the community')}</span>
@@ -354,7 +354,7 @@
 			</li>
 			<li>
 				<a href="/scholarships" class="flex items-center gap-3 py-2.5">
-					<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]"><GraduationCap size={16} /></span>
+					<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"><GraduationCap size={16} /></span>
 					<span class="min-w-0 flex-1">
 						<span class="block text-sm font-medium text-[var(--color-text)]">{t('profile.qa.scholarships', 'Find Scholarships')}</span>
 						<span class="block text-xs text-[var(--color-muted)]">{t('profile.qa.scholarships_desc', 'Explore scholarship opportunities')}</span>
@@ -364,7 +364,7 @@
 			</li>
 			<li>
 				<a href="/universities" class="flex items-center gap-3 py-2.5">
-					<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]"><School size={16} /></span>
+					<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"><School size={16} /></span>
 					<span class="min-w-0 flex-1">
 						<span class="block text-sm font-medium text-[var(--color-text)]">{t('profile.qa.programs', 'Browse Study Programs')}</span>
 						<span class="block text-xs text-[var(--color-muted)]">{t('profile.qa.programs_desc', 'Find programs abroad')}</span>
@@ -374,7 +374,7 @@
 			</li>
 			<li>
 				<a href="/dashboard/analytics" class="flex items-center gap-3 py-2.5">
-					<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]"><BarChart3 size={16} /></span>
+					<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"><BarChart3 size={16} /></span>
 					<span class="min-w-0 flex-1">
 						<span class="block text-sm font-medium text-[var(--color-text)]">{t('profile.qa.analytics', 'View Analytics')}</span>
 						<span class="block text-xs text-[var(--color-muted)]">{t('profile.qa.analytics_desc', 'Your profile performance')}</span>
@@ -396,7 +396,7 @@
 						href={`/certificates/${cert.id}`}
 						class="flex items-center gap-2 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]"
 					>
-						<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+						<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 							<Award size={16} />
 						</span>
 						<span class="min-w-0 flex-1">
@@ -439,7 +439,7 @@
 		{#if spaces.length > visibleSpaces.length}
 			<a
 				href="?tab=spaces"
-				class="mt-2 block text-xs font-medium text-[var(--color-primary)] hover:underline"
+				class="mt-2 block text-xs font-medium text-[var(--color-primary-text)] hover:underline"
 			>
 				{t('profile.view_all_spaces', 'View all {count} spaces').replace('{count}', String(spaces.length))}
 			</a>

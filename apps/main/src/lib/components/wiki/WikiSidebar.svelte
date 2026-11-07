@@ -122,7 +122,7 @@
 				<li>
 					<a
 						href="#{item.id}"
-						class="block truncate text-sm text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]"
+						class="block truncate text-sm text-[var(--color-text)] transition-colors hover:text-[var(--color-primary-text)]"
 					>
 						{item.label}
 					</a>
@@ -167,7 +167,7 @@
 					<a
 						href="/wiki/{encodeURIComponent(spaceSlug)}/{encodeURIComponent(p.slug)}"
 						rel={p.indexable === false ? 'nofollow' : undefined}
-						class="flex items-center gap-2 py-2 text-sm text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]"
+						class="flex items-center gap-2 py-2 text-sm text-[var(--color-text)] transition-colors hover:text-[var(--color-primary-text)]"
 					>
 						<FileText size={14} class="shrink-0 text-[var(--color-muted)]" aria-hidden="true" />
 						<span class="min-w-0 truncate">{p.title}</span>
@@ -178,7 +178,7 @@
 		{#if hasMore}
 			<a
 				href="/wiki/{encodeURIComponent(spaceSlug)}"
-				class="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
+				class="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 			>
 				{t('wiki.view_all_articles', 'View all articles')}
 				<ArrowRight class="rtl:-scale-x-100" size={14} aria-hidden="true" />
@@ -219,7 +219,7 @@
 		{#if cities.length > 5}
 			<a
 				href="/wiki"
-				class="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
+				class="mt-2 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 			>
 				{seeAllLabel}
 				<ArrowRight class="rtl:-scale-x-100" size={14} aria-hidden="true" />

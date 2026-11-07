@@ -179,6 +179,10 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 		req.Header.Set(k, v)
 	}
 
+	// Conditional validators go last — like User-Agent/Accept they are
+	// fetcher-owned and a provider_config header must not override them.
+	applyConditionals(ctx, req)
+
 	resp, err := f.client.Do(req)
 	if err != nil {
 		return FetchResult{}, fmt.Errorf("api: do: %w", err)
@@ -186,17 +190,38 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 
 	defer func() { _ = resp.Body.Close() }()
 
+	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
+	if err != nil {
+		return FetchResult{}, fmt.Errorf("api: read body: %w", err)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+
+	// 304: the upstream confirmed our validators are current — the feed
+	// is unchanged, the crawl counts as a success, nothing is persisted.
+	if resp.StatusCode == http.StatusNotModified {
+		return FetchResult{HTTPStatus: resp.StatusCode, ContentType: contentType, NotModified: true}, nil
+	}
+
 	// Error responses are fetch failures, not documents — matching the
 	// rss/social/wayback/render convention. Without the check an endpoint
 	// that 500s stores the error body as content, resets
 	// consecutive_failures, and never enters the fallback ladder.
+	// httpFailureError classifies the failure for the worker's routing.
 	if resp.StatusCode >= 400 {
-		return FetchResult{}, fmt.Errorf("api: unexpected HTTP status %d", resp.StatusCode)
+		return FetchResult{}, httpFailureError("api", resp, body, contentType)
 	}
 
-	body, err := io.ReadAll(NewMaxBodyReader(resp.Body, defaultMaxBodySize))
-	if err != nil {
-		return FetchResult{}, fmt.Errorf("api: read body: %w", err)
+	// A walled endpoint answers an HTML challenge where JSON is expected —
+	// on a 2xx the challenge would otherwise reach selectByPath and fail
+	// as an opaque unmarshal error. HTML with no wall signature means the
+	// endpoint itself is broken — gone-class, not a transient.
+	if sig, ok := DetectWall(resp.StatusCode, resp.Header, body, contentType); ok {
+		return FetchResult{}, &WallError{Method: "api", Status: resp.StatusCode, Signature: sig}
+	}
+
+	if looksLikeHTML(body) {
+		return FetchResult{}, fmt.Errorf("api: %w: endpoint returned HTML, expected JSON", ErrContentGone)
 	}
 
 	if cfg.Path != "" {
@@ -205,8 +230,6 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 			return FetchResult{}, fmt.Errorf("api: select path %q: %w", cfg.Path, err)
 		}
 	}
-
-	contentType := resp.Header.Get("Content-Type")
 
 	return FetchResult{
 		HTTPStatus:  resp.StatusCode,

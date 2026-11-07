@@ -169,7 +169,7 @@
 			<div class="mt-3 text-center">
 				<a
 					href="/login?redirect=%2Fseries%3Ftab%3Dmine"
-					class="text-sm font-medium text-[var(--color-primary)] hover:underline"
+					class="text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 				>
 					{t('series.sign_in', 'Sign in')}
 				</a>
@@ -201,13 +201,13 @@
 								/>
 							{:else}
 								<span
-									class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+									class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]"
 								>
 									<BookOpen size={20} />
 								</span>
 							{/if}
 							<div class="min-w-0 flex-1">
-								<h2 class="truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]">
+								<h2 class="truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]">
 									{series.title}
 								</h2>
 								{#if series.status}
@@ -223,7 +223,7 @@
 							</p>
 						{/if}
 						<div class="mt-3 flex items-center justify-end text-xs text-[var(--color-text-subtle)]">
-							<span class="flex items-center gap-1 group-hover:text-[var(--color-primary)]">
+							<span class="flex items-center gap-1 group-hover:text-[var(--color-primary-text)]">
 								{t('series.view', 'View series')} <ArrowRight class="rtl:-scale-x-100" size={14} />
 							</span>
 						</div>

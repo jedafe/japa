@@ -138,7 +138,7 @@
 <div class="mx-auto w-full max-w-2xl px-4 py-6">
 	<!-- Header -->
 	<div class="mb-5 flex items-center gap-2">
-		<Trophy size={20} class="text-[var(--color-primary)]" />
+		<Trophy size={20} class="text-[var(--color-primary-text)]" />
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">
 			{t('achievements.new_heading', 'Share an Achievement')}
 		</h1>

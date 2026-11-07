@@ -260,7 +260,7 @@
 					{/each}
 				</div>
 				<div class="mt-4 flex justify-center">
-					<a href="/radar" class="text-sm font-medium text-[var(--color-primary)] hover:underline">
+					<a href="/radar" class="text-sm font-medium text-[var(--color-primary-text)] hover:underline">
 						{t('discover.opportunities_view_all', 'View all in Japa Opportunities')} →
 					</a>
 				</div>

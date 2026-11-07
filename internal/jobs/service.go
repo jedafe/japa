@@ -305,13 +305,14 @@ func (s *Service) CallerScope(r *http.Request) features.CallerScope {
 }
 
 // IsEnabledFor is the request-path variant of IsEnabled: a flag that is
-// enabled globally but scoped away from this caller (surface, geo, audience,
-// rollout) reports unavailable — matching the Gate + menu contract so jobs
-// routes, nav items, and gamification badges agree.
+// enabled globally but scoped away from this caller (surface-disabled,
+// geo, audience, rollout) reports unavailable — the same .Enabled contract
+// features.Gate applies, so handler-level enforcement behaves identically
+// to a gated route group. A merely hidden flag (Enabled but not Visible on
+// this surface) still serves — hiding from nav is not disabling.
 func (s *Service) IsEnabledFor(ctx context.Context, sc features.CallerScope) bool {
 	if s.checker != nil {
-		res := s.checker.EvalFlag(ctx, "jobs.enabled", sc)
-		return res.Enabled && res.Visible
+		return s.checker.EvalFlag(ctx, "jobs.enabled", sc).Enabled
 	}
 
 	if s.settings == nil {

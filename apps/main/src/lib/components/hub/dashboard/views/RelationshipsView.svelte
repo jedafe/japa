@@ -580,7 +580,7 @@
 								/>
 							{:else}
 								<span
-									class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]"
+									class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary-text)]"
 								>
 									{initials(displayName(item) || item.entity_name)}
 								</span>
@@ -628,7 +628,7 @@
 								/>
 							{:else}
 								<span
-									class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]"
+									class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary-text)]"
 								>
 									{initials(user.display_name || user.username)}
 								</span>
@@ -667,7 +667,7 @@
 					>
 						<div class="flex min-w-0 items-center gap-3">
 							<span
-								class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]"
+								class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary-text)]"
 							>
 								{initials(space.name)}
 							</span>
@@ -680,7 +680,7 @@
 								</a>
 								{#if space.is_primary}
 									<span
-										class="inline-block rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]"
+										class="inline-block rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary-text)]"
 									>
 										{t('dashboard.relationships.primary_space', 'Primary')}
 									</span>
@@ -742,7 +742,7 @@
 								/>
 							{:else}
 								<span
-									class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]"
+									class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary-text)]"
 								>
 									{initials(user.display_name || user.username)}
 								</span>
@@ -783,7 +783,7 @@
 								/>
 							{:else}
 								<span
-									class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]"
+									class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary-text)]"
 								>
 									{initials(user.display_name || user.username)}
 								</span>
@@ -817,7 +817,7 @@
 					>
 						<div class="flex min-w-0 items-center gap-3">
 							<span
-								class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]"
+								class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary-text)]"
 							>
 								{initials(space.space_name)}
 							</span>
@@ -830,7 +830,7 @@
 								</a>
 								{#if space.is_primary}
 									<span
-										class="inline-block rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary)]"
+										class="inline-block rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs text-[var(--color-primary-text)]"
 									>
 										{t('dashboard.relationships.primary_space', 'Primary')}
 									</span>

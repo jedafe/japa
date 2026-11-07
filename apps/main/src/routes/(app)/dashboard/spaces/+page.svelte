@@ -198,14 +198,14 @@
 						>
 							<a
 								href="/spaces/{s.slug}"
-								class="flex h-full min-w-0 flex-1 flex-col justify-center transition hover:text-[var(--color-primary)]"
+								class="flex h-full min-w-0 flex-1 flex-col justify-center transition hover:text-[var(--color-primary-text)]"
 							>
 								<p class="truncate text-sm font-medium text-[var(--color-text)]">{s.name}</p>
 								<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{s.slug}</p>
 							</a>
 							<div class="flex items-center gap-3">
 								{#if s.is_primary}
-									<span class="shrink-0 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">
+									<span class="shrink-0 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary-text)]">
 										{t('spaces.primary')}
 									</span>
 								{/if}
@@ -224,7 +224,7 @@
 						<div
 							class="flex h-full items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 						>
-							<a href="/spaces/{s.slug}" class="min-w-0 flex-1 transition hover:text-[var(--color-primary)]">
+							<a href="/spaces/{s.slug}" class="min-w-0 flex-1 transition hover:text-[var(--color-primary-text)]">
 								<p class="truncate text-sm font-medium text-[var(--color-text)]">{s.name}</p>
 								<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{s.slug} · {t('spaces.status_suspended', 'Suspended')}</p>
 							</a>
@@ -240,7 +240,7 @@
 								<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{s.slug}</p>
 							</div>
 							{#if s.is_primary}
-								<span class="shrink-0 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">
+								<span class="shrink-0 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary-text)]">
 									{t('spaces.primary')}
 								</span>
 							{/if}

@@ -77,6 +77,40 @@ type Handlers struct {
 	redis     CacheClient // nil disables cache reads/writes
 	feedLimit int32
 	cat       literalCatalog // nil disables literal resolution
+	flags     FeatureChecker // nil disables feature-flag pruning
+}
+
+// FeatureChecker is the minimal feature_flags reader the feeds need —
+// global IsEnabled only. Feed XML is a shared cached document rendered once
+// for all readers (jc:cache:feed:rss:*), so caller scope cannot be honored
+// under one cache key — same semantic as the sitemap's global flagOn.
+// *features.Checker satisfies it; worker's local checker is structurally
+// identical.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the feature flag resolver so feeds prune
+// disabled-feature content types (§42).
+func (h *Handlers) SetFeatureChecker(c FeatureChecker) { h.flags = c }
+
+// ContentTypeGateOff reports whether a content_type's feature flag is off —
+// used by feed renderers to keep disabled features out of shared feed
+// documents. The worker applies the same check inline against
+// model.ContentTypeFeatureFlag (it must not import internal/features —
+// features → auth → worker would cycle).
+func ContentTypeGateOff(ctx context.Context, c FeatureChecker, contentType string) bool {
+	flag, ok := model.ContentTypeFeatureFlag[contentType]
+	return ok && c != nil && !c.IsEnabled(ctx, flag)
+}
+
+// gatedContentType returns the content_type → flag-off predicate feed
+// converters apply, or nil when no checker is wired (tests/dev).
+func (h *Handlers) gatedContentType(ctx context.Context) func(string) bool {
+	if h.flags == nil {
+		return nil
+	}
+	return func(ct string) bool { return ContentTypeGateOff(ctx, h.flags, ct) }
 }
 
 // literalCatalog resolves {{...}} template literals on feed item fields
@@ -175,7 +209,7 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := feedItemsFromAllRows(rows, siteURL)
+	items := feedItemsFromAllRows(rows, siteURL, h.gatedContentType(r.Context()))
 	h.resolveItems(r.Context(), items)
 
 	// The channel <link> is the site root, not the feed URL itself (RSS 2.0:
@@ -272,7 +306,7 @@ func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 				return nil, err
 			}
 
-			return feedItemsFromSpaceRows(rows, siteURL), nil
+			return feedItemsFromSpaceRows(rows, siteURL, h.gatedContentType(r.Context())), nil
 		},
 		h.siteName+" — "+slug,
 		siteURL+"/spaces/"+slug,
@@ -317,7 +351,7 @@ func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 				return nil, err
 			}
 
-			return feedItemsFromTagRows(rows, siteURL), nil
+			return feedItemsFromTagRows(rows, siteURL, h.gatedContentType(r.Context())), nil
 		},
 		h.siteName+" — #"+slug,
 		siteURL+"/tags/"+slug,
@@ -366,7 +400,7 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 				return nil, err
 			}
 
-			return feedItemsFromUserRows(rows, siteURL), nil
+			return feedItemsFromUserRows(rows, siteURL, h.gatedContentType(r.Context())), nil
 		},
 		h.siteName+" — "+username,
 		siteURL+"/u/"+username,
@@ -443,9 +477,13 @@ func (h *Handlers) HandleTypeFeed(prefix string) http.HandlerFunc {
 }
 
 // feedItemsFromAllRows converts ListRSSFeedItemsRow to RSS items.
-func feedItemsFromAllRows(rows []gen.ListRSSFeedItemsRow, siteURL string) []RSSItem {
+// gated, when non-nil, drops rows whose content_type is feature-flagged off.
+func feedItemsFromAllRows(rows []gen.ListRSSFeedItemsRow, siteURL string, gated func(string) bool) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
+		if gated != nil && gated(row.ContentType) {
+			continue
+		}
 		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
 			row.Username, row.PublishedAt, row.CreatedAt, siteURL, model.LinkPathFor(row.ContentType),
@@ -456,9 +494,12 @@ func feedItemsFromAllRows(rows []gen.ListRSSFeedItemsRow, siteURL string) []RSSI
 }
 
 // feedItemsFromSpaceRows converts ListRSSSpaceFeedItemsRow to RSS items.
-func feedItemsFromSpaceRows(rows []gen.ListRSSSpaceFeedItemsRow, siteURL string) []RSSItem {
+func feedItemsFromSpaceRows(rows []gen.ListRSSSpaceFeedItemsRow, siteURL string, gated func(string) bool) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
+		if gated != nil && gated(row.ContentType) {
+			continue
+		}
 		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
 			row.Username, row.PublishedAt, row.CreatedAt, siteURL, model.LinkPathFor(row.ContentType),
@@ -469,9 +510,12 @@ func feedItemsFromSpaceRows(rows []gen.ListRSSSpaceFeedItemsRow, siteURL string)
 }
 
 // feedItemsFromTagRows converts ListRSSTagFeedItemsRow to RSS items.
-func feedItemsFromTagRows(rows []gen.ListRSSTagFeedItemsRow, siteURL string) []RSSItem {
+func feedItemsFromTagRows(rows []gen.ListRSSTagFeedItemsRow, siteURL string, gated func(string) bool) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
+		if gated != nil && gated(row.ContentType) {
+			continue
+		}
 		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
 			row.Username, row.PublishedAt, row.CreatedAt, siteURL, model.LinkPathFor(row.ContentType),
@@ -482,9 +526,12 @@ func feedItemsFromTagRows(rows []gen.ListRSSTagFeedItemsRow, siteURL string) []R
 }
 
 // feedItemsFromUserRows converts ListRSSUserFeedItemsRow to RSS items.
-func feedItemsFromUserRows(rows []gen.ListRSSUserFeedItemsRow, siteURL string) []RSSItem {
+func feedItemsFromUserRows(rows []gen.ListRSSUserFeedItemsRow, siteURL string, gated func(string) bool) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
+		if gated != nil && gated(row.ContentType) {
+			continue
+		}
 		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
 			row.Username, row.PublishedAt, row.CreatedAt, siteURL, model.LinkPathFor(row.ContentType),

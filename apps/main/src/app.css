@@ -59,6 +59,9 @@
 	--color-primary: #3b49df;
 	--color-primary-hover: #2f3bc0;
 	--color-primary-contrast: #ffffff;
+	/* Primary rendered as text on surfaces — identical to primary here,
+	   overridden in dark mode where primary itself fails 4.5:1. */
+	--color-primary-text: var(--color-primary);
 	--color-secondary: #0ea5e9;
 	--color-secondary-hover: color-mix(in oklab, var(--color-secondary) 82%, black);
 	--color-secondary-contrast: #ffffff;
@@ -128,6 +131,9 @@
 	--color-primary: #5865f2;
 	--color-primary-hover: #6b76f5;
 	--color-primary-contrast: #ffffff;
+	/* #5865f2 on --color-surface (#161618) is only ~3.9:1 — text usage
+	   needs the lighter indigo-400 to reach WCAG AA 4.5:1. */
+	--color-primary-text: #818cf8;
 	--color-secondary: #38bdf8;
 	--color-secondary-hover: color-mix(in oklab, var(--color-secondary) 82%, white);
 	--color-secondary-contrast: #0a0a0a;

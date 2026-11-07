@@ -662,7 +662,7 @@
 									</td>
 									<td class="px-4 py-2.5 text-center">
 										{#if uni.initials}
-											<span class="rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-xs font-semibold text-[var(--color-primary)]"
+											<span class="rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-xs font-semibold text-[var(--color-primary-text)]"
 												>{uni.initials}</span>
 										{/if}
 									</td>

@@ -180,7 +180,7 @@
 				<button
 					type="button"
 					onclick={() => (followersOpen = true)}
-					class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary)]"
+					class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)]"
 				>
 					{space.follower_count}
 				</button>
@@ -291,7 +291,7 @@
 			<ul class="space-y-2.5">
 				{#each members.slice(0, 5) as member (member.user_id)}
 					<li>
-						<a href="/u/{member.username}" class="flex items-center gap-2.5 transition-colors hover:text-[var(--color-primary)]">
+						<a href="/u/{member.username}" class="flex items-center gap-2.5 transition-colors hover:text-[var(--color-primary-text)]">
 							{#if member.avatar_url}
 								<img src={member.avatar_url} alt="" class="h-8 w-8 shrink-0 rounded-full object-cover" />
 							{:else}

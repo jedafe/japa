@@ -202,7 +202,7 @@
 			<button
 				type="button"
 				class="absolute end-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-black/40 backdrop-blur-sm transition-colors hover:bg-black/60 disabled:opacity-50 {bookmarked
-					? 'text-[var(--color-primary)]'
+					? 'text-[var(--color-primary-text)]'
 					: 'text-white'}"
 				aria-label={bookmarked
 					? t('bookmarks.remove', 'Remove bookmark')
@@ -222,7 +222,7 @@
 			{#if listing.org_name}
 				<span class="truncate font-medium text-[var(--color-text-subtle)]">{listing.org_name}</span>
 				{#if listing.is_verified}
-					<BadgeCheck size={13} class="shrink-0 text-[var(--color-primary)]" />
+					<BadgeCheck size={13} class="shrink-0 text-[var(--color-primary-text)]" />
 				{/if}
 			{:else if listing.author_name}
 				<span class="truncate font-medium text-[var(--color-text-subtle)]"
@@ -238,7 +238,7 @@
 		</div>
 
 		<h2
-			class="line-clamp-2 text-[15px] font-semibold leading-snug text-[var(--color-text)] transition-colors group-hover:text-[var(--color-primary)]"
+			class="line-clamp-2 text-[15px] font-semibold leading-snug text-[var(--color-text)] transition-colors group-hover:text-[var(--color-primary-text)]"
 		>
 			{listing.title}
 		</h2>

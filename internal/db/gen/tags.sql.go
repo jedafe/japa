@@ -191,6 +191,72 @@ func (q *Queries) CountContentByTag(ctx context.Context, tagID pgtype.UUID) (int
 	return count, err
 }
 
+const countTagContentByTypes = `-- name: CountTagContentByTypes :one
+SELECT COUNT(*)::int AS count
+FROM content_tags ct
+JOIN contents c ON c.id = ct.content_id
+WHERE ct.tag_id = $1
+  AND c.content_type = ANY(COALESCE($2::text[], '{}'::text[]))
+`
+
+type CountTagContentByTypesParams struct {
+	TagID        pgtype.UUID `json:"tag_id"`
+	ContentTypes []string    `json:"content_types"`
+}
+
+// §42: counts content_tags rows whose content is one of the given
+// content_types — the search indexer subtracts it from the stored
+// tags.content_count so autocomplete and indexed docs never advertise
+// totals that include feature-gated content.
+func (q *Queries) CountTagContentByTypes(ctx context.Context, arg CountTagContentByTypesParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countTagContentByTypes, arg.TagID, arg.ContentTypes)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTagContentByTypesForTags = `-- name: CountTagContentByTypesForTags :many
+SELECT ct.tag_id, COUNT(*)::int AS count
+FROM content_tags ct
+JOIN contents c ON c.id = ct.content_id
+WHERE ct.tag_id = ANY($1::uuid[])
+  AND c.content_type = ANY(COALESCE($2::text[], '{}'::text[]))
+GROUP BY ct.tag_id
+`
+
+type CountTagContentByTypesForTagsParams struct {
+	TagIds       []pgtype.UUID `json:"tag_ids"`
+	ContentTypes []string      `json:"content_types"`
+}
+
+type CountTagContentByTypesForTagsRow struct {
+	TagID pgtype.UUID `json:"tag_id"`
+	Count int32       `json:"count"`
+}
+
+// §42: batched counterpart of CountTagContentByTypes — one round trip for
+// a page of tags so listing endpoints can subtract gated-feature content
+// from each tag's stored content_count without N+1 queries.
+func (q *Queries) CountTagContentByTypesForTags(ctx context.Context, arg CountTagContentByTypesForTagsParams) ([]CountTagContentByTypesForTagsRow, error) {
+	rows, err := q.db.Query(ctx, countTagContentByTypesForTags, arg.TagIds, arg.ContentTypes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountTagContentByTypesForTagsRow
+	for rows.Next() {
+		var i CountTagContentByTypesForTagsRow
+		if err := rows.Scan(&i.TagID, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countTagsPaginated = `-- name: CountTagsPaginated :one
 SELECT COUNT(*)::int AS count
 FROM tags

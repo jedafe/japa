@@ -31,10 +31,12 @@ import (
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/rbac"
+	rssmodel "github.com/jedafe/japa/internal/rss/model"
 	"github.com/jedafe/japa/internal/spam"
 	"github.com/jedafe/japa/internal/timeparse"
 	"github.com/jedafe/japa/internal/visitor"
@@ -126,6 +128,7 @@ type SpaceKeywordMatcher interface {
 // list.enabled). *features.Checker satisfies it structurally.
 type FeatureChecker interface {
 	IsEnabled(ctx context.Context, key string) bool
+	EvalFlag(ctx context.Context, key string, sc features.CallerScope) features.EvalResult
 }
 
 // SetSpacePostChecker injects the space posting-permission checker so the
@@ -151,19 +154,88 @@ func (h *Handlers) SetFeatureChecker(c FeatureChecker) {
 	h.checker = c
 }
 
-// listContentEnabled resolves the list.enabled flag — the killswitch for the
-// list content type. system_settings is consulted only as a fallback when no
-// checker is wired.
-func (h *Handlers) listContentEnabled(ctx context.Context) bool {
+// contentTypeUnreachable reports whether a contents.content_type's feature
+// flag makes it unreachable for this caller (§42): the same .Enabled
+// contract features.Gate applies — a flag that is enabled but merely
+// hidden on this surface still serves. Used by single-item reads and
+// writes; unattached contexts evaluate globally. Checker nil falls back to
+// the deprecated system_settings toggle.
+func (h *Handlers) contentTypeUnreachable(ctx context.Context, contentType string) bool {
 	if h.checker != nil {
-		return h.checker.IsEnabled(ctx, "list.enabled")
+		res, ok := features.EvalContentType(ctx, h.checker, contentType)
+		return ok && !res.Enabled
 	}
+	flag, ok := rssmodel.ContentTypeFeatureFlag[contentType]
+	return ok && h.settings != nil && !h.settings.GetBoolOr(ctx, flag, true)
+}
 
-	if h.settings == nil {
-		return true
+// contentTypeHidden reports whether a contents.content_type's flag is
+// disabled OR merely hidden for this caller (§42): the Enabled && Visible
+// projection contract menu items use — prunes hidden features from mixed
+// listings while they remain reachable at their own routes.
+func (h *Handlers) contentTypeHidden(ctx context.Context, contentType string) bool {
+	if h.checker != nil {
+		res, ok := features.EvalContentType(ctx, h.checker, contentType)
+		return ok && !(res.Enabled && res.Visible)
 	}
+	flag, ok := rssmodel.ContentTypeFeatureFlag[contentType]
+	return ok && h.settings != nil && !h.settings.GetBoolOr(ctx, flag, true)
+}
 
-	return h.settings.GetBoolOr(ctx, "list.enabled", true)
+// filterFlaggedListItems drops list rows whose content_type is hidden or
+// disabled for this caller (§42). ListContent multiplexes five row types —
+// each case filters by its ContentType field.
+func (h *Handlers) filterFlaggedListItems(ctx context.Context, contents any) any {
+	switch rows := contents.(type) {
+	case []gen.ListContentsRow:
+		return filterRowsByFlag(rows, func(r gen.ListContentsRow) string { return r.ContentType }, h.flagged(ctx))
+	case []gen.ListContentsByIDsRow:
+		return filterRowsByFlag(rows, func(r gen.ListContentsByIDsRow) string { return r.ContentType }, h.flagged(ctx))
+	case []gen.ListFeaturedContentsByTypeRow:
+		return filterRowsByFlag(rows, func(r gen.ListFeaturedContentsByTypeRow) string { return r.ContentType }, h.flagged(ctx))
+	case []gen.ListContentsByTypeRow:
+		return filterRowsByFlag(rows, func(r gen.ListContentsByTypeRow) string { return r.ContentType }, h.flagged(ctx))
+	case []gen.ListContentsBySpaceRow:
+		return filterRowsByFlag(rows, func(r gen.ListContentsBySpaceRow) string { return r.ContentType }, h.flagged(ctx))
+	default:
+		return contents
+	}
+}
+
+// parentContentUnreachable reports whether a content item's type is
+// feature-flagged unreachable for this caller (§42) — the same .Enabled
+// Gate contract the detail route applies. Missing/errored parents report
+// not-gated so each path keeps its existing not-found handling.
+func (h *Handlers) parentContentUnreachable(ctx context.Context, contentID pgtype.UUID) bool {
+	if h.Service == nil {
+		return false
+	}
+	row, err := h.Service.GetContent(ctx, contentID)
+	return err == nil && h.contentTypeUnreachable(ctx, row.ContentType)
+}
+
+// flagged returns the content_type → hidden predicate, or nil when no
+// flagging can be evaluated (no checker and no settings reader).
+func (h *Handlers) flagged(ctx context.Context) func(string) bool {
+	if h.checker == nil && h.settings == nil {
+		return nil
+	}
+	return func(ct string) bool { return h.contentTypeHidden(ctx, ct) }
+}
+
+// filterRowsByFlag keeps rows whose mapped content_type is not gated.
+func filterRowsByFlag[T any](rows []T, ct func(T) string, gated func(string) bool) []T {
+	if gated == nil {
+		return rows
+	}
+	out := rows[:0]
+	for _, r := range rows {
+		if gated(ct(r)) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // GuideCategory is a evergreen guide category (Visa, Travel, Scholarship, etc.)
@@ -1026,16 +1098,23 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// §42: a flagged-off content type can't be created — generalized from
+	// the U17 list.enabled killswitch to every mapped type. The
+	// list_feature_disabled error code stays stable for lists.
+	if h.contentTypeUnreachable(r.Context(), input.ContentType) {
+		code := "feature_disabled"
+		if input.ContentType == TypeList {
+			code = "list_feature_disabled"
+		}
+		errpkg.WriteError(w, http.StatusNotFound, code,
+			"This content type is currently disabled")
+		return
+	}
+
 	// §14 list amendment: list creation requires the list.create node
 	// (super_admin wildcard or explicit grant) and respects the public
 	// list.enabled killswitch.
 	if input.ContentType == TypeList {
-		if !h.listContentEnabled(r.Context()) {
-			errpkg.WriteError(w, http.StatusNotFound, "list_feature_disabled",
-				"List creation is currently disabled")
-			return
-		}
-
 		allowed := false
 		if resolver := rbac.FromContext(r.Context()); resolver != nil {
 			allowed = resolver.IsSuperAdmin(r.Context(), user.UserID) ||
@@ -1359,9 +1438,11 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// U17: the list content type is behind the list.enabled killswitch —
-	// when disabled, list singles 404 like the create path rejects them.
-	if content.ContentType == TypeList && !h.listContentEnabled(r.Context()) {
+	// U17 + §42: content types behind a feature-flag killswitch 404 like the
+	// create path rejects them — list.enabled's special case generalized to
+	// every flagged type in rssmodel.ContentTypeFeatureFlag. Reachability
+	// semantics: a hidden-but-enabled type still serves.
+	if h.contentTypeUnreachable(r.Context(), content.ContentType) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 		return
 	}
@@ -1754,6 +1835,14 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	guideCategory := r.URL.Query().Get("guide_category")
 	spaceIDStr := r.URL.Query().Get("space_id")
 
+	// §42: an explicitly requested type behind a disabled feature 404s like
+	// the feature's own routes — same feature_disabled envelope Gate uses.
+	// Reachability semantics: a hidden-but-enabled type still serves.
+	if contentType != "" && h.contentTypeUnreachable(r.Context(), contentType) {
+		errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "This content type is not available")
+		return
+	}
+
 	var contents any
 
 	var err error
@@ -1813,6 +1902,10 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// §42: prune items whose content_type is hidden or disabled for this
+	// caller — the mixed browse list must not advertise gated features.
+	contents = h.filterFlaggedListItems(r.Context(), contents)
 
 	// Resolve template literals in list items best-effort.
 	rc := buildRenderContext(r, "")
@@ -2455,6 +2548,14 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: a feature-flagged-off content type can't be published — the
+	// draft stays editable/archivable but cannot go live on a disabled
+	// surface (404 like the detail route).
+	if h.contentTypeUnreachable(r.Context(), prevContent.ContentType) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
 	// BUG-003: only the author, super-admins, or content.edit_any holders
 	// may publish this content.
 	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
@@ -2626,6 +2727,13 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: scheduling is a publish transition — a feature-flagged-off
+	// content type can't be scheduled onto a disabled surface.
+	if h.contentTypeUnreachable(r.Context(), prevContent.ContentType) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
 	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only schedule your own content")
 		return
@@ -2687,6 +2795,13 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	// §42: a feature-flagged-off parent is unreachable — view counters and
+	// view-driven activity events must not accrue on gated content.
+	if h.parentContentUnreachable(r.Context(), id) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 		return
 	}
 
@@ -2760,6 +2875,13 @@ func (h *Handlers) GetContentShareCount(w http.ResponseWriter, r *http.Request) 
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	// §42: a feature-flagged-off parent type is unreachable — its share
+	// counter is not a public read either.
+	if h.parentContentUnreachable(r.Context(), id) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 		return
 	}
 
@@ -2965,6 +3087,13 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: a feature-flagged-off parent type is unreachable — no reactions
+	// can be added on it (same 404 envelope as invisible content).
+	if h.contentTypeUnreachable(r.Context(), existing.ContentType) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
 	if existing.ContentType == TypeAchievement {
 		if !isAllowedAchievementReaction(r.Context(), h.settings, input.ReactionKey) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_reaction_key", "This reaction is not available for achievement posts")
@@ -3112,6 +3241,13 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: a feature-flagged-off parent type is unreachable — no reactions
+	// can be removed on it either.
+	if h.parentContentUnreachable(r.Context(), contentID) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
 	removed, err := h.Service.RemoveReaction(r.Context(), EntityContent, contentID, user.UserID, reactionKey)
 	if err != nil {
 		handleServiceError(w, err)
@@ -3149,6 +3285,13 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !visible {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
+	// §42: reaction counts on a feature-flagged-off parent are invisible
+	// like the content itself.
+	if h.parentContentUnreachable(r.Context(), contentID) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 		return
 	}
@@ -3244,6 +3387,13 @@ func (h *Handlers) ListReactors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: reactors on a feature-flagged-off parent are invisible like the
+	// content itself.
+	if h.parentContentUnreachable(r.Context(), contentID) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
 	var key *string
 	if k := r.URL.Query().Get("key"); k != "" {
 		key = &k
@@ -3289,6 +3439,13 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !visible {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
+	// §42: a feature-flagged-off parent type is unreachable — the caller's
+	// own reaction state on it is hidden like the content itself.
+	if h.parentContentUnreachable(r.Context(), contentID) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 		return
 	}
@@ -3423,6 +3580,13 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: a feature-flagged-off parent is unreachable — no new bookmarks
+	// on gated content (removals stay open for me-surface cleanup).
+	if h.parentContentUnreachable(r.Context(), contentID) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
 	var input struct {
 		Folder   string `json:"folder"`
 		FolderID string `json:"folder_id"`
@@ -3499,6 +3663,13 @@ func (h *Handlers) GetBookmarkStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: bookmark state on a feature-flagged-off parent is invisible like
+	// the content itself.
+	if h.parentContentUnreachable(r.Context(), contentID) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
 	bookmarked, err := h.Service.IsBookmarked(r.Context(), user.UserID, EntityContent, contentID)
 	if err != nil {
 		handleServiceError(w, err)
@@ -3562,6 +3733,13 @@ func (h *Handlers) ListContentTags(w http.ResponseWriter, r *http.Request) {
 	contentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	// §42: an unreachable parent's tag list must not serve — it would
+	// confirm the gated item's existence and topic while its detail 404s.
+	if h.parentContentUnreachable(r.Context(), contentID) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 		return
 	}
 
@@ -3841,6 +4019,13 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §42: a feature-flagged-off parent type is unreachable — it cannot
+	// accrue share records either.
+	if h.parentContentUnreachable(r.Context(), contentID) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
 	share, err := h.Service.ShareContent(r.Context(), contentID, user.UserID, input.Platform)
 	if err != nil {
 		handleServiceError(w, err)
@@ -3871,6 +4056,20 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 	// stay within the same route family.
 	contentType := strings.TrimSpace(r.URL.Query().Get("content_type"))
 
+	// §42: an explicitly requested unreachable type yields the empty related
+	// set — the seed item and results of a gated type must not surface.
+	if contentType != "" && h.contentTypeUnreachable(r.Context(), contentType) {
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+
+	// §42: a gated seed item serves no neighborhood — its existence and
+	// similarity pool must not be confirmable while its detail 404s.
+	if h.parentContentUnreachable(r.Context(), contentID) {
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+
 	// Get the content's embedding from content_scores.
 	score, err := h.Service.GetContentScore(r.Context(), contentID)
 	if err != nil || score.RelevanceEmbedding == nil {
@@ -3883,6 +4082,10 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// §42: prune related items whose content_type's feature flag is hidden
+	// or disabled for this caller — the similarity pool is scope-agnostic.
+	contents = filterRowsByFlag(contents, func(row gen.GetRelatedContentRow) string { return row.ContentType }, h.flagged(r.Context()))
 
 	// Resolve template literals in related-card titles/excerpts (best-effort).
 	rc := buildRenderContext(r, "")
@@ -3917,6 +4120,11 @@ func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 	types := make([]map[string]any, 0)
 
 	for _, t := range ContentTypes() {
+		// §42: a disabled or surface-hidden type's create/read routes are
+		// unreachable — the picker must not advertise it.
+		if h.contentTypeHidden(r.Context(), t) {
+			continue
+		}
 		entry := map[string]any{
 			"value": t,
 			"label": ContentTypeLabels[t],

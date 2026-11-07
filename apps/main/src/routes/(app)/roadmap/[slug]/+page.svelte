@@ -99,7 +99,7 @@
 					<StatusBadge status={item.status} />
 					{#if item.is_flagship}
 						<span
-							class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary)]"
+							class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-text)]"
 						>
 							<Pin size={11} />
 							{t('roadmap.flagship', 'Now building')}
@@ -163,7 +163,7 @@
 						></span>
 						<span
 							class="text-[11px] {i === currentStep
-								? 'font-semibold text-[var(--color-primary)]'
+								? 'font-semibold text-[var(--color-primary-text)]'
 								: i < currentStep
 									? 'text-[var(--color-text-subtle)]'
 									: 'text-[var(--color-muted)]'}"

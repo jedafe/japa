@@ -131,8 +131,11 @@ SELECT * FROM intel_raw_documents WHERE id = $1;
 -- name: GetLatestIntelRawDocHash :one
 -- Derived (manifest child) docs are excluded — a source-level baseline
 -- must compare against top-level captures, not fan-out pages (Phase 2).
+-- Manifest-type docs are excluded for the same reason: a wayback
+-- manifest from a fallback hop is not comparable content.
 SELECT content_hash FROM intel_raw_documents WHERE source_id = $1
   AND parent_document_id IS NULL
+  AND COALESCE(content_type, '') <> 'application/x-intel-manifest'
 ORDER BY retrieved_at DESC LIMIT 1;
 
 -- name: GetLatestIntelRawDocHashForChannelURL :one

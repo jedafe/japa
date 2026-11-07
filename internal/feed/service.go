@@ -14,8 +14,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/rag"
+	rssmodel "github.com/jedafe/japa/internal/rss/model"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
@@ -70,34 +72,34 @@ func stripTitlePrefix(text, title string) string {
 // all feed types (explore, primary, space, profile) for the daily card.
 // Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
 type FeedItem struct { //nolint:revive // stuttering type name preserved for API compatibility
-	ID                 string   `json:"id"`
-	Title              string   `json:"title"`
-	Slug               string   `json:"slug"`
-	ContentType        string   `json:"content_type"`
-	AuthorID           string   `json:"author_id"`
-	AuthorUsername     string   `json:"author_username,omitempty"`
-	AuthorName         string   `json:"author_name,omitempty"`
-	AuthorAvatarURL    string   `json:"author_avatar_url,omitempty"`
+	ID              string `json:"id"`
+	Title           string `json:"title"`
+	Slug            string `json:"slug"`
+	ContentType     string `json:"content_type"`
+	AuthorID        string `json:"author_id"`
+	AuthorUsername  string `json:"author_username,omitempty"`
+	AuthorName      string `json:"author_name,omitempty"`
+	AuthorAvatarURL string `json:"author_avatar_url,omitempty"`
 	// §07/001013 — author verification badge; verification_type resolves to
 	// custom artwork via /verification-requests/types on the frontend.
-	AuthorVerified         bool   `json:"author_verified,omitempty"`
-	AuthorVerificationType string `json:"author_verification_type,omitempty"`
-	SpaceID            *string  `json:"space_id,omitempty"`
-	SpaceName          string   `json:"space_name,omitempty"`
-	SpaceSlug          string   `json:"space_slug,omitempty"`
-	SpaceAvatarURL     string   `json:"space_avatar_url,omitempty"`
-	Organization       *OrgRef  `json:"organization,omitempty"`
-	CreatedAt          string   `json:"created_at"`
-	ViewCount          int32    `json:"view_count"`
-	CommentCount       int32    `json:"comment_count"`
-	ReactionCount      int32    `json:"reaction_count"`
-	VoteScore          int32    `json:"vote_score"`
-	VelocityScore      float64  `json:"velocity_score"`
-	Excerpt            string   `json:"excerpt,omitempty"`
-	Tags               []string `json:"tags,omitempty"`
-	ReadingTimeMinutes int      `json:"reading_time_minutes,omitempty"`
-	CoverImageURL      string   `json:"cover_image_url,omitempty"`
-	BookmarkCount      int32    `json:"bookmark_count,omitempty"`
+	AuthorVerified         bool     `json:"author_verified,omitempty"`
+	AuthorVerificationType string   `json:"author_verification_type,omitempty"`
+	SpaceID                *string  `json:"space_id,omitempty"`
+	SpaceName              string   `json:"space_name,omitempty"`
+	SpaceSlug              string   `json:"space_slug,omitempty"`
+	SpaceAvatarURL         string   `json:"space_avatar_url,omitempty"`
+	Organization           *OrgRef  `json:"organization,omitempty"`
+	CreatedAt              string   `json:"created_at"`
+	ViewCount              int32    `json:"view_count"`
+	CommentCount           int32    `json:"comment_count"`
+	ReactionCount          int32    `json:"reaction_count"`
+	VoteScore              int32    `json:"vote_score"`
+	VelocityScore          float64  `json:"velocity_score"`
+	Excerpt                string   `json:"excerpt,omitempty"`
+	Tags                   []string `json:"tags,omitempty"`
+	ReadingTimeMinutes     int      `json:"reading_time_minutes,omitempty"`
+	CoverImageURL          string   `json:"cover_image_url,omitempty"`
+	BookmarkCount          int32    `json:"bookmark_count,omitempty"`
 	// Journey-aware recommendation metadata surfaced on feed cards.
 	JourneyStage  *string `json:"journey_stage,omitempty"`
 	VisaRoute     *string `json:"visa_route,omitempty"`
@@ -275,22 +277,15 @@ func (s *Service) GetFeed(ctx context.Context, timeline string, userID, spaceID,
 }
 
 // feedContentTypeFeatureFlag maps feed item content_type values to the
-// feature_flags key that gates them (§42). Ungated core types (guide,
-// page, news…) are intentionally absent — they are never pruned.
-var feedContentTypeFeatureFlag = map[string]string{
-	"story":           "story.enabled",
-	"video":           "video.enabled",
-	"list":            "list.enabled",
-	"comparison":      "feature.comparison",
-	"blog_post":       "feature.blog",
-	"discussion":      "feature.forum",
-	"job_listing":     "jobs.enabled",
-	"service_listing": "service_directory.enabled",
-	"wiki_page":       "wiki.enabled",
-}
+// feature_flags key that gates them — canonical map lives in
+// rssmodel.ContentTypeFeatureFlag (§42).
+var feedContentTypeFeatureFlag = rssmodel.ContentTypeFeatureFlag
 
 // filterDisabledFeatureItems drops feed items whose content type's feature
-// flag is off. Nil-checker keeps the feed unfiltered (tests/dev).
+// flag is off. On request paths (scope attached via features.ScopeMiddleware)
+// the check is caller-scoped Enabled && Visible — matching menu/search
+// projection semantics; unattached contexts (workers, tests) evaluate
+// globally. Nil-checker keeps the feed unfiltered.
 func (s *Service) filterDisabledFeatureItems(ctx context.Context, items []FeedItem) []FeedItem {
 	if s.checker == nil || len(items) == 0 {
 		return items
@@ -299,13 +294,21 @@ func (s *Service) filterDisabledFeatureItems(ctx context.Context, items []FeedIt
 	filtered := items[:0]
 
 	for _, it := range items {
-		if flag, ok := feedContentTypeFeatureFlag[it.ContentType]; ok && !s.checker.IsEnabled(ctx, flag) {
+		if flag, ok := feedContentTypeFeatureFlag[it.ContentType]; ok && !s.featureVisible(ctx, flag) {
 			continue
 		}
 		filtered = append(filtered, it)
 	}
 
 	return filtered
+}
+
+// featureVisible reports whether a content-gating flag is enabled AND
+// visible for this caller when a §42 scope is attached, or globally
+// enabled otherwise.
+func (s *Service) featureVisible(ctx context.Context, flag string) bool {
+	res := features.EvalFlagScoped(ctx, s.checker, flag)
+	return res.Enabled && res.Visible
 }
 
 // attachSources enriches feed items with source attribution for any content
@@ -903,41 +906,41 @@ func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:                 uuidToString(r.ID),
-			Title:              r.Title,
-			Slug:               r.Slug,
-			ContentType:        r.ContentType,
-			AuthorID:           uuidToString(r.AuthorID),
-			AuthorUsername:     r.AuthorUsername,
+			ID:                     uuidToString(r.ID),
+			Title:                  r.Title,
+			Slug:                   r.Slug,
+			ContentType:            r.ContentType,
+			AuthorID:               uuidToString(r.AuthorID),
+			AuthorUsername:         r.AuthorUsername,
 			AuthorVerified:         r.AuthorVerified,
 			AuthorVerificationType: r.AuthorVerificationType,
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceID:            nullableUUIDToString(r.SpaceID),
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
-			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
-			CreatedAt:          r.CreatedAt.Time.String(),
-			ViewCount:          r.ViewCount,
-			CommentCount:       r.CommentCount,
-			ReactionCount:      r.ReactionCount,
-			VoteScore:          r.VoteScore,
-			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
-			Tags:               splitTags(r.Tags),
-			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
-			BookmarkCount:      r.BookmarkCount,
-			JourneyStage:       r.JourneyStage,
-			VisaRoute:          r.VisaRoute,
-			SourceCountry:      r.SourceCountry,
-			TargetCountry:      r.TargetCountry,
-			GuideCategory:      r.GuideCategory,
-			VideoSourceURL:     derefStr(r.VideoSourceUrl),
-			VideoSourceType:    derefStr(r.VideoSourceType),
-			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
-			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
+			AuthorName:             r.AuthorName,
+			AuthorAvatarURL:        r.AuthorAvatarUrl,
+			SpaceID:                nullableUUIDToString(r.SpaceID),
+			SpaceName:              asString(r.SpaceName),
+			SpaceSlug:              r.SpaceSlug,
+			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			CreatedAt:              r.CreatedAt.Time.String(),
+			ViewCount:              r.ViewCount,
+			CommentCount:           r.CommentCount,
+			ReactionCount:          r.ReactionCount,
+			VoteScore:              r.VoteScore,
+			VelocityScore:          pgNumericToFloat64(r.VelocityScore),
+			Excerpt:                CleanExcerpt(r.Excerpt, r.Title),
+			Tags:                   splitTags(r.Tags),
+			ReadingTimeMinutes:     int(r.ReadTimeMinutes),
+			CoverImageURL:          coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
+			BookmarkCount:          r.BookmarkCount,
+			JourneyStage:           r.JourneyStage,
+			VisaRoute:              r.VisaRoute,
+			SourceCountry:          r.SourceCountry,
+			TargetCountry:          r.TargetCountry,
+			GuideCategory:          r.GuideCategory,
+			VideoSourceURL:         derefStr(r.VideoSourceUrl),
+			VideoSourceType:        derefStr(r.VideoSourceType),
+			VideoDurationSecs:      derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:      derefStr(r.VideoThumbnailUrl),
 		}
 	}
 
@@ -948,41 +951,41 @@ func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:                 uuidToString(r.ID),
-			Title:              r.Title,
-			Slug:               r.Slug,
-			ContentType:        r.ContentType,
-			AuthorID:           uuidToString(r.AuthorID),
-			AuthorUsername:     r.AuthorUsername,
+			ID:                     uuidToString(r.ID),
+			Title:                  r.Title,
+			Slug:                   r.Slug,
+			ContentType:            r.ContentType,
+			AuthorID:               uuidToString(r.AuthorID),
+			AuthorUsername:         r.AuthorUsername,
 			AuthorVerified:         r.AuthorVerified,
 			AuthorVerificationType: r.AuthorVerificationType,
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceID:            nullableUUIDToString(r.SpaceID),
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
-			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
-			CreatedAt:          r.CreatedAt.Time.String(),
-			ViewCount:          r.ViewCount,
-			CommentCount:       r.CommentCount,
-			ReactionCount:      r.ReactionCount,
-			VoteScore:          r.VoteScore,
-			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
-			Tags:               splitTags(r.Tags),
-			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
-			BookmarkCount:      r.BookmarkCount,
-			JourneyStage:       r.JourneyStage,
-			VisaRoute:          r.VisaRoute,
-			SourceCountry:      r.SourceCountry,
-			TargetCountry:      r.TargetCountry,
-			GuideCategory:      r.GuideCategory,
-			VideoSourceURL:     derefStr(r.VideoSourceUrl),
-			VideoSourceType:    derefStr(r.VideoSourceType),
-			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
-			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
+			AuthorName:             r.AuthorName,
+			AuthorAvatarURL:        r.AuthorAvatarUrl,
+			SpaceID:                nullableUUIDToString(r.SpaceID),
+			SpaceName:              asString(r.SpaceName),
+			SpaceSlug:              r.SpaceSlug,
+			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			CreatedAt:              r.CreatedAt.Time.String(),
+			ViewCount:              r.ViewCount,
+			CommentCount:           r.CommentCount,
+			ReactionCount:          r.ReactionCount,
+			VoteScore:              r.VoteScore,
+			VelocityScore:          pgNumericToFloat64(r.VelocityScore),
+			Excerpt:                CleanExcerpt(r.Excerpt, r.Title),
+			Tags:                   splitTags(r.Tags),
+			ReadingTimeMinutes:     int(r.ReadTimeMinutes),
+			CoverImageURL:          coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
+			BookmarkCount:          r.BookmarkCount,
+			JourneyStage:           r.JourneyStage,
+			VisaRoute:              r.VisaRoute,
+			SourceCountry:          r.SourceCountry,
+			TargetCountry:          r.TargetCountry,
+			GuideCategory:          r.GuideCategory,
+			VideoSourceURL:         derefStr(r.VideoSourceUrl),
+			VideoSourceType:        derefStr(r.VideoSourceType),
+			VideoDurationSecs:      derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:      derefStr(r.VideoThumbnailUrl),
 		}
 	}
 
@@ -993,41 +996,41 @@ func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:                 uuidToString(r.ID),
-			Title:              r.Title,
-			Slug:               r.Slug,
-			ContentType:        r.ContentType,
-			AuthorID:           uuidToString(r.AuthorID),
-			AuthorUsername:     r.AuthorUsername,
+			ID:                     uuidToString(r.ID),
+			Title:                  r.Title,
+			Slug:                   r.Slug,
+			ContentType:            r.ContentType,
+			AuthorID:               uuidToString(r.AuthorID),
+			AuthorUsername:         r.AuthorUsername,
 			AuthorVerified:         r.AuthorVerified,
 			AuthorVerificationType: r.AuthorVerificationType,
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceID:            nullableUUIDToString(r.SpaceID),
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
-			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
-			CreatedAt:          r.CreatedAt.Time.String(),
-			ViewCount:          r.ViewCount,
-			CommentCount:       r.CommentCount,
-			ReactionCount:      r.ReactionCount,
-			VoteScore:          r.VoteScore,
-			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
-			Tags:               splitTags(r.Tags),
-			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
-			BookmarkCount:      r.BookmarkCount,
-			JourneyStage:       r.JourneyStage,
-			VisaRoute:          r.VisaRoute,
-			SourceCountry:      r.SourceCountry,
-			TargetCountry:      r.TargetCountry,
-			GuideCategory:      r.GuideCategory,
-			VideoSourceURL:     derefStr(r.VideoSourceUrl),
-			VideoSourceType:    derefStr(r.VideoSourceType),
-			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
-			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
+			AuthorName:             r.AuthorName,
+			AuthorAvatarURL:        r.AuthorAvatarUrl,
+			SpaceID:                nullableUUIDToString(r.SpaceID),
+			SpaceName:              asString(r.SpaceName),
+			SpaceSlug:              r.SpaceSlug,
+			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			CreatedAt:              r.CreatedAt.Time.String(),
+			ViewCount:              r.ViewCount,
+			CommentCount:           r.CommentCount,
+			ReactionCount:          r.ReactionCount,
+			VoteScore:              r.VoteScore,
+			VelocityScore:          pgNumericToFloat64(r.VelocityScore),
+			Excerpt:                CleanExcerpt(r.Excerpt, r.Title),
+			Tags:                   splitTags(r.Tags),
+			ReadingTimeMinutes:     int(r.ReadTimeMinutes),
+			CoverImageURL:          coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
+			BookmarkCount:          r.BookmarkCount,
+			JourneyStage:           r.JourneyStage,
+			VisaRoute:              r.VisaRoute,
+			SourceCountry:          r.SourceCountry,
+			TargetCountry:          r.TargetCountry,
+			GuideCategory:          r.GuideCategory,
+			VideoSourceURL:         derefStr(r.VideoSourceUrl),
+			VideoSourceType:        derefStr(r.VideoSourceType),
+			VideoDurationSecs:      derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:      derefStr(r.VideoThumbnailUrl),
 		}
 	}
 
@@ -1038,41 +1041,41 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:                 uuidToString(r.ContentID),
-			Title:              r.Title,
-			Slug:               r.Slug,
-			ContentType:        r.ContentType,
-			AuthorID:           uuidToString(r.AuthorID),
-			AuthorUsername:     r.AuthorUsername,
+			ID:                     uuidToString(r.ContentID),
+			Title:                  r.Title,
+			Slug:                   r.Slug,
+			ContentType:            r.ContentType,
+			AuthorID:               uuidToString(r.AuthorID),
+			AuthorUsername:         r.AuthorUsername,
 			AuthorVerified:         r.AuthorVerified,
 			AuthorVerificationType: r.AuthorVerificationType,
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceID:            nullableUUIDToString(r.SpaceID),
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
-			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
-			CreatedAt:          r.ContentCreatedAt.Time.String(),
-			ViewCount:          r.ViewCount,
-			CommentCount:       r.CommentCount,
-			ReactionCount:      r.ReactionCount,
-			VoteScore:          derefInt32(r.VoteScore),
-			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
-			Tags:               splitTags(r.Tags),
-			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
-			BookmarkCount:      derefInt32(r.BookmarkCount),
-			JourneyStage:       r.JourneyStage,
-			VisaRoute:          r.VisaRoute,
-			SourceCountry:      r.SourceCountry,
-			TargetCountry:      r.TargetCountry,
-			GuideCategory:      r.GuideCategory,
-			VideoSourceURL:     derefStr(r.VideoSourceUrl),
-			VideoSourceType:    derefStr(r.VideoSourceType),
-			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
-			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
+			AuthorName:             r.AuthorName,
+			AuthorAvatarURL:        r.AuthorAvatarUrl,
+			SpaceID:                nullableUUIDToString(r.SpaceID),
+			SpaceName:              asString(r.SpaceName),
+			SpaceSlug:              r.SpaceSlug,
+			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			CreatedAt:              r.ContentCreatedAt.Time.String(),
+			ViewCount:              r.ViewCount,
+			CommentCount:           r.CommentCount,
+			ReactionCount:          r.ReactionCount,
+			VoteScore:              derefInt32(r.VoteScore),
+			VelocityScore:          pgNumericToFloat64(r.VelocityScore),
+			Excerpt:                CleanExcerpt(r.Excerpt, r.Title),
+			Tags:                   splitTags(r.Tags),
+			ReadingTimeMinutes:     int(r.ReadTimeMinutes),
+			CoverImageURL:          coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
+			BookmarkCount:          derefInt32(r.BookmarkCount),
+			JourneyStage:           r.JourneyStage,
+			VisaRoute:              r.VisaRoute,
+			SourceCountry:          r.SourceCountry,
+			TargetCountry:          r.TargetCountry,
+			GuideCategory:          r.GuideCategory,
+			VideoSourceURL:         derefStr(r.VideoSourceUrl),
+			VideoSourceType:        derefStr(r.VideoSourceType),
+			VideoDurationSecs:      derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:      derefStr(r.VideoThumbnailUrl),
 		}
 	}
 
@@ -1083,41 +1086,41 @@ func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:                 uuidToString(r.ID),
-			Title:              r.Title,
-			Slug:               r.Slug,
-			ContentType:        r.ContentType,
-			AuthorID:           uuidToString(r.AuthorID),
-			AuthorUsername:     r.AuthorUsername,
+			ID:                     uuidToString(r.ID),
+			Title:                  r.Title,
+			Slug:                   r.Slug,
+			ContentType:            r.ContentType,
+			AuthorID:               uuidToString(r.AuthorID),
+			AuthorUsername:         r.AuthorUsername,
 			AuthorVerified:         r.AuthorVerified,
 			AuthorVerificationType: r.AuthorVerificationType,
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceID:            nil,
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
-			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
-			CreatedAt:          r.CreatedAt.Time.String(),
-			ViewCount:          r.ViewCount,
-			CommentCount:       r.CommentCount,
-			ReactionCount:      r.ReactionCount,
-			VoteScore:          r.VoteScore,
-			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
-			Tags:               splitTags(r.Tags),
-			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
-			BookmarkCount:      r.BookmarkCount,
-			JourneyStage:       r.JourneyStage,
-			VisaRoute:          r.VisaRoute,
-			SourceCountry:      r.SourceCountry,
-			TargetCountry:      r.TargetCountry,
-			GuideCategory:      r.GuideCategory,
-			VideoSourceURL:     derefStr(r.VideoSourceUrl),
-			VideoSourceType:    derefStr(r.VideoSourceType),
-			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
-			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
+			AuthorName:             r.AuthorName,
+			AuthorAvatarURL:        r.AuthorAvatarUrl,
+			SpaceID:                nil,
+			SpaceName:              asString(r.SpaceName),
+			SpaceSlug:              r.SpaceSlug,
+			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			CreatedAt:              r.CreatedAt.Time.String(),
+			ViewCount:              r.ViewCount,
+			CommentCount:           r.CommentCount,
+			ReactionCount:          r.ReactionCount,
+			VoteScore:              r.VoteScore,
+			VelocityScore:          pgNumericToFloat64(r.VelocityScore),
+			Excerpt:                CleanExcerpt(r.Excerpt, r.Title),
+			Tags:                   splitTags(r.Tags),
+			ReadingTimeMinutes:     int(r.ReadTimeMinutes),
+			CoverImageURL:          coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
+			BookmarkCount:          r.BookmarkCount,
+			JourneyStage:           r.JourneyStage,
+			VisaRoute:              r.VisaRoute,
+			SourceCountry:          r.SourceCountry,
+			TargetCountry:          r.TargetCountry,
+			GuideCategory:          r.GuideCategory,
+			VideoSourceURL:         derefStr(r.VideoSourceUrl),
+			VideoSourceType:        derefStr(r.VideoSourceType),
+			VideoDurationSecs:      derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:      derefStr(r.VideoThumbnailUrl),
 		}
 	}
 
@@ -1128,41 +1131,41 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 	items := make([]FeedItem, len(rows))
 	for i, r := range rows {
 		items[i] = FeedItem{
-			ID:                 uuidToString(r.ID),
-			Title:              r.Title,
-			Slug:               r.Slug,
-			ContentType:        r.ContentType,
-			AuthorID:           uuidToString(r.AuthorID),
-			AuthorUsername:     r.AuthorUsername,
+			ID:                     uuidToString(r.ID),
+			Title:                  r.Title,
+			Slug:                   r.Slug,
+			ContentType:            r.ContentType,
+			AuthorID:               uuidToString(r.AuthorID),
+			AuthorUsername:         r.AuthorUsername,
 			AuthorVerified:         r.AuthorVerified,
 			AuthorVerificationType: r.AuthorVerificationType,
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceID:            nullableUUIDToString(r.SpaceID),
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
-			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
-			CreatedAt:          r.CreatedAt.Time.String(),
-			ViewCount:          r.ViewCount,
-			CommentCount:       r.CommentCount,
-			ReactionCount:      r.ReactionCount,
-			VoteScore:          r.VoteScore,
-			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
-			Tags:               splitTags(r.Tags),
-			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
-			BookmarkCount:      r.BookmarkCount,
-			JourneyStage:       r.JourneyStage,
-			VisaRoute:          r.VisaRoute,
-			SourceCountry:      r.SourceCountry,
-			TargetCountry:      r.TargetCountry,
-			GuideCategory:      r.GuideCategory,
-			VideoSourceURL:     derefStr(r.VideoSourceUrl),
-			VideoSourceType:    derefStr(r.VideoSourceType),
-			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
-			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
+			AuthorName:             r.AuthorName,
+			AuthorAvatarURL:        r.AuthorAvatarUrl,
+			SpaceID:                nullableUUIDToString(r.SpaceID),
+			SpaceName:              asString(r.SpaceName),
+			SpaceSlug:              r.SpaceSlug,
+			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			CreatedAt:              r.CreatedAt.Time.String(),
+			ViewCount:              r.ViewCount,
+			CommentCount:           r.CommentCount,
+			ReactionCount:          r.ReactionCount,
+			VoteScore:              r.VoteScore,
+			VelocityScore:          pgNumericToFloat64(r.VelocityScore),
+			Excerpt:                CleanExcerpt(r.Excerpt, r.Title),
+			Tags:                   splitTags(r.Tags),
+			ReadingTimeMinutes:     int(r.ReadTimeMinutes),
+			CoverImageURL:          coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
+			BookmarkCount:          r.BookmarkCount,
+			JourneyStage:           r.JourneyStage,
+			VisaRoute:              r.VisaRoute,
+			SourceCountry:          r.SourceCountry,
+			TargetCountry:          r.TargetCountry,
+			GuideCategory:          r.GuideCategory,
+			VideoSourceURL:         derefStr(r.VideoSourceUrl),
+			VideoSourceType:        derefStr(r.VideoSourceType),
+			VideoDurationSecs:      derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:      derefStr(r.VideoThumbnailUrl),
 		}
 	}
 

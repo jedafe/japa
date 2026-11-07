@@ -60,6 +60,11 @@ func (h *Handlers) ListLikedByUser(w http.ResponseWriter, r *http.Request) {
 		rows = []gen.ListContentLikedByUserRow{}
 	}
 
+	// §42: prune items whose content_type is hidden or disabled for this
+	// caller — a gated feature's posts must not surface on the public
+	// Likes tab.
+	rows = filterRowsByFlag(rows, func(r gen.ListContentLikedByUserRow) string { return r.ContentType }, h.flagged(r.Context()))
+
 	// Resolve template literals in liked-card titles/excerpts (best-effort).
 	rc := buildRenderContext(r, "")
 	if err := h.Service.ResolveContentFields(r.Context(), &rows, rc); err != nil {

@@ -41,11 +41,8 @@ func (d *queryDeps) FeatureEnabled(ctx context.Context, key string) (bool, error
 	// a flag enabled globally but scoped away from this caller must not
 	// nudge them into a feature that would 404. Unattached contexts
 	// (sweeps, worker replays) evaluate globally.
-	if sc, ok := features.ScopeFrom(ctx); ok {
-		res := d.flags.EvalFlag(ctx, key, sc)
-		return res.Enabled && res.Visible, nil
-	}
-	return d.flags.IsEnabled(ctx, key), nil
+	res := features.EvalFlagScoped(ctx, d.flags, key)
+	return res.Enabled && res.Visible, nil
 }
 
 func (d *queryDeps) CountEvents(ctx context.Context, s *UserState, eventType string, days int, session bool) (int64, error) {

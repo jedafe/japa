@@ -246,7 +246,7 @@
 						<div class="font-medium text-[var(--color-text)]">{provider.name}</div>
 						<div class="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
 							{#if provider.website}
-								<a href={provider.website} target="_blank" rel="noopener" class="underline text-[var(--color-primary)]">{provider.website}</a>
+								<a href={provider.website} target="_blank" rel="noopener" class="underline text-[var(--color-primary-text)]">{provider.website}</a>
 							{/if}
 						</div>
 					</div>
@@ -295,7 +295,7 @@
 									<div class="mb-4 space-y-3">
 										{#each detail.guide.pathway_steps as step (step.step)}
 											<div class="flex gap-3">
-												<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary)]">
+												<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary-text)]">
 													{step.step}
 												</div>
 												<div>
@@ -342,7 +342,7 @@
 								{/if}
 
 								{#if detail.guide.official_url}
-									<a href={detail.guide.official_url} target="_blank" rel="noopener" class="text-xs underline text-[var(--color-primary)]">
+									<a href={detail.guide.official_url} target="_blank" rel="noopener" class="text-xs underline text-[var(--color-primary-text)]">
 										{t('eca_guide.official', 'Official website')} ↗
 									</a>
 								{/if}
@@ -399,7 +399,7 @@
 										</div>
 									{/if}
 								{:else}
-									<a href="/login?redirect={encodeURIComponent(page.url.pathname)}" class="mt-3 inline-block text-xs underline text-[var(--color-primary)]">
+									<a href="/login?redirect={encodeURIComponent(page.url.pathname)}" class="mt-3 inline-block text-xs underline text-[var(--color-primary-text)]">
 										{t('eca_guide.signin_to_share', 'Sign in to share your experience')}
 									</a>
 								{/if}
@@ -414,7 +414,7 @@
 	<!-- Cross-link to credential checker -->
 	<div class="mt-6 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] p-4 text-center text-sm text-[var(--color-muted)]">
 		{t('eca_guide.credential_hint', 'Need to check if your profession is regulated?')}
-		<a href="/tools/credential-checker" class="font-medium underline text-[var(--color-primary)]">
+		<a href="/tools/credential-checker" class="font-medium underline text-[var(--color-primary-text)]">
 			{t('eca_guide.credential_link', 'Credential Checker')}
 		</a>
 	</div>

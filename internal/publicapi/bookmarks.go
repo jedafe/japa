@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
@@ -122,6 +123,13 @@ func (h *Handlers) PutMyBookmark(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_folder_id", "Invalid folder_id format")
 			return
 		}
+	}
+
+	// §42: a feature-flagged-off parent type is unreachable — bookmarking it
+	// returns the same invisible-content 404 as GetContentByID.
+	if h.gatedParentContent(r.Context(), contentID) {
+		handleServiceError(w, pgx.ErrNoRows)
+		return
 	}
 
 	item, err := h.bookmarks.AddContentBookmark(r.Context(), keyCtx.UserID, contentID, folderID)

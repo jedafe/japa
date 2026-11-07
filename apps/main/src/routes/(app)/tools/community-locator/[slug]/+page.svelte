@@ -74,14 +74,14 @@
 	<div class="p-4 space-y-4">
 		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
 			<div class="flex items-start gap-3">
-				<div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+				<div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 					<Users size={20} />
 				</div>
 				<div class="min-w-0 flex-1">
 					<div class="flex flex-wrap items-center gap-2">
 						<h1 class="text-lg font-semibold text-[var(--color-text)]">{org.name}</h1>
 						{#if org.is_verified}
-							<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">
+							<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary-text)]">
 								<BadgeCheck size={12} />
 								{t('community_locator.verified', 'Verified')}
 							</span>
@@ -113,7 +113,7 @@
 						href={mapsUrl(org.latitude, org.longitude)}
 						target="_blank"
 						rel="noopener noreferrer"
-						class="mt-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+						class="mt-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
 					>
 						<Navigation size={14} />
 						{t('community_locator.view_map', 'View on map')}
@@ -129,7 +129,7 @@
 					href={org.website_url}
 					target="_blank"
 					rel="noopener noreferrer"
-					class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+					class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
 				>
 					<Globe size={14} />
 					{org.website_url}
@@ -173,7 +173,7 @@
 				</h2>
 				<a
 					href={`/spaces/${org.japaconnect_space_slug || org.japaconnect_space_id}`}
-					class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+					class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
 				>
 					<Users size={14} />
 					{t('community_locator.view_space', 'View Space — posts, members & events')}
@@ -184,7 +184,7 @@
 		<!-- Claim action — only meaningful while unclaimed -->
 		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			{#if claimSubmitted}
-				<span class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)]">
+				<span class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)]">
 					<CheckCircle2 size={16} />
 					{t('community_locator.claimed_locally', 'Claim submitted — pending review')}
 				</span>
@@ -203,7 +203,7 @@
 					type="button"
 					onclick={claimOrg}
 					disabled={claiming}
-					class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[var(--color-border)] rounded-[var(--radius)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors disabled:opacity-50"
+					class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[var(--color-border)] rounded-[var(--radius)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] transition-colors disabled:opacity-50"
 				>
 					{#if claiming}
 						<Loader2 size={14} class="animate-spin" />

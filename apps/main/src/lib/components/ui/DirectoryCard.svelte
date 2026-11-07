@@ -168,7 +168,7 @@
 			<span class="flex items-center gap-1 text-sm font-semibold text-[var(--color-text)]">
 				<span class="truncate">{title}</span>
 				{#if verified}
-					<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary)]" aria-label={t('organizations.verified', 'Verified')} />
+					<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary-text)]" aria-label={t('organizations.verified', 'Verified')} />
 				{/if}
 			</span>
 			{#if subtitle}

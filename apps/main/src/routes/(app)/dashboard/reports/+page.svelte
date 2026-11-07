@@ -164,7 +164,7 @@
 								{#if entityHref(report) && report.entity_title}
 									<a
 										href={entityHref(report)}
-										class="mt-1 block truncate text-sm text-[var(--color-primary)] hover:underline"
+										class="mt-1 block truncate text-sm text-[var(--color-primary-text)] hover:underline"
 									>{report.entity_title}</a>
 								{:else if report.entity_title}
 									<p class="mt-1 truncate text-sm text-[var(--color-text-subtle)]">{report.entity_title}</p>

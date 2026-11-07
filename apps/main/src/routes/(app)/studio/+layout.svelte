@@ -313,7 +313,7 @@
 	}
 
 	.studio-mobile-tab.active {
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 	}
 
 	.studio-mobile-tab.disabled {
@@ -382,7 +382,7 @@
 	.type-modal-item.selected {
 		border-color: var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-		color: var(--color-primary);
+		color: var(--color-primary-text);
 		font-weight: 500;
 	}
 

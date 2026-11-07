@@ -59,7 +59,7 @@
 
 	<header class="flex items-center gap-3">
 		<div
-			class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+			class="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"
 		>
 			<History class="h-5 w-5" />
 		</div>
@@ -103,7 +103,7 @@
 							<div class="min-w-0 flex-1">
 								<a
 									href="/roadmap/{item.slug}"
-									class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)]"
+									class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary-text)]"
 								>
 									{item.title}
 								</a>
@@ -126,7 +126,7 @@
 								{#if item.release_version && item.release_slug}
 									<a
 										href="/roadmap/releases/{item.release_slug}"
-										class="mt-1.5 ml-1 inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-muted)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+										class="mt-1.5 ml-1 inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-muted)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 									>
 										{item.release_version}
 									</a>

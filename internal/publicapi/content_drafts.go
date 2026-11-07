@@ -109,6 +109,14 @@ func (h *Handlers) CreatePublicDraft(w http.ResponseWriter, r *http.Request) {
 			"content_type must be one of: blog_post, guide, story, discussion")
 		return
 	}
+
+	// §42: a feature-flagged-off content type can't be drafted either —
+	// same 404+feature_disabled envelope features.Gate returns.
+	if h.contentTypeUnreachable(r.Context(), input.ContentType) {
+		errpkg.WriteError(w, http.StatusNotFound, "feature_disabled",
+			"This content type is not available")
+		return
+	}
 	// Publish is a session-side act — a caller-supplied status is rejected
 	// outright (never silently clamped) so integrations can't assume they
 	// published when they didn't.

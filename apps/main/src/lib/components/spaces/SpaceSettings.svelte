@@ -509,7 +509,7 @@
 					{/if}
 					{#if logoSaving}
 						<div class="absolute inset-0 grid h-16 w-16 place-items-center rounded-full bg-[var(--color-surface)]/60">
-							<Loader2 size={16} class="animate-spin text-[var(--color-primary)]" />
+							<Loader2 size={16} class="animate-spin text-[var(--color-primary-text)]" />
 						</div>
 					{/if}
 					<button
@@ -537,7 +537,7 @@
 						<img src={headerUrl} alt={t('spaces.settings_header', 'Header image')} class="h-32 w-full object-cover" />
 						{#if headerSaving}
 							<div class="absolute inset-0 grid place-items-center bg-[var(--color-surface)]/60">
-								<Loader2 size={20} class="animate-spin text-[var(--color-primary)]" />
+								<Loader2 size={20} class="animate-spin text-[var(--color-primary-text)]" />
 							</div>
 						{/if}
 						<div class="absolute bottom-2 end-2 flex gap-2">
@@ -566,7 +566,7 @@
 								<button
 									type="button"
 									onclick={() => (headerPickerOpen = true)}
-									class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+									class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-primary-text)]"
 								>
 									<ImageIcon size={16} />
 									{t('spaces.settings_header_upload', 'Upload header image')}
@@ -635,7 +635,7 @@
 							<div class="flex items-center justify-between">
 								<span class="text-sm font-medium text-[var(--color-text)]">{preset.name}</span>
 								{#if applyingPreset === preset.name}
-									<Loader2 size={14} class="animate-spin text-[var(--color-primary)]" />
+									<Loader2 size={14} class="animate-spin text-[var(--color-primary-text)]" />
 								{/if}
 							</div>
 							<p class="mt-1 text-xs text-[var(--color-muted)]">
@@ -741,7 +741,7 @@
 					<ul class="mb-4 space-y-2">
 						{#each moderators as mod (mod.user_id)}
 							<li class="flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5">
-								<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-primary)]">
+								<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]">
 									<ShieldCheck size={15} />
 								</span>
 								<a href="/u/{mod.user_username}" class="min-w-0 flex-1">
@@ -953,7 +953,7 @@
 					<ul class="mb-4 space-y-2">
 						{#each parentSpaces as parent (parent.id)}
 							<li class="flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5">
-								<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-primary)]">
+								<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]">
 									<Link2 size={15} />
 								</span>
 								<a href="/spaces/{parent.slug}" class="min-w-0 flex-1">

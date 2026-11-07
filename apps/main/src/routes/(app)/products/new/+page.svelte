@@ -375,7 +375,7 @@
 								{:else if kind === 'image_single'}
 									<div class="flex items-center gap-2">
 										<button type="button" onclick={() => openPicker(f.id)}
-											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)] disabled:opacity-50">
+											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)] disabled:opacity-50">
 											<ImagePlus size={14} /> {fieldValues[f.id] ? t('products.change_image', 'Change image') : t('products.pick_image', 'Pick image')}
 										</button>
 										{#if fieldValues[f.id]}
@@ -385,7 +385,7 @@
 								{:else if kind === 'image_multi'}
 									<div class="flex items-center gap-2">
 										<button type="button" onclick={() => openPicker('multi:' + f.id)}
-											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)] disabled:opacity-50">
+											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)] disabled:opacity-50">
 											<ImagePlus size={14} /> {t('products.add_image', 'Add image')}
 										</button>
 										<span class="text-xs text-[var(--color-muted)]">{Array.isArray(fieldValues[f.id]) ? fieldValues[f.id].length : 0}</span>
@@ -431,12 +431,12 @@
 							</button>
 						</div>
 						<button type="button" onclick={() => openPicker('logo')}
-							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary)] disabled:opacity-50">
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/60 hover:text-[var(--color-primary-text)] disabled:opacity-50">
 							<ImagePlus size={13} /> {t('products.change_image', 'Change image')}
 						</button>
 					{:else}
 						<button type="button" onclick={() => openPicker('logo')}
-							class="flex h-16 w-full max-w-40 flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)] disabled:opacity-50">
+							class="flex h-16 w-full max-w-40 flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)] disabled:opacity-50">
 							<ImagePlus size={18} />
 							<span class="text-[11px] font-medium">{t('products.pick_image', 'Pick image')}</span>
 						</button>
@@ -458,7 +458,7 @@
 					{/each}
 					<button type="button" onclick={() => openPicker('gallery')}
 						aria-label={t('products.add_image', 'Add image')}
-						class="flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)] disabled:opacity-50">
+						class="flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)]/60 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)] disabled:opacity-50">
 						<ImagePlus size={16} />
 						<span class="text-[10px] font-medium">{t('products.add_image', 'Add image')}</span>
 					</button>

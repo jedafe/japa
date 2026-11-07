@@ -159,7 +159,7 @@
 				<div class="flex flex-wrap items-center gap-2">
 					<h1 class="text-lg font-bold">{source.name}</h1>
 					{#if source.trust_level > 0}
-						<span class="rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-xs font-medium text-[var(--color-primary)]">
+						<span class="rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-xs font-medium text-[var(--color-primary-text)]">
 							{sourceTrustLabel(source.trust_level)}
 						</span>
 					{/if}
@@ -203,7 +203,7 @@
 						{@const tagSlug = source.tag_slugs?.[kw] ?? ''}
 						<a
 							href="/tags/{tagSlug}"
-							class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-xs text-[var(--color-text-subtle)] transition hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
+							class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-xs text-[var(--color-text-subtle)] transition hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary-text)]"
 						>
 							{kw}
 						</a>
@@ -214,7 +214,7 @@
 			{#if source.linked_entity}
 				<a
 					href={source.linked_entity.href}
-					class="mt-1 inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
+					class="mt-1 inline-flex items-center gap-1 text-sm text-[var(--color-primary-text)] hover:underline"
 				>
 					{t('sources.view_profile', 'View {type} profile').replace('{type}', source.linked_entity.type)}
 					<ExternalLink class="h-3 w-3 rtl:-scale-x-100" />
@@ -226,7 +226,7 @@
 			{#if source.source_type === 'video_channel' && source.channel_username}
 				<a
 					href="/u/{source.channel_username}/claim"
-					class="mt-1 inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
+					class="mt-1 inline-flex items-center gap-1 text-sm text-[var(--color-primary-text)] hover:underline"
 				>
 					{t('video.claim_or_report', 'Is this your channel? Claim or report it')}
 				</a>
@@ -284,7 +284,7 @@
 					aria-pressed={!data.entityType}
 					class="rounded-full px-3 py-1 text-xs font-medium transition-colors {!data.entityType
 						? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-						: 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]'}"
+						: 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] hover:text-[var(--color-primary-text)]'}"
 				>
 					{t('sources.items.all', 'All')}
 				</button>
@@ -295,7 +295,7 @@
 						aria-pressed={data.entityType === et.value}
 						class="rounded-full px-3 py-1 text-xs font-medium transition-colors {data.entityType === et.value
 							? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
-							: 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]'}"
+							: 'bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)] hover:text-[var(--color-primary-text)]'}"
 					>
 						{entityTypePillLabel(et.value)}
 					</button>

@@ -336,7 +336,7 @@
 
 {#if slug}
 	<LinkPreview.Root {open} onOpenChange={onOpenChange} openDelay={350} closeDelay={200}>
-		<LinkPreview.Trigger class={triggerClass} onclick={onTriggerClick}>
+		<LinkPreview.Trigger class={triggerClass} onclick={onTriggerClick} aria-label={name}>
 			{#if trigger}
 				{@render trigger()}
 			{:else}
@@ -415,7 +415,7 @@
 									href={websiteHref}
 									target="_blank"
 									rel="noopener noreferrer"
-									class="inline-flex max-w-[10rem] items-center gap-1 truncate hover:text-[var(--color-primary)]"
+									class="inline-flex max-w-[10rem] items-center gap-1 truncate hover:text-[var(--color-primary-text)]"
 									onclick={(e) => e.stopPropagation()}
 								>
 									<Globe size={12} />

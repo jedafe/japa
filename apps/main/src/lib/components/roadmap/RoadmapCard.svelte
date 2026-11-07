@@ -26,13 +26,13 @@
 			<div class="flex items-start justify-between gap-2">
 				<a
 					href="/roadmap/{item.slug}"
-					class="text-sm font-semibold leading-snug text-[var(--color-text)] hover:text-[var(--color-primary)]"
+					class="text-sm font-semibold leading-snug text-[var(--color-text)] hover:text-[var(--color-primary-text)]"
 				>
 					{item.title}
 				</a>
 				{#if item.is_flagship}
 					<span
-						class="shrink-0 text-[var(--color-primary)]"
+						class="shrink-0 text-[var(--color-primary-text)]"
 						title={t('roadmap.flagship', 'Flagship')}
 						aria-label={t('roadmap.flagship', 'Flagship')}
 					>

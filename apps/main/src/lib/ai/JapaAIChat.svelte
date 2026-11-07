@@ -1472,7 +1472,7 @@
 				<button
 					type="button"
 					onclick={() => openProjectDialog('create')}
-					class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+					class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-primary-text)]"
 					aria-label={t('ai.projects.new', 'New project')}
 					title={t('ai.projects.new', 'New project')}
 				>
@@ -1481,7 +1481,7 @@
 				<button
 					type="button"
 					onclick={startNewChat}
-					class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+					class="inline-flex items-center gap-1 text-xs text-[var(--color-primary-text)] hover:underline"
 				>
 					<Plus size={14} />
 					{t('ai.chat.new', 'New')}
@@ -1713,7 +1713,7 @@
 										e.stopPropagation();
 										assignProject(conv.conversation_id, p.id);
 									}}
-									class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs hover:bg-[var(--color-surface-subtle)] {conv.project_id === p.id ? 'font-medium text-[var(--color-primary)]' : 'text-[var(--color-text)]'}"
+									class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-xs hover:bg-[var(--color-surface-subtle)] {conv.project_id === p.id ? 'font-medium text-[var(--color-primary-text)]' : 'text-[var(--color-text)]'}"
 								>
 									<Folder size={11} class="shrink-0 text-[var(--color-muted)]" />
 									<span class="flex-1 truncate">{p.name}</span>
@@ -1784,7 +1784,7 @@
 						onclick={() => (templatePanelOpen = !templatePanelOpen)}
 						class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors"
 						style={templatePanelOpen
-							? 'border-color: var(--color-primary); color: var(--color-primary); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)'
+							? 'border-color: var(--color-primary); color: var(--color-primary-text); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)'
 							: 'border-color: var(--color-border); color: var(--color-muted)'}
 						title={t('ai.templates.toggle', 'Chat templates')}
 					>
@@ -1823,7 +1823,7 @@
 			{:else}
 				{#if loadingConversation}
 					<div class="absolute inset-0 z-10 flex items-center justify-center bg-[var(--color-surface)]/80">
-						<Loader2 class="h-6 w-6 animate-spin" style="color: var(--color-primary)" />
+						<Loader2 class="h-6 w-6 animate-spin" style="color: var(--color-primary-text)" />
 					</div>
 				{/if}
 				<div class="mx-auto w-full max-w-3xl space-y-6 px-1 py-3 sm:px-4">
@@ -1924,7 +1924,7 @@
 															<a
 																href={l.href}
 																class="rounded-full border px-1.5 py-0.5 underline-offset-2 hover:underline"
-																style="border-color: var(--color-border); color: var(--color-primary)"
+																style="border-color: var(--color-border); color: var(--color-primary-text)"
 																target="_blank"
 																rel="noopener noreferrer">{l.label}</a
 															>
@@ -2044,7 +2044,7 @@
 			<div class="mb-2 flex items-center gap-2 text-xs">
 				<span
 					class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1"
-					style="border-color: var(--color-primary); color: var(--color-primary); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)"
+					style="border-color: var(--color-primary); color: var(--color-primary-text); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)"
 				>
 					{t('ai.templates.sent_with', 'Template')}: {activeTemplateLabel}
 					<button
@@ -2092,7 +2092,7 @@
 						onclick={() => (toolsOpen = !toolsOpen)}
 						class="flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs transition-colors {toolsOn ? 'font-medium' : ''}"
 						style={toolsOn
-							? 'border-color: var(--color-primary); color: var(--color-primary); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)'
+							? 'border-color: var(--color-primary); color: var(--color-primary-text); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)'
 							: 'border-color: var(--color-border); color: var(--color-muted)'}
 						title={t('ai.tools.configure', 'Configure tools')}
 					>

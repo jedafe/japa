@@ -12,6 +12,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/notifications"
 	"github.com/jedafe/japa/internal/wallet"
@@ -44,8 +45,19 @@ func (s *Service) CanViewComments(ctx context.Context, contentID, viewerID pgtyp
 	if err != nil {
 		return false, fmt.Errorf("checking comment visibility: %w", err)
 	}
+	if !visible {
+		return false, nil
+	}
 
-	return visible, nil
+	// §42: a feature-flagged-off parent type is unreachable — comments on
+	// it are as invisible as the content itself, for list/get/create alike.
+	if gated, err := s.parentFlagUnreachable(ctx, contentID); err != nil {
+		return false, err
+	} else if gated {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // CreateComment creates a new comment or reply. The depth is computed from the
@@ -1117,8 +1129,9 @@ func (s *Service) CountCommentsByContent(ctx context.Context, contentID pgtype.U
 // PK; the trg_comment_views_increment trigger bumps comments.view_count.
 func (s *Service) RecordCommentView(ctx context.Context, commentID, userID pgtype.UUID) error {
 	if err := s.write.InsertCommentView(ctx, gen.InsertCommentViewParams{
-		CommentID: commentID,
-		UserID:    userID,
+		CommentID:  commentID,
+		UserID:     userID,
+		GatedTypes: features.GatedContentTypes(ctx, s.flags),
 	}); err != nil {
 		return fmt.Errorf("recording comment view: %w", err)
 	}
@@ -1137,6 +1150,7 @@ func (s *Service) RecordCommentViews(ctx context.Context, commentIDs []pgtype.UU
 	if err := s.write.InsertCommentViews(ctx, gen.InsertCommentViewsParams{
 		CommentIds: commentIDs,
 		UserID:     userID,
+		GatedTypes: features.GatedContentTypes(ctx, s.flags),
 	}); err != nil {
 		return fmt.Errorf("recording comment views: %w", err)
 	}

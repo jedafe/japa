@@ -1518,15 +1518,17 @@ type SpaceStat struct {
 // CountSpaceStats returns live member, post and follower counts for a set of
 // spaces. Counts are computed from the authoritative tables rather than the
 // denormalised columns, which can drift (e.g. negative member_count).
-func (s *Service) CountSpaceStats(ctx context.Context, spaceIDs []pgtype.UUID) (map[string]SpaceStat, error) {
+// gatedTypes carries the content_types hidden for this caller (§42) so
+// post/discussion counts exclude feature-flagged rows.
+func (s *Service) CountSpaceStats(ctx context.Context, spaceIDs []pgtype.UUID, gatedTypes []string) (map[string]SpaceStat, error) {
 	if len(spaceIDs) == 0 {
 		return map[string]SpaceStat{}, nil
 	}
 
-	rows, err := s.read.CountSpaceStats(ctx,
-
-		spaceIDs,
-	)
+	rows, err := s.read.CountSpaceStats(ctx, gen.CountSpaceStatsParams{
+		SpaceIds:   spaceIDs,
+		GatedTypes: gatedTypes,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("counting space stats: %w", err)
 	}

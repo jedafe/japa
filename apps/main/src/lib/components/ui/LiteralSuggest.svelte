@@ -172,7 +172,7 @@
 						onmousedown={(e) => e.preventDefault()}
 						onclick={() => pick(hit)}
 					>
-						<code class="text-xs text-[var(--color-primary)]">{'{{'}{hit.slug ?? hit.id}{'}}'}</code>
+						<code class="text-xs text-[var(--color-primary-text)]">{'{{'}{hit.slug ?? hit.id}{'}}'}</code>
 						<span class="truncate text-[var(--color-muted)]">{hit.label}</span>
 					</button>
 				</li>

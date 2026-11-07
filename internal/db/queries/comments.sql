@@ -373,9 +373,12 @@ LIMIT @page_limit;
 -- Public "Replies" tab: comments the user authored on published+public content,
 -- with parent-content title/slug for context. Public-safe: comments on
 -- draft/private content and soft-deleted comments are excluded.
+-- §42: gated_types carries the content_types whose feature flag is
+-- unreachable for this caller — replies on those parents are excluded so
+-- page totals and rows agree (no empty-page drift or count leak).
 SELECT c.id, c.content_id, c.parent_id, c.body, c.vote_score,
  c.created_at,
- ct.title AS content_title, ct.slug AS content_slug
+ ct.title AS content_title, ct.slug AS content_slug, ct.content_type
 FROM comments c
 JOIN contents ct ON ct.id = c.content_id
 WHERE c.author_user_id = @author_user_id
@@ -384,6 +387,7 @@ WHERE c.author_user_id = @author_user_id
  AND c.is_anonymous = false
  AND ct.status = 'published'
  AND ct.visibility = 'public'
+ AND NOT (ct.content_type = ANY(COALESCE(@gated_types::text[], '{}'::text[])))
 ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -396,7 +400,8 @@ WHERE c.author_user_id = @author_user_id
  AND c.status = 'published'
  AND c.is_anonymous = false
  AND ct.status = 'published'
- AND ct.visibility = 'public';
+ AND ct.visibility = 'public'
+ AND NOT (ct.content_type = ANY(COALESCE(@gated_types::text[], '{}'::text[])));
 
 -- name: CountTopLevelCommentsByContent :one
 -- Top-level published comments only — drives the frontend load-more meta.
@@ -526,22 +531,29 @@ WHERE l.content_id = @content_id
 -- trg_comment_views_increment trigger bumps comments.view_count.
 -- The EXISTS guard silently skips nonexistent, deleted, or removed comments
 -- so a view ping can never 500 on a dangling FK.
+-- §42: gated_types carries the content_types whose feature flag is
+-- unreachable for this caller — comments on those parents accrue no views.
 INSERT INTO comment_views (comment_id, user_id)
 SELECT @comment_id, @user_id
 WHERE EXISTS (
     SELECT 1 FROM comments c
+    JOIN contents ct ON ct.id = c.content_id
     WHERE c.id = @comment_id AND c.deleted_at IS NULL AND c.status = 'published'
+      AND NOT (ct.content_type = ANY(COALESCE(@gated_types::text[], '{}'::text[])))
 )
 ON CONFLICT DO NOTHING;
 
 -- name: InsertCommentViews :exec
 -- Batch view recording (Guide §4.3 — one round trip per thread, not per
 -- comment). Same live-comment guard + idempotency as InsertCommentView.
+-- §42: gated_types skips comments on feature-flag-unreachable parents.
 INSERT INTO comment_views (comment_id, user_id)
 SELECT v.comment_id, @user_id
 FROM unnest(@comment_ids::uuid[]) AS v(comment_id)
 WHERE EXISTS (
     SELECT 1 FROM comments c
+    JOIN contents ct ON ct.id = c.content_id
     WHERE c.id = v.comment_id AND c.deleted_at IS NULL AND c.status = 'published'
+      AND NOT (ct.content_type = ANY(COALESCE(@gated_types::text[], '{}'::text[])))
 )
 ON CONFLICT DO NOTHING;

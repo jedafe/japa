@@ -383,7 +383,7 @@
 					{:else}
 						<div class="w-full px-4 py-6 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-center">
 							<Upload size={32} class="mx-auto text-[var(--color-muted)] mb-2" />
-							<label for="cvf-file" class="cursor-pointer text-sm text-[var(--color-primary)] hover:underline">
+							<label for="cvf-file" class="cursor-pointer text-sm text-[var(--color-primary-text)] hover:underline">
 								{t('cv_formatter.choose_file', 'Choose a PDF or DOCX file')}
 							</label>
 							<input
@@ -445,7 +445,7 @@
 				<div class="px-4 py-4 space-y-4">
 					{#if session.status === 'pending' || session.status === 'processing'}
 						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 flex items-center gap-3">
-							<Loader2 size={20} class="animate-spin text-[var(--color-primary)]" />
+							<Loader2 size={20} class="animate-spin text-[var(--color-primary-text)]" />
 							<div>
 								<p class="text-sm font-medium text-[var(--color-text)]">
 									{t('cv_formatter.processing', 'Formatting your CV…')}
@@ -457,7 +457,7 @@
 						</div>
 					{:else if session.status === 'failed'}
 						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 flex items-start gap-3">
-							<XCircle size={20} class="text-[var(--color-primary)] flex-shrink-0 mt-0.5" />
+							<XCircle size={20} class="text-[var(--color-primary-text)] flex-shrink-0 mt-0.5" />
 							<div>
 								<p class="text-sm font-medium text-[var(--color-text)]">
 									{t('cv_formatter.failed', 'Formatting failed')}
@@ -526,7 +526,7 @@
 	{#if showRegisterPrompt}
 		<div class="px-4 py-4">
 			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-center">
-				<div class="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-primary)]">
+				<div class="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]">
 					<Sparkles size={20} />
 				</div>
 				<p class="text-sm font-medium text-[var(--color-text)]">

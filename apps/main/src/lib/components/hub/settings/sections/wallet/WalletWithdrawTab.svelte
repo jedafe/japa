@@ -359,7 +359,7 @@
 							<p class="text-[var(--color-muted)]">{m.account}{m.currency_code ? ` (${m.currency_code})` : ''}</p>
 						</div>
 						{#if m.is_default}
-							<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">{t('wallet.withdraw.default', 'Default')}</span>
+							<span class="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-primary-text)]">{t('wallet.withdraw.default', 'Default')}</span>
 						{/if}
 					</li>
 				{/each}

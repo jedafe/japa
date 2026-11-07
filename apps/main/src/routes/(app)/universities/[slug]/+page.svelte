@@ -277,7 +277,7 @@
 				/>
 			{:else}
 				<span
-					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]"
 				>
 					<GraduationCap size={24} />
 				</span>
@@ -305,7 +305,7 @@
 						<dt class="text-[var(--color-muted)]">{fact.label}</dt>
 						<dd class="text-end text-[var(--color-text)]">
 							{#if fact.href}
-								<a href={fact.href} class="break-all text-[var(--color-primary)] hover:underline" target="_blank" rel="noopener">
+								<a href={fact.href} class="break-all text-[var(--color-primary-text)] hover:underline" target="_blank" rel="noopener">
 									{fact.value}
 								</a>
 							{:else}
@@ -345,7 +345,7 @@
 				/>
 			{:else}
 				<span
-					class="grid h-14 w-14 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+					class="grid h-14 w-14 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]"
 				>
 					<GraduationCap size={26} />
 				</span>
@@ -353,7 +353,7 @@
 			<div class="min-w-0 flex-1">
 				<div class="flex items-center gap-2">
 					{#if university.initials}
-						<span class="shrink-0 rounded bg-[var(--color-primary)]/10 px-2 py-0.5 text-sm font-semibold text-[var(--color-primary)]"
+						<span class="shrink-0 rounded bg-[var(--color-primary)]/10 px-2 py-0.5 text-sm font-semibold text-[var(--color-primary-text)]"
 							>{university.initials}</span>
 					{/if}
 					<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">{university.name}</h1>
@@ -469,7 +469,7 @@
 								href={wikiData.content_url ?? wikiData.wikipedia_url}
 								target="_blank"
 								rel="noopener noreferrer"
-								class="text-[var(--color-primary)] hover:underline"
+								class="text-[var(--color-primary-text)] hover:underline"
 							>
 								{t('university.wiki_source', 'Read more on Wikipedia →')}
 							</a>
@@ -489,7 +489,7 @@
 								<dd class="truncate text-[var(--color-text)]">
 									{#if field.field_type === 'url' || field.field_type === 'email'}
 										{#if field.field_type === 'email'}
-											<a href={`mailto:${field.value}`} class="text-[var(--color-primary)] hover:underline">
+											<a href={`mailto:${field.value}`} class="text-[var(--color-primary-text)] hover:underline">
 												{field.value.replace(/^https?:\/\//, '').replace(/\/$/, '')}
 											</a>
 										{:else if /^https?:\/\//i.test(String(field.value ?? '').trim())}
@@ -497,7 +497,7 @@
 												href={field.value}
 												target="_blank"
 												rel="noopener noreferrer"
-												class="text-[var(--color-primary)] hover:underline"
+												class="text-[var(--color-primary-text)] hover:underline"
 											>
 												{field.value.replace(/^https?:\/\//, '').replace(/\/$/, '')}
 											</a>
@@ -519,7 +519,7 @@
 											href={fact.href}
 											target="_blank"
 											rel="noopener noreferrer"
-											class="text-[var(--color-primary)] hover:underline"
+											class="text-[var(--color-primary-text)] hover:underline"
 										>
 											{fact.value}
 										</a>
@@ -571,7 +571,7 @@
 					{/if}
 					<a
 						href="/wiki/{encodeURIComponent(university.slug)}"
-						class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"
+						class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 						data-sveltekit-preload-data="hover"
 					>
 						{t('space.view_wiki', 'View wiki')}
@@ -703,7 +703,7 @@
 						{#each Array(5) as _, i}
 							<Star
 								size={16}
-								class={i < Math.round(averageRating) ? 'fill-[var(--color-primary)] text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}
+								class={i < Math.round(averageRating) ? 'fill-[var(--color-primary)] text-[var(--color-primary-text)]' : 'text-[var(--color-muted)]'}
 							/>
 						{/each}
 					</div>
@@ -785,7 +785,7 @@
 												{#each Array(5) as _, i}
 													<Star
 														size={14}
-														class={i < review.rating ? 'fill-[var(--color-primary)] text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}
+														class={i < review.rating ? 'fill-[var(--color-primary)] text-[var(--color-primary-text)]' : 'text-[var(--color-muted)]'}
 													/>
 												{/each}
 											</div>
@@ -837,7 +837,7 @@
 					class="flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 				>
 					<span class="flex items-center gap-2.5">
-						<GitCompare size={20} class="text-[var(--color-primary)]" />
+						<GitCompare size={20} class="text-[var(--color-primary-text)]" />
 						<span class="min-w-0">
 							<span class="block text-sm font-medium text-[var(--color-text)]">
 								{t('university.compare_title', 'Compare with other universities')}
@@ -858,7 +858,7 @@
 			class="mt-3 flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
 			<span class="flex items-center gap-2.5">
-				<MessageSquare size={20} class="text-[var(--color-primary)]" />
+				<MessageSquare size={20} class="text-[var(--color-primary-text)]" />
 				<span class="min-w-0">
 					<span class="block text-sm font-medium text-[var(--color-text)]">
 						{t('university.discussions', 'View discussions')}

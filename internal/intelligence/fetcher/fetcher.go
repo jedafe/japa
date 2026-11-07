@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -63,6 +64,47 @@ type FetchResult struct {
 	// Adapters that do not follow redirects may leave it empty; callers
 	// fall back to the entry URL.
 	FinalURL string
+	// ViaMethod records which crawl method actually produced the body —
+	// the channel's method on a primary fetch, the ladder hop's method on
+	// a fallback save. Composite sets it; single-adapter callers may leave
+	// it empty (meaning "the requested method").
+	ViaMethod string
+	// NotModified marks a 304 answer to a conditional request: the
+	// upstream confirmed the content is unchanged, so Body/ContentHash
+	// are empty and the caller must persist nothing — the crawl itself
+	// still counts as a success.
+	NotModified bool
+}
+
+// conditionalHeadersKey carries the previous capture's cache validators
+// through context so plain-GET adapters can send If-None-Match /
+// If-Modified-Since — an unchanged upstream then answers 304 instead of
+// re-shipping the body (fewer bytes upstream, no document churn).
+type conditionalHeadersKey struct{}
+
+// WithConditionals attaches prior-capture validators to the context —
+// the worker calls it after loading the channel's previous http_headers.
+// With no validators the context returns unchanged.
+func WithConditionals(ctx context.Context, etag, lastModified string) context.Context {
+	if etag == "" && lastModified == "" {
+		return ctx
+	}
+
+	return context.WithValue(ctx, conditionalHeadersKey{}, [2]string{etag, lastModified})
+}
+
+// applyConditionals sets If-None-Match / If-Modified-Since on the request
+// when the caller carried prior validators on the context.
+func applyConditionals(ctx context.Context, req *http.Request) {
+	v, _ := ctx.Value(conditionalHeadersKey{}).([2]string)
+
+	if v[0] != "" {
+		req.Header.Set("If-None-Match", v[0])
+	}
+
+	if v[1] != "" {
+		req.Header.Set("If-Modified-Since", v[1])
+	}
 }
 
 // NormalizeForHash produces a stable hash key from raw bytes.

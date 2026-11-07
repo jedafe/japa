@@ -132,7 +132,7 @@
 
 <div class="mx-auto w-full max-w-2xl px-4 py-6">
 	<div class="mb-5 flex items-center gap-2">
-		<Trophy size={20} class="text-[var(--color-primary)]" />
+		<Trophy size={20} class="text-[var(--color-primary-text)]" />
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">
 			{t('achievements.edit_heading', 'Edit Achievement')}
 		</h1>

@@ -25,7 +25,7 @@ func TestIsEnabledFor(t *testing.T) {
 		want    bool
 	}{
 		{"enabled and visible → allowed", stubJobChecker{eval: features.EvalResult{Enabled: true, Visible: true}}, true},
-		{"enabled but invisible → denied", stubJobChecker{eval: features.EvalResult{Enabled: true, Visible: false}}, false},
+		{"enabled but hidden → still serves (Gate parity)", stubJobChecker{eval: features.EvalResult{Enabled: true, Visible: false}}, true},
 		{"disabled globally → denied", stubJobChecker{eval: features.EvalResult{Enabled: false, Visible: false}}, false},
 		{"nil checker + nil settings → allowed (fail-open default)", nil, true},
 	}

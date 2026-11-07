@@ -76,7 +76,7 @@
 	disabled={loading}
 	onmouseenter={ensureConfig}
 	class={compact
-		? 'group/btn flex shrink-0 items-center justify-center rounded-full p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] disabled:opacity-50 ' + cls
+		? 'group/btn flex shrink-0 items-center justify-center rounded-full p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary-text)] disabled:opacity-50 ' + cls
 		: 'inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition hover:bg-muted disabled:opacity-50 ' + cls}
 	title={t('tips.title')}
 >

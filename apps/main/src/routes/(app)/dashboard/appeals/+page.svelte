@@ -201,7 +201,7 @@
 							<span>·</span>
 							<a
 								href={ticketHref({ id: appeal.ticket_id, ticket_number: appeal.ticket_number })}
-								class="text-[var(--color-primary)] hover:underline"
+								class="text-[var(--color-primary-text)] hover:underline"
 							>
 								{t('appeals.view_ticket', 'View ticket')}
 							</a>

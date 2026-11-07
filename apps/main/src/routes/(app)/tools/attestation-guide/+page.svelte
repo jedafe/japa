@@ -418,7 +418,7 @@
 											{pathway.document_type}
 										</span>
 										{#if pathway.apostille_required}
-											<span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary)">
+											<span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary-text)">
 												{t('attestation_guide.apostille_required', 'Apostille required')}
 											</span>
 										{:else}
@@ -452,7 +452,7 @@
 											<ol class="space-y-3">
 												{#each pathway.pathway_steps as step, i (i)}
 													<li class="flex items-start gap-3">
-														<span class="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-xs font-semibold flex items-center justify-center">
+														<span class="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)] text-xs font-semibold flex items-center justify-center">
 															{i + 1}
 														</span>
 														<div class="text-sm text-[var(--color-text)] min-w-0">
@@ -465,7 +465,7 @@
 																				href={val}
 																				target="_blank"
 																				rel="noopener noreferrer"
-																				class="text-[var(--color-primary)] hover:underline break-all"
+																				class="text-[var(--color-primary-text)] hover:underline break-all"
 																			>
 																				{val}
 																			</a>
@@ -507,7 +507,7 @@
 									<div class="flex flex-wrap items-center gap-3 pt-2 border-t border-[var(--color-border)]">
 										<a
 											href="/tools/attestation-guide/{pathway.id}"
-										class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors"
+										class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] transition-colors"
 									>
 										{t('common.view_details', 'View details')}
 									</a>
@@ -515,7 +515,7 @@
 										href={buildApiUrl(`/attestation/${pathway.id}/export/pdf`, PUBLIC_JC_API_URL)}
 											target="_blank"
 											rel="noopener noreferrer"
-											class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors"
+											class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] transition-colors"
 										>
 											<Download size={16} />
 											{t('attestation_guide.download_pdf', 'Export pathway')}
@@ -629,7 +629,7 @@
 								type="button"
 								onclick={loadMorePathways}
 								disabled={loadingMore}
-								class="px-4 py-2 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors disabled:opacity-50"
+								class="px-4 py-2 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] transition-colors disabled:opacity-50"
 							>
 								{loadingMore ? t('common.loading', 'Loading...') : t('common.load_more', 'Load more')}
 							</button>
@@ -644,7 +644,7 @@
 		<div class="p-4">
 			<div class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]">
 				{t('register.add_update_desc', 'Create a free account to share your attestation experience and help others navigate the process.')}
-				<a href="/login" class="ms-1 text-[var(--color-primary)] hover:underline">{t('common.sign_in', 'Sign in')}</a>.
+				<a href="/login" class="ms-1 text-[var(--color-primary-text)] hover:underline">{t('common.sign_in', 'Sign in')}</a>.
 			</div>
 		</div>
 	{/if}

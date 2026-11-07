@@ -144,7 +144,7 @@
 	<div class="mt-4">
 		<a
 			href="/dashboard/relationships"
-			class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline"
+			class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 		>
 			{t('settings.privacy.blocked_users', 'Manage blocked users')}
 		</a>
@@ -158,7 +158,7 @@
 	<div class="mt-4 border-t border-[var(--color-border)] pt-4">
 		<a
 			href="/me/blocked-sources"
-			class="text-sm font-medium text-[var(--color-primary)] hover:underline"
+			class="text-sm font-medium text-[var(--color-primary-text)] hover:underline"
 		>
 			{t('settings.privacy.blocked_sources', 'Manage blocked sources')}
 		</a>

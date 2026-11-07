@@ -50,6 +50,17 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 			items = []gen.SearchContentsBySpaceRow{}
 		}
 
+		// §42: prune items whose content_type is hidden or disabled for this
+		// caller — a gated feature's posts must not surface in space search.
+		filtered := items[:0]
+		for _, it := range items {
+			if h.contentTypeHidden(r.Context(), it.ContentType) {
+				continue
+			}
+			filtered = append(filtered, it)
+		}
+		items = filtered
+
 		// Resolve template literals in titles/excerpts (best-effort).
 		if err := h.content.ResolveContentFields(r.Context(), &items, literals.NewRequestContext(r, "")); err != nil {
 			slog.Warn("spaces: failed to resolve content literals", "error", err)
@@ -83,6 +94,17 @@ func (h *Handlers) ListSpaceContent(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []gen.ListContentsBySpaceRow{}
 	}
+
+	// §42: prune items whose content_type is hidden or disabled for this
+	// caller — a gated feature's posts must not surface in space listings.
+	filtered := items[:0]
+	for _, it := range items {
+		if h.contentTypeHidden(r.Context(), it.ContentType) {
+			continue
+		}
+		filtered = append(filtered, it)
+	}
+	items = filtered
 
 	// Resolve template literals in titles/excerpts (best-effort).
 	if err := h.content.ResolveContentFields(r.Context(), &items, literals.NewRequestContext(r, "")); err != nil {
@@ -119,6 +141,17 @@ func (h *Handlers) ListPinned(w http.ResponseWriter, r *http.Request) {
 	if pins == nil {
 		pins = []gen.ListPinnedContentBySpaceRow{}
 	}
+
+	// §42: prune pins whose content_type is hidden or disabled for this
+	// caller — a gated feature's posts must not surface in pinned tabs.
+	filteredPins := pins[:0]
+	for _, p := range pins {
+		if h.contentTypeHidden(r.Context(), p.ContentType) {
+			continue
+		}
+		filteredPins = append(filteredPins, p)
+	}
+	pins = filteredPins
 
 	// Resolve template literals in pinned-card titles/excerpts (best-effort).
 	if err := h.content.ResolveContentFields(r.Context(), &pins, literals.NewRequestContext(r, "")); err != nil {

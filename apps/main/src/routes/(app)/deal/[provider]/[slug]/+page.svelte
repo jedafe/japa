@@ -232,7 +232,7 @@
 			<!-- Title + lede -->
 			<div class="flex items-start gap-3">
 				<span
-					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]"
 				>
 					<Ticket size={24} />
 				</span>
@@ -262,7 +262,7 @@
 						{/if}
 						{#if coupon.is_verified}
 							<span
-								class="inline-flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-primary)]"
+								class="inline-flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-primary-text)]"
 							>
 								<BadgeCheck size={14} />
 								{t('coupons.verified', 'Verified')}
@@ -291,7 +291,7 @@
 						<p class="mt-2 text-sm text-red-500" role="alert">{copyError}</p>
 					{/if}
 					{#if discountLabel}
-						<span class="text-base font-semibold text-[var(--color-primary)]"
+						<span class="text-base font-semibold text-[var(--color-primary-text)]"
 							>{discountLabel}</span
 						>
 					{/if}
@@ -383,12 +383,12 @@
 							>
 								<div class="min-w-0 flex-1">
 									<p
-										class="truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+										class="truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]"
 									>
 										{rel.title}
 									</p>
 									{#if relLabel}
-										<span class="text-xs font-medium text-[var(--color-primary)]">
+										<span class="text-xs font-medium text-[var(--color-primary-text)]">
 											{relLabel}
 										</span>
 									{/if}

@@ -132,7 +132,7 @@
 	<div class="flex flex-1 flex-col gap-2 p-4">
 		<h2 class="line-clamp-2 text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
 			<!-- relative z-10 keeps the title link above the full-card overlay anchor. -->
-			<a href={item.href} class="relative z-10 transition-colors hover:text-[var(--color-primary)]">{item.title}</a>
+			<a href={item.href} class="relative z-10 transition-colors hover:text-[var(--color-primary-text)]">{item.title}</a>
 		</h2>
 
 		{#if item.excerpt}

@@ -153,7 +153,7 @@
 			<div class="flex items-start justify-between gap-3">
 				<div class="min-w-0 flex-1">
 					<div class="mb-2 flex items-center gap-2">
-						<Sparkles size={16} style="color: var(--color-primary)" />
+						<Sparkles size={16} style="color: var(--color-primary-text)" />
 						<span class="text-xs font-mono" style="color: var(--color-muted)">{session.id}</span>
 					</div>
 					<p class="text-base font-medium" style="color: var(--color-text)">{session.prompt}</p>
@@ -195,7 +195,7 @@
 				{#if projectName}
 					<span
 						class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
-						style="background-color: var(--color-primary-subtle); color: var(--color-primary)"
+						style="background-color: var(--color-primary-subtle); color: var(--color-primary-text)"
 					>
 						<Folder size={10} />
 						{projectName}

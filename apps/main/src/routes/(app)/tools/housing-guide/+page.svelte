@@ -227,7 +227,7 @@
 										</span>
 									{/if}
 									{#if guide.accommodation_type}
-										<span class="text-xs px-2 py-0.5 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full font-medium">
+										<span class="text-xs px-2 py-0.5 bg-[var(--color-primary)]/10 text-[var(--color-primary-text)] rounded-full font-medium">
 											{guide.accommodation_type}
 										</span>
 									{/if}
@@ -321,7 +321,7 @@
 										{#if page.data.features?.['scam_alert.enabled']}
 											<a
 												href="/scam-alerts?scam_type=housing_fraud&dest={guide.destination_space_id}"
-												class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline"
+												class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)] hover:underline"
 											>
 												{t('scam_alerts.see_alerts', 'See housing scam alerts for this destination')} →
 											</a>
@@ -346,7 +346,7 @@
 								{/if}
 								<a
 									href="/tools/housing-guide/{guide.id}"
-									class="inline-flex items-center gap-1.5 pt-2 text-sm text-[var(--color-primary)] hover:underline"
+									class="inline-flex items-center gap-1.5 pt-2 text-sm text-[var(--color-primary-text)] hover:underline"
 								>
 									{t('common.view_details', 'View details')}
 								</a>

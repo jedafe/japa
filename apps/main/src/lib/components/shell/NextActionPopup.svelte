@@ -137,7 +137,7 @@
 				</div>
 
 				<div class="px-5 pb-5 pt-4">
-					<p class="inline-flex items-center rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+					<p class="inline-flex items-center rounded-full bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-primary-text)]">
 						{action.badge || t('nextaction.next_step', 'Your next step')}
 					</p>
 					<Dialog.Title class="mt-2 text-lg font-semibold leading-snug text-[var(--color-text)]">

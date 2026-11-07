@@ -92,7 +92,7 @@
 	>
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-2">
-				<Newspaper size={18} class="text-[var(--color-primary)]" />
+				<Newspaper size={18} class="text-[var(--color-primary-text)]" />
 				<span class="text-sm font-semibold text-[var(--color-foreground)]">
 					{t('digest.widget_title', 'Community Digest')}
 				</span>

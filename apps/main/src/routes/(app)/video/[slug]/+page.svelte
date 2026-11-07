@@ -61,7 +61,7 @@
 		<div class="mt-3 flex flex-wrap items-center gap-3 text-sm text-[var(--color-text-muted)]">
 			{#if platformLabel}
 				<span
-					class="rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary)]"
+					class="rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-medium text-[var(--color-primary-text)]"
 					>{platformLabel}</span
 				>
 			{/if}
@@ -72,7 +72,7 @@
 				href={source.source_url}
 				target={source.source_url.startsWith('/api/') ? undefined : '_blank'}
 				rel="noopener noreferrer"
-				class="font-medium text-[var(--color-primary)] hover:underline"
+				class="font-medium text-[var(--color-primary-text)] hover:underline"
 			>
 				{t('video.watch_on', 'Watch on {platform}').replace('{platform}', platformLabel)}
 			</a>

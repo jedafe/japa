@@ -507,7 +507,7 @@
 								aria-pressed={selectedCategory === ''}
 								class="flex w-20 flex-col items-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium transition-colors {selectedCategory ===
 								''
-									? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+									? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 									: 'text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
 							>
 								<Tag size={20} />
@@ -523,7 +523,7 @@
 									aria-pressed={selectedCategory === category}
 									class="flex w-20 flex-col items-center gap-1.5 rounded-xl px-2 py-2 text-xs font-medium transition-colors {selectedCategory ===
 									category
-										? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+										? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]'
 										: 'text-[var(--color-text-subtle)] hover:text-[var(--color-text)]'}"
 								>
 									<TabIcon size={20} />
@@ -575,7 +575,7 @@
 											{cardTitle(coupon)}
 										</a>
 										{#if coupon.is_verified}
-											<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary)]" />
+											<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary-text)]" />
 										{/if}
 										{#if data.canManage}
 											<button
@@ -607,7 +607,7 @@
 											type="button"
 											onclick={() => copyCouponCode(coupon)}
 											aria-label={t('coupons.copy_code', 'Copy code')}
-											class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border-2 border-dashed border-[var(--color-primary)]/60 px-3 py-2 font-mono text-sm font-bold tracking-widest text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/5"
+											class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border-2 border-dashed border-[var(--color-primary)]/60 px-3 py-2 font-mono text-sm font-bold tracking-widest text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary)]/5"
 										>
 											{#if copiedId === coupon.id}
 												<Check size={15} />
@@ -619,7 +619,7 @@
 									{:else}
 										<a
 											href={dealPath(coupon)}
-											class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border-2 border-dashed border-[var(--color-primary)]/60 px-3 py-2 text-sm font-bold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/5"
+											class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full border-2 border-dashed border-[var(--color-primary)]/60 px-3 py-2 text-sm font-bold text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary)]/5"
 										>
 											<ExternalLink class="rtl:-scale-x-100" size={15} />
 											{t('coupons.claim', 'Claim')}
@@ -674,16 +674,16 @@
 										<div class="flex items-center gap-1.5">
 											<a
 												href={dealPath(coupon)}
-												class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary)] hover:underline"
+												class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)] hover:underline"
 											>
 												{coupon.title}
 											</a>
 											{#if coupon.is_verified}
-												<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
+												<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary-text)]" />
 											{/if}
 										</div>
 										{#if discountLabel(coupon)}
-											<span class="text-xs font-medium text-[var(--color-primary)]">
+											<span class="text-xs font-medium text-[var(--color-primary-text)]">
 												{discountLabel(coupon)}
 											</span>
 										{/if}
@@ -699,7 +699,7 @@
 									</td>
 									<td class="px-3 py-3">
 										<span
-											class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)]"
+											class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)]"
 										>
 											<ExternalLink class="rtl:-scale-x-100" size={12} />
 											{t('coupons.claim', 'Claim')}
@@ -733,7 +733,7 @@
 										{coupon.title}
 									</h2>
 									{#if coupon.is_verified}
-										<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
+										<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary-text)]" />
 									{/if}
 								</div>
 								<p class="mt-0.5 truncate text-xs text-[var(--color-text-subtle)]">
@@ -748,7 +748,7 @@
 							</a>
 							<div class="flex shrink-0 items-center gap-1">
 								<span
-									class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)]"
+									class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)]"
 								>
 									{#if discountLabel(coupon)}
 										{discountLabel(coupon)}

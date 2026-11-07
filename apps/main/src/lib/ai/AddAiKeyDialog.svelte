@@ -106,7 +106,7 @@
 					target="_blank"
 					rel="noopener"
 					onclick={() => trackByokReferral(selectedProvider.id)}
-					class="mt-1.5 inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
+					class="mt-1.5 inline-flex items-center gap-1 text-sm text-[var(--color-primary-text)] hover:underline"
 				>
 					{selectedProvider.signup_label || t('ai.byok.get_key', 'Get an API key')}
 					<ExternalLink class="h-3.5 w-3.5 rtl:-scale-x-100" />

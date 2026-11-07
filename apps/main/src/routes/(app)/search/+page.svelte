@@ -315,7 +315,7 @@
 								<button
 									type="button"
 									onclick={() => filterByType(filterTypeForGroup(group.type))}
-									class="text-sm text-[var(--color-primary)] hover:underline"
+									class="text-sm text-[var(--color-primary-text)] hover:underline"
 								>
 									{t('search.see_all', 'See all {n}').replace('{n}', String(group.total))} →
 								</button>

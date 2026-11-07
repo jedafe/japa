@@ -367,7 +367,7 @@
 													href={detailPathway.official_application_url}
 													target="_blank"
 													rel="noopener noreferrer"
-													class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+													class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
 												>
 													<ExternalLink class="rtl:-scale-x-100" size={14} />
 													{t('credential_checker.official_application', 'Official application')}
@@ -378,7 +378,7 @@
 													href={detailPathway.regulatory_body_url}
 													target="_blank"
 													rel="noopener noreferrer"
-													class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+													class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
 												>
 													<ExternalLink class="rtl:-scale-x-100" size={14} />
 													{t('credential_checker.regulatory_body', 'Regulatory body')}

@@ -21,6 +21,7 @@ import (
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/rag"
@@ -94,6 +95,9 @@ type Handlers struct {
 	// permChecker resolves static RBAC nodes (e.g. spaces.moderate for the
 	// private-space member-list gate). Wired by the server; nil-safe.
 	permChecker PermissionChecker
+	// flags gates space content listings on each row's content_type feature
+	// flag (§42); nil disables filtering.
+	flags features.FlagEvaluator
 
 	// tipSettings reports a space's tips_enabled flag for the
 	// monetization exclusivity gate (§05); nil-safe.
@@ -283,6 +287,19 @@ func (h *Handlers) invalidateTargetPermCache(ctx context.Context, targetUserID p
 	}
 
 	h.permCache.InvalidateUserCache(ctx, targetUserID)
+}
+
+// SetFeatureChecker injects the feature flag evaluator so space content
+// listings prune rows whose content_type is hidden or disabled for the
+// caller (§42). Optional — nil-safe.
+func (h *Handlers) SetFeatureChecker(c features.FlagEvaluator) { h.flags = c }
+
+// contentTypeHidden reports whether a content_type's feature flag is
+// disabled or hidden for this caller (§42) — the Enabled && Visible
+// projection contract.
+func (h *Handlers) contentTypeHidden(ctx context.Context, contentType string) bool {
+	res, ok := features.EvalContentType(ctx, h.flags, contentType)
+	return ok && !(res.Enabled && res.Visible)
 }
 
 // SetPermissionChecker wires the RBAC resolver for static permission

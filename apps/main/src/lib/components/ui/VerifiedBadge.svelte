@@ -32,6 +32,6 @@
 			style="width:{size}px;height:{size}px"
 		/>
 	{:else}
-		<BadgeCheck {size} class="shrink-0 text-[var(--color-primary)] {className}" />
+		<BadgeCheck {size} class="shrink-0 text-[var(--color-primary-text)] {className}" />
 	{/if}
 {/if}

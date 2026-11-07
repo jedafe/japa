@@ -14,7 +14,7 @@
 			<ul class="space-y-1.5">
 				{#each items as item (item.anchor)}
 					<li>
-						<a href={`#${item.anchor}`} class="block text-sm text-[var(--color-primary)] hover:underline">
+						<a href={`#${item.anchor}`} class="block text-sm text-[var(--color-primary-text)] hover:underline">
 							{item.label}
 						</a>
 					</li>

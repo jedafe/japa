@@ -184,7 +184,7 @@
 					>
 						<div class="flex items-start justify-between gap-2">
 							<h2
-								class="truncate text-sm font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+								class="truncate text-sm font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]"
 							>
 								{group.name}
 							</h2>

@@ -26,6 +26,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -67,7 +68,15 @@ type Handlers struct {
 	settings settingsReader
 	cache    valkeycompat.Cmdable // nil disables caching (tests)
 	trending TrendingReader       // nil disables content/spaces sourcing (tests)
+	flags    FeatureChecker       // §42: prune gated content types
 }
+
+// FeatureChecker is the feature-flag surface recommendations needs for
+// caller-scoped content-type filtering (§42).
+type FeatureChecker = features.FlagEvaluator
+
+// SetFeatureChecker wires the §42 feature checker.
+func (h *Handlers) SetFeatureChecker(c FeatureChecker) { h.flags = c }
 
 // NewHandlers creates Handlers for the recommendation engine. The trending
 // reader may be nil to disable content/spaces sourcing (e.g. in tests); in
@@ -427,6 +436,12 @@ func (h *Handlers) buildContentItems(ctx context.Context, vc visitor.VisitorCont
 			continue
 		}
 
+		// §42: skip content whose type's feature flag is hidden/disabled
+		// for this caller — the trending pool is scope-agnostic.
+		if features.ContentTypeHidden(ctx, h.flags, row.ContentType) {
+			continue
+		}
+
 		items = append(items, RecommendationContentItem{
 			ID:          row.ID_2.String(),
 			Title:       row.Title,
@@ -540,6 +555,17 @@ func (h *Handlers) serveFromCache(ctx context.Context, key string, limit int, w 
 	if !contextMatches(resp.Context, vc) {
 		return false
 	}
+
+	// §42: re-filter post-cache — the cached response was rendered under an
+	// earlier flag state/scope; gated content types must not leak through it.
+	filtered := resp.Content[:0]
+	for _, it := range resp.Content {
+		if features.ContentTypeHidden(ctx, h.flags, it.ContentType) {
+			continue
+		}
+		filtered = append(filtered, it)
+	}
+	resp.Content = filtered
 
 	resp.Tools = sliceItems(resp.Tools, limit)
 	resp.Features = sliceItems(resp.Features, limit)

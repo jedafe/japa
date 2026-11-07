@@ -5,9 +5,12 @@
 package blog
 
 import (
+	"context"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/features"
 )
 
 // Series statuses.
@@ -134,6 +137,20 @@ func coverImageURL(bucket, path *string) string {
 type Service struct {
 	store *Store
 	db    *db.DB
+	flags FeatureChecker
+}
+
+// FeatureChecker is the feature-flag surface blog needs for
+// caller-scoped content-type filtering (§42).
+type FeatureChecker = features.FlagEvaluator
+
+// SetFeatureChecker wires the §42 feature checker.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.flags = c }
+
+// contentTypeHidden reports whether ct's feature flag should hide it from
+// public series projections for this caller (§42).
+func (s *Service) contentTypeHidden(ctx context.Context, contentType string) bool {
+	return features.ContentTypeHidden(ctx, s.flags, contentType)
 }
 
 // NewService creates a Service backed by the given database pool.

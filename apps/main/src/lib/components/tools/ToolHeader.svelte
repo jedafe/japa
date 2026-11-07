@@ -15,7 +15,7 @@
 	 desktop. Replaces the old bare `<Icon size={20}/> text-lg` heading. -->
 <div class="mb-5 flex items-center gap-3 sm:mb-6 sm:gap-4">
 	<div
-		class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)] sm:h-12 sm:w-12"
+		class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius-card)] bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)] sm:h-12 sm:w-12"
 	>
 		<Icon size={20} />
 	</div>

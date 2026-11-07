@@ -420,7 +420,7 @@
 				/>
 			{:else}
 				<span
-					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]"
 					style={tagColor
 						? `background: color-mix(in srgb, ${tagColor} 15%, transparent); color: ${tagColor}`
 						: ''}
@@ -491,7 +491,7 @@
 				/>
 			{:else}
 				<span
-					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary-text)]"
 					style={tagColor
 						? `background: color-mix(in srgb, ${tagColor} 15%, transparent); color: ${tagColor}`
 						: ''}
@@ -536,7 +536,7 @@
 									href={safeUrl(fieldValues[field.key])}
 									target="_blank"
 									rel="noopener noreferrer"
-									class="inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
+									class="inline-flex items-center gap-1 text-sm text-[var(--color-primary-text)] hover:underline"
 								>
 									{String(fieldValues[field.key])}
 									<ExternalLink class="rtl:-scale-x-100" size={12} />
@@ -553,7 +553,7 @@
 								{#each parseTagSlugList(fieldValues[field.key]) as slug (slug)}
 									<a
 										href="/tags/{slug}"
-										class="rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-primary)] transition-colors hover:bg-[var(--color-border)]"
+										class="rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-border)]"
 									>
 										#{slug}
 									</a>
@@ -639,7 +639,7 @@
 									{#if f.avatar_url}
 										<img src={f.avatar_url} alt={f.display_name} class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy" />
 									{:else}
-										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]">
+										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary-text)]">
 											{initials(f.display_name)}
 										</span>
 									{/if}
@@ -671,7 +671,7 @@
 									{#if m.avatar_url}
 										<img src={m.avatar_url} alt={m.display_name || m.username} class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy" />
 									{:else}
-										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]">
+										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary-text)]">
 											{initials(m.display_name || m.username)}
 										</span>
 									{/if}
@@ -679,7 +679,7 @@
 										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{m.display_name || m.username}</span>
 										<span class="block truncate text-xs text-[var(--color-muted)]">@{m.username}</span>
 									</span>
-									<ShieldCheck size={16} class="shrink-0 text-[var(--color-primary)]" />
+									<ShieldCheck size={16} class="shrink-0 text-[var(--color-primary-text)]" />
 								{/snippet}
 							</UserHoverCard>
 						</li>
@@ -828,7 +828,7 @@
 										{#if selectedSlugs.length > 0}
 											<div class="mt-2 flex flex-wrap gap-1.5">
 												{#each selectedSlugs as slug (slug)}
-													<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-primary)]">
+													<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-primary-text)]">
 														#{slug}
 														<button
 															type="button"

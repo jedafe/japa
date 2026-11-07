@@ -338,7 +338,7 @@
 				</dt>
 				<dd class="mt-0.5 truncate text-[var(--color-text)]">
 					{#if counterpart.username}
-						<a href="/u/{counterpart.username}" class="hover:text-[var(--color-primary)]">
+						<a href="/u/{counterpart.username}" class="hover:text-[var(--color-primary-text)]">
 							{counterpart.name || `@${counterpart.username}`}
 						</a>
 					{:else}

@@ -224,7 +224,7 @@
 			{#if selectedScopes.length > 0}
 				<div class="mb-2 flex flex-wrap gap-1.5">
 					{#each selectedScopes as scope (scope)}
-						<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-medium text-[var(--color-primary)]">
+						<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-medium text-[var(--color-primary-text)]">
 							{scopeLabel(scope)}
 							<button
 								type="button"

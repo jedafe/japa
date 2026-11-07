@@ -404,6 +404,13 @@
         "heic2any",
       ],
     },
+    "services/render": {
+      "name": "@japaconnect/render-service",
+      "version": "0.1.0",
+      "dependencies": {
+        "playwright-core": "1.64.1",
+      },
+    },
   },
   "trustedDependencies": [
     "@sentry/cli",
@@ -638,6 +645,8 @@
     "@japaconnect/landing-blocks": ["@japaconnect/landing-blocks@workspace:packages/landing-blocks"],
 
     "@japaconnect/main": ["@japaconnect/main@workspace:apps/main"],
+
+    "@japaconnect/render-service": ["@japaconnect/render-service@workspace:services/render"],
 
     "@japaconnect/studio-desktop": ["@japaconnect/studio-desktop@workspace:apps/studio-desktop"],
 

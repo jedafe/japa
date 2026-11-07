@@ -52,7 +52,7 @@
 		{#if primaryHref}
 			<a
 				href={primaryHref}
-				class="inline-flex items-center justify-center rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-[var(--color-primary)] transition hover:bg-white/90"
+				class="inline-flex items-center justify-center rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-[var(--color-primary-text)] transition hover:bg-white/90"
 			>
 				{primaryLabel}
 			</a>
@@ -60,7 +60,7 @@
 			<button
 				type="button"
 				onclick={onPrimary}
-				class="inline-flex items-center justify-center rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-[var(--color-primary)] transition hover:bg-white/90"
+				class="inline-flex items-center justify-center rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-[var(--color-primary-text)] transition hover:bg-white/90"
 			>
 				{primaryLabel}
 			</button>

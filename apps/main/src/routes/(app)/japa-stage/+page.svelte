@@ -254,7 +254,10 @@
 	const chipPalette = ['#8b5cf6', '#0d9488', '#d97706', '#2563eb', '#db2777', '#16a34a'];
 	function chipStyle(i: number) {
 		const c = chipPalette[i % chipPalette.length];
-		return `background-color: color-mix(in srgb, ${c} 14%, transparent); color: ${c};`;
+		// Text is pulled toward --color-text so the pastel chip colors stay
+		// WCAG-legible on both light and dark surfaces (dark mode lightens,
+		// light mode darkens).
+		return `background-color: color-mix(in srgb, ${c} 14%, transparent); color: color-mix(in srgb, ${c} 72%, var(--color-text));`;
 	}
 </script>
 
@@ -283,12 +286,14 @@
 								src={m.avatar_url}
 								alt=""
 								class="h-8 w-8 rounded-full border-2 border-[var(--color-surface)] object-cover"
+								width="32"
+								height="32"
 								loading="lazy"
 							/>
 						{/each}
 					</span>
 				{:else}
-					<span class="grid h-8 w-8 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+					<span class="grid h-8 w-8 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 						<Users size={15} />
 					</span>
 				{/if}
@@ -309,7 +314,7 @@
 
 			<ul class="mt-7 flex flex-wrap gap-x-6 gap-y-3" role="list">
 				<li class="flex items-center gap-2.5">
-					<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full" style="background-color: color-mix(in srgb, var(--color-primary) 12%, transparent); color: var(--color-primary);">
+					<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full" style="background-color: color-mix(in srgb, var(--color-primary) 12%, transparent); color: var(--color-primary-text);">
 						<Users size={17} />
 					</span>
 					<span class="w-40 shrink-0 text-xs font-medium leading-snug text-[var(--color-text)]">{t('japa_stage.feature_find', 'Find people on the same journey as you')}</span>
@@ -341,7 +346,7 @@
 					onclick={() => (guideOpen = true)}
 					class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)] transition-opacity hover:opacity-75"
 				>
-					<CirclePlay size={17} class="text-[var(--color-primary)]" />
+					<CirclePlay size={17} class="text-[var(--color-primary-text)]" />
 					{t('common.how_it_works', 'How it works')}
 				</button>
 			</div>
@@ -603,7 +608,7 @@
 		{/if}
 
 		<div class="mt-6 flex justify-center">
-			<a href="/users" class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline">
+			<a href="/users" class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary-text)] hover:underline">
 				{t('japa_stage.view_all_members', 'View all members')}
 				<ArrowRight size={14} class="rtl:-scale-x-100" />
 			</a>
@@ -619,14 +624,14 @@
 				<section class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 {data.discussions.length === 0 ? 'lg:col-span-2' : ''}">
 					<div class="mb-4 flex items-center justify-between">
 						<h2 class="text-base font-semibold text-[var(--color-text)]">{t('japa_stage.trending_destinations', 'Trending destinations')}</h2>
-						<a href="/radar?tab=countries" class="text-sm font-medium text-[var(--color-primary)] hover:underline">{t('common.view_all', 'View all')}</a>
+						<a href="/radar?tab=countries" class="text-sm font-medium text-[var(--color-primary-text)] hover:underline">{t('common.view_all', 'View all')}</a>
 					</div>
 					<ul class="space-y-4">
 						{#each data.stats?.destinations ?? [] as d (d.space_id)}
 							<li>
 								<a href="/japa-stage?dest={d.space_id}" class="group flex items-center gap-3">
 									<span class="w-7 shrink-0 text-xl leading-none" aria-hidden="true">{flagEmoji(d.geo_code)}</span>
-									<span class="w-32 shrink-0 truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]">{d.name}</span>
+									<span class="w-32 shrink-0 truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]">{d.name}</span>
 									<span class="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
 										<span
 											class="block h-full rounded-full"
@@ -644,17 +649,17 @@
 				<section class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 {(data.stats?.destinations?.length ?? 0) === 0 ? 'lg:col-span-2' : ''}">
 					<div class="mb-4 flex items-center justify-between">
 						<h2 class="text-base font-semibold text-[var(--color-text)]">{t('japa_stage.popular_discussions', 'Popular discussions')}</h2>
-						<a href="/forum" class="text-sm font-medium text-[var(--color-primary)] hover:underline">{t('common.view_all', 'View all')}</a>
+						<a href="/forum" class="text-sm font-medium text-[var(--color-primary-text)] hover:underline">{t('common.view_all', 'View all')}</a>
 					</div>
 					<ul class="divide-y divide-[var(--color-border)]">
 						{#each data.discussions.slice(0, 5) as item (item.id)}
 							<li class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
 								<a href={discussionUrl(item)} class="group flex min-w-0 flex-1 items-center gap-3">
-									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]">
 										<MessagesSquare size={17} />
 									</span>
 									<span class="min-w-0">
-										<span class="line-clamp-1 text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]">{item.title}</span>
+										<span class="line-clamp-1 text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary-text)]">{item.title}</span>
 										<span class="mt-1 flex items-center gap-2 text-xs text-[var(--color-muted)]">
 											<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-medium capitalize text-[var(--color-text-subtle)]">{item.content_type.replaceAll('_', ' ')}</span>
 											{#if item.view_count > 0}
@@ -669,7 +674,7 @@
 									aria-label={t('feed.card.bookmark', 'Bookmark')}
 									aria-pressed={bookmarkedIds.has(item.id_2)}
 									disabled={bookmarkPending.has(item.id_2)}
-									class="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)] disabled:opacity-50 {bookmarkedIds.has(item.id_2) ? 'text-[var(--color-primary)]' : ''}"
+									class="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)] disabled:opacity-50 {bookmarkedIds.has(item.id_2) ? 'text-[var(--color-primary-text)]' : ''}"
 								>
 									<Bookmark size={16} fill={bookmarkedIds.has(item.id_2) ? 'currentColor' : 'none'} />
 								</button>
@@ -687,7 +692,7 @@
 			<span class="grid h-24 w-24 place-items-center rounded-full text-[var(--color-primary-contrast)] shadow-md" style="background: linear-gradient(135deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 60%, #9333ea));">
 				<Earth size={44} strokeWidth={1.4} />
 			</span>
-			<span class="absolute bottom-0 right-2 grid h-11 w-11 place-items-center rounded-2xl bg-[var(--color-surface)] text-[var(--color-primary)] shadow-md">
+			<span class="absolute bottom-0 right-2 grid h-11 w-11 place-items-center rounded-2xl bg-[var(--color-surface)] text-[var(--color-primary-text)] shadow-md">
 				<Luggage size={20} />
 			</span>
 			<span class="absolute left-1 top-0 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-surface)] text-[#e11d48] shadow-sm">
@@ -707,15 +712,15 @@
 		</div>
 		<ul class="space-y-2.5 text-sm text-[var(--color-text-subtle)]">
 			<li class="flex items-center gap-2.5">
-				<span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/12 text-[var(--color-primary)]"><Check size={12} /></span>
+				<span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/12 text-[var(--color-primary-text)]"><Check size={12} /></span>
 				{t('japa_stage.cta_point_match', 'Get matched with the right people')}
 			</li>
 			<li class="flex items-center gap-2.5">
-				<span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/12 text-[var(--color-primary)]"><Check size={12} /></span>
+				<span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/12 text-[var(--color-primary-text)]"><Check size={12} /></span>
 				{t('japa_stage.cta_point_opps', 'Receive relevant opportunities')}
 			</li>
 			<li class="flex items-center gap-2.5">
-				<span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/12 text-[var(--color-primary)]"><Check size={12} /></span>
+				<span class="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/12 text-[var(--color-primary-text)]"><Check size={12} /></span>
 				{t('japa_stage.cta_point_progress', 'Track your progress')}
 			</li>
 		</ul>
@@ -728,12 +733,12 @@
 		<!-- Cover -->
 		<div class="relative h-24 w-full" style="background: {color ? `linear-gradient(120deg, color-mix(in srgb, ${color} 24%, transparent), color-mix(in srgb, ${color} 8%, transparent))` : 'var(--color-surface-subtle)'}">
 			{#if m.cover_url}
-				<img src={m.cover_url} alt="" class="h-full w-full object-cover" loading="lazy" />
+				<img src={m.cover_url} alt="" class="h-full w-full object-cover" width="640" height="96" loading="lazy" />
 			{/if}
 			{#if m.stage}
 				<span
 					class="absolute right-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur-sm"
-					style="color: {color}; background-color: color-mix(in srgb, {color} 14%, var(--color-surface));"
+					style="color: color-mix(in srgb, {color} 70%, var(--color-text)); background-color: color-mix(in srgb, {color} 14%, var(--color-surface));"
 				>
 					{japaStageLabel(t, m.stage as JapaStage)}
 				</span>
@@ -747,12 +752,12 @@
 				slug={m.username}
 				name={m.display_name ?? m.username ?? ''}
 				avatar={m.avatar_url}
-				class="-mt-8 block w-fit"
+				class="relative -mt-8 block w-fit"
 			>
 				{#snippet trigger()}
 					<span class="grid h-16 w-16 place-items-center overflow-hidden rounded-full border-[3px] border-[var(--color-surface)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)] shadow-sm">
 						{#if m.avatar_url}
-							<img src={m.avatar_url} alt={m.username} class="h-full w-full object-cover" loading="lazy" />
+							<img src={m.avatar_url} alt={m.username} class="h-full w-full object-cover" width="64" height="64" loading="lazy" />
 						{:else}
 							<Users size={26} />
 						{/if}
@@ -762,7 +767,7 @@
 			<a href="/u/{m.username}" class="mt-2 flex items-center gap-1.5 truncate text-base font-semibold text-[var(--color-text)] hover:underline">
 				<span class="truncate">{m.display_name ?? `@${m.username}`}</span>
 				{#if m.verified}
-					<BadgeCheck size={16} class="shrink-0 text-[var(--color-primary)]" aria-label={t('japa_stage.verified', 'Verified')} />
+					<BadgeCheck size={16} class="shrink-0 text-[var(--color-primary-text)]" aria-label={t('japa_stage.verified', 'Verified')} />
 				{/if}
 			</a>
 			{#if m.destination_space_name}
@@ -810,14 +815,14 @@
 							onclick={() => openMessage(m)}
 							aria-label={t('japa_stage.message', 'Message')}
 							title={t('japa_stage.message', 'Message')}
-							class="grid h-8 w-8 place-items-center rounded-full border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+							class="grid h-8 w-8 place-items-center rounded-full border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
 						>
 							<MessageCircle size={15} />
 						</button>
 						<FollowButton entityType="user" entityId={m.user_id} iconOnly />
 					</span>
 				{:else if !data.authed}
-					<a href="/login?redirect=/japa-stage" class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline">
+					<a href="/login?redirect=/japa-stage" class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)] hover:underline">
 						<UserPlus size={13} />
 						{t('japa_stage.connect', 'Connect')}
 					</a>

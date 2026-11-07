@@ -209,6 +209,7 @@ const (
 	TypeIntelPurgeInboundEvents   = "intel:purge_inbound_events"   // low (daily retention sweep)
 	TypeIntelPruneRejectedRecords = "intel:prune_rejected_records" // low (daily retention sweep)
 	TypeIntelHarvestOutbound      = "intel:harvest_outbound"       // low (intel-channels Phase 4)
+	TypeIntelReprobeDeadChannels  = "intel:reprobe_dead_channels"  // low (intel bot-wall hardening cron)
 )
 
 // RegisterHandlers wires every task type constant to its handler function.
@@ -437,6 +438,7 @@ var handlerRegistry = []struct {
 	{TypeIntelPurgeInboundEvents, HandleIntelPurgeInboundEvents},
 	{TypeIntelPruneRejectedRecords, HandleIntelPruneRejectedRecords},
 	{TypeIntelHarvestOutbound, HandleIntelHarvestOutbound},
+	{TypeIntelReprobeDeadChannels, HandleIntelReprobeDeadChannels},
 }
 
 // RegisterHandlers wires every task type constant to its handler function.
