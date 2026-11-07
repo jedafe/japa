@@ -165,9 +165,10 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 // back — it is read off the plain HTTP upgrade request.
 const wsTicketSubprotocolPrefix = "jc-ticket."
 
-// ticketFromRequest resolves the WS ticket, preferring the
-// Sec-WebSocket-Protocol channel and falling back to the ?ticket= query
-// parameter for older clients.
+// ticketFromRequest resolves the WS ticket from the
+// Sec-WebSocket-Protocol channel. The legacy ?ticket= query parameter is
+// deliberately not accepted: query strings land in proxy and access logs,
+// leaking a session-equivalent credential (CWE-598).
 func ticketFromRequest(r *http.Request) string {
 	for _, proto := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",") {
 		if t := strings.TrimSpace(proto); strings.HasPrefix(t, wsTicketSubprotocolPrefix) {
@@ -177,16 +178,15 @@ func ticketFromRequest(r *http.Request) string {
 		}
 	}
 
-	return r.URL.Query().Get("ticket")
+	return ""
 }
 
 // HandleWebSocket upgrades connection and authenticates via ticket.
-// GET /api/v1/ws — ticket via Sec-WebSocket-Protocol ("jc-ticket.<uuid>"),
-// legacy ?ticket={ticket_id} query parameter still accepted.
+// GET /api/v1/ws — ticket via Sec-WebSocket-Protocol ("jc-ticket.<uuid>").
 func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ticketStr := ticketFromRequest(r)
 	if ticketStr == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_ticket", "Ticket query parameter is required")
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_ticket", "Sec-WebSocket-Protocol jc-ticket.<uuid> is required")
 		return
 	}
 

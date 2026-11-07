@@ -49,39 +49,71 @@
 		"heic2any": "^0.0.4"
 	},
 	"peerDependenciesMeta": {
-		"bits-ui": { "optional": true },
-		"heic2any": { "optional": true },
-		"@tiptap/core": { "optional": true },
-		"@tiptap/extension-image": { "optional": true },
-		"@tiptap/extension-link": { "optional": true },
-		"@tiptap/extension-mention": { "optional": true },
-		"@tiptap/extension-placeholder": { "optional": true },
-		"@tiptap/extension-table": { "optional": true },
-		"@tiptap/extension-table-cell": { "optional": true },
-		"@tiptap/extension-table-header": { "optional": true },
-		"@tiptap/extension-table-row": { "optional": true },
-		"@tiptap/extension-youtube": { "optional": true },
-		"@tiptap/markdown": { "optional": true },
-		"@tiptap/pm": { "optional": true },
-		"@tiptap/starter-kit": { "optional": true },
-		"@tiptap/suggestion": { "optional": true }
+		"bits-ui": {
+			"optional": true
+		},
+		"heic2any": {
+			"optional": true
+		},
+		"@tiptap/core": {
+			"optional": true
+		},
+		"@tiptap/extension-image": {
+			"optional": true
+		},
+		"@tiptap/extension-link": {
+			"optional": true
+		},
+		"@tiptap/extension-mention": {
+			"optional": true
+		},
+		"@tiptap/extension-placeholder": {
+			"optional": true
+		},
+		"@tiptap/extension-table": {
+			"optional": true
+		},
+		"@tiptap/extension-table-cell": {
+			"optional": true
+		},
+		"@tiptap/extension-table-header": {
+			"optional": true
+		},
+		"@tiptap/extension-table-row": {
+			"optional": true
+		},
+		"@tiptap/extension-youtube": {
+			"optional": true
+		},
+		"@tiptap/markdown": {
+			"optional": true
+		},
+		"@tiptap/pm": {
+			"optional": true
+		},
+		"@tiptap/starter-kit": {
+			"optional": true
+		},
+		"@tiptap/suggestion": {
+			"optional": true
+		}
 	},
 	"devDependencies": {
 		"bits-ui": "^2.18.1",
 		"@tiptap/core": "^3.29.0",
-		"@tiptap/extension-image": "^3.29.0",
+		"@tiptap/extension-image": "^3.33.0",
 		"@tiptap/extension-link": "^3.29.0",
-		"@tiptap/extension-mention": "^3.29.0",
-		"@tiptap/extension-placeholder": "^3.29.0",
-		"@tiptap/extension-table": "^3.29.1",
-		"@tiptap/extension-table-cell": "^3.29.1",
-		"@tiptap/extension-table-header": "^3.29.1",
-		"@tiptap/extension-table-row": "^3.29.1",
-		"@tiptap/extension-youtube": "^3.29.2",
-		"@tiptap/markdown": "^3.29.0",
+		"@tiptap/extension-mention": "^3.33.0",
+		"@tiptap/extension-placeholder": "^3.33.0",
+		"@tiptap/extension-table": "^3.33.0",
+		"@tiptap/extension-table-cell": "^3.33.0",
+		"@tiptap/extension-table-header": "^3.33.0",
+		"@tiptap/extension-table-row": "^3.33.0",
+		"@tiptap/extension-youtube": "^3.33.0",
+		"@tiptap/markdown": "^3.33.0",
 		"@tiptap/pm": "^3.29.0",
-		"@tiptap/starter-kit": "^3.29.0",
-		"@tiptap/suggestion": "^3.29.0",
+		"@tiptap/starter-kit": "^3.33.0",
+		"@tiptap/suggestion": "^3.33.0",
 		"heic2any": "0.0.4"
 	}
 }

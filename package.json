@@ -16,11 +16,20 @@
     "pagespeed": "bun scripts/pagespeed.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.1"
+    "@playwright/test": "^1.65.0"
   },
   "dependencies": {
-    "cline": "^3.0.72"
+    "cline": "^3.0.74"
   },
   "trustedDependencies": ["@sentry/cli"],
+  "overrides": {
+    "prosemirror-view": "^1.42.3",
+    "dompurify": "^3.4.17",
+    "zod": "^4.6.7",
+    "dify-ai-provider>zod": "^3.25.76",
+    "happy-dom": "^21.0.4",
+    "js-yaml": "^4.3.2",
+    "@tiptap/core": "^3.33.0"
+  },
   "workspaces": ["apps/*", "packages/*", "services/*"]
 }
