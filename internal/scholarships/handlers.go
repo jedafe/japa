@@ -889,8 +889,18 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// 2. Insert the scholarship projection row with guide_id.
+	// 2. Insert the scholarship projection row with guide_id. The slug column
+	// is NOT NULL + UNIQUE, so it is derived from the title and deduplicated
+	// against existing scholarship rows.
 	arg := buildScholarshipCreateParams(contentRow.ID, body, deadline)
+
+	schSlug, err := h.svc.store.EnsureUniqueScholarshipSlug(r.Context(), slug)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create scholarship")
+		return
+	}
+
+	arg.Slug = schSlug
 
 	sch, err := h.svc.store.AdminCreateScholarship(r.Context(), arg)
 	if err != nil {

@@ -144,7 +144,7 @@ func (q *Queries) CountScholarshipsByCountry(ctx context.Context) ([]CountSchola
 
 const createScholarship = `-- name: CreateScholarship :one
 
-INSERT INTO scholarships (intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33) RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email
+INSERT INTO scholarships (intel_record_id, guide_id, source_url, source_type, trust_level, title, slug, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34) RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, slug, scholarship_type, study_mode, number_of_awards, application_fee, renewable, duration_years, start_date, open_to_international_students, contact_email
 `
 
 type CreateScholarshipParams struct {
@@ -154,6 +154,7 @@ type CreateScholarshipParams struct {
 	SourceType                  string         `json:"source_type"`
 	TrustLevel                  int16          `json:"trust_level"`
 	Title                       string         `json:"title"`
+	Slug                        string         `json:"slug"`
 	Description                 *string        `json:"description"`
 	Country                     string         `json:"country"`
 	CountrySpaceID              pgtype.UUID    `json:"country_space_id"`
@@ -197,6 +198,7 @@ func (q *Queries) CreateScholarship(ctx context.Context, arg CreateScholarshipPa
 		arg.SourceType,
 		arg.TrustLevel,
 		arg.Title,
+		arg.Slug,
 		arg.Description,
 		arg.Country,
 		arg.CountrySpaceID,
@@ -870,6 +872,17 @@ func (q *Queries) ListScholarshipsKeyset(ctx context.Context, arg ListScholarshi
 		return nil, err
 	}
 	return items, nil
+}
+
+const scholarshipSlugExists = `-- name: ScholarshipSlugExists :one
+SELECT EXISTS(SELECT 1 FROM scholarships WHERE slug = $1)::bool AS exists
+`
+
+func (q *Queries) ScholarshipSlugExists(ctx context.Context, slug string) (bool, error) {
+	row := q.db.QueryRow(ctx, scholarshipSlugExists, slug)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const searchScholarships = `-- name: SearchScholarships :many

@@ -401,8 +401,15 @@ func bestThumbnail(thumbs map[string]any) string {
 
 // newSSRFSafeClient returns an HTTP client that validates redirect hops.
 func newSSRFSafeClient() *http.Client {
+	return newSSRFSafeClientWithTimeout(10 * time.Second)
+}
+
+// newSSRFSafeClientWithTimeout is newSSRFSafeClient with a caller-chosen
+// deadline — channel_sync feed fetches need more headroom than oEmbed
+// lookups because YouTube deprioritises Atom feed responses.
+func newSSRFSafeClientWithTimeout(timeout time.Duration) *http.Client {
 	return &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return fmt.Errorf("stopped after %d redirects", len(via))

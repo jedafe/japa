@@ -133,6 +133,13 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, contentID pgtype.UUID)
 
 	create := buildCreateParams(params)
 
+	schSlug, err := s.EnsureUniqueScholarshipSlug(ctx, content.Slug)
+	if err != nil {
+		return fmt.Errorf("scholarships: sync from guide: unique slug: %w", err)
+	}
+
+	create.Slug = schSlug
+
 	_, err = s.AdminCreateScholarship(ctx, create)
 	if err != nil {
 		return fmt.Errorf("scholarships: sync from guide: create: %w", err)

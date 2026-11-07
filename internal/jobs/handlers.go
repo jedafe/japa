@@ -98,7 +98,7 @@ func (h *Handlers) callerScope(r *http.Request) features.CallerScope {
 	if h.service == nil {
 		return features.CallerScope{}
 	}
-	return h.callerScope(r)
+	return h.service.CallerScope(r)
 }
 
 // resolveLiterals resolves {{...}} placeholders on a job DTO or slice.

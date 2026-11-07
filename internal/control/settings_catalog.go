@@ -934,6 +934,7 @@ var settingsCatalog = map[string]settingMeta{
 	"video.channel_sync.enabled":          {Type: "bool", DefaultValue: "true", Description: "Master switch for the recurring video_channel Atom-feed sync task.", Panel: "admin"},
 	"video.channel_sync.interval_minutes": {Type: "int", DefaultValue: "360", Description: "Minimum minutes between syncs of the same channel source.", Panel: "admin"},
 	"video.channel_sync.batch_size":       {Type: "int", DefaultValue: "50", Description: "Max channels processed per video:sync_channels run.", Panel: "admin"},
+	"video.channel_sync.request_timeout_secs": {Type: "int", DefaultValue: "30", Description: "HTTP deadline (seconds) for channel_sync feed fetches — YouTube deprioritises Atom responses beyond the shared 10s client timeout.", Panel: "admin"},
 	"video.channel_sync.auto_publish":     {Type: "bool", DefaultValue: "true", Description: "Publish synced videos as contents when the channel author has a default space.", Panel: "admin"},
 	// List (listicle) content type — §14 list amendment.
 	// Public: the /create composer and /lists index gate on this setting

@@ -117,6 +117,20 @@ func (m *mockStore) ContentSlugExists(_ context.Context, slug string) (bool, err
 	return exists, nil
 }
 
+func (m *mockStore) ScholarshipSlugExists(_ context.Context, slug string) (bool, error) {
+	if m.hasExisting && m.existing.Slug == slug {
+		return true, nil
+	}
+
+	for _, arg := range m.createScholarshipCalls {
+		if arg.Slug == slug {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 func (m *mockStore) UpdateContent(_ context.Context, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
 	m.updateContentCalls = append(m.updateContentCalls, arg)
 	return gen.UpdateContentRow{ID: arg.ID, Title: arg.Title, Slug: arg.Slug}, nil

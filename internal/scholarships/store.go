@@ -274,6 +274,34 @@ func (s *Store) AdminGetScholarship(ctx context.Context, id pgtype.UUID) (gen.Sc
 	return row, nil
 }
 
+// EnsureUniqueScholarshipSlug appends a numeric suffix (-2, -3, ...) to base
+// until no scholarships row uses the candidate. Callers populate Slug before
+// AdminCreateScholarship because scholarships.slug is NOT NULL + UNIQUE and
+// the insert fails without it.
+func (s *Store) EnsureUniqueScholarshipSlug(ctx context.Context, base string) (string, error) {
+	if base == "" {
+		return "", fmt.Errorf("scholarships: cannot ensure unique empty slug")
+	}
+
+	for i := 2; i <= 101; i++ {
+		candidate := base
+		if i > 2 {
+			candidate = fmt.Sprintf("%s-%d", base, i-1)
+		}
+
+		exists, err := s.queries.ScholarshipSlugExists(ctx, candidate)
+		if err != nil {
+			return "", fmt.Errorf("scholarships: check slug %q: %w", candidate, err)
+		}
+
+		if !exists {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("scholarships: could not find unique slug after %d attempts", 100)
+}
+
 // AdminCreateScholarship creates a new scholarship record. The ID is
 // stamped into the query params.
 func (s *Store) AdminCreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {

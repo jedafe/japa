@@ -61,6 +61,7 @@ type Store interface {
 // directly.
 type TxStore interface {
 	CreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
+	ScholarshipSlugExists(ctx context.Context, slug string) (bool, error)
 	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
 	UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateIntelRecordPromotedParams) error
 	UpdateScholarship(ctx context.Context, arg gen.UpdateScholarshipParams) error
@@ -246,6 +247,13 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 
 		scholarshipParams := buildCreateParams(record, source, guideID, ext, verificationStatus, overrideSource)
 		scholarshipParams.CountrySpaceID = countrySpaceID
+
+		slug, err := p.ensureUniqueScholarshipSlug(ctx, tx, scholarshipSlugBase(record, source, ext))
+		if err != nil {
+			return fmt.Errorf("promoter: ensure unique scholarship slug on create: %w", err)
+		}
+
+		scholarshipParams.Slug = slug
 
 		scholarship, err := tx.CreateScholarship(ctx, scholarshipParams)
 		if err != nil {
@@ -1819,6 +1827,56 @@ func (p *ScholarshipPromoter) ensureUniqueSlug(ctx context.Context, tx TxStore, 
 	}
 
 	return "", fmt.Errorf("promoter: could not find unique slug after %d attempts", maxSlugAttempts)
+}
+
+// scholarshipSlugBase derives the candidate slug for a new scholarships row:
+// the extractor's slug when present, else the title, else the source name,
+// else a deterministic record-derived value so promotion never wedges on an
+// empty slug.
+func scholarshipSlugBase(record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) string {
+	if slug := stringField(ext, "slug"); slug != "" {
+		return slug
+	}
+
+	if title := stringField(ext, fieldTitle); title != "" {
+		if slug := content.Slugify(title); slug != "" && slug != "untitled" {
+			return slug
+		}
+	}
+
+	if slug := content.Slugify(source.Name); slug != "" && slug != "untitled" {
+		return slug
+	}
+
+	return fmt.Sprintf("scholarship-%s", pgToUUID(record.ID).String()[:8])
+}
+
+// ensureUniqueScholarshipSlug appends a numeric suffix (-2, -3, ...) until no
+// scholarships row uses the candidate. The slug is immutable afterwards — the
+// UpdateScholarship query does not touch the column — so this only runs on the
+// create path.
+func (p *ScholarshipPromoter) ensureUniqueScholarshipSlug(ctx context.Context, tx TxStore, base string) (string, error) {
+	if base == "" {
+		return "", errors.New("promoter: cannot ensure unique empty scholarship slug")
+	}
+
+	for i := 2; i <= maxSlugAttempts+1; i++ {
+		candidate := base
+		if i > 2 {
+			candidate = fmt.Sprintf("%s-%d", base, i-1)
+		}
+
+		exists, err := tx.ScholarshipSlugExists(ctx, candidate)
+		if err != nil {
+			return "", fmt.Errorf("promoter: checking scholarship slug %q: %w", candidate, err)
+		}
+
+		if !exists {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("promoter: could not find unique scholarship slug after %d attempts", maxSlugAttempts)
 }
 
 // ---------------------------------------------------------------------------

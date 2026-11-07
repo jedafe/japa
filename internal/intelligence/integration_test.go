@@ -136,6 +136,10 @@ func (m *mockPromoterStore) ContentSlugExists(_ context.Context, _ string) (bool
 	return false, nil
 }
 
+func (m *mockPromoterStore) ScholarshipSlugExists(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+
 func (m *mockPromoterStore) UpdateContent(_ context.Context, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
 	m.updateContentCalls = append(m.updateContentCalls, arg)
 	return gen.UpdateContentRow{ID: arg.ID}, nil

@@ -908,6 +908,17 @@ func (s *Store) ContentSlugExists(ctx context.Context, slug string) (bool, error
 	return exists, nil
 }
 
+// ScholarshipSlugExists reports whether any scholarships row uses the given
+// slug. The slug unique index is total, so every row counts.
+func (s *Store) ScholarshipSlugExists(ctx context.Context, slug string) (bool, error) {
+	exists, err := s.queries.ScholarshipSlugExists(ctx, slug)
+	if err != nil {
+		return false, fmt.Errorf("stores: check scholarship slug exists: %w", err)
+	}
+
+	return exists, nil
+}
+
 // UpdateContent overwrites the mutable fields of a contents row and stamps
 // updated_at to now(). Used by the promoter (Task 3) to sync guide content
 // with a re-crawled scholarship extraction. The ID is stamped into the

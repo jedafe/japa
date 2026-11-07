@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -101,7 +102,12 @@ func (s *Service) syncChannel(ctx context.Context, src gen.IntelSource) (bool, e
 		return false, nil
 	}
 
-	client := newSSRFSafeClient()
+	// YouTube deprioritises Atom feed responses (often >10s), so the feed
+	// fetch gets a wider, operator-tunable deadline than the shared 10s
+	// client. video.channel_sync.request_timeout_secs (Rule 3).
+	client := newSSRFSafeClientWithTimeout(
+		time.Duration(s.channelSyncInt(ctx, "video.channel_sync.request_timeout_secs", 30)) * time.Second,
+	)
 
 	videoIDs, err := s.channelVideoIDs(ctx, client, src)
 	if err != nil {
