@@ -3076,6 +3076,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// — the hub must reach back into this deployment.
 	worker.RegisterIntelSiteURL(cfg.SiteURL)
 
+	// CAVEAT-016 fix: wire the .discovered consumer — intel:discovery_fanout
+	// resolves space followers via the intel store and creates
+	// intel.discovery notifications via the notifications service.
+	worker.RegisterIntelDiscoveryFanout(intelStores, notificationService)
+
 	// HTTP handlers for the /api/v1/intel/* routes. The radar reuses the
 	// existing follows service (entity_type "space") and scholarships
 	// service (saved-scholarship tracker) so no parallel tables are needed.

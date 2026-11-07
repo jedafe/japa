@@ -151,6 +151,18 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Counts
 -- =====================
 
+-- name: ListSpaceFollowerIDs :many
+-- Lean follower-id list for fan-out tasks (intel discovery → space
+-- followers). Returns only ids — the fan-out batches notifications and
+-- does not need the profile joins GetFollowersByEntity performs.
+SELECT f.follower_id
+FROM follows f
+JOIN users u ON u.id = f.follower_id
+WHERE f.entity_type = @entity_type AND f.entity_id = @entity_id
+  AND u.status = 'active'
+ORDER BY f.created_at DESC
+LIMIT @page_limit;
+
 -- name: CountFollowersByEntity :one
 SELECT COUNT(*)::int AS count FROM follows
 WHERE entity_type = @entity_type AND entity_id = @entity_id;

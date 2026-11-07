@@ -256,6 +256,37 @@ func RegisterIntelCurator(c intelCuratorPort) {
 	intelCurator = c
 }
 
+// intelDiscoveryFanoutDeps is the read surface HandleIntelDiscoveryFanout
+// needs — implemented by *intel_stores.Store. Kept as an interface so the
+// handler is unit-testable without a database.
+type intelDiscoveryFanoutDeps interface {
+	ListSpaceFollowerIDs(ctx context.Context, entityType string, entityID pgtype.UUID, limit int32) ([]pgtype.UUID, error)
+	GetContentByID(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
+}
+
+// intelDiscoveryNotifier creates the per-follower in-app notification and
+// dedupes on an existing unread row. Implemented by
+// notifications.Service — the signatures mirror CreateNotification /
+// HasUnreadNotification.
+type intelDiscoveryNotifier interface {
+	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+	HasUnreadNotification(ctx context.Context, recipientID pgtype.UUID, nType, subjectType string, subjectID pgtype.UUID) (bool, error)
+}
+
+var (
+	intelDiscoveryDeps    intelDiscoveryFanoutDeps
+	intelDiscoveryNotify  intelDiscoveryNotifier
+)
+
+// RegisterIntelDiscoveryFanout wires the .discovered consumer dependencies:
+// the store (follower resolution + slug lookup) and the notifications
+// service (row creation + unread dedup). Called from server.go after
+// RegisterIntelDependencies. Pass nil to leave the fan-out a logged skip.
+func RegisterIntelDiscoveryFanout(deps intelDiscoveryFanoutDeps, notifier intelDiscoveryNotifier) {
+	intelDiscoveryDeps = deps
+	intelDiscoveryNotify = notifier
+}
+
 // intelRelevanceGate is the per-item relevance-gate seam (Task 10). It
 // supersedes Task 9's bool-returning intelCurateRelevanceGate hook: the
 // verdict is returned so the caller can persist an 'off_topic'
@@ -3472,6 +3503,7 @@ func HandleIntelPostPublish(ctx context.Context, t *asynq.Task) error {
 		"domain_id":   domainID.String(),
 		"entity_type": p.EntityType,
 		"record_id":   p.RecordID,
+		"content_id":  p.ContentID,
 	})
 
 	if err := intelEventPublisher.Publish(ctx, events.DomainEvent{
@@ -3541,19 +3573,35 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 	//     bridge translates every published domain event into a notify task
 	// The handler resolves the domain id from whichever field is populated.
 	var p struct {
-		DomainID   string `json:"domain_id"`
-		EntityID   string `json:"entity_id"`
-		EntityType string `json:"entity_type"`
-		EventType  string `json:"type"`
+		DomainID   string          `json:"domain_id"`
+		EntityID   string          `json:"entity_id"`
+		EntityType string          `json:"entity_type"`
+		EventType  string          `json:"type"`
+		Payload    json.RawMessage `json:"payload"`
 	}
 
 	if err := parsePayloadOrSkip(t, &p); err != nil {
 		return err
 	}
 	// .discovered events are this handler's own output — re-fanning them
-	// out would loop the task on itself. Skip them.
+	// out would loop the task on itself. The AsynqEventPublisher bridge
+	// routes them to intel:discovery_fanout instead, but guard anyway in
+	// case one is enqueued directly.
 	if strings.HasSuffix(p.EventType, ".discovered") {
 		return nil
+	}
+
+	// Forward content_id from the .published event payload so the
+	// .discovered event carries the slug-resolvable row the fan-out
+	// notification links to. Absent on legacy direct-enqueue payloads.
+	contentID := ""
+	if len(p.Payload) > 0 {
+		var inner struct {
+			ContentID string `json:"content_id"`
+		}
+		if err := json.Unmarshal(p.Payload, &inner); err == nil {
+			contentID = inner.ContentID
+		}
 	}
 
 	domainIDStr := p.DomainID
@@ -3610,14 +3658,15 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 		slog.Info("task:intel:notify_discoveries: no geo space resolver for entity type, emitting generic discovery", "entity_type", p.EntityType, "domain_id", domainID.String())
 	}
 
-	// Publish the {entity_type}.discovered event with the geo space id so
-	// the notification service can resolve followers of that space and
-	// create discovery notifications.
+	// Publish the {entity_type}.discovered event with the geo space id and
+	// content id so the discovery fan-out can resolve space followers and
+	// link the notification to the published content row.
 	evtPayload, _ := json.Marshal(map[string]interface{}{
 		"domain_id":        domainID.String(),
 		"entity_type":      p.EntityType,
 		"country_space_id": geoSpaceID,
 		"country":          country,
+		"content_id":       contentID,
 	})
 	if err := intelEventPublisher.Publish(ctx, events.DomainEvent{
 		Type:       p.EntityType + ".discovered",
@@ -3630,6 +3679,127 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 	}
 
 	slog.Info("task:intel:notify_discoveries: discovery event published", "entity_type", p.EntityType, "domain_id", domainID.String(), "country_space_id", geoSpaceID)
+
+	return nil
+}
+
+// HandleIntelDiscoveryFanout consumes {entity}.discovered DomainEvents and
+// creates intel.discovery notifications for followers of the entity's geo
+// space (§35, CAVEAT-016 fix). It is the terminal consumer the
+// AsynqEventPublisher bridge routes .discovered events to —
+// notify_discoveries cannot consume its own output without looping, so the
+// bridge directs them here. Recipients are deduped on an existing unread
+// notification for the same entity and capped by
+// intel.discovery_fanout.max_recipients.
+func HandleIntelDiscoveryFanout(ctx context.Context, t *asynq.Task) error {
+	defer recoverPanic("TypeIntelDiscoveryFanout")
+	slog.Info("task:intel:discovery_fanout")
+
+	if intelDiscoveryDeps == nil || intelDiscoveryNotify == nil {
+		slog.Warn("task:intel:discovery_fanout: dependencies not wired, skipping")
+		return nil
+	}
+
+	var evt events.DomainEvent
+	if err := parsePayloadOrSkip(t, &evt); err != nil {
+		return err
+	}
+
+	var p struct {
+		DomainID       string `json:"domain_id"`
+		CountrySpaceID string `json:"country_space_id"`
+		Country        string `json:"country"`
+		ContentID      string `json:"content_id"`
+	}
+	if err := json.Unmarshal(evt.Payload, &p); err != nil {
+		return fmt.Errorf("task:intel:discovery_fanout: event payload: %w", err)
+	}
+
+	// Resolve the follower cohort's space. Projection-table domains carry
+	// country_space_id in the event; content-projection domains leave it
+	// empty and we fall back to the contents row's geo_space_id.
+	var spaceID pgtype.UUID
+
+	if p.CountrySpaceID != "" {
+		var serr error
+		if spaceID, serr = scanUUID(p.CountrySpaceID); serr != nil {
+			slog.Warn("task:intel:discovery_fanout: bad country_space_id, ignoring", "value", p.CountrySpaceID, "error", serr)
+		}
+	}
+
+	actionURL := "/sources"
+
+	if p.ContentID != "" && p.ContentID != uuid.Nil.String() {
+		if cid, cerr := scanUUID(p.ContentID); cerr == nil {
+			if row, rerr := intelDiscoveryDeps.GetContentByID(ctx, cid); rerr == nil {
+				if row.Slug != "" {
+					actionURL = "/content/" + row.Slug
+				}
+
+				if !spaceID.Valid && row.GeoSpaceID.Valid {
+					spaceID = row.GeoSpaceID
+				}
+			}
+		}
+	}
+
+	if !spaceID.Valid {
+		slog.Info("task:intel:discovery_fanout: no geo space resolved, nothing to fan out", "entity_type", evt.EntityType, "domain_id", p.DomainID)
+		return nil
+	}
+
+	domainID, err := scanUUID(p.DomainID)
+	if err != nil {
+		return fmt.Errorf("task:intel:discovery_fanout: domain_id: %w", err)
+	}
+
+	maxRecipients := int32(200)
+	if appSettings != nil {
+		maxRecipients = int32(appSettings.GetIntOr(ctx, "intel.discovery_fanout.max_recipients", 200)) // #nosec G115 — bounded by the settings Min/Max
+	}
+
+	followerIDs, err := intelDiscoveryDeps.ListSpaceFollowerIDs(ctx, "space", spaceID, maxRecipients)
+	if err != nil {
+		return fmt.Errorf("task:intel:discovery_fanout: list followers: %w", err)
+	}
+
+	if len(followerIDs) == 0 {
+		return nil
+	}
+
+	label := strings.ReplaceAll(evt.EntityType, "_", " ")
+	title := "New " + label
+	if p.Country != "" {
+		title += " in " + p.Country
+	}
+
+	body := "A new " + label + " was discovered"
+	if p.Country != "" {
+		body += " for " + p.Country
+	}
+	body += "."
+
+	zero := pgtype.UUID{}
+	notified := 0
+
+	for _, recipient := range followerIDs {
+		// Dedup: a re-crawl that re-publishes the same entity must not spam
+		// a follower who still has the earlier notification unread.
+		unread, uerr := intelDiscoveryNotify.HasUnreadNotification(ctx, recipient, "intel.discovery", evt.EntityType, domainID)
+		if uerr == nil && unread {
+			continue
+		}
+
+		if cerr := intelDiscoveryNotify.CreateNotification(ctx, recipient, "intel.discovery", "system", zero, evt.EntityType, domainID, title, body, actionURL); cerr != nil {
+			slog.Warn("task:intel:discovery_fanout: create notification failed", "recipient", recipient, "error", cerr)
+
+			continue
+		}
+
+		notified++
+	}
+
+	slog.Info("task:intel:discovery_fanout: notified followers", "entity_type", evt.EntityType, "domain_id", p.DomainID, "followers", len(followerIDs), "notified", notified)
 
 	return nil
 }

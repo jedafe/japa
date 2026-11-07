@@ -921,6 +921,23 @@ func (s *Store) UpdateContent(ctx context.Context, arg gen.UpdateContentParams) 
 	return row, nil
 }
 
+// ListSpaceFollowerIDs returns the ids of active users following an entity
+// (entity_type='space'), newest first, capped at limit. Used by the intel
+// discovery fan-out to resolve the notification recipient cohort for a
+// promoted record's geo space.
+func (s *Store) ListSpaceFollowerIDs(ctx context.Context, entityType string, entityID pgtype.UUID, limit int32) ([]pgtype.UUID, error) {
+	ids, err := s.queries.ListSpaceFollowerIDs(ctx, gen.ListSpaceFollowerIDsParams{
+		EntityType: entityType,
+		EntityID:   entityID,
+		PageLimit:  limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stores: list space follower ids: %w", err)
+	}
+
+	return ids, nil
+}
+
 // ---------------------------------------------------------------------------
 // IntelJobs (domain projection for the jobs domain)
 // ---------------------------------------------------------------------------

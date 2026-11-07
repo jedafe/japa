@@ -125,13 +125,14 @@ func TestAsynqEventPublisher_PublishDeadlineChanged(t *testing.T) {
 	}
 }
 
-func TestAsynqEventPublisher_SkipsDiscoveredEvents(t *testing.T) {
+func TestAsynqEventPublisher_RoutesDiscoveredEventsToFanout(t *testing.T) {
 	t.Parallel()
 	client, inspector := newTestClient(t)
 	pub := NewAsynqEventPublisher(client)
 
 	// A .discovered event is the notify_discoveries handler's own output —
-	// bridging it back onto the same task type would loop indefinitely.
+	// bridging it back onto that task type would loop indefinitely, so the
+	// bridge routes it to intel:discovery_fanout, the terminal consumer.
 	evt := DomainEvent{
 		Type:       "scholarship.discovered",
 		EntityType: "scholarship",
@@ -144,14 +145,26 @@ func TestAsynqEventPublisher_SkipsDiscoveredEvents(t *testing.T) {
 		t.Fatalf("Publish returned error: %v", err)
 	}
 
-	// A skipped event enqueues nothing — the default queue never materializes.
-	queues, err := inspector.Queues()
+	tasks, err := inspector.ListPendingTasks("default", asynq.PageSize(10))
 	if err != nil {
-		t.Fatalf("Queues: %v", err)
+		t.Fatalf("ListPendingTasks: %v", err)
 	}
 
-	if len(queues) != 0 {
-		t.Fatalf("expected no queues for skipped .discovered event, got %v", queues)
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 pending task, got %d", len(tasks))
+	}
+
+	if tasks[0].Type != "intel:discovery_fanout" {
+		t.Fatalf("task type = %q, want %q", tasks[0].Type, "intel:discovery_fanout")
+	}
+
+	var got DomainEvent
+	if err := json.Unmarshal(tasks[0].Payload, &got); err != nil {
+		t.Fatalf("unmarshal DomainEvent from task payload: %v", err)
+	}
+
+	if got.Type != evt.Type {
+		t.Fatalf("Type = %q, want %q", got.Type, evt.Type)
 	}
 }
 

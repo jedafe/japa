@@ -788,6 +788,7 @@ var settingsCatalog = map[string]settingMeta{
 	"intel.extraction_confidence_reject":      {Type: "float", DefaultValue: "0.50", Min: 0, Max: 1, Description: "Reject threshold (confidence below this from Tier 3+ → reject).", Panel: "control"},
 	"intel.extraction_max_retries":            {Type: "int", DefaultValue: "3", Min: 0, Max: 10, Description: "Malformed JSON retries before routing to REVIEW_REQUIRED.", Panel: "control"},
 	"intel.extraction_model":                  {Type: "string", DefaultValue: "gpt-4o-mini", Description: "Extraction model via §20 AI gateway (cost-tuned; switchable).", Panel: "control"},
+	"intel.discovery_fanout.max_recipients":   {Type: "int", DefaultValue: "200", Min: 1, Max: 5000, Description: "Max space followers notified per intel discovery event.", Panel: "control"},
 	"intel.freshness_decay_scholarship":       {Type: "string", DefaultValue: "slow", Description: "Freshness policy per entity type: slow | medium | fast.", Options: `[{"value":"slow","label":"Slow"},{"value":"medium","label":"Medium"},{"value":"fast","label":"Fast"}]`, Panel: "control"},
 	"intel.credential.enabled":                {Type: "bool", DefaultValue: "true", Description: "Enable the credential_pathways intelligence domain.", Panel: "control"},
 	"intel.credential.freshness_decay_policy": {Type: "string", DefaultValue: "slow", Description: "Freshness policy for credential_pathways: slow | medium | fast.", Options: `[{"value":"slow","label":"Slow"},{"value":"medium","label":"Medium"},{"value":"fast","label":"Fast"}]`, Panel: "control"},

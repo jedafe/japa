@@ -514,6 +514,7 @@ var taskTypeCatalog = []struct {
 	{TypeIntelPromote, "default", "Promote intel record to scholarships + contents projection"},
 	{TypeIntelPostPublish, "default", "Post-publish fan-out: Meilisearch index + RAG embedding + event publish"},
 	{TypeIntelNotifyDiscoveries, "default", "Fan-out discovery notifications to country space followers"},
+	{TypeIntelDiscoveryFanout, "default", "Create intel.discovery notifications for space followers (consumes .discovered events)"},
 	{TypeIntelRetryFailedSource, "default", "Manual retry trigger for a failed intelligence source"},
 	{TypeIntelSourceMetadata, "default", "Fetch and store public-site metadata for a source"},
 	{TypeIntelProbeVerify, "default", "Deep verify probe for an approved intel source; writes probe_report and materializes channels"},

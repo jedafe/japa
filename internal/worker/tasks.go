@@ -197,6 +197,7 @@ const (
 	TypeIntelPromote              = "intel:promote"                // default
 	TypeIntelPostPublish          = "intel:post_publish"           // default
 	TypeIntelNotifyDiscoveries    = "intel:notify_discoveries"     // default
+	TypeIntelDiscoveryFanout      = "intel:discovery_fanout"       // default
 	TypeIntelRefreshFreshness     = "intel:refresh_freshness"      // low (daily cron)
 	TypeIntelRetryFailedSource    = "intel:retry_failed_source"    // default
 	TypeIntelSourceMetadata       = "intel:source_metadata"        // default
@@ -426,6 +427,7 @@ var handlerRegistry = []struct {
 	{TypeIntelPromote, HandleIntelPromote},
 	{TypeIntelPostPublish, HandleIntelPostPublish},
 	{TypeIntelNotifyDiscoveries, HandleIntelNotifyDiscoveries},
+	{TypeIntelDiscoveryFanout, HandleIntelDiscoveryFanout},
 	{TypeIntelRefreshFreshness, HandleIntelRefreshFreshness},
 	{TypeIntelRetryFailedSource, HandleIntelRetryFailedSource},
 	{TypeIntelSourceMetadata, HandleSourceMetadata},

@@ -12,7 +12,6 @@ import (
 )
 
 const countFollowersByEntity = `-- name: CountFollowersByEntity :one
-
 SELECT COUNT(*)::int AS count FROM follows
 WHERE entity_type = $1 AND entity_id = $2
 `
@@ -22,9 +21,6 @@ type CountFollowersByEntityParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-// =====================
-// Counts
-// =====================
 func (q *Queries) CountFollowersByEntity(ctx context.Context, arg CountFollowersByEntityParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countFollowersByEntity, arg.EntityType, arg.EntityID)
 	var count int32
@@ -510,4 +506,47 @@ func (q *Queries) IsMutualFollow(ctx context.Context, arg IsMutualFollowParams) 
 	var is_mutual bool
 	err := row.Scan(&is_mutual)
 	return is_mutual, err
+}
+
+const listSpaceFollowerIDs = `-- name: ListSpaceFollowerIDs :many
+
+SELECT f.follower_id
+FROM follows f
+JOIN users u ON u.id = f.follower_id
+WHERE f.entity_type = $1 AND f.entity_id = $2
+  AND u.status = 'active'
+ORDER BY f.created_at DESC
+LIMIT $3
+`
+
+type ListSpaceFollowerIDsParams struct {
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+// =====================
+// Counts
+// =====================
+// Lean follower-id list for fan-out tasks (intel discovery → space
+// followers). Returns only ids — the fan-out batches notifications and
+// does not need the profile joins GetFollowersByEntity performs.
+func (q *Queries) ListSpaceFollowerIDs(ctx context.Context, arg ListSpaceFollowerIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listSpaceFollowerIDs, arg.EntityType, arg.EntityID, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var follower_id pgtype.UUID
+		if err := rows.Scan(&follower_id); err != nil {
+			return nil, err
+		}
+		items = append(items, follower_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

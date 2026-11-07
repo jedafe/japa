@@ -21,14 +21,21 @@ func NewAsynqEventPublisher(client *asynq.Client) *AsynqEventPublisher {
 	return &AsynqEventPublisher{client: client}
 }
 
-// Publish marshals the DomainEvent and enqueues it as an intel:notify_discoveries task.
-// Two event classes are not bridged:
-//   - *.discovered events are the output of the notify_discoveries handler
-//     itself — enqueuing them would loop the task on itself indefinitely.
-//   - Events with no entity id resolve to nothing the handler can fan out on.
+// Publish marshals the DomainEvent and enqueues it as a task on the bridge.
+// Routing is by event suffix:
+//   - *.discovered events → intel:discovery_fanout — they are the output of
+//     notify_discoveries, so routing them back there would loop the task on
+//     itself indefinitely; the fan-out task is their terminal consumer.
+//   - everything else → intel:notify_discoveries.
+// Events with no entity id resolve to nothing the handlers can fan out on.
 func (p *AsynqEventPublisher) Publish(ctx context.Context, evt DomainEvent) error {
-	if strings.HasSuffix(evt.Type, ".discovered") || evt.EntityID == uuid.Nil {
+	if evt.EntityID == uuid.Nil {
 		return nil
+	}
+
+	taskType := "intel:notify_discoveries"
+	if strings.HasSuffix(evt.Type, ".discovered") {
+		taskType = "intel:discovery_fanout"
 	}
 
 	payload, err := json.Marshal(evt)
@@ -36,7 +43,7 @@ func (p *AsynqEventPublisher) Publish(ctx context.Context, evt DomainEvent) erro
 		return fmt.Errorf("events: marshal: %w", err)
 	}
 
-	task := asynq.NewTask("intel:notify_discoveries", payload)
+	task := asynq.NewTask(taskType, payload)
 
 	_, err = p.client.EnqueueContext(ctx, task)
 	if err != nil {
