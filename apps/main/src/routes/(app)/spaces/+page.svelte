@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Filter, Layers, Users, MessageSquare, Plus, ShieldX, ChevronLeft, ChevronRight, X, Search, Globe } from 'lucide-svelte';
+	import { Filter, Layers, Users, MessageSquare, Plus, ShieldX, ChevronDown, ChevronRight, X, Search, Globe } from 'lucide-svelte';
 	import { EmptyState, EntityHero, SpaceJoinButton, SearchInput, DirectoryCard, ListPageBar, SelectField, UrlTabs, type SearchSuggestion, type CardMetaItem, type UrlTab } from '$lib/components/ui';
 	import { GuideSlideOver, Modal, type GuideContent } from '$lib/components/ui';
 	import HeroArtSpaces from '$lib/components/heroes/HeroArtSpaces.svelte';
@@ -74,7 +74,20 @@
 	let filtersModalOpen = $state(false);
 	let searchModalOpen = $state(false);
 
-	const visibleSpaces = $derived(data.spaces);
+	// Load more — client-side appends (replaces Previous/Next pagination);
+	// resets when the SSR list changes (filter/sort/search navigation).
+	let allSpaces = $state<Space[]>(untrack(() => data.spaces));
+	let loadingMore = $state(false);
+	let moreError = $state(false);
+	$effect(() => {
+		const fresh = data.spaces;
+		untrack(() => {
+			allSpaces = fresh;
+			moreError = false;
+		});
+	});
+
+	const visibleSpaces = $derived(allSpaces);
 	const visibleTotal = $derived(data.total);
 
 	const sortOptions = $derived([
@@ -144,17 +157,48 @@
 
 	const followingSpaceIdSet = $derived(new Set(data.followingSpaceIds ?? []));
 
-	function buildHref(pageNum: number): string {
-		const params = new URLSearchParams();
-		if (data.q) params.set('q', data.q);
-		if (data.country) params.set('country', data.country);
-		if (data.state) params.set('state', data.state);
-		if (data.city) params.set('city', data.city);
-		if (data.sort) params.set('sort', data.sort);
-		if (data.joined) params.set('joined', '1');
-		if (pageNum > 0) params.set('page', String(pageNum));
-		const qs = params.toString();
-		return qs ? `/spaces?${qs}` : '/spaces';
+	async function loadMoreSpaces() {
+		if (loadingMore || allSpaces.length >= visibleTotal) return;
+		loadingMore = true;
+		moreError = false;
+		try {
+			// Mirrors the SSR query in +page.server.ts — same filters plus the
+			// member_created scope the directory always applies (§05 amendment).
+			// Offset accounts for the SSR ?page= deep-link so appends continue
+			// from the page actually rendered.
+			const params = new URLSearchParams();
+			params.set('page_size', String(data.pageSize));
+			params.set('page_offset', String(data.page * data.pageSize + allSpaces.length));
+			params.set('member_created', '1');
+			if (data.q) params.set('q', data.q);
+			if (data.type) params.set('type', data.type);
+			if (data.level) params.set('level', data.level);
+			if (data.sort) params.set('sort', data.sort);
+			if (data.geo) params.set('geo', data.geo);
+			if (data.region) params.set('region', data.region);
+			if (data.subregion) params.set('subregion', data.subregion);
+			const withinSlug =
+				data.city ||
+				data.state ||
+				data.countries.find((c) => c.geo_code === data.country)?.slug ||
+				'';
+			if (withinSlug) params.set('within', withinSlug);
+			else if (data.country) params.set('geo', data.country);
+			if (data.parent && !withinSlug) params.set('parent', data.parent);
+			if (data.joined) params.set('joined', '1');
+			const res = await api.get<Space[]>(`/spaces?${params.toString()}`);
+			if (res.error) {
+				moreError = true;
+			} else {
+				const next = res.data ?? [];
+				const seen = new Set(allSpaces.map((s) => s.slug));
+				allSpaces = [...allSpaces, ...next.filter((s) => !seen.has(s.slug))];
+			}
+		} catch {
+			moreError = true;
+		} finally {
+			loadingMore = false;
+		}
 	}
 
 	function onFilterChange() {
@@ -465,24 +509,23 @@
 				{/each}
 			</div>
 
-			<!-- Pagination -->
-			{#if data.totalPages > 1}
-				<div class="mt-6 flex items-center justify-center gap-4">
-					<a
-						href={buildHref(data.page - 1)}
-						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page === 0 ? 'pointer-events-none opacity-40' : ''}"
+			<!-- Load more -->
+			{#if visibleTotal > 0}
+				<div class="mt-4 flex justify-center">
+					<button
+						type="button"
+						onclick={loadMoreSpaces}
+						disabled={loadingMore || allSpaces.length >= visibleTotal}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 					>
-						<ChevronLeft class="rtl:-scale-x-100" size={16} /> {t('common.prev', 'Prev')}
-					</a>
-					<span class="text-xs text-[var(--color-muted)]">
-						{data.page + 1} / {data.totalPages}
-					</span>
-					<a
-						href={buildHref(data.page + 1)}
-						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] {data.page >= data.totalPages - 1 ? 'pointer-events-none opacity-40' : ''}"
-					>
-						{t('common.next', 'Next')} <ChevronRight class="rtl:-scale-x-100" size={16} />
-					</a>
+						{loadingMore ? t('common.loading', 'Loading…') : t('common.load_more', 'Load more')}
+						<ChevronDown size={14} />
+					</button>
+					{#if moreError}
+						<span class="ml-3 text-sm text-[var(--color-text-subtle)]">
+							{t('common.load_error', 'Failed to load more. Please try again.')}
+						</span>
+					{/if}
 				</div>
 			{/if}
 		{/if}
