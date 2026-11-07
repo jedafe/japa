@@ -246,11 +246,14 @@ RETURNING *;
 
 -- name: CountUserPointsEarned :one
 -- Total positive points earned by the user within a date range.
+-- operation='earn' matches GetLifetimePoints — admin_adjust floor
+-- corrections and reversals are balance repairs, not earned points.
 -- Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 SELECT COALESCE(SUM(amount), 0)::bigint AS points
 FROM wallet_ledger
 WHERE user_id = $1
  AND ledger_type = 'points'
+ AND operation = 'earn'
  AND amount > 0
  AND ($2::timestamptz IS NULL OR created_at >= $2)
  AND ($3::timestamptz IS NULL OR created_at <= $3);
