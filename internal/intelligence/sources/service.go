@@ -400,16 +400,17 @@ func (s *Service) UpdateCategories(ctx context.Context, arg gen.UpdateIntelSourc
 }
 
 // ListProposed returns a page of sources with status='proposed' for admin
-// review — with the proposer's display name resolved. Platform-scoped.
-func (s *Service) ListProposed(ctx context.Context, limit, offset int32, search string) ([]ProposedSource, error) {
-	return s.store.ListProposed(ctx, limit, offset, search)
+// review — with the proposer's display name resolved. origin (''|'user'|
+// 'system') narrows by who proposed the row (audit BUG-007). Platform-scoped.
+func (s *Service) ListProposed(ctx context.Context, limit, offset int32, search, origin string) ([]ProposedSource, error) {
+	return s.store.ListProposed(ctx, limit, offset, search, origin)
 }
 
 // CountProposed returns the total number of proposed sources matching the
-// same search filter as ListProposed so the review surface can
+// same search/origin filters as ListProposed so the review surface can
 // server-paginate.
-func (s *Service) CountProposed(ctx context.Context, search string) (int64, error) {
-	return s.store.CountProposed(ctx, search)
+func (s *Service) CountProposed(ctx context.Context, search, origin string) (int64, error) {
+	return s.store.CountProposed(ctx, search, origin)
 }
 
 // ListFiltered runs the filtered registry list used by the control-panel
@@ -1316,6 +1317,24 @@ func (s *Service) UpdateChannel(ctx context.Context, arg gen.UpdateIntelSourceCh
 		pipelineRequiresEntityTypes(Pipeline(*arg.Pipeline)) &&
 		len(existing.EntityTypes) == 0 {
 		return Channel{}, fmt.Errorf("sources: update channel: %w: entity_types required for %s pipeline", errpkg.ErrInvalid, *arg.Pipeline)
+	}
+
+	// Method-required provider_config keys are enforced on the effective
+	// post-merge pair: a patch can change crawl_method alone (inheriting the
+	// existing config) or provider_config alone — either way the result must
+	// still satisfy the method's requirements (audit BUG-004).
+	effectiveMethod := existing.CrawlMethod
+	if arg.CrawlMethod != nil {
+		effectiveMethod = *arg.CrawlMethod
+	}
+
+	effectiveConfig := existing.ProviderConfig
+	if len(arg.ProviderConfig) > 0 {
+		effectiveConfig = arg.ProviderConfig
+	}
+
+	if err := validateChannelProviderConfig(CrawlMethod(effectiveMethod), effectiveConfig); err != nil {
+		return Channel{}, err
 	}
 
 	return s.store.UpdateChannel(ctx, arg)

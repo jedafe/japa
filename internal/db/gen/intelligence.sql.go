@@ -222,10 +222,18 @@ WHERE s.status = 'proposed'
        OR s.domain ILIKE '%' || $1 || '%'
        OR s.source_url ILIKE '%' || $1 || '%'
        OR s.category ILIKE '%' || $1 || '%')
+  AND ($2::text = ''
+       OR ($2::text = 'user' AND s.proposed_by IS NOT NULL)
+       OR ($2::text = 'system' AND s.proposed_by IS NULL))
 `
 
-func (q *Queries) CountProposedIntelSources(ctx context.Context, search string) (int64, error) {
-	row := q.db.QueryRow(ctx, countProposedIntelSources, search)
+type CountProposedIntelSourcesParams struct {
+	Search string `json:"search"`
+	Origin string `json:"origin"`
+}
+
+func (q *Queries) CountProposedIntelSources(ctx context.Context, arg CountProposedIntelSourcesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countProposedIntelSources, arg.Search, arg.Origin)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -2009,7 +2017,8 @@ func (q *Queries) ListIntelSourcesFiltered(ctx context.Context, arg ListIntelSou
 }
 
 const listProposedIntelSources = `-- name: ListProposedIntelSources :many
-SELECT s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind, s.keywords, s.categories, s.probe_report, s.detected_methods, s.last_probed_at, s.rejected_by, s.rejected_at, COALESCE(up.display_name, u.username, s.proposed_by::text, 'system') AS proposer_name
+SELECT s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind, s.keywords, s.categories, s.probe_report, s.detected_methods, s.last_probed_at, s.rejected_by, s.rejected_at, COALESCE(up.display_name, u.username, s.proposed_by::text, 'system') AS proposer_name,
+       CASE WHEN s.proposed_by IS NULL THEN 'system' ELSE 'user' END AS proposed_origin
 FROM intel_sources s
 LEFT JOIN users u ON u.id = s.proposed_by
 LEFT JOIN user_profiles up ON up.user_id = s.proposed_by
@@ -2018,12 +2027,16 @@ WHERE s.status = 'proposed'
        OR s.domain ILIKE '%' || $1 || '%'
        OR s.source_url ILIKE '%' || $1 || '%'
        OR s.category ILIKE '%' || $1 || '%')
+  AND ($2::text = ''
+       OR ($2::text = 'user' AND s.proposed_by IS NOT NULL)
+       OR ($2::text = 'system' AND s.proposed_by IS NULL))
 ORDER BY s.proposed_at DESC NULLS LAST
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type ListProposedIntelSourcesParams struct {
 	Search    string `json:"search"`
+	Origin    string `json:"origin"`
 	RowOffset int32  `json:"row_offset"`
 	RowLimit  int32  `json:"row_limit"`
 }
@@ -2073,6 +2086,7 @@ type ListProposedIntelSourcesRow struct {
 	RejectedBy          pgtype.UUID        `json:"rejected_by"`
 	RejectedAt          pgtype.Timestamptz `json:"rejected_at"`
 	ProposerName        string             `json:"proposer_name"`
+	ProposedOrigin      string             `json:"proposed_origin"`
 }
 
 // Returns sources with status='proposed' for admin review. The LEFT JOINs
@@ -2080,7 +2094,12 @@ type ListProposedIntelSourcesRow struct {
 // to username, then the raw UUID string) so the review surface never shows
 // a bare UUID.
 func (q *Queries) ListProposedIntelSources(ctx context.Context, arg ListProposedIntelSourcesParams) ([]ListProposedIntelSourcesRow, error) {
-	rows, err := q.db.Query(ctx, listProposedIntelSources, arg.Search, arg.RowOffset, arg.RowLimit)
+	rows, err := q.db.Query(ctx, listProposedIntelSources,
+		arg.Search,
+		arg.Origin,
+		arg.RowOffset,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -2133,6 +2152,7 @@ func (q *Queries) ListProposedIntelSources(ctx context.Context, arg ListProposed
 			&i.RejectedBy,
 			&i.RejectedAt,
 			&i.ProposerName,
+			&i.ProposedOrigin,
 		); err != nil {
 			return nil, err
 		}

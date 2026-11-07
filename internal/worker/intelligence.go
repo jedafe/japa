@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1902,7 +1903,8 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		// raw category is stored on the record for the moderation surface.
 		slog.Warn("task:intel:extract: unsupported source category, routing to review", "raw_doc_id", p.RawDocID, "category", src.Category)
 
-		return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, src.Category)
+		return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, src.Category,
+			"unsupported_entity_type", "no entity type resolved for source category "+strconv.Quote(src.Category))
 	}
 
 	// Relevance gate (Task 10, extract path): the raw body is not itemized
@@ -1925,6 +1927,8 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	var persisted int
 
 	var retriesExhausted, curateOnly bool
+
+	var lastEntityErr error
 
 	for _, entityType := range entityTypes {
 		// Curate-only entity types (article, event, dataset) have no LLM
@@ -1970,6 +1974,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 				slog.Warn("task:intel:extract: retries exhausted for entity type", "raw_doc_id", p.RawDocID, "entity_type", entityType)
 
 				retriesExhausted = true
+				lastEntityErr = extErr
 
 				continue
 			}
@@ -1999,7 +2004,16 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		if retriesExhausted || curateOnly {
 			slog.Warn("task:intel:extract: no extractable entity types, routing to review", "raw_doc_id", p.RawDocID, "retries_exhausted", retriesExhausted, "curate_only", curateOnly)
 
-			return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, entityTypes[0])
+			reason, detail := "curate_only_entity_type", "resolved entity types have no extraction path"
+			if retriesExhausted {
+				reason = "extraction_retries_exhausted"
+			}
+
+			if lastEntityErr != nil {
+				detail = lastEntityErr.Error()
+			}
+
+			return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, entityTypes[0], reason, detail)
 		}
 
 		// Terminal non-failure: the extractor ran clean but yielded zero
@@ -2249,7 +2263,16 @@ func intelPersistExtractedRecords(ctx context.Context, sourceID, rawDocID, chann
 // extraction retries are exhausted so the moderation queue surfaces it. When
 // a record already exists for the (source_id, external_key) pair — e.g. from
 // a prior failed extraction — the task is a no-op rather than a failure.
-func intelCreateReviewStub(ctx context.Context, sourceID, rawDocID pgtype.UUID, entityType string) error {
+//
+// reason/detail ride the record's evidence blob ({stub_reason, detail}) so the
+// moderation surface can show WHY the stub exists — a provider outage and a
+// deterministic-parse failure look identical without it (audit BUG-002).
+func intelCreateReviewStub(ctx context.Context, sourceID, rawDocID pgtype.UUID, entityType, reason, detail string) error {
+	evidence, _ := json.Marshal(map[string]string{
+		"stub_reason": reason,
+		"detail":      detail,
+	})
+
 	record, cErr := intelStores.CreateIntelRecord(ctx, gen.CreateIntelRecordParams{
 		SourceID:          sourceID,
 		RawDocumentID:     rawDocID,
@@ -2257,7 +2280,7 @@ func intelCreateReviewStub(ctx context.Context, sourceID, rawDocID pgtype.UUID, 
 		ExternalKey:       "raw:" + rawDocID.String(),
 		Extracted:         []byte(`{}`),
 		Confidence:        []byte(`{}`),
-		Evidence:          []byte(`{}`),
+		Evidence:          evidence,
 		ConfidenceOverall: 0,
 		GeoSpaceIds:       []pgtype.UUID{},
 	})
@@ -2416,7 +2439,8 @@ func HandleIntelCurateChannel(ctx context.Context, t *asynq.Task) error {
 		// retries.
 		slog.Warn("task:intel:curate_channel: curator failed, routing to review", "channel_id", ch.ID.String(), "crawl_method", ch.CrawlMethod, "error", err)
 
-		return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, intelCurateDefaultEntityType(ch, src))
+		return intelCreateReviewStub(ctx, rawDoc.SourceID, rawDocID, intelCurateDefaultEntityType(ch, src),
+			"curate_parse_failure", err.Error())
 	}
 
 	if len(records) == 0 {

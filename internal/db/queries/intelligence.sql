@@ -307,7 +307,8 @@ WHERE ap.id = $1;
 -- resolve proposed_by into a human-readable name (display_name falling back
 -- to username, then the raw UUID string) so the review surface never shows
 -- a bare UUID.
-SELECT s.*, COALESCE(up.display_name, u.username, s.proposed_by::text, 'system') AS proposer_name
+SELECT s.*, COALESCE(up.display_name, u.username, s.proposed_by::text, 'system') AS proposer_name,
+       CASE WHEN s.proposed_by IS NULL THEN 'system' ELSE 'user' END AS proposed_origin
 FROM intel_sources s
 LEFT JOIN users u ON u.id = s.proposed_by
 LEFT JOIN user_profiles up ON up.user_id = s.proposed_by
@@ -316,6 +317,9 @@ WHERE s.status = 'proposed'
        OR s.domain ILIKE '%' || @search || '%'
        OR s.source_url ILIKE '%' || @search || '%'
        OR s.category ILIKE '%' || @search || '%')
+  AND (@origin::text = ''
+       OR (@origin::text = 'user' AND s.proposed_by IS NOT NULL)
+       OR (@origin::text = 'system' AND s.proposed_by IS NULL))
 ORDER BY s.proposed_at DESC NULLS LAST
 LIMIT @row_limit OFFSET @row_offset;
 
@@ -325,7 +329,10 @@ WHERE s.status = 'proposed'
   AND (@search::text = '' OR s.name ILIKE '%' || @search || '%'
        OR s.domain ILIKE '%' || @search || '%'
        OR s.source_url ILIKE '%' || @search || '%'
-       OR s.category ILIKE '%' || @search || '%');
+       OR s.category ILIKE '%' || @search || '%')
+  AND (@origin::text = ''
+       OR (@origin::text = 'user' AND s.proposed_by IS NOT NULL)
+       OR (@origin::text = 'system' AND s.proposed_by IS NULL));
 
 -- name: ApproveProposedIntelSource :one
 -- Approves a proposed source: status='active', enabled=true, record approver.

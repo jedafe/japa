@@ -991,7 +991,16 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 	offset := clampInt32((page - 1) * limit)
 	search := r.URL.Query().Get("q")
 
-	rows, err := h.intelSources.ListProposed(r.Context(), clampInt32(limit), offset, search)
+	// ?origin=user|system separates user-submitted proposals from
+	// machine-discovered rows (audit BUG-007) — discovery noise was drowning
+	// the user queue.
+	origin := r.URL.Query().Get("origin")
+	if origin != "" && origin != "user" && origin != "system" {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_origin", "origin must be 'user' or 'system'")
+		return
+	}
+
+	rows, err := h.intelSources.ListProposed(r.Context(), clampInt32(limit), offset, search, origin)
 	if err != nil {
 		slog.Error("intel: list proposed sources failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_proposed_failed", "Failed to list proposed sources")
@@ -999,7 +1008,7 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	total, err := h.intelSources.CountProposed(r.Context(), search)
+	total, err := h.intelSources.CountProposed(r.Context(), search, origin)
 	if err != nil {
 		slog.Error("intel: count proposed sources failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_proposed_failed", "Failed to list proposed sources")
@@ -1012,6 +1021,7 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 	for _, s := range rows {
 		entry := sourceToFullEntry(s.Source)
 		entry["proposer_name"] = s.ProposerName
+		entry["proposed_origin"] = s.ProposedOrigin
 		entries = append(entries, entry)
 	}
 

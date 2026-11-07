@@ -944,6 +944,15 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-user proposal quota (audit BUG-005): each accepted proposal lands
+	// in the admin review queue, so intake is throttled — same atomic
+	// fixed-window pattern as /sources/probe, under
+	// jc:intel:propose_quota:{user_id} / intel.propose.rate_limit_per_hr.
+	if h.quotaExceeded(r.Context(), userID, "propose", defaultProposeRateLimit) {
+		errpkg.WriteError(w, http.StatusTooManyRequests, "propose_quota_exceeded", "Hourly proposal limit reached; try again later")
+		return
+	}
+
 	var req proposeSourceRequest
 	// probe_snapshot rides this body — cap at 4 MiB (probe maxBodyBytes) so a
 	// bloated snapshot cannot exhaust request memory.

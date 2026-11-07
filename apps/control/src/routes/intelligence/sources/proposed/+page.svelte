@@ -64,6 +64,8 @@
 		proposed_by?: string | null;
 		/** Resolved display name for proposed_by (display_name → username → UUID). */
 		proposer_name?: string | null;
+		/** 'user' = user-submitted via /sources/propose; 'system' = machine-discovered. */
+		proposed_origin?: string | null;
 		approved_at?: string | null;
 		approved_by?: string | null;
 		last_crawled_at?: string | null;
@@ -84,6 +86,9 @@
 	let errorMessage = $state('');
 	let noticeMessage = $state('');
 	let filter = $state('');
+	// 'user' | 'system' | '' — audit BUG-007: separate user proposals from
+	// machine-discovered rows so discovery noise can't bury the user queue.
+	let originFilter = $state('');
 
 	let page = $state(0);
 	let pageSize = $state(10);
@@ -140,6 +145,7 @@
 		params.set('page_size', String(pageSize));
 		params.set('page', String(page + 1)); // backend pagination is 1-based
 		if (debouncedFilter) params.set('q', debouncedFilter);
+		if (originFilter) params.set('origin', originFilter);
 		const result = await apiList<ProposedSource[]>(
 			`/api/v1/intel/sources/proposed?${params.toString()}`
 		);
@@ -171,6 +177,7 @@
 		void page;
 		void pageSize;
 		void debouncedFilter;
+		void originFilter;
 		load();
 	});
 
@@ -375,6 +382,16 @@
 	<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 		<div class="flex flex-1 flex-wrap items-center gap-2">
 			<SearchInput bind:value={filter} placeholder={t('intel.search_proposed', 'Search proposed sources...')} class="w-64" />
+			<select
+				bind:value={originFilter}
+				onchange={() => (page = 0)}
+				class="border-border-input bg-background-alt text-foreground rounded-9px border px-3 py-2 text-sm"
+				aria-label={t('intel.origin_filter', 'Proposal origin')}
+			>
+				<option value="">{t('intel.origin_all', 'All origins')}</option>
+				<option value="user">{t('intel.origin_user', 'User-submitted')}</option>
+				<option value="system">{t('intel.origin_system', 'Machine-discovered')}</option>
+			</select>
 		</div>
 		<div class="flex items-center gap-2">
 			<button
@@ -442,6 +459,13 @@
 								{detailSource.proposer_name}
 							{:else}
 								<span class="font-mono">{detailSource.proposed_by ?? '—'}</span>
+							{/if}
+							{#if detailSource.proposed_origin}
+								<span class="ml-1 inline-flex items-center rounded-full px-2 py-0.5 font-medium {detailSource.proposed_origin === 'user' ? 'bg-sky-500/10 text-sky-600' : 'bg-muted text-muted-foreground'}">
+									{detailSource.proposed_origin === 'user'
+										? t('intel.origin_user', 'User-submitted')
+										: t('intel.origin_system', 'Machine-discovered')}
+								</span>
 							{/if}
 						</div>
 

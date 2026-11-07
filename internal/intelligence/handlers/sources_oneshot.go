@@ -52,19 +52,9 @@ func (h *Handlers) HandleOneshotSource(w http.ResponseWriter, r *http.Request) {
 
 	// Per-user hourly quota — same jc:intel:probe_quota budget as the
 	// preview probe (a oneshot is a probe-adjacent outbound fetch).
-	if h.rdb != nil {
-		limit := defaultProbeRateLimit
-		if h.settings != nil {
-			limit = h.settings.GetIntOr(r.Context(), "intel.probe.rate_limit_per_hr", defaultProbeRateLimit)
-		}
-
-		count, incrErr := h.incrProbeQuota(r.Context(), userID)
-		if incrErr != nil {
-			slog.Warn("intel: oneshot quota increment failed; allowing request", "user_id", userID.String(), "error", incrErr, "quota_fail_open_total", h.noteQuotaFailOpen())
-		} else if count > int64(limit) {
-			errpkg.WriteError(w, http.StatusTooManyRequests, "quota_exceeded", "Hourly limit reached; try again later")
-			return
-		}
+	if h.quotaExceeded(r.Context(), userID, "probe", defaultProbeRateLimit) {
+		errpkg.WriteError(w, http.StatusTooManyRequests, "quota_exceeded", "Hourly limit reached; try again later")
+		return
 	}
 
 	// entity_hint optionally names the expected entity type — it must be a

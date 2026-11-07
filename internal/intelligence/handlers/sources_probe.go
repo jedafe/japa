@@ -23,6 +23,11 @@ const (
 	// when the intel.probe.rate_limit_per_hr setting is absent
 	// (intel-channels design §10: default 20).
 	defaultProbeRateLimit = 20
+	// defaultProposeRateLimit is the per-user hourly source-proposal quota
+	// used when the intel.propose.rate_limit_per_hr setting is absent —
+	// each accepted proposal creates a review-queue row, so intake is
+	// throttled tighter than previews (audit BUG-005).
+	defaultProposeRateLimit = 10
 	// probeQuotaWindow is the fixed window the per-user probe quota covers.
 	probeQuotaWindow = time.Hour
 )
@@ -43,12 +48,12 @@ end
 return count
 `
 
-// incrProbeQuota records one quota spend for the user and returns the
-// count within the current fixed window. Callers fail open on error — a
-// quota-store outage must not take the endpoint down (the prober's SSRF
-// guard is independent of the quota).
-func (h *Handlers) incrProbeQuota(ctx context.Context, userID pgtype.UUID) (int64, error) {
-	key := "jc:intel:probe_quota:" + userID.String()
+// incrUserQuota records one quota spend for the user under the
+// jc:intel:{scope}_quota:{user_id} key and returns the count within the
+// current fixed window. Callers fail open on error — a quota-store outage
+// must not take the endpoint down.
+func (h *Handlers) incrUserQuota(ctx context.Context, userID pgtype.UUID, scope string) (int64, error) {
+	key := "jc:intel:" + scope + "_quota:" + userID.String()
 
 	res, err := h.rdb.Eval(ctx, probeQuotaScript, []string{key}, int64(probeQuotaWindow/time.Second)).Result()
 	if err != nil {
@@ -58,6 +63,30 @@ func (h *Handlers) incrProbeQuota(ctx context.Context, userID pgtype.UUID) (int6
 	count, _ := res.(int64)
 
 	return count, nil
+}
+
+// quotaExceeded reports whether the user has spent their hourly budget for
+// the given quota scope — jc:intel:{scope}_quota:{user_id}, limit from the
+// intel.{scope}.rate_limit_per_hr setting (fail-open on store errors so a
+// Valkey outage never blocks the action class).
+func (h *Handlers) quotaExceeded(ctx context.Context, userID pgtype.UUID, scope string, defaultLimit int) bool {
+	if h.rdb == nil {
+		return false
+	}
+
+	limit := defaultLimit
+	if h.settings != nil {
+		limit = h.settings.GetIntOr(ctx, "intel."+scope+".rate_limit_per_hr", defaultLimit)
+	}
+
+	count, incrErr := h.incrUserQuota(ctx, userID, scope)
+	if incrErr != nil {
+		slog.Warn("intel: "+scope+" quota increment failed; allowing", "user_id", userID.String(), "error", incrErr, "quota_fail_open_total", h.noteQuotaFailOpen())
+
+		return false
+	}
+
+	return count > int64(limit)
 }
 
 // reprobeProposal re-runs the preview probe server-side when the proposal
@@ -72,18 +101,8 @@ func (h *Handlers) reprobeProposal(ctx context.Context, userID pgtype.UUID, req 
 		return nil, nil
 	}
 
-	if h.rdb != nil {
-		limit := defaultProbeRateLimit
-		if h.settings != nil {
-			limit = h.settings.GetIntOr(ctx, "intel.probe.rate_limit_per_hr", defaultProbeRateLimit)
-		}
-
-		count, incrErr := h.incrProbeQuota(ctx, userID)
-		if incrErr != nil {
-			slog.Warn("intel: propose re-probe quota increment failed; allowing", "user_id", userID.String(), "error", incrErr, "quota_fail_open_total", h.noteQuotaFailOpen())
-		} else if count > int64(limit) {
-			return nil, nil
-		}
+	if h.quotaExceeded(ctx, userID, "probe", defaultProbeRateLimit) {
+		return nil, nil
 	}
 
 	// Bound the synchronous re-probe so a slow target cannot stall the
@@ -172,19 +191,9 @@ func (h *Handlers) HandleProbeSource(w http.ResponseWriter, r *http.Request) {
 
 	// Per-user fixed-window quota (spec §2 preview stage): atomic
 	// increment + first-hit TTL via probeQuotaScript.
-	if h.rdb != nil {
-		limit := defaultProbeRateLimit
-		if h.settings != nil {
-			limit = h.settings.GetIntOr(r.Context(), "intel.probe.rate_limit_per_hr", defaultProbeRateLimit)
-		}
-
-		count, incrErr := h.incrProbeQuota(r.Context(), userID)
-		if incrErr != nil {
-			slog.Warn("intel: probe quota increment failed; allowing request", "user_id", userID.String(), "error", incrErr, "quota_fail_open_total", h.noteQuotaFailOpen())
-		} else if count > int64(limit) {
-			errpkg.WriteError(w, http.StatusTooManyRequests, "probe_quota_exceeded", "Hourly probe limit reached; try again later")
-			return
-		}
+	if h.quotaExceeded(r.Context(), userID, "probe", defaultProbeRateLimit) {
+		errpkg.WriteError(w, http.StatusTooManyRequests, "probe_quota_exceeded", "Hourly probe limit reached; try again later")
+		return
 	}
 
 	report, err := h.prober.Preview(r.Context(), normalized, req.SourceKind, req.Categories)

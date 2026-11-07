@@ -2859,6 +2859,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		&intelMeteredAIGateway{inner: aiDispatcher, usage: intelAIUsage},
 		extractor.WithModel(intelExtractionModel),
 		extractor.WithMaxRetries(intelExtractionMaxRetries),
+		// BUG-18/audit BUG-003: wire the Valkey extraction cache — identical
+		// source content skips the LLM call (24hr TTL, cataloged key).
+		extractor.WithCache(vkClient.Redis()),
 	)
 	intelExtractorAdapter := &intelExtractorPortAdapter{ext: intelExtractor}
 

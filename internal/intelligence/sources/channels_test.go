@@ -213,6 +213,30 @@ func TestValidateChannelCreate(t *testing.T) {
 		{"ipv4-mapped ipv6 literal entry_url", func(a *gen.CreateIntelSourceChannelParams) { a.EntryUrl = "http://[::ffff:10.0.0.1]/x" }, errpkg.ErrInvalid},
 		{"unknown crawl_method", func(a *gen.CreateIntelSourceChannelParams) { a.CrawlMethod = "telepathy" }, errpkg.ErrInvalid},
 		{"unknown pipeline", func(a *gen.CreateIntelSourceChannelParams) { a.Pipeline = "llm" }, errpkg.ErrInvalid},
+		// Method-required provider_config keys (audit BUG-004): an api
+		// channel without provider_config.endpoint / a search channel without
+		// provider_config.query can only ever fail crawls until the breaker
+		// disables them.
+		{"api without endpoint", func(a *gen.CreateIntelSourceChannelParams) {
+			a.CrawlMethod = string(CrawlMethodAPI)
+			a.ProviderConfig = []byte("{}")
+		}, errpkg.ErrRequired},
+		{"api empty endpoint", func(a *gen.CreateIntelSourceChannelParams) {
+			a.CrawlMethod = string(CrawlMethodAPI)
+			a.ProviderConfig = []byte(`{"endpoint":"  "}`)
+		}, errpkg.ErrRequired},
+		{"api non-http endpoint", func(a *gen.CreateIntelSourceChannelParams) {
+			a.CrawlMethod = string(CrawlMethodAPI)
+			a.ProviderConfig = []byte(`{"endpoint":"ftp://example.com/x"}`)
+		}, errpkg.ErrInvalid},
+		{"search without query", func(a *gen.CreateIntelSourceChannelParams) {
+			a.CrawlMethod = string(CrawlMethodSearch)
+			a.ProviderConfig = []byte("{}")
+		}, errpkg.ErrRequired},
+		{"search empty query", func(a *gen.CreateIntelSourceChannelParams) {
+			a.CrawlMethod = string(CrawlMethodSearch)
+			a.ProviderConfig = []byte(`{"query":" "}`)
+		}, errpkg.ErrRequired},
 		{"extract without entity_types", func(a *gen.CreateIntelSourceChannelParams) { a.EntityTypes = nil }, errpkg.ErrInvalid},
 		{"curate without entity_types", func(a *gen.CreateIntelSourceChannelParams) {
 			a.Pipeline = string(PipelineCurate)

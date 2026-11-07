@@ -11,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"net/http"
+
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -30,10 +31,9 @@ type AIGateway interface {
 // Extractor calls the AI gateway to extract structured entity fields from
 // source text, then validates the output against the entity schema.
 // // When a Valkey client is provided via WithCache, extraction results are
-// cached under jc:intel:extraction_cache:{}:{content_hash} (24hr
+// cached under jc:intel:extraction_cache:{content_hash} (24hr
 // TTL) so identical source content skips the LLM call on subsequent crawls
-// (BUG-18 fix, valkey-keys-catalog Section INTEL, platform-scoped per
-// ADR-112 Amendment 2).
+// (BUG-18 fix, valkey-keys-catalog Section INTEL).
 type Extractor struct {
 	gateway     AIGateway
 	category    string
@@ -83,9 +83,8 @@ func WithCategory(c string) ExtractorOption {
 // WithCache enables Valkey-backed extraction result caching. Identical
 // source content (by SHA-256 hash) skips the LLM call and returns the
 // cached extraction result. The cache key is
-// jc:intel:extraction_cache:{}:{content_hash} with a 24hr TTL
-// per valkey-keys-catalog Section INTEL (BUG-18 fix, platform-scoped per
-// ADR-112 Amendment 2).
+// jc:intel:extraction_cache:{content_hash} with a 24hr TTL
+// per valkey-keys-catalog Section INTEL (BUG-18 fix).
 func WithCache(rdb valkeycompat.Cmdable) ExtractorOption {
 	return func(e *Extractor) { e.rdb = rdb }
 }
@@ -122,10 +121,9 @@ type ExtractResult struct {
 // response, and validates it against the scholarship schema. It retries up to
 // maxRetries times when the LLM returns malformed JSON.
 // // When a Valkey client is configured (via WithCache), the extraction result
-// is cached under jc:intel:extraction_cache:{}:{content_hash}
+// is cached under jc:intel:extraction_cache:{content_hash}
 // (24hr TTL) so identical source content skips the LLM call on subsequent
-// crawls (BUG-18 fix, valkey-keys-catalog Section INTEL, platform-scoped per
-// ADR-112 Amendment 2).
+// crawls (BUG-18 fix, valkey-keys-catalog Section INTEL).
 func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, sourceURL, sourceType, sourceText string) (ExtractResult, error) {
 	// Check extraction cache (BUG-18 fix). The cache key is the SHA-256 of
 	// the source text + entity type, so identical content across re-crawls
@@ -156,6 +154,11 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 
 		if err != nil {
 			lastErr = err
+
+			if terminalGatewayError(err) {
+				break
+			}
+
 			continue
 		}
 
@@ -221,6 +224,26 @@ func (e *Extractor) Extract(ctx context.Context, schema schemas.EntitySchema, so
 	return ExtractResult{}, fmt.Errorf("extractor: %w (last error: %w)", ErrExtractionRetriesExhausted, lastErr)
 }
 
+// terminalGatewayError reports whether a gateway failure can never succeed on
+// retry — burning maxRetries paid calls on the same answer only delays the
+// review stub. Terminal classes: no provider configured for the category, the
+// provider not supporting function calling, and definitive client rejections
+// (4xx other than 429 — auth, unknown model, malformed request). Rate-limit
+// (429), 5xx, transport, and malformed-JSON outcomes stay retryable.
+func terminalGatewayError(err error) bool {
+	if errors.Is(err, ai.ErrNoProviders) || errors.Is(err, ai.ErrFunctionCallingUnsupported) {
+		return true
+	}
+
+	var hse *ai.HTTPStatusError
+	if errors.As(err, &hse) {
+		return hse.Status >= http.StatusBadRequest && hse.Status < http.StatusInternalServerError &&
+			hse.Status != http.StatusTooManyRequests
+	}
+
+	return false
+}
+
 // cachedExtraction returns the cached extraction result for the source text
 // when present and valid. A corrupt or legacy cache entry falls through to
 // the LLM call — returning ok=false.
@@ -250,13 +273,13 @@ func (e *Extractor) cachedExtraction(ctx context.Context, schema schemas.EntityS
 }
 
 // extractionCacheKey returns the Valkey key for the extraction cache.
-// The key is jc:intel:extraction_cache:{}:{content_hash} where
-// content_hash is the SHA-256 of the entity type + source text, ensuring
-// identical content across re-crawls hits the cache. The scopes
-// the cache per platform (ADR-112 Amendment 2).
+// The key is jc:intel:extraction_cache:{content_hash} where content_hash
+// is the SHA-256 of the entity type + source text, ensuring identical
+// content across re-crawls hits the cache (valkey-keys-catalog Section
+// INTEL).
 func (e *Extractor) extractionCacheKey(entityType, sourceText string) string {
 	h := sha256.Sum256([]byte(entityType + ":" + sourceText))
-	return "jc:intel:extraction_cache:" + pgtype.UUID{}.String() + ":" + hex.EncodeToString(h[:])
+	return "jc:intel:extraction_cache:" + hex.EncodeToString(h[:])
 }
 
 // stripFences removes surrounding markdown code fences (```json ... ```)

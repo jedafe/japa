@@ -1,6 +1,7 @@
 package sources
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
@@ -164,6 +165,10 @@ func validateChannelCreate(arg gen.CreateIntelSourceChannelParams, allowedLitera
 		return fmt.Errorf("sources: channel: %w: unknown pipeline %q", errpkg.ErrInvalid, arg.Pipeline)
 	}
 
+	if err := validateChannelProviderConfig(method, arg.ProviderConfig); err != nil {
+		return err
+	}
+
 	if pipelineRequiresEntityTypes(pipeline) && len(arg.EntityTypes) == 0 {
 		return fmt.Errorf("sources: channel: %w: entity_types required for %s pipeline", errpkg.ErrInvalid, pipeline)
 	}
@@ -174,6 +179,50 @@ func validateChannelCreate(arg gen.CreateIntelSourceChannelParams, allowedLitera
 
 	if !ChannelOrigin(arg.Origin).IsValid() {
 		return fmt.Errorf("sources: channel: %w: unknown origin %q", errpkg.ErrInvalid, arg.Origin)
+	}
+
+	return nil
+}
+
+// validateChannelProviderConfig enforces the method-required provider_config
+// keys at create/update time. A channel missing the config its fetcher
+// requires can only ever fail crawls — an api channel without
+// provider_config.endpoint, a search channel without provider_config.query —
+// and each failure burns the consecutive_failures budget until the breaker
+// disables it (audit BUG-004). Methods not listed need no channel-level
+// config (render/xhr_sniff read the env-level service URL; webhook secrets
+// are auto-provisioned; email inbound addresses are provisioned at create).
+func validateChannelProviderConfig(method CrawlMethod, raw []byte) error {
+	var required []string
+
+	switch method {
+	case CrawlMethodAPI:
+		required = []string{"endpoint"}
+	case CrawlMethodSearch:
+		required = []string{"query"}
+	default:
+		return nil
+	}
+
+	var cfg map[string]any
+	if err := json.Unmarshal(raw, &cfg); err != nil || cfg == nil {
+		cfg = map[string]any{}
+	}
+
+	for _, key := range required {
+		v, _ := cfg[key].(string)
+		if strings.TrimSpace(v) == "" {
+			return fmt.Errorf("sources: channel: %w: provider_config.%s required for %s crawl_method", errpkg.ErrRequired, key, method)
+		}
+	}
+
+	if method == CrawlMethodAPI {
+		endpoint, _ := cfg["endpoint"].(string)
+
+		u, err := url.Parse(strings.TrimSpace(endpoint))
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("sources: channel: %w: provider_config.endpoint must be an http(s) URL", errpkg.ErrInvalid)
+		}
 	}
 
 	return nil

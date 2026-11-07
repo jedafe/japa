@@ -312,20 +312,25 @@ func (s *Store) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (So
 
 // ProposedSource is a proposed-queue row plus the resolved proposer display
 // name (display_name → username → raw UUID string) so the review surface
-// never renders a bare UUID.
+// never renders a bare UUID. ProposedOrigin is 'user' or 'system' — the
+// review queue uses it to separate user-submitted proposals from
+// machine-discovered rows (audit BUG-007).
 type ProposedSource struct {
 	Source
-	ProposerName string
+	ProposerName   string
+	ProposedOrigin string
 }
 
 // ListProposed returns a page of sources with status='proposed' for admin
-// review; search (” disables) narrows by name/domain/source_url/category.
+// review; search (” disables) narrows by name/domain/source_url/category,
+// origin (''|'user'|'system') narrows by who proposed the row.
 // Platform-scoped.
-func (s *Store) ListProposed(ctx context.Context, limit, offset int32, search string) ([]ProposedSource, error) {
+func (s *Store) ListProposed(ctx context.Context, limit, offset int32, search, origin string) ([]ProposedSource, error) {
 	rows, err := s.queries.ListProposedIntelSources(ctx, gen.ListProposedIntelSourcesParams{
 		RowLimit:  limit,
 		RowOffset: offset,
 		Search:    search,
+		Origin:    origin,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("sources: list proposed: %w", err)
@@ -334,8 +339,9 @@ func (s *Store) ListProposed(ctx context.Context, limit, offset int32, search st
 	out := make([]ProposedSource, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, ProposedSource{
-			Source:       proposedRowToSource(r),
-			ProposerName: r.ProposerName,
+			Source:         proposedRowToSource(r),
+			ProposerName:   r.ProposerName,
+			ProposedOrigin: r.ProposedOrigin,
 		})
 	}
 
@@ -343,10 +349,13 @@ func (s *Store) ListProposed(ctx context.Context, limit, offset int32, search st
 }
 
 // CountProposed returns the total number of proposed sources matching the
-// same search filter as ListProposed so the review surface can
+// same search/origin filters as ListProposed so the review surface can
 // server-paginate.
-func (s *Store) CountProposed(ctx context.Context, search string) (int64, error) {
-	n, err := s.queries.CountProposedIntelSources(ctx, search)
+func (s *Store) CountProposed(ctx context.Context, search, origin string) (int64, error) {
+	n, err := s.queries.CountProposedIntelSources(ctx, gen.CountProposedIntelSourcesParams{
+		Search: search,
+		Origin: origin,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("sources: count proposed: %w", err)
 	}
