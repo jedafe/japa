@@ -137,6 +137,9 @@
 
 	<!-- Engagement metrics from /me/analytics (period-scoped; default 30d) -->
 	<DashboardPanel titleKey="dashboard.overview.engagement">
+		{#snippet actions()}
+			<span class="text-xs text-[var(--color-muted)]">{t('dashboard.analytics.last_30_days')}</span>
+		{/snippet}
 		<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
 			<MetricCard labelKey="dashboard.overview.views" value={analytics?.total_views ?? 0} />
 			<MetricCard labelKey="dashboard.overview.reactions" value={analytics?.total_reactions ?? 0} />
