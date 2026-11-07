@@ -245,7 +245,12 @@ func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, aut
 		title = stringField(ext, "name")
 	}
 
-	slug := stringField(ext, "slug")
+	// The extraction-supplied slug is still AI output — slugify it like the
+	// title fallback instead of trusting it as a valid URL part.
+	slug := slugify(stringField(ext, "slug"))
+	if slug == "" || slug == "untitled" {
+		slug = ""
+	}
 	if slug == "" && title != "" {
 		slug = slugify(title)
 	}

@@ -1834,7 +1834,9 @@ func (p *ScholarshipPromoter) ensureUniqueSlug(ctx context.Context, tx TxStore, 
 // else a deterministic record-derived value so promotion never wedges on an
 // empty slug.
 func scholarshipSlugBase(record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction) string {
-	if slug := stringField(ext, "slug"); slug != "" {
+	// An extraction-supplied slug is still AI output — slugify it like the
+	// title/source candidates instead of trusting it as a valid URL part.
+	if slug := content.Slugify(stringField(ext, "slug")); slug != "" && slug != "untitled" {
 		return slug
 	}
 

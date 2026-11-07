@@ -377,11 +377,13 @@ func (p *UniversityPromoter) universityCreatePath(ctx context.Context, record ge
 		return PromoteResult{}, fmt.Errorf("promoter: university requires a name: %w", ErrRouteToReview)
 	}
 
-	slug := stringField(ext, "slug")
-	if slug == "" {
+	// The extraction-supplied slug is still AI output — slugify it like the
+	// name fallback instead of trusting it as a valid URL part.
+	slug := content.Slugify(stringField(ext, "slug"))
+	if slug == "" || slug == "untitled" {
 		slug = content.Slugify(name)
 	}
-	if slug == "" {
+	if slug == "" || slug == "untitled" {
 		slug = slugify(name)
 	}
 

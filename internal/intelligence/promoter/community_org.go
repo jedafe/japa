@@ -240,8 +240,10 @@ func buildCommunityOrgCreateParams(record gen.IntelRecord, source gen.IntelSourc
 		name = source.Name
 	}
 
-	slug := stringField(ext, "slug")
-	if slug == "" {
+	// The extraction-supplied slug is still AI output — slugify it like the
+	// name fallback instead of trusting it as a valid URL part.
+	slug := content.Slugify(stringField(ext, "slug"))
+	if slug == "" || slug == "untitled" {
 		slug = content.Slugify(name)
 	}
 
