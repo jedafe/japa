@@ -93,6 +93,11 @@ export const load: PageServerLoad = async (event) => {
 		null;
 	let geoCountryName: string | undefined;
 
+	// ?geo=all is the documented explicit-global override (ADR-064 §2) —
+	// normalize it to the 'global' sentinel so getGeoTokens doesn't render
+	// "all" as a literal country name.
+	if (geoCountry?.toLowerCase() === 'all') geoCountry = 'global';
+
 	// Fire every geo-independent call up front so the serial chain collapses
 	// to a single wave: the landing fetch, the countries catalog (needed to
 	// name-resolve whatever geo code wins; 5m-cached so usually free), and

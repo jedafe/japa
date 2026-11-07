@@ -165,7 +165,7 @@ func parseGeoCode(r *http.Request) string {
 	// from user preference → GeoIP → system default). ?geo=all is the
 	// documented "unfiltered" override — it must not reach SQL as a literal
 	// geo_code (it would match nothing and blank the feed).
-	if g := r.URL.Query().Get("geo"); g != "" {
+	if g := strings.TrimSpace(r.URL.Query().Get("geo")); g != "" {
 		if strings.EqualFold(g, "all") {
 			return ""
 		}

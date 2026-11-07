@@ -483,6 +483,43 @@ func TestBuildSpaceItems_NilTrendingReturnsEmptySlice(t *testing.T) {
 	}
 }
 
+// TestContextMatches_JapaIntent verifies the cached-context guard sees the
+// intent axis: the tool-slug matrix keys on JapaIntent (ADR-128), so two
+// same-IP guests differing only in intent must not share a cache entry.
+func TestContextMatches_JapaIntent(t *testing.T) {
+	t.Parallel()
+
+	summary := VisitorContextSummary{
+		Archetype:      "diaspora",
+		ContentCountry: "GB",
+		OriginCountry:  "NG",
+		CurrentCountry: "GB",
+		DestCountry:    "GB",
+		JapaStage:      "planning",
+		JapaIntent:     "work",
+		CurrentCity:    "London",
+	}
+	vc := visitor.VisitorContext{
+		Archetype:          "diaspora",
+		ContentCountry:     "GB",
+		OriginCountry:      "NG",
+		CurrentCountry:     "GB",
+		DestinationCountry: "GB",
+		JapaStage:          "planning",
+		JapaIntent:         "work",
+		CurrentCity:        "London",
+	}
+
+	if !contextMatches(summary, vc) {
+		t.Error("contextMatches rejected an identical context")
+	}
+
+	vc.JapaIntent = "study"
+	if contextMatches(summary, vc) {
+		t.Error("contextMatches ignored a JapaIntent change — same-IP guests would share tool lists")
+	}
+}
+
 // contains reports whether s contains substr.
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && indexOf(s, substr) >= 0

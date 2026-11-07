@@ -95,7 +95,12 @@ func Middleware(reader *Reader) func(http.Handler) http.Handler {
 // it. Empty header, a resolved country, or an untrusted peer all leave the
 // context untouched.
 func cdnCountryFallback(gc GeoContext, r *http.Request, header string) GeoContext {
-	if gc.CountryCode != "" || header == "" {
+	if header == "" {
+		return gc
+	}
+
+	headerValue := r.Header.Get(header)
+	if headerValue == "" {
 		return gc
 	}
 
@@ -103,19 +108,26 @@ func cdnCountryFallback(gc GeoContext, r *http.Request, header string) GeoContex
 		// A country header arriving from an untrusted peer is either a spoof
 		// attempt or — more commonly — a misconfigured deployment where the
 		// CDN edge ranges are missing from JC_TRUSTED_PROXIES / the nginx
-		// edge whitelist. Warn once per process so operators can tell these
-		// apart instead of silently losing geo for every visitor.
-		if r.Header.Get(header) != "" {
-			untrustedGeoHeaderWarn.Do(func() {
-				slog.Warn("geoip: ignoring CDN country header from untrusted peer — check JC_TRUSTED_PROXIES / CDN edge whitelist",
-					"header", header, "peer", clientip.PeerIP(r))
-			})
-		}
+		// edge whitelist. This check runs before the resolved-country early
+		// return on purpose: in that misconfig the client IP resolves to the
+		// edge's own datacenter country, so the lookup "succeeds" and the
+		// forged/misrouted header would otherwise be silently ignored.
+		// Warn once per process so operators can tell these apart.
+		untrustedGeoHeaderWarn.Do(func() {
+			slog.Warn("geoip: ignoring CDN country header from untrusted peer — check JC_TRUSTED_PROXIES / CDN edge whitelist",
+				"header", header, "peer", clientip.PeerIP(r))
+		})
 
 		return gc
 	}
 
-	if cc := normalizeCountryCode(r.Header.Get(header)); cc != "" {
+	// The local MaxMind lookup stays authoritative whenever it resolved a
+	// country — the header only covers what the DB cannot.
+	if gc.CountryCode != "" {
+		return gc
+	}
+
+	if cc := normalizeCountryCode(headerValue); cc != "" {
 		gc.CountryCode = cc
 		gc.IsValid = true
 	}

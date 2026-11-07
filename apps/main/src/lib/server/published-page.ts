@@ -39,6 +39,11 @@ export async function resolveGeoContext(event: ServerLoadEvent): Promise<{
 		null;
 	let geoCountryName: string | undefined;
 
+	// ?geo=all is the documented explicit-global override (ADR-064 §2) —
+	// normalize it to the 'global' sentinel so getGeoTokens doesn't render
+	// "all" as a literal country name.
+	if (geoCountry?.toLowerCase() === 'all') geoCountry = 'global';
+
 	// The countries catalog doesn't depend on the resolved country — fire it
 	// alongside GeoIP so a needed name lookup never waits a second round-trip.
 	// It's a 5m-cached public catalog, so the speculative call is usually free.

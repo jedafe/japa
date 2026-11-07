@@ -128,6 +128,7 @@ type VisitorContextSummary struct {
 	CurrentCountry string `json:"current_country"`
 	DestCountry    string `json:"destination_country"`
 	JapaStage      string `json:"japa_stage"`
+	JapaIntent     string `json:"japa_intent"`
 	CurrentCity    string `json:"current_city"`
 }
 
@@ -286,6 +287,7 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 			CurrentCountry: vc.CurrentCountry,
 			DestCountry:    vc.DestinationCountry,
 			JapaStage:      vc.JapaStage,
+			JapaIntent:     vc.JapaIntent,
 			CurrentCity:    vc.CurrentCity,
 		},
 	}
@@ -529,6 +531,9 @@ func contextMatches(summary VisitorContextSummary, vc visitor.VisitorContext) bo
 		summary.CurrentCountry == vc.CurrentCountry &&
 		summary.DestCountry == vc.DestinationCountry &&
 		summary.JapaStage == vc.JapaStage &&
+		// JapaIntent drives the tool-slug matrix (ADR-128) — two same-IP
+		// guests differing only in intent must not share the entry.
+		summary.JapaIntent == vc.JapaIntent &&
 		summary.CurrentCity == vc.CurrentCity
 }
 

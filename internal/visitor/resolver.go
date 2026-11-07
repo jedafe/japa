@@ -649,21 +649,22 @@ type cachedVisitorContext struct {
 	VC          VisitorContext `json:"vc"`
 }
 
-// anonCacheKey picks the cache scope for an anonymous visitor. A guest
-// carrying a jc_journey_token cookie resolves under the journey token —
-// never the shared IP key, or the journey fields baked into the cached
-// context (origin, destination, stage, visa) would bleed to every other
-// guest behind the same NAT/CGNAT address. Guests carrying only transient
-// ?journey_* params (shared links) get no cache entry: their context must
-// not land under the IP key either, and a param-hash key would multiply
-// pointless entries.
+// anonCacheKey picks the cache scope for an anonymous visitor. Transient
+// ?journey_* params (shared links) disable caching entirely — even for
+// guests carrying a journey cookie: persisting a param-overridden context
+// under the token key would poison the guest's stored journey for the full
+// TTL, and serving the cached entry would silently discard the param
+// overrides. A cookie-only guest resolves under the journey token — never
+// the shared IP key, or the journey fields baked into the cached context
+// (origin, destination, stage, visa) would bleed to every other guest
+// behind the same NAT/CGNAT address.
 func (res *Resolver) anonCacheKey(r *http.Request) string {
-	if c, err := r.Cookie("jc_journey_token"); err == nil && c.Value != "" {
-		return valkey.MustKey("visitor:ctx:journey:%s", c.Value)
-	}
-
 	if hasJourneyParams(r) {
 		return ""
+	}
+
+	if c, err := r.Cookie("jc_journey_token"); err == nil && c.Value != "" {
+		return valkey.MustKey("visitor:ctx:journey:%s", c.Value)
 	}
 
 	return valkey.MustKey("visitor:ctx:ip:%s", clientip.FromRequest(r))

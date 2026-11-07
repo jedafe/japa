@@ -79,11 +79,13 @@ type SearchHealthChecker interface {
 }
 
 // GeoIPHealthChecker reports GeoIP database load status for the Control
-// Panel infrastructure health group (Section 37). The anonymous-IP
-// database is optional — AnonymousConfigured reports whether a path was
-// set so its check only appears when the operator asked for it.
+// Panel infrastructure health group (Section 37). Both databases are
+// optional config — the *Configured methods report whether a path was set
+// so each check only appears when the operator asked for it (an
+// unconfigured deployment shows no row, never a misleading "down").
 type GeoIPHealthChecker interface {
 	IsLoaded() bool
+	CityConfigured() bool
 	AnonymousConfigured() bool
 	AnonymousLoaded() bool
 }
@@ -622,15 +624,18 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 
 	// GeoIP (Section 37): a missing/unloadable .mmdb degrades geo-aware
 	// surfaces to defaults without erroring any request — the only place
-	// that failure is visible is here.
+	// that failure is visible is here. Rows appear only for databases the
+	// operator actually configured (CityConfigured / AnonymousConfigured).
 	if h.GeoIP != nil {
-		infrastructure = append(infrastructure, checkService("GeoIP", func(_ context.Context) error {
-			if !h.GeoIP.IsLoaded() {
-				return errors.New("city database not loaded")
-			}
+		if h.GeoIP.CityConfigured() {
+			infrastructure = append(infrastructure, checkService("GeoIP", func(_ context.Context) error {
+				if !h.GeoIP.IsLoaded() {
+					return errors.New("city database not loaded")
+				}
 
-			return nil
-		}))
+				return nil
+			}))
+		}
 
 		if h.GeoIP.AnonymousConfigured() {
 			infrastructure = append(infrastructure, checkService("GeoIP Anonymous-IP", func(_ context.Context) error {

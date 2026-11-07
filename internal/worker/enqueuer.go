@@ -94,6 +94,7 @@ var idempotentTasks = map[string]bool{
 	TypeWikiPopulateFacts:               true, // enrichment — collapse repeat fact-fetches for the same space_id
 	TypeSearchReindexAll:                true, // collapse repeat full-resync enqueues (same payload)
 	TypeSearchReindexSpaceEntities:      true, // collapse repeat fan-outs for the same space_id
+	TypeMaintenanceUpdateGeoIPDB:        true, // §37 — multi-replica boots each enqueue a DB-missing update; one download is enough and both targets share a .tmp path
 }
 
 func taskDefaults(taskType string) []asynq.Option {

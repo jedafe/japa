@@ -547,9 +547,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	missingGeoDB := (cfg.GeoIPDBPath != "" && !geoipReader.IsLoaded()) ||
 		(cfg.GeoIPAnonDBPath != "" && !geoipReader.AnonymousLoaded())
 	if missingGeoDB && cfg.MaxmindLicenseKey != "" {
-		if err := taskEnqueuer.Enqueue(worker.TypeMaintenanceUpdateGeoIPDB, nil); err != nil {
+		err := taskEnqueuer.Enqueue(worker.TypeMaintenanceUpdateGeoIPDB, nil)
+		switch {
+		case errors.Is(err, asynq.ErrDuplicateTask):
+			// Another replica already queued the update — that's the
+			// dedupe working, not a failure.
+			slog.Info("server: geoip boot update already queued")
+		case err != nil:
 			slog.Warn("server: geoip boot update enqueue failed", "error", err)
-		} else {
+		default:
 			slog.Info("server: geoip database missing — enqueued immediate update")
 		}
 	}
@@ -3541,6 +3547,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	controlHandlers.SetHoncho(honcho.NewClient(cfg.HonchoURL)) // ADR-027: infra health
 	controlHandlers.SetGeoIP(geoIPHealth{                      // §37: .mmdb load status
 		reader:      geoipReader,
+		cityPending: cfg.GeoIPDBPath != "",
 		anonPending: cfg.GeoIPAnonDBPath != "",
 	})
 	controlHandlers.SetAIStore(aiStore) // AI budget dashboard aggregation
@@ -9760,15 +9767,17 @@ func (a audienceResolverAdapter) ResolveScope(ctx context.Context, userID pgtype
 // ---------------------------------------------------------------------------
 
 // geoIPHealth exposes GeoIP database load status to the Control Panel
-// health view (Section 37). anonPending records whether JC_GEOIP_ANON_DB_PATH
-// was configured so the anonymous-IP check only appears when an operator
-// asked for that database.
+// health view (Section 37). The *Pending flags record which database paths
+// were configured so each check only appears when an operator asked for
+// that database — an unconfigured .mmdb is "not set up", not "down".
 type geoIPHealth struct {
 	reader      *geoip.Reader
+	cityPending bool
 	anonPending bool
 }
 
 func (g geoIPHealth) IsLoaded() bool            { return g.reader.IsLoaded() }
+func (g geoIPHealth) CityConfigured() bool      { return g.cityPending }
 func (g geoIPHealth) AnonymousConfigured() bool { return g.anonPending }
 func (g geoIPHealth) AnonymousLoaded() bool     { return g.reader.AnonymousLoaded() }
 

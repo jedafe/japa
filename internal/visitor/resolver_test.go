@@ -543,12 +543,14 @@ func TestAnonCacheKey(t *testing.T) {
 		t.Errorf("anonCacheKey(param-only) = %q, want empty", k)
 	}
 
-	// Cookie wins over params (cookie guests are keyed by token).
+	// Params are transient even for cookied guests: a param-overridden
+	// context must neither persist under the token key nor be masked by the
+	// cached entry — so it bypasses the cache entirely.
 	req = httptest.NewRequest(http.MethodGet, "/?journey_origin=NG", nil)
 	req.AddCookie(&http.Cookie{Name: "jc_journey_token", Value: "tok9"})
 
-	if k := res.anonCacheKey(req); !strings.HasSuffix(k, "visitor:ctx:journey:tok9") {
-		t.Errorf("anonCacheKey(cookie+params) = %q, want journey scope", k)
+	if k := res.anonCacheKey(req); k != "" {
+		t.Errorf("anonCacheKey(cookie+params) = %q, want empty (params bypass cache)", k)
 	}
 
 	// Plain anonymous guests fall back to the IP scope.
