@@ -20,14 +20,19 @@
 		item: FeedItem;
 		style: CardStyle;
 		layout: 'stream' | 'grid-cell';
+		/** For You/Following feeds open the unified discussion page by
+		 *  default (thread-rename spec): every item resolves to
+		 *  /thread/{slug} — the embed card there links back to the
+		 *  canonical content page. Other surfaces keep canonical links. */
+		threadDefault?: boolean;
 	}
-	let { item, style, layout }: Props = $props();
+	let { item, style, layout, threadDefault = false }: Props = $props();
 
 	// Content-type pill label. Resolved via i18n with a content_type.{value}
 	// key; falls back to a humanized form of the raw type for unknown types.
 	// Ref: Guide §7 (i18n), Rule 16 — no hardcoded English in components.
 	const typeLabel = (ct: string) => t(`content_type.${ct}`, ct.replace(/_/g, ' '));
-	const href = (i: FeedItem) => contentHref(i);
+	const href = (i: FeedItem) => (threadDefault ? `/thread/${i.slug}` : contentHref(i));
 	const time = $derived(relativeTime(item.created_at, new Date(), i18n.locale));
 	const initials = $derived((item.author_name ?? '?').slice(0, 2).toUpperCase());
 	// §106 video — thumbnail play overlay + duration badge on video cards.
