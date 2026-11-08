@@ -74,7 +74,7 @@ var ActivityRoutes = []activityRoute{
 	// against internal/server/server.go registrations.
 	{Method: http.MethodPost, Prefix: "/spaces", Key: "space.created", RefMode: "root_unique"},
 	{Method: http.MethodPost, Prefix: "/scam-alerts", Key: "scam_report.submitted", RefMode: "root_unique"},
-	{Method: http.MethodPost, Prefix: "/forum", Key: "forum.thread_created", RefMode: "root_unique"},
+	{Method: http.MethodPost, Prefix: "/thread", Key: "forum.thread_created", RefMode: "root_unique"},
 	{Method: http.MethodPost, Prefix: "/mentorship/request", Key: "mentorship.requested", RefMode: "root_unique"},
 	{Method: http.MethodPost, Prefix: "/jce/comparisons", Key: "comparison.completed", RefMode: "root_unique"},
 	{Method: http.MethodPost, Prefix: "/jce/comparisons/from-token", Key: "comparison.completed", RefMode: "unique"},
@@ -148,7 +148,7 @@ var bodyActivityRoutes = []struct {
 	}},
 	// Poll creation rides on the thread-create payload — body {poll}. Each
 	// poll counts (Poll Master ×3) so the ref must be unique per request.
-	{Method: http.MethodPost, Prefix: "/forum", RefMode: "unique", Rules: []bodyRouteRule{
+	{Method: http.MethodPost, Prefix: "/thread", RefMode: "unique", Rules: []bodyRouteRule{
 		{Field: "poll", KeyFor: map[string]string{}, Default: "forum.poll_created"},
 	}},
 }

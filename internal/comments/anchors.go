@@ -121,6 +121,12 @@ func (s *Service) ResolveAnchor(ctx context.Context, entityType, entityKey strin
 		if err != nil {
 			return AnchorSummary{}, err
 		}
+		// The resolve route is public — only surface rows an anonymous
+		// viewer could load on an entity page. Drafts, pending-moderation
+		// and non-public rows must not leak title/slug/comment_count.
+		if row.Status != content.StatusPublished || row.Visibility != content.VisibilityPublic {
+			return AnchorSummary{}, pgx.ErrNoRows
+		}
 
 		return AnchorSummary{
 			ContentID:    row.ID,
@@ -282,6 +288,13 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 	})
 	if err != nil {
 		return AnchorSummary{}, fmt.Errorf("creating thread anchor: %w", err)
+	}
+
+	// Lost the get-or-create race: ON CONFLICT kept the earlier row's
+	// content_id, so our minted contents row is unanchored. Re-resolve to
+	// return the winning anchor's slug instead of the orphan's.
+	if anchor.ContentID != row.ID {
+		return s.ResolveAnchor(ctx, entityType, entityKey)
 	}
 
 	return AnchorSummary{

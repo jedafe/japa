@@ -3937,7 +3937,7 @@ func generateForumRSSForPlatform(ctx context.Context, q *gen.Queries, baseURL st
 
 	xmlBytes := rssmodel.Render(
 		siteName+" — Forum",
-		baseURL+"/forum",
+		baseURL+"/thread",
 		"Latest discussions from the "+siteName+" community forum.",
 		"en",
 		baseURL+"/thread/feed.xml",

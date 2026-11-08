@@ -427,7 +427,7 @@ func (h *Handlers) HandleForumFeed(w http.ResponseWriter, r *http.Request) {
 			return feedItemsFromForumRows(rows, siteURL), nil
 		},
 		h.siteName+" — Forum",
-		siteURL+"/forum",
+		siteURL+"/thread",
 		"Latest discussions from the "+h.siteName+" community forum.",
 	)
 }

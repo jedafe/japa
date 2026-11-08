@@ -11,8 +11,11 @@ BEGIN;
 -- space — anchor threads file here so comments stay open to members.
 -- space_type_id '...63' is the seeded 'community' space type (baseline seed);
 -- creator_user_id NULL marks the space as platform-run (is_primary).
+-- commenting_perm/replying_perm are 'open': anchor threads are entity
+-- discussion surfaces, so any authenticated member can comment without
+-- joining this hidden platform space (001092 corrects existing rows).
 INSERT INTO public.spaces (id, space_type_id, name, slug, description, level, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, status)
-VALUES ('9c7c2a1d-2c47-4e3b-9f9d-7a1b9e6a2f01', '00000000-0000-0000-0000-000000000063', 'Community Threads', 'community-threads', 'Threads attached to tools and wiki pages.', 'community', 'public', 'members', 'members', 'members', 'open', 'active')
+VALUES ('9c7c2a1d-2c47-4e3b-9f9d-7a1b9e6a2f01', '00000000-0000-0000-0000-000000000063', 'Community Threads', 'community-threads', 'Threads attached to tools and wiki pages.', 'community', 'public', 'members', 'open', 'open', 'open', 'active')
 ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE thread_anchors (
