@@ -15,7 +15,7 @@
 	 * ?scope= filters items + entries by extension.
 	 * Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	 */
-	let { data } = $props<{ data: PageData }>();
+	let { data }: { data: PageData } = $props();
 
 	const rel = $derived(data.release);
 	const scopes = $derived.by(() => {

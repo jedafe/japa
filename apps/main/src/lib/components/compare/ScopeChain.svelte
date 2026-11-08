@@ -19,12 +19,12 @@
 		selections = $bindable({}),
 		labels = $bindable({}),
 		onChange
-	} = $props<{
+	}: {
 		chain: string[];
 		selections: Record<string, string>;
 		labels?: Record<string, string>;
 		onChange: (key: string, value: string) => void;
-	}>();
+	} = $props();
 
 	let options = $state<Record<string, ScopeOption[]>>({});
 

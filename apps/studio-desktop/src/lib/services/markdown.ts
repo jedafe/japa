@@ -34,7 +34,7 @@ export function parseFrontmatter(text: string): ParsedMarkdown {
 }
 
 export function buildMarkdown(frontmatter: Record<string, unknown>, body: string): string {
-	const dumped = yaml.dump(frontmatter, { lineWidth: -1, noArrayIndent: false }).trim();
+	const dumped = yaml.dump(frontmatter, { lineWidth: -1 }).trim();
 	return `---\n${dumped}\n---\n\n${body.trim()}\n`;
 }
 

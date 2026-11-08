@@ -13,7 +13,7 @@
 	 * not yet absorbed into a published release.
 	 * Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	 */
-	let { data } = $props<{ data: PageData }>();
+	let { data }: { data: PageData } = $props();
 
 	const entries = $derived((data.entries ?? []) as RoadmapReleaseEntry[]);
 

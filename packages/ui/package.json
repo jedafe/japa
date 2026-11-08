@@ -27,10 +27,10 @@
 		}
 	},
 	"peerDependencies": {
-		"svelte": "^5.0.0",
+		"svelte": "^5.57.3",
 		"@sveltejs/kit": "^2.0.0 || ^3.0.0",
-		"lucide-svelte": "^1.0.0",
-		"tailwindcss": "^4.0.0",
+		"lucide-svelte": "^1.0.1",
+		"tailwindcss": "^4.3.5",
 		"bits-ui": "^2.0.0",
 		"@tiptap/core": "^3.0.0",
 		"@tiptap/extension-image": "^3.0.0",
@@ -99,10 +99,10 @@
 		}
 	},
 	"devDependencies": {
-		"bits-ui": "^2.18.1",
-		"@tiptap/core": "^3.29.0",
+		"bits-ui": "^2.20.6",
+		"@tiptap/core": "^3.33.0",
 		"@tiptap/extension-image": "^3.33.0",
-		"@tiptap/extension-link": "^3.29.0",
+		"@tiptap/extension-link": "^3.33.0",
 		"@tiptap/extension-mention": "^3.33.0",
 		"@tiptap/extension-placeholder": "^3.33.0",
 		"@tiptap/extension-table": "^3.33.0",
@@ -111,7 +111,7 @@
 		"@tiptap/extension-table-row": "^3.33.0",
 		"@tiptap/extension-youtube": "^3.33.0",
 		"@tiptap/markdown": "^3.33.0",
-		"@tiptap/pm": "^3.29.0",
+		"@tiptap/pm": "^3.33.0",
 		"@tiptap/starter-kit": "^3.33.0",
 		"@tiptap/suggestion": "^3.33.0",
 		"heic2any": "0.0.4"

@@ -12,7 +12,7 @@
 	 * back to eol_at, then a 1-month minimum band).
 	 * Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	 */
-	let { data } = $props<{ data: PageData }>();
+	let { data }: { data: PageData } = $props();
 
 	const release = $derived((data.releases ?? []) as RoadmapRelease[]);
 	const bySurface = $derived.by(() => {

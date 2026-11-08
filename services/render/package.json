@@ -1,15 +1,15 @@
 {
-  "name": "@japaconnect/render-service",
-  "private": true,
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "start": "bun run src/server.ts",
-    "dev": "bun --watch run src/server.ts",
-    "test": "bun test",
-    "install:browsers": "bunx playwright install chromium"
-  },
-  "dependencies": {
-    "playwright-core": "1.64.1"
-  }
+	"name": "@japaconnect/render-service",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"start": "bun run src/server.ts",
+		"dev": "bun --watch run src/server.ts",
+		"test": "bun test",
+		"install:browsers": "bunx playwright install chromium"
+	},
+	"dependencies": {
+		"playwright-core": "^1.65.0"
+	}
 }
