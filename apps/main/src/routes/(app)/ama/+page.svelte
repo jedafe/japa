@@ -94,7 +94,7 @@
 		if (destFilter) params.set('dest', destFilter);
 		if (professionFilter) params.set('profession', professionFilter);
 		if (view === 'closed') params.set('status', 'closed');
-		const res = await api.get<AMAThread[]>(`/forum/ama?${params.toString()}`);
+		const res = await api.get<AMAThread[]>(`/thread/ama?${params.toString()}`);
 		if (res.error) {
 			loading = false;
 			return;
@@ -147,7 +147,7 @@
 		if (destFilter) params.set('dest', destFilter);
 		if (professionFilter) params.set('profession', professionFilter);
 		params.set('status', 'closed');
-		const res = await api.get<AMAThread[]>(`/forum/ama?${params.toString()}`);
+		const res = await api.get<AMAThread[]>(`/thread/ama?${params.toString()}`);
 		loading = false;
 		if (res.error) return;
 		sessions = res.data ?? [];

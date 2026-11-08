@@ -87,7 +87,7 @@ export const load: PageServerLoad = async (event) => {
 	// /create (stories use the standard composer; the backend syncs
 	// story_meta and routes publishes into §79 moderation). Pages are
 	// created in the admin pagebuilder; discussions are created in the forum
-	// composer (ComposeModal -> DiscussionComposer or /forum/[category]/new).
+	// composer (ComposeModal -> DiscussionComposer or /thread/[category]/new).
 	// Invalid ?type values are ignored and fall back to the first allowed type.
 	// 'blog' is accepted as an alias for the canonical 'blog_post' — external
 	// links and hand-typed URLs use it even though the public route is /blog.

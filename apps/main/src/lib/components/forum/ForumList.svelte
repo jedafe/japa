@@ -86,7 +86,7 @@
 			params.set('solved', status === 'solved' ? 'true' : 'false');
 		}
 
-		const path = `/forum?${params.toString()}`;
+		const path = `/thread?${params.toString()}`;
 		const res = await api.get<ForumThread[]>(path);
 		if (res.error) {
 			loading = false;
@@ -144,7 +144,7 @@
 		action={
 			page.data.user
 				? { label: t('forum.start_discussion', 'Start a discussion'), onclick: () => compose.openDiscussion() }
-				: { label: t('forum.start_discussion', 'Start a discussion'), href: '/login?redirect=' + encodeURIComponent('/forum') }
+				: { label: t('forum.start_discussion', 'Start a discussion'), href: '/login?redirect=' + encodeURIComponent('/thread') }
 		}
 	/>
 {:else}

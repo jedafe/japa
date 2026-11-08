@@ -139,7 +139,7 @@
 			'/notifications': 'notifications',
 			'/messages': 'messages',
 			'/stories': 'stories',
-			'/forum': 'forum',
+			'/thread': 'forum',
 			'/discover': 'discover',
 			'/explore': 'explore',
 			'/academy': 'academy',

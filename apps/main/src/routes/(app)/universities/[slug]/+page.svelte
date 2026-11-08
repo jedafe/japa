@@ -611,7 +611,7 @@
 			{:else}
 				<div class="mt-3 divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					{#each forums as thread (thread.id)}
-						<a href="/forum/{thread.slug}" class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
+						<a href="/thread/{thread.slug}" class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
 							<h3 class="text-sm font-medium text-[var(--color-text)]">{thread.title}</h3>
 							<div class="mt-2 flex items-center gap-4 text-xs text-[var(--color-muted)]">
 								<span>{thread.comment_count ?? 0} {t('profile.comments', 'comments')}</span>

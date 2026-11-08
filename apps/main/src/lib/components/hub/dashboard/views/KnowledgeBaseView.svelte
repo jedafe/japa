@@ -23,7 +23,7 @@
 			case 'blog_post':
 				return `/${idOrSlug}`;
 			case 'forum_thread':
-				return `/forum/${idOrSlug}`;
+				return `/thread/${idOrSlug}`;
 			case 'space':
 				return `/spaces/${idOrSlug}`;
 			case 'tag':

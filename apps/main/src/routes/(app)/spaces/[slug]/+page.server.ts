@@ -143,7 +143,7 @@ export const load: PageServerLoad = async (event) => {
 		apiList<SpaceMember>(ctx, `/spaces/${slug}/members?page_size=${pageSize}`)
 			.then((r) => r.items)
 			.catch(() => []),
-		apiList<ForumThread>(ctx, `/forum?space_id=${spaceId}&page_size=${forumPageSize}`)
+		apiList<ForumThread>(ctx, `/thread?space_id=${spaceId}&page_size=${forumPageSize}`)
 			.then((r) => r.items)
 			.catch(() => []),
 		// Moderators list — only fetched for the owner/moderator so the

@@ -24,7 +24,7 @@
 	import type { ForumReply } from '#lib/types/index.js';
 	import VoteRail from './VoteRail.svelte';
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
-	// Reply view count is recorded via POST /forum/replies/{id}/view when the
+	// Reply view count is recorded via POST /thread/replies/{id}/view when the
 	// reply is first visible in the viewport.
 	// Self-import replaces the deprecated <svelte:self> for recursive nesting.
 	import ReplyItem from './ReplyItem.svelte';
@@ -104,11 +104,11 @@
 	// §88 AMA: is this a pending question awaiting host approval?
 	const isPending = $derived(!!reply.ama_pending && !approvedLocally);
 
-	// §88: host approves a pending question via POST /forum/ama/:id/questions/:replyId/approve
+	// §88: host approves a pending question via POST /thread/ama/:id/questions/:replyId/approve
 	async function approveQuestion() {
 		if (approving) return;
 		approving = true;
-		const res = await api.post(`/forum/ama/${threadId}/questions/${reply.id}/approve`, {});
+		const res = await api.post(`/thread/ama/${threadId}/questions/${reply.id}/approve`, {});
 		approving = false;
 		if (!res.error) approvedLocally = true;
 	}
@@ -186,7 +186,7 @@
 		const observer = new IntersectionObserver(
 			(entries) => {
 				if (entries[0]?.isIntersecting) {
-					api.post(`/forum/replies/${reply.id}/view`, {}, { 'x-silent-error': '1' });
+					api.post(`/thread/replies/${reply.id}/view`, {}, { 'x-silent-error': '1' });
 					viewRecorded = true;
 					observer.disconnect();
 				}
@@ -238,7 +238,7 @@
 		if (!replyBody || submitting) return;
 		if (!(await requireAuthOrRedirect())) return;
 		submitting = true;
-		const res = await api.post<ForumReply>(`/forum/${threadId}/replies`, {
+		const res = await api.post<ForumReply>(`/thread/${threadId}/replies`, {
 			body: replyBody,
 			parent_reply_id: reply.id
 		});
@@ -258,7 +258,7 @@
 		// Fetch the raw (unresolved) body so authored {{...}} literals survive a
 		// re-save — the display payload is resolved and CommentEditor reads
 		// initialBody once at mount.
-		const res = await api.get<ForumReply[]>(`/forum/${threadId}/replies?raw=1`);
+		const res = await api.get<ForumReply[]>(`/thread/${threadId}/replies?raw=1`);
 		const raw = res.data?.find((r) => r.id === reply.id);
 		editBody = raw?.body ?? reply.body;
 		editing = true;
@@ -268,7 +268,7 @@
 		if (savingEdit || !canEditReplyInWindow || !editBody) return;
 		savingEdit = true;
 		editError = null;
-		const res = await api.patch<ForumReply>(`/forum/replies/${reply.id}`, {
+		const res = await api.patch<ForumReply>(`/thread/replies/${reply.id}`, {
 			body: editBody,
 			is_anonymous: reply.is_anonymous
 		});
@@ -291,7 +291,7 @@
 		if (!confirm(t('forum.delete_reply_confirm', 'Delete this reply? This cannot be undone.'))) return;
 		deleting = true;
 		deleteError = null;
-		const res = await api.delete(`/forum/replies/${reply.id}`);
+		const res = await api.delete(`/thread/replies/${reply.id}`);
 		deleting = false;
 		if (res.error) {
 			deleteError = res.error.message || t('forum.delete_error', 'Failed to delete reply.');

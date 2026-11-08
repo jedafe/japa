@@ -27,9 +27,9 @@
 			path: '/blog/feed.xml'
 		},
 		{
-			name: t('rss.feed.forum', 'Forum'),
+			name: t('rss.feed.forum', 'Threads'),
 			desc: t('rss.feed.forum_desc', 'Latest discussions across public spaces'),
-			path: '/forum/feed.xml'
+			path: '/thread/feed.xml'
 		},
 		{
 			name: t('rss.feed.releases', 'Releases'),

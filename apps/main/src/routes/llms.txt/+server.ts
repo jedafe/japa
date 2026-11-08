@@ -27,7 +27,7 @@ const fallback = (origin: string) => [
 	'## Top Links',
 	'',
 	`- [Blog](${origin}/blog)`,
-	`- [Forum](${origin}/forum)`,
+	`- [Threads](${origin}/thread)`,
 	`- [Spaces](${origin}/spaces)`,
 	`- [Tags](${origin}/tags)`,
 	`- [Deals](${origin}/products/deals)`,

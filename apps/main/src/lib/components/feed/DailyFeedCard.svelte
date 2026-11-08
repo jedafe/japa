@@ -202,7 +202,7 @@
 		try {
 			if (forumId) {
 				if (next) {
-					const res = await api.post<{ id: string }>(`/forum/bookmarks`, {
+					const res = await api.post<{ id: string }>(`/thread/bookmarks`, {
 						entity_type: 'forum_thread',
 						entity_id: forumId
 					});
@@ -223,7 +223,7 @@
 						bmId = m.get(forumId);
 					}
 					if (bmId) {
-						const res = await api.delete(`/forum/bookmarks/${bmId}`);
+						const res = await api.delete(`/thread/bookmarks/${bmId}`);
 						if (res.error) throw new Error(res.error.message);
 						m.delete(forumId);
 					}

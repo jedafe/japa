@@ -35,4 +35,24 @@ CREATE TABLE thread_anchors (
 
 CREATE INDEX idx_thread_anchors_entity ON thread_anchors (entity_type, entity_key);
 
+-- ── /forum → /thread canonical URL updates ────────────────────────────────
+-- Old frontend paths 301 to /thread, but stored config should emit canonical
+-- URLs so menus, sidebars and suggestion cards don't bounce through the shim.
+
+-- Seeded nav menu item ("Japa Discuss") — feature_flag stays 'feature.forum'.
+UPDATE public.menu_items SET url = '/thread' WHERE url = '/forum';
+
+-- Right-sidebar route family for the forum pages.
+UPDATE public.sidebars SET page_pattern = '/thread/*' WHERE slug = 'main-forum-right' AND page_pattern = '/forum/*';
+
+-- Next-action suggestion card that links members into the forum.
+UPDATE public.next_action_rules
+SET payload = jsonb_set(payload, '{cta_url}', '"/thread"')
+WHERE payload->>'cta_url' = '/forum';
+
+-- Page-builder block HTML linking to the forum (e.g. the seeded FAQ page).
+UPDATE public.pages
+SET blocks = REPLACE(blocks::text, '"/forum"', '"/thread"')::jsonb
+WHERE blocks::text LIKE '%"/forum"%';
+
 COMMIT;

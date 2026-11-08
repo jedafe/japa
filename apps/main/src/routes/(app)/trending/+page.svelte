@@ -58,7 +58,7 @@
 
 	// Build the canonical URL for a trending content item via the shared
 	// contentHref mapping — every content type lands directly on its own
-	// route family (blog posts /blog/{slug}, threads /forum/{slug}, guides
+	// route family (blog posts /blog/{slug}, threads /thread/{slug}, guides
 	// /guide/{slug}, …) instead of bouncing through /content's 301.
 	function contentUrl(item: { content_type: string; slug: string }): string {
 		return contentHref(item);

@@ -103,11 +103,11 @@
 			case 'source':
 				return `/sources/${slug}`;
 			case 'forum_reply':
-				return slug ? `/forum/${slug}` : null;
+				return slug ? `/thread/${slug}` : null;
 			case 'message':
 				return null;
 			default:
-				if (report.thread_slug) return `/forum/${report.thread_slug}`;
+				if (report.thread_slug) return `/thread/${report.thread_slug}`;
 				return contentHref({ slug, content_type: report.entity_content_type });
 		}
 	}

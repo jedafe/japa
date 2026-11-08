@@ -314,18 +314,18 @@
 		// entity_slug carries the content slug for content/comment reports, the
 		// space slug for space reports, and the source slug for source reports.
 		// entity_content_type picks the canonical per-type route via contentHref
-		// (/story, /video, /guide, /forum, …). thread_slug marks content backing
-		// a forum thread — those render at /forum/[slug]. Messages have no public
+		// (/story, /video, /guide, /thread, …). thread_slug marks content backing
+		// a forum thread — those render at /thread/[slug]. Messages have no public
 		// page (DMs are private to participants) — the excerpt renders inline.
 		if (item.entity_type === 'content' || item.entity_type === 'comment') {
-			if (item.thread_slug) return `/forum/${item.thread_slug}`;
+			if (item.thread_slug) return `/thread/${item.thread_slug}`;
 			if (item.entity_slug) {
 				return contentHref({ slug: item.entity_slug, content_type: item.entity_content_type });
 			}
 			return null;
 		}
 		if (item.entity_type === 'forum_reply') {
-			return item.thread_slug || item.entity_slug ? `/forum/${item.thread_slug || item.entity_slug}` : null;
+			return item.thread_slug || item.entity_slug ? `/thread/${item.thread_slug || item.entity_slug}` : null;
 		}
 		if (item.entity_type === 'space' && item.entity_slug) return `/spaces/${item.entity_slug}`;
 		if (item.entity_type === 'user' && item.entity_title) return `/u/${item.entity_title}`;

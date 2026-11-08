@@ -15,8 +15,8 @@
 
 	/**
 	 * Inline discussion composer — rendered inside the Compose bottom sheet.
-	 * Creates a forum thread via POST /forum, optionally with a poll via
-	 * POST /forum/polls. Uses the TipTap PostEditor for rich text editing.
+	 * Creates a forum thread via POST /thread, optionally with a poll via
+	 * POST /thread/polls. Uses the TipTap PostEditor for rich text editing.
 	 * Ref: ADR-058 (discussion posts compose inline) and
 	 *      sections/08-forum-qa-solved.md
 	 */
@@ -130,7 +130,7 @@
 						}
 					: undefined;
 
-			const res = await api.post<ForumThread>('/forum', {
+			const res = await api.post<ForumThread>('/thread', {
 				title: title.trim(),
 				slug,
 				body: encodeTiptapDoc(bodyJson as unknown as TipTapDoc),
@@ -164,7 +164,7 @@
 			}
 
 			onClose();
-			goto(`/forum/${thread.slug}`);
+			goto(`/thread/${thread.slug}`);
 		} catch {
 			errorMsg = t('forum.new.error_generic', 'Failed to create the discussion. Please try again.');
 			submitting = false;

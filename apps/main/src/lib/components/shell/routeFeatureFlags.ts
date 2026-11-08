@@ -32,7 +32,7 @@ export const routeFeatureFlags: Map<string, RouteFeatureFlag> = new Map<
 >([
 	// Content features
 	['/blog', 'feature.blog'],
-	['/forum', 'feature.forum'],
+	['/thread', 'feature.forum'],
 	// §14 list amendment — hides any seeded /lists nav item when the type is
 	// off; /list covers the singular family for completeness.
 	['/lists', 'list.enabled'],

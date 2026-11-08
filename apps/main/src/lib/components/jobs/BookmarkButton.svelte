@@ -49,8 +49,8 @@
 			// Ref: japaconnect-engineering/sections/14-content-type-system.md
 			// Content/blog_post bookmarks use the entity-scoped routes
 			// POST/DELETE /content/{id}/bookmark (api-routes-catalog L272-273).
-			// Forum thread bookmarks use POST /forum/bookmarks + DELETE
-			// /forum/bookmarks/{bookmark_id} — a different flow that requires
+			// Forum thread bookmarks use POST /thread/bookmarks + DELETE
+			// /thread/bookmarks/{bookmark_id} — a different flow that requires
 			// the bookmark row ID, so it is handled by the forum UI directly,
 			// not this generic button.
 			if (entityType === 'content' || entityType === 'blog_post') {

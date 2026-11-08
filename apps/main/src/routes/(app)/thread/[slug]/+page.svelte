@@ -51,7 +51,7 @@ import { contentHref } from '#lib/utils/contentLink.js';
 	const title = $derived(`${thread.title} — ${t('forum.list_title', 'Forum')}`);
 	// Section 26 — self-referencing canonical on the clean slug URL (never
 	// the query-string form) so filtered/paginated hits consolidate.
-	const canonical = $derived(`${page.url.origin}/forum/${thread.slug}`);
+	const canonical = $derived(`${page.url.origin}/thread/${thread.slug}`);
 	const description = $derived(tiptapExcerpt(thread.body, 160));
 
 	// BUG-013: use the backend-provided JSON-LD (which includes the
@@ -78,20 +78,20 @@ import { contentHref } from '#lib/utils/contentLink.js';
 	);
 
 	// BreadcrumbList JSON-LD (Section 26 — all pages with hierarchy).
-	// Forum threads live under /forum, optionally within a space.
+	// Forum threads live under /thread, optionally within a space.
 	const breadcrumbLd = $derived(
 		JSON.stringify(
 			breadcrumbJsonLd(
 				thread.space_slug
 					? [
 							{ name: 'Home', path: page.url.origin },
-							{ name: 'Forum', path: `${page.url.origin}/forum` },
+							{ name: 'Forum', path: `${page.url.origin}/thread` },
 							{ name: thread.space_name ?? thread.space_slug, path: `${page.url.origin}/spaces/${thread.space_slug}` },
 							{ name: thread.title, path: canonical }
 						]
 					: [
 							{ name: 'Home', path: page.url.origin },
-							{ name: 'Forum', path: `${page.url.origin}/forum` },
+							{ name: 'Forum', path: `${page.url.origin}/thread` },
 							{ name: thread.title, path: canonical }
 						]
 			)
@@ -132,7 +132,7 @@ import { contentHref } from '#lib/utils/contentLink.js';
 		// Tags are universal (Sections 08/14): the composer's tag flow uses
 		// POST /content/{id}/tags {tag_slugs} — get-or-creates missing slugs
 		// server-side and enforces the per-content cap with too_many_tags.
-		// The /forum/{id}/tags bulk endpoint takes UUIDs and requires
+		// The /thread/{id}/tags bulk endpoint takes UUIDs and requires
 		// forum.tag.assign, so it cannot serve author-typed slugs.
 		const res = await api.post(`/content/${thread.content_id}/tags`, { tag_slugs: newTagSlugs });
 		tagSaving = false;
@@ -204,7 +204,7 @@ import { contentHref } from '#lib/utils/contentLink.js';
 		};
 		if (pollCloseAt) body.close_at = new Date(pollCloseAt).toISOString();
 
-		const res = await api.post(`/forum/${thread.id}/poll`, body);
+		const res = await api.post(`/thread/${thread.id}/poll`, body);
 		pollSubmitting = false;
 		if (res.error) {
 			pollError = res.error.message ?? t('forum.poll_create_error', 'Could not create poll');
@@ -235,16 +235,16 @@ import { contentHref } from '#lib/utils/contentLink.js';
 			},
 			call: () =>
 				wasSolved
-					? api.delete(`/forum/${thread.id}/solve`)
-					: api.post(`/forum/${thread.id}/solve`, replyId ? { reply_id: replyId } : {})
+					? api.delete(`/thread/${thread.id}/solve`)
+					: api.post(`/thread/${thread.id}/solve`, replyId ? { reply_id: replyId } : {})
 		});
 		solving = false;
 		if (res.ok) await invalidateAll();
 	}
 
-	// Bookmark toggle — POST/DELETE /forum/bookmarks with entity_type=thread.
+	// Bookmark toggle — POST/DELETE /thread/bookmarks with entity_type=thread.
 	// The backend returns bookmark_id on GetThread so DELETE can target
-	// /forum/bookmarks/{id} directly. Ref: sections/08-forum-qa-solved.md (Bookmarks)
+	// /thread/bookmarks/{id} directly. Ref: sections/08-forum-qa-solved.md (Bookmarks)
 	// Seed from SSR props (same hydration-flash fix as `solved` above).
 	let bookmarked = $state(untrack(() => data.isBookmarked));
 	let bookmarking = $state(false);
@@ -275,7 +275,7 @@ import { contentHref } from '#lib/utils/contentLink.js';
 					bookmarked = true;
 					bookmarkCount = prevCount;
 				},
-				call: () => api.delete(`/forum/bookmarks/${bookmarkId}`)
+				call: () => api.delete(`/thread/bookmarks/${bookmarkId}`)
 			});
 			if (res.ok) bookmarkId = '';
 			bookmarkId = res.ok ? '' : prevId;
@@ -290,7 +290,7 @@ import { contentHref } from '#lib/utils/contentLink.js';
 					bookmarkCount = prevCount;
 				},
 				call: () =>
-					api.post<{ id: string }>(`/forum/bookmarks`, {
+					api.post<{ id: string }>(`/thread/bookmarks`, {
 						entity_type: 'thread',
 						entity_id: thread.id
 					})
@@ -358,8 +358,8 @@ import { contentHref } from '#lib/utils/contentLink.js';
 		editing = true;
 		// Fetch the raw (unresolved) thread so {{...}} literals authored via the
 		// token picker survive a re-save — the display payload is resolved.
-		// GET /forum/{slug} resolves by slug, not id — passing the UUID 404s.
-		const res = await api.get<ForumThread>(`/forum/${thread.slug}?raw=1`);
+		// GET /thread/{slug} resolves by slug, not id — passing the UUID 404s.
+		const res = await api.get<ForumThread>(`/thread/${thread.slug}?raw=1`);
 		if (!editing || !res.data) return;
 		editTitle = res.data.title;
 		editBodyHtml = tiptapBodyToHtml(res.data.body, {
@@ -400,7 +400,7 @@ import { contentHref } from '#lib/utils/contentLink.js';
 		if (savingEdit || !editTitle.trim()) return;
 		savingEdit = true;
 		editError = null;
-		const res = await api.patch<ForumThread>(`/forum/${thread.id}`, {
+		const res = await api.patch<ForumThread>(`/thread/${thread.id}`, {
 			title: editTitle.trim(),
 			body: encodeTiptapDoc(editBodyJson as unknown as TipTapDoc),
 			is_anonymous: editAnonymous
@@ -426,14 +426,14 @@ import { contentHref } from '#lib/utils/contentLink.js';
 		const res = await optimisticAction({
 			apply: () => {},
 			rollback: () => {},
-			call: () => api.delete(`/forum/${thread.id}`)
+			call: () => api.delete(`/thread/${thread.id}`)
 		});
 		deleting = false;
 		if (res.error) {
 			deleteError = res.error.message || t('forum.delete_error', 'Failed to delete discussion.');
 			return;
 		}
-		await goto('/forum');
+		await goto('/thread');
 	}
 </script>
 
@@ -454,7 +454,7 @@ import { contentHref } from '#lib/utils/contentLink.js';
 
 <div class="mx-auto w-full max-w-3xl px-4 py-6 pb-20 sm:pb-6">
 	<a
-		href="/forum"
+		href="/thread"
 		class="mb-5 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 	>
 		<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('forum.back', 'Back to forum')}

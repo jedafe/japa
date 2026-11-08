@@ -714,7 +714,7 @@
 					</span>
 
 					<a
-						href="/forum/{encodeURIComponent(data.spaceSlug)}/new?type=question"
+						href="/thread/{encodeURIComponent(data.spaceSlug)}/new?type=question"
 						class="inline-flex shrink-0 items-center rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 				>
 					{t('wiki.ask_a_question', 'Ask a Question')}

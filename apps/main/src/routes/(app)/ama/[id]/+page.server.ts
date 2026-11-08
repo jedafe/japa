@@ -23,7 +23,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let session: AMAThread;
 	try {
-		session = await apiGet<AMAThread>(ctx, `/forum/ama/${id}`);
+		session = await apiGet<AMAThread>(ctx, `/thread/ama/${id}`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'AMA not found' });
@@ -32,7 +32,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const [fetchedReplies, countries] = await Promise.all([
-		apiList<ForumReply>(ctx, `/forum/${session.id}/replies`)
+		apiList<ForumReply>(ctx, `/thread/${session.id}/replies`)
 			.then((r) => r.items)
 			.catch(() => [] as ForumReply[]),
 		countriesPromise

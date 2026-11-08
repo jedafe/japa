@@ -184,9 +184,9 @@
 			case 'blog_post':
 				return `/blog/${idOrSlug}`;
 			case 'forum_thread':
-				return `/forum/${idOrSlug}`;
+				return `/thread/${idOrSlug}`;
 			case 'forum_reply':
-				return `/forum/${idOrSlug}#reply-${b.entity_id}`;
+				return `/thread/${idOrSlug}#reply-${b.entity_id}`;
 			case 'space':
 				return `/spaces/${idOrSlug}`;
 			case 'tag':

@@ -28,7 +28,7 @@ export const load: PageServerLoad = async (event) => {
 	let session: AMAThread;
 	try {
 		// ?raw=1 keeps authored {{...}} literals unresolved for the edit form.
-		session = await apiGet<AMAThread>(ctx, `/forum/ama/${id}?raw=1`);
+		session = await apiGet<AMAThread>(ctx, `/thread/ama/${id}?raw=1`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'AMA session not found' });

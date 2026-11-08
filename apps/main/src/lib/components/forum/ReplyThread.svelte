@@ -70,7 +70,7 @@
 		if (!(await requireAuthOrRedirect())) return;
 		if (!topBody) return;
 		topSubmitting = true;
-		const res = await api.post<ForumReply>(`/forum/${threadId}/replies`, { body: topBody });
+		const res = await api.post<ForumReply>(`/thread/${threadId}/replies`, { body: topBody });
 		topSubmitting = false;
 		if (res.error || !res.data) return;
 		topBody = '';

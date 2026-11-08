@@ -218,7 +218,7 @@
 		const item = r.item;
 		if (item.url) return item.url;
 		if (item.content_type === 'blog_post' && item.slug) return `/blog/${item.slug}`;
-		if (item.content_type === 'forum_thread' && item.slug) return `/forum/${item.slug}`;
+		if (item.content_type === 'forum_thread' && item.slug) return `/thread/${item.slug}`;
 		if (item.slug) return `/content/${item.slug}`;
 		return '#';
 	}

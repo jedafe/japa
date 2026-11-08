@@ -250,7 +250,7 @@
 	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if showFilters && categoryFilterApplies}
 			<!-- Category filter — admin-configured options from GET /content-types
-			     (§14), same FilterToggle/Autocomplete pattern as /blog and /forum. -->
+			     (§14), same FilterToggle/Autocomplete pattern as /blog and /thread. -->
 			<div
 				id="guides-filter-panel"
 				class="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"

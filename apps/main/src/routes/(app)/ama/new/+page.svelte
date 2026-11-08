@@ -62,7 +62,7 @@
 				if (!Number.isNaN(yrs)) bodyPayload.host_years_abroad = yrs;
 			}
 
-			const res = await api.post<{ id: string }>('/forum/ama', bodyPayload);
+			const res = await api.post<{ id: string }>('/thread/ama', bodyPayload);
 			if (res.data?.id) {
 				loading = false;
 				await goto(`/ama/${res.data.id}`);

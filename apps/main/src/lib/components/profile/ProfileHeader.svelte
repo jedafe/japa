@@ -158,7 +158,7 @@
 		<div class="mt-3 flex flex-wrap items-center gap-4 text-sm text-[var(--color-muted)]">
 			<span class="flex items-center gap-1"><Calendar size={14} /> {t('profile.joined', 'Joined')} {joinDate}</span>
 			<a
-				href="/forum?author_id={user.id}"
+				href="/thread?author_id={user.id}"
 				class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
 			>
 				<MessageSquare size={14} /> {t('profile.forum_posts', 'Forum posts')}

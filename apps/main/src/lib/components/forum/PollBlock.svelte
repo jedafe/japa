@@ -2,7 +2,7 @@
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (polls)
 	// Renders a forum poll with options and live vote counts. The poll data
 	// is fetched by the parent (server load) and passed in. Voting is done
-	// client-side via POST /forum/polls/{id}/vote; changing or retracting a
+	// client-side via POST /thread/polls/{id}/vote; changing or retracting a
 	// vote uses POST /poll-options/{id}/vote / DELETE /poll-options/{id}/vote.
 	// Live updates are pushed over the WebSocket room for the thread's space.
 	import { t } from '#lib/i18n/index.js';
@@ -69,7 +69,7 @@
 	const isClosed = $derived(!!poll.close_at && new Date(poll.close_at) < new Date());
 
 	async function refreshResults() {
-		const res = await api.get<PollWithResults>(`/forum/polls/${poll.id}`);
+		const res = await api.get<PollWithResults>(`/thread/polls/${poll.id}`);
 		if (res.data) {
 			poll = res.data.poll;
 			results = res.data.results;
@@ -103,7 +103,7 @@
 			const ids = [...selected];
 			let failures = 0;
 			for (const optionId of ids) {
-				const res = await api.post(`/forum/polls/${poll.id}/vote`, { option_id: optionId });
+				const res = await api.post(`/thread/polls/${poll.id}/vote`, { option_id: optionId });
 				if (res.error) failures += 1;
 			}
 			if (failures === 0) {
@@ -133,7 +133,7 @@
 		try {
 			const res = selected.has(optionId)
 				? await api.delete(`/poll-options/${optionId}/vote`)
-				: await api.post(`/forum/polls/${poll.id}/vote`, { option_id: optionId });
+				: await api.post(`/thread/polls/${poll.id}/vote`, { option_id: optionId });
 			if (res.error) {
 				error = t('forum.poll_error', 'Failed to submit your vote. Please try again.');
 				voting = false;

@@ -97,7 +97,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-4 flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
-		<a href="/forum" class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]" aria-label={t('forum.new.back', 'Back to forum')}>
+		<a href="/thread" class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]" aria-label={t('forum.new.back', 'Back to forum')}>
 			<ArrowLeft class="rtl:-scale-x-100" size={18} />
 		</a>
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">
@@ -165,7 +165,7 @@
 				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 			/>
 			{#if title}
-				<p class="mt-1 text-xs text-[var(--color-muted)]">/forum/{titleSlug}</p>
+				<p class="mt-1 text-xs text-[var(--color-muted)]">/thread/{titleSlug}</p>
 			{/if}
 		</div>
 
@@ -276,7 +276,7 @@
 
 		<!-- Submit -->
 		<div class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-4">
-			<a href="/forum" class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]">
+			<a href="/thread" class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]">
 				{t('common.cancel', 'Cancel')}
 			</a>
 			<button

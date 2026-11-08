@@ -41,7 +41,7 @@ export interface ApiOk<T> {
 	/** Optional bookmark state emitted by forum thread detail (is_bookmarked + bookmark_id). */
 	is_bookmarked?: boolean;
 	bookmark_id?: string;
-	/** Optional list of erased user UUIDs emitted by content/forum detail
+	/** Optional list of erased user UUIDs emitted by content/thread detail
 	 * endpoints for GDPR/ADR-029 mention redaction (Section 15). */
 	deleted_user_ids?: string[];
 	/** Optional map of entity_id -> current user's vote value (1, -1, 0)
@@ -754,7 +754,7 @@ export interface OnboardingOptions {
  * TipTap JSON (not pre-rendered HTML). See $lib/tiptap/serialize.
  * ------------------------------------------------------------------ */
 
-/** A forum discussion thread (GET /forum, GET /forum/{slug}). */
+/** A forum discussion thread (GET /thread, GET /thread/{slug}). */
 export interface ForumThread {
 	seo_indexable?: boolean;
 	indexable?: boolean;
@@ -796,10 +796,10 @@ export interface ForumThread {
 }
 
 /* ------------------------------------------------------------------ *
- * Forum Polls — Section 08 (GET /forum/polls/{id}, POST /forum/polls/{id}/vote)
+ * Forum Polls — Section 08 (GET /thread/polls/{id}, POST /thread/polls/{id}/vote)
  * ------------------------------------------------------------------ */
 
-/** A forum tag attached to a thread — GET /forum/{id}/tags.
+/** A forum tag attached to a thread — GET /thread/{id}/tags.
  * Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Tags) */
 export interface ForumTag {
 	id: string;
@@ -832,7 +832,7 @@ export interface PollResult {
 	vote_count: number;
 }
 
-/** GET /forum/polls/{id} response — poll + results. */
+/** GET /thread/polls/{id} response — poll + results. */
 export interface PollWithResults {
 	poll: ForumPoll;
 	results: PollResult[];
@@ -840,7 +840,7 @@ export interface PollWithResults {
 	user_votes?: string[];
 }
 
-/** A forum reply (GET /forum/{id}/replies, POST /forum/{id}/replies). */
+/** A forum reply (GET /thread/{id}/replies, POST /thread/{id}/replies). */
 export interface ForumReply {
 	id: string;
 
@@ -868,10 +868,10 @@ export interface ForumReply {
 	ama_approved_at?: string | null;
 }
 
-/** Vote entity type accepted by POST /forum/vote. */
+/** Vote entity type accepted by POST /thread/vote. */
 export type ForumVoteEntity = 'thread' | 'reply';
 
-/** POST /forum/vote response row. */
+/** POST /thread/vote response row. */
 export interface ForumVote {
 	entity_type: ForumVoteEntity;
 	entity_id: string;

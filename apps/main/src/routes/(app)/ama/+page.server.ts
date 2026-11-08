@@ -31,7 +31,7 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		const [{ items }, countries] = await Promise.all([
-			apiList<AMAThread>(ctx, `/forum/ama?${params.toString()}`),
+			apiList<AMAThread>(ctx, `/thread/ama?${params.toString()}`),
 			countriesPromise
 		]);
 		return {

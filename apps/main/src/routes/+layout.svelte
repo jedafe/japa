@@ -325,7 +325,7 @@
 		rel="alternate"
 		type="application/rss+xml"
 		title={t('forum.rss_title', '{site} Forum')}
-		href="/forum/feed.xml"
+		href="/thread/feed.xml"
 	/>
 	<!-- Site-level fallback description metas are injected by hooks.server.ts
 	     (marked data-jc-fallback) when the page supplies no description —

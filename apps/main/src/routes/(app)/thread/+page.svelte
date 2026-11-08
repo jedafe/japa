@@ -32,7 +32,7 @@
 			if (status !== 'all') params.set('status', status);
 			if (data.tagSlug) params.set('tag', data.tagSlug);
 		}
-		return `/forum${params.toString() ? `?${params.toString()}` : ''}`;
+		return `/thread${params.toString() ? `?${params.toString()}` : ''}`;
 	}
 
 	function applyFilter(kind: 'sort' | 'status', value: string) {
@@ -91,7 +91,7 @@
 	});
 </script>
 
-<SeoHead title={title} description={description} ogTitle={title} canonical={page.url.origin + '/forum'} />
+<SeoHead title={title} description={description} ogTitle={title} canonical={page.url.origin + '/thread'} />
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: max(1rem, calc((100% - 48rem)/2))">
 	<h1 class="sr-only">{t('forum.heading', 'Forum')}</h1>
@@ -114,7 +114,7 @@
 				/>
 			{:else}
 				<PageAction
-					href="/login?redirect=/forum"
+					href="/login?redirect=/thread"
 					icon={PenSquare}
 					label={t('forum.new_discussion', 'New discussion')}
 				/>

@@ -82,7 +82,7 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
 	// Tag suggestions come from the tags directory endpoint (GET /tags?q=),
 	// not /search?type=tag — the search index's "tag" type holds forum tags
-	// (url: /forum/tags/{slug}), which are a different entity from the
+	// (url: /thread/tags/{slug}), which are a different entity from the
 	// directory tags listed on this page.
 	async function tagSearchFetcher(q: string): Promise<SearchSuggestion[]> {
 		const res = await api.get<{ id: string; name: string; slug: string; follower_count?: number }[]>(

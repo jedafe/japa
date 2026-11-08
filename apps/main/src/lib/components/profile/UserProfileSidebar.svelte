@@ -358,7 +358,7 @@
 		</h2>
 		<ul class="divide-y divide-[var(--color-border)]">
 			<li>
-				<a href="/forum" class="flex items-center gap-3 py-2.5">
+				<a href="/thread" class="flex items-center gap-3 py-2.5">
 					<span class="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]"><HelpCircle size={16} /></span>
 					<span class="min-w-0 flex-1">
 						<span class="block text-sm font-medium text-[var(--color-text)]">{t('profile.qa.ask', 'Ask a Question')}</span>

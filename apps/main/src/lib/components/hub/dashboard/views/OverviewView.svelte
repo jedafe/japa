@@ -38,12 +38,12 @@
 	const recommendations = $derived(overview?.recommendations ?? null);
 
 	// Build the canonical URL for a content item — blog posts use /blog/{slug},
-	// forum threads use /forum/{slug}, and other content types use /content/{slug}.
+	// forum threads use /thread/{slug}, and other content types use /content/{slug}.
 	// Falls back to /content/{id}.
 	function contentUrl(item: RecentItem): string {
 		const idOrSlug = item.slug ?? item.id;
 		if (item.content_type === 'blog_post') return `/blog/${idOrSlug}`;
-		if (item.content_type === 'forum_thread') return `/forum/${idOrSlug}`;
+		if (item.content_type === 'forum_thread') return `/thread/${idOrSlug}`;
 		return `/content/${idOrSlug}`;
 	}
 

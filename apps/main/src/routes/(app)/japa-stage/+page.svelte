@@ -207,7 +207,7 @@
 
 	// Trending discussion URLs — same mapping as the backend contentURL().
 	function discussionUrl(item: TrendingContent): string {
-		if (item.content_type === 'forum_thread') return `/forum/${item.slug}`;
+		if (item.content_type === 'forum_thread') return `/thread/${item.slug}`;
 		if (item.content_type === 'blog_post') return `/blog/${item.slug}`;
 		return `/content/${item.slug}`;
 	}
@@ -671,7 +671,7 @@
 				<section class="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 {(data.stats?.destinations?.length ?? 0) === 0 ? 'lg:col-span-2' : ''}">
 					<div class="mb-4 flex items-center justify-between">
 						<h2 class="text-base font-semibold text-[var(--color-text)]">{t('japa_stage.popular_discussions', 'Popular discussions')}</h2>
-						<a href="/forum" class="text-sm font-medium text-[var(--color-primary-text)] hover:underline">{t('common.view_all', 'View all')}</a>
+						<a href="/thread" class="text-sm font-medium text-[var(--color-primary-text)] hover:underline">{t('common.view_all', 'View all')}</a>
 					</div>
 					<ul class="divide-y divide-[var(--color-border)]">
 						{#each data.discussions.slice(0, 5) as item (item.id)}

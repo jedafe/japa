@@ -13,7 +13,7 @@
 		/** The thread/reply id the vote API expects. Optional for thread votes
 		 * rendered on feed cards, where the item id is the backing content id —
 		 * pass `slug` instead and the thread id is resolved lazily on the first
-		 * vote via GET /forum/{slug}. */
+		 * vote via GET /thread/{slug}. */
 		entityId?: string;
 		/** Thread slug — used to lazily resolve the thread id when `entityId` is
 		 * not a forum thread id (feed cards). Only applies to entityType 'thread'. */
@@ -82,7 +82,7 @@
 		if (resolvedId) return resolvedId;
 		if (entityType !== 'thread' || !slug) return null;
 		resolving ??= (async () => {
-			const res = await api.getEnvelope<ForumThread>(`/forum/${slug}`);
+			const res = await api.getEnvelope<ForumThread>(`/thread/${slug}`);
 			if (!res.data?.id) return null;
 			resolvedId = res.data.id;
 			optimisticDelta = res.data.vote_score - initialScore;
@@ -116,8 +116,8 @@
 
 		const res =
 			next === 0
-				? await api.delete<unknown>(`/forum/${id}/vote?entity_type=${encodeURIComponent(entityType)}`)
-				: await api.post<ForumVote>(`/forum/${id}/vote`, {
+				? await api.delete<unknown>(`/thread/${id}/vote?entity_type=${encodeURIComponent(entityType)}`)
+				: await api.post<ForumVote>(`/thread/${id}/vote`, {
 						entity_type: entityType,
 						value: next
 					});

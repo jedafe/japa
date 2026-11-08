@@ -358,7 +358,7 @@
 		}
 		switch (configuredWidget?.widget_type) {
 			case 'blog_posts': return slug ? `/blog/${slug}` : '#';
-			case 'forum_threads': return slug ? `/forum/${slug}` : '#';
+			case 'forum_threads': return slug ? `/thread/${slug}` : '#';
 			case 'job_listings': return slug ? `/jobs/${slug}` : '#';
 			case 'achievements': return slug ? `/achievements/${slug}` : '#';
 			case 'academy_tracks': return slug ? safeAcademyUrl(`/tracks/${encodeURIComponent(slug)}`) || '#' : '#';

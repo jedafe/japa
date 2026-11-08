@@ -30,8 +30,8 @@ describe('resolveAiPageContext', () => {
 		expect(ctx?.context).toMatchObject({ content_type: 'post', content_id: 'c9' });
 	});
 	it('unknown path → path anchor with title only', () => {
-		const ctx = resolveAiPageContext('/forum', { title: 'Forum' });
-		expect(ctx?.anchor).toBe('path:main:/forum');
+		const ctx = resolveAiPageContext('/thread', { title: 'Forum' });
+		expect(ctx?.anchor).toBe('path:main:/thread');
 	});
 	it('entity path with missing data → path anchor', () => {
 		const ctx = resolveAiPageContext('/blog/moving-to-canada', {});

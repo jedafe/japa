@@ -50,7 +50,7 @@
 		if (!canSubmit) return;
 		loading = true;
 		try {
-			const res = await api.patch<{ id: string }>(`/forum/ama/${session.id}`, {
+			const res = await api.patch<{ id: string }>(`/thread/ama/${session.id}`, {
 				title: title.trim(),
 				body: buildTipTapDoc(body.trim()),
 				is_anonymous: isAnonymous

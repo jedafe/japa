@@ -104,7 +104,7 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 		return JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faqs });
 	});
 
-	// Host-only control: close the AMA via PATCH /forum/ama/{id}. The backend
+	// Host-only control: close the AMA via PATCH /thread/ama/{id}. The backend
 	// sets closes_at = now() server-side (no body needed) and enforces the
 	// host-or-moderator permission. Ref: sections/88-ask-an-expat.md
 	// Close is gated on host-or-moderator (backend enforces CanClose; the
@@ -118,7 +118,7 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 		if (!session || closing) return;
 		closing = true;
 		closeError = null;
-		const res = await api.patch<AMAThread>(`/forum/ama/${session.id}`, { closed: true });
+		const res = await api.patch<AMAThread>(`/thread/ama/${session.id}`, { closed: true });
 		closing = false;
 		if (res.error) {
 			closeError = res.error.message || t('ama.close_error', 'Failed to close the AMA.');

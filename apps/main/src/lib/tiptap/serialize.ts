@@ -421,7 +421,7 @@ function encodeBase64Text(text: string): string {
 
 /**
  * Wrap a plain-text reply string into a minimal TipTap paragraph document
- * and base64-encode it for POST /forum/{id}/replies. Empty input yields an
+ * and base64-encode it for POST /thread/{id}/replies. Empty input yields an
  * empty paragraph so the backend always receives a valid document.
  */
 export function encodeReplyBody(text: string): string {
