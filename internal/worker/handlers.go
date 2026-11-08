@@ -2515,6 +2515,15 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 		maxFanOut = appSettings.GetIntOr(ctx, "feed.fanout_threshold", 5000)
 	}
 
+	// Push-time relevance snapshot for feeds.score — one lookup per task,
+	// shared by every recipient row. Falls back to 0 on lookup failure.
+	pushScore := defaultScore()
+	if s, serr := queries.GetFeedPushScore(ctx, contentID); serr != nil {
+		slog.Warn("task:content:fan_out_to_feeds: push score lookup failed, using 0", "content_id", payload.ContentID, "error", serr)
+	} else if s.Valid {
+		pushScore = s
+	}
+
 	switch payload.FanOutType {
 	case "followers":
 		if !authorID.Valid {
@@ -2522,7 +2531,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 			return nil
 		}
 
-		return fanOutToFollowers(ctx, queries, contentID, authorID, spaceID, payload.ContentType, maxFanOut)
+		return fanOutToFollowers(ctx, queries, contentID, authorID, spaceID, payload.ContentType, maxFanOut, pushScore)
 
 	case fanOutSpace:
 		if !spaceID.Valid {
@@ -2530,10 +2539,10 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 			return nil
 		}
 
-		return fanOutToSpace(ctx, queries, contentID, spaceID, payload.ContentType, payload.SpaceID, payload.ContentID, maxFanOut)
+		return fanOutToSpace(ctx, queries, contentID, spaceID, payload.ContentType, payload.SpaceID, payload.ContentID, maxFanOut, pushScore)
 
 	case "bubble":
-		return fanOutToBubble(ctx, queries, contentID, spaceID, payload.ContentType, payload.ContentID, maxFanOut)
+		return fanOutToBubble(ctx, queries, contentID, spaceID, payload.ContentType, payload.ContentID, maxFanOut, pushScore)
 	}
 
 	return nil
@@ -2543,7 +2552,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 // the feed.follower_fanout_cap (default 1000) — the fetch limit and the cap
 // now come from the same setting so admins can actually tune reach
 // (ALG-009). The author is skipped.
-func fanOutToFollowers(ctx context.Context, queries *gen.Queries, contentID, authorID, spaceID pgtype.UUID, contentType string, maxFanOut int) error {
+func fanOutToFollowers(ctx context.Context, queries *gen.Queries, contentID, authorID, spaceID pgtype.UUID, contentType string, maxFanOut int, score pgtype.Numeric) error {
 	followerCap := 1000
 	if appSettings != nil {
 		followerCap = appSettings.GetIntOr(ctx, "feed.follower_fanout_cap", 1000)
@@ -2576,7 +2585,7 @@ func fanOutToFollowers(ctx context.Context, queries *gen.Queries, contentID, aut
 			continue
 		}
 
-		if err := insertFeedItem(ctx, queries, f.FollowerID, contentID, spaceID, contentType); err != nil {
+		if err := insertFeedItem(ctx, queries, f.FollowerID, contentID, spaceID, contentType, score); err != nil {
 			slog.Error("task:content:fan_out_to_feeds: failed to insert feed item", "user_id", f.FollowerID, "error", err)
 			continue
 		}
@@ -2594,7 +2603,7 @@ func fanOutToFollowers(ctx context.Context, queries *gen.Queries, contentID, aut
 // — members discover the post via the space feed query (GetSpaceFeed), which
 // pulls by space_id at read time. This prevents unbounded feed row writes
 // for very large spaces.
-func fanOutToSpace(ctx context.Context, queries *gen.Queries, contentID, spaceID pgtype.UUID, contentType, spaceIDStr, contentIDStr string, maxFanOut int) error {
+func fanOutToSpace(ctx context.Context, queries *gen.Queries, contentID, spaceID pgtype.UUID, contentType, spaceIDStr, contentIDStr string, maxFanOut int, score pgtype.Numeric) error {
 	memberCount, err := gen.New(dbPool.Reader).CountSpaceMembers(ctx,
 		spaceID,
 	)
@@ -2627,7 +2636,7 @@ func fanOutToSpace(ctx context.Context, queries *gen.Queries, contentID, spaceID
 	fedCount := 0
 
 	for _, userID := range memberIDs {
-		if err := insertFeedItem(ctx, queries, userID, contentID, spaceID, contentType); err != nil {
+		if err := insertFeedItem(ctx, queries, userID, contentID, spaceID, contentType, score); err != nil {
 			slog.Error("task:content:fan_out_to_feeds: failed to insert feed item", "user_id", userID, "error", err)
 			continue
 		}
@@ -2653,7 +2662,7 @@ func fanOutToSpace(ctx context.Context, queries *gen.Queries, contentID, spaceID
 // label). Per Section 05, posts bubble up the space hierarchy based on
 // spaces.bubble_depth (default 2). Spaces can have multiple parents via
 // space_parent_spaces, so we BFS up the hierarchy.
-func fanOutToBubble(ctx context.Context, queries *gen.Queries, contentID, spaceID pgtype.UUID, contentType, contentIDStr string, maxFanOut int) error {
+func fanOutToBubble(ctx context.Context, queries *gen.Queries, contentID, spaceID pgtype.UUID, contentType, contentIDStr string, maxFanOut int, score pgtype.Numeric) error {
 	maxDepth := 2
 	if appSettings != nil {
 		maxDepth = appSettings.GetIntOr(ctx, "spaces.bubble_depth", 2)
@@ -2684,7 +2693,7 @@ func fanOutToBubble(ctx context.Context, queries *gen.Queries, contentID, spaceI
 				visited[p.ParentSpaceID] = true
 
 				nextLevel = append(nextLevel, p.ParentSpaceID)
-				fedCount += fanOutToSpaceMembers(ctx, queries, contentID, p.ParentSpaceID, contentType, maxFanOut)
+				fedCount += fanOutToSpaceMembers(ctx, queries, contentID, p.ParentSpaceID, contentType, maxFanOut, score)
 			}
 		}
 
@@ -2701,7 +2710,7 @@ func fanOutToBubble(ctx context.Context, queries *gen.Queries, contentID, spaceI
 // The same push/pull threshold as fanOutToSpace applies (ALG-008): a
 // parent space over feed.fanout_threshold gets no forced pushes — its
 // members pull via the space feed query at read time.
-func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, contentID, spaceID pgtype.UUID, contentType string, maxFanOut int) int {
+func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, contentID, spaceID pgtype.UUID, contentType string, maxFanOut int, score pgtype.Numeric) int {
 	memberCount, err := gen.New(dbPool.Reader).CountSpaceMembers(ctx, spaceID)
 	if err != nil {
 		slog.Warn("task:content:fan_out_to_feeds: bubble member count failed", "space_id", spaceID, "error", err)
@@ -2723,7 +2732,7 @@ func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, contentID, 
 	fed := 0
 
 	for _, userID := range memberIDs {
-		if err := insertFeedItem(ctx, queries, userID, contentID, spaceID, contentType); err != nil {
+		if err := insertFeedItem(ctx, queries, userID, contentID, spaceID, contentType, score); err != nil {
 			continue
 		}
 
@@ -2742,14 +2751,14 @@ func fanOutToSpaceMembers(ctx context.Context, queries *gen.Queries, contentID, 
 	return fed
 }
 
-// insertFeedItem inserts a single feeds row with a default score.
-func insertFeedItem(ctx context.Context, queries *gen.Queries, userID, contentID, spaceID pgtype.UUID, contentType string) error {
+// insertFeedItem inserts a single feeds row with the push-time relevance score.
+func insertFeedItem(ctx context.Context, queries *gen.Queries, userID, contentID, spaceID pgtype.UUID, contentType string, score pgtype.Numeric) error {
 	return queries.InsertFeedItem(ctx, gen.InsertFeedItemParams{
 		UserID:      userID,
 		ContentID:   contentID,
 		SpaceID:     spaceID,
 		ContentType: contentType,
-		Score:       defaultScore(),
+		Score:       score,
 	})
 }
 

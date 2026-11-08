@@ -52,7 +52,7 @@ WITH content_geo AS (
  GROUP BY cs.content_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
- c.created_at, c.view_count, c.comment_count,
+ COALESCE(c.published_at, c.created_at) AS created_at, c.view_count, c.comment_count,
  cs.vote_score, cs.velocity_score,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
@@ -254,6 +254,25 @@ func (q *Queries) GetFeedItemCount(ctx context.Context, userID pgtype.UUID) (int
 	var count int32
 	err := row.Scan(&count)
 	return count, err
+}
+
+const getFeedPushScore = `-- name: GetFeedPushScore :one
+SELECT COALESCE((
+ SELECT cs.velocity_score::numeric + LN(1 + COALESCE(cs.reaction_count, 0))
+ FROM content_scores cs
+ WHERE cs.content_id = $1
+), 0)::numeric AS score
+`
+
+// Push-time relevance snapshot written to feeds.score at fan-out: velocity +
+// log(1 + reactions) — the same signals the read-time 'relevant' arms use,
+// minus recency (a pushed row is fresh by definition at write time).
+// Surfaced via FeedItem.score and used by the weekly digest ordering.
+func (q *Queries) GetFeedPushScore(ctx context.Context, contentID pgtype.UUID) (pgtype.Numeric, error) {
+	row := q.db.QueryRow(ctx, getFeedPushScore, contentID)
+	var score pgtype.Numeric
+	err := row.Scan(&score)
+	return score, err
 }
 
 const getFollowedEntityIDsByType = `-- name: GetFollowedEntityIDsByType :many
@@ -629,7 +648,7 @@ func (q *Queries) GetMemberSpaceIDs(ctx context.Context, userID pgtype.UUID) ([]
 
 const getPrimaryFeed = `-- name: GetPrimaryFeed :many
 SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
- c.title, c.slug, c.author_id, c.created_at AS content_created_at,
+ c.title, c.slug, c.author_id, COALESCE(c.published_at, c.created_at) AS content_created_at,
  c.view_count, c.comment_count,
  cs.vote_score, cs.velocity_score, cs.bookmark_count,
  COALESCE(cs.reaction_count, 0) AS reaction_count,
@@ -843,7 +862,7 @@ func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) 
 
 const getProfileFeed = `-- name: GetProfileFeed :many
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
- c.created_at, c.view_count, c.comment_count,
+ COALESCE(c.published_at, c.created_at) AS created_at, c.view_count, c.comment_count,
  cs.vote_score, cs.velocity_score,
  cs.bookmark_count,
  COALESCE(cs.reaction_count, 0) AS reaction_count,
@@ -905,16 +924,22 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
 ORDER BY
  CASE WHEN $3 = 'top' THEN cs.reaction_count END DESC,
  CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
+ CASE WHEN $3 = 'relevant' THEN
+ COALESCE(cs.velocity_score, 0)::float8
+ + LN(1 + COALESCE(cs.reaction_count, 0)::float8)
+ + 2.0 * POWER(0.5, GREATEST(EXTRACT(EPOCH FROM (now() - COALESCE(c.published_at, c.created_at))) / 3600.0, 0)::float8 / GREATEST($4::float8, 1.0))
+ END DESC,
  COALESCE(c.published_at, c.created_at) DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type GetProfileFeedParams struct {
-	AuthorID   pgtype.UUID `json:"author_id"`
-	ViewerID   pgtype.UUID `json:"viewer_id"`
-	Sort       interface{} `json:"sort"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	AuthorID      pgtype.UUID `json:"author_id"`
+	ViewerID      pgtype.UUID `json:"viewer_id"`
+	Sort          interface{} `json:"sort"`
+	HalfLifeHours float64     `json:"half_life_hours"`
+	PageOffset    int32       `json:"page_offset"`
+	PageLimit     int32       `json:"page_limit"`
 }
 
 type GetProfileFeedRow struct {
@@ -962,8 +987,10 @@ type GetProfileFeedRow struct {
 }
 
 // All public posts by a specific user.
-// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC).
-// 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
+// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising'
+// (velocity_score DESC), 'relevant' (velocity + ln(1+reactions) + recency
+// half-life decay — same blend as the primary feed).
+// @half_life_hours is the recency-decay half-life (feed.for_you_half_life_hours).
 // @viewer_id is nullable — when present, mutual user_blocks are excluded (§41).
 // If the viewer has blocked the profile owner (or vice versa), the profile
 // feed returns no rows, enforcing mutual invisibility.
@@ -972,6 +999,7 @@ func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) 
 		arg.AuthorID,
 		arg.ViewerID,
 		arg.Sort,
+		arg.HalfLifeHours,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -1058,7 +1086,7 @@ WITH content_geo AS (
  GROUP BY cs.content_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
- c.created_at, c.view_count, c.comment_count,
+ COALESCE(c.published_at, c.created_at) AS created_at, c.view_count, c.comment_count,
  cs.vote_score, cs.velocity_score,
  cs.bookmark_count,
  COALESCE(cs.reaction_count, 0) AS reaction_count,
@@ -1240,7 +1268,7 @@ func (q *Queries) GetRisingFeed(ctx context.Context, arg GetRisingFeedParams) ([
 
 const getSpaceFeed = `-- name: GetSpaceFeed :many
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
- c.created_at, c.view_count, c.comment_count,
+ COALESCE(c.published_at, c.created_at) AS created_at, c.view_count, c.comment_count,
  cs.vote_score, cs.velocity_score,
  cs.bookmark_count,
  COALESCE(cs.reaction_count, 0) AS reaction_count,
@@ -1301,16 +1329,22 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
 ORDER BY
  CASE WHEN $3 = 'top' THEN cs.reaction_count END DESC,
  CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
+ CASE WHEN $3 = 'relevant' THEN
+ COALESCE(cs.velocity_score, 0)::float8
+ + LN(1 + COALESCE(cs.reaction_count, 0)::float8)
+ + 2.0 * POWER(0.5, GREATEST(EXTRACT(EPOCH FROM (now() - COALESCE(c.published_at, c.created_at))) / 3600.0, 0)::float8 / GREATEST($4::float8, 1.0))
+ END DESC,
  COALESCE(c.published_at, c.created_at) DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type GetSpaceFeedParams struct {
-	SpaceID    pgtype.UUID `json:"space_id"`
-	ViewerID   pgtype.UUID `json:"viewer_id"`
-	Sort       interface{} `json:"sort"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	SpaceID       pgtype.UUID `json:"space_id"`
+	ViewerID      pgtype.UUID `json:"viewer_id"`
+	Sort          interface{} `json:"sort"`
+	HalfLifeHours float64     `json:"half_life_hours"`
+	PageOffset    int32       `json:"page_offset"`
+	PageLimit     int32       `json:"page_limit"`
 }
 
 type GetSpaceFeedRow struct {
@@ -1357,14 +1391,17 @@ type GetSpaceFeedRow struct {
 }
 
 // Posts in a specific space.
-// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC).
-// 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
+// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising'
+// (velocity_score DESC), 'relevant' (velocity + ln(1+reactions) + recency
+// half-life decay — same blend as the primary feed).
+// @half_life_hours is the recency-decay half-life (feed.for_you_half_life_hours).
 // @viewer_id is nullable — when present, mutual user_blocks are excluded (§41).
 func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]GetSpaceFeedRow, error) {
 	rows, err := q.db.Query(ctx, getSpaceFeed,
 		arg.SpaceID,
 		arg.ViewerID,
 		arg.Sort,
+		arg.HalfLifeHours,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -1450,7 +1487,7 @@ WITH content_geo AS (
  GROUP BY cs.content_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
- c.created_at, c.view_count, c.comment_count,
+ COALESCE(c.published_at, c.created_at) AS created_at, c.view_count, c.comment_count,
  cs.vote_score, cs.velocity_score,
  cs.bookmark_count,
  COALESCE(cs.reaction_count, 0) AS reaction_count,
@@ -1667,7 +1704,7 @@ FROM feeds f
 JOIN contents c ON c.id = f.content_id
 WHERE f.user_id = $1
  AND f.created_at >= now() - interval '7 days'
-ORDER BY f.created_at DESC
+ORDER BY f.score DESC, f.created_at DESC
 LIMIT 20
 `
 

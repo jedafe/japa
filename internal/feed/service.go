@@ -495,6 +495,20 @@ func (s *Service) getExploreFeed(ctx context.Context, sort, visitorCountryCode, 
 	}
 }
 
+// relevanceHalfLife returns the recency-decay half-life shared by every
+// feed 'relevant' arm (feed.for_you_half_life_hours, default 48h).
+func (s *Service) relevanceHalfLife(ctx context.Context) float64 {
+	halfLife := defaultRankingWeights().HalfLifeHours
+	if s.settings != nil {
+		halfLife = s.settings.GetFloatOr(ctx, "feed.for_you_half_life_hours", halfLife)
+	}
+	if halfLife <= 0 {
+		halfLife = defaultRankingWeights().HalfLifeHours
+	}
+
+	return halfLife
+}
+
 // getPrimaryFeedItems returns the user's personalized feed with sort.
 // sort: 'latest' (default), 'top' (reaction_count DESC over the
 // feed.top_window_days rolling window), 'rising' (velocity_score DESC),
@@ -502,19 +516,14 @@ func (s *Service) getExploreFeed(ctx context.Context, sort, visitorCountryCode, 
 // already fanned out from followed authors and member spaces — same signals
 // the for-you ranker blends). The half-life reuses feed.for_you_half_life_hours.
 func (s *Service) getPrimaryFeedItems(ctx context.Context, userID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
-	halfLife := defaultRankingWeights().HalfLifeHours
 	topWindowDays := int32(7)
 	if s.settings != nil {
-		halfLife = s.settings.GetFloatOr(ctx, "feed.for_you_half_life_hours", halfLife)
 		if v := s.settings.GetIntOr(ctx, "feed.top_window_days", 7); v > 0 {
 			topWindowDays = toInt32(v)
 		}
 	}
-	if halfLife <= 0 {
-		halfLife = defaultRankingWeights().HalfLifeHours
-	}
 
-	rows, err := s.store.getPrimaryFeed(ctx, userID, sort, halfLife, topWindowDays, limit, offset)
+	rows, err := s.store.getPrimaryFeed(ctx, userID, sort, s.relevanceHalfLife(ctx), topWindowDays, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -523,11 +532,12 @@ func (s *Service) getPrimaryFeedItems(ctx context.Context, userID pgtype.UUID, s
 }
 
 // getSpaceFeedItems returns space-specific feed with sort.
-// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC).
-// 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
+// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising'
+// (velocity_score DESC), 'relevant' (velocity + ln(1+reactions) + recency
+// half-life decay — same blend as the primary feed).
 // viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
 func (s *Service) getSpaceFeedItems(ctx context.Context, spaceID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
-	rows, err := s.store.getSpaceFeed(ctx, spaceID, viewerID, sort, limit, offset)
+	rows, err := s.store.getSpaceFeed(ctx, spaceID, viewerID, sort, s.relevanceHalfLife(ctx), limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -536,11 +546,12 @@ func (s *Service) getSpaceFeedItems(ctx context.Context, spaceID, viewerID pgtyp
 }
 
 // getProfileFeedItems returns a user's public posts with sort.
-// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC).
-// 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
+// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising'
+// (velocity_score DESC), 'relevant' (velocity + ln(1+reactions) + recency
+// half-life decay — same blend as the primary feed).
 // viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
 func (s *Service) getProfileFeedItems(ctx context.Context, authorID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
-	rows, err := s.store.getProfileFeed(ctx, authorID, viewerID, sort, limit, offset)
+	rows, err := s.store.getProfileFeed(ctx, authorID, viewerID, sort, s.relevanceHalfLife(ctx), limit, offset)
 	if err != nil {
 		return nil, err
 	}

@@ -207,8 +207,10 @@ func parseSort(r *http.Request) string {
 // ---------------------------------------------------------------------------
 
 // GetExploreFeed handles GET /api/v1/feed/explore — public, no auth required.
-// BUG-006: caches results in Valkey (jc:explore:{platform}:{geo}:{page}, Section 53, TTL 15min).
-// Uses distributed lock stampede protection (BUG-008).
+// BUG-006: caches ranked sorts in Valkey (jc:explore:{geo}:{region}:{sort}:
+// {page}:{page_size}, Section 53, TTL 15min) with distributed lock stampede
+// protection (BUG-008). 'latest' is chronological — freshness is the chip's
+// contract — so it bypasses the cache entirely.
 func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 	limit := h.parsePageSize(r)
 	offset := parsePageOffset(r)
@@ -231,9 +233,18 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 
 	vc := visitor.FromContext(r.Context())
 
-	items, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, exploreCacheTTL, func(ctx context.Context) ([]FeedItem, error) {
+	compute := func(ctx context.Context) ([]FeedItem, error) {
 		return h.service.GetFeed(ctx, "explore", nil, nil, nil, sort, limit, offset, vc.ContentCountry, vc.ContentRegion)
-	})
+	}
+
+	var items []FeedItem
+
+	var err error
+	if sort == SortLatest {
+		items, err = compute(r.Context())
+	} else {
+		items, err = vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, exploreCacheTTL, compute)
+	}
 	if err != nil {
 		slog.Error("feed: get explore feed failed", "sort", sort, "geo", geoCode, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get explore feed")

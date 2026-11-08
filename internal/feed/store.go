@@ -104,17 +104,18 @@ func (s *Store) getPrimaryFeed(ctx context.Context, userID pgtype.UUID, sort str
 // viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
 //
 
-func (s *Store) getSpaceFeed(ctx context.Context, spaceID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetSpaceFeedRow, error) {
+func (s *Store) getSpaceFeed(ctx context.Context, spaceID, viewerID pgtype.UUID, sort string, halfLifeHours float64, limit, offset int32) ([]gen.GetSpaceFeedRow, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.GetSpaceFeed(ctx, gen.GetSpaceFeedParams{
-		SpaceID:    spaceID,
-		ViewerID:   viewerID,
-		Sort:       sort,
-		PageLimit:  limit,
-		PageOffset: offset,
+		SpaceID:       spaceID,
+		ViewerID:      viewerID,
+		Sort:          sort,
+		HalfLifeHours: halfLifeHours,
+		PageLimit:     limit,
+		PageOffset:    offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting space feed: %w", err)
@@ -127,17 +128,18 @@ func (s *Store) getSpaceFeed(ctx context.Context, spaceID, viewerID pgtype.UUID,
 // viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
 //
 
-func (s *Store) getProfileFeed(ctx context.Context, authorID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetProfileFeedRow, error) {
+func (s *Store) getProfileFeed(ctx context.Context, authorID, viewerID pgtype.UUID, sort string, halfLifeHours float64, limit, offset int32) ([]gen.GetProfileFeedRow, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.GetProfileFeed(ctx, gen.GetProfileFeedParams{
-		AuthorID:   authorID,
-		ViewerID:   viewerID,
-		Sort:       sort,
-		PageLimit:  limit,
-		PageOffset: offset,
+		AuthorID:      authorID,
+		ViewerID:      viewerID,
+		Sort:          sort,
+		HalfLifeHours: halfLifeHours,
+		PageLimit:     limit,
+		PageOffset:    offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting profile feed: %w", err)
