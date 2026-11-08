@@ -25,14 +25,37 @@ func RequestBodyLimit(maxBytes int64) func(http.Handler) http.Handler {
 }
 
 // isBulkBodyRequest reports whether the request legitimately carries a
-// body larger than the JSON-API ceiling: multipart uploads and the
-// presigned PUT fallback, which enforce their own size bounds downstream.
+// body larger than the JSON-API ceiling. Only multipart requests on routes
+// that actually consume multipart are exempt — matching on Content-Type
+// alone would let a spoofed multipart header smuggle an unbounded JSON
+// body past the backstop. Every exempted path enforces its own tighter or
+// equal cap downstream (MaxBytesReader before ParseMultipartForm).
+//
+// MAINTENANCE: when adding a new multipart upload route under /api/v1,
+// add its path here — otherwise uploads over the JSON ceiling are rejected.
 func isBulkBodyRequest(r *http.Request) bool {
-	ct := r.Header.Get("Content-Type")
-	if strings.HasPrefix(ct, "multipart/") || ct == "application/octet-stream" {
-		return true
-	}
 	// Dev-only presigned upload sink (server.go mounts it outside /api/v1
 	// but the check is harmless and future-proof if the path ever moves).
-	return strings.HasPrefix(r.URL.Path, "/seaweedfs/upload/")
+	if strings.HasPrefix(r.URL.Path, "/seaweedfs/upload/") {
+		return true
+	}
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
+		return false
+	}
+	for _, p := range bulkBodyPrefixes {
+		if strings.HasPrefix(r.URL.Path, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// bulkBodyPrefixes are the /api/v1 routes whose handlers consume multipart
+// bodies (each self-caps before parsing).
+var bulkBodyPrefixes = []string{
+	"/api/v1/videos/upload",
+	"/api/v1/cv-formatter/format",
+	"/api/v1/admin/universities/bulk-import",
+	"/api/v1/admin/media/upload",
+	"/api/v1/intel/inbound/email",
 }
