@@ -639,11 +639,15 @@ func (res *Resolver) getBoolSetting(ctx context.Context, key string, fallback bo
 }
 
 // defaultCountry returns the configured fallback country code for visitors
-// with no resolvable geo signal. Falls back to "NG" when no setting.
+// with no resolvable geo signal. Falls back to "NG" when the setting is
+// unset — or holds an invalid value: the code reaches SQL geo_code matches
+// downstream, so an admin-entered "ng" or "nigeria" must not leak through.
 func (res *Resolver) defaultCountry(ctx context.Context) string {
 	fallback := "NG"
 	if res.settings != nil {
-		return res.settings.GetStringOr(ctx, "geo_personalization.default_country", fallback)
+		if cc := normalizeCountry(res.settings.GetStringOr(ctx, "geo_personalization.default_country", fallback)); cc != "" {
+			return cc
+		}
 	}
 
 	return fallback
