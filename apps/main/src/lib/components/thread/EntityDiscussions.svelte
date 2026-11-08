@@ -149,7 +149,7 @@
 			<ul class="ed-list">
 				{#each comments as comment (comment.id)}
 					<li>
-						<a href={threadHref} class="ed-comment">
+						<a href="{threadHref}#reply-{comment.id}" class="ed-comment">
 							{#if comment.avatar_url && !comment.is_anonymous}
 								<img src={comment.avatar_url} alt="" class="ed-avatar" loading="lazy" />
 							{:else}

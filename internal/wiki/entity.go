@@ -1142,11 +1142,13 @@ func (s *Service) CreateEntityPageWithRevision(ctx context.Context, userID pgtyp
 	}
 
 	if !s.isSuperAdmin(ctx, userID) {
+		s.mintThreadAnchor(ctx, userID, pageID)
 		return pageID.String(), revID.String(), slug, false, nil
 	}
 	if _, err := s.store.ApproveRevisionByID(ctx, revID, userID, "auto-approved (super_admin)"); err != nil {
 		return pageID.String(), revID.String(), slug, false, fmt.Errorf("wiki: create entity page: auto-approve: %w", err)
 	}
+	s.mintThreadAnchor(ctx, userID, pageID)
 	return pageID.String(), revID.String(), slug, true, nil
 }
 

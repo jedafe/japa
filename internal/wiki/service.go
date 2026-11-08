@@ -367,6 +367,30 @@ type Service struct {
 	media            mediaURLResolver      // destination logo_url resolution (§80 Reader UX)
 	rag              ragIndexer            // lifecycle-driven embedding sync (§69/ADR-069)
 	fxRates          FxRateProvider        // §112 display base rates for "(base)" equivalents
+
+	// Unified-discussion spec: every wiki page eagerly gets a backing
+	// thread (contents row via thread_anchors). Injected as a callback so
+	// wiki never imports comments; nil disables minting.
+	threadAnchorMinter ThreadAnchorMinter
+}
+
+// ThreadAnchorMinter mints the /thread page backing an entity — wired to
+// comments.Service.CreateAnchor in server.go. Best-effort semantics.
+type ThreadAnchorMinter func(ctx context.Context, userID pgtype.UUID, entityType, entityKey string) error
+
+// SetThreadAnchorMinter injects the anchor minter (unified-discussion
+// spec). Nil disables minting.
+func (s *Service) SetThreadAnchorMinter(m ThreadAnchorMinter) { s.threadAnchorMinter = m }
+
+// mintThreadAnchor best-effort mints the /thread anchor for a freshly
+// created wiki page. Page creation never fails on a mint error.
+func (s *Service) mintThreadAnchor(ctx context.Context, userID, pageID pgtype.UUID) {
+	if s.threadAnchorMinter == nil || !pageID.Valid {
+		return
+	}
+	if err := s.threadAnchorMinter(ctx, userID, "wiki_page", pageID.String()); err != nil {
+		slog.WarnContext(ctx, "wiki: thread anchor mint failed", "page_id", pageID.String(), "error", err)
+	}
 }
 
 // FxRateProvider is the narrow slice of *fx.Service the wiki read path
@@ -1666,6 +1690,7 @@ func (s *Service) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID
 	}
 
 	if !s.isSuperAdmin(ctx, userID) {
+		s.mintThreadAnchor(ctx, userID, pageID)
 		return pageID.String(), revID.String(), slug, false, nil
 	}
 
@@ -1678,6 +1703,7 @@ func (s *Service) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID
 		return pageID.String(), revID.String(), slug, false, fmt.Errorf("wiki: create page: auto-approve: %w", err)
 	}
 
+	s.mintThreadAnchor(ctx, userID, pageID)
 	return pageID.String(), revID.String(), slug, true, nil
 }
 

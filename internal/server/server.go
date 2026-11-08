@@ -1717,6 +1717,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	wikiService.SetCustomFields(cfService)
 	wikiService.SetPermissionChecker(rbacResolver)
 	wikiService.SetEnqueuer(taskEnqueuer)
+	// Unified-discussion spec: every new wiki page eagerly mints its
+	// /thread anchor (contents row authored by the page creator).
+	wikiService.SetThreadAnchorMinter(func(ctx context.Context, userID pgtype.UUID, entityType, entityKey string) error {
+		_, err := commentsService.CreateAnchor(ctx, userID, entityType, entityKey)
+		return err
+	})
 	// §80: activating wiki.enabled fans out wiki:seed_stub_pages to every
 	// country space (idempotent — existing pages are skipped).
 	featureHandlers.SetOnFlagEnabled(func(ctx context.Context, flagName string) {

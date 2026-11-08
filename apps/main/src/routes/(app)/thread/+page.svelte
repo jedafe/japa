@@ -9,6 +9,8 @@
 	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
 	import ForumList from '#lib/components/forum/ForumList.svelte';
 	import FeedCard from '#lib/components/feed/FeedCard.svelte';
+	import { api } from '#lib/api/client.js';
+	import { Loader2 } from 'lucide-svelte';
 	import { compose } from '#lib/components/shell/compose.svelte.js';
 	import { t } from '#lib/i18n/index.js';
 	import { tiptapJsonFirstImageSrc } from '#lib/tiptap/serialize.js';
@@ -52,7 +54,7 @@
 			id: g.id,
 			title: g.title,
 			slug: g.slug,
-			content_type: 'forum_thread',
+			content_type: g.content_type ?? 'forum_thread',
 			author_id: g.author_id ?? '',
 			author_name: g.author_display_name ?? g.author_username ?? '',
 			author_username: g.author_username,
@@ -73,6 +75,35 @@
 	}
 
 	const featuredItems = $derived(data.featured.map(featuredToFeedItem));
+
+	// The default list is /explore — ALL threads (every contents row is a
+	// thread). Cards open /thread/{slug} (threadDefault). ForumList only
+	// renders when forum-specific filters (status/tag/author) narrow the
+	// list to forum_thread rows.
+	let moreItems = $state<FeedItem[]>([]);
+	let exhausted = $state(false);
+	let loadingMore = $state(false);
+	const allItems = $derived([...data.items, ...moreItems]);
+	const forumFiltered = $derived(data.status !== 'all' || !!data.tagSlug || !!data.authorId);
+
+	$effect(() => {
+		// Reset pagination whenever the server list re-loads (sort change).
+		data.items;
+		moreItems = [];
+		exhausted = false;
+	});
+
+	async function loadMore() {
+		if (loadingMore) return;
+		loadingMore = true;
+		const res = await api.get<FeedItem[]>(
+			`/explore?sort=${data.sort === 'top' ? 'top' : 'latest'}&page_size=${data.pageSize}&page_offset=${allItems.length}`
+		);
+		loadingMore = false;
+		const next = res.data ?? [];
+		moreItems = [...moreItems, ...next];
+		if (next.length < data.pageSize) exhausted = true;
+	}
 
 	const hasActiveFilters = $derived(data.status !== 'all' || !!data.tagSlug);
 
@@ -168,17 +199,46 @@
 				<div class="flex flex-col gap-3">
 					{#each featuredItems as item (item.id)}
 						<!-- Featured threads use the same forum card as the thread list. -->
-						<FeedCard {item} style="daily" layout="stream" />
+						<FeedCard {item} style="daily" layout="stream" threadDefault />
 					{/each}
 				</div>
 			{/if}
-		{:else}
+		{:else if forumFiltered}
 			<ForumList
 				threads={data.threads}
 				pageSize={data.pageSize}
 				loadError={data.loadError}
 				adSlot="native_forum"
 			/>
+		{:else}
+			{#if data.loadError}
+				<p class="py-12 text-center text-[var(--color-text-subtle)]">
+					{t('forum.load_error', 'Failed to load discussions. Please try again later.')}
+				</p>
+			{:else if allItems.length === 0}
+				<p class="py-12 text-center text-[var(--color-text-subtle)]">
+					{t('thread.no_discussions', 'No discussions yet.')}
+				</p>
+			{:else}
+				<div class="flex flex-col gap-3">
+					{#each allItems as item (item.id)}
+						<FeedCard {item} style="daily" layout="stream" threadDefault />
+					{/each}
+				</div>
+				{#if !exhausted}
+					<div class="mt-4 flex justify-center">
+						<button
+							type="button"
+							onclick={loadMore}
+							disabled={loadingMore}
+							class="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						>
+							{#if loadingMore}<Loader2 size={14} class="animate-spin" />{/if}
+							{t('common.load_more', 'Load more')}
+						</button>
+					</div>
+				{/if}
+			{/if}
 		{/if}
 	</div>
 </div>

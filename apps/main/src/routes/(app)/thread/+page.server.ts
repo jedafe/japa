@@ -1,20 +1,17 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGetEnvelope, apiList } from '#lib/server/api.js';
-import type { ForumThread } from '#lib/types/index.js';
+import type { FeedItem, ForumThread } from '#lib/types/index.js';
 import type { GuideListItem } from '#lib/types/content.js';
 
 /**
- * Forum list at /thread — Reddit-style compact thread list inside the app shell.
- * Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+ * Thread index at /thread — lists ALL threads: every contents row is a
+ * thread (unified-discussion spec), so the default list is the explore
+ * feed of all published content, and /thread/{slug} is its discussion
+ * page. The "New discussion" composer still creates forum questions.
  *
- * The backend lists threads by keyset-paginated by created_at desc
- * (page_size + cursor_created_at). Sort=top orders by vote_score descending.
- * Supports ?tag=slug, ?sort=latest|top|featured and ?status=all|solved|open.
- * sort=featured consumes the generic content_featured junction
- * (GET /content?type=forum_thread&featured=1 — §14). Forum threads are
- * backed by contents rows with content_type='forum_thread' (BUG-004 /
- * m000636); 'discussion' is the §49 comment-thread type and never
- * matches forum threads.
+ * The forum-only filters (?status=solved|open, ?tag=slug) narrow to
+ * forum_thread rows via /thread and render the ForumList; sort=featured
+ * pulls featured content of every type (§14 content_featured junction).
  */
 const PAGE_SIZE = 20;
 
@@ -27,6 +24,7 @@ export const load: PageServerLoad = async (event) => {
 	const authorId = event.url.searchParams.get('author_id') ?? '';
 
 	const base = {
+		items: [] as FeedItem[],
 		threads: [] as ForumThread[],
 		featured: [] as GuideListItem[],
 		authed,
@@ -42,7 +40,7 @@ export const load: PageServerLoad = async (event) => {
 		try {
 			const res = await apiGetEnvelope<GuideListItem[]>(
 				ctx,
-				`/content?type=forum_thread&featured=1&page_size=${PAGE_SIZE}`
+				`/content?featured=1&page_size=${PAGE_SIZE}`
 			);
 			return { ...base, featured: res.data ?? [] };
 		} catch {
@@ -50,17 +48,31 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	const params = new URLSearchParams();
-	params.set('page_size', String(PAGE_SIZE));
-	if (sort === 'top') params.set('sort', 'top');
-	if (status === 'solved') params.set('solved', 'true');
-	if (status === 'open') params.set('solved', 'false');
-	if (tagSlug) params.set('tag', tagSlug);
-	if (authorId) params.set('author_id', authorId);
+	// Forum-specific filters keep the forum thread list — solved/open and
+	// tag filtering only apply to forum_thread rows.
+	if (status !== 'all' || tagSlug || authorId) {
+		const params = new URLSearchParams();
+		params.set('page_size', String(PAGE_SIZE));
+		if (sort === 'top') params.set('sort', 'top');
+		if (status === 'solved') params.set('solved', 'true');
+		if (status === 'open') params.set('solved', 'false');
+		if (tagSlug) params.set('tag', tagSlug);
+		if (authorId) params.set('author_id', authorId);
+
+		try {
+			const { items } = await apiList<ForumThread>(ctx, `/thread?${params.toString()}`);
+			return { ...base, threads: items };
+		} catch {
+			return { ...base, loadError: true };
+		}
+	}
 
 	try {
-		const { items } = await apiList<ForumThread>(ctx, `/thread?${params.toString()}`);
-		return { ...base, threads: items };
+		const { items } = await apiList<FeedItem>(
+			ctx,
+			`/explore?sort=${sort === 'top' ? 'top' : 'latest'}&page_size=${PAGE_SIZE}&page_offset=0`
+		);
+		return { ...base, items };
 	} catch {
 		return { ...base, loadError: true };
 	}
