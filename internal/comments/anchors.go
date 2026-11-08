@@ -52,27 +52,27 @@ var toolAnchorMeta = map[string]struct {
 	Title   string
 	Summary string
 }{
-	"arrival-checklist":  {"Arrival Checklist", "A personalized arrival checklist for your destination."},
-	"attestation-guide":  {"Attestation Guide", "Step-by-step document attestation guidance."},
-	"community-locator":  {"Community Locator", "Find diaspora communities near you."},
-	"cost-of-living":     {"Cost of Living Calculator", "Compare living costs across destination cities."},
-	"credential-checker": {"Credential Checker", "Check how your credentials transfer abroad."},
-	"crs-calculator":     {"CRS Calculator", "Estimate your Comprehensive Ranking System score."},
-	"currency-converter": {"Currency Converter", "Convert between origin and destination currencies."},
-	"cv-formatter":       {"CV Formatter", "Format your CV for your destination market."},
-	"eca-guide":          {"ECA Guide", "Educational Credential Assessment guidance."},
-	"embassy-alerter":    {"Embassy Alerter", "Alerts for embassy appointment availability."},
-	"housing-guide":      {"Housing Guide", "Housing guides for your destination city."},
-	"language-test":      {"Language Test Hub", "Prepare for IELTS, TOEFL and other language tests."},
-	"pof-calculator":     {"Proof of Funds Calculator", "Compute proof-of-funds requirements."},
-	"processing-tracker": {"Processing Time Tracker", "Track visa processing times."},
-	"readiness":          {"Readiness Assessment", "Assess your readiness to relocate abroad."},
-	"remittance":         {"Remittance Rate Tracker", "Track live remittance rates across corridors."},
-	"sop-generator":      {"SOP Generator", "Generate a statement of purpose draft."},
-	"tax-calculator":     {"Tax Calculator", "Estimate taxes in your destination country."},
-	"travel":             {"Travel Search", "Search and compare flights and hotels."},
-	"visa-checklist":     {"Visa Checklist", "Generate your visa document checklist by destination."},
-	"visa-routes":        {"Visa Routes", "Compare visa routes for your destination."},
+	"arrival-checklist":  {"Arrival Checklist", "A personalized checklist for your first weeks after landing — documents to carry, registrations to complete, bank, phone, transport, and the tasks people commonly forget. Built per destination so nothing slips through."},
+	"attestation-guide":  {"Attestation Guide", "Step-by-step guidance for getting your documents attested — which offices to visit, what order to follow, and the fees and timelines at each stage. Covers Nigerian and destination-country requirements."},
+	"community-locator":  {"Community Locator", "Find diaspora communities near you — associations, religious centres, cultural groups, and informal networks organised by city and country of origin."},
+	"cost-of-living":     {"Cost of Living Calculator", "Compare real living costs across destination cities — rent, food, transport, childcare, and utilities — side by side with your origin city so you can budget before you move."},
+	"credential-checker": {"Credential Checker", "Check how your degrees and professional credentials transfer abroad — recognition status, evaluation bodies, and the extra steps each destination requires."},
+	"crs-calculator":     {"CRS Calculator", "Estimate your Comprehensive Ranking System score for Canadian Express Entry — age, education, language, and work experience broken down per factor so you can see where to gain points."},
+	"currency-converter": {"Currency Converter", "Convert between your home and destination currencies with live rates — useful for budgeting, remittances, and comparing salaries across countries."},
+	"cv-formatter":       {"CV Formatter", "Format your CV for your destination market — the structure, length, and conventions recruiters in that country actually expect."},
+	"eca-guide":          {"ECA Guide", "Educational Credential Assessment guidance — which ECA bodies evaluate your qualifications, how long each takes, and which one your destination accepts."},
+	"embassy-alerter":    {"Embassy Alerter", "Alerts when embassy and visa application centre appointment slots open — interview calendars fill fast and checking manually is a losing game."},
+	"housing-guide":      {"Housing Guide", "Housing guides for destination cities — where newcomers typically live, what deposits and paperwork landlords expect, and realistic rent ranges by area."},
+	"language-test":      {"Language Test Hub", "Prepare for IELTS, TOEFL, PTE and other language tests — target scores per visa route, prep resources, and booking links."},
+	"pof-calculator":     {"Proof of Funds Calculator", "Compute proof-of-funds requirements for your destination — minimum balances, how many months of statements, and acceptable account types."},
+	"processing-tracker": {"Processing Time Tracker", "Track current visa and permit processing times — real submission-to-decision timelines by route, so you can plan flights and resignations sensibly."},
+	"readiness":          {"Readiness Assessment", "Assess how ready you are to relocate — documents, finances, credentials, and timeline scored so you know exactly what's left before you can move."},
+	"remittance":         {"Remittance Rate Tracker", "Track live remittance rates and fees across corridors — compare providers before you send money home."},
+	"sop-generator":      {"SOP Generator", "Draft a statement of purpose for admissions or visa applications — structured around your background, goals, and the programme you're targeting."},
+	"tax-calculator":     {"Tax Calculator", "Estimate income tax and take-home pay in your destination country — so salary offers can be compared on net, not gross."},
+	"travel":             {"Travel Search", "Search and compare flights and hotels for your route — prices across airlines and dates so you can book the legwork smartly."},
+	"visa-checklist":     {"Visa Checklist", "Generate your visa document checklist by destination — every required document, form, and supporting evidence for your route, in submission order."},
+	"visa-routes":        {"Visa Routes", "Compare visa routes for your destination — eligibility, cost, timeline, and pathway-to-residency for each option."},
 }
 
 // AnchorSummary is the public shape returned by the anchor endpoints — the
@@ -222,6 +222,27 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 	}
 }
 
+// anchorBodyDoc renders an anchor thread's body as a TipTap document: the
+// entity description paragraph, then a prompt line that invites
+// conversation about the entity.
+func anchorBodyDoc(description, title string) string {
+	text := func(s string) map[string]any {
+		return map[string]any{
+			"type":    "paragraph",
+			"content": []any{map[string]any{"type": "text", "text": s}},
+		}
+	}
+	doc := map[string]any{
+		"type":    "doc",
+		"content": []any{text(description), text("Questions, experiences, and tips about " + title + " — join the discussion below.")},
+	}
+	b, err := json.Marshal(doc)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
 // CreateAnchor get-or-creates a thread anchor for an entity. The backing
 // contents row is a published `discussion` authored by the caller, filed
 // under the platform anchor space so comments aren't gated by a wiki-only
@@ -251,6 +272,14 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 
 	title := "Discussing: " + desc.Title
 
+	// The thread body carries the entity's real description plus a
+	// conversation prompt — /thread/{slug} renders it as the body section,
+	// so anchor threads aren't empty shells (unified-discussion spec).
+	body := ""
+	if desc.Summary != nil && *desc.Summary != "" {
+		body = anchorBodyDoc(*desc.Summary, desc.Title)
+	}
+
 	// Same uniqueness trick as StartConversation: the hash input carries the
 	// entity coordinates + a fresh UUID so repeat anchors can't collide on
 	// the contents content_hash index (dedup is meaningless for generated
@@ -264,7 +293,7 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 		AuthorID:    userID,
 		ContentType: "discussion",
 		Title:       title,
-		Body:        "",
+		Body:        body,
 		ContentHash: &contentHash,
 		SpaceID:     desc.SpaceID,
 		Status:      content.StatusPublished,

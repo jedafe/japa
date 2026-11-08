@@ -6014,6 +6014,7 @@
 	"thread.reply_count": "{count} replies",
 	"thread.start": "Start a conversation",
 	"thread.started_by": "Started by",
+	"thread.read_full": "Read full {type}",
 	"thread.tab.latest": "Latest",
 	"thread.tab.popular": "Popular",
 	"tickets.back_to_list": "Back to tickets",

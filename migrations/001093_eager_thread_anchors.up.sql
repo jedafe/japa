@@ -36,7 +36,14 @@ WITH new_threads AS (
         'discussion',
         'Discussing: ' || wp.title,
         'thread-wiki-' || substr(replace(wp.id::text, '-', ''), 1, 12),
-        '',
+        -- Same body the in-process minter writes: the entity description
+        -- plus a conversation prompt (TipTap doc).
+        jsonb_build_object('type', 'doc', 'content', jsonb_build_array(
+            jsonb_build_object('type', 'paragraph', 'content', jsonb_build_array(
+                jsonb_build_object('type', 'text', 'text', 'Discussing a page in the ' || s.name || ' wiki.'))),
+            jsonb_build_object('type', 'paragraph', 'content', jsonb_build_array(
+                jsonb_build_object('type', 'text', 'text', 'Questions, experiences, and tips about ' || wp.title || ' — join the discussion below.')))
+        ))::text,
         '',
         'published',
         'public',
@@ -76,29 +83,30 @@ WHERE wp.deleted_at IS NULL
 ON CONFLICT (entity_type, entity_key) DO NOTHING;
 
 -- 3. Registered /tools/{tool} pages → thread anchors.
+-- Summary strings mirror comments.toolAnchorMeta — keep them in sync.
 WITH tool_slugs (slug, title, summary) AS (
     VALUES
-        ('arrival-checklist',  'Arrival Checklist',          'A personalized arrival checklist for your destination.'),
-        ('attestation-guide',  'Attestation Guide',          'Step-by-step document attestation guidance.'),
-        ('community-locator',  'Community Locator',          'Find diaspora communities near you.'),
-        ('cost-of-living',     'Cost of Living Calculator',  'Compare living costs across destination cities.'),
-        ('credential-checker', 'Credential Checker',         'Check how your credentials transfer abroad.'),
-        ('crs-calculator',     'CRS Calculator',             'Estimate your Comprehensive Ranking System score.'),
-        ('currency-converter', 'Currency Converter',         'Convert between origin and destination currencies.'),
-        ('cv-formatter',       'CV Formatter',               'Format your CV for your destination market.'),
-        ('eca-guide',          'ECA Guide',                  'Educational Credential Assessment guidance.'),
-        ('embassy-alerter',    'Embassy Alerter',            'Alerts for embassy appointment availability.'),
-        ('housing-guide',      'Housing Guide',              'Housing guides for your destination city.'),
-        ('language-test',      'Language Test Hub',          'Prepare for IELTS, TOEFL and other language tests.'),
-        ('pof-calculator',     'Proof of Funds Calculator',  'Compute proof-of-funds requirements.'),
-        ('processing-tracker', 'Processing Time Tracker',    'Track visa processing times.'),
-        ('readiness',          'Readiness Assessment',       'Assess your readiness to relocate abroad.'),
-        ('remittance',         'Remittance Rate Tracker',    'Track live remittance rates across corridors.'),
-        ('sop-generator',      'SOP Generator',              'Generate a statement of purpose draft.'),
-        ('tax-calculator',     'Tax Calculator',             'Estimate taxes in your destination country.'),
-        ('travel',             'Travel Search',              'Search and compare flights and hotels.'),
-        ('visa-checklist',     'Visa Checklist',             'Generate your visa document checklist by destination.'),
-        ('visa-routes',        'Visa Routes',                'Compare visa routes for your destination.')
+        ('arrival-checklist',  'Arrival Checklist',          'A personalized checklist for your first weeks after landing — documents to carry, registrations to complete, bank, phone, transport, and the tasks people commonly forget. Built per destination so nothing slips through.'),
+        ('attestation-guide',  'Attestation Guide',          'Step-by-step guidance for getting your documents attested — which offices to visit, what order to follow, and the fees and timelines at each stage. Covers Nigerian and destination-country requirements.'),
+        ('community-locator',  'Community Locator',          'Find diaspora communities near you — associations, religious centres, cultural groups, and informal networks organised by city and country of origin.'),
+        ('cost-of-living',     'Cost of Living Calculator',  'Compare real living costs across destination cities — rent, food, transport, childcare, and utilities — side by side with your origin city so you can budget before you move.'),
+        ('credential-checker', 'Credential Checker',         'Check how your degrees and professional credentials transfer abroad — recognition status, evaluation bodies, and the extra steps each destination requires.'),
+        ('crs-calculator',     'CRS Calculator',             'Estimate your Comprehensive Ranking System score for Canadian Express Entry — age, education, language, and work experience broken down per factor so you can see where to gain points.'),
+        ('currency-converter', 'Currency Converter',         'Convert between your home and destination currencies with live rates — useful for budgeting, remittances, and comparing salaries across countries.'),
+        ('cv-formatter',       'CV Formatter',               'Format your CV for your destination market — the structure, length, and conventions recruiters in that country actually expect.'),
+        ('eca-guide',          'ECA Guide',                  'Educational Credential Assessment guidance — which ECA bodies evaluate your qualifications, how long each takes, and which one your destination accepts.'),
+        ('embassy-alerter',    'Embassy Alerter',            'Alerts when embassy and visa application centre appointment slots open — interview calendars fill fast and checking manually is a losing game.'),
+        ('housing-guide',      'Housing Guide',              'Housing guides for destination cities — where newcomers typically live, what deposits and paperwork landlords expect, and realistic rent ranges by area.'),
+        ('language-test',      'Language Test Hub',          'Prepare for IELTS, TOEFL, PTE and other language tests — target scores per visa route, prep resources, and booking links.'),
+        ('pof-calculator',     'Proof of Funds Calculator',  'Compute proof-of-funds requirements for your destination — minimum balances, how many months of statements, and acceptable account types.'),
+        ('processing-tracker', 'Processing Time Tracker',    'Track current visa and permit processing times — real submission-to-decision timelines by route, so you can plan flights and resignations sensibly.'),
+        ('readiness',          'Readiness Assessment',       'Assess how ready you are to relocate — documents, finances, credentials, and timeline scored so you know exactly what''s left before you can move.'),
+        ('remittance',         'Remittance Rate Tracker',    'Track live remittance rates and fees across corridors — compare providers before you send money home.'),
+        ('sop-generator',      'SOP Generator',              'Draft a statement of purpose for admissions or visa applications — structured around your background, goals, and the programme you''re targeting.'),
+        ('tax-calculator',     'Tax Calculator',             'Estimate income tax and take-home pay in your destination country — so salary offers can be compared on net, not gross.'),
+        ('travel',             'Travel Search',              'Search and compare flights and hotels for your route — prices across airlines and dates so you can book the legwork smartly.'),
+        ('visa-checklist',     'Visa Checklist',             'Generate your visa document checklist by destination — every required document, form, and supporting evidence for your route, in submission order.'),
+        ('visa-routes',        'Visa Routes',                'Compare visa routes for your destination — eligibility, cost, timeline, and pathway-to-residency for each option.')
 ), new_threads AS (
     INSERT INTO public.contents (
         author_id, space_id, content_type, title, slug, body, body_html,
@@ -110,7 +118,13 @@ WITH tool_slugs (slug, title, summary) AS (
         'discussion',
         'Discussing: ' || ts.title,
         'thread-tool-' || ts.slug,
-        '',
+        -- Same body the in-process minter writes (TipTap doc).
+        jsonb_build_object('type', 'doc', 'content', jsonb_build_array(
+            jsonb_build_object('type', 'paragraph', 'content', jsonb_build_array(
+                jsonb_build_object('type', 'text', 'text', ts.summary))),
+            jsonb_build_object('type', 'paragraph', 'content', jsonb_build_array(
+                jsonb_build_object('type', 'text', 'text', 'Questions, experiences, and tips about ' || ts.title || ' — join the discussion below.')))
+        ))::text,
         '',
         'published',
         'public',

@@ -5910,6 +5910,7 @@
 	"thread.reply_count": "{count} réponses",
 	"thread.start": "Démarrer une conversation",
 	"thread.started_by": "Commencé par",
+	"thread.read_full": "Lire l’intégralité : {type}",
 	"thread.tab.latest": "Récents",
 	"thread.tab.popular": "Populaires",
 	"tickets.back_to_list": "Retour aux tickets",

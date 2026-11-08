@@ -15,7 +15,7 @@
 	import ReactionRail from '#lib/components/blog/ReactionRail.svelte';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import { commentsApi, commentsConversation, listAllComments } from '#lib/components/forum/conversationApi.js';
-	import { tiptapBodyToHtml } from '#lib/tiptap/serialize.js';
+	import { tiptapBodyToHtml, decodeTipTapDoc, tiptapToText } from '#lib/tiptap/serialize.js';
 	import { relativeTime } from '#lib/feed/time.js';
 	import { hydrateLinkPreviews } from '#lib/tiptap/hydrateLinkPreviews.js';
 	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
@@ -66,9 +66,22 @@
 				})
 			: ''
 	);
+	// Content threads (a contents row that IS its canonical article) render
+	// only the opening ~80 words of the body + a "Read full {type}" CTA —
+	// the full article lives on the canonical page, and truncating here also
+	// keeps the thread from duplicating the article's content. Discussion
+	// threads (forum-style bodies) render in full.
+	const isContentThread = $derived(data.embed?.kind === 'self');
+	const contentExcerpt = $derived.by(() => {
+		if (!isContentThread || !article.body) return '';
+		const words = tiptapToText(decodeTipTapDoc(article.body)).split(/\s+/).filter(Boolean);
+		return words.length > 80 ? words.slice(0, 80).join(' ') + '…' : words.join(' ');
+	});
 	// Empty-body threads (minted anchors, linked discussions) fall back to the
 	// embed excerpt so the body section still carries a description.
-	const fallbackExcerpt = $derived(!bodyHtml ? (data.embed?.excerpt ?? article.excerpt ?? '') : '');
+	const fallbackExcerpt = $derived(
+		!isContentThread && !bodyHtml ? (data.embed?.excerpt ?? article.excerpt ?? '') : ''
+	);
 
 	const authorLabel = $derived(article.author_name ?? article.author_username ?? t('forum.member', 'Member'));
 	const time = $derived(article.published_at ? relativeTime(article.published_at, new Date(), i18n.locale) : '');
@@ -191,9 +204,22 @@
 			</div>
 		</div>
 
-		<!-- Body — TipTap prose when the thread carries one, otherwise the
-		     canonical entity's excerpt (anchor threads have no body). -->
-		{#if bodyHtml}
+		<!-- Body — content threads render the first ~80 words plus a "Read
+		     full {type}" CTA; discussion threads render their full body;
+		     empty-body anchors fall back to the entity excerpt. -->
+		{#if isContentThread}
+			{#if contentExcerpt}
+				<p class="mt-5 text-[var(--color-text-subtle)]">{contentExcerpt}</p>
+			{/if}
+			{#if data.embed}
+				<a
+					href={data.embed.href}
+					class="mt-4 inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
+				>
+					{t('thread.read_full', 'Read full {type}').replace('{type}', typeBadge)}
+				</a>
+			{/if}
+		{:else if bodyHtml}
 			<div class="prose mt-5 max-w-none text-[var(--color-text)]" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds>
 				{@html bodyHtml}
 			</div>
