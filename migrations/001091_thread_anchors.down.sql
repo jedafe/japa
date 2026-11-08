@@ -1,0 +1,5 @@
+BEGIN;
+
+DROP TABLE IF EXISTS thread_anchors;
+
+COMMIT;

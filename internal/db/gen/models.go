@@ -4401,6 +4401,17 @@ type TemplateLiteral struct {
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 }
 
+type ThreadAnchor struct {
+	ID            pgtype.UUID        `json:"id"`
+	ContentID     pgtype.UUID        `json:"content_id"`
+	EntityType    string             `json:"entity_type"`
+	EntityKey     string             `json:"entity_key"`
+	EntityUrl     string             `json:"entity_url"`
+	EntityTitle   string             `json:"entity_title"`
+	EntitySummary *string            `json:"entity_summary"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type Ticket struct {
 	ID              pgtype.UUID        `json:"id"`
 	TypeID          pgtype.UUID        `json:"type_id"`

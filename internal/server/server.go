@@ -7847,6 +7847,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/content/{id}/discussions", commentsHandlers.ListDiscussions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "comments.create")).
 				Post("/content/{id}/discussions", commentsHandlers.StartConversation)
+			// Thread anchors — /thread/{slug} entity threads (tools, wiki
+			// pages). Resolve is public-read like ListDiscussions; create
+			// requires auth and reuses the comments.create permission since
+			// an anchor is just a lazily-minted discussion row.
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/threads/anchor/{entityType}/{entityKey}", commentsHandlers.ResolveAnchor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "comments.create")).
+				Post("/threads/anchor", commentsHandlers.CreateAnchor)
 			// NOTE: /content/{id}/react (POST+DELETE) and /content/{id}/spaces
 			// (PATCH) are registered once in the main content route group above
 			// (see "Singular reaction action routes"). They must not be
