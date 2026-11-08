@@ -865,7 +865,6 @@ var settingsCatalog = map[string]settingMeta{
 	"feed.velocity_window_days":               {Type: "int", DefaultValue: "30", Description: "Lookback window in days for velocity score recalculation (BUG-009)", Panel: "admin"},
 	"gdpr.policy_version":                     {Type: "string", DefaultValue: "1.0", Description: "Current privacy policy version stamped on consent records (BUG-GDPR-005)", Panel: "admin"},
 	"geo_personalization.default_country":     {Type: "string", DefaultValue: "NG", Description: "Fallback ISO 3166-1 alpha-2 code for visitors with no resolvable geo signal (GeoIP, preference, or archetype)", Panel: "control"},
-	"geoip.anonymous_ip_enabled":              {Type: "bool", DefaultValue: "false", Description: `Master switch for VPN/anonymous-IP detection via GeoLite2-Anonymous-IP. When false (default), ` + "`" + `is_vpn` + "`" + ` in ` + "`" + `/geo/me` + "`" + ` and ` + "`" + `/geo/lookup` + "`" + ` is always ` + "`" + `false` + "`" + ` (GeoLite2-City carries no anonymous-IP data). When true, a second ` + "`" + `.mmdb` + "`" + ` is loaded and ` + "`" + `is_vpn` + "`" + ` is populated from the anonymous-IP record (Section 37)`, Panel: "control"},
 	"jce.comparisons.page_size_options":       {Type: "json", DefaultValue: `[12,24,48,96]`, Description: "Allowed page-size options for JCE comparison lists.", Panel: "control"},
 	"jce.comparisons.sort_options":            {Type: "json", DefaultValue: `["created_at","title","popularity"]`, Description: "Allowed sort fields for JCE comparison lists.", Panel: "control"},
 	"jce.freshness_ai_estimate_weight":        {Type: "int", DefaultValue: "50", Description: "Weight numerator for AI-estimate sources in freshness scoring.", Panel: "control"},
@@ -924,18 +923,18 @@ var settingsCatalog = map[string]settingMeta{
 	// Video (§106, ADR-117)
 	// Public because the main /create composer and studio surfaces gate
 	// themselves on this setting (Rule 16).
-	"video.enabled":                       {Type: "bool", DefaultValue: "true", Public: true, Description: "Feature flag for the video content type and /create composer.", Panel: "admin"},
-	"video.import.allowed_platforms":      {Type: "json", DefaultValue: `["youtube","tiktok","instagram","vimeo"]`, Description: "Platform allowlist for single URL import.", Panel: "admin"},
-	"video.import.youtube_api_key":        {Type: "string", DefaultValue: "", Description: "YouTube Data API v3 key for bulk imports (server-only).", Sensitive: true, Panel: "admin"},
-	"video.import.instagram_access_token": {Type: "string", DefaultValue: "", Description: "Instagram oEmbed access token for Reel/post imports (server-only).", Sensitive: true, Panel: "admin"},
-	"video.import.max_items_per_run":      {Type: "int", DefaultValue: "50", Description: "Max videos resolved per bulk import run.", Panel: "admin"},
-	"video.ai_summary.enabled":            {Type: "bool", DefaultValue: "false", Public: true, Description: "Allow users to enqueue AI-generated drafts from video metadata.", Panel: "admin"},
-	"video.claim_form_slug":               {Type: "string", DefaultValue: "video-channel-claim", Description: "Form Builder slug for claim/takedown evidence.", Panel: "admin"},
-	"video.channel_sync.enabled":          {Type: "bool", DefaultValue: "true", Description: "Master switch for the recurring video_channel Atom-feed sync task.", Panel: "admin"},
-	"video.channel_sync.interval_minutes": {Type: "int", DefaultValue: "360", Description: "Minimum minutes between syncs of the same channel source.", Panel: "admin"},
-	"video.channel_sync.batch_size":       {Type: "int", DefaultValue: "50", Description: "Max channels processed per video:sync_channels run.", Panel: "admin"},
+	"video.enabled":                           {Type: "bool", DefaultValue: "true", Public: true, Description: "Feature flag for the video content type and /create composer.", Panel: "admin"},
+	"video.import.allowed_platforms":          {Type: "json", DefaultValue: `["youtube","tiktok","instagram","vimeo"]`, Description: "Platform allowlist for single URL import.", Panel: "admin"},
+	"video.import.youtube_api_key":            {Type: "string", DefaultValue: "", Description: "YouTube Data API v3 key for bulk imports (server-only).", Sensitive: true, Panel: "admin"},
+	"video.import.instagram_access_token":     {Type: "string", DefaultValue: "", Description: "Instagram oEmbed access token for Reel/post imports (server-only).", Sensitive: true, Panel: "admin"},
+	"video.import.max_items_per_run":          {Type: "int", DefaultValue: "50", Description: "Max videos resolved per bulk import run.", Panel: "admin"},
+	"video.ai_summary.enabled":                {Type: "bool", DefaultValue: "false", Public: true, Description: "Allow users to enqueue AI-generated drafts from video metadata.", Panel: "admin"},
+	"video.claim_form_slug":                   {Type: "string", DefaultValue: "video-channel-claim", Description: "Form Builder slug for claim/takedown evidence.", Panel: "admin"},
+	"video.channel_sync.enabled":              {Type: "bool", DefaultValue: "true", Description: "Master switch for the recurring video_channel Atom-feed sync task.", Panel: "admin"},
+	"video.channel_sync.interval_minutes":     {Type: "int", DefaultValue: "360", Description: "Minimum minutes between syncs of the same channel source.", Panel: "admin"},
+	"video.channel_sync.batch_size":           {Type: "int", DefaultValue: "50", Description: "Max channels processed per video:sync_channels run.", Panel: "admin"},
 	"video.channel_sync.request_timeout_secs": {Type: "int", DefaultValue: "30", Description: "HTTP deadline (seconds) for channel_sync feed fetches — YouTube deprioritises Atom responses beyond the shared 10s client timeout.", Panel: "admin"},
-	"video.channel_sync.auto_publish":     {Type: "bool", DefaultValue: "true", Description: "Publish synced videos as contents when the channel author has a default space.", Panel: "admin"},
+	"video.channel_sync.auto_publish":         {Type: "bool", DefaultValue: "true", Description: "Publish synced videos as contents when the channel author has a default space.", Panel: "admin"},
 	// List (listicle) content type — §14 list amendment.
 	// Public: the /create composer and /lists index gate on this setting
 	// (same role as video.enabled). Missing = enabled.

@@ -261,7 +261,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Optional GeoLite2-Anonymous-IP database (Section 37 is_vpn). Loaded
 	// eagerly when a path is configured; the response field stays gated on
-	// the geoip.anonymous_ip_enabled setting until an operator turns it on.
+	// the geoip.anonymous_ip feature flag until an operator turns it on.
 	if cfg.GeoIPAnonDBPath != "" {
 		if aerr := geoipReader.LoadAnonymousDB(cfg.GeoIPAnonDBPath); aerr != nil {
 			slog.Warn("geoip anonymous-IP database not loaded",
@@ -588,9 +588,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	settingsService := config.NewSettings(database, vkClient.Redis())
 	closers = append(closers, settingsService.Close)
 	// §37 is_vpn: emit the anonymous-IP flag only while the
-	// geoip.anonymous_ip_enabled setting is on (hot-reloadable).
+	// geoip.anonymous_ip feature flag is on (Control → Extensions).
 	geoHandlers.SetVPNChecker(func(ctx context.Context) bool {
-		return settingsService.GetBoolOr(ctx, "geoip.anonymous_ip_enabled", false)
+		return featureChecker.IsEnabled(ctx, "geoip.anonymous_ip")
 	})
 	contentService.SetSettings(settingsService)
 	universitiesHandlers.SetSettings(settingsService) // §43: sitemap quality thresholds for the indexable flag

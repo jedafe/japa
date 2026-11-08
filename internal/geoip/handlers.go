@@ -65,7 +65,7 @@ type Handlers struct {
 	reader *Reader
 	spaces SpacesService
 	// vpnCheck reports whether anonymous-IP detection is enabled
-	// (geoip.anonymous_ip_enabled). Nil means disabled — is_vpn then
+	// (geoip.anonymous_ip feature flag). Nil means disabled — is_vpn then
 	// always emits false per Section 37.
 	vpnCheck func(ctx context.Context) bool
 }
@@ -75,7 +75,7 @@ func NewHandlers(reader *Reader, spacesService SpacesService) *Handlers {
 	return &Handlers{reader: reader, spaces: spacesService}
 }
 
-// SetVPNChecker wires the geoip.anonymous_ip_enabled setting reader so
+// SetVPNChecker wires the geoip.anonymous_ip feature-flag reader so
 // is_vpn reflects the anonymous-IP record only while the feature is on.
 func (h *Handlers) SetVPNChecker(fn func(ctx context.Context) bool) {
 	h.vpnCheck = fn
@@ -111,7 +111,7 @@ func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
 		"longitude":        geo.Longitude,
 		"suggested_spaces": h.suggestedSpaces(r, geo),
 		// Populated from the anonymous-IP record only when a second .mmdb
-		// is loaded and geoip.anonymous_ip_enabled is on (Section 37).
+		// is loaded and the geoip.anonymous_ip flag is on (Section 37).
 		"is_vpn": h.isVPN(r.Context(), geo),
 	}
 
@@ -159,7 +159,7 @@ func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 		"time_zone":    geo.TimeZone,
 		"latitude":     geo.Latitude,
 		"longitude":    geo.Longitude,
-		// See HandleGeoMe: gated on geoip.anonymous_ip_enabled (Section 37).
+		// See HandleGeoMe: gated on the geoip.anonymous_ip flag (Section 37).
 		"is_vpn": h.isVPN(r.Context(), geo),
 	}
 

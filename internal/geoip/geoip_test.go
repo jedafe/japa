@@ -237,8 +237,8 @@ func TestReader_Close_ClosesAnonymous(t *testing.T) {
 }
 
 // TestHandlers_IsVPNGating verifies is_vpn emission honours the
-// geoip.anonymous_ip_enabled contract: the raw anonymous-IP flag only
-// surfaces when the checker reports the setting on (Section 37).
+// geoip.anonymous_ip flag contract: the raw anonymous-IP flag only
+// surfaces when the checker reports the flag on (Section 37).
 func TestHandlers_IsVPNGating(t *testing.T) {
 	t.Parallel()
 

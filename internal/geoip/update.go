@@ -23,7 +23,7 @@ const (
 	// CityEdition is the default GeoLite2-City database.
 	CityEdition = "GeoLite2-City"
 	// AnonIPEdition is the GeoLite2-Anonymous-IP database — powers the
-	// is_vpn contract field when geoip.anonymous_ip_enabled is on (§37).
+	// is_vpn contract field when the geoip.anonymous_ip flag is on (§37).
 	AnonIPEdition = "GeoLite2-Anonymous-IP"
 )
 

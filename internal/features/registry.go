@@ -147,6 +147,10 @@ var Registry = []Feature{
 	// 000811 seeds an explicit row preserving the operator's setting.
 	{Key: "push.enabled", Label: "Mobile Push Notifications", Description: "FCM and APNs push notification delivery for mobile apps", Default: false, Category: "Integrations", SettingsCategory: "push"},
 	{Key: "geo_personalization.enabled", Label: "Geo Personalization", Description: "Geo-aware feed, search, and discovery ranking based on user location", Default: true, Category: "Integrations", SettingsCategory: "geo_personalization"},
+	// §37 is_vpn: gates emission of the anonymous-IP flag in /geo/me and
+	// /geo/lookup. Off by default — enabling without a GeoLite2-Anonymous-IP
+	// database (JC_GEOIP_ANON_DB_PATH) is a no-op, not an error.
+	{Key: "geoip.anonymous_ip", Label: "Anonymous-IP Detection", Description: "Flags VPN, proxy, Tor, and hosting IPs via GeoLite2-Anonymous-IP — populates is_vpn in the geo endpoints", Default: false, Category: "Integrations", SettingsCategory: "geo_personalization"},
 	// V2 AI / Infrastructure extensions
 	{Key: "rag.enabled", Label: "RAG / JapaBot Knowledge", Description: "Retrieval-augmented generation knowledge layer for JapaBot grounding", Default: false, Category: "AI", SettingsCategory: "rag"},
 	{Key: "rag.spec_corpus", Label: "Engineering Spec Corpus", Description: "Indexes the .jeos spec tree into RAG as private spec_doc chunks for the staff-only spec.search agent tool (§121)", Default: false, Category: "AI", SettingsCategory: "rag"},

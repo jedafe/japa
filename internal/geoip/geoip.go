@@ -41,7 +41,7 @@ type GeoContext struct {
 	// (anonymous VPN, Tor exit node, public/residential proxy, hosting
 	// provider). Populated only when a second .mmdb is loaded via
 	// LoadAnonymousDB; emitted as is_vpn by handlers only when the
-	// geoip.anonymous_ip_enabled system setting is on (Section 37).
+	// geoip.anonymous_ip feature flag is on (Section 37).
 	IsVPN   bool `json:"is_vpn"`
 	IsValid bool `json:"-"`
 }
