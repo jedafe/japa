@@ -33,7 +33,7 @@
 		<!-- Section tabs within the active group -->
 		{#if groupSections.length > 1}
 			<nav
-				class="mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] px-1"
+				class="sticky top-0 z-10 mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-1 backdrop-blur"
 				aria-label={t('settings.tabs_label', 'Settings sections')}
 			>
 				{#each groupSections as sect (sect.slug)}
