@@ -223,7 +223,7 @@ func windowDays(w string) int {
 	if w == "session" {
 		return 1
 	}
-	if d, err := strconv.Atoi(strings.TrimSuffix(w, "d")); err == nil && d > 0 {
+	if d, err := strconv.Atoi(strings.TrimSuffix(w, "d")); err == nil && d > 0 && d <= 3650 {
 		return d
 	}
 	return 30

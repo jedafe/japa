@@ -2052,13 +2052,13 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 
 // ListSecurityScanResults is an exported method.
 func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 0 {
+	page, _ := strconv.ParseInt(r.URL.Query().Get("page"), 10, 32)
+	if page < 0 || page > 1000000 {
 		page = 0
 	}
 
 	limit := 20
-	offset := int32(page * limit) //nolint:gosec // G115: bounded
+	offset := int32(page) * int32(limit) //nolint:gosec // G115: page<=1e6, limit=20
 
 	severity := r.URL.Query().Get("severity")
 
@@ -2443,14 +2443,14 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	perPage := 25
 
 	if p := r.URL.Query().Get("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil && v >= 0 {
-			page = v
+		if v, err := strconv.ParseInt(p, 10, 32); err == nil && v >= 0 && v <= 1000000 {
+			page = int(v)
 		}
 	}
 
 	if pp := r.URL.Query().Get("per_page"); pp != "" {
-		if v, err := strconv.Atoi(pp); err == nil && v > 0 && v <= 100 {
-			perPage = v
+		if v, err := strconv.ParseInt(pp, 10, 32); err == nil && v > 0 && v <= 100 {
+			perPage = int(v)
 		}
 	}
 

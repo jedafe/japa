@@ -115,12 +115,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	// Convention: page_offset is a row offset (api-response-format.md).
 	// Backward compat: page is a 1-based page-number alias.
 	if v := r.URL.Query().Get("page_offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			page = int32(n)/limit + 1 // #nosec
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n >= 0 {
+			page = int32(n)/limit + 1
 		}
 	} else if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 && n <= 1000000 {
+			page = int32(n)
 		}
 	}
 

@@ -117,8 +117,8 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	limit = 20
 
 	if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 && n <= 1000000 {
+			page = int32(n)
 		}
 	}
 

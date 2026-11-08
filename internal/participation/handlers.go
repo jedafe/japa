@@ -241,7 +241,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 // clamped to [1, 100].
 func parsePagination(r *http.Request) (int, int) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
+	if page < 1 || page > 1000000 {
 		page = 1
 	}
 

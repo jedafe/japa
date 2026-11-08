@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -162,13 +163,14 @@ func parsePageSizeOffset(r *http.Request) int32 {
 		return 0
 	}
 
-	n, err := strconv.Atoi(s)
+	n, err := strconv.ParseInt(s, 10, 32)
 	if err != nil || n < 0 {
 		return 0
 	}
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
 
-	// #nosec G109 // value bounded by MaxPageSize check
-	// #nosec G115 // value bounded by caller
 	return int32(n)
 }
 

@@ -233,8 +233,8 @@ func parseRulePageOffset(r *http.Request, limit int32) int32 {
 		return 0
 	}
 	if s := r.URL.Query().Get("page"); s != "" {
-		if v, err := strconv.ParseInt(s, 10, 32); err == nil && v >= 1 {
-			return int32(v-1) * limit // #nosec
+		if v, err := strconv.ParseInt(s, 10, 32); err == nil && v >= 1 && v <= 1000000 {
+			return int32(v-1) * limit // #nosec G115 -- page<=1e6
 		}
 	}
 	return 0

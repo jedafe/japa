@@ -138,14 +138,14 @@ func parsePagination(r *http.Request) (int32, int32) {
 	}
 
 	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = int32(n) // #nosec
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n >= 0 {
+			offset = int32(n)
 		}
 	}
 
 	if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			offset = (int32(n) - 1) * limit // #nosec
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 && n <= 1000000 {
+			offset = (int32(n) - 1) * limit // #nosec G115 -- page<=1e6, limit<=100
 		}
 	}
 

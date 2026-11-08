@@ -102,12 +102,12 @@ func parsePageOffset(r *http.Request) int32 {
 		return 0
 	}
 
-	n, err := strconv.Atoi(v)
+	n, err := strconv.ParseInt(v, 10, 32)
 	if err != nil || n < 0 {
 		return 0
 	}
 
-	return int32(n) // #nosec
+	return int32(n)
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {

@@ -1720,12 +1720,12 @@ func parsePageSize(r *http.Request) int32 {
 }
 
 func parsePageSizeOffset(r *http.Request) int32 {
-	n, _ := strconv.Atoi(r.URL.Query().Get("page_offset"))
+	n, _ := strconv.ParseInt(r.URL.Query().Get("page_offset"), 10, 32)
 	if n < 0 {
 		n = 0
 	}
 
-	return int32(n) // #nosec G109 G115 -- bounded by non-negative check above
+	return int32(n) // #nosec G109 G115 -- bounded by ParseInt(10,32) + non-negative check
 }
 
 // ─── Admin Academy Extras (P5.6 — Task 14) ──────────────────────────────
@@ -1747,8 +1747,8 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if v := r.URL.Query().Get("page_offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = int32(n) // #nosec G109 G115 -- bounded by n >= 0 check above
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n >= 0 {
+			offset = int32(n) // #nosec G109 G115 -- bounded by ParseInt(10,32) + n >= 0 check
 		}
 	}
 

@@ -147,8 +147,8 @@ func parsePageParams(r *http.Request) (pageSize, pageOffset int32) {
 	}
 
 	if v := r.URL.Query().Get("page_offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			pageOffset = int32(n) // #nosec
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n >= 0 {
+			pageOffset = int32(n)
 		}
 	}
 

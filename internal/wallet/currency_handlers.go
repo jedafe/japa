@@ -445,12 +445,12 @@ func (h *Handlers) AdminListCreditPurchases(w http.ResponseWriter, r *http.Reque
 	params.PageLimit = parsePageSize(r)
 
 	if v := q.Get("page"); v != "" {
-		page, _ := strconv.Atoi(v)
-		if page < 1 {
+		page, _ := strconv.ParseInt(v, 10, 32)
+		if page < 1 || page > 1000000 {
 			page = 1
 		}
 
-		params.PageOffset = int32((page - 1) * int(params.PageLimit)) // #nosec
+		params.PageOffset = int32((page - 1) * int64(params.PageLimit)) // #nosec G115 -- page<=1e6, limit<=MaxPageSize
 	}
 
 	if v := q.Get("user_id"); v != "" {
