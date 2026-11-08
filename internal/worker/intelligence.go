@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"path"
 	"strconv"
@@ -898,7 +899,7 @@ func intelFetchChannel(ctx context.Context, logPrefix string, src gen.IntelSourc
 			intelReleaseChannelLock(ctx, channelIDStr, opts.URLOverride)
 
 			msg := fmt.Sprintf("content collapsed vs prior capture (%d bytes — suspected bot wall)", len(result.Body))
-			_ = intelSourcesStore.NoteChannelWall(ctx, ch.ID, msg, int32(appSettings.GetIntOr(ctx, "intel.wall_episode_secs", 21600))) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+			_ = intelSourcesStore.NoteChannelWall(ctx, ch.ID, msg, int32(min(appSettings.GetIntOr(ctx, "intel.wall_episode_secs", 21600), math.MaxInt32))) // #nosec G115 -- clamped to MaxInt32
 			slog.Warn(logPrefix+": "+msg, "channel_id", channelIDStr)
 
 			return fmt.Errorf("%s: fetch: %w: %w", logPrefix, fetcher.ErrContentCollapsed, asynq.SkipRetry)
@@ -1200,7 +1201,7 @@ func classifyChannelFetchFailure(ctx context.Context, logPrefix string, ch gen.I
 		// Stamp the wall sighting (blocked_reason + wall_seen_count) so the
 		// control panel can distinguish "walled" from "erroring" channels —
 		// noteErr alone would flatten the wall into a generic error string.
-		wallEpisodeSecs := int32(appSettings.GetIntOr(ctx, "intel.wall_episode_secs", 21600)) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+		wallEpisodeSecs := int32(min(appSettings.GetIntOr(ctx, "intel.wall_episode_secs", 21600), math.MaxInt32)) // #nosec G115 -- clamped to MaxInt32
 		_ = intelSourcesStore.NoteChannelWall(ctx, ch.ID, fetchErr.Error(), wallEpisodeSecs)
 		slog.Warn(logPrefix+": fetch blocked (bot wall/access denied), waiting for next schedule", "channel_id", channelIDStr, "error", fetchErr)
 
@@ -3997,7 +3998,7 @@ func HandleIntelReprobeDeadChannels(ctx context.Context, _ *asynq.Task) error {
 			deadSources[ch.SourceID.String()] = true
 			intelReleaseChannelLock(ctx, ch.ID.String(), "")
 			if fetcher.ClassifyFetchError(err) == fetcher.FailureBlocked {
-				_ = intelSourcesStore.NoteChannelWall(ctx, ch.ID, "reprobe: "+err.Error(), int32(appSettings.GetIntOr(ctx, "intel.wall_episode_secs", 21600))) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+				_ = intelSourcesStore.NoteChannelWall(ctx, ch.ID, "reprobe: "+err.Error(), int32(min(appSettings.GetIntOr(ctx, "intel.wall_episode_secs", 21600), math.MaxInt32))) // #nosec G115 -- clamped to MaxInt32
 			} else {
 				_ = intelSourcesStore.NoteChannelError(ctx, gen.NoteIntelChannelErrorParams{
 					ID:               ch.ID,

@@ -734,7 +734,7 @@ func (s *Service) ReconcileMissingObjects(ctx context.Context, maxRows int32) (c
 			}
 		}
 
-		if int32(len(rows)) < limit { // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+		if int32(len(rows)) < limit { // #nosec G115 -- len(rows) <= query limit, cannot reach int32 overflow
 			exhausted = true
 			break
 		}

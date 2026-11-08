@@ -126,7 +126,7 @@ func (s *Service) RemoveEdgeBackground(ctx context.Context, mediaID pgtype.UUID,
 	// Keep width_px/height_px in sync with the rewritten object — the
 	// downscale may have shrunk the canvas.
 	if ocfg, _, cfgErr := image.DecodeConfig(bytes.NewReader(knocked)); cfgErr == nil {
-		w, h := int32(ocfg.Width), int32(ocfg.Height) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+		w, h := int32(ocfg.Width), int32(ocfg.Height) // #nosec G115 -- decoded image dims bounded by optimizeMaxPixels
 		params.WidthPx, params.HeightPx = &w, &h
 	}
 

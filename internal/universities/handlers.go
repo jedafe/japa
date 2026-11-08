@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -629,9 +630,10 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		if minPosts < 0 {
 			minPosts = bots.DefaultSitemapQualityConfig().MinPosts
 		}
+		minPosts = min(minPosts, math.MaxInt32)
 		// minPosts == 0 disables the gate (all universities indexable).
 		if minPosts > 0 {
-			indexable = space.PostCount+discussionCount >= int32(minPosts) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+			indexable = space.PostCount+discussionCount >= int32(minPosts) // #nosec G115 -- clamped to MaxInt32 above
 		}
 	}
 

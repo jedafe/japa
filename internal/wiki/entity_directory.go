@@ -16,6 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/valkey"
@@ -99,17 +101,23 @@ type EntityDirectoryItem struct {
 	Href          string `json:"href"` // canonical /wiki/e/{type_slug}/{slug}/overview
 }
 
+// entityIndexFlight collapses concurrent cold-cache recomputes of the
+// /wiki/e index — without it a burst fans out the COUNT(*) storm once
+// per in-flight request.
+var entityIndexFlight singleflight.Group
+
 // entityIndexCacheTTL bounds staleness of the /wiki/e index counts. Counts
 // are expensive (one COUNT(*) per kind + per discriminated type) and change
 // slowly — a short cache collapses the fan-out to a single Valkey GET.
-// Tunable via system_settings wiki.entity_index_cache_ttl_seconds.
+// Tunable via system_settings wiki.entity_index_cache_ttl_seconds;
+// 0 disables the cache (no read, no write).
 func (s *Service) entityIndexCacheTTL(ctx context.Context) time.Duration {
 	secs := 300
 	if s.settings != nil {
 		secs = s.settings.GetIntOr(ctx, "wiki.entity_index_cache_ttl_seconds", 300)
 	}
-	if secs <= 0 {
-		return 5 * time.Minute
+	if secs < 0 {
+		secs = 300
 	}
 
 	return time.Duration(secs) * time.Second
@@ -119,7 +127,8 @@ func (s *Service) entityIndexCacheTTL(ctx context.Context) time.Duration {
 // from its source table.
 func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) {
 	cacheKey := valkey.MustKey("wiki:entity_index")
-	if s.vk != nil {
+	ttl := s.entityIndexCacheTTL(ctx)
+	if s.vk != nil && ttl > 0 {
 		if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 			var hit []EntityKindDTO
 			if err := json.Unmarshal([]byte(cached), &hit); err == nil {
@@ -128,6 +137,27 @@ func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) 
 		}
 	}
 
+	// WithoutCancel: the leader's request may finish before the counts do —
+	// waiters still need the result.
+	v, err, _ := entityIndexFlight.Do("kinds", func() (any, error) {
+		return s.listEntityKindsUncached(context.WithoutCancel(ctx))
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := v.([]EntityKindDTO)
+
+	if s.vk != nil && ttl > 0 {
+		if raw, err := json.Marshal(out); err == nil {
+			_ = s.vk.Set(ctx, cacheKey, raw, ttl).Err()
+		}
+	}
+
+	return out, nil
+}
+
+// listEntityKindsUncached is the DB-backed body of ListEntityKinds.
+func (s *Service) listEntityKindsUncached(ctx context.Context) ([]EntityKindDTO, error) {
 	kinds, err := s.store.read.ListWikiEntityKinds(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing entity kinds: %w", err)
@@ -186,12 +216,6 @@ func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) 
 			}
 
 			out[i].Types = append(out[i].Types, EntityKindTypeDTO{Slug: tr.Slug, Label: tr.TypeName, Count: tn})
-		}
-	}
-
-	if s.vk != nil {
-		if raw, err := json.Marshal(out); err == nil {
-			_ = s.vk.Set(ctx, cacheKey, raw, s.entityIndexCacheTTL(ctx)).Err()
 		}
 	}
 

@@ -399,7 +399,7 @@ func (s *Service) stateFiltered(rule Rule, st userActionState) bool {
 	if rule.Frequency.Mode == "once" && st.Impressions >= 1 {
 		return true
 	}
-	if rule.Frequency.MaxImpressions > 0 && st.Impressions >= int32(rule.Frequency.MaxImpressions) { // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+	if rule.Frequency.MaxImpressions > 0 && int64(st.Impressions) >= int64(rule.Frequency.MaxImpressions) {
 		return true
 	}
 	if rule.Frequency.Mode == "recurring" && rule.Frequency.CooldownHours > 0 &&

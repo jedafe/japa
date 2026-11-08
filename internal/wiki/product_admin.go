@@ -632,7 +632,7 @@ func (s *Service) UpdateProductType(ctx context.Context, slug string, in Product
 		if err != nil {
 			return fmt.Errorf("list type groups: %w", err)
 		}
-		pos := int32(len(existing)) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+		pos := int32(len(existing)) // #nosec G115 -- len() of type-group list, far below int32 max
 		// The comparison type keyed by the same slug carries the pool rows.
 		var ctID pgtype.UUID
 		if ct, err := q.GetComparisonTypeBySlug(ctx, slug); err == nil {

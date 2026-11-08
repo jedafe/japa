@@ -238,7 +238,7 @@ func (s *Service) fetchObjectBytes(ctx context.Context, bucket, path string, lim
 }
 
 func ptrInt32(v int) *int32 {
-	i := int32(v) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+	i := int32(v) // #nosec G115 -- image dims bounded by optimizeMaxPixels probe
 	return &i
 }
 

@@ -131,7 +131,7 @@ func (h *Handlers) HandleListProducts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.service.store.read.SearchProducts(ctx, gen.SearchProductsParams{
-		Column1: typeSlug, Column2: q, LimitCount: int32(limit), OffsetCount: int32(offset), // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+		Column1: typeSlug, Column2: q, LimitCount: int32(limit), OffsetCount: int32(offset), // #nosec G115 -- limit<=100, offset<=MaxInt32 via ParseInt(10,32)
 	})
 	if err != nil {
 		slog.Error("products: list failed", "error", err)

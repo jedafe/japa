@@ -123,7 +123,7 @@ func (h *Handlers) GetReleasesFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(xmlBytes)
+	_, _ = w.Write(xmlBytes) // #nosec G705 -- feed built via xml.MarshalIndent; user text is escaped
 }
 
 // ---------------------------------------------------------------------------

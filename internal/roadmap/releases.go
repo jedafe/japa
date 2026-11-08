@@ -491,6 +491,9 @@ func (s *Service) AdminListReleases(ctx context.Context, f AdminReleaseListFilte
 	if pageSize <= 0 || pageSize > MaxPageSize {
 		pageSize = DefaultPageSize
 	}
+	if f.PageOffset < 0 {
+		f.PageOffset = 0
+	}
 	rows, err := s.store.read.ListAdminRoadmapReleases(ctx, gen.ListAdminRoadmapReleasesParams{
 		IncludeDeleted: f.IncludeDeleted, Surface: f.Surface, Status: f.Status,
 		PageSize: pageSize, PageOffset: f.PageOffset,
@@ -505,7 +508,7 @@ func (s *Service) AdminListReleases(ctx context.Context, f AdminReleaseListFilte
 		return AdminReleaseListResponse{}, fmt.Errorf("counting releases: %w", err)
 	}
 	page := f.PageOffset/pageSize + 1
-	totalPages := int32((total + int64(pageSize) - 1) / int64(pageSize)) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+	totalPages := int32((total + int64(pageSize) - 1) / int64(pageSize)) // #nosec G115 -- totalPages = rowcount/pageSize; releases rowcount can't reach 2^31*pageSize
 	return AdminReleaseListResponse{Releases: rows, Total: total, Page: page, TotalPages: totalPages}, nil
 }
 
@@ -852,6 +855,9 @@ func (s *Service) AdminListEntries(ctx context.Context, f EntryFilter) (EntryLis
 	if pageSize <= 0 || pageSize > MaxPageSize {
 		pageSize = DefaultPageSize
 	}
+	if f.PageOffset < 0 {
+		f.PageOffset = 0
+	}
 	rows, err := s.store.read.ListAdminReleaseEntries(ctx, gen.ListAdminReleaseEntriesParams{
 		Unreleased: f.Unreleased, CommitType: f.CommitType, Scope: f.Scope,
 		PageSize: pageSize, PageOffset: f.PageOffset,
@@ -866,7 +872,7 @@ func (s *Service) AdminListEntries(ctx context.Context, f EntryFilter) (EntryLis
 		return EntryListResponse{}, fmt.Errorf("counting entries: %w", err)
 	}
 	page := f.PageOffset/pageSize + 1
-	totalPages := int32((total + int64(pageSize) - 1) / int64(pageSize)) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+	totalPages := int32((total + int64(pageSize) - 1) / int64(pageSize)) // #nosec G115 -- totalPages = rowcount/pageSize; entries rowcount can't reach 2^31*pageSize
 	return EntryListResponse{Entries: rows, Total: total, Page: page, TotalPages: totalPages}, nil
 }
 

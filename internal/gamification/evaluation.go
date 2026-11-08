@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -91,7 +92,7 @@ func (s *Service) evaluateCountBadges(ctx context.Context, userID pgtype.UUID, a
 
 		// Track progress toward locked badges for the achievement centre.
 		// Best-effort — a failure must not block evaluation.
-		if err := s.store.UpsertBadgeProgress(ctx, userID, b.ID, int32(min64(currentCount, int64(*b.TriggerValue)))); err != nil { // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+		if err := s.store.UpsertBadgeProgress(ctx, userID, b.ID, int32(min64(min64(currentCount, int64(*b.TriggerValue)), math.MaxInt32))); err != nil { // #nosec G115 -- min() <= TriggerValue, floored at MaxInt32
 			slog.Warn("gamification: upsert badge progress failed",
 				"badge_id", uuidStr(b.ID), "error", err)
 		}
@@ -138,7 +139,7 @@ func (s *Service) evaluateStreakBadges(ctx context.Context, userID pgtype.UUID, 
 			continue
 		}
 
-		if err := s.store.UpsertBadgeProgress(ctx, userID, b.ID, int32(min64(int64(streak), int64(*b.TriggerValue)))); err != nil { // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+		if err := s.store.UpsertBadgeProgress(ctx, userID, b.ID, int32(min64(min64(int64(streak), int64(*b.TriggerValue)), math.MaxInt32))); err != nil { // #nosec G115 -- min() <= TriggerValue, floored at MaxInt32
 			slog.Warn("gamification: upsert badge progress failed",
 				"badge_id", uuidStr(b.ID), "error", err)
 		}
@@ -397,7 +398,7 @@ func (s *Service) EvaluatePointsBadges(ctx context.Context, userID pgtype.UUID, 
 			continue
 		}
 
-		if err := s.store.UpsertBadgeProgress(ctx, userID, b.ID, int32(min64(currentLifetimePoints, int64(*b.TriggerValue)))); err != nil { // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+		if err := s.store.UpsertBadgeProgress(ctx, userID, b.ID, int32(min64(min64(currentLifetimePoints, int64(*b.TriggerValue)), math.MaxInt32))); err != nil { // #nosec G115 -- min() <= TriggerValue, floored at MaxInt32
 			slog.Warn("gamification: upsert badge progress failed",
 				"badge_id", uuidStr(b.ID), "error", err)
 		}

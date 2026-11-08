@@ -44,7 +44,7 @@ func GuestSessionMiddleware(secure bool) func(http.Handler) http.Handler {
 				if _, err := r.Cookie(GuestCookieName); err != nil {
 					id := make([]byte, 16)
 					if _, err := rand.Read(id); err == nil {
-						http.SetCookie(w, &http.Cookie{
+						http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure follows cfg.IsProduction; dev serves over plain http
 							Name:     GuestCookieName,
 							Value:    hex.EncodeToString(id),
 							Path:     "/",
