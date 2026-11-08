@@ -15,7 +15,7 @@
 	import ReactionRail from '#lib/components/blog/ReactionRail.svelte';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import { commentsApi, commentsConversation, listAllComments } from '#lib/components/forum/conversationApi.js';
-	import { tiptapBodyToHtml, decodeTipTapDoc, tiptapToText } from '#lib/tiptap/serialize.js';
+	import { tiptapBodyToHtml, tiptapToHtml, type TipTapDoc } from '#lib/tiptap/serialize.js';
 	import { relativeTime } from '#lib/feed/time.js';
 	import { hydrateLinkPreviews } from '#lib/tiptap/hydrateLinkPreviews.js';
 	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
@@ -58,14 +58,21 @@
 	const deletedUserIds = $derived(
 		data.deletedUserIds ? new Set<string>(data.deletedUserIds) : undefined
 	);
-	const bodyHtml = $derived(
-		article.body
-			? tiptapBodyToHtml(article.body, {
-					deletedUserIds,
-					deletedUserLabel: t('mentions.deleted_user', '[deleted user]')
-				})
-			: ''
-	);
+	// contents.body stores raw TipTap JSON (the forum API base64-encodes its
+	// own DTO, but the contents endpoint returns the column as-is). Parse
+	// raw JSON first; fall back to base64 for rows stored that way.
+	const bodyHtml = $derived.by(() => {
+		if (!article.body) return '';
+		const opts = {
+			deletedUserIds,
+			deletedUserLabel: t('mentions.deleted_user', '[deleted user]')
+		};
+		try {
+			return tiptapToHtml(JSON.parse(article.body) as TipTapDoc, opts);
+		} catch {
+			return tiptapBodyToHtml(article.body, opts);
+		}
+	});
 	// Content threads (a contents row that IS its canonical article) render
 	// only the opening ~80 words of the body + a "Read full {type}" CTA —
 	// the full article lives on the canonical page, and truncating here also
@@ -73,8 +80,14 @@
 	// threads (forum-style bodies) render in full.
 	const isContentThread = $derived(data.embed?.kind === 'self');
 	const contentExcerpt = $derived.by(() => {
-		if (!isContentThread || !article.body) return '';
-		const words = tiptapToText(decodeTipTapDoc(article.body)).split(/\s+/).filter(Boolean);
+		if (!isContentThread) return '';
+		// contents rows render body_html (pre-rendered HTML); body is the
+		// raw editor source. Strip tags from body_html — the rendered
+		// field — and take the first ~80 words. Falls back to the meta
+		// excerpt when the row has no body_html.
+		const text = stripHtmlText(article.body_html || article.body || '');
+		const words = text.split(/\s+/).filter(Boolean);
+		if (words.length === 0) return article.excerpt ?? '';
 		return words.length > 80 ? words.slice(0, 80).join(' ') + '…' : words.join(' ');
 	});
 	// Empty-body threads (minted anchors, linked discussions) fall back to the
@@ -82,6 +95,15 @@
 	const fallbackExcerpt = $derived(
 		!isContentThread && !bodyHtml ? (data.embed?.excerpt ?? article.excerpt ?? '') : ''
 	);
+
+	/** Strip HTML tags/entities to plain text (body_html → excerpt source). */
+	function stripHtmlText(html: string): string {
+		return html
+			.replace(/<[^>]*>/g, ' ')
+			.replace(/&[a-z]+;/gi, ' ')
+			.replace(/\s+/g, ' ')
+			.trim();
+	}
 
 	const authorLabel = $derived(article.author_name ?? article.author_username ?? t('forum.member', 'Member'));
 	const time = $derived(article.published_at ? relativeTime(article.published_at, new Date(), i18n.locale) : '');
