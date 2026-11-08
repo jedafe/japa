@@ -632,7 +632,7 @@ func (s *Service) UpdateProductType(ctx context.Context, slug string, in Product
 		if err != nil {
 			return fmt.Errorf("list type groups: %w", err)
 		}
-		pos := int32(len(existing))
+		pos := int32(len(existing)) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
 		// The comparison type keyed by the same slug carries the pool rows.
 		var ctID pgtype.UUID
 		if ct, err := q.GetComparisonTypeBySlug(ctx, slug); err == nil {
@@ -839,16 +839,18 @@ func (h *Handlers) HandleAdminListProducts(w http.ResponseWriter, r *http.Reques
 		}
 		sort += ":" + dir
 	}
-	page, _ := strconv.Atoi(qp.Get("page"))
-	if page < 1 {
+	page, _ := strconv.ParseInt(qp.Get("page"), 10, 32)
+	// Upper bound keeps (page-1)*limit inside int32 — unclamped offsets
+	// wrapped negative and 500'd (audit: G109).
+	if page < 1 || page > 1000000 {
 		page = 1
 	}
-	limit, _ := strconv.Atoi(qp.Get("limit"))
+	limit, _ := strconv.ParseInt(qp.Get("limit"), 10, 32)
 	if limit < 1 || limit > 200 {
 		limit = 25
 	}
 	rows, total, err := h.service.AdminListProducts(r.Context(),
-		qp.Get("type"), qp.Get("q"), qp.Get("status"), sort, int32(limit), int32((page-1)*limit))
+		qp.Get("type"), qp.Get("q"), qp.Get("status"), sort, int32(limit), int32((page-1)*limit)) // #nosec G115 -- bounded: limit<=200, page<=1e6
 	if err != nil {
 		slog.Error("wiki: admin list products failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list products")
@@ -941,15 +943,15 @@ func (h *Handlers) HandleSetProductDeal(w http.ResponseWriter, r *http.Request) 
 // disabled, with live product counts.
 func (h *Handlers) HandleAdminProductTypes(w http.ResponseWriter, r *http.Request) {
 	qp := r.URL.Query()
-	page, _ := strconv.Atoi(qp.Get("page"))
-	if page < 1 {
+	page, _ := strconv.ParseInt(qp.Get("page"), 10, 32)
+	if page < 1 || page > 1000000 {
 		page = 1
 	}
-	limit, _ := strconv.Atoi(qp.Get("limit"))
+	limit, _ := strconv.ParseInt(qp.Get("limit"), 10, 32)
 	if limit < 1 || limit > 200 {
 		limit = 200
 	}
-	rows, total, err := h.service.AdminListProductTypes(r.Context(), qp.Get("q"), int32(limit), int32((page-1)*limit))
+	rows, total, err := h.service.AdminListProductTypes(r.Context(), qp.Get("q"), int32(limit), int32((page-1)*limit)) // #nosec G115 -- bounded: limit<=200, page<=1e6
 	if err != nil {
 		slog.Error("wiki: list product types failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list product types")

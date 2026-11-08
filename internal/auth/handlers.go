@@ -2188,13 +2188,13 @@ func (h *AuthHandlers) SubmitKYC(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandlers) AdminListPendingKYC(w http.ResponseWriter, r *http.Request) {
 	limit, offset := int32(50), int32(0)
 	if v := r.URL.Query().Get("page_size"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 && n <= 200 {
 			limit = int32(n)
 		}
 	}
 	if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			offset = int32(n-1) * limit
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 && n <= 1000000 {
+			offset = int32(n-1) * limit // #nosec G115 -- bounded: page<=1e6, limit<=200
 		}
 	}
 

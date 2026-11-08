@@ -455,7 +455,7 @@ func (h *Handlers) ListDocStatuses(w http.ResponseWriter, r *http.Request) {
 // silent clamp — limit clamps to [0,200] (0 = unlimited).
 func adminListPaging(w http.ResponseWriter, r *http.Request) (limit, offset int32, ok bool) {
 	if v := r.URL.Query().Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
+		n, err := strconv.ParseInt(v, 10, 32)
 		if err != nil || n < 0 {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_limit", "limit must be a non-negative integer")
 			return 0, 0, false
@@ -466,7 +466,7 @@ func adminListPaging(w http.ResponseWriter, r *http.Request) (limit, offset int3
 		limit = int32(n)
 	}
 	if v := r.URL.Query().Get("offset"); v != "" {
-		n, err := strconv.Atoi(v)
+		n, err := strconv.ParseInt(v, 10, 32)
 		if err != nil || n < 0 {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_offset", "offset must be a non-negative integer")
 			return 0, 0, false

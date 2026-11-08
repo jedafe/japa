@@ -2540,16 +2540,16 @@ func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := int32(50)
-	if v, err := strconv.Atoi(r.URL.Query().Get("page_size")); err == nil && v > 0 {
+	if v, err := strconv.ParseInt(r.URL.Query().Get("page_size"), 10, 32); err == nil && v > 0 {
 		if v > 100 {
 			v = 100
 		}
-		limit = int32(v) // #nosec G115 -- bounded by 100 clamp
+		limit = int32(v)
 	}
 
 	offset := int32(0)
-	if v, err := strconv.Atoi(r.URL.Query().Get("page_offset")); err == nil && v >= 0 {
-		offset = int32(v) // #nosec G115 -- bounded by caller
+	if v, err := strconv.ParseInt(r.URL.Query().Get("page_offset"), 10, 32); err == nil && v >= 0 {
+		offset = int32(v)
 	}
 
 	rows, err := h.Queries.ListAdminBroadcasts(r.Context(), gen.ListAdminBroadcastsParams{

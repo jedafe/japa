@@ -77,6 +77,13 @@ var allowedAttributes = map[string]map[string]bool{
 	"summary": {
 		"data-type": true,
 	},
+	// Approved iframes only (isApprovedIframe host-checks src before
+	// attribute filtering). src stays scheme-validated via isSafeURL.
+	"iframe": {
+		"src": true, "width": true, "height": true, "title": true,
+		"allow": true, "allowfullscreen": true, "frameborder": true,
+		"loading": true, "referrerpolicy": true,
+	},
 }
 
 // approvedIframeHosts is the default allowlist of domains permitted in

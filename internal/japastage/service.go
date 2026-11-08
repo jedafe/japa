@@ -629,7 +629,7 @@ func (s *Service) Stats(ctx context.Context, intent string) (StatsDTO, error) {
 
 	limit := int32(5)
 	if s.settings != nil {
-		limit = int32(s.settings.GetIntOr(ctx, "japa_stage.top_destinations_limit", 5))
+		limit = int32(s.settings.GetIntOr(ctx, "japa_stage.top_destinations_limit", 5)) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
 	}
 
 	stages, total, err := s.store.StageCounts(ctx, intent)

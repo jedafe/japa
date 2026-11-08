@@ -107,7 +107,7 @@ func RoadmapReleasesListHandler(deps *ToolDeps) ToolHandler {
 		}
 		out, err := svc.ListReleases(ctx, RoadmapReleaseFilter{
 			Surface: surface, Status: status,
-			PageSize: int32(limit), PageOffset: int32((page - 1) * limit),
+			PageSize: int32(limit), PageOffset: int32((page - 1) * limit), // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
 		})
 		if err != nil {
 			return roadmapErrResult("list_failed", err), nil
@@ -317,7 +317,7 @@ func RoadmapEntriesListHandler(deps *ToolDeps) ToolHandler {
 		if a.Limit != nil && *a.Limit > 0 {
 			limit = min(*a.Limit, roadmapListLimitCap)
 		}
-		f := RoadmapEntryFilter{PageSize: int32(limit), PageOffset: int32((page - 1) * limit)}
+		f := RoadmapEntryFilter{PageSize: int32(limit), PageOffset: int32((page - 1) * limit)} // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
 		if a.Unreleased != nil {
 			f.Unreleased = *a.Unreleased
 		}

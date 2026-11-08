@@ -30,50 +30,69 @@ def collapse_params(p: str) -> str:
 def parse_server(path: str):
     """Return set of (METHOD, normalized_path).
 
-    Tracks the /auth and /control sub-routes so their relative registrations
-    get the correct prefix restored. Everything else is relative to /api/v1,
-    which the catalog also strips, so no prefix is added.
+    Tracks every r.Route("/prefix", ...) mount scope via a depth-based stack —
+    mirroring parseServerRoutes in internal/server/routes_test.go — so nested
+    mounts like /api/v1 → /admin/next-actions/rules compose to the full path
+    instead of orphaning inner Get("/") registrations as bare "/".
     """
     routes = set()
-    route_prefix = None
-    prefix_depth = None
+    stack = []  # (composed_prefix, open_depth)
     depth = 0
+    route_mount = re.compile(r'\.Route\("(/[^"]*)"')
     with open(path) as f:
         for line in f:
             depth += line.count("{") - line.count("}")
-            if re.search(r'\.Route\("/auth"', line):
-                route_prefix = "/auth"
-                prefix_depth = depth
-            elif re.search(r'\.Route\("/control"', line):
-                route_prefix = "/control"
-                prefix_depth = depth
-            if prefix_depth is not None and depth < prefix_depth:
-                route_prefix = None
-                prefix_depth = None
+            while stack and depth < stack[-1][1]:
+                stack.pop()
+            # Skip `//` comment lines — doc comments describing mounts (e.g.
+            # the /control top-level-mount note) must not push phantom
+            # prefixes.
+            if line.lstrip().startswith("//"):
+                continue
+            m = route_mount.search(line)
+            if m:
+                base = stack[-1][0] if stack else ""
+                stack.append((base + m.group(1), depth))
             # Match both `r.Get("…")` and the continuation-line form where the
             # method sits on its own indented line after `r.With(...).`:
             #     r.With(mw...).
             #         Post("/path", handler)
             # The (?<![A-Za-z]) lookbehind keeps `Post(` from matching inside an
             # identifier like `RepostGet(` while allowing `.Post(` and `  Post(`.
-            m = re.search(r'(?<![A-Za-z])(Get|Post|Put|Patch|Delete)\("(/[^"]*)"', line)
+            m = re.search(r'(?<![A-Za-z])(Get|Post|Put|Patch|Delete|Handle)\("(/[^"]*)"', line)
             if not m:
                 continue
             meth, rpath = m.group(1).upper(), m.group(2)
-            if route_prefix is not None and not rpath.startswith(route_prefix):
-                rpath = route_prefix + rpath
-            routes.add((meth, collapse_params(rpath)))
+            if stack:
+                prefix = stack[-1][0]
+                if not rpath.startswith(prefix):
+                    rpath = prefix + rpath
+            # The catalog treats /api/v1 as implicit base and strips it —
+            # match that convention so mounts compose correctly.
+            if rpath.startswith("/api/v1"):
+                rpath = rpath[len("/api/v1"):] or "/"
+            # r.Handle registers all methods (e.g. /api/v1/mcp).
+            methods = ("GET", "POST", "PUT", "PATCH", "DELETE") if meth == "HANDLE" else (meth,)
+            for meth_ in methods:
+                routes.add((meth_, collapse_params(rpath)))
     return routes
 
 
 def parse_catalog(path: str):
     routes = set()
+    # Table-row form: | GET | /api/v1/path | ... |  (used by later addenda)
+    tbl = re.compile(r"^\|\s*(GET|POST|PUT|PATCH|DELETE|GET/POST|GET/PATCH)\s*\|\s*(/\S+?)\s*\|")
     with open(path) as f:
         for line in f:
             m = re.match(r"\s*(GET|POST|PUT|PATCH|DELETE|GET/POST|GET/PATCH)\s+(/\S+)", line)
             if not m:
+                m = tbl.match(line)
+            if not m:
                 continue
-            path_ = m.group(2).replace("/api/v1", "")
+            # Anchor the /api/v1 strip at the leading position — a mid-path
+            # occurrence (e.g. /.well-known/oauth-protected-resource/api/v1/mcp)
+            # is part of the route identity, not the API base.
+            path_ = re.sub(r"^/api/v1", "", m.group(2))
             for meth in m.group(1).split("/"):
                 routes.add((meth, collapse_params(path_)))
     return routes

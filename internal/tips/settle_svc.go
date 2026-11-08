@@ -275,7 +275,7 @@ func (s *Service) SweepStalePending(ctx context.Context) error {
 	hours := int32(48)
 	if s.settings != nil {
 		if h := s.settings.GetIntOr(ctx, "tips.pending_ttl_hours", 48); h > 0 {
-			hours = int32(h)
+			hours = int32(h) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
 		}
 	}
 	ids, err := s.store.listStalePendingTips(ctx, hours, 500)

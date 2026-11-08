@@ -20,7 +20,8 @@ func main() {
 
 	dbURL := os.Getenv("JC_DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgresql://japa:japa@localhost:5433/japa?sslmode=disable"
+		fmt.Fprintln(os.Stderr, "JC_DATABASE_URL is required")
+		os.Exit(1)
 	}
 	redisAddr := os.Getenv("JC_REDIS_ADDR")
 	if redisAddr == "" {

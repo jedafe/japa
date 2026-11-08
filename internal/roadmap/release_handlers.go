@@ -160,8 +160,8 @@ func (h *Handlers) AdminListReleases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	pageSize, _ := strconv.Atoi(q.Get("page_size"))
-	pageOffset, _ := strconv.Atoi(q.Get("page_offset"))
+	pageSize, _ := strconv.ParseInt(q.Get("page_size"), 10, 32)
+	pageOffset, _ := strconv.ParseInt(q.Get("page_offset"), 10, 32)
 	out, err := h.Service.AdminListReleases(r.Context(), AdminReleaseListFilter{
 		Surface:        q.Get("surface"),
 		Status:         q.Get("status"),
@@ -373,8 +373,8 @@ func (h *Handlers) AdminListEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	pageSize, _ := strconv.Atoi(q.Get("page_size"))
-	pageOffset, _ := strconv.Atoi(q.Get("page_offset"))
+	pageSize, _ := strconv.ParseInt(q.Get("page_size"), 10, 32)
+	pageOffset, _ := strconv.ParseInt(q.Get("page_offset"), 10, 32)
 	out, err := h.Service.AdminListEntries(r.Context(), EntryFilter{
 		Unreleased: q.Get("unreleased") == "true",
 		CommitType: q.Get("type"),

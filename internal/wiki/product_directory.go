@@ -105,11 +105,11 @@ func numToFloatPtr(n pgtype.Numeric) *float64 {
 // product picker. ?type is a product_types slug; an unknown one 404s
 // rather than silently listing every product.
 func (h *Handlers) HandleListProducts(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	limit, _ := strconv.ParseInt(r.URL.Query().Get("limit"), 10, 32)
 	if limit <= 0 || limit > 100 {
 		limit = 24
 	}
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	offset, _ := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 32)
 	if offset < 0 {
 		offset = 0
 	}
@@ -131,7 +131,7 @@ func (h *Handlers) HandleListProducts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.service.store.read.SearchProducts(ctx, gen.SearchProductsParams{
-		Column1: typeSlug, Column2: q, LimitCount: int32(limit), OffsetCount: int32(offset),
+		Column1: typeSlug, Column2: q, LimitCount: int32(limit), OffsetCount: int32(offset), // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
 	})
 	if err != nil {
 		slog.Error("products: list failed", "error", err)

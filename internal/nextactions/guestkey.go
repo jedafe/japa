@@ -35,24 +35,28 @@ func guestSessionKey(r *http.Request) string { return GuestSessionKey(r) }
 // that lack one, so the first /api/v1 touch establishes identity before any
 // tool.used events or next-actions state write. Authenticated requests are
 // skipped — OptionalAuth must run before this middleware.
-func GuestSessionMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if auth.FromContext(r.Context()) == nil {
-			if _, err := r.Cookie(GuestCookieName); err != nil {
-				id := make([]byte, 16)
-				if _, err := rand.Read(id); err == nil {
-					http.SetCookie(w, &http.Cookie{
-						Name:     GuestCookieName,
-						Value:    hex.EncodeToString(id),
-						Path:     "/",
-						MaxAge:   int(guestCookieMaxAge.Seconds()),
-						HttpOnly: true,
-						SameSite: http.SameSiteLaxMode,
-						Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
-					})
+// secure comes from cfg.IsProduction so the flag follows deployment config
+// rather than hop-by-hop X-Forwarded-Proto presence.
+func GuestSessionMiddleware(secure bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if auth.FromContext(r.Context()) == nil {
+				if _, err := r.Cookie(GuestCookieName); err != nil {
+					id := make([]byte, 16)
+					if _, err := rand.Read(id); err == nil {
+						http.SetCookie(w, &http.Cookie{
+							Name:     GuestCookieName,
+							Value:    hex.EncodeToString(id),
+							Path:     "/",
+							MaxAge:   int(guestCookieMaxAge.Seconds()),
+							HttpOnly: true,
+							SameSite: http.SameSiteLaxMode,
+							Secure:   secure,
+						})
+					}
 				}
 			}
-		}
-		next.ServeHTTP(w, r)
-	})
+			next.ServeHTTP(w, r)
+		})
+	}
 }

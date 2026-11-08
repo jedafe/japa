@@ -3798,7 +3798,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// anonymous request so guest state + event feeds key on a stable
 			// identity (survives IP rotation) rather than raw IP. Must run
 			// AFTER OptionalAuth so members are skipped.
-			r.Use(nextactions.GuestSessionMiddleware)
+			r.Use(nextactions.GuestSessionMiddleware(cfg.IsProduction()))
 
 			// §122 tool.used feed — emits a platform_event for successful
 			// requests to tool action/engagement endpoints (see

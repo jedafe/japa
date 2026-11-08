@@ -505,7 +505,7 @@ func (s *Service) AdminListReleases(ctx context.Context, f AdminReleaseListFilte
 		return AdminReleaseListResponse{}, fmt.Errorf("counting releases: %w", err)
 	}
 	page := f.PageOffset/pageSize + 1
-	totalPages := int32((total + int64(pageSize) - 1) / int64(pageSize))
+	totalPages := int32((total + int64(pageSize) - 1) / int64(pageSize)) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
 	return AdminReleaseListResponse{Releases: rows, Total: total, Page: page, TotalPages: totalPages}, nil
 }
 
@@ -866,7 +866,7 @@ func (s *Service) AdminListEntries(ctx context.Context, f EntryFilter) (EntryLis
 		return EntryListResponse{}, fmt.Errorf("counting entries: %w", err)
 	}
 	page := f.PageOffset/pageSize + 1
-	totalPages := int32((total + int64(pageSize) - 1) / int64(pageSize))
+	totalPages := int32((total + int64(pageSize) - 1) / int64(pageSize)) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
 	return EntryListResponse{Entries: rows, Total: total, Page: page, TotalPages: totalPages}, nil
 }
 

@@ -253,11 +253,11 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 	// Paginated path — the admin claims EntityPage passes page/limit/q/sort.
 	// Legacy callers (no pagination params) keep the unpaginated response.
 	if q.Get("page") != "" || q.Get("limit") != "" {
-		page, _ := strconv.Atoi(q.Get("page"))
-		if page < 1 {
+		page, _ := strconv.ParseInt(q.Get("page"), 10, 32)
+		if page < 1 || page > 1000000 {
 			page = 1
 		}
-		limit, _ := strconv.Atoi(q.Get("limit"))
+		limit, _ := strconv.ParseInt(q.Get("limit"), 10, 32)
 		if limit <= 0 || limit > 200 {
 			limit = 25
 		}
@@ -276,7 +276,7 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 			Column1: status,
 			Column2: q.Get("q"),
 			Limit:   int32(limit),
-			Offset:  int32((page - 1) * limit),
+			Offset:  int32((page - 1) * limit), // #nosec G115 -- bounded: limit<=200, page<=1e6
 			Column5: dir,
 			Column6: key,
 		})

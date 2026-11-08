@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/valkey"
 )
 
 // Wiki entity directory (§80 Entity Directory amendment): /wiki/e and
@@ -97,9 +99,35 @@ type EntityDirectoryItem struct {
 	Href          string `json:"href"` // canonical /wiki/e/{type_slug}/{slug}/overview
 }
 
+// entityIndexCacheTTL bounds staleness of the /wiki/e index counts. Counts
+// are expensive (one COUNT(*) per kind + per discriminated type) and change
+// slowly — a short cache collapses the fan-out to a single Valkey GET.
+// Tunable via system_settings wiki.entity_index_cache_ttl_seconds.
+func (s *Service) entityIndexCacheTTL(ctx context.Context) time.Duration {
+	secs := 300
+	if s.settings != nil {
+		secs = s.settings.GetIntOr(ctx, "wiki.entity_index_cache_ttl_seconds", 300)
+	}
+	if secs <= 0 {
+		return 5 * time.Minute
+	}
+
+	return time.Duration(secs) * time.Second
+}
+
 // ListEntityKinds serves the /wiki/e index — every kind with a live count
 // from its source table.
 func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) {
+	cacheKey := valkey.MustKey("wiki:entity_index")
+	if s.vk != nil {
+		if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
+			var hit []EntityKindDTO
+			if err := json.Unmarshal([]byte(cached), &hit); err == nil {
+				return hit, nil
+			}
+		}
+	}
+
 	kinds, err := s.store.read.ListWikiEntityKinds(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing entity kinds: %w", err)
@@ -158,6 +186,12 @@ func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) 
 			}
 
 			out[i].Types = append(out[i].Types, EntityKindTypeDTO{Slug: tr.Slug, Label: tr.TypeName, Count: tn})
+		}
+	}
+
+	if s.vk != nil {
+		if raw, err := json.Marshal(out); err == nil {
+			_ = s.vk.Set(ctx, cacheKey, raw, s.entityIndexCacheTTL(ctx)).Err()
 		}
 	}
 

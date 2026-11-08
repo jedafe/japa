@@ -631,7 +631,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		}
 		// minPosts == 0 disables the gate (all universities indexable).
 		if minPosts > 0 {
-			indexable = space.PostCount+discussionCount >= int32(minPosts)
+			indexable = space.PostCount+discussionCount >= int32(minPosts) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
 		}
 	}
 

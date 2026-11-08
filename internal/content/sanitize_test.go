@@ -142,6 +142,24 @@ func TestSanitizeHTML_IframesRemovedExceptApproved(t *testing.T) {
 	}
 }
 
+// Regression: approved iframes previously kept the element but stripped
+// every attribute (iframe had no entry in allowedAttributes), leaving a
+// dead <iframe></iframe>. src and embed attrs must survive host validation.
+func TestSanitizeHTML_ApprovedIframeKeepsSrc(t *testing.T) {
+	t.Parallel()
+
+	got := SanitizeHTML(`<iframe src="https://www.youtube.com/embed/abc123" width="560" height="315" allowfullscreen onclick="alert(1)"></iframe>`)
+	if !strings.Contains(got, `src="https://www.youtube.com/embed/abc123"`) {
+		t.Errorf("approved iframe lost src: %s", got)
+	}
+	if !strings.Contains(got, "allowfullscreen") {
+		t.Errorf("approved iframe lost allowfullscreen: %s", got)
+	}
+	if strings.Contains(got, "onclick") {
+		t.Errorf("event handler survived on iframe: %s", got)
+	}
+}
+
 func TestSanitizeHTML_StyleTagsRemoved(t *testing.T) {
 	t.Parallel()
 

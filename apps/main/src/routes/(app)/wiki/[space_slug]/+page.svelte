@@ -14,7 +14,6 @@
 	import EntityFieldsPanel from '#lib/components/wiki/EntityFieldsPanel.svelte';
 	import WikiGalleryStrip from '#lib/components/wiki/WikiGalleryStrip.svelte';
 	import WikiTabs from '#lib/components/wiki/WikiTabs.svelte';
-	import WikiExploreMap from '#lib/components/wiki/WikiExploreMap.svelte';
 	import { browser } from '$app/env';
 	import { apiBaseUrl } from '#lib/api/client.js';
 	import WikiSidebar from '#lib/components/wiki/WikiSidebar.svelte';
@@ -47,6 +46,16 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	// §16/§80 — the explore map pulls ~3MB of generated world-geo data
+	// (city shapes/positions/centroids) via @japaconnect/landing-blocks.
+	// Lazy-import it below the fold so the route's initial JS stays lean.
+	let ExploreMapComp = $state<any>(null);
+	$effect(() => {
+		if (browser && !ExploreMapComp) {
+			import('#lib/components/wiki/WikiExploreMap.svelte').then((m) => (ExploreMapComp = m.default));
+		}
+	});
 
 	// Entity-bound wiki children grouped by type slug (JCE ↔ wiki mapping).
 	const entityChildGroups = $derived(
@@ -522,8 +531,8 @@
 	<div class="mx-auto w-full max-w-3xl px-4 pb-8">
 		<!-- §16/§80 — the contextual explore map replaces the static cover
 		     image when the space's geo resolves; the hero stays as fallback. -->
-		{#if space && wikiEnabled && !data.loadError && space.geo_code}
-			<WikiExploreMap
+		{#if space && wikiEnabled && !data.loadError && space.geo_code && ExploreMapComp}
+			<ExploreMapComp
 				space={space}
 				fetchCtx={fetchCtx}
 				countryCode={data.countryGeoCode}

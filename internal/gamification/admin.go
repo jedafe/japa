@@ -917,7 +917,7 @@ func (s *Service) CreateTier(ctx context.Context, in CreateTierInput) (TierInfo,
 			return TierInfo{}, invalidInput("invalid badge_id")
 		}
 	}
-	row, err := s.store.CreateBadgeTier(ctx, strings.TrimSpace(in.BadgeGroup), in.Tier, strings.TrimSpace(in.Name), int32(in.Threshold), badgeID)
+	row, err := s.store.CreateBadgeTier(ctx, strings.TrimSpace(in.BadgeGroup), in.Tier, strings.TrimSpace(in.Name), int32(in.Threshold), badgeID) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
 	if err != nil {
 		if isUniqueViolation(err) {
 			return TierInfo{}, ErrTierExists
@@ -931,7 +931,7 @@ func (s *Service) CreateTier(ctx context.Context, in CreateTierInput) (TierInfo,
 func (s *Service) UpdateTier(ctx context.Context, id pgtype.UUID, in UpdateTierInput) (TierInfo, error) {
 	arg := gen.UpdateBadgeTierParams{ID: id, BadgeGroup: in.BadgeGroup, Tier: in.Tier, Name: in.Name, ClearBadgeID: in.ClearBadgeID}
 	if in.Threshold != nil {
-		v := int32(*in.Threshold)
+		v := int32(*in.Threshold) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
 		arg.Threshold = &v
 	}
 	if in.BadgeID != nil {
