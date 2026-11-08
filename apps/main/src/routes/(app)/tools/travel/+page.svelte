@@ -503,11 +503,15 @@
 		dirPage = 1;
 		loadDirectory(1);
 		if (recordRecent) {
-			recordSearch('hotel', dirCity.trim() || t('travel.all_stays', 'All stays'), {
-				dirCity: dirCity.trim(),
-				dirQuery: dirQuery.trim(),
-				dirMinStars
-			});
+			recordSearch(
+				'hotel',
+				dirCity.trim() || dirQuery.trim() || t('travel.all_stays', 'All stays'),
+				{
+					dirCity: dirCity.trim(),
+					dirQuery: dirQuery.trim(),
+					dirMinStars
+				}
+			);
 		}
 		scrollToResults();
 	}
@@ -659,18 +663,30 @@
 	// "Browse by destination" rail — real per-city stay counts from the
 	// directory's own totals (page_size=1 keeps the payload tiny). Only
 	// the hotels tab renders this rail, so it loads lazily on tab visit.
+	// Failed requests are dropped rather than stored as 0 — a transient
+	// error must not pin a bogus "0 stays" label on a city for the
+	// session, and the per-city guard lets the next visit retry just the
+	// missing ones.
+	let cityCountsLoading = false;
 	async function loadCityStayCounts() {
-		if (cityStayCounts.size > 0 || destinations.length === 0) return;
+		if (cityCountsLoading || destinations.length === 0) return;
 		const cities = destinations.slice(0, 6).map((d) => d.key);
-		const counts = await Promise.all(
+		if (cities.every((c) => cityStayCounts.has(c))) return;
+		cityCountsLoading = true;
+		const rows = await Promise.all(
 			cities.map(async (city) => {
 				const r = await api.get<TravelHotelDirectoryResponse>(
 					`/travel/hotels?city=${encodeURIComponent(city)}&page_size=1`
 				);
-				return [city, r.data?.total ?? 0] as const;
+				return [city, r.error || !r.data ? null : (r.data.total ?? 0)] as const;
 			})
 		);
-		cityStayCounts = new Map(counts);
+		cityCountsLoading = false;
+		const next = new Map(cityStayCounts);
+		for (const [city, count] of rows) {
+			if (count != null) next.set(city, count);
+		}
+		cityStayCounts = next;
 	}
 
 	$effect(() => {
@@ -722,6 +738,18 @@
 		switchTab('hotels');
 		dirLoaded = true;
 		dirSearch();
+	}
+
+	// Recommended-stay cards — deep-link into the directory filtered by
+	// the property's name so the rail lands on the stay instead of being
+	// a dead end.
+	function openStayInDirectory(name: string) {
+		dirCity = '';
+		dirQuery = name;
+		dirMinStars = '';
+		switchTab('hotels');
+		dirLoaded = true;
+		dirSearch(true);
 	}
 
 	// ── My searches (§67 mockup "My searches" chip) — the last few executed
@@ -982,7 +1010,7 @@
 									<Autocomplete
 										id="dir-city"
 										freeText
-										placeholder={t('travel.destination_hint', 'City, hotel, landmark or address')}
+										placeholder={t('travel.destination_hint', 'City or area')}
 										emptyMessage={t('common.no_results', 'No results found')}
 										fetcher={fetchCityOptions}
 										selectedId={null}
@@ -1030,10 +1058,13 @@
 		{#if tab === 'flights'}
 			<div class="travel-content" id="travel-panel-results" role="tabpanel" aria-labelledby="travel-tab-{tab}" bind:this={resultsEl}>
 				{#if flightError}
-					<div class="travel-alert" role="alert">{flightError}</div>
+					<div class="travel-alert" role="alert">
+						{flightError}
+						<button type="button" class="travel-alert-retry" onclick={() => searchFlights()}>{t('common.retry', 'Try again')}</button>
+					</div>
 				{/if}
 
-				{#if flightLoading}
+				{#if flightLoading && flights.length === 0}
 					<LoadingSkeleton variant="lines" />
 				{:else if flightProviderMissing}
 					<EmptyState
@@ -1170,7 +1201,10 @@
 				<!-- Airline compare (mockup 3 — folded under Flights).
 				     Catalog data from GET /travel/airlines. -->
 				{#if alError}
-					<div class="travel-alert" role="alert">{alError}</div>
+					<div class="travel-alert" role="alert">
+						{alError}
+						<button type="button" class="travel-alert-retry" onclick={() => loadAirlines(alPage)}>{t('common.retry', 'Try again')}</button>
+					</div>
 				{/if}
 				{#if alLoading && alItems.length === 0}
 					<section class="travel-section"><LoadingSkeleton variant="lines" /></section>
@@ -1184,6 +1218,8 @@
 						</div>
 						<div class="airline-row">
 							{#each showcaseItems as a (a.airline_key)}
+								{@const picked = comparePicked.some((x) => x.airline_key === a.airline_key)}
+								{@const capped = !picked && comparePicked.length >= 4}
 								<article class="airline-card">
 									<span class="airline-mark">{a.iata_code ?? a.name.slice(0, 2).toUpperCase()}</span>
 									<h4>{a.name}</h4>
@@ -1201,10 +1237,12 @@
 									<button
 										type="button"
 										class="airline-compare"
-										class:airline-compare-on={comparePicked.some((x) => x.airline_key === a.airline_key)}
+										class:airline-compare-on={picked}
+										disabled={capped}
+										title={capped ? t('travel.compare_max', 'Compare up to 4 airlines') : undefined}
 										onclick={() => toggleCompare(a)}
 									>
-										{comparePicked.some((x) => x.airline_key === a.airline_key) ? t('travel.comparing', 'Comparing') : t('travel.compare', 'Compare')}
+										{picked ? t('travel.comparing', 'Comparing') : t('travel.compare', 'Compare')}
 									</button>
 								</article>
 							{/each}
@@ -1332,6 +1370,8 @@
 							</div>
 							<div class="space-y-2">
 								{#each alItems as a (a.airline_key)}
+									{@const picked = comparePicked.some((x) => x.airline_key === a.airline_key)}
+									{@const capped = !picked && comparePicked.length >= 4}
 									<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 										<div class="min-w-0 flex-1">
 											<span class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
@@ -1349,11 +1389,23 @@
 												{/if}
 											</span>
 										</div>
-										{#if a.observed}
-											<span class="shrink-0 rounded-[var(--radius)] bg-green-500/10 px-2 py-1 text-xs font-medium text-green-600 dark:text-green-400">
-												{t('travel.bookable', 'bookable')}
-											</span>
-										{/if}
+										<div class="flex shrink-0 items-center gap-2">
+											{#if a.observed}
+												<span class="rounded-[var(--radius)] bg-green-500/10 px-2 py-1 text-xs font-medium text-green-600 dark:text-green-400">
+													{t('travel.bookable', 'bookable')}
+												</span>
+											{/if}
+											<button
+												type="button"
+												class="airline-compare"
+												class:airline-compare-on={picked}
+												disabled={capped}
+												title={capped ? t('travel.compare_max', 'Compare up to 4 airlines') : undefined}
+												onclick={() => toggleCompare(a)}
+											>
+												{picked ? t('travel.comparing', 'Comparing') : t('travel.compare', 'Compare')}
+											</button>
+										</div>
 									</div>
 								{/each}
 							</div>
@@ -1478,8 +1530,8 @@
 									</button>
 								</div>
 								<div class="stay-grid">
-									{#each topStays as h (h.hotel_id ?? h.name)}
-										<article class="stay-card">
+									{#each topStays as h (h.hotel_id || h.name)}
+										<button type="button" class="stay-card stay-card-btn" onclick={() => openStayInDirectory(h.name)}>
 											{#if (h.star_rating ?? 0) >= 5}<span class="stay-badge">{t('travel.badge_luxury', 'Luxury')}</span>{/if}
 											{#if h.image_url}
 												<img src={h.image_url} alt="" loading="lazy" class="stay-card-img" />
@@ -1499,7 +1551,7 @@
 													</p>
 												{/if}
 											</div>
-										</article>
+										</button>
 									{/each}
 								</div>
 							</section>
@@ -1549,7 +1601,10 @@
 				     inventory, listed after the discovery rails. -->
 				<section class="travel-section" aria-labelledby="dir-h" bind:this={resultsEl}>
 					{#if dirError}
-						<div class="travel-alert" role="alert">{dirError}</div>
+						<div class="travel-alert" role="alert">
+							{dirError}
+							<button type="button" class="travel-alert-retry" onclick={() => loadDirectory(dirPage)}>{t('common.retry', 'Try again')}</button>
+						</div>
 					{/if}
 
 					{#if dirLoading && dirItems.length === 0}
@@ -1986,6 +2041,12 @@
 		font-size: 0.875rem;
 		color: var(--color-danger);
 	}
+	.travel-alert-retry {
+		margin-inline-start: 0.5rem;
+		font-weight: 600;
+		text-decoration: underline;
+		cursor: pointer;
+	}
 	.travel-form-inline {
 		margin-bottom: 1rem;
 	}
@@ -2308,6 +2369,15 @@
 		overflow: hidden;
 		transition: transform 0.2s ease, box-shadow 0.2s ease;
 	}
+	.stay-card-btn {
+		display: block;
+		width: 100%;
+		padding: 0;
+		text-align: start;
+		cursor: pointer;
+		font: inherit;
+		color: inherit;
+	}
 	.stay-card:hover {
 		transform: translateY(-3px);
 		box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
@@ -2440,6 +2510,16 @@
 		font-weight: 600;
 		cursor: pointer;
 		transition: background 0.15s;
+	}
+	.airline-compare:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+	/* Directory rows reuse the chip inline, not the card's full-width block. */
+	.space-y-2 .airline-compare {
+		margin-top: 0;
+		width: auto;
+		padding-inline: 0.875rem;
 	}
 	.airline-compare:hover {
 		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
