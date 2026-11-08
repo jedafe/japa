@@ -16,7 +16,7 @@
 </script>
 
 <nav
-	class="sticky top-0 z-10 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur"
+	class="sticky top-0 z-[15] flex gap-1 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur"
 	style="min-height: var(--nav-height)"
 	aria-label={t('profile.tabs_label', 'Profile tabs')}
 >

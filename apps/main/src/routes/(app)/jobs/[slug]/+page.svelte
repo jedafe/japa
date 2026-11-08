@@ -583,7 +583,7 @@
 		</header>
 
 		<!-- Section tabs -->
-		<nav class="sticky top-0 z-10 mt-4 flex gap-5 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-bg)]" aria-label={t('jobs.sections', 'Job sections')}>
+		<nav class="sticky top-0 z-[15] mt-4 flex gap-5 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-bg)]" aria-label={t('jobs.sections', 'Job sections')}>
 			{#each tabs() as tab (tab.id)}
 				<a
 					href="#{tab.id}"

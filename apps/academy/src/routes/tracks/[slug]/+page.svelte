@@ -425,7 +425,7 @@
 
 	<!-- Tabs: Overview | Curriculum | Reviews -->
 	<Tabs.Root value="overview" class="mt-6">
-		<Tabs.List class="sticky top-0 z-10 flex gap-1 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur">
+		<Tabs.List class="sticky top-0 z-[15] flex gap-1 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur">
 			<Tabs.Trigger
 				value="overview"
 				class="border-b-2 border-transparent px-4 py-2 text-sm font-medium text-[var(--color-text-subtle)] data-[state=active]:border-[var(--color-primary)] data-[state=active]:text-[var(--color-primary)]"

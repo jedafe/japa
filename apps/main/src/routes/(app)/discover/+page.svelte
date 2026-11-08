@@ -81,7 +81,7 @@
 
 	<!-- Tab bar -->
 	<nav
-		class="discover-tabs sticky top-0 z-10" style="margin-inline: max(0.75rem, calc((100% - 48rem)/2))"
+		class="discover-tabs sticky top-0 z-[15]" style="margin-inline: max(0.75rem, calc((100% - 48rem)/2))"
 		aria-label={t('discover.tabs_label', 'Discover tabs')}
 	>
 		<UrlTabs {tabs} value={data.tab} onValueChange={(v) => goto(`?tab=${v}`)} />

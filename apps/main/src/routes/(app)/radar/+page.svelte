@@ -466,7 +466,7 @@
 			     right (BUG-012). Identical in the geo-filtered view so nothing
 			     jumps when a country is picked; the Clear button restores
 			     the default feed. -->
-			<div class="sticky top-0 z-10 flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur sm:z-20">
+			<div class="sticky top-0 z-[15] flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur">
 					<div class="min-w-0 flex-1">
 					<UrlTabs tabs={radarTabs} value={activeTab} onValueChange={handleTabChange} urlParam="tab" class="!border-b-0 !bg-transparent" />
 					</div>

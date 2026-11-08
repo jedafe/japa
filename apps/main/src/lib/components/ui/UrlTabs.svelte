@@ -144,7 +144,7 @@
 	type="button"
 	onclick={() => mobilePickerOpen = true}
 	aria-haspopup="dialog"
-	class="sticky top-0 z-10 flex shrink-0 cursor-pointer items-center gap-1.5 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-4 text-sm font-medium text-[var(--color-text)] backdrop-blur sm:hidden {className}"
+	class="sticky top-0 z-[15] flex shrink-0 cursor-pointer items-center gap-1.5 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-4 text-sm font-medium text-[var(--color-text)] backdrop-blur sm:hidden {className}"
 	style="min-height: var(--nav-height)"
 >
 	{activeLabel}
@@ -183,7 +183,7 @@
 	</Dialog.Portal>
 </Dialog.Root>
 
-<Tabs.Root value={activeValue} onValueChange={handleChange} class="sticky top-0 z-10">
+<Tabs.Root value={activeValue} onValueChange={handleChange} class="sticky top-0 z-[15]">
 	<Tabs.List
 		bind:ref={rootEl}
 		class="relative hidden gap-1 overflow-y-hidden border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 backdrop-blur sm:flex {className} {autoOverflow &&

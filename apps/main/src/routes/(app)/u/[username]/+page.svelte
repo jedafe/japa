@@ -1091,7 +1091,7 @@ profile is private, or no stage is set. -->
 	</div>
 {/if}
 
-<div class="sticky top-0 z-10 mx-auto w-full max-w-3xl"><UrlTabs tabs={tabs} bind:value={activeTab} autoOverflow /></div>
+<div class="sticky top-0 z-[15] mx-auto w-full max-w-3xl"><UrlTabs tabs={tabs} bind:value={activeTab} autoOverflow /></div>
 
 <!-- isolate: content z-indexes (journey dots, badges, media buttons) must
      stay below the sticky tab bar — contain them in a stacking context. -->

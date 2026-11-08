@@ -28,7 +28,7 @@
 <!-- Authenticated home timeline in the app shell -->
 <div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<div
-		class="sticky top-0 z-10 flex items-center border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
+		class="sticky top-0 z-[15] flex items-center border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
 		style="margin-inline: max(1rem, calc((100% - 48rem)/2)); min-height: var(--nav-height)"
 	>
 		<UrlTabs

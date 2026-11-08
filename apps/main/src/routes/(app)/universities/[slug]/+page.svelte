@@ -411,7 +411,7 @@
 	</div>
 
 	<!-- Tabs — Section 39 / ADR-039: Overview / Posts / Forums / Courses / Members / Reviews / Compare -->
-	<div class="sticky top-0 z-10 mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} class="mx-3 px-4" /></div>
+	<div class="sticky top-0 z-[15] mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} class="mx-3 px-4" /></div>
 
 	<div class="isolate mx-auto w-full max-w-3xl p-4">
 		<!-- Stats row -->

@@ -21,12 +21,12 @@
 </script>
 
 	<!-- Sticky tab bar (ADR-058): pins to the top of the center column on
-	     scroll. z-20 keeps dropdowns opened by bar controls (e.g.
-	     Autocomplete) above positioned content below (user cards, -mt-*
-	     overlap rows); on mobile it stays under the shell topbar (z-20)
-	     so it doesn't cover app nav. -->
+	     scroll. z-[15] sits above positioned page content (z-10 max —
+	     badges, media buttons, journey dots) and below shell chrome
+	     (mobile topbar z-20, nav flyouts z-30), so bar-control dropdowns
+	     (e.g. Autocomplete) stay above content on every breakpoint. -->
 <div
-	class="sticky top-0 z-10 flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur sm:z-20"
+	class="sticky top-0 z-[15] flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
 	style="margin-inline: var(--page-gutter, 0.75rem)"
 >
 	<div class="min-w-0 flex-1">

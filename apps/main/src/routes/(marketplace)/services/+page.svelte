@@ -362,7 +362,7 @@
 	</div>
 
 	<!-- Toolbar: kind tabs + filters + sort + list action -->
-	<div class="sticky top-0 z-10 mb-4 flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur">
+	<div class="sticky top-0 z-[15] mb-4 flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur">
 		{#if data.mentorshipEnabled}
 			<UrlTabs
 				tabs={kindTabs}

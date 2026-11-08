@@ -77,7 +77,7 @@
 		transition:slide={{ duration: 250, axis: 'y' }}
 	>
 		<!-- Drag handle -->
-		<div class="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl bg-[var(--color-surface)] px-4 pt-3 pb-2">
+		<div class="sticky top-0 z-[15] flex items-center justify-between rounded-t-2xl bg-[var(--color-surface)] px-4 pt-3 pb-2">
 			<div class="mx-auto h-1 w-10 rounded-full bg-[var(--color-border)]"></div>
 			<button
 				type="button"

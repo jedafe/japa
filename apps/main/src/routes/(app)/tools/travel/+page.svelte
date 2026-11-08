@@ -573,7 +573,7 @@
 		</div>
 	{:else}
 		<!-- Tab switcher -->
-		<div class="sticky top-0 z-10 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-4 backdrop-blur">
+		<div class="sticky top-0 z-[15] border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-4 backdrop-blur">
 			<UrlTabs tabs={TABS} bind:value={tab} urlParam="tab" defaultTab="flights" />
 		</div>
 

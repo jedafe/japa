@@ -193,7 +193,7 @@
 <nav
 	bind:this={navEl}
 	aria-label={t('wiki.heading', 'Wiki')}
-	class="sticky top-0 z-10 flex items-center gap-1 overflow-hidden border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 pt-4 backdrop-blur"
+	class="sticky top-0 z-[15] flex items-center gap-1 overflow-hidden border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-3 pt-4 backdrop-blur"
 >
 	{#each visibleTabs as tab (tab.slug)}
 		{@const Icon = tab.icon}

@@ -524,7 +524,7 @@
 	</div>
 
 	<!-- Category tab strip -->
-	<div class="sticky top-0 z-10 mx-auto w-full max-w-3xl px-1 sm:px-3">
+	<div class="sticky top-0 z-[15] mx-auto w-full max-w-3xl px-1 sm:px-3">
 		<WikiTabs spaceSlug={data.spaceSlug} categories={apiCategories} pages={data.index} active="overview" />
 	</div>
 

@@ -27,7 +27,7 @@
 
 {#if visible}
 	<div
-		class="sticky top-[var(--nav-height)] z-10 mx-auto flex w-full max-w-2xl items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm shadow-sm"
+		class="sticky top-[var(--nav-height)] z-[15] mx-auto flex w-full max-w-2xl items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm shadow-sm"
 		role="status"
 		aria-live="polite"
 	>

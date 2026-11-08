@@ -33,7 +33,7 @@
 </script>
 
 <div
-	class="sticky z-10 flex items-center gap-2 bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-4 py-2 backdrop-blur"
+	class="sticky z-[15] flex items-center gap-2 bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] px-4 py-2 backdrop-blur"
 	style="top: {stickyTop}; margin-inline: max(1rem, calc((100% - 48rem)/2))"
 >
 	{#each chips as chip (chip.value)}
