@@ -1,8 +1,6 @@
 // Ref: japaconnect-engineering/sections/67-travel-search.md (ADR-085)
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '#lib/server/api.js';
-import type { CatalogOption } from '#lib/types/index.js';
 
 /**
  * Travel Search at /tools/travel (Section 67, ADR-085).
@@ -15,14 +13,5 @@ export const load: PageServerLoad = async (event) => {
 		throw error(404, { code: 'feature_disabled', message: 'Travel Search is not available' });
 	}
 
-	const ctx = apiContext(event);
-
-	// Cabin-class options (Rule 16 — option lists come from the backend
-	// catalog endpoint, never hardcoded frontend arrays). Degrades
-	// non-fatally.
-	const cabinClasses = await apiGet<CatalogOption[]>(ctx, '/catalogs/travel.cabin_class')
-		.then((v) => v ?? [])
-		.catch(() => [] as CatalogOption[]);
-
-	return { cabinClasses };
+	return {};
 };

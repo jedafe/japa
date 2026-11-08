@@ -8,11 +8,9 @@
 	import { Popover } from 'bits-ui';
 	import {
 		Plane,
-		PlaneTakeoff,
 		Lock,
 		Hotel,
 		Luggage,
-		BookOpen,
 		ExternalLink,
 		Search,
 		Hourglass,
@@ -21,7 +19,6 @@
 		ArrowLeftRight,
 		ArrowRight,
 		ChevronRight,
-		ChevronDown,
 		Users,
 		GraduationCap,
 		Briefcase,
@@ -35,7 +32,6 @@
 		Star,
 		Ticket,
 		Building2,
-		CalendarDays,
 		Gem
 	} from 'lucide-svelte';
 
@@ -54,7 +50,6 @@
 	import { formatMoney } from '#lib/utils/currency.js';
 	import type {
 		TravelFlightResult,
-		TravelHotelResult,
 		TravelSearchResponse,
 		TravelHotelDirectoryItem,
 		TravelHotelDirectoryResponse,
@@ -94,14 +89,11 @@
 		)
 	);
 
-	type Tab = 'flights' | 'hotels' | 'bundle' | 'airlines' | 'directory';
-	const TAB_VALUES: Tab[] = ['flights', 'hotels', 'bundle', 'airlines', 'directory'];
+	type Tab = 'flights' | 'hotels';
+	const TAB_VALUES: Tab[] = ['flights', 'hotels'];
 	const TABS = $derived<Array<{ value: Tab; label: string; icon: typeof Plane }>>([
 		{ value: 'flights', label: t('travel.flights', 'Flights'), icon: Plane },
-		{ value: 'hotels', label: t('travel.hotels', 'Hotels'), icon: Hotel },
-		{ value: 'bundle', label: t('travel.bundle', 'Flight + Hotel'), icon: Luggage },
-		{ value: 'airlines', label: t('travel.airlines', 'Airlines'), icon: PlaneTakeoff },
-		{ value: 'directory', label: t('travel.directory', 'Directory'), icon: BookOpen }
+		{ value: 'hotels', label: t('travel.hotels', 'Hotels'), icon: Hotel }
 	]);
 	const initialTabParam = page.url.searchParams.get('tab') as Tab;
 	let tab = $state<Tab>(
@@ -136,61 +128,28 @@
 	// ── Hero copy per tab (§67 mockups) ───────────────────────────────────
 	const HERO_IMAGES = {
 		flights: '/brand/kigali-airplane-window.jpg',
-		hotels: '/brand/kigali-skyline.jpg',
-		bundle: '/brand/kigali-airplane-window.jpg',
-		airlines: '/brand/kigali-airplane-window.jpg',
-		directory: '/brand/kigali-skyline.jpg'
+		hotels: '/brand/kigali-skyline.jpg'
 	} as const;
 
 	const hero = $derived.by(() => {
-		switch (tab) {
-			case 'hotels':
-				return {
-					image: HERO_IMAGES.hotels,
-					title: t('travel.hero_hotels_title', 'Find the perfect place to stay.'),
-					sub: t('travel.hero_hotels_sub', 'Hotels, apartments, and unique stays for every trip and budget.')
-				};
-			case 'bundle':
-				return {
-					image: HERO_IMAGES.bundle,
-					title: t('travel.hero_bundle_title', 'Flight + hotel, one search.'),
-					sub: t('travel.hero_bundle_sub', 'Bundle airfare and stays to plan the whole trip in one go.')
-				};
-			case 'airlines':
-				return {
-					image: HERO_IMAGES.airlines,
-					title: t('travel.hero_airlines_title', 'Compare airlines. Fly smarter.'),
-					sub: t('travel.hero_airlines_sub', 'Compare prices, services, baggage, and reviews to find the best airline for your next trip.')
-				};
-			case 'directory':
-				return {
-					image: HERO_IMAGES.directory,
-					title: t('travel.hero_directory_title', 'The stay directory.'),
-					sub: t('travel.hero_directory_sub', 'Every property travelers have found through {site} — browse, compare, pick your stay.')
-				};
-			default:
-				return {
-					image: HERO_IMAGES.flights,
-					title: t('travel.hero_flights_title', 'Your journey starts here.'),
-					sub: t('travel.hero_flights_sub', 'Search flights, hotels and travel options that take you closer to your next big move.')
-				};
+		if (tab === 'hotels') {
+			return {
+				image: HERO_IMAGES.hotels,
+				title: t('travel.hero_hotels_title', 'Find the perfect place to stay.'),
+				sub: t('travel.hero_hotels_sub', 'Hotels, apartments, and unique stays for every trip and budget.')
+			};
 		}
+		return {
+			image: HERO_IMAGES.flights,
+			title: t('travel.hero_flights_title', 'Your journey starts here.'),
+			sub: t('travel.hero_flights_sub', 'Search flights, hotels and travel options that take you closer to your next big move.')
+		};
 	});
 
 	// ── Shared list controls ────────────────────────────────────────────────
-	// Numeric pickers are input constraints (not domain data); enum options
-	// come from the backend /catalogs endpoint via the server load (Rule 16).
+	// Page-size is an input constraint (not domain data) — the only
+	// hardcoded list allowed by Rule 16.
 	const PAGE_SIZE_OPTIONS = [10, 25, 50].map((n) => ({ value: String(n), label: String(n) }));
-	const numberOptions = (from: number, to: number) =>
-		Array.from({ length: to - from + 1 }, (_, i) => {
-			const n = from + i;
-			return { value: String(n), label: String(n) };
-		});
-
-	const cabinOptions = $derived([
-		{ value: '', label: t('travel.any_cabin', 'Any cabin') },
-		...(data.cabinClasses ?? []).map((o) => ({ value: o.value, label: o.label }))
-	]);
 
 	const flightSortOptions = $derived([
 		{ value: '', label: t('travel.sort_relevance', 'Best match') },
@@ -200,17 +159,16 @@
 		{ value: 'stops', label: t('travel.sort_stops', 'Fewest stops') },
 		{ value: 'departure', label: t('travel.sort_departure', 'Earliest departure') }
 	]);
-	const hotelSortOptions = $derived([
-		{ value: '', label: t('travel.sort_relevance', 'Best match') },
-		{ value: 'price_asc', label: t('travel.sort_price_asc', 'Price: low to high') },
-		{ value: 'price_desc', label: t('travel.sort_price_desc', 'Price: high to low') },
-		{ value: 'rating', label: t('travel.sort_rating', 'Highest rated') }
-	]);
-
-	// Today's date (local) for the date-input min attributes.
-	const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000)
-		.toISOString()
-		.slice(0, 10);
+	// ── Sample itinerary dates ────────────────────────────────────────────
+	// The tool compares provider offers; it doesn't book (§67). Provider
+	// searches still require a travel window, so a representative one is
+	// applied behind the scenes and disclosed alongside the results rather
+	// than collected from the user.
+	function offsetDate(days: number): string {
+		const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000);
+		d.setDate(d.getDate() + days);
+		return d.toISOString().slice(0, 10);
+	}
 
 	// ── Flight form ─────────────────────────────────────────────────────────
 	// Origin/destination autocomplete over the IATA airport catalog
@@ -250,48 +208,19 @@
 
 	let flightOrigin = $state('');
 	let flightDest = $state('');
+	// Set per search — the auto-picked departure date, shown in the
+	// results meta line so the sample window stays honest.
 	let flightDate = $state('');
-	let flightReturn = $state('');
-	let flightAdults = $state('1');
-	let flightChildren = $state('0');
-	let flightCabin = $state('');
-
-	// ── Hotel form ──────────────────────────────────────────────────────────
-	let hotelDest = $state('');
-	let hotelCheckIn = $state('');
-	let hotelCheckOut = $state('');
-	let hotelGuests = $state('1');
-	let hotelRooms = $state('1');
-
-	// Travelers/class popover summaries (§67 mockup combined pickers).
-	const travelersSummary = $derived.by(() => {
-		const n = (Number(flightAdults) || 0) + (Number(flightChildren) || 0);
-		const cabin = flightCabin
-			? (data.cabinClasses ?? []).find((c) => c.value === flightCabin)?.label ?? flightCabin
-			: t('travel.any_cabin', 'Any cabin');
-		return `${n} ${n === 1 ? t('travel.traveler', 'Traveler') : t('travel.travelers', 'Travelers')}, ${cabin}`;
-	});
-	const guestsSummary = $derived(
-		`${hotelGuests} ${Number(hotelGuests) === 1 ? t('travel.guest', 'Guest') : t('travel.guests', 'Guests')}, ${hotelRooms} ${Number(hotelRooms) === 1 ? t('travel.room', 'Room') : t('travel.rooms', 'Rooms')}`
-	);
 
 	// ── Per-tab request state ───────────────────────────────────────────────
 	let flightLoading = $state(false);
-	let hotelLoading = $state(false);
 	let flightError = $state<string | null>(null);
-	let hotelError = $state<string | null>(null);
 	let flightProviderMissing = $state(false);
-	let hotelProviderMissing = $state(false);
 	let flightQuotaExceeded = $state(false);
-	let hotelQuotaExceeded = $state(false);
 	let flightsSearched = $state(false);
-	let hotelsSearched = $state(false);
 	let flightMeta = $state<{ cache_hit: boolean; source?: string; search_time_ms: number; total?: number; page?: number; page_size?: number } | null>(null);
-	let hotelMeta = $state<{ cache_hit: boolean; source?: string; search_time_ms: number; total?: number; page?: number; page_size?: number } | null>(null);
 	let flights = $state<TravelFlightResult[]>([]);
-	let hotels = $state<TravelHotelResult[]>([]);
 	let flightTotal = $state<number | null>(null);
-	let hotelTotal = $state<number | null>(null);
 
 	function isQuotaError(code?: string): boolean {
 		return code === 'travel_quota_exceeded' || code === 'rate_limit_exceeded';
@@ -361,31 +290,6 @@
 		)
 	);
 
-	// ── Hotel result list state ─────────────────────────────────────────────
-	let hotelSort = $state('');
-	let hotelPageSize = $state('10');
-	let hotelPage = $state(1);
-
-	const sortedHotels = $derived.by(() => {
-		const arr = [...hotels];
-		switch (hotelSort) {
-			case 'price_asc':
-				return arr.sort((a, b) => a.price - b.price);
-			case 'price_desc':
-				return arr.sort((a, b) => b.price - a.price);
-			case 'rating':
-				return arr.sort((a, b) => b.star_rating - a.star_rating);
-			default:
-				return arr;
-		}
-	});
-
-	const hotelPageSizeNum = $derived(Number(hotelPageSize) || 10);
-	const hotelTotalPages = $derived(Math.max(1, Math.ceil(sortedHotels.length / hotelPageSizeNum)));
-	const pagedHotels = $derived(
-		sortedHotels.slice((hotelPage - 1) * hotelPageSizeNum, hotelPage * hotelPageSizeNum)
-	);
-
 	// Scroll results into view once a search lands (mockup keeps the
 	// marketing rails below — the user shouldn't have to hunt for results).
 	let resultsEl = $state<HTMLElement | null>(null);
@@ -397,21 +301,18 @@
 	async function searchFlights() {
 		const origin = flightOrigin.trim().toUpperCase();
 		const dest = flightDest.trim().toUpperCase();
-		if (!origin || !dest || !flightDate) {
-			flightError = t('travel.missing_fields', 'Fill in origin, destination and departure date.');
+		if (!origin || !dest) {
+			flightError = t('travel.missing_fields', 'Fill in origin and destination.');
 			return;
 		}
 		if (origin === dest) {
 			flightError = t('travel.origin_dest_same', 'Origin and destination must differ.');
 			return;
 		}
-		if (flightReturn && flightReturn < flightDate) {
-			flightError = t(
-				'travel.return_after_departure',
-				'Return date must be on or after the departure date.'
-			);
-			return;
-		}
+
+		// No booking inputs — the provider query runs on a representative
+		// departure ~4 weeks out, disclosed in the results meta line.
+		flightDate = offsetDate(30);
 
 		flightLoading = true;
 		flightError = null;
@@ -421,22 +322,16 @@
 		flightTotal = null;
 		flightsSearched = false;
 		flightMeta = null;
+		flightPage = 1;
+		// The airline filter is derived from the result set — a stale pick
+		// from a previous route would silently filter the new offers away.
+		flightAirline = '';
 
-		const params = new URLSearchParams({
-			origin,
-			dest,
-			date: flightDate,
-			adults: flightAdults,
-			children: flightChildren
-		});
-		if (flightReturn) params.set('return_date', flightReturn);
-		if (flightCabin) params.set('cabin_class', flightCabin);
-		// Sort/filter/page ride on the request — the backend applies them
-		// server-side over the coverage offer set.
-		if (flightSort) params.set('sort', flightSort);
-		if (flightAirline) params.set('airline', flightAirline);
-		params.set('page', String(flightPage));
-		params.set('page_size', flightPageSize);
+		const params = new URLSearchParams({ origin, dest, date: flightDate });
+		// No sort/filter/page params — page_size 0 returns the full offer
+		// set (the service's documented contract for self-paginating
+		// clients), so all presentation happens client-side over the
+		// complete set and the airline filter sees every carrier.
 
 		const res = await api.get<TravelSearchResponse>(
 			`/travel/search/flights?${params.toString()}`
@@ -467,98 +362,17 @@
 		flightMeta = res.data
 			? { cache_hit: res.data.cache_hit, source: res.data.source, search_time_ms: res.data.search_time_ms, total: res.data.total, page: res.data.page, page_size: res.data.page_size }
 			: null;
-		recordSearch('flight', `${origin} → ${dest} · ${flightDate}`, {
+		recordSearch('flight', `${origin} → ${dest}`, {
 			flightOrigin: origin,
-			flightDest: dest,
-			flightDate,
-			flightReturn,
-			flightAdults,
-			flightChildren,
-			flightCabin
+			flightDest: dest
 		});
 		scrollToResults();
 	}
 
-	async function searchHotels() {
-		const dest = hotelDest.trim();
-		if (!dest || !hotelCheckIn || !hotelCheckOut) {
-			hotelError = t('travel.missing_fields_hotels', 'Fill in destination, check-in and check-out.');
-			return;
-		}
-		if (hotelCheckOut <= hotelCheckIn) {
-			hotelError = t('travel.checkout_after_checkin', 'Check-out must be after check-in.');
-			return;
-		}
-
-		hotelLoading = true;
-		hotelError = null;
-		hotelProviderMissing = false;
-		hotelQuotaExceeded = false;
-		hotels = [];
-		hotelTotal = null;
-		hotelsSearched = false;
-		hotelMeta = null;
-
-		const params = new URLSearchParams({
-			dest,
-			checkin: hotelCheckIn,
-			checkout: hotelCheckOut,
-			guests: hotelGuests,
-			rooms: hotelRooms
-		});
-		// Sort/page ride on the request — the backend applies them
-		// server-side over the coverage offer set.
-		if (hotelSort) params.set('sort', hotelSort);
-		params.set('page', String(hotelPage));
-		params.set('page_size', hotelPageSize);
-		const res = await api.get<TravelSearchResponse>(
-			`/travel/search/hotels?${params.toString()}`
-		);
-		hotelLoading = false;
-		hotelsSearched = true;
-		if (res.error) {
-			if (res.error.code === 'travel_disabled' || res.error.code === 'feature_disabled') {
-				disabled = true;
-				return;
-			}
-			if (res.error.code === 'provider_not_configured') {
-				hotelProviderMissing = true;
-				return;
-			}
-			if (isQuotaError(res.error.code)) {
-				hotelQuotaExceeded = true;
-				return;
-			}
-			hotelError = res.error.message;
-			return;
-		}
-		hotels = res.data?.results as TravelHotelResult[] | undefined ?? [];
-		hotelTotal = res.data?.total ?? hotels.length;
-		hotelMeta = res.data
-			? { cache_hit: res.data.cache_hit, source: res.data.source, search_time_ms: res.data.search_time_ms, total: res.data.total, page: res.data.page, page_size: res.data.page_size }
-			: null;
-		recordSearch('hotel', `${dest} · ${hotelCheckIn} → ${hotelCheckOut}`, {
-			hotelDest: dest,
-			hotelCheckIn,
-			hotelCheckOut,
-			hotelGuests,
-			hotelRooms
-		});
-		scrollToResults();
-	}
-
-	// Bundle tab fires both searches — hotel dates fall back to the flight
-	// window when left empty so a single form fill covers both.
-	function searchBundle() {
-		if (!hotelCheckIn && flightDate) hotelCheckIn = flightDate;
-		if (!hotelCheckOut && flightReturn) hotelCheckOut = flightReturn;
-		searchFlights();
-		searchHotels();
-	}
-
-	// ── Hotel directory (ADR-124) — server-paginated browse over
-	// /travel/hotels; rows accumulate from searches and the provider feed
-	// sync, so results are always local and free to browse.
+	// ── Hotel directory (ADR-124) — the Hotels tab searches this curated
+	// inventory (server-paginated browse over /travel/hotels; rows
+	// accumulate from provider searches and the feed sync, so results are
+	// always local, free to browse, and need no booking dates).
 	let dirCity = $state('');
 	let dirQuery = $state('');
 	let dirMinStars = $state('');
@@ -609,14 +423,23 @@
 		dirPage = res.data.page ?? nextPage;
 	}
 
-	function dirSearch() {
+	function dirSearch(recordRecent = false) {
 		dirPage = 1;
 		loadDirectory(1);
+		if (recordRecent) {
+			recordSearch('hotel', dirCity.trim() || t('travel.all_stays', 'All stays'), {
+				dirCity: dirCity.trim(),
+				dirQuery: dirQuery.trim(),
+				dirMinStars
+			});
+		}
+		scrollToResults();
 	}
 
-	// First visit to the directory tab loads the first page; filters re-query.
+	// First visit to the hotels tab loads the first directory page;
+	// filters re-query from there.
 	$effect(() => {
-		if (tab === 'directory' && !dirLoaded && !dirLoading) loadDirectory(1);
+		if (tab === 'hotels' && !dirLoaded && !dirLoading) loadDirectory(1);
 	});
 
 	// ── Airline directory (ADR-124) — server-paginated browse over
@@ -667,9 +490,10 @@
 		loadAirlines(1);
 	}
 
-	// First visit to the airlines tab loads the first page; q re-queries.
+	// The airline catalog feeds the flights tab's compare rails — load on
+	// first visit (the flights tab is the default landing).
 	$effect(() => {
-		if (tab === 'airlines' && !alLoaded && !alLoading) loadAirlines(1);
+		if (tab === 'flights' && !alLoaded && !alLoading) loadAirlines(1);
 	});
 
 	// ── Showcase data (§67 mockups) — the discovery rails under the search
@@ -774,19 +598,12 @@
 	const chips = $derived(destinations.slice(0, 7));
 
 	async function pickChip(city: string) {
-		if (tab === 'hotels' || tab === 'directory') {
-			if (tab === 'hotels') hotelDest = city;
-			else {
-				dirCity = city;
-				dirSearch();
-			}
+		if (tab === 'hotels') {
+			dirCity = city;
+			dirSearch(true);
 			return;
 		}
-		if (tab === 'bundle') {
-			hotelDest = city;
-			return;
-		}
-		// flights + airlines — resolve the city to its airport code.
+		// Flights — resolve the city to its airport code.
 		const res = await api.get<TravelLocation[]>(
 			`/travel/locations?q=${encodeURIComponent(city)}&limit=1`
 		);
@@ -795,17 +612,24 @@
 	}
 
 	// Prefill helpers used by the discovery cards — they park the value in
-	// the right form and hop to the tab that uses it.
+	// the right form and hop to the tab that uses it. dirSearch also
+	// scrolls the directory section (below the rails) into view.
 	function openDestinationInHotels(city: string) {
-		hotelDest = city;
+		dirCity = city;
 		switchTab('hotels');
+		dirLoaded = true;
+		dirSearch(true);
 	}
 
-	function openDestinationInDirectory(city: string) {
-		dirCity = city;
-		switchTab('directory');
+	// "View all" rail links — clear the filters and browse the whole
+	// directory on the hotels tab.
+	function browseAllStays() {
+		dirCity = '';
+		dirQuery = '';
+		dirMinStars = '';
+		switchTab('hotels');
 		dirLoaded = true;
-		loadDirectory(1);
+		dirSearch();
 	}
 
 	// ── My searches (§67 mockup "My searches" chip) — the last few executed
@@ -841,21 +665,15 @@
 		if (r.kind === 'flight') {
 			flightOrigin = r.fields.flightOrigin ?? '';
 			flightDest = r.fields.flightDest ?? '';
-			flightDate = r.fields.flightDate ?? '';
-			flightReturn = r.fields.flightReturn ?? '';
-			flightAdults = r.fields.flightAdults ?? '1';
-			flightChildren = r.fields.flightChildren ?? '0';
-			flightCabin = r.fields.flightCabin ?? '';
 			switchTab('flights');
 			searchFlights();
 		} else {
-			hotelDest = r.fields.hotelDest ?? '';
-			hotelCheckIn = r.fields.hotelCheckIn ?? '';
-			hotelCheckOut = r.fields.hotelCheckOut ?? '';
-			hotelGuests = r.fields.hotelGuests ?? '1';
-			hotelRooms = r.fields.hotelRooms ?? '1';
+			dirCity = r.fields.dirCity ?? '';
+			dirQuery = r.fields.dirQuery ?? '';
+			dirMinStars = r.fields.dirMinStars ?? '';
 			switchTab('hotels');
-			searchHotels();
+			dirLoaded = true;
+			dirSearch();
 		}
 	}
 
@@ -910,6 +728,15 @@
 		return p && !p.startsWith('http') ? p : '';
 	}
 
+	// "View flights" in the compare table — apply the airline filter and
+	// land on the results (page top when nothing has been searched yet,
+	// so the form is what the user sees next).
+	function viewAirlineFlights(a: TravelAirlineItem) {
+		flightAirline = a.airline_key || a.name;
+		if (flights.length > 0) scrollToResults();
+		else window.scrollTo({ top: 0, behavior: 'smooth' });
+	}
+
 	function swapFlightEnds() {
 		const o = flightOrigin;
 		flightOrigin = flightDest;
@@ -949,19 +776,6 @@
 					<h1 class="travel-hero-title">{hero.title}</h1>
 					<p class="travel-hero-sub">{hero.sub}</p>
 				</div>
-
-				{#if tab === 'airlines'}
-					<aside class="hero-side-card">
-						<span class="hero-side-icon"><PlaneTakeoff size={20} /></span>
-						<h2>{t('travel.why_compare_title', 'Why compare with {site}?')}</h2>
-						<ul>
-							<li><Check size={14} />{t('travel.why_compare_1', 'Real-time prices from 1000+ airlines')}</li>
-							<li><Check size={14} />{t('travel.why_compare_2', 'Honest reviews from travelers like you')}</li>
-							<li><Check size={14} />{t('travel.why_compare_3', 'Baggage, fees & policies side-by-side')}</li>
-							<li><Check size={14} />{t('travel.why_compare_4', 'Book with confidence and save more')}</li>
-						</ul>
-					</aside>
-				{/if}
 			</div>
 		</section>
 
@@ -1019,17 +833,13 @@
 								</Popover.Content>
 							</Popover.Portal>
 						</Popover.Root>
-						<span class="travel-tool-chip cursor-not-allowed opacity-60" title={t('travel.multicity_soon', 'Multi-city search is coming soon')}>
-							<span>{t('travel.multi_city', 'Multi-city')}</span>
-							<span class="travel-switch" aria-hidden="true"><span class="travel-switch-dot"></span></span>
-						</span>
 					</div>
 				</div>
 
 				<div class="travel-search-body">
-					{#if tab === 'flights' || tab === 'airlines'}
+					{#if tab === 'flights'}
 						<form onsubmit={(e) => { e.preventDefault(); searchFlights(); }} class="travel-form">
-							<div class="travel-field">
+							<div class="travel-field travel-field-wide">
 								<label for="flight-origin">{t('travel.origin', 'From')}</label>
 								<div class="travel-input">
 									<Autocomplete
@@ -1049,7 +859,7 @@
 							<button type="button" onclick={swapFlightEnds} class="travel-swap" aria-label={t('travel.swap', 'Swap origin and destination')}>
 								<ArrowLeftRight size={15} />
 							</button>
-							<div class="travel-field">
+							<div class="travel-field travel-field-wide">
 								<label for="flight-dest">{t('travel.destination', 'To')}</label>
 								<div class="travel-input">
 									<Autocomplete
@@ -1066,262 +876,28 @@
 									<MapPin size={15} class="travel-input-icon" />
 								</div>
 							</div>
-							<div class="travel-field">
-								<label for="flight-date">{t('travel.departure_date', 'Depart')}</label>
-								<div class="travel-input">
-									<input id="flight-date" type="date" required min={today} bind:value={flightDate} />
-									<CalendarDays size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<label for="flight-return">{t('travel.return_date', 'Return')}</label>
-								<div class="travel-input">
-									<input id="flight-return" type="date" min={flightDate || today} bind:value={flightReturn} />
-									<CalendarDays size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<span class="travel-field-label">{t('travel.travelers_class', 'Travelers & Class')}</span>
-								<Popover.Root>
-									<Popover.Trigger class="travel-input travel-popover-trigger">
-										<span class="flex items-center gap-1.5 truncate"><Users size={15} class="text-[var(--color-muted)]" />{travelersSummary}</span>
-										<ChevronDown size={15} class="travel-input-icon" />
-									</Popover.Trigger>
-									<Popover.Portal>
-										<Popover.Content class="z-50 w-64 space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-lg" sideOffset={6}>
-											<div class="space-y-1.5">
-												<span class="text-xs font-medium text-[var(--color-muted)]">{t('travel.adults', 'Adults')}</span>
-												<AutocompleteSelect id="flight-adults" options={numberOptions(1, 9)} bind:value={flightAdults} />
-											</div>
-											<div class="space-y-1.5">
-												<span class="text-xs font-medium text-[var(--color-muted)]">{t('travel.children', 'Children')}</span>
-												<AutocompleteSelect id="flight-children" options={numberOptions(0, 8)} bind:value={flightChildren} />
-											</div>
-											{#if cabinOptions.length > 1}
-												<div class="space-y-1.5">
-													<span class="text-xs font-medium text-[var(--color-muted)]">{t('travel.cabin_class', 'Cabin class')}</span>
-													<AutocompleteSelect id="flight-cabin" options={cabinOptions} bind:value={flightCabin} />
-												</div>
-											{/if}
-										</Popover.Content>
-									</Popover.Portal>
-								</Popover.Root>
-							</div>
 							<button type="submit" disabled={flightLoading} class="travel-search-btn">
 								<Search size={15} />
-								{flightLoading ? t('common.searching', 'Searching…') : tab === 'airlines' ? t('travel.search_airlines', 'Search Airlines') : t('travel.search', 'Search')}
+								{flightLoading ? t('common.searching', 'Searching…') : t('travel.search', 'Search')}
 							</button>
 						</form>
-					{:else if tab === 'hotels'}
-						<form onsubmit={(e) => { e.preventDefault(); searchHotels(); }} class="travel-form">
+					{:else}
+						<!-- Ref: .jeos/sections/67-travel-search.md (hotel directory, ADR-124) — browse the curated stay inventory; no booking dates needed. -->
+						<form onsubmit={(e) => { e.preventDefault(); dirSearch(true); }} class="travel-form">
 							<div class="travel-field travel-field-wide">
-								<label for="hotel-dest">{t('travel.where_going', 'Where are you going?')}</label>
-								<div class="travel-input">
-									<Autocomplete
-										id="hotel-dest"
-										freeText
-										placeholder={t('travel.destination_hint', 'City, hotel, landmark or address')}
-										emptyMessage={t('common.no_results', 'No results found')}
-										fetcher={fetchCityOptions}
-										selectedId={null}
-										selectedLabel={hotelDest}
-										onSelect={(item) => hotelDest = item.label}
-										onFreeTextBlur={(q) => hotelDest = q}
-									/>
-									<MapPin size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<label for="hotel-checkin">{t('travel.check_in', 'Check-in')}</label>
-								<div class="travel-input">
-									<input id="hotel-checkin" type="date" required min={today} bind:value={hotelCheckIn} />
-									<CalendarDays size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<label for="hotel-checkout">{t('travel.check_out', 'Check-out')}</label>
-								<div class="travel-input">
-									<input id="hotel-checkout" type="date" required min={hotelCheckIn || today} bind:value={hotelCheckOut} />
-									<CalendarDays size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<span class="travel-field-label">{t('travel.guests_rooms', 'Guests & Rooms')}</span>
-								<Popover.Root>
-									<Popover.Trigger class="travel-input travel-popover-trigger">
-										<span class="flex items-center gap-1.5 truncate"><Users size={15} class="text-[var(--color-muted)]" />{guestsSummary}</span>
-										<ChevronDown size={15} class="travel-input-icon" />
-									</Popover.Trigger>
-									<Popover.Portal>
-										<Popover.Content class="z-50 w-64 space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-lg" sideOffset={6}>
-											<div class="space-y-1.5">
-												<span class="text-xs font-medium text-[var(--color-muted)]">{t('travel.guests', 'Guests')}</span>
-												<AutocompleteSelect id="hotel-guests" options={numberOptions(1, 8)} bind:value={hotelGuests} />
-											</div>
-											<div class="space-y-1.5">
-												<span class="text-xs font-medium text-[var(--color-muted)]">{t('travel.rooms', 'Rooms')}</span>
-												<AutocompleteSelect id="hotel-rooms" options={numberOptions(1, 4)} bind:value={hotelRooms} />
-											</div>
-										</Popover.Content>
-									</Popover.Portal>
-								</Popover.Root>
-							</div>
-							<button type="submit" disabled={hotelLoading} class="travel-search-btn">
-								<Search size={15} />
-								{hotelLoading ? t('common.searching', 'Searching…') : t('travel.search_hotels', 'Search Hotels')}
-							</button>
-						</form>
-					{:else if tab === 'bundle'}
-						<form onsubmit={(e) => { e.preventDefault(); searchBundle(); }} class="travel-form">
-							<div class="travel-field">
-								<label for="bundle-origin">{t('travel.origin', 'From')}</label>
-								<div class="travel-input">
-									<Autocomplete
-										id="bundle-origin"
-										freeText
-										placeholder={t('travel.origin_hint', 'City or airport code')}
-										emptyMessage={t('common.no_results', 'No results found')}
-										fetcher={fetchAirportOptions}
-										selectedId={null}
-										selectedLabel={flightOrigin}
-										onSelect={(item) => flightOrigin = item.id}
-										onFreeTextBlur={(q) => flightOrigin = q}
-									/>
-									<MapPin size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<label for="bundle-dest">{t('travel.destination', 'To')}</label>
-								<div class="travel-input">
-									<Autocomplete
-										id="bundle-dest"
-										freeText
-										placeholder={t('travel.destination_hint_flight', 'Where to?')}
-										emptyMessage={t('common.no_results', 'No results found')}
-										fetcher={fetchAirportOptions}
-										selectedId={null}
-										selectedLabel={flightDest}
-										onSelect={(item) => flightDest = item.id}
-										onFreeTextBlur={(q) => flightDest = q}
-									/>
-									<MapPin size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<label for="bundle-date">{t('travel.departure_date', 'Depart')}</label>
-								<div class="travel-input">
-									<input id="bundle-date" type="date" required min={today} bind:value={flightDate} />
-									<CalendarDays size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<label for="bundle-return">{t('travel.return_date', 'Return')}</label>
-								<div class="travel-input">
-									<input id="bundle-return" type="date" min={flightDate || today} bind:value={flightReturn} />
-									<CalendarDays size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<span class="travel-field-label">{t('travel.travelers_class', 'Travelers & Class')}</span>
-								<Popover.Root>
-									<Popover.Trigger class="travel-input travel-popover-trigger">
-										<span class="flex items-center gap-1.5 truncate"><Users size={15} class="text-[var(--color-muted)]" />{travelersSummary}</span>
-										<ChevronDown size={15} class="travel-input-icon" />
-									</Popover.Trigger>
-									<Popover.Portal>
-										<Popover.Content class="z-50 w-64 space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-lg" sideOffset={6}>
-											<div class="space-y-1.5">
-												<span class="text-xs font-medium text-[var(--color-muted)]">{t('travel.adults', 'Adults')}</span>
-												<AutocompleteSelect id="bundle-adults" options={numberOptions(1, 9)} bind:value={flightAdults} />
-											</div>
-											<div class="space-y-1.5">
-												<span class="text-xs font-medium text-[var(--color-muted)]">{t('travel.children', 'Children')}</span>
-												<AutocompleteSelect id="bundle-children" options={numberOptions(0, 8)} bind:value={flightChildren} />
-											</div>
-											{#if cabinOptions.length > 1}
-												<div class="space-y-1.5">
-													<span class="text-xs font-medium text-[var(--color-muted)]">{t('travel.cabin_class', 'Cabin class')}</span>
-													<AutocompleteSelect id="bundle-cabin" options={cabinOptions} bind:value={flightCabin} />
-												</div>
-											{/if}
-										</Popover.Content>
-									</Popover.Portal>
-								</Popover.Root>
-							</div>
-							<div class="travel-field">
-								<label for="bundle-city">{t('travel.stay_city', 'Stay city')}</label>
-								<div class="travel-input">
-									<Autocomplete
-										id="bundle-city"
-										freeText
-										placeholder={t('travel.destination_hint', 'City, hotel, landmark or address')}
-										emptyMessage={t('common.no_results', 'No results found')}
-										fetcher={fetchCityOptions}
-										selectedId={null}
-										selectedLabel={hotelDest}
-										onSelect={(item) => hotelDest = item.label}
-										onFreeTextBlur={(q) => hotelDest = q}
-									/>
-									<MapPin size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<label for="bundle-checkin">{t('travel.check_in', 'Check-in')}</label>
-								<div class="travel-input">
-									<input id="bundle-checkin" type="date" min={today} bind:value={hotelCheckIn} />
-									<CalendarDays size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<label for="bundle-checkout">{t('travel.check_out', 'Check-out')}</label>
-								<div class="travel-input">
-									<input id="bundle-checkout" type="date" min={hotelCheckIn || today} bind:value={hotelCheckOut} />
-									<CalendarDays size={15} class="travel-input-icon" />
-								</div>
-							</div>
-							<div class="travel-field">
-								<span class="travel-field-label">{t('travel.guests_rooms', 'Guests & Rooms')}</span>
-								<Popover.Root>
-									<Popover.Trigger class="travel-input travel-popover-trigger">
-										<span class="flex items-center gap-1.5 truncate"><Users size={15} class="text-[var(--color-muted)]" />{guestsSummary}</span>
-										<ChevronDown size={15} class="travel-input-icon" />
-									</Popover.Trigger>
-									<Popover.Portal>
-										<Popover.Content class="z-50 w-64 space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-lg" sideOffset={6}>
-											<div class="space-y-1.5">
-												<span class="text-xs font-medium text-[var(--color-muted)]">{t('travel.guests', 'Guests')}</span>
-												<AutocompleteSelect id="bundle-guests" options={numberOptions(1, 8)} bind:value={hotelGuests} />
-											</div>
-											<div class="space-y-1.5">
-												<span class="text-xs font-medium text-[var(--color-muted)]">{t('travel.rooms', 'Rooms')}</span>
-												<AutocompleteSelect id="bundle-rooms" options={numberOptions(1, 4)} bind:value={hotelRooms} />
-											</div>
-										</Popover.Content>
-									</Popover.Portal>
-								</Popover.Root>
-							</div>
-							<button type="submit" disabled={flightLoading || hotelLoading} class="travel-search-btn">
-								<Search size={15} />
-								{flightLoading || hotelLoading ? t('common.searching', 'Searching…') : t('travel.search_bundle', 'Search Flight + Hotel')}
-							</button>
-						</form>
-					{:else if tab === 'directory'}
-						<!-- Ref: .jeos/sections/67-travel-search.md (hotel directory, ADR-124) -->
-						<form onsubmit={(e) => { e.preventDefault(); dirSearch(); }} class="travel-form">
-							<div class="travel-field travel-field-wide">
-								<label for="dir-city">{t('travel.destination', 'Destination')}</label>
+								<label for="dir-city">{t('travel.where_going', 'Where are you going?')}</label>
 								<div class="travel-input">
 									<Autocomplete
 										id="dir-city"
 										freeText
-										placeholder={t('travel.directory_city_hint', 'City (optional)')}
+										placeholder={t('travel.destination_hint', 'City, hotel, landmark or address')}
 										emptyMessage={t('common.no_results', 'No results found')}
 										fetcher={fetchCityOptions}
 										selectedId={null}
 										selectedLabel={dirCity}
 										onSelect={(item) => {
 											dirCity = item.label;
-											dirSearch();
+											dirSearch(true);
 										}}
 										onFreeTextBlur={(q) => dirCity = q}
 									/>
@@ -1336,16 +912,16 @@
 							</div>
 							<div class="travel-field">
 								<label for="dir-stars">{t('travel.min_stars', 'Minimum rating')}</label>
-								<AutocompleteSelect id="dir-stars" options={dirStarOptions} bind:value={dirMinStars} onValueChange={() => dirSearch()} />
+								<AutocompleteSelect id="dir-stars" options={dirStarOptions} bind:value={dirMinStars} onValueChange={() => dirSearch(true)} />
 							</div>
 							<button type="submit" disabled={dirLoading} class="travel-search-btn">
 								<Search size={15} />
-								{dirLoading ? t('common.searching', 'Searching…') : t('travel.browse', 'Browse')}
+								{dirLoading ? t('common.searching', 'Searching…') : t('travel.search', 'Search')}
 							</button>
 						</form>
 					{/if}
 
-					{#if chips.length > 0 && tab !== 'directory'}
+					{#if chips.length > 0}
 						<div class="travel-chips">
 							<span class="travel-chips-label">{t('travel.popular_searches', 'Popular searches:')}</span>
 							{#each chips as c (c.key)}
@@ -1357,9 +933,10 @@
 			</div>
 		</div>
 
-		<!-- ═══ Results zone ═══ -->
-		<div class="travel-content" bind:this={resultsEl}>
-			{#if tab === 'flights' || tab === 'airlines'}
+		<!-- ═══ Results zone — flights only. The hotels directory sits
+		     below the discovery rails on that tab instead. ═══ -->
+		{#if tab === 'flights'}
+			<div class="travel-content" bind:this={resultsEl}>
 				{#if flightError}
 					<div class="travel-alert" role="alert">{flightError}</div>
 				{/if}
@@ -1383,6 +960,7 @@
 					<div class="mb-3 flex flex-wrap items-center gap-2">
 						<p class="me-auto text-xs text-[var(--color-muted)]">
 							{t('travel.results', '{count} results', { count: sortedFlights.length })}
+							· {t('travel.fares_for', 'fares for {date}', { date: formatDate(flightDate) })}
 							{#if flightMeta?.source === 'stale'}· {t('travel.stale_results', 'results may be outdated')}{:else if flightMeta?.cache_hit}· {t('travel.cached', 'cached')}{/if}
 						</p>
 
@@ -1430,7 +1008,7 @@
 									<span class="text-sm font-medium text-[var(--color-text)]">{formatMoney(f.price, f.currency, data.currencies)}</span>
 									{#if f.booking_url}
 										<a href={f.booking_url} target="_blank" rel="noopener sponsored" class="flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90">
-											{t('travel.book_now', 'Book now')} <ExternalLink class="rtl:-scale-x-100" size={12} />
+											{t('travel.view_deal', 'View deal')} <ExternalLink class="rtl:-scale-x-100" size={12} />
 										</a>
 									{/if}
 								</div>
@@ -1450,691 +1028,530 @@
 					<EmptyState
 						icon={Plane}
 						title={t('travel.no_flights', 'No flights found')}
-						body={t('travel.no_flights_body', 'Try different dates or nearby airports.')}
+						body={t('travel.no_flights_body', 'Try a different route or nearby airports.')}
 					/>
-				{/if}
-			{:else if tab === 'hotels'}
-				{#if hotelError}
-					<div class="travel-alert" role="alert">{hotelError}</div>
-				{/if}
-
-				{#if hotelLoading}
-					<LoadingSkeleton variant="lines" />
-				{:else if hotelProviderMissing}
-					<EmptyState
-						icon={Hotel}
-						title={t('travel.provider_unavailable', 'No provider configured yet')}
-						body={t('travel.provider_unavailable_hotels_body', 'Hotel search will be available once a provider is configured.')}
-					/>
-				{:else if hotelQuotaExceeded}
-					<EmptyState
-						icon={Hourglass}
-						title={t('travel.quota_exceeded', 'Search quota reached')}
-						body={t('travel.quota_exceeded_body', 'Too many provider requests right now. Wait a few minutes and try again.')}
-						action={{ label: t('common.retry', 'Try again'), onclick: () => searchHotels() }}
-					/>
-				{:else if hotels.length > 0}
-					<div class="mb-3 flex flex-wrap items-center gap-2">
-						<p class="me-auto text-xs text-[var(--color-muted)]">
-							{t('travel.results', '{count} results', { count: sortedHotels.length })}
-							{#if hotelMeta?.source === 'stale'}· {t('travel.stale_results', 'results may be outdated')}{:else if hotelMeta?.cache_hit}· {t('travel.cached', 'cached')}{/if}
-						</p>
-
-						<div class="w-44">
-							<AutocompleteSelect
-								options={hotelSortOptions}
-								bind:value={hotelSort}
-								onValueChange={() => hotelPage = 1}
-								ariaLabel={t('travel.sort_by', 'Sort results')}
-							/>
-						</div>
-
-						<div class="w-24">
-							<AutocompleteSelect
-								options={PAGE_SIZE_OPTIONS}
-								bind:value={hotelPageSize}
-								onValueChange={() => hotelPage = 1}
-								ariaLabel={t('travel.per_page', 'Results per page')}
-							/>
-						</div>
-					</div>
-
-					<div class="space-y-2">
-						{#each pagedHotels as h, i (i)}
-							<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-								{#if h.image_url}
-									<img src={h.image_url} alt="" loading="lazy" class="hidden h-14 w-20 shrink-0 rounded-[var(--radius)] object-cover sm:block" />
-								{/if}
-								<div class="min-w-0 flex-1">
-									<span class="block text-sm font-medium text-[var(--color-text)]">{h.name}</span>
-									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
-										{#if h.star_rating > 0}
-											{('★').repeat(Math.min(5, Math.floor(h.star_rating)))} ·
-										{/if}{h.address}
-										{#if h.check_in && h.check_out}
-											· {formatDate(h.check_in)} → {formatDate(h.check_out)}
-										{/if}
-										{#if displayProvider(h.provider)}
-											· {displayProvider(h.provider)}
-										{/if}
-									</span>
-								</div>
-								<div class="flex items-center gap-3">
-									<span class="text-sm font-medium text-[var(--color-text)]">{formatMoney(h.price, h.currency, data.currencies)}</span>
-									{#if h.booking_url}
-										<a href={h.booking_url} target="_blank" rel="noopener sponsored" class="flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90">
-											{t('travel.book_now', 'Book now')} <ExternalLink class="rtl:-scale-x-100" size={12} />
-										</a>
-									{/if}
-								</div>
-							</div>
-						{/each}
-					</div>
-					{#if hotelTotalPages > 1}
-						<div class="mt-4 flex justify-center">
-							<PaginationControls
-								page={hotelPage}
-								totalPages={hotelTotalPages}
-								onPageChange={(p) => hotelPage = p}
-							/>
-						</div>
-					{/if}
-				{:else if hotelsSearched && !hotelError}
-					<EmptyState
-						icon={Hotel}
-						title={t('travel.no_hotels', 'No hotels found')}
-						body={t('travel.no_hotels_body', 'Try different dates or a nearby destination.')}
-					/>
-				{/if}
-			{:else if tab === 'bundle'}
-				{#if flightError}<div class="travel-alert" role="alert">{flightError}</div>{/if}
-				{#if hotelError}<div class="travel-alert" role="alert">{hotelError}</div>{/if}
-				{#if flightLoading || hotelLoading}
-					<LoadingSkeleton variant="lines" />
-				{:else if flights.length > 0 || hotels.length > 0}
-					<div class="grid gap-6 lg:grid-cols-2">
-						<div>
-							<h3 class="travel-col-title"><Plane size={16} /> {t('travel.bundle_flights', 'Flights')}</h3>
-							{#if flights.length === 0}
-								<EmptyState icon={Plane} title={t('travel.no_flights', 'No flights found')} body={t('travel.no_flights_body', 'Try different dates or nearby airports.')} />
-							{:else}
-								<div class="space-y-2">
-									{#each sortedFlights.slice(0, 4) as f, i (i)}
-										<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-											<div class="min-w-0 flex-1">
-												<span class="block text-sm font-medium text-[var(--color-text)]">{f.airline} {f.flight_number}</span>
-												<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
-													{f.departure_time} → {f.arrival_time} · {#if f.stops === 0}{t('travel.nonstop', 'Nonstop')}{:else}{f.stops} {t('travel.stops', 'stops')}{/if}
-												</span>
-											</div>
-											<span class="text-sm font-medium text-[var(--color-text)]">{formatMoney(f.price, f.currency, data.currencies)}</span>
-										</div>
-									{/each}
-								</div>
-								<button type="button" class="travel-viewall" onclick={() => switchTab('flights')}>
-									{t('travel.view_all_flights', 'View all flights')} <ArrowRight size={13} />
-								</button>
-							{/if}
-						</div>
-						<div>
-							<h3 class="travel-col-title"><Hotel size={16} /> {t('travel.bundle_stays', 'Stays')}</h3>
-							{#if hotels.length === 0}
-								<EmptyState icon={Hotel} title={t('travel.no_hotels', 'No hotels found')} body={t('travel.no_hotels_body', 'Try different dates or a nearby destination.')} />
-							{:else}
-								<div class="space-y-2">
-									{#each sortedHotels.slice(0, 4) as h, i (i)}
-										<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-											{#if h.image_url}
-												<img src={h.image_url} alt="" loading="lazy" class="h-12 w-16 shrink-0 rounded-[var(--radius)] object-cover" />
-											{/if}
-											<div class="min-w-0 flex-1">
-												<span class="block text-sm font-medium text-[var(--color-text)]">{h.name}</span>
-												<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
-													{#if h.star_rating > 0}{('★').repeat(Math.min(5, Math.floor(h.star_rating)))} · {/if}{h.address}
-												</span>
-											</div>
-											<span class="text-sm font-medium text-[var(--color-text)]">{formatMoney(h.price, h.currency, data.currencies)}</span>
-										</div>
-									{/each}
-								</div>
-								<button type="button" class="travel-viewall" onclick={() => switchTab('hotels')}>
-									{t('travel.view_all_stays', 'View all stays')} <ArrowRight size={13} />
-								</button>
-							{/if}
-						</div>
-					</div>
-				{:else if flightsSearched && !flightError}
-					<EmptyState
-						icon={Luggage}
-						title={t('travel.no_bundle', 'Nothing found yet')}
-						body={t('travel.no_bundle_body', 'Try different dates, airports or cities.')}
-					/>
-				{/if}
-			{:else if tab === 'directory'}
-				{#if dirError}
-					<div class="travel-alert" role="alert">{dirError}</div>
-				{/if}
-
-				{#if dirLoading && dirItems.length === 0}
-					<LoadingSkeleton variant="lines" />
-				{:else if dirItems.length > 0}
-					<div class="mb-3 flex flex-wrap items-center gap-2">
-						<p class="me-auto text-xs text-[var(--color-muted)]">
-							{t('travel.directory_count', '{count} hotels in the directory', { count: dirTotal })}
-						</p>
-						<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={dirPageSize} onValueChange={() => dirSearch()} ariaLabel={t('travel.per_page', 'Results per page')} /></div>
-					</div>
-					<div class="stay-grid">
-						{#each dirItems as h, i (i)}
-							<article class="stay-card">
-								{#if h.image_url}
-									<img src={h.image_url} alt="" loading="lazy" class="stay-card-img" />
-								{:else}
-									<div class="stay-card-img stay-card-noimg"><Hotel size={22} /></div>
-								{/if}
-								<div class="stay-card-body">
-									<h4>{h.name}</h4>
-									{#if (h.star_rating ?? 0) > 0}
-										<span class="stay-stars" aria-label={t('travel.stars_label', '{count} star rating', { count: h.star_rating ?? 0 })}>
-											{#each Array(Math.min(5, Math.floor(h.star_rating ?? 0))) as _}<Star size={12} fill="currentColor" />{/each}
-										</span>
-									{/if}
-									<p class="stay-card-meta">
-										{#if h.address}{h.address} · {/if}{titleCase(h.city)}
-									</p>
-									{#if h.last_price}
-										<p class="stay-card-price">
-											{t('travel.from', 'From')} <strong>{formatMoney(h.last_price, h.last_currency ?? 'USD', data.currencies)}</strong>
-											<span>{t('travel.recent_rate', 'recent rate')}</span>
-										</p>
-									{/if}
-								</div>
-							</article>
-						{/each}
-					</div>
-					{#if dirTotalPages > 1}
-						<div class="mt-4 flex justify-center">
-							<PaginationControls page={dirPage} totalPages={dirTotalPages} onPageChange={(p) => loadDirectory(p)} />
-						</div>
-					{/if}
-				{:else if dirLoaded && !dirError}
-					<EmptyState
-						icon={Hotel}
-						title={t('travel.no_directory', 'No hotels in the directory yet')}
-						body={t('travel.no_directory_body', 'The directory grows as hotel searches run — try a hotel search for your destination first.')}
-					/>
-				{/if}
-			{:else if tab === 'airlines'}
-				{#if alError}
-					<div class="travel-alert" role="alert">{alError}</div>
-				{/if}
-			{/if}
-		</div>
-
-		<!-- ═══ Discovery rails (§67 mockups — all data from the directories) ═══ -->
-		{#if tab !== 'directory'}
-			<div class="travel-content travel-rails">
-				{#if tab === 'flights' || tab === 'bundle'}
-					<!-- Popular destinations — derived from the hotel directory -->
-					{#if destinations.length > 0}
-						<section class="travel-section" aria-labelledby="travel-dest-h">
-							<div class="travel-section-head">
-								<div>
-									<h2 id="travel-dest-h">{t('travel.popular_destinations', 'Popular destinations')}</h2>
-									<p>{t('travel.popular_destinations_sub', 'Top picks from travelers like you')}</p>
-								</div>
-								<button type="button" class="travel-link" onclick={() => switchTab('directory')}>
-									{t('travel.view_all_destinations', 'View all destinations')} <ArrowRight size={13} />
-								</button>
-							</div>
-							<div class="dest-row">
-								{#each destinations as d (d.key)}
-									<button type="button" class="dest-card" onclick={() => openDestinationInHotels(d.city)}>
-										{#if d.image}
-											<img src={d.image} alt="" loading="lazy" />
-										{:else}
-											<div class="dest-card-noimg"><MapPin size={22} /></div>
-										{/if}
-										<span class="dest-card-scrim"></span>
-										<span class="dest-card-copy">
-											<strong>{d.city}</strong>
-											{#if d.fromPrice != null}
-												<em>{t('travel.stays_from', 'Stays from')} {formatMoney(d.fromPrice, d.currency, data.currencies)}</em>
-											{/if}
-										</span>
-									</button>
-								{/each}
-							</div>
-						</section>
-					{/if}
-
-					<!-- More than a trip — links out to the relocation toolset -->
-					<section class="travel-section travel-future" aria-labelledby="travel-future-h">
-						<div class="travel-future-copy">
-							<h2 id="travel-future-h">{t('travel.future_title', 'More than a trip. A step toward your future.')}</h2>
-							<p>{t('travel.future_sub', 'Travel with purpose. Plan your journey with tools built for relocation, study, work and new opportunities.')}</p>
-							<a href="/tools" class="travel-outline-btn">{t('travel.explore_tools', 'Explore Relocation Tools')} <ArrowRight size={13} /></a>
-						</div>
-						<div class="travel-future-grid">
-							<a href="/tools/readiness" class="future-item">
-								<span class="future-icon"><Briefcase size={18} /></span>
-								<strong>{t('travel.future_relocation', 'Relocation Ready')}</strong>
-								<span>{t('travel.future_relocation_sub', 'Find routes and info that support your relocation plans.')}</span>
-							</a>
-							<a href="/scholarships" class="future-item">
-								<span class="future-icon"><GraduationCap size={18} /></span>
-								<strong>{t('travel.future_study', 'Study Abroad')}</strong>
-								<span>{t('travel.future_study_sub', 'Travel to your dream school with ease and confidence.')}</span>
-							</a>
-							<a href="/jobs" class="future-item">
-								<span class="future-icon"><Building2 size={18} /></span>
-								<strong>{t('travel.future_work', 'Work Opportunities')}</strong>
-								<span>{t('travel.future_work_sub', 'Explore business trips and job opportunities worldwide.')}</span>
-							</a>
-							<a href="/tools" class="future-item">
-								<span class="future-icon"><Globe size={18} /></span>
-								<strong>{t('travel.future_migrate', 'Migrate Smarter')}</strong>
-								<span>{t('travel.future_migrate_sub', 'Get travel tips and docs guidance for a smooth move.')}</span>
-							</a>
-						</div>
-					</section>
-
-					<!-- Tips / deals / help cards -->
-					<section class="travel-section travel-trio" aria-label={t('travel.extras', 'Travel extras')}>
-						<article class="trio-card trio-lavender">
-							<h3>{t('travel.tips_title', 'Travel tips & guides')}</h3>
-							<p>{t('travel.tips_sub', 'Helpful tips to travel smarter and save more.')}</p>
-							<ul>
-								<li><Check size={13} />{t('travel.tips_1', 'Best time to book flights')}</li>
-								<li><Check size={13} />{t('travel.tips_2', 'Visa requirements by country')}</li>
-								<li><Check size={13} />{t('travel.tips_3', 'Packing checklists')}</li>
-								<li><Check size={13} />{t('travel.tips_4', 'Travel safety tips')}</li>
-							</ul>
-							<a href="/guides" class="travel-link">{t('travel.tips_cta', 'View all guides')} <ArrowRight size={13} /></a>
-						</article>
-						<article class="trio-card trio-mint">
-							<h3>{t('travel.deals_title', 'Travel deals for you')}</h3>
-							<p>{t('travel.deals_sub', 'Exclusive discounts on flights and hotels.')}</p>
-							<ul>
-								<li><Ticket size={13} />{t('travel.deals_1', 'Flight and stay deals picked for you')}</li>
-								<li><Percent size={13} />{t('travel.deals_2', 'Save on hotels worldwide')}</li>
-								<li><GraduationCap size={13} />{t('travel.deals_3', 'Student travel deals')}</li>
-							</ul>
-							<a href="/deals" class="travel-link">{t('travel.deals_cta', 'See all deals')} <ArrowRight size={13} /></a>
-						</article>
-						<article class="trio-card trio-peach">
-							<h3>{t('travel.help_title', 'Need help planning?')}</h3>
-							<p>{t('travel.help_sub', 'Our travel partners are here to help.')}</p>
-							<ul>
-								<li><Check size={13} />{t('travel.help_1', 'Flight booking support')}</li>
-								<li><Check size={13} />{t('travel.help_2', 'Hotel & stay assistance')}</li>
-								<li><Check size={13} />{t('travel.help_3', 'Itinerary planning')}</li>
-							</ul>
-							<a href="/services" class="travel-link">{t('travel.help_cta', 'Contact a Travel Expert')} <ArrowRight size={13} /></a>
-						</article>
-					</section>
-				{:else if tab === 'hotels'}
-					<div class="hotels-layout">
-						<div class="hotels-main">
-							{#if destinations.length > 0}
-								<section class="travel-section" aria-labelledby="hotel-dest-h">
-									<div class="travel-section-head">
-										<div>
-											<h2 id="hotel-dest-h">{t('travel.popular_destinations', 'Popular destinations')}</h2>
-											<p>{t('travel.destinations_sub_hotels', 'Top places travelers love')}</p>
-										</div>
-										<button type="button" class="travel-link" onclick={() => switchTab('directory')}>
-											{t('travel.view_all_destinations', 'View all destinations')} <ArrowRight size={13} />
-										</button>
-									</div>
-									<div class="dest-row">
-										{#each destinations.slice(0, 4) as d (d.key)}
-											<button type="button" class="dest-card" onclick={() => { hotelDest = d.city; }}>
-												{#if d.image}<img src={d.image} alt="" loading="lazy" />{:else}<div class="dest-card-noimg"><MapPin size={22} /></div>{/if}
-												<span class="dest-card-scrim"></span>
-												<span class="dest-card-copy">
-													<strong>{d.city}</strong>
-													{#if d.fromPrice != null}<em>{t('travel.stays_from', 'Stays from')} {formatMoney(d.fromPrice, d.currency, data.currencies)}</em>{/if}
-												</span>
-											</button>
-										{/each}
-									</div>
-								</section>
-							{/if}
-
-							{#if topStays.length > 0}
-								<section class="travel-section" aria-labelledby="hotel-stays-h">
-									<div class="travel-section-head">
-										<div>
-											<h2 id="hotel-stays-h">{t('travel.recommended_stays', 'Recommended stays')}</h2>
-											<p>{t('travel.recommended_stays_sub', 'Top-rated properties for your next trip')}</p>
-										</div>
-										<button type="button" class="travel-link" onclick={() => switchTab('directory')}>
-											{t('travel.view_all_stays', 'View all stays')} <ArrowRight size={13} />
-										</button>
-									</div>
-									<div class="stay-grid">
-										{#each topStays as h (h.hotel_id ?? h.name)}
-											<article class="stay-card">
-												{#if (h.star_rating ?? 0) >= 5}<span class="stay-badge">{t('travel.badge_luxury', 'Luxury')}</span>{/if}
-												{#if h.image_url}
-													<img src={h.image_url} alt="" loading="lazy" class="stay-card-img" />
-												{/if}
-												<div class="stay-card-body">
-													<h4>{h.name}</h4>
-													<span class="stay-stars">
-														{#each Array(Math.min(5, Math.floor(h.star_rating ?? 0))) as _}<Star size={12} fill="currentColor" />{/each}
-													</span>
-													<p class="stay-card-meta">
-														{#if h.address}{h.address} · {/if}{titleCase(h.city)}
-													</p>
-													{#if h.last_price}
-														<p class="stay-card-price">
-															{t('travel.from', 'From')} <strong>{formatMoney(h.last_price, h.last_currency ?? 'USD', data.currencies)}</strong>
-															<span>{t('travel.recent_rate', 'recent rate')}</span>
-														</p>
-													{/if}
-												</div>
-											</article>
-										{/each}
-									</div>
-								</section>
-							{/if}
-						</div>
-
-						<aside class="hotels-rail">
-							<div class="rail-card">
-								<h3>{t('travel.why_book_title', 'Why book with {site}?')}</h3>
-								<ul class="rail-checklist">
-									<li><BadgeCheck size={16} /><div><strong>{t('travel.why_book_1', 'Best price guarantee')}</strong><span>{t('travel.why_book_1_sub', 'We compare 100s of sites')}</span></div></li>
-									<li><ShieldCheck size={16} /><div><strong>{t('travel.why_book_2', 'Secure booking')}</strong><span>{t('travel.why_book_2_sub', 'Your data is safe with us')}</span></div></li>
-									<li><Check size={16} /><div><strong>{t('travel.why_book_3', 'Free cancellation options')}</strong><span>{t('travel.why_book_3_sub', 'On most rooms')}</span></div></li>
-									<li><Headphones size={16} /><div><strong>{t('travel.why_book_4', '24/7 customer support')}</strong><span>{t('travel.why_book_4_sub', "We're here to help")}</span></div></li>
-								</ul>
-							</div>
-
-							{#if !data.user}
-								<div class="rail-card rail-member">
-									<span class="rail-member-icon"><Gem size={18} /></span>
-									<strong>{t('travel.members_title', 'Members save more!')}</strong>
-									<p>{t('travel.members_sub', 'Sign in to unlock member-only prices and deals.')}</p>
-									<a href="/login" class="travel-outline-btn">{t('nav.login', 'Log in')} / {t('nav.signup', 'Sign up')}</a>
-								</div>
-							{/if}
-
-							{#if cityStayCounts.size > 0}
-								<div class="rail-card">
-									<h3>{t('travel.browse_by_city', 'Browse by destination')}</h3>
-									<ul class="rail-citylist">
-										{#each [...cityStayCounts.entries()] as [city, count] (city)}
-											<li>
-												<button type="button" onclick={() => openDestinationInDirectory(city)}>
-													<span class="rail-city-icon"><Hotel size={14} /></span>
-													<span class="rail-city-name">{titleCase(city)}</span>
-													<span class="rail-city-count">{t('travel.stays_count', '{count} stays', { count })}</span>
-												</button>
-											</li>
-										{/each}
-									</ul>
-								</div>
-							{/if}
-						</aside>
-					</div>
-
-					<div class="feature-strip">
-						<div class="feature-item"><span class="feature-icon f-mint"><Check size={16} /></span><div><strong>{t('travel.feature_flexible', 'Flexible options')}</strong><span>{t('travel.feature_flexible_sub', 'Free cancellation on thousands of properties.')}</span></div></div>
-						<div class="feature-item"><span class="feature-icon f-gold"><Ticket size={16} /></span><div><strong>{t('travel.feature_payway', 'Pay your way')}</strong><span>{t('travel.feature_payway_sub', 'Book now, pay later on eligible stays.')}</span></div></div>
-						<div class="feature-item"><span class="feature-icon f-sky"><BadgeCheck size={16} /></span><div><strong>{t('travel.feature_reviews', 'Trusted reviews')}</strong><span>{t('travel.feature_reviews_sub', 'Real guests. Real stays. Real opinions.')}</span></div></div>
-						<div class="feature-item"><span class="feature-icon f-violet"><Gem size={16} /></span><div><strong>{t('travel.feature_rewards', 'Rewards for you')}</strong><span>{t('travel.feature_rewards_sub', 'Earn points with every booking you make.')}</span></div></div>
-					</div>
-				{:else if tab === 'airlines'}
-					{#if alLoading && alItems.length === 0}
-						<section class="travel-section"><LoadingSkeleton variant="lines" /></section>
-					{:else if alItems.length > 0}
-						<section class="travel-section" aria-labelledby="pop-airlines-h">
-							<div class="travel-section-head">
-								<div>
-									<h2 id="pop-airlines-h">{t('travel.popular_airlines', 'Popular airlines')}</h2>
-									<p>{t('travel.popular_airlines_sub', 'Top airlines trusted by travelers on {site}')}</p>
-								</div>
-							</div>
-							<div class="airline-row">
-								{#each showcaseAirlines as a (a.airline_key)}
-									<article class="airline-card">
-										<span class="airline-mark">{a.iata_code ?? a.name.slice(0, 2).toUpperCase()}</span>
-										<h4>{a.name}</h4>
-										<p class="airline-meta">
-											{#if a.iata_code}IATA: {a.iata_code}{/if}
-											{#if a.country} · {a.country}{/if}
-										</p>
-										<p class="airline-via">
-											{#if a.providers.length > 0}
-												{t('travel.bookable_via', 'via')} {a.providers.join(', ')}
-											{:else}
-												{t('travel.catalog_only', 'catalog only')}
-											{/if}
-										</p>
-										<button
-											type="button"
-											class="airline-compare"
-											class:airline-compare-on={compareKeys.includes(a.airline_key)}
-											onclick={() => toggleCompare(a.airline_key)}
-										>
-											{compareKeys.includes(a.airline_key) ? t('travel.comparing', 'Comparing') : t('travel.compare', 'Compare')}
-										</button>
-									</article>
-								{/each}
-							</div>
-						</section>
-
-						<div class="airlines-compare-layout">
-							<section class="travel-section compare-card" aria-labelledby="compare-h">
-								<h2 id="compare-h">{t('travel.compare_title', 'Compare airlines side-by-side')}</h2>
-								<p class="compare-sub">{t('travel.compare_sub', 'Coverage and routes from observed offers.')}</p>
-								<div class="compare-table-wrap">
-									<table class="compare-table">
-										<thead>
-											<tr>
-												<th>{t('travel.compare_airline', 'Airline')}</th>
-												{#each compareAirlines as a (a.airline_key)}
-													<th>
-														<span class="airline-mark airline-mark-sm">{a.iata_code ?? a.name.slice(0, 2).toUpperCase()}</span>
-														{a.name}
-													</th>
-												{/each}
-											</tr>
-										</thead>
-										<tbody>
-											<tr>
-												<td>{t('travel.compare_iata', 'IATA')}</td>
-												{#each compareAirlines as a (a.airline_key)}<td>{a.iata_code ?? '—'}</td>{/each}
-											</tr>
-											<tr>
-												<td>{t('travel.compare_icao', 'ICAO')}</td>
-												{#each compareAirlines as a (a.airline_key)}<td>{a.icao_code ?? '—'}</td>{/each}
-											</tr>
-											<tr>
-												<td>{t('travel.compare_country', 'Country')}</td>
-												{#each compareAirlines as a (a.airline_key)}<td>{a.country || '—'}</td>{/each}
-											</tr>
-											<tr>
-												<td>{t('travel.compare_coverage', 'Bookable via')}</td>
-												{#each compareAirlines as a (a.airline_key)}
-													<td>{a.providers.length > 0 ? a.providers.join(', ') : '—'}</td>
-												{/each}
-											</tr>
-											<tr>
-												<td>{t('travel.compare_status', 'Status')}</td>
-												{#each compareAirlines as a (a.airline_key)}
-													<td>
-														{#if a.observed}
-															<span class="compare-bookable">{t('travel.bookable', 'bookable')}</span>
-														{:else}
-															<span class="text-[var(--color-muted)]">{t('travel.catalog_only', 'catalog only')}</span>
-														{/if}
-													</td>
-												{/each}
-											</tr>
-											<tr>
-												<td>{t('travel.compare_action', 'Action')}</td>
-												{#each compareAirlines as a (a.airline_key)}
-													<td>
-														<button type="button" class="airline-compare" onclick={() => { flightAirline = a.airline_key || a.name; switchTab('flights'); }}>
-															{t('travel.view_flights', 'View flights')}
-														</button>
-													</td>
-												{/each}
-											</tr>
-										</tbody>
-									</table>
-								</div>
-							</section>
-
-							{#if destinations.length > 0}
-								<aside class="rail-card airlines-rail">
-									<h3>{t('travel.trending_destinations', 'Trending destinations')}</h3>
-									<p class="rail-sub">{t('travel.trending_destinations_sub', 'Popular places and the best recent stay rates')}</p>
-									<ul class="rail-citylist">
-										{#each destinations.slice(0, 4) as d (d.key)}
-											<li>
-												<button type="button" onclick={() => openDestinationInHotels(d.city)}>
-													<span class="rail-city-icon"><MapPin size={14} /></span>
-													<span class="rail-city-name">{d.city}</span>
-													{#if d.fromPrice != null}
-														<span class="rail-city-count">{t('travel.from', 'from')} {formatMoney(d.fromPrice, d.currency, data.currencies)}</span>
-													{/if}
-												</button>
-											</li>
-										{/each}
-									</ul>
-								</aside>
-							{/if}
-						</div>
-
-						<div class="feature-strip">
-							<div class="feature-item"><span class="feature-icon f-sky"><Luggage size={16} /></span><div><strong>{t('travel.feature_baggage', 'Baggage made easy')}</strong><span>{t('travel.feature_baggage_sub', 'Compare baggage allowance and avoid surprise fees.')}</span></div></div>
-							<div class="feature-item"><span class="feature-icon f-gold"><Ticket size={16} /></span><div><strong>{t('travel.feature_flextix', 'Flexible tickets')}</strong><span>{t('travel.feature_flextix_sub', 'Find airlines with free changes and refunds.')}</span></div></div>
-							<div class="feature-item"><span class="feature-icon f-violet"><Star size={16} /></span><div><strong>{t('travel.feature_reviews', 'Trusted reviews')}</strong><span>{t('travel.feature_reviews_sub', 'Real guests. Real stays. Real opinions.')}</span></div></div>
-							<div class="feature-item"><span class="feature-icon f-mint"><ShieldCheck size={16} /></span><div><strong>{t('travel.feature_promise', 'Best price promise')}</strong><span>{t('travel.feature_promise_sub', 'We help you find the best fares available.')}</span></div></div>
-						</div>
-
-						<!-- Airline directory browser stays attached to the tab -->
-						<section class="travel-section" aria-labelledby="al-dir-h">
-							<div class="travel-section-head">
-								<div>
-									<h2 id="al-dir-h">{t('travel.airline_directory', 'Airline directory')}</h2>
-									<p>{t('travel.airline_directory_sub', 'Every carrier in the catalog — search by name, code or country.')}</p>
-								</div>
-							</div>
-							<form onsubmit={(e) => { e.preventDefault(); alSearch(); }} class="travel-form travel-form-inline">
-								<div class="travel-field travel-field-wide">
-									<label for="al-q">{t('travel.airline_name', 'Airline')}</label>
-									<div class="travel-input">
-										<input id="al-q" type="search" bind:value={alQuery} placeholder={t('travel.airline_hint', 'Name, IATA code or country…')} />
-									</div>
-								</div>
-								<button type="submit" disabled={alLoading} class="travel-search-btn">
-									<Search size={15} />
-									{alLoading ? t('common.searching', 'Searching…') : t('travel.browse', 'Browse')}
-								</button>
-							</form>
-
-							{#if alItems.length > 0}
-								<div class="mb-3 flex flex-wrap items-center gap-2">
-									<p class="me-auto text-xs text-[var(--color-muted)]">
-										{t('travel.airlines_count', '{count} airlines in the directory', { count: alTotal })}
-									</p>
-									<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={alPageSize} onValueChange={() => alSearch()} ariaLabel={t('travel.per_page', 'Results per page')} /></div>
-								</div>
-								<div class="space-y-2">
-									{#each alItems as a (a.airline_key)}
-										<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-											<div class="min-w-0 flex-1">
-												<span class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-													{#if a.iata_code}
-														<span class="rounded-[var(--radius)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-mono text-xs font-semibold text-[var(--color-primary-text)]">{a.iata_code}</span>
-													{/if}
-													{a.name}
-												</span>
-												<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
-													{a.country}
-													{#if a.providers.length > 0}
-														· {t('travel.bookable_via', 'via')} {a.providers.join(', ')}
-													{:else}
-														· {t('travel.catalog_only', 'catalog only')}
-													{/if}
-												</span>
-											</div>
-											{#if a.observed}
-												<span class="shrink-0 rounded-[var(--radius)] bg-green-500/10 px-2 py-1 text-xs font-medium text-green-600 dark:text-green-400">
-													{t('travel.bookable', 'bookable')}
-												</span>
-											{/if}
-										</div>
-									{/each}
-								</div>
-								{#if alTotalPages > 1}
-									<div class="mt-4 flex justify-center">
-										<PaginationControls page={alPage} totalPages={alTotalPages} onPageChange={(p) => loadAirlines(p)} />
-									</div>
-								{/if}
-							{:else if alLoaded && !alError && !alLoading}
-								<EmptyState
-									icon={Plane}
-									title={t('travel.no_airlines', 'No airlines match')}
-									body={t('travel.no_airlines_body', 'Try a different name, code or country.')}
-								/>
-							{/if}
-						</section>
-					{:else if alLoaded && !alError}
-						<EmptyState
-							icon={Plane}
-							title={t('travel.no_airlines', 'No airlines match')}
-							body={t('travel.no_airlines_body', 'Try a different name, code or country.')}
-						/>
-					{/if}
 				{/if}
 			</div>
 		{/if}
 
-		<!-- ═══ Newsletter band + trust strip + footer (§67 mockups) ═══ -->
-		{#if tab !== 'directory'}
-			<div class="travel-content">
-				{#if data.features?.['feature.newsletter']}
-					<section class="newsletter-band" aria-labelledby="travel-news-h">
-						<div class="newsletter-copy">
-							<span class="newsletter-icon"><Send size={22} /></span>
+		<!-- ═══ Discovery rails (§67 mockups — all data from the directories) ═══ -->
+		<div class="travel-content travel-rails">
+			{#if tab === 'flights'}
+				<!-- Popular destinations — derived from the hotel directory -->
+				{#if destinations.length > 0}
+					<section class="travel-section" aria-labelledby="travel-dest-h">
+						<div class="travel-section-head">
 							<div>
-								<h2 id="travel-news-h">{t('travel.newsletter_title', 'Get travel inspiration & deals')}</h2>
-								<p>{t('travel.newsletter_sub', 'Subscribe to get the best travel deals, tips and inspiration straight to your inbox.')}</p>
+								<h2 id="travel-dest-h">{t('travel.popular_destinations', 'Popular destinations')}</h2>
+								<p>{t('travel.popular_destinations_sub', 'Top picks from travelers like you')}</p>
+							</div>
+							<button type="button" class="travel-link" onclick={browseAllStays}>
+								{t('travel.view_all_destinations', 'View all destinations')} <ArrowRight size={13} />
+							</button>
+						</div>
+						<div class="dest-row">
+							{#each destinations as d (d.key)}
+								<button type="button" class="dest-card" onclick={() => openDestinationInHotels(d.city)}>
+									{#if d.image}
+										<img src={d.image} alt="" loading="lazy" />
+									{:else}
+										<div class="dest-card-noimg"><MapPin size={22} /></div>
+									{/if}
+									<span class="dest-card-scrim"></span>
+									<span class="dest-card-copy">
+										<strong>{d.city}</strong>
+										{#if d.fromPrice != null}
+											<em>{t('travel.stays_from', 'Stays from')} {formatMoney(d.fromPrice, d.currency, data.currencies)}</em>
+										{/if}
+									</span>
+								</button>
+							{/each}
+						</div>
+					</section>
+				{/if}
+
+				<!-- Airline compare (mockup 3 — folded under Flights).
+				     Catalog data from GET /travel/airlines. -->
+				{#if alError}
+					<div class="travel-alert" role="alert">{alError}</div>
+				{/if}
+				{#if alLoading && alItems.length === 0}
+					<section class="travel-section"><LoadingSkeleton variant="lines" /></section>
+				{:else if alItems.length > 0}
+					<section class="travel-section" aria-labelledby="pop-airlines-h">
+						<div class="travel-section-head">
+							<div>
+								<h2 id="pop-airlines-h">{t('travel.popular_airlines', 'Popular airlines')}</h2>
+								<p>{t('travel.popular_airlines_sub', 'Top airlines trusted by travelers on {site}')}</p>
 							</div>
 						</div>
-						<form class="newsletter-form" onsubmit={subscribeNewsletter}>
-							<input
-								type="email"
-								required
-								bind:value={newsletterEmail}
-								placeholder={t('travel.newsletter_placeholder', 'Enter your email address')}
-								aria-label={t('travel.newsletter_placeholder', 'Enter your email address')}
-							/>
-							<button type="submit" disabled={newsletterStatus === 'loading'}>
-								{newsletterStatus === 'loading' ? t('common.loading', 'Loading...') : t('travel.newsletter_cta', 'Subscribe')}
+						<div class="airline-row">
+							{#each showcaseAirlines as a (a.airline_key)}
+								<article class="airline-card">
+									<span class="airline-mark">{a.iata_code ?? a.name.slice(0, 2).toUpperCase()}</span>
+									<h4>{a.name}</h4>
+									<p class="airline-meta">
+										{#if a.iata_code}IATA: {a.iata_code}{/if}
+										{#if a.country} · {a.country}{/if}
+									</p>
+									<p class="airline-via">
+										{#if a.providers.length > 0}
+											{t('travel.bookable_via', 'via')} {a.providers.join(', ')}
+										{:else}
+											{t('travel.catalog_only', 'catalog only')}
+										{/if}
+									</p>
+									<button
+										type="button"
+										class="airline-compare"
+										class:airline-compare-on={compareKeys.includes(a.airline_key)}
+										onclick={() => toggleCompare(a.airline_key)}
+									>
+										{compareKeys.includes(a.airline_key) ? t('travel.comparing', 'Comparing') : t('travel.compare', 'Compare')}
+									</button>
+								</article>
+							{/each}
+						</div>
+					</section>
+
+					<div class="airlines-compare-layout">
+						<section class="travel-section compare-card" aria-labelledby="compare-h">
+							<h2 id="compare-h">{t('travel.compare_title', 'Compare airlines side-by-side')}</h2>
+							<p class="compare-sub">{t('travel.compare_sub', 'Coverage and routes from observed offers.')}</p>
+							<div class="compare-table-wrap">
+								<table class="compare-table">
+									<thead>
+										<tr>
+											<th>{t('travel.compare_airline', 'Airline')}</th>
+											{#each compareAirlines as a (a.airline_key)}
+												<th>
+													<span class="airline-mark airline-mark-sm">{a.iata_code ?? a.name.slice(0, 2).toUpperCase()}</span>
+													{a.name}
+												</th>
+											{/each}
+										</tr>
+									</thead>
+									<tbody>
+										<tr>
+											<td>{t('travel.compare_iata', 'IATA')}</td>
+											{#each compareAirlines as a (a.airline_key)}<td>{a.iata_code ?? '—'}</td>{/each}
+										</tr>
+										<tr>
+											<td>{t('travel.compare_icao', 'ICAO')}</td>
+											{#each compareAirlines as a (a.airline_key)}<td>{a.icao_code ?? '—'}</td>{/each}
+										</tr>
+										<tr>
+											<td>{t('travel.compare_country', 'Country')}</td>
+											{#each compareAirlines as a (a.airline_key)}<td>{a.country || '—'}</td>{/each}
+										</tr>
+										<tr>
+											<td>{t('travel.compare_coverage', 'Bookable via')}</td>
+											{#each compareAirlines as a (a.airline_key)}
+												<td>{a.providers.length > 0 ? a.providers.join(', ') : '—'}</td>
+											{/each}
+										</tr>
+										<tr>
+											<td>{t('travel.compare_status', 'Status')}</td>
+											{#each compareAirlines as a (a.airline_key)}
+												<td>
+													{#if a.observed}
+														<span class="compare-bookable">{t('travel.bookable', 'bookable')}</span>
+													{:else}
+														<span class="text-[var(--color-muted)]">{t('travel.catalog_only', 'catalog only')}</span>
+													{/if}
+												</td>
+											{/each}
+										</tr>
+										<tr>
+											<td>{t('travel.compare_action', 'Action')}</td>
+											{#each compareAirlines as a (a.airline_key)}
+												<td>
+													<button type="button" class="airline-compare" onclick={() => viewAirlineFlights(a)}>
+														{t('travel.view_flights', 'View flights')}
+													</button>
+												</td>
+											{/each}
+										</tr>
+									</tbody>
+								</table>
+							</div>
+						</section>
+
+						{#if destinations.length > 0}
+							<aside class="rail-card airlines-rail">
+								<h3>{t('travel.trending_destinations', 'Trending destinations')}</h3>
+								<p class="rail-sub">{t('travel.trending_destinations_sub', 'Popular places and the best recent stay rates')}</p>
+								<ul class="rail-citylist">
+									{#each destinations.slice(0, 4) as d (d.key)}
+										<li>
+											<button type="button" onclick={() => openDestinationInHotels(d.city)}>
+												<span class="rail-city-icon"><MapPin size={14} /></span>
+												<span class="rail-city-name">{d.city}</span>
+												{#if d.fromPrice != null}
+													<span class="rail-city-count">{t('travel.from', 'from')} {formatMoney(d.fromPrice, d.currency, data.currencies)}</span>
+												{/if}
+											</button>
+										</li>
+									{/each}
+								</ul>
+							</aside>
+						{/if}
+					</div>
+
+					<div class="feature-strip">
+						<div class="feature-item"><span class="feature-icon f-sky"><Luggage size={16} /></span><div><strong>{t('travel.feature_baggage', 'Baggage made easy')}</strong><span>{t('travel.feature_baggage_sub', 'Compare baggage allowance and avoid surprise fees.')}</span></div></div>
+						<div class="feature-item"><span class="feature-icon f-gold"><Ticket size={16} /></span><div><strong>{t('travel.feature_flextix', 'Flexible tickets')}</strong><span>{t('travel.feature_flextix_sub', 'Find airlines with free changes and refunds.')}</span></div></div>
+						<div class="feature-item"><span class="feature-icon f-violet"><Star size={16} /></span><div><strong>{t('travel.feature_coverage', 'Wide coverage')}</strong><span>{t('travel.feature_coverage_sub', 'Compare offers across many carriers.')}</span></div></div>
+						<div class="feature-item"><span class="feature-icon f-mint"><ShieldCheck size={16} /></span><div><strong>{t('travel.feature_promise', 'Best price promise')}</strong><span>{t('travel.feature_promise_sub', 'We help you find the best fares available.')}</span></div></div>
+					</div>
+
+					<!-- Airline directory browser -->
+					<section class="travel-section" aria-labelledby="al-dir-h">
+						<div class="travel-section-head">
+							<div>
+								<h2 id="al-dir-h">{t('travel.airline_directory', 'Airline directory')}</h2>
+								<p>{t('travel.airline_directory_sub', 'Every carrier in the catalog — search by name, code or country.')}</p>
+							</div>
+						</div>
+						<form onsubmit={(e) => { e.preventDefault(); alSearch(); }} class="travel-form travel-form-inline">
+							<div class="travel-field travel-field-wide">
+								<label for="al-q">{t('travel.airline_name', 'Airline')}</label>
+								<div class="travel-input">
+									<input id="al-q" type="search" bind:value={alQuery} placeholder={t('travel.airline_hint', 'Name, IATA code or country…')} />
+								</div>
+							</div>
+							<button type="submit" disabled={alLoading} class="travel-search-btn">
+								<Search size={15} />
+								{alLoading ? t('common.searching', 'Searching…') : t('travel.browse', 'Browse')}
 							</button>
 						</form>
-						{#if newsletterMessage}
-							<p class="newsletter-msg" class:newsletter-msg-err={newsletterStatus === 'error'} role="status">{newsletterMessage}</p>
+
+						{#if alItems.length > 0}
+							<div class="mb-3 flex flex-wrap items-center gap-2">
+								<p class="me-auto text-xs text-[var(--color-muted)]">
+									{t('travel.airlines_count', '{count} airlines in the directory', { count: alTotal })}
+								</p>
+								<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={alPageSize} onValueChange={() => alSearch()} ariaLabel={t('travel.per_page', 'Results per page')} /></div>
+							</div>
+							<div class="space-y-2">
+								{#each alItems as a (a.airline_key)}
+									<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+										<div class="min-w-0 flex-1">
+											<span class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+												{#if a.iata_code}
+													<span class="rounded-[var(--radius)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-mono text-xs font-semibold text-[var(--color-primary-text)]">{a.iata_code}</span>
+												{/if}
+												{a.name}
+											</span>
+											<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
+												{a.country}
+												{#if a.providers.length > 0}
+													· {t('travel.bookable_via', 'via')} {a.providers.join(', ')}
+												{:else}
+													· {t('travel.catalog_only', 'catalog only')}
+												{/if}
+											</span>
+										</div>
+										{#if a.observed}
+											<span class="shrink-0 rounded-[var(--radius)] bg-green-500/10 px-2 py-1 text-xs font-medium text-green-600 dark:text-green-400">
+												{t('travel.bookable', 'bookable')}
+											</span>
+										{/if}
+									</div>
+								{/each}
+							</div>
+							{#if alTotalPages > 1}
+								<div class="mt-4 flex justify-center">
+									<PaginationControls page={alPage} totalPages={alTotalPages} onPageChange={(p) => loadAirlines(p)} />
+								</div>
+							{/if}
+						{:else if alLoaded && !alError && !alLoading}
+							<EmptyState
+								icon={Plane}
+								title={t('travel.no_airlines', 'No airlines match')}
+								body={t('travel.no_airlines_body', 'Try a different name, code or country.')}
+							/>
 						{/if}
 					</section>
 				{/if}
 
-				<div class="trust-strip">
-					<div class="trust-item"><BadgeCheck size={20} /><div><strong>{t('travel.trust_price', 'Best Price Guarantee')}</strong><span>{t('travel.trust_price_sub', 'We compare 100s of sites')}</span></div></div>
-					<div class="trust-item"><Lock size={20} /><div><strong>{t('travel.trust_secure', 'Secure Booking')}</strong><span>{t('travel.trust_secure_sub', 'Your data is safe with us')}</span></div></div>
-					<div class="trust-item"><Headphones size={20} /><div><strong>{t('travel.trust_support', '24/7 Support')}</strong><span>{t('travel.trust_support_sub', "We're here to help")}</span></div></div>
-					<div class="trust-item"><Users size={20} /><div><strong>{t('travel.trust_travelers', 'Trusted by Travelers')}</strong><span>{t('travel.trust_travelers_sub', 'Join thousands globally')}</span></div></div>
+				<!-- More than a trip — links out to the relocation toolset -->
+				<section class="travel-section travel-future" aria-labelledby="travel-future-h">
+					<div class="travel-future-copy">
+						<h2 id="travel-future-h">{t('travel.future_title', 'More than a trip. A step toward your future.')}</h2>
+						<p>{t('travel.future_sub', 'Travel with purpose. Plan your journey with tools built for relocation, study, work and new opportunities.')}</p>
+						<a href="/tools" class="travel-outline-btn">{t('travel.explore_tools', 'Explore Relocation Tools')} <ArrowRight size={13} /></a>
+					</div>
+					<div class="travel-future-grid">
+						<a href="/tools/readiness" class="future-item">
+							<span class="future-icon"><Briefcase size={18} /></span>
+							<strong>{t('travel.future_relocation', 'Relocation Ready')}</strong>
+							<span>{t('travel.future_relocation_sub', 'Find routes and info that support your relocation plans.')}</span>
+						</a>
+						<a href="/scholarships" class="future-item">
+							<span class="future-icon"><GraduationCap size={18} /></span>
+							<strong>{t('travel.future_study', 'Study Abroad')}</strong>
+							<span>{t('travel.future_study_sub', 'Travel to your dream school with ease and confidence.')}</span>
+						</a>
+						<a href="/jobs" class="future-item">
+							<span class="future-icon"><Building2 size={18} /></span>
+							<strong>{t('travel.future_work', 'Work Opportunities')}</strong>
+							<span>{t('travel.future_work_sub', 'Explore business trips and job opportunities worldwide.')}</span>
+						</a>
+						<a href="/tools" class="future-item">
+							<span class="future-icon"><Globe size={18} /></span>
+							<strong>{t('travel.future_migrate', 'Migrate Smarter')}</strong>
+							<span>{t('travel.future_migrate_sub', 'Get travel tips and docs guidance for a smooth move.')}</span>
+						</a>
+					</div>
+				</section>
+
+				<!-- Tips / deals / help cards -->
+				<section class="travel-section travel-trio" aria-label={t('travel.extras', 'Travel extras')}>
+					<article class="trio-card trio-lavender">
+						<h3>{t('travel.tips_title', 'Travel tips & guides')}</h3>
+						<p>{t('travel.tips_sub', 'Helpful tips to travel smarter and save more.')}</p>
+						<ul>
+							<li><Check size={13} />{t('travel.tips_1', 'Best time to book flights')}</li>
+							<li><Check size={13} />{t('travel.tips_2', 'Visa requirements by country')}</li>
+							<li><Check size={13} />{t('travel.tips_3', 'Packing checklists')}</li>
+							<li><Check size={13} />{t('travel.tips_4', 'Travel safety tips')}</li>
+						</ul>
+						<a href="/guides" class="travel-link">{t('travel.tips_cta', 'View all guides')} <ArrowRight size={13} /></a>
+					</article>
+					<article class="trio-card trio-mint">
+						<h3>{t('travel.deals_title', 'Travel deals for you')}</h3>
+						<p>{t('travel.deals_sub', 'Handpicked offers on flights and stays.')}</p>
+						<ul>
+							<li><Ticket size={13} />{t('travel.deals_1', 'Flight and stay deals picked for you')}</li>
+							<li><Percent size={13} />{t('travel.deals_2', 'Save on hotels worldwide')}</li>
+							<li><GraduationCap size={13} />{t('travel.deals_3', 'Student travel deals')}</li>
+						</ul>
+						<a href="/deals" class="travel-link">{t('travel.deals_cta', 'See all deals')} <ArrowRight size={13} /></a>
+					</article>
+					<article class="trio-card trio-peach">
+						<h3>{t('travel.help_title', 'Need help planning?')}</h3>
+						<p>{t('travel.help_sub', 'Our travel partners are here to help.')}</p>
+						<ul>
+							<li><Check size={13} />{t('travel.help_1', 'Flight search help')}</li>
+							<li><Check size={13} />{t('travel.help_2', 'Hotel & stay assistance')}</li>
+							<li><Check size={13} />{t('travel.help_3', 'Itinerary planning')}</li>
+						</ul>
+						<a href="/services" class="travel-link">{t('travel.help_cta', 'Contact a Travel Expert')} <ArrowRight size={13} /></a>
+					</article>
+				</section>
+			{:else}
+				<div class="hotels-layout">
+					<div class="hotels-main">
+						{#if destinations.length > 0}
+							<section class="travel-section" aria-labelledby="hotel-dest-h">
+								<div class="travel-section-head">
+									<div>
+										<h2 id="hotel-dest-h">{t('travel.popular_destinations', 'Popular destinations')}</h2>
+										<p>{t('travel.destinations_sub_hotels', 'Top places travelers love')}</p>
+									</div>
+									<button type="button" class="travel-link" onclick={browseAllStays}>
+										{t('travel.view_all_destinations', 'View all destinations')} <ArrowRight size={13} />
+									</button>
+								</div>
+								<div class="dest-row">
+									{#each destinations.slice(0, 4) as d (d.key)}
+										<button type="button" class="dest-card" onclick={() => openDestinationInHotels(d.city)}>
+											{#if d.image}<img src={d.image} alt="" loading="lazy" />{:else}<div class="dest-card-noimg"><MapPin size={22} /></div>{/if}
+											<span class="dest-card-scrim"></span>
+											<span class="dest-card-copy">
+												<strong>{d.city}</strong>
+												{#if d.fromPrice != null}<em>{t('travel.stays_from', 'Stays from')} {formatMoney(d.fromPrice, d.currency, data.currencies)}</em>{/if}
+											</span>
+										</button>
+									{/each}
+								</div>
+							</section>
+						{/if}
+
+						{#if topStays.length > 0}
+							<section class="travel-section" aria-labelledby="hotel-stays-h">
+								<div class="travel-section-head">
+									<div>
+										<h2 id="hotel-stays-h">{t('travel.recommended_stays', 'Recommended stays')}</h2>
+										<p>{t('travel.recommended_stays_sub', 'Top-rated properties for your next trip')}</p>
+									</div>
+									<button type="button" class="travel-link" onclick={browseAllStays}>
+										{t('travel.view_all_stays', 'View all stays')} <ArrowRight size={13} />
+									</button>
+								</div>
+								<div class="stay-grid">
+									{#each topStays as h (h.hotel_id ?? h.name)}
+										<article class="stay-card">
+											{#if (h.star_rating ?? 0) >= 5}<span class="stay-badge">{t('travel.badge_luxury', 'Luxury')}</span>{/if}
+											{#if h.image_url}
+												<img src={h.image_url} alt="" loading="lazy" class="stay-card-img" />
+											{/if}
+											<div class="stay-card-body">
+												<h4>{h.name}</h4>
+												<span class="stay-stars">
+													{#each Array(Math.min(5, Math.floor(h.star_rating ?? 0))) as _}<Star size={12} fill="currentColor" />{/each}
+												</span>
+												<p class="stay-card-meta">
+													{#if h.address}{h.address} · {/if}{titleCase(h.city)}
+												</p>
+												{#if h.last_price}
+													<p class="stay-card-price">
+														{t('travel.from', 'From')} <strong>{formatMoney(h.last_price, h.last_currency ?? 'USD', data.currencies)}</strong>
+														<span>{t('travel.recent_rate', 'recent rate')}</span>
+													</p>
+												{/if}
+											</div>
+										</article>
+									{/each}
+								</div>
+							</section>
+						{/if}
+					</div>
+
+					<aside class="hotels-rail">
+						<div class="rail-card">
+							<h3>{t('travel.why_book_title', 'Why compare with {site}?')}</h3>
+							<ul class="rail-checklist">
+								<li><BadgeCheck size={16} /><div><strong>{t('travel.why_book_1', 'Best price finder')}</strong><span>{t('travel.why_book_1_sub', 'We compare provider offers')}</span></div></li>
+								<li><ShieldCheck size={16} /><div><strong>{t('travel.why_book_2', 'Private & secure')}</strong><span>{t('travel.why_book_2_sub', 'Your data is safe with us')}</span></div></li>
+								<li><Check size={16} /><div><strong>{t('travel.why_book_3', 'Provider-direct rates')}</strong><span>{t('travel.why_book_3_sub', 'Prices reported by providers')}</span></div></li>
+								<li><Headphones size={16} /><div><strong>{t('travel.why_book_4', '24/7 customer support')}</strong><span>{t('travel.why_book_4_sub', "We're here to help")}</span></div></li>
+							</ul>
+						</div>
+
+						{#if !data.user}
+							<div class="rail-card rail-member">
+								<span class="rail-member-icon"><Gem size={18} /></span>
+								<strong>{t('travel.members_title', 'Members save more!')}</strong>
+								<p>{t('travel.members_sub', 'Sign in to save your searches and picks.')}</p>
+								<a href="/login" class="travel-outline-btn">{t('nav.login', 'Log in')} / {t('nav.signup', 'Sign up')}</a>
+							</div>
+						{/if}
+
+						{#if cityStayCounts.size > 0}
+							<div class="rail-card">
+								<h3>{t('travel.browse_by_city', 'Browse by destination')}</h3>
+								<ul class="rail-citylist">
+									{#each [...cityStayCounts.entries()] as [city, count] (city)}
+										<li>
+											<button type="button" onclick={() => openDestinationInHotels(city)}>
+												<span class="rail-city-icon"><Hotel size={14} /></span>
+												<span class="rail-city-name">{titleCase(city)}</span>
+												<span class="rail-city-count">{t('travel.stays_count', '{count} stays', { count })}</span>
+											</button>
+										</li>
+									{/each}
+								</ul>
+							</div>
+						{/if}
+					</aside>
 				</div>
+
+				<!-- Curated stay directory (ADR-124) — the tab's browsable
+				     inventory, listed after the discovery rails. -->
+				<section class="travel-section" aria-labelledby="dir-h" bind:this={resultsEl}>
+					{#if dirError}
+						<div class="travel-alert" role="alert">{dirError}</div>
+					{/if}
+
+					{#if dirLoading && dirItems.length === 0}
+						<LoadingSkeleton variant="lines" />
+					{:else if dirItems.length > 0}
+						<div class="travel-section-head">
+							<div>
+								<h2 id="dir-h">{t('travel.stay_directory', 'Stay directory')}</h2>
+								<p>{t('travel.directory_count', '{count} hotels in the directory', { count: dirTotal })}</p>
+							</div>
+							<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={dirPageSize} onValueChange={() => dirSearch()} ariaLabel={t('travel.per_page', 'Results per page')} /></div>
+						</div>
+						<div class="stay-grid">
+							{#each dirItems as h, i (i)}
+								<article class="stay-card">
+									{#if h.image_url}
+										<img src={h.image_url} alt="" loading="lazy" class="stay-card-img" />
+									{:else}
+										<div class="stay-card-img stay-card-noimg"><Hotel size={22} /></div>
+									{/if}
+									<div class="stay-card-body">
+										<h4>{h.name}</h4>
+										{#if (h.star_rating ?? 0) > 0}
+											<span class="stay-stars" aria-label={t('travel.stars_label', '{count} star rating', { count: h.star_rating ?? 0 })}>
+												{#each Array(Math.min(5, Math.floor(h.star_rating ?? 0))) as _}<Star size={12} fill="currentColor" />{/each}
+											</span>
+										{/if}
+										<p class="stay-card-meta">
+											{#if h.address}{h.address} · {/if}{titleCase(h.city)}
+										</p>
+										{#if h.last_price}
+											<p class="stay-card-price">
+												{t('travel.from', 'From')} <strong>{formatMoney(h.last_price, h.last_currency ?? 'USD', data.currencies)}</strong>
+												<span>{t('travel.recent_rate', 'recent rate')}</span>
+											</p>
+										{/if}
+									</div>
+								</article>
+							{/each}
+						</div>
+						{#if dirTotalPages > 1}
+							<div class="mt-4 flex justify-center">
+								<PaginationControls page={dirPage} totalPages={dirTotalPages} onPageChange={(p) => loadDirectory(p)} />
+							</div>
+						{/if}
+					{:else if dirLoaded && !dirError}
+						<EmptyState
+							icon={Hotel}
+							title={t('travel.no_stays', 'No stays match your search')}
+							body={t('travel.no_stays_body', 'Try a different city or clear the filters — the directory grows as travelers search.')}
+						/>
+					{/if}
+				</section>
+
+				<div class="feature-strip">
+					<div class="feature-item"><span class="feature-icon f-mint"><Check size={16} /></span><div><strong>{t('travel.feature_flexible', 'Flexible options')}</strong><span>{t('travel.feature_flexible_sub', 'Many providers offer free cancellation and flexible fares.')}</span></div></div>
+					<div class="feature-item"><span class="feature-icon f-gold"><Ticket size={16} /></span><div><strong>{t('travel.feature_payway', 'Provider-direct deals')}</strong><span>{t('travel.feature_payway_sub', 'Offers and rates straight from travel providers.')}</span></div></div>
+					<div class="feature-item"><span class="feature-icon f-sky"><BadgeCheck size={16} /></span><div><strong>{t('travel.feature_reviews', 'Curated stays')}</strong><span>{t('travel.feature_reviews_sub', 'Properties and rates curated from provider data.')}</span></div></div>
+					<div class="feature-item"><span class="feature-icon f-violet"><Gem size={16} /></span><div><strong>{t('travel.feature_rewards', 'Smart savings')}</strong><span>{t('travel.feature_rewards_sub', 'Compare rates to find the best-value options.')}</span></div></div>
+				</div>
+			{/if}
+		</div>
+
+		<!-- ═══ Newsletter band + trust strip + footer (§67 mockups) ═══ -->
+		<div class="travel-content">
+			{#if data.features?.['feature.newsletter']}
+				<section class="newsletter-band" aria-labelledby="travel-news-h">
+					<div class="newsletter-copy">
+						<span class="newsletter-icon"><Send size={22} /></span>
+						<div>
+							<h2 id="travel-news-h">{t('travel.newsletter_title', 'Get travel inspiration & deals')}</h2>
+							<p>{t('travel.newsletter_sub', 'Subscribe to get the best travel deals, tips and inspiration straight to your inbox.')}</p>
+						</div>
+					</div>
+					<form class="newsletter-form" onsubmit={subscribeNewsletter}>
+						<input
+							type="email"
+							required
+							bind:value={newsletterEmail}
+							placeholder={t('travel.newsletter_placeholder', 'Enter your email address')}
+							aria-label={t('travel.newsletter_placeholder', 'Enter your email address')}
+						/>
+						<button type="submit" disabled={newsletterStatus === 'loading'}>
+							{newsletterStatus === 'loading' ? t('common.loading', 'Loading...') : t('travel.newsletter_cta', 'Subscribe')}
+						</button>
+					</form>
+					{#if newsletterMessage}
+						<p class="newsletter-msg" class:newsletter-msg-err={newsletterStatus === 'error'} role="status">{newsletterMessage}</p>
+					{/if}
+				</section>
+			{/if}
+
+			<div class="trust-strip">
+				<div class="trust-item"><BadgeCheck size={20} /><div><strong>{t('travel.trust_price', 'Best price finder')}</strong><span>{t('travel.trust_price_sub', 'We compare provider offers')}</span></div></div>
+				<div class="trust-item"><Lock size={20} /><div><strong>{t('travel.trust_secure', 'Private & secure')}</strong><span>{t('travel.trust_secure_sub', 'Your data is safe with us')}</span></div></div>
+				<div class="trust-item"><Headphones size={20} /><div><strong>{t('travel.trust_support', '24/7 Support')}</strong><span>{t('travel.trust_support_sub', "We're here to help")}</span></div></div>
+				<div class="trust-item"><Users size={20} /><div><strong>{t('travel.trust_travelers', 'Trusted by Travelers')}</strong><span>{t('travel.trust_travelers_sub', 'Join thousands globally')}</span></div></div>
 			</div>
-		{/if}
+		</div>
 
 		<footer class="travel-footer">
 			<div class="travel-footer-inner">
@@ -2234,46 +1651,6 @@
 		color: rgb(255 255 255 / 0.9);
 		max-width: 30rem;
 	}
-	.hero-side-card {
-		flex-shrink: 0;
-		width: 19rem;
-		padding: 1.25rem;
-		border-radius: 1rem;
-		background: rgb(20 20 40 / 0.55);
-		backdrop-filter: blur(12px);
-		border: 1px solid rgb(255 255 255 / 0.15);
-		color: #fff;
-	}
-	.hero-side-icon {
-		display: inline-grid;
-		place-items: center;
-		width: 2.25rem;
-		height: 2.25rem;
-		border-radius: 50%;
-		background: rgb(255 255 255 / 0.15);
-		margin-bottom: 0.5rem;
-	}
-	.hero-side-card h2 {
-		font-size: 0.9375rem;
-		font-weight: 700;
-		margin-bottom: 0.625rem;
-	}
-	.hero-side-card ul {
-		display: grid;
-		gap: 0.5rem;
-	}
-	.hero-side-card li {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.8125rem;
-		color: rgb(255 255 255 / 0.92);
-	}
-	.hero-side-card li :global(svg) {
-		flex-shrink: 0;
-		color: #4ade80;
-	}
-
 	/* ── Search card ──────────────────────────────────────────────────── */
 	.travel-search-wrap {
 		position: relative;
@@ -2335,25 +1712,6 @@
 		white-space: nowrap;
 		cursor: pointer;
 	}
-	.travel-switch {
-		display: inline-block;
-		width: 2rem;
-		height: 1.125rem;
-		border-radius: 999px;
-		background: var(--color-surface-subtle);
-		border: 1px solid var(--color-border);
-		position: relative;
-	}
-	.travel-switch-dot {
-		position: absolute;
-		top: 1px;
-		inset-inline-start: 1px;
-		width: 0.875rem;
-		height: 0.875rem;
-		border-radius: 50%;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-	}
 	.travel-search-body {
 		padding: 1.25rem 1.5rem 1.5rem;
 	}
@@ -2369,8 +1727,7 @@
 	.travel-field-wide {
 		grid-column: span 2;
 	}
-	.travel-field > label,
-	.travel-field > .travel-field-label {
+	.travel-field > label {
 		display: block;
 		font-size: 0.75rem;
 		font-weight: 500;
@@ -2416,14 +1773,6 @@
 		inset-inline-end: 0.625rem;
 		color: var(--color-muted);
 		pointer-events: none;
-	}
-	.travel-popover-trigger {
-		width: 100%;
-		padding: 0 0.625rem;
-		font-size: 0.875rem;
-		color: var(--color-text);
-		cursor: pointer;
-		text-align: start;
 	}
 	.travel-swap {
 		display: grid;
@@ -2539,28 +1888,6 @@
 		padding: 0.75rem;
 		font-size: 0.875rem;
 		color: var(--color-danger);
-	}
-	.travel-col-title {
-		display: flex;
-		align-items: center;
-		gap: 0.4375rem;
-		font-size: 1rem;
-		font-weight: 700;
-		color: var(--color-text);
-		margin-bottom: 0.75rem;
-	}
-	.travel-viewall {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.25rem;
-		margin-top: 0.75rem;
-		font-size: 0.8125rem;
-		font-weight: 600;
-		color: var(--color-primary-text);
-		cursor: pointer;
-	}
-	.travel-viewall:hover {
-		text-decoration: underline;
 	}
 	.travel-form-inline {
 		margin-bottom: 1rem;
@@ -3303,9 +2630,6 @@
 		}
 		.travel-hero-inner {
 			padding-bottom: 4.5rem;
-		}
-		.hero-side-card {
-			display: none;
 		}
 		.travel-search-wrap {
 			margin-top: -2.5rem;
