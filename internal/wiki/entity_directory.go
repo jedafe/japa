@@ -138,14 +138,17 @@ func (s *Service) ListEntityKinds(ctx context.Context) ([]EntityKindDTO, error) 
 	}
 
 	// WithoutCancel: the leader's request may finish before the counts do —
-	// waiters still need the result.
+	// waiters still need the result. WithTimeout re-imposes a hard ceiling so
+	// a stalled DB cannot leak the detached work indefinitely.
 	v, err, _ := entityIndexFlight.Do("kinds", func() (any, error) {
-		return s.listEntityKindsUncached(context.WithoutCancel(ctx))
+		detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		return s.listEntityKindsUncached(detached)
 	})
 	if err != nil {
 		return nil, err
 	}
-	out := v.([]EntityKindDTO)
+	out, _ := v.([]EntityKindDTO)
 
 	if s.vk != nil && ttl > 0 {
 		if raw, err := json.Marshal(out); err == nil {
