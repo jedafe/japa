@@ -3,6 +3,7 @@
   // Extracted into its own component because svelte-check's TSX transform
   // cannot handle `{@html '<style>...'}` inside components that also declare
   // a real <style> block — this file deliberately has none.
+  import { cssTagSafe } from './styleToCss';
   interface Props {
     css: string | null | undefined;
   }
@@ -10,5 +11,5 @@
 </script>
 
 <svelte:head>
-  {@html css ? '<style>' + css + '<\/style>' : ''}
+  {@html css ? '<style>' + cssTagSafe(css) + '<\/style>' : ''}
 </svelte:head>

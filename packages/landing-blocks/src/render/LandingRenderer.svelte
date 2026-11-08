@@ -6,6 +6,7 @@
   import { isBlockVisible, isBlockEmpty, containsGuestBlocks } from './blockVisibility';
   import { setGuestHomeData } from '../data/guestHomeContext';
   import GuestBlockStyles from '../blocks/guest/GuestBlockStyles.svelte';
+  import { cssIdent, cssTagSafe } from '../shell/styleToCss';
 
   interface Props {
     blocks: Block[];
@@ -34,7 +35,7 @@
     const parts: string[] = [];
     for (const block of blocks) {
       if (!isBlockVisible(block, geoCountry) || !block.responsive_visibility) continue;
-      const scope = `[data-rv="${block.id}"]`;
+      const scope = `[data-rv="${cssIdent(block.id)}"]`;
       // Desktop: hide when container is wider than 1024px
       if (block.responsive_visibility.desktop === false) {
         parts.push(`@container (min-width: 1025px) { ${scope} { display: none; } }`);
@@ -53,7 +54,7 @@
 </script>
 
 <svelte:head>
-  {@html responsiveVisibilityCss ? '<style>' + responsiveVisibilityCss + '<\/style>' : ''}
+  {@html responsiveVisibilityCss ? '<style>' + cssTagSafe(responsiveVisibilityCss) + '<\/style>' : ''}
 </svelte:head>
 
 {#if hasGuestBlocks}
@@ -65,7 +66,7 @@
     {#if isBlockVisible(block, geoCountry)}
       {@const meta = blockRegistry[block.type]}
       {#if meta}
-        <div data-rv={block.id}>
+        <div data-rv={cssIdent(block.id)}>
           <BlockShell style={block.style} motion={block.motion} background={block.style?.background} hideIfEmpty={block.visibility_rules?.hide_if_empty} initialHasContent={!isBlockEmpty(block)} scopeKey={block.id}>
             {@const Component = meta.component}
             {#if block.type === 'custom'}

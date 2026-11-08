@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { BlockStyle, MotionConfig, BackgroundConfig } from '../types';
-  import { styleToCss, responsiveStyleToCss, typographyScopeCss, BLUR_MAP } from './styleToCss';
+  import { styleToCss, responsiveStyleToCss, typographyScopeCss, BLUR_MAP, cssTagSafe, cssIdent } from './styleToCss';
   import { setBlockContentContext, type BlockContentContext } from './blockContent';
   import Reveal from './Reveal.svelte';
   import LazyIcon from '../lib/LazyIcon.svelte';
@@ -54,13 +54,13 @@
   // leak to sibling blocks. The ID is derived from the block id when given
   // so it is identical between SSR and hydration.
   // svelte-ignore state_referenced_locally
-  const scopeId = `bs-${scopeKey ?? crypto.randomUUID()}`;
+  const scopeId = `bs-${cssIdent(scopeKey ?? crypto.randomUUID())}`;
   const scopeSelector = `[data-bs="${scopeId}"]`;
   const scopedCss = $derived.by(() => {
     const raw = style?.custom_css;
     if (!raw?.trim()) return null;
     // Replace `&` with the scoped selector `[data-bs="<id>"]`
-    return raw.replace(/&/g, scopeSelector);
+    return cssTagSafe(raw.replace(/&/g, scopeSelector));
   });
   // Responsive container-query CSS from style.responsive overrides.
   const responsiveCss = $derived(responsiveStyleToCss(style, scopeSelector));
@@ -99,9 +99,9 @@
 </script>
 
 <svelte:head>
-  {@html scopedCss ? '<style>' + scopedCss + '<\/style>' : ''}
-  {@html responsiveCss ? '<style>' + responsiveCss + '<\/style>' : ''}
-  {@html typographyCss ? '<style>' + typographyCss + '<\/style>' : ''}
+  {@html scopedCss ? '<style>' + cssTagSafe(scopedCss) + '<\/style>' : ''}
+  {@html responsiveCss ? '<style>' + cssTagSafe(responsiveCss) + '<\/style>' : ''}
+  {@html typographyCss ? '<style>' + cssTagSafe(typographyCss) + '<\/style>' : ''}
 </svelte:head>
 
 {#if !hideIfEmpty || hasContent}

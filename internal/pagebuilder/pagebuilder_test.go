@@ -2,6 +2,7 @@ package pagebuilder
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -264,4 +265,45 @@ func testID() pgtype.UUID {
 	_ = id.Scan("00000000-0000-0000-0000-000000000003")
 
 	return id
+}
+
+func TestSanitizeBlocksJSONHardening(t *testing.T) {
+	t.Parallel()
+
+	raw := json.RawMessage(`[
+		{"id":"ok-uuid_1","type":"hero","props":{"title":"Hi"}},
+		{"id":"evil\"}</style><img>","type":"content","props":{"html":"<img src=x onerror=alert(1)>"}},
+		{"id":"css1","type":"content","props":{"html":"<p>keep</p>"},"style":{"custom_css":"& { color: red; }</style><script>x</script>","responsive":{"tablet":{"custom_css":"& { margin: 0 }</style>"},"mobile":{"custom_css":"& { padding: 1px }"}}}}
+	]`)
+
+	out := sanitizeBlocksJSON(raw)
+
+	var blocks []map[string]any
+	if err := json.Unmarshal(out, &blocks); err != nil {
+		t.Fatalf("output not a block array: %v", err)
+	}
+
+	if blocks[0]["id"] != "ok-uuid_1" {
+		t.Errorf("clean id mutated: %v", blocks[0]["id"])
+	}
+	if blocks[1]["id"] != "evilstyleimg" {
+		t.Errorf("unsafe id not normalized: %v", blocks[1]["id"])
+	}
+
+	props := blocks[1]["props"].(map[string]any)
+	if props["html"] == "<img src=x onerror=alert(1)>" {
+		t.Error("content props.html was not sanitized")
+	}
+
+	style := blocks[2]["style"].(map[string]any)
+	if strings.Contains(style["custom_css"].(string), "</") {
+		t.Errorf("custom_css still contains </ : %v", style["custom_css"])
+	}
+	resp := style["responsive"].(map[string]any)
+	if strings.Contains(resp["tablet"].(map[string]any)["custom_css"].(string), "</") {
+		t.Error("responsive tablet custom_css still contains </")
+	}
+	if resp["mobile"].(map[string]any)["custom_css"].(string) != "& { padding: 1px }" {
+		t.Error("clean responsive custom_css was mutated")
+	}
 }

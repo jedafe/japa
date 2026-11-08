@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { CardGridProps } from '../types';
   import LazyIcon from '../lib/LazyIcon.svelte';
+  import { cssIdent, cssTagSafe } from '../shell/styleToCss';
 
   interface Props {
     props: CardGridProps;
@@ -10,7 +11,7 @@
 
   // Unique ID for this card-grid instance — used to scope responsive CSS.
   // Use the stable block id so SSR and client produce the same value (no hydration mismatch).
-  const gridId = $derived(id ? `cg-${id}` : `cg-${crypto.randomUUID()}`);
+  const gridId = $derived(id ? `cg-${cssIdent(id)}` : `cg-${crypto.randomUUID()}`);
 
   // Base desktop column count (clamped 1–6).
   const desktopCols = $derived(Math.max(1, Math.min(6, props.columns ?? 3)));
@@ -42,7 +43,7 @@
 </script>
 
 <svelte:head>
-  {@html responsiveCss ? '<style>' + responsiveCss + '<\/style>' : ''}
+  {@html responsiveCss ? '<style>' + cssTagSafe(responsiveCss) + '<\/style>' : ''}
 </svelte:head>
 
 {#if props.card_variant === 'overlay'}

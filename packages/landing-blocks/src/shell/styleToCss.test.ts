@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { styleToCss, responsiveStyleToCss } from './styleToCss';
+import { styleToCss, responsiveStyleToCss, responsiveVisibilityCss, cssTagSafe, cssIdent, cssUrl } from './styleToCss';
 
 describe('styleToCss', () => {
   it('returns empty for undefined style', () => {
@@ -222,5 +222,49 @@ describe('responsiveStyleToCss', () => {
       '[data-bs="abc"]'
     );
     expect(css).toContain('@container (min-width: 769px) and (max-width: 1024px)');
+  });
+});
+
+describe('css injection hardening', () => {
+  it('cssTagSafe strips closing-tag sequences', () => {
+    expect(cssTagSafe('a { color: red; }')).toBe('a { color: red; }');
+    expect(cssTagSafe('x {}</style><script>alert(1)</script>')).toBe('x {}style><script>alert(1)script>');
+  });
+
+  it('cssIdent keeps only selector-safe characters', () => {
+    expect(cssIdent('abc-123_DEF')).toBe('abc-123_DEF');
+    expect(cssIdent('a"}</style><img>')).toBe('astyleimg');
+  });
+
+  it('cssUrl quotes the URL and strips breakout chars', () => {
+    expect(cssUrl('https://cdn.example.com/a.png')).toBe('url("https://cdn.example.com/a.png")');
+    expect(cssUrl('https://x/");}</style>')).toBe('url("https://x/;}/style")');
+    expect(cssUrl('javascript:alert(1)')).toBe('url("javascript:alert1")');
+  });
+
+  it('responsiveStyleToCss strips </ from responsive custom_css', () => {
+    const css = responsiveStyleToCss(
+      { responsive: { mobile: { custom_css: '& { color: red; }</style><script>x</script>' } } },
+      '[data-bs="abc"]'
+    );
+    expect(css).toContain('[data-bs="abc"] { color: red; }');
+    expect(css).not.toContain('</style>');
+  });
+
+  it('responsiveVisibilityCss sanitizes block ids in selectors', () => {
+    const css = responsiveVisibilityCss([
+      { id: 'evil"}</style><img>', responsive_visibility: { mobile: false } },
+    ]);
+    expect(css).toContain('[data-bs="bs-evilstyleimg"]');
+    expect(css).not.toContain('</style>');
+    expect(css).not.toContain('evil"}');
+  });
+
+  it('responsiveStyleToCss quotes background image URLs', () => {
+    const css = responsiveStyleToCss(
+      { responsive: { mobile: { background: { type: 'image', image: { media_id: 'm1', url: 'https://cdn.example.com/a.png', alt: '', fit: 'cover' } } } } },
+      '[data-bs="abc"]'
+    );
+    expect(css).toContain('background-image: url("https://cdn.example.com/a.png")');
   });
 });

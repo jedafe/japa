@@ -407,6 +407,33 @@ func sanitizeBlocksJSON(raw json.RawMessage) json.RawMessage {
 	}
 
 	for _, block := range blocks {
+		// Normalize the block id — it is interpolated into CSS selectors and
+		// data-* attributes by the landing-blocks renderer, so restrict it to
+		// the same [\w-] charset the frontend cssIdent helper applies.
+		if id, ok := block["id"].(string); ok {
+			if safe := sanitizeBlockID(id); safe != id {
+				block["id"] = safe
+			}
+		}
+
+		// `</` can never appear in valid CSS — strip it from custom_css so the
+		// value cannot close the literal <style> tag the renderer injects it
+		// into via {@html} (same contract as the frontend cssTagSafe helper).
+		if style, ok := block["style"].(map[string]any); ok {
+			if css, ok := style["custom_css"].(string); ok {
+				style["custom_css"] = strings.ReplaceAll(css, "</", "")
+			}
+			if responsive, ok := style["responsive"].(map[string]any); ok {
+				for _, bp := range []string{"desktop", "tablet", "mobile"} {
+					if ov, ok := responsive[bp].(map[string]any); ok {
+						if css, ok := ov["custom_css"].(string); ok {
+							ov["custom_css"] = strings.ReplaceAll(css, "</", "")
+						}
+					}
+				}
+			}
+		}
+
 		blockType, _ := block["type"].(string)
 		if blockType != "content" {
 			continue
@@ -428,6 +455,19 @@ func sanitizeBlocksJSON(raw json.RawMessage) json.RawMessage {
 	}
 
 	return result
+}
+
+// sanitizeBlockID strips everything outside the [\w-] charset — the same set
+// the frontend cssIdent helper keeps — so block ids can never break CSS
+// selectors or data-* attributes they are interpolated into.
+func sanitizeBlockID(id string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '-' || r == '_' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return -1
+	}, id)
 }
 
 // DeletePage removes a page and invalidates its cache.

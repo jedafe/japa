@@ -1,5 +1,26 @@
 import type { BlockStyle } from '../types';
 
+/**
+ * `</` can never appear in valid CSS — it exists only to close the literal
+ * `<style>` tag this text is injected into via `{@html}` (same contract as
+ * main's sanitizeCustomCss). Strip it at emission and at render boundaries.
+ */
+export function cssTagSafe(css: string): string {
+  return css.replace(/<\//g, '');
+}
+
+/** Restrict a value to selector-safe chars for `[data-*="..."]` scopes —
+ * a `"` or `}` in a block id would otherwise break the selector/declaration. */
+export function cssIdent(v: string): string {
+  return v.replace(/[^\w-]/g, '');
+}
+
+/** Quote a URL for safe `url(...)` interpolation — unquoted URLs are
+ * breakout-prone via `)`, quotes, or `</`. */
+export function cssUrl(v: string): string {
+  return `url("${v.replace(/["'\\()<>]/g, '')}")`;
+}
+
 export interface ResolvedStyle {
   classes: string;
   inline: Record<string, string>;
@@ -403,13 +424,13 @@ function styleToCssDeclarations(style: Partial<BlockStyle>): string[] {
       const angle = bg.gradient.angle === 'radial' ? 'radial' : `${bg.gradient.angle}deg`;
       decls.push(`background: linear-gradient(${angle}, ${bg.gradient.from}, ${bg.gradient.to})`);
     } else if (bg.type === 'image' && bg.image?.url) {
-      decls.push(`background-image: url(${bg.image.url})`);
+      decls.push(`background-image: ${cssUrl(bg.image.url)}`);
       decls.push(`background-size: ${bg.image.fit === 'contain' ? 'contain' : 'cover'}`);
       decls.push(`background-repeat: ${bg.image.fit === 'repeat' ? 'repeat' : 'no-repeat'}`);
       decls.push(`background-position: center`);
       if (bg.image.fit === 'fixed') decls.push(`background-attachment: fixed`);
     } else if (bg.type === 'video' && bg.video?.poster) {
-      decls.push(`background-image: url(${bg.video.poster})`);
+      decls.push(`background-image: ${cssUrl(bg.video.poster)}`);
       decls.push(`background-size: cover`);
       decls.push(`background-position: center`);
     } else if (bg.type === 'none') decls.push('background: none');
@@ -489,7 +510,7 @@ export function responsiveStyleToCss(style: BlockStyle | undefined, scopeSelecto
     }
     // Per-device custom CSS — same `&` scoping as the base custom_css.
     if (override.custom_css?.trim()) {
-      rules.push(override.custom_css.replace(/&/g, scopeSelector));
+      rules.push(cssTagSafe(override.custom_css.replace(/&/g, scopeSelector)));
     }
     if (rules.length === 0) continue;
     const query = breakpointQuery(breakpoint);
@@ -525,7 +546,7 @@ export function responsiveVisibilityCss(blocks: Array<{ id: string; responsive_v
   for (const b of blocks) {
     const rv = b.responsive_visibility;
     if (!rv) continue;
-    const sel = `[data-bs="bs-${b.id}"]`;
+    const sel = `[data-bs="bs-${cssIdent(b.id)}"]`;
     if (rv.desktop === false) parts.push(`@container (min-width: ${BREAKPOINTS.tablet + 1}px) { ${sel} { display: none !important; } }`);
     if (rv.tablet === false) parts.push(`@container (min-width: ${BREAKPOINTS.mobile + 1}px) and (max-width: ${BREAKPOINTS.tablet}px) { ${sel} { display: none !important; } }`);
     if (rv.mobile === false) parts.push(`@container (max-width: ${BREAKPOINTS.mobile}px) { ${sel} { display: none !important; } }`);

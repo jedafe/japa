@@ -5,6 +5,7 @@
   import { isBlockVisible, isBlockEmpty } from '../render/blockVisibility';
   import BlockShell from '../shell/BlockShell.svelte';
   import { getBlockContentContext } from '../shell/blockContent';
+  import { cssIdent, cssTagSafe } from '../shell/styleToCss';
 
   interface Props {
     props: ContainerProps;
@@ -70,7 +71,7 @@
 
   // Unique ID for this container instance — used to scope responsive CSS.
   // Use the stable block id when available so SSR and client match (no hydration mismatch).
-  const containerId = $derived(id ? `ctr-${id}` : `ctr-${crypto.randomUUID()}`);
+  const containerId = $derived(id ? `ctr-${cssIdent(id)}` : `ctr-${crypto.randomUUID()}`);
 
   // Generate responsive CSS for per-device column overrides + child visibility.
   // Uses @container queries so they respond to the preview container width
@@ -190,7 +191,7 @@
 </script>
 
 <svelte:head>
-  {@html allCss ? '<style>' + allCss + '<\/style>' : ''}
+  {@html allCss ? '<style>' + cssTagSafe(allCss) + '<\/style>' : ''}
 </svelte:head>
 
 <section class="w-full {widthClass} mx-auto" style={minHeightStyle}>
