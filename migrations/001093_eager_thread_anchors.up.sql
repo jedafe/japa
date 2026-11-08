@@ -64,7 +64,7 @@ WITH new_threads AS (
           SELECT 1 FROM thread_anchors ta
           WHERE ta.entity_type = 'wiki_page' AND ta.entity_key = wp.id::text
       )
-    ON CONFLICT (slug) DO NOTHING
+    ON CONFLICT DO NOTHING
     RETURNING id, slug
 )
 INSERT INTO thread_anchors (content_id, entity_type, entity_key, entity_url, entity_title, entity_summary)
@@ -134,7 +134,7 @@ WITH tool_slugs (slug, title, summary) AS (
         SELECT 1 FROM thread_anchors ta
         WHERE ta.entity_type = 'tool' AND ta.entity_key = ts.slug
     )
-    ON CONFLICT (slug) DO NOTHING
+    ON CONFLICT DO NOTHING
     RETURNING id, slug
 )
 INSERT INTO thread_anchors (content_id, entity_type, entity_key, entity_url, entity_title, entity_summary)

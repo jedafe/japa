@@ -108,7 +108,13 @@ LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN users su ON su.id = ft.solved_by_user_id
 LEFT JOIN user_profiles sup ON sup.user_id = ft.solved_by_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ft.slug = @slug AND ft.deleted_at IS NULL;
+-- Match the forum slug OR the backing contents row's slug — the backfill
+-- may dedupe contents slugs, so /thread/{contents-slug} must still render
+-- the forum thread (unified-discussion spec). Forum-slug match wins on
+-- the (theoretical) cross-table slug collision.
+WHERE (ft.slug = @slug OR c.slug = @slug) AND ft.deleted_at IS NULL
+ORDER BY (ft.slug = @slug) DESC
+LIMIT 1;
 
 -- name: GetForumThreadSpaceAccess :one
 -- Resolves the containing space's visibility + the viewer's membership for

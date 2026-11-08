@@ -795,7 +795,9 @@ LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN users su ON su.id = ft.solved_by_user_id
 LEFT JOIN user_profiles sup ON sup.user_id = ft.solved_by_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ft.slug = $1 AND ft.deleted_at IS NULL
+WHERE (ft.slug = $1 OR c.slug = $1) AND ft.deleted_at IS NULL
+ORDER BY (ft.slug = $1) DESC
+LIMIT 1
 `
 
 type GetForumThreadBySlugWithDetailsRow struct {
@@ -840,6 +842,10 @@ type GetForumThreadBySlugWithDetailsRow struct {
 // response. When is_anonymous = true, author fields are nulled out so
 // the frontend never receives identifying data for anonymous posts.
 // =====================
+// Match the forum slug OR the backing contents row's slug — the backfill
+// may dedupe contents slugs, so /thread/{contents-slug} must still render
+// the forum thread (unified-discussion spec). Forum-slug match wins on
+// the (theoretical) cross-table slug collision.
 func (q *Queries) GetForumThreadBySlugWithDetails(ctx context.Context, slug string) (GetForumThreadBySlugWithDetailsRow, error) {
 	row := q.db.QueryRow(ctx, getForumThreadBySlugWithDetails, slug)
 	var i GetForumThreadBySlugWithDetailsRow
