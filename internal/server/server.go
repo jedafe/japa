@@ -3754,6 +3754,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Tighter tiers are applied to specific subgroups below.
 			r.Use(mw.BaselineRateLimit(vkClient.Redis()))
 
+			// Backstop body cap: json.NewDecoder/ReadAll sites that don't
+			// set their own limit would otherwise read unbounded bodies.
+			// Multipart/raw-octet uploads are exempt (they self-cap or
+			// stream behind pending-upload records). 16 MiB covers every
+			// legitimate JSON payload with headroom.
+			r.Use(mw.RequestBodyLimit(16 << 20))
+
 			// Literal safety net (§14): resolves any {{...}} still present in
 			// JSON response bodies so endpoints that don't call a resolver
 			// explicitly can't leak raw template syntax. Skips ?raw=1 (edit
@@ -9429,6 +9436,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// Audit finding M1: (re)issue the csrf_token cookie for control-panel
 		// requests so the SPA always has a valid double-submit token available.
 		r.Use(csrf.EnsureCookie(cfg.CookieDomain, cfg.IsProduction()))
+
+		// Same JSON-body backstop as /api/v1 — control routes don't carry
+		// bulk payloads.
+		r.Use(mw.RequestBodyLimit(16 << 20))
 
 		r.Route("/control", func(r chi.Router) {
 			// System Settings — canonical RBAC per Section 21.
