@@ -866,6 +866,9 @@ export interface ForumReply {
 	ama_pending?: boolean;
 	/** §88: when the pending AMA question was approved by the host. */
 	ama_approved_at?: string | null;
+	/** §49 comments rendered through ReplyThread carry their pin flag
+	 *  (forum replies have no pin concept). */
+	is_pinned?: boolean;
 }
 
 /** Vote entity type accepted by POST /thread/vote. */

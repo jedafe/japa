@@ -17,7 +17,8 @@ import type { ThreadEmbed } from '#lib/components/thread/ThreadEmbedView.svelte'
  *   kind 'embed' — any other contents row: §49 discussion (possibly a
  *     thread_anchors row for a tool/wiki page, or a linked-discussion
  *     thread about a parent content) or another CPT reached via a thread
- *     URL. Renders ThreadEmbedCard + the CommentThread engine.
+ *     URL. Renders ThreadEmbedCard + the ReplyThread conversation engine
+ *     (§49 comments — the one reply UI for every discussion).
  *
  * Parallel fetches (forum kind):
  *   - GET /thread/{slug}         → the thread

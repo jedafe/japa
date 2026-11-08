@@ -6,11 +6,13 @@
 	// engine (comments post to the backing contents row).
 	// Ref: docs/superpowers/specs/2026-11-08-thread-rename-unified-discussions-design.md
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { ArrowLeft } from 'lucide-svelte';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import ThreadEmbedCard from '#lib/components/thread/ThreadEmbedCard.svelte';
-	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import ReplyThread from '#lib/components/forum/ReplyThread.svelte';
+	import { commentsApi, commentsConversation, listAllComments } from '#lib/components/forum/conversationApi.js';
 	import { tiptapBodyToHtml } from '#lib/tiptap/serialize.js';
 	import type { ContentArticle } from '#lib/types/content.js';
 	import type { Comment } from '#lib/types/index.js';
@@ -58,6 +60,24 @@
 				})
 			: ''
 	);
+
+	// Unified conversation (thread-rename spec: ReplyThread renders every
+	// discussion). The SSR seed is the top-level page only — a client pass
+	// pulls descendants so the tree renders complete. invalidateAll() after
+	// any post/edit/delete re-seeds and re-runs this effect.
+	const convApi = $derived(commentsApi(article.id));
+	let conversation = $state(
+		untrack(() => commentsConversation(data.comments, data.article.id))
+	);
+	$effect(() => {
+		const seeded = data.comments;
+		conversation = commentsConversation(seeded, data.article.id);
+		if (seeded.some((c) => (c.reply_count ?? 0) > 0) || (data.commentsTotal ?? 0) > seeded.length) {
+			void listAllComments(data.article.id).then((all) => {
+				conversation = commentsConversation(all, data.article.id);
+			});
+		}
+	});
 	const robots = $derived(
 		data.indexable === false || data.seoIndexable === false ? 'noindex,nofollow' : ''
 	);
@@ -106,18 +126,24 @@
 			<div class="tiptap-body mt-4">{@html bodyHtml}</div>
 		{/if}
 
-		<!-- Unified comment engine (Section 49) — the whole point of the
-		     thread page: discussion happens here, not on the entity page. -->
-		<CommentThread
-			comments={data.comments}
-			totalCount={article.comment_count}
-			commentsTotal={data.commentsTotal}
-			contentId={article.id}
-			contentType={article.content_type}
+		<!-- Unified conversation (Section 49 comments via the §08 reply UI)
+		     — the whole point of the thread page: discussion happens here,
+		     not on the entity page. -->
+		{#if data.commentsLoadError}
+			<p class="mt-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-muted)]">
+				{t('comments.load_error', 'Could not load comments right now.')}
+			</p>
+		{/if}
+		<ReplyThread
+			replies={conversation.replies}
+			threadId={article.id}
+			backend={convApi}
 			authed={data.authed}
-			currentUserId={data.currentUserId}
+			canSolve={false}
+			acceptedReplyId={null}
+			userVotes={conversation.userVotes}
 			canModerate={data.canModerate}
-			loadError={data.commentsLoadError}
+			currentUserId={data.currentUserId}
 			{deletedUserIds}
 		/>
 	</article>

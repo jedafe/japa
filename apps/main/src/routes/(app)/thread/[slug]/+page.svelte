@@ -2,7 +2,7 @@
 	// /thread/{slug} dispatch — the server load resolves the slug against the
 	// forum API first, then the content API (thread-rename spec):
 	//   'forum' → §08 engine view, identical to the old /forum/{slug} page
-	//   'embed' → entity embed card + CommentThread (tool/wiki anchor threads,
+	//   'embed' → entity embed card + ReplyThread (tool/wiki anchor threads,
 	//             §49 linked discussions, other CPTs reached via /thread)
 	import ForumThreadView from '#lib/components/thread/ForumThreadView.svelte';
 	import ThreadEmbedView from '#lib/components/thread/ThreadEmbedView.svelte';

@@ -31,6 +31,10 @@
 		layout?: 'vertical' | 'horizontal' | 'rail';
 		/** Auth gating: only render interactive controls when true. */
 		authed: boolean;
+		/** Vote backend — 'forum' hits /thread/{id}/vote (default); 'comments'
+		 *  hits /comments/{id}/vote for §49 entity conversations
+		 *  (thread-rename spec: ReplyThread renders every discussion). */
+		backend?: 'forum' | 'comments';
 	}
 	let {
 		entityType,
@@ -40,7 +44,8 @@
 		score: initialScore,
 		userVote: initialVote = 0,
 		layout = 'horizontal',
-		authed
+		authed,
+		backend = 'forum'
 	}: Props = $props();
 
 	// Score and the viewer's vote track the server props directly — derived
@@ -115,12 +120,16 @@
 		optimisticDelta = prevDelta + (next - prevVote);
 
 		const res =
-			next === 0
-				? await api.delete<unknown>(`/thread/${id}/vote?entity_type=${encodeURIComponent(entityType)}`)
-				: await api.post<ForumVote>(`/thread/${id}/vote`, {
-						entity_type: entityType,
-						value: next
-					});
+			backend === 'comments'
+				? next === 0
+					? await api.delete<unknown>(`/comments/${id}/vote`)
+					: await api.post<ForumVote>(`/comments/${id}/vote`, { value: next })
+				: next === 0
+					? await api.delete<unknown>(`/thread/${id}/vote?entity_type=${encodeURIComponent(entityType)}`)
+					: await api.post<ForumVote>(`/thread/${id}/vote`, {
+							entity_type: entityType,
+							value: next
+						});
 		pending = false;
 
 		if (res.error) {

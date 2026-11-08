@@ -2,16 +2,19 @@
 	import { CornerUpLeft } from 'lucide-svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
-	import { api } from '#lib/api/client.js';
 	import { t } from '#lib/i18n/index.js';
 	import type { ForumReply } from '#lib/types/index.js';
 	import ReplyItem from './ReplyItem.svelte';
 	import LazyCommentEditor from '#lib/components/comments/LazyCommentEditor.svelte';
+	import { forumApi, type ConversationBackend } from './conversationApi.js';
 
 	interface Props {
 		/** Flat list of all replies for the thread (parent_reply_id links them). */
 		replies: ForumReply[];
 		threadId: string;
+		/** Conversation backend — defaults to the §08 forum replies API.
+		 *  Entity threads (thread-rename spec) pass commentsApi(contentId). */
+		backend?: ConversationBackend;
 		authed: boolean;
 		/** OP or moderator — controls the "mark as solved" affordance. */
 		canSolve: boolean;
@@ -34,7 +37,9 @@
 		/** Callback to mark a specific reply as the accepted answer. */
 		onMarkSolved?: (replyId: string) => void;
 	}
-	let { replies, threadId, authed, canSolve, acceptedReplyId, userVotes, canModerate, currentUserId, deletedUserIds, hostUserId, isHost, onMarkSolved }: Props = $props();
+	let { replies, threadId, backend, authed, canSolve, acceptedReplyId, userVotes, canModerate, currentUserId, deletedUserIds, hostUserId, isHost, onMarkSolved }: Props = $props();
+
+	const convApi = $derived(backend ?? forumApi(threadId));
 
 	// Build a parent → children map from the flat reply list. Uses $derived so
 	// the tree is computed synchronously during SSR (not deferred to $effect,
@@ -70,9 +75,9 @@
 		if (!(await requireAuthOrRedirect())) return;
 		if (!topBody) return;
 		topSubmitting = true;
-		const res = await api.post<ForumReply>(`/thread/${threadId}/replies`, { body: topBody });
+		const created = await convApi.postReply(null, topBody);
 		topSubmitting = false;
-		if (res.error || !res.data) return;
+		if (!created) return;
 		topBody = '';
 		resetNonce++;
 		// Refetch so the new reply renders with the joined author row — the
@@ -139,6 +144,7 @@
 					{childrenOf}
 					depth={0}
 					{threadId}
+					backend={convApi}
 					{authed}
 					{canSolve}
 					isAccepted={acceptedReplyId === reply.id}

@@ -8,7 +8,7 @@
 		Plus,
 		Share2,
 		MoreHorizontal,
-		Check, Flag } from 'lucide-svelte';
+		Check, Flag, Pin } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
@@ -23,6 +23,7 @@
 	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
 	import type { ForumReply } from '#lib/types/index.js';
 	import VoteRail from './VoteRail.svelte';
+	import { forumApi, type ConversationBackend } from './conversationApi.js';
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
 	// Reply view count is recorded via POST /thread/replies/{id}/view when the
 	// reply is first visible in the viewport.
@@ -36,6 +37,9 @@
 		childrenOf: (id: string) => ForumReply[];
 		depth: number;
 		threadId: string;
+		/** Conversation backend — defaults to the §08 forum replies API.
+		 *  Entity threads pass the §49 comments adapter (thread-rename spec). */
+		backend?: ConversationBackend;
 		authed: boolean;
 		/** Whether the current user can mark this thread solved (OP/mod). */
 		canSolve: boolean;
@@ -63,6 +67,7 @@
 		childrenOf,
 		depth,
 		threadId,
+		backend,
 		authed,
 		canSolve,
 		isAccepted,
@@ -76,6 +81,8 @@
 	}: Props = $props();
 
 	const myVote = $derived.by(() => (userVotes?.[reply.id] ?? 0) as 1 | -1 | 0);
+
+	const convApi = $derived(backend ?? forumApi(threadId));
 
 	const MAX_DEPTH = 6;
 	const bodyHtml = $derived(
@@ -101,12 +108,27 @@
 	let approving = $state(false);
 	let approvedLocally = $state(false);
 
+	// §49 pin affordance — comments backend only (convApi.pin). Optimistic
+	// toggle seeded from the normalized comment's is_pinned flag.
+	let pinned = $state(untrack(() => !!reply.is_pinned));
+	let pinPending = $state(false);
+
+	async function togglePin() {
+		if (pinPending || !convApi.pin) return;
+		pinPending = true;
+		const next = !pinned;
+		const ok = await convApi.pin(reply.id, next);
+		pinPending = false;
+		if (ok) pinned = next;
+	}
+
 	// §88 AMA: is this a pending question awaiting host approval?
 	const isPending = $derived(!!reply.ama_pending && !approvedLocally);
 
 	// §88: host approves a pending question via POST /thread/ama/:id/questions/:replyId/approve
+	// — forum threads only; entity conversations never carry AMA state.
 	async function approveQuestion() {
-		if (approving) return;
+		if (approving || convApi.kind !== 'forum') return;
 		approving = true;
 		const res = await api.post(`/thread/ama/${threadId}/questions/${reply.id}/approve`, {});
 		approving = false;
@@ -186,7 +208,7 @@
 		const observer = new IntersectionObserver(
 			(entries) => {
 				if (entries[0]?.isIntersecting) {
-					api.post(`/thread/replies/${reply.id}/view`, {}, { 'x-silent-error': '1' });
+					convApi.recordView(reply.id);
 					viewRecorded = true;
 					observer.disconnect();
 				}
@@ -201,9 +223,11 @@
 	// Reply edit window mirrors the parent thread's edit_window_minutes: the
 	// thread page passes it via `reply.edit_window_minutes` when present,
 	// defaulting to 30. Authors see a countdown; the edit entry disables
-	// once the window lapses (moderators bypass it).
+	// once the window lapses (moderators bypass it). §49 comments only flag
+	// is_edited after their window — they never hard-block the edit button.
 	const replyWindowMinutes = $derived((reply as { edit_window_minutes?: number }).edit_window_minutes ?? 30);
 	const replyEditExpired = $derived.by(() => {
+		if (!convApi.editWindowApplies) return false;
 		if (canModerate || currentUserId !== reply.author_user_id) return false;
 		const created = new Date(reply.created_at).getTime();
 		if (Number.isNaN(created)) return false;
@@ -238,12 +262,9 @@
 		if (!replyBody || submitting) return;
 		if (!(await requireAuthOrRedirect())) return;
 		submitting = true;
-		const res = await api.post<ForumReply>(`/thread/${threadId}/replies`, {
-			body: replyBody,
-			parent_reply_id: reply.id
-		});
+		const created = await convApi.postReply(reply.id, replyBody);
 		submitting = false;
-		if (res.error || !res.data) return;
+		if (!created) return;
 		replyBody = '';
 		composing = false;
 		collapsed = false;
@@ -258,9 +279,8 @@
 		// Fetch the raw (unresolved) body so authored {{...}} literals survive a
 		// re-save — the display payload is resolved and CommentEditor reads
 		// initialBody once at mount.
-		const res = await api.get<ForumReply[]>(`/thread/${threadId}/replies?raw=1`);
-		const raw = res.data?.find((r) => r.id === reply.id);
-		editBody = raw?.body ?? reply.body;
+		const raw = await convApi.fetchRawBody(reply.id);
+		editBody = raw ?? reply.body;
 		editing = true;
 	}
 
@@ -268,16 +288,13 @@
 		if (savingEdit || !canEditReplyInWindow || !editBody) return;
 		savingEdit = true;
 		editError = null;
-		const res = await api.patch<ForumReply>(`/thread/replies/${reply.id}`, {
-			body: editBody,
-			is_anonymous: reply.is_anonymous
-		});
+		const err = await convApi.editReply(reply.id, editBody, reply.is_anonymous);
 		savingEdit = false;
-		if (res.error || !res.data) {
+		if (err) {
 			editError =
-				res.error?.code === 'edit_window_expired'
+				err.code === 'edit_window_expired'
 					? t('forum.edit_window_expired', 'The edit window has expired.')
-					: res.error?.message || t('forum.edit_error', 'Failed to save edits.');
+					: err.error || t('forum.edit_error', 'Failed to save edits.');
 			return;
 		}
 		// Load-data props aren't deeply reactive — mutating reply.* fields
@@ -291,10 +308,10 @@
 		if (!confirm(t('forum.delete_reply_confirm', 'Delete this reply? This cannot be undone.'))) return;
 		deleting = true;
 		deleteError = null;
-		const res = await api.delete(`/thread/replies/${reply.id}`);
+		const err = await convApi.deleteReply(reply.id);
 		deleting = false;
-		if (res.error) {
-			deleteError = res.error.message || t('forum.delete_error', 'Failed to delete reply.');
+		if (err) {
+			deleteError = err.error || t('forum.delete_error', 'Failed to delete reply.');
 			return;
 		}
 		removed = true;
@@ -362,6 +379,13 @@
 									<CheckCircle2 size={10} /> {t('forum.accepted', 'Accepted')}
 								</span>
 							{/if}
+							{#if pinned}
+								<span
+									class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary-text)]"
+								>
+									<Pin size={10} /> {t('comments.pinned', 'Pinned')}
+								</span>
+							{/if}
 							{#if isHostReply}
 								<span
 									class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary-text)]"
@@ -398,6 +422,13 @@
 							class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-success)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-success)]"
 						>
 							<CheckCircle2 size={10} /> {t('forum.accepted', 'Accepted')}
+						</span>
+					{/if}
+					{#if pinned}
+						<span
+							class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary-text)]"
+						>
+							<Pin size={10} /> {t('comments.pinned', 'Pinned')}
 						</span>
 					{/if}
 					{#if isPending}
@@ -487,24 +518,29 @@
 						layout="horizontal"
 						{authed}
 						userVote={myVote}
+						backend={convApi.voteBackend}
 					/>
 
-					<!-- Visible for guests — clicking redirects to /login. -->
-					<button
-						type="button"
-						onclick={() => {
-							if (!authed) {
-								void requireAuthOrRedirect();
-								return;
-							}
-							composing = !composing;
-						}}
-						class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
-						aria-label={t('forum.reply', 'Reply')}
-						title={t('forum.reply', 'Reply')}
-					>
-						<Reply class="rtl:-scale-x-100" size={18} />
-					</button>
+					<!-- Visible for guests — clicking redirects to /login.
+					     §49 comments cap nesting at depth 3 — hide the affordance
+					     where the backend would reject the reply. -->
+					{#if depth < convApi.maxDepth}
+						<button
+							type="button"
+							onclick={() => {
+								if (!authed) {
+									void requireAuthOrRedirect();
+									return;
+								}
+								composing = !composing;
+							}}
+							class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							aria-label={t('forum.reply', 'Reply')}
+							title={t('forum.reply', 'Reply')}
+						>
+							<Reply class="rtl:-scale-x-100" size={18} />
+						</button>
+					{/if}
 
 					<button
 						type="button"
@@ -516,7 +552,7 @@
 						{#if copied}<Check size={18} class="text-[var(--color-success)]" />{:else}<Share2 size={18} />{/if}
 					</button>
 
-					{#if (canEditReply || canDeleteReply || canMarkSolved || (isPending && isHost) || canReport) && !removed}
+					{#if (canEditReply || canDeleteReply || canMarkSolved || (isPending && isHost) || (convApi.pin && canModerate) || canReport) && !removed}
 						<Menu contentClass="min-w-44">
 							{#snippet trigger(props)}
 								<button
@@ -541,6 +577,11 @@
 							{#if isPending && isHost}
 								<MenuItem icon={CheckCircle2} onSelect={approveQuestion} disabled={approving}>
 									{approving ? t('common.loading', 'Loading') : t('ama.approve', 'Approve')}
+								</MenuItem>
+							{/if}
+							{#if convApi.pin && canModerate}
+								<MenuItem icon={Pin} onSelect={togglePin} disabled={pinPending}>
+									{pinned ? t('comments.unpin', 'Unpin') : t('comments.pin', 'Pin')}
 								</MenuItem>
 							{/if}
 							{#if canReport}
@@ -605,6 +646,7 @@
 									{childrenOf}
 									depth={beyondMaxDepth ? depth : depth + 1}
 									{threadId}
+									backend={convApi}
 									{authed}
 									{canSolve}
 									isAccepted={false}
@@ -672,4 +714,4 @@
 	}
 </style>
 
-<ReportDialog bind:open={reportOpen} entityType="forum_reply" entityId={reply.id} entityName={t('comments.report_entity', 'reply')} />
+<ReportDialog bind:open={reportOpen} entityType={convApi.reportEntity} entityId={reply.id} entityName={t('comments.report_entity', 'reply')} />
