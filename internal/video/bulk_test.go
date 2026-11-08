@@ -195,6 +195,7 @@ func (f *fakeRowsForBulk) FieldDescriptions() []pgconn.FieldDescription { return
 func (f *fakeRowsForBulk) Next() bool                                   { return false }
 func (f *fakeRowsForBulk) Scan(...any) error                            { return nil }
 func (f *fakeRowsForBulk) Values() ([]any, error)                       { return nil, nil }
+func (f *fakeRowsForBulk) TypeMap() *pgtype.Map                         { return pgtype.NewMap() }
 func (f *fakeRowsForBulk) RawValues() [][]byte                          { return nil }
 func (f *fakeRowsForBulk) Conn() *pgx.Conn                              { return nil }
 

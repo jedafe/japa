@@ -59,6 +59,7 @@ func (r *matrixFakeRows) Scan(dest ...any) error {
 }
 
 func (r *matrixFakeRows) Values() ([]any, error) { return r.rows[r.pos-1], nil }
+func (r *matrixFakeRows) TypeMap() *pgtype.Map   { return pgtype.NewMap() }
 func (r *matrixFakeRows) RawValues() [][]byte    { return nil }
 func (r *matrixFakeRows) Conn() *pgx.Conn        { return nil }
 

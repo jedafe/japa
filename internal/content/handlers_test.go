@@ -642,6 +642,7 @@ func (emptyRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
 func (emptyRows) Next() bool                                   { return false }
 func (emptyRows) Scan(...any) error                            { return errors.New("emptyRows: no rows") }
 func (emptyRows) Values() ([]any, error)                       { return nil, nil }
+func (emptyRows) TypeMap() *pgtype.Map                         { return pgtype.NewMap() }
 func (emptyRows) RawValues() [][]byte                          { return nil }
 func (emptyRows) Conn() *pgx.Conn                              { return nil }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // fakeRow implements pgx.Row for QueryRow tests.
@@ -79,6 +80,7 @@ func (r *fakeRows) Scan(dest ...any) error {
 	return nil
 }
 func (r *fakeRows) Values() ([]any, error) { return r.rows[r.pos-1], nil }
+func (r *fakeRows) TypeMap() *pgtype.Map   { return pgtype.NewMap() }
 func (r *fakeRows) RawValues() [][]byte    { return nil }
 func (r *fakeRows) Conn() *pgx.Conn        { return nil }
 
