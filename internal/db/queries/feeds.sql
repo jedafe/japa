@@ -10,7 +10,8 @@ ON CONFLICT (user_id, content_id) DO NOTHING;
 -- sort: 'relevant' ranks by the content's best linked geo proximity to the
 -- visitor, then velocity and reaction count — the closest relevance proxy
 -- for guests, who have no user interest embedding. 'latest' switches to a
--- plain created_at DESC chronological order.
+-- plain COALESCE(published_at, created_at) DESC chronological order — the
+-- went-live timestamp, not draft creation.
 WITH content_geo AS (
  SELECT cs.content_id,
  COALESCE(MAX(CASE
@@ -91,7 +92,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
- CASE WHEN @sort = 'latest' THEN EXTRACT(EPOCH FROM c.created_at)::float8 END DESC,
+ CASE WHEN @sort = 'latest' THEN COALESCE(c.published_at, c.created_at) END DESC,
  COALESCE(MAX(cg.geo_proximity), 1) DESC,
  cs.velocity_score DESC,
  cs.reaction_count DESC
@@ -152,8 +153,9 @@ LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE f.user_id = @user_id
  AND c.status = 'published'
  AND c.deleted_at IS NULL
- -- 'top' is a rolling-window popular sort — other sorts see the full set.
- AND (@sort <> 'top' OR c.created_at > now() - make_interval(days := @top_window_days::int))
+ -- 'top' is a rolling-window popular sort measured from published_at (the
+ -- went-live timestamp, not draft creation) — other sorts see the full set.
+ AND (@sort <> 'top' OR COALESCE(c.published_at, c.created_at) > now() - make_interval(days := @top_window_days::int))
  AND NOT EXISTS (
  SELECT 1 FROM user_blocks ub
  WHERE ((ub.blocker_id = @user_id AND ub.blocked_id = c.author_id)
@@ -176,14 +178,14 @@ ORDER BY
  CASE WHEN @sort = 'relevant' THEN
  COALESCE(cs.velocity_score, 0)::float8
  + LN(1 + COALESCE(cs.reaction_count, 0)::float8)
- + 2.0 * POWER(0.5, GREATEST(EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600.0, 0)::float8 / GREATEST(@half_life_hours::float8, 1.0))
+ + 2.0 * POWER(0.5, GREATEST(EXTRACT(EPOCH FROM (now() - COALESCE(c.published_at, c.created_at))) / 3600.0, 0)::float8 / GREATEST(@half_life_hours::float8, 1.0))
  END DESC,
  f.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetSpaceFeed :many
 -- Posts in a specific space.
--- sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+-- sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC).
 -- 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
 -- @viewer_id is nullable — when present, mutual user_blocks are excluded (§41).
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
@@ -248,12 +250,12 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
 ORDER BY
  CASE WHEN @sort = 'top' THEN cs.reaction_count END DESC,
  CASE WHEN @sort = 'rising' THEN cs.velocity_score END DESC,
- c.created_at DESC
+ COALESCE(c.published_at, c.created_at) DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetProfileFeed :many
 -- All public posts by a specific user.
--- sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+-- sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC).
 -- 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
 -- @viewer_id is nullable — when present, mutual user_blocks are excluded (§41).
 -- If the viewer has blocked the profile owner (or vice versa), the profile
@@ -321,7 +323,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
 ORDER BY
  CASE WHEN @sort = 'top' THEN cs.reaction_count END DESC,
  CASE WHEN @sort = 'rising' THEN cs.velocity_score END DESC,
- c.created_at DESC
+ COALESCE(c.published_at, c.created_at) DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetTopFeed :many
@@ -395,7 +397,7 @@ LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
- AND c.created_at > now() - make_interval(days := @top_window_days::int)
+ AND COALESCE(c.published_at, c.created_at) > now() - make_interval(days := @top_window_days::int)
  -- §106: exclude synthetic video channel content from discovery feeds.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
@@ -562,7 +564,7 @@ WITH affinity AS (
  WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
- AND c.created_at >= @window_start
+ AND COALESCE(c.published_at, c.created_at) >= @window_start
  AND c.author_id <> @exclude_author_id
  AND NOT EXISTS (
  SELECT 1 FROM user_blocks ub
@@ -577,7 +579,7 @@ WITH affinity AS (
  WHERE ct.content_id = c.id AND ct.tag_id = ANY(COALESCE(@tag_ids::uuid[], ARRAY[]::uuid[]))
  )
  )
- ORDER BY c.created_at DESC
+ ORDER BY COALESCE(c.published_at, c.created_at) DESC
  LIMIT @affinity_limit
 ),
 velocity AS (
@@ -587,7 +589,7 @@ velocity AS (
  WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
- AND c.created_at >= @window_start
+ AND COALESCE(c.published_at, c.created_at) >= @window_start
  AND c.author_id <> @exclude_author_id
  AND NOT EXISTS (
  SELECT 1 FROM user_blocks ub
@@ -653,7 +655,9 @@ author_points AS (
  GROUP BY ca.author_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
- c.created_at, c.view_count, c.comment_count,
+ -- Went-live timestamp (not draft creation) — drives recency decay, the
+ -- 'latest' sort, and the card timestamp downstream.
+ COALESCE(c.published_at, c.created_at) AS created_at, c.view_count, c.comment_count,
  cs.vote_score, cs.velocity_score, cs.bookmark_count,
  COALESCE(cs.reaction_count, 0) AS reaction_count,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,

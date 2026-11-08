@@ -110,7 +110,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
- CASE WHEN $1 = 'latest' THEN EXTRACT(EPOCH FROM c.created_at)::float8 END DESC,
+ CASE WHEN $1 = 'latest' THEN COALESCE(c.published_at, c.created_at) END DESC,
  COALESCE(MAX(cg.geo_proximity), 1) DESC,
  cs.velocity_score DESC,
  cs.reaction_count DESC
@@ -174,7 +174,8 @@ type GetExploreFeedRow struct {
 // sort: 'relevant' ranks by the content's best linked geo proximity to the
 // visitor, then velocity and reaction count — the closest relevance proxy
 // for guests, who have no user interest embedding. 'latest' switches to a
-// plain created_at DESC chronological order.
+// plain COALESCE(published_at, created_at) DESC chronological order — the
+// went-live timestamp, not draft creation.
 func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) ([]GetExploreFeedRow, error) {
 	rows, err := q.db.Query(ctx, getExploreFeed,
 		arg.Sort,
@@ -298,7 +299,7 @@ WITH affinity AS (
  WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
- AND c.created_at >= $5
+ AND COALESCE(c.published_at, c.created_at) >= $5
  AND c.author_id <> $6
  AND NOT EXISTS (
  SELECT 1 FROM user_blocks ub
@@ -313,7 +314,7 @@ WITH affinity AS (
  WHERE ct.content_id = c.id AND ct.tag_id = ANY(COALESCE($3::uuid[], ARRAY[]::uuid[]))
  )
  )
- ORDER BY c.created_at DESC
+ ORDER BY COALESCE(c.published_at, c.created_at) DESC
  LIMIT $7
 ),
 velocity AS (
@@ -323,7 +324,7 @@ velocity AS (
  WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
- AND c.created_at >= $5
+ AND COALESCE(c.published_at, c.created_at) >= $5
  AND c.author_id <> $6
  AND NOT EXISTS (
  SELECT 1 FROM user_blocks ub
@@ -383,7 +384,9 @@ author_points AS (
  GROUP BY ca.author_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
- c.created_at, c.view_count, c.comment_count,
+ -- Went-live timestamp (not draft creation) — drives recency decay, the
+ -- 'latest' sort, and the card timestamp downstream.
+ COALESCE(c.published_at, c.created_at) AS created_at, c.view_count, c.comment_count,
  cs.vote_score, cs.velocity_score, cs.bookmark_count,
  COALESCE(cs.reaction_count, 0) AS reaction_count,
  COALESCE(up.display_name, u.public_username, u.username, '') AS author_name,
@@ -671,8 +674,9 @@ LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE f.user_id = $1
  AND c.status = 'published'
  AND c.deleted_at IS NULL
- -- 'top' is a rolling-window popular sort — other sorts see the full set.
- AND ($2 <> 'top' OR c.created_at > now() - make_interval(days := $3::int))
+ -- 'top' is a rolling-window popular sort measured from published_at (the
+ -- went-live timestamp, not draft creation) — other sorts see the full set.
+ AND ($2 <> 'top' OR COALESCE(c.published_at, c.created_at) > now() - make_interval(days := $3::int))
  AND NOT EXISTS (
  SELECT 1 FROM user_blocks ub
  WHERE ((ub.blocker_id = $1 AND ub.blocked_id = c.author_id)
@@ -695,7 +699,7 @@ ORDER BY
  CASE WHEN $2 = 'relevant' THEN
  COALESCE(cs.velocity_score, 0)::float8
  + LN(1 + COALESCE(cs.reaction_count, 0)::float8)
- + 2.0 * POWER(0.5, GREATEST(EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600.0, 0)::float8 / GREATEST($4::float8, 1.0))
+ + 2.0 * POWER(0.5, GREATEST(EXTRACT(EPOCH FROM (now() - COALESCE(c.published_at, c.created_at))) / 3600.0, 0)::float8 / GREATEST($4::float8, 1.0))
  END DESC,
  f.created_at DESC
 LIMIT $6 OFFSET $5
@@ -901,7 +905,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
 ORDER BY
  CASE WHEN $3 = 'top' THEN cs.reaction_count END DESC,
  CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
- c.created_at DESC
+ COALESCE(c.published_at, c.created_at) DESC
 LIMIT $5 OFFSET $4
 `
 
@@ -958,7 +962,7 @@ type GetProfileFeedRow struct {
 }
 
 // All public posts by a specific user.
-// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC).
 // 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
 // @viewer_id is nullable — when present, mutual user_blocks are excluded (§41).
 // If the viewer has blocked the profile owner (or vice versa), the profile
@@ -1297,7 +1301,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
 ORDER BY
  CASE WHEN $3 = 'top' THEN cs.reaction_count END DESC,
  CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
- c.created_at DESC
+ COALESCE(c.published_at, c.created_at) DESC
 LIMIT $5 OFFSET $4
 `
 
@@ -1353,7 +1357,7 @@ type GetSpaceFeedRow struct {
 }
 
 // Posts in a specific space.
-// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC).
 // 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
 // @viewer_id is nullable — when present, mutual user_blocks are excluded (§41).
 func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]GetSpaceFeedRow, error) {
@@ -1492,7 +1496,7 @@ LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
- AND c.created_at > now() - make_interval(days := $1::int)
+ AND COALESCE(c.published_at, c.created_at) > now() - make_interval(days := $1::int)
  -- §106: exclude synthetic video channel content from discovery feeds.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,

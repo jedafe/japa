@@ -523,7 +523,7 @@ func (s *Service) getPrimaryFeedItems(ctx context.Context, userID pgtype.UUID, s
 }
 
 // getSpaceFeedItems returns space-specific feed with sort.
-// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC).
 // 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
 // viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
 func (s *Service) getSpaceFeedItems(ctx context.Context, spaceID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
@@ -536,7 +536,7 @@ func (s *Service) getSpaceFeedItems(ctx context.Context, spaceID, viewerID pgtyp
 }
 
 // getProfileFeedItems returns a user's public posts with sort.
-// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
+// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC).
 // 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
 // viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
 func (s *Service) getProfileFeedItems(ctx context.Context, authorID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
