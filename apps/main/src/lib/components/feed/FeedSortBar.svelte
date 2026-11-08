@@ -39,7 +39,7 @@
 	{#each chips as chip (chip.value)}
 		<a
 			href={hrefFor(chip.value)}
-			data-sveltekit-noscroll
+			data-sveltekit-reset="false"
 			aria-current={sort === chip.value ? 'true' : undefined}
 			class="rounded-full px-3 py-1 text-xs font-medium transition-colors {sort === chip.value
 				? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'

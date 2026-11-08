@@ -23,7 +23,7 @@
 	{#each tabs as tab (tab.key)}
 		<a
 			href={tab.href}
-			data-sveltekit-noscroll
+			data-sveltekit-reset="false"
 			aria-current={active === tab.key ? 'page' : undefined}
 			class="relative flex shrink-0 items-center px-4 text-sm font-medium transition-colors {active === tab.key
 				? 'text-[var(--color-text)]'

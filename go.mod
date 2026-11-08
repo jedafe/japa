@@ -5,7 +5,7 @@ go 1.26.10
 require (
 	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/SherClockHolmes/webpush-go v1.4.0
-	github.com/alicebob/miniredis/v2 v2.38.0
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/gen2brain/webp v0.6.4
 	github.com/getsentry/sentry-go v0.50.0
 	github.com/go-chi/chi/v5 v5.5.0

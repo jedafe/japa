@@ -39,6 +39,11 @@ export default defineConfig({
 					})
 		})
 	],
+	// Keep every workspace resolving to the single .bun store copy of svelte —
+	// a second copy crashes hydration (AGENTS.md).
+	resolve: {
+		dedupe: ['svelte']
+	},
 	clearScreen: false,
 	server: {
 		port: 3010,

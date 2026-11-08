@@ -39,7 +39,7 @@
 				{#each groupSections as sect (sect.slug)}
 					<a
 						href="/settings/{sect.slug}"
-						data-sveltekit-noscroll
+						data-sveltekit-reset="false"
 						aria-current={activeSection === sect.slug ? 'page' : undefined}
 						class="relative flex shrink-0 items-center px-4 py-2 text-sm font-medium transition-colors {activeSection === sect.slug
 							? 'text-[var(--color-text)]'
