@@ -504,6 +504,33 @@ func TestResolve_GeoParamPinsCountry(t *testing.T) {
 	}
 }
 
+func TestResolve_GeoParamKeepsJourneyContext(t *testing.T) {
+	t.Parallel()
+
+	// ?geo= overrides ContentCountry only — journey params still enrich the
+	// context (an explicit geo switch must not erase origin/intent signals).
+	res := NewResolver(nil, nil, nil)
+	req := withGeoIP(httptest.NewRequest(http.MethodGet, "/feed?geo=gb&journey_origin=ng&journey_intent=work", nil),
+		geoip.GeoContext{CountryCode: "FR", IsValid: true})
+
+	vc := res.resolve(req)
+	if vc.ContentCountry != "GB" {
+		t.Errorf("ContentCountry = %q, want GB", vc.ContentCountry)
+	}
+
+	if vc.Source != "query" {
+		t.Errorf("Source = %q, want query", vc.Source)
+	}
+
+	if vc.OriginCountry != "NG" {
+		t.Errorf("OriginCountry = %q, want NG (journey params survive ?geo=)", vc.OriginCountry)
+	}
+
+	if vc.JapaIntent == "" {
+		t.Error("JapaIntent empty — journey params must enrich even under ?geo=")
+	}
+}
+
 func TestResolve_GeoParamInvalidFallsThrough(t *testing.T) {
 	t.Parallel()
 
@@ -531,10 +558,22 @@ func TestAnonCacheKey(t *testing.T) {
 	// Journey-cookie guests resolve under the token — never the IP key, so
 	// journey fields cannot bleed to other guests on the same NAT address.
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(&http.Cookie{Name: "jc_journey_token", Value: "tok123"})
+	const token = "0123456789abcdef0123456789abcdef"
+	req.AddCookie(&http.Cookie{Name: "jc_journey_token", Value: token})
 
-	if k := res.anonCacheKey(req); !strings.HasSuffix(k, "visitor:ctx:journey:tok123") {
-		t.Errorf("anonCacheKey(cookie) = %q, want ...visitor:ctx:journey:tok123", k)
+	if k := res.anonCacheKey(req); !strings.HasSuffix(k, "visitor:ctx:journey:"+token) {
+		t.Errorf("anonCacheKey(cookie) = %q, want ...visitor:ctx:journey:%s", k, token)
+	}
+
+	// A malformed cookie value is not minted-format — the guest resolves
+	// under the IP scope like a cookie-less visitor rather than producing
+	// an arbitrary Valkey key part.
+	req2 := httptest.NewRequest(http.MethodGet, "/?x=1", nil)
+	req2.RemoteAddr = "192.0.2.1:1234"
+	req2.AddCookie(&http.Cookie{Name: "jc_journey_token", Value: "tok123"})
+
+	if k := res.anonCacheKey(req2); !strings.HasSuffix(k, "visitor:ctx:ip:192.0.2.1") {
+		t.Errorf("anonCacheKey(bad cookie) = %q, want ...visitor:ctx:ip:192.0.2.1", k)
 	}
 
 	// Param-only journeys are transient — no cache entry at all.

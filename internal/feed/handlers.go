@@ -419,24 +419,6 @@ type feedContextRequest struct {
 // guestJourneyTTL is the lifetime of a guest journey context in Valkey.
 const guestJourneyTTL = 30 * 24 * time.Hour
 
-// isJourneyToken reports whether s looks like a token this handler minted —
-// 16 rand.Read bytes hex-encoded to 32 lowercase hex chars. Anything else
-// (empty, tampered, foreign format) is not reused as a Valkey key scope.
-func isJourneyToken(s string) bool {
-	if len(s) != 32 {
-		return false
-	}
-
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-
-	return true
-}
-
 // SetFeedContext handles POST /api/v1/feed/context.
 // Anonymous users can set their journey context (origin, destination, stage,
 // visa, purpose, travel date) without creating an account. The context is
@@ -490,7 +472,7 @@ func (h *Handlers) SetFeedContext(w http.ResponseWriter, r *http.Request) {
 	// entry for the rest of its 30-day TTL. Only a minted-format token
 	// (32 lowercase hex chars) is trusted; anything else gets a fresh one.
 	token := ""
-	if c, err := r.Cookie("jc_journey_token"); err == nil && isJourneyToken(c.Value) {
+	if c, err := r.Cookie("jc_journey_token"); err == nil && visitor.IsJourneyToken(c.Value) {
 		token = c.Value
 	}
 

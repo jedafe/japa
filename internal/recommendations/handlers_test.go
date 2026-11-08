@@ -542,11 +542,22 @@ func indexOf(s, sub string) int {
 func TestAnonRecommendationsCacheKey(t *testing.T) {
 	t.Parallel()
 
+	const token = "0123456789abcdef0123456789abcdef"
 	req := httptest.NewRequest(http.MethodGet, "/recommendations", nil)
+	req.AddCookie(&http.Cookie{Name: "jc_journey_token", Value: token})
+
+	if k := anonRecommendationsCacheKey(req); !strings.HasSuffix(k, "recommendations:journey:"+token) {
+		t.Errorf("key(cookie) = %q, want journey scope", k)
+	}
+
+	// Malformed cookie values fall through to the IP scope — never used as
+	// a key part.
+	req = httptest.NewRequest(http.MethodGet, "/recommendations", nil)
+	req.RemoteAddr = "192.0.2.1:1234"
 	req.AddCookie(&http.Cookie{Name: "jc_journey_token", Value: "tok123"})
 
-	if k := anonRecommendationsCacheKey(req); !strings.HasSuffix(k, "recommendations:journey:tok123") {
-		t.Errorf("key(cookie) = %q, want journey scope", k)
+	if k := anonRecommendationsCacheKey(req); !strings.HasSuffix(k, "recommendations:ip:192.0.2.1") {
+		t.Errorf("key(bad cookie) = %q, want ip scope", k)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/recommendations?journey_origin=NG", nil)

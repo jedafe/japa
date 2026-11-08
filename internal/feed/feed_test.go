@@ -4,6 +4,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // ---------------------------------------------------------------------------
@@ -432,8 +434,8 @@ func TestIsJourneyToken(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isJourneyToken(tc.input); got != tc.want {
-				t.Errorf("isJourneyToken(%q) = %v, want %v", tc.input, got, tc.want)
+			if got := visitor.IsJourneyToken(tc.input); got != tc.want {
+				t.Errorf("visitor.IsJourneyToken(%q) = %v, want %v", tc.input, got, tc.want)
 			}
 		})
 	}

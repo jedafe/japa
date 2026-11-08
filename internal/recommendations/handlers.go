@@ -548,7 +548,7 @@ func anonRecommendationsCacheKey(r *http.Request) string {
 		return ""
 	}
 
-	if c, err := r.Cookie("jc_journey_token"); err == nil && c.Value != "" {
+	if c, err := r.Cookie("jc_journey_token"); err == nil && visitor.IsJourneyToken(c.Value) {
 		return valkey.MustKey("recommendations:journey:%s", c.Value)
 	}
 

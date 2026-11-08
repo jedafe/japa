@@ -297,7 +297,14 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 		return vc
 	}
 
-	// 1. Explicit ?geo= query parameter — always wins when present.
+	// 1. Guest journey cookie / query parameters (journey-aware
+	// recommendations). Runs before the ?geo= early return so an explicit
+	// geo override still carries the visitor's origin/destination/stage —
+	// ?geo= overrides ContentCountry only, it does not erase journey
+	// context. enrichGuestJourney never sets ContentCountry.
+	res.enrichGuestJourney(r, &vc)
+
+	// 2. Explicit ?geo= query parameter — always wins when present.
 	// "?geo=all" explicitly requests global ranking (ADR-064 §2).
 	if cc, ok := explicitGeoParam(r); ok {
 		vc.ContentCountry = cc
@@ -305,12 +312,6 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 
 		return vc
 	}
-
-	// 1b. Guest journey cookie / query parameters (journey-aware
-	// recommendations). Allows anonymous users to set origin, destination,
-	// stage, and visa route without logging in. Auth/profile resolution below
-	// may override these values for authenticated users.
-	res.enrichGuestJourney(r, &vc)
 
 	// Determine cache key and auth state.
 	// ADR-064: cache key is jc:visitor:ctx:{session_id} for authenticated
@@ -673,7 +674,7 @@ func (res *Resolver) anonCacheKey(r *http.Request) string {
 		return ""
 	}
 
-	if c, err := r.Cookie("jc_journey_token"); err == nil && c.Value != "" {
+	if c, err := r.Cookie("jc_journey_token"); err == nil && IsJourneyToken(c.Value) {
 		return valkey.MustKey("visitor:ctx:journey:%s", c.Value)
 	}
 
@@ -684,6 +685,26 @@ func (res *Resolver) anonCacheKey(r *http.Request) string {
 	// No resolvable scope (e.g. empty RemoteAddr): skip caching rather than
 	// collapse every such request into a single "jc:visitor:ctx:ip:" bucket.
 	return ""
+}
+
+// IsJourneyToken reports whether s looks like a token minted by
+// POST /api/v1/feed/context — 16 rand bytes hex-encoded to 32 lowercase
+// hex chars. Cookie values that fail this check are treated as absent:
+// they are never used as a Valkey key part (a tampered cookie would
+// otherwise produce arbitrary-length keys and wasted lookups).
+func IsJourneyToken(s string) bool {
+	if len(s) != 32 {
+		return false
+	}
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+
+	return true
 }
 
 // HasJourneyParams reports whether the request carries any of the
@@ -865,9 +886,11 @@ func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
 
 	loaded := false
 
-	// 1. Try the cookie-backed Valkey store.
+	// 1. Try the cookie-backed Valkey store. Only minted-format tokens are
+	// looked up — a malformed cookie value is ignored rather than used as
+	// a Valkey key part.
 	if res.rdb != nil {
-		if token, err := r.Cookie("jc_journey_token"); err == nil && token.Value != "" {
+		if token, err := r.Cookie("jc_journey_token"); err == nil && IsJourneyToken(token.Value) {
 			key := valkey.MustKey("visitor:journey:%s", token.Value)
 			if raw, err := res.rdb.Get(r.Context(), key).Result(); err == nil && raw != "" {
 				if err := json.Unmarshal([]byte(raw), &stored); err == nil {

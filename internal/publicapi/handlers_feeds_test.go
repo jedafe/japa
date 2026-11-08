@@ -234,6 +234,7 @@ func (r *stubRows) Scan(dest ...any) error {
 
 func (r *stubRows) Values() ([]any, error) { return r.vals[r.idx-1], nil }
 func (r *stubRows) RawValues() [][]byte    { return nil }
+func (r *stubRows) TypeMap() *pgtype.Map   { return pgtype.NewMap() }
 
 type stubDBTX struct {
 	queryRowFn func(sql string, args ...any) pgx.Row
