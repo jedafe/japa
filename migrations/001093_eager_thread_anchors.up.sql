@@ -41,6 +41,7 @@ WITH new_threads AS (
         now()
     FROM wiki_pages wp
     JOIN spaces s ON s.id = wp.space_id AND s.deleted_at IS NULL
+        AND s.visibility = 'public' AND s.status = 'active'
     WHERE wp.deleted_at IS NULL
       AND NOT EXISTS (
           SELECT 1 FROM thread_anchors ta
@@ -59,6 +60,7 @@ SELECT
     'Discussing a page in the ' || s.name || ' wiki.'
 FROM wiki_pages wp
 JOIN spaces s ON s.id = wp.space_id AND s.deleted_at IS NULL
+    AND s.visibility = 'public' AND s.status = 'active'
 JOIN new_threads nt ON nt.slug = 'thread-wiki-' || substr(replace(wp.id::text, '-', ''), 1, 12)
 WHERE wp.deleted_at IS NULL
 ON CONFLICT (entity_type, entity_key) DO NOTHING;

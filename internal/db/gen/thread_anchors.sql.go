@@ -170,6 +170,7 @@ const getWikiPageAnchorInfo = `-- name: GetWikiPageAnchorInfo :one
 SELECT wp.id, wp.title, wp.slug AS page_slug, s.slug AS space_slug, s.name AS space_name
 FROM wiki_pages wp
 JOIN spaces s ON s.id = wp.space_id AND s.deleted_at IS NULL
+    AND s.visibility = 'public' AND s.status = 'active'
 WHERE wp.id = $1 AND wp.deleted_at IS NULL
 `
 
@@ -183,6 +184,8 @@ type GetWikiPageAnchorInfoRow struct {
 
 // Display fields for binding a thread anchor to a wiki page: the page's
 // space slug + page slug build the canonical /wiki/{space}/{page} URL.
+// Only public, active spaces may bind a public thread — anchoring a page
+// from a private/inactive space would leak its title via /thread/{slug}.
 func (q *Queries) GetWikiPageAnchorInfo(ctx context.Context, id pgtype.UUID) (GetWikiPageAnchorInfoRow, error) {
 	row := q.db.QueryRow(ctx, getWikiPageAnchorInfo, id)
 	var i GetWikiPageAnchorInfoRow
