@@ -249,6 +249,27 @@
 		return code === 'travel_quota_exceeded' || code === 'rate_limit_exceeded';
 	}
 
+	// Maps terminal flight-search errors onto their dedicated states;
+	// returns true when the error was claimed so the caller doesn't also
+	// set a generic flightError. feature_disabled is what the route gate
+	// returns when travel.enabled is off; travel_disabled is the
+	// service-level variant — both mean the whole surface is unavailable.
+	function mapFlightError(err: { code?: string }): boolean {
+		if (err.code === 'travel_disabled' || err.code === 'feature_disabled') {
+			disabled = true;
+			return true;
+		}
+		if (err.code === 'provider_not_configured') {
+			flightProviderMissing = true;
+			return true;
+		}
+		if (isQuotaError(err.code)) {
+			flightQuotaExceeded = true;
+			return true;
+		}
+		return false;
+	}
+
 	// ── Flight result list state (sort / filter / page — all server-side,
 	//    ADR-124) ─────────────────────────────────────────────────────────
 	let flightSort = $state('');
@@ -341,13 +362,18 @@
 		// new offers away.
 		flightAirline = '';
 
-		const params = new URLSearchParams({ origin, dest, date: flightDate });
+		// page_size=0 is the service's full-offer-set contract — fetched
+		// once to seed the airline-filter options, since paginated
+		// responses carry no facets. Display pages then run server-side
+		// via loadFlightPage; every presentation shape serves from the
+		// same stored coverage, so those never hit the provider again.
+		const params = new URLSearchParams({
+			origin,
+			dest,
+			date: flightDate,
+			page_size: '0'
+		});
 		const seq = ++flightSeq;
-		// The full unfiltered set (page_size 0 contract) is fetched once
-		// to seed the airline-filter options — paginated responses carry
-		// no facets. Display pages then run server-side via loadFlightPage;
-		// every presentation shape serves from the same stored coverage,
-		// so those requests never hit the provider again.
 
 		const res = await api.get<TravelSearchResponse>(
 			`/travel/search/flights?${params.toString()}`
@@ -356,21 +382,7 @@
 		flightsSearched = true;
 		if (res.error) {
 			flightLoading = false;
-			// feature_disabled is what the route gate returns when
-			// travel.enabled is off; travel_disabled is the service-level
-			// variant — both mean the whole surface is unavailable.
-			if (res.error.code === 'travel_disabled' || res.error.code === 'feature_disabled') {
-				disabled = true;
-				return;
-			}
-			if (res.error.code === 'provider_not_configured') {
-				flightProviderMissing = true;
-				return;
-			}
-			if (isQuotaError(res.error.code)) {
-				flightQuotaExceeded = true;
-				return;
-			}
+			if (mapFlightError(res.error)) return;
 			flightError = res.error.message;
 			return;
 		}
@@ -430,10 +442,13 @@
 		if (seq !== flightSeq) return; // a newer request owns the state
 		flightLoading = false;
 		if (res.error) {
+			if (mapFlightError(res.error)) return;
 			flightError = res.error.message;
 			return;
 		}
 		flightError = null;
+		flightProviderMissing = false;
+		flightQuotaExceeded = false;
 		flights = (res.data?.results as TravelFlightResult[] | undefined) ?? [];
 		flightTotal = res.data?.total ?? 0;
 		flightPage = res.data?.page ?? page;
@@ -467,7 +482,9 @@
 
 	const dirTotalPages = $derived(Math.max(1, Math.ceil(dirTotal / (Number(dirPageSize) || 10))));
 
-	async function loadDirectory(nextPage = dirPage) {
+	// Returns whether the response landed successfully — callers that
+	// record recents need the outcome, not just the loading state.
+	async function loadDirectory(nextPage = dirPage): Promise<boolean> {
 		const seq = ++dirSeq;
 		dirLoading = true;
 		dirError = null;
@@ -481,30 +498,31 @@
 		if (dirMinStars) params.set('min_stars', dirMinStars);
 
 		const res = await api.get<TravelHotelDirectoryResponse>(`/travel/hotels?${params.toString()}`);
-		if (seq !== dirSeq) return; // a newer request owns the state
+		if (seq !== dirSeq) return false; // a newer request owns the state
 		dirLoading = false;
 		dirLoaded = true;
 
 		if (res.error || !res.data) {
 			if (res.error?.code === 'feature_disabled' || res.error?.code === 'travel_disabled') {
 				disabled = true;
-				return;
+				return false;
 			}
 			dirError = res.error?.message ?? t('travel.directory_error', 'Could not load the hotel directory.');
-			return;
+			return false;
 		}
 
 		dirItems = res.data.results ?? [];
 		dirTotal = res.data.total ?? 0;
 		dirPage = res.data.page ?? nextPage;
+		return true;
 	}
 
 	// recordRecent → store the search only once it succeeds — a failed
 	// directory call shouldn't pollute My searches.
 	async function dirSearch(recordRecent = false) {
 		dirPage = 1;
-		await loadDirectory(1);
-		if (recordRecent && !dirError) {
+		const ok = await loadDirectory(1);
+		if (recordRecent && ok) {
 			recordSearch(
 				'hotel',
 				dirCity.trim() || dirQuery.trim() || t('travel.all_stays', 'All stays'),
@@ -800,7 +818,7 @@
 			dirMinStars = fields.dirMinStars ?? '';
 			switchTab('hotels');
 			dirLoaded = true;
-			dirSearch();
+			dirSearch(true);
 		}
 	}
 
