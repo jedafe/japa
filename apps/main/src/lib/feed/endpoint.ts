@@ -55,10 +55,13 @@ export function resolveTab(raw: string | null, authed: boolean): FeedTab {
 	return 'for_you';
 }
 
-/** Resolve the active sort; always yields an explicit value (default latest).
- * Backend SQL treats unknown sort values as 'latest', so the frontend default
- * must match to keep the URL and the rendered data consistent.
+/** Resolve the active sort; always yields an explicit value. The authed home
+ * tabs default to 'relevant' — the for-you feed ranks it properly and the
+ * following feed's SQL falls back to chronological for it — while explore
+ * defaults to 'latest', matching the backend's fallback so the URL and the
+ * rendered data stay consistent.
  */
-export function resolveSort(raw: string | null): SortValue {
-	return (SORTS as string[]).includes(raw ?? '') ? (raw as SortValue) : 'latest';
+export function resolveSort(raw: string | null, tab: FeedTab): SortValue {
+	if ((SORTS as string[]).includes(raw ?? '')) return raw as SortValue;
+	return tab === 'explore' ? 'latest' : 'relevant';
 }

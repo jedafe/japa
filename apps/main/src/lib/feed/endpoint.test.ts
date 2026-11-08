@@ -35,15 +35,22 @@ describe('resolveTab', () => {
 });
 
 describe('resolveSort', () => {
-	it('accepts the four valid values', () => {
+	it('accepts the four valid values on any tab', () => {
 		for (const s of ['relevant', 'latest', 'top', 'rising'] as const) {
-			expect(resolveSort(s)).toBe(s);
+			expect(resolveSort(s, 'for_you')).toBe(s);
+			expect(resolveSort(s, 'following')).toBe(s);
+			expect(resolveSort(s, 'explore')).toBe(s);
 		}
 	});
-	it('defaults invalid/absent to latest', () => {
-		expect(resolveSort(null)).toBe('latest');
-		expect(resolveSort('popular')).toBe('latest'); // "popular" is a label, not a value
-		expect(resolveSort('')).toBe('latest');
+	it('defaults the authed home tabs to relevant', () => {
+		expect(resolveSort(null, 'for_you')).toBe('relevant');
+		expect(resolveSort(null, 'following')).toBe('relevant');
+		expect(resolveSort('', 'for_you')).toBe('relevant');
+		expect(resolveSort('popular', 'following')).toBe('relevant'); // "popular" is a label, not a value
+	});
+	it('keeps explore on latest', () => {
+		expect(resolveSort(null, 'explore')).toBe('latest');
+		expect(resolveSort('', 'explore')).toBe('latest');
 	});
 });
 

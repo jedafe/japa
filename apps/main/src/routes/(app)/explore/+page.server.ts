@@ -11,7 +11,7 @@ import type { FeedItem } from '#lib/types/index.js';
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
-	const sort = resolveSort(event.url.searchParams.get('sort'));
+	const sort = resolveSort(event.url.searchParams.get('sort'), 'explore');
 	// Forward the explicit ?geo= override or the user's content_country_preference
 	// so the SSR feed matches the client-side load-more (ADR-064).
 	const geo =

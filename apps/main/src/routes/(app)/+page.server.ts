@@ -37,7 +37,7 @@ export const load: PageServerLoad = async (event) => {
 	// Authenticated users get the timeline in the shell.
 	if (authed) {
 		const tab = resolveTab(event.url.searchParams.get('tab'), authed);
-		const sort = resolveSort(event.url.searchParams.get('sort'));
+		const sort = resolveSort(event.url.searchParams.get('sort'), tab);
 		const geo =
 			event.url.searchParams.get('geo') ??
 			event.locals.user?.content_country_preference ??
