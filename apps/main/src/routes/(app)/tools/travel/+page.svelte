@@ -213,14 +213,14 @@
 	let flightDate = $state('');
 
 	// ── Per-tab request state ───────────────────────────────────────────────
+	let flightSeq = 0; // stale-response guard: last search wins
 	let flightLoading = $state(false);
 	let flightError = $state<string | null>(null);
 	let flightProviderMissing = $state(false);
 	let flightQuotaExceeded = $state(false);
 	let flightsSearched = $state(false);
-	let flightMeta = $state<{ cache_hit: boolean; source?: string; search_time_ms: number; total?: number; page?: number; page_size?: number } | null>(null);
+	let flightMeta = $state<{ cache_hit: boolean; source?: string } | null>(null);
 	let flights = $state<TravelFlightResult[]>([]);
-	let flightTotal = $state<number | null>(null);
 
 	function isQuotaError(code?: string): boolean {
 		return code === 'travel_quota_exceeded' || code === 'rate_limit_exceeded';
@@ -293,8 +293,12 @@
 	// Scroll results into view once a search lands (mockup keeps the
 	// marketing rails below — the user shouldn't have to hunt for results).
 	let resultsEl = $state<HTMLElement | null>(null);
+	let airlineDirEl = $state<HTMLElement | null>(null);
+	function scrollToEl(el: HTMLElement | null) {
+		requestAnimationFrame(() => el?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+	}
 	function scrollToResults() {
-		requestAnimationFrame(() => resultsEl?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+		scrollToEl(resultsEl);
 	}
 
 	// ── Search actions ──────────────────────────────────────────────────────
@@ -319,7 +323,6 @@
 		flightProviderMissing = false;
 		flightQuotaExceeded = false;
 		flights = [];
-		flightTotal = null;
 		flightsSearched = false;
 		flightMeta = null;
 		flightPage = 1;
@@ -328,6 +331,7 @@
 		flightAirline = '';
 
 		const params = new URLSearchParams({ origin, dest, date: flightDate });
+		const seq = ++flightSeq;
 		// No sort/filter/page params — page_size 0 returns the full offer
 		// set (the service's documented contract for self-paginating
 		// clients), so all presentation happens client-side over the
@@ -336,6 +340,7 @@
 		const res = await api.get<TravelSearchResponse>(
 			`/travel/search/flights?${params.toString()}`
 		);
+		if (seq !== flightSeq) return; // a newer search owns the state
 		flightLoading = false;
 		flightsSearched = true;
 		if (res.error) {
@@ -358,9 +363,8 @@
 			return;
 		}
 		flights = res.data?.results as TravelFlightResult[] | undefined ?? [];
-		flightTotal = res.data?.total ?? flights.length;
 		flightMeta = res.data
-			? { cache_hit: res.data.cache_hit, source: res.data.source, search_time_ms: res.data.search_time_ms, total: res.data.total, page: res.data.page, page_size: res.data.page_size }
+			? { cache_hit: res.data.cache_hit, source: res.data.source }
 			: null;
 		recordSearch('flight', `${origin} → ${dest}`, {
 			flightOrigin: origin,
@@ -383,6 +387,7 @@
 	let dirLoaded = $state(false);
 	let dirItems = $state<TravelHotelDirectoryItem[]>([]);
 	let dirTotal = $state(0);
+	let dirSeq = 0; // stale-response guard
 
 	const dirStarOptions = $derived([
 		{ value: '', label: t('travel.any_stars', 'Any rating') },
@@ -394,6 +399,7 @@
 	const dirTotalPages = $derived(Math.max(1, Math.ceil(dirTotal / (Number(dirPageSize) || 10))));
 
 	async function loadDirectory(nextPage = dirPage) {
+		const seq = ++dirSeq;
 		dirLoading = true;
 		dirError = null;
 
@@ -406,6 +412,7 @@
 		if (dirMinStars) params.set('min_stars', dirMinStars);
 
 		const res = await api.get<TravelHotelDirectoryResponse>(`/travel/hotels?${params.toString()}`);
+		if (seq !== dirSeq) return; // a newer request owns the state
 		dirLoading = false;
 		dirLoaded = true;
 
@@ -454,10 +461,12 @@
 	let alLoaded = $state(false);
 	let alItems = $state<TravelAirlineItem[]>([]);
 	let alTotal = $state(0);
+	let alSeq = 0;
 
 	const alTotalPages = $derived(Math.max(1, Math.ceil(alTotal / (Number(alPageSize) || 25))));
 
 	async function loadAirlines(nextPage = alPage) {
+		const seq = ++alSeq;
 		alLoading = true;
 		alError = null;
 
@@ -468,6 +477,7 @@
 		if (alQuery.trim()) params.set('q', alQuery.trim());
 
 		const res = await api.get<TravelAirlineDirectoryResponse>(`/travel/airlines?${params.toString()}`);
+		if (seq !== alSeq) return;
 		alLoading = false;
 		alLoaded = true;
 
@@ -519,20 +529,18 @@
 
 	// Compare tray — up to four carriers rendered side-by-side over real
 	// directory fields (no ratings/baggage fabrication: the catalog carries
-	// codes, country and provider coverage, nothing else).
-	let compareKeys = $state<string[]>([]);
-	const compareAirlines = $derived.by(() => {
-		const picked = compareKeys
-			.map((k) => alItems.find((a) => a.airline_key === k))
-			.filter((a): a is TravelAirlineItem => !!a);
-		return picked.length > 0 ? picked : showcaseAirlines.slice(0, 4);
-	});
+	// codes, country and provider coverage, nothing else). Picked items are
+	// held, not keys, so paging the directory doesn't lose selections.
+	let comparePicked = $state<TravelAirlineItem[]>([]);
+	const compareAirlines = $derived(
+		comparePicked.length > 0 ? comparePicked : showcaseAirlines.slice(0, 4)
+	);
 
-	function toggleCompare(key: string) {
-		if (compareKeys.includes(key)) {
-			compareKeys = compareKeys.filter((k) => k !== key);
-		} else if (compareKeys.length < 4) {
-			compareKeys = [...compareKeys, key];
+	function toggleCompare(a: TravelAirlineItem) {
+		if (comparePicked.some((x) => x.airline_key === a.airline_key)) {
+			comparePicked = comparePicked.filter((x) => x.airline_key !== a.airline_key);
+		} else if (comparePicked.length < 4) {
+			comparePicked = [...comparePicked, a];
 		}
 	}
 
@@ -570,9 +578,13 @@
 			byCity.set(key, cur);
 		}
 		destinations = [...byCity.values()].slice(0, 8);
+	}
 
-		// "Browse by destination" rail — real per-city stay counts from the
-		// directory's own totals (page_size=1 keeps the payload tiny).
+	// "Browse by destination" rail — real per-city stay counts from the
+	// directory's own totals (page_size=1 keeps the payload tiny). Only
+	// the hotels tab renders this rail, so it loads lazily on tab visit.
+	async function loadCityStayCounts() {
+		if (cityStayCounts.size > 0 || destinations.length === 0) return;
 		const cities = destinations.slice(0, 6).map((d) => d.key);
 		const counts = await Promise.all(
 			cities.map(async (city) => {
@@ -584,6 +596,10 @@
 		);
 		cityStayCounts = new Map(counts);
 	}
+
+	$effect(() => {
+		if (tab === 'hotels' && destinations.length > 0) loadCityStayCounts();
+	});
 
 	// The showcase feeds every tab's discovery rails — load once on mount.
 	onMount(() => {
@@ -668,7 +684,9 @@
 			switchTab('flights');
 			searchFlights();
 		} else {
-			dirCity = r.fields.dirCity ?? '';
+			// hotelDest: field name used by recents stored before the
+			// directory-browse model — keep them replayable.
+			dirCity = r.fields.dirCity ?? r.fields.hotelDest ?? '';
 			dirQuery = r.fields.dirQuery ?? '';
 			dirMinStars = r.fields.dirMinStars ?? '';
 			switchTab('hotels');
@@ -994,6 +1012,11 @@
 					</div>
 
 					<div class="space-y-2">
+						{#if pagedFlights.length === 0}
+							<p class="py-8 text-center text-sm text-[var(--color-muted)]">
+								{t('travel.no_filtered', 'No offers match this airline — clear the filter to see them all.')}
+							</p>
+						{/if}
 						{#each pagedFlights as f, i (i)}
 							<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 								<div class="min-w-0 flex-1">
@@ -1020,7 +1043,7 @@
 							<PaginationControls
 								page={flightPage}
 								totalPages={flightTotalPages}
-								onPageChange={(p) => flightPage = p}
+								onPageChange={(p) => { flightPage = p; scrollToResults(); }}
 							/>
 						</div>
 					{/if}
@@ -1104,10 +1127,10 @@
 									<button
 										type="button"
 										class="airline-compare"
-										class:airline-compare-on={compareKeys.includes(a.airline_key)}
-										onclick={() => toggleCompare(a.airline_key)}
+										class:airline-compare-on={comparePicked.some((x) => x.airline_key === a.airline_key)}
+										onclick={() => toggleCompare(a)}
 									>
-										{compareKeys.includes(a.airline_key) ? t('travel.comparing', 'Comparing') : t('travel.compare', 'Compare')}
+										{comparePicked.some((x) => x.airline_key === a.airline_key) ? t('travel.comparing', 'Comparing') : t('travel.compare', 'Compare')}
 									</button>
 								</article>
 							{/each}
@@ -1206,7 +1229,7 @@
 					</div>
 
 					<!-- Airline directory browser -->
-					<section class="travel-section" aria-labelledby="al-dir-h">
+					<section class="travel-section" aria-labelledby="al-dir-h" bind:this={airlineDirEl}>
 						<div class="travel-section-head">
 							<div>
 								<h2 id="al-dir-h">{t('travel.airline_directory', 'Airline directory')}</h2>
@@ -1262,7 +1285,7 @@
 							</div>
 							{#if alTotalPages > 1}
 								<div class="mt-4 flex justify-center">
-									<PaginationControls page={alPage} totalPages={alTotalPages} onPageChange={(p) => loadAirlines(p)} />
+									<PaginationControls page={alPage} totalPages={alTotalPages} onPageChange={(p) => { loadAirlines(p); scrollToEl(airlineDirEl); }} />
 								</div>
 							{/if}
 						{:else if alLoaded && !alError && !alLoading}
@@ -1495,7 +1518,7 @@
 						</div>
 						{#if dirTotalPages > 1}
 							<div class="mt-4 flex justify-center">
-								<PaginationControls page={dirPage} totalPages={dirTotalPages} onPageChange={(p) => loadDirectory(p)} />
+								<PaginationControls page={dirPage} totalPages={dirTotalPages} onPageChange={(p) => { loadDirectory(p); scrollToResults(); }} />
 							</div>
 						{/if}
 					{:else if dirLoaded && !dirError}
