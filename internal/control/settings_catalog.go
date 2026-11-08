@@ -854,6 +854,7 @@ var settingsCatalog = map[string]settingMeta{
 	"feed.for_you_tag_overlap_cap":            {Type: "int", DefaultValue: "3", Description: "Cap on followed-tag overlap count when computing the tag signal (BUG-007)", Panel: "admin"},
 	"feed.for_you_velocity_cap":               {Type: "int", DefaultValue: "300", Description: "Max velocity-sourced candidates in the for-you pool (BUG-008)", Panel: "admin"},
 	"feed.for_you_weight_author":              {Type: "float", DefaultValue: "3.0", Description: "For-you ranking weight for followed-author signal (BUG-007)", Panel: "admin"},
+	"feed.for_you_weight_author_points":       {Type: "float", DefaultValue: "1.0", Description: "For-you ranking weight for the author reputation signal — log-scaled points balance vs candidate pool max; 0 disables (Section 32)", Panel: "admin"},
 	"feed.for_you_weight_recency":             {Type: "float", DefaultValue: "2.0", Description: "For-you ranking weight for recency decay (BUG-007)", Panel: "admin"},
 	"feed.for_you_weight_space":               {Type: "float", DefaultValue: "2.5", Description: "For-you ranking weight for followed-space signal (BUG-007)", Panel: "admin"},
 	"feed.for_you_weight_tag":                 {Type: "float", DefaultValue: "1.5", Description: "For-you ranking weight for followed-tag overlap signal (BUG-007)", Panel: "admin"},
