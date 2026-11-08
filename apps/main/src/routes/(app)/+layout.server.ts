@@ -65,7 +65,10 @@ export const load: LayoutServerLoad = async (event) => {
 	const hideRight =
 		rid.startsWith('/(app)/studio') ||
 		rid === '/(app)/create' ||
-		rid === '/(app)/roadmap';
+		rid === '/(app)/roadmap' ||
+		// /tools/travel renders its discovery rails in-page (§67 mockups) —
+		// same reclaim-the-column path as /roadmap, so skip the resolve.
+		rid === '/(app)/tools/travel';
 	const hideLeft =
 		rid.startsWith('/(app)/studio') ||
 		rid === '/(app)/create' ||
