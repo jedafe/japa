@@ -11,7 +11,7 @@
 	import { hydrateLinkPreviews } from '#lib/tiptap/hydrateLinkPreviews.js';
 	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
 	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
-	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import EntityDiscussions from '#lib/components/thread/EntityDiscussions.svelte';
 	import AdSlot from '#lib/components/ui/AdSlot.svelte';
 	import VoteButton from '#lib/components/roadmap/VoteButton.svelte';
 	import StatusBadge from '#lib/components/roadmap/StatusBadge.svelte';
@@ -24,6 +24,7 @@
 	let { data } = $props();
 	const item = $derived(data.item);
 
+	// Deleted-user mention redaction still applies to the item body.
 	const deletedUserIds = $derived(
 		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
 	);
@@ -192,17 +193,8 @@
 	</article>
 
 	{#if item.content_id}
-		<CommentThread
-			comments={data.comments}
-			commentsTotal={data.commentsTotal}
-			contentId={item.content_id}
-			contentType="roadmap"
-			authed={data.authed}
-			currentUserId={data.currentUserId}
-			canModerate={data.canModerate}
-			loadError={data.commentsLoadError}
-			{deletedUserIds}
-		/>
+		<!-- Discussion preview — full engine lives at /thread/{slug}. -->
+		<EntityDiscussions entityType="content" entityKey={item.content_id} authed={data.authed} />
 		<!-- §25: engagement-area ad slot. -->
 		<AdSlot slot="comments_below" format="banner" />
 	{/if}

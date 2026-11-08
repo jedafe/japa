@@ -107,7 +107,31 @@ func (s *Service) anchorSpace(ctx context.Context) (pgtype.UUID, error) {
 }
 
 // ResolveAnchor returns the thread anchor bound to an entity, or ErrNotFound.
+// entity_type='content' is special-cased: the contents row itself IS the
+// thread (/thread/{slug} renders its embed + comments), so no anchor row is
+// needed — resolve returns the row's own identity.
 func (s *Service) ResolveAnchor(ctx context.Context, entityType, entityKey string) (AnchorSummary, error) {
+	if entityType == "content" {
+		var contentID pgtype.UUID
+		if err := contentID.Scan(entityKey); err != nil {
+			return AnchorSummary{}, fmt.Errorf("content key must be a content UUID: %w", errpkg.ErrInvalid)
+		}
+
+		row, err := s.read.GetContentByID(ctx, contentID)
+		if err != nil {
+			return AnchorSummary{}, err
+		}
+
+		return AnchorSummary{
+			ContentID:    row.ID,
+			Slug:         row.Slug,
+			Title:        row.Title,
+			CommentCount: row.CommentCount,
+			EntityType:   "content",
+			EntityKey:    entityKey,
+		}, nil
+	}
+
 	row, err := s.read.GetThreadAnchorByEntity(ctx, gen.GetThreadAnchorByEntityParams{
 		EntityType: entityType,
 		EntityKey:  entityKey,
@@ -198,6 +222,11 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 // or member-restricted space.
 func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityType, entityKey string) (AnchorSummary, error) {
 	existing, err := s.ResolveAnchor(ctx, entityType, entityKey)
+	// A 'content' entity resolves to the row itself — the thread already
+	// exists, so "start a conversation" is a no-op deep link.
+	if err == nil && entityType == "content" {
+		return existing, nil
+	}
 	if err == nil {
 		return existing, nil
 	}

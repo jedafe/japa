@@ -28,7 +28,7 @@
 		Eye
 	} from 'lucide-svelte';
 	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
-	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import EntityDiscussions from '#lib/components/thread/EntityDiscussions.svelte';
 	import type { AchievementMilestoneType } from '#lib/types/index.js';
 	import type { IconComponent } from '#lib/components/ui/icons.js';
 	import type { PageData } from './$types';
@@ -274,17 +274,6 @@
 	</div>
 
 	<!-- Unified comment engine (§49) — SSR-seeded, load-more driven by meta. -->
-	<CommentThread
-		comments={data.comments ?? []}
-		totalCount={achievement.comment_count}
-		commentsTotal={data.commentsTotal ?? null}
-		contentId={achievement.id}
-		contentType="achievement"
-		authed={data.authed}
-		currentUserId={data.currentUserId ?? ''}
-		canModerate={data.canEdit}
-		loadError={data.commentsLoadError ?? false}
-		deletedUserIds={new Set(data.deletedUserIds ?? [])}
-		showDiscussions
-	/>
+	<!-- Discussion preview — full engine lives at /thread/{slug}. -->
+	<EntityDiscussions entityType="content" entityKey={achievement.id} authed={data.authed} />
 </div>

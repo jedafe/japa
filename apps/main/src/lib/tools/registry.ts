@@ -28,6 +28,12 @@ export interface MainToolMeta {
 	/** Hub categories the tool belongs to (primary first, then secondary).
 	 *  A tool appears under every category listed here. */
 	sections: ToolSection[];
+	/** Discussion-block placement on the tool detail page (thread-rename
+	 *  spec). 'bottom' mounts the 5-comment preview at the page foot via the
+	 *  /tools layout; 'sidebar' tools mount EntityDiscussions inside their
+	 *  own sidebar markup; 'none' renders no discussion block (e.g. JapaBot).
+	 *  Defaults to 'bottom' when omitted. */
+	discussion?: 'bottom' | 'sidebar' | 'none';
 }
 
 /** Display order of the six categories on the hub. */
@@ -65,7 +71,8 @@ export const MAIN_TOOLS: MainToolMeta[] = [
 		labelKey: 'tools.japabot',
 		descKey: 'tools.japabot_desc',
 		enabledSetting: 'feature.japabot',
-		sections: ['planning', 'immigration']
+		sections: ['planning', 'immigration'],
+		discussion: 'none'
 	},
 	{
 		href: '/tools/travel',

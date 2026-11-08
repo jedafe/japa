@@ -12,6 +12,7 @@
 	import WikiHelpfulWidget from '#lib/components/wiki/WikiHelpfulWidget.svelte';
 	import WikiRollupPanel from '#lib/components/wiki/WikiRollupPanel.svelte';
 	import WikiDirectoryPanel from '#lib/components/wiki/WikiDirectoryPanel.svelte';
+	import EntityDiscussions from '#lib/components/thread/EntityDiscussions.svelte';
 	import InArticleAd from '#lib/components/ads/InArticleAd.svelte';
 	import NextActionInline from '#lib/components/shell/NextActionInline.svelte';
 	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
@@ -906,6 +907,12 @@
 					{/if}
 				{/if}
 			</article>
+
+			<!-- Discussion preview — full engine lives at /thread/{slug};
+			     the wiki page's thread anchors on demand. -->
+			{#if data.page?.id}
+				<EntityDiscussions entityType="wiki_page" entityKey={data.page.id} authed={data.authed} />
+			{/if}
 		{/if}
 	</div>
 </div>

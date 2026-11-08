@@ -4,7 +4,6 @@ import { apiContext, apiGet, apiGetEnvelope, ApiError } from '#lib/server/api.js
 import { hasPerm } from '#lib/server/auth.js';
 import type { ContentArticle, ContentAnalytics, SeriesPost } from '#lib/types/content.js';
 import type { Comment } from '#lib/types/index.js';
-
 /**
  * Shared loader for the generic content single page — used by /content/[slug]
  * (fallback for types without a dedicated route) and /guide/[slug].
@@ -87,25 +86,10 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 					.catch(() => false)
 			: Promise.resolve(false);
 
-	let comments: Comment[] = [];
-	let commentsLoadError = false;
-	let commentDeletedUserIds: string[] | null = null;
-	let commentsTotal: number | null = null;
-	try {
-		const envelope = await apiGetEnvelope<Comment[]>(ctx, `/content/${article.id}/comments?page_size=50`);
-		comments = envelope.data ?? [];
-		commentDeletedUserIds = envelope.deleted_user_ids ?? null;
-		commentsTotal = (envelope.meta as { total?: number } | undefined)?.total ?? null;
-	} catch {
-		commentsLoadError = true;
-	}
-
-	// Merge deleted user IDs from the article body and comments so the
-	// frontend can render @[deleted user] for all erased mentions (ADR-029).
-	const allDeletedUserIds = new Set<string>();
-	if (deletedUserIds) for (const id of deletedUserIds) allDeletedUserIds.add(id);
-	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
-	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
+	// The comment engine no longer mounts on entity pages — the discussion
+	// preview (EntityDiscussions) fetches its own 5 comments client-side, and
+	// the full engine lives at /thread/{slug}. Only the article envelope's
+	// deleted_user_ids is still needed for body mention redaction (ADR-029).
 
 	// Sidebar widgets (Section 59, ADR-066). The content reading layout renders
 	// these below the CreatorCard in the right <aside>. The (app) layout already
@@ -182,16 +166,13 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 		currentUserId,
 		canModerate,
 		canEdit,
-		comments,
-		commentsLoadError,
-		commentsTotal,
 		rightSidebarWidgets,
 		relatedContent,
 		recommendedContent,
 		analytics,
 		seriesPosts,
 		jsonLd,
-		deletedUserIds: mergedDeletedUserIds,
+		deletedUserIds,
 		initiallyFollowing: isFollowing,
 		siteSettings
 	};

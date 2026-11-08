@@ -12,7 +12,7 @@
 	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
 	import BlogSeriesNav from '#lib/components/blog/BlogSeriesNav.svelte';
 	import SidebarWidgetRenderer from '#lib/components/shell/SidebarWidgetRenderer.svelte';
-	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import EntityDiscussions from '#lib/components/thread/EntityDiscussions.svelte';
 	import VideoEmbed from '#lib/components/content/VideoEmbed.svelte';
 	import { hydrateLinkPreviews } from '#lib/tiptap/hydrateLinkPreviews.js';
 	import { imgLightbox, openLightbox } from '#lib/lightbox.svelte.js';
@@ -24,7 +24,7 @@
 	import { mergeJsonLd } from '#lib/seo/jsonld.js';
 	import { contentHref } from '#lib/utils/contentLink.js';
 	import type { ContentArticle, ContentAnalytics, SeriesPost } from '#lib/types/content.js';
-	import type { Comment, SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '#lib/types/index.js';
+	import type { SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '#lib/types/index.js';
 
 	// Mirrors the loadContentArticle() return shape ($lib/server/content-article.ts).
 	// Type-only imports from $lib/server are avoided so the component stays
@@ -35,8 +35,6 @@
 		currentUserId: string | null;
 		canModerate: boolean;
 		canEdit: boolean;
-		comments: Comment[];
-		commentsLoadError: boolean;
 		rightSidebarWidgets: unknown[];
 		relatedContent: ContentArticle[];
 		recommendedContent: ContentArticle[];
@@ -59,9 +57,8 @@
 	let { data }: { data: PageData } = $props();
 
 	const article = $derived(data.article);
-	const deletedUserIds = $derived(
-		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
-	);
+	// Discussion preview mounts EntityDiscussions; the full comment engine
+	// (and its deletedUserIds handling) lives at /thread/{slug}.
 
 	// Normalize sidebar widgets to the typed shape expected by SidebarWidgetRenderer.
 	const sidebarWidgets = $derived(
@@ -443,19 +440,10 @@
 			{@render rightSidebar()}
 		</div>
 
-		<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
-		<CommentThread
-			comments={data.comments}
-			totalCount={article.comment_count}
-			contentId={article.id}
-			contentType={article.content_type}
-			authed={data.authed}
-			currentUserId={data.currentUserId}
-			canModerate={data.canModerate}
-			loadError={data.commentsLoadError}
-			deletedUserIds={deletedUserIds}
-			showDiscussions
-		/>
+		<!-- Discussion preview — the full comment engine lives at
+		     /thread/{slug} (thread-rename spec); this block previews 5
+		     comments and links in. -->
+		<EntityDiscussions entityType="content" entityKey={article.id} authed={data.authed} />
 
 		<!-- Same-type recommendations, ranked by embedding similarity. -->
 		<div class="mt-8">

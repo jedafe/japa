@@ -19,7 +19,7 @@
 	import type { PageData } from './$types';
 	import FreshnessChip from '#lib/components/compare/FreshnessChip.svelte';
 	import RefreshButton from '#lib/components/compare/RefreshButton.svelte';
-	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import EntityDiscussions from '#lib/components/thread/EntityDiscussions.svelte';
 	import AdSlot from '#lib/components/ui/AdSlot.svelte';
 	import ReactionRail from '#lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '#lib/components/blog/CreatorCard.svelte';
@@ -45,9 +45,8 @@
 	let resolvedItems = $derived(uniqueResolvedItems(data.resolvedItems ?? []));
 	let user = $derived(data.user ?? null);
 	let features = $derived((data.features as Record<string, boolean> | undefined) ?? {});
-	let deletedUserIds = $derived(
-		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
-	);
+	// Discussion preview mounts EntityDiscussions; the full comment engine
+	// lives at /thread/{slug}.
 	let authorName = $derived(
 		comparison.content.author_display_name ??
 			comparison.content.author_name ??
@@ -332,19 +331,8 @@
 	</div>
 
 	<!-- Unified comment engine (Section 49) — top-level comments are SSR-seeded. -->
-	<CommentThread
-		comments={data.comments}
-		commentsTotal={data.commentsTotal}
-		totalCount={comparison.content.comment_count}
-		contentId={comparison.content.id}
-		contentType="comparison"
-		authed={data.authed}
-		currentUserId={data.currentUserId}
-		canModerate={data.canModerate}
-		loadError={data.commentsLoadError}
-		deletedUserIds={deletedUserIds}
-		showDiscussions
-	/>
+	<!-- Discussion preview — full engine lives at /thread/{slug}. -->
+	<EntityDiscussions entityType="content" entityKey={comparison.content.id} authed={data.authed} />
 
 	<!-- §25: engagement-area ad slot. -->
 	<AdSlot slot="comments_below" format="banner" />

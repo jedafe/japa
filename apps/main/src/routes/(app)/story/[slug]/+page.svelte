@@ -13,7 +13,7 @@
 	import CreatorCard from '#lib/components/blog/CreatorCard.svelte';
 	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
 	import SidebarWidgetRenderer from '#lib/components/shell/SidebarWidgetRenderer.svelte';
-	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import EntityDiscussions from '#lib/components/thread/EntityDiscussions.svelte';
 	import BlogSeriesNav from '#lib/components/blog/BlogSeriesNav.svelte';
 	import InArticleAd from '#lib/components/ads/InArticleAd.svelte';
 	import NextActionInline from '#lib/components/shell/NextActionInline.svelte';
@@ -34,9 +34,8 @@
 
 	const story = $derived(data.story);
 	const isAuthor = $derived(!!story && !!data.currentUserId && story.author_id === data.currentUserId);
-	const deletedUserIds = $derived(
-		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
-	);
+	// Discussion preview mounts EntityDiscussions; the full comment engine
+	// lives at /thread/{slug}.
 
 	// Normalize sidebar widgets to the typed shape expected by SidebarWidgetRenderer.
 	const sidebarWidgets = $derived(
@@ -441,19 +440,8 @@
 			{/if}
 
 			<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
-			<CommentThread
-				comments={data.comments}
-				commentsTotal={data.commentsTotal}
-				totalCount={story.comment_count}
-				contentId={story.id}
-				contentType="story"
-				authed={data.authed}
-				currentUserId={data.currentUserId}
-				canModerate={data.canModerate}
-				loadError={data.commentsLoadError}
-				deletedUserIds={deletedUserIds}
-				showDiscussions
-			/>
+			<!-- Discussion preview — full engine lives at /thread/{slug}. -->
+			<EntityDiscussions entityType="content" entityKey={story.id} authed={data.authed} />
 
 			<!-- §25: engagement-area ad slot. -->
 			<AdSlot slot="comments_below" format="banner" />

@@ -10,7 +10,7 @@
 	import CreatorCard from '#lib/components/blog/CreatorCard.svelte';
 	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
 	import SidebarWidgetRenderer from '#lib/components/shell/SidebarWidgetRenderer.svelte';
-	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import EntityDiscussions from '#lib/components/thread/EntityDiscussions.svelte';
 	import BlogSeriesNav from '#lib/components/blog/BlogSeriesNav.svelte';
 	import InArticleAd from '#lib/components/ads/InArticleAd.svelte';
 	import NextActionInline from '#lib/components/shell/NextActionInline.svelte';
@@ -29,9 +29,8 @@
 	let { data }: { data: PageData } = $props();
 
 	const article = $derived(data.article);
-	const deletedUserIds = $derived(
-		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
-	);
+	// Discussion preview mounts EntityDiscussions; the full comment engine
+	// lives at /thread/{slug}.
 
 	const isDraft = $derived(article.status === 'draft');
 	const canSubmitForReview = $derived(data.canEdit && isDraft);
@@ -343,19 +342,8 @@
 		</div>
 
 		<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
-		<CommentThread
-			comments={data.comments}
-			commentsTotal={data.commentsTotal}
-			totalCount={article.comment_count}
-			contentId={article.id}
-			contentType={article.content_type}
-			authed={data.authed}
-			currentUserId={data.currentUserId}
-			canModerate={data.canModerate}
-			loadError={data.commentsLoadError}
-			deletedUserIds={deletedUserIds}
-			showDiscussions
-		/>
+		<!-- Discussion preview — full engine lives at /thread/{slug}. -->
+		<EntityDiscussions entityType="content" entityKey={article.id} authed={data.authed} />
 
 		<!-- §25: engagement-area ad slots — hidden when no campaign fills them. -->
 		<AdSlot slot="comments_below" format="banner" />
