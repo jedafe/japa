@@ -11,7 +11,7 @@ import {
 	type Block
 } from '@japaconnect/landing-blocks';
 import type { WikiDestination, WikiTypeItem, PageBuilderPage } from '#lib/types/index.js';
-import { wikiDrillChain } from '#lib/utils/wikiTypeChain.js';
+import { wikiDestinationChain } from '#lib/utils/wikiTypeChain.js';
 
 /**
  * §80 Hierarchical UX + directories: the landing is a root-grid +
@@ -68,7 +68,7 @@ export const load: PageServerLoad = async (event) => {
 		types = (typesRes.items ?? [])
 			.filter((t) => t.enabled !== false)
 			.sort((a, b) => a.position - b.position);
-		chain = wikiDrillChain(types);
+		chain = wikiDestinationChain(types);
 
 		const rootSlug = chain[0]?.space_type_slug ?? '';
 		// The flag gallery is inherently country-level: when the chain roots

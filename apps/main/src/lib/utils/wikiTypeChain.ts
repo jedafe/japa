@@ -39,12 +39,10 @@ export function wikiPrimaryChild(types: WikiTypeItem[], type: WikiTypeItem): Wik
 	);
 }
 
-/** The full drill chain starting at the first root: [country, state, city]
- *  for the default seed. Stops at depth 5 — deeper nests (neighborhood)
- *  surface as chips/contextual pickers on the space page instead. */
-export function wikiDrillChain(types: WikiTypeItem[]): WikiTypeItem[] {
-	const root = wikiTypeRoots(types)[0];
-	if (!root) return [];
+/** The drill chain descending from a given root through primary-lineage
+ *  children. Stops at depth 5 — deeper nests (neighborhood) surface as
+ *  chips/contextual pickers on the space page instead. */
+function drillFrom(types: WikiTypeItem[], root: WikiTypeItem): WikiTypeItem[] {
 	const chain = [root];
 	for (let i = 0; i < 5; i++) {
 		const next = wikiPrimaryChild(types, chain[chain.length - 1]);
@@ -52,6 +50,37 @@ export function wikiDrillChain(types: WikiTypeItem[]): WikiTypeItem[] {
 		chain.push(next);
 	}
 	return chain;
+}
+
+/** The full drill chain starting at the first root: [country, state, city]
+ *  for the default seed. */
+export function wikiDrillChain(types: WikiTypeItem[]): WikiTypeItem[] {
+	const root = wikiTypeRoots(types)[0];
+	if (!root) return [];
+	return drillFrom(types, root);
+}
+
+/** The destination chain for the /wiki landing — the chain containing the
+ *  'country' level, resolved by walking UP the declared parent edges from
+ *  country to the chain's root, then drilling back down. Entity types
+ *  (ai-agent, saas, …) are roots too, so "the first root" is arbitrary;
+ *  the flag gallery is anchored on the geo hierarchy. Falls back to the
+ *  first-root chain when no country type exists. */
+export function wikiDestinationChain(types: WikiTypeItem[]): WikiTypeItem[] {
+	const country = types.find((t) => t.space_type_slug === 'country');
+	if (!country) return wikiDrillChain(types);
+
+	const byId = new Map(types.map((t) => [t.space_type_id, t]));
+	let root = country;
+	// Walk up declared parents (first edge wins — geo types are
+	// single-parented) to the topmost ancestor, depth-capped.
+	for (let i = 0; i < 6; i++) {
+		const pid = (root.parent_type_ids ?? [])[0];
+		const parent = pid ? byId.get(pid) : undefined;
+		if (!parent) break;
+		root = parent;
+	}
+	return drillFrom(types, root);
 }
 
 /** Child types of `type` other than the primary-lineage child — the
