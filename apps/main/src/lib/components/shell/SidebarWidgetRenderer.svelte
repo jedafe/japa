@@ -22,7 +22,7 @@
 	// suggested_spaces) receive their data from the parent RightSidebar via
 	// props, since the data is already fetched SSR in +layout.server.ts.
 
-	import { Sun, Moon, Languages, Check, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, Bookmark, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, AtSign, Globe, Link, Rss, Users, TrendingUp, Activity } from 'lucide-svelte';
+	import { Sun, Moon, Languages, Check, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, Bookmark, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, AtSign, Globe, Link, Rss, Users, TrendingUp, Activity, Newspaper, Sparkles, Compass, Puzzle, Target } from 'lucide-svelte';
 	import { theme } from '#lib/stores/theme.svelte.js';
 	import { t, i18n } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
@@ -213,7 +213,15 @@
 	interface FeaturedPost { id: string; title: string; slug: string; content_type?: string; }
 	interface SpaceItem { id: string; name: string; slug: string; member_count: number; }
 	interface SpaceTypeItem { id: string; name: string; slug: string; icon?: string | null; }
-	interface RecentContentItem { id: string; title: string; slug: string; content_type: string; }
+	interface RecentContentItem {
+		id: string;
+		title: string;
+		slug: string;
+		content_type: string;
+		author_username?: string;
+		author_display_name?: string | null;
+		author_avatar_url?: string | null;
+	}
 	interface BookmarkFolderItem { id: string; name: string; bookmark_count?: number; }
 	interface LeaderboardUser { id: string; username: string; display_name?: string; avatar_url?: string; score: number; }
 	interface EventItem { id: string; title: string; starts_at?: string; url?: string; }
@@ -1062,7 +1070,10 @@
 {:else if widget.widget_type === 'trending_tags'}
 	{#if trendingTags.length > 0}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.trending_tags')}</h2>
+			<div class="mb-3 flex items-center gap-2">
+				<TrendingUp size={18} class="text-[var(--color-primary-text)]" />
+				<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.trending_tags')}</h2>
+			</div>
 			<ul class="flex flex-wrap gap-2">
 				{#each trendingTags.slice(0, limit) as tag (tag.id)}
 					<li>
@@ -1079,7 +1090,10 @@
 {:else if widget.widget_type === 'suggested_spaces'}
 	{#if suggestedSpaces.length > 0}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.suggested_spaces')}</h2>
+			<div class="mb-3 flex items-center gap-2">
+				<Users size={18} class="text-[var(--color-primary-text)]" />
+				<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.suggested_spaces')}</h2>
+			</div>
 			<ul class="space-y-2">
 				{#each suggestedSpaces.slice(0, limit) as space (space.id)}
 					<li>
@@ -1131,24 +1145,46 @@
 	{/if}
 {:else if widget.widget_type === 'recent_content'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.recent_posts', 'Recent Posts')}</h2>
+		<div class="mb-3 flex items-center gap-2">
+			<Newspaper size={18} class="text-[var(--color-primary-text)]" />
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.recent_posts', 'Recent Posts')}</h2>
+		</div>
 		{#if !user}
 			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.sign_in_to_see', 'Sign in to see recent posts')}</p>
 		{:else if !dataLoaded['recent_content']}
 			<!-- Skeleton while the client fetch resolves — the empty state must
 			     not flash before real data lands. -->
 			<div class="space-y-2">
-				<div class="jc-skeleton h-4 w-full rounded"></div>
-				<div class="jc-skeleton h-4 w-3/4 rounded"></div>
-				<div class="jc-skeleton h-4 w-1/2 rounded"></div>
+				{#each Array(3) as _}
+					<div class="flex items-center gap-2.5">
+						<div class="jc-skeleton h-9 w-9 shrink-0 rounded-full"></div>
+						<div class="min-w-0 flex-1 space-y-1.5">
+							<div class="jc-skeleton h-4 w-full rounded"></div>
+							<div class="jc-skeleton h-3 w-1/2 rounded"></div>
+						</div>
+					</div>
+				{/each}
 			</div>
 		{:else if recentContent.length === 0}
 			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_content', 'No recent posts')}</p>
 		{:else}
-			<ul class="space-y-2">
+			<ul class="space-y-1">
 				{#each recentContent.slice(0, limit) as item (item.id)}
+					{@const authorName = item.author_display_name || item.author_username || ''}
 					<li>
-						<a href={contentHref(item)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{item.title}</a>
+						<a href={contentHref(item)} class="flex items-start gap-2.5 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
+							{#if item.author_avatar_url}
+								<img src={item.author_avatar_url} alt={authorName} class="h-9 w-9 shrink-0 rounded-full object-cover" />
+							{:else}
+								<span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">{(authorName || '?').charAt(0).toUpperCase()}</span>
+							{/if}
+							<span class="min-w-0 flex-1">
+								<span class="line-clamp-2 text-sm leading-snug text-[var(--color-text)]">{item.title}</span>
+								{#if authorName}
+									<span class="mt-0.5 block truncate text-xs text-[var(--color-muted)]">{authorName}</span>
+								{/if}
+							</span>
+						</a>
 					</li>
 				{/each}
 			</ul>
@@ -1156,7 +1192,10 @@
 	</section>
 {:else if widget.widget_type === 'suggested_content'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.suggested_content', 'Suggested for you')}</h2>
+		<div class="mb-3 flex items-center gap-2">
+			<Sparkles size={18} class="text-[var(--color-primary-text)]" />
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.suggested_content', 'Suggested for you')}</h2>
+		</div>
 		{#if !user}
 			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.sign_in_for_suggestions', 'Sign in to see suggestions')}</p>
 		{:else if !dataLoaded['suggested_content']}
@@ -1190,7 +1229,10 @@
 	{:else if nextActions.length > 0}
 		{@const na = nextActions[0]}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.next_action', 'Your next step')}</h2>
+			<div class="mb-2 flex items-center gap-2">
+				<Compass size={18} class="text-[var(--color-primary-text)]" />
+				<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.next_action', 'Your next step')}</h2>
+			</div>
 			<p class="text-sm font-medium text-[var(--color-text)]">{na.title}</p>
 			{#if na.body}<p class="mt-1 text-xs text-[var(--color-muted)]">{na.body}</p>{/if}
 			<div class="mt-3 flex items-center gap-2">
@@ -1208,7 +1250,10 @@
 	{/if}
 {:else if widget.widget_type === 'space_list'}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.spaces', 'Spaces')}</h2>
+		<div class="mb-3 flex items-center gap-2">
+			<Globe size={18} class="text-[var(--color-primary-text)]" />
+			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.spaces', 'Spaces')}</h2>
+		</div>
 		{#if !dataLoaded['space_list']}
 			<div class="space-y-2">
 				<div class="jc-skeleton h-9 w-full rounded"></div>
@@ -1296,7 +1341,12 @@
 	)}
 	{#if validLinks.length > 0}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			{#if title}<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title}</h2>{/if}
+			{#if title}
+				<div class="mb-3 flex items-center gap-2">
+					<Share2 size={18} class="text-[var(--color-primary-text)]" />
+					<h2 class="text-sm font-medium text-[var(--color-text)]">{title}</h2>
+				</div>
+			{/if}
 			<div class="flex flex-wrap gap-2">
 				{#each validLinks as link, i (String(link.platform ?? '') + '-' + i)}
 					{@const SocialIcon = socialIconByPlatform[String(link.platform ?? '').toLowerCase().trim()] ?? Share2}
@@ -1335,7 +1385,10 @@
 {:else if widget.widget_type === 'tag_cloud'}
 	{#if popularTags.length > 0}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.popular_tags')}</h2>
+			<div class="mb-3 flex items-center gap-2">
+				<Hash size={18} class="text-[var(--color-primary-text)]" />
+				<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.popular_tags')}</h2>
+			</div>
 			<div class="flex flex-wrap gap-1.5">
 				{#each popularTags.slice(0, limit) as tag, i (tag.id)}
 					<a
@@ -1584,7 +1637,10 @@
 {:else if widget.widget_type === 'progress_ring'}
 	{#if user}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-center">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.my_progress', 'My Progress')}</h2>
+			<div class="mb-3 flex items-center justify-center gap-2">
+				<Target size={18} class="text-[var(--color-primary-text)]" />
+				<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.my_progress', 'My Progress')}</h2>
+			</div>
 			{#if !dataLoaded['progress_ring']}
 				<div class="mx-auto grid h-20 w-20 place-items-center">
 					<div class="jc-skeleton h-16 w-16 rounded-full"></div>
@@ -1682,7 +1738,10 @@
 			/>
 		{:else}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.widget', 'Widget')}</h2>
+			<div class="mb-3 flex items-center gap-2">
+				<Puzzle size={18} class="text-[var(--color-primary-text)]" />
+				<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.widget', 'Widget')}</h2>
+			</div>
 			{#if !dataLoaded['configured_widget']}
 				<div class="space-y-2">
 					<div class="jc-skeleton h-4 w-full rounded"></div>

@@ -2673,6 +2673,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -2749,6 +2750,7 @@ type ListContentsRow struct {
 	IsFeatured        bool               `json:"is_featured"`
 	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
+	AuthorAvatarUrl   string             `json:"author_avatar_url"`
 	SpaceName         *string            `json:"space_name"`
 }
 
@@ -2810,6 +2812,7 @@ func (q *Queries) ListContents(ctx context.Context, arg ListContentsParams) ([]L
 			&i.IsFeatured,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
+			&i.AuthorAvatarUrl,
 			&i.SpaceName,
 		); err != nil {
 			return nil, err
@@ -2831,6 +2834,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
  c.field_values->>'purpose' AS purpose,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -2904,6 +2908,7 @@ type ListContentsByIDsRow struct {
 	Purpose           interface{}        `json:"purpose"`
 	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
+	AuthorAvatarUrl   string             `json:"author_avatar_url"`
 	SpaceName         *string            `json:"space_name"`
 }
 
@@ -2968,6 +2973,7 @@ func (q *Queries) ListContentsByIDs(ctx context.Context, arg ListContentsByIDsPa
 			&i.Purpose,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
+			&i.AuthorAvatarUrl,
 			&i.SpaceName,
 		); err != nil {
 			return nil, err
@@ -3350,6 +3356,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c
  EXISTS(SELECT 1 FROM content_featured cf WHERE cf.content_id = c.id
  AND (cf.featured_until IS NULL OR cf.featured_until > now())) AS is_featured,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
  s.name AS space_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
@@ -3455,6 +3462,7 @@ type ListContentsByTypeRow struct {
 	IsFeatured        bool               `json:"is_featured"`
 	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
+	AuthorAvatarUrl   string             `json:"author_avatar_url"`
 	SpaceName         *string            `json:"space_name"`
 }
 
@@ -3533,6 +3541,7 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 			&i.IsFeatured,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
+			&i.AuthorAvatarUrl,
 			&i.SpaceName,
 		); err != nil {
 			return nil, err
@@ -3636,6 +3645,7 @@ SELECT cf.id AS featured_id, cf.featured_order, cf.featured_until,
  c.field_values->>'purpose' AS purpose,
  COALESCE(ft.vote_score, cs.vote_score, 0) AS vote_score,
  COALESCE(u.public_username, u.username, '') AS author_username, up.display_name AS author_display_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
  s.name AS space_name
 FROM content_featured cf
 JOIN contents c ON c.id = cf.content_id
@@ -3718,6 +3728,7 @@ type ListFeaturedContentsByTypeRow struct {
 	VoteScore         int32              `json:"vote_score"`
 	AuthorUsername    string             `json:"author_username"`
 	AuthorDisplayName *string            `json:"author_display_name"`
+	AuthorAvatarUrl   string             `json:"author_avatar_url"`
 	SpaceName         *string            `json:"space_name"`
 }
 
@@ -3786,6 +3797,7 @@ func (q *Queries) ListFeaturedContentsByType(ctx context.Context, arg ListFeatur
 			&i.VoteScore,
 			&i.AuthorUsername,
 			&i.AuthorDisplayName,
+			&i.AuthorAvatarUrl,
 			&i.SpaceName,
 		); err != nil {
 			return nil, err

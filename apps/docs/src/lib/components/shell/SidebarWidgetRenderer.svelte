@@ -240,7 +240,12 @@
 
 	{#if validLinks.length > 0}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			{#if title}<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title}</h2>{/if}
+			{#if title}
+				<div class="mb-3 flex items-center gap-2">
+					<Share2 size={18} class="text-[var(--color-primary)]" />
+					<h2 class="text-sm font-medium text-[var(--color-text)]">{title}</h2>
+				</div>
+			{/if}
 			<div class="flex flex-wrap gap-2">
 				{#each validLinks as link, i (String(link.platform ?? '') + '-' + i)}
 					{@const SocialIcon = socialIconByPlatform[String(link.platform ?? '').toLowerCase().trim()] ?? Share2}

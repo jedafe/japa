@@ -3,6 +3,7 @@
 	// Uses the shared academy_enrollments store so it stays in sync with other widgets
 	// (ContinueAcademyCard, AcademyEnrollmentsWidget) after mutations.
 	import { t } from '#lib/i18n/index.js';
+	import { Target } from 'lucide-svelte';
 	import ProgressRing from '#lib/components/academy/ProgressRing.svelte';
 	import { enrollmentsStore } from '#lib/stores/enrollments.svelte.js';
 
@@ -37,7 +38,10 @@
 </script>
 
 <section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-center">
-	<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('academy.progress', 'My Progress')}</h2>
+	<div class="mb-3 flex items-center justify-center gap-2">
+		<Target size={18} class="text-[var(--color-primary)]" />
+		<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('academy.progress', 'My Progress')}</h2>
+	</div>
 	{#if loading}
 		<div class="mx-auto grid h-20 w-20 place-items-center">
 			<div class="jc-skeleton h-16 w-16 rounded-full"></div>
