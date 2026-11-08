@@ -144,7 +144,7 @@ func parsePagination(r *http.Request) (int, int) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	if page <= 0 {
+	if page <= 0 || page > 1000000 {
 		page = 1
 	}
 

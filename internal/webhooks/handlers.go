@@ -401,8 +401,8 @@ func parsePageSize(r *http.Request) int32 {
 
 func parsePageSizeOffset(r *http.Request) int32 {
 	if v := r.URL.Query().Get("page_offset"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			return int32(n) // #nosec
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil {
+			return int32(n)
 		}
 	}
 

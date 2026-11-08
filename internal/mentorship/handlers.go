@@ -151,7 +151,7 @@ func parsePage(r *http.Request) (int32, int32) {
 	page := 1
 
 	if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 1000000 {
 			page = n
 		}
 	}
@@ -229,7 +229,7 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 	page := 1
 
 	if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 1000000 {
 			page = n
 		}
 	}

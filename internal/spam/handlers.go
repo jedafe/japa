@@ -115,8 +115,8 @@ func parsePageOffset(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_offset")
 	if s == "" {
 		if ps := r.URL.Query().Get("page"); ps != "" {
-			if p, err := strconv.ParseInt(ps, 10, 32); err == nil && p >= 0 {
-				return int32(p) * parsePageSize(r)
+			if p, err := strconv.ParseInt(ps, 10, 32); err == nil && p >= 0 && p <= 1000000 {
+				return int32(p) * parsePageSize(r) // #nosec G115 -- p<=1e6, pageSize<=cap
 			}
 		}
 
