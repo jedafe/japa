@@ -558,4 +558,12 @@ func TestAnonCacheKey(t *testing.T) {
 	if k := res.anonCacheKey(req); !strings.Contains(k, "visitor:ctx:ip:") {
 		t.Errorf("anonCacheKey(plain) = %q, want ip scope", k)
 	}
+
+	// An unresolvable client IP has no cache scope — otherwise every such
+	// request would collapse into a single shared "ip:" bucket.
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = ""
+	if k := res.anonCacheKey(req); k != "" {
+		t.Errorf("anonCacheKey(empty-ip) = %q, want empty (no cache scope)", k)
+	}
 }

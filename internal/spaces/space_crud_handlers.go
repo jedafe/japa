@@ -53,7 +53,7 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	search := strings.TrimSpace(q.Get("q"))
-	geoCode := strings.TrimSpace(q.Get("geo"))
+	geoCode := strings.ToUpper(strings.TrimSpace(q.Get("geo")))
 	// ?within= is a primary-space slug (country/state/city) — the
 	// hierarchical closure matches spaces linked to it or its geo
 	// descendants via space_parent_spaces/parent_id (same semantics as

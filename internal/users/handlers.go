@@ -20,6 +20,7 @@ import (
 	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -843,8 +844,8 @@ func (h *Handlers) UpdateMyContentCountry(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	country := strings.ToUpper(strings.TrimSpace(body.Country))
-	if country != "" && len(country) != 2 {
+	country := visitor.NormalizeCountry(body.Country)
+	if strings.TrimSpace(body.Country) != "" && country == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_country", "Country must be a 2-letter ISO code")
 		return
 	}

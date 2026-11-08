@@ -351,15 +351,22 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 		if pref, err := res.read.GetUserContentCountryPreference(r.Context(),
 
 			user.UserID,
-		); err == nil && pref != nil && *pref != "" {
-			vc.ContentCountry = strings.ToUpper(*pref)
-			vc.Source = "preference"
-			// Still resolve archetype for analytics/surfacing, using profile
-			// fields + GeoIP, but the preference wins for ContentCountry.
-			res.enrichArchetype(r.Context(), &vc, user, "")
-			res.cache(r.Context(), cacheKey, vc)
+		); err == nil && pref != nil {
+			// normalizeCountry also defends against legacy malformed
+			// values: an invalid stored preference is treated as unset and
+			// resolution falls through to archetype rather than pinning a
+			// bogus code.
+			if cc := normalizeCountry(*pref); cc != "" {
+				vc.ContentCountry = cc
+				vc.Source = "preference"
+				// Still resolve archetype for analytics/surfacing, using
+				// profile fields + GeoIP, but the preference wins for
+				// ContentCountry.
+				res.enrichArchetype(r.Context(), &vc, user, "")
+				res.cache(r.Context(), cacheKey, vc)
 
-			return vc
+				return vc
+			}
 		}
 	}
 
@@ -667,7 +674,13 @@ func (res *Resolver) anonCacheKey(r *http.Request) string {
 		return valkey.MustKey("visitor:ctx:journey:%s", c.Value)
 	}
 
-	return valkey.MustKey("visitor:ctx:ip:%s", clientip.FromRequest(r))
+	if ip := clientip.FromRequest(r); ip != "" {
+		return valkey.MustKey("visitor:ctx:ip:%s", ip)
+	}
+
+	// No resolvable scope (e.g. empty RemoteAddr): skip caching rather than
+	// collapse every such request into a single "jc:visitor:ctx:ip:" bucket.
+	return ""
 }
 
 // hasJourneyParams reports whether the request carries any of the

@@ -1190,16 +1190,17 @@ func parseTrendingWindow(r *http.Request) string {
 }
 
 // parseTrendingGeo normalizes the ?geo= query param for the trending SQL
-// ($2 IS NULL or ” → unfiltered). ?geo=all is the documented unfiltered
-// override (ADR-064 §2) — it must not reach SQL as a literal geo_code, or
-// it would match nothing and blank the feed.
+// ($2 empty → unfiltered). ?geo=all is the documented unfiltered override
+// (ADR-064 §2) — it must not reach SQL as a literal geo_code, or it would
+// match nothing and blank the feed. Values are uppercased to match stored
+// geo_code rows ("?geo=ng" behaves like "?geo=NG").
 func parseTrendingGeo(r *http.Request) string {
 	g := strings.TrimSpace(r.URL.Query().Get("geo"))
 	if strings.EqualFold(g, "all") {
 		return ""
 	}
 
-	return g
+	return strings.ToUpper(g)
 }
 
 // GetTrendingContentHandler handles GET /api/v1/trending/content — returns

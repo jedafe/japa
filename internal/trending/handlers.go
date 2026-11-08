@@ -170,7 +170,12 @@ func parseGeoCode(r *http.Request) string {
 			return ""
 		}
 
-		return g
+		// Same rule as the visitor resolver: a malformed ?geo= is "no
+		// override", so fall through to the resolved ContentCountry rather
+		// than filtering on a nonexistent geo_code.
+		if cc := visitor.NormalizeCountry(g); cc != "" {
+			return cc
+		}
 	}
 
 	return visitor.FromContext(r.Context()).ContentCountry

@@ -289,9 +289,12 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	if geoParam := r.URL.Query().Get("geo"); geoParam != "" {
 		if strings.EqualFold(strings.TrimSpace(geoParam), "all") {
 			geoCountry = ""
-		} else {
-			geoCountry = strings.ToUpper(strings.TrimSpace(geoParam))
+		} else if cc := visitor.NormalizeCountry(geoParam); cc != "" {
+			geoCountry = cc
 		}
+		// Invalid values are ignored — same rule as the visitor resolver:
+		// a malformed ?geo= is "no override", not a filter for a
+		// nonexistent country.
 	}
 
 	// §54: build the extra posts-index filter from content_type, space_id,
