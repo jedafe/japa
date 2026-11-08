@@ -1670,6 +1670,26 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Thread context for /thread/{slug} embed rendering — only `discussion`
+	// rows can be anchor threads (tool/wiki entity) or §49 link targets
+	// (parent content). Both lookups are single-row and skip every other
+	// content type.
+	if content.ContentType == "discussion" {
+		if anchor, aErr := h.Service.ThreadAnchorFor(r.Context(), content.ID); aErr == nil && anchor != nil {
+			dto["thread_anchor"] = anchor
+		} else if parent, pErr := h.Service.ThreadParentFor(r.Context(), content.ID); pErr == nil && parent != nil {
+			dto["thread_parent"] = map[string]any{
+				"slug":         parent.Slug,
+				"title":        parent.Title,
+				"content_type": parent.ContentType,
+				"excerpt":      parent.Excerpt,
+			}
+			if parent.FeaturedStorageBucket != nil && parent.FeaturedStoragePath != nil {
+				dto["thread_parent"].(map[string]any)["cover_image_url"] = media.MediaURL(*parent.FeaturedStorageBucket, *parent.FeaturedStoragePath, media.ImageProxyOpts{})
+			}
+		}
+	}
+
 	resp := map[string]any{"data": dto}
 
 	if len(erasedIDs) > 0 {
