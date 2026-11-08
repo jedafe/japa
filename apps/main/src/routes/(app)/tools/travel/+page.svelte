@@ -499,10 +499,12 @@
 		dirPage = res.data.page ?? nextPage;
 	}
 
-	function dirSearch(recordRecent = false) {
+	// recordRecent → store the search only once it succeeds — a failed
+	// directory call shouldn't pollute My searches.
+	async function dirSearch(recordRecent = false) {
 		dirPage = 1;
-		loadDirectory(1);
-		if (recordRecent) {
+		await loadDirectory(1);
+		if (recordRecent && !dirError) {
 			recordSearch(
 				'hotel',
 				dirCity.trim() || dirQuery.trim() || t('travel.all_stays', 'All stays'),
@@ -765,7 +767,9 @@
 
 	function loadRecentSearches() {
 		try {
-			recentSearches = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
+			const v: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
+			// A hand-edited/corrupt value must not break the {#each}.
+			recentSearches = Array.isArray(v) ? v : [];
 		} catch {
 			recentSearches = [];
 		}
@@ -782,17 +786,18 @@
 	}
 
 	function runRecent(r: RecentSearch) {
+		const fields = r.fields ?? {};
 		if (r.kind === 'flight') {
-			flightOrigin = r.fields.flightOrigin ?? '';
-			flightDest = r.fields.flightDest ?? '';
+			flightOrigin = fields.flightOrigin ?? '';
+			flightDest = fields.flightDest ?? '';
 			switchTab('flights');
 			searchFlights();
 		} else {
 			// hotelDest: field name used by recents stored before the
 			// directory-browse model — keep them replayable.
-			dirCity = r.fields.dirCity ?? r.fields.hotelDest ?? '';
-			dirQuery = r.fields.dirQuery ?? '';
-			dirMinStars = r.fields.dirMinStars ?? '';
+			dirCity = fields.dirCity ?? fields.hotelDest ?? '';
+			dirQuery = fields.dirQuery ?? '';
+			dirMinStars = fields.dirMinStars ?? '';
 			switchTab('hotels');
 			dirLoaded = true;
 			dirSearch();
@@ -1206,9 +1211,10 @@
 						<button type="button" class="travel-alert-retry" onclick={() => loadAirlines(alPage)}>{t('common.retry', 'Try again')}</button>
 					</div>
 				{/if}
-				{#if alLoading && alItems.length === 0}
+				{#if alLoading && showcaseItems.length === 0}
 					<section class="travel-section"><LoadingSkeleton variant="lines" /></section>
-				{:else if alItems.length > 0}
+				{/if}
+				{#if showcaseItems.length > 0}
 					<section class="travel-section" aria-labelledby="pop-airlines-h">
 						<div class="travel-section-head">
 							<div>
@@ -1339,8 +1345,11 @@
 						<div class="feature-item"><span class="feature-icon f-violet"><Star size={16} /></span><div><strong>{t('travel.feature_coverage', 'Wide coverage')}</strong><span>{t('travel.feature_coverage_sub', 'Compare offers across many carriers.')}</span></div></div>
 						<div class="feature-item"><span class="feature-icon f-mint"><ShieldCheck size={16} /></span><div><strong>{t('travel.feature_promise', 'Best price promise')}</strong><span>{t('travel.feature_promise_sub', 'We help you find the best fares available.')}</span></div></div>
 					</div>
+				{/if}
 
-					<!-- Airline directory browser -->
+				<!-- Airline directory browser — outside the showcase guard so a
+				     0-result search keeps the form reachable. -->
+				{#if alLoaded || alLoading}
 					<section class="travel-section" aria-labelledby="al-dir-h" bind:this={airlineDirEl}>
 						<div class="travel-section-head">
 							<div>
@@ -1361,7 +1370,9 @@
 							</button>
 						</form>
 
-						{#if alItems.length > 0}
+						{#if alLoading && alItems.length === 0}
+							<LoadingSkeleton variant="lines" />
+						{:else if alItems.length > 0}
 							<div class="mb-3 flex flex-wrap items-center gap-2">
 								<p class="me-auto text-xs text-[var(--color-muted)]">
 									{t('travel.airlines_count', '{count} airlines in the directory', { count: alTotal })}
@@ -1414,7 +1425,7 @@
 									<PaginationControls page={alPage} totalPages={alTotalPages} onPageChange={(p) => { loadAirlines(p); scrollToEl(airlineDirEl); }} />
 								</div>
 							{/if}
-						{:else if alLoaded && !alError && !alLoading}
+						{:else if !alError}
 							<EmptyState
 								icon={Plane}
 								title={t('travel.no_airlines', 'No airlines match')}
@@ -1877,7 +1888,10 @@
 		min-width: 0;
 	}
 	.travel-field-wide {
-		grid-column: span 2;
+		/* 1/-1 spans however many columns the auto-fit grid actually
+		   produced — span 2 would overflow onto an implicit track on
+		   viewports narrow enough for a single column. */
+		grid-column: 1 / -1;
 	}
 	.travel-field > label {
 		display: block;
