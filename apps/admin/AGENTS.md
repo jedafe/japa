@@ -1,6 +1,6 @@
 # AGENTS.md — JapaConnect Admin Panel
 
-This document captures the conventions for the `apps/admin` SvelteKit 2 + Svelte 5 Runes SPA.
+This document captures the conventions for the `apps/admin` SvelteKit 3 + Svelte 5 Runes SPA.
 It is the single source of truth for the shared UI components introduced by the
 admin-panel shared-component refactor and the recipe for migrating the
 remaining ~55 legacy entity pages to the new scaffold.

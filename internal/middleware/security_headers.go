@@ -23,6 +23,13 @@ func SecurityHeaders() func(http.Handler) http.Handler {
 			// content, leaking information cross-origin).
 			w.Header().Set("X-XSS-Protection", "0")
 			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			// HSTS: emitted unconditionally — browsers ignore STS on plain-HTTP
+			// responses, so local dev over :8080 is unaffected while production
+			// responses (TLS terminated at the edge) carry it through.
+			// includeSubDomains is safe because every production surface lives
+			// under the same TLS'd base domain; preload is deliberately omitted
+			// — list submission is a one-way commitment.
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 
 			path := r.URL.Path
 			if strings.HasPrefix(path, "/docs") || strings.HasPrefix(path, "/developer/swagger") {

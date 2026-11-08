@@ -44,7 +44,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-migrat
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" -o /japa-reindex ./cmd/reindex/
 
 # Stage 2: minimal runtime image
-FROM alpine:latest
+FROM alpine:3.23
 
 RUN apk --no-cache add ca-certificates tesseract-ocr tesseract-ocr-data-eng poppler-utils ffmpeg
 
