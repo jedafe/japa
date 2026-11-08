@@ -11,7 +11,7 @@ import {
 	Trophy,
 	MessageCircle
 } from 'lucide-svelte';
-import { SvelteComponent } from 'svelte';
+import type { IconComponent } from '#lib/components/ui/icons.js';
 import { t } from '#lib/i18n/index.js';
 
 /**
@@ -20,7 +20,7 @@ import { t } from '#lib/i18n/index.js';
  * scannable at a glance without forking the card layout.
  */
 export interface ContentTypeMeta {
-	icon: typeof SvelteComponent<any>;
+	icon: IconComponent;
 	/** CSS custom property used for the accent color. */
 	accentVar: string;
 	/** i18n key for the action label: t(key, fallback). */
