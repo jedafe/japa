@@ -249,21 +249,32 @@
 		return code === 'travel_quota_exceeded' || code === 'rate_limit_exceeded';
 	}
 
-	// ── Flight result list state (sort / filter / page) ─────────────────────
+	// ── Flight result list state (sort / filter / page — all server-side,
+	//    ADR-124) ─────────────────────────────────────────────────────────
 	let flightSort = $state('');
 	let flightAirline = $state('');
 	let flightPageSize = $state('10');
 	let flightPage = $state(1);
+	// Filtered-set size from the response (`total` is pre-pagination).
+	let flightTotal = $state(0);
+	// The committed route the displayed offers belong to — page/filter
+	// loads replay against it, not the (possibly edited) form fields.
+	let flightRoute = $state<{ origin: string; dest: string } | null>(null);
 
-	// Airline filter groups by the canonical airline_key so "P4" and
-	// "Air Peace" collapse into one option; the label prefers whichever raw
-	// provider string reads as a name over a bare code. Offers without a
-	// resolved key fall back to their raw value so filtering still works.
+	// Airline filter options are seeded from the search's full unfiltered
+	// set — paginated responses carry no facets, so they can't be derived
+	// from displayed pages. Rows group by the canonical airline_key so
+	// "P4" and "Air Peace" collapse into one option; the label prefers
+	// whichever raw provider string reads as a name over a bare code, and
+	// it's the label that's sent as the `airline` param (the service
+	// resolves names to canonical keys — a raw "iata:BA" key wouldn't
+	// match). Offers without a resolved key fall back to their raw value.
 	const airlineIdentity = (f: TravelFlightResult) => f.airline_key || f.airline;
+	let flightAirlineRows = $state<Array<{ value: string; label: string }>>([]);
 
-	const airlineOptions = $derived.by(() => {
+	function buildAirlineRows(offers: TravelFlightResult[]) {
 		const labels = new Map<string, string>();
-		for (const f of flights) {
+		for (const f of offers) {
 			const key = airlineIdentity(f);
 			const raw = f.airline || '';
 			if (!key || !raw) continue;
@@ -272,45 +283,19 @@
 				labels.set(key, raw);
 			}
 		}
-		return [
-			{ value: '', label: t('travel.all_airlines', 'All airlines') },
-			...[...labels.entries()]
-				.sort((a, b) => a[1].localeCompare(b[1]))
-				.map(([value, label]) => ({ value, label }))
-		];
-	});
+		return [...labels.entries()]
+			.sort((a, b) => a[1].localeCompare(b[1]))
+			.map(([value, label]) => ({ value, label }));
+	}
 
-	const filteredFlights = $derived(
-		flightAirline ? flights.filter((f) => airlineIdentity(f) === flightAirline) : flights
-	);
-
-	const sortedFlights = $derived.by(() => {
-		const arr = [...filteredFlights];
-		switch (flightSort) {
-			case 'price_asc':
-				return arr.sort((a, b) => a.price - b.price);
-			case 'price_desc':
-				return arr.sort((a, b) => b.price - a.price);
-			case 'duration':
-				return arr.sort((a, b) => durationMinutes(a.duration) - durationMinutes(b.duration));
-			case 'stops':
-				return arr.sort((a, b) => a.stops - b.stops);
-			case 'departure':
-				return arr.sort((a, b) => a.departure_time.localeCompare(b.departure_time));
-			default:
-				return arr;
-		}
-	});
+	const airlineOptions = $derived([
+		{ value: '', label: t('travel.all_airlines', 'All airlines') },
+		...flightAirlineRows
+	]);
 
 	const flightPageSizeNum = $derived(Number(flightPageSize) || 10);
 	const flightTotalPages = $derived(
-		Math.max(1, Math.ceil(sortedFlights.length / flightPageSizeNum))
-	);
-	const pagedFlights = $derived(
-		sortedFlights.slice(
-			(flightPage - 1) * flightPageSizeNum,
-			flightPage * flightPageSizeNum
-		)
+		Math.max(1, Math.ceil(flightTotal / flightPageSizeNum))
 	);
 
 	// Scroll results into view once a search lands (mockup keeps the
@@ -340,6 +325,7 @@
 		// No booking inputs — the provider query runs on a representative
 		// departure ~4 weeks out, disclosed in the results meta line.
 		flightDate = offsetDate(30);
+		flightRoute = { origin, dest };
 
 		flightLoading = true;
 		flightError = null;
@@ -349,24 +335,27 @@
 		flightsSearched = false;
 		flightMeta = null;
 		flightPage = 1;
-		// The airline filter is derived from the result set — a stale pick
-		// from a previous route would silently filter the new offers away.
+		flightTotal = 0;
+		flightAirlineRows = [];
+		// A stale pick from a previous route would silently filter the
+		// new offers away.
 		flightAirline = '';
 
 		const params = new URLSearchParams({ origin, dest, date: flightDate });
 		const seq = ++flightSeq;
-		// No sort/filter/page params — page_size 0 returns the full offer
-		// set (the service's documented contract for self-paginating
-		// clients), so all presentation happens client-side over the
-		// complete set and the airline filter sees every carrier.
+		// The full unfiltered set (page_size 0 contract) is fetched once
+		// to seed the airline-filter options — paginated responses carry
+		// no facets. Display pages then run server-side via loadFlightPage;
+		// every presentation shape serves from the same stored coverage,
+		// so those requests never hit the provider again.
 
 		const res = await api.get<TravelSearchResponse>(
 			`/travel/search/flights?${params.toString()}`
 		);
 		if (seq !== flightSeq) return; // a newer search owns the state
-		flightLoading = false;
 		flightsSearched = true;
 		if (res.error) {
+			flightLoading = false;
 			// feature_disabled is what the route gate returns when
 			// travel.enabled is off; travel_disabled is the service-level
 			// variant — both mean the whole surface is unavailable.
@@ -385,15 +374,72 @@
 			flightError = res.error.message;
 			return;
 		}
-		flights = res.data?.results as TravelFlightResult[] | undefined ?? [];
+		const all = (res.data?.results as TravelFlightResult[] | undefined) ?? [];
+		flightAirlineRows = buildAirlineRows(all);
 		flightMeta = res.data
 			? { cache_hit: res.data.cache_hit, source: res.data.source }
 			: null;
+		if (flightSort) {
+			// A sort carried over from a previous search needs the
+			// server's ordering over the full set — page 1 comes back
+			// through the pager.
+			await loadFlightPage(1);
+		} else {
+			// Unsorted/unfiltered: the response's first page-size slice is
+			// exactly what the server returns for page 1 — no second
+			// round trip.
+			flightTotal = res.data?.total ?? all.length;
+			flights = all.slice(0, flightPageSizeNum);
+			flightPage = 1;
+			flightLoading = false;
+		}
 		recordSearch('flight', `${origin} → ${dest}`, {
 			flightOrigin: origin,
 			flightDest: dest
 		});
 		scrollToResults();
+	}
+
+	// Server-side presentation (ADR-124): sort, airline filter and page
+	// are request params over the committed route's stored coverage.
+	async function loadFlightPage(page: number) {
+		const route = flightRoute;
+		if (!route) return;
+		flightLoading = true;
+
+		const params = new URLSearchParams({
+			origin: route.origin,
+			dest: route.dest,
+			date: flightDate,
+			page: String(page),
+			page_size: String(flightPageSizeNum)
+		});
+		if (flightSort) params.set('sort', flightSort);
+		if (flightAirline) {
+			// Send the option's label (an airline name) — the canonical
+			// key used as the select value wouldn't resolve server-side.
+			const param =
+				flightAirlineRows.find((o) => o.value === flightAirline)?.label ?? flightAirline;
+			params.set('airline', param);
+		}
+
+		const seq = ++flightSeq;
+		const res = await api.get<TravelSearchResponse>(
+			`/travel/search/flights?${params.toString()}`
+		);
+		if (seq !== flightSeq) return; // a newer request owns the state
+		flightLoading = false;
+		if (res.error) {
+			flightError = res.error.message;
+			return;
+		}
+		flightError = null;
+		flights = (res.data?.results as TravelFlightResult[] | undefined) ?? [];
+		flightTotal = res.data?.total ?? 0;
+		flightPage = res.data?.page ?? page;
+		flightMeta = res.data
+			? { cache_hit: res.data.cache_hit, source: res.data.source }
+			: flightMeta;
 	}
 
 	// ── Hotel directory (ADR-124) — the Hotels tab searches this curated
@@ -747,19 +793,6 @@
 	}
 
 	// ── Formatting helpers ──────────────────────────────────────────────────
-	function durationMinutes(s: string): number {
-		if (!s) return Number.MAX_SAFE_INTEGER;
-		const iso = (/^PT(?:(\d+)H)?(?:(\d+)M)?/i).exec(s);
-		if (iso && (iso[1] || iso[2])) return Number(iso[1] ?? 0) * 60 + Number(iso[2] ?? 0);
-		const hm = (/(\d+)\s*h(?:ours?)?\s*(\d+)?\s*m?/i).exec(s);
-		if (hm) return Number(hm[1]) * 60 + Number(hm[2] ?? 0);
-		const colon = (/(\d+):(\d+)/).exec(s);
-		if (colon) return Number(colon[1]) * 60 + Number(colon[2]);
-		const mins = (/(\d+)\s*m(?:in(?:ute)?s?)?\b/i).exec(s);
-		if (mins) return Number(mins[1]);
-		return Number.MAX_SAFE_INTEGER;
-	}
-
 	function formatDate(iso: string): string {
 		return iso ? iso.slice(0, 10) : '';
 	}
@@ -778,11 +811,18 @@
 
 	// "View flights" in the compare table — apply the airline filter and
 	// land on the results (page top when nothing has been searched yet,
-	// so the form is what the user sees next).
+	// so the form is what the user sees next). When the carrier is in the
+	// current option rows we select its canonical-key value; otherwise the
+	// raw name is kept — it's what the `airline` param resolves against.
 	function viewAirlineFlights(a: TravelAirlineItem) {
-		flightAirline = a.airline_key || a.name;
-		if (flights.length > 0) scrollToResults();
-		else window.scrollTo({ top: 0, behavior: 'smooth' });
+		const key = a.airline_key || a.name;
+		flightAirline = flightAirlineRows.some((o) => o.value === key) ? key : a.name;
+		if (flightsSearched) {
+			loadFlightPage(1);
+			scrollToResults();
+		} else {
+			window.scrollTo({ top: 0, behavior: 'smooth' });
+		}
 	}
 
 	function swapFlightEnds() {
@@ -1008,10 +1048,10 @@
 						body={t('travel.quota_exceeded_body', 'Too many provider requests right now. Wait a few minutes and try again.')}
 						action={{ label: t('common.retry', 'Try again'), onclick: () => searchFlights() }}
 					/>
-				{:else if flights.length > 0}
+				{:else if flightsSearched && (flights.length > 0 || flightAirline)}
 					<div class="mb-3 flex flex-wrap items-center gap-2">
 						<p class="me-auto text-xs text-[var(--color-muted)]">
-							{t('travel.results', '{count} results', { count: sortedFlights.length })}
+							{t('travel.results', '{count} results', { count: flightTotal })}
 							· {t('travel.fares_for', 'fares for {date}', { date: formatDate(flightDate) })}
 							{#if flightMeta?.source === 'stale'}· {t('travel.stale_results', 'results may be outdated')}{:else if flightMeta?.cache_hit}· {t('travel.cached', 'cached')}{/if}
 						</p>
@@ -1020,7 +1060,7 @@
 							<AutocompleteSelect
 								options={airlineOptions}
 								bind:value={flightAirline}
-								onValueChange={() => flightPage = 1}
+								onValueChange={() => loadFlightPage(1)}
 								ariaLabel={t('travel.filter_airline', 'Filter by airline')}
 								placeholder={t('travel.filter_airline', 'Filter by airline')}
 							/>
@@ -1030,7 +1070,7 @@
 							<AutocompleteSelect
 								options={flightSortOptions}
 								bind:value={flightSort}
-								onValueChange={() => flightPage = 1}
+								onValueChange={() => loadFlightPage(1)}
 								ariaLabel={t('travel.sort_by', 'Sort results')}
 							/>
 						</div>
@@ -1039,19 +1079,19 @@
 							<AutocompleteSelect
 								options={PAGE_SIZE_OPTIONS}
 								bind:value={flightPageSize}
-								onValueChange={() => flightPage = 1}
+								onValueChange={() => loadFlightPage(1)}
 								ariaLabel={t('travel.per_page', 'Results per page')}
 							/>
 						</div>
 					</div>
 
 					<div class="space-y-2">
-						{#if pagedFlights.length === 0}
+						{#if flights.length === 0}
 							<p class="py-8 text-center text-sm text-[var(--color-muted)]">
 								{t('travel.no_filtered', 'No offers match this airline — clear the filter to see them all.')}
 							</p>
 						{/if}
-						{#each pagedFlights as f, i (i)}
+						{#each flights as f, i (i)}
 							<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 								<div class="min-w-0 flex-1">
 									<span class="block text-sm font-medium text-[var(--color-text)]">{f.airline} {f.flight_number}</span>
@@ -1077,7 +1117,7 @@
 							<PaginationControls
 								page={flightPage}
 								totalPages={flightTotalPages}
-								onPageChange={(p) => { flightPage = p; scrollToResults(); }}
+								onPageChange={(p) => { loadFlightPage(p); scrollToResults(); }}
 							/>
 						</div>
 					{/if}
@@ -1759,7 +1799,7 @@
 		gap: 0.75rem;
 		padding-inline-start: 0.75rem;
 	}
-	.travel-tool-chip {
+	.travel-search-tools :global(.travel-tool-chip) {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
@@ -1825,7 +1865,7 @@
 		border: none !important;
 		box-shadow: none !important;
 	}
-	.travel-input-icon {
+	.travel-input :global(.travel-input-icon) {
 		position: absolute;
 		inset-inline-end: 0.625rem;
 		color: var(--color-muted);
