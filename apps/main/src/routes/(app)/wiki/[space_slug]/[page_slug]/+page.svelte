@@ -909,9 +909,12 @@
 			</article>
 
 			<!-- Discussion preview — full engine lives at /thread/{slug};
-			     the wiki page's thread anchors on demand. -->
+			     the wiki page's thread anchors on demand. Constrained to the
+			     article's max-w-3xl center shell. -->
 			{#if data.page?.id}
-				<EntityDiscussions entityType="wiki_page" entityKey={data.page.id} authed={data.authed} />
+				<div class="mx-auto w-full max-w-3xl">
+					<EntityDiscussions entityType="wiki_page" entityKey={data.page.id} authed={data.authed} />
+				</div>
 			{/if}
 		{/if}
 	</div>

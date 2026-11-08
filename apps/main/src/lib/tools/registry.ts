@@ -30,10 +30,11 @@ export interface MainToolMeta {
 	sections: ToolSection[];
 	/** Discussion-block placement on the tool detail page (thread-rename
 	 *  spec). 'bottom' mounts the 5-comment preview at the page foot via the
-	 *  /tools layout; 'sidebar' tools mount EntityDiscussions inside their
-	 *  own sidebar markup; 'none' renders no discussion block (e.g. JapaBot).
+	 *  /tools layout inside the standard max-w-3xl center shell; 'none'
+	 *  renders no block and leaves the page free to extend into the right
+	 *  shell (full-width workbenches — JapaBot, readiness, travel).
 	 *  Defaults to 'bottom' when omitted. */
-	discussion?: 'bottom' | 'sidebar' | 'none';
+	discussion?: 'bottom' | 'none';
 }
 
 /** Display order of the six categories on the hub. */
@@ -60,7 +61,8 @@ export const MAIN_TOOLS: MainToolMeta[] = [
 		labelKey: 'tools.readiness',
 		descKey: 'tools.readiness_desc',
 		enabledSetting: 'assessment.enabled',
-		sections: ['planning', 'finance']
+		sections: ['planning', 'finance'],
+		discussion: 'none'
 	},
 	{
 		// §103 + ADR-130 — JapaBot is the unified /ai surface: plain chat and

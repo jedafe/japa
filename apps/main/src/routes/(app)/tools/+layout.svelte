@@ -1,10 +1,13 @@
 <script lang="ts">
 	// /tools layout — mounts the entity discussion block at the bottom of
 	// tool detail pages whose registry entry opts in (discussion: 'bottom',
-	// the default). 'sidebar' tools mount EntityDiscussions in their own
-	// page markup; 'none' (e.g. JapaBot) render no block. The hub index and
-	// the [tab] permalink redirect never reach this render path — the slug
-	// must resolve to a registered tool anyway.
+	// the default) and constrains those pages to the standard center-shell
+	// width (max-w-3xl) used by every other page that renders with the right
+	// sidebar (/thread, /wiki, /spaces). 'none' tools (JapaBot, readiness,
+	// travel) are full-width workbenches that extend into the right shell —
+	// they render unwrapped with no discussion block. The hub index and the
+	// [tab] permalink redirect never reach this render path — the slug must
+	// resolve to a registered tool anyway.
 	import { page } from '$app/state';
 	import { isAuthed } from '#lib/auth/guest.js';
 	import { MAIN_TOOLS } from '#lib/tools/registry.js';
@@ -25,22 +28,13 @@
 	});
 </script>
 
-{@render children()}
-
 {#if toolSlug}
 	{#key toolSlug}
-		<div class="tool-discussions-wrap">
+		<div class="mx-auto w-full max-w-3xl">
+			{@render children()}
 			<EntityDiscussions entityType="tool" entityKey={toolSlug} authed={isAuthed()} />
 		</div>
 	{/key}
+{:else}
+	{@render children()}
 {/if}
-
-<style>
-	/* Tool pages each own their outer width/padding; the wrap matches the
-	   common centered-column width so the block aligns with page content. */
-	.tool-discussions-wrap {
-		max-width: 72rem;
-		margin: 0 auto;
-		padding: 0 1rem 2rem;
-	}
-</style>
