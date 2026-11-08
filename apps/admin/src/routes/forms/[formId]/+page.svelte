@@ -1164,7 +1164,7 @@
 							<div class="flex items-center gap-2">
 								<code
 									class="flex-1 rounded-md border border-border bg-surface px-3 py-2 text-xs font-mono text-foreground break-all"
-								><iframe src="{PUBLIC_JC_SITE_URL}/forms/{(form!).slug}" width="100%" height="600" frameborder="0"></iframe></code>
+								>{`<iframe src="${PUBLIC_JC_SITE_URL}/forms/${(form!).slug}" width="100%" height="600" frameborder="0"></iframe>`}</code>
 
 								<Button
 									variant="outline"

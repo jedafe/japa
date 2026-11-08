@@ -4,7 +4,7 @@
 	// deal multi-select write product_providers + product_deals in the save tx.
 	import { api, productsAdminApi, productTypesAdminApi, affiliateProvidersAdminApi } from '#lib/api.js';
 	import { t } from '#lib/stores/i18n.svelte.js';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { Loader2, Plus, Trash2, ImagePlus, X } from 'lucide-svelte';
 	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
@@ -37,18 +37,18 @@
 	let providersAll = $state<Provider[]>([]);
 	let dealsAll = $state<Deal[]>([]);
 
-	let typeSlug = $state(initial?.product?.type_slug ?? '');
-	let name = $state(initial?.product?.name ?? '');
-	let slug = $state(initial?.product?.slug ?? '');
-	let slugTouched = $state(mode === 'edit');
-	let tagline = $state(initial?.product?.tagline ?? '');
-	let description = $state(initial?.product?.description ?? '');
-	let logoId = $state<string | null>(initial?.product?.logo_id ?? null);
-	let logoUrl = $state<string | null>(initial?.logo_url ?? null);
+	let typeSlug = $state(untrack(() => initial?.product?.type_slug ?? ''));
+	let name = $state(untrack(() => initial?.product?.name ?? ''));
+	let slug = $state(untrack(() => initial?.product?.slug ?? ''));
+	let slugTouched = $state(untrack(() => mode === 'edit'));
+	let tagline = $state(untrack(() => initial?.product?.tagline ?? ''));
+	let description = $state(untrack(() => initial?.product?.description ?? ''));
+	let logoId = $state<string | null>(untrack(() => initial?.product?.logo_id ?? null));
+	let logoUrl = $state<string | null>(untrack(() => initial?.logo_url ?? null));
 	let logoTouched = $state(false); // PATCH sends logo_id only when picked/cleared
 	type GalleryItem = { media_id: string; url: string; filename?: string };
 	let gallery = $state<GalleryItem[]>(
-		(initial?.gallery ?? []).map((g: any) => ({ media_id: g.media_id, url: g.url, filename: g.filename }))
+		untrack(() => (initial?.gallery ?? []).map((g: any) => ({ media_id: g.media_id, url: g.url, filename: g.filename })))
 	);
 	let pickerFor = $state<'logo' | 'gallery' | null>(null);
 	let pickerOpen = $state(false);
@@ -61,21 +61,23 @@
 		if (!pickerOpen) { pickerFor = null; fieldPickerFor = null; }
 	});
 	let fieldPickerFor = $state<string | null>(null); // cfv field_id for image_single/media
-	let websiteUrl = $state(initial?.product?.website_url ?? '');
-	let pricingModel = $state(initial?.product?.pricing_model ?? '');
-	let priceFrom = $state(initial?.product?.price_from ?? '');
+	let websiteUrl = $state(untrack(() => initial?.product?.website_url ?? ''));
+	let pricingModel = $state(untrack(() => initial?.product?.pricing_model ?? ''));
+	let priceFrom = $state(untrack(() => initial?.product?.price_from ?? ''));
 
 	type ProviderRow = { provider_id: string; price_from: string; offer_url: string; position: number };
 	let providerRows = $state<ProviderRow[]>(
-		(initial?.providers ?? []).map((p: any, i: number) => ({
-			provider_id: p.provider_id,
-			price_from: p.price_from ?? '',
-			offer_url: p.offer_url ?? '',
-			position: i
-		}))
+		untrack(() =>
+			(initial?.providers ?? []).map((p: any, i: number) => ({
+				provider_id: p.provider_id,
+				price_from: p.price_from ?? '',
+				offer_url: p.offer_url ?? '',
+				position: i
+			}))
+		)
 	);
 
-	let dealIds = $state<string[]>((initial?.deals ?? []).map((d: any) => d.coupon_id));
+	let dealIds = $state<string[]>(untrack(() => (initial?.deals ?? []).map((d: any) => d.coupon_id)));
 
 	let schema = $state<SchemaGroup[]>([]);
 	let schemaLoading = $state(false);
