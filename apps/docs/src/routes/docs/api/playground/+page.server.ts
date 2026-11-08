@@ -18,7 +18,7 @@ export const load: PageServerLoad = async (event) => {
 	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	if (!event.locals.user) {
 		const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
-		throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
+		throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: [mainOrigin] });
 	}
 
 	let spec: OpenAPISpec | null = null;

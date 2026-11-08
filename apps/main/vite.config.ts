@@ -7,6 +7,10 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import type { Connect, Plugin } from 'vite';
 
+type CspSource = NonNullable<
+	NonNullable<NonNullable<NonNullable<Parameters<typeof sveltekit>[0]>['csp']>['directives']>['connect-src']
+>[number];
+
 // Dev-only backend target. In production the SSR server talks to the backend via
 // PRIVATE_API_BASE_URL ($lib/server/api); this proxy only serves browser fetches.
 const API_TARGET = 'http://localhost:8080';
@@ -83,9 +87,9 @@ const connectOrigins = [
 	envOrigin(env('PUBLIC_JC_WS_URL')),
 	envOrigin(env('PUBLIC_JC_UMAMI_URL')),
 	envOrigin(env('PUBLIC_JC_GLITCHTIP_DSN'))
-].filter(Boolean);
+].filter(Boolean) as CspSource[];
 
-const umamiOrigin = envOrigin(env('PUBLIC_JC_UMAMI_URL'));
+const umamiOrigin = envOrigin(env('PUBLIC_JC_UMAMI_URL')) as CspSource;
 
 export default defineConfig({
 	define: {
@@ -176,7 +180,8 @@ export default defineConfig({
 		proxy: {
 			// WebSocket upgrade must be matched before the plain /api/v1 entry
 			// (which has no ws:true) so the dev proxy upgrades /api/v1/ws to the
-			// backend's GET /api/v1/ws?ticket=... handler.
+			// backend's GET /api/v1/ws handler (ticket rides the
+			// Sec-WebSocket-Protocol subprotocol, not a query param).
 			'/api/v1/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
 			'/api/v1': { target: API_TARGET, changeOrigin: true, timeout: 0, proxyTimeout: 0 },
 			'/ws': { target: API_TARGET.replace(/^http/, 'ws'), ws: true, changeOrigin: true },

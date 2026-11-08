@@ -10,7 +10,7 @@ import { ACADEMY_ORIGIN } from '#lib/appOrigins.js';
 export const load: PageServerLoad = async ({ url, params }) => {
 	const rest = params.rest ?? '';
 	const path = rest ? `/${rest}` : '';
-	throw redirect(308, `${ACADEMY_ORIGIN}${path}${url.search}`, { external: true });
+	throw redirect(308, `${ACADEMY_ORIGIN}${path}${url.search}`, { external: [ACADEMY_ORIGIN] });
 };
 
 export const prerender = false;

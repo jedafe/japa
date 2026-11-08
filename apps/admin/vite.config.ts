@@ -4,6 +4,10 @@ import { defineConfig } from 'vitest/config';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 
+type CspSource = NonNullable<
+	NonNullable<NonNullable<NonNullable<Parameters<typeof sveltekit>[0]>['csp']>['directives']>['connect-src']
+>[number];
+
 const dev = process.argv.includes('dev');
 
 // Origins the browser legitimately connects to (API, realtime WS, Umami,
@@ -24,9 +28,9 @@ const connectOrigins = [
 	envOrigin(process.env.PUBLIC_JC_WS_URL),
 	envOrigin(process.env.PUBLIC_JC_UMAMI_URL),
 	envOrigin(process.env.PUBLIC_JC_GLITCHTIP_DSN)
-].filter(Boolean);
+].filter(Boolean) as CspSource[];
 
-const umamiOrigin = envOrigin(process.env.PUBLIC_JC_UMAMI_URL);
+const umamiOrigin = envOrigin(process.env.PUBLIC_JC_UMAMI_URL) as CspSource;
 
 export default defineConfig({
 	plugins: [

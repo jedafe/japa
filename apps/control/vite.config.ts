@@ -5,6 +5,10 @@ import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import type { Plugin } from 'vite';
 
+type CspSource = NonNullable<
+	NonNullable<NonNullable<NonNullable<Parameters<typeof sveltekit>[0]>['csp']>['directives']>['connect-src']
+>[number];
+
 function authProxyPlugin(): Plugin {
 	return {
 		name: 'auth-proxy',
@@ -46,9 +50,9 @@ const connectOrigins = [
 	envOrigin(process.env.PUBLIC_JC_WS_URL),
 	envOrigin(process.env.PUBLIC_JC_UMAMI_URL),
 	envOrigin(process.env.PUBLIC_JC_GLITCHTIP_DSN)
-].filter(Boolean);
+].filter(Boolean) as CspSource[];
 
-const umamiOrigin = envOrigin(process.env.PUBLIC_JC_UMAMI_URL);
+const umamiOrigin = envOrigin(process.env.PUBLIC_JC_UMAMI_URL) as CspSource;
 
 export default defineConfig({
 	plugins: [

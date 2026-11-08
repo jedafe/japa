@@ -20,7 +20,7 @@ const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/
 export const load: PageServerLoad = async (event) => {
 	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	if (!event.locals.user) {
-		throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
+		throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: [mainOrigin] });
 	}
 
 	const ctx = apiContext(event);
@@ -90,7 +90,7 @@ export const actions: Actions = {
 	/** Create a new API key (Ref: §47 ROADMAP 06.02). */
 	create: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: [mainOrigin] });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
@@ -122,7 +122,7 @@ export const actions: Actions = {
 	/** Rename an API key — PATCH /me/api-keys/{id} (P5.6, name only). */
 	rename: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: [mainOrigin] });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
@@ -142,7 +142,7 @@ export const actions: Actions = {
 	 *  secret is returned once; the old key expires after a 24h grace. */
 	rotate: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: [mainOrigin] });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
@@ -160,7 +160,7 @@ export const actions: Actions = {
 	/** Add a CIDR entry to a key's IP allowlist (§47). */
 	addIp: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: [mainOrigin] });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
@@ -180,7 +180,7 @@ export const actions: Actions = {
 	/** Remove an IP allowlist entry (§47). */
 	removeIp: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: [mainOrigin] });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
@@ -199,7 +199,7 @@ export const actions: Actions = {
 	/** Revoke an API key (Ref: §47 ROADMAP 06.03). */
 	revoke: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: [mainOrigin] });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();

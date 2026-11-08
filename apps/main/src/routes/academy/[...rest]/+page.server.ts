@@ -17,7 +17,7 @@ export const load: PageServerLoad = async ({ url, params }) => {
 	const rest = params.rest ?? '';
 	const path = rest ? `/${rest}` : '';
 	const search = url.search; // preserves ?q=... etc.
-	throw redirect(302, `${ACADEMY_ORIGIN}${path}${search}`, { external: true });
+	throw redirect(302, `${ACADEMY_ORIGIN}${path}${search}`, { external: [ACADEMY_ORIGIN] });
 };
 
 export const prerender = false;

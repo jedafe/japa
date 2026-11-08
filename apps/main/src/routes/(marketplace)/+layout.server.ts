@@ -1,6 +1,6 @@
 import type { LayoutServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { academyUrl } from '#lib/appOrigins.js';
+import { ACADEMY_ORIGIN, academyUrl } from '#lib/appOrigins.js';
 
 // Pass-through: the root layout already loads everything the marketplace
 // chrome needs (user, siteSettings, menu, userSpaces, navCollapsed,
@@ -15,7 +15,7 @@ import { academyUrl } from '#lib/appOrigins.js';
 // rather than hoisted to the root layout so (auth) behavior is unchanged.
 export const load: LayoutServerLoad = async (event) => {
 	if (event.locals.isAcademyHost) {
-		throw redirect(302, academyUrl(`${event.url.pathname}${event.url.search}`), { external: true });
+		throw redirect(302, academyUrl(`${event.url.pathname}${event.url.search}`), { external: [ACADEMY_ORIGIN] });
 	}
 
 	// ADR-127: the roadmap host serves only the public roadmap surface.
