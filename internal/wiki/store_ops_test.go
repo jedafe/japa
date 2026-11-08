@@ -17,13 +17,15 @@ import (
 )
 
 // opsTestStore returns a Store backed by a real Postgres. Skipped unless
-// JC_DATABASE_URL is set, so it never runs in CI without a database.
+// JC_TEST_DATABASE_URL is set — the fixture suite does not clean up every
+// row it writes (wop-* residue), so it must not run against the dev DB
+// that JC_DATABASE_URL points at. Never falls back to it.
 func opsTestStore(t *testing.T) (*Store, *db.DB) {
 	t.Helper()
 
-	dsn := os.Getenv("JC_DATABASE_URL")
+	dsn := os.Getenv("JC_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("JC_DATABASE_URL not set; skipping integration test")
+		t.Skip("JC_TEST_DATABASE_URL not set; skipping integration test")
 	}
 
 	database, err := db.New(t.Context(), dsn)

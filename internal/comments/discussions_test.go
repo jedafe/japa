@@ -20,9 +20,6 @@ func testDB(t *testing.T) *db.DB {
 	t.Helper()
 	dsn := os.Getenv("JC_TEST_DATABASE_URL")
 	if dsn == "" {
-		dsn = os.Getenv("JC_DATABASE_URL")
-	}
-	if dsn == "" {
 		t.Skip("JC_TEST_DATABASE_URL not set — skipping DB integration test")
 	}
 	d, err := db.New(context.Background(), dsn)
