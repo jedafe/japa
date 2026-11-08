@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { goto } from '$app/navigation';
 	import { navigating } from '$app/state';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Search } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { persistNavCollapse } from '$lib/nav-collapse';
-	import { AUDIENCE_LABEL_KEY } from '$lib/types';
-	import type { DocAudience } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
+	import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
+	import type { DocAudience } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

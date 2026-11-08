@@ -1,7 +1,7 @@
 import { mount, unmount } from 'svelte';
 import { LinkPreviewCard, type LinkPreviewData } from '@japaconnect/ui';
-import { api } from '$lib/api/client';
-import { t } from '$lib/i18n';
+import { api } from '#lib/api/client.js';
+import { t } from '#lib/i18n/index.js';
 
 /**
  * Svelte action that scans a container for `data-type="link-preview"` divs

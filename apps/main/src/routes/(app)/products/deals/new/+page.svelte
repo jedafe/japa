@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 	// /products/deals/new — staff create (audience="staff") or organization deal
 	// submission (audience="org", create-only — org mode never PATCHes the
@@ -8,12 +8,12 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ArrowLeft, Ticket, Loader2, CheckCircle2 } from 'lucide-svelte';
-	import { t, i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import DealForm from '$lib/components/deals/DealForm.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { EmptyState } from '$lib/components/ui';
-	import { dealPath, type Coupon } from '$lib/types';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import DealForm from '#lib/components/deals/DealForm.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import { dealPath, type Coupon } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

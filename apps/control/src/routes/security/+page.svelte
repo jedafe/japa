@@ -1,18 +1,18 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import MetricCard from '$lib/components/MetricCard.svelte';
-	import SearchInput from '$lib/components/ui/SearchInput.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import Tabs from '$lib/components/ui/Tabs.svelte';
-	import TabsContent from '$lib/components/ui/TabsContent.svelte';
-	import { api } from '$lib/api';
-	import { t, translations } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import MetricCard from '#lib/components/MetricCard.svelte';
+	import SearchInput from '#lib/components/ui/SearchInput.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import Tabs from '#lib/components/ui/Tabs.svelte';
+	import TabsContent from '#lib/components/ui/TabsContent.svelte';
+	import { api } from '#lib/api.js';
+	import { t, translations } from '#lib/stores/i18n.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
 	import { Plus, ShieldAlert, ShieldCheck, Trash2, CheckCircle } from 'lucide-svelte';
-	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '#lib/api/types.js';
 
 	type ScanResult = {
 		id: string;

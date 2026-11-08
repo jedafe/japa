@@ -3,8 +3,8 @@
  * propose form's category picker must always agree on the option list and
  * its labels.
  */
-import { t } from '$lib/i18n';
-import type { SourceMeta } from '$lib/types/sources';
+import { t } from '#lib/i18n/index.js';
+import type { SourceMeta } from '#lib/types/sources.js';
 
 /**
  * The canonical source-category list: the union of the curated proposal

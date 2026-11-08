@@ -1,7 +1,7 @@
 import type { LayoutServerLoad } from './$types';
 import { isRedirect, redirect } from '@sveltejs/kit';
-import { apiContext, apiGet } from '$lib/server/api';
-import { academyUrl } from '$lib/appOrigins';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import { academyUrl } from '#lib/appOrigins.js';
 
 /**
  * App-shell scoped data for every `(app)` route. This layout is re-run on
@@ -13,7 +13,7 @@ import { academyUrl } from '$lib/appOrigins';
  */
 export const load: LayoutServerLoad = async (event) => {
 	if (event.locals.isAcademyHost) {
-		throw redirect(302, academyUrl(`${event.url.pathname}${event.url.search}`));
+		throw redirect(302, academyUrl(`${event.url.pathname}${event.url.search}`), { external: true });
 	}
 
 	// ADR-127: the roadmap host serves only the public roadmap surface.
@@ -72,8 +72,47 @@ export const load: LayoutServerLoad = async (event) => {
 		rid.startsWith('/(app)/settings') ||
 		rid.startsWith('/(app)/dashboard') ||
 		rid === '/(app)/roadmap';
+
+	// Viewport-class flags for rail mount gating. Both rails are display:none
+	// below 1280px and the side nav below 768px — on devices that can never
+	// show them, the shell skips mounting those subtrees entirely (no widget
+	// hydration, no mount-time fetches). A client-side matchMedia flip mounts
+	// them if the viewport ever crosses up, so a UA-misdetected or resized
+	// device self-heals. Crawlers are exempted so bot-rendered HTML keeps the
+	// nav/footer/trending internal links.
+	// Phone-class UA hides both rails; tablet-class hides only the 1280px
+	// sidebar (nav is visible at >=768px).
+	const ua = event.request.headers.get('user-agent') ?? '';
+	const chMobile = event.request.headers.get('sec-ch-ua-mobile') === '?1';
+	const isBot = /bot|crawl|spider|slurp|facebookexternal|twitterbot|linkedinbot|whatsapp|discordbot|embedly|preview/i.test(ua);
+	// Tablet first: iPad UA carries a `Mobile/15E148` build token that would
+	// otherwise match the phone regex; Android tablets send `Android` without
+	// `Mobile` (phones send both).
+	const isTablet =
+		!isBot &&
+		(/iPad|Tablet/i.test(ua) || ((/Android/i.test(ua) || chMobile) && !/Mobile/i.test(ua)));
+	const isPhone =
+		!isBot &&
+		!isTablet &&
+		(/Mobi|iPhone|iPod|IEMobile|BlackBerry|Opera Mini/i.test(ua) || chMobile);
+	const shellHideNav = isPhone;
+	const shellHideSidebar = isPhone || isTablet;
+	// Exception #1 singles render rightSidebarWidgets in-page (visible on
+	// mobile), so their resolve call must stay; every other route's rail data
+	// is unreachable on small viewports — skip both resolves outright.
+	const inPageAsideRoute =
+		rid === '/(app)/blog/[slug]' ||
+		rid === '/(app)/content/[slug]' ||
+		rid === '/(app)/guide/[slug]' ||
+		rid === '/(app)/story/[slug]' ||
+		rid === '/(app)/comparisons/[slug]' ||
+		rid === '/(app)/video/[slug]' ||
+		rid === '/(app)/list/[slug]';
+	const skipRightResolve = hideRight || (shellHideSidebar && !inPageAsideRoute);
+	const skipLeftResolve = hideLeft || shellHideSidebar;
+
 	const [sidebarData, leftSidebarData] = await Promise.all([
-		hideRight
+		skipRightResolve
 			? null
 			: apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
 					ctx,
@@ -87,7 +126,7 @@ export const load: LayoutServerLoad = async (event) => {
 					}
 					return null;
 				}),
-		hideLeft
+		skipLeftResolve
 			? null
 			: apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
 					ctx,
@@ -101,6 +140,8 @@ export const load: LayoutServerLoad = async (event) => {
 	]);
 
 	return {
+		shellHideNav,
+		shellHideSidebar,
 		rightSidebarWidgets: sidebarData?.widgets ?? [],
 		rightSidebarEnabled: sidebarData?.sidebar != null,
 		leftSidebarWidgets: leftSidebarData?.widgets ?? [],

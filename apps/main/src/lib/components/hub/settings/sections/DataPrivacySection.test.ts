@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 
-vi.mock('$lib/i18n', () => ({
+vi.mock('#lib/i18n/index.js', () => ({
 	t: vi.fn((key: string, fallback?: string) => fallback ?? key)
 }));
 
@@ -9,7 +9,7 @@ vi.mock('$env/static/public', () => ({
 	PUBLIC_JC_API_URL: 'http://localhost:8080'
 }));
 
-vi.mock('$lib/api/client', () => ({
+vi.mock('#lib/api/client.js', () => ({
 	api: {
 		get: vi.fn(),
 		post: vi.fn(),
@@ -18,11 +18,11 @@ vi.mock('$lib/api/client', () => ({
 	apiBaseUrl: 'http://localhost:8080'
 }));
 
-vi.mock('$lib/api/url', () => ({
+vi.mock('#lib/api/url.js', () => ({
 	buildApiUrl: (path: string, base: string) => `${base.replace(/\/$/, '')}${path}`
 }));
 
-vi.mock('$lib/api/hub', () => ({
+vi.mock('#lib/api/hub.js', () => ({
 	exportData: vi.fn(),
 	cancelDataExport: vi.fn()
 }));

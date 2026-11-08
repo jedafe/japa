@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { blogAdminApi, contentAdminApi } from '$lib/api';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { blogAdminApi, contentAdminApi } from '#lib/api.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { ArrowLeft } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	// Ref: jc-admin-develop — RBAC gate for blog creation (Section 24 — blog.create).
 	// BUG-002: previously checked 'blog.post.create', a node that does not exist

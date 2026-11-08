@@ -1,10 +1,10 @@
 <script lang="ts">
 	// Ref: 2026-08-21-journey-aware-recommendations-design.md §6.3
 	// Rule 16: country names are resolved from /geo/countries.
-	import { t } from '$lib/i18n';
-	import { getFeedContextCached, getGeoCountriesCached, getJourneyOptionsCached, type JourneyOptions } from '$lib/api/journey';
-	import { journeyModal } from '$lib/stores/journey.svelte';
-	import type { GeoCountry, VisitorContextSummary } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import { getFeedContextCached, getGeoCountriesCached, getJourneyOptionsCached, type JourneyOptions } from '#lib/api/journey.js';
+	import { journeyModal } from '#lib/stores/journey.svelte.js';
+	import type { GeoCountry, VisitorContextSummary } from '#lib/types/index.js';
 	import { Pencil } from 'lucide-svelte';
 
 	let loaded = $state(false);

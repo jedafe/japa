@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/07-organizations.md (my organizations)
 	// Lists the orgs the current user is a member of, with a role badge and a
 	// link to the per-org admin dashboard at /dashboard/organizations/{id}.
@@ -8,17 +8,17 @@
 	// center column (no navigation to /org/new). The form POSTs /organizations
 	// via the browser API client; on success the list is invalidated and the
 	// user is routed to the new org's admin dashboard.
-	import { t, siteName} from '$lib/i18n';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { t, siteName} from '#lib/i18n/index.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { Building2, Plus, ShieldCheck, Loader2, X } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { invalidateAll, goto } from '$app/navigation';
-	import { suggestSlug } from '$lib/components/create/slug';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { suggestSlug } from '#lib/components/create/slug.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import type { MyOrganizationRow } from './+page.server';
-	import type { PublicOrganization } from '$lib/types';
+	import type { PublicOrganization } from '#lib/types/index.js';
 
 	let { data } = $props();
 	const organizations = $derived(data.organizations);

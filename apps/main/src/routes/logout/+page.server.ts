@@ -4,7 +4,7 @@
 // to /login. Triggered by the UserDropdown "Log out" link.
 import { redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { apiContext, backendLogout, clearSessionCookie } from '$lib/server/auth';
+import { apiContext, backendLogout, clearSessionCookie } from '#lib/server/auth.js';
 
 // A plain navigation to /logout (GET) logs the user out too — the dropdown
 // uses an <a href="/logout">, so we handle both GET and POST here.

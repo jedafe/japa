@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { Chart, Bars, Tooltip } from 'layerchart';
-	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import DashboardPanel from '#lib/components/hub/DashboardPanel.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { GraduationCap } from 'lucide-svelte';
-	import { academyUrl } from '$lib/appOrigins';
-	import type { AcademyEnrollment, LessonNavRef } from '$lib/types';
+	import { academyUrl } from '#lib/appOrigins.js';
+	import type { AcademyEnrollment, LessonNavRef } from '#lib/types/index.js';
 
 	let { data }: { data: unknown } = $props();
 	const academy_enrollments = $derived((data as AcademyEnrollment[] | null) ?? []);

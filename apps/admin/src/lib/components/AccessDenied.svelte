@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { ShieldAlert } from 'lucide-svelte';
 	let { requiredPermission = '' }: { requiredPermission?: string | string[] } = $props();
 </script>

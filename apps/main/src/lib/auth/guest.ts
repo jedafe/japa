@@ -1,6 +1,5 @@
 import { goto } from '$app/navigation';
-import { page } from '$app/stores';
-import { get } from 'svelte/store';
+import { page } from '$app/state';
 
 /**
  * Guest-access helpers for auth-gated client-side actions.
@@ -12,10 +11,9 @@ import { get } from 'svelte/store';
  * with a `redirect` return-to query param instead of calling the API and
  * surfacing a raw 401.
  *
- * Uses `$app/stores` + `get()` (not `$app/state`) because Svelte 5 runes in
- * `$app/state` are only reactive in `.svelte` / `.svelte.ts` files. In a
- * plain `.ts` file, `page` from `$app/state` returns stale data. The store
- * API with `get()` reads the current value imperatively.
+ * Uses `$app/state` — `page` is a live state object, so reading it at call
+ * time (inside an event handler, not a reactive context) always yields the
+ * current value. `$app/stores` was removed in SvelteKit 3.
  *
  * Ref: japaconnect-engineering/Prompts/japa-bugs-hunters.md §3.1 (401 loop),
  *      §5.2 (auth/sessions). Uses `goto()` (not `window.location`) so the SPA
@@ -29,7 +27,7 @@ import { get } from 'svelte/store';
  * page returns the viewed profile's user as `user`).
  */
 export function isAuthed(): boolean {
-	return get(page).data.isAuthed === true;
+	return page.data.isAuthed === true;
 }
 
 /**
@@ -47,8 +45,7 @@ export function isAuthed(): boolean {
  */
 export async function requireAuthOrRedirect(): Promise<boolean> {
 	if (isAuthed()) return true;
-	const p = get(page);
-	const returnTo = p.url.pathname + p.url.search;
+	const returnTo = page.url.pathname + page.url.search;
 	await goto(`/login?redirect=${encodeURIComponent(returnTo)}`);
 	return false;
 }

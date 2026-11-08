@@ -1,5 +1,5 @@
-import { api } from '$lib/api/client';
-import type { AIKeyVerifyResult, ByokProviderOption, UserAIKeyView } from '$lib/ai/agentTypes';
+import { api } from '#lib/api/client.js';
+import type { AIKeyVerifyResult, ByokProviderOption, UserAIKeyView } from '#lib/ai/agentTypes.js';
 
 /**
  * BYOK client wrappers — user-owned AI provider keys (spec:

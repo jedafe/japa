@@ -1,4 +1,4 @@
-import type { Menu, MenuItem } from '$lib/types';
+import type { Menu, MenuItem } from '#lib/types/index.js';
 
 /**
  * Client-side view metadata for a dashboard rail item. The authoritative list

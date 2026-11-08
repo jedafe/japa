@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Card, CardContent } from "#lib/components/ui/card/index.js";
+	import { DataTable } from "#lib/components/ui/data-table/index.js";
+	import { TableSkeleton } from "#lib/components/ui/skeleton/index.js";
 	import { RefreshCw } from "lucide-svelte";
-	import { auditLogsAdminApi } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
+	import { auditLogsAdminApi } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
 	import { page } from "$app/state";
 
 	type AuditLogEntry = {

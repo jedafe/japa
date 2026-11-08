@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Star, Check, X, Trash2 } from 'lucide-svelte';
-	import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
+	import { formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
 	import type {
 		ComparisonItem,
 		ComparisonDimension,
 		ComparisonMatrixItem,
 		ComparisonMatrixDimensionValue
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 
 	/**
 	 * ComparisonMatrix — the shared items×dimensions table (Section 30,

@@ -1,12 +1,12 @@
 <script lang="ts">
 	// /content/video-imports — admin DataTable for video_import_jobs.
 	// Ref: japaconnect-engineering/sections/106-video-content-and-import.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
-	import type { ActionContext } from '$lib/components/ui/data-table/types';
-	import { videoImportJobsAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { siteName } from '$lib/stores/site.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from '#lib/components/entity/index.js';
+	import type { ActionContext } from '#lib/components/ui/data-table/types.js';
+	import { videoImportJobsAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, RefreshCw } from 'lucide-svelte';
 
 	type VideoImportJob = {

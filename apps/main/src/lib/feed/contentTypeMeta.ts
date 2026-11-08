@@ -12,7 +12,7 @@ import {
 	MessageCircle
 } from 'lucide-svelte';
 import { SvelteComponent } from 'svelte';
-import { t } from '$lib/i18n';
+import { t } from '#lib/i18n/index.js';
 
 /**
  * Content-type identity for the `daily` feed card. Each type gets a Lucide

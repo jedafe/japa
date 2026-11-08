@@ -368,9 +368,9 @@ Tests use **vitest** + **@testing-library/svelte**. Co-located as
 
 ### Page tests
 
-- Mock `$lib/api` with `vi.mock('$lib/api', ...)` — return `{ ok: true, data: [] }`
+- Mock `#lib/api` with `vi.mock('$lib/api', ...)` — return `{ ok: true, data: [] }`
   shapes so `EntityPage`'s `load` resolves.
-- Mock `$app/state`, `$app/navigation`, and `$lib/stores/permissions.svelte`
+- Mock `$app/state`, `$app/navigation`, and `#lib/stores/permissions.svelte.ts`
   (see `src/routes/tags/page.test.ts` for the canonical mock block).
 - Assert the page heading renders and the empty state appears via `waitFor`
   (data loads asynchronously).

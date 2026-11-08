@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { campaignsAdminApi, api, type Campaign, type CampaignItem } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { campaignsAdminApi, api, type Campaign, type CampaignItem } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Play, X, RefreshCw } from 'lucide-svelte';
 	import { onMount } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type PersonaOption = { id: string; label: string };
 

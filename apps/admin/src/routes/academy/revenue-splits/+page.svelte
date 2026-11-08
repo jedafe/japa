@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /academy/revenue-splits — read-only audit viewer migrated to EntityPage scaffold.
-	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
-	import { academyAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import { t, locale } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from '#lib/components/entity/index.js';
+	import { academyAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { t, locale } from '#lib/stores/i18n.svelte.js';
 	import { Eye } from 'lucide-svelte';
 
 	type RevenueSplit = {

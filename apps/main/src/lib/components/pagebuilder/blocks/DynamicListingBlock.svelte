@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api } from '$lib/api/client';
-	import FeedCard from '$lib/components/feed/FeedCard.svelte';
-	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
+	import { api } from '#lib/api/client.js';
+	import FeedCard from '#lib/components/feed/FeedCard.svelte';
+	import { cardStyleFor, type CardStyleConfig } from '#lib/feed/cardStyle.js';
 	import { page } from '$app/state';
 	import type { DynamicListingProps } from '../types';
-	import type { FeedItem } from '$lib/types';
+	import type { FeedItem } from '#lib/types/index.js';
 
 	interface Props {
 		props: DynamicListingProps;

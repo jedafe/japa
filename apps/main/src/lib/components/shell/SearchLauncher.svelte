@@ -2,7 +2,7 @@
 	// Search launcher button (icon + ⌘K hint) that opens the SearchPalette
 	// modal. Same look/behavior as the Docs app's SearchLauncher (ADR-060).
 	import { Search } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 
 	interface Props {
 		/** Whether this launcher registers the global ⌘/Ctrl+K shortcut. */

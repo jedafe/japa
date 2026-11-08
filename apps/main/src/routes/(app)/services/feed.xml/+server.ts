@@ -1,6 +1,6 @@
-import { env } from '$env/dynamic/private';
+import { PRIVATE_API_BASE_URL } from '$app/env/private';
 import { buildApiUrl } from '@japaconnect/api-url';
-import { JC_SURFACE } from '$lib/server/api';
+import { JC_SURFACE } from '#lib/server/api.js';
 import type { RequestHandler } from './$types';
 
 /**
@@ -12,7 +12,7 @@ import type { RequestHandler } from './$types';
  * Ref: japaconnect-engineering/sections/26-seo-performance.md
  */
 export const GET: RequestHandler = async ({ fetch, url, request, getClientAddress }) => {
-	const apiBase = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
+	const apiBase = PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
 	const headers: Record<string, string> = {
 		'x-forwarded-host': url.host,
 		host: url.host,

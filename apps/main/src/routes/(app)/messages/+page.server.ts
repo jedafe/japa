@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { DMConversation, DMMessage, DMRequest } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { DMConversation, DMMessage, DMRequest } from '#lib/types/index.js';
 
 /**
  * Messages at /messages — auth-gated DM surface (feature.dm). Renders the

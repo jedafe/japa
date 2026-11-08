@@ -1,9 +1,9 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md (Entity Directory amendment)
-	import { t, siteName } from '$lib/i18n';
-	import { EntityHero } from '$lib/components/ui';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { t, siteName } from '#lib/i18n/index.js';
+	import { EntityHero } from '#lib/components/ui/index.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import {
 		ArrowRight,
 		Award,

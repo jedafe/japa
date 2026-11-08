@@ -4,9 +4,9 @@
 	// standalone /services/[slug]/reviews index. Caller wraps in a <ul>.
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
 	import { Star } from 'lucide-svelte';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
-	import { t } from '$lib/i18n';
-	import type { ServiceReview } from '$lib/types';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import type { ServiceReview } from '#lib/types/index.js';
 
 	interface Props {
 		review: ServiceReview;

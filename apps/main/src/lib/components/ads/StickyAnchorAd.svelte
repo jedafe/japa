@@ -4,12 +4,12 @@
 	// Dismissal persists for the browser session (sessionStorage). Sits above
 	// the mobile tab bar on small screens. Same fetch/track contract as
 	// AdSlot.svelte.
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { trackedAdUrl } from '$lib/ads/trackedUrl';
-	import { fetchAdCampaigns, type AdCampaign } from '$lib/ads/serve';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { trackedAdUrl } from '#lib/ads/trackedUrl.js';
+	import { fetchAdCampaigns, type AdCampaign } from '#lib/ads/serve.js';
 	import { X } from 'lucide-svelte';
 
 	const DISMISS_KEY = 'jc.ad.anchor.dismissed';

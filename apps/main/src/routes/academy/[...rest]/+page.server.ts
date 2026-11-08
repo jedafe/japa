@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { ACADEMY_ORIGIN } from '$lib/appOrigins';
+import { ACADEMY_ORIGIN } from '#lib/appOrigins.js';
 
 /**
  * ADR-060 / P9 (one backend, multiple client surfaces): the Academy Platform
@@ -17,7 +17,7 @@ export const load: PageServerLoad = async ({ url, params }) => {
 	const rest = params.rest ?? '';
 	const path = rest ? `/${rest}` : '';
 	const search = url.search; // preserves ?q=... etc.
-	throw redirect(302, `${ACADEMY_ORIGIN}${path}${search}`);
+	throw redirect(302, `${ACADEMY_ORIGIN}${path}${search}`, { external: true });
 };
 
 export const prerender = false;

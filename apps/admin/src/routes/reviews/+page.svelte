@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /reviews — migrated to the EntityPage scaffold. Moderation entity (no create):
 	// View (modal), Moderate (page-local Modal → PATCH status), Delete (confirm → DELETE).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { Select } from '$lib/components/ui/select';
-	import { api, moderationAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import { api, moderationAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Shield, Trash2 } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 
 	type Review = {
 		id: string;

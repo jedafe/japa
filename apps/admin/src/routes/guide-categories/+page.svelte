@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /guide-categories — migrated to the EntityPage scaffold.
 	// Create + delete only (no update API); custom `actions` array omits Edit.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { api, guideCategoriesAdminApi, type GuideCategory } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { api, guideCategoriesAdminApi, type GuideCategory } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Trash2, Eye } from 'lucide-svelte';
 
 	// Normalize an API row: copy `Slug` into `id` so the scaffold's id-based remove + bulk selection work.

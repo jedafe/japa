@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /spaces/[spaceId]/rules — migrated to shared components (ActionMenu,
 	// Modal, shared Modal). Reorder arrows stay as a componentSnippet
 	// (inline up/down UI that doesn't fit the ⋮ dropdown). Create/edit open
 	// in a Modal; delete confirmation uses the shared Modal.
 	import { page } from '$app/state';
-	import { Modal } from '$lib/components/ui/modal';
-	import { api, spacesAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { api, spacesAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
 	import { Plus, Pencil, Trash2, RefreshCw, ArrowUp, ArrowDown } from 'lucide-svelte';
 
 	// Backend routes are slug-resolved via SpaceResolver and gated by

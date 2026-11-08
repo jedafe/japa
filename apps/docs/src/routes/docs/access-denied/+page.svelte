@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import { t } from '$lib/i18n';
-	import { persistNavCollapse } from '$lib/nav-collapse';
-	import { AUDIENCE_LABEL_KEY } from '$lib/types';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
+	import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
 	import { Lock, LogIn, BookOpen } from 'lucide-svelte';
 	import type { PageData } from './$types';
 

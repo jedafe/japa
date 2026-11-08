@@ -1,14 +1,14 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
 
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { actionColorClass } from '$lib/constants/audit';
-	import { escapeHtml } from '$lib/utils';
-	import type { AuditLogEntry, PaginatedResponse, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { actionColorClass } from '#lib/constants/audit.js';
+	import { escapeHtml } from '#lib/utils.js';
+	import type { AuditLogEntry, PaginatedResponse, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '#lib/api/types.js';
 	import { Trash2 } from 'lucide-svelte';
 
 

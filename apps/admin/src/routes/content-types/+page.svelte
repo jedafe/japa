@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { Select } from '$lib/components/ui/select';
-	import { contentAdminApi, settingsAdminApi } from '$lib/api';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { parseCardStyleValue, buildCardStyleValue, CARD_STYLE_VALUES, type ParsedCardStyle } from '$lib/feed/cardStyleValue';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import { contentAdminApi, settingsAdminApi } from '#lib/api.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { parseCardStyleValue, buildCardStyleValue, CARD_STYLE_VALUES, type ParsedCardStyle } from '#lib/feed/cardStyleValue.js';
 	import { RefreshCw, Save, Undo2, Check, LayoutGrid } from 'lucide-svelte';
 
 	const canManage = $derived(hasPermission('admin.settings'));

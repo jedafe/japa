@@ -4,12 +4,12 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import { slugify } from '$lib/services/prompt';
-import { siteName } from '$lib/stores/site.svelte';
-import { isHighStakesCategory } from '$lib/services/validation';
-import type { BatchTopic } from '$lib/types/batch';
-import type { StudioSettings } from '$lib/services/settings';
-import type { PromptLookups } from '$lib/services/prompt';
+import { slugify } from '#lib/services/prompt.js';
+import { siteName } from '#lib/stores/site.svelte.js';
+import { isHighStakesCategory } from '#lib/services/validation.js';
+import type { BatchTopic } from '#lib/types/batch.js';
+import type { StudioSettings } from '#lib/services/settings.js';
+import type { PromptLookups } from '#lib/services/prompt.js';
 
 export { type BatchTopic };
 

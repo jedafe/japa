@@ -1,8 +1,8 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import {
 		Ticket,
 		BadgeCheck,
@@ -12,12 +12,12 @@
 		Pencil,
 		ChevronRight
 	} from 'lucide-svelte';
-	import { api, apiBaseUrl } from '$lib/api/client';
+	import { api, apiBaseUrl } from '#lib/api/client.js';
 	import type { PageData } from './$types';
-	import { safeHref } from '$lib/utils/safeHtml';
-	import { currencySymbol } from '$lib/utils/currency';
-	import { dealPath, type Coupon } from '$lib/types';
-	import DealForm from '$lib/components/deals/DealForm.svelte';
+	import { safeHref } from '#lib/utils/safeHtml.js';
+	import { currencySymbol } from '#lib/utils/currency.js';
+	import { dealPath, type Coupon } from '#lib/types/index.js';
+	import DealForm from '#lib/components/deals/DealForm.svelte';
 
 	let { data }: { data: PageData } = $props();
 

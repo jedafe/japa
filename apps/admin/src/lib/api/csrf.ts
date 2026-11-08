@@ -1,4 +1,4 @@
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
 
 // CSRF_TOKEN_COOKIE is the double-submit cookie the backend issues (non-HttpOnly)

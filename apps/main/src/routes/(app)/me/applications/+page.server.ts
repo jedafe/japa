@@ -1,7 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiList, apiPatch } from '$lib/server/api';
+import { apiContext, apiList, apiPatch } from '#lib/server/api.js';
 import { redirect, fail } from '@sveltejs/kit';
-import type { JobApplication } from '$lib/types';
+import type { JobApplication } from '#lib/types/index.js';
 
 /**
  * My Applications at /me/applications (Section 63, ADR-079).

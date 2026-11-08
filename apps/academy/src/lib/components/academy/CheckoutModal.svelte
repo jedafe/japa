@@ -3,12 +3,12 @@
 	// Shows the price, accepts a discount code, and initiates payment via
 	// POST /payments/intent with purpose_type='course_access'. For Pro
 	// subscribers, the parent skips this modal entirely.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { page } from '$app/state';
-	import { formatPriceKobo } from '$lib/format';
+	import { formatPriceKobo } from '#lib/format.js';
 	import { X, CreditCard, ShieldCheck, Tag } from 'lucide-svelte';
-	import type { TrackDetail, SessionUser, DiscountCode, PaymentIntent } from '$lib/types';
+	import type { TrackDetail, SessionUser, DiscountCode, PaymentIntent } from '#lib/types/index.js';
 
 	interface Props {
 		track: TrackDetail;

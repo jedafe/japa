@@ -8,16 +8,16 @@
 	 *
 	 * Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
 	 */
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { untrack, onMount } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { createApiKey, createExtensionToken, rotateApiKey, revokeApiKey } from '$lib/api/hub';
-	import { optimisticAction } from '$lib/components/hub/optimisticAction';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { createApiKey, createExtensionToken, rotateApiKey, revokeApiKey } from '#lib/api/hub.js';
+	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
 	import { invalidateAll } from '$app/navigation';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import { Key, X } from 'lucide-svelte';
 	import ApiKeyRevealDialog from '../flows/ApiKeyRevealDialog.svelte';
 

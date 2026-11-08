@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Home, AlertCircle, RefreshCw } from 'lucide-svelte';
 
 	const status = $derived(page.status);

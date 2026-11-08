@@ -2,11 +2,11 @@
      ConditionGroup against the code-registered vocabulary fetched from
      /admin/next-actions/predicates. Emits the JSON object the API expects. -->
 <script lang="ts">
-	import { getPredicateSpecs, type PredicateSpec } from '$lib/api/nextactions';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { getPredicateSpecs, type PredicateSpec } from '#lib/api/nextactions.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Plus, X } from 'lucide-svelte';
 
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	interface Props {
 		value: { all?: any[]; any?: any[] };

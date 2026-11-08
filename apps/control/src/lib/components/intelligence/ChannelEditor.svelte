@@ -1,8 +1,8 @@
 <script lang="ts">
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { JsonValueEditor } from '@japaconnect/ui';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Loader2 } from 'lucide-svelte';
 
 	// ChannelEditor is the create/edit dialog for one intel_source_channels

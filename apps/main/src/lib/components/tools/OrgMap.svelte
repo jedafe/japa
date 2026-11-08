@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte';
-	import type { CommunityOrgWithAi } from '$lib/types';
+	import type { CommunityOrgWithAi } from '#lib/types/index.js';
 
 	/**
 	 * OrgMap — Leaflet map showing community organisation markers.

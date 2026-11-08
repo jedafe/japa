@@ -10,10 +10,10 @@
 	//
 	// Ref: japaconnect-engineering/adr/ADR-064-geo-aware-personalization.md
 	// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
-	import { t } from '$lib/stores/i18n.svelte';
-	import { api } from '$lib/api';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { api } from '#lib/api.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import { X } from 'lucide-svelte';
 
 	interface CountrySpace {

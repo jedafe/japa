@@ -1,11 +1,11 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Gauge } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { LineChart, Spline, Points } from 'layerchart';
 	import type {
 		CrsFactorsResponse,
@@ -13,9 +13,9 @@
 		CrsScoreHistoryItem,
 		CrsCalculateResult,
 		CrsCalculateInput
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * CRS Calculator tool — §107, ADR-118.

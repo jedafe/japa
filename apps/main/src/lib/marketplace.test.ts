@@ -5,8 +5,8 @@ import {
 	priceLabel,
 	serviceCategoryInfo
 } from './marketplace';
-import type { CurrencyInfo } from '$lib/utils/currency';
-import type { ListingCoupon, ServiceCategoryInfo, ServiceListing } from '$lib/types';
+import type { CurrencyInfo } from '#lib/utils/currency.js';
+import type { ListingCoupon, ServiceCategoryInfo, ServiceListing } from '#lib/types/index.js';
 
 // §114 services marketplace — pure display helpers shared by the list-card,
 // detail hero, and sticky CTA surfaces. These guard the money/discount/

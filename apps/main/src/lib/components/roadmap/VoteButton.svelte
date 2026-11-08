@@ -9,10 +9,10 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ChevronUp } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
-	import { roadmapVotableStatuses } from '$lib/enumOptions';
-	import type { RoadmapBoardItem } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
+	import { roadmapVotableStatuses } from '#lib/enumOptions.js';
+	import type { RoadmapBoardItem } from '#lib/types/index.js';
 
 	interface Props {
 		item: RoadmapBoardItem;

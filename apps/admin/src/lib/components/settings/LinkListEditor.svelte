@@ -4,8 +4,8 @@
 	//   link-cards → [{label, url, description?, icon?}]         (developer resources)
 	// Emitted objects keep alphabetical key order so the settings page's
 	// JSON.stringify dirty check matches the API's sorted-key serialization.
-	import { t } from '$lib/stores/i18n.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-svelte';
 
 	export interface LinkItem {

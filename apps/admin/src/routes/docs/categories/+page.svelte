@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /docs/categories — manages the public docs.categories setting (the
 	// docs portal's category/subcategory catalog). Lives on its own subpage
 	// instead of Settings → Documentation because it is docs-surface work.
 	// The /admin/settings/* endpoints require admin.settings server-side, so
 	// the page renders an error rather than a broken editor without it.
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { Card, CardHeader, CardContent } from '$lib/components/ui/card';
-	import DocsCategoriesEditor from '$lib/components/settings/DocsCategoriesEditor.svelte';
-	import { api, settingsAdminApi } from '$lib/api';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Card, CardHeader, CardContent } from '#lib/components/ui/card/index.js';
+	import DocsCategoriesEditor from '#lib/components/settings/DocsCategoriesEditor.svelte';
+	import { api, settingsAdminApi } from '#lib/api.js';
 	import { ArrowLeft } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 

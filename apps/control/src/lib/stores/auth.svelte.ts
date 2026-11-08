@@ -1,4 +1,4 @@
-import type { User } from '$lib/api/types';
+import type { User } from '#lib/api/types.js';
 
 let user = $state<User | null>(null);
 let permissions = $state<string[]>([]);

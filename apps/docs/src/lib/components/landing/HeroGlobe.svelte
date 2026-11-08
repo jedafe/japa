@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	// Decorative hero illustration — a stylized globe with orbiting docs
 	// domains (API, Members, Analytics, Security). Pure SVG/CSS so it follows
 	// the theme tokens and needs no image assets. aria-hidden: decoration only.

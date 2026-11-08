@@ -10,9 +10,9 @@
 	//
 	// Ref: japaconnect-engineering/sections/22-admin-panel.md (Appeals)
 	import { Modal } from '@japaconnect/ui';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
-	import { MAIN_ORIGIN } from '$lib/appOrigins';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
+	import { MAIN_ORIGIN } from '#lib/appOrigins.js';
 	import {
 		AlertCircle, Check, CheckCircle2, ChevronRight, FileText, Gavel,
 		Loader2, MessageSquare, Scale, ShieldCheck, X

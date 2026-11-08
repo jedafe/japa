@@ -1,19 +1,19 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/114-services-marketplace.md
 	// §114 — org coupon management: create/edit/suspend/delete plus
 	// redemption + attachment rollups. List mutations go through the
 	// client API then invalidateAll() re-runs the server load.
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { BadgePercent, Plus, Loader2, AlertCircle, Pencil, PauseCircle, PlayCircle, Trash2, X } from 'lucide-svelte';
-	import { EmptyState, SelectField } from '$lib/components/ui';
-	import { discountLabel } from '$lib/marketplace';
-	import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
-	import type { OrgCoupon, OrgCouponInput } from '$lib/types';
+	import { EmptyState, SelectField } from '#lib/components/ui/index.js';
+	import { discountLabel } from '#lib/marketplace.js';
+	import { formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
+	import type { OrgCoupon, OrgCouponInput } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

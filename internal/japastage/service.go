@@ -27,6 +27,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/honcho"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/visitor"
 )
@@ -756,6 +757,13 @@ func profileRowToPublicDTO(r ProfileRow) PublicProfileDTO {
 	return dto
 }
 
+// directoryAvatarWidth is the imgproxy derivative width emitted for
+// directory-listing avatars. Cards render avatars at ≤64px, so 128 covers
+// 2x density without shipping the stored 640px URL (PageSpeed
+// image-delivery finding). Profiles without avatar_media_id keep their
+// stored avatar_url unchanged.
+const directoryAvatarWidth = 128
+
 // directoryRowToDTO converts a DirectoryRow to a PublicProfileDTO.
 func directoryRowToDTO(r DirectoryRow) PublicProfileDTO {
 	dto := PublicProfileDTO{
@@ -773,7 +781,9 @@ func directoryRowToDTO(r DirectoryRow) PublicProfileDTO {
 		dto.DisplayName = *r.DisplayName
 	}
 
-	if r.AvatarURL != nil {
+	if u := media.URLFromParts(r.AvatarMediaBucket, r.AvatarMediaPath, media.ImageProxyOpts{Width: directoryAvatarWidth}); u != nil {
+		dto.AvatarURL = *u
+	} else if r.AvatarURL != nil {
 		dto.AvatarURL = *r.AvatarURL
 	}
 

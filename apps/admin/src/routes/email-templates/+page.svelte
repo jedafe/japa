@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /email-templates — migrated to the EntityPage scaffold.
 	//
 	// Email templates are predefined (no create/delete). The page is READ + EDIT
@@ -7,13 +7,13 @@
 	// `readonly: true` hides the Create button in the header; a custom `actions`
 	// array (View + Edit) renders regardless of readonly. Reset/Test buttons live
 	// inside the `formSnippet` and trigger page-local confirm/test Modals.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { Tabs, TabsContent } from '$lib/components/ui/tabs';
-	import { emailTemplatesAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Tabs, TabsContent } from '#lib/components/ui/tabs/index.js';
+	import { emailTemplatesAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Pencil, RotateCcw, Send } from 'lucide-svelte';
 
 	type EmailTemplate = {

@@ -1,8 +1,8 @@
 import { redirect, error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGet } from '$lib/server/api';
-import type { SavedScholarship } from '$lib/types';
-import { defaultReminderDays } from '$lib/scholarships/defaultReminder';
+import { apiContext, apiList, apiGet } from '#lib/server/api.js';
+import type { SavedScholarship } from '#lib/types/index.js';
+import { defaultReminderDays } from '#lib/scholarships/defaultReminder.js';
 
 /**
  * Saved Scholarships tracker — Section 73, ADR-073.

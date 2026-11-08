@@ -4,10 +4,10 @@
 	// SetSidebar — renders above the global widget rail, ADR-058):
 	//   Quick Facts → Need Help? → Related Articles → Popular Cities.
 	import { ArrowRight, FileText, MapPin } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import WikiQuickFacts from './WikiQuickFacts.svelte';
-	import type { WikiDestination, WikiPageIndex } from '$lib/types';
+	import type { WikiDestination, WikiPageIndex } from '#lib/types/index.js';
 
 	let {
 		spaceSlug,

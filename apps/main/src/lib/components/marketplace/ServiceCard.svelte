@@ -17,15 +17,15 @@
 		Star,
 		Wifi
 	} from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
-	import { accentClasses, priceLabel, serviceCategoryInfo } from '$lib/marketplace';
-	import { excerpt } from '$lib/utils/seo-score';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
+	import { accentClasses, priceLabel, serviceCategoryInfo } from '#lib/marketplace.js';
+	import { excerpt } from '#lib/utils/seo-score.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import { serviceCategoryIcon } from './serviceCategoryIcon';
-	import type { ServiceCategoryInfo, ServiceListing } from '$lib/types';
-	import type { CurrencyInfo } from '$lib/utils/currency';
+	import type { ServiceCategoryInfo, ServiceListing } from '#lib/types/index.js';
+	import type { CurrencyInfo } from '#lib/utils/currency.js';
 
 	interface Props {
 		listing: ServiceListing;

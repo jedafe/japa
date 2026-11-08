@@ -10,7 +10,7 @@ import {
 	toDateTimeLocal,
 	type DealFormValues
 } from './dealForm';
-import type { Coupon } from '$lib/types';
+import type { Coupon } from '#lib/types/index.js';
 
 function baseValues(overrides: Partial<DealFormValues> = {}): DealFormValues {
 	return { ...emptyDealFormValues(), title: '10% off luggage', ...overrides };

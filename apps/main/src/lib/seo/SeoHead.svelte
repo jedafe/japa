@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
 	/**
 	 * Shared SEO head — one component owns the title/description/OG/Twitter/

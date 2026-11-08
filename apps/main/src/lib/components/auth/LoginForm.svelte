@@ -3,12 +3,12 @@
 	// Presentational login form — calls the /api/auth/login proxy, sets the
 	// cookie server-side, and invokes onSuccess. Used by both the /login route
 	// (via form action) and the AuthDialog modal (via fetch).
-	import { t } from '$lib/i18n/store.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
 	import { invalidateAll } from '$app/navigation';
 	import { goto } from '$app/navigation';
-	import { navigatePostLogin, safeRelativePath } from '$lib/auth/redirect';
-	import { validateLogin } from '$lib/auth/validation';
-	import { mapAuthError } from '$lib/auth/errors';
+	import { navigatePostLogin, safeRelativePath } from '#lib/auth/redirect.js';
+	import { validateLogin } from '#lib/auth/validation.js';
+	import { mapAuthError } from '#lib/auth/errors.js';
 	import PasswordField from './PasswordField.svelte';
 	import OAuthButtons from './OAuthButtons.svelte';
 	import AuthFooter from './AuthFooter.svelte';

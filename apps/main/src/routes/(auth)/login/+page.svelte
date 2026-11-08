@@ -1,8 +1,8 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n/store.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
 
-	import LoginForm from '$lib/components/auth/LoginForm.svelte';
+	import LoginForm from '#lib/components/auth/LoginForm.svelte';
 	import { page } from '$app/state';
 
 	const oauthError = $derived(page.data.oauthError);

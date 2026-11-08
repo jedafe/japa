@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { deleteDevice, deletePushToken, getVapidKey, getPushTokens, subscribePush } from '$lib/api/hub';
-	import { optimisticAction } from '$lib/components/hub/optimisticAction';
+	import { t } from '#lib/i18n/index.js';
+	import { deleteDevice, deletePushToken, getVapidKey, getPushTokens, subscribePush } from '#lib/api/hub.js';
+	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
 	import { pwaInstall } from '@japaconnect/ui/pwa-install';
-	import { arrayBufferToBase64, urlBase64ToUint8Array } from '$lib/pwa/push-sync';
-	import type { DeviceInfo } from '$lib/types';
+	import { arrayBufferToBase64, urlBase64ToUint8Array } from '#lib/pwa/push-sync.js';
+	import type { DeviceInfo } from '#lib/types/index.js';
 
 	interface PushToken {
 		id: string;

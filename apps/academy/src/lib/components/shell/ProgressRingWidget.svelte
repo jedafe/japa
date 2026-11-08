@@ -2,9 +2,9 @@
 	// ProgressRingWidget — admin-managed sidebar widget (Section 59, ADR-066).
 	// Uses the shared academy_enrollments store so it stays in sync with other widgets
 	// (ContinueAcademyCard, AcademyEnrollmentsWidget) after mutations.
-	import { t } from '$lib/i18n';
-	import ProgressRing from '$lib/components/academy/ProgressRing.svelte';
-	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import ProgressRing from '#lib/components/academy/ProgressRing.svelte';
+	import { enrollmentsStore } from '#lib/stores/enrollments.svelte.js';
 
 	interface Props {
 		title?: string;

@@ -3,9 +3,9 @@
 //      ADR-058 Exception #1 (dev.to reading layout — CPT singles)
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
-import type { Comment, Story } from '$lib/types';
-import type { ContentAnalytics, ContentArticle, SeriesPost } from '$lib/types/content';
+import { apiContext, apiGet, apiGetEnvelope, ApiError } from '#lib/server/api.js';
+import type { Comment, Story } from '#lib/types/index.js';
+import type { ContentAnalytics, ContentArticle, SeriesPost } from '#lib/types/content.js';
 
 /**
  * Single community story at /stories/[slug] — SSR detail rendered in the

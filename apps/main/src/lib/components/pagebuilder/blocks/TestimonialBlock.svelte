@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { TestimonialProps } from '../types';
 	import { Star } from 'lucide-svelte';
-	import { safeHref } from '$lib/utils/safeHtml';
+	import { safeHref } from '#lib/utils/safeHtml.js';
 
 	let { props }: { props: TestimonialProps } = $props();
 	const avatarSrc = $derived(props.avatar_url ? safeHref(props.avatar_url) : '');

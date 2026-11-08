@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
-	import { t, siteName, i18n } from '$lib/i18n';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { t, siteName, i18n } from '#lib/i18n/index.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import {
 		Newspaper,
 		MessageSquare,
@@ -11,9 +11,9 @@
 		Vote,
 		ArrowLeft
 	} from 'lucide-svelte';
-	import type { IconComponent } from '$lib/components/ui/icons';
-	import { ListPageBar } from '$lib/components/ui';
-	import { contentHref } from '$lib/utils/contentLink';
+	import type { IconComponent } from '#lib/components/ui/icons.js';
+	import { ListPageBar } from '#lib/components/ui/index.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
 	import type {
 		DigestEdition,
 		DigestContent,
@@ -22,7 +22,7 @@
 		DigestEvent,
 		DigestStory,
 		DigestPoll
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 
 	interface Props {
 		digest: DigestEdition | null;

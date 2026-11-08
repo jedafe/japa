@@ -4,7 +4,7 @@
 	// then strips it. Mirrors apps/main's AdConversionTracker — requires a
 	// same-origin referrer so crafted/shared URLs don't mint conversions.
 	import { page } from '$app/state';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 
 	let handled = $state('');
 
@@ -14,7 +14,7 @@
 		if (!document.referrer.startsWith(window.location.origin)) return;
 		handled = cid;
 
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.delete('jc_ad_cid');
 		history.replaceState(history.state, '', url.pathname + url.search + url.hash);
 

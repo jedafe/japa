@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { CatalogOption, GeoSpaceOption, VisaTimeline } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { CatalogOption, GeoSpaceOption, VisaTimeline } from '#lib/types/index.js';
 
 /**
  * My Applications — the personal tracker half of the Visa Processing Time

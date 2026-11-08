@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// Ref: japaconnect-engineering/sections/16-page-builder.md
 	// Unified Page Builder editor — handles all page types (landing, about,
 	// service, event, custom) on the shared @japaconnect/landing-blocks library.
@@ -8,14 +8,14 @@
 	import { page } from '$app/state';
 	import { goto, beforeNavigate } from '$app/navigation';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { onMount, untrack, type Component } from 'svelte';
-	import { PUBLIC_JC_SITE_URL, PUBLIC_JC_API_URL } from '$env/static/public';
-	import { api, pageBuilderAdminApiExtended } from '$lib/api';
-	import { getAccessToken } from '$lib/api/token';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { useCountries } from '$lib/utils/countries.svelte';
+	import { PUBLIC_JC_SITE_URL, PUBLIC_JC_API_URL } from '$app/env/public';
+	import { api, pageBuilderAdminApiExtended } from '#lib/api.js';
+	import { getAccessToken } from '#lib/api/token.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
 	import { DragDropProvider, DragOverlay } from '@dnd-kit/svelte';
 	import { isSortable } from '@dnd-kit/svelte/sortable';
 	import {
@@ -50,18 +50,18 @@
 		type GuestHomeDestination,
 		type FetchContext,
 	} from '@japaconnect/landing-blocks';
-	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle, WidgetPicker } from '$lib/components/landing-editor';
-	import { isContainerLike, isChildOnlyType, childrenOf, childSlotsOf, mapChildSlots, defaultSlotKey, getContainerLayout, getContainerColumns, seedAllContainerDefaults, seedBlockDefaults, defaultChildrenFor, materializeGuestContextItems } from '$lib/utils/blocks';
-	import { Button } from '$lib/components/ui/button';
+	import { DraggableBlockType, SortableSection, ContainerChildren, ResizeHandle, WidgetPicker } from '#lib/components/landing-editor/index.js';
+	import { isContainerLike, isChildOnlyType, childrenOf, childSlotsOf, mapChildSlots, defaultSlotKey, getContainerLayout, getContainerColumns, seedAllContainerDefaults, seedBlockDefaults, defaultChildrenFor, materializeGuestContextItems } from '#lib/utils/blocks.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 
-	import { Modal } from '$lib/components/ui/modal';
+	import { Modal } from '#lib/components/ui/modal/index.js';
 	import { Tabs } from 'bits-ui';
 	import * as LucideIcons from 'lucide-svelte';
 	import { ArrowLeft, Save, Plus, Search, LayoutTemplate, Rocket, Archive, PanelLeft, PanelRight, PanelTop, Maximize2, Minimize2, Settings } from 'lucide-svelte';
-	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	// Cast for DI — the editors expect Component<any>, MediaPickerModal has bindable props
 	const MediaPicker = MediaPickerModal as unknown as Component;
@@ -243,9 +243,13 @@
 		if (typeof raw === 'string') {
 			try {
 				const parsed = JSON.parse(raw);
-				return Array.isArray(parsed) ? (parsed as Block[]) : [];
-			} catch { return []; }
+
+				return Array.isArray(parsed) ? parsed as Block[] : [];
+			} catch {
+				return [];
+			}
 		}
+
 		return [];
 	}
 
@@ -315,7 +319,7 @@
 				// Live preview data for the guest homepage block.
 				void loadGuestHome(blocks);
 			}
-			if (themesRes.ok) themes = ((themesRes.data as any[]) ?? []).map((th) => ({ id: th.id, name: th.name, is_default: th.is_default }));
+			if (themesRes.ok) themes = (themesRes.data as any[] ?? []).map((th) => ({ id: th.id, name: th.name, is_default: th.is_default }));
 			if (typesRes.ok && Array.isArray(typesRes.data)) pageTypeOptions = typesRes.data;
 			// Load custom block definitions into the runtime registry.
 			if (blocksRes.ok && Array.isArray(blocksRes.data)) {
@@ -419,16 +423,20 @@
 			slug: typeof story.slug === 'string' ? story.slug : undefined,
 			title,
 			quote,
-			author_name: typeof story.author_display_name === 'string' ? story.author_display_name : (typeof story.author_name === 'string' ? story.author_name : `A ${siteName()} Member`),
+			author_name: typeof story.author_display_name === 'string'
+				? story.author_display_name
+				: typeof story.author_name === 'string' ? story.author_name : `A ${siteName()} Member`,
 			author_role: role || undefined,
-			author_avatar_url: (typeof story.author_avatar === 'string' ? story.author_avatar : (typeof story.featured_image_url === 'string' ? story.featured_image_url : null)) as string | null,
+			author_avatar_url: (typeof story.author_avatar === 'string'
+				? story.author_avatar
+				: typeof story.featured_image_url === 'string' ? story.featured_image_url : null) as string | null,
 			destination: destinationSpaceName || undefined
 		};
 	}
 
 	function getIcon(name: string): Component | null {
 		const found = (LucideIcons as Record<string, unknown>)[name];
-		return (found as Component) ?? null;
+		return found as Component ?? null;
 	}
 
 	// ─── Block CRUD ───────────────────────────────────────────────
@@ -442,7 +450,7 @@
 	function buildBlock(type: string): Block {
 		// Custom block — parse the block def ID and seed props from defaults.
 		if (type.startsWith('custom:')) {
-			const blockDefId = type.slice('custom:'.length);
+			const blockDefId = type.slice(('custom:').length);
 			const def = getCustomBlockDef(blockDefId);
 			const defaultProps = def?.default_config ?? {};
 			// Also apply field-level defaults from the schema.
@@ -641,7 +649,7 @@
 		return tree.map((b) => {
 			if (b.id === containerId && isContainerLike(b)) {
 				const target = slotKey || defaultSlotKey(b);
-				return mapChildSlots(b, (children, slot) => (slot.key === target ? [...children, block] : children));
+				return mapChildSlots(b, (children, slot) => slot.key === target ? [...children, block] : children);
 			}
 			if (isContainerLike(b)) {
 				return mapChildSlots(b, (children) => insertIntoContainer(children, containerId, slotKey, block));
@@ -715,7 +723,7 @@
 	function removeContainerChild(containerId: string, slotKey: string, childId: string): void {
 		blocks = updateBlockInTree(blocks, containerId, (b) => {
 			if (!isContainerLike(b)) return b;
-			return mapChildSlots(b, (children, slot) => (slot.key === slotKey ? children.filter((c) => c.id !== childId) : children));
+			return mapChildSlots(b, (children, slot) => slot.key === slotKey ? children.filter((c) => c.id !== childId) : children);
 		});
 		if (selectedBlockId === childId) selectedBlockId = null;
 		unsavedChanges = true;
@@ -747,17 +755,16 @@
 	}
 	/** Merge a motion patch into a block anywhere in the tree. */
 	function updateBlockMotion(id: string, patch: Partial<MotionConfig> | null): void {
-		blocks = updateBlockInTree(blocks, id, (b) =>
-			patch === null
-				? ({ ...b, motion: undefined } as Block)
-				: ({ ...b, motion: { ...(b.motion ?? {}), ...patch } } as Block)
-		);
+		blocks = updateBlockInTree(blocks, id, (b) => patch === null
+			? { ...b, motion: undefined } as Block
+			: { ...b, motion: { ...b.motion ?? {}, ...patch } } as Block);
+
 		unsavedChanges = true;
 	}
 	/** Toggle per-device visibility for a block (desktop/tablet/mobile). */
 	function updateResponsiveVisibility(id: string, device: 'desktop' | 'tablet' | 'mobile', visible: boolean): void {
 		blocks = updateBlockInTree(blocks, id, (b) => {
-			const rv = { ...(b.responsive_visibility ?? {}) };
+			const rv = { ...b.responsive_visibility ?? {} };
 			if (visible) {
 				// Setting to visible = remove the override (fall back to default visible)
 				delete rv[device];
@@ -773,7 +780,7 @@
 	/** Update the `hide_if_empty` visibility rule for a block. */
 	function updateVisibilityRuleHideIfEmpty(id: string, checked: boolean): void {
 		blocks = updateBlockInTree(blocks, id, (b) => {
-			const rules = { ...(b.visibility_rules ?? {}) } as VisibilityRules;
+			const rules = { ...b.visibility_rules ?? {} } as VisibilityRules;
 			if (checked) {
 				rules.hide_if_empty = true;
 			} else {
@@ -788,7 +795,7 @@
 	/** Toggle a country code in the `geo_countries` visibility rule. */
 	function updateVisibilityRuleGeo(id: string, geoCode: string, checked: boolean): void {
 		blocks = updateBlockInTree(blocks, id, (b) => {
-			const rules = { ...(b.visibility_rules ?? {}) } as VisibilityRules;
+			const rules = { ...b.visibility_rules ?? {} } as VisibilityRules;
 			const set = new Set(rules.geo_countries ?? []);
 			if (checked) {
 				set.add(geoCode);
@@ -824,7 +831,7 @@
 		// Drop onto a container drop zone → insert into that container slot (append).
 		if (targetData?.source === 'container-dropzone') {
 			const containerId = targetData.containerId as string;
-			const slotKey = (targetData.slotKey as string) ?? '';
+			const slotKey = targetData.slotKey as string ?? '';
 			if (sourceData?.source === 'palette') {
 				const nb = makeBlock(sourceData.blockType as string);
 				blocks = insertIntoContainer(blocks, containerId, slotKey, nb);
@@ -847,7 +854,7 @@
 		// Drop onto a container child (sortable target) → reorder or insert.
 		if (targetData?.source === 'container-child' && target && isSortable(target)) {
 			const targetContainerId = targetData.containerId as string;
-			const targetSlotKey = (targetData.slotKey as string) ?? '';
+			const targetSlotKey = targetData.slotKey as string ?? '';
 			const targetChildId = target.id as string;
 
 			// Palette → insert before the target child.
@@ -993,7 +1000,7 @@
 			showPublishDialog = false;
 			pageData = { ...pageData, status: 'published' };
 			successMessage = t('pageBuilder.published', 'Published!');
-			setTimeout(() => (successMessage = ''), 2500);
+			setTimeout(() => successMessage = '', 2500);
 			return;
 		}
 		publishError = result.error ?? t('pageBuilder.publish_failed', 'Failed to publish page');
@@ -1005,7 +1012,7 @@
 		if (result.ok) {
 			pageData = { ...pageData, status: 'archived' };
 			successMessage = t('pageBuilder.archived', 'Archived');
-			setTimeout(() => (successMessage = ''), 2500);
+			setTimeout(() => successMessage = '', 2500);
 		} else {
 			errorMessage = result.error ?? t('common.error', 'Failed to archive page');
 		}
@@ -1026,7 +1033,7 @@
 				showSaveAsTemplate = false;
 				templateName = '';
 				successMessage = t('pageBuilder.templateSaved', 'Saved as template!');
-				setTimeout(() => (successMessage = ''), 3000);
+				setTimeout(() => successMessage = '', 3000);
 			} else {
 				errorMessage = result.error ?? t('common.error', 'Failed to save template');
 			}
@@ -1050,6 +1057,7 @@
 	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
 	let bypassGuard = false;
 	beforeNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
 		if (!unsavedChanges || bypassGuard || nav.type === 'leave') return;
 		nav.cancel();
 		const target = nav.to?.url;
@@ -1082,412 +1090,501 @@
 	</div>
 {:else}
 <div class="relative flex h-screen flex-col overflow-hidden">
-	<!-- Floating restore tab for hidden header -->
-	{#if !showHeader}
-		<button
-			type="button"
-			onclick={() => (showHeader = true)}
-			class="absolute start-1/2 top-0 z-50 -translate-x-1/2 rounded-b-md border border-t-0 px-3 py-0.5 text-[10px] font-medium transition-colors hover:bg-[var(--color-surface)]"
-			style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
-			aria-label={t('landing_editor.show_top_bar', 'Show top bar')}
+		<!-- Floating restore tab for hidden header -->
+		{#if !showHeader}
+			<button
+				type="button"
+				onclick={() => showHeader = true}
+				class="absolute start-1/2 top-0 z-50 -translate-x-1/2 rounded-b-md border border-t-0 px-3 py-0.5 text-[10px] font-medium transition-colors hover:bg-[var(--color-surface)]"
+				style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
+				aria-label={t('landing_editor.show_top_bar', 'Show top bar')}
 		><PanelTop class="inline h-3 w-3" /> {t('landing_editor.show_top_bar', 'Show top bar')}</button>
-	{/if}
-	<!-- Top bar — single row with 3 zones:
+		{/if}
+		<!-- Top bar — single row with 3 zones:
 	     Left: back button.
 	     Center: active category controls (switched by the right-side toggle).
 	     Right: 3-button segmented switch + section toggles + distraction-free. -->
-	{#if showHeader}
+		{#if showHeader}
 	<header class="flex items-center gap-3 border-b px-4 py-2" style="border-color: var(--color-border); background: var(--color-background)">
-		<!-- Left: back button -->
+				<!-- Left: back button -->
 		<Button variant="ghost" size="sm" onclick={() => goto('/page-builder/pages')} class="shrink-0"><ArrowLeft class="me-1 h-4 w-4 rtl:-scale-x-100" />{t('common.back', 'Back')}</Button>
 
-		<!-- Center: active category controls -->
+				<!-- Center: active category controls -->
 		<div class="flex flex-1 items-center justify-center gap-2 overflow-hidden">
-			{#if activeHeaderPanel === 'info'}
-				<!-- Info: title + metadata + status -->
-				<input type="text" bind:value={pageTitle} oninput={() => (unsavedChanges = true)} class="w-48 rounded border px-2 py-1 text-sm font-medium" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" aria-label={t('page_builder.title', 'Title')} />
-				<button type="button" onclick={() => (showPageSettings = true)} class="shrink-0 rounded p-1 transition-colors hover:bg-[var(--color-surface)]" title={t('page_builder.page_settings', 'Page settings')} aria-label={t('page_builder.page_settings', 'Page settings')}><Settings class="h-4 w-4" style="color: var(--color-muted)" /></button>
-				{#if pageData?.page_type}<span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider" style="background: var(--color-surface); color: var(--color-muted)">{pageData.page_type}</span>{/if}
-				<span class="shrink-0 text-xs" style="color: var(--color-muted)">/{pageData?.slug} · {blocks.length} {t('page_builder.blocks', 'blocks')}</span>
-				{#if unsavedChanges}<span class="h-2 w-2 shrink-0 rounded-full" style="background: var(--color-warning)" title={t('pageBuilder.unsaved_changes', 'Unsaved changes')}></span>{/if}
-				{#if successMessage}<span class="truncate text-sm" style="color: var(--color-success)">{successMessage}</span>{/if}
-				{#if errorMessage}<span class="truncate text-sm" style="color: var(--color-danger)">{errorMessage}</span>{/if}
-			{:else if activeHeaderPanel === 'preview'}
-				<!-- Preview: geo country + device toggle + theme -->
-				<Autocomplete
-					id="preview-country"
-					placeholder={t('landing.preview_country', 'Preview country')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					selectedId={previewCountry}
+					{#if activeHeaderPanel === 'info'}
+						<!-- Info: title + metadata + status -->
+
+						<input
+							type="text"
+							bind:value={pageTitle}
+							oninput={() => unsavedChanges = true}
+							class="w-48 rounded border px-2 py-1 text-sm font-medium"
+							style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)"
+							aria-label={t('page_builder.title', 'Title')}
+						/>
+
+						<button
+							type="button"
+							onclick={() => showPageSettings = true}
+							class="shrink-0 rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
+							title={t('page_builder.page_settings', 'Page settings')}
+							aria-label={t('page_builder.page_settings', 'Page settings')}
+						><Settings class="h-4 w-4" style="color: var(--color-muted)" /></button>
+
+						{#if pageData?.page_type}
+							<span
+								class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+								style="background: var(--color-surface); color: var(--color-muted)"
+							>{pageData.page_type}</span>
+						{/if}
+
+						<span
+							class="shrink-0 text-xs"
+							style="color: var(--color-muted)"
+						>/{pageData?.slug} · {blocks.length} {t('page_builder.blocks', 'blocks')}</span>
+
+						{#if unsavedChanges}
+							<span
+								class="h-2 w-2 shrink-0 rounded-full"
+								style="background: var(--color-warning)"
+								title={t('pageBuilder.unsaved_changes', 'Unsaved changes')}
+							></span>
+						{/if}
+
+						{#if successMessage}
+							<span
+								class="truncate text-sm"
+								style="color: var(--color-success)"
+							>{successMessage}</span>
+						{/if}
+
+						{#if errorMessage}
+							<span
+								class="truncate text-sm"
+								style="color: var(--color-danger)"
+							>{errorMessage}</span>
+						{/if}
+					{:else if activeHeaderPanel === 'preview'}
+						<!-- Preview: geo country + device toggle + theme -->
+						<Autocomplete
+							id="preview-country"
+							placeholder={t('landing.preview_country', 'Preview country')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							selectedId={previewCountry}
 					selectedLabel={previewCountry === 'global' ? t('landing.global', 'Global') : countryUtils.getSelectedLabel(previewCountry)}
-					fetcher={(q, limit = 50) => {
-						const globalItem = { id: 'global', label: t('landing.global', 'Global') };
-						const needle = q.toLowerCase().trim();
-						const matchesGlobal = !needle || 'global'.includes(needle) || globalItem.label.toLowerCase().includes(needle);
-						return countryUtils.fetcher(q, limit - (matchesGlobal ? 1 : 0)).then((items) => matchesGlobal ? [globalItem, ...items].slice(0, limit) : items);
-					}}
-					initialFetcher={() => {
-						const globalItem = { id: 'global', label: t('landing.global', 'Global') };
-						return countryUtils.initialFetcher().then((items) => [globalItem, ...items]);
-					}}
+							fetcher={(q, limit = 50) => {
+								const globalItem = { id: 'global', label: t('landing.global', 'Global') };
+								const needle = q.toLowerCase().trim();
+								const matchesGlobal = !needle || ('global').includes(needle) || globalItem.label.toLowerCase().includes(needle);
+								return countryUtils.fetcher(q, limit - (matchesGlobal ? 1 : 0)).then((items) => matchesGlobal ? [globalItem, ...items].slice(0, limit) : items);
+							}}
+							initialFetcher={() => {
+								const globalItem = { id: 'global', label: t('landing.global', 'Global') };
+								return countryUtils.initialFetcher().then((items) => [globalItem, ...items]);
+							}}
 					onSelect={(item: AutocompleteItem) => { previewCountry = item.id; }}
 					onClear={() => { previewCountry = 'global'; }}
-					inputClass="text-xs"
-				/>
-				<div class="flex shrink-0 gap-1">
-					<button onclick={() => (deviceMode = 'desktop')} class="rounded px-2 py-1 text-xs {deviceMode === 'desktop' ? 'text-white' : 'border'}" style={deviceMode === 'desktop' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_desktop', 'Desktop')}</button>
-					<button onclick={() => (deviceMode = 'tablet')} class="rounded px-2 py-1 text-xs {deviceMode === 'tablet' ? 'text-white' : 'border'}" style={deviceMode === 'tablet' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_tablet', 'Tablet')}</button>
-					<button onclick={() => (deviceMode = 'mobile')} class="rounded px-2 py-1 text-xs {deviceMode === 'mobile' ? 'text-white' : 'border'}" style={deviceMode === 'mobile' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_mobile', 'Mobile')}</button>
-				</div>
-				<AutocompleteSelect
-					value={selectedThemeId}
-					onValueChange={(v) => changeTheme(v)}
-					ariaLabel={t('page_builder.theme', 'Theme')}
-					options={[
+							inputClass="text-xs"
+						/>
+						<div class="flex shrink-0 gap-1">
+							<button
+								onclick={() => deviceMode = 'desktop'}
+								class="rounded px-2 py-1 text-xs {deviceMode === 'desktop' ? 'text-white' : 'border'}"
+								style={deviceMode === 'desktop'
+									? 'background: var(--color-primary)'
+									: 'border-color: var(--color-border)'}
+							>{t('landing.device_desktop', 'Desktop')}</button>
+
+							<button
+								onclick={() => deviceMode = 'tablet'}
+								class="rounded px-2 py-1 text-xs {deviceMode === 'tablet' ? 'text-white' : 'border'}"
+								style={deviceMode === 'tablet'
+									? 'background: var(--color-primary)'
+									: 'border-color: var(--color-border)'}
+							>{t('landing.device_tablet', 'Tablet')}</button>
+
+							<button
+								onclick={() => deviceMode = 'mobile'}
+								class="rounded px-2 py-1 text-xs {deviceMode === 'mobile' ? 'text-white' : 'border'}"
+								style={deviceMode === 'mobile'
+									? 'background: var(--color-primary)'
+									: 'border-color: var(--color-border)'}
+							>{t('landing.device_mobile', 'Mobile')}</button>
+						</div>
+						<AutocompleteSelect
+							value={selectedThemeId}
+							onValueChange={(v) => changeTheme(v)}
+							ariaLabel={t('page_builder.theme', 'Theme')}
+							options={[
 						{ value: '', label: t('page_builder.default_theme', 'Default Theme') },
 						...themes.map((th) => ({ value: th.id, label: th.name + (th.is_default ? ' (default)' : '') }))
-					]}
-					class="w-44"
-				/>
-			{:else if activeHeaderPanel === 'actions'}
-				<!-- Actions: save template + save draft + publish/archive -->
-				{#if canManagePages}
+							]}
+							class="w-44"
+						/>
+					{:else if activeHeaderPanel === 'actions'}
+						<!-- Actions: save template + save draft + publish/archive -->
+						{#if canManagePages}
 					<Button variant="outline" size="sm" class="shrink-0" onclick={() => { templateName = `${pageData?.title ?? 'Page'} Template`; showSaveAsTemplate = true; }}>
 						<LayoutTemplate class="me-1 h-3 w-3" />{t('page_builder.save_as_template', 'Save as Template')}
-					</Button>
-				{/if}
+							</Button>
+						{/if}
 				<Button variant="outline" size="sm" class="shrink-0" onclick={saveDraft} disabled={saving || !unsavedChanges}>
 					<Save class="me-1 h-3 w-3" />{saving ? t('common.saving', 'Saving...') : t('page_builder.save_draft', 'Save Draft')}
-				</Button>
-				{#if pageData?.status === 'published' && canPublishPages}
+						</Button>
+						{#if pageData?.status === 'published' && canPublishPages}
 					<Button variant="outline" size="sm" class="shrink-0" onclick={archive} disabled={publishing}>
 						<Archive class="me-1 h-3 w-3" />{t('page_builder.archive', 'Archive')}
-					</Button>
-				{:else if pageData?.status !== 'published' && canPublishPages}
+							</Button>
+						{:else if pageData?.status !== 'published' && canPublishPages}
 					<Button size="sm" class="shrink-0" onclick={() => { publishError = ''; showPublishDialog = true; }} disabled={publishing}>
 						<Rocket class="me-1 h-3 w-3" />{t('page_builder.publish', 'Publish')}
-					</Button>
-				{/if}
-			{/if}
-		</div>
+							</Button>
+						{/if}
+					{/if}
+				</div>
 
-		<!-- Right: 3-button segmented switch + section toggles + distraction-free -->
-		<div class="flex shrink-0 items-center gap-2">
+				<!-- Right: 3-button segmented switch + section toggles + distraction-free -->
+				<div class="flex shrink-0 items-center gap-2">
 			<div class="flex gap-0.5 rounded-md border p-0.5" style="border-color: var(--color-border)">
-				<button
-					type="button"
-					onclick={() => (activeHeaderPanel = 'info')}
-					class="rounded px-3 py-1 text-xs font-medium transition-colors"
+						<button
+							type="button"
+							onclick={() => activeHeaderPanel = 'info'}
+							class="rounded px-3 py-1 text-xs font-medium transition-colors"
 					style={activeHeaderPanel === 'info' ? 'background: var(--color-primary); color: white' : 'color: var(--color-muted)'}
-				>{t('landing_editor.tab_info', 'Info')}</button>
-				<button
-					type="button"
-					onclick={() => (activeHeaderPanel = 'preview')}
-					class="rounded px-3 py-1 text-xs font-medium transition-colors"
+						>{t('landing_editor.tab_info', 'Info')}</button>
+						<button
+							type="button"
+							onclick={() => activeHeaderPanel = 'preview'}
+							class="rounded px-3 py-1 text-xs font-medium transition-colors"
 					style={activeHeaderPanel === 'preview' ? 'background: var(--color-primary); color: white' : 'color: var(--color-muted)'}
-				>{t('landing_editor.tab_preview', 'Preview')}</button>
-				<button
-					type="button"
-					onclick={() => (activeHeaderPanel = 'actions')}
-					class="rounded px-3 py-1 text-xs font-medium transition-colors"
+						>{t('landing_editor.tab_preview', 'Preview')}</button>
+						<button
+							type="button"
+							onclick={() => activeHeaderPanel = 'actions'}
+							class="rounded px-3 py-1 text-xs font-medium transition-colors"
 					style={activeHeaderPanel === 'actions' ? 'background: var(--color-primary); color: white' : 'color: var(--color-muted)'}
-				>{t('landing_editor.tab_actions', 'Actions')}</button>
-			</div>
-			<!-- Section visibility toggles -->
+						>{t('landing_editor.tab_actions', 'Actions')}</button>
+					</div>
+					<!-- Section visibility toggles -->
 			<div class="flex gap-0.5 rounded-md border p-0.5" style="border-color: var(--color-border)">
-				<button
-					type="button"
-					onclick={() => (showLeftPane = !showLeftPane)}
-					class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
+						<button
+							type="button"
+							onclick={() => showLeftPane = !showLeftPane}
+							class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
 					style={showLeftPane ? 'color: var(--color-foreground)' : 'color: var(--color-muted); opacity: 0.5'}
-					title={showLeftPane ? 'Hide left panel' : 'Show left panel'}
-					aria-label={t('landing_editor.toggle_left_panel', 'Toggle left panel')}
-				><PanelLeft class="h-4 w-4 rtl:-scale-x-100" /></button>
-				<button
-					type="button"
-					onclick={() => (showRightPane = !showRightPane)}
-					class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
+							title={showLeftPane ? 'Hide left panel' : 'Show left panel'}
+							aria-label={t('landing_editor.toggle_left_panel', 'Toggle left panel')}
+						><PanelLeft class="h-4 w-4 rtl:-scale-x-100" /></button>
+						<button
+							type="button"
+							onclick={() => showRightPane = !showRightPane}
+							class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
 					style={showRightPane ? 'color: var(--color-foreground)' : 'color: var(--color-muted); opacity: 0.5'}
-					title={showRightPane ? 'Hide right panel' : 'Show right panel'}
-					aria-label={t('landing_editor.toggle_right_panel', 'Toggle right panel')}
-				><PanelRight class="h-4 w-4 rtl:-scale-x-100" /></button>
-				<button
-					type="button"
-					onclick={() => (showHeader = !showHeader)}
-					class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
+							title={showRightPane ? 'Hide right panel' : 'Show right panel'}
+							aria-label={t('landing_editor.toggle_right_panel', 'Toggle right panel')}
+						><PanelRight class="h-4 w-4 rtl:-scale-x-100" /></button>
+						<button
+							type="button"
+							onclick={() => showHeader = !showHeader}
+							class="rounded p-1 transition-colors hover:bg-[var(--color-surface)]"
 					style={showHeader ? 'color: var(--color-foreground)' : 'color: var(--color-muted); opacity: 0.5'}
-					title={showHeader ? 'Hide top bar' : 'Show top bar'}
-					aria-label={t('landing_editor.toggle_top_bar', 'Toggle top bar')}
-				><PanelTop class="h-4 w-4" /></button>
-			</div>
-			<!-- Distraction-free / full-width editor -->
-			<button
-				type="button"
-				onclick={toggleDistractionFree}
-				class="rounded-md border p-1.5 transition-colors hover:bg-[var(--color-surface)]"
-				style="border-color: var(--color-border); color: var(--color-foreground)"
+							title={showHeader ? 'Hide top bar' : 'Show top bar'}
+							aria-label={t('landing_editor.toggle_top_bar', 'Toggle top bar')}
+						><PanelTop class="h-4 w-4" /></button>
+					</div>
+					<!-- Distraction-free / full-width editor -->
+					<button
+						type="button"
+						onclick={toggleDistractionFree}
+						class="rounded-md border p-1.5 transition-colors hover:bg-[var(--color-surface)]"
+						style="border-color: var(--color-border); color: var(--color-foreground)"
 				title={distractionFree ? 'Exit full-width mode' : 'Full-width editor (hide all panels)'}
-				aria-label={t('landing_editor.toggle_full_width', 'Toggle full-width mode')}
-			>
-				{#if distractionFree}
-					<Minimize2 class="h-4 w-4" />
-				{:else}
-					<Maximize2 class="h-4 w-4" />
-				{/if}
-			</button>
-		</div>
-	</header>
-	{/if}
-	{#if saveError}
+						aria-label={t('landing_editor.toggle_full_width', 'Toggle full-width mode')}
+					>
+						{#if distractionFree}
+							<Minimize2 class="h-4 w-4" />
+						{:else}
+							<Maximize2 class="h-4 w-4" />
+						{/if}
+					</button>
+				</div>
+			</header>
+		{/if}
+		{#if saveError}
 		<div class="px-4 py-2 text-sm" style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">{saveError}</div>
-	{/if}
+		{/if}
 
 	<DragDropProvider onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
 		<div class="relative flex min-h-0 flex-1 overflow-x-auto">
-			<!-- Floating restore tab for hidden left pane -->
-			{#if !showLeftPane}
-				<button
-					type="button"
-					onclick={() => (showLeftPane = true)}
-					class="absolute start-0 top-1/2 z-50 -translate-y-1/2 rounded-e-md border border-s-0 px-1 py-3 transition-colors hover:bg-[var(--color-surface)]"
-					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
-					aria-label={t('landing_editor.show_left_panel', 'Show left panel')}
-				><PanelLeft class="h-4 w-4 rtl:-scale-x-100" /></button>
-			{/if}
-			<!-- Floating restore tab for hidden right pane -->
-			{#if !showRightPane}
-				<button
-					type="button"
-					onclick={() => (showRightPane = true)}
-					class="absolute end-0 top-1/2 z-50 -translate-y-1/2 rounded-s-md border border-e-0 px-1 py-3 transition-colors hover:bg-[var(--color-surface)]"
-					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
-					aria-label={t('landing_editor.show_right_panel', 'Show right panel')}
-				><PanelRight class="h-4 w-4 rtl:-scale-x-100" /></button>
-			{/if}
-			<!-- Floating exit button for distraction-free mode -->
-			{#if distractionFree}
-				<button
-					type="button"
-					onclick={toggleDistractionFree}
-					class="absolute end-3 top-3 z-50 flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium shadow-lg transition-colors hover:bg-[var(--color-surface)]"
-					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
-					aria-label={t('landing_editor.exit_full_width', 'Exit full-width mode')}
-				><Minimize2 class="h-3.5 w-3.5" /> Exit full-width</button>
-			{/if}
+				<!-- Floating restore tab for hidden left pane -->
+				{#if !showLeftPane}
+					<button
+						type="button"
+						onclick={() => showLeftPane = true}
+						class="absolute start-0 top-1/2 z-50 -translate-y-1/2 rounded-e-md border border-s-0 px-1 py-3 transition-colors hover:bg-[var(--color-surface)]"
+						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
+						aria-label={t('landing_editor.show_left_panel', 'Show left panel')}
+					><PanelLeft class="h-4 w-4 rtl:-scale-x-100" /></button>
+				{/if}
+				<!-- Floating restore tab for hidden right pane -->
+				{#if !showRightPane}
+					<button
+						type="button"
+						onclick={() => showRightPane = true}
+						class="absolute end-0 top-1/2 z-50 -translate-y-1/2 rounded-s-md border border-e-0 px-1 py-3 transition-colors hover:bg-[var(--color-surface)]"
+						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-muted)"
+						aria-label={t('landing_editor.show_right_panel', 'Show right panel')}
+					><PanelRight class="h-4 w-4 rtl:-scale-x-100" /></button>
+				{/if}
+				<!-- Floating exit button for distraction-free mode -->
+				{#if distractionFree}
+					<button
+						type="button"
+						onclick={toggleDistractionFree}
+						class="absolute end-3 top-3 z-50 flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium shadow-lg transition-colors hover:bg-[var(--color-surface)]"
+						style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+						aria-label={t('landing_editor.exit_full_width', 'Exit full-width mode')}
+					><Minimize2 class="h-3.5 w-3.5" /> Exit full-width</button>
+				{/if}
 
-			{#if showLeftPane}
-			<!-- Left pane: palette + sections list (resizable) -->
+				{#if showLeftPane}
+					<!-- Left pane: palette + sections list (resizable) -->
 			<aside class="flex shrink-0 flex-col" style="width: min({leftPaneWidth}px, 85vw); background: var(--color-background)">
-				<!-- Palette (resizable height) -->
+						<!-- Palette (resizable height) -->
 				<div class="shrink-0 overflow-y-auto p-2" style="height: {paletteHeight}px">
 					<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('pageBuilder.blockTypes', 'Block Types')}</h2>
-					<div class="relative mb-2">
+							<div class="relative mb-2">
 						<Search class="absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--color-muted)" />
 						<input type="text" bind:value={paletteSearch} placeholder={t('common.search', 'Search')} class="w-full rounded-md border py-1.5 ps-8 pe-2 text-xs" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" />
-					</div>
-					{#if paletteMessage}
+							</div>
+							{#if paletteMessage}
 						<p class="mb-2 rounded border px-2 py-1.5 text-[11px]" style="border-color: var(--color-warning); color: var(--color-warning)">{paletteMessage}</p>
-					{/if}
-					{#each Object.entries(groupedBlockTypes) as [category, types] (category)}
+							{/if}
+							{#each Object.entries(groupedBlockTypes) as [category, types] (category)}
 						<p class="mb-1.5 mt-3 text-[10px] font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{category}</p>
-						<div class="space-y-1.5">
-							{#each types as [type, meta] (type)}
-								<DraggableBlockType blockType={type} {meta} {getIcon} onAdd={addBlock} />
-							{/each}
-						</div>
-					{/each}
-				</div>
-
-				<!-- Resize handle: palette ↔ sections (drag up/down) -->
-				<ResizeHandle paneId="palette" size={paletteHeight} orientation="vertical" direction="right" minSize={120} maxSize={700} onResize={handlePaneResize} />
-
-				<!-- Sections list (sortable) — fills remaining height -->
-				<div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
-					<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('landing.sections', 'Sections')}</h2>
-					{#if blocks.length === 0}
-						<p class="px-1 py-2 text-xs" style="color: var(--color-muted)">{t('pageBuilder.dropBlocks', 'Drag blocks here or click to add')}</p>
-					{:else}
-						{#each blocks as block, i (block.id)}
-							{@const meta = blockRegistry[block.type]}
-							<SortableSection {block} index={i} selected={selectedBlockId === block.id} {meta} {getIcon} onSelect={() => (selectedBlockId = block.id)} onRemove={() => removeBlock(block.id)} />
-							{#if isContainerLike(block)}
-								{@const slots = childSlotsOf(block)}
-								<div class="ms-2">
-									<button
-										type="button"
-										onclick={() => toggleContainerExpand(block.id)}
-										class="text-[10px] text-[var(--muted)] hover:text-[var(--foreground)] px-2 py-0.5"
-									>
-										{expandedContainers.has(block.id) ? '▼' : '▶'} {slots.reduce((n, s) => n + s.blocks.length, 0)} children
-									</button>
-								</div>
-								{#if expandedContainers.has(block.id)}
-									{#each slots as slot (slot.key)}
-										{#if slot.label}
-											<div class="ms-6 mt-1 text-[10px] font-medium uppercase tracking-wider" style="color: var(--color-muted)">{slot.label}</div>
-										{/if}
-										<ContainerChildren
-											containerId={block.id}
-											slotKey={slot.key}
-											children={slot.blocks}
-											layout={getContainerLayout(block)}
-											columns={getContainerColumns(block)}
-											{selectedBlockId}
-											{getIcon}
-											onSelect={(id) => (selectedBlockId = id)}
-											onReorder={reorderContainerChild}
-											onRemove={removeContainerChild}
-											onMoveOut={moveChildToTopLevel}
-											onSpanChange={updateChildSpan} {expandedContainers} toggleExpand={toggleContainerExpand}
+								<div class="space-y-1.5">
+									{#each types as [type, meta] (type)}
+										<DraggableBlockType
+											blockType={type}
+											meta={meta}
+											getIcon={getIcon}
+											onAdd={addBlock}
 										/>
 									{/each}
-								{/if}
+								</div>
+							{/each}
+						</div>
+
+						<!-- Resize handle: palette ↔ sections (drag up/down) -->
+				<ResizeHandle paneId="palette" size={paletteHeight} orientation="vertical" direction="right" minSize={120} maxSize={700} onResize={handlePaneResize} />
+
+						<!-- Sections list (sortable) — fills remaining height -->
+				<div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
+					<h2 class="mb-2 text-xs font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('landing.sections', 'Sections')}</h2>
+							{#if blocks.length === 0}
+						<p class="px-1 py-2 text-xs" style="color: var(--color-muted)">{t('pageBuilder.dropBlocks', 'Drag blocks here or click to add')}</p>
+							{:else}
+								{#each blocks as block, i (block.id)}
+									{@const meta = blockRegistry[block.type]}
+
+									<SortableSection
+										block={block}
+										index={i}
+										selected={selectedBlockId === block.id}
+										meta={meta}
+										getIcon={getIcon}
+										onSelect={() => selectedBlockId = block.id}
+										onRemove={() => removeBlock(block.id)}
+									/>
+
+									{#if isContainerLike(block)}
+										{@const slots = childSlotsOf(block)}
+										<div class="ms-2">
+											<button
+												type="button"
+												onclick={() => toggleContainerExpand(block.id)}
+												class="text-[10px] text-[var(--muted)] hover:text-[var(--foreground)] px-2 py-0.5"
+											>
+												{expandedContainers.has(block.id) ? '▼' : '▶'} {slots.reduce((n, s) => n + s.blocks.length, 0)} children
+											</button>
+										</div>
+										{#if expandedContainers.has(block.id)}
+											{#each slots as slot (slot.key)}
+												{#if slot.label}
+											<div class="ms-6 mt-1 text-[10px] font-medium uppercase tracking-wider" style="color: var(--color-muted)">{slot.label}</div>
+												{/if}
+												<ContainerChildren
+													containerId={block.id}
+													slotKey={slot.key}
+													children={slot.blocks}
+													layout={getContainerLayout(block)}
+													columns={getContainerColumns(block)}
+													selectedBlockId={selectedBlockId}
+													getIcon={getIcon}
+													onSelect={(id) => selectedBlockId = id}
+													onReorder={reorderContainerChild}
+													onRemove={removeContainerChild}
+													onMoveOut={moveChildToTopLevel}
+													onSpanChange={updateChildSpan}
+													expandedContainers={expandedContainers}
+													toggleExpand={toggleContainerExpand}
+												/>
+											{/each}
+										{/if}
+									{/if}
+								{/each}
 							{/if}
-						{/each}
-					{/if}
 					<button onclick={() => addBlock('hero')} class="mt-2 w-full rounded border border-dashed py-1.5 text-xs hover:bg-[var(--surface)]" style="border-color: var(--color-border); color: var(--color-muted)">
 						+ {t('landing.add_section', 'Add Section')}
 					</button>
-				</div>
-			</aside>
+						</div>
+					</aside>
 
-			<!-- Resize handle: left ↔ center -->
+					<!-- Resize handle: left ↔ center -->
 			<ResizeHandle paneId="left" size={leftPaneWidth} minSize={180} maxSize={500} onResize={handlePaneResize} />
-			{/if}
+				{/if}
 
-			<!-- Center pane: live preview -->
+				<!-- Center pane: live preview -->
 			<main class="flex-1 overflow-y-auto p-4" style="background: var(--color-surface)">
 				<div class="mx-auto shadow-lg" style="width: {deviceWidth}px; max-width: 100%; background: var(--color-background)">
-					{#if resolvedBlocks.length > 0}
-						<LandingRenderer blocks={resolvedBlocks} {fetchCtx} geoCountry={previewCountry} guestHome={guestHomePreview} />
-					{:else}
+						{#if resolvedBlocks.length > 0}
+							<LandingRenderer
+								blocks={resolvedBlocks}
+								fetchCtx={fetchCtx}
+								geoCountry={previewCountry}
+								guestHome={guestHomePreview}
+							/>
+						{:else}
 						<div class="flex h-full flex-col items-center justify-center rounded-xl border-2 border-dashed py-20" style="border-color: var(--color-border)">
 							<Plus class="mb-3 h-8 w-8" style="color: var(--color-muted)" />
 							<p class="text-sm font-medium" style="color: var(--color-foreground)">{t('pageBuilder.emptyCanvas', 'Build your page by adding blocks from the left panel')}</p>
-						</div>
-					{/if}
-				</div>
-			</main>
+							</div>
+						{/if}
+					</div>
+				</main>
 
-			{#if showRightPane}
-			<!-- Resize handle: center ↔ right (dragging left grows the right pane) -->
+				{#if showRightPane}
+					<!-- Resize handle: center ↔ right (dragging left grows the right pane) -->
 			<ResizeHandle paneId="right" size={rightPaneWidth} direction="left" minSize={250} maxSize={700} onResize={handlePaneResize} />
 
-			<!-- Right pane: inspector (resizable) -->
+					<!-- Right pane: inspector (resizable) -->
 			<aside class="shrink-0 overflow-y-auto" style="width: min({rightPaneWidth}px, 85vw); border-inline-start: 1px solid var(--color-border); background: var(--color-background)">
-				{#if selectedBlock}
-					{@const meta = blockRegistry[selectedBlock.type]}
+						{#if selectedBlock}
+							{@const meta = blockRegistry[selectedBlock.type]}
 					<div class="border-b p-3" style="border-color: var(--color-border)">
 						<h3 class="text-sm font-semibold" style="color: var(--color-foreground)">{meta?.label ?? selectedBlock.type}</h3>
-					</div>
+							</div>
 					<Tabs.Root bind:value={activeTab} class="flex h-full flex-col">
 						<Tabs.List class="flex border-b" style="border-color: var(--color-border)">
 							<Tabs.Trigger value="content" class="flex-1 px-3 py-2 text-xs font-medium {activeTab === 'content' ? 'border-b-2 text-[var(--primary)]' : 'text-[var(--muted)]'}" style="border-color: var(--color-primary)">{t('landing.tab_content', 'Content')}</Tabs.Trigger>
 							<Tabs.Trigger value="style" class="flex-1 px-3 py-2 text-xs font-medium {activeTab === 'style' ? 'border-b-2 text-[var(--primary)]' : 'text-[var(--muted)]'}" style="border-color: var(--color-primary)">{t('landing.tab_style', 'Style')}{#if deviceMode !== 'desktop'} <span class="text-[9px] uppercase opacity-70">({deviceMode})</span>{/if}</Tabs.Trigger>
 							<Tabs.Trigger value="settings" class="flex-1 px-3 py-2 text-xs font-medium {activeTab === 'settings' ? 'border-b-2 text-[var(--primary)]' : 'text-[var(--muted)]'}" style="border-color: var(--color-primary)">{t('landing.tab_settings', 'Settings')}</Tabs.Trigger>
-						</Tabs.List>
-						<Tabs.Content value="content" class="flex-1 overflow-y-auto p-3">
-							{#if ContentEditor}
-								{@const Editor = ContentEditor}
-								{#if selectedBlock.type === 'custom'}
+								</Tabs.List>
+								<Tabs.Content value="content" class="flex-1 overflow-y-auto p-3">
+									{#if ContentEditor}
+										{@const Editor = ContentEditor}
+										{#if selectedBlock.type === 'custom'}
 									<Editor props={selectedBlock.props} blockDefId={selectedBlock.block_def_id} onchange={(v: unknown) => updateBlockProps(selectedBlock.id, v)} mediaPickerComponent={MediaPicker} geoCtx={previewCtx} />
-								{:else}
+										{:else}
 									<Editor props={selectedBlock.props} onchange={(v: unknown) => updateBlockProps(selectedBlock.id, v)} mediaPickerComponent={MediaPicker} widgetPickerComponent={WidgetPickerComponent} geoCtx={previewCtx} />
-								{/if}
-							{:else}
-								<p class="text-xs" style="color: var(--color-muted)">{t('pageBuilder.no_config', 'No content editor for this block type')}</p>
-							{/if}
-						</Tabs.Content>
-						<Tabs.Content value="style" class="flex-1 overflow-y-auto p-3">
+										{/if}
+									{:else}
+										<p class="text-xs" style="color: var(--color-muted)">{t('pageBuilder.no_config', 'No content editor for this block type')}</p>
+									{/if}
+								</Tabs.Content>
+								<Tabs.Content value="style" class="flex-1 overflow-y-auto p-3">
 							<BlockStylePanel value={selectedBlock.style} onchange={(v: BlockStyle) => updateBlockStyle(selectedBlock.id, v)} mediaPickerComponent={MediaPicker} device={deviceMode} />
-						</Tabs.Content>
+								</Tabs.Content>
 						<Tabs.Content value="settings" class="flex-1 overflow-y-auto p-3">
-							<div class="space-y-4">
+									<div class="space-y-4">
 								<label class="flex items-center justify-between gap-2 flex-wrap text-sm">
-									<span style="color: var(--color-foreground)">{t('landing.visible', 'Visible')}</span>
+											<span style="color: var(--color-foreground)">{t('landing.visible', 'Visible')}</span>
 									<input type="checkbox" checked={selectedBlock.visible} onchange={() => toggleBlockVisibility(selectedBlock.id)} />
-								</label>
+										</label>
 
-								<!-- Per-device visibility -->
+										<!-- Per-device visibility -->
 								<div class="space-y-2 rounded border p-3" style="border-color: var(--color-border)">
 									<h4 class="text-xs font-semibold uppercase" style="color: var(--color-muted)">{t('landing_editor.show_on_device', 'Show on device')}</h4>
-									<div class="grid grid-cols-3 gap-2">
+											<div class="grid grid-cols-3 gap-2">
 										<label class="flex items-center justify-center gap-1.5 rounded border px-2 py-1.5 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
-											<input
-												type="checkbox"
-												checked={selectedBlock.responsive_visibility?.desktop !== false}
-												onchange={(e) => updateResponsiveVisibility(selectedBlock.id, 'desktop', e.currentTarget.checked)}
-											/>
-											Desktop
-										</label>
+													<input
+														type="checkbox"
+														checked={selectedBlock.responsive_visibility?.desktop !== false}
+														onchange={(e) => updateResponsiveVisibility(selectedBlock.id, 'desktop', e.currentTarget.checked)}
+													/>
+													Desktop
+												</label>
 										<label class="flex items-center justify-center gap-1.5 rounded border px-2 py-1.5 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
-											<input
-												type="checkbox"
-												checked={selectedBlock.responsive_visibility?.tablet !== false}
-												onchange={(e) => updateResponsiveVisibility(selectedBlock.id, 'tablet', e.currentTarget.checked)}
-											/>
-											Tablet
-										</label>
+													<input
+														type="checkbox"
+														checked={selectedBlock.responsive_visibility?.tablet !== false}
+														onchange={(e) => updateResponsiveVisibility(selectedBlock.id, 'tablet', e.currentTarget.checked)}
+													/>
+													Tablet
+												</label>
 										<label class="flex items-center justify-center gap-1.5 rounded border px-2 py-1.5 text-xs" style="border-color: var(--color-border); color: var(--color-foreground)">
-											<input
-												type="checkbox"
-												checked={selectedBlock.responsive_visibility?.mobile !== false}
-												onchange={(e) => updateResponsiveVisibility(selectedBlock.id, 'mobile', e.currentTarget.checked)}
-											/>
-											Mobile
-										</label>
-									</div>
+													<input
+														type="checkbox"
+														checked={selectedBlock.responsive_visibility?.mobile !== false}
+														onchange={(e) => updateResponsiveVisibility(selectedBlock.id, 'mobile', e.currentTarget.checked)}
+													/>
+													Mobile
+												</label>
+											</div>
 									<p class="text-[10px]" style="color: var(--color-muted)">Uncheck to hide this block on that device. The block stays in the DOM but is display:none.</p>
-								</div>
+										</div>
 
-								<!-- Conditional visibility rules -->
+										<!-- Conditional visibility rules -->
 								<div class="space-y-3 rounded border p-3" style="border-color: var(--color-border)">
 									<h4 class="text-xs font-semibold uppercase" style="color: var(--color-muted)">{t('landing.visibility_rules', 'Visibility rules')}</h4>
 									<label class="flex items-center justify-between gap-2 flex-wrap text-sm">
-										<span style="color: var(--color-foreground)">{t('landing.hide_if_empty', 'Hide if empty')}</span>
-										<input
-											type="checkbox"
-											checked={selectedBlock.visibility_rules?.hide_if_empty ?? false}
-											onchange={(e) => updateVisibilityRuleHideIfEmpty(selectedBlock.id, e.currentTarget.checked)}
-										/>
-									</label>
-									<div>
+												<span style="color: var(--color-foreground)">{t('landing.hide_if_empty', 'Hide if empty')}</span>
+												<input
+													type="checkbox"
+													checked={selectedBlock.visibility_rules?.hide_if_empty ?? false}
+													onchange={(e) => updateVisibilityRuleHideIfEmpty(selectedBlock.id, e.currentTarget.checked)}
+												/>
+											</label>
+											<div>
 										<span class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.geo_countries', 'Show only in countries')}</span>
-									<Autocomplete
-										id="block-geo-countries"
-										placeholder={t('landing.search_country', 'Search country...')}
-										emptyMessage={t('common.no_results', 'No results found')}
-										fetcher={countryUtils.fetcher}
-										initialFetcher={countryUtils.initialFetcher}
-										selectedId={null}
-										selectedLabel={null}
-										onSelect={(item: AutocompleteItem) => updateVisibilityRuleGeo(selectedBlock.id, item.id, true)}
-										onClear={() => {}}
-									/>
-									{#if (selectedBlock.visibility_rules?.geo_countries ?? []).length > 0}
-										<div class="mt-2 flex flex-wrap gap-2">
-											{#each (selectedBlock.visibility_rules?.geo_countries ?? []) as code (code)}
-												<span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium" style="background-color: var(--color-primary); color: white">
-													{countryUtils.getSelectedLabel(code)}
+												<Autocomplete
+													id="block-geo-countries"
+													placeholder={t('landing.search_country', 'Search country...')}
+													emptyMessage={t('common.no_results', 'No results found')}
+													fetcher={countryUtils.fetcher}
+													initialFetcher={countryUtils.initialFetcher}
+													selectedId={null}
+													selectedLabel={null}
+													onSelect={(item: AutocompleteItem) => updateVisibilityRuleGeo(selectedBlock.id, item.id, true)}
+													onClear={() => {}}
+												/>
+												{#if (selectedBlock.visibility_rules?.geo_countries ?? []).length > 0}
+													<div class="mt-2 flex flex-wrap gap-2">
+														{#each selectedBlock.visibility_rules?.geo_countries ?? [] as code (code)}
+															<span
+																class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium"
+																style="background-color: var(--color-primary); color: white"
+															>
+																{countryUtils.getSelectedLabel(code)} 
 													<button onclick={() => updateVisibilityRuleGeo(selectedBlock.id, code, false)} class="hover:opacity-70" aria-label={t('common.remove', 'Remove')}>×</button>
-												</span>
-											{/each}
+															</span>
+														{/each}
+													</div>
+												{/if}
+											</div>
 										</div>
-									{/if}
-								</div>
-								</div>
 
-								<!-- Motion / Animation -->
+										<!-- Motion / Animation -->
 								<div class="space-y-3 rounded border p-3" style="border-color: var(--color-border)">
 									<h4 class="text-xs font-semibold uppercase" style="color: var(--color-muted)">{t('landing.animation', 'Animation')}</h4>
-									<div>
+											<div>
 										<label for="motion-preset" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_preset', 'Preset')}</label>
-										<AutocompleteSelect
-											id="motion-preset"
-											value={selectedBlock.motion?.preset ?? 'none'}
-											onValueChange={(v) => updateBlockMotion(selectedBlock.id, { preset: v as MotionConfig['preset'] })}
-											options={[
-												{ value: 'none', label: t('landing.motion_none', 'None') },
+												<AutocompleteSelect
+													id="motion-preset"
+													value={selectedBlock.motion?.preset ?? 'none'}
+													onValueChange={(v) => updateBlockMotion(selectedBlock.id, { preset: v as MotionConfig['preset'] })}
+													options={[
+														{ value: 'none', label: t('landing.motion_none', 'None') },
 												{ value: 'fade-in', label: t('landing.motion_fade_in', 'Fade In'), sublabel: t('landing.motion_fade', 'Fade') },
 												{ value: 'fade-up', label: t('landing.motion_fade_up', 'Fade Up'), sublabel: t('landing.motion_fade', 'Fade') },
 												{ value: 'fade-down', label: t('landing.motion_fade_down', 'Fade Down'), sublabel: t('landing.motion_fade', 'Fade') },
@@ -1507,118 +1604,159 @@
 												{ value: 'flip-up', label: t('landing.motion_flip_up', 'Flip Up'), sublabel: t('landing.motion_blur_flip', 'Blur & Flip') },
 												{ value: 'flip-down', label: t('landing.motion_flip_down', 'Flip Down'), sublabel: t('landing.motion_blur_flip', 'Blur & Flip') },
 												{ value: 'bounce-in', label: t('landing.motion_bounce_in', 'Bounce In'), sublabel: t('landing.motion_special', 'Special') }
-											]}
-											class="w-full"
-										/>
-									</div>
-									{#if (selectedBlock.motion?.preset ?? 'none') !== 'none'}
-										<div class="grid grid-cols-2 gap-2">
-											<div>
+													]}
+													class="w-full"
+												/>
+											</div>
+											{#if (selectedBlock.motion?.preset ?? 'none') !== 'none'}
+												<div class="grid grid-cols-2 gap-2">
+													<div>
 												<label for="motion-delay" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_delay', 'Delay (ms)')}</label>
 												<input id="motion-delay" type="number" min="0" step="50" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.delay ?? 0} oninput={(e) => updateBlockMotion(selectedBlock.id, { delay: Number(e.currentTarget.value) })} />
-											</div>
-											<div>
+													</div>
+													<div>
 												<label for="motion-duration" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_duration', 'Duration (ms)')}</label>
 												<input id="motion-duration" type="number" min="100" step="50" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.duration ?? 700} oninput={(e) => updateBlockMotion(selectedBlock.id, { duration: Number(e.currentTarget.value) })} />
-											</div>
-										</div>
-										<div>
+													</div>
+												</div>
+												<div>
 											<label for="motion-easing" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_easing', 'Easing')}</label>
-											<AutocompleteSelect
-												id="motion-easing"
-												value={selectedBlock.motion?.easing ?? 'cubic-bezier(0.16, 1, 0.3, 1)'}
-												onValueChange={(v) => updateBlockMotion(selectedBlock.id, { easing: v })}
+													<AutocompleteSelect
+														id="motion-easing"
+														value={selectedBlock.motion?.easing ?? 'cubic-bezier(0.16, 1, 0.3, 1)'}
+														onValueChange={(v) => updateBlockMotion(selectedBlock.id, { easing: v })}
 												options={[{ value: 'cubic-bezier(0.16, 1, 0.3, 1)', label: t('landing.easing_smooth', 'Smooth (default)') }, { value: 'ease-out', label: t('landing.easing_out', 'Ease Out') }, { value: 'ease-in-out', label: t('landing.easing_in_out', 'Ease In Out') }, { value: 'ease-in', label: t('landing.easing_in', 'Ease In') }, { value: 'linear', label: t('landing.easing_linear', 'Linear') }, { value: 'cubic-bezier(0.34, 1.56, 0.64, 1)', label: t('landing.easing_bounce', 'Bounce') }, { value: 'cubic-bezier(0.68, -0.55, 0.27, 1.55)', label: t('landing.easing_elastic', 'Elastic') }]}
-												class="w-full"
-											/>
-										</div>
-										<div>
+														class="w-full"
+													/>
+												</div>
+												<div>
 											<label for="motion-threshold" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_threshold', 'Viewport threshold')}: {selectedBlock.motion?.threshold ?? 0.1}</label>
 											<input id="motion-threshold" type="range" min="0" max="1" step="0.05" class="w-full" value={selectedBlock.motion?.threshold ?? 0.1} oninput={(e) => updateBlockMotion(selectedBlock.id, { threshold: Number(e.currentTarget.value) })} />
-										</div>
+												</div>
 										<label class="flex items-center justify-between gap-2 flex-wrap text-xs">
-											<span style="color: var(--color-foreground)">{t('landing.motion_once', 'Animate only once')}</span>
+													<span style="color: var(--color-foreground)">{t('landing.motion_once', 'Animate only once')}</span>
 											<input type="checkbox" checked={selectedBlock.motion?.once ?? true} onchange={(e) => updateBlockMotion(selectedBlock.id, { once: e.currentTarget.checked })} />
-										</label>
+												</label>
 										<label class="flex items-center justify-between gap-2 flex-wrap text-xs">
-											<span style="color: var(--color-foreground)">{t('landing.motion_stagger', 'Stagger children')}</span>
+													<span style="color: var(--color-foreground)">{t('landing.motion_stagger', 'Stagger children')}</span>
 											<input type="checkbox" checked={selectedBlock.motion?.stagger_children ?? false} onchange={(e) => updateBlockMotion(selectedBlock.id, { stagger_children: e.currentTarget.checked })} />
-										</label>
-										{#if selectedBlock.motion?.stagger_children}
-											<div>
+												</label>
+												{#if selectedBlock.motion?.stagger_children}
+													<div>
 												<label for="motion-stagger-delay" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_stagger_delay', 'Stagger delay (ms)')}</label>
 												<input id="motion-stagger-delay" type="number" min="0" step="20" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.stagger_delay ?? 80} oninput={(e) => updateBlockMotion(selectedBlock.id, { stagger_delay: Number(e.currentTarget.value) })} />
-											</div>
-										{/if}
+													</div>
+												{/if}
 										<button type="button" onclick={() => updateBlockMotion(selectedBlock.id, null)} class="w-full rounded border px-2 py-1 text-xs hover:bg-[var(--surface)]" style="border-color: var(--color-border); color: var(--color-muted)">
 											{t('landing.motion_reset', 'Reset animation')}
 										</button>
-									{/if}
-								</div>
+											{/if}
+										</div>
 
-								<div class="flex gap-2 pt-2">
+										<div class="flex gap-2 pt-2">
 									<button onclick={() => duplicateBlock(selectedBlock.id)} class="flex-1 rounded border px-2 py-1 text-xs" style="border-color: var(--color-border)">{t('landing.duplicate', 'Duplicate')}</button>
 									<button onclick={() => removeBlock(selectedBlock.id)} class="flex-1 rounded border px-2 py-1 text-xs" style="border-color: var(--color-danger); color: var(--color-danger)">{t('common.delete', 'Delete')}</button>
-								</div>
-							</div>
-						</Tabs.Content>
-					</Tabs.Root>
-				{:else}
+										</div>
+									</div>
+								</Tabs.Content>
+							</Tabs.Root>
+						{:else}
 					<div class="p-6 text-center text-sm" style="color: var(--color-muted)">
 						{t('landing.select_section_hint', 'Select a section to edit its content, style, and settings.')}
 					</div>
+						{/if}
+					</aside>
 				{/if}
-			</aside>
-			{/if}
-		</div>
+			</div>
 
-		<DragOverlay>
-			{#if activeDragData}
+			<DragOverlay>
+				{#if activeDragData}
 				<div class="rounded-lg border px-4 py-3 text-sm font-medium shadow-lg" style="border-color: var(--color-primary); background: var(--color-background); color: var(--color-foreground)">
-					{activeDragData.meta?.label ?? (blockRegistry as Record<string, BlockMeta>)[activeDragData.blockType as string]?.label ?? activeDragData.blockType ?? 'Block'}
-				</div>
-			{/if}
-		</DragOverlay>
-	</DragDropProvider>
-</div>
+						{activeDragData.meta?.label ?? (blockRegistry as Record<string, BlockMeta>)[activeDragData.blockType as string]?.label ?? activeDragData.blockType ?? 'Block'}
+					</div>
+				{/if}
+			</DragOverlay>
+		</DragDropProvider>
+	</div>
 {/if}
 
 <!-- Page settings dialog — the only UI where slug/page_type/description/SEO
      title can be edited after creation (the list page's Edit action opens
      this editor, which previously had no metadata form). -->
 <Modal bind:open={showPageSettings} title={t('page_builder.page_settings', 'Page Settings')} size="sm">
-			<div class="space-y-4">
-				<div>
+	<div class="space-y-4">
+		<div>
 					<label for="page-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.slug', 'Slug')}</label>
-					<div class="flex items-center gap-1">
-						<span class="text-sm" style="color: var(--color-muted)">/</span>
-						<input id="page-slug" type="text" bind:value={pageSlug} oninput={() => (unsavedChanges = true)} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" />
-					</div>
-				</div>
-				<div>
+			<div class="flex items-center gap-1">
+				<span class="text-sm" style="color: var(--color-muted)">/</span>
+
+				<input
+					id="page-slug"
+					type="text"
+					bind:value={pageSlug}
+					oninput={() => unsavedChanges = true}
+					class="w-full rounded-md border px-3 py-2 text-sm"
+					style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+				/>
+			</div>
+		</div>
+		<div>
 					<label for="page-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.page_type', 'Page type')}</label>
-					<AutocompleteSelect
-						id="page-type"
-						bind:value={pageType}
-						onValueChange={() => (unsavedChanges = true)}
-						options={pageTypeOptions}
-						class="w-full"
-					/>
-				</div>
-				<div>
-					<label for="page-description" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.description', 'Description')}</label>
-					<textarea id="page-description" rows="2" bind:value={pageDescription} oninput={() => (unsavedChanges = true)} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"></textarea>
-					<p class="mt-1 text-[11px]" style="color: var(--color-muted)">{t('page_builder.description_hint', 'Used as the meta description on the published page.')}</p>
-				</div>
-				<div>
-					<label for="page-seo-title" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.seo_title', 'SEO title')}</label>
-					<input id="page-seo-title" type="text" bind:value={seoTitle} oninput={() => (unsavedChanges = true)} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" placeholder={pageTitle} />
-					<p class="mt-1 text-[11px]" style="color: var(--color-muted)">{t('page_builder.seo_title_hint', 'Overrides the browser/OG title (stored in meta.title).')}</p>
-				</div>
-			</div>
-			<div class="mt-4 flex justify-end gap-2">
+			<AutocompleteSelect
+				id="page-type"
+				bind:value={pageType}
+				onValueChange={() => unsavedChanges = true}
+				options={pageTypeOptions}
+				class="w-full"
+			/>
+		</div>
+		<div>
+			<label
+				for="page-description"
+				class="mb-1 block text-sm font-medium"
+				style="color: var(--color-foreground)"
+			>{t('page_builder.description', 'Description')}</label>
+
+			<textarea
+				id="page-description"
+				rows="2"
+				bind:value={pageDescription}
+				oninput={() => unsavedChanges = true}
+				class="w-full rounded-md border px-3 py-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+			></textarea>
+
+			<p
+				class="mt-1 text-[11px]"
+				style="color: var(--color-muted)"
+			>{t('page_builder.description_hint', 'Used as the meta description on the published page.')}</p>
+		</div>
+		<div>
+			<label
+				for="page-seo-title"
+				class="mb-1 block text-sm font-medium"
+				style="color: var(--color-foreground)"
+			>{t('page_builder.seo_title', 'SEO title')}</label>
+
+			<input
+				id="page-seo-title"
+				type="text"
+				bind:value={seoTitle}
+				oninput={() => unsavedChanges = true}
+				class="w-full rounded-md border px-3 py-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)"
+				placeholder={pageTitle}
+			/>
+
+			<p
+				class="mt-1 text-[11px]"
+				style="color: var(--color-muted)"
+			>{t('page_builder.seo_title_hint', 'Overrides the browser/OG title (stored in meta.title).')}</p>
+		</div>
+	</div>
+	<div class="mt-4 flex justify-end gap-2">
 				<Button variant="ghost" onclick={() => { showPageSettings = false; }}>{t('common.done', 'Done')}</Button>
-			</div>
+	</div>
 </Modal>
 
 <!-- Save-as-template dialog -->
@@ -1637,10 +1775,22 @@
 <Modal bind:open={showPublishDialog} title={t('pageBuilder.publish_confirm_title', 'Publish Page?')} size="sm">
 			<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('pageBuilder.publish_confirm_body', 'This will make the current draft live. Visitors will see the published version immediately.')}</p>
 			{#if publishError}<p class="mb-4 text-sm" style="color: var(--color-danger)">{publishError}</p>{/if}
-			<div class="flex justify-end gap-2">
-				<button onclick={() => (showPublishDialog = false)} class="rounded border px-4 py-2 text-sm" style="border-color: var(--color-border)">{t('common.cancel', 'Cancel')}</button>
-				<button onclick={publish} disabled={publishing} class="rounded px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style="background: var(--color-primary)">
-					{publishing ? t('pageBuilder.publishing', 'Publishing...') : t('page_builder.publish', 'Publish')}
-				</button>
-			</div>
+	<div class="flex justify-end gap-2">
+		<button
+			onclick={() => showPublishDialog = false}
+			class="rounded border px-4 py-2 text-sm"
+			style="border-color: var(--color-border)"
+		>{t('common.cancel', 'Cancel')}</button>
+
+		<button
+			onclick={publish}
+			disabled={publishing}
+			class="rounded px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+			style="background: var(--color-primary)"
+		>
+			{publishing
+				? t('pageBuilder.publishing', 'Publishing...')
+				: t('page_builder.publish', 'Publish')}
+		</button>
+	</div>
 </Modal>

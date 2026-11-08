@@ -1,9 +1,9 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { loadContentArticle } from '$lib/server/content-article';
-import { apiContext, apiGet } from '$lib/server/api';
-import { contentHref } from '$lib/utils/contentLink';
-import type { VideoSource } from '$lib/types';
+import { loadContentArticle } from '#lib/server/content-article.js';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import { contentHref } from '#lib/utils/contentLink.js';
+import type { VideoSource } from '#lib/types/index.js';
 
 /**
  * Generic content single page (CPTs without a dedicated route family).

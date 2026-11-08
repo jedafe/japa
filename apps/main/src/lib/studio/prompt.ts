@@ -14,9 +14,9 @@ import {
 } from './types';
 import { isHighStakes } from './validation';
 import * as yaml from 'js-yaml';
-import type { CustomFieldDef } from '$lib/types';
+import type { CustomFieldDef } from '#lib/types/index.js';
 
-import { siteName } from '$lib/i18n';
+import { siteName } from '#lib/i18n/index.js';
 export interface PromptLookups {
 	contentTypeName: string;
 	guideCategoryName: string;

@@ -1,9 +1,9 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md (Status Lifecycle)
 	// Pill badge mapping a roadmap item status to an i18n label + colour.
-	import { t } from '$lib/i18n';
-	import { roadmapStatusLabel } from '$lib/enumOptions';
-	import type { RoadmapStatus } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import { roadmapStatusLabel } from '#lib/enumOptions.js';
+	import type { RoadmapStatus } from '#lib/types/index.js';
 
 	interface Props {
 		status: RoadmapStatus | string;

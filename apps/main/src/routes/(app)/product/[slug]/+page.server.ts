@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
 import type { PageServerLoad } from './$types';
 
 /**

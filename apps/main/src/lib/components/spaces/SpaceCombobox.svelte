@@ -4,8 +4,8 @@
 	// On focus: shows user's joined spaces + primary spaces first. On keystroke
 	// (debounced 200ms): searches via the API. Returns selected space IDs to the
 	// parent via the onSelect callback.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { Search, Loader2, X, Plus, Check } from 'lucide-svelte';
 
 	interface SpaceOption {

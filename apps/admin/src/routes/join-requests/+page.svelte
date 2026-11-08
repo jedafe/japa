@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /join-requests — migrated to the EntityPage scaffold; read-only list with state actions (approve/reject).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, CheckCircle, XCircle } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 
 	// GET /admin/join-requests rows carry a composite id (space_id::user_id)
 	// and joined_at — there is no request id, message, or requested_at.

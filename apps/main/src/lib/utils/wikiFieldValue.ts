@@ -3,9 +3,9 @@
 // select/multiselect keys to their option labels, formats numbers in the
 // request-scoped locale, and unwraps {label} objects. Used by
 // EntityFieldsPanel (body) and WikiQuickFacts (sidebar) so both stay in sync.
-import { i18n, t } from '$lib/i18n';
-import type { WikiEntityField } from '$lib/api/wiki';
-import { currencySymbol, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
+import { i18n, t } from '#lib/i18n/index.js';
+import type { WikiEntityField } from '#lib/api/wiki.js';
+import { currencySymbol, formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
 
 type ChoiceOption = string | { value: string; label: string };
 

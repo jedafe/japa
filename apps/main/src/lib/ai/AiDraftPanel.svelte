@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Sparkles, X, Loader2, RefreshCw, Check } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { api, type ClientResult } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api, type ClientResult } from '#lib/api/client.js';
 	import { draftContent } from './draftApi';
 	import {
 		assistImprove,
@@ -19,9 +19,9 @@
 		type OgMetadata
 	} from './assistApi';
 	import type { DraftRequest, DraftResponse, FieldSchema, DraftOptions } from './types';
-	import { AutocompleteSelect } from '$lib/components/ui';
+	import { AutocompleteSelect } from '#lib/components/ui/index.js';
 	import AiModelVoicePicker from './AiModelVoicePicker.svelte';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 
 	interface Props {
 		open: boolean;

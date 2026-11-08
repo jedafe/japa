@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { loadContentArticle } from '$lib/server/content-article';
-import { contentHref } from '$lib/utils/contentLink';
+import { loadContentArticle } from '#lib/server/content-article.js';
+import { contentHref } from '#lib/utils/contentLink.js';
 
 /**
  * List (listicle) single page at /list/{slug} — the canonical detail route

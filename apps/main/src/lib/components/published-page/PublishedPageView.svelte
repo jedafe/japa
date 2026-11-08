@@ -6,12 +6,12 @@
 	 * Ref: japaconnect-engineering/sections/27-page-builder.md
 	 */
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { FileText } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState } from '#lib/components/ui/index.js';
 	import { LandingRenderer, normalizeLegacyBlocks, type Block, type GuestHomeData } from '@japaconnect/landing-blocks';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import type { PageBuilderPage } from '$lib/types';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import type { PageBuilderPage } from '#lib/types/index.js';
 
 	interface Props {
 		page: PageBuilderPage;

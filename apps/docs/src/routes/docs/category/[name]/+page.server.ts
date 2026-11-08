@@ -6,11 +6,11 @@ import {
 	parseManagedCategories,
 	type DocsCategory,
 	type DocsCategoryItem
-} from '$lib/docs/catalog';
-import { buildMeta, collectionPageLd, DOCS_ORIGIN } from '$lib/seo/meta';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
-import type { DocAudience } from '$lib/types';
-import { AUDIENCE_LABEL_KEY } from '$lib/types';
+} from '#lib/docs/catalog.js';
+import { buildMeta, collectionPageLd, DOCS_ORIGIN } from '#lib/seo/meta.js';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
+import type { DocAudience } from '#lib/types/index.js';
+import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
 
 export interface CategoryAudienceGroup {
 	audience: DocAudience;

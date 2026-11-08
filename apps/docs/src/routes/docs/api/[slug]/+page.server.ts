@@ -1,8 +1,8 @@
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, API_BASE, JC_SURFACE } from '$lib/server/api';
-import { loadDocPage, editorData, saveDocPageAction, reviewAction } from '$lib/server/docs-author';
-import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
+import { apiContext, API_BASE, JC_SURFACE } from '#lib/server/api.js';
+import { loadDocPage, editorData, saveDocPageAction, reviewAction } from '#lib/server/docs-author.js';
+import { buildMeta, techArticleLd, DOCS_ORIGIN } from '#lib/seo/meta.js';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 
 /**
  * Module-level OpenAPI spec cache (TTL 5 min). The spec is large and fetched

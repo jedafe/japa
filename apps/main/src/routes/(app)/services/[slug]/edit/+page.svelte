@@ -1,31 +1,31 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/98-service-directory.md
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { Briefcase, Save, Loader2, AlertCircle, Package } from 'lucide-svelte';
-	import { serviceCategoryOptions } from '$lib/enumOptions';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
-	import { destinationMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
+	import { serviceCategoryOptions } from '#lib/enumOptions.js';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import type { ServiceCategory, ServiceListing, Space } from '#lib/types/index.js';
+	import { destinationMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 	import type { PageData } from './$types';
-	import AiBodyField from '$lib/ai/AiBodyField.svelte';
-	import CoverUploader from '$lib/components/create/CoverUploader.svelte';
-	import ServiceTierEditor from '$lib/components/services/ServiceTierEditor.svelte';
-	import ServiceContentEditor from '$lib/components/services/ServiceContentEditor.svelte';
+	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import CoverUploader from '#lib/components/create/CoverUploader.svelte';
+	import ServiceTierEditor from '#lib/components/services/ServiceTierEditor.svelte';
+	import ServiceContentEditor from '#lib/components/services/ServiceContentEditor.svelte';
 	import type {
 		FactEntry,
 		FaqEntry,
 		IconEntry,
 		StepEntry
-	} from '$lib/components/services/ServiceContentEditor.svelte';
-	import { tiersToPayload, type EditableTier } from '$lib/components/services/serviceForm';
-	import type { CurrencyInfo } from '$lib/utils/currency';
+	} from '#lib/components/services/ServiceContentEditor.svelte';
+	import { tiersToPayload, type EditableTier } from '#lib/components/services/serviceForm.js';
+	import type { CurrencyInfo } from '#lib/utils/currency.js';
 
 	let { data }: { data: PageData } = $props();
 

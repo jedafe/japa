@@ -2,7 +2,7 @@
      ({mode, max_impressions, cooldown_hours, snooze_default_hours}) as
      typed inputs instead of raw JSON. -->
 <script lang="ts">
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	interface Props {
 		value: Record<string, unknown>;

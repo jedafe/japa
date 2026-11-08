@@ -1,14 +1,14 @@
 <script lang="ts">
 	// /community/planning-groups — admin HITL review queue for Planning Groups with extend action.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { planningGroupAdminApi, apiRaw } from '$lib/api';
-	import { useCountries } from '$lib/utils/countries.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { planningGroupAdminApi, apiRaw } from '#lib/api.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, CalendarClock } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	type PlanningGroupItem = {
 		id: string;

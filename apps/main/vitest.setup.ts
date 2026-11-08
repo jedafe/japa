@@ -2,6 +2,11 @@ import '@testing-library/svelte';
 import { cleanup } from '@testing-library/svelte';
 import { afterEach } from 'vitest';
 
+// SvelteKit 3's generated `$app/env/public` module reads
+// `globalThis.__sveltekit_dev.env` at import time; vitest has no kit runtime,
+// so provide the global before any test module touches it.
+(globalThis as any).__sveltekit_dev ??= { env: {} };
+
 // bits-ui's body-scroll-lock schedules a setTimeout cleanup that can fire
 // after jsdom is torn down, causing "document is not defined" errors. Unmount
 // all rendered components and wait for the ~24ms cleanup to finish before

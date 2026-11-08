@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
 	import { X, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 
 	// Ref: media tab of /u/[username] — fullscreen viewer for media items.
 	// Pointer-event driven: pinch-zoom, pan-when-zoomed, swipe-to-navigate,

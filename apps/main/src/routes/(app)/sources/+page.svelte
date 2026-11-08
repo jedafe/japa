@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Rss, Plus, Search, ChevronRight, ChevronDown, Tag, Filter } from 'lucide-svelte';
@@ -15,16 +15,16 @@
 		type GuideContent,
 		type SearchSuggestion,
 		type UrlTab
-	} from '$lib/components/ui';
-	import HeroArtSources from '$lib/components/heroes/HeroArtSources.svelte';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-	import SourceCard from '$lib/components/source/SourceCard.svelte';
-	import ProposeSourceModal from '$lib/components/source/ProposeSourceModal.svelte';
-	import { sourceCategoryOptions, sourceCategoryLabel } from '$lib/sources';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import { api } from '$lib/api/client';
+	} from '#lib/components/ui/index.js';
+	import HeroArtSources from '#lib/components/heroes/HeroArtSources.svelte';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+	import SourceCard from '#lib/components/source/SourceCard.svelte';
+	import ProposeSourceModal from '#lib/components/source/ProposeSourceModal.svelte';
+	import { sourceCategoryOptions, sourceCategoryLabel } from '#lib/sources.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import { api } from '#lib/api/client.js';
 	import type { PageData } from './$types';
-	import type { Source } from '$lib/types/sources';
+	import type { Source } from '#lib/types/sources.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -144,7 +144,7 @@
 		if (selectedCategory) params.set('category', selectedCategory);
 		if (selectedSourceKind) params.set('source_kind', selectedSourceKind);
 		const qs = params.toString();
-		goto(qs ? `/sources?${qs}` : '/sources', { keepFocus: true });
+		goto(qs ? `/sources?${qs}` : '/sources', { reset: false });
 	}
 
 	async function sourceSearchFetcher(q: string): Promise<SearchSuggestion[]> {

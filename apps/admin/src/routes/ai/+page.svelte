@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { aiApi, aiAdminApi, aiModelsAdminApi, type HitlReview, type HitlVerifyResult, type GenerateResult, type AiTool, type AiUsageSummary, type AiToolUsageStats } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { aiApi, aiAdminApi, aiModelsAdminApi, type HitlReview, type HitlVerifyResult, type GenerateResult, type AiTool, type AiUsageSummary, type AiToolUsageStats } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 	import { Loader2, Copy, Check, Clock, CheckCircle2, XCircle, Eye, Sparkles, AlertTriangle, Wrench, BarChart3, Activity, Settings, Trash2, Search } from 'lucide-svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Select } from '$lib/components/ui/select';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { Select } from '#lib/components/ui/select/index.js';
 	import { page as pageState } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
-	import { Switch } from '$lib/components/ui/switch';
+	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
 
 	const canGenerate = $derived(hasPermission('ai.generate'));
 	const canReviewHitl = $derived(hasPermission('ai.hitl.review'));

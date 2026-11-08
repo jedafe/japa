@@ -3,7 +3,7 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import type { PromptFormValues, PromptTemplate } from '$lib/types/prompt';
+import type { PromptFormValues, PromptTemplate } from '#lib/types/prompt.js';
 
 export const TEMPLATES_KEY = 'japa-studio:prompt-templates';
 

@@ -2,8 +2,8 @@
 // Lists the spaces the current user has joined, moderates, owns, or has muted. Auth-gated.
 import { redirect, error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { MeSpace, MutedSpace, SpaceType } from '$lib/types';
+import { apiContext, apiList, ApiError } from '#lib/server/api.js';
+import type { MeSpace, MutedSpace, SpaceType } from '#lib/types/index.js';
 
 const VALID_TABS = ['joined', 'moderated', 'owned', 'muted'] as const;
 type Tab = (typeof VALID_TABS)[number];

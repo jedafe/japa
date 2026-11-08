@@ -1,7 +1,7 @@
 import { redirect, error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { AssessmentResult } from '$lib/types';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import type { AssessmentResult } from '#lib/types/index.js';
 
 /**
  * /tools/readiness/:slug — result permalink (§71, ADR-071).

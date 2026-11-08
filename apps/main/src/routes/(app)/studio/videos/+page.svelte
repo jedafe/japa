@@ -1,14 +1,14 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { Clapperboard, CheckCircle2, AlertCircle, Loader2, Video, Search, ListVideo, RefreshCw } from 'lucide-svelte';
-	import { EmptyState, RelativeTime } from '$lib/components/ui';
+	import { EmptyState, RelativeTime } from '#lib/components/ui/index.js';
 	import { enhance } from '$app/forms';
 	import { invalidate } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import { previewBulkImport, retryImportJob, type BulkImportPreview } from '$lib/api/videos';
-	import { formatDuration } from '$lib/utils/duration';
-	import type { VideoImportJob } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { previewBulkImport, retryImportJob, type BulkImportPreview } from '#lib/api/videos.js';
+	import { formatDuration } from '#lib/utils/duration.js';
+	import type { VideoImportJob } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	const STUDIO_CACHE_TAG = 'app:studio';

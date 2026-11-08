@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /tags — migrated to the EntityPage scaffold (Task 9).
 	//
 	// The rich tag form (logo/cover media pickers, custom field definitions) and
 	// the tag-moderators sub-flow cannot be expressed by the basic EntityForm, so
 	// they are rendered via the `formSnippet` escape hatch and page-local state.
-	import { EntityPage, type EntityPageConfig, type FieldDef } from "$lib/components/entity";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Button } from "$lib/components/ui/button";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import UserAutocomplete from "$lib/components/ui/UserAutocomplete.svelte";
-	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
-	import MediaPickerModal from "$lib/components/ui/MediaPickerModal.svelte";
-	import { tagsAdminApi, tagsModeratorsAdminApi, api, apiRaw } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { EntityPage, type EntityPageConfig, type FieldDef } from "#lib/components/entity/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { TableSkeleton } from "#lib/components/ui/skeleton/index.js";
+	import UserAutocomplete from "#lib/components/ui/UserAutocomplete.svelte";
+	import Autocomplete, { type AutocompleteItem } from "#lib/components/ui/Autocomplete.svelte";
+	import MediaPickerModal from "#lib/components/ui/MediaPickerModal.svelte";
+	import { tagsAdminApi, tagsModeratorsAdminApi, api, apiRaw } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { Shield, Eye, Pencil, Trash2, Image as ImageIcon, X } from "lucide-svelte";
 
 	type Tag = {

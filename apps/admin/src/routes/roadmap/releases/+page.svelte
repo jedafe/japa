@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /roadmap/releases — EntityPage scaffold (§113, ADR-135). Versioned
 	// releases table with surface/status filters, soft-delete + hard delete,
 	// and a "Change Status" state action driving draft→published→yanked
 	// (publish optionally absorbs the unreleased entry queue).
-	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { roadmapReleasesAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { roadmapReleasesAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Pencil, Trash2, Trash, RotateCcw, ArrowRightLeft } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	type RoadmapRelease = {
 		id: string;

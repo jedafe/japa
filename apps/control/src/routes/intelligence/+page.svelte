@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { api, apiList } from '$lib/api';
-	import { env } from '$env/dynamic/public';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import AccessDenied from '$lib/components/AccessDenied.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasAnyPermission } from '$lib/stores/auth.svelte';
+	import { api, apiList } from '#lib/api.js';
+	import { PUBLIC_JC_MAIN_URL } from '$app/env/public';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import AccessDenied from '#lib/components/AccessDenied.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasAnyPermission } from '#lib/stores/auth.svelte.js';
 	import {
 		Download,
 		Copy,
@@ -99,7 +99,7 @@
 		]);
 
 		if (srcRes.status === 'fulfilled' && srcRes.value.ok) {
-			sources = Array.isArray(srcRes.value.data) ? (srcRes.value.data as SourceEntry[]) : [];
+			sources = Array.isArray(srcRes.value.data) ? srcRes.value.data as SourceEntry[] : [];
 			sourcesTotal = srcRes.value.meta.total ?? sources.length;
 			// Freshness reads last_crawled_at per source — page through the
 			// remaining sources (bounded) so the count is not limited to the
@@ -111,7 +111,7 @@
 					{ signal }
 				);
 				if (!page2.ok || !Array.isArray(page2.data) || page2.data.length === 0) break;
-				sources = [...sources, ...(page2.data as SourceEntry[])];
+				sources = [...sources, ...page2.data as SourceEntry[]];
 				if (page2.data.length < 100) break;
 			}
 		}
@@ -122,7 +122,7 @@
 			radarCounts = countsRes.value.data;
 		}
 		if (promotedRes.status === 'fulfilled' && promotedRes.value.ok) {
-			promotedRecords = Array.isArray(promotedRes.value.data) ? (promotedRes.value.data as IntelRecord[]) : [];
+			promotedRecords = Array.isArray(promotedRes.value.data) ? promotedRes.value.data as IntelRecord[] : [];
 			publishedTotal = promotedRes.value.meta.total ?? promotedRecords.length;
 		}
 		if (approvedRes.status === 'fulfilled' && approvedRes.value.ok) {
@@ -137,9 +137,16 @@
 
 		// Surface the first non-abort error so the operator knows something
 		// is wrong, but only if every endpoint failed.
-		const failed = [srcRes, reviewRes, countsRes, promotedRes, approvedRes, proposedRes, enabledRes].filter(
-			(r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)
-		);
+		const failed = [
+			srcRes,
+			reviewRes,
+			countsRes,
+			promotedRes,
+			approvedRes,
+			proposedRes,
+			enabledRes
+		].filter((r) => r.status === 'rejected' || r.status === 'fulfilled' && !r.value.ok);
+
 		if (failed.length === 7) {
 			const first = failed[0];
 			errorMessage =
@@ -334,7 +341,7 @@
 	// authoritative override (dev box on :3000, separate prod origin, etc).
 	// Fallbacks keep the dev port-swap heuristic then same-origin.
 	function mainAppUrl(path: string): string {
-		const configured = env.PUBLIC_JC_MAIN_URL?.trim();
+		const configured = PUBLIC_JC_MAIN_URL?.trim();
 		if (configured) {
 			return configured.replace(/\/$/, '') + path;
 		}

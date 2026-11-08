@@ -1,9 +1,9 @@
 import { error } from '@sveltejs/kit';
 import type { ServerLoadEvent } from '@sveltejs/kit';
-import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
-import { hasPerm } from '$lib/server/auth';
-import type { ContentArticle, ContentAnalytics, SeriesPost } from '$lib/types/content';
-import type { Comment } from '$lib/types';
+import { apiContext, apiGet, apiGetEnvelope, ApiError } from '#lib/server/api.js';
+import { hasPerm } from '#lib/server/auth.js';
+import type { ContentArticle, ContentAnalytics, SeriesPost } from '#lib/types/content.js';
+import type { Comment } from '#lib/types/index.js';
 
 /**
  * Shared loader for the generic content single page — used by /content/[slug]

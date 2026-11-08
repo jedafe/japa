@@ -1,8 +1,8 @@
 <script lang="ts">
 	// Ref: docs/superpowers/plans/2026-09-11-sources-directory-v2-plan.md
 	// Source block toggle. POST /sources/{slug}/block, DELETE /sources/{slug}/block.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 
 	interface Props {
 		slug: string;

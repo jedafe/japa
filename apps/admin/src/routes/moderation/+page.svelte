@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /moderation — canonical review queue (merged with the former
 	// /moderation-queue page, which now redirects here). EntityPage scaffold
 	// with state actions: approve/reject/delete (reason modal), Assign to Me,
 	// and §61 ad-campaign approve/reject, plus bulk approve/reject/assign.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Button } from "$lib/components/ui/button";
-	import { moderationAdminApi, adsAdminApi } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import { user } from "$lib/stores/auth.svelte";
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "#lib/components/entity/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { moderationAdminApi, adsAdminApi } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
+	import { user } from "#lib/stores/auth.svelte.js";
 	import { Eye, Check, X, Trash2, UserPlus, Ban } from "lucide-svelte";
-	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
+	import type { ActionItem, FilterDef } from "#lib/components/ui/data-table/index.js";
 
 	type ModItem = {
 		id: string;

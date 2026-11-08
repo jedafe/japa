@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { api, setToken } from '$lib/api';
-	import { clearUser } from '$lib/stores/auth.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { api, setToken } from '#lib/api.js';
+	import { clearUser } from '#lib/stores/auth.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	onMount(async () => {
 		// Call logout to revoke the refresh token server-side. The

@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { i18n } from '$lib/i18n';
-	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
-	import MetricCard from '$lib/components/hub/MetricCard.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { i18n } from '#lib/i18n/index.js';
+	import DashboardPanel from '#lib/components/hub/DashboardPanel.svelte';
+	import MetricCard from '#lib/components/hub/MetricCard.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { FileText, Wallet, Bell, Users } from 'lucide-svelte';
-	import ReferralWidget from '$lib/components/referral/ReferralWidget.svelte';
-	import RadarCard from '$lib/components/RadarCard.svelte';
-	import RecommendationsWidget from '$lib/components/hub/dashboard/RecommendationsWidget.svelte';
-	import type { MeAnalytics, RecommendationsResponse, WalletSummary } from '$lib/types';
+	import ReferralWidget from '#lib/components/referral/ReferralWidget.svelte';
+	import RadarCard from '#lib/components/RadarCard.svelte';
+	import RecommendationsWidget from '#lib/components/hub/dashboard/RecommendationsWidget.svelte';
+	import type { MeAnalytics, RecommendationsResponse, WalletSummary } from '#lib/types/index.js';
 
 	interface RecentItem {
 		id: string;

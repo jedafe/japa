@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { DOCS_ORIGIN } from '$lib/appOrigins';
+import { DOCS_ORIGIN } from '#lib/appOrigins.js';
 
 /**
  * ADR-060 / P9 (one backend, multiple client surfaces): the Documentation site
@@ -17,7 +17,7 @@ export const load: PageServerLoad = async ({ url, params }) => {
 	const rest = params.rest ?? '';
 	const path = rest ? `/${rest}` : '';
 	const search = url.search; // preserves ?q=... etc.
-	throw redirect(308, `${DOCS_ORIGIN}${path}${search}`);
+	throw redirect(308, `${DOCS_ORIGIN}${path}${search}`, { external: true });
 };
 
 export const prerender = false;

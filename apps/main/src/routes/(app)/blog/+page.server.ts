@@ -1,9 +1,9 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import { attachAuthorUsernames } from '$lib/server/users';
-import type { ContentArticle } from '$lib/types/content';
-import type { BlogSeries } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import { attachAuthorUsernames } from '#lib/server/users.js';
+import type { ContentArticle } from '#lib/types/content.js';
+import type { BlogSeries } from '#lib/types/index.js';
 
 /**
  * Blog listing — GET /api/v1/blog (public, platform-scoped).

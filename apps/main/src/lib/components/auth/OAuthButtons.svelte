@@ -4,9 +4,9 @@
 	// GET /api/v1/auth/oauth/providers (env credentials or Control-managed
 	// client entries). Falls back to the original Google/Apple/Facebook set
 	// when the endpoint can't be reached so the buttons degrade gracefully.
-	import { t } from '$lib/i18n/store.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
 	import { page } from '$app/state';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { onMount } from 'svelte';
 
 	let { redirect }: { redirect?: string } = $props();

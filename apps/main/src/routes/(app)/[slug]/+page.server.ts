@@ -1,4 +1,4 @@
-import { loadPublishedPage } from '$lib/server/published-page';
+import { loadPublishedPage } from '#lib/server/published-page.js';
 import type { PageServerLoad } from './$types';
 
 /**

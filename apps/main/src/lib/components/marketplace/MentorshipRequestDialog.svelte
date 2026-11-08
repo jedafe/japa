@@ -12,13 +12,13 @@
 	// request flow; the Modal/idempotency/CSRF pattern mirrors BookingDialog
 	// (one Idempotency-Key per dialog open — Rule 9).
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { Modal } from '$lib/components/ui';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { Modal } from '#lib/components/ui/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { CheckCircle2, GraduationCap, Loader2, Send } from 'lucide-svelte';
-	import type { GeoCountry, ServiceBookingResult, ServiceListing } from '$lib/types';
+	import type { GeoCountry, ServiceBookingResult, ServiceListing } from '#lib/types/index.js';
 
 	interface Props {
 		service: ServiceListing;

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, i18n } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import {
 		Timer,
@@ -12,12 +12,12 @@
 		ChartLine,
 		Lock
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
+	import { EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
 	import { LineChart } from 'layerchart';
-	import type { GeoCountry, ProcessingStat, ProcessingTrendPoint } from '$lib/types';
+	import type { GeoCountry, ProcessingStat, ProcessingTrendPoint } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Visa Processing Time Tracker tool — §93.

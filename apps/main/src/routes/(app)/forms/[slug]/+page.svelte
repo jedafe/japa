@@ -1,16 +1,16 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md
 	// Generic public form renderer for {SITE_URL}/forms/{slug}. Renders the
 	// fields from GET /forms/{slug}/embed (no hardcoded fields — Rule 16) and
 	// submits to POST /forms/{id}/submissions. Multi-step forms render one
 	// step at a time; each step's fields are submitted together.
-	import { t, siteName } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { t, siteName } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { FileText, Send, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import type { FormField } from '$lib/types';
+	import type { FormField } from '#lib/types/index.js';
 
 	let { data } = $props();
 	const form = $derived(data.form);

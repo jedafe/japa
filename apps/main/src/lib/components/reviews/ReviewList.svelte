@@ -3,11 +3,11 @@
 	// Renders a list of reviews for an entity. Each item shows the star fill,
 	// title, body, and a relative date. The list is fetched by the parent
 	// (server load) and passed in — this component is presentational only.
-	import { t } from '$lib/i18n';
-	import { i18n } from '$lib/i18n';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { i18n } from '#lib/i18n/index.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { Star, MessageSquare } from 'lucide-svelte';
-	import type { Review } from '$lib/types';
+	import type { Review } from '#lib/types/index.js';
 
 	interface Props {
 		reviews: Review[];

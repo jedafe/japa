@@ -8,11 +8,11 @@
 	//
 	// Ref: japaconnect-engineering/sections/63-jobs-board.md
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { listCountries, listStates, listCities, createCity } from '$lib/api/geo';
-	import type { GeoCountry, GeoState, GeoCity } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { listCountries, listStates, listCities, createCity } from '#lib/api/geo.js';
+	import type { GeoCountry, GeoState, GeoCity } from '#lib/types/index.js';
 
 	interface Props {
 		values: Record<string, unknown>;

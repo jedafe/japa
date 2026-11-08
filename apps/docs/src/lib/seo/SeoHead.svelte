@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import type { SeoMeta } from '$lib/seo/meta';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import type { SeoMeta } from '#lib/seo/meta.js';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
 	interface Props {
 		meta: SeoMeta;

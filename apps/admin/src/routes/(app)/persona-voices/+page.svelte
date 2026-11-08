@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /persona-voices — shared persona voice / tone definitions (ADR-114, §68).
-	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { EntityPage, type EntityPageConfig, type FieldDef } from '#lib/components/entity/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 	import { Eye, Pencil, Trash2 } from 'lucide-svelte';
-	import { personaVoicesAdminApi, type PersonaVoice } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { personaVoicesAdminApi, type PersonaVoice } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	const fields: FieldDef[] = [
 		{

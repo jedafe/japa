@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { CrsFactorsResponse, CrsDraw, CrsScoreHistoryItem } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { CrsFactorsResponse, CrsDraw, CrsScoreHistoryItem } from '#lib/types/index.js';
 
 /**
  * Express Entry CRS Calculator at /tools/crs-calculator (§107, ADR-118).

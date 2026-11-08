@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Service reviews index — /services/[slug]/reviews. Full paginated list
 	// backed by GET /services/{id}/reviews (§114); the detail page links
 	// here via the "View all reviews" footer when its embedded slice is
@@ -8,11 +8,11 @@
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { ChevronRight, Star } from 'lucide-svelte';
-	import { t, siteName} from '$lib/i18n';
-	import { EmptyState, PaginationControls } from '$lib/components/ui';
-	import ReviewListItem from '$lib/components/marketplace/ReviewListItem.svelte';
-	import ReviewForm from '$lib/components/reviews/ReviewForm.svelte';
-	import { excerpt } from '$lib/utils/seo-score';
+	import { t, siteName} from '#lib/i18n/index.js';
+	import { EmptyState, PaginationControls } from '#lib/components/ui/index.js';
+	import ReviewListItem from '#lib/components/marketplace/ReviewListItem.svelte';
+	import ReviewForm from '#lib/components/reviews/ReviewForm.svelte';
+	import { excerpt } from '#lib/utils/seo-score.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -38,7 +38,7 @@
 	const canonical = $derived(`${page.url.origin}/services/${service.slug}/reviews`);
 
 	function gotoPage(p: number) {
-		const params = new URLSearchParams(page.url.searchParams);
+		const params = new URLSearchParams(page.url.search);
 		params.set('page', String(p));
 		goto(`/services/${service.slug}/reviews?${params.toString()}`);
 	}

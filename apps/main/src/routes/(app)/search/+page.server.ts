@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { SearchResponse, SearchResult, ResultGroup } from '$lib/types/search';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { SearchResponse, SearchResult, ResultGroup } from '#lib/types/search.js';
 
 /**
  * Search results — GET /api/v1/search?q=...&type=...&limit=20 (§54).

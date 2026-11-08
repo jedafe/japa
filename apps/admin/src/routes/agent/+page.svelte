@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /agent — Admin AI Agent session viewer. Read-only audit surface with
 	// three tabs: Sessions (list + detail modal), Tool Stats, Cost Report.
 	//
@@ -11,18 +11,18 @@
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Admin Routes)
 	// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 10, task 10.06)
 
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { apiFetch } from '$lib/api';
-	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { apiFetch } from '#lib/api.js';
+	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import {
 		Sparkles, Wrench, DollarSign, BarChart3, Eye, Loader2, AlertCircle,
 		Search, Clock, Cpu, Database, CheckCircle2, XCircle, Shield, Lock,
 		ChevronLeft, ChevronRight, Calendar
 	} from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	// ─── Types ────────────────────────────────────────────────────────
 	interface AgentSession {

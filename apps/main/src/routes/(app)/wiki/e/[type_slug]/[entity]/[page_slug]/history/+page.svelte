@@ -1,10 +1,10 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, siteName } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, siteName } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Bot, ChevronRight } from 'lucide-svelte';
-	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
-	import { entityPageHref } from '$lib/utils/wikiEntityLinks';
+	import PaginationControls from '#lib/components/ui/PaginationControls.svelte';
+	import { entityPageHref } from '#lib/utils/wikiEntityLinks.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

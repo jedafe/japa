@@ -1,16 +1,16 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/06-custom-fields-forms.md (public form embed)
 	// Public feedback form. Renders the fields from GET /forms/feedback/embed
 	// (no hardcoded fields — Rule 16) and submits to POST /forms/{id}/submissions
 	// via the browser API client. Auth is optional: an authed user's ID is
 	// recorded automatically by the backend.
-	import { t, siteName} from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { t, siteName} from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { MessageSquare, Send } from 'lucide-svelte';
-	import type { FormField } from '$lib/types';
+	import type { FormField } from '#lib/types/index.js';
 
 	let { data } = $props();
 	const form = $derived(data.form);

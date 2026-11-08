@@ -1,13 +1,13 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, siteName} from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, siteName} from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import { Briefcase, FileText, ArrowLeft } from 'lucide-svelte';
-	import { EmptyState, PaginationControls, RelativeTime } from '$lib/components/ui';
-	import SelectField from '$lib/components/ui/SelectField.svelte';
-	import { safeHttpUrl } from '$lib/utils/safeUrl';
+	import { EmptyState, PaginationControls, RelativeTime } from '#lib/components/ui/index.js';
+	import SelectField from '#lib/components/ui/SelectField.svelte';
+	import { safeHttpUrl } from '#lib/utils/safeUrl.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -53,11 +53,11 @@
 	};
 
 	function applyStatusFilter(v: string) {
-		const params = new URLSearchParams(page.url.searchParams);
+		const params = new URLSearchParams(page.url.search);
 		if (v) params.set('status', v);
 		else params.delete('status');
 		params.delete('page');
-		goto(`${page.url.pathname}?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`${page.url.pathname}?${params.toString()}`, { reset: false });
 	}
 </script>
 
@@ -165,7 +165,7 @@
 						page={meta.page ?? 1}
 						totalPages={Math.ceil((meta.total ?? 0) / (meta.limit ?? 20))}
 						onPageChange={(p) => {
-							const params = new URLSearchParams(page.url.searchParams);
+							const params = new URLSearchParams(page.url.search);
 							params.set('page', String(p));
 							goto(`${page.url.pathname}?${params.toString()}`);
 						}}

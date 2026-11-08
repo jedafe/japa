@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { untrack, onMount, type Component, type Snippet } from 'svelte';
 	import { page } from '$app/state';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import GuestHeader from '$lib/components/shell/GuestHeader.svelte';
-	import GuestFooter from '$lib/components/shell/GuestFooter.svelte';
-	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
-	import wordmarkLight from '$lib/assets/branding/wordmark-light.webp';
-	import wordmarkDark from '$lib/assets/branding/wordmark-dark.webp';
-	import { isExceptionRoute, isNoTabBarRoute, isNoRightSidebarRoute } from '$lib/components/create/gate';
-	import { api } from '$lib/api/client';
-	import { realtime } from '$lib/realtime/realtime.svelte';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import GuestHeader from '#lib/components/shell/GuestHeader.svelte';
+	import GuestFooter from '#lib/components/shell/GuestFooter.svelte';
+	import MobileBottomTabBar from '#lib/components/shell/MobileBottomTabBar.svelte';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
+	import wordmarkLight from '#lib/assets/branding/wordmark-light.webp';
+	import wordmarkDark from '#lib/assets/branding/wordmark-dark.webp';
+	import { isExceptionRoute, isNoTabBarRoute, isNoRightSidebarRoute } from '#lib/components/create/gate.js';
+	import { api } from '#lib/api/client.js';
+	import { realtime } from '#lib/realtime/realtime.svelte.js';
 	// ProductTour (driver.js), MediaLightbox (bits-ui Dialog) and the AI
 	// panel mount lazily — they are interaction-gated, so eager imports
 	// would put them on every page's critical path for nothing.
@@ -18,17 +18,17 @@
 	let MediaLightboxComp = $state<any>(null);
 	let AiPanelComp = $state<any>(null);
 	let aiPanelLoading = false;
-	import StickyAnchorAd from '$lib/components/ads/StickyAnchorAd.svelte';
-	import NextActionBar from '$lib/components/shell/NextActionBar.svelte';
-	import NextActionPopup from '$lib/components/shell/NextActionPopup.svelte';
-	import AdConversionTracker from '$lib/components/ads/AdConversionTracker.svelte';
-	import { lightbox } from '$lib/lightbox.svelte';
-	import { chatTemplateRail } from '$lib/ai/chatTemplateRail.svelte';
+	import StickyAnchorAd from '#lib/components/ads/StickyAnchorAd.svelte';
+	import NextActionBar from '#lib/components/shell/NextActionBar.svelte';
+	import NextActionPopup from '#lib/components/shell/NextActionPopup.svelte';
+	import AdConversionTracker from '#lib/components/ads/AdConversionTracker.svelte';
+	import { lightbox } from '#lib/lightbox.svelte.js';
+	import { chatTemplateRail } from '#lib/ai/chatTemplateRail.svelte.js';
 	import { Sparkles } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { setAiPageContext } from '@japaconnect/ai-panel';
-	import { ensureAiPanelDeps } from '$lib/ai/panel';
-	import { resolveAiPageContext } from '$lib/ai/pageContext';
+	import { ensureAiPanelDeps } from '#lib/ai/panel.js';
+	import { resolveAiPageContext } from '#lib/ai/pageContext.js';
 	import { beforeNavigate } from '$app/navigation';
 	import type { LayoutData } from './$types';
 
@@ -51,9 +51,8 @@
 	// ?tour=1 is suppressed so it never re-triggers automatically. The
 	// explicit "Replay tour" link uses ?tour=replay to override the guard.
 	const tourParam = $derived(page.url.searchParams.get('tour'));
-	const tourRequested = $derived(
-		tourParam === 'replay' || (tourParam === '1' && !data.tourDismissed)
-	);
+
+	const tourRequested = $derived(tourParam === 'replay' || tourParam === '1' && !data.tourDismissed);
 
 	// Latch: ProductTour strips the ?tour param once the tour starts, which
 	// flips tourRequested back to false for replay+dismissed users — keep the
@@ -65,7 +64,7 @@
 	});
 	$effect(() => {
 		if (tourMounted && !ProductTourComp) {
-			import('$lib/components/onboarding/ProductTour.svelte').then((m) => (ProductTourComp = m.default));
+			import('#lib/components/onboarding/ProductTour.svelte').then((m) => ProductTourComp = m.default);
 		}
 	});
 
@@ -104,12 +103,9 @@
 	// open — when the panel is closed the widget sidebar comes back. While
 	// the unified chat is still mounting (`!mounted`), assume the rail will
 	// open (its desktop default) so the widgets never flash into view.
-	const aiUnifiedRoute = $derived(
-		page.route.id === '/(app)/ai' && page.data.chatEnabled === true
-	);
-	const aiRailOpen = $derived(
-		aiUnifiedRoute && (!chatTemplateRail.mounted || chatTemplateRail.open)
-	);
+	const aiUnifiedRoute = $derived(page.route.id === '/(app)/ai' && page.data.chatEnabled === true);
+
+	const aiRailOpen = $derived(aiUnifiedRoute && (!chatTemplateRail.mounted || chatTemplateRail.open));
 
 	// ADR-058 Exception #1: content single pages (blog, content, guide,
 	// story, comparisons) still render the unified shell's left ad rail. The
@@ -128,7 +124,7 @@
 	// localStorage) so SSR renders the same nav width — a post-mount
 	// localStorage read forced a full three-column reflow on every load.
 	let navPinOverride = $state(untrack(() => data.navPinOverride));
-	const shownCollapsed = $derived(collapsed || (exception && !navPinOverride));
+	const shownCollapsed = $derived(collapsed || exception && !navPinOverride);
 
 	// Auto-collapse when entering settings, dashboard, roadmap or /ai (once
 	// per transition). The user can still expand via the toggle — we only
@@ -193,13 +189,12 @@
 	$effect(() => {
 		if (aiPanelOpen && !AiPanelComp && !aiPanelLoading) {
 			aiPanelLoading = true;
-			import('@japaconnect/ai-panel')
-				.then((m) => (AiPanelComp = m.AiPanel as Component))
-				.catch(() => {
-					// Reset on failure — a permanent latch would dead-end the
-					// FAB after one transient chunk-fetch error.
-					aiPanelLoading = false;
-				});
+
+			import('@japaconnect/ai-panel').then((m) => AiPanelComp = m.AiPanel as Component).catch(() => {
+				// Reset on failure — a permanent latch would dead-end the
+				// FAB after one transient chunk-fetch error.
+				aiPanelLoading = false;
+			});
 		}
 	});
 
@@ -208,13 +203,16 @@
 	$effect(() => {
 		setAiPageContext(resolveAiPageContext(page.url.pathname, page.data));
 	});
-	beforeNavigate(() => setAiPageContext(null));
 
-	// The shared lightbox mounts on first use — items land in the store only
-	// when a user clicks a zoomable image, so the chunk loads on demand.
+	beforeNavigate(({ shallow, type }) => {
+		if (shallow && type === 'goto') return;
+
+		return setAiPageContext(null);
+	});
+
 	$effect(() => {
 		if (lightbox.items.length > 0 && !MediaLightboxComp) {
-			import('$lib/components/ui/MediaLightbox.svelte').then((m) => (MediaLightboxComp = m.default));
+			import('#lib/components/ui/MediaLightbox.svelte').then((m) => MediaLightboxComp = m.default);
 		}
 	});
 
@@ -276,19 +274,17 @@
 		{@render children()}
 	</main>
 	<footer class="roadmap-footer">
-		<span>
-			&copy; {new Date().getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
-		</span>
+		<span>© {new Date().getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}</span>
 	</footer>
 {:else if isGuestLanding}
 	<!-- ADR-058 §5 Exception #3: guest landing page — GuestHeader + content + GuestFooter -->
 	<GuestHeader
 		logoUrl={page.data.guestHome
 			? wordmarkLight
-			: (data.siteSettings?.['appearance.logo_url'] as string | undefined)}
+			: data.siteSettings?.['appearance.logo_url'] as string | undefined}
 		logoDarkUrl={page.data.guestHome
 			? wordmarkDark
-			: (data.siteSettings?.['appearance.logo_url_dark'] as string | undefined)}
+			: data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
 		menu={data.menu}
 		features={data.features}
 	/>
@@ -322,6 +318,8 @@
 		logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
 		hideRightSidebar={exception || aiRailOpen || !data.rightSidebarEnabled || noRightSidebar}
+		shellHideNav={data.shellHideNav ?? false}
+		shellHideSidebar={data.shellHideSidebar ?? false}
 		rightSidebarWidgets={data.rightSidebarWidgets}
 		leftSidebarWidgets={isCreateRoute || isSettings || isDashboard || isRoadmap || isAi ? [] : data.leftSidebarWidgets}
 
@@ -349,7 +347,7 @@
 		     the mobile tab bar (bottom-20), flush right on desktop. -->
 		<button
 			type="button"
-			onclick={() => (aiPanelOpen = !aiPanelOpen)}
+			onclick={() => aiPanelOpen = !aiPanelOpen}
 			aria-label={t('ai.panel.title', 'Japa AI')}
 			title={t('ai.panel.title', 'Japa AI')}
 			aria-expanded={aiPanelOpen}
@@ -360,7 +358,11 @@
 			<Sparkles size={22} />
 		</button>
 		{#if AiPanelComp}
-			<AiPanelComp open={aiPanelOpen} user={data.user ?? null} onclose={() => (aiPanelOpen = false)} />
+			<AiPanelComp
+				open={aiPanelOpen}
+				user={data.user ?? null}
+				onclose={() => aiPanelOpen = false}
+			/>
 		{/if}
 	{/if}
 	{#if tourMounted && ProductTourComp}

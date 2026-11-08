@@ -1,14 +1,14 @@
 <script lang="ts">
 	// /community/services — admin HITL review queue for service directory listings.
 	// Ref: japaconnect-engineering/sections/98-service-directory.md (ADR-106)
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { serviceDirectoryAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import { useCountries } from '$lib/utils/countries.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { serviceDirectoryAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, CheckCircle, BadgeCheck, XCircle, Upload, Archive } from 'lucide-svelte';
-	import { Modal } from '$lib/components/ui/modal';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	// Backend ServiceRow shape (§98 DTO). The admin list endpoint returns
 	// { data: ServiceRow[], meta: { page, limit, total } }.

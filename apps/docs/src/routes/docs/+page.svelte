@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import SearchPalette from '$lib/components/docs/SearchPalette.svelte';
-	import HeroGlobe from '$lib/components/landing/HeroGlobe.svelte';
-	import { t } from '$lib/i18n';
-	import { persistNavCollapse } from '$lib/nav-collapse';
-	import { AUDIENCE_LABEL_KEY } from '$lib/types';
-	import { AUDIENCE_ICON, AUDIENCE_DESC_KEY } from '$lib/audience-meta';
-	import { categoryIcon, categoryDescKey, namedCategoryIcon } from '$lib/category-meta';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import SearchPalette from '#lib/components/docs/SearchPalette.svelte';
+	import HeroGlobe from '#lib/components/landing/HeroGlobe.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
+	import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
+	import { AUDIENCE_ICON, AUDIENCE_DESC_KEY } from '#lib/audience-meta.js';
+	import { categoryIcon, categoryDescKey, namedCategoryIcon } from '#lib/category-meta.js';
 	import {
 		collectCategories,
 		collectChangelog,
@@ -20,9 +20,9 @@
 		parseLinkCards,
 		parseManagedCategories,
 		mergeManagedCategories
-	} from '$lib/docs/catalog';
-	import type { DocsResource } from '$lib/docs/catalog';
-	import type { DocAudience } from '$lib/types';
+	} from '#lib/docs/catalog.js';
+	import type { DocsResource } from '#lib/docs/catalog.js';
+	import type { DocAudience } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 	import {
 		ArrowRight,
@@ -43,8 +43,8 @@
 		Send,
 		SquareTerminal
 	} from 'lucide-svelte';
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { env } from '$env/dynamic/public';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { PUBLIC_MAIN_ORIGIN } from '$app/env/public';
 
 	let { data }: { data: PageData } = $props();
 
@@ -56,7 +56,7 @@
 		await persistNavCollapse(collapsed);
 	}
 
-	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+	const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 
 	// Layout data (nav, accessibleAudiences, user, navCollapsed) comes via the
 	// nearest layout — here the root +layout.svelte. We read it from $props.
@@ -83,19 +83,13 @@
 
 	// "What's new" — changelog-category pages across accessible audiences,
 	// newest first (docs.changelog_category / docs.changelog_new_days).
-	let changelogCategories = $derived(
-		parseCsvSetting(siteSettings['docs.changelog_category'], ['Changelog'])
-	);
-	let changelog = $derived(
-		collectChangelog(
-			data.summaries ?? [],
-			changelogCategories,
-			parseIntSetting(siteSettings['docs.changelog_new_days'], 14)
-		).slice(0, 6)
-	);
-	let updatesHref = $derived(
-		changelogCategories[0] ? categoryHref(changelogCategories[0]) : '/docs/categories'
-	);
+	let changelogCategories = $derived(parseCsvSetting(siteSettings['docs.changelog_category'], ['Changelog']));
+
+	let changelog = $derived(collectChangelog(data.summaries ?? [], changelogCategories, parseIntSetting(siteSettings['docs.changelog_new_days'], 14)).slice(0, 6));
+
+	let updatesHref = $derived(changelogCategories[0]
+		? categoryHref(changelogCategories[0])
+		: '/docs/categories');
 
 	// Popular documentation list — leading pages per audience.
 	let popular = $derived(popularPages(data.nav, 2, 5));
@@ -103,11 +97,11 @@
 	// Help / contribute links — repeater-driven (docs.help_links /
 	// docs.contribute_links). An absent key falls back to the legacy
 	// docs.*_url settings; a stored [] hides the links entirely.
-	let helpCenterHref = $derived(
-		(siteSettings['docs.help_center_url'] as string | undefined) || mainOrigin
-	);
-	let supportHref = $derived((siteSettings['docs.support_url'] as string | undefined) || '');
-	let repoHref = $derived(((siteSettings['docs.repo_url'] as string | undefined) ?? '').replace(/\/$/, ''));
+	let helpCenterHref = $derived(siteSettings['docs.help_center_url'] as string | undefined || mainOrigin);
+
+	let supportHref = $derived(siteSettings['docs.support_url'] as string | undefined || '');
+	let repoHref = $derived((siteSettings['docs.repo_url'] as string | undefined ?? '').replace(/\/$/, ''));
+
 	let helpLinks = $derived.by(() => {
 		const raw = siteSettings['docs.help_links'];
 		if (raw !== undefined) return parseLinkList(raw);
@@ -196,16 +190,13 @@
 	);
 </script>
 
-<svelte:head>
-	<SeoHead meta={data.meta} />
-</svelte:head>
-
-<svelte:window onresize={updateSlider} />
+<svelte:head><SeoHead meta={data.meta} /></svelte:head>
+<svelte:window onresize={updateSlider}></svelte:window>
 
 <AppShell
 	nav={data.nav}
 	accessibleAudiences={data.accessibleAudiences}
-	logoUrl={(data.siteSettings?.["appearance.logo_url"] as string | undefined) ?? ""}
+	logoUrl={data.siteSettings?.["appearance.logo_url"] as string | undefined ?? ""}
 	footerMenu={data.footerMenu}
 	rightSidebarWidgets={data.rightSidebarWidgets}
 	leftSidebarWidgets={data.leftSidebarWidgets}
@@ -221,13 +212,20 @@
 				<h1>{t('landing.hero_title')}</h1>
 				<p class="subtitle">{t('landing.hero_subtitle')}</p>
 				<div class="hero-searchbar">
-					<button type="button" class="hero-search" onclick={() => (searchOpen = true)}>
+					<button
+						type="button"
+						class="hero-search"
+						onclick={() => searchOpen = true}
+					>
 						<Search size={18} />
 						<span class="hero-search-label">{t('search.placeholder')}</span>
 					</button>
-					<button type="button" class="hero-search-btn" onclick={() => (searchOpen = true)}>
-						{t('landing.search_cta')}
-					</button>
+
+					<button
+						type="button"
+						class="hero-search-btn"
+						onclick={() => searchOpen = true}
+					>{t('landing.search_cta')}</button>
 				</div>
 				{#if heroPopular.length > 0}
 					<div class="hero-popular">
@@ -316,7 +314,7 @@
 				</div>
 				<div class="cat-grid">
 					{#each categories.slice(0, 8) as cat, i (cat.slug)}
-						{@const CatIcon = (cat.icon && namedCategoryIcon(cat.icon)) || categoryIcon(cat.name)}
+						{@const CatIcon = cat.icon && namedCategoryIcon(cat.icon) || categoryIcon(cat.name)}
 						{@const descKey = cat.description ? null : categoryDescKey(cat.name)}
 						<div class="cat-card">
 							<div class="cat-head">
@@ -467,7 +465,7 @@
 							rel={res.url.startsWith('http') ? 'noopener noreferrer' : undefined}
 							data-sveltekit-reload={res.url.startsWith('http')
 								? undefined
-								: /\.[a-z0-9]+$/i.test(res.url.split('/').pop() ?? '') || undefined}
+								: (/\.[a-z0-9]+$/i).test(res.url.split('/').pop() ?? '') || undefined}
 						>
 							<span class="resource-icon"><ResIcon size={16} /></span>
 							<span class="resource-body">
@@ -486,7 +484,7 @@
 </AppShell>
 
 {#if searchOpen}
-	<SearchPalette onClose={() => (searchOpen = false)} />
+	<SearchPalette onClose={() => searchOpen = false} />
 {/if}
 
 <style>
@@ -691,11 +689,27 @@
 		justify-content: space-between;
 		gap: 0.5rem;
 	}
-	.group-count { font-size: 0.75rem; color: var(--color-muted); }
-	:global(.card-arrow) { color: var(--color-muted); transition: transform 0.15s, color 0.15s; }
-	.group-card:hover :global(.card-arrow) { color: var(--color-primary); transform: translateX(2px); }
 
-	.slider-nav { display: flex; gap: 0.375rem; }
+	.group-count {
+		font-size: 0.75rem;
+		color: var(--color-muted);
+	}
+
+	:global(.card-arrow) {
+		color: var(--color-muted);
+		transition: transform 0.15s, color 0.15s;
+	}
+
+	.group-card:hover :global(.card-arrow) {
+		color: var(--color-primary);
+		transform: translateX(2px);
+	}
+
+	.slider-nav {
+		display: flex;
+		gap: 0.375rem;
+	}
+
 	.slider-btn {
 		display: grid;
 		place-items: center;
@@ -862,12 +876,28 @@
 		color: var(--color-primary);
 		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 	}
-	.pop-badge.aud-users { color: var(--chart-3); background: color-mix(in srgb, var(--chart-3) 12%, transparent); }
-	.pop-badge.aud-api { color: var(--chart-1); background: color-mix(in srgb, var(--chart-1) 10%, transparent); }
-	.pop-badge.aud-premium { color: var(--chart-4); background: color-mix(in srgb, var(--chart-4) 14%, transparent); }
-	.pop-badge.aud-admin, .pop-badge.aud-superadmin {
-		color: var(--chart-5); background: color-mix(in srgb, var(--chart-5) 10%, transparent);
+
+	.pop-badge.aud-users {
+		color: var(--chart-3);
+		background: color-mix(in srgb, var(--chart-3) 12%, transparent);
 	}
+
+	.pop-badge.aud-api {
+		color: var(--chart-1);
+		background: color-mix(in srgb, var(--chart-1) 10%, transparent);
+	}
+
+	.pop-badge.aud-premium {
+		color: var(--chart-4);
+		background: color-mix(in srgb, var(--chart-4) 14%, transparent);
+	}
+
+	.pop-badge.aud-admin,
+	.pop-badge.aud-superadmin {
+		color: var(--chart-5);
+		background: color-mix(in srgb, var(--chart-5) 10%, transparent);
+	}
+
 	.news-badge {
 		font-size: 0.625rem;
 		font-weight: 700;

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { Pencil, Loader2 } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import type { Source } from '$lib/types/sources';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import type { Source } from '#lib/types/sources.js';
 
 	interface Props {
 		open: boolean;

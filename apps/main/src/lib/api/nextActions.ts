@@ -2,10 +2,10 @@
 // Wraps /api/v1/next-actions — OptionalAuth, serves guests + members.
 // getNextActions is memoized ~60s so the bar/popup/sidebar/in-article
 // renderers share one request per page view; mutations bust the memo.
-import { api } from '$lib/api/client';
+import { api } from '#lib/api/client.js';
 import { page } from '$app/state';
 import { goto } from '$app/navigation';
-import type { NextAction } from '$lib/types';
+import type { NextAction } from '#lib/types/index.js';
 
 const MEMO_MS = 60_000;
 

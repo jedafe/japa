@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /gamification — migrated to the EntityPage scaffold.
 	// Two tabs: Badges (full CRUD + award) and Challenges (full CRUD).
 	// Rich forms (ActivityKeyAutocomplete) use the formSnippet escape hatch.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import ActivityKeyAutocomplete from '$lib/components/gamification/ActivityKeyAutocomplete.svelte';
-	import UserAutocomplete from '$lib/components/ui/UserAutocomplete.svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import ActivityKeyAutocomplete from '#lib/components/gamification/ActivityKeyAutocomplete.svelte';
+	import UserAutocomplete from '#lib/components/ui/UserAutocomplete.svelte';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 	import { Trophy, Target, Pencil, Award, Trash2, Eye, CalendarDays, Layers, ScrollText } from 'lucide-svelte';
-	import { api, apiRaw, adminCatalogApi, featureFlagsAdminApi, type CatalogOption } from '$lib/api';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
+	import { api, apiRaw, adminCatalogApi, featureFlagsAdminApi, type CatalogOption } from '#lib/api.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
 
 	type Badge = {
 		id: string;

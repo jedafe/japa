@@ -7,12 +7,12 @@
 	// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §6.2.
 	import { Dialog } from 'bits-ui';
 	import { X, Loader2, ChevronDown, ChevronUp, Route, Globe, Users } from 'lucide-svelte';
-	import Switch from '$lib/components/ui/Switch.svelte';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { api } from '$lib/api';
+	import Switch from '#lib/components/ui/Switch.svelte';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { api } from '#lib/api.js';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { t, translations } from '$lib/stores/i18n.svelte';
+	import { t, translations } from '#lib/stores/i18n.svelte.js';
 	import {
 		SURFACES,
 		PHASES,

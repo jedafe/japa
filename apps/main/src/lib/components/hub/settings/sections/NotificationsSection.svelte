@@ -18,14 +18,14 @@
 	import { untrack } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
-	import { patchNotifications } from '$lib/api/hub';
-	import { t } from '$lib/i18n';
+	import { DirtyForm } from '#lib/components/hub/useDirtyForm.svelte.js';
+	import { patchNotifications } from '#lib/api/hub.js';
+	import { t } from '#lib/i18n/index.js';
 	import { Bell, Mail, Smartphone, MessageSquare, AtSign, Heart, Send, Building2, CreditCard, Shield, GraduationCap, Megaphone, Users } from 'lucide-svelte';
-	import type { NotificationPreference } from '$lib/types';
+	import type { NotificationPreference } from '#lib/types/index.js';
 
 	let { data }: { data: unknown } = $props();
-	const apiPrefs = $derived((data as NotificationPreference[] | null) ?? []);
+	const apiPrefs = $derived(data as NotificationPreference[] | null ?? []);
 
 	// ---- Category mapping (Section 35) ----
 	// Categories now come from the backend notification_types.category column
@@ -81,6 +81,7 @@
 
 	let bypassGuard = false;
 	beforeNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
 		if (!form.dirty || bypassGuard || nav.type === 'leave') return;
 		nav.cancel();
 		const target = nav.to?.url;
@@ -146,7 +147,7 @@
 				type="button"
 				role="tab"
 				aria-selected={activeTab === cat}
-				onclick={() => (activeTab = cat)}
+				onclick={() => activeTab = cat}
 				class="inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors {activeTab === cat
 					? 'border-[var(--color-primary)] text-[var(--color-primary-text)]'
 					: 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'}"

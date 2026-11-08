@@ -2,11 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.js', () => ({
 	api: vi.fn().mockResolvedValue({ ok: true, data: {} })
 }));
 
-vi.mock('$lib/stores/i18n.svelte', () => ({
+vi.mock('#lib/stores/i18n.svelte.js', () => ({
 	t: vi.fn((key: string, fallback?: string) => fallback ?? key)
 }));
 

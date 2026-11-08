@@ -3,14 +3,14 @@
 	// Shared deal (coupon) form: staff create/edit via /admin/coupons and
 	// organization submissions via /organizations/{id}/deals.
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { slugify } from '$lib/studio/prompt';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { slugify } from '#lib/studio/prompt.js';
 	import { Plus, Loader2, AlertCircle, Trash2 } from 'lucide-svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import type { Coupon, DealPartnerRef } from '$lib/types';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import type { Coupon, DealPartnerRef } from '#lib/types/index.js';
 	import {
 		buildCouponPayload,
 		buildProviderPayload,

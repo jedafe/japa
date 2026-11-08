@@ -6,9 +6,9 @@
 	import { page } from '$app/state';
 	import type { LayoutData } from './$types';
 	import type { Snippet } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { Modal } from '$lib/components/ui';
-	import { studioMobile } from '$lib/studio/mobileView.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { Modal } from '#lib/components/ui/index.js';
+	import { studioMobile } from '#lib/studio/mobileView.svelte.js';
 	import { Files, Clapperboard, TerminalSquare, SquarePen, Shield, SlidersHorizontal, Shapes, Check } from 'lucide-svelte';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();

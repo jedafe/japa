@@ -1,9 +1,9 @@
 <script lang="ts">
 	// /wallet/credit-packs — migrated to the EntityPage scaffold; declarative CRUD entity.
 	// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { walletApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { walletApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Trash2 } from 'lucide-svelte';
 
 	type CreditPack = {

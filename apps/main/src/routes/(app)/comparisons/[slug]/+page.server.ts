@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
-import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
-import type { JCEComparisonDetail, MatrixItem, ResolvedItem } from '$lib/types/jce';
-import type { Comment } from '$lib/types';
-import type { ContentArticle } from '$lib/types/content';
+import { apiContext, apiGet, apiGetEnvelope, ApiError } from '#lib/server/api.js';
+import type { JCEComparisonDetail, MatrixItem, ResolvedItem } from '#lib/types/jce.js';
+import type { Comment } from '#lib/types/index.js';
+import type { ContentArticle } from '#lib/types/content.js';
 import type { PageServerLoad } from './$types';
 
 function resolvedItems(cmp: JCEComparisonDetail): ResolvedItem[] {

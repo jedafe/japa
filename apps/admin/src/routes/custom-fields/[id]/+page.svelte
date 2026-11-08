@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	import { page } from '$app/state';
-	import { api, fieldGroupsAdminApiExtended, userManagementApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { api, fieldGroupsAdminApiExtended, userManagementApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Plus, Pencil, Trash2, ArrowLeft, GripVertical } from 'lucide-svelte';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import type { ActionItem, Column } from '$lib/components/ui/data-table';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import type { ActionItem, Column } from '#lib/components/ui/data-table/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type FieldOption = { value: string; label: string };
 	// §80 Wiki Topic Pages — one column of a price_parts field's

@@ -7,7 +7,7 @@ import type {
 	JCEComparisonSummary,
 	ResolvedItem,
 	SelectionToken
-} from '$lib/types/jce';
+} from '#lib/types/jce.js';
 
 export async function listComparisonTypes(): Promise<ComparisonType[]> {
 	const res = await api.get<ComparisonType[]>('/jce/comparison-types');

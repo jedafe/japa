@@ -4,12 +4,12 @@
 	// resolve the track by slug (GET /academy/tracks/{slug}) and then fetch
 	// GET /academy/progress/{trackId} with the track's UUID.
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
-	import ProgressRing from '$lib/components/academy/ProgressRing.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { LoadingSkeleton, EmptyState } from '#lib/components/ui/index.js';
+	import ProgressRing from '#lib/components/academy/ProgressRing.svelte';
 	import { ArrowLeft, CheckCircle, Clock } from 'lucide-svelte';
-	import type { TrackDetail } from '$lib/types';
+	import type { TrackDetail } from '#lib/types/index.js';
 
 	const slug = $derived(page.params.slug);
 

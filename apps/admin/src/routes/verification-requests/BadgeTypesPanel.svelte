@@ -3,13 +3,13 @@
 	// CRUD over /admin/verification-types. Badge artwork uploads via a
 	// dedicated "Set badge" row action + shared media picker. Seeded rows are
 	// is_protected: deactivate, never delete.
-	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
-	import { EntityPage, type EntityPageConfig, type EntityPageController } from "$lib/components/entity";
-	import { verificationTypesAdminApi, type VerificationTypeItem } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from "#lib/components/entity/index.js";
+	import { verificationTypesAdminApi, type VerificationTypeItem } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { Eye, Pencil, Trash2, Image as ImageIcon } from "lucide-svelte";
-	import type { ActionItem, ActionContext } from "$lib/components/ui/data-table";
+	import type { ActionItem, ActionContext } from "#lib/components/ui/data-table/index.js";
 
 	const canManage = $derived(hasPermission("verification.types.manage"));
 

@@ -5,17 +5,17 @@
 	import { page } from '$app/state';
 	import { Menu as MenuIcon, Search, ChevronDown, Sun, Moon, Languages, Check } from 'lucide-svelte';
 	import { Menu, MenuItem } from '@japaconnect/ui';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
-	import SearchPalette from '$lib/components/docs/SearchPalette.svelte';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
+	import SearchPalette from '#lib/components/docs/SearchPalette.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import GuestAuthButtons from './GuestAuthButtons.svelte';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
-	import { t, i18n } from '$lib/i18n';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { enabledLanguages, localeLabel, switchLanguage } from '$lib/locale';
-	import { parseVersions } from '$lib/docs/catalog';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { enabledLanguages, localeLabel, switchLanguage } from '#lib/locale.js';
+	import { parseVersions } from '#lib/docs/catalog.js';
 
-	import type { SessionUser } from '$lib/types';
+	import type { SessionUser } from '#lib/types/index.js';
 
 	interface HeaderWidget {
 		id: string;

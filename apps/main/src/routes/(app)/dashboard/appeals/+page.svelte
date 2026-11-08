@@ -1,17 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/22-admin-panel.md (Appeals)
 	// Lists the user's submitted appeals (GET /me/appeals) with status pills
 	// and links to the linked staff ticket (the conversation thread).
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
-	import { ticketHref } from '$lib/tickets';
+	import { t } from '#lib/i18n/index.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import PaginationControls from '#lib/components/ui/PaginationControls.svelte';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
+	import { ticketHref } from '#lib/tickets.js';
 	import { AlertTriangle, Scale, Ticket } from 'lucide-svelte';
-	import type { AppealEligibleItem, AppealListItem } from '$lib/types';
+	import type { AppealEligibleItem, AppealListItem } from '#lib/types/index.js';
 
 	let { data } = $props();
 	const appeals = $derived<AppealListItem[]>(data.appeals);
@@ -79,7 +79,7 @@
 	}
 
 	function changePage(next: number) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('page', String(next));
 		goto(url.toString());
 	}

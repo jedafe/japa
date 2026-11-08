@@ -1,37 +1,37 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
 	import {
 		Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3,
 		UserPlus, UserCheck, Loader2, BellOff, Bell, Flag, Pin, PinOff,
 		Check, X, Inbox, ChevronUp, ChevronDown, BookOpen, Star
 	, TriangleAlert, Radar } from 'lucide-svelte';
-	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
-	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
-	import SpaceSidebar from '$lib/components/spaces/SpaceSidebar.svelte';
-	import SpaceSettings from '$lib/components/spaces/SpaceSettings.svelte';
-	import ForumList from '$lib/components/forum/ForumList.svelte';
-	import { EmptyState, UrlTabs } from '$lib/components/ui';
-	import RadarItemRow from '$lib/components/RadarItemRow.svelte';
-	import type { UrlTab } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import { imgLightbox } from '$lib/lightbox.svelte';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import { decodeBase64Text } from '$lib/tiptap/serialize';
-	import type { FeedItem } from '$lib/types';
-	import FeedCard from '$lib/components/feed/FeedCard.svelte';
-	import NativeAd from '$lib/components/ads/NativeAd.svelte';
-	import DigestWidget from '$lib/components/digest/DigestWidget.svelte';
-	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
+	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
+	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
+	import SpaceSidebar from '#lib/components/spaces/SpaceSidebar.svelte';
+	import SpaceSettings from '#lib/components/spaces/SpaceSettings.svelte';
+	import ForumList from '#lib/components/forum/ForumList.svelte';
+	import { EmptyState, UrlTabs } from '#lib/components/ui/index.js';
+	import RadarItemRow from '#lib/components/RadarItemRow.svelte';
+	import type { UrlTab } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import { imgLightbox } from '#lib/lightbox.svelte.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import { decodeBase64Text } from '#lib/tiptap/serialize.js';
+	import type { FeedItem } from '#lib/types/index.js';
+	import FeedCard from '#lib/components/feed/FeedCard.svelte';
+	import NativeAd from '#lib/components/ads/NativeAd.svelte';
+	import DigestWidget from '#lib/components/digest/DigestWidget.svelte';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import type {
 		Space, SpaceContentItem, SpaceMember, SpaceModerator, SpaceRule,
 		SpacePermissionPreset, SpaceJoinRequest, WikiPageIndex, SpaceReview
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
-import { flagUrl } from '$lib/utils/flags';
+import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+import { flagUrl } from '#lib/utils/flags.js';
 
 	let { data }: { data: PageData } = $props();
 

@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { ACADEMY_ORIGIN } from '$lib/appOrigins';
+import { ACADEMY_ORIGIN } from '#lib/appOrigins.js';
 
 /**
  * Legacy deep links: the Learn surface was renamed to Academy. `/learn/*`
@@ -10,7 +10,7 @@ import { ACADEMY_ORIGIN } from '$lib/appOrigins';
 export const load: PageServerLoad = async ({ url, params }) => {
 	const rest = params.rest ?? '';
 	const path = rest ? `/${rest}` : '';
-	throw redirect(308, `${ACADEMY_ORIGIN}${path}${url.search}`);
+	throw redirect(308, `${ACADEMY_ORIGIN}${path}${url.search}`, { external: true });
 };
 
 export const prerender = false;

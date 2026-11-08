@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { BookOpen, ArrowRight, X } from 'lucide-svelte';
-	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle } from '$lib/components/ui';
-	import type { FeedItem, BlogSeries } from '$lib/types';
-	import ContentGridCard from '$lib/components/feed/ContentGridCard.svelte';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { api } from '$lib/api/client';
+	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle } from '#lib/components/ui/index.js';
+	import type { FeedItem, BlogSeries } from '#lib/types/index.js';
+	import ContentGridCard from '#lib/components/feed/ContentGridCard.svelte';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { api } from '#lib/api/client.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -211,7 +211,7 @@
 	}
 
 	function buildUrl(next: Partial<{ tab: string; page: number; tag: string; space_id: string; author_id: string; series_id: string }>): string {
-		const params = new URLSearchParams(page.url.searchParams);
+		const params = new URLSearchParams(page.url.search);
 		if (next.tab != null) params.set('tab', next.tab);
 		if (next.page != null) {
 			if (next.page <= 1) params.delete('page');

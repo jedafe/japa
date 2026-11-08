@@ -6,13 +6,13 @@
 	// app (entityUrl). Folders are managed client-side via
 	// POST/PATCH/DELETE /me/bookmark-folders.
 	// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { loginUrl, MAIN_ORIGIN } from '$lib/appOrigins';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { loginUrl, MAIN_ORIGIN } from '#lib/appOrigins.js';
 	import { goto } from '$app/navigation';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState } from '#lib/components/ui/index.js';
 	import { Bookmark as BookmarkIcon, ExternalLink, FolderPlus, Trash2, Loader2, Folder, Pencil, Check, X, ChevronRight, ChevronDown } from 'lucide-svelte';
-	import type { Bookmark, BookmarkFolder } from '$lib/types';
+	import type { Bookmark, BookmarkFolder } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -121,7 +121,7 @@
 		} else {
 			url.searchParams.delete('folder');
 		}
-		goto(`${url.pathname}${url.search}`, { replaceState: true, keepFocus: true, noScroll: true });
+		goto(`${url.pathname}${url.search}`, { replace: true, reset: false });
 	}
 
 	function entityUrl(b: Bookmark): string {

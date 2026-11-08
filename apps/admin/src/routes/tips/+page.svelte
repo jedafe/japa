@@ -3,11 +3,11 @@
 	// stats strip, and a per-row Refund action (tips.moderate).
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { onMount } from 'svelte';
-	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { tipsAdminApi } from '$lib/api';
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { tipsAdminApi } from '#lib/api.js';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { RotateCcw } from 'lucide-svelte';
 
 	type TipRow = {

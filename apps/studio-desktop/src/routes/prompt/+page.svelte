@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	import { onMount } from 'svelte';
 	import { Sparkles, Copy, Save, Loader2 } from 'lucide-svelte';
-	import { promptStore } from '$lib/stores/prompt.svelte';
-	import { createApiClient, mapPublicContentType } from '$lib/services/api';
+	import { promptStore } from '#lib/stores/prompt.svelte.js';
+	import { createApiClient, mapPublicContentType } from '#lib/services/api.js';
 	import {
 		buildPrompt,
 		buildProjectInstruction,
 		defaultFrameworkFor,
 		type PromptLookups
-	} from '$lib/services/prompt';
-	import { copyToClipboard } from '$lib/services/clipboard';
-	import { saveProjectInstruction } from '$lib/services/claude-md';
-	import { initSettingsDb, loadSettings, type StudioSettings } from '$lib/services/settings';
-	import { isHighStakes, isHighStakesCategory } from '$lib/services/validation';
+	} from '#lib/services/prompt.js';
+	import { copyToClipboard } from '#lib/services/clipboard.js';
+	import { saveProjectInstruction } from '#lib/services/claude-md.js';
+	import { initSettingsDb, loadSettings, type StudioSettings } from '#lib/services/settings.js';
+	import { isHighStakes, isHighStakesCategory } from '#lib/services/validation.js';
 	import {
 		TONE_OPTIONS,
 		FRAMEWORK_OPTIONS,
@@ -29,12 +29,12 @@
 		type HumanizeLevel,
 		type PromptFormValues,
 		type SelectOption
-	} from '$lib/types/prompt';
-	import SelectField from '$lib/components/prompt/SelectField.svelte';
-	import TextField from '$lib/components/prompt/TextField.svelte';
-	import NumberField from '$lib/components/prompt/NumberField.svelte';
-	import CheckboxGroup from '$lib/components/prompt/CheckboxGroup.svelte';
-	import Preview from '$lib/components/prompt/Preview.svelte';
+	} from '#lib/types/prompt.js';
+	import SelectField from '#lib/components/prompt/SelectField.svelte';
+	import TextField from '#lib/components/prompt/TextField.svelte';
+	import NumberField from '#lib/components/prompt/NumberField.svelte';
+	import CheckboxGroup from '#lib/components/prompt/CheckboxGroup.svelte';
+	import Preview from '#lib/components/prompt/Preview.svelte';
 
 
 	const STRUCTURE_TOGGLES = [

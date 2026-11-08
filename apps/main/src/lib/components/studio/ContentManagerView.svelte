@@ -2,20 +2,20 @@
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §11 — Contents tab:
 	// the member content manager lives here (moved from /dashboard/content,
 	// which now redirects to /studio/contents).
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { i18n } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
+	import { i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import { publishContent, archiveContent, deleteContent } from '$lib/api/hub';
-	import { optimisticAction } from '$lib/components/hub/optimisticAction';
-	import { buildContentQuery } from '$lib/studio/contentQuery';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
-	import { contentHref } from '$lib/utils/contentLink';
+	import { api } from '#lib/api/client.js';
+	import { publishContent, archiveContent, deleteContent } from '#lib/api/hub.js';
+	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
+	import { buildContentQuery } from '#lib/studio/contentQuery.js';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { CREATE_ALLOWED_TYPES } from '#lib/components/create/contentTypeRegistry.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
 	import { FileText, Search, Loader2, X, Check, ListFilter } from 'lucide-svelte';
 
 	interface ContentItem {
@@ -131,7 +131,7 @@
 	// Build a querystring preserving every active filter except page_offset
 	// (a filter/tab/search change always resets to the first page).
 	function filterParams(overrides: Record<string, string | undefined>): URLSearchParams {
-		const params = new URLSearchParams(page.url.searchParams);
+		const params = new URLSearchParams(page.url.search);
 		params.delete('page_offset');
 		for (const [k, v] of Object.entries(overrides)) {
 			if (v) params.set(k, v);
@@ -145,17 +145,17 @@
 
 	function switchTab(key: string) {
 		const params = filterParams(key === 'published' ? { status: undefined } : { status: key });
-		goto(`/studio/contents?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/studio/contents?${params.toString()}`, { reset: false });
 	}
 
 	function setType(type: string) {
 		const params = filterParams({ type: type || undefined });
-		goto(`/studio/contents?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/studio/contents?${params.toString()}`, { reset: false });
 	}
 
 	function setSort(sort: string) {
 		const params = filterParams({ sort: sort || undefined });
-		goto(`/studio/contents?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/studio/contents?${params.toString()}`, { reset: false });
 	}
 
 	// Debounced search — update the ?q= query param 350ms after the user
@@ -165,7 +165,7 @@
 		if (searchTimer) clearTimeout(searchTimer);
 		searchTimer = setTimeout(() => {
 			const params = filterParams({ q: value || undefined });
-			goto(`/studio/contents?${params.toString()}`, { keepFocus: true, noScroll: true });
+			goto(`/studio/contents?${params.toString()}`, { reset: false });
 		}, 350);
 	}
 

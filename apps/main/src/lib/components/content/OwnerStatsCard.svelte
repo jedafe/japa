@@ -2,8 +2,8 @@
 	// Ref: japaconnect-engineering/sections/40-platform-analytics-reports.md
 	// Owner-only content stats card — rendered on content single pages when
 	// the loader resolved GET /content/{id}/analytics for the author.
-	import { t } from '$lib/i18n';
-	import type { ContentAnalytics } from '$lib/types/content';
+	import { t } from '#lib/i18n/index.js';
+	import type { ContentAnalytics } from '#lib/types/content.js';
 
 	let { stats }: { stats: ContentAnalytics } = $props();
 

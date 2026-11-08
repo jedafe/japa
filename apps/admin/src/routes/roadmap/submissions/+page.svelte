@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /roadmap/submissions — pending community submissions triage queue (§113).
 	// Readonly EntityPage; Approve/Decline drive the lifecycle state machine
 	// (pending → under_review | declined) via PATCH .../status.
-	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { roadmapAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { roadmapAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Check, X } from 'lucide-svelte';
-	import type { ActionItem, ActionContext } from '$lib/components/ui/data-table';
+	import type { ActionItem, ActionContext } from '#lib/components/ui/data-table/index.js';
 
 	type RoadmapSubmission = {
 		id: string;

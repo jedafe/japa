@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolveView, viewsByGroup, DEFAULT_VIEW } from './dashboardViews';
-import type { Menu, MenuItem } from '$lib/types';
+import type { Menu, MenuItem } from '#lib/types/index.js';
 
 const item = (over: Partial<MenuItem> = {}): MenuItem => ({
 	id: 'x',

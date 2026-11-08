@@ -3,19 +3,19 @@
 	// CSR ONLY: GET /academy/my/tracks (find by id), PATCH /academy/my/tracks/{id}.
 	// PATCH accepts optional fields: title, description, difficulty, price_kobo,
 	// currency, category, language, geo_space_id (internal/academy/creator/handlers.go).
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
+	import { LoadingSkeleton, EmptyState } from '#lib/components/ui/index.js';
 	import { Save, ArrowLeft, BookOpen, Send } from 'lucide-svelte';
-	import { formatPriceKobo } from '$lib/format';
-	import { loadCurrencies, currencyLabel, type CurrencyInfo } from '$lib/utils/currency';
-	import type { InstructorTrack, GeoCountry, CatalogOption } from '$lib/types';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { formatPriceKobo } from '#lib/format.js';
+	import { loadCurrencies, currencyLabel, type CurrencyInfo } from '#lib/utils/currency.js';
+	import type { InstructorTrack, GeoCountry, CatalogOption } from '#lib/types/index.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 
 	const trackId = page.params.id;
 

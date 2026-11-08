@@ -1,7 +1,7 @@
 import { mount, unmount } from 'svelte';
-import { getVideoSource } from '$lib/api/videos';
-import VideoEmbed from '$lib/components/content/VideoEmbed.svelte';
-import type { VideoSource } from '$lib/types';
+import { getVideoSource } from '#lib/api/videos.js';
+import VideoEmbed from '#lib/components/content/VideoEmbed.svelte';
+import type { VideoSource } from '#lib/types/index.js';
 
 /**
  * Svelte action that scans a container for `.video-embed[data-video-source-id]`

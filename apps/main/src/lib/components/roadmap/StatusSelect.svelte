@@ -6,12 +6,12 @@
 	// detail views re-fetch. Options are constrained to the valid lifecycle
 	// transitions (§113); the backend re-validates regardless.
 	import { invalidateAll } from '$app/navigation';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
-	import { roadmapErrorKey, roadmapStatusLabel, roadmapStatusOptions } from '$lib/enumOptions';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
+	import { roadmapErrorKey, roadmapStatusLabel, roadmapStatusOptions } from '#lib/enumOptions.js';
 	import { Flag } from 'lucide-svelte';
-	import type { RoadmapStatus } from '$lib/types';
+	import type { RoadmapStatus } from '#lib/types/index.js';
 
 	interface Props {
 		itemId: string;

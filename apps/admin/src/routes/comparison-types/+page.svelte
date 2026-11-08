@@ -8,11 +8,11 @@
 	// hatch. The dimensions + access-control sub-flow (legacy expand row) is kept
 	// as a page-local `<Modal>` triggered by a custom row action, mirroring
 	// the `/tags` moderators sub-flow pattern.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { TableSkeleton } from '$lib/components/ui/skeleton';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { TableSkeleton } from '#lib/components/ui/skeleton/index.js';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import {
 		comparisonAdminApi,
 		userManagementApi,
@@ -21,12 +21,12 @@
 		type ComparisonTypeAccessRow,
 		type CustomFieldGroupOption,
 		type UserGroup
-	} from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { parseJson, jsonToString } from '$lib/utils/json';
+	} from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { parseJson, jsonToString } from '#lib/utils/json.js';
 	import { GitCompare, Shield, Trash2, Eye, Pencil } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	const canCreateType = $derived(hasPermission('comparison.type.create'));
 	const canEditType = $derived(hasPermission('comparison.type.edit'));

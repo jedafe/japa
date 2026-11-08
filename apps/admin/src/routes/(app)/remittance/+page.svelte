@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /remittance — migrated to the EntityPage scaffold: server-paginated
 	// fetch loop + client-side q/sort/filter (the backend only supports
 	// limit/offset/active_only), ActionMenu row actions, Modal forms.
 	//
 	// Ref: japaconnect-engineering/sections/74-remittance-tracker.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { Banknote, Pencil, Download } from 'lucide-svelte';
-	import { api, apiRaw, walletApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { api, apiRaw, walletApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 
 	type RemittanceProvider = {
 		id: string;

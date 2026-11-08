@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
-import type { ContentAnalytics, ContentArticle, SeriesPost } from '$lib/types/content';
-import type { Comment } from '$lib/types';
+import { apiContext, apiGet, apiGetEnvelope, ApiError } from '#lib/server/api.js';
+import type { ContentAnalytics, ContentArticle, SeriesPost } from '#lib/types/content.js';
+import type { Comment } from '#lib/types/index.js';
 
 /**
  * Blog single post — GET /api/v1/blog/{slug} (public, platform-scoped).

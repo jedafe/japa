@@ -2,17 +2,17 @@
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §5 — paste generated
 	// .md output → parse frontmatter → confirm → save as a contents draft.
 	// This is the web replacement for the desktop app's watched folder.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { enhance } from '$app/forms';
 	import { invalidate } from '$app/navigation';
-	import type { ContentTypeMeta, MeSpace, ContentRecord } from '$lib/types';
-	import { parseFrontmatter, buildMarkdown } from '$lib/studio/frontmatter';
-	import { localDateTimeToIso, isoToLocalDateTime } from '$lib/utils/datetime';
-	import { validateFrontmatter, validateBody, isHighStakesCategory } from '$lib/studio/validation';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import { CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
-	import { contentHref } from '$lib/utils/contentLink';
+	import type { ContentTypeMeta, MeSpace, ContentRecord } from '#lib/types/index.js';
+	import { parseFrontmatter, buildMarkdown } from '#lib/studio/frontmatter.js';
+	import { localDateTimeToIso, isoToLocalDateTime } from '#lib/utils/datetime.js';
+	import { validateFrontmatter, validateBody, isHighStakesCategory } from '#lib/studio/validation.js';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import { CREATE_ALLOWED_TYPES } from '#lib/components/create/contentTypeRegistry.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
 	import { FileUp, CheckCircle2, AlertCircle, Copy, Check, Save } from 'lucide-svelte';
 
 	const STUDIO_PROMPTS_TAG = 'app:studio-prompts';

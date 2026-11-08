@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPost, apiPut, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiPost, apiPut, ApiError } from '#lib/server/api.js';
 import type {
 	OrgMeta,
 	PublicOrganization,
@@ -8,7 +8,7 @@ import type {
 	ComparisonCreated,
 	ComparisonItem,
 	ComparisonDimension
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Organizations index at /org — public, SSR, indexable. Lists every

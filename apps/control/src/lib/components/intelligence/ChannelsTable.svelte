@@ -1,11 +1,11 @@
 <script lang="ts">
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasAnyPermission } from '$lib/stores/auth.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import ChannelEditor from '$lib/components/intelligence/ChannelEditor.svelte';
-	import type { ChannelSubmitValues } from '$lib/components/intelligence/ChannelEditor.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasAnyPermission } from '#lib/stores/auth.svelte.js';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import ChannelEditor from '#lib/components/intelligence/ChannelEditor.svelte';
+	import type { ChannelSubmitValues } from '#lib/components/intelligence/ChannelEditor.svelte';
 	import { Plus, Pencil, Trash2, Zap, RefreshCw, Radar, Loader2, Rss } from 'lucide-svelte';
 
 	// ChannelsTable is the per-source channels editor (intel-channels Phase

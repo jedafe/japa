@@ -1,13 +1,13 @@
 <!-- RBAC CRUD: Permission Nodes viewer -->
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
-	import { api } from '$lib/api';
-	import { t, translations } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import AlertBanner from '#lib/components/ui/AlertBanner.svelte';
+	import { api } from '#lib/api.js';
+	import { t, translations } from '#lib/stores/i18n.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
 	import { Shield, Search, RefreshCw } from 'lucide-svelte';
-	import type { DataTableColumn } from '$lib/api/types';
+	import type { DataTableColumn } from '#lib/api/types.js';
 
 	let {} = $props();
 

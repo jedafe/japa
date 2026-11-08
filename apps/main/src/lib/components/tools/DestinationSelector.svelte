@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import type { GeoSpaceOption } from '$lib/types';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import type { GeoSpaceOption } from '#lib/types/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 
 	/**
 	 * DestinationSelector — the first UI input on every V2 geo-aware tool page

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: docs/superpowers/specs/2026-09-24-agent-data-api-phase3-design.md
 	// Confirmation surface for the extension's save-to-account deep link.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { BookmarkCheck, BookmarkX } from 'lucide-svelte';
 
 	let { data } = $props();

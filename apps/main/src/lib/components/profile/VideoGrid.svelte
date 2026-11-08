@@ -5,10 +5,10 @@
 	// videos alike stay inside JapaConnect (player + "Watch on …" link).
 	import { Play, ExternalLink } from 'lucide-svelte';
 	import { page } from '$app/state';
-	import { t, i18n } from '$lib/i18n';
-	import { relativeTime } from '$lib/feed/time';
-	import { formatDuration } from '$lib/utils/duration';
-	import type { VideoSource } from '$lib/types';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { formatDuration } from '#lib/utils/duration.js';
+	import type { VideoSource } from '#lib/types/index.js';
 
 	interface Props {
 		videos: VideoSource[];

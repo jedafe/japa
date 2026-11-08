@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import BookingDialog from './BookingDialog.svelte';
-import type { ServiceListing } from '$lib/types';
+import type { ServiceListing } from '#lib/types/index.js';
 
 vi.mock('$app/state', () => ({
 	page: {
@@ -12,7 +12,7 @@ vi.mock('$app/state', () => ({
 
 const getMock = vi.fn().mockResolvedValue({ data: [], error: null, status: 200 });
 const postMock = vi.fn();
-vi.mock('$lib/api/client', () => ({
+vi.mock('#lib/api/client.js', () => ({
 	api: {
 		get: (...args: unknown[]) => getMock(...args),
 		post: (...args: unknown[]) => postMock(...args)

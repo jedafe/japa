@@ -13,7 +13,7 @@ import {
 	type EditorDraft
 } from './db';
 import { defaultSettings, type StudioSettings } from './settings';
-import type { FileState } from '$lib/types/queue';
+import type { FileState } from '#lib/types/queue.js';
 
 function createStorage(): Storage {
 	const store = new Map<string, string>();

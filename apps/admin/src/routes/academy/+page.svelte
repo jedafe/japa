@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent } from "$lib/components/ui/card";
-	import { Button } from "$lib/components/ui/button";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Card, CardContent } from "#lib/components/ui/card/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
 	import {
 		Users, BookOpen, DollarSign, TrendingUp,
 		RefreshCw, ArrowRight
 	} from "lucide-svelte";
-	import { academyAdminApi } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { academyAdminApi } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 
 	// Ref: japaconnect-engineering/adr/ADR-063-japa-academy-creator-economy.md
 	// The /academy hub is the admin landing for the Japa Academy creator

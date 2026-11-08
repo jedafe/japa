@@ -9,8 +9,8 @@
 // ?type=<entity_type> is forwarded as the backend's entity_type filter.
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { Bookmark, BookmarkFolder } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { Bookmark, BookmarkFolder } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {

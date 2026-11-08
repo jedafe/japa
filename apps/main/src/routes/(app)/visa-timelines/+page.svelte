@@ -1,17 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { t, i18n } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { LineChart } from 'layerchart';
 	import { CalendarClock, X } from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { ListPageBar, FilterToggle, PageAction } from '$lib/components/ui';
-	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
-	import type { VisaProcessingStats, TrendPoint } from '$lib/types';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { ListPageBar, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { staticAutocompleteFetcher, autocompleteItems } from '#lib/autocomplete.js';
+	import type { VisaProcessingStats, TrendPoint } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

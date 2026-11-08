@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { api } from '$lib/api/client';
-	import { searchEntities } from '$lib/api/jce';
-	import { t } from '$lib/i18n';
-	import { AutocompleteSelect } from '$lib/components/ui';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import { api } from '#lib/api/client.js';
+	import { searchEntities } from '#lib/api/jce.js';
+	import { t } from '#lib/i18n/index.js';
+	import { AutocompleteSelect } from '#lib/components/ui/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '@japaconnect/ui';
-	import type { ResolvedItem } from '$lib/types/jce';
+	import type { ResolvedItem } from '#lib/types/jce.js';
 
 	type ScopeOption = {
 		id: string;

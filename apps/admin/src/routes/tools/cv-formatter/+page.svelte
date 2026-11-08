@@ -1,18 +1,18 @@
 <script lang="ts">
 	// /tools/cv-formatter — admin management for CV formatting standards (§95).
 	// Ref: japaconnect-engineering/sections/95-cv-formatter.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Save } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { cvFormatterAdminApi } from '$lib/api';
-	import { useCountries } from '$lib/utils/countries.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
+	import { cvFormatterAdminApi } from '#lib/api.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	// CVStandardRow matches the backend StandardDTO (§95, ADR-103).
 	type CVStandardRow = {

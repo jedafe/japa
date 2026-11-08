@@ -1,16 +1,16 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import MetricCard from '$lib/components/MetricCard.svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import Tabs from '$lib/components/ui/Tabs.svelte';
-	import TabsContent from '$lib/components/ui/TabsContent.svelte';
-	import { api } from '$lib/api';
-	import type { AiBudget } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n.svelte';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import MetricCard from '#lib/components/MetricCard.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import Tabs from '#lib/components/ui/Tabs.svelte';
+	import TabsContent from '#lib/components/ui/TabsContent.svelte';
+	import { api } from '#lib/api.js';
+	import type { AiBudget } from '#lib/api/types.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { DollarSign, RefreshCw, AlertTriangle, Pencil } from 'lucide-svelte';
 	import { BarChart, LineChart } from 'layerchart';
 	import { curveMonotoneX } from 'd3-shape';
-	import { hasAnyPermission } from '$lib/stores/auth.svelte';
+	import { hasAnyPermission } from '#lib/stores/auth.svelte.js';
 
 	let {} = $props();
 

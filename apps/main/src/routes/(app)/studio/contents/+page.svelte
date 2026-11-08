@@ -1,10 +1,10 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §11 — Contents tab:
 	// member content manager (Published / Drafts / Scheduled), moved from
 	// /dashboard/content.
-	import { t } from '$lib/i18n';
-	import ContentManagerView from '$lib/components/studio/ContentManagerView.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import ContentManagerView from '#lib/components/studio/ContentManagerView.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

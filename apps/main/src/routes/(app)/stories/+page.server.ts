@@ -1,10 +1,10 @@
 // Ref: japaconnect-engineering/sections/79-community-story-wall.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGetEnvelope, apiList } from '$lib/server/api';
-import { attachAuthorUsernames } from '$lib/server/users';
-import type { BlogSeries, GeoCountry, Story } from '$lib/types';
-import type { GuideListItem } from '$lib/types/content';
+import { apiContext, apiGetEnvelope, apiList } from '#lib/server/api.js';
+import { attachAuthorUsernames } from '#lib/server/users.js';
+import type { BlogSeries, GeoCountry, Story } from '#lib/types/index.js';
+import type { GuideListItem } from '#lib/types/content.js';
 
 /**
  * Community Story Wall at /stories — SSR list of relocation stories.

@@ -9,10 +9,10 @@
 	 * Ref: Japa Intelligence System spec §7 (RadarItemRow)
 	 *      ADR-058 (renders inside the unified app shell)
 	 */
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { GraduationCap, ExternalLink, Clock, ShieldCheck, ShieldAlert } from 'lucide-svelte';
-	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-	import type { RadarItem } from '$lib/types';
+	import RelativeTime from '#lib/components/ui/RelativeTime.svelte';
+	import type { RadarItem } from '#lib/types/index.js';
 
 	// Re-export so existing imports from this module keep working.
 	export type { RadarItem };

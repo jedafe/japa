@@ -7,7 +7,7 @@
 	//   city    → fit the admin-1 (state) bounds, pin best-effort
 	import { ExploreMapBlock, WORLD_COUNTRIES, ADMIN1_CENTROIDS, COUNTRY_BOUNDS, CITY_POSITIONS, CITY_SHAPES } from '@japaconnect/landing-blocks';
 	import type { ExploreMapProps, FetchContext } from '@japaconnect/landing-blocks';
-	import type { Space } from '$lib/types';
+	import type { Space } from '#lib/types/index.js';
 
 	let {
 		space,

@@ -3,11 +3,11 @@
 	// (space_types carrying a wiki_type_configs row, with parent edges that
 	// express the geo chain + child types like university) and each type's
 	// category template (slug + category token + optional field-group binding).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Button } from '$lib/components/ui/button';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import IconPicker from '$lib/components/ui/icon-picker.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import IconPicker from '#lib/components/ui/icon-picker.svelte';
 	import { WIKI_ICONS } from './wiki-icons';
 	import {
 		wikiAdminApi,
@@ -18,13 +18,13 @@
 		type WikiCategoryItem,
 		type WikiPageTemplateItem,
 		type AttractionSeedCandidate
-	} from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	} from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Pencil, Trash2, FolderTree, Layers, X, CheckCircle, XCircle, Sparkles } from 'lucide-svelte';
-	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { Modal } from '$lib/components/ui/modal';
+	import type { ActionItem, BulkAction } from '#lib/components/ui/data-table/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { Modal } from '#lib/components/ui/modal/index.js';
 
 	const canManage = $derived(hasPermission('wiki.manage'));
 

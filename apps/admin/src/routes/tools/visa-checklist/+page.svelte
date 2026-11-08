@@ -2,12 +2,12 @@
 	// /tools/visa-checklist — read-only monitoring page for visa document
 	// checklist user progress. Displays raw per-item progress rows from
 	// GET /admin/checklist/progress (§70, ADR-070).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { visaChecklistAdminApi } from '$lib/api';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
+	import { visaChecklistAdminApi } from '#lib/api.js';
 
 	type ChecklistProgressRow = {
 		id: string;

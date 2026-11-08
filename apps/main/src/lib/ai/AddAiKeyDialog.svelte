@@ -4,11 +4,11 @@
 	// affiliate signup_url and fires the referral-click counter.
 	//
 	// Spec: docs/superpowers/specs/2026-10-19-ai-byok-design.md
-	import { t } from '$lib/i18n';
-	import { Modal } from '$lib/components/ui';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { createAIKey, verifyAIKey, trackByokReferral } from '$lib/api/byok';
-	import type { ByokProviderOption } from '$lib/ai/agentTypes';
+	import { t } from '#lib/i18n/index.js';
+	import { Modal } from '#lib/components/ui/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { createAIKey, verifyAIKey, trackByokReferral } from '#lib/api/byok.js';
+	import type { ByokProviderOption } from '#lib/ai/agentTypes.js';
 	import { ExternalLink } from 'lucide-svelte';
 
 	interface Props {

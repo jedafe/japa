@@ -1,12 +1,12 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
 	import { Trophy, Lock, Medal } from 'lucide-svelte';
-	import { EmptyState, ListPageBar, SelectField, UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { EmptyState, ListPageBar, SelectField, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
 	import { goto } from '$app/navigation';
-	import type { LeaderboardEntry } from '$lib/types';
+	import type { LeaderboardEntry } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -39,7 +39,7 @@
 		const params = new URLSearchParams();
 		params.set('scope', scope);
 		params.set('period', period);
-		goto(`/leaderboard?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/leaderboard?${params.toString()}`, { reset: false });
 	}
 
 	function selectPeriod(period: string) {

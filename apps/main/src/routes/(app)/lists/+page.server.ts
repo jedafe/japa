@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGetEnvelope } from '$lib/server/api';
-import { attachAuthorUsernames } from '$lib/server/users';
-import type { GuideListItem } from '$lib/types/content';
+import { apiContext, apiGetEnvelope } from '#lib/server/api.js';
+import { attachAuthorUsernames } from '#lib/server/users.js';
+import type { GuideListItem } from '#lib/types/content.js';
 
 /**
  * Lists hub at /lists — GET /content?type=list with cursor pagination,

@@ -9,7 +9,7 @@
 	// at lg+.
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
 	import { Check, ExternalLink, Flag, MessageCircle, Share2, Star } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 
 	interface Props {
 		price: string | null;

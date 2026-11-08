@@ -2,7 +2,7 @@
 	// The load function redirects before this page renders. This component
 	// exists only to satisfy SvelteKit's requirement for a +page.svelte alongside
 	// +page.server.ts. Users never see it.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 </script>
 
 <div class="grid min-h-screen place-items-center">

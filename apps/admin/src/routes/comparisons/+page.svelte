@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { comparisonAdminApi, type ComparisonEntry, type ComparisonType } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { escapeHtml } from '$lib/utils/html';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { comparisonAdminApi, type ComparisonEntry, type ComparisonType } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { escapeHtml } from '#lib/utils/html.js';
 	import { Trash2 } from 'lucide-svelte';
-	import type { FilterDef, BulkAction } from '$lib/components/ui/data-table';
+	import type { FilterDef, BulkAction } from '#lib/components/ui/data-table/index.js';
 	import type { Snippet } from 'svelte';
 
 	type Comparison = ComparisonEntry;

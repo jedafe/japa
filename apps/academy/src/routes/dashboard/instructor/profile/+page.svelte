@@ -2,12 +2,12 @@
 	// Instructor profile edit — Japa Academy creator economy (ADR-063).
 	// CSR ONLY: GET /academy/instructor/me, PATCH /academy/instructor/me.
 	// PATCH payload: display_name?, headline?, bio?, social_links?, payout_method?
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { onMount } from 'svelte';
-	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
+	import { LoadingSkeleton, EmptyState } from '#lib/components/ui/index.js';
 	import { PenLine, Save, ArrowLeft, AtSign, Share2, Globe, Play, Link } from 'lucide-svelte';
-	import type { AcademyInstructorProfile, CatalogOption } from '$lib/types';
+	import type { AcademyInstructorProfile, CatalogOption } from '#lib/types/index.js';
 
 	let profile = $state<AcademyInstructorProfile | null>(null);
 	let loading = $state(true);

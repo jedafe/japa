@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /universities/course-catalog — canonical institutional course catalog
 	// (university_course_catalog, Section 39). EntityPage scaffold.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { courseCatalogAdminApi, type CourseCatalogEntry } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { courseCatalogAdminApi, type CourseCatalogEntry } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Trash2 } from 'lucide-svelte';
 
 	let entityController = $state<EntityPageController | undefined>(undefined);

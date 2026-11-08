@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { Modal } from '$lib/components/ui/modal';
-	import CampaignManager from '$lib/components/campaigns/campaign-manager.svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent, CardHeader } from '#lib/components/ui/card/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import CampaignManager from '#lib/components/campaigns/campaign-manager.svelte';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 	import { Wand, Plus, RefreshCw, BarChart3, RotateCcw, X, Eye, Link2, Megaphone } from 'lucide-svelte';
-	import { api, apiRaw, aiApi, personaVoicesAdminApi, type PersonaVoice } from '$lib/api';
+	import { api, apiRaw, aiApi, personaVoicesAdminApi, type PersonaVoice } from '#lib/api.js';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { goto } from '$app/navigation';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type StudioJob = {
 		id: string;
@@ -193,8 +193,8 @@
 			const [personasRes, typesRes, voicesRes, modelsRes] = await Promise.all([
 				api<{ id: string; label: string }[]>('/admin/studio/personas'),
 				api<ContentTypeResponse>('/admin/studio/content-types'),
-				personaVoicesAdminApi.list().then(r => r.ok ? (r.data?.data as PersonaVoice[]) : []),
-				aiApi.listModels().then(r => r.ok ? r.data : [])
+				personaVoicesAdminApi.list().then((r) => r.ok ? r.data?.data as PersonaVoice[] : []),
+				aiApi.listModels().then((r) => r.ok ? r.data : [])
 			]);
 			if (personasRes.ok) {
 				personas = personasRes.data ?? [];
@@ -477,7 +477,12 @@
 	]);
 
 	const jobRowActions: ActionItem[] = [
-		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: StudioJob) => viewJob(row.id) },
+		{
+			label: t('common.view', 'View'),
+			icon: Eye,
+			onclick: (row: StudioJob) => viewJob(row.id)
+		},
+
 		{
 			label: t('studio.retry', 'Retry'),
 			icon: RotateCcw,
@@ -519,7 +524,12 @@
 	]);
 
 	const batchRowActions: ActionItem[] = [
-		{ label: t('common.view', 'View'), icon: Eye, onclick: (row: StudioBatch) => viewBatch(row.id) },
+		{
+			label: t('common.view', 'View'),
+			icon: Eye,
+			onclick: (row: StudioBatch) => viewBatch(row.id)
+		},
+
 		{
 			label: t('studio.retry_failed', 'Retry Failed'),
 			icon: RotateCcw,
@@ -543,7 +553,7 @@
 		loadCreateOptions();
 		createJobModalOpen = true;
 		// Clean the URL so a refresh doesn't re-trigger the pre-fill.
-		replaceState('/studio', {});
+		goto('/studio', { shallow: true, replace: true });
 	});
 
 	load();
@@ -579,7 +589,12 @@
 		{error}
 	</div>
 {:else}
-	<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
+	<Tabs
+		tabs={tabs}
+		bind:value={activeTab}
+		tabParam="tab"
+		tabPreserve={[]}
+	/>
 
 	{#if activeTab === 'jobs'}
 		<div class="mb-4 flex flex-wrap items-end gap-3">
@@ -768,9 +783,18 @@
 		</div>
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
-				<Button variant="outline" onclick={() => (createJobModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={createJob} disabled={saving || !newJob.persona_id || !newJob.topic_prompt}>
-					{saving ? t('common.saving', 'Saving...') : t('studio.create', 'Create Job')}
+				<Button
+					variant="outline"
+					onclick={() => createJobModalOpen = false}
+				>{t('common.cancel', 'Cancel')}</Button>
+
+				<Button
+					onclick={createJob}
+					disabled={saving || !newJob.persona_id || !newJob.topic_prompt}
+				>
+					{saving
+						? t('common.saving', 'Saving...')
+						: t('studio.create', 'Create Job')}
 				</Button>
 			</div>
 		{/snippet}
@@ -809,7 +833,13 @@
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
 				{#if viewingJob && canManage && viewingJob.status === 'failed'}
-					<Button variant="outline" onclick={() => { retryJob(viewingJob!.id); viewJobModalOpen = false; }}>
+					<Button
+						variant="outline"
+						onclick={() => {
+							retryJob((viewingJob!).id);
+							viewJobModalOpen = false;
+						}}
+					>
 						<RotateCcw class="h-4 w-4" />
 						{t('studio.retry', 'Retry')}
 					</Button>
@@ -880,9 +910,18 @@
 		</div>
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
-				<Button variant="outline" onclick={() => (createBatchModalOpen = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={createBatch} disabled={savingBatch || !newBatch.name}>
-					{savingBatch ? t('common.saving', 'Saving...') : t('studio.create_batch', 'Create Batch')}
+				<Button
+					variant="outline"
+					onclick={() => createBatchModalOpen = false}
+				>{t('common.cancel', 'Cancel')}</Button>
+
+				<Button
+					onclick={createBatch}
+					disabled={savingBatch || !newBatch.name}
+				>
+					{savingBatch
+						? t('common.saving', 'Saving...')
+						: t('studio.create_batch', 'Create Batch')}
 				</Button>
 			</div>
 		{/snippet}
@@ -928,7 +967,13 @@
 		{#snippet footer()}
 			<div class="flex justify-end gap-2">
 				{#if canManage && viewingBatch && viewingBatch.stats.failed > 0}
-					<Button variant="outline" onclick={() => { retryBatch(viewingBatch!.batch.id); viewBatchModalOpen = false; }}>
+					<Button
+						variant="outline"
+						onclick={() => {
+							retryBatch((viewingBatch!).batch.id);
+							viewBatchModalOpen = false;
+						}}
+					>
 						<RotateCcw class="h-4 w-4" />
 						{t('studio.retry_failed', 'Retry Failed')}
 					</Button>

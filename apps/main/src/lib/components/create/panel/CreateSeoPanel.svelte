@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Switch } from 'bits-ui';
 	import { ImagePlus, X, AlertTriangle, CheckCircle2 } from 'lucide-svelte';
-	import type { MediaAsset } from '$lib/types';
-	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
-	import { computeSeoScore, SEO_MIN_LENGTHS, SEO_MAX_LENGTHS } from '$lib/utils/seo-score';
+	import type { MediaAsset } from '#lib/types/index.js';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
+	import { computeSeoScore, SEO_MIN_LENGTHS, SEO_MAX_LENGTHS } from '#lib/utils/seo-score.js';
 
 	interface Props {
 		metaTitle: string | null;

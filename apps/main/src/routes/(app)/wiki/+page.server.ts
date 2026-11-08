@@ -2,16 +2,16 @@
 // SSR the landing page directory so search engines see the destination list
 // without executing JavaScript.
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGetEnvelope, ApiError } from '$lib/server/api';
-import { resolveGeoContext } from '$lib/server/published-page';
+import { apiContext, apiList, apiGetEnvelope, ApiError } from '#lib/server/api.js';
+import { resolveGeoContext } from '#lib/server/published-page.js';
 import {
 	normalizeLegacyBlocks,
 	resolveGeoCopy,
 	getGeoTokens,
 	type Block
 } from '@japaconnect/landing-blocks';
-import type { WikiDestination, WikiTypeItem, PageBuilderPage } from '$lib/types';
-import { wikiDrillChain } from '$lib/utils/wikiTypeChain';
+import type { WikiDestination, WikiTypeItem, PageBuilderPage } from '#lib/types/index.js';
+import { wikiDrillChain } from '#lib/utils/wikiTypeChain.js';
 
 /**
  * §80 Hierarchical UX + directories: the landing is a root-grid +

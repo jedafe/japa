@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
-	import { PUBLIC_JC_ENV } from '$env/static/public';
-	import { user, clearUser } from '$lib/stores/auth.svelte';
-	import { apiFetch } from '$lib/api/client';
-	import { clearAccessToken } from '$lib/api/token';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { getNotifications, getUnreadCount, markRead, markAllRead } from '$lib/stores/notifications.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { PUBLIC_JC_ENV } from '$app/env/public';
+	import { user, clearUser } from '#lib/stores/auth.svelte.js';
+	import { apiFetch } from '#lib/api/client.js';
+	import { clearAccessToken } from '#lib/api/token.js';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { getNotifications, getUnreadCount, markRead, markAllRead } from '#lib/stores/notifications.svelte.js';
 	import { goto, invalidateAll } from '$app/navigation';
-	import Avatar from '$lib/components/ui/Avatar.svelte';
+	import Avatar from '#lib/components/ui/Avatar.svelte';
 	import { Bell, Sun, Moon, Check, Menu, PanelLeft } from 'lucide-svelte';
 
 	let { onMenuClick, onCollapseToggle }: { onMenuClick?: () => void; onCollapseToggle?: () => void } = $props();
@@ -39,7 +39,7 @@
 	}
 </script>
 
-<svelte:window onclick={closeDropdowns} />
+<svelte:window onclick={closeDropdowns}></svelte:window>
 
 <header class="flex h-14 items-center justify-between border-b px-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 	<div class="flex items-center gap-3">
@@ -142,7 +142,7 @@
 				<button
 					type="button"
 					class="flex items-center gap-2 rounded p-1 hover:bg-black/5 dark:hover:bg-white/10"
-					onclick={() => (showDropdown = !showDropdown)}
+					onclick={() => showDropdown = !showDropdown}
 				>
 					<Avatar src={user.current.avatar_url} alt={user.current.username} size="sm" />
 					<span class="hidden text-sm sm:inline" style="color: var(--color-foreground)">{user.current.username}</span>

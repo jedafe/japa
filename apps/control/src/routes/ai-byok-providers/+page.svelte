@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { api } from '$lib/api';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+	import { api } from '#lib/api.js';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
 	import { KeyRound, Plus, Pencil, Trash2 } from 'lucide-svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import type { AiByokProvider } from '$lib/api/types';
-	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
-	import { hasAnyPermission } from '$lib/stores/auth.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import type { AiByokProvider } from '#lib/api/types.js';
+	import type { DataTableColumn, DataTableRowAction } from '#lib/api/types.js';
+	import { hasAnyPermission } from '#lib/stores/auth.svelte.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { onMount } from 'svelte';
 
 	// BYOK provider allowlist — the "storefront" users attach their own API

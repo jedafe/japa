@@ -1,8 +1,8 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext } from '$lib/server/api';
-import { resolveView, DASHBOARD_COMPONENT_SLUGS } from '$lib/components/hub/dashboard/dashboardViews';
-import { DASHBOARD_LOADERS } from '$lib/components/hub/dashboard/dashboardLoaders.server';
+import { apiContext } from '#lib/server/api.js';
+import { resolveView, DASHBOARD_COMPONENT_SLUGS } from '#lib/components/hub/dashboard/dashboardViews.js';
+import { DASHBOARD_LOADERS } from '#lib/components/hub/dashboard/dashboardLoaders.server.js';
 
 /**
  * Dispatch to the view's server loader. 404s on unknown slugs or slugs not

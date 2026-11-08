@@ -1,5 +1,5 @@
-import type { User } from '$lib/api/types';
-import { setPermissions as _setPermissions } from '$lib/stores/permissions.svelte';
+import type { User } from '#lib/api/types.js';
+import { setPermissions as _setPermissions } from '#lib/stores/permissions.svelte.js';
 
 let _user = $state<User | null>(null);
 

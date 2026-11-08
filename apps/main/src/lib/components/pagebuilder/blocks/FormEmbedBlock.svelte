@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { FormEmbedProps } from '../types';
-	import { safeHref } from '$lib/utils/safeHtml';
+	import { safeHref } from '#lib/utils/safeHtml.js';
 
 	let { props }: { props: FormEmbedProps } = $props();
 	const height = $derived(props.height_px ?? 600);

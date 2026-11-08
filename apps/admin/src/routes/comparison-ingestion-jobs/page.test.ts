@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
-vi.mock('$lib/api/comparison-data-sources', () => ({
+vi.mock('#lib/api/comparison-data-sources.js', () => ({
 	listIngestionJobs: vi.fn().mockResolvedValue([]),
 	listDataSources: vi.fn().mockResolvedValue([])
 }));
@@ -14,7 +14,7 @@ vi.mock('$app/state', () => ({
 	}
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn(), pushState: vi.fn() }));
-vi.mock('$lib/stores/permissions.svelte', () => ({
+vi.mock('#lib/stores/permissions.svelte.js', () => ({
 	hasPermission: () => true,
 	getPermissions: () => ['*'],
 	getPermissionState: () => ({})

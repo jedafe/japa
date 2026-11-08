@@ -4,7 +4,7 @@
 // of the signup form. Authenticated users are redirected by the (auth) layout.
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
+import { apiContext, apiGet } from '#lib/server/api.js';
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);

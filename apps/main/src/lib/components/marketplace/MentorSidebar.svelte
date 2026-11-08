@@ -19,9 +19,9 @@
 		TrendingUp,
 		Users
 	} from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
-	import type { ServiceListing } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import { formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
+	import type { ServiceListing } from '#lib/types/index.js';
 
 	interface Props {
 		service: ServiceListing;

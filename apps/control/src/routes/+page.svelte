@@ -1,9 +1,9 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import MetricCard from '$lib/components/MetricCard.svelte';
-	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import MetricCard from '#lib/components/MetricCard.svelte';
+	import StatusBadge from '#lib/components/StatusBadge.svelte';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { PieChart, BarChart, LineChart } from 'layerchart';
 	import { curveMonotoneX } from 'd3-shape';
 	import { RotateCw } from 'lucide-svelte';

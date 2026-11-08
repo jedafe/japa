@@ -16,14 +16,14 @@
 // of a form that would charge a submission fee and then fail.
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
 import type {
 	PublicOrganization,
 	FormEmbed,
 	MyVerificationRequest,
 	MeProfile,
 	ComposerOrganization
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 export type VerificationBlock =
 	| 'already_verified'

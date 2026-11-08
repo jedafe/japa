@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import SettingsGroupRail from '$lib/components/hub/settings/SettingsGroupRail.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import SettingsGroupRail from '#lib/components/hub/settings/SettingsGroupRail.svelte';
 	import {
 		readyGroups,
 		groupForSection,
 		sectionsInGroup
-	} from '$lib/components/hub/settings/settingsSections';
+	} from '#lib/components/hub/settings/settingsSections.js';
 	let { data, children } = $props();
 
 	const features = $derived(data.features ?? {});

@@ -16,7 +16,7 @@
 	//
 	// Ref: japaconnect-engineering/adr/ADR-064a-geo-aware-recommendations.md
 	// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Plus, Trash2 } from 'lucide-svelte';
 
 	interface KVRow {

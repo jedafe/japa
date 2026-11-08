@@ -11,10 +11,10 @@
 	 */
 	import { onMount } from 'svelte';
 	import { MessageSquare, ArrowRight, ChevronDown } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
-	import { tiptapExcerpt } from '$lib/tiptap/serialize';
-	import type { Comment } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
+	import { tiptapExcerpt } from '#lib/tiptap/serialize.js';
+	import type { Comment } from '#lib/types/index.js';
 
 	interface LinkedDiscussion {
 		id: string;

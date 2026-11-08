@@ -2,15 +2,15 @@
 	// Ref: japaconnect-engineering/sections/114-services-marketplace.md
 	// §114 — package pricing-tier editor (Essential/Standard/Premium style).
 	// Replace-on-save like items[]/departures[]: position follows row order.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Plus, Trash2, ChevronUp, ChevronDown, Star } from 'lucide-svelte';
-	import type { CurrencyInfo } from '$lib/utils/currency';
+	import type { CurrencyInfo } from '#lib/utils/currency.js';
 	import type { EditableTier } from './serviceForm';
 	import {
 		marketplaceIcon,
 		MARKETPLACE_ICON_NAMES
-	} from '$lib/components/marketplace/marketplaceIcon';
-	import { SelectField } from '$lib/components/ui';
+	} from '#lib/components/marketplace/marketplaceIcon.js';
+	import { SelectField } from '#lib/components/ui/index.js';
 
 	interface Props {
 		tiers: EditableTier[];

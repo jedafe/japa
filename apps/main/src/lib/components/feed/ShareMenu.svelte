@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Menu } from '$lib/components/ui';
+	import { Menu } from '#lib/components/ui/index.js';
 	import { Share2, Check } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import ShareMenuItems from './ShareMenuItems.svelte';
 
 	interface Props {

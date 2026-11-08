@@ -11,10 +11,10 @@
 	// No hardcoded data. Renders nothing when the intelligence system is
 	// unavailable (503) or the user is not authenticated — the parent dashboard
 	// is already auth-gated.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { Radar, ShieldCheck, ShieldAlert, CalendarClock, ArrowRight } from 'lucide-svelte';
-	import type { RadarItem, RadarCountsResponse } from '$lib/types';
+	import type { RadarItem, RadarCountsResponse } from '#lib/types/index.js';
 
 	let loading = $state(true);
 	let followedItems = $state<RadarItem[]>([]);

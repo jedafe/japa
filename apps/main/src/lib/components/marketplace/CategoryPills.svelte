@@ -9,10 +9,10 @@
 	import { goto } from '$app/navigation';
 	import { DropdownMenu } from 'bits-ui';
 	import { Check, ChevronDown, Grid2x2 } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { accentClasses } from '$lib/marketplace';
+	import { t } from '#lib/i18n/index.js';
+	import { accentClasses } from '#lib/marketplace.js';
 	import { serviceCategoryIcon } from './serviceCategoryIcon';
-	import type { ServiceCategoryInfo } from '$lib/types';
+	import type { ServiceCategoryInfo } from '#lib/types/index.js';
 
 	interface Props {
 		categories: ServiceCategoryInfo[];
@@ -53,7 +53,7 @@
 	// category change; pagination always resets and the one-shot
 	// ?submitted=1 notice never propagates into new URLs.
 	function categoryHref(slug: string): string {
-		const params = new URLSearchParams(page.url.searchParams);
+		const params = new URLSearchParams(page.url.search);
 		if (slug) params.set('category', slug);
 		else params.delete('category');
 		params.delete('page');

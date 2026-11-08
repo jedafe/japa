@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { Button } from "$lib/components/ui/button";
-	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "#lib/components/ui/card/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import Autocomplete, { type AutocompleteItem } from "#lib/components/ui/Autocomplete.svelte";
 	import { ArrowLeft, Save } from "lucide-svelte";
-	import { api, spacesAdminApi, spaceTypesApi, permissionPresetsApi, adminCatalogApi, type CatalogOption, type PermissionPreset } from "$lib/api";
+	import { api, spacesAdminApi, spaceTypesApi, permissionPresetsApi, adminCatalogApi, type CatalogOption, type PermissionPreset } from "#lib/api.js";
 	import { goto } from "$app/navigation";
 	import { page } from "$app/state";
-	import { t } from "$lib/stores/i18n.svelte";
+	import { t } from "#lib/stores/i18n.svelte.js";
 
 	// Read level and parent_id from URL query params so the /geo page can
 	// deep-link here with a pre-selected level (e.g. /spaces/new?level=state&parent_id=...).

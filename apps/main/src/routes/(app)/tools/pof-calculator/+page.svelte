@@ -1,25 +1,25 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
-	import { replaceState } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import { t, i18n } from '$lib/i18n';
+	import { goto } from '$app/navigation';
+	import { api } from '#lib/api/client.js';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Wallet, TriangleAlert } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
-	import { formatMoney, currencySymbol, currencyName } from '$lib/utils/currency';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import DestinationSelector from '#lib/components/tools/DestinationSelector.svelte';
+	import { formatMoney, currencySymbol, currencyName } from '#lib/utils/currency.js';
 	import type {
 		GeoSpaceOption,
 		PofRequirement,
 		PofCalculateResult,
 		PofScheduleBand,
 		PofScheduleFormula
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Proof of Funds Calculator — §108, ADR-119.
@@ -110,12 +110,12 @@
 	// Keep the selection in the URL so results pages are shareable
 	// (?dest=&visa_type= are consumed by the server load).
 	function syncUrl() {
-		const url = new URL(page.url);
-		if (selectedDest) url.searchParams.set('dest', selectedDest);
-		else url.searchParams.delete('dest');
-		if (selectedVisaType) url.searchParams.set('visa_type', selectedVisaType);
-		else url.searchParams.delete('visa_type');
-		replaceState(url, {});
+		const url = new URL(page.url.href);
+
+		if (selectedDest) url.searchParams.set('dest', selectedDest); else url.searchParams.delete('dest');
+		if (selectedVisaType) url.searchParams.set('visa_type', selectedVisaType); else url.searchParams.delete('visa_type');
+
+		goto(url, { shallow: true, replace: true });
 	}
 
 	function clearResults() {
@@ -190,7 +190,11 @@
 	<form onsubmit={calculate} class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<!-- Destination (self-labeled by DestinationSelector) -->
 		<div class="mb-4">
-			<DestinationSelector {destinations} bind:selectedId={selectedDest} onchange={onDestChange} />
+			<DestinationSelector
+				destinations={destinations}
+				bind:selectedId={selectedDest}
+				onchange={onDestChange}
+			/>
 		</div>
 
 		<!-- Visa type -->
@@ -262,16 +266,18 @@
 
 	<!-- Results -->
 	{#each results as result (result.requirement_id)}
-		<div class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<div class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
-				{t('pof_calculator.required', 'Required proof of funds')}
-			</div>
-			<div class="mt-2 text-2xl sm:text-3xl font-bold tabular-nums text-[var(--color-primary-text)]">
-				{formatMoney(result.amount, result.currency, data.currencies)}
-			</div>
-			<div class="mt-1 text-sm text-[var(--color-muted)]">
-				{result.program_label} · {t('pof_calculator.household', 'household of')} {result.household}
-			</div>
+		<div
+			class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+		>
+			<div
+				class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]"
+			>{t('pof_calculator.required', 'Required proof of funds')}</div>
+
+			<div
+				class="mt-2 text-2xl sm:text-3xl font-bold tabular-nums text-[var(--color-primary-text)]"
+			>{formatMoney(result.amount, result.currency, data.currencies)}</div>
+
+			<div class="mt-1 text-sm text-[var(--color-muted)]">{result.program_label} · {t('pof_calculator.household', 'household of')} {result.household}</div>
 
 			{#if result.ngn_equivalent || result.usd_equivalent}
 				<div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">

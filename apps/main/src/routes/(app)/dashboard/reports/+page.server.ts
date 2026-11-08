@@ -5,8 +5,8 @@
 // Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { MyReport } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { MyReport } from '#lib/types/index.js';
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;

@@ -14,7 +14,7 @@
 		Wrench,
 		X
 	} from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { compose } from './compose.svelte';
 	import DiscussionComposer from './DiscussionComposer.svelte';
 

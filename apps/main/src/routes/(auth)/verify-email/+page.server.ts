@@ -3,7 +3,7 @@
 // can access this route (the layout gate exempts verify-email).
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, verifyEmail } from '$lib/server/auth';
+import { apiContext, verifyEmail } from '#lib/server/auth.js';
 
 export const load: PageServerLoad = async (event) => {
 	const token = event.url.searchParams.get('token');

@@ -1,10 +1,10 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { t, siteName } from '$lib/i18n';
+	import { t, siteName } from '#lib/i18n/index.js';
 	import { Package, Rss, ArrowRight } from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import type { RoadmapRelease } from '$lib/types';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import type { RoadmapRelease } from '#lib/types/index.js';
 
 	/**
 	 * Releases timeline — Discourse-style release bands + per-release cards.

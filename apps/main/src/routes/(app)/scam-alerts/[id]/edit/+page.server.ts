@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { ScamReport, GeoCountry, ScamType, ScamPlatform } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { ScamReport, GeoCountry, ScamType, ScamPlatform } from '#lib/types/index.js';
 
 /**
  * Edit-scam form at /scam-alerts/[id]/edit — auth-gated, author-or-edit_any.

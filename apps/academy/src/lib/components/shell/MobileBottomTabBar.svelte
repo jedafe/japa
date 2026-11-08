@@ -4,10 +4,10 @@
 	// Nav items come from the API-driven bottom bar menu
 	// (GET /menus/academy_bottom_bar) so the list is never hardcoded (Rule 16).
 	import { page } from '$app/state';
-	import { resolveIcon } from '$lib/components/ui/icons';
-	import { t } from '$lib/i18n';
-	import { loginUrl, profileUrl, resolveMenuUrl } from '$lib/appOrigins';
-	import type { Menu, MenuItem, SessionUser } from '$lib/types';
+	import { resolveIcon } from '#lib/components/ui/icons.js';
+	import { t } from '#lib/i18n/index.js';
+	import { loginUrl, profileUrl, resolveMenuUrl } from '#lib/appOrigins.js';
+	import type { Menu, MenuItem, SessionUser } from '#lib/types/index.js';
 
 	interface Props {
 		user: SessionUser | null;

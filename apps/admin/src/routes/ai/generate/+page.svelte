@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { aiApi, personaVoicesAdminApi, type GenerateResult, type PersonaVoice } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { aiApi, personaVoicesAdminApi, type GenerateResult, type PersonaVoice } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Loader2, Copy, Check, Sparkles, RotateCcw, Send, ChevronDown, ChevronUp, Clock, Zap, Trash2, AlertTriangle } from 'lucide-svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Select } from '$lib/components/ui/select';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

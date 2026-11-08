@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { publishContent } from './publisher';
-import { queueStore } from '$lib/stores/queue.svelte';
-import { syncLogStore } from '$lib/stores/sync-log.svelte';
+import { queueStore } from '#lib/stores/queue.svelte.js';
+import { syncLogStore } from '#lib/stores/sync-log.svelte.js';
 import {
 	SETTINGS_KEY,
 	defaultSettings,
@@ -9,7 +9,7 @@ import {
 	type StudioSettings
 } from './settings';
 
-vi.mock('$lib/services/markdown', () => ({
+vi.mock('#lib/services/markdown.js', () => ({
 	markdownToHtml: vi.fn((text: string) => `<p>${text}</p>`)
 }));
 

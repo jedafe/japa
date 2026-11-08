@@ -2,7 +2,7 @@
 // Server-side proxy for the 2FA backup-code login path. Accepts a challenge
 // token and a one-time backup code, calls POST /auth/totp/backup, sets the
 // jc_token cookie, and returns { redirect }.
-import { json } from '@sveltejs/kit';
+
 import type { RequestHandler } from './$types';
 import {
 	apiContext,
@@ -11,7 +11,7 @@ import {
 	resolvePostLoginRedirect,
 	setRefreshCookie,
 	setSessionCookie
-} from '$lib/server/auth';
+} from '#lib/server/auth.js';
 
 export const POST: RequestHandler = async (event) => {
 	const body = await event.request.json().catch(() => ({}));
@@ -20,7 +20,7 @@ export const POST: RequestHandler = async (event) => {
 	const redirect = body?.redirect ?? '/';
 
 	if (!challengeToken || !backupCode) {
-		return json({ error: { code: 'missing_fields', message: 'Challenge token and backup code are required.', status: 400 } }, { status: 400 });
+		return Response.json({ error: { code: 'missing_fields', message: 'Challenge token and backup code are required.', status: 400 } }, { status: 400 });
 	}
 
 	const ctx = apiContext(event);
@@ -31,11 +31,11 @@ export const POST: RequestHandler = async (event) => {
 
 		const onboarding = await getOnboardingStatus({ ...ctx, token: result.access_token });
 		const target = resolvePostLoginRedirect(onboarding, redirect);
-		return json({ redirect: target });
+		return Response.json({ redirect: target });
 	} catch (err) {
 		const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 500;
 		const code = err instanceof Error && 'code' in err ? (err as { code: string }).code : 'api_error';
 		const message = err instanceof Error ? err.message : 'Backup code verification failed';
-		return json({ error: { code: code || 'api_error', message: message || 'Request failed', status } }, { status });
+		return Response.json({ error: { code: code || 'api_error', message: message || 'Request failed', status } }, { status });
 	}
 };

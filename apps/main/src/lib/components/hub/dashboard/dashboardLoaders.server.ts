@@ -1,4 +1,4 @@
-import { apiGet, apiList, type ApiContext } from '$lib/server/api';
+import { apiGet, apiList, type ApiContext } from '#lib/server/api.js';
 import type {
 	MeAnalytics,
 	FollowerGrowthItem,
@@ -7,7 +7,7 @@ import type {
 	AcademyEnrollment,
 	Certificate,
 	UserDashboard
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Server-only loader registry for the dashboard family. Mirrors the settings

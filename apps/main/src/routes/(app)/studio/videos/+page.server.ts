@@ -1,7 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiPost, ApiError } from '#lib/server/api.js';
 import { redirect } from '@sveltejs/kit';
-import type { VideoImportJob } from '$lib/types';
+import type { VideoImportJob } from '#lib/types/index.js';
 
 const STUDIO_CACHE_TAG = 'app:studio';
 

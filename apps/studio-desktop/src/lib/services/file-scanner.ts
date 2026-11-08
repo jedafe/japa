@@ -5,9 +5,9 @@
 
 import { readDir, readTextFile, stat, type DirEntry } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
-import { parseFrontmatter } from '$lib/services/markdown';
-import { hashFile } from '$lib/services/hash';
-import { slugify } from '$lib/services/prompt';
+import { parseFrontmatter } from '#lib/services/markdown.js';
+import { hashFile } from '#lib/services/hash.js';
+import { slugify } from '#lib/services/prompt.js';
 
 export interface ScannedFile {
 	relativePath: string;

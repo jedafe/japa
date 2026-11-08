@@ -1,5 +1,5 @@
 import { page } from '$app/state';
-import { DEFAULT_SITE_NAME } from '$lib/brand';
+import { DEFAULT_SITE_NAME } from '#lib/brand.js';
 import en from './en.json';
 import jce_en from './jce_en.json';
 

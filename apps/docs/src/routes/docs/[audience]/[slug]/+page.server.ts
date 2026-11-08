@@ -1,10 +1,10 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { loadDocPage, editorData, saveDocPageAction, reviewAction } from '$lib/server/docs-author';
-import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
-import type { DocAudience } from '$lib/types';
-import { AUDIENCE_LABEL_KEY } from '$lib/types';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
+import { loadDocPage, editorData, saveDocPageAction, reviewAction } from '#lib/server/docs-author.js';
+import { buildMeta, techArticleLd, DOCS_ORIGIN } from '#lib/seo/meta.js';
+import type { DocAudience } from '#lib/types/index.js';
+import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 
 /**
  * Single doc page: fetches the published page, renders TipTap JSON → HTML

@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { CustomFieldGroup, ComposerOrganization, JobDetail, JobListing } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { CustomFieldGroup, ComposerOrganization, JobDetail, JobListing } from '#lib/types/index.js';
 
 const JOB_EDITOR_ROLES = new Set(['owner', 'admin', 'editor']);
 

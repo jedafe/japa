@@ -1,15 +1,15 @@
 <script lang="ts">
 	// /tools/processing-tracker — management page for user-submitted visa processing timeline entries.
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md (ADR-091)
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Trash2 } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { processingTrackerAdminApi } from '$lib/api';
-	import { useCountries } from '$lib/utils/countries.svelte';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
+	import { processingTrackerAdminApi } from '#lib/api.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
 
 	// TimelineDTO shape from GET /admin/visa-timelines (§83). The backend
 	// returns the full TimelineDTO with joined milestones; we derive the

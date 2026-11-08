@@ -16,10 +16,10 @@
 	 */
 	import { untrack, onMount } from 'svelte';
 	import { Switch } from 'bits-ui';
-	import { t } from '$lib/i18n';
-	import { api, apiBaseUrl } from '$lib/api/client';
-	import { buildApiUrl } from '$lib/api/url';
-	import { exportData, cancelDataExport } from '$lib/api/hub';
+	import { t } from '#lib/i18n/index.js';
+	import { api, apiBaseUrl } from '#lib/api/client.js';
+	import { buildApiUrl } from '#lib/api/url.js';
+	import { exportData, cancelDataExport } from '#lib/api/hub.js';
 	import { Download, Loader2, ShieldCheck, X } from 'lucide-svelte';
 
 	/** Backend consent record — matches gen.ConsentRecord (Section 19). */

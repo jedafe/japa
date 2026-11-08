@@ -1,7 +1,7 @@
-import { json, error } from '@sveltejs/kit';
-import { apiContext, apiGet, apiPost, ApiError } from '$lib/server/api';
+import { error } from '@sveltejs/kit';
+import { apiContext, apiGet, apiPost, ApiError } from '#lib/server/api.js';
 import type { RequestHandler } from './$types';
-import type { DocFeedback } from '$lib/types';
+import type { DocFeedback } from '#lib/types/index.js';
 
 /**
  * Same-origin feedback proxy for doc pages.
@@ -28,7 +28,7 @@ export const GET: RequestHandler = async (event) => {
 			apiContext(event),
 			`/docs/${encodeURIComponent(audience)}/${encodeURIComponent(slug)}/feedback`
 		);
-		return json({ data: result });
+		return Response.json({ data: result });
 	} catch (err) {
 		if (err instanceof ApiError) {
 			throw error(err.status, { code: err.code, message: err.message });
@@ -60,7 +60,7 @@ export const POST: RequestHandler = async (event) => {
 			`/docs/${encodeURIComponent(audience)}/${encodeURIComponent(slug)}/feedback`,
 			{ vote }
 		);
-		return json({ data: result });
+		return Response.json({ data: result });
 	} catch (err) {
 		if (err instanceof ApiError) {
 			throw error(err.status, { code: err.code, message: err.message });

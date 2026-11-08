@@ -12,21 +12,21 @@ const { clearUserMock, gotoMock } = vi.hoisted(() => ({
 
 vi.mock('$env/static/public', () => ({ PUBLIC_JC_ENV: 'development' }));
 
-vi.mock('$lib/api/client', () => ({
+vi.mock('#lib/api/client.js', () => ({
 	apiFetch: vi.fn().mockResolvedValue({ data: null, error: null, status: 200 })
 }));
 
-vi.mock('$lib/stores/auth.svelte', () => ({
+vi.mock('#lib/stores/auth.svelte.js', () => ({
 	user: { current: { username: 'Ada', avatar_url: '' } },
 	clearUser: clearUserMock
 }));
 
-vi.mock('$lib/stores/permissions.svelte', () => ({
+vi.mock('#lib/stores/permissions.svelte.js', () => ({
 	permissions: [],
 	hasPermission: vi.fn().mockReturnValue(false)
 }));
 
-vi.mock('$lib/stores/theme.svelte', () => ({
+vi.mock('#lib/stores/theme.svelte.js', () => ({
 	theme: 'light'
 }));
 
@@ -36,7 +36,7 @@ vi.mock('$app/navigation', () => ({
 	invalidateAll: vi.fn()
 }));
 
-import { apiFetch } from '$lib/api/client';
+import { apiFetch } from '#lib/api/client.js';
 import TopBar from './TopBar.svelte';
 
 describe('admin TopBar logout', () => {

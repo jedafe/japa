@@ -12,11 +12,11 @@
 	//
 	// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
 	// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { ChevronDown, Plus, Trash2, X } from 'lucide-svelte';
-	import Switch from '$lib/components/ui/Switch.svelte';
+	import Switch from '#lib/components/ui/Switch.svelte';
 	import { comparisonHintPresets, type ComparisonHintPreset } from './comparisonPresets';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	interface HintGroup {
 		name?: string;

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { ArrowUp, X } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { realtime } from '$lib/realtime/realtime.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { realtime } from '#lib/realtime/realtime.svelte.js';
 
 	// The pill is only relevant on the home timeline; the parent renders it
 	// conditionally. Here we just react to the realtime store counter.

@@ -1,8 +1,8 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext } from '$lib/server/api';
-import { resolveSection } from '$lib/components/hub/settings/settingsSections';
-import { SETTINGS_LOADERS } from '$lib/components/hub/settings/settingsLoaders.server';
+import { apiContext } from '#lib/server/api.js';
+import { resolveSection } from '#lib/components/hub/settings/settingsSections.js';
+import { SETTINGS_LOADERS } from '#lib/components/hub/settings/settingsLoaders.server.js';
 
 /**
  * Dispatch to the section's server loader. 404s on unknown slugs, sections

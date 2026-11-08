@@ -17,17 +17,17 @@
  * TypeScript (no Svelte) so it can be driven from a Runes store.
  */
 
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
 
-export type WSEventType =
-	| 'notification'
-	| 'presence'
-	| 'typing'
-	| 'space_activity'
-	| 'feed_update'
-	| 'dm_message'
-	| 'moderation_alert';
+export type WSEventType = 
+	'notification' |
+	'presence' |
+	'typing' |
+	'space_activity' |
+	'feed_update' |
+	'dm_message' |
+	'moderation_alert';
 
 type EventHandler = (payload: unknown) => void;
 
@@ -48,7 +48,7 @@ async function mintTicket(): Promise<MintResult> {
 		});
 		if (!res.ok) return { ticket: null, status: res.status };
 		// Standard envelope: { "data": { "ticket": "..." } }
-		const body = (await res.json()) as { data?: { ticket?: string } };
+		const body = await res.json() as { data?: { ticket?: string } };
 		return { ticket: body.data?.ticket ?? null, status: res.status };
 	} catch {
 		return { ticket: null, status: 0 };

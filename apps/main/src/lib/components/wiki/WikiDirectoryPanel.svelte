@@ -4,13 +4,13 @@
 	// page (e.g. /wiki/nigeria/states). Children link to their own wiki at
 	// /wiki/{slug}; search calls GET /wiki/destinations?within={slug} so the
 	// full set stays reachable beyond the embedded cap.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { goto } from '$app/navigation';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import type { WikiDestination, WikiDirectory, WikiDirectoryChild } from '$lib/types';
-	import { entityPageHref } from '$lib/utils/wikiEntityLinks';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import type { WikiDestination, WikiDirectory, WikiDirectoryChild } from '#lib/types/index.js';
+	import { entityPageHref } from '#lib/utils/wikiEntityLinks.js';
 	import { MapPin } from 'lucide-svelte';
 
 	let {

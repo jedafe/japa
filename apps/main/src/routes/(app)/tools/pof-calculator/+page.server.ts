@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { GeoCountry, GeoSpaceOption, PofRequirement } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { GeoCountry, GeoSpaceOption, PofRequirement } from '#lib/types/index.js';
 
 /**
  * Proof of Funds Calculator at /tools/pof-calculator (§108, ADR-119).

@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { browser } from '$app/environment';
-	import type { UrlTab } from '$lib/components/ui';
+	import { browser } from '$app/env';
+	import type { UrlTab } from '#lib/components/ui/index.js';
 	import { LandingRenderer, type Block } from '@japaconnect/landing-blocks';
-	import { t } from '$lib/i18n';
-	import type { CardStyleConfig } from '$lib/feed/cardStyle';
+	import { t } from '#lib/i18n/index.js';
+	import type { CardStyleConfig } from '#lib/feed/cardStyle.js';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { apiBaseUrl } from '$lib/api/client';
-	import { getCsrfToken } from '$lib/api/csrf.svelte';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { apiBaseUrl } from '#lib/api/client.js';
+	import { getCsrfToken } from '#lib/api/csrf.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -25,26 +25,24 @@
 	);
 
 	// cardStyleConfig comes from the (app) layout loader (shared shell data).
-	const config = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
+	const config = $derived(page.data.cardStyleConfig as CardStyleConfig ?? { default: 'reddit', byType: {} });
 
 	// SEO: title/description differ for the landing page vs the authed feed.
 	const isLanding = $derived(!!data.landing);
-	const title = $derived(
-		isLanding
-			? (data.landing?.title ?? t('app.name'))
-			: t('home.title', '{site} — Explore')
-	);
-	const description = $derived(
-		isLanding
-			? (data.landing?.description ?? t('landing.description', 'Stories, discussions, and guides for Nigerians abroad.'))
-			: t('home.description', 'Explore the Nigerian diaspora community: stories, discussions, comparisons, and guides.')
-	);
-	const jsonLd = $derived(
-		JSON.stringify({
-			'@context': 'https://schema.org',
-			'@type': 'WebSite',
-			name: t('app.name'),
-			url: page.url.origin
+
+	const title = $derived(isLanding
+		? data.landing?.title ?? t('app.name')
+		: t('home.title', '{site} — Explore'));
+
+	const description = $derived(isLanding
+		? data.landing?.description ?? t('landing.description', 'Stories, discussions, and guides for Nigerians abroad.')
+		: t('home.description', 'Explore the Nigerian diaspora community: stories, discussions, comparisons, and guides.'));
+
+	const jsonLd = $derived(JSON.stringify({
+		'@context': 'https://schema.org',
+		'@type': 'WebSite',
+		name: t('app.name'),
+		url: page.url.origin
 		})
 	);
 
@@ -91,14 +89,26 @@
 
 {#if data.guestHome}
 	<!-- ADR-058 §5 Exception #3: new default guest homepage -->
-	<LandingRenderer blocks={fallbackBlocks} {fetchCtx} geoCountry={data.contentCountry} guestHome={data.home} />
+
+	<LandingRenderer
+		blocks={fallbackBlocks}
+		fetchCtx={fetchCtx}
+		geoCountry={data.contentCountry}
+		guestHome={data.home}
+	/>
 {:else if data.landing}
 	<!-- ADR-058 §5 Exception #3: guest Page Builder landing page (or default seed) -->
-	<LandingRenderer blocks={data.landing.blocks} {fetchCtx} geoCountry={data.contentCountry} guestHome={data.home} />
+
+	<LandingRenderer
+		blocks={data.landing.blocks}
+		fetchCtx={fetchCtx}
+		geoCountry={data.contentCountry}
+		guestHome={data.home}
+	/>
 {:else}
 	<!-- Authenticated home timeline — dynamic import keeps the feed stack out
 	     of the guest landing bundle (PageSpeed). SSR still renders it. -->
-	{#await import('$lib/components/home/AuthedHomeView.svelte') then { default: AuthedHomeView }}
-		<AuthedHomeView {data} {tabs} {config} />
+	{#await import('#lib/components/home/AuthedHomeView.svelte') then { default: AuthedHomeView }}
+		<AuthedHomeView data={data} tabs={tabs} config={config} />
 	{/await}
 {/if}

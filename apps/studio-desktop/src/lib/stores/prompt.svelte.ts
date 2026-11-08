@@ -3,15 +3,15 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import { promptFromDefaults, type PromptFormValues, type PromptTemplate } from '$lib/types/prompt';
-import { loadSettings } from '$lib/services/settings';
+import { promptFromDefaults, type PromptFormValues, type PromptTemplate } from '#lib/types/prompt.js';
+import { loadSettings } from '#lib/services/settings.js';
 import {
 	loadTemplates,
 	saveTemplates,
 	addTemplate,
 	updateTemplateName,
 	deleteTemplate
-} from '$lib/services/templates';
+} from '#lib/services/templates.js';
 
 function createPromptStore() {
 	const settings = loadSettings();

@@ -6,8 +6,8 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import { ensureSettingsLoaded, loadSettings, saveSettings } from '$lib/services/settings';
-import type { StudioSettings } from '$lib/services/settings';
+import { ensureSettingsLoaded, loadSettings, saveSettings } from '#lib/services/settings.js';
+import type { StudioSettings } from '#lib/services/settings.js';
 
 export interface ExchangeKeyResponse {
 	access_token: string;

@@ -7,8 +7,8 @@
 	// Uses the full MediaPickerModal (Browse / Upload / Stock) so the admin can
 	// pick existing media, upload a new file, or import a stock photo — all
 	// without leaving the settings page.
-	import { t } from '$lib/stores/i18n.svelte';
-	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
 	import { Plus, Trash2, GripVertical } from 'lucide-svelte';
 
 	interface Slide {

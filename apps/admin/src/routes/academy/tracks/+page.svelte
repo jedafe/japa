@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /academy/tracks — migrated to the EntityPage scaffold.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { academyAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { loadCurrencies, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { academyAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { loadCurrencies, formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Check, Eye, EyeOff, X } from 'lucide-svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 
 	type Track = {
 		id: string;

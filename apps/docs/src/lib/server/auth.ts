@@ -4,9 +4,9 @@
 // $lib/server/auth contract so an expired jc_token (15min TTL) re-mints
 // invisibly instead of bouncing the user through the Main-app login.
 
-import { env as publicEnv } from '$env/dynamic/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
-import { ApiError, API_BASE, apiContext, type ApiContext } from '$lib/server/api';
+import { ApiError, API_BASE, apiContext, type ApiContext } from '#lib/server/api.js';
 import type { RequestEvent } from '@sveltejs/kit';
 
 const SESSION_COOKIE = 'jc_token';
@@ -22,7 +22,7 @@ const REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60;
  */
 export function sessionCookieDomain(): string {
 	try {
-		const apiHost = new URL(publicEnv.PUBLIC_JC_API_URL ?? '').hostname;
+		const apiHost = new URL(PUBLIC_JC_API_URL ?? '').hostname;
 		return apiHost.startsWith('api.') ? `.${apiHost.slice(4)}` : '';
 	} catch {
 		return '';
@@ -32,7 +32,7 @@ export function sessionCookieDomain(): string {
 export function setSessionCookie(event: RequestEvent, accessToken: string): void {
 	event.cookies.set(SESSION_COOKIE, accessToken, {
 		path: '/',
-		...(sessionCookieDomain() ? { domain: sessionCookieDomain() } : {}),
+		...sessionCookieDomain() ? { domain: sessionCookieDomain() } : {},
 		httpOnly: true,
 		secure: true,
 		sameSite: 'lax',
@@ -43,7 +43,7 @@ export function setSessionCookie(event: RequestEvent, accessToken: string): void
 export function setRefreshCookie(event: RequestEvent, refreshToken: string): void {
 	event.cookies.set(REFRESH_COOKIE, refreshToken, {
 		path: '/',
-		...(sessionCookieDomain() ? { domain: sessionCookieDomain() } : {}),
+		...sessionCookieDomain() ? { domain: sessionCookieDomain() } : {},
 		httpOnly: true,
 		secure: true,
 		sameSite: 'strict',
@@ -68,7 +68,7 @@ export function clearSessionCookies(event: RequestEvent): void {
 function extractRefreshToken(res: Response): string | null {
 	for (const c of res.headers.getSetCookie?.() ?? []) {
 		if (c.startsWith('jc_refresh=')) {
-			const value = c.split(';')[0].slice('jc_refresh='.length);
+			const value = c.split(';')[0].slice(('jc_refresh=').length);
 			return value || null;
 		}
 	}

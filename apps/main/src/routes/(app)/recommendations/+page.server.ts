@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { RecommendationsResponse } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { RecommendationsResponse } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);

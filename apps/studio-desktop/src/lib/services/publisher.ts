@@ -3,20 +3,20 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import { createApiClient } from '$lib/services/api';
-import { ensureSettingsLoaded, loadSettings, type StudioSettings } from '$lib/services/settings';
-import { markdownToHtml, parseFrontmatter } from '$lib/services/markdown';
-import { hashFile } from '$lib/services/hash';
-import { queueStore } from '$lib/stores/queue.svelte';
-import { syncLogStore } from '$lib/stores/sync-log.svelte';
-import { validateFrontmatter, validateBody, isHighStakes } from '$lib/services/validation';
-import type { Persona, ContentRecord } from '$lib/types/prompt';
-import type { ApiResponse } from '$lib/api/client';
+import { createApiClient } from '#lib/services/api.js';
+import { ensureSettingsLoaded, loadSettings, type StudioSettings } from '#lib/services/settings.js';
+import { markdownToHtml, parseFrontmatter } from '#lib/services/markdown.js';
+import { hashFile } from '#lib/services/hash.js';
+import { queueStore } from '#lib/stores/queue.svelte.js';
+import { syncLogStore } from '#lib/stores/sync-log.svelte.js';
+import { validateFrontmatter, validateBody, isHighStakes } from '#lib/services/validation.js';
+import type { Persona, ContentRecord } from '#lib/types/prompt.js';
+import type { ApiResponse } from '#lib/api/client.js';
 import { writable } from 'svelte/store';
 import { readTextFile, stat } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
 
-import { siteName } from '$lib/stores/site.svelte';
+import { siteName } from '#lib/stores/site.svelte.js';
 export interface PublishInput {
 	relativePath: string;
 	frontmatter: Record<string, unknown>;

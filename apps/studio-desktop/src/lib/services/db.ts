@@ -5,8 +5,8 @@
  */
 
 import type { StudioSettings } from './settings';
-import type { FileState } from '$lib/types/queue';
-import type { SyncLogEntry } from '$lib/stores/sync-log.svelte';
+import type { FileState } from '#lib/types/queue.js';
+import type { SyncLogEntry } from '#lib/stores/sync-log.svelte.js';
 import { decryptSecret, encryptSecret, redactSecrets } from './secrets';
 
 const DB_PATH = 'sqlite:state.db';

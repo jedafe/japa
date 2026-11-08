@@ -1,17 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/34-media-system.md (user media library)
 	// Grid/list of the user's uploaded media with filter, search, pagination,
 	// bulk actions, upload, and per-item actions (edit, delete, copy URL, details).
 	// All data comes from /me/media, PATCH /media/{id}, DELETE /media/{id},
 	// GET /media/{id}, and POST /media/bulk-delete — Rule 16.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { untrack } from 'svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
-	import { Modal } from '$lib/components/ui';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import PaginationControls from '#lib/components/ui/PaginationControls.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
+	import { Modal } from '#lib/components/ui/index.js';
 	import {
 		Image as ImageIcon,
 		File,
@@ -29,10 +29,10 @@
 		Maximize2,
 		AlertTriangle
 	} from 'lucide-svelte';
-	import { openLightbox } from '$lib/lightbox.svelte';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
-	import type { MediaAsset } from '$lib/types';
-	import { listMyMedia, getMedia, updateMedia, deleteMedia, bulkDeleteMedia } from '$lib/api/create';
+	import { openLightbox } from '#lib/lightbox.svelte.js';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
+	import type { MediaAsset } from '#lib/types/index.js';
+	import { listMyMedia, getMedia, updateMedia, deleteMedia, bulkDeleteMedia } from '#lib/api/create.js';
 
 	let { data } = $props();
 

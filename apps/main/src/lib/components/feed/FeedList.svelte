@@ -2,14 +2,14 @@
 	import { untrack } from 'svelte';
 	import { navigating, page } from '$app/state';
 	import { TriangleAlert } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { feedQueryString, type FeedTab, type SortValue } from '$lib/feed/endpoint';
-	import type { CardStyleConfig } from '$lib/feed/cardStyle';
-	import { EmptyState, LoadingSkeleton, PaginationControls } from '$lib/components/ui';
-	import { t } from '$lib/i18n';
-	import type { FeedItem } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { feedQueryString, type FeedTab, type SortValue } from '#lib/feed/endpoint.js';
+	import type { CardStyleConfig } from '#lib/feed/cardStyle.js';
+	import { EmptyState, LoadingSkeleton, PaginationControls } from '#lib/components/ui/index.js';
+	import { t } from '#lib/i18n/index.js';
+	import type { FeedItem } from '#lib/types/index.js';
 	import FeedCard from './FeedCard.svelte';
-	import NativeAd from '$lib/components/ads/NativeAd.svelte';
+	import NativeAd from '#lib/components/ads/NativeAd.svelte';
 
 	interface Props {
 		items: FeedItem[];

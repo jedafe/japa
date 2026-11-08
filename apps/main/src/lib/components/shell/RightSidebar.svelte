@@ -4,7 +4,8 @@
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import GuestFooter from './GuestFooter.svelte';
 	import { routeSidebar } from './routeSidebar.svelte';
-	import type { Menu, SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
+	import { provideRailGate } from './railVisibility.svelte';
+	import type { Menu, SessionUser, TrendingTag, SpaceSuggestion } from '#lib/types/index.js';
 
 	interface SidebarWidget {
 		id: string;
@@ -48,6 +49,10 @@
 	// Prefer the registered route snippet (set by SetSidebar) over the direct
 	// prop.
 	const sidebar = $derived(routeSidebar.snippet ?? sidebarProp);
+
+	// Rail subtree is viewport-gated: widgets/ads inside skip mount-time
+	// fetches while the rail is display:none (<1280px). See railVisibility.
+	provideRailGate();
 
 	// Normalize incoming widgets to the SidebarWidget shape.
 	const widgets = $derived(

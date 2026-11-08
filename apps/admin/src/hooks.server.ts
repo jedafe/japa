@@ -1,5 +1,5 @@
-import { type Handle, type HandleServerError } from '@sveltejs/kit';
-import { building } from '$app/environment';
+import type { Handle, HandleServerError } from '@sveltejs/kit/hooks';
+import { building } from '$app/env';
 import * as Sentry from '@sentry/sveltekit';
 
 export const handle: Handle = async ({ event, resolve }) => {

@@ -1,9 +1,9 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md (Product Domain)
 import type { PageServerLoad } from './$types';
 import { error, redirect } from '@sveltejs/kit';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import { hasPerm } from '$lib/server/auth';
-import type { DealPartnerRef } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import { hasPerm } from '#lib/server/auth.js';
+import type { DealPartnerRef } from '#lib/types/index.js';
 
 /**
  * /products/new — product creation gated by the products.create RBAC node.

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /product-types — product type management (§80). Each type carries an
 	// associated custom field group set; edit lives on /product-types/{slug}.
-	import { EntityPage, type EntityPageConfig } from '$lib/components/entity';
-	import { productTypesAdminApi } from '$lib/api';
+	import { EntityPage, type EntityPageConfig } from '#lib/components/entity/index.js';
+	import { productTypesAdminApi } from '#lib/api.js';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Pencil, Plus } from 'lucide-svelte';
 
 	type Row = {

@@ -1,5 +1,5 @@
 import type { PageLoad } from './$types';
-import { api } from '$lib/api';
+import { api } from '#lib/api.js';
 
 /**
  * Admin AI Generate page load — fetch feature flags so the UI can hide the

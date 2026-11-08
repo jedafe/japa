@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { slugify, buildProjectInstruction, buildPrompt } from './prompt';
-import { promptFromDefaults, DEFAULT_PROMPT_VALUES, type PromptFormValues } from '$lib/types/prompt';
+import { promptFromDefaults, DEFAULT_PROMPT_VALUES, type PromptFormValues } from '#lib/types/prompt.js';
 import type { PromptLookups } from './prompt';
 import type { StudioSettings } from './settings';
 

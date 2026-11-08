@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { buildMeta } from '$lib/seo/meta';
-import { env } from '$env/dynamic/public';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
+import { buildMeta } from '#lib/seo/meta.js';
+import { PUBLIC_MAIN_ORIGIN } from '$app/env/public';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 
 /**
  * Access-denied page — the destination for 403s on gated audiences (ADR-060).
@@ -21,6 +21,10 @@ export const load: PageServerLoad = async (event) => {
 	});
 	// Login lives on the Main app — point the CTA at the main origin so it
 	// does not 404 on the docs origin.
-	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
-	return { meta, loginUrl: `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}` };
+	const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+
+	return {
+		meta,
+		loginUrl: `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`
+	};
 };

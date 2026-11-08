@@ -9,7 +9,7 @@
 // permission is still granted.
 // Ref: japaconnect-engineering/sections/35-notification-system.md
 // Ref: .jeos/sections/124-progressive-web-app.md
-import { getVapidKey, getPushTokens, subscribePush } from '$lib/api/hub';
+import { getVapidKey, getPushTokens, subscribePush } from '#lib/api/hub.js';
 
 export function urlBase64ToUint8Array(base64String: string): Uint8Array {
 	const padding = '='.repeat((4 - (base64String.length % 4)) % 4);

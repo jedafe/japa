@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md (Sub-spec 6)
-	import type { JCEFieldPoolGroup } from '$lib/types/jce';
-	import { t } from '$lib/i18n';
+	import type { JCEFieldPoolGroup } from '#lib/types/jce.js';
+	import { t } from '#lib/i18n/index.js';
 
 	let {
 		groups,

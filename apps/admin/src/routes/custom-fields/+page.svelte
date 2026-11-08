@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /custom-fields — migrated to the EntityPage scaffold.
 	//
 	// The field-group list + group CRUD is driven declaratively by EntityPage.
 	// The field-editor sub-flow (add/edit/delete/reorder fields within a group)
 	// is kept as a page-local <Modal> triggered by a custom "Manage Fields"
 	// row action — mirrors the tags page's moderators Modal.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { TableSkeleton } from '$lib/components/ui/skeleton';
-	import { api, fieldGroupsAdminApiExtended, fieldPermissionsApi, fieldTypesAdminApi, userManagementApi, type FieldTypeInfo, type UserGroup } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { TableSkeleton } from '#lib/components/ui/skeleton/index.js';
+	import { api, fieldGroupsAdminApiExtended, fieldPermissionsApi, fieldTypesAdminApi, userManagementApi, type FieldTypeInfo, type UserGroup } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Trash2, List, Pencil, Plus, GripVertical, ArrowUp, ArrowDown, ShieldCheck } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type FieldGroup = {
 		id: string;

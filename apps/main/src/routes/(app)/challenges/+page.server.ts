@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { Challenge } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { Challenge } from '#lib/types/index.js';
 
 /**
  * Challenges page at /challenges (Section 64, ADR-080).

@@ -14,7 +14,7 @@ import {
 	Ticket,
 	Award
 } from 'lucide-svelte';
-import type { IconComponent } from '$lib/components/ui/icons';
+import type { IconComponent } from '#lib/components/ui/icons.js';
 
 /**
  * Filterable notification categories used by the full notifications page.

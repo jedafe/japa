@@ -3,7 +3,7 @@
 	// thank-you message, external links CRUD, Open Collective connect.
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { onMount } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		getMyTipSettings, updateMyTipSettings, createTipLink, deleteTipLink,
 		connectOC, disconnectOC,
@@ -11,9 +11,9 @@
 		connectOrgOC, disconnectOrgOC,
 		listTipProductDomains,
 		type TipSettings, type TipExternalLink, type TipProductDomain
-	} from '$lib/api/tips';
+	} from '#lib/api/tips.js';
 	import { CheckCircle2, ExternalLink, Loader2, Plus, Trash2 } from 'lucide-svelte';
-	import { SelectField } from '$lib/components/ui';
+	import { SelectField } from '#lib/components/ui/index.js';
 
 	// orgId scopes the section to an organization's tip settings (org
 	// owner/admin dashboard); absent → the member's own /me settings.

@@ -4,16 +4,16 @@
 	import { confirmDialog } from '@japaconnect/ui';
 	import { onMount, untrack } from 'svelte';
 	import { Check } from 'lucide-svelte';
-	import DocEditor from '$lib/components/docs/DocEditor.svelte';
-	import FeatureImageField from '$lib/components/docs/FeatureImageField.svelte';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import type { ManagedCategory } from '$lib/docs/catalog';
-	import { t } from '$lib/i18n';
-	import type { DocPage } from '$lib/types';
-	import type { ExistingPage } from '$lib/server/docs-author';
+	import DocEditor from '#lib/components/docs/DocEditor.svelte';
+	import FeatureImageField from '#lib/components/docs/FeatureImageField.svelte';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import type { ManagedCategory } from '#lib/docs/catalog.js';
+	import { t } from '#lib/i18n/index.js';
+	import type { DocPage } from '#lib/types/index.js';
+	import type { ExistingPage } from '#lib/server/docs-author.js';
 
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	interface FormValues {
 		error?: string;
@@ -122,22 +122,17 @@
 
 	const parentItems = $derived(
 		existingPages.map((p) => ({
-			id: p.id,
-			label: p.title,
+		id: p.id,
+		label: p.title,
 			sublabel:
 				p.slug +
 				(p.review_status !== 'published'
-					? ` · ${t(`new_page.status.${p.review_status}`, p.review_status)}`
-					: '')
-		}))
-	);
-	const parentFetcher = (q: string): Promise<AutocompleteItem[]> =>
-		Promise.resolve(
-			parentItems.filter((p) => p.label.toLowerCase().includes(q.toLowerCase()))
-		);
-	const parentLabel = $derived(
-		existingPages.find((p) => p.id === editParentId)?.title ?? null
-	);
+			? ` · ${t(`new_page.status.${p.review_status}`, p.review_status)}`
+			: '')
+	})));
+
+	const parentFetcher = (q: string): Promise<AutocompleteItem[]> => Promise.resolve(parentItems.filter((p) => p.label.toLowerCase().includes(q.toLowerCase())));
+	const parentLabel = $derived(existingPages.find((p) => p.id === editParentId)?.title ?? null);
 
 	$effect(() => {
 		if (dirty) justSaved = false;
@@ -168,6 +163,8 @@
 	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
 	let bypassGuard = false;
 	beforeNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
+
 		// Guard every in-app navigation (link, goto, back/forward) — 'form'
 		// is our own submit (saving/reviewing) and 'leave' is handled by the
 		// beforeunload listener.
@@ -263,10 +260,10 @@
 				selectedLabel={editCategory || null}
 				freeText
 				allowFreeText
-				onSelect={(item) => (editCategory = item.id)}
-				onInput={(v) => (editCategory = v)}
-				onFreeTextBlur={(v) => (editCategory = v.trim())}
-				onClear={() => (editCategory = '')}
+				onSelect={(item) => editCategory = item.id}
+				onInput={(v) => editCategory = v}
+				onFreeTextBlur={(v) => editCategory = v.trim()}
+				onClear={() => editCategory = ''}
 			/>
 		</div>
 
@@ -283,10 +280,10 @@
 				selectedLabel={editSubcategory || null}
 				freeText
 				allowFreeText
-				onSelect={(item) => (editSubcategory = item.id)}
-				onInput={(v) => (editSubcategory = v)}
-				onFreeTextBlur={(v) => (editSubcategory = v.trim())}
-				onClear={() => (editSubcategory = '')}
+				onSelect={(item) => editSubcategory = item.id}
+				onInput={(v) => editSubcategory = v}
+				onFreeTextBlur={(v) => editSubcategory = v.trim()}
+				onClear={() => editSubcategory = ''}
 			/>
 		</div>
 
@@ -324,8 +321,8 @@
 					initialFetcher={() => Promise.resolve(parentItems)}
 					selectedId={editParentId || null}
 					selectedLabel={parentLabel}
-					onSelect={(item) => (editParentId = item.id)}
-					onClear={() => (editParentId = '')}
+					onSelect={(item) => editParentId = item.id}
+					onClear={() => editParentId = ''}
 				/>
 			</div>
 			<label class="ef-field">
@@ -350,7 +347,7 @@
 	<DocEditor
 		initialContent={editSeed}
 		bind:value={contentJson}
-		onUpdate={() => (contentEdited = true)}
+		onUpdate={() => contentEdited = true}
 		placeholder={t('new_page.content_placeholder', 'Start writing the documentation…')}
 	/>
 

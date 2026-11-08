@@ -5,7 +5,7 @@
 // Ref: docs/superpowers/specs/2026-09-24-agent-data-api-phase3-design.md
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiPost, ApiError } from '$lib/server/api';
+import { apiContext, apiPost, ApiError } from '#lib/server/api.js';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {

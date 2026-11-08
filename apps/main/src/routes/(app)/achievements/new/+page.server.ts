@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/89-achievement-feed.md
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
+import { apiContext, apiList } from '#lib/server/api.js';
 import { redirect } from '@sveltejs/kit';
-import type { GeoCountry } from '$lib/types';
+import type { GeoCountry } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {

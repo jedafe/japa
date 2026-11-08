@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Modal } from '$lib/components/ui';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { Modal } from '#lib/components/ui/index.js';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { X, UserCircle } from 'lucide-svelte';
 
 	// Ref: japaconnect-engineering/sections/31-follow-system.md

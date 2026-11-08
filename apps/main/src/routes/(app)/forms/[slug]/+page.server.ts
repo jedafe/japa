@@ -4,8 +4,8 @@
 // schema from GET /forms/{slug}/embed (public, no auth).
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { FormEmbed } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { FormEmbed } from '#lib/types/index.js';
 
 // System forms consumed by bespoke pages (same special-casing the backend
 // applies for link intents): the generic renderer would be a degraded clone

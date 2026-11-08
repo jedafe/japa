@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	import { page } from '$app/state';
 	import { FileQuestion, ShieldX, TriangleAlert } from 'lucide-svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	const status = $derived(page.status);
 	const isNotFound = $derived(status === 404);

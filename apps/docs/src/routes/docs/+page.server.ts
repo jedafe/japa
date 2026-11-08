@@ -1,8 +1,8 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import { buildMeta, webSiteLd } from '$lib/seo/meta';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
-import type { DocPageSummary } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import { buildMeta, webSiteLd } from '#lib/seo/meta.js';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
+import type { DocPageSummary } from '#lib/types/index.js';
 
 /**
  * Docs landing: the portal homepage — hero, user-group cards, category

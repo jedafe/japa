@@ -3,12 +3,12 @@
 	import { page } from '$app/state';
 	import { onDestroy } from 'svelte';
 	import { Search, Eye, MessageCircle, Share2, GitCompare, Filter, ChevronRight } from 'lucide-svelte';
-	import { i18n, t, siteName} from '$lib/i18n';
-	import JceSelect from '$lib/components/ui/JceSelect.svelte';
-	import { EmptyState, EntityHero, ListPageBar, PaginationControls, UrlTabs, GuideSlideOver, Modal, type GuideContent, type UrlTab } from '$lib/components/ui';
+	import { i18n, t, siteName} from '#lib/i18n/index.js';
+	import JceSelect from '#lib/components/ui/JceSelect.svelte';
+	import { EmptyState, EntityHero, ListPageBar, PaginationControls, UrlTabs, GuideSlideOver, Modal, type GuideContent, type UrlTab } from '#lib/components/ui/index.js';
 	import type { PageData } from './$types';
-	import { api } from '$lib/api/client';
-	import HeroArtCompare from '$lib/components/heroes/HeroArtCompare.svelte';
+	import { api } from '#lib/api/client.js';
+	import HeroArtCompare from '#lib/components/heroes/HeroArtCompare.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -88,7 +88,7 @@
 	);
 
 	function buildURL(updates: Record<string, string | number | null>) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		for (const [key, value] of Object.entries(updates)) {
 			if (value === '' || value === null || value === undefined) {
 				url.searchParams.delete(key);
@@ -101,23 +101,23 @@
 
 	function apply() {
 		const url = buildURL({ q: query, page: 1 });
-		goto(url, { replaceState: true, keepFocus: true });
+		goto(url, { replace: true, reset: false });
 	}
 
 	function setSort(sort: string) {
-		goto(buildURL({ sort, page: 1 }), { replaceState: true });
+		goto(buildURL({ sort, page: 1 }), { replace: true });
 	}
 
 	function setPageSize(size: number) {
-		goto(buildURL({ page_size: size, page: 1 }), { replaceState: true });
+		goto(buildURL({ page_size: size, page: 1 }), { replace: true });
 	}
 
 	function setPage(pageNum: number) {
-		goto(buildURL({ page: pageNum }), { replaceState: true });
+		goto(buildURL({ page: pageNum }), { replace: true });
 	}
 
 	function setFilterType(slug: string) {
-		goto(buildURL({ filter_type: slug || null, page: 1 }), { replaceState: true });
+		goto(buildURL({ filter_type: slug || null, page: 1 }), { replace: true });
 	}
 
 	function detailURL(item: (typeof items)[number]): string {
@@ -132,7 +132,7 @@
 			filter_visibility: null,
 			page: 1
 		};
-		goto(buildURL(updates), { replaceState: true });
+		goto(buildURL(updates), { replace: true });
 	}
 
 	function excerpt(text?: string | null, max = 140) {

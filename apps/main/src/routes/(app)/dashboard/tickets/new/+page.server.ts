@@ -3,8 +3,8 @@
 // ticket. Auth-gated; the backend filters to is_public=true types for users.
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { TicketType } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { TicketType } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {

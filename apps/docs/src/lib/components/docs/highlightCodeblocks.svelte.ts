@@ -9,7 +9,7 @@
  * to the unstyled <pre> block. Returns a cleanup function that removes the
  * dynamically added listeners/timers so navigation does not leak state.
  */
-import { t } from '$lib/i18n';
+import { t } from '#lib/i18n/index.js';
 
 export function enhanceCodeblocks(root: HTMLElement): () => void {
 	const cleanups: Array<() => void> = [];

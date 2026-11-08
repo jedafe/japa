@@ -21,17 +21,17 @@
 	 */
 	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
-	import { browser } from '$app/environment';
-	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
-	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
-	import { patchProfile, putPreferences } from '$lib/api/hub';
-	import { setContentCountry } from '$lib/api/geo';
-	import { t, i18n } from '$lib/i18n';
+	import { browser } from '$app/env';
+	import { DirtyForm } from '#lib/components/hub/useDirtyForm.svelte.js';
+	import SettingsSection from '#lib/components/hub/SettingsSection.svelte';
+	import { patchProfile, putPreferences } from '#lib/api/hub.js';
+	import { setContentCountry } from '#lib/api/geo.js';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { Globe, Clock, MapPin } from 'lucide-svelte';
-	import type { GeoCountry } from '$lib/types';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
+	import type { GeoCountry } from '#lib/types/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
 
 	interface LanguageData {
 		packs: string[];
@@ -188,7 +188,11 @@
 	);
 </script>
 
-<SettingsSection titleKey="settings.nav.language" descKey="settings.language.desc" {form}>
+<SettingsSection
+	titleKey="settings.nav.language"
+	descKey="settings.language.desc"
+	form={form}
+>
 	<label class="mb-4 block">
 		<span class="mb-1.5 flex items-center gap-1.5 text-sm text-[var(--color-muted)]">
 			<Globe size={14} /> {t('settings.language.language', 'Language')}

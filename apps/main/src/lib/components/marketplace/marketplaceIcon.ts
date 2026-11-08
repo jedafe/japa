@@ -42,7 +42,7 @@ import {
 	Wifi,
 	Zap
 } from 'lucide-svelte';
-import type { IconComponent } from '$lib/components/ui/icons';
+import type { IconComponent } from '#lib/components/ui/icons.js';
 
 const MARKETPLACE_ICONS: Record<string, IconComponent> = {
 	award: Award,

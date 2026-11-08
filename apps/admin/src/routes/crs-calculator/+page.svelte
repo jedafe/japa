@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /crs-calculator — CRS ruleset + draw management (§107).
 	// Backend: GET/POST/PATCH/DELETE /admin/crs/rulesets, GET/POST/PATCH/DELETE /admin/crs/draws.
 	// Ref: sections/107-crs-calculator.md, ADR-118.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
 	import { CheckCircle, XCircle, Eye } from 'lucide-svelte';
 
 	type Ruleset = {

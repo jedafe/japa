@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { FxCurrency } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { FxCurrency } from '#lib/types/index.js';
 
 /**
  * FX Currency Converter at /tools/currency-converter (§112, ADR-125).

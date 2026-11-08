@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (TOTP login challenge)
 	// Completes the second factor of a 2FA login for the control panel. The
 	// login page stashes the challenge token + email in the challenge store
@@ -9,12 +9,12 @@
 	// success the access token is set and the user is forwarded to the
 	// control root. Without this page, any control-panel user who enables 2FA
 	// (mandatory per §22) is permanently locked out of the control panel.
-	import { t } from '$lib/stores/i18n.svelte';
-	import { setToken } from '$lib/api';
-	import { clearChallenge, getChallengeEmail, getChallengeToken } from '$lib/api/challenge';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { setToken } from '#lib/api.js';
+	import { clearChallenge, getChallengeEmail, getChallengeToken } from '#lib/api/challenge.js';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
 
 	let code = $state('');
@@ -132,13 +132,16 @@
 </svelte:head>
 
 <div class="px-4">
-	<div class="border-border-card bg-background-alt w-full max-w-sm rounded-lg border p-6">
-		<h1 class="text-foreground mb-1 text-center text-xl font-bold tracking-tight">
-			{t('auth.totp.title', 'Two-Factor Authentication')}
-		</h1>
-		<p class="text-muted-foreground mb-6 text-center text-sm">
-			{t('auth.totp.subtitle', 'Enter the 6-digit code from your authenticator app')}
-		</p>
+	<div
+		class="border-border-card bg-background-alt w-full max-w-sm rounded-lg border p-6"
+	>
+		<h1
+			class="text-foreground mb-1 text-center text-xl font-bold tracking-tight"
+		>{t('auth.totp.title', 'Two-Factor Authentication')}</h1>
+
+		<p
+			class="text-muted-foreground mb-6 text-center text-sm"
+		>{t('auth.totp.subtitle', 'Enter the 6-digit code from your authenticator app')}</p>
 
 		{#if email}
 			<p class="text-muted-foreground mb-4 text-center text-sm">
@@ -165,7 +168,7 @@
 						autocapitalize="none"
 						placeholder="000000"
 						value={code}
-						oninput={(e) => (code = sanitizeCode(e.currentTarget.value))}
+						oninput={(e) => code = sanitizeCode(e.currentTarget.value)}
 						class="border-border-input bg-background text-foreground w-full rounded-md border px-3 py-2 text-center text-lg tracking-[0.5em] transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
 					<p class="text-muted-foreground mt-1 text-xs">{t('auth.totp.code_help', 'Enter the current 6-digit code from your authenticator app.')}</p>
@@ -197,7 +200,7 @@
 						autocomplete="off"
 						placeholder="xxxx-xxxx"
 						value={backupCode}
-						oninput={(e) => (backupCode = e.currentTarget.value)}
+						oninput={(e) => backupCode = e.currentTarget.value}
 						class="border-border-input bg-background text-foreground w-full rounded-md border px-3 py-2 transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
 					/>
 					<p class="text-muted-foreground mt-1 text-xs">{t('auth.totp.backup_help', 'Enter one of the single-use backup codes you saved when enabling 2FA.')}</p>

@@ -7,8 +7,8 @@
 	// Ref: japaconnect-engineering/sections/25-ad-placement.md —
 	// target_space_ids on ad campaigns accept specific space UUIDs.
 	// Ref: AGENTS.md Rule 16 — spaces come from the API, never hardcoded.
-	import { spacesAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { spacesAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	type Space = { id: string; name: string; slug: string; level?: string };
 

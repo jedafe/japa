@@ -1,4 +1,4 @@
-import type { Reroute } from '@sveltejs/kit';
+import type { Reroute } from '@sveltejs/kit/hooks';
 
 // §18 / ADR-013 — locale-prefixed URLs (/fr/blog, /yo/blog) render the
 // unprefixed route in that language; the locale cookie is set in

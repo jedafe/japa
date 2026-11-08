@@ -5,8 +5,8 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { BadgePercent, Headset, Search, ShieldCheck, Sparkles } from 'lucide-svelte';
-	import SearchInput, { type SearchSuggestion } from '$lib/components/ui/SearchInput.svelte';
-	import { t } from '$lib/i18n';
+	import SearchInput, { type SearchSuggestion } from '#lib/components/ui/SearchInput.svelte';
+	import { t } from '#lib/i18n/index.js';
 
 	interface Props {
 		/** Current ?q= value — seeds the search input. */

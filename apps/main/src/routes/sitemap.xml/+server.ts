@@ -5,14 +5,21 @@
 // a minimal urlset containing just the landing page when the backend is
 // unreachable. Returns 404 on non-indexable deployments.
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
-import { API_BASE, JC_SURFACE } from '$lib/server/api';
+import { PUBLIC_JC_ENV, JC_ENV } from '$app/env/private';
+import { API_BASE, JC_SURFACE } from '#lib/server/api.js';
 
-const NON_PROD_ENVS = new Set(['development', 'dev', 'staging', 'stage', 'test', 'preview', 'local']);
-const blocksIndexing = NON_PROD_ENVS.has((env.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase());
+const NON_PROD_ENVS = new Set([
+	'development',
+	'dev',
+	'staging',
+	'stage',
+	'test',
+	'preview',
+	'local'
+]);
 
-const fallback = (origin: string) =>
-	`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${origin}/</loc></url>\n</urlset>`;
+const blocksIndexing = NON_PROD_ENVS.has((PUBLIC_JC_ENV ?? JC_ENV ?? '').toLowerCase());
+const fallback = (origin: string) => `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${origin}/</loc></url>\n</urlset>`;
 
 export const GET: RequestHandler = async ({ request, url }) => {
 	if (blocksIndexing) {

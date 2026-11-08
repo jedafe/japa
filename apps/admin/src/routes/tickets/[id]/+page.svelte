@@ -1,23 +1,23 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Select } from '$lib/components/ui/select';
-	import { TableSkeleton } from '$lib/components/ui/skeleton';
-	import { ticketsAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent, CardHeader } from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import { TableSkeleton } from '#lib/components/ui/skeleton/index.js';
+	import { ticketsAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	// Ref: japaconnect-engineering/sections/40-support-tickets.md — admin ticket
 	// detail with event timeline, internal notes, public comments, and resolve.
 	import {
 		ArrowLeft, RefreshCw, Pencil, Trash2, CheckCircle, Clock,
 		AlertCircle, MessageSquare, StickyNote, Send, Ticket as TicketIcon
 	} from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type TicketItem = {
 		id: string;

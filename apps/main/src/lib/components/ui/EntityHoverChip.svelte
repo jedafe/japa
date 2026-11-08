@@ -6,17 +6,17 @@
 	 * descriptions are available without over-fetching in the feed list.
 	 */
 	import { LinkPreview } from 'bits-ui';
-	import type { Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { Calendar, Globe, MapPin } from 'lucide-svelte';
-	import VerifiedBadge from '$lib/components/ui/VerifiedBadge.svelte';
-	import { t, i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import { safeHttpUrl } from '$lib/utils/safeUrl';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import { safeHttpUrl } from '#lib/utils/safeUrl.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import FollowButton from '$lib/components/ui/FollowButton.svelte';
-	import type { FollowableType } from '$lib/api/hub';
+	import FollowButton from '#lib/components/ui/FollowButton.svelte';
+	import type { FollowableType } from '#lib/api/hub.js';
 
 	interface Props {
 		type: 'user' | 'space' | 'organization' | 'source';
@@ -58,6 +58,23 @@
 		trigger,
 		externalHref
 	}: Props = $props();
+
+	// Progressive enhancement: SSR and the first client render emit a plain
+	// anchor (keyboard/touch accessible, crawlable). On hover-capable
+	// devices the chip upgrades to a Bits UI LinkPreview during idle time —
+	// touch devices never pay the per-instance hover-card hydration cost.
+	let hoverable = $state(false);
+	onMount(() => {
+		if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+		const ric = (window as { requestIdleCallback?: typeof window.requestIdleCallback })
+			.requestIdleCallback;
+		if (typeof ric === 'function') {
+			const id = ric(() => (hoverable = true), { timeout: 1500 });
+			return () => window.cancelIdleCallback?.(id);
+		}
+		const t = setTimeout(() => (hoverable = true), 800);
+		return () => clearTimeout(t);
+	});
 
 	let open = $state(false);
 	let loading = $state(false);
@@ -150,6 +167,7 @@
 						: `/sources/${slug}`
 			: ''
 	);
+	const extHref = $derived(safeHttpUrl(externalHref));
 	const followType: FollowableType = $derived(
 		type === 'user'
 			? 'user'
@@ -291,9 +309,8 @@
 
 	function onTriggerClick(e: MouseEvent) {
 		e.stopPropagation();
-		const ext = safeHttpUrl(externalHref);
-		if (ext) {
-			window.open(ext, '_blank', 'noopener,noreferrer');
+		if (extHref) {
+			window.open(extHref, '_blank', 'noopener,noreferrer');
 			return;
 		}
 		if (href) goto(href);
@@ -334,7 +351,22 @@
 	{/if}
 {/snippet}
 
-{#if slug}
+{#if slug && !hoverable}
+	<a
+		href={extHref ?? href}
+		class={triggerClass}
+		aria-label={name}
+		target={extHref ? '_blank' : undefined}
+		rel={extHref ? 'noopener noreferrer' : undefined}
+		onclick={(e) => e.stopPropagation()}
+	>
+		{#if trigger}
+			{@render trigger()}
+		{:else}
+			{@render defaultTrigger()}
+		{/if}
+	</a>
+{:else if slug}
 	<LinkPreview.Root {open} onOpenChange={onOpenChange} openDelay={350} closeDelay={200}>
 		<LinkPreview.Trigger class={triggerClass} onclick={onTriggerClick} aria-label={name}>
 			{#if trigger}

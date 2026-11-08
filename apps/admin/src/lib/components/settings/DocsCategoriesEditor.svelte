@@ -7,8 +7,8 @@
 	// Emitted objects keep alphabetical key order (description < icon < name
 	// < subcategories) so the settings page's JSON.stringify dirty check
 	// matches the API's sorted-key serialization.
-	import { t } from '$lib/stores/i18n.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-svelte';
 
 	export interface CategoryItem {

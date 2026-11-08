@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Pencil } from 'lucide-svelte';
-	import FollowButton from '$lib/components/ui/FollowButton.svelte';
+	import FollowButton from '#lib/components/ui/FollowButton.svelte';
 
 	interface Props {
 		authorName?: string;

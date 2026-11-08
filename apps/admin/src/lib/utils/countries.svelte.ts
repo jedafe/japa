@@ -1,5 +1,5 @@
-import { geoApi, type GeoCountry } from '$lib/api';
-import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+import { geoApi, type GeoCountry } from '#lib/api.js';
+import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 
 export type CountryValueType = 'id' | 'name' | 'geo_code';
 

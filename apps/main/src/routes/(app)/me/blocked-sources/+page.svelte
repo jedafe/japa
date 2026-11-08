@@ -1,8 +1,8 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import type { PageData } from './$types';
-	import SourceBlockButton from '$lib/components/source/SourceBlockButton.svelte';
+	import SourceBlockButton from '#lib/components/source/SourceBlockButton.svelte';
 
 	let { data }: { data: PageData } = $props();
 	// svelte-ignore state_referenced_locally

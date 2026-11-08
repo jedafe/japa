@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { Bookmark, MessageCircle, Share2, Check, Heart, Flag, MoreVertical } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { getReactionTypes, type ReactionType } from '$lib/api/reactions';
-	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { getReactionTypes, type ReactionType } from '#lib/api/reactions.js';
+	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { shareContrastColor } from '$lib/utils/shareColor';
-	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
-	import TipButton from '$lib/components/tips/TipButton.svelte';
-	import { Menu, MenuItem } from '$lib/components/ui';
-	import type { SessionUser } from '$lib/types';
+	import { shareContrastColor } from '#lib/utils/shareColor.js';
+	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
+	import TipButton from '#lib/components/tips/TipButton.svelte';
+	import { Menu, MenuItem } from '#lib/components/ui/index.js';
+	import type { SessionUser } from '#lib/types/index.js';
 
 	interface SharePlatform {
 		key: string;

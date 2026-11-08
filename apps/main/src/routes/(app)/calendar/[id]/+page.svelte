@@ -1,8 +1,8 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import {
 		ArrowLeft,
 		CalendarDays,
@@ -16,11 +16,11 @@
 		MapPin,
 		Pencil
 	} from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { calendarCategoryLabel } from '$lib/enumOptions';
-	import type { CalendarEntry, CalendarCategory } from '$lib/types';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { calendarCategoryLabel } from '#lib/enumOptions.js';
+	import type { CalendarEntry, CalendarCategory } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
 	let { data }: { data: PageData } = $props();
 

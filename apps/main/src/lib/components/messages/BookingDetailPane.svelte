@@ -18,12 +18,12 @@
 	// back to the /messages inbox (the accept path auto-opens the thread
 	// server-side, ADR-110).
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import { formatMoney } from '$lib/utils/currency';
-	import { safeSameOriginHref } from '$lib/utils/safeUrl';
+	import { api } from '#lib/api/client.js';
+	import { formatMoney } from '#lib/utils/currency.js';
+	import { safeSameOriginHref } from '#lib/utils/safeUrl.js';
 	import {
 		CalendarDays,
 		Users,
@@ -32,8 +32,8 @@
 		CheckCircle2,
 		MapPin
 	} from 'lucide-svelte';
-	import { RelativeTime, Modal } from '$lib/components/ui';
-	import type { ServiceBooking } from '$lib/types';
+	import { RelativeTime, Modal } from '#lib/components/ui/index.js';
+	import type { ServiceBooking } from '#lib/types/index.js';
 	import {
 		bookingCounterpart,
 		bookingStatus,

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Plus, Star, X } from 'lucide-svelte';
 	import Autocomplete from './Autocomplete.svelte';
 	import type { AutocompleteItem } from './Autocomplete.svelte';
-	import type { MeSpace } from '$lib/types';
-	import { searchSpaces } from '$lib/api/create';
-	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
+	import type { MeSpace } from '#lib/types/index.js';
+	import { searchSpaces } from '#lib/api/create.js';
+	import SpaceCreationModal from '#lib/components/spaces/SpaceCreationModal.svelte';
 
 	// Section 14: content may belong to a primary space plus up to two
 	// additional spaces. A named constant keeps the limit visible and

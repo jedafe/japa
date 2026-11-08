@@ -4,18 +4,18 @@
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
 	import { ArrowLeft, Circle, CircleSlash, MessageSquare, Lock, Loader2 } from 'lucide-svelte';
-	import { t, i18n } from '$lib/i18n';
-	import { relativeTime } from '$lib/feed/time';
-	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
-	import { api } from '$lib/api/client';
-	import { EmptyState } from '$lib/components/ui';
-	import ReplyThread from '$lib/components/forum/ReplyThread.svelte';
-	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
-	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
-	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
-	import type { AMAThread, ForumReply } from '$lib/types';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { tiptapBodyToHtml, tiptapExcerpt } from '#lib/tiptap/serialize.js';
+	import { api } from '#lib/api/client.js';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import ReplyThread from '#lib/components/forum/ReplyThread.svelte';
+	import { hydrateLinkPreviews } from '#lib/tiptap/hydrateLinkPreviews.js';
+	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
+	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
+	import type { AMAThread, ForumReply } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
 	let { data }: { data: PageData } = $props();
 

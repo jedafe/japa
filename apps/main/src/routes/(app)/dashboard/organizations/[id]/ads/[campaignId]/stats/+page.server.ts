@@ -3,7 +3,7 @@
 // Auth-gated; the backend self-403s non-members on /org/{org_id}/ads/* routes.
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
+import { apiContext, apiGet } from '#lib/server/api.js';
 import type { AdCampaign } from '../../+page.server';
 
 export const load: PageServerLoad = async (event) => {

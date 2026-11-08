@@ -1,3 +1,5 @@
+import adapter from '@sveltejs/adapter-node';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
@@ -21,20 +23,43 @@ function apiHeadersPlugin(): Plugin {
 		configureServer(server) {
 			server.middlewares.use(
 				(req: Connect.IncomingMessage, _res, next: Connect.NextFunction) => {
-					const url = req.url ?? '';
-					if (url.startsWith('/api/v1/') || url.startsWith('/ws') || url.startsWith('/seaweedfs')) {
-						const cookie = req.headers.cookie ?? '';
-						const match = /jc_token=([^;]+)/.exec(cookie);
-						if (match) req.headers.authorization = `Bearer ${match[1]}`;
-						const host = (req.headers.host ?? '').split(':')[0];
-						if (host) req.headers['x-forwarded-host'] = host;
-					}
-					next();
+				const url = req.url ?? '';
+				if (url.startsWith('/api/v1/') || url.startsWith('/ws') || url.startsWith('/seaweedfs')) {
+					const cookie = req.headers.cookie ?? '';
+					const match = (/jc_token=([^;]+)/).exec(cookie);
+					if (match) req.headers.authorization = `Bearer ${match[1]}`;
+					const host = (req.headers.host ?? '').split(':')[0];
+					if (host) req.headers['x-forwarded-host'] = host;
 				}
-			);
+				next();
+			});
 		}
 	};
 }
+
+const dev = process.argv.includes('dev');
+
+// Origins the browser legitimately connects to (API, realtime WS, Umami).
+// PUBLIC_* vars are build-time constants — the same values are compiled
+// into the client bundle, so CSP origins derived from them cannot drift.
+const envOrigin = (v: string | undefined) => {
+	try {
+		const u = new URL(v ?? '');
+
+		return (/^https?:|^wss?:/).test(u.protocol) ? `${u.protocol}//${u.host}` : '';
+	} catch {
+		return '';
+	}
+};
+
+const connectOrigins = [
+	envOrigin(process.env.PUBLIC_JC_API_URL),
+	envOrigin(process.env.PUBLIC_JC_WS_URL),
+	envOrigin(process.env.PUBLIC_JC_UMAMI_URL),
+	envOrigin(process.env.PUBLIC_JC_GLITCHTIP_DSN)
+].filter(Boolean);
+
+const umamiOrigin = envOrigin(process.env.PUBLIC_JC_UMAMI_URL);
 
 export default defineConfig({
 	define: {
@@ -42,7 +67,15 @@ export default defineConfig({
 		// (replaces $service-worker version; see src/service-worker.ts).
 		__SW_VERSION__: JSON.stringify(String(Date.now()))
 	},
-	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit()],
+	plugins: [
+		tailwindcss(),
+		apiHeadersPlugin(),
+		sveltekit({
+			preprocess: vitePreprocess(),
+			// Learning platform is SSR via adapter-node + Bun (port 3003).
+			adapter: adapter()
+		})
+	],
 	resolve: {
 		// The workspace packages (@japaconnect/ui, ai-panel, landing-blocks)
 		// carry stale bun-installed svelte copies in their own node_modules.

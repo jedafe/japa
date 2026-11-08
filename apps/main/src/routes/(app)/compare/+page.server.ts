@@ -1,8 +1,15 @@
 import { error, redirect } from '@sveltejs/kit';
-import { env } from '$env/dynamic/public';
-import { apiContext, apiGet, apiList, apiPost, ApiError, API_BASE } from '$lib/server/api';
-import type { ComparisonType, ComparisonTypeConfig, JCEComparisonSummary, JCEFieldPoolGroup, ResolvedItem } from '$lib/types/jce';
-import type { ListMeta } from '$lib/types';
+
+import {
+	PUBLIC_JCE_DEFAULT_ITEM_REF_TYPES,
+	PUBLIC_JCE_DEFAULT_PAGE_SIZE,
+	PUBLIC_JCE_DEFAULT_PAGE_SIZE_OPTIONS,
+	PUBLIC_JCE_DEFAULT_SORT_OPTIONS
+} from '$app/env/public';
+
+import { apiContext, apiGet, apiList, apiPost, ApiError, API_BASE } from '#lib/server/api.js';
+import type { ComparisonType, ComparisonTypeConfig, JCEComparisonSummary, JCEFieldPoolGroup, ResolvedItem } from '#lib/types/jce.js';
+import type { ListMeta } from '#lib/types/index.js';
 import type { PageServerLoad } from './$types';
 
 function parseConfig(raw: unknown): ComparisonTypeConfig | null {
@@ -18,7 +25,7 @@ function parseConfig(raw: unknown): ComparisonTypeConfig | null {
 }
 
 function parseDefaultItemRefTypes(): string[] {
-	const raw = env.PUBLIC_JCE_DEFAULT_ITEM_REF_TYPES;
+	const raw = PUBLIC_JCE_DEFAULT_ITEM_REF_TYPES;
 	if (raw) {
 		try {
 			const parsed = JSON.parse(raw);
@@ -31,11 +38,11 @@ function parseDefaultItemRefTypes(): string[] {
 }
 
 function parseDefaultPageSize(): number {
-	return parseInt(env.PUBLIC_JCE_DEFAULT_PAGE_SIZE ?? '24', 10) || 24;
+	return parseInt(PUBLIC_JCE_DEFAULT_PAGE_SIZE ?? '24', 10) || 24;
 }
 
 function parseDefaultPageSizeOptions(): number[] {
-	const raw = env.PUBLIC_JCE_DEFAULT_PAGE_SIZE_OPTIONS;
+	const raw = PUBLIC_JCE_DEFAULT_PAGE_SIZE_OPTIONS;
 	if (raw) {
 		try {
 			const parsed = JSON.parse(raw);
@@ -48,7 +55,7 @@ function parseDefaultPageSizeOptions(): number[] {
 }
 
 function parseDefaultSortOptions(): string[] {
-	const raw = env.PUBLIC_JCE_DEFAULT_SORT_OPTIONS;
+	const raw = PUBLIC_JCE_DEFAULT_SORT_OPTIONS;
 	if (raw) {
 		try {
 			const parsed = JSON.parse(raw);
@@ -142,16 +149,16 @@ export const load: PageServerLoad = async (event) => {
 	const defaultItemRefTypes = parseDefaultItemRefTypes();
 	const itemRefTypes = configuredItemRefTypes ??
 		(selectedType?.config?.default_item_ref_type
-			? [String(selectedType.config.default_item_ref_type)]
-			: defaultItemRefTypes);
+		? [String(selectedType.config.default_item_ref_type)]
+		: defaultItemRefTypes);
 	const allowNestedComparisons = Boolean(selectedType?.config?.allow_nested_comparisons);
-	const allowedNestedTypes = (selectedType?.config?.allowed_nested_types as string[]) ?? [];
+	const allowedNestedTypes = selectedType?.config?.allowed_nested_types as string[] ?? [];
 
 	const defaultPageSize = parseDefaultPageSize();
 	const defaultPageSizeOptions = parseDefaultPageSizeOptions();
-	const configuredPageSizeOptions = (selectedType?.config?.page_size_options as number[]) ?? [];
+	const configuredPageSizeOptions = selectedType?.config?.page_size_options as number[] ?? [];
 	const pageSizeOptions = configuredPageSizeOptions.length > 0 ? configuredPageSizeOptions : defaultPageSizeOptions;
-	const configuredSortOptions = (selectedType?.config?.sort_options as string[]) ?? [];
+	const configuredSortOptions = selectedType?.config?.sort_options as string[] ?? [];
 	const sortOptions = configuredSortOptions.length > 0 ? configuredSortOptions : parseDefaultSortOptions();
 
 	let source = searchParams.get('source') ?? '';
@@ -164,14 +171,17 @@ export const load: PageServerLoad = async (event) => {
 	const requestedPageSize = parseInt(searchParams.get('page_size') ?? '', 10) || 0;
 	const pageSize = pageSizeOptions.includes(requestedPageSize)
 		? requestedPageSize
-		: (pageSizeOptions.includes(defaultPageSize) ? defaultPageSize : (pageSizeOptions[0] ?? defaultPageSize));
+		: pageSizeOptions.includes(defaultPageSize)
+			? defaultPageSize
+			: pageSizeOptions[0] ?? defaultPageSize;
+
 	// Fetch one extra item so the client can infer whether another page exists without a total count.
 	const fetchLimit = pageSize + 1;
 	const fetchOffset = (page - 1) * pageSize;
 	const nestedType = searchParams.get('nested_type') ?? '';
 	const sort = searchParams.get('sort') ?? '';
 
-	let scopeChain = (selectedType?.config?.scope_chain as string[]) ?? [];
+	let scopeChain = selectedType?.config?.scope_chain as string[] ?? [];
 	// Courses narrow country → university: the country step filters the
 	// university autocomplete to one country (BSc Agric UNILAG vs UNIBEN).
 	// Older type configs that do not include a scope_chain still need this
@@ -201,7 +211,7 @@ export const load: PageServerLoad = async (event) => {
 	if (scopeChain[scopeChain.length - 1] === selfScopeStep[source]) {
 		scopeChain = scopeChain.slice(0, -1);
 	}
-	const scopeParamMapping = (selectedType?.config?.scope_param_mapping as Record<string, string> | undefined) ?? {};
+	const scopeParamMapping = selectedType?.config?.scope_param_mapping as Record<string, string> | undefined ?? {};
 
 	function defaultScopeParamKey(step: string): string {
 		// Region/subregion are string filters; everything else uses the
@@ -248,7 +258,7 @@ export const load: PageServerLoad = async (event) => {
 			const cmp = await apiPost<{ slug: string }>(ctx, '/jce/comparisons/from-token', {
 				token: compareToken,
 				type_id: selectedType.id,
-				...(fieldIds.length > 0 ? { field_ids: fieldIds } : {})
+				...fieldIds.length > 0 ? { field_ids: fieldIds } : {}
 			});
 			if (cmp?.slug) {
 				fromTokenSlug = cmp.slug;
@@ -395,8 +405,8 @@ export const load: PageServerLoad = async (event) => {
 			)
 		);
 		return {
-			items: results.flatMap((r) => (r.item ? [r.item] : [])),
-			failures: results.flatMap((r) => (r.failed ? [r.token] : []))
+			items: results.flatMap((r) => r.item ? [r.item] : []),
+			failures: results.flatMap((r) => r.failed ? [r.token] : [])
 		};
 	})();
 
@@ -406,8 +416,14 @@ export const load: PageServerLoad = async (event) => {
 		}
 		try {
 			const res = await apiList<JCEComparisonSummary>(ctx, `/jce/comparisons?mine=true&filter_depth=quick&page_size=${defaultPageSize}&page_offset=${(page - 1) * defaultPageSize}&sort=created_at`);
-			return { comparisons: res.items, meta: res.meta ?? null, failed: false, message: '' };
-		} catch (err) {
+
+			return {
+				comparisons: res.items,
+				meta: res.meta ?? null,
+				failed: false,
+				message: ''
+			};
+		} catch(err) {
 			return {
 				comparisons: [] as JCEComparisonSummary[],
 				meta: null,
@@ -487,7 +503,7 @@ export const load: PageServerLoad = async (event) => {
 	let fieldPool: { groups: JCEFieldPoolGroup[] } = { groups: [] };
 	if (selectedType) {
 		try {
-			fieldPool = (await apiGet<{ groups: JCEFieldPoolGroup[] }>(ctx, `/jce/comparison-types/${selectedType.id}/fields`)) ?? { groups: [] };
+			fieldPool = await apiGet<{ groups: JCEFieldPoolGroup[] }>(ctx, `/jce/comparison-types/${selectedType.id}/fields`) ?? { groups: [] };
 		} catch {
 			fieldPool = { groups: [] };
 		}

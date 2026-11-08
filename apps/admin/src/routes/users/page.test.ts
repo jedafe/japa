@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.js', () => ({
 	userManagementApi: {
 		list: vi.fn().mockResolvedValue({ ok: true, data: { items: [], total: 0, page: 1, total_pages: 1 } }),
 		getModerationConfig: vi.fn().mockResolvedValue({ ok: true, data: { statuses: [] } }),
@@ -33,12 +33,12 @@ vi.mock('$app/navigation', () => ({
 	invalidateAll: vi.fn(),
 }));
 
-vi.mock('$lib/stores/permissions.svelte', () => ({
+vi.mock('#lib/stores/permissions.svelte.js', () => ({
 	hasPermission: vi.fn().mockReturnValue(false),
 	getPermissionState: vi.fn().mockReturnValue([]),
 }));
 
-vi.mock('$lib/stores/i18n.svelte', () => ({
+vi.mock('#lib/stores/i18n.svelte.js', () => ({
 	t: vi.fn((key: string, fallback: string) => fallback),
 }));
 
@@ -66,7 +66,7 @@ describe('Users +page.svelte', () => {
 
 	it('renders an action menu trigger per row when rows are present', async () => {
 		// Override the list mock for this test to return one row.
-		const { userManagementApi } = await import('$lib/api');
+		const { userManagementApi } = await import('#lib/api.js');
 		const listMock = userManagementApi.list as ReturnType<typeof vi.fn>;
 		listMock.mockResolvedValue({
 			ok: true,

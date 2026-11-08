@@ -6,11 +6,11 @@
 	// main/docs-only types on academy sidebars, and any legacy rows render as
 	// no-ops below (never a permanent "Loading…" state).
 
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Sun, Moon, Languages, Check, Mail, Share2, BarChart3, MousePointerClick, AtSign, Globe, Link, Rss, Users, TrendingUp, Activity, Star, Trophy, Calendar, MessageSquare, BookOpen, Bookmark, Bell, Hash } from 'lucide-svelte';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { page } from '$app/state';
 	import { Menu, MenuItem } from '@japaconnect/ui';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
@@ -19,8 +19,8 @@
 	import ProgressRingWidget from './ProgressRingWidget.svelte';
 	import AcademyEnrollmentsWidget from './AcademyEnrollmentsWidget.svelte';
 	import TrackCardWidget from './TrackCardWidget.svelte';
-	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
-	import type { SessionUser } from '$lib/types';
+	import { sanitizeSidebarHtml, safeHref } from '#lib/utils/safeHtml.js';
+	import type { SessionUser } from '#lib/types/index.js';
 
 	interface SidebarWidget {
 		id: string;

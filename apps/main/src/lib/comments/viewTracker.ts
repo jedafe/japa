@@ -3,8 +3,8 @@
  * POST /comments/views flush (Guide §4.3: one round trip per thread, not
  * per comment). Deduped per session; silent failures are dropped.
  */
-import { api } from '$lib/api/client';
-import { browser } from '$app/environment';
+import { api } from '#lib/api/client.js';
+import { browser } from '$app/env';
 
 const recorded = new Set<string>();
 let pending = new Set<string>();

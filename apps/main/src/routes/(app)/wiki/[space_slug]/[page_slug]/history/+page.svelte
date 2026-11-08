@@ -1,19 +1,19 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName} from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
 	import { page as pageState } from '$app/state';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { enhance } from '$app/forms';
 	import { History, ArrowLeft, Bot, ChevronLeft, ChevronRight, Table2, Trash2 } from 'lucide-svelte';
-	import type { WikiRevision, WikiRevisionStatus } from '$lib/types';
+	import type { WikiRevision, WikiRevisionStatus } from '#lib/types/index.js';
 	import type { PageData, ActionData } from './$types';
-	import { tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
-	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
-	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
+	import { tiptapToText, type TipTapDoc } from '#lib/tiptap/serialize.js';
+	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
+	import WikiSidebar from '#lib/components/wiki/WikiSidebar.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 

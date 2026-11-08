@@ -2,7 +2,7 @@
 	// Ref: docs/superpowers/specs/2026-09-03-unified-user-tiers-and-professional-profile-removal-design.md
 	// Author context is now always the user account; Professional Profiles were removed.
 	// This component is retained as a compatibility shim for any existing callers.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { User } from 'lucide-svelte';
 
 	interface Props {

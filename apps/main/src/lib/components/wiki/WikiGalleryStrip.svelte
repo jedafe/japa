@@ -5,15 +5,15 @@
 	// fields carry (the attraction overview group's `gallery` image_multi)
 	// as thumbnails that open the shared MediaLightbox.
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { getEntityFields } from '$lib/api/wiki';
-	import { openLightbox } from '$lib/lightbox.svelte';
-	import type { LightboxItem } from '$lib/components/ui/MediaLightbox.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { getEntityFields } from '#lib/api/wiki.js';
+	import { openLightbox } from '#lib/lightbox.svelte.js';
+	import type { LightboxItem } from '#lib/components/ui/MediaLightbox.svelte';
 	import {
 		isMediaFieldType,
 		mediaFieldItems,
 		type MediaFieldItem
-	} from '$lib/utils/wikiFieldValue';
+	} from '#lib/utils/wikiFieldValue.js';
 
 	let { entityId }: { entityId: string } = $props();
 

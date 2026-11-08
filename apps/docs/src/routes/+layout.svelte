@@ -7,17 +7,17 @@
 	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
 	import { pwaInstall, moduleServiceWorkerSupported } from '@japaconnect/ui/pwa-install';
 	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
-	import { setGlobalErrorHandler } from '$lib/api/client';
-	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
-	import { ensureAiPanelDeps } from '$lib/ai/panel';
-	import { resolveAiPageContext } from '$lib/ai/pageContext';
-	import NextActions from '$lib/components/shell/NextActions.svelte';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { t } from '$lib/i18n';
-	import { setRuntimePack } from '$lib/i18n/dict';
-	import { isRtl } from '$lib/i18n/rtl';
-	import { env } from '$env/dynamic/public';
-	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
+	import { setGlobalErrorHandler } from '#lib/api/client.js';
+	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
+	import { ensureAiPanelDeps } from '#lib/ai/panel.js';
+	import { resolveAiPageContext } from '#lib/ai/pageContext.js';
+	import NextActions from '#lib/components/shell/NextActions.svelte';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { t } from '#lib/i18n/index.js';
+	import { setRuntimePack } from '#lib/i18n/dict.js';
+	import { isRtl } from '#lib/i18n/rtl.js';
+	import { PUBLIC_JC_UMAMI_URL, PUBLIC_JC_UMAMI_SITE_ID_DOCS } from '$app/env/public';
+	import ProductTour from '#lib/components/onboarding/ProductTour.svelte';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 
@@ -28,11 +28,8 @@
 	// and it auto-starts once for authenticated users who have never
 	// dismissed it (dismissal is persisted per surface server-side).
 	const tourParam = $derived(page.url.searchParams.get('tour'));
-	const tourActive = $derived(
-		!!data.user &&
-			(tourParam === 'replay' ||
-				(!data.tourDismissed && (tourParam === '1' || tourParam === null)))
-	);
+
+	const tourActive = $derived(!!data.user && (tourParam === 'replay' || !data.tourDismissed && (tourParam === '1' || tourParam === null)));
 
 	// Latch: ProductTour strips the ?tour param once the tour starts, which
 	// flips tourActive back to false for replay+dismissed users — keep the
@@ -90,16 +87,13 @@
 	// Custom favicon from appearance.favicon_url — overrides the default
 	// favicon links in app.html when set.
 	// Ref: conventions/system-settings-catalog.md (appearance.favicon_url)
-	let faviconUrl = $derived(
-		((theme.resolved === 'dark'
-			? (data.siteSettings?.['appearance.favicon_url_dark'] as string | undefined)
-			: undefined) ??
-			(data.siteSettings?.['appearance.favicon_url'] as string | undefined) ?? '')
-	);
+	let faviconUrl = $derived((theme.resolved === 'dark'
+		? data.siteSettings?.['appearance.favicon_url_dark'] as string | undefined
+		: undefined) ?? data.siteSettings?.['appearance.favicon_url'] as string | undefined ?? '');
 
 	// Umami analytics — Docs surface (§40).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
-	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID_DOCS);
+	const umamiEnabled = $derived(!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_DOCS);
 
 	// §115 AI Quick Panel: FAB toggles the page-aware slide-in panel
 	// ("Open in Japa AI" links to the main app's /ai). Deps init on
@@ -110,26 +104,23 @@
 	$effect(() => {
 		setAiPageContext(resolveAiPageContext(page.url.pathname, page.data));
 	});
-	beforeNavigate(() => setAiPageContext(null));
+
+	beforeNavigate(({ shallow, type }) => {
+		if (shallow && type === 'goto') return;
+
+		return setAiPageContext(null);
+	});
 
 	onMount(() => ensureAiPanelDeps());
 
-	// §124 — capture beforeinstallprompt + register the PWA service worker
-	// (precache, runtime caching, offline fallback). Without registration
-	// Chromium never marks the app installable and the offline layer is
-	// dead code.
-	// Ref: .jeos/sections/124-progressive-web-app.md
 	onMount(() => {
 		if (installPromptEnabled) pwaInstall.init();
-		if (
-			typeof navigator !== 'undefined' &&
-			'serviceWorker' in navigator &&
-			// Firefox ≤146 / ESR 140 can't run module service workers — it
-			// falls back to classic evaluation of the ES-module dev stub and
-			// throws "script threw an exception during script evaluation" on
-			// every load. Production serves a classic IIFE, so only dev gates.
-			(!import.meta.env.DEV || moduleServiceWorkerSupported())
-		) {
+
+		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && (// Firefox ≤146 / ESR 140 can't run module service workers — it
+		// falls back to classic evaluation of the ES-module dev stub and
+		// throws "script threw an exception during script evaluation" on
+		// every load. Production serves a classic IIFE, so only dev gates.
+		!import.meta.env.DEV || moduleServiceWorkerSupported())) {
 			// SvelteKit/Vite serves the source service worker as an ES module in dev,
 			// but compiles it to a classic IIFE for production. Use the matching
 			// registration type so the browser does not fail to evaluate the script.
@@ -172,8 +163,8 @@
 		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
 		<script
 			defer
-			src="{env.PUBLIC_JC_UMAMI_URL}/script.js"
-			data-website-id={env.PUBLIC_JC_UMAMI_SITE_ID_DOCS}
+			src="{PUBLIC_JC_UMAMI_URL}/script.js"
+			data-website-id={PUBLIC_JC_UMAMI_SITE_ID_DOCS}
 		></script>
 	{/if}
 </svelte:head>
@@ -192,15 +183,18 @@
 	<!-- §115 Japa AI FAB — opens the page-aware quick panel. -->
 	<button
 		type="button"
-		onclick={() => (aiPanelOpen = !aiPanelOpen)}
+		onclick={() => aiPanelOpen = !aiPanelOpen}
 		aria-label={t('ai.panel.title', 'Japa AI')}
 		title={t('ai.panel.title', 'Japa AI')}
 		aria-expanded={aiPanelOpen}
 		class="fixed bottom-5 end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105"
-	>
-		<Sparkles size={22} />
-	</button>
-	<AiPanel open={aiPanelOpen} user={data.user ?? null} onclose={() => (aiPanelOpen = false)} />
+	><Sparkles size={22} /></button>
+
+	<AiPanel
+		open={aiPanelOpen}
+		user={data.user ?? null}
+		onclose={() => aiPanelOpen = false}
+	/>
 {/if}
 
 {#if installPromptEnabled}

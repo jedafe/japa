@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { MessageCircle, TriangleAlert } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
-	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
-	import type { Comment } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
+	import { EmptyState, AutocompleteSelect } from '#lib/components/ui/index.js';
+	import type { Comment } from '#lib/types/index.js';
 	import CommentItem from './CommentItem.svelte';
 	import LazyCommentEditor from './LazyCommentEditor.svelte';
 	import DiscussionPanel from './DiscussionPanel.svelte';

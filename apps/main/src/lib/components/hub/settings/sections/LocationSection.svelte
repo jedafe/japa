@@ -17,15 +17,15 @@
 	 */
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import { destinationMarkets, originMarkets, pinMarketsFirst, servedMarkets } from '$lib/utils/geoMarkets';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { patchProfile } from '$lib/api/hub';
-	import { listStates, listCities, setLocation, getMyLocation, createCity } from '$lib/api/geo';
-	import { t } from '$lib/i18n';
+	import SettingsSection from '#lib/components/hub/SettingsSection.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import { destinationMarkets, originMarkets, pinMarketsFirst, servedMarkets } from '#lib/utils/geoMarkets.js';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { patchProfile } from '#lib/api/hub.js';
+	import { listStates, listCities, setLocation, getMyLocation, createCity } from '#lib/api/geo.js';
+	import { t } from '#lib/i18n/index.js';
 	import { MapPin, Navigation, Loader2, Home, Plane } from 'lucide-svelte';
-	import type { GeoCountry, GeoState, GeoCity } from '$lib/types';
+	import type { GeoCountry, GeoState, GeoCity } from '#lib/types/index.js';
 
 	interface LocationData {
 		profile: {

@@ -7,11 +7,11 @@
 	// width via a hidden mirror row + ResizeObserver, so it adapts to
 	// viewport, locale, and font changes).
 	import { untrack } from 'svelte';
-	import { Menu, MenuItem } from '$lib/components/ui';
+	import { Menu, MenuItem } from '#lib/components/ui/index.js';
 	import { ChevronDown } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { categoryIcon, categoryIconResolved } from './icons';
-	import type { WikiPageIndex } from '$lib/types';
+	import type { WikiPageIndex } from '#lib/types/index.js';
 
 	export interface WikiTabCategory {
 		slug: string;

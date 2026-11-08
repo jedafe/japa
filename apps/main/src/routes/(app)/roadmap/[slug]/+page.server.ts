@@ -1,12 +1,12 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, ApiError } from '#lib/server/api.js';
 import type {
 	Comment,
 	FeatureFlagDetail,
 	RoadmapBoardItem,
 	RoadmapItemDetail
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Roadmap item detail — GET /api/v1/roadmap/items/{slug} (public).

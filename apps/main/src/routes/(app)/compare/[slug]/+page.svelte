@@ -5,27 +5,27 @@
 		deleteComparison,
 		getFreshness,
 		promoteComparison
-	} from '$lib/api/jce';
-	import { t } from '$lib/i18n';
+	} from '#lib/api/jce.js';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		deduplicateMatrix,
 		uniqueDimensions,
 		uniqueResolvedItems
-	} from '$lib/utils/comparison';
-	import { formatMoney } from '$lib/utils/currency';
+	} from '#lib/utils/comparison.js';
+	import { formatMoney } from '#lib/utils/currency.js';
 	import type {
 		FreshnessSummary,
 		JCEDimension,
 		MatrixDimension,
 		MatrixItem,
 		ResolvedItem
-	} from '$lib/types/jce';
+	} from '#lib/types/jce.js';
 	import type { PageData } from './$types';
-	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
-	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
+	import FreshnessChip from '#lib/components/compare/FreshnessChip.svelte';
+	import RefreshButton from '#lib/components/compare/RefreshButton.svelte';
 	import { ArrowLeft, Pencil, Sparkles, Trash2, ExternalLink } from 'lucide-svelte';
-	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
-	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
+	import { safeJsonLdScript, sanitizeContentHtml } from '#lib/utils/safeHtml.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -109,7 +109,7 @@
 		const ids = resolvedItems
 			.map((i: ResolvedItem) => (i.type ? `${i.type}:${i.id}` : i.id))
 			.join(',');
-		const url = new URL('/compare', page.url);
+		const url = new URL('/compare', page.url.href);
 		if (typeSlug) url.searchParams.set('type', typeSlug);
 		url.searchParams.set('preselect', ids);
 		goto(url);

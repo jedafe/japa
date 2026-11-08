@@ -1,14 +1,14 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	// BUG-003: saved calendar entries dashboard page.
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
 	import { CalendarDays, ExternalLink, AlertTriangle, Bookmark, BookmarkX, Loader2 } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { calendarCategoryLabel } from '$lib/enumOptions';
-	import type { CalendarEntry, CalendarCategory } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { calendarCategoryLabel } from '#lib/enumOptions.js';
+	import type { CalendarEntry, CalendarCategory } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

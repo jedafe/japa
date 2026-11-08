@@ -6,21 +6,21 @@
 	// main/academy-only types on docs sidebars, and any legacy rows render as
 	// no-ops below (never a permanent "Loading…" state).
 
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Sun, Moon, Languages, Check, Mail, Share2, BarChart3, MousePointerClick, AtSign, Globe, Link, Rss, Users, TrendingUp, Activity, Star, Trophy, Calendar, MessageSquare, BookOpen, Bookmark, Bell, Hash } from 'lucide-svelte';
 	import { Menu, MenuItem } from '@japaconnect/ui';
-	import HelpfulWidget from '$lib/components/docs/HelpfulWidget.svelte';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { i18n } from '$lib/i18n';
-	import { apiPost } from '$lib/api/client';
+	import HelpfulWidget from '#lib/components/docs/HelpfulWidget.svelte';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { i18n } from '#lib/i18n/index.js';
+	import { apiPost } from '#lib/api/client.js';
 	import { page } from '$app/state';
 	import SearchLauncher from './SearchLauncher.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import AdSlot from './AdSlot.svelte';
-	import { sanitizeSidebarHtml, safeHref, resolveMenuHref } from '$lib/utils/safeHtml';
-	import { localeLabel, switchLanguage } from '$lib/locale';
-	import { env } from '$env/dynamic/public';
-	import type { SessionUser } from '$lib/types';
+	import { sanitizeSidebarHtml, safeHref, resolveMenuHref } from '#lib/utils/safeHtml.js';
+	import { localeLabel, switchLanguage } from '#lib/locale.js';
+	import { PUBLIC_MAIN_ORIGIN } from '$app/env/public';
+	import type { SessionUser } from '#lib/types/index.js';
 
 	interface SidebarWidget {
 		id: string;
@@ -37,7 +37,7 @@
 
 	let { widget, user = null }: Props = $props();
 
-	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+	const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 
 	const widgetProps = $derived(widget.props ?? {});
 	const title = $derived(typeof widgetProps.title === 'string' ? widgetProps.title : '');
@@ -45,19 +45,16 @@
 	// existed in ad_slot_types, so widgets without a slot prop must fall
 	// back to 'sidebar' to actually serve.
 	const adSlot = $derived(typeof widgetProps.slot === 'string' ? widgetProps.slot : 'sidebar');
-	const adFormat = $derived(
-		typeof widgetProps.format === 'string' && ['square', 'banner', 'inline'].includes(widgetProps.format)
-			? (widgetProps.format as 'square' | 'banner' | 'inline')
-			: 'square'
-	);
+
+	const adFormat = $derived(typeof widgetProps.format === 'string' && ['square', 'banner', 'inline'].includes(widgetProps.format)
+		? widgetProps.format as 'square' | 'banner' | 'inline'
+		: 'square');
 
 	// Enabled languages + default language from site settings (§18, ADR-013).
 	// If the setting is unavailable, fall back to the active locale instead of
 	// a hardcoded list (Rule 16).
-	const enabledLanguages = $derived(
-		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? (page.data?.locale as string) ?? 'en')
-			.split(',').map((l) => l.trim()).filter(Boolean)
-	);
+	const enabledLanguages = $derived((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined ?? page.data?.locale as string ?? 'en').split(',').map((l) => l.trim()).filter(Boolean));
+
 	// The language_toggle `languages` prop restricts the offered locales to a
 	// subset of the site-enabled list — empty means all enabled languages.
 	const configuredLanguages = $derived(
@@ -204,44 +201,43 @@
 {:else if widget.widget_type === 'newsletter_signup'}
 	{#if newsletterEnabled}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<div class="mb-3 flex items-center gap-2">
-			<Mail size={18} class="text-[var(--color-primary)]" />
+			<div class="mb-3 flex items-center gap-2">
+				<Mail size={18} class="text-[var(--color-primary)]" />
 			<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.newsletter', 'Subscribe')}</h2>
-		</div>
-		{#if typeof widgetProps.description === 'string' && widgetProps.description}
-			<p class="mb-3 text-xs text-[var(--color-muted)]">{widgetProps.description}</p>
-		{/if}
+			</div>
+			{#if typeof widgetProps.description === 'string' && widgetProps.description}
+				<p class="mb-3 text-xs text-[var(--color-muted)]">{widgetProps.description}</p>
+			{/if}
 		<form class="space-y-2" onsubmit={handleNewsletterSubmit}>
-			<input
-				type="email"
-				bind:value={newsletterEmail}
+				<input
+					type="email"
+					bind:value={newsletterEmail}
 				placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : t('sidebar.email_placeholder')}
-				disabled={newsletterSubmitting}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-60"
-			/>
+					disabled={newsletterSubmitting}
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-60"
+				/>
 			<button type="submit" disabled={newsletterSubmitting} class="w-full rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-60">
 				{typeof widgetProps.button_text === 'string' ? widgetProps.button_text : t('sidebar.subscribe', 'Subscribe')}
-			</button>
-		</form>
-		{#if newsletterMessage}
-			<p
-				class="mt-2 text-xs {newsletterMessage.kind === 'error'
-					? 'text-[var(--color-danger)]'
-					: newsletterMessage.kind === 'success'
-						? 'text-[var(--color-success)]'
-						: 'text-[var(--color-muted)]'}"
+				</button>
+			</form>
+			{#if newsletterMessage}
+				<p
+					class="mt-2 text-xs {newsletterMessage.kind === 'error'
+						? 'text-[var(--color-danger)]'
+						: newsletterMessage.kind === 'success'
+							? 'text-[var(--color-success)]'
+							: 'text-[var(--color-muted)]'}"
 			>
 				{newsletterMessage.text}
 			</p>
-		{/if}
-	</section>
+			{/if}
+		</section>
 	{/if}
 {:else if widget.widget_type === 'social_links'}
 	<!-- Only render when at least one configured link has a URL — an empty
 	     "Follow Us" card is dead space on every page otherwise. -->
-	{@const validLinks = (Array.isArray(widgetProps.links) ? widgetProps.links : []).filter(
-		(l) => typeof l === 'object' && l !== null && typeof (l as { url?: unknown }).url === 'string' && ((l as { url: string }).url).trim() !== ''
-	)}
+	{@const validLinks = (Array.isArray(widgetProps.links) ? widgetProps.links : []).filter((l) => typeof l === 'object' && l !== null && typeof (l as { url?: unknown }).url === 'string' && (l as { url: string }).url.trim() !== '')}
+
 	{#if validLinks.length > 0}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			{#if title}<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title}</h2>{/if}
@@ -292,7 +288,7 @@
 	<SearchLauncher placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : ''} />
 {:else if widget.widget_type === 'user_dropdown'}
 	{#if user}
-		<UserDropdown {user} />
+		<UserDropdown user={user} />
 	{/if}
 {:else if ['recent_content', 'space_list', 'trending_tags', 'suggested_spaces', 'suggested_content', 'leaderboard', 'featured_content', 'related_discussions', 'upcoming_events', 'tag_cloud', 'user_card', 'space_categories', 'bookmark_folders', 'notification_centre', 'continue_learning', 'academy_enrollments', 'progress_ring', 'track_card'].includes(widget.widget_type)}
 	<!-- Main-app / Learn-only widget type — the backend registry rejects

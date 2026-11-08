@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	import { page } from '$app/state';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { RefreshCw, CheckCircle, XCircle } from 'lucide-svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
 
 	// GET/PATCH /admin/spaces/{id}/join-requests* are gated by
 	// spaces.moderate (space-scoped) — "space.join_requests.manage" is not a

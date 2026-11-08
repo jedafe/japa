@@ -3,13 +3,13 @@
 	// Lists all achievements (any status) with publish/unpublish/delete
 	// actions gated by achievement.moderate. Uses server-side pagination via
 	// the DataTable. Ref: §89, ADR-097.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { achievementAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import { useCountries } from '$lib/utils/countries.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { achievementAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, EyeOff, Trash2, CheckCircle } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	type AchievementItem = {
 		id: string;

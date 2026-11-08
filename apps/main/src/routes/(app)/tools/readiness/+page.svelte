@@ -1,8 +1,8 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, i18n } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { untrack, tick } from 'svelte';
 	import {
 		Lock, CheckCircle2, CircleCheckBig, Check, ArrowRight, ArrowLeft, TrendingUp, X,
@@ -14,12 +14,12 @@
 		Hospital, Car, Building2, LifeBuoy, MessageCircleHeart, Info
 	} from 'lucide-svelte';
 	import { LineChart } from 'layerchart';
-	import { EmptyState, LoadingSkeleton, AutocompleteSelect, type IconComponent } from '$lib/components/ui';
-	import ReadinessHeroArt from '$lib/components/tools/ReadinessHeroArt.svelte';
-	import UserDropdown from '$lib/components/shell/UserDropdown.svelte';
-	import { api } from '$lib/api/client';
-	import { completePendingNextAction } from '$lib/api/nextActions';
-	import type { AssessmentForm, AssessmentResult, AssessmentField, FeedItem, SessionUser } from '$lib/types';
+	import { EmptyState, LoadingSkeleton, AutocompleteSelect, type IconComponent } from '#lib/components/ui/index.js';
+	import ReadinessHeroArt from '#lib/components/tools/ReadinessHeroArt.svelte';
+	import UserDropdown from '#lib/components/shell/UserDropdown.svelte';
+	import { api } from '#lib/api/client.js';
+	import { completePendingNextAction } from '#lib/api/nextActions.js';
+	import type { AssessmentForm, AssessmentResult, AssessmentField, FeedItem, SessionUser } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	interface JourneyContext {
@@ -31,15 +31,8 @@
 		travel_date: string;
 	}
 
-	interface RoadmapResponse {
-		context: JourneyContext;
-		items: FeedItem[];
-	}
-
-	interface CountryOption {
-		value: string;
-		label: string;
-	}
+	interface RoadmapResponse { context: JourneyContext; items: FeedItem[] }
+	interface CountryOption { value: string; label: string }
 
 	// AssessmentHistoryEntry is exported from +page.server.ts and inferred by
 	// $types via PageData, but we redeclare it here for direct use in
@@ -130,19 +123,22 @@
 		// Debounce server saves — every keystroke is a write otherwise.
 		if (draftSaveTimer) clearTimeout(draftSaveTimer);
 		draftSaveTimer = setTimeout(() => {
-			if (user) {
-				if (Object.keys(snapshot.answers).length === 0) {
-					api.delete(`/me/form-drafts/${draftKind}`);
+				if (user) {
+					if (Object.keys(snapshot.answers).length === 0) {
+						api.delete(`/me/form-drafts/${draftKind}`);
+					} else {
+						api.put(`/me/form-drafts/${draftKind}`, { data: snapshot });
+					}
 				} else {
-					api.put(`/me/form-drafts/${draftKind}`, { data: snapshot });
+					try {
+						if (Object.keys(snapshot.answers).length === 0) localStorage.removeItem(localDraftKey); else localStorage.setItem(localDraftKey, JSON.stringify(snapshot));
+					} catch {
+						/* storage full / private mode — non-fatal */
+					}
 				}
-			} else {
-				try {
-					if (Object.keys(snapshot.answers).length === 0) localStorage.removeItem(localDraftKey);
-					else localStorage.setItem(localDraftKey, JSON.stringify(snapshot));
-				} catch { /* storage full / private mode — non-fatal */ }
-			}
-		}, 600);
+			},
+			600
+		);
 	});
 
 	function clearDraft() {
@@ -214,7 +210,7 @@
 				map.set(dim, []);
 				order.push(dim);
 			}
-			map.get(dim)!.push(f);
+			(map.get(dim)!).push(f);
 		}
 		return order.map((name) => ({ name, fields: map.get(name)! }));
 	});
@@ -303,7 +299,7 @@
 		const opts = fieldOptions(field);
 		if (!opts.length || !['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
 		e.preventDefault();
-		const cur = typeof answers[field.key] === 'string' ? (answers[field.key] as string) : '';
+		const cur = typeof answers[field.key] === 'string' ? answers[field.key] as string : '';
 		let idx = opts.findIndex((o) => o.value === cur);
 		if (e.key === 'Home') {
 			idx = 0;
@@ -311,7 +307,10 @@
 			idx = opts.length - 1;
 		} else {
 			const delta = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
-			idx = idx < 0 ? (delta > 0 ? 0 : opts.length - 1) : (idx + delta + opts.length) % opts.length;
+
+			idx = idx < 0
+				? delta > 0 ? 0 : opts.length - 1
+				: (idx + delta + opts.length) % opts.length;
 		}
 		const next = opts[idx];
 		if (!next) return;
@@ -389,20 +388,16 @@
 	function isGroupField(f: AssessmentField): boolean {
 		if (isCountryField(f) && data.countryOptions.length > 0) return false;
 		if (f.field_type === 'multiselect' || f.field_type === 'boolean') return true;
-		return (
-			(f.field_type === 'select' || f.field_type === 'radio' || f.field_type === 'suggest') &&
-			fieldOptions(f).length > 0
-		);
+
+		return (f.field_type === 'select' || f.field_type === 'radio' || f.field_type === 'suggest') && fieldOptions(f).length > 0;
 	}
 
 	/** Full-width fields vs the two-per-row inputs in the step grid. */
 	function isWideField(f: AssessmentField): boolean {
 		if (isCountryField(f)) return false;
 		if (f.field_type === 'multiselect' || f.field_type === 'textarea' || f.field_type === 'rich_text') return true;
-		return (
-			(f.field_type === 'select' || f.field_type === 'radio' || f.field_type === 'suggest') &&
-			fieldOptions(f).length > 0
-		);
+
+		return (f.field_type === 'select' || f.field_type === 'radio' || f.field_type === 'suggest') && fieldOptions(f).length > 0;
 	}
 
 	function stepComplete(): boolean {
@@ -420,8 +415,11 @@
 	}
 
 	function toggleMulti(key: string, value: string, checked: boolean) {
-		const current = Array.isArray(answers[key]) ? (answers[key] as string[]) : [];
-		setAnswer(key, checked ? [...current, value] : current.filter((v) => v !== value));
+		const current = Array.isArray(answers[key]) ? answers[key] as string[] : [];
+
+		setAnswer(key, checked
+			? [...current, value]
+			: current.filter((v) => v !== value));
 	}
 
 	const countryKeys = new Set(['origin_country', 'destination_country']);
@@ -493,9 +491,9 @@
 		resultLoadError = null;
 		// Keep attemptedResultId as the current result id while the URL is being
 		// cleared so the load effect does not re-fetch the same result.
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.delete('result');
-		replaceState(url, {});
+		goto(url, { shallow: true, replace: true });
 	}
 
 	// Persist the in-flight submission so a scoring timeout never orphans the
@@ -612,15 +610,15 @@
 	// anonymous users are shown a registration prompt (§71).
 	$effect(() => {
 		if (!result) return;
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('result', result.id);
-		replaceState(url, {});
+		goto(url, { shallow: true, replace: true });
 
 		// Only the signed-in user's own results belong in their history —
 		// anonymous (shared) results have an empty user_id and must not be
 		// prepended.
 		if (authed && result.user_id) {
-			const exists = history.some((h) => h.id === result!.id);
+			const exists = history.some((h) => h.id === (result!).id);
 			if (!exists) {
 				const newItem: AssessmentHistoryEntry = {
 					id: result.id,
@@ -696,11 +694,9 @@
 		return resolveThresholdColor(resultThreshold?.color);
 	});
 
-	const scorePct = $derived(
-		result && form
-			? Math.round((result.total_score / Math.max(form.scoring_config.max_score, 1)) * 100)
-			: 0
-	);
+	const scorePct = $derived(result && form
+		? Math.round(result.total_score / Math.max(form.scoring_config.max_score, 1) * 100)
+		: 0);
 
 	const maxScore = $derived(form?.scoring_config.max_score ?? 1);
 	const historySeries = $derived(
@@ -708,9 +704,9 @@
 			.slice()
 			.reverse()
 			.map((h) => ({
-				date: new Date(h.created_at),
-				score: Math.round((h.total_score / Math.max(maxScore, 1)) * 100),
-				label: h.created_at
+		date: new Date(h.created_at),
+		score: Math.round(h.total_score / Math.max(maxScore, 1) * 100),
+		label: h.created_at
 			}))
 	);
 
@@ -753,7 +749,7 @@
 						>
 							<span class="font-medium">{new Date(item.created_at).toLocaleDateString()}</span>
 							<span class="ms-2" style="color: var(--r-muted)">
-								{Math.round((item.total_score / Math.max(maxScore, 1)) * 100)}%
+								{Math.round(item.total_score / Math.max(maxScore, 1) * 100)}% 
 								{#if item.threshold_label}
 									— {item.threshold_label}
 								{/if}
@@ -770,9 +766,9 @@
 	<div class="relative mx-auto w-full max-w-6xl px-4 pb-16 pt-8 sm:px-6 lg:px-10 lg:pt-12">
 		<!-- Account avatar — pinned to the page's top-right corner, the same
 		     spot it occupies in the shell sidebar topbar on other pages. -->
-		<div class="absolute end-4 top-8 sm:end-6 lg:end-10 lg:top-12">
-			<UserDropdown {user} />
-		</div>
+		<div
+			class="absolute end-4 top-8 sm:end-6 lg:end-10 lg:top-12"
+		><UserDropdown user={user} /></div>
 		{#if disabled}
 			<div class="r-card p-8">
 				<EmptyState
@@ -820,16 +816,27 @@
 						<div class="flex items-center gap-6">
 							<div class="relative grid h-28 w-28 shrink-0 place-items-center">
 								<svg class="h-28 w-28 -rotate-90" viewBox="0 0 80 80">
-									<circle cx="40" cy="40" r="34" fill="none" stroke="var(--r-soft)" stroke-width="7" />
 									<circle
-										cx="40" cy="40" r="34" fill="none"
+										cx="40"
+										cy="40"
+										r="34"
+										fill="none"
+										stroke="var(--r-soft)"
+										stroke-width="7"
+									></circle>
+
+									<circle
+										cx="40"
+										cy="40"
+										r="34"
+										fill="none"
 										stroke={gaugeColor}
 										stroke-width="7"
 										stroke-dasharray={2 * Math.PI * 34}
 										stroke-dashoffset={2 * Math.PI * 34 * (1 - scorePct / 100)}
 										stroke-linecap="round"
 										class="transition-all duration-700"
-									/>
+									></circle>
 								</svg>
 								<span class="absolute font-serif text-2xl font-semibold" style="color: var(--r-ink)">{scorePct}%</span>
 							</div>
@@ -993,7 +1000,7 @@
 								</div>
 								<button
 									type="button"
-									onclick={() => (showRegisterPrompt = false)}
+									onclick={() => showRegisterPrompt = false}
 									class="hover:opacity-70"
 									style="color: var(--r-muted)"
 									aria-label={t('common.close', 'Close')}
@@ -1032,8 +1039,32 @@
 			<!-- Form view -->
 			<header class="flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
 				<div class="max-w-2xl">
-					<h1 class="font-serif text-4xl font-semibold leading-[1.08] tracking-tight sm:text-5xl" style="color: var(--r-ink)">
-						{#if heroParts.head}{heroParts.head}&nbsp;{/if}<span class="relative inline-block">{heroParts.tail}<svg class="absolute -bottom-1 start-0 h-[0.28em] w-full" viewBox="0 0 120 12" preserveAspectRatio="none" aria-hidden="true"><path d="M3 9 C 34 2, 78 2, 117 7" stroke="var(--r-lime)" stroke-width="5" fill="none" stroke-linecap="round" /></svg></span>
+					<h1
+						class="font-serif text-4xl font-semibold leading-[1.08] tracking-tight sm:text-5xl"
+						style="color: var(--r-ink)"
+					>
+						{#if heroParts.head}
+							{heroParts.head}
+						{/if}
+
+						<span class="relative inline-block">
+							{heroParts.tail}
+
+							<svg
+								class="absolute -bottom-1 start-0 h-[0.28em] w-full"
+								viewBox="0 0 120 12"
+								preserveAspectRatio="none"
+								aria-hidden="true"
+							>
+								<path
+									d="M3 9 C 34 2, 78 2, 117 7"
+									stroke="var(--r-lime)"
+									stroke-width="5"
+									fill="none"
+									stroke-linecap="round"
+								></path>
+							</svg>
+						</span>
 					</h1>
 					<p class="mt-3 max-w-lg text-base" style="color: var(--r-muted)">
 						{t('tools.readiness_hero_sub', 'Understand your readiness to move abroad — and what to do next.')}
@@ -1162,7 +1193,7 @@
 									{#if isCountryField(field) && data.countryOptions.length > 0}
 										<AutocompleteSelect
 											id={field.key}
-											value={typeof answers[field.key] === 'string' ? (answers[field.key] as string) : ''}
+											value={typeof answers[field.key] === 'string' ? answers[field.key] as string : ''}
 											options={[
 												{ value: '', label: field.placeholder || t('assessment.select_country', 'Select a country') },
 												...data.countryOptions.map((o) => ({ value: o.value, label: o.label }))
@@ -1179,7 +1210,7 @@
 													role="radio"
 													aria-checked={selected}
 													id="{field.key}-opt-{i}"
-													tabindex={selected || (answers[field.key] === undefined && i === 0) ? 0 : -1}
+													tabindex={selected || answers[field.key] === undefined && i === 0 ? 0 : -1}
 													onclick={() => setAnswer(field.key, opt.value)}
 													class="r-pill"
 													class:r-pill-on={selected}
@@ -1241,21 +1272,23 @@
 												type="range"
 												min="0"
 												max="100"
-												value={(answers[field.key] as number) ?? 0}
+												value={answers[field.key] as number ?? 0}
 												oninput={(e) => setAnswer(field.key, parseInt(e.currentTarget.value))}
 												class="r-range flex-1"
 												aria-label={field.label}
 											/>
-											<span class="w-8 text-center text-sm font-semibold" style="color: var(--r-ink)">
-												{(answers[field.key] as number) ?? 0}
-											</span>
+
+											<span
+												class="w-8 text-center text-sm font-semibold"
+												style="color: var(--r-ink)"
+											>{answers[field.key] as number ?? 0}</span>
 										</div>
 									{:else if field.field_type === 'number' || field.field_type === 'currency' || field.field_type === 'percentage' || field.field_type === 'price_range'}
 										<input
 											id={field.key}
 											type="number"
 											placeholder={field.placeholder || ''}
-											value={(answers[field.key] as number) ?? ''}
+											value={answers[field.key] as number ?? ''}
 											oninput={(e) => {
 												const raw = (e.currentTarget as HTMLInputElement).value;
 												setAnswer(field.key, raw === '' ? '' : parseFloat(raw));
@@ -1266,7 +1299,7 @@
 										<input
 											id={field.key}
 											type={field.field_type === 'datetime' ? 'datetime-local' : field.field_type}
-											value={(answers[field.key] as string) ?? ''}
+											value={answers[field.key] as string ?? ''}
 											oninput={(e) => setAnswer(field.key, (e.currentTarget as HTMLInputElement).value)}
 											class="r-input"
 										/>
@@ -1275,7 +1308,7 @@
 											id={field.key}
 											rows="3"
 											placeholder={field.placeholder || ''}
-											value={(answers[field.key] as string) ?? ''}
+											value={answers[field.key] as string ?? ''}
 											oninput={(e) => setAnswer(field.key, (e.currentTarget as HTMLTextAreaElement).value)}
 											class="r-input"
 										></textarea>
@@ -1284,7 +1317,7 @@
 											id={field.key}
 											type="text"
 											placeholder={field.placeholder || ''}
-											value={(answers[field.key] as string) ?? ''}
+											value={answers[field.key] as string ?? ''}
 											oninput={(e) => setAnswer(field.key, (e.target as HTMLInputElement).value)}
 											class="r-input"
 										/>

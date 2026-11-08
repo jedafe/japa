@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /docs — migrated to shared components (ActionMenu, FilterPanel, Modal,
 	// Modal). Replaces the legacy FilterBar.svelte and hand-rolled bits-ui
 	// Dialog with shared Modal/Modal. State action: toggle publish.
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Select } from '$lib/components/ui/select';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { api, docsApi } from '$lib/api';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
+	import { api, docsApi } from '#lib/api.js';
 	import { goto } from '$app/navigation';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2, Tags, ArrowUp, ArrowDown } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 

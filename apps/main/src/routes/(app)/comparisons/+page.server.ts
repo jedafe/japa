@@ -1,15 +1,19 @@
-import { env } from '$env/dynamic/public';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { ListMeta } from '$lib/types';
-import type { ComparisonType, JCEComparisonSummary } from '$lib/types/jce';
+import {
+	PUBLIC_JCE_COMPARISON_LIST_PAGE_SIZE,
+	PUBLIC_JCE_COMPARISON_LIST_MAX_PAGE_SIZE
+} from '$app/env/public';
+
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { ListMeta } from '#lib/types/index.js';
+import type { ComparisonType, JCEComparisonSummary } from '#lib/types/jce.js';
 import type { PageServerLoad } from './$types';
 
 function parseListPageSize(): number {
-	return parseInt(env.PUBLIC_JCE_COMPARISON_LIST_PAGE_SIZE ?? '12', 10) || 12;
+	return parseInt(PUBLIC_JCE_COMPARISON_LIST_PAGE_SIZE ?? '12', 10) || 12;
 }
 
 function parseListMaxPageSize(): number {
-	return parseInt(env.PUBLIC_JCE_COMPARISON_LIST_MAX_PAGE_SIZE ?? '100', 10) || 100;
+	return parseInt(PUBLIC_JCE_COMPARISON_LIST_MAX_PAGE_SIZE ?? '100', 10) || 100;
 }
 
 function mapComparisonTypes(comparisons: JCEComparisonSummary[], types: ComparisonType[]): JCEComparisonSummary[] {

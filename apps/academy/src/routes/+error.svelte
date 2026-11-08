@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { AlertTriangle } from 'lucide-svelte';
 
 	const status = $derived(page.status);

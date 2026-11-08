@@ -2,8 +2,8 @@
 // Lists all published Page Builder pages (GET /pages — public, no auth).
 // Each card links to /pages/{slug} for the full rendered page.
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { PageBuilderPage } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { PageBuilderPage } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);

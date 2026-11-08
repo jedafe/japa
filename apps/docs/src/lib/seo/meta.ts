@@ -1,10 +1,7 @@
-import { env } from '$env/dynamic/private';
-import { DEFAULT_SITE_NAME } from '$lib/i18n/dict';
+import { PUBLIC_DOCS_ORIGIN } from '$app/env/private';
+import { DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 /** Canonical docs origin for SEO canonical URLs + JSON-LD. */
-export const DOCS_ORIGIN = (env.PUBLIC_DOCS_ORIGIN ?? 'https://docs.japa.to').replace(
-	/\/$/,
-	''
-);
+export const DOCS_ORIGIN = (PUBLIC_DOCS_ORIGIN ?? 'https://docs.japa.to').replace(/\/$/, '');
 
 /**
  * Build a normalized SEO meta object from a single options bag.

@@ -1,21 +1,21 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
 	import { FileText, Users, Info, ShieldQuestion, Image as ImageIcon, GitCompare, ArrowRight, Briefcase, Pencil, TriangleAlert } from 'lucide-svelte';
-	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
-	import OrgHeader from '$lib/components/profile/OrgHeader.svelte';
-	import OrgProfileSidebar from '$lib/components/profile/OrgProfileSidebar.svelte';
+	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
+	import OrgHeader from '#lib/components/profile/OrgHeader.svelte';
+	import OrgProfileSidebar from '#lib/components/profile/OrgProfileSidebar.svelte';
 	import { goto } from '$app/navigation';
-	import { EmptyState, FollowButton, MenuItem, UrlTabs } from '$lib/components/ui';
-	import type { UrlTab } from '$lib/components/ui';
+	import { EmptyState, FollowButton, MenuItem, UrlTabs } from '#lib/components/ui/index.js';
+	import type { UrlTab } from '#lib/components/ui/index.js';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { openLightbox } from '$lib/lightbox.svelte';
-	import FeedCard from '$lib/components/feed/FeedCard.svelte';
-	import TipButton from '$lib/components/tips/TipButton.svelte';
-	import type { ProfilePost, FeedItem } from '$lib/types';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { openLightbox } from '#lib/lightbox.svelte.js';
+	import FeedCard from '#lib/components/feed/FeedCard.svelte';
+	import TipButton from '#lib/components/tips/TipButton.svelte';
+	import type { ProfilePost, FeedItem } from '#lib/types/index.js';
 
 	let { data }: { data: PageData } = $props();
 

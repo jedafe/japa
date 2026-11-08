@@ -1,18 +1,18 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: .jeos/specs/2026-09-23-studio-moderation-tab.md — Moderation tab:
 	// scoped report queue for space/tag moderators, assignees, and platform
 	// moderators. Actions hit PATCH /me/moderation/queue/{id} and the list
 	// re-syncs via invalidateAll() (Rule 16 — no local patching).
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { untrack } from 'svelte';
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import { contentHref } from '$lib/utils/contentLink';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { api } from '#lib/api/client.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { Shield, Search, Loader2, X, Flag, Check, ListFilter } from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import type { ModerationQueueItem } from './+page.server';
@@ -128,7 +128,7 @@
 	const selectedTagLabel = $derived(tagItems.find((i) => i.id === tagParam)?.label ?? null);
 
 	function filterParams(overrides: Record<string, string | undefined>): URLSearchParams {
-		const params = new URLSearchParams(page.url.searchParams);
+		const params = new URLSearchParams(page.url.search);
 		params.delete('page');
 		for (const [k, v] of Object.entries(overrides)) {
 			if (v) params.set(k, v);
@@ -138,7 +138,7 @@
 	}
 
 	function applyFilter(overrides: Record<string, string | undefined>) {
-		goto(`/studio/moderation?${filterParams(overrides).toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/studio/moderation?${filterParams(overrides).toString()}`, { reset: false });
 	}
 
 	// Mobile: the status subtabs collapse into a fixed FAB → modal list.
@@ -151,9 +151,9 @@
 	}
 
 	function goPage(p: number) {
-		const params = new URLSearchParams(page.url.searchParams);
+		const params = new URLSearchParams(page.url.search);
 		params.set('page', String(p));
-		goto(`/studio/moderation?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/studio/moderation?${params.toString()}`, { reset: false });
 	}
 
 	// Selection helpers. Actionable = pending/reviewing (the four PATCH

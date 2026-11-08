@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { clsx, type ClassValue } from 'clsx';
 	import type { FieldDef } from './index';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import MultiAutocomplete from '$lib/components/ui/MultiAutocomplete.svelte';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import MultiAutocomplete from '#lib/components/ui/MultiAutocomplete.svelte';
 	import { JsonValueEditor } from '@japaconnect/ui';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	let {
 		fields,

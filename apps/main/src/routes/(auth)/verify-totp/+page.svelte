@@ -1,13 +1,13 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (TOTP login challenge)
 	// Collects a 6-digit TOTP code (or a one-time backup code) and posts to the
 	// /api/auth/totp/verify or /api/auth/totp/backup proxy. On success the
 	// jc_token cookie is set and the user is forwarded to the redirect target.
-	import { t } from '$lib/i18n/store.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
 	import { invalidateAll } from '$app/navigation';
 	import { goto } from '$app/navigation';
-	import { navigatePostLogin, safeRelativePath } from '$lib/auth/redirect';
+	import { navigatePostLogin, safeRelativePath } from '#lib/auth/redirect.js';
 	import { ShieldCheck } from 'lucide-svelte';
 
 	let { data } = $props();

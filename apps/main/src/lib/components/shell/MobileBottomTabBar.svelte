@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { Home, Search, Plus, Bell, User } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { realtime } from '$lib/realtime/realtime.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { realtime } from '#lib/realtime/realtime.svelte.js';
 	import { compose } from './compose.svelte';
 	import UserDropdown from './UserDropdown.svelte';
-	import { resolveIcon } from '$lib/components/ui';
-	import type { IconComponent } from '$lib/components/ui/icons';
-	import type { SessionUser, Menu } from '$lib/types';
+	import { resolveIcon } from '#lib/components/ui/index.js';
+	import type { IconComponent } from '#lib/components/ui/icons.js';
+	import type { SessionUser, Menu } from '#lib/types/index.js';
 	import { routeFeatureGateVisible } from './routeFeatureFlags';
 
 	interface Props {

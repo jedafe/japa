@@ -1,6 +1,6 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { MailX, CheckCircle2, AlertCircle } from 'lucide-svelte';
 	import { enhance } from '$app/forms';

@@ -2,7 +2,7 @@
 	// Editor for the docs.versions setting — the version dropdown entries in
 	// the docs portal header. Serializes to [{label, url?}]; the first entry
 	// is shown as the current version on the trigger button.
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-svelte';
 
 	interface DocsVersion {

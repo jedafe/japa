@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Button } from "$lib/components/ui/button";
-	import { adSlotTypesApi, adsAdminApi } from "$lib/api";
-	import SpaceAutocomplete from "$lib/components/ui/SpaceAutocomplete.svelte";
-	import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
-	import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { adSlotTypesApi, adsAdminApi } from "#lib/api.js";
+	import SpaceAutocomplete from "#lib/components/ui/SpaceAutocomplete.svelte";
+	import Autocomplete from "#lib/components/ui/Autocomplete.svelte";
+	import type { AutocompleteItem } from "#lib/components/ui/Autocomplete.svelte";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { goto } from "$app/navigation";
 	import { ArrowLeft, Save, Image as ImageIcon, X, Code, FileText, Type, Eye } from "lucide-svelte";
-	import MediaPickerModal from "$lib/components/ui/MediaPickerModal.svelte";
-	import { sanitizeHtml } from "$lib/utils/html";
-	import { useCountries } from "$lib/utils/countries.svelte";
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import MediaPickerModal from "#lib/components/ui/MediaPickerModal.svelte";
+	import { sanitizeHtml } from "#lib/utils/html.js";
+	import { useCountries } from "#lib/utils/countries.svelte.js";
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	// Ref: japaconnect-engineering/sections/25-ad-placement.md — the backend
 	// AdSlotType sqlc struct exposes `slot_name` and `max_display_per_page`

@@ -1,4 +1,4 @@
-import type { HandleClientError } from '@sveltejs/kit';
+import type { HandleClientError } from '@sveltejs/kit/hooks';
 
 // Unexpected client-side errors (render throws, hydration faults, failed
 // client navigations) land here — SvelteKit renders the nearest

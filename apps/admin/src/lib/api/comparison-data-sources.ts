@@ -1,5 +1,5 @@
-import { apiFetch } from '$lib/api/client';
-import type { DataSource, IngestionJob } from '$lib/types/jce';
+import { apiFetch } from '#lib/api/client.js';
+import type { DataSource, IngestionJob } from '#lib/types/jce.js';
 
 type ApiCallResult<T> = { ok: true; data: T } | { ok: false; error: string };
 type PaginatedDataSources = { data: DataSource[]; meta: { total: number; page: number; page_size: number; total_pages: number } };

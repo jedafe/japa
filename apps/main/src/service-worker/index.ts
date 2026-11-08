@@ -6,7 +6,7 @@
 // Ref: japaconnect-engineering/sections/35-notification-system.md
 // Ref: .jeos/sections/124-progressive-web-app.md
 
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 // §124 — build/start timestamp injected via vite `define`, used only for
 // cache namespacing. `$service-worker` is deliberately NOT imported: its dev
 // shim guards on `self instanceof ServiceWorkerGlobalScope`, which throws at
@@ -17,7 +17,7 @@ declare const __SW_VERSION__: string | undefined;
 const version = typeof __SW_VERSION__ === 'string' && __SW_VERSION__ ? __SW_VERSION__ : 'sw-dev';
 import { buildApiUrl } from '@japaconnect/api-url';
 import { initPwaServiceWorker } from '@japaconnect/ui/pwa';
-import { DEFAULT_SITE_NAME } from '$lib/brand';
+import { DEFAULT_SITE_NAME } from '#lib/brand.js';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
@@ -110,25 +110,25 @@ sw.addEventListener('push', (event) => {
 sw.addEventListener('pushsubscriptionchange', (event) => {
 	event.waitUntil(
 		(async () => {
-			if (!event.newSubscription) {
-				try {
-					const options: PushSubscriptionOptionsInit = { userVisibleOnly: true };
-					const key = event.oldSubscription?.options?.applicationServerKey;
-					if (key) options.applicationServerKey = key;
-					await sw.registration.pushManager.subscribe(options);
-				} catch {
-					// Re-subscribe refused (permission revoked, browser policy) —
-					// the client-side sync rebuilds it on the next visit if
-					// permission is still granted.
-				}
+		if (!event.newSubscription) {
+			try {
+				const options: PushSubscriptionOptionsInit = { userVisibleOnly: true };
+				const key = event.oldSubscription?.options?.applicationServerKey;
+				if (key) options.applicationServerKey = key;
+				await sw.registration.pushManager.subscribe(options);
+			} catch {
+				// Re-subscribe refused (permission revoked, browser policy) —
+				// the client-side sync rebuilds it on the next visit if
+				// permission is still granted.
 			}
+		}
 			const clientList = await sw.clients.matchAll({
 				type: 'window',
 				includeUncontrolled: true
 			});
-			for (const client of clientList) {
-				client.postMessage({ type: 'jc:push-subscription-changed' });
-			}
+		for (const client of clientList) {
+			client.postMessage({ type: 'jc:push-subscription-changed' });
+		}
 		})()
 	);
 });

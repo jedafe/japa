@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /spam — migrated to the EntityPage scaffold. This page has 3 distinct entity
 	// types (ip-blocks, censored-words, user-blocks) presented in tabs; each tab
 	// renders its own `<EntityPage>` with a config specific to that entity type.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { spamApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { datetimeLocalToPostgresTimestamptz } from '$lib/utils/date';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { spamApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { datetimeLocalToPostgresTimestamptz } from '#lib/utils/date.js';
 	import { Ban, MessageSquareOff, Users, Trash2, Eye } from 'lucide-svelte';
 
 	type IpBlock = {

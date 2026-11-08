@@ -11,8 +11,8 @@
 // never fetches. The first subscriber's $effect triggers the initial fetch;
 // subsequent subscribers reuse the cached data.
 
-import { api, clientHasSession } from '$lib/api/client';
-import type { Enrollment } from '$lib/types';
+import { api, clientHasSession } from '#lib/api/client.js';
+import type { Enrollment } from '#lib/types/index.js';
 
 class EnrollmentsStore {
 	/** Current academy_enrollments (empty array = loaded but none, null = not loaded). */

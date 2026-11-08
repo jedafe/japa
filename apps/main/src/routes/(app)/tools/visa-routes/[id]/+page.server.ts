@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope } from '$lib/server/api';
-import type { VisaRouteWithAi } from '$lib/types';
+import { apiContext, apiGet, apiGetEnvelope } from '#lib/server/api.js';
+import type { VisaRouteWithAi } from '#lib/types/index.js';
 
 /**
  * Visa Route detail page — Section 90, ADR-098.

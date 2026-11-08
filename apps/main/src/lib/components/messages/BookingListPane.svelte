@@ -7,12 +7,12 @@
 	// status pills, booking rows (listing title, status chip, counterpart,
 	// time). Row selection writes ?b=<id> which the server load resolves to
 	// the detail pane.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Inbox } from 'lucide-svelte';
-	import { EmptyState, PaginationControls, RelativeTime } from '$lib/components/ui';
-	import type { ListMeta, ServiceBooking } from '$lib/types';
+	import { EmptyState, PaginationControls, RelativeTime } from '#lib/components/ui/index.js';
+	import type { ListMeta, ServiceBooking } from '#lib/types/index.js';
 	import {
 		bookingCounterpart,
 		bookingStatus,
@@ -81,7 +81,7 @@
 
 	/** Filter href — changing role/intent/status resets the page + selection. */
 	function filterHref(overrides: Record<string, string>): string {
-		const sp = new URLSearchParams(page.url.searchParams);
+		const sp = new URLSearchParams(page.url.search);
 		for (const [k, v] of Object.entries(overrides)) {
 			if (v) sp.set(k, v);
 			else sp.delete(k);
@@ -95,17 +95,17 @@
 	/** Row href — selects the booking in the detail pane (?b=), keeping the
 	 *  current list filters so closing the detail returns to the same list. */
 	function rowHref(id: string): string {
-		const sp = new URLSearchParams(page.url.searchParams);
+		const sp = new URLSearchParams(page.url.search);
 		sp.set('b', id);
 		return `${basePath}?${sp.toString()}`;
 	}
 
 	function onPageChange(p: number) {
-		const sp = new URLSearchParams(page.url.searchParams);
+		const sp = new URLSearchParams(page.url.search);
 		if (p > 1) sp.set('page', String(p));
 		else sp.delete('page');
 		const qs = sp.toString();
-		void goto(`${basePath}${qs ? `?${qs}` : ''}`, { noScroll: true });
+		void goto(`${basePath}${qs ? `?${qs}` : ''}`, { reset: false });
 	}
 </script>
 

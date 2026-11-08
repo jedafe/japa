@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { Tabs } from 'bits-ui';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import CreateGuidePanel from './CreateGuidePanel.svelte';
 	import CreateSettingsPanel from './CreateSettingsPanel.svelte';
 	import CreateJourneyPanel from './CreateJourneyPanel.svelte';
 	import CreateSeoPanel from './CreateSeoPanel.svelte';
-	import type { BlogSeries, MediaAsset, MeSpace, Visibility } from '$lib/types';
+	import type { BlogSeries, MediaAsset, MeSpace, Visibility } from '#lib/types/index.js';
 
 	interface Props {
 		focusedField: 'space' | 'tags' | 'series' | 'body' | null;

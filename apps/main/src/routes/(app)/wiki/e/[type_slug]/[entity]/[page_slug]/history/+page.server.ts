@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
 import type { PageServerLoad } from './$types';
 import type { EntityWikiPage } from '../+page.server';
-import type { WikiRevision } from '$lib/types';
+import type { WikiRevision } from '#lib/types/index.js';
 
 // Revision history for an entity-bound wiki page —
 // /wiki/e/{type_slug}/{entity}/{page_slug}/history. Lists field/content

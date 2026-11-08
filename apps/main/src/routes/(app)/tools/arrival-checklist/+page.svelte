@@ -1,8 +1,8 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
-	import { replaceState } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { goto } from '$app/navigation';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import {
 		PlaneLanding,
@@ -17,17 +17,17 @@
 		Loader2,
 		Play
 	, TriangleAlert } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
+	import { EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
 	import type {
 		ArrivalChecklistSelectorEntry,
 		ArrivalChecklistItem,
 		GeoSpaceOption,
 		UserArrivalChecklist,
 		UserArrivalChecklistItem
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Arrival Checklist tool — §92, ADR-088.
@@ -210,7 +210,7 @@
 			error = res.error.message;
 			return;
 		}
-		progressItems = progressItems.map((p) => (p.id === itemId ? { ...p, completed } : p));
+		progressItems = progressItems.map((p) => p.id === itemId ? { ...p, completed } : p);
 	}
 
 	function startEditNotes(itemId: string, current: string) {
@@ -240,10 +240,11 @@
 		selectedDestId = id;
 		selectedVisaCategory = '';
 		error = null;
-		const url = new URL(page.url);
-		if (id) url.searchParams.set('dest', id);
-		else url.searchParams.delete('dest');
-		replaceState(url, {});
+		const url = new URL(page.url.href);
+
+		if (id) url.searchParams.set('dest', id); else url.searchParams.delete('dest');
+
+		goto(url, { shallow: true, replace: true });
 		loadItems();
 	}
 
@@ -258,9 +259,9 @@
 		if (!entry) return;
 		selectedDestId = entry.destination_space_id;
 		selectedVisaCategory = entry.visa_category ?? '';
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('dest', selectedDestId);
-		replaceState(url, {});
+		goto(url, { shallow: true, replace: true });
 		await loadItems();
 	}
 </script>
@@ -437,7 +438,7 @@
 																		</button>
 																		<button
 																			type="button"
-																			onclick={() => (editingNotes[item.item_id] = false)}
+																			onclick={() => editingNotes[item.item_id] = false}
 																			class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
 																		>
 																			{t('common.cancel', 'Cancel')}

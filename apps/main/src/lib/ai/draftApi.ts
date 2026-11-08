@@ -1,5 +1,5 @@
-import { api } from '$lib/api/client';
-import type { ClientResult } from '$lib/api/client';
+import { api } from '#lib/api/client.js';
+import type { ClientResult } from '#lib/api/client.js';
 import type { DraftRequest, DraftResponse } from './types';
 
 /**

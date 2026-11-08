@@ -12,11 +12,11 @@
 	//                    mentorship bookings are served to the booker even
 	//                    when packages are off
 	//   mentorship     → mentorship.enabled
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { UrlTabs, type UrlTab } from '$lib/components/ui';
-	import { bookingsInboxEnabled } from '$lib/features';
+	import { UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
+	import { bookingsInboxEnabled } from '#lib/features.js';
 
 	interface Props {
 		value: 'inbox' | 'requests' | 'bookings' | 'mentorship';

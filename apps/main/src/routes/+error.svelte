@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { FileQuestion, ShieldX, TriangleAlert } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
-	import { t } from '$lib/i18n';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import { t } from '#lib/i18n/index.js';
 
 	const status = $derived(page.status);
 	const meta = $derived(

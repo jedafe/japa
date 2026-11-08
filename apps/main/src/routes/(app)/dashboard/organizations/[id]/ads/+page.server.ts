@@ -4,8 +4,8 @@
 // on /org/{org_id}/ads/* routes.
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { OrganizationAdmin } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { OrganizationAdmin } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {

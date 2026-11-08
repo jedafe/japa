@@ -1,7 +1,7 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, siteName} from '$lib/i18n';
-	import RecommendationsWidget from '$lib/components/hub/dashboard/RecommendationsWidget.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, siteName} from '#lib/i18n/index.js';
+	import RecommendationsWidget from '#lib/components/hub/dashboard/RecommendationsWidget.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

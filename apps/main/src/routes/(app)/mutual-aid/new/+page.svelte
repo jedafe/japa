@@ -1,20 +1,20 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Send } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { mutualAidPostTypeOptions, mutualAidCategoryOptions } from '$lib/enumOptions';
-	import type { MutualAidPost, MutualAidPostType, MutualAidCategory, Space } from '$lib/types';
-	import { destinationMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
+	import { api } from '#lib/api/client.js';
+	import { mutualAidPostTypeOptions, mutualAidCategoryOptions } from '#lib/enumOptions.js';
+	import type { MutualAidPost, MutualAidPostType, MutualAidCategory, Space } from '#lib/types/index.js';
+	import { destinationMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 	import type { PageData } from './$types';
-	import AiBodyField from '$lib/ai/AiBodyField.svelte';
+	import AiBodyField from '#lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 

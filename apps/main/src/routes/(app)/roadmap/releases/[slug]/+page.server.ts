@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { RoadmapReleaseDetail } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { RoadmapReleaseDetail } from '#lib/types/index.js';
 
 /**
  * Release detail — GET /api/v1/roadmap/releases/{slug} returns the release

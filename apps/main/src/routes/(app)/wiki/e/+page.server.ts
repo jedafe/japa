@@ -1,5 +1,5 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md (Entity Directory amendment)
-import { apiContext, apiGet } from '$lib/server/api';
+import { apiContext, apiGet } from '#lib/server/api.js';
 import type { PageServerLoad } from './$types';
 
 export interface EntityKindType {

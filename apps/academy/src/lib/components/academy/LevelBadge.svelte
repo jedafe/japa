@@ -1,8 +1,8 @@
 <script lang="ts">
 	// Difficulty badge — uses CSS custom properties, never hardcoded hex.
 	// Ref: ADR-060 (difficulty tokens), skill (--level-beginner/intermediate/advanced).
-	import { t } from '$lib/i18n';
-	import type { TrackLevel } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import type { TrackLevel } from '#lib/types/index.js';
 
 	interface Props {
 		level: TrackLevel;

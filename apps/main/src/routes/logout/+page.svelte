@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Minimal placeholder — the server load/action redirects to /login before
 	// this renders. Shown only for the brief moment before the redirect lands.
-	import { t } from '$lib/i18n/store.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
 </script>
 
 <div class="grid min-h-screen place-items-center bg-[var(--color-bg)]">

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { goto } from '$app/navigation';
 	import type { Component } from 'svelte';
 	import { onDestroy } from 'svelte';
@@ -9,27 +9,27 @@
 		createGuestSelection,
 		deleteComparison,
 		promoteComparison
-	} from '$lib/api/jce';
-	import { compareEntities, type CompareEntitiesResult } from '$lib/ai/compareApi';
-	import type { ComparisonType, ResolvedItem, JCEComparisonSummary } from '$lib/types/jce';
-	import StepHeader from '$lib/components/compare/StepHeader.svelte';
-	import NarrowPanel from '$lib/components/compare/NarrowPanel.svelte';
-	import CompareTray from '$lib/components/compare/CompareTray.svelte';
-	import AiQuickPanel from '$lib/components/compare/AiQuickPanel.svelte';
-	import TypeCardGrid from '$lib/components/compare/TypeCardGrid.svelte';
-	import FieldPoolPicker from '$lib/components/compare/FieldPoolPicker.svelte';
-	import JceSelect from '$lib/components/ui/JceSelect.svelte';
-	import { EmptyState, EntityHero, ListPageBar, PaginationControls, UrlTabs, GuideSlideOver, type GuideContent, type IconComponent, type UrlTab } from '$lib/components/ui';
+	} from '#lib/api/jce.js';
+	import { compareEntities, type CompareEntitiesResult } from '#lib/ai/compareApi.js';
+	import type { ComparisonType, ResolvedItem, JCEComparisonSummary } from '#lib/types/jce.js';
+	import StepHeader from '#lib/components/compare/StepHeader.svelte';
+	import NarrowPanel from '#lib/components/compare/NarrowPanel.svelte';
+	import CompareTray from '#lib/components/compare/CompareTray.svelte';
+	import AiQuickPanel from '#lib/components/compare/AiQuickPanel.svelte';
+	import TypeCardGrid from '#lib/components/compare/TypeCardGrid.svelte';
+	import FieldPoolPicker from '#lib/components/compare/FieldPoolPicker.svelte';
+	import JceSelect from '#lib/components/ui/JceSelect.svelte';
+	import { EmptyState, EntityHero, ListPageBar, PaginationControls, UrlTabs, GuideSlideOver, type GuideContent, type IconComponent, type UrlTab } from '#lib/components/ui/index.js';
 	import { Popover } from 'bits-ui';
 	import {
 		missingRequiredScope,
 		scopeSummary,
 		sourceOptions
-	} from '$lib/components/compare/compareFlow';
+	} from '#lib/components/compare/compareFlow.js';
 	import type { PageData } from './$types';
-	import { api } from '$lib/api/client';
-	import HeroArtCompare from '$lib/components/heroes/HeroArtCompare.svelte';
-	import { i18n, t, siteName} from '$lib/i18n';
+	import { api } from '#lib/api/client.js';
+	import HeroArtCompare from '#lib/components/heroes/HeroArtCompare.svelte';
+	import { i18n, t, siteName} from '#lib/i18n/index.js';
 	import {
 		GitCompare,
 		ChevronRight,
@@ -275,7 +275,7 @@
 		pageSize = nextOptions.includes(defaultPageSize) ? defaultPageSize : (nextOptions[0] ?? defaultPageSize);
 		currentPage = 1;
 		nestedType = '';
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('type', nextType.slug);
 		url.searchParams.delete('mine');
 		url.searchParams.delete('preselect');
@@ -289,7 +289,7 @@
 			url.searchParams.delete(scopeParamFor(step));
 		}
 		url.searchParams.set('page', '1');
-		goto(url, { replaceState: true });
+		goto(url, { replace: true });
 	}
 
 	function selectSource(next: string) {
@@ -302,7 +302,7 @@
 		pageSize = pageSizeOptions.includes(defaultPageSize) ? defaultPageSize : (pageSizeOptions[0] ?? defaultPageSize);
 		currentPage = 1;
 		nestedType = '';
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('source', next);
 		url.searchParams.delete('preselect');
 		url.searchParams.delete('nested_type');
@@ -314,7 +314,7 @@
 			url.searchParams.delete(scopeParamFor(step));
 		}
 		url.searchParams.set('page', '1');
-		goto(url, { replaceState: true });
+		goto(url, { replace: true });
 	}
 
 	function setNestedType(next: string) {
@@ -351,7 +351,7 @@
 		scopeSelections = { ...scopeSelections };
 
 		currentPage = 1;
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		const param = scopeParamFor(step);
 		if (value) {
 			url.searchParams.set(param, value);
@@ -365,18 +365,18 @@
 			}
 		}
 		url.searchParams.set('page', '1');
-		goto(url, { replaceState: true });
+		goto(url, { replace: true });
 	}
 
 	function clearScope() {
 		scopeSelections = {};
 		currentPage = 1;
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		for (const step of data.scopeChain ?? []) {
 			url.searchParams.delete(scopeParamFor(step));
 		}
 		url.searchParams.set('page', '1');
-		goto(url, { replaceState: true });
+		goto(url, { replace: true });
 	}
 
 	function skipNarrow() {
@@ -403,7 +403,7 @@
 	}
 
 	function backToLanding() {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.delete('type');
 		url.searchParams.delete('preselect');
 		url.searchParams.delete('source');
@@ -415,7 +415,7 @@
 		for (const step of data.scopeChain ?? []) {
 			url.searchParams.delete(scopeParamFor(step));
 		}
-		goto(url, { replaceState: true });
+		goto(url, { replace: true });
 	}
 
 	// navigateURL triggers a SvelteKit client-side navigation so the +page.server.ts load re-runs
@@ -426,7 +426,7 @@
 			if (v === null || v === '') url.searchParams.delete(k);
 			else url.searchParams.set(k, v);
 		}
-		goto(url, { replaceState: true, keepFocus: true });
+		goto(url, { replace: true, reset: false });
 	}
 
 	function setSearch(q: string) {
@@ -456,11 +456,11 @@
 	}
 
 	function setTab(isMine: boolean) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (isMine) url.searchParams.set('mine', 'true');
 		else url.searchParams.delete('mine');
 		url.searchParams.delete('page');
-		goto(url, { replaceState: true });
+		goto(url, { replace: true });
 	}
 
 	function filteredItems(items: ResolvedItem[]): ResolvedItem[] {
@@ -702,7 +702,7 @@
 			errorParams = { message: res.error.message };
 			return;
 		}
-		goto(page.url, { invalidateAll: true });
+		goto(page.url.href, { invalidateAll: true });
 	}
 
 	async function promote(id: string) {

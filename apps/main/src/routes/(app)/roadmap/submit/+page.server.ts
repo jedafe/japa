@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { RoadmapBoard, RoadmapCategory } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { RoadmapBoard, RoadmapCategory } from '#lib/types/index.js';
 
 /**
  * Submit-a-request page — auth required (roadmap.submit). Categories come

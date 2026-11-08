@@ -7,9 +7,9 @@
 	// page_slug — they render as a capped preview table with a "View more"
 	// link to the real topic page; sections whose fields are all
 	// price_parts render a named-parts table (columns = options.parts).
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import type { WikiEntityField, WikiEntityFieldGroup, WikiEntityFieldSection } from '$lib/api/wiki';
+	import type { WikiEntityField, WikiEntityFieldGroup, WikiEntityFieldSection } from '#lib/api/wiki.js';
 	import {
 		fieldCurrencyCode,
 		formatPricePart,
@@ -22,8 +22,8 @@
 		pricePartsValue,
 		priceRangeParts,
 		type FxEquiv
-	} from '$lib/utils/wikiFieldValue';
-	import type { CurrencyInfo } from '$lib/utils/currency';
+	} from '#lib/utils/wikiFieldValue.js';
+	import type { CurrencyInfo } from '#lib/utils/currency.js';
 
 	let {
 		group,

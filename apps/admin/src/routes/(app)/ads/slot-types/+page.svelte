@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /ads/slot-types — migrated to the EntityPage scaffold; declarative CRUD entity.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { adSlotTypesApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { adSlotTypesApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Trash2 } from 'lucide-svelte';
 
 	type SlotType = {

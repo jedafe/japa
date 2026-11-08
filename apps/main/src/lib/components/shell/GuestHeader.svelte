@@ -3,13 +3,13 @@
 	// Replaces the LeftNav + RightSidebar shell for guests on public pages.
 	// Ref: ADR-058 §5 Exception #4 — showing the full app shell (Compose,
 	// Notifications, left nav) to a logged-out user is incoherent.
-	import { t } from '$lib/i18n';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { createScrollHide } from '$lib/stores/scrollDirection.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { createScrollHide } from '#lib/stores/scrollDirection.svelte.js';
 	import { Sun, Moon, LogIn, UserPlus, Menu as MenuIcon, X } from 'lucide-svelte';
 	import SearchLauncher from './SearchLauncher.svelte';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
-	import type { Menu, MenuItem } from '$lib/types';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
+	import type { Menu, MenuItem } from '#lib/types/index.js';
 	import { routeFeatureGateVisible } from './routeFeatureFlags';
 
 	let mobileMenuOpen = $state(false);

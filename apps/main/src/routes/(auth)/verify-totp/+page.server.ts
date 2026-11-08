@@ -4,7 +4,7 @@
 // when the account has 2FA enabled; without it the user is sent back to login.
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { sanitizePostLoginTarget } from '$lib/server/auth';
+import { sanitizePostLoginTarget } from '#lib/server/auth.js';
 
 export const load: PageServerLoad = async ({ url }) => {
 	const challengeToken = url.searchParams.get('challenge_token');

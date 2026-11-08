@@ -10,10 +10,10 @@
 	// Ref: japaconnect-engineering/sections/98-service-directory.md
 	// Ref: japaconnect-engineering/sections/114-services-marketplace.md
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import {
 		AlertCircle,
 		ArrowRight,
@@ -37,49 +37,49 @@
 		TriangleAlert,
 		Users
 } from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import ShareButton from '$lib/components/ui/ShareButton.svelte';
-	import SellingPoints from '$lib/components/marketplace/SellingPoints.svelte';
-	import FactsCard from '$lib/components/marketplace/FactsCard.svelte';
-	import IconCardGrid from '$lib/components/marketplace/IconCardGrid.svelte';
-	import ChecklistSection from '$lib/components/marketplace/ChecklistSection.svelte';
-	import HowItWorks from '$lib/components/marketplace/HowItWorks.svelte';
-	import TierGrid from '$lib/components/marketplace/TierGrid.svelte';
-	import CouponCard from '$lib/components/marketplace/CouponCard.svelte';
-	import ServiceFaq from '$lib/components/marketplace/ServiceFaq.svelte';
-	import ServiceReviews from '$lib/components/marketplace/ServiceReviews.svelte';
-	import ReviewForm from '$lib/components/reviews/ReviewForm.svelte';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
-	import ProviderCard from '$lib/components/marketplace/ProviderCard.svelte';
-	import MentorSidebar from '$lib/components/marketplace/MentorSidebar.svelte';
-	import CtaBanner from '$lib/components/marketplace/CtaBanner.svelte';
-	import StickyBookBar from '$lib/components/marketplace/StickyBookBar.svelte';
-	import BookingDialog from '$lib/components/marketplace/BookingDialog.svelte';
-	import TipButton from '$lib/components/tips/TipButton.svelte';
-	import MentorshipRequestDialog from '$lib/components/marketplace/MentorshipRequestDialog.svelte';
-	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
-	import MessageDialog from '$lib/components/marketplace/MessageDialog.svelte';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
-	import { serviceCategoryIcon } from '$lib/components/marketplace/serviceCategoryIcon';
-	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
-	import { accentClasses, priceLabel, serviceCategoryInfo } from '$lib/marketplace';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import { serviceCategoryLabel } from '$lib/enumOptions';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import { formatMoney } from '$lib/utils/currency';
-	import { excerpt } from '$lib/utils/seo-score';
-	import { contentHref } from '$lib/utils/contentLink';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import ShareButton from '#lib/components/ui/ShareButton.svelte';
+	import SellingPoints from '#lib/components/marketplace/SellingPoints.svelte';
+	import FactsCard from '#lib/components/marketplace/FactsCard.svelte';
+	import IconCardGrid from '#lib/components/marketplace/IconCardGrid.svelte';
+	import ChecklistSection from '#lib/components/marketplace/ChecklistSection.svelte';
+	import HowItWorks from '#lib/components/marketplace/HowItWorks.svelte';
+	import TierGrid from '#lib/components/marketplace/TierGrid.svelte';
+	import CouponCard from '#lib/components/marketplace/CouponCard.svelte';
+	import ServiceFaq from '#lib/components/marketplace/ServiceFaq.svelte';
+	import ServiceReviews from '#lib/components/marketplace/ServiceReviews.svelte';
+	import ReviewForm from '#lib/components/reviews/ReviewForm.svelte';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import ProviderCard from '#lib/components/marketplace/ProviderCard.svelte';
+	import MentorSidebar from '#lib/components/marketplace/MentorSidebar.svelte';
+	import CtaBanner from '#lib/components/marketplace/CtaBanner.svelte';
+	import StickyBookBar from '#lib/components/marketplace/StickyBookBar.svelte';
+	import BookingDialog from '#lib/components/marketplace/BookingDialog.svelte';
+	import TipButton from '#lib/components/tips/TipButton.svelte';
+	import MentorshipRequestDialog from '#lib/components/marketplace/MentorshipRequestDialog.svelte';
+	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
+	import MessageDialog from '#lib/components/marketplace/MessageDialog.svelte';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
+	import { serviceCategoryIcon } from '#lib/components/marketplace/serviceCategoryIcon.js';
+	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
+	import { accentClasses, priceLabel, serviceCategoryInfo } from '#lib/marketplace.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import { serviceCategoryLabel } from '#lib/enumOptions.js';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import { formatMoney } from '#lib/utils/currency.js';
+	import { excerpt } from '#lib/utils/seo-score.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
 	import type {
 		ServiceListing,
 		ServiceCategory,
 		ServiceReview,
 		ServiceFact,
 		PackageTier
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { sanitizeContentHtml, safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
 	let { data }: { data: PageData } = $props();
 

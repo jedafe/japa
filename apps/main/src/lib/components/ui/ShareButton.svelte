@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Menu, MenuItem } from '$lib/components/ui';
+	import { Menu, MenuItem } from '#lib/components/ui/index.js';
 	import { Share2, Check } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import ShareMenuItems from '$lib/components/feed/ShareMenuItems.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import ShareMenuItems from '#lib/components/feed/ShareMenuItems.svelte';
 
 	interface Props {
 		contentId?: string;

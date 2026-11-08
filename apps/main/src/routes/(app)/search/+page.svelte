@@ -1,17 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Search as SearchIcon, FileText, Users, MessageSquare, Building2, Hash, Layers, Loader2, BookOpen } from 'lucide-svelte';
-	import { docsUrl } from '$lib/appOrigins';
-	import { t } from '$lib/i18n';
-	import { SearchInput, type SearchSuggestion } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
+	import { docsUrl } from '#lib/appOrigins.js';
+	import { t } from '#lib/i18n/index.js';
+	import { SearchInput, type SearchSuggestion } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
 	import type { PageData } from './$types';
-	import type { SearchResult } from '$lib/types/search';
+	import type { SearchResult } from '#lib/types/search.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -32,7 +32,7 @@
 		}
 		if (!q) {
 			loading = false;
-			if (data.query) goto('/search', { keepFocus: true, noScroll: true });
+			if (data.query) goto('/search', { reset: false });
 			return;
 		}
 		loading = true;
@@ -51,7 +51,7 @@
 			if (tagSlug) params.set('tag_slug', tagSlug);
 			const geo = page.url.searchParams.get('geo');
 			if (geo) params.set('geo', geo);
-			goto(`/search?${params.toString()}`, { keepFocus: true, noScroll: true });
+			goto(`/search?${params.toString()}`, { reset: false });
 		}, 200);
 	}
 
@@ -74,7 +74,7 @@
 		const q = query.trim();
 		if (q) {
 			loading = true;
-			goto(`/search?q=${encodeURIComponent(q)}`, { keepFocus: true, noScroll: true });
+			goto(`/search?q=${encodeURIComponent(q)}`, { reset: false });
 		}
 	}
 
@@ -84,7 +84,7 @@
 		if (q) params.set('q', q);
 		if (type !== 'all') params.set('type', type);
 		loading = true;
-		goto(`/search?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/search?${params.toString()}`, { reset: false });
 	}
 
 	// DOC-006: the backend groups doc results as type `doc_page`, but the

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /ticket-types — migrated to the EntityPage scaffold; simple server-paginated CRUD entity using `fields` (EntityForm).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { ticketTypesApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { ticketTypesApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Trash2 } from 'lucide-svelte';
 
 	type TicketType = {

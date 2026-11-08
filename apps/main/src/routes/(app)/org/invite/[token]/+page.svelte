@@ -1,13 +1,13 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 	// Accepts an org invitation by POSTing the email token to
 	// POST /organizations/invitations/{token}/accept. The backend verifies the
 	// signed-in user's email matches the invited email, marks the invitation
 	// accepted, adds the membership, and returns the org slug.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { Building2, Check, Loader2, Mail, ArrowRight } from 'lucide-svelte';
 	import type { PageData } from './$types';
 

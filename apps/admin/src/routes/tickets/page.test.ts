@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.js', () => ({
 	api: vi.fn().mockRejectedValue(new Error('not connected')),
 	ticketsAdminApi: {
 		list: vi.fn().mockRejectedValue(new Error('not connected')),
@@ -17,6 +17,8 @@ vi.mock('$lib/api', () => ({
 		get: vi.fn().mockResolvedValue({ ok: true, data: [] }),
 	},
 }));
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn(), pushState: vi.fn() }));
 
 describe('Tickets +page.svelte', () => {
 	it('renders the tickets heading', () => {

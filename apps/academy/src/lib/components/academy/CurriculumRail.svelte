@@ -3,9 +3,9 @@
 	// States: current (▶), completed (✓), locked (🔒), not-started (○).
 	// Sticky/scrollable. Belongs to the content — visually distinct from the
 	// collapsed nav, NOT a second nav.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { PlayCircle, CheckCircle, Lock, Circle } from 'lucide-svelte';
-	import type { TrackDetail, LessonSummary } from '$lib/types';
+	import type { TrackDetail, LessonSummary } from '#lib/types/index.js';
 
 	interface Props {
 		track: TrackDetail;

@@ -1,10 +1,10 @@
 import { redirect } from '@sveltejs/kit';
-import { env } from '$env/dynamic/public';
+import { PUBLIC_MAIN_ORIGIN } from '$app/env/public';
 import type { PageServerLoad } from './$types';
-import { buildMeta } from '$lib/seo/meta';
-import { API_BASE, JC_SURFACE, apiContext, apiGet } from '$lib/server/api';
-import type { OpenAPISpec, ApiKeySummary } from '$lib/types';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
+import { buildMeta } from '#lib/seo/meta.js';
+import { API_BASE, JC_SURFACE, apiContext, apiGet } from '#lib/server/api.js';
+import type { OpenAPISpec, ApiKeySummary } from '#lib/types/index.js';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 
 /**
  * API Playground — the full-width tool exception (ADR-060). Breaks the shell
@@ -17,16 +17,15 @@ import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
 export const load: PageServerLoad = async (event) => {
 	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	if (!event.locals.user) {
-		const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
-		throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+		const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+		throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
 	}
 
 	let spec: OpenAPISpec | null = null;
 	try {
-		const res = await event.fetch(`${API_BASE}/docs/openapi.json`, {
-			headers: { 'X-JC-Surface': JC_SURFACE }
-		});
-		if (res.ok) spec = (await res.json()) as OpenAPISpec;
+		const res = await event.fetch(`${API_BASE}/docs/openapi.json`, { headers: { 'X-JC-Surface': JC_SURFACE } });
+
+		if (res.ok) spec = await res.json() as OpenAPISpec;
 	} catch {
 		spec = null;
 	}
@@ -44,19 +43,8 @@ export const load: PageServerLoad = async (event) => {
 	const locale = event.locals.locale;
 	const appName = tServer(locale, 'app.name', '{site} Docs', undefined, site);
 	const title = `${tServer(locale, 'api.playground_title', 'API Playground', undefined, site)} · ${appName}`;
-	const description = tServer(
-		locale,
-		'api.playground_subtitle',
-		'Make real requests against the {site} API with your own key.',
-		undefined,
-		site
-	);
-
-	const meta = buildMeta({
-		title,
-		description,
-		path: '/docs/api/playground'
-	});
+	const description = tServer(locale, 'api.playground_subtitle', 'Make real requests against the {site} API with your own key.', undefined, site);
+	const meta = buildMeta({ title, description, path: '/docs/api/playground' });
 
 	// Prefill from ?method=&path= — used by the "Try it" links on the API
 	// landing endpoint browser.

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { resolveSection } from '$lib/components/hub/settings/settingsSections';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { resolveSection } from '#lib/components/hub/settings/settingsSections.js';
+	import { t } from '#lib/i18n/index.js';
 	let { data } = $props();
 	const meta = $derived(resolveSection(data.section));
 	const SectionComponent = $derived(meta?.component ?? null);

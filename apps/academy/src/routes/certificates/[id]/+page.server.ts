@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
 import { error } from '@sveltejs/kit';
-import type { Certificate } from '$lib/types';
+import type { Certificate } from '#lib/types/index.js';
 
 /**
  * Public certificate share page — SSR (public content, ADR-060 §4).

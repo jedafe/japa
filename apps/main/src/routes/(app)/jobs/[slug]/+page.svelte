@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t, i18n, siteName} from '$lib/i18n';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
+	import { t, i18n, siteName} from '#lib/i18n/index.js';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
 	import { page } from '$app/state';
 	import {
 		Briefcase, MapPin, Clock, CheckCircle2, AlertCircle, ExternalLink, Pencil,
@@ -8,23 +8,23 @@
 		Flag, ArrowRight, ChevronRight, Building2, Wallet, GraduationCap, X,
 		UserRound, Layers
 	} from 'lucide-svelte';
-	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
-	import { EmptyState } from '$lib/components/ui';
-	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
-	import { api } from '$lib/api/client';
-	import { initiateUpload, uploadToPresigned, confirmMedia } from '$lib/api/create';
+	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
+	import { api } from '#lib/api/client.js';
+	import { initiateUpload, uploadToPresigned, confirmMedia } from '#lib/api/create.js';
 	import { invalidateAll } from '$app/navigation';
-	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import { relativeTime } from '$lib/feed/time';
-	import type { JobDetail, MediaAsset } from '$lib/types';
+	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import { relativeTime } from '#lib/feed/time.js';
+	import type { JobDetail, MediaAsset } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { safeHttpUrl } from '$lib/utils/safeUrl';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import { salaryPeriodLabel } from '$lib/utils/jobs';
-	import { currencySymbol } from '$lib/utils/currency';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { safeHttpUrl } from '#lib/utils/safeUrl.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import { salaryPeriodLabel } from '#lib/utils/jobs.js';
+	import { currencySymbol } from '#lib/utils/currency.js';
 
 	let { data }: { data: PageData } = $props();
 

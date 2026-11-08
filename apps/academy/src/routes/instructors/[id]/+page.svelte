@@ -3,13 +3,13 @@
 	// CSR ONLY: fetches GET /academy/instructors/{id} on mount.
 	// Shows the instructor's bio, stats, social links, and their published tracks.
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { safeJsonLd } from '$lib/seo';
-	import { api } from '$lib/api/client';
-	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
-	import { formatCount, formatPriceKobo } from '$lib/format';
+	import { t } from '#lib/i18n/index.js';
+	import { safeJsonLd } from '#lib/seo/index.js';
+	import { api } from '#lib/api/client.js';
+	import { LoadingSkeleton, EmptyState } from '#lib/components/ui/index.js';
+	import { formatCount, formatPriceKobo } from '#lib/format.js';
 	import { GraduationCap, Users, Star, BookOpen, Link as LinkIcon } from 'lucide-svelte';
-	import type { AcademyInstructorProfile, TrackSummary } from '$lib/types';
+	import type { AcademyInstructorProfile, TrackSummary } from '#lib/types/index.js';
 
 	interface AcademyInstructorProfileResponse {
 		instructor: AcademyInstructorProfile;

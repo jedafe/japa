@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { CornerUpLeft } from 'lucide-svelte';
 	import { invalidateAll } from '$app/navigation';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
-	import type { ForumReply } from '$lib/types';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
+	import type { ForumReply } from '#lib/types/index.js';
 	import ReplyItem from './ReplyItem.svelte';
-	import LazyCommentEditor from '$lib/components/comments/LazyCommentEditor.svelte';
+	import LazyCommentEditor from '#lib/components/comments/LazyCommentEditor.svelte';
 
 	interface Props {
 		/** Flat list of all replies for the thread (parent_reply_id links them). */

@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { Source, SourceItemEnvelope, SourceMeta } from '$lib/types/sources';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import type { Source, SourceItemEnvelope, SourceMeta } from '#lib/types/sources.js';
 
 const PAGE_SIZE = 24;
 

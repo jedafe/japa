@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { IconComponent } from '$lib/components/ui';
+	import type { IconComponent } from '#lib/components/ui/index.js';
 
 	interface Props {
 		icon: IconComponent;

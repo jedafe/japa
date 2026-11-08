@@ -1,13 +1,8 @@
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
 
-export interface ApiOk<T> {
-	data: T;
-}
-
-export interface ApiErr {
-	error: { code: string; message: string; status: number };
-}
+export interface ApiOk<T> { data: T }
+export interface ApiErr { error: { code: string; message: string; status: number } }
 
 export interface ApiResult<T> {
 	data: T | null;
@@ -103,7 +98,7 @@ async function tryTokenRefresh(): Promise<boolean> {
 			if (!res.ok) return false;
 			const body = await res.json().catch(() => null);
 			if (!body?.data?.access_token) return false;
-			const { setToken } = await import('$lib/api');
+			const { setToken } = await import('#lib/api.js');
 			setToken(body.data.access_token);
 			lastRefreshOkAt = Date.now();
 			return true;
@@ -146,16 +141,15 @@ export async function apiFetch<T>(
 	// Opt-out for fire-and-forget calls: pass { 'x-silent-error': '1' } in
 	// headers to skip the global toast on failure. Client-side only — it is
 	// stripped before the request goes out.
-	const h = { ...((options.headers ?? {}) as Record<string, string>) };
+	const h = { ...(options.headers ?? {}) as Record<string, string> };
 	const silent = h['x-silent-error'] === '1' || h['X-Silent-Error'] === '1';
 	delete h['x-silent-error'];
 	delete h['X-Silent-Error'];
 	options = { ...options, headers: h };
 
 	async function doFetch(opts: RequestInit): Promise<{ res: Response; body: ApiOk<unknown> | ApiErr | null }> {
-		const headers: Record<string, string> = {
-			...(opts.headers as Record<string, string> | undefined),
-		};
+		const headers: Record<string, string> = { ...opts.headers as Record<string, string> | undefined };
+
 		if (opts.body) {
 			headers['Content-Type'] = 'application/json';
 		}
@@ -169,7 +163,7 @@ export async function apiFetch<T>(
 		const ct = res.headers.get('content-type') ?? '';
 		let body: ApiOk<T> | ApiErr | null = null;
 		if (ct.includes('application/json')) {
-			body = (await res.json().catch(() => null)) as ApiOk<T> | ApiErr | null;
+			body = await res.json().catch(() => null) as ApiOk<T> | ApiErr | null;
 		} else if (res.status !== 204) {
 			const text = await res.text();
 			if (!res.ok) {
@@ -193,8 +187,8 @@ export async function apiFetch<T>(
 				const newToken = readCsrfCookie();
 				if (newToken) {
 					const retryHeaders = {
-						...(options.headers as Record<string, string> | undefined),
-						[CSRF_HEADER]: newToken,
+						...options.headers as Record<string, string> | undefined,
+						[CSRF_HEADER]: newToken
 					};
 					const retryOpts = { ...options, headers: retryHeaders };
 					const retry = await doFetch(retryOpts);
@@ -219,12 +213,12 @@ export async function apiFetch<T>(
 			const refreshOk = await tryTokenRefresh();
 			if (refreshOk) {
 				// Retry the original request with the updated Authorization header.
-				const { getToken } = await import('$lib/api');
+				const { getToken } = await import('#lib/api.js');
 				const newToken = getToken();
 				if (newToken) {
 					const retryHeaders = {
-						...(options.headers as Record<string, string> | undefined),
-						Authorization: `Bearer ${newToken}`,
+						...options.headers as Record<string, string> | undefined,
+						Authorization: `Bearer ${newToken}`
 					};
 					const retryOpts = { ...options, headers: retryHeaders };
 					const retry = await doFetch(retryOpts);
@@ -238,12 +232,18 @@ export async function apiFetch<T>(
 		// instead of a hardcoded string, so e.g. a failed login shows the actual
 		// reason rather than a misleading "Session expired".
 		if (res.status === 401) {
-			const msg = (body && 'error' in body && body.error.message) || 'Session expired';
-			return { data: null, meta: null, error: { code: 'unauthorized', message: msg, status: 401 }, status: 401 };
+			const msg = body && 'error' in body && body.error.message || 'Session expired';
+
+			return {
+				data: null,
+				meta: null,
+				error: { code: 'unauthorized', message: msg, status: 401 },
+				status: 401
+			};
 		}
 
 		if (res.status === 403) {
-			const msg = (body && 'error' in body && body.error.message) || 'Insufficient privileges';
+			const msg = body && 'error' in body && body.error.message || 'Insufficient privileges';
 			const code = body && 'error' in body ? body.error.code : 'forbidden';
 			if (globalErrorHandler && isMutating && !silent && code !== 'csrf_token_invalid' && code !== 'csrf_token_missing') {
 				globalErrorHandler({ code: 'forbidden', message: msg, status: 403 });
@@ -251,9 +251,12 @@ export async function apiFetch<T>(
 			return { data: null, meta: null, error: { code: 'forbidden', message: msg, status: 403 }, status: 403 };
 		}
 
-		if (!res.ok || (body && 'error' in body)) {
-			const err = body && 'error' in body ? body.error : { code: 'unknown', message: res.statusText, status: res.status };
-			if (globalErrorHandler && !silent && (res.status >= 500 || (isMutating && res.status === 429))) {
+		if (!res.ok || body && 'error' in body) {
+			const err = body && 'error' in body
+				? body.error
+				: { code: 'unknown', message: res.statusText, status: res.status };
+
+			if (globalErrorHandler && !silent && (res.status >= 500 || isMutating && res.status === 429)) {
 				globalErrorHandler(err);
 			}
 			return { data: null, meta: null, error: err, status: res.status };

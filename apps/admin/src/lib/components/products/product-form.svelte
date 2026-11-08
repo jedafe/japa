@@ -2,12 +2,12 @@
 	// ProductForm — shared create/edit body for /products/new + /products/[slug]
 	// (§80). Type picker drives the custom-field schema; providers repeater and
 	// deal multi-select write product_providers + product_deals in the save tx.
-	import { api, productsAdminApi, productTypesAdminApi, affiliateProvidersAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { api, productsAdminApi, productTypesAdminApi, affiliateProvidersAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { onMount } from 'svelte';
 	import { Loader2, Plus, Trash2, ImagePlus, X } from 'lucide-svelte';
-	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import MediaPickerModal from '#lib/components/ui/MediaPickerModal.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type Provider = { id: string; name: string; slug: string };
 	type Deal = { id: string; title: string; provider_name?: string | null; provider_id?: string | null };

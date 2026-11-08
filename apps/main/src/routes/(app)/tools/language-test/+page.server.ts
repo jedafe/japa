@@ -2,7 +2,7 @@
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPost, apiPut, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiPost, apiPut, ApiError } from '#lib/server/api.js';
 import type {
 	LanguageTest,
 	LanguageTestHubPage,
@@ -12,7 +12,7 @@ import type {
 	ComparisonItem,
 	ComparisonDimension,
 	GeoCountry
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Language Test Hub — §99, ADR-088.

@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError, API_BASE, JC_SURFACE } from '$lib/server/api';
+import { apiContext, apiGet, apiList, ApiError, API_BASE, JC_SURFACE } from '#lib/server/api.js';
 import { buildApiUrl } from '@japaconnect/api-url';
-import type { UniversityDetail, ProfilePost, SpaceMember, Review, ReviewAggregate, CourseOffering, WikiPageIndex } from '$lib/types';
+import type { UniversityDetail, ProfilePost, SpaceMember, Review, ReviewAggregate, CourseOffering, WikiPageIndex } from '#lib/types/index.js';
 
 /**
  * University detail at /universities/[slug] — public, SSR, indexable.

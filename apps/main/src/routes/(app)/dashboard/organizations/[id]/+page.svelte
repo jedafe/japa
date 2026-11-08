@@ -1,22 +1,22 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/07-organizations.md (org admin dashboard)
 	// Org admin view: edit org fields (PATCH /organizations/{id}), manage
 	// members (list + remove + change role), invite members, revoke invitations,
 	// and delete the org. Mutations go through the browser API client; the org
 	// row is seeded from the server load.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { UrlTabs, type UrlTab, AutocompleteSelect } from '$lib/components/ui';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { UrlTabs, type UrlTab, AutocompleteSelect } from '#lib/components/ui/index.js';
 	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Send, UserPlus, UserCheck, Megaphone, Image, BadgeCheck } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { invalidateAll, goto } from '$app/navigation';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import type { OrganizationAdmin, OrgInvitation, OrgMedia, OrgMember, ProfilePost } from '$lib/types';
-	import TipsSection from '$lib/components/hub/settings/sections/TipsSection.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import type { OrganizationAdmin, OrgInvitation, OrgMedia, OrgMember, ProfilePost } from '#lib/types/index.js';
+	import TipsSection from '#lib/components/hub/settings/sections/TipsSection.svelte';
 
 	let { data } = $props();
 	const org = $derived(data.org);
@@ -419,7 +419,7 @@
 						{ value: '90d', label: t('org_admin.analytics_90d', 'Last 90 days') }
 					]}
 					onValueChange={(v) => {
-						const url = new URL(page.url);
+						const url = new URL(page.url.href);
 						url.searchParams.set('tab', 'analytics');
 						url.searchParams.set('period', v);
 						goto(`${url.pathname}${url.search}`);

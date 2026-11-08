@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /page-builder/themes — migrated to the EntityPage scaffold.
 	// Simple CRUD entity using declarative `fields` (EntityForm) plus a custom
 	// `actions` array with a "Set Default" state action backed by a page-local
 	// confirm Modal (EntityPage's built-in confirm only covers delete).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { pageBuilderAdminApiExtended, apiRaw } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { pageBuilderAdminApiExtended, apiRaw } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Pencil, Trash2, Star } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 
 	type PageTheme = {
 		id: string;

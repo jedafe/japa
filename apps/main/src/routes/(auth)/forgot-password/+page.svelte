@@ -1,9 +1,9 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n/store.svelte';
-	import { validateForgotPassword } from '$lib/auth/validation';
-	import { mapAuthError } from '$lib/auth/errors';
-	import HoneypotField from '$lib/components/auth/HoneypotField.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
+	import { validateForgotPassword } from '#lib/auth/validation.js';
+	import { mapAuthError } from '#lib/auth/errors.js';
+	import HoneypotField from '#lib/components/auth/HoneypotField.svelte';
 
 	let email = $state('');
 	let loading = $state(false);

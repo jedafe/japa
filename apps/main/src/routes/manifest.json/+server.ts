@@ -1,4 +1,4 @@
-import { json } from '@sveltejs/kit';
+
 import type { RequestHandler } from './$types';
 import { buildWebManifest } from '@japaconnect/ui/pwa';
 
@@ -10,7 +10,7 @@ export const GET: RequestHandler = (event) => {
 		defaultStartUrl: '/',
 		includeShareTarget: true
 	});
-	return json(manifest, {
+	return Response.json(manifest, {
 		headers: {
 			'Content-Type': 'application/manifest+json',
 			'Cache-Control': 'public, max-age=300'

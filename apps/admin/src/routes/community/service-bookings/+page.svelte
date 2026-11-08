@@ -2,15 +2,15 @@
 	// /community/service-bookings — admin bookings inbox + dispute-resolution
 	// queue for §111 service packages.
 	// Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { serviceBookingsAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { formatMoney } from '$lib/utils/currency';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { serviceBookingsAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { formatMoney } from '#lib/utils/currency.js';
 	import { Eye, ArrowRightLeft } from 'lucide-svelte';
-	import { Modal } from '$lib/components/ui/modal';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	// Backend BookingDTO shape (§111). The admin list endpoint returns
 	// { data: BookingItem[], meta: { page, limit, total } }.

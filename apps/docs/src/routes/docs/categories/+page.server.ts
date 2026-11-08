@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { collectCategories, mergeManagedCategories, parseManagedCategories } from '$lib/docs/catalog';
-import { buildMeta } from '$lib/seo/meta';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
+import { collectCategories, mergeManagedCategories, parseManagedCategories } from '#lib/docs/catalog.js';
+import { buildMeta } from '#lib/seo/meta.js';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 
 /**
  * Categories index: every doc category across all accessible audiences,

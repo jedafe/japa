@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /(app)/jobs — admin view of all job listings (Section 63, ADR-081).
 	// Listings are org-created via POST /org/:org_id/jobs — there is no
 	// POST /admin/jobs in the route catalog, so this page moderates only:
 	// list, view, edit, feature-toggle, delete (hideCreate).
 	// Ref: japaconnect-engineering/sections/63-jobs-board.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { jobsAdminApi, contentAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { loadCurrencies, currencySymbol, currencyOptions, type CurrencyInfo } from '$lib/utils/currency';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Card, CardContent, CardHeader } from '#lib/components/ui/card/index.js';
+	import { jobsAdminApi, contentAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { loadCurrencies, currencySymbol, currencyOptions, type CurrencyInfo } from '#lib/utils/currency.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Star, Eye, Pencil, Trash2, Users } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	type JobListing = {
 		id: string;

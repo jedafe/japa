@@ -1,12 +1,12 @@
 <script lang="ts">
 	// /wallet/withdrawals — admin withdrawal management.
 	// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import type { ActionItem } from '$lib/components/ui/data-table/types';
-	import { walletApi, api, authApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/types.js';
+	import { walletApi, api, authApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { Check, Eye, X } from 'lucide-svelte';
 
 	type Withdrawal = {

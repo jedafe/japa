@@ -1,7 +1,7 @@
-import { browser } from '$app/environment';
-import { PUBLIC_JC_WS_URL, PUBLIC_JC_API_URL } from '$env/static/public';
+import { browser } from '$app/env';
+import { PUBLIC_JC_WS_URL, PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
-import { getAccessToken } from '$lib/api/token';
+import { getAccessToken } from '#lib/api/token.js';
 
 // PUBLIC_JC_WS_URL is the WS *origin* (e.g. ws://localhost:8080); the
 // WebSocket endpoint lives under the API version prefix, /api/v1/ws.
@@ -143,7 +143,7 @@ class AdminWebSocketClient {
 		if (!this.listeners.has(event)) {
 			this.listeners.set(event, new Set());
 		}
-		this.listeners.get(event)!.add(callback);
+		(this.listeners.get(event)!).add(callback);
 		return () => {
 			this.listeners.get(event)?.delete(callback);
 		};

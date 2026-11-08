@@ -1,29 +1,29 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, i18n } from '$lib/i18n';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { Briefcase, Lock, ArrowRight, Plus, GitCompare, Loader2, Building2, Globe, BadgeCheck, CircleDollarSign, Users, ChevronRight, Search, Filter } from 'lucide-svelte';
-	import { EmptyState, EntityHero, GuideSlideOver, LoadingSkeleton, PaginationControls, SearchInput, ListPageBar, Modal, UrlTabs, type GuideContent, type SearchSuggestion, type UrlTab } from '$lib/components/ui';
-	import HeroArtJobs from '$lib/components/heroes/HeroArtJobs.svelte';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-	import BookmarkButton from '$lib/components/jobs/BookmarkButton.svelte';
-	import { relativeTime } from '$lib/feed/time';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import { salaryPeriodLabel } from '$lib/utils/jobs';
-	import { currencySymbol } from '$lib/utils/currency';
-	import { safeHttpUrl } from '$lib/utils/safeUrl';
-	import SelectField from '$lib/components/ui/SelectField.svelte';
-	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { api } from '$lib/api/client';
+	import { EmptyState, EntityHero, GuideSlideOver, LoadingSkeleton, PaginationControls, SearchInput, ListPageBar, Modal, UrlTabs, type GuideContent, type SearchSuggestion, type UrlTab } from '#lib/components/ui/index.js';
+	import HeroArtJobs from '#lib/components/heroes/HeroArtJobs.svelte';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+	import BookmarkButton from '#lib/components/jobs/BookmarkButton.svelte';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import { salaryPeriodLabel } from '#lib/utils/jobs.js';
+	import { currencySymbol } from '#lib/utils/currency.js';
+	import { safeHttpUrl } from '#lib/utils/safeUrl.js';
+	import SelectField from '#lib/components/ui/SelectField.svelte';
+	import { staticAutocompleteFetcher, autocompleteItems } from '#lib/autocomplete.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { api } from '#lib/api/client.js';
 	import { goto } from '$app/navigation';
 	import { navigating } from '$app/state';
-	import type { JobListing } from '$lib/types';
+	import type { JobListing } from '#lib/types/index.js';
 	import type { PageData, ActionData } from './$types';
-	import { destinationMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
+	import { destinationMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
@@ -76,7 +76,7 @@
 		if (visaSponsorship) params.set('visa_sponsorship', 'true');
 		if (sort && sort !== 'newest') params.set('sort', sort);
 		if (includeExpired) params.set('include_expired', 'true');
-		goto(`/jobs?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/jobs?${params.toString()}`, { reset: false });
 	}
 
 	function clearFilters() {
@@ -713,7 +713,7 @@
 							page={data.currentPage}
 							totalPages={Math.ceil(data.total / data.pageSize)}
 							onPageChange={(p) => {
-						const params = new URLSearchParams(page.url.searchParams);
+						const params = new URLSearchParams(page.url.search);
 						params.set('page', String(p));
 						goto(`/jobs?${params.toString()}`);
 					}}

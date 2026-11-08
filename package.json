@@ -1,35 +1,40 @@
 {
-  "name": "japaconnect-e2e",
-  "private": true,
-  "version": "0.0.1",
-  "type": "module",
-  "bin": {
-    "japa": "./japa"
-  },
-  "scripts": {
-    "test:e2e": "playwright test",
-    "test:e2e:main": "playwright test --project=main",
-    "test:e2e:admin": "playwright test --project=admin",
-    "test:e2e:control": "playwright test --project=control",
-    "test:e2e:docs": "playwright test --project=docs",
-    "test:e2e:report": "playwright show-report",
-    "pagespeed": "bun scripts/pagespeed.ts"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.65.0"
-  },
-  "dependencies": {
-    "cline": "^3.0.74"
-  },
-  "trustedDependencies": ["@sentry/cli"],
-  "overrides": {
-    "prosemirror-view": "^1.42.3",
-    "dompurify": "^3.4.17",
-    "zod": "^4.6.7",
-    "dify-ai-provider>zod": "^3.25.76",
-    "happy-dom": "^21.0.4",
-    "js-yaml": "^4.3.2",
-    "@tiptap/core": "^3.33.0"
-  },
-  "workspaces": ["apps/*", "packages/*", "services/*"]
+	"name": "japaconnect-e2e",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"bin": {
+		"japa": "./japa"
+	},
+	"scripts": {
+		"test:e2e": "playwright test",
+		"test:e2e:main": "playwright test --project=main",
+		"test:e2e:admin": "playwright test --project=admin",
+		"test:e2e:control": "playwright test --project=control",
+		"test:e2e:docs": "playwright test --project=docs",
+		"test:e2e:report": "playwright show-report",
+		"pagespeed": "bun scripts/pagespeed.ts"
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.65.0"
+	},
+	"trustedDependencies": [
+		"@sentry/cli"
+	],
+	"overrides": {
+		"prosemirror-view": "^1.42.3",
+		"dompurify": "^3.4.17",
+		"zod": "^4.6.7",
+		"dify-ai-provider>zod": "^3.25.76",
+		"happy-dom": "^21.0.4",
+		"js-yaml": "^4.3.2",
+		"@tiptap/core": "^3.33.0",
+		"glob": "^14.0.4",
+		"minimatch": "^11.0.5"
+	},
+	"workspaces": [
+		"apps/*",
+		"packages/*",
+		"services/*"
+	]
 }

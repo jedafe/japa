@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { impersonationApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent, CardHeader } from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { impersonationApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	// Ref: japaconnect-engineering/sections/46-impersonation.md — every
 	// impersonation start/end must write to audit_logs (Rule 10). The backend
 	// handles the audit-log write; this page only calls the API endpoints.

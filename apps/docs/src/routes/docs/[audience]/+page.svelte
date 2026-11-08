@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { onMount } from 'svelte';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import { t } from '$lib/i18n';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { persistNavCollapse } from '$lib/nav-collapse';
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { AUDIENCE_ICON, AUDIENCE_DESC_KEY } from '$lib/audience-meta';
-	import { groupNavItems } from '$lib/docs/grouping';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { AUDIENCE_ICON, AUDIENCE_DESC_KEY } from '#lib/audience-meta.js';
+	import { groupNavItems } from '#lib/docs/grouping.js';
 	import { ArrowRight, ArrowUpRight, ChevronRight, FileText, Plus } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import type { DocNavItem } from '$lib/types';
+	import type { DocNavItem } from '#lib/types/index.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -41,7 +41,7 @@
 		noticeStatus =
 			page.url.searchParams.get('created') ?? page.url.searchParams.get('saved');
 		if (noticeStatus) {
-			const url = new URL(page.url);
+			const url = new URL(page.url.href);
 			url.searchParams.delete('created');
 			url.searchParams.delete('saved');
 			history.replaceState(history.state, '', url);

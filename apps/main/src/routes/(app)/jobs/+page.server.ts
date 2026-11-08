@@ -1,6 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiList, apiGet, apiPost, apiPut, ApiError } from '$lib/server/api';
+import { apiContext, apiList, apiGet, apiPost, apiPut, ApiError } from '#lib/server/api.js';
 import type {
 	JobListing,
 	JobDetail,
@@ -9,7 +9,7 @@ import type {
 	ComparisonCreated,
 	ComparisonItem,
 	ComparisonDimension
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Jobs Board finder at /jobs (Section 63, ADR-081).

@@ -1,5 +1,5 @@
-import { browser } from '$app/environment';
-import { PUBLIC_JC_GLITCHTIP_DSN } from '$env/static/public';
+import { browser } from '$app/env';
+import { PUBLIC_JC_GLITCHTIP_DSN } from '$app/env/public';
 
 let initialized = false;
 

@@ -1,7 +1,7 @@
 // Donate page load — public platform donation config (§125).
 // Ref: japaconnect-engineering/sections/125-donations-tips.md
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
+import { apiContext, apiGet } from '#lib/server/api.js';
 
 export interface DonateConfig {
 	enabled: boolean;

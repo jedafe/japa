@@ -1,17 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { ChevronDown, ChevronUp, FileBadge } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, AutocompleteSelect } from '$lib/components/ui';
-	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
-	import { currencySymbol } from '$lib/utils/currency';
-	import type { GeoSpaceOption, EcaProvider, EcaGuide, EcaGuideDetail } from '$lib/types';
+	import { EmptyState, LoadingSkeleton, AutocompleteSelect } from '#lib/components/ui/index.js';
+	import DestinationSelector from '#lib/components/tools/DestinationSelector.svelte';
+	import { currencySymbol } from '#lib/utils/currency.js';
+	import type { GeoSpaceOption, EcaProvider, EcaGuide, EcaGuideDetail } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * ECA Evaluation Guide — §109, ADR-120.
@@ -63,7 +63,11 @@
 		{ value: '', label: t('eca_guide.all_purposes', 'All purposes') },
 		{ value: 'immigration', label: t('eca_guide.purpose_immigration', 'Immigration') },
 		{ value: 'study', label: t('eca_guide.purpose_study', 'Study') },
-		{ value: 'employment', label: t('eca_guide.purpose_employment', 'Employment') },
+		{
+			value: 'employment',
+			label: t('eca_guide.purpose_employment', 'Employment')
+		},
+
 		{
 			value: 'professional_licensure',
 			label: t('eca_guide.purpose_professional_licensure', 'Professional licensure')
@@ -99,14 +103,13 @@
 	// Keep the shareable ?dest=&purpose=&provider= deep link in sync without
 	// re-running the server load (replaceState does not trigger navigation).
 	function syncUrl() {
-		const url = new URL(page.url);
-		if (selectedDest) url.searchParams.set('dest', selectedDest);
-		else url.searchParams.delete('dest');
-		if (selectedPurpose) url.searchParams.set('purpose', selectedPurpose);
-		else url.searchParams.delete('purpose');
-		if (selectedProvider) url.searchParams.set('provider', selectedProvider);
-		else url.searchParams.delete('provider');
-		replaceState(url, {});
+		const url = new URL(page.url.href);
+
+		if (selectedDest) url.searchParams.set('dest', selectedDest); else url.searchParams.delete('dest');
+		if (selectedPurpose) url.searchParams.set('purpose', selectedPurpose); else url.searchParams.delete('purpose');
+		if (selectedProvider) url.searchParams.set('provider', selectedProvider); else url.searchParams.delete('provider');
+
+		goto(url, { shallow: true, replace: true });
 	}
 
 	async function loadGuides() {
@@ -120,7 +123,7 @@
 		if (selectedProvider) params.set('provider', selectedProvider);
 		const res = await api.get<EcaGuide[]>(`/eca/guides?${params.toString()}`);
 		loadingGuides = false;
-		guides = res.error ? [] : (res.data ?? []);
+		guides = res.error ? [] : res.data ?? [];
 		syncUrl();
 	}
 
@@ -198,10 +201,16 @@
 	<form onsubmit={onSearch} class="{cardCls} p-4">
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 			<div>
-				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="dest">
-					{t('eca_guide.destination', 'Destination')}
-				</label>
-				<DestinationSelector {destinations} bind:selectedId={selectedDest} onchange={onDestChange} />
+				<label
+					class="mb-1 block text-sm font-medium text-[var(--color-text)]"
+					for="dest"
+				>{t('eca_guide.destination', 'Destination')}</label>
+
+				<DestinationSelector
+					destinations={destinations}
+					bind:selectedId={selectedDest}
+					onchange={onDestChange}
+				/>
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="purpose">
@@ -267,8 +276,11 @@
 	{:else if guides.length > 0}
 		<div class="mt-6 space-y-3">
 			{#each guides as guide (guide.id)}
-				<div class="{cardCls}">
-					<button class="flex w-full items-center justify-between gap-4 p-4 text-start" onclick={() => toggleDetail(guide)}>
+				<div class={cardCls}>
+					<button
+						class="flex w-full items-center justify-between gap-4 p-4 text-start"
+						onclick={() => toggleDetail(guide)}
+					>
 						<div>
 							<div class="font-medium text-[var(--color-text)]">
 								{guide.provider_name ?? guide.provider_slug ?? 'Guide'} — {purposeLabel(guide.purpose)}
@@ -389,7 +401,7 @@
 											<button
 												class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] disabled:opacity-50"
 												onclick={submitUpdate}
-												disabled={submittingUpdate || (!updateFee && updateDays === '' && !updateNote)}
+												disabled={submittingUpdate || !updateFee && updateDays === '' && !updateNote}
 											>
 												{submittingUpdate ? t('eca_guide.submitting', 'Submitting…') : t('eca_guide.submit', 'Submit report')}
 											</button>

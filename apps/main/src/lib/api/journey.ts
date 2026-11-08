@@ -1,5 +1,5 @@
-import { api } from '$lib/api/client';
-import type { VisitorContextSummary } from '$lib/types';
+import { api } from '#lib/api/client.js';
+import type { VisitorContextSummary } from '#lib/types/index.js';
 
 export interface JourneyOption {
 	value: string;
@@ -52,11 +52,11 @@ export function invalidateJourneyCaches() {
 	feedContextPromise = null;
 }
 
-let geoCountriesPromise: ReturnType<typeof api.get<import('$lib/types').GeoCountry[]>> | null = null;
+let geoCountriesPromise: ReturnType<typeof api.get<import('#lib/types/index.js').GeoCountry[]>> | null = null;
 
 /** Memoized GET /geo/countries — one fetch per session across all consumers. */
 export function getGeoCountriesCached() {
-	geoCountriesPromise ??= api.get<import('$lib/types').GeoCountry[]>('/geo/countries');
+	geoCountriesPromise ??= api.get<import('#lib/types/index.js').GeoCountry[]>('/geo/countries');
 	return geoCountriesPromise;
 }
 

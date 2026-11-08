@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import type { ActionItem } from "$lib/components/ui/data-table";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { DataTable } from "#lib/components/ui/data-table/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { TableSkeleton } from "#lib/components/ui/skeleton/index.js";
+	import type { ActionItem } from "#lib/components/ui/data-table/index.js";
 	import { DollarSign, RefreshCw, AlertTriangle, Eye } from "lucide-svelte";
-	import { academyAdminApi, adminCatalogApi, type CatalogOption } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { loadCurrencies, formatMoney, type CurrencyInfo } from "$lib/utils/currency";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { academyAdminApi, adminCatalogApi, type CatalogOption } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { loadCurrencies, formatMoney, type CurrencyInfo } from "#lib/utils/currency.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 
 	type Payout = {
 		id: string;

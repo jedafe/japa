@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Thin wrapper over @japaconnect/ui injecting this app's i18n labels.
 	import { AutocompleteSelect } from '@japaconnect/ui';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import type { ComponentProps } from 'svelte';
 
 	let {

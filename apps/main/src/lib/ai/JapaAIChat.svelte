@@ -14,7 +14,7 @@
 	// Ref: japaconnect-engineering/sections/20-ai-core.md
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import {
 		ArrowUp,
@@ -48,7 +48,7 @@
 		History,
 		PanelRight
 	} from 'lucide-svelte';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { AgentRequestError } from './agentTypes';
 	import { streamChat, type ToolSelectionOverride } from './unifiedStream';
 	import AiModelVoicePicker from './AiModelVoicePicker.svelte';
@@ -70,7 +70,7 @@
 	} from './chatTemplate';
 	import { chatTemplateRail } from './chatTemplateRail.svelte';
 	import { invalidateAll } from '$app/navigation';
-	import { AutocompleteSelect, Modal } from '$lib/components/ui';
+	import { AutocompleteSelect, Modal } from '#lib/components/ui/index.js';
 	import AddAiKeyDialog from './AddAiKeyDialog.svelte';
 	import AiSourceCitations from './AiSourceCitations.svelte';
 	import type { AiCitationSource } from './types';
@@ -85,7 +85,7 @@
 		type ToolCallEntry,
 		type ToolStatus
 	} from './display';
-	import type { MeSpace, BlogSeries, ContentTypeMeta } from '$lib/types';
+	import type { MeSpace, BlogSeries, ContentTypeMeta } from '#lib/types/index.js';
 	import type {
 		AgentCapabilities,
 		AgentEvent,
@@ -99,7 +99,7 @@
 	interface Props {
 		conversations: UnifiedConversationSummary[];
 		models: { id: string; label: string }[];
-		byokProviders?: import('$lib/ai/agentTypes').ByokProviderOption[];
+		byokProviders?: import('#lib/ai/agentTypes.js').ByokProviderOption[];
 		voices: { id: string; name: string }[];
 		projects: AiProject[];
 		capabilities: AgentCapabilities | null;

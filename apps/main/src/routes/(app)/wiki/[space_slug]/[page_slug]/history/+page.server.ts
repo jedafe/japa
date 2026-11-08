@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
 import { fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiList, apiGet, apiGetEnvelope, apiDelete, ApiError } from '$lib/server/api';
-import type { WikiRevision, WikiPageIndex, SpaceDetail } from '$lib/types';
+import { apiContext, apiList, apiGet, apiGetEnvelope, apiDelete, ApiError } from '#lib/server/api.js';
+import type { WikiRevision, WikiPageIndex, SpaceDetail } from '#lib/types/index.js';
 
 type ListMeta = { total: number; page: number; limit: number };
 type WikiApiCategory = {

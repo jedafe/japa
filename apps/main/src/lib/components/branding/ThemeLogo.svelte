@@ -5,8 +5,8 @@
 	// Falls back to the bundled homepage wordmark when settings are empty —
 	// never the square icon mark (that's reserved for favicon contexts).
 	import { page } from '$app/state';
-	import wordmarkLight from '$lib/assets/branding/wordmark-light.webp';
-	import wordmarkDark from '$lib/assets/branding/wordmark-dark.webp';
+	import wordmarkLight from '#lib/assets/branding/wordmark-light.webp';
+	import wordmarkDark from '#lib/assets/branding/wordmark-dark.webp';
 
 	let {
 		logoUrl = '',

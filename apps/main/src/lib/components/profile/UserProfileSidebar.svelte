@@ -4,7 +4,7 @@
 	// Quick Actions. Visitor: Community Badges, Recent Posts, Connections,
 	// Liked Items, Report/Block. Certificates/Spaces cards are shared and
 	// render only when they have data.
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import {
 		Award,
 		Ban,
@@ -18,9 +18,9 @@
 		Plane,
 		School
 	} from 'lucide-svelte';
-	import { bookmarkLabel, bookmarkUrl } from '$lib/components/profile/bookmarks';
-	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
+	import { bookmarkLabel, bookmarkUrl } from '#lib/components/profile/bookmarks.js';
+	import RelativeTime from '#lib/components/ui/RelativeTime.svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import type {
 		Badge,
 		Bookmark,
@@ -30,7 +30,7 @@
 		ProfilePost,
 		ProfileSpace,
 		PublicUser
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 
 	interface SidebarConnection {
 		id: string;

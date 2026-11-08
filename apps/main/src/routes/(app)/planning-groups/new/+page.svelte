@@ -1,16 +1,16 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 	// Create planning group form. Submits via the browser API client (POST
 	// /planning-groups), then redirects to the new group's detail page.
-	import { t } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { Users, Plus, ArrowLeft } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import AiBodyField from '$lib/ai/AiBodyField.svelte';
+	import AiBodyField from '#lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 

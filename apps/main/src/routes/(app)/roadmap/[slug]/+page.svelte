@@ -1,25 +1,25 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	// Roadmap item detail — status stepper, vote pill, category chip, target
 	// window, feature-flag rollout badge, description, and the §49 comment
 	// thread (via the item's shadow contents row). Moderators carrying
 	// roadmap.moderate get the same inline status select as board cards.
 	import { page } from '$app/state';
-	import { t, siteName, i18n } from '$lib/i18n';
-	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
-	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
-	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
-	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
-	import CommentThread from '$lib/components/comments/CommentThread.svelte';
-	import AdSlot from '$lib/components/ui/AdSlot.svelte';
-	import VoteButton from '$lib/components/roadmap/VoteButton.svelte';
-	import StatusBadge from '$lib/components/roadmap/StatusBadge.svelte';
-	import StatusSelect from '$lib/components/roadmap/StatusSelect.svelte';
-	import RoadmapCard from '$lib/components/roadmap/RoadmapCard.svelte';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
+	import { t, siteName, i18n } from '#lib/i18n/index.js';
+	import { tiptapBodyToHtml } from '#lib/tiptap/serialize.js';
+	import { hydrateLinkPreviews } from '#lib/tiptap/hydrateLinkPreviews.js';
+	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
+	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
+	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import AdSlot from '#lib/components/ui/AdSlot.svelte';
+	import VoteButton from '#lib/components/roadmap/VoteButton.svelte';
+	import StatusBadge from '#lib/components/roadmap/StatusBadge.svelte';
+	import StatusSelect from '#lib/components/roadmap/StatusSelect.svelte';
+	import RoadmapCard from '#lib/components/roadmap/RoadmapCard.svelte';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
 	import { ArrowLeft, Flag, Pin } from 'lucide-svelte';
-	import { roadmapPublicStatuses, roadmapStatusLabel } from '$lib/enumOptions';
+	import { roadmapPublicStatuses, roadmapStatusLabel } from '#lib/enumOptions.js';
 
 	let { data } = $props();
 	const item = $derived(data.item);

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md
 	// Achievement Feed list page. Renders milestone cards from the SSR-loaded
@@ -8,12 +8,12 @@
 	// hardcoded data arrays (Rule 16).
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { t, i18n } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { relativeTime } from '$lib/feed/time';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { relativeTime } from '#lib/feed/time.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
 	import {
 		Plus,
 		Trophy,
@@ -26,11 +26,11 @@
 		Sparkles,
 		Heart
 	} from 'lucide-svelte';
-	import type { Achievement, AchievementMilestoneType } from '$lib/types';
-	import { milestoneOptions } from '$lib/achievement';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
+	import type { Achievement, AchievementMilestoneType } from '#lib/types/index.js';
+	import { milestoneOptions } from '#lib/achievement.js';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
 	import type { PageData } from './$types';
-	import type { IconComponent } from '$lib/components/ui/icons';
+	import type { IconComponent } from '#lib/components/ui/icons.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -88,14 +88,14 @@
 		if (dest) params.set('dest', dest);
 		if (milestone) params.set('milestone', milestone);
 		params.set('sort', sort || 'latest');
-		goto(`/achievements?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/achievements?${params.toString()}`, { reset: false });
 	}
 
 	function clearFilters() {
 		dest = '';
 		milestone = '';
 		sort = 'latest';
-		goto('/achievements', { keepFocus: true, noScroll: true });
+		goto('/achievements', { reset: false });
 	}
 
 	const hasFilters = $derived(!!data.filters.dest || !!data.filters.milestone);
@@ -110,7 +110,7 @@
 		if (data.filters.dest) params.set('dest', data.filters.dest);
 		if (data.filters.milestone) params.set('milestone', data.filters.milestone);
 		params.set('sort', v);
-		goto(`/achievements?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/achievements?${params.toString()}`, { reset: false });
 	}
 
 	let showFilters = $state(false);

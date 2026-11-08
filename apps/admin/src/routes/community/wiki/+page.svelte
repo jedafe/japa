@@ -1,20 +1,20 @@
 <script lang="ts">
 	// /community/wiki — admin HITL review queue for wiki page revisions.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import RevisionDiff from '$lib/components/wiki/RevisionDiff.svelte';
-	import WikiTypesAdmin from '$lib/components/wiki/WikiTypesAdmin.svelte';
-	import { wikiAdminApi, apiRaw, type WikiRevisionItem } from '$lib/api';
-	import { useCountries } from '$lib/utils/countries.svelte';
-	import { initTabParam } from '$lib/utils/url-sync.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission, isPermissionsLoaded } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import RevisionDiff from '#lib/components/wiki/RevisionDiff.svelte';
+	import WikiTypesAdmin from '#lib/components/wiki/WikiTypesAdmin.svelte';
+	import { wikiAdminApi, apiRaw, type WikiRevisionItem } from '#lib/api.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
+	import { initTabParam } from '#lib/utils/url-sync.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission, isPermissionsLoaded } from '#lib/stores/permissions.svelte.js';
 	import { Eye, CheckCircle, XCircle, Sparkles, Lock, LockOpen, Star, StarOff, FileDiff, Trash2 , History } from 'lucide-svelte';
-	import type { ActionItem, BulkAction, FilterDef } from '$lib/components/ui/data-table';
+	import type { ActionItem, BulkAction, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	// One row of GET /admin/wiki (AdminWikiPageDTO). status is the LATEST
 	// revision's status ('' when the page has no revisions); ai_generated /

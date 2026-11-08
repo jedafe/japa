@@ -5,8 +5,8 @@
 // component drives filter/search/pagination via /me/media directly.
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGetEnvelope } from '$lib/server/api';
-import type { MediaAsset } from '$lib/types';
+import { apiContext, apiGetEnvelope } from '#lib/server/api.js';
+import type { MediaAsset } from '#lib/types/index.js';
 
 const PAGE_SIZE = 48;
 

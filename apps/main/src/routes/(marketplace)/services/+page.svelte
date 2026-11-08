@@ -3,11 +3,11 @@
 	// Ref: japaconnect-engineering/sections/114-services-marketplace.md
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.2)
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { page, navigating } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import {
 		Briefcase,
 		Plus,
@@ -25,13 +25,13 @@
 		SelectField,
 		UrlTabs,
 		type UrlTab
-	} from '$lib/components/ui';
-	import MarketplaceHero from '$lib/components/marketplace/MarketplaceHero.svelte';
-	import CategoryPills from '$lib/components/marketplace/CategoryPills.svelte';
-	import ServiceCard from '$lib/components/marketplace/ServiceCard.svelte';
-	import { bookingsInboxEnabled } from '$lib/features';
-	import { destinationMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
-	import type { ServiceListing, Space } from '$lib/types';
+	} from '#lib/components/ui/index.js';
+	import MarketplaceHero from '#lib/components/marketplace/MarketplaceHero.svelte';
+	import CategoryPills from '#lib/components/marketplace/CategoryPills.svelte';
+	import ServiceCard from '#lib/components/marketplace/ServiceCard.svelte';
+	import { bookingsInboxEnabled } from '#lib/features.js';
+	import { destinationMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
+	import type { ServiceListing, Space } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -66,7 +66,7 @@
 	async function loadMore() {
 		if (loadingMore || !hasMore) return;
 		loadingMore = true;
-		const params = new URLSearchParams(page.url.searchParams);
+		const params = new URLSearchParams(page.url.search);
 		params.set('page', String(lastFetchedPage + 1));
 		params.delete('submitted');
 		// The API only accepts space UUIDs — the URL may carry slug-form
@@ -215,7 +215,7 @@
 	 * and the one-shot ?submitted=1 notice never propagates into new URLs.
 	 */
 	function paramsWith(mutate: (p: URLSearchParams) => void): string {
-		const params = new URLSearchParams(page.url.searchParams);
+		const params = new URLSearchParams(page.url.search);
 		mutate(params);
 		params.delete('page');
 		params.delete('submitted');
@@ -238,7 +238,7 @@
 				if (v === 'all') p.delete('kind');
 				else p.set('kind', v);
 			}),
-			{ keepFocus: true }
+			{ reset: false }
 		);
 	}
 
@@ -248,7 +248,7 @@
 				if (v === 'latest') p.delete('sort');
 				else p.set('sort', v);
 			}),
-			{ keepFocus: true }
+			{ reset: false }
 		);
 	}
 
@@ -271,7 +271,7 @@
 					p.set('include_unavailable', 'true');
 				else p.delete('include_unavailable');
 			}),
-			{ keepFocus: true }
+			{ reset: false }
 		);
 	}
 

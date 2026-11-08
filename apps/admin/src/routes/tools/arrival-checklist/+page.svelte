@@ -1,18 +1,18 @@
 <script lang="ts">
 	// /tools/arrival-checklist — admin HITL review queue for AI-generated arrival checklists.
 	// Ref: §92 (Arrival Checklist Generator), ADR-100, ADR-088 (Universal AI content generation).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { arrivalChecklistAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import { useCountries } from '$lib/utils/countries.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
+	import { arrivalChecklistAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	// GuideDTO — matches the backend response shape (internal/arrivalchecklist/service.go).
 	type ArrivalChecklistGuide = {

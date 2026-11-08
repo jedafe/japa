@@ -2,6 +2,11 @@ import { vi, afterEach } from 'vitest';
 import { cleanup } from '@testing-library/svelte';
 import en from './src/lib/locales/en.json';
 
+// SvelteKit 3's generated `$app/env/public` module reads
+// `globalThis.__sveltekit_dev.env` at import time; vitest has no kit runtime,
+// so provide the global before any test module touches it.
+(globalThis as any).__sveltekit_dev ??= { env: {} };
+
 // jsdom does not implement ResizeObserver, but @dnd-kit/svelte (sortable
 // drag-and-drop) and floating-ui (bits-ui popovers) read it at import/run time.
 // Provide a constructable stub before any test modules are loaded.
@@ -25,7 +30,7 @@ console.warn = (...args: any[]) => {
 	originalWarn(...args);
 };
 
-vi.mock('$lib/stores/i18n.svelte', () => ({
+vi.mock('#lib/stores/i18n.svelte.js', () => ({
     t: (key: string, fallback?: string) => en[key] ?? fallback ?? key,
     locale: { current: 'en', set: vi.fn(), init: vi.fn() },
     getLocale: () => ({ current: 'en', set: vi.fn(), init: vi.fn() }),

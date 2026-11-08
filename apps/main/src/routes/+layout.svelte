@@ -2,17 +2,23 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { t, DEFAULT_SITE_NAME, isRtl } from '$lib/i18n';
-	import { seedCsrfToken } from '$lib/api/csrf.svelte';
-	import { seedAccessToken, clearAccessToken } from '$lib/api/token.svelte';
-	import { realtime } from '$lib/realtime/realtime.svelte';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { t, DEFAULT_SITE_NAME, isRtl } from '#lib/i18n/index.js';
+	import { seedCsrfToken } from '#lib/api/csrf.svelte.js';
+	import { seedAccessToken, clearAccessToken } from '#lib/api/token.svelte.js';
+	import { realtime } from '#lib/realtime/realtime.svelte.js';
 	import { pwaInstall, moduleServiceWorkerSupported } from '@japaconnect/ui/pwa-install';
 	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
-	import { setGlobalErrorHandler } from '$lib/api/client';
-	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
-	import { syncPushSubscription } from '$lib/pwa/push-sync';
-	import { env } from '$env/dynamic/public';
+	import { setGlobalErrorHandler } from '#lib/api/client.js';
+	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
+	import { syncPushSubscription } from '#lib/pwa/push-sync.js';
+
+	import {
+		PUBLIC_JC_UMAMI_URL,
+		PUBLIC_JC_UMAMI_SITE_ID,
+		PUBLIC_JC_API_URL
+	} from '$app/env/public';
+
 	import { resolveString, GLOBAL_TOKENS } from '@japaconnect/landing-blocks';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
@@ -68,12 +74,10 @@
 	// Apply the custom favicon from the control panel appearance settings.
 	// When appearance.favicon_url is set, we override the default favicon.svg
 	// link tag with the uploaded favicon. Ref: conventions/system-settings-catalog.md
-	let faviconUrl = $derived(
-		((theme.resolved === 'dark'
-			? (data.siteSettings?.['appearance.favicon_url_dark'] as string | undefined)
-			: undefined) ??
-			(data.siteSettings?.['appearance.favicon_url'] as string | undefined) ?? '')
-	);
+	let faviconUrl = $derived((theme.resolved === 'dark'
+		? data.siteSettings?.['appearance.favicon_url_dark'] as string | undefined
+		: undefined) ?? data.siteSettings?.['appearance.favicon_url'] as string | undefined ?? '');
+
 	$effect(() => {
 		if (!faviconUrl) return;
 		// Update every icon link — the app.html fallbacks carry
@@ -101,39 +105,24 @@
 	// en,fr when the setting is absent (Rule 3 — no hardcoded config in the
 	// steady state). Ref: japaconnect-engineering/sections/26-seo-performance.md
 	//      conventions/system-settings-catalog.md (i18n.enabled_languages)
-	let enabledLanguages = $derived(
-		((data.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
-			.split(',')
-			.map((l) => l.trim())
-			.filter(Boolean)
-	);
-	let defaultLanguage = $derived(
-		(data.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
-	);
+	let enabledLanguages = $derived((data.siteSettings?.['i18n.enabled_languages'] as string | undefined ?? 'en,fr').split(',').map((l) => l.trim()).filter(Boolean));
+
+	let defaultLanguage = $derived(data.siteSettings?.['i18n.default_language'] as string | undefined ?? 'en');
+
 	// og:locale mirrors the active locale; alternates cover the other enabled
 	// languages (same source as the server-side hreflang set so they never drift).
-	let ogLocale = $derived((data.locale as string | undefined) ?? defaultLanguage);
+	let ogLocale = $derived(data.locale as string | undefined ?? defaultLanguage);
 
 	// Site-level settings from GET /site/settings/public (general.*).
 	// Used for SEO meta tags and the maintenance banner.
-	let siteName = $derived(
-		resolveString(
-			(data.siteSettings?.['general.site_name'] as string | undefined) ?? DEFAULT_SITE_NAME,
-			GLOBAL_TOKENS
-		)
-	);
+	let siteName = $derived(resolveString(data.siteSettings?.['general.site_name'] as string | undefined ?? DEFAULT_SITE_NAME, GLOBAL_TOKENS));
+
 	// The admin-managed description may carry {{country}}/{{country_adjective}}
 	// geo tokens (Page Builder copy syntax). The layout has no per-visitor geo
 	// context, so resolve against GLOBAL_TOKENS — never emit a raw {{token}}.
-	let siteDescription = $derived(
-		resolveString(
-			(data.siteSettings?.['general.site_description'] as string | undefined) ?? '',
-			GLOBAL_TOKENS
-		)
-	);
-	let maintenanceMode = $derived(
-		(data.siteSettings?.['general.maintenance_mode'] as boolean | undefined) ?? false
-	);
+	let siteDescription = $derived(resolveString(data.siteSettings?.['general.site_description'] as string | undefined ?? '', GLOBAL_TOKENS));
+
+	let maintenanceMode = $derived(data.siteSettings?.['general.maintenance_mode'] as boolean | undefined ?? false);
 
 	// Mirror the SSR dedupeFallbackMeta on client navigations: the layout's
 	// fallback metas persist across nav, so when the incoming page supplies
@@ -164,7 +153,7 @@
 	});
 	// Admins bypass the maintenance banner.
 	let showMaintenanceBanner = $derived(
-		maintenanceMode && !(data.user?.groups?.some((g) => g === 'Super Admin' || g === 'Admin') ?? false)
+		maintenanceMode && !(data.user?.groups?.some((g: string) => g === 'Super Admin' || g === 'Admin') ?? false)
 	);
 
 	// Custom code injection (§57). Loaded from GET /site/settings/public
@@ -183,23 +172,22 @@
 	// site.custom_css is injected server-side by hooks.server.ts into the
 	// static <style id="jc-custom-css"> tag in app.html (sanitized there) —
 	// {@html} inside a <style> element does not compile, so it cannot live here.
-	let customJsRaw = $derived((data.siteSettings?.['site.custom_js'] as string | undefined) ?? '');
-	let customJsApproved = $derived(
-		(data.siteSettings?.['site.custom_js_approved'] as boolean | undefined) ?? false
-	);
+	let customJsRaw = $derived(data.siteSettings?.['site.custom_js'] as string | undefined ?? '');
+
+	let customJsApproved = $derived(data.siteSettings?.['site.custom_js_approved'] as boolean | undefined ?? false);
 	let customJs = $derived(customJsApproved ? customJsRaw : '');
 	let cspNonce = $derived(data.cspNonce ?? '');
 
 	// Umami analytics — Main surface (§40, ROADMAP-MAIN 01.10).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
-	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID);
+	const umamiEnabled = $derived(!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID);
 
 	// Cross-origin API host (logos, avatars, media). Preconnecting saves the
 	// DNS+TLS handshake on the first media request — a real LCP factor on
 	// media-heavy pages (§26 performance).
 	const apiOrigin = $derived.by(() => {
 		try {
-			const u = new URL(env.PUBLIC_JC_API_URL ?? '');
+			const u = new URL(PUBLIC_JC_API_URL ?? '');
 			return u.origin;
 		} catch {
 			return '';
@@ -221,15 +209,11 @@
 		// onboarding, marketplace, public pages — gets installability,
 		// offline caching, and push delivery, not just the (app) group.
 		// Ref: .jeos/sections/124-progressive-web-app.md
-		if (
-			typeof navigator !== 'undefined' &&
-			'serviceWorker' in navigator &&
-			// Firefox ≤146 / ESR 140 can't run module service workers — it
-			// falls back to classic evaluation of the ES-module dev stub and
-			// throws "script threw an exception during script evaluation" on
-			// every load. Production serves a classic IIFE, so only dev gates.
-			(!import.meta.env.DEV || moduleServiceWorkerSupported())
-		) {
+		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && (// Firefox ≤146 / ESR 140 can't run module service workers — it
+		// falls back to classic evaluation of the ES-module dev stub and
+		// throws "script threw an exception during script evaluation" on
+		// every load. Production serves a classic IIFE, so only dev gates.
+		!import.meta.env.DEV || moduleServiceWorkerSupported())) {
 			// SvelteKit/Vite serves the source service worker as an ES module in dev,
 			// but compiles it to a classic IIFE for production. Use the matching
 			// registration type so the browser does not fail to evaluate the script.
@@ -320,9 +304,23 @@
 <svelte:head>
 	{#if preconnectApi}<link rel="preconnect" href={apiOrigin} crossorigin="anonymous" />{/if}
 	<meta property="og:locale" content={ogLocale} />
-	{#each enabledLanguages.filter((l) => l !== ogLocale) as alt}<meta property="og:locale:alternate" content={alt} />{/each}
-	<link rel="alternate" type="application/rss+xml" title={t('feed.rss_title', '{site} Feed')} href="/feed.xml" />
-	<link rel="alternate" type="application/rss+xml" title={t('blog.rss_title', '{site} Blog')} href="/blog/feed.xml" />
+	{#each enabledLanguages.filter((l) => l !== ogLocale) as alt}
+		<meta property="og:locale:alternate" content={alt} />
+	{/each}
+	<link
+		rel="alternate"
+		type="application/rss+xml"
+		title={t('feed.rss_title', '{site} Feed')}
+		href="/feed.xml"
+	/>
+
+	<link
+		rel="alternate"
+		type="application/rss+xml"
+		title={t('blog.rss_title', '{site} Blog')}
+		href="/blog/feed.xml"
+	/>
+
 	<link
 		rel="alternate"
 		type="application/rss+xml"
@@ -344,8 +342,8 @@
 		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
 		<script
 			defer
-			src="{env.PUBLIC_JC_UMAMI_URL}/script.js"
-			data-website-id={env.PUBLIC_JC_UMAMI_SITE_ID}
+			src="{PUBLIC_JC_UMAMI_URL}/script.js"
+			data-website-id={PUBLIC_JC_UMAMI_SITE_ID}
 		></script>
 	{/if}
 </svelte:head>

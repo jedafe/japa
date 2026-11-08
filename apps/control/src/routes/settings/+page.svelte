@@ -1,26 +1,35 @@
 <script lang="ts">
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import Switch from '$lib/components/ui/Switch.svelte';
-	import Tooltip from '$lib/components/ui/Tooltip.svelte';
-	import { api, getToken } from '$lib/api';
-	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import Switch from '#lib/components/ui/Switch.svelte';
+	import Tooltip from '#lib/components/ui/Tooltip.svelte';
+	import { api, getToken } from '#lib/api.js';
+	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
-	import type { SystemSetting } from '$lib/api/types';
-	import { t, translations } from '$lib/stores/i18n.svelte';
-	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
-	import AchievementReactionsEditor from '$lib/components/settings/AchievementReactionsEditor.svelte';
-	import SeedOpsEditor from '$lib/components/settings/SeedOpsEditor.svelte';
-	import ComparisonDimensionHintsEditor from '$lib/components/settings/ComparisonDimensionHintsEditor.svelte';
-	import CountryMultiSelect from '$lib/components/settings/CountryMultiSelect.svelte';
-	import KeyValueEditor from '$lib/components/settings/KeyValueEditor.svelte';
-	import CsvRepeater from '$lib/components/settings/CsvRepeater.svelte';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import type { SystemSetting } from '#lib/api/types.js';
+	import { t, translations } from '#lib/stores/i18n.svelte.js';
+	import { convertImageToModernFormat } from '#lib/utils/imageConvert.js';
+	import AchievementReactionsEditor from '#lib/components/settings/AchievementReactionsEditor.svelte';
+	import SeedOpsEditor from '#lib/components/settings/SeedOpsEditor.svelte';
+	import ComparisonDimensionHintsEditor from '#lib/components/settings/ComparisonDimensionHintsEditor.svelte';
+	import CountryMultiSelect from '#lib/components/settings/CountryMultiSelect.svelte';
+	import KeyValueEditor from '#lib/components/settings/KeyValueEditor.svelte';
+	import CsvRepeater from '#lib/components/settings/CsvRepeater.svelte';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import { JsonValueEditor, confirmDialog } from '@japaconnect/ui';
-	import { categoryIcons, categoryNames, sensitiveKeys as categorySensitiveKeys, textareaKeys as categoryTextareaKeys, uploadKeys as categoryUploadKeys, colorKeys as categoryColorKeys } from '$lib/components/settings/categoryConfig';
+
+	import {
+		categoryIcons,
+		categoryNames,
+		sensitiveKeys as categorySensitiveKeys,
+		textareaKeys as categoryTextareaKeys,
+		uploadKeys as categoryUploadKeys,
+		colorKeys as categoryColorKeys
+	} from '#lib/components/settings/categoryConfig.js';
+
 	import {
 		Settings,
 		RefreshCw,
@@ -91,32 +100,32 @@
 
 	const selectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
-			translations();
-			const opts: Record<string, { value: string; label: string }[]> = {
-				'media.storage.provider': [
+		translations();
+		const opts: Record<string, { value: string; label: string }[]> = {
+			'media.storage.provider': [
 					{ value: 'seaweedfs', label: t('settings.storage_seaweedfs', 'SeaweedFS') },
-					{ value: 's3', label: t('settings.storage_s3', 'Amazon S3') },
+				{ value: 's3', label: t('settings.storage_s3', 'Amazon S3') },
 					{ value: 'r2', label: t('settings.storage_r2', 'Cloudflare R2') },
-					{ value: 'b2', label: t('settings.storage_b2', 'Backblaze B2') }
-				],
-				// ADR-134 — edge CDN provider select.
-				'integrations.cdn.provider': [
-					{ value: '', label: t('settings.cdn_none', 'None (disabled)') },
+				{ value: 'b2', label: t('settings.storage_b2', 'Backblaze B2') }
+			],
+			// ADR-134 — edge CDN provider select.
+			'integrations.cdn.provider': [
+				{ value: '', label: t('settings.cdn_none', 'None (disabled)') },
 					{ value: 'cloudflare', label: t('settings.cdn_cloudflare', 'Cloudflare') },
 					{ value: 'bunnycdn', label: t('settings.cdn_bunnycdn', 'BunnyCDN') }
-				]
-			};
-			return opts;
+			]
+		};
+		return opts;
 		})()
 	);
 
 	const multiSelectOptions: Record<string, { value: string; label: string }[]> = $derived(
 		(() => {
-			translations();
-			// No control-panel settings use hardcoded multi-select options.
-			// Settings with options (e.g. pricing.currency) get them from the
-			// backend catalog via setting.options.
-			return {};
+		translations();
+		// No control-panel settings use hardcoded multi-select options.
+		// Settings with options (e.g. pricing.currency) get them from the
+		// backend catalog via setting.options.
+		return {};
 		})()
 	);
 
@@ -397,42 +406,42 @@
 		switch (setting.type) {
 			case 'int':
 			case 'float': {
-				const trimmed = raw.trim();
-				if (trimmed === '' || Number.isNaN(Number(trimmed))) {
-					return t('settings.validation_number', '"{key}" must be a valid number.').replace('{key}', key);
-				}
-				const num = Number(trimmed);
-				if (setting.type === 'int' && !Number.isInteger(num)) {
-					return t('settings.validation_integer', '"{key}" must be a whole number.').replace('{key}', key);
-				}
-				const min = (setting as unknown as Record<string, unknown>).min;
-				const max = (setting as unknown as Record<string, unknown>).max;
-				if (typeof min === 'number' && num < min) {
-					return t('settings.validation_number', '"{key}" must be ≥ {min}.').replace('{key}', key).replace('{min}', String(min));
-				}
-				if (typeof max === 'number' && num > max) {
-					return t('settings.validation_number', '"{key}" must be ≤ {max}.').replace('{key}', key).replace('{max}', String(max));
-				}
-				return null;
-			}
-			case 'bool': {
-				const unquoted = raw.replace(/^"(.*)"$/, '$1').toLowerCase();
-				if (unquoted !== 'true' && unquoted !== 'false') {
-					return t('settings.validation_bool', '"{key}" must be true or false.').replace('{key}', key);
-				}
-				return null;
-			}
-			default: {
-				const trimmed = raw.trim();
-				if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-					try {
-						JSON.parse(trimmed);
-					} catch {
-						return t('settings.validation_json', '"{key}" is not valid JSON.').replace('{key}', key);
+					const trimmed = raw.trim();
+					if (trimmed === '' || Number.isNaN(Number(trimmed))) {
+						return t('settings.validation_number', '"{key}" must be a valid number.').replace('{key}', key);
 					}
+					const num = Number(trimmed);
+					if (setting.type === 'int' && !Number.isInteger(num)) {
+						return t('settings.validation_integer', '"{key}" must be a whole number.').replace('{key}', key);
+					}
+					const min = (setting as unknown as Record<string, unknown>).min;
+					const max = (setting as unknown as Record<string, unknown>).max;
+					if (typeof min === 'number' && num < min) {
+						return t('settings.validation_number', '"{key}" must be ≥ {min}.').replace('{key}', key).replace('{min}', String(min));
+					}
+					if (typeof max === 'number' && num > max) {
+						return t('settings.validation_number', '"{key}" must be ≤ {max}.').replace('{key}', key).replace('{max}', String(max));
+					}
+					return null;
 				}
-				return null;
-			}
+			case 'bool': {
+					const unquoted = raw.replace(/^"(.*)"$/, '$1').toLowerCase();
+					if (unquoted !== 'true' && unquoted !== 'false') {
+						return t('settings.validation_bool', '"{key}" must be true or false.').replace('{key}', key);
+					}
+					return null;
+				}
+			default: {
+					const trimmed = raw.trim();
+					if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+						try {
+							JSON.parse(trimmed);
+						} catch {
+							return t('settings.validation_json', '"{key}" is not valid JSON.').replace('{key}', key);
+						}
+					}
+					return null;
+				}
 		}
 	}
 
@@ -834,6 +843,8 @@
 	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
 	let bypassGuard = false;
 	beforeNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
+
 		const { cancel, to, from } = nav;
 		// Same-page navigations (e.g. the ?category= deep-link update in
 		// selectCategory) never lose state — the dirty guard only applies
@@ -881,13 +892,13 @@
 	// selection is shareable and survives navigation.
 	function selectCategory(cat: string) {
 		activeCategory = cat;
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (cat === 'all') {
 			url.searchParams.delete('category');
 		} else {
 			url.searchParams.set('category', cat);
 		}
-		goto(url.pathname + url.search, { replaceState: true, noScroll: true });
+		goto(url.pathname + url.search, { replace: true, reset: false });
 	}
 
 	load();
@@ -920,23 +931,23 @@
 				activeCategory === 'all'
 					? true
 					: getSettingCategory(s) === activeCategory;
-			if (!matchesCategory) return false;
-			// ADR-134: only the selected CDN provider's credential fields are
-			// meaningful — hide the other provider's keys.
-			if (s.key.startsWith('integrations.')) return isCdnSettingVisible(s.key);
-			return true;
+		if (!matchesCategory) return false;
+		// ADR-134: only the selected CDN provider's credential fields are
+		// meaningful — hide the other provider's keys.
+		if (s.key.startsWith('integrations.')) return isCdnSettingVisible(s.key);
+		return true;
 		})
 	);
 
 	let grouped = $derived(
 		Object.entries(
 			filtered.reduce(
-				(acc, s) => {
-					const ns = getSettingCategory(s);
-					(acc[ns] ??= []).push(s);
-					return acc;
-				},
-				{} as Record<string, SystemSetting[]>
+		(acc, s) => {
+			const ns = getSettingCategory(s);
+			(acc[ns] ??= []).push(s);
+			return acc;
+		},
+		{} as Record<string, SystemSetting[]>
 			)
 		).sort(([a], [b]) => a.localeCompare(b))
 	);
@@ -1061,7 +1072,7 @@
 
 	function getMaskedValue(value: string): string {
 		if (!value) return '';
-		return '•'.repeat(Math.min(value.length, 16));
+		return ('•').repeat(Math.min(value.length, 16));
 	}
 
 	const MAX_UPLOAD_SIZE_MB = 50;
@@ -1087,8 +1098,8 @@
 		// Content-Disposition: attachment for it — never inline. Reject both
 		// by MIME and by extension (some platforms report an empty/generic
 		// type for .svg files).
-		const looksSvg =
-			file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
+		const looksSvg = file.type === 'image/svg+xml' || (/\.svg$/i).test(file.name);
+
 		if (looksSvg) {
 			uploadError = t(
 				'settings.upload_svg_blocked',
@@ -1119,8 +1130,8 @@
 			const res = await fetch(buildApiUrl('/admin/media/upload', PUBLIC_JC_API_URL), {
 				method: 'POST',
 				headers: {
-					...(token ? { authorization: `Bearer ${token}` } : {}),
-					...(csrf ? { 'X-CSRF-Token': csrf } : {})
+					...token ? { authorization: `Bearer ${token}` } : {},
+					...csrf ? { 'X-CSRF-Token': csrf } : {}
 				},
 				body: formData
 			});
@@ -1521,93 +1532,93 @@
 										/>
 									</div>
 
-							{:else if componentType === 'csv-repeater'}
-								<div class="w-full max-w-md">
-									<CsvRepeater
-										value={getDisplayValue(setting)}
+								{:else if componentType === 'csv-repeater'}
+									<div class="w-full max-w-md">
+										<CsvRepeater
+											value={getDisplayValue(setting)}
+											disabled={isSaving}
+											onchange={(next) => updateSetting(setting.key, next)}
+										/>
+									</div>
+
+								{:else if componentType === 'comparison-dimension-hints-editor'}
+									<div class="w-full max-w-2xl">
+										<ComparisonDimensionHintsEditor
+											value={setting.value ?? '{}'}
+											disabled={isSaving}
+											onchange={(next) => updateSetting(setting.key, next)}
+										/>
+									</div>
+
+								{:else if componentType === 'achievement-reactions'}
+									<div class="w-full max-w-md">
+										<AchievementReactionsEditor
+											value={setting.value ?? '[]'}
+											disabled={isSaving}
+											onchange={(next) => updateSetting(setting.key, next)}
+										/>
+									</div>
+
+								{:else if componentType === 'seed-ops-editor'}
+									<div class="w-full max-w-2xl">
+										<SeedOpsEditor
+											value={setting.value ?? '[]'}
+											disabled={isSaving}
+											onchange={(next) => updateSetting(setting.key, next)}
+										/>
+									</div>
+
+								{:else if componentType === 'country-multi-select'}
+									<CountryMultiSelect
+										value={setting.value ?? ''}
 										disabled={isSaving}
 										onchange={(next) => updateSetting(setting.key, next)}
 									/>
-								</div>
 
-							{:else if componentType === 'comparison-dimension-hints-editor'}
-								<div class="w-full max-w-2xl">
-									<ComparisonDimensionHintsEditor
+								{:else if componentType === 'key-value-editor'}
+									<KeyValueEditor
 										value={setting.value ?? '{}'}
-										disabled={isSaving}
-										onchange={(next) => updateSetting(setting.key, next)}
-									/>
-								</div>
-
-							{:else if componentType === 'achievement-reactions'}
-								<div class="w-full max-w-md">
-									<AchievementReactionsEditor
-										value={setting.value ?? '[]'}
-										disabled={isSaving}
-										onchange={(next) => updateSetting(setting.key, next)}
-									/>
-								</div>
-
-							{:else if componentType === 'seed-ops-editor'}
-								<div class="w-full max-w-2xl">
-									<SeedOpsEditor
-										value={setting.value ?? '[]'}
-										disabled={isSaving}
-										onchange={(next) => updateSetting(setting.key, next)}
-									/>
-								</div>
-
-							{:else if componentType === 'country-multi-select'}
-								<CountryMultiSelect
-									value={setting.value ?? ''}
-									disabled={isSaving}
-									onchange={(next) => updateSetting(setting.key, next)}
-								/>
-
-							{:else if componentType === 'key-value-editor'}
-								<KeyValueEditor
-									value={setting.value ?? '{}'}
-									valueMode="string"
-									keyPlaceholder={setting.key === 'ai.provider_cost_overrides' ? 'provider.model' : 'slug'}
+										valueMode="string"
+										keyPlaceholder={setting.key === 'ai.provider_cost_overrides' ? 'provider.model' : 'slug'}
 									valuePlaceholder={setting.key === 'ai.provider_cost_overrides' ? '0.0003' : setting.key === 'geo_personalization.tool_urls' ? '/path' : 'Display label'}
-									disabled={isSaving}
-									onchange={(next) => updateSetting(setting.key, next)}
-								/>
-
-							{:else if componentType === 'stage-tool-matrix-editor'}
-								<KeyValueEditor
-									value={setting.value ?? '{}'}
-									valueMode="csv"
-									keyPlaceholder="archetype:stage"
-									valuePlaceholder="tool-slug-1, tool-slug-2, ..."
-									disabled={isSaving}
-									onchange={(next) => updateSetting(setting.key, next)}
-								/>
-
-							{:else if componentType === 'entity-multi-select'}
-									{@const selectedUuids = getCurrentUuids(setting.key)}
-								<div class="w-64">
-									{#if selectedUuids.length > 0}
-										<div class="mb-1 flex flex-wrap gap-1">
-											{#each selectedUuids as uuid}
-												<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
-													{getEntityLabel(setting.key, uuid)}
-													<button class="hover:text-destructive" onclick={() => removeUuidFromSetting(setting.key, uuid)}>×</button>
-												</span>
-											{/each}
-										</div>
-									{/if}
-									<Autocomplete
-										id="setting-{setting.key}"
-										placeholder={t('settings.add_placeholder', 'Add...')}
-										emptyMessage={t('settings.no_results', 'No results found')}
-										fetcher={(q) => getEntityFetcher(setting.key)(q, selectedUuids)}
-										initialFetcher={() => getEntityInitialFetcher(setting.key)(selectedUuids)}
-										selectedId={null}
-										onSelect={(item) => addUuidToSetting(setting.key, item.id)}
+										disabled={isSaving}
+										onchange={(next) => updateSetting(setting.key, next)}
 									/>
-								</div>
-							{:else if componentType === 'json-editor'}
+
+								{:else if componentType === 'stage-tool-matrix-editor'}
+									<KeyValueEditor
+										value={setting.value ?? '{}'}
+										valueMode="csv"
+										keyPlaceholder="archetype:stage"
+										valuePlaceholder="tool-slug-1, tool-slug-2, ..."
+										disabled={isSaving}
+										onchange={(next) => updateSetting(setting.key, next)}
+									/>
+
+								{:else if componentType === 'entity-multi-select'}
+									{@const selectedUuids = getCurrentUuids(setting.key)}
+									<div class="w-64">
+										{#if selectedUuids.length > 0}
+											<div class="mb-1 flex flex-wrap gap-1">
+												{#each selectedUuids as uuid}
+												<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+														{getEntityLabel(setting.key, uuid)} 
+													<button class="hover:text-destructive" onclick={() => removeUuidFromSetting(setting.key, uuid)}>×</button>
+													</span>
+												{/each}
+											</div>
+										{/if}
+										<Autocomplete
+											id="setting-{setting.key}"
+											placeholder={t('settings.add_placeholder', 'Add...')}
+											emptyMessage={t('settings.no_results', 'No results found')}
+											fetcher={(q) => getEntityFetcher(setting.key)(q, selectedUuids)}
+											initialFetcher={() => getEntityInitialFetcher(setting.key)(selectedUuids)}
+											selectedId={null}
+											onSelect={(item) => addUuidToSetting(setting.key, item.id)}
+										/>
+									</div>
+								{:else if componentType === 'json-editor'}
 									<div class="w-64">
 										<JsonValueEditor
 											id="setting-{setting.key}"
@@ -1918,160 +1929,172 @@
 												class={selectTriggerClasses}
 											/>
 
-									{:else if componentType === 'multi-select'}
-										{@const selectedValues = getMultiSelectValues(getDisplayValue(setting))}
-										<div class="w-56">
-											<div class="mb-1 flex flex-wrap gap-1">
-												{#each selectedValues as val}
-													{@const optionLabel = getMultiSelectOptionsForSetting(setting).find((o) => o.value === val)?.label ?? val}
+										{:else if componentType === 'multi-select'}
+											{@const selectedValues = getMultiSelectValues(getDisplayValue(setting))}
+											<div class="w-56">
+												<div class="mb-1 flex flex-wrap gap-1">
+													{#each selectedValues as val}
+														{@const optionLabel = getMultiSelectOptionsForSetting(setting).find((o) => o.value === val)?.label ?? val}
 													<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
-														{optionLabel}
+															{optionLabel} 
 														<button class="hover:text-destructive" onclick={() => updateSetting(setting.key, selectedValues.filter((v) => v !== val).join(','))}>×</button>
-													</span>
-												{/each}
+														</span>
+													{/each}
+												</div>
+												<AutocompleteSelect
+													id="setting-{setting.key}"
+													value=""
+													onValueChange={(v) => {
+														if (v && !selectedValues.includes(v)) {
+															updateSetting(setting.key, [...selectedValues, v].join(','));
+														}
+													}}
+													options={getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value))}
+													placeholder={t('settings.add_placeholder', 'Add...')}
+													class="{selectTriggerClasses} w-full"
+												/>
 											</div>
-											<AutocompleteSelect
-												id="setting-{setting.key}"
-												value=""
-												onValueChange={(v) => {
-													if (v && !selectedValues.includes(v)) {
-														updateSetting(setting.key, [...selectedValues, v].join(','));
-													}
-												}}
-												options={getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value))}
-												placeholder={t('settings.add_placeholder', 'Add...')}
-												class="{selectTriggerClasses} w-full"
-											/>
-										</div>
 
-									{:else if componentType === 'json-editor'}
-										<div class="w-64">
-											<JsonValueEditor
-												id="setting-{setting.key}"
-												value={setting.value ?? ''}
-												disabled={isSaving}
-												onchange={(json) => {
-													const val = json.trim();
+										{:else if componentType === 'json-editor'}
+											<div class="w-64">
+												<JsonValueEditor
+													id="setting-{setting.key}"
+													value={setting.value ?? ''}
+													disabled={isSaving}
+													onchange={(json) => {
+														const val = json.trim();
 													if (val === '' && setting.value?.startsWith('[')) updateSetting(setting.key, '[]');
 													else updateSetting(setting.key, val);
-												}}
-											/>
-										</div>
-
-									{:else if componentType === 'textarea'}
-										<textarea
-											id="setting-{setting.key}"
-											rows={2}
-											value={getDisplayValue(setting)}
-											onchange={(e) => {
-												const target = e.currentTarget as HTMLTextAreaElement;
-												const val = target.value.trim();
-												if ((val === '' || val === '[]') && setting.value?.startsWith('[')) {
-													updateSetting(setting.key, '[]');
-												} else {
-													updateSetting(setting.key, val);
-												}
-											}}
-											class="{inputClasses} w-64 resize-y font-mono text-xs"
-										></textarea>
-
-								{:else if componentType === 'csv-repeater'}
-									<div class="w-full max-w-md">
-										<CsvRepeater
-											value={getDisplayValue(setting)}
-											disabled={isSaving}
-											onchange={(next) => updateSetting(setting.key, next)}
-										/>
-									</div>
-
-								{:else if componentType === 'comparison-dimension-hints-editor'}
-									<div class="w-full">
-										<ComparisonDimensionHintsEditor
-											value={setting.value ?? '{}'}
-											disabled={isSaving}
-											onchange={(next) => updateSetting(setting.key, next)}
-										/>
-									</div>
-
-								{:else if componentType === 'achievement-reactions'}
-									<div class="w-full">
-										<AchievementReactionsEditor
-											value={setting.value ?? '[]'}
-											disabled={isSaving}
-											onchange={(next) => updateSetting(setting.key, next)}
-										/>
-									</div>
-
-								{:else if componentType === 'entity-multi-select'}
-									{@const selectedUuids = getCurrentUuids(setting.key)}
-									<div class="w-64">
-										{#if selectedUuids.length > 0}
-											<div class="mb-1 flex flex-wrap gap-1">
-												{#each selectedUuids as uuid}
-													<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
-														{getEntityLabel(setting.key, uuid)}
-														<button class="hover:text-destructive" onclick={() => removeUuidFromSetting(setting.key, uuid)}>×</button>
-													</span>
-												{/each}
+													}}
+												/>
 											</div>
-										{/if}
-										<Autocomplete
-											id="setting-{setting.key}"
-											placeholder={t('settings.add_placeholder', 'Add...')}
-											emptyMessage={t('settings.no_results', 'No results found')}
-											fetcher={(q) => getEntityFetcher(setting.key)(q, selectedUuids)}
-											initialFetcher={() => getEntityInitialFetcher(setting.key)(selectedUuids)}
-											selectedId={null}
-											onSelect={(item) => addUuidToSetting(setting.key, item.id)}
-										/>
-									</div>
-								{:else if componentType === 'number'}
-										<input
-											id="setting-{setting.key}"
-											type="number"
-											value={getDisplayValue(setting)}
-											onchange={(e) => {
-												const target = e.currentTarget as HTMLInputElement;
-												updateSetting(setting.key, target.value);
-											}}
-											step={setting.type === 'float' ? '0.01' : '1'}
-											min={typeof setting.min === 'number' ? setting.min : undefined}
-											max={typeof setting.max === 'number' ? setting.max : undefined}
-											class="{inputClasses} w-28"
-										/>
+
+										{:else if componentType === 'textarea'}
+											<textarea
+												id="setting-{setting.key}"
+												rows={2}
+												value={getDisplayValue(setting)}
+												onchange={(e) => {
+													const target = e.currentTarget as HTMLTextAreaElement;
+													const val = target.value.trim();
+													if ((val === '' || val === '[]') && setting.value?.startsWith('[')) {
+														updateSetting(setting.key, '[]');
+													} else {
+														updateSetting(setting.key, val);
+													}
+												}}
+												class="{inputClasses} w-64 resize-y font-mono text-xs"
+											></textarea>
+
+										{:else if componentType === 'csv-repeater'}
+											<div class="w-full max-w-md">
+												<CsvRepeater
+													value={getDisplayValue(setting)}
+													disabled={isSaving}
+													onchange={(next) => updateSetting(setting.key, next)}
+												/>
+											</div>
+
+										{:else if componentType === 'comparison-dimension-hints-editor'}
+											<div class="w-full">
+												<ComparisonDimensionHintsEditor
+													value={setting.value ?? '{}'}
+													disabled={isSaving}
+													onchange={(next) => updateSetting(setting.key, next)}
+												/>
+											</div>
+
+										{:else if componentType === 'achievement-reactions'}
+											<div class="w-full">
+												<AchievementReactionsEditor
+													value={setting.value ?? '[]'}
+													disabled={isSaving}
+													onchange={(next) => updateSetting(setting.key, next)}
+												/>
+											</div>
+
+										{:else if componentType === 'entity-multi-select'}
+											{@const selectedUuids = getCurrentUuids(setting.key)}
+											<div class="w-64">
+												{#if selectedUuids.length > 0}
+													<div class="mb-1 flex flex-wrap gap-1">
+														{#each selectedUuids as uuid}
+													<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]">
+																{getEntityLabel(setting.key, uuid)} 
+														<button class="hover:text-destructive" onclick={() => removeUuidFromSetting(setting.key, uuid)}>×</button>
+															</span>
+														{/each}
+													</div>
+												{/if}
+												<Autocomplete
+													id="setting-{setting.key}"
+													placeholder={t('settings.add_placeholder', 'Add...')}
+													emptyMessage={t('settings.no_results', 'No results found')}
+													fetcher={(q) => getEntityFetcher(setting.key)(q, selectedUuids)}
+													initialFetcher={() => getEntityInitialFetcher(setting.key)(selectedUuids)}
+													selectedId={null}
+													onSelect={(item) => addUuidToSetting(setting.key, item.id)}
+												/>
+											</div>
+										{:else if componentType === 'number'}
+											<input
+												id="setting-{setting.key}"
+												type="number"
+												value={getDisplayValue(setting)}
+												onchange={(e) => {
+													const target = e.currentTarget as HTMLInputElement;
+													updateSetting(setting.key, target.value);
+												}}
+												step={setting.type === 'float' ? '0.01' : '1'}
+												min={typeof setting.min === 'number' ? setting.min : undefined}
+												max={typeof setting.max === 'number' ? setting.max : undefined}
+												class="{inputClasses} w-28"
+											/>
 
 										{:else if componentType === 'upload'}
-										<div class="flex items-center gap-2">
+											<div class="flex items-center gap-2">
 											<input id="setting-{setting.key}" type="text" value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} placeholder="https://..." class="{inputClasses} w-44" />
-											<button
-												type="button"
-												class="border-border-input bg-background-alt hover:bg-muted text-muted-foreground flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors"
-												aria-label={t('settings.upload_image', 'Upload image')}
+												<button
+													type="button"
+													class="border-border-input bg-background-alt hover:bg-muted text-muted-foreground flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors"
+													aria-label={t('settings.upload_image', 'Upload image')}
 												onclick={(e) => { (e.currentTarget as HTMLButtonElement).querySelector<HTMLInputElement>('input[type=file]')?.click(); }}
-												disabled={uploadingKey === setting.key}
-											>
+													disabled={uploadingKey === setting.key}
+												>
 												<input type="file" class="hidden" accept="image/*,.heic,.heif" title={t('settings.upload_raster_only', 'Raster images only — SVG uploads are blocked (script vector)')} onchange={(e) => { const input = e.currentTarget; const file = input.files?.[0]; if (file) handleFileUpload(setting, file, input); }} />
-												{#if uploadingKey === setting.key}
-													<Loader2 class="size-3 animate-spin" />
-												{:else}
-													<Upload class="size-3" />
-												{/if}
-											</button>
-											{#if getDisplayValue(setting)}
+													{#if uploadingKey === setting.key}
+														<Loader2 class="size-3 animate-spin" />
+													{:else}
+														<Upload class="size-3" />
+													{/if}
+												</button>
+												{#if getDisplayValue(setting)}
 												<img src={getDisplayValue(setting)} alt="" class="size-6 rounded border border-border-input object-cover" onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+												{/if}
+											</div>
+											{#if uploadError && uploadingKey === setting.key}
+												<p class="text-destructive text-[10px]">{uploadError}</p>
 											{/if}
-										</div>
-										{#if uploadError && uploadingKey === setting.key}
-											<p class="text-destructive text-[10px]">{uploadError}</p>
-										{/if}
 
-									{:else if componentType === 'color'}
-										<div class="flex items-center gap-2">
-											<input id="setting-{setting.key}" type="color" value={getDisplayValue(setting) || '#000000'} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} class="size-8 cursor-pointer rounded-lg border border-border-input bg-transparent" />
-											<input type="text" value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} placeholder="#000000" class="{inputClasses} w-24 font-mono text-xs" />
-										</div>
+										{:else if componentType === 'color'}
+											<div class="flex items-center gap-2">
+												<input
+													id="setting-{setting.key}"
+													type="color"
+													value={getDisplayValue(setting) || '#000000'}
+													onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)}
+													class="size-8 cursor-pointer rounded-lg border border-border-input bg-transparent"
+												/>
 
-									{:else if isSensitiveKey(setting.key, setting)}
+												<input
+													type="text"
+													value={getDisplayValue(setting)}
+													onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)}
+													placeholder="#000000"
+													class="{inputClasses} w-24 font-mono text-xs"
+												/>
+											</div>
+										{:else if isSensitiveKey(setting.key, setting)}
 											<div class="flex items-center gap-1">
 												<input id="setting-{setting.key}" type={revealedKeys.has(setting.key) ? 'text' : 'password'} value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} class="{inputClasses} w-44 font-mono text-xs" />
 												<button type="button" class="text-muted-foreground hover:text-foreground rounded p-1 transition-colors" onclick={() => toggleReveal(setting.key)} aria-label={revealedKeys.has(setting.key) ? t('settings.hide_value', 'Hide') : t('settings.reveal_value', 'Reveal')}>

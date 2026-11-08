@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /onboarding/templates — Onboarding template CRUD (Section 09).
 	// Templates are configurable onboarding step sequences stored as jsonb.
 	// The backend exposes GET/POST/PATCH/DELETE under /admin/onboarding/templates
 	// (RBAC: admin.settings for mutations, admin.settings.view for reads).
 	// This page uses the EntityPage scaffold with a formSnippet for the steps
 	// jsonb editor (a JsonValueEditor editing a JSON array as a repeater).
-	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
-	import { api, onboardingAdminApi } from '$lib/api';
+	import { EntityPage, type EntityPageConfig, type FieldDef } from '#lib/components/entity/index.js';
+	import { api, onboardingAdminApi } from '#lib/api.js';
 	import { JsonValueEditor } from '@japaconnect/ui';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 
 	type OnboardingTemplate = {
 		id: string;

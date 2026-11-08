@@ -4,11 +4,11 @@
 	// form posts to /reviews/{entity_type}/{entity_id} via the browser API
 	// client and emits `onCreated` with the new review so the parent can
 	// prepend it to the list and refresh the aggregate.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { Star, Send } from 'lucide-svelte';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import type { Review } from '$lib/types';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import type { Review } from '#lib/types/index.js';
 
 	interface Props {
 		entityType: string;

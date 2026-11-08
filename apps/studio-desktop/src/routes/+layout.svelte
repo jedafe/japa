@@ -3,10 +3,10 @@
 	import { onMount } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { LayoutDashboard, Sparkles, Check, Settings, RefreshCw, List } from 'lucide-svelte';
-	import { initSettingsDb, loadSettings, type StudioSettings } from '$lib/services/settings';
-	import { initSiteSettings, siteName } from '$lib/stores/site.svelte';
+	import { initSettingsDb, loadSettings, type StudioSettings } from '#lib/services/settings.js';
+	import { initSiteSettings, siteName } from '#lib/stores/site.svelte.js';
 	import { ToastHost, ConfirmHost } from '@japaconnect/ui';
-	import { startWatcher, stopWatcher } from '$lib/services/watcher';
+	import { startWatcher, stopWatcher } from '#lib/services/watcher.js';
 
 	let { children } = $props();
 
@@ -23,7 +23,9 @@
 		initSiteSettings(settings.baseUrl);
 	});
 
-	afterNavigate(() => {
+	afterNavigate(({ shallow, type }) => {
+		if (shallow && type === 'goto') return;
+
 		reloadSettings();
 	});
 

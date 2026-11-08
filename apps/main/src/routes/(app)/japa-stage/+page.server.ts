@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { MemberStage, JapaStageOption, JapaStageStats, JapaIntent, GeoCountry, TrendingContent } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { MemberStage, JapaStageOption, JapaStageStats, JapaIntent, GeoCountry, TrendingContent } from '#lib/types/index.js';
 
 const PAGE_SIZE = 20;
 const SORT_KEYS = new Set(['recent', 'stage_updated', 'name']);
@@ -50,9 +50,12 @@ export const load: PageServerLoad = async (event) => {
 		apiList<TrendingContent>(ctx, '/trending/content?page_size=8')
 			.then((r) => r.items)
 			.catch(() => [] as TrendingContent[]),
+		// The dest filter only needs id/name/geo_code — the /geo/countries
+		// rows carry ~300-char descriptions plus counters, and serializing
+		// all ~250 of them added ~120KB to the hydration payload.
 		apiList<GeoCountry>(ctx, '/geo/countries')
-			.then((r) => r.items)
-			.catch(() => [] as GeoCountry[]),
+			.then((r) => r.items.map((c) => ({ id: c.id, name: c.name, geo_code: c.geo_code })))
+			.catch(() => [] as Pick<GeoCountry, 'id' | 'name' | 'geo_code'>[]),
 		apiGet<{ value: string; label: string; intents?: JapaIntent[] }[]>(ctx, '/japa-stage/stages')
 			.then((list) => (list ?? []).map((o) => ({ value: o.value, intents: o.intents }) as JapaStageOption))
 			.catch(() => [] as JapaStageOption[]),

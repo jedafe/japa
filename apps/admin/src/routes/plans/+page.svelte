@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /plans — migrated to the EntityPage scaffold.
 	//
 	// The plan form includes a feature-list editor (add/remove/toggle) and a
@@ -8,13 +8,13 @@
 	// supplied via the `formSnippet` escape hatch (the `fields` array is still
 	// passed so EntityPage can seed the edit-form value). The "Manage Tracks"
 	// sub-flow is kept as a page-local <Modal> triggered from a custom row action.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { Select } from '$lib/components/ui/select';
-	import { plansApi, walletApi, type SubscriptionPlan, type PlanFeature, api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import { plansApi, walletApi, type SubscriptionPlan, type PlanFeature, api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Pencil, Trash2, Plus, X, Check, Star, ListChecks } from 'lucide-svelte';
 
 	type Plan = SubscriptionPlan;

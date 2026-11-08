@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGet } from '$lib/server/api';
-import type { Source, SourceMeta } from '$lib/types/sources';
+import { apiContext, apiList, apiGet } from '#lib/server/api.js';
+import type { Source, SourceMeta } from '#lib/types/sources.js';
 
 const PAGE_SIZE = 24;
 

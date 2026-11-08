@@ -3,9 +3,9 @@
 	// Ported from the Main app's AdSlot so admin-managed ad_slot widgets on
 	// Academy renders an actual campaign instead of a placeholder box. The slot
 	// is suppressed on the lesson player by RightSidebar (ADR-060: no ads).
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import { page } from '$app/state';
 
 	interface Props {

@@ -2,13 +2,13 @@
 	// Canonical video single page (§106). sourceOnly=false renders the full
 	// article page for a published video post; sourceOnly=true renders a lean
 	// player page for a bare video_sources row reached from /sources/{channel}.
-	import ContentArticlePage from '$lib/components/content/ContentArticlePage.svelte';
-	import VideoEmbed from '$lib/components/content/VideoEmbed.svelte';
-	import { formatDuration } from '$lib/utils/duration';
-	import { api } from '$lib/api/client';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
+	import ContentArticlePage from '#lib/components/content/ContentArticlePage.svelte';
+	import VideoEmbed from '#lib/components/content/VideoEmbed.svelte';
+	import { formatDuration } from '#lib/utils/duration.js';
+	import { api } from '#lib/api/client.js';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
 	import { Sparkles, CheckCircle2, AlertCircle, Loader2 } from 'lucide-svelte';
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName} from '#lib/i18n/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

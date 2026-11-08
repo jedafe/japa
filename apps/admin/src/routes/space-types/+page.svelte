@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { spaceTypesApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { spaceTypesApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Pencil, Trash2 } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 	import { onMount } from 'svelte';
 
 	type SpaceType = {

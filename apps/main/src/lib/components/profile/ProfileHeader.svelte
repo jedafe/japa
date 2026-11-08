@@ -1,14 +1,14 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { i18n } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
+	import { i18n } from '#lib/i18n/index.js';
 	import { Bot, Calendar, MessageSquare, MoreVertical, Pencil } from 'lucide-svelte';
-	import VerifiedBadge from '$lib/components/ui/VerifiedBadge.svelte';
-	import { Menu, MenuItem } from '$lib/components/ui';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
+	import { Menu, MenuItem } from '#lib/components/ui/index.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import type { PublicUser } from '$lib/types';
-	import FollowListModal, { type FollowListItem } from '$lib/components/profile/FollowListModal.svelte';
+	import type { PublicUser } from '#lib/types/index.js';
+	import FollowListModal, { type FollowListItem } from '#lib/components/profile/FollowListModal.svelte';
 
 	interface Props {
 		user: PublicUser;

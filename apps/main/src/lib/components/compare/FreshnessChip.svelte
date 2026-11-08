@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import type { FreshnessCell, FreshnessSummary } from '$lib/types/jce';
+	import { t } from '#lib/i18n/index.js';
+	import type { FreshnessCell, FreshnessSummary } from '#lib/types/jce.js';
 	import Self from './FreshnessChip.svelte';
 
 	interface Props {

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import type { BlogSeries, MediaAsset, MeSpace } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import type { BlogSeries, MediaAsset, MeSpace } from '#lib/types/index.js';
 	import SeriesSelector from './SeriesSelector.svelte';
 	import SpaceSelector from '../SpaceSelector.svelte';
 	import TagInput from '../TagInput.svelte';

@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { LogIn, UserPlus } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { env } from '$env/dynamic/public';
+	import { t } from '#lib/i18n/index.js';
+	import { PUBLIC_MAIN_ORIGIN } from '$app/env/public';
 	import { page } from '$app/state';
 
 	interface Props {
 		/** Compact variant for the mobile top bar (icon only). */
 		compact?: boolean;
 	}
-	let { compact = false }: Props = $props();
 
-	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+	let { compact = false }: Props = $props();
+	const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 	const returnTo = encodeURIComponent(page.url.href);
 </script>
 

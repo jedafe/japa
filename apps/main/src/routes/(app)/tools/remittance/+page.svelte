@@ -1,7 +1,7 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import {
@@ -19,8 +19,8 @@
 		Loader2,
 		GitCompare
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
+	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
 	import { LineChart } from 'layerchart';
 	import type {
 		RemittanceCorridor,
@@ -31,12 +31,12 @@
 		RemittanceCalculation,
 		RemittanceProviderCalc,
 		CatalogOption
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { PageData, ActionData } from './$types';
-	import { formatMoney, currencyLabel, currencySymbol } from '$lib/utils/currency';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import { formatMoney, currencyLabel, currencySymbol } from '#lib/utils/currency.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 

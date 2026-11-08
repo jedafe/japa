@@ -1,8 +1,8 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import { hasPerm } from '$lib/server/auth';
-import { dealPath, type Coupon, type DealPartnerRef } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import { hasPerm } from '#lib/server/auth.js';
+import { dealPath, type Coupon, type DealPartnerRef } from '#lib/types/index.js';
 
 /**
  * Deal detail at /deal/{provider}/{slug} — public, SSR, canonical slug URL

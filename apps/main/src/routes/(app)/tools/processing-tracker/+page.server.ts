@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { GeoCountry } from '$lib/types';
+import { apiContext, apiList, ApiError } from '#lib/server/api.js';
+import type { GeoCountry } from '#lib/types/index.js';
 
 /**
  * Visa Processing Time Tracker at /tools/processing-tracker (§93, reuses §83 visa timeline backend).

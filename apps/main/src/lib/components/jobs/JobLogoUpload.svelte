@@ -4,11 +4,11 @@
 	// unset, finder cards fall back to the poster org/user avatar.
 	//
 	// Ref: japaconnect-engineering/sections/63-jobs-board.md
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { ImagePlus, X } from 'lucide-svelte';
-	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import type { MediaAsset } from '$lib/types';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import type { MediaAsset } from '#lib/types/index.js';
 
 	interface Props {
 		values: Record<string, unknown>;

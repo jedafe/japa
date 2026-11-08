@@ -3,8 +3,8 @@
 	// CSR ONLY: POST /academy/instructor/apply.
 	// Payload matches backend ApplyInput (internal/academy/creator/store.go):
 	//   display_name (required), headline, bio, application_note.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { goto } from '$app/navigation';
 	import { GraduationCap, Send } from 'lucide-svelte';
 

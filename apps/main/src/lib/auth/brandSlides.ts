@@ -13,7 +13,7 @@ export interface BrandSlide {
  * empty array for any malformed input so the AuthShell can fall back to its
  * default static brand panel.
  */
-import { apiBaseUrl } from '$lib/api/client';
+import { apiBaseUrl } from '#lib/api/client.js';
 
 function normalizeImageUrl(image: string): string {
 	// API returns relative media paths — resolve them against the API origin

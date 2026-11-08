@@ -3,10 +3,10 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { EntityPage } from './index';
 import type { EntityPageConfig } from './index';
 
-vi.mock('$lib/api', () => ({}));
+vi.mock('#lib/api.js', () => ({}));
 vi.mock('$app/state', () => ({ page: { params: {}, url: new URL('http://localhost/') } }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn(), pushState: vi.fn() }));
-vi.mock('$lib/stores/permissions.svelte', () => ({
+vi.mock('#lib/stores/permissions.svelte.js', () => ({
 	hasPermission: () => true,
 	hasAllPermissions: () => true,
 	hasAnyPermission: () => true,

@@ -3,14 +3,14 @@
 	// Billing / Payments section. Displays the user's payment history fetched
 	// from GET /me/payments and lets the user view a single payment's details
 	// via GET /me/payments/{id}.
-	import { Modal } from '$lib/components/ui';
-	import { t } from '$lib/i18n';
-	import { i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { Modal } from '#lib/components/ui/index.js';
+	import { t } from '#lib/i18n/index.js';
+	import { i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { Receipt } from 'lucide-svelte';
-	import { loadCurrencies, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
-	import type { Payment } from '$lib/types';
+	import { loadCurrencies, formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
+	import type { Payment } from '#lib/types/index.js';
 
 	interface PaymentsData {
 		payments: Payment[];

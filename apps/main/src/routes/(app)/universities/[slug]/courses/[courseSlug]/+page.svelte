@@ -1,12 +1,12 @@
 <!-- Ref: japaconnect-engineering/sections/39-space-types-university.md
      (university_course_offerings — public offering detail) -->
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, siteName} from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, siteName} from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { GraduationCap, ArrowLeft, GitCompare, CalendarDays, Clock, Globe, Award, ListChecks, Wallet, Building2 } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import { formatMoney } from '$lib/utils/currency';
+	import { formatMoney } from '#lib/utils/currency.js';
 
 	let { data }: { data: PageData } = $props();
 

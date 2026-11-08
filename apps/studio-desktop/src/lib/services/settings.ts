@@ -4,7 +4,7 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import * as stateDb from '$lib/services/db';
+import * as stateDb from '#lib/services/db.js';
 
 export const SETTINGS_KEY = 'japa-studio:settings';
 

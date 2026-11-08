@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import ServiceCard from './ServiceCard.svelte';
-import type { ServiceListing } from '$lib/types';
+import type { ServiceListing } from '#lib/types/index.js';
 
 const features: Record<string, boolean> = { 'feature.bookmarks': true };
 
@@ -18,7 +18,7 @@ vi.mock('$app/navigation', () => ({
 	goto: vi.fn()
 }));
 
-vi.mock('$lib/api/client', () => ({
+vi.mock('#lib/api/client.js', () => ({
 	api: {
 		post: vi.fn().mockResolvedValue({ data: {}, error: null, status: 200 }),
 		delete: vi.fn().mockResolvedValue({ data: {}, error: null, status: 200 })
@@ -27,7 +27,7 @@ vi.mock('$lib/api/client', () => ({
 
 const getViewerStateMock = vi.fn().mockResolvedValue({ bookmarked: false });
 const updateViewerStateMock = vi.fn();
-vi.mock('$lib/api/viewerState', () => ({
+vi.mock('#lib/api/viewerState.js', () => ({
 	getViewerState: (...args: unknown[]) => getViewerStateMock(...args),
 	updateViewerState: (...args: unknown[]) => updateViewerStateMock(...args)
 }));

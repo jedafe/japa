@@ -5,23 +5,23 @@
 	// a wiki-specific right sidebar (quick facts, related, popular cities)
 	// registered on the shared rail via SetSidebar (ADR-058).
 	import { page } from '$app/state';
-	import { i18n, t, siteName} from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import ShareButton from '$lib/components/ui/ShareButton.svelte';
-	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
-	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
-	import WikiGalleryStrip from '$lib/components/wiki/WikiGalleryStrip.svelte';
-	import WikiTabs from '$lib/components/wiki/WikiTabs.svelte';
-	import WikiExploreMap from '$lib/components/wiki/WikiExploreMap.svelte';
-	import { browser } from '$app/environment';
-	import { apiBaseUrl } from '$lib/api/client';
-	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
-	import { categoryIconResolved, categoryTint } from '$lib/components/wiki/icons';
-	import { decodeBase64Text } from '$lib/tiptap/serialize';
-	import { flagUrl } from '$lib/utils/flags';
-	import { openLightbox } from '$lib/lightbox.svelte';
+	import { i18n, t, siteName} from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import ShareButton from '#lib/components/ui/ShareButton.svelte';
+	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
+	import EntityFieldsPanel from '#lib/components/wiki/EntityFieldsPanel.svelte';
+	import WikiGalleryStrip from '#lib/components/wiki/WikiGalleryStrip.svelte';
+	import WikiTabs from '#lib/components/wiki/WikiTabs.svelte';
+	import WikiExploreMap from '#lib/components/wiki/WikiExploreMap.svelte';
+	import { browser } from '$app/env';
+	import { apiBaseUrl } from '#lib/api/client.js';
+	import WikiSidebar from '#lib/components/wiki/WikiSidebar.svelte';
+	import { categoryIconResolved, categoryTint } from '#lib/components/wiki/icons.js';
+	import { decodeBase64Text } from '#lib/tiptap/serialize.js';
+	import { flagUrl } from '#lib/utils/flags.js';
+	import { openLightbox } from '#lib/lightbox.svelte.js';
 	import {
 		ArrowRight,
 		BookOpen,
@@ -41,9 +41,9 @@
 		Table2,
 		X
 	} from 'lucide-svelte';
-	import type { WikiPageIndex } from '$lib/types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
+	import type { WikiPageIndex } from '#lib/types/index.js';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -67,9 +67,9 @@
 	};
 	const entityTypeMeta = (slug: string) =>
 		ENTITY_TYPE_META[slug] ?? {
-			icon: FileText,
-			label: slug.replaceAll('_', ' ').replace(/\b\w/g, (ch) => ch.toUpperCase())
-		};
+		icon: FileText,
+		label: slug.replaceAll('_', ' ').replace(/\b\w/g, (ch) => ch.toUpperCase())
+	};
 
 	// The canonical category list is scoped to the space type server-side:
 	// university spaces get the university set (§80 amendment). These must
@@ -127,9 +127,8 @@
 	const logoUrl = $derived(data.spaceDetail?.logo_url ?? data.spaceDetail?.space?.logo_url ?? '');
 	// Country spaces use the bundled flag as identity artwork — logo_url
 	// remains for other space types and unresolvable codes.
-	const displayLogo = $derived(
-		spaceLevel === 'country' ? (flagUrl(space?.geo_code) ?? logoUrl) : logoUrl
-	);
+	const displayLogo = $derived(spaceLevel === 'country' ? flagUrl(space?.geo_code) ?? logoUrl : logoUrl);
+
 	// §80 Wiki Types — the index is the overview tab (WikiTabs
 	// active="overview"), so its fields panel and SuggestEdit scope to the
 	// overview category's bound group. Space types without an overview
@@ -234,33 +233,31 @@
 		for (const c of apiCategories) {
 			if (c.page_slug && !hiddenDirCats.has(c.slug)) cats.add(c.slug);
 		}
-		return [...cats]
-			.map((category) => {
-				const pages = [...(groups.get(category) ?? [])].sort(
-					(a, b) => Number(b.is_featured) - Number(a.is_featured)
-				);
-				const materialized = new Set(pages.map((p) => p.slug));
-				const apiCat = apiCategories.find((c) => c.slug === category);
-				const templates = (apiCat?.page_templates ?? [])
-					// §80 Wiki Topic Pages: nested topics are reached through
-					// their parent page's composite sections, not the index.
-					.filter((tm) => !materialized.has(tm.slug) && !tm.parent_template_id)
-					.map((tm) => ({ slug: tm.slug, label: tm.label }));
-				return {
-					category,
-					label: categoryLabel(category),
-					pages,
-					templates,
-					pageSlug: apiCat?.page_slug,
-					directory: apiCat?.directory ?? false,
-					icon: apiCat?.icon
-				};
+
+		return [...cats].map((category) => {
+			const pages = [...groups.get(category) ?? []].sort((a, b) => Number(b.is_featured) - Number(a.is_featured));
+			const materialized = new Set(pages.map((p) => p.slug));
+			const apiCat = apiCategories.find((c) => c.slug === category);
+
+			const templates = (apiCat?.page_templates ?? []).// §80 Wiki Topic Pages: nested topics are reached through
+			// their parent page's composite sections, not the index.
+			filter((tm) => !materialized.has(tm.slug) && !tm.parent_template_id).map((tm) => ({ slug: tm.slug, label: tm.label }));
+
+			return {
+				category,
+				label: categoryLabel(category),
+				pages,
+				templates,
+				pageSlug: apiCat?.page_slug,
+				directory: apiCat?.directory ?? false,
+				icon: apiCat?.icon
+			};
 			})
 			.sort((a, b) => {
-				const ca = order.get(a.category) ?? Number.MAX_SAFE_INTEGER;
-				const cb = order.get(b.category) ?? Number.MAX_SAFE_INTEGER;
-				return ca !== cb ? ca - cb : a.label.localeCompare(b.label);
-			});
+			const ca = order.get(a.category) ?? Number.MAX_SAFE_INTEGER;
+			const cb = order.get(b.category) ?? Number.MAX_SAFE_INTEGER;
+			return ca !== cb ? ca - cb : a.label.localeCompare(b.label);
+		});
 	});
 
 	const lastUpdated = $derived.by(() => {
@@ -280,9 +277,9 @@
 
 	const title = $derived(`${spaceName} ${t('wiki.heading')} — ${siteName()}`);
 	const description = $derived(intro || t('wiki.index_description'));
-	const ogImage = $derived(
-		heroUrl ? (heroUrl.startsWith('http') ? heroUrl : page.url.origin + heroUrl) : ''
-	);
+	const ogImage = $derived(heroUrl
+		? heroUrl.startsWith('http') ? heroUrl : page.url.origin + heroUrl
+		: '');
 	const canonicalUrl = $derived(page.url.origin + page.url.pathname);
 	// CollectionPage + BreadcrumbList JSON-LD (Section 26 — the space
 	// index lists that destination's wiki articles).
@@ -343,7 +340,7 @@
 
 	async function toggleSave() {
 		if (savePending || !space) return;
-		if (!(await requireAuthOrRedirect())) return;
+		if (!await requireAuthOrRedirect()) return;
 		const was = saved;
 		saved = !was;
 		savePending = true;
@@ -385,9 +382,9 @@
 <SetSidebar>
 	<WikiSidebar
 		spaceSlug={data.spaceSlug}
-		{spaceName}
-		{spaceId}
-		{spaceLevel}
+		spaceName={spaceName}
+		spaceId={spaceId}
+		spaceLevel={spaceLevel}
 		pages={sidebarPages}
 		wikiOnly={data.spaceDetail?.wiki_only ?? false}
 	/>
@@ -486,7 +483,7 @@
 			</span>
 			<button
 				type="button"
-				onclick={() => (showWikiOnlyBanner = false)}
+				onclick={() => showWikiOnlyBanner = false}
 				aria-label={t('common.dismiss', 'Dismiss')}
 				class="inline-flex shrink-0 items-center rounded-[var(--radius)] border border-[var(--color-border)] p-1.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
 			>
@@ -526,7 +523,12 @@
 		<!-- §16/§80 — the contextual explore map replaces the static cover
 		     image when the space's geo resolves; the hero stays as fallback. -->
 		{#if space && wikiEnabled && !data.loadError && space.geo_code}
-			<WikiExploreMap {space} {fetchCtx} countryCode={data.countryGeoCode} stateCode={data.stateGeoCode} />
+			<WikiExploreMap
+				space={space}
+				fetchCtx={fetchCtx}
+				countryCode={data.countryGeoCode}
+				stateCode={data.stateGeoCode}
+			/>
 		{:else if heroUrl}
 			<button
 				type="button"
@@ -609,75 +611,81 @@
 					     materialized page (directory stub, lazy template) or is a
 					     thin page under the word floor; a stub slug that was since
 					     materialized keeps its own indexable flag. -->
-					{@const linkedPage = group.pages.find((pg) => pg.slug === firstSlug)}
-					{@const firstNofollow = linkedPage ? linkedPage.indexable === false : true}
-					<div>
-						<a
-							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(firstSlug)}"
-							rel={firstNofollow ? 'nofollow' : undefined}
-							class="flex items-center gap-3.5 px-4 py-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
-						>
-							<span
-								class="grid h-10 w-10 shrink-0 place-items-center rounded-full"
-								style="background: {tint.bg}; color: {tint.fg}"
+							{@const linkedPage = group.pages.find((pg) => pg.slug === firstSlug)}
+							{@const firstNofollow = linkedPage ? linkedPage.indexable === false : true}
+							<div>
+								<a
+									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(firstSlug)}"
+									rel={firstNofollow ? 'nofollow' : undefined}
+									class="flex items-center gap-3.5 px-4 py-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
+								>
+									<span
+										class="grid h-10 w-10 shrink-0 place-items-center rounded-full"
+										style="background: {tint.bg}; color: {tint.fg}"
 							>
 								<Icon size={18} aria-hidden="true" />
 							</span>
-							<span class="min-w-0 flex-1">
+									<span class="min-w-0 flex-1">
 								<span class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-									{group.label}
-									{#if first?.is_featured}
+											{group.label} 
+											{#if first?.is_featured}
 										<Star size={12} class="shrink-0 text-[var(--color-warning)]" role="img" aria-label={t('wiki.featured', 'Featured')} />
-									{/if}
-									{#if first?.is_locked}
+											{/if}
+											{#if first?.is_locked}
 										<Lock size={12} class="shrink-0 text-[var(--color-muted)]" role="img" aria-label={t('wiki.locked', 'Locked')} />
-									{/if}
-									{#if structuredEditsOn && group.pages.some((p) => p.data_entity_type)}
-										<span
-											class="inline-flex items-center gap-1 rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--color-muted)]"
-											title={t('wiki.data_badge_hint', 'Includes community-editable data')}
-										>
+											{/if}
+											{#if structuredEditsOn && group.pages.some((p) => p.data_entity_type)}
+												<span
+													class="inline-flex items-center gap-1 rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--color-muted)]"
+													title={t('wiki.data_badge_hint', 'Includes community-editable data')}
+												>
 											<Table2 size={10} /> {t('wiki.data_badge', 'Data')}
+												</span>
+											{/if}
 										</span>
-									{/if}
-								</span>
-								<span class="mt-0.5 line-clamp-2 block text-xs text-[var(--color-muted)]">
-									{categoryDesc(group.category)}
-								</span>
-							</span>
-							<ChevronRight size={18} class="shrink-0 text-[var(--color-muted)] rtl:-scale-x-100" aria-hidden="true" />
-						</a>
-						{#if group.pages.length > 1 || group.templates.length > 0}
+
+										<span
+											class="mt-0.5 line-clamp-2 block text-xs text-[var(--color-muted)]"
+										>{categoryDesc(group.category)}</span>
+									</span>
+
+									<ChevronRight
+										size={18}
+										class="shrink-0 text-[var(--color-muted)] rtl:-scale-x-100"
+										aria-hidden="true"
+									/>
+								</a>
+								{#if group.pages.length > 1 || group.templates.length > 0}
 							<div class="flex flex-wrap items-center gap-1.5 border-t border-[var(--color-border)] px-4 py-2.5 ps-[4.25rem]">
-								{#each group.pages.slice(1) as p (p.id)}
-									<a
-										href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(p.slug)}"
-										rel={p.indexable === false ? 'nofollow' : undefined}
-										class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs text-[var(--color-text)] transition-colors hover:text-[var(--color-primary-text)]"
-									>
-										{p.title}
-										{#if p.is_locked}
+										{#each group.pages.slice(1) as p (p.id)}
+											<a
+												href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(p.slug)}"
+												rel={p.indexable === false ? 'nofollow' : undefined}
+												class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-xs text-[var(--color-text)] transition-colors hover:text-[var(--color-primary-text)]"
+											>
+												{p.title} 
+												{#if p.is_locked}
 											<Lock size={10} class="shrink-0 text-[var(--color-muted)]" role="img" aria-label={t('wiki.locked', 'Locked')} />
-										{/if}
-									</a>
-								{/each}
-								{#each group.templates as tm (tm.slug)}
-									{#if !data.isGuest}
-									<a
-										href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(tm.slug)}"
-										rel="nofollow"
-										class="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
+												{/if}
+											</a>
+										{/each}
+										{#each group.templates as tm (tm.slug)}
+											{#if !data.isGuest}
+												<a
+													href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(tm.slug)}"
+													rel="nofollow"
+													class="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)]"
 									>
 										{tm.label}
 									</a>
-									{/if}
-								{/each}
+											{/if}
+										{/each}
+									</div>
+								{/if}
 							</div>
 						{/if}
-					</div>
-					{/if}
-				{/each}
-			</div>
+					{/each}
+				</div>
 			{/if}
 
 			<!-- Community CTA — hidden on wiki-only spaces (attractions):
@@ -687,22 +695,22 @@
 			<div class="mt-6 flex flex-wrap items-center gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)]">
 					<CircleHelp size={18} class="text-[var(--color-primary-text)]" aria-hidden="true" />
-				</span>
-				<span class="min-w-0 flex-1">
-					<span class="block text-sm font-semibold text-[var(--color-text)]">
-						{t('wiki.still_have_questions', 'Still have questions about {name}?', { name: spaceName })}
 					</span>
-					<span class="block text-xs text-[var(--color-muted)]">
-						{t('wiki.community_help', 'Our community and expert advisors are here to help.')}
+					<span class="min-w-0 flex-1">
+						<span
+							class="block text-sm font-semibold text-[var(--color-text)]"
+						>{t('wiki.still_have_questions', 'Still have questions about {name}?', { name: spaceName })}</span>
+
+						<span class="block text-xs text-[var(--color-muted)]">{t('wiki.community_help', 'Our community and expert advisors are here to help.')}</span>
 					</span>
-				</span>
-				<a
-					href="/forum/{encodeURIComponent(data.spaceSlug)}/new?type=question"
-					class="inline-flex shrink-0 items-center rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+
+					<a
+						href="/forum/{encodeURIComponent(data.spaceSlug)}/new?type=question"
+						class="inline-flex shrink-0 items-center rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 				>
 					{t('wiki.ask_a_question', 'Ask a Question')}
 				</a>
-			</div>
+				</div>
 			{/if}
 		{/if}
 

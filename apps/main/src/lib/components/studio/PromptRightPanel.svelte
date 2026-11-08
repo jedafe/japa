@@ -9,9 +9,9 @@
 	// Settings reuse the composer's own panels, with space/tags/status/
 	// field_values appended to Settings. All selects render as Autocomplete.
 	import { Tabs } from 'bits-ui';
-	import { t } from '$lib/i18n';
-	import type { MeSpace, BlogSeries } from '$lib/types';
-	import type { Persona, PromptFormValues, PromptMode, PromptTone, PromptFramework, HumanizeLevel } from '$lib/studio/types';
+	import { t } from '#lib/i18n/index.js';
+	import type { MeSpace, BlogSeries } from '#lib/types/index.js';
+	import type { Persona, PromptFormValues, PromptMode, PromptTone, PromptFramework, HumanizeLevel } from '#lib/studio/types.js';
 	import {
 		MODE_OPTIONS,
 		TONE_OPTIONS,
@@ -19,14 +19,14 @@
 		HUMANIZE_OPTIONS,
 		DEFAULT_PROMPT_VALUES,
 		type SelectOption
-	} from '$lib/studio/types';
-	import { isHighStakesCategory } from '$lib/studio/validation';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import SpaceSelector from '$lib/components/create/SpaceSelector.svelte';
-	import TagInput from '$lib/components/create/TagInput.svelte';
-	import SeriesSelector from '$lib/components/create/panel/SeriesSelector.svelte';
-	import CreateJourneyPanel from '$lib/components/create/panel/CreateJourneyPanel.svelte';
+	} from '#lib/studio/types.js';
+	import { isHighStakesCategory } from '#lib/studio/validation.js';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import SpaceSelector from '#lib/components/create/SpaceSelector.svelte';
+	import TagInput from '#lib/components/create/TagInput.svelte';
+	import SeriesSelector from '#lib/components/create/panel/SeriesSelector.svelte';
+	import CreateJourneyPanel from '#lib/components/create/panel/CreateJourneyPanel.svelte';
 
 	interface VoiceOption {
 		id: string;

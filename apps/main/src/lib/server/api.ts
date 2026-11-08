@@ -1,10 +1,10 @@
-import { env } from '$env/dynamic/private';
+import { PRIVATE_API_BASE_URL } from '$app/env/private';
 import { buildApiUrl } from '@japaconnect/api-url';
 import { redirect, type RequestEvent } from '@sveltejs/kit';
-import type { ApiErr, ApiOk, ListMeta } from '$lib/types';
+import type { ApiErr, ApiOk, ListMeta } from '#lib/types/index.js';
 
 /** Server-only base URL for the Go backend (no /api/v1 suffix). */
-export const API_BASE = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
+export const API_BASE = PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
 export const API_V1 = `${API_BASE}/api/v1`;
 
 /**
@@ -303,18 +303,22 @@ export async function apiList<T>(
 	let meta =
 		raw.meta ??
 		(raw.pagination?.total !== undefined
-			? {
-					total: raw.pagination.total,
-					page: raw.pagination.page,
-					limit: raw.pagination.limit ?? raw.pagination.page_size
-				}
-			: raw.total !== undefined
+		? {
+			total: raw.pagination.total,
+			page: raw.pagination.page,
+			limit: raw.pagination.limit ?? raw.pagination.page_size
+		}
+		: raw.total !== undefined
 				? { total: raw.total, page: raw.page, limit: raw.limit, total_pages: raw.total_pages }
-				: undefined);
+			: undefined);
 	// Cursor-paginated endpoints (§48 DM lists) emit next_cursor/has_more as
 	// top-level sidecars — surface them through meta so callers can resume.
 	if (raw.next_cursor !== undefined || raw.has_more !== undefined) {
-		meta = { ...(meta ?? {}), next_cursor: raw.next_cursor ?? meta?.next_cursor, has_more: raw.has_more };
+		meta = {
+			...meta ?? {},
+			next_cursor: raw.next_cursor ?? meta?.next_cursor,
+			has_more: raw.has_more
+		};
 	}
 	return { items: raw.data ?? [], meta };
 }
@@ -337,7 +341,7 @@ export async function apiRadarList<T>(
 	// the fields directly from the returned object.
 	const payload = await request<Record<string, unknown>>(ctx, 'GET', path);
 	const raw = payload as unknown as Record<string, unknown>;
-	const items = (raw['items'] as T[] | undefined) ?? [];
+	const items = raw['items'] as T[] | undefined ?? [];
 	const meta: Record<string, unknown> = {};
 	for (const key of [
 		'next_cursor',

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, i18n } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Home, ArrowLeft, Globe, AlertTriangle, ShieldCheck, MapPin } from 'lucide-svelte';
 	import type { PageData } from './$types';

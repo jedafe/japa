@@ -1,18 +1,18 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/38-tickets.md (user portal)
 	// Lists the user's submitted tickets with status/priority pills and links
 	// to the single-ticket thread view. The "New ticket" CTA routes to the
 	// full-page form at /dashboard/tickets/new.
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import PaginationControls from '#lib/components/ui/PaginationControls.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Ticket, Plus, Scale } from 'lucide-svelte';
-	import { ticketHref, ticketRef } from '$lib/tickets';
-	import type { TicketPriority, TicketStatus } from '$lib/types';
+	import { ticketHref, ticketRef } from '#lib/tickets.js';
+	import type { TicketPriority, TicketStatus } from '#lib/types/index.js';
 
 	let { data } = $props();
 	const tickets = $derived(data.tickets);
@@ -54,7 +54,7 @@
 	];
 
 	function buildURL(overrides: Record<string, string | null>) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		for (const [key, value] of Object.entries(overrides)) {
 			if (value === null || value === '') url.searchParams.delete(key);
 			else url.searchParams.set(key, value);

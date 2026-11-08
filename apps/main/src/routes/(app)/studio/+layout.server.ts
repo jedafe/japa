@@ -4,7 +4,7 @@
 // in videos/+page.server.ts; here it only controls the disabled tab state.
 import { redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
+import { apiContext, apiGet } from '#lib/server/api.js';
 
 interface ModerationScope {
 	platform_moderator: boolean;

@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import { ApiError } from '$lib/server/api';
-import type { ChecklistGuide, ChecklistSelector, GeoCountry } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import { ApiError } from '#lib/server/api.js';
+import type { ChecklistGuide, ChecklistSelector, GeoCountry } from '#lib/types/index.js';
 
 interface CountryOptionWithCode {
 	id: string;

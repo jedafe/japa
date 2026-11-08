@@ -2,12 +2,12 @@
 	// Modal dialog for creating a new blog series (POST /series).
 	// Mirrors SpaceCreationModal — uses bits-ui Dialog, auto-generates slug
 	// from title, and calls onCreated on success instead of navigating.
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { Plus, Loader2 } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { createSeries } from '$lib/api/create';
+	import { t } from '#lib/i18n/index.js';
+	import { createSeries } from '#lib/api/create.js';
 	import { suggestSlug } from '../slug';
-	import type { BlogSeries } from '$lib/types';
+	import type { BlogSeries } from '#lib/types/index.js';
 
 	interface Props {
 		open?: boolean;

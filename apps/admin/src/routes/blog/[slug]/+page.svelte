@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { api, blogAdminApi, contentAdminApi } from '$lib/api';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { TableSkeleton } from '$lib/components/ui/skeleton';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { api, blogAdminApi, contentAdminApi } from '#lib/api.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { TableSkeleton } from '#lib/components/ui/skeleton/index.js';
 	import { ArrowLeft, Save, Trash2, CheckCircle, XCircle, RefreshCw } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	let loading = $state(true);
 	let saving = $state(false);

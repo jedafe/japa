@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, apiList, apiRadarList } from '$lib/server/api';
-import type { RadarItem } from '$lib/types';
+import { apiContext, apiGet, apiGetEnvelope, apiList, apiRadarList } from '#lib/server/api.js';
+import type { RadarItem } from '#lib/types/index.js';
 import type {
 	SpaceDetail,
 	Space,
@@ -14,7 +14,7 @@ import type {
 	WikiPageIndex,
 	Achievement,
 	SpaceReview
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Space hub at /spaces/[slug] — SSR, indexable. Center column swaps between

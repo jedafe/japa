@@ -1,4 +1,4 @@
-import { apiFetch } from '$lib/api/client';
+import { apiFetch } from '#lib/api/client.js';
 
 let _permissions = $state<string[]>([]);
 let _permissionsLoaded = $state(false);

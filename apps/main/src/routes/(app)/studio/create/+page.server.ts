@@ -1,10 +1,10 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import { hasPerm } from '$lib/server/auth';
-import { createAvailableTypes, CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
-import { contentHref } from '$lib/utils/contentLink';
-import type { MatrixItem } from '$lib/types/jce';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import { hasPerm } from '#lib/server/auth.js';
+import { createAvailableTypes, CREATE_ALLOWED_TYPES } from '#lib/components/create/contentTypeRegistry.js';
+import { contentHref } from '#lib/utils/contentLink.js';
+import type { MatrixItem } from '#lib/types/jce.js';
 import type {
 	ContentTypeMeta,
 	MeSpace,
@@ -21,7 +21,7 @@ import type {
 	JCEComparison,
 	AssessmentForm,
 	VideoSource
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /** Load everything the composer needs; every fetch degrades independently. */
 export const load: PageServerLoad = async (event) => {

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { contentHref } from '$lib/utils/contentLink';
-	import type { SeriesPost } from '$lib/types/content';
+	import { t } from '#lib/i18n/index.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import type { SeriesPost } from '#lib/types/content.js';
 
 	interface Props {
 		title: string;

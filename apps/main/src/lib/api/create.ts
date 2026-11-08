@@ -1,9 +1,9 @@
 import { untrack } from 'svelte';
-import { api } from '$lib/api/client';
-import { getAccessToken } from '$lib/api/token.svelte';
-import { localDateTimeToIso } from '$lib/utils/datetime';
-import type { ContentRecord, MediaAsset, MeSpace, SaveErrorClass, SearchHit, BlogSeries, SpaceType, Space } from '$lib/types';
-import { searchPath, mapUserHits, mapContentHits, mapTagHits, mapCouponHits, mapLiteralHits } from '$lib/tiptap/search';
+import { api } from '#lib/api/client.js';
+import { getAccessToken } from '#lib/api/token.svelte.js';
+import { localDateTimeToIso } from '#lib/utils/datetime.js';
+import type { ContentRecord, MediaAsset, MeSpace, SaveErrorClass, SearchHit, BlogSeries, SpaceType, Space } from '#lib/types/index.js';
+import { searchPath, mapUserHits, mapContentHits, mapTagHits, mapCouponHits, mapLiteralHits } from '#lib/tiptap/search.js';
 
 export interface CreateContentInput {
 	content_type: string;

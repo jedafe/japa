@@ -3,10 +3,10 @@
 // the public API origin, handling the { data } envelope and error shapes.
 // Server-side data loading uses $lib/server/api.ts instead.
 
-import { env } from '$env/dynamic/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
 
-const API_BASE = (env.PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
+const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
 /**
  * Surface identifier sent on every backend call (X-JC-Surface). The backend

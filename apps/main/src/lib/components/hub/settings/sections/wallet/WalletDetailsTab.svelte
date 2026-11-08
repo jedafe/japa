@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { invalidateAll } from '$app/navigation';
-	import { setCurrencyPreference } from '$lib/api/hub';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { setCurrencyPreference } from '#lib/api/hub.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import type { WalletData } from './types';
 
 	interface Props {

@@ -1,13 +1,13 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, i18n } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { GraduationCap, ClipboardList, ArrowLeft, ExternalLink, Trash2 } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { goto } from '$app/navigation';
-	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
-	import type { SavedScholarship } from '$lib/types';
+	import { EmptyState, AutocompleteSelect } from '#lib/components/ui/index.js';
+	import type { SavedScholarship } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	/**
@@ -96,8 +96,7 @@
 	const activeStatus = $derived(data.statusFilter ?? '');
 	function filterByStatus(status: string) {
 		goto(status ? `/scholarships/saved?status=${encodeURIComponent(status)}` : '/scholarships/saved', {
-			keepFocus: true,
-			noScroll: true
+			reset: false
 		});
 	}
 </script>

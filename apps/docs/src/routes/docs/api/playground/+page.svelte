@@ -1,10 +1,10 @@
 <script lang="ts">
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import JsonEditor from '$lib/components/docs/JsonEditor.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { t } from '$lib/i18n';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import JsonEditor from '#lib/components/docs/JsonEditor.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { untrack } from 'svelte';
-	import { env } from '$env/dynamic/public';
+	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { Plus, X, Send, AlertTriangle, History, KeyRound, AlignLeft } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
@@ -25,8 +25,8 @@
 	let selectedKeyId = $state<string>('');
 	// Prefill values seed the initial form state only — untrack so later
 	// navigations don't reset an in-progress request.
-	let method = $state<HttpMethod>(untrack(() => (data.prefill?.method as HttpMethod) || 'GET'));
-	let url = $state(untrack(() => (data.prefill?.path ? apiPath(data.prefill.path) : '/api/v1/spaces')));
+	let method = $state<HttpMethod>(untrack(() => data.prefill?.method as HttpMethod || 'GET'));
+	let url = $state(untrack(() => data.prefill?.path ? apiPath(data.prefill.path) : '/api/v1/spaces'));
 	let body = $state('');
 	const bodyPlaceholder = '{"key": "value"}';
 	let headers = $state<{ key: string; value: string }[]>([
@@ -67,9 +67,7 @@
 
 	// Strip any /api/v1 suffix so apiBase is the origin only; the request
 	// URL (from the input or OpenAPI spec paths) already includes /api/v1.
-	const apiBase = (env.PUBLIC_JC_API_URL ?? '/api/v1')
-		.replace(/\/api\/v1$/, '')
-		.replace(/\/$/, '');
+	const apiBase = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/api\/v1$/, '').replace(/\/$/, '');
 
 	// Security guardrail (Ref: §47 ROADMAP 04.12): the playground may only
 	// send requests to the JapaConnect API origin. We derive the allowed
@@ -77,7 +75,7 @@
 	// any absolute URL that does not match it. Relative paths are always
 	// allowed because they are resolved against apiBase.
 	const allowedEnvOrigin = (() => {
-		const raw = (env.PUBLIC_JC_API_URL ?? '').replace(/\/$/, '');
+		const raw = (PUBLIC_JC_API_URL ?? '').replace(/\/$/, '');
 		if (!raw) return '';
 		try {
 			return new URL(raw).origin;
@@ -234,7 +232,7 @@
 <AppShell
 	nav={data.nav}
 	accessibleAudiences={data.accessibleAudiences}
-	logoUrl={(data.siteSettings?.["appearance.logo_url"] as string | undefined) ?? ""}
+	logoUrl={data.siteSettings?.["appearance.logo_url"] as string | undefined ?? ""}
 	footerMenu={data.footerMenu}
 	activeAudience="api"
 	user={data.user}
@@ -370,7 +368,7 @@
 						value={body}
 						placeholder={bodyPlaceholder}
 						minHeight={120}
-						onChange={(v) => (body = v)}
+						onChange={(v) => body = v}
 					/>
 				{:else}
 					<p class="body-disabled">{t('api.no_body_for_method', 'No body needed for GET/DELETE')}</p>

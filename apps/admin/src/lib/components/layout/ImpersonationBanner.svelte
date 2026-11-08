@@ -5,9 +5,9 @@
 	// 60 seconds. Warns the admin at 5 minutes remaining. On "End Session"
 	// click, calls DELETE /admin/impersonate and reloads.
 	import { onMount, onDestroy } from 'svelte';
-	import { impersonationApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { restoreSession } from '$lib/stores/session.svelte';
+	import { impersonationApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { restoreSession } from '#lib/stores/session.svelte.js';
 	import { goto } from '$app/navigation';
 	import { LogOut, ShieldAlert } from 'lucide-svelte';
 

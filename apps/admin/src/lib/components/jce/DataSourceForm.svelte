@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { untrack } from 'svelte';
-	import type { DataSource } from '$lib/types/jce';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import type { DataSource } from '#lib/types/jce.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { JsonValueEditor } from '@japaconnect/ui';
 
 	let {

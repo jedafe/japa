@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { t, i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { Plus } from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import type { LedgerEntry, WalletData } from './types';
 
 	interface Props {

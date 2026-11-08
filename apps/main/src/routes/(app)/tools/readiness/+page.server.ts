@@ -1,8 +1,8 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import { ApiError } from '$lib/server/api';
-import type { AssessmentForm, AssessmentResult } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import { ApiError } from '#lib/server/api.js';
+import type { AssessmentForm, AssessmentResult } from '#lib/types/index.js';
 
 export interface CountryOption {
 	value: string;

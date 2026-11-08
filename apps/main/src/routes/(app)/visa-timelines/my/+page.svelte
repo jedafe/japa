@@ -1,21 +1,21 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { api } from '#lib/api/client.js';
 	import { ArrowLeft, CalendarClock, Check, ChevronDown, ChevronRight, Pencil, Plus, X } from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import type {
 		VisaApplicationMethod,
 		VisaMilestoneType,
 		VisaTimeline,
 		VisaTimelineMilestone,
 		VisaTimelineOutcome
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

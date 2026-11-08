@@ -1,15 +1,15 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import WebhookEventMultiSelect from '$lib/components/webhooks/WebhookEventMultiSelect.svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import AlertBanner from '#lib/components/ui/AlertBanner.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import WebhookEventMultiSelect from '#lib/components/webhooks/WebhookEventMultiSelect.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
 	import { Webhook, Plus, Trash2, TestTube, Pencil, RefreshCw, Send } from 'lucide-svelte';
-	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '#lib/api/types.js';
 
 	let {} = $props();
 

@@ -1,6 +1,6 @@
 // §87 — Japa Stage helpers for the public profile journey card/timeline.
 // Derives an ordered milestone list from the member's current public stage.
-import type { PublicJapaStage } from '$lib/types';
+import type { PublicJapaStage } from '#lib/types/index.js';
 
 // Canonical progression order (ADR-122). 'returned' is an alternate terminal
 // state — handled separately rather than placed in the linear order.

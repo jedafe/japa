@@ -1,9 +1,9 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		Users,
 		Check,
@@ -30,12 +30,12 @@
 		type SearchSuggestion,
 		type UrlTab,
 		type CardMetaItem
-	} from '$lib/components/ui';
-	import HeroArtUsers from '$lib/components/heroes/HeroArtUsers.svelte';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-	import { api } from '$lib/api/client';
+	} from '#lib/components/ui/index.js';
+	import HeroArtUsers from '#lib/components/heroes/HeroArtUsers.svelte';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+	import { api } from '#lib/api/client.js';
 	import type { PageData } from './$types';
-	import type { PublicUser } from '$lib/types';
+	import type { PublicUser } from '#lib/types/index.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -102,7 +102,7 @@
 		if (selectedProfileType) params.set('profile_type', selectedProfileType);
 		if (sort !== 'followers') params.set('sort', sort);
 		const qs = params.toString();
-		goto(qs ? `/users?${qs}` : '/users', { keepFocus: true });
+		goto(qs ? `/users?${qs}` : '/users', { reset: false });
 	}
 
 	// Offset pagination mirrors the server loader (page_size/page_offset);

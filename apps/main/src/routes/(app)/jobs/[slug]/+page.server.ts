@@ -1,8 +1,8 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '#lib/server/api.js';
 import { error } from '@sveltejs/kit';
-import type { ComposerOrganization, FormEmbed, JobDetail, ProfilePost, PublicOrganization } from '$lib/types';
-import type { ContentArticle } from '$lib/types/content';
+import type { ComposerOrganization, FormEmbed, JobDetail, ProfilePost, PublicOrganization } from '#lib/types/index.js';
+import type { ContentArticle } from '#lib/types/content.js';
 
 const JOB_EDITOR_ROLES = new Set(['owner', 'admin', 'editor']);
 

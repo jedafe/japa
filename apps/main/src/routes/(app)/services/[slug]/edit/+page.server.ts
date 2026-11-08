@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/98-service-directory.md
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { ServiceListing, GeoCountry, ServiceCategoryInfo } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { ServiceListing, GeoCountry, ServiceCategoryInfo } from '#lib/types/index.js';
 
 /**
  * Edit-service form at /services/[slug]/edit — auth-gated, author-or-edit_any.

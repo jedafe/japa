@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /roadmap/categories — EntityPage scaffold (§113). Simple CRUD entity
 	// using declarative `fields` (EntityForm); the list endpoint returns all
 	// categories unpaginated, so search/pagination are applied client-side
 	// (mirrors /share-platforms).
-	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
-	import { roadmapCategoriesAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type FieldDef } from '#lib/components/entity/index.js';
+	import { roadmapCategoriesAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	type RoadmapCategory = {
 		id: string;

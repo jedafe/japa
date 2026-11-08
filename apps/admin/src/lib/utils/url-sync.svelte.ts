@@ -1,5 +1,5 @@
 import { page } from '$app/state';
-import { replaceState } from '$app/navigation';
+import { goto } from '$app/navigation';
 import { untrack } from 'svelte';
 
 /**
@@ -81,7 +81,7 @@ export function syncListStateToUrl(opts: {
 	const qs = params.toString();
 	const url = `${page.url.pathname}${qs ? `?${qs}` : ''}`;
 	try {
-		replaceState(url, {});
+		goto(url, { shallow: true, replace: true });
 	} catch {
 		// ignore URL sync failures in non-browser contexts
 	}
@@ -93,7 +93,7 @@ export function syncListStateToUrl(opts: {
  */
 export function tabFromUrl(param = 'tab', valid?: readonly string[]): string {
 	const raw = page.url.searchParams.get(param) ?? '';
-	return valid ? (valid.includes(raw) ? raw : '') : raw;
+	return valid ? valid.includes(raw) ? raw : '' : raw;
 }
 
 /**
@@ -132,7 +132,7 @@ export function syncTabToUrl(
 		url = `${page.url.pathname}${qs ? `?${qs}` : ''}`;
 	}
 	try {
-		replaceState(url, {});
+		goto(url, { shallow: true, replace: true });
 	} catch {
 		// ignore URL sync failures in non-browser contexts
 	}

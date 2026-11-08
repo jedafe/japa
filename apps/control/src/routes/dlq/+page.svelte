@@ -1,16 +1,16 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import SearchInput from '$lib/components/ui/SearchInput.svelte';
-	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
-	import Tabs from '$lib/components/ui/Tabs.svelte';
-	import TabsContent from '$lib/components/ui/TabsContent.svelte';
-	import Tooltip from '$lib/components/ui/Tooltip.svelte';
-	import { api } from '$lib/api';
-	import type { DlqEntry, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
-	import { t, translations } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import SearchInput from '#lib/components/ui/SearchInput.svelte';
+	import AlertBanner from '#lib/components/ui/AlertBanner.svelte';
+	import Tabs from '#lib/components/ui/Tabs.svelte';
+	import TabsContent from '#lib/components/ui/TabsContent.svelte';
+	import Tooltip from '#lib/components/ui/Tooltip.svelte';
+	import { api } from '#lib/api.js';
+	import type { DlqEntry, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '#lib/api/types.js';
+	import { t, translations } from '#lib/stores/i18n.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
 	import { RefreshCw, RotateCw, Trash2 } from 'lucide-svelte';
 
 	let entries = $state<DlqEntry[]>([]);

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	// Public product roadmap board — Canny-style status columns fed entirely
 	// by GET /roadmap/board (Rule 16: categories, columns, and items all come
@@ -8,14 +8,14 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t, siteName} from '$lib/i18n';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import VoteButton from '$lib/components/roadmap/VoteButton.svelte';
-	import RoadmapCard from '$lib/components/roadmap/RoadmapCard.svelte';
-	import StatusSelect from '$lib/components/roadmap/StatusSelect.svelte';
+	import { t, siteName} from '#lib/i18n/index.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import VoteButton from '#lib/components/roadmap/VoteButton.svelte';
+	import RoadmapCard from '#lib/components/roadmap/RoadmapCard.svelte';
+	import StatusSelect from '#lib/components/roadmap/StatusSelect.svelte';
 	import { Map as MapIcon, History, Send, Rocket, TriangleAlert, Inbox, Package } from 'lucide-svelte';
-	import type { RoadmapBoardItem } from '$lib/types';
+	import type { RoadmapBoardItem } from '#lib/types/index.js';
 
 	let { data } = $props();
 	const board = $derived(data.board);
@@ -185,9 +185,9 @@
 						]}
 						onValueChange={(v) => {
 							sort = v as 'votes' | 'recent';
-							const u = new URL(page.url);
+							const u = new URL(page.url.href);
 							if (v === 'votes') u.searchParams.delete('sort'); else u.searchParams.set('sort', v);
-							goto(u, { replaceState: true, noScroll: true, keepFocus: true });
+							goto(u, { replace: true, reset: false });
 						}}
 						compact
 						class="w-36"

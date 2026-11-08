@@ -6,7 +6,7 @@
 	//
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md
 	// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Plus, Trash2, GripVertical } from 'lucide-svelte';
 
 	interface Reaction {

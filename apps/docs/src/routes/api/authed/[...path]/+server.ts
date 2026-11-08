@@ -1,5 +1,5 @@
-import { error, json } from '@sveltejs/kit';
-import { apiContext, apiGet, apiPost, apiPatch, apiDelete, ApiError, API_BASE, API_V1 } from '$lib/server/api';
+import { error } from '@sveltejs/kit';
+import { apiContext, apiGet, apiPost, apiPatch, apiDelete, ApiError, API_BASE, API_V1 } from '#lib/server/api.js';
 import type { RequestHandler } from './$types';
 
 /**
@@ -40,7 +40,7 @@ async function forward(event: Parameters<RequestHandler>[0], method: 'GET' | 'PO
 					: method === 'PATCH'
 						? await apiPatch(ctx, target, body)
 						: await apiDelete(ctx, target);
-		return json({ data: result });
+		return Response.json({ data: result });
 	} catch (err) {
 		if (err instanceof ApiError) {
 			throw error(err.status, { code: err.code, message: err.message });
@@ -87,7 +87,7 @@ export const PUT: RequestHandler = async (event) => {
 			message: payload?.error?.message ?? 'Upload failed'
 		});
 	}
-	return json(payload ?? { data: { ok: true } });
+	return Response.json(payload ?? { data: { ok: true } });
 };
 
 export const GET: RequestHandler = (event) => forward(event, 'GET');

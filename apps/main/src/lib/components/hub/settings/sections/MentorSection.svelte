@@ -19,25 +19,25 @@
 	 *      japaconnect-engineering/adr/ADR-110-mentorship-matching.md
 	 */
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
+	import SettingsSection from '#lib/components/hub/SettingsSection.svelte';
 	import ServiceContentEditor, {
 		type FactEntry,
 		type FaqEntry,
 		type IconEntry,
 		type StepEntry
-	} from '$lib/components/services/ServiceContentEditor.svelte';
-	import { api } from '$lib/api/client';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import type { GeoCountry } from '$lib/types';
+	} from '#lib/components/services/ServiceContentEditor.svelte';
+	import { api } from '#lib/api/client.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import type { GeoCountry } from '#lib/types/index.js';
 	import { GraduationCap, Loader2, Check, X, Plus } from 'lucide-svelte';
-	import ServiceTierEditor from '$lib/components/services/ServiceTierEditor.svelte';
-	import { tiersToPayload, type EditableTier } from '$lib/components/services/serviceForm';
-	import type { CurrencyInfo } from '$lib/utils/currency';
-	import type { MentorProfile } from '$lib/types';
+	import ServiceTierEditor from '#lib/components/services/ServiceTierEditor.svelte';
+	import { tiersToPayload, type EditableTier } from '#lib/components/services/serviceForm.js';
+	import type { CurrencyInfo } from '#lib/utils/currency.js';
+	import type { MentorProfile } from '#lib/types/index.js';
 
 	let { data }: { data: unknown } = $props();
 	const payload = $derived(data as { profile: MentorProfile | null; countries?: GeoCountry[] } | null);

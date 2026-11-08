@@ -4,7 +4,7 @@
 // items. Non-moderators get a 403.
 import { redirect, error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
 
 export interface ScopedEntity {
 	id: string;

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { invalidateAll } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import { calculateWithdrawal, createWithdrawal, createWithdrawalMethod } from '$lib/api/hub';
+	import { api } from '#lib/api/client.js';
+	import { calculateWithdrawal, createWithdrawal, createWithdrawalMethod } from '#lib/api/hub.js';
 	import type { WalletData, Withdrawal } from './types';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
 
 	interface Props {
 		data: WalletData;

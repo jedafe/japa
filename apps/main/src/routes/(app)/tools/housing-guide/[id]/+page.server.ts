@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { HousingGuideWithAi } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { HousingGuideWithAi } from '#lib/types/index.js';
 
 /**
  * Housing Guide detail page — Section 96, ADR-104.

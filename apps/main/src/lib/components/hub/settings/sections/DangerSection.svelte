@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
-	import { exportData, deactivateAccount } from '$lib/api/hub';
+	import { t } from '#lib/i18n/index.js';
+	import { exportData, deactivateAccount } from '#lib/api/hub.js';
 	import DeleteAccountDialog from '../flows/DeleteAccountDialog.svelte';
 
 	let { data }: { data: unknown } = $props();

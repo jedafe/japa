@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /menus — migrated to the EntityPage scaffold.
 	//
 	// The menu list + menu CRUD use the shared EntityPage scaffold (declarative
@@ -7,17 +7,17 @@
 	// icon picker, route suggestions, permission node, group selection, nesting,
 	// visibility, target) is kept as a page-local `<Modal>` sub-flow that
 	// mirrors the tags moderators Modal pattern.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Select } from '$lib/components/ui/select';
-	import IconPicker from '$lib/components/ui/icon-picker.svelte';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { menusAdminApi, userManagementApi, permissionsApi, featureFlagsAdminApi, type UserGroup } from '$lib/api';
-	import { suggestRoutes } from '$lib/data/routes';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import IconPicker from '#lib/components/ui/icon-picker.svelte';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import { menusAdminApi, userManagementApi, permissionsApi, featureFlagsAdminApi, type UserGroup } from '#lib/api.js';
+	import { suggestRoutes } from '#lib/data/routes.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Pencil, Trash2, ListTree, ArrowUp, ArrowDown, Plus } from 'lucide-svelte';
 
 	type MenuItem = {

@@ -1,4 +1,4 @@
-import { siteName } from '$lib/i18n';
+import { siteName } from '#lib/i18n/index.js';
 /**
  * Chat templates — named generation-spec presets for the /ai composer.
  * A template carries the same structured drafting options the studio

@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import { t, i18n } from '$lib/i18n';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { persistNavCollapse } from '$lib/nav-collapse';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { Plus, Trash2, Copy, Check, AlertTriangle, Pencil, RefreshCw, Shield, X } from 'lucide-svelte';
 	import type { PageData, ActionData } from './$types';
-	import type { ApiKeySummary } from '$lib/types';
+	import type { ApiKeySummary } from '#lib/types/index.js';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 

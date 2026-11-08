@@ -1,14 +1,14 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import Tabs from '$lib/components/ui/Tabs.svelte';
-	import TabsContent from '$lib/components/ui/TabsContent.svelte';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
-	import type { DataTableColumn } from '$lib/api/types';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import AlertBanner from '#lib/components/ui/AlertBanner.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import Tabs from '#lib/components/ui/Tabs.svelte';
+	import TabsContent from '#lib/components/ui/TabsContent.svelte';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
+	import type { DataTableColumn } from '#lib/api/types.js';
 	import { Database, RefreshCw } from 'lucide-svelte';
 
 	interface CacheNamespace {

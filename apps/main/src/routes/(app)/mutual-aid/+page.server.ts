@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { MutualAidPost, MutualAidPostType, MutualAidCategory, GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { MutualAidPost, MutualAidPostType, MutualAidCategory, GeoCountry } from '#lib/types/index.js';
 
 /**
  * Mutual Aid list at /mutual-aid — community help requests and offers inside

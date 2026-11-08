@@ -3,8 +3,8 @@
      origin_country}) as typed inputs instead of raw JSON. Bounded
      vocabularies are checkboxes; free-form lists are comma-separated. -->
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
-	import { getVocab } from '$lib/api/nextactions';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { getVocab } from '#lib/api/nextactions.js';
 	interface Props {
 		value: Record<string, unknown>;
 	}

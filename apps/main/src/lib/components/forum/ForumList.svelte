@@ -2,14 +2,14 @@
 	import { untrack } from 'svelte';
 	import { navigating, page } from '$app/state';
 	import { MessageSquarePlus, TriangleAlert } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
-	import { t } from '$lib/i18n';
-	import { compose } from '$lib/components/shell/compose.svelte';
-	import type { ForumThread, FeedItem } from '$lib/types';
-	import { tiptapFirstImageSrc } from '$lib/tiptap/serialize';
-	import FeedCard from '$lib/components/feed/FeedCard.svelte';
-	import NativeAd from '$lib/components/ads/NativeAd.svelte';
+	import { api } from '#lib/api/client.js';
+	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
+	import { t } from '#lib/i18n/index.js';
+	import { compose } from '#lib/components/shell/compose.svelte.js';
+	import type { ForumThread, FeedItem } from '#lib/types/index.js';
+	import { tiptapFirstImageSrc } from '#lib/tiptap/serialize.js';
+	import FeedCard from '#lib/components/feed/FeedCard.svelte';
+	import NativeAd from '#lib/components/ads/NativeAd.svelte';
 
 	interface Props {
 		threads: ForumThread[];
@@ -69,7 +69,7 @@
 		if (!c) return;
 		loading = true;
 
-		const params = new URLSearchParams(page.url.searchParams);
+		const params = new URLSearchParams(page.url.search);
 		params.set('page_size', String(pageSize));
 		params.set('cursor_created_at', c.createdAt);
 		params.set('cursor_id', c.id);

@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
 import { redirect } from '@sveltejs/kit';
-import type { MyJapaStage, JapaStageOption, JapaIntent, GeoCountry, UserJourney } from '$lib/types';
+import type { MyJapaStage, JapaStageOption, JapaIntent, GeoCountry, UserJourney } from '#lib/types/index.js';
 
 /**
  * My Japa Stage at /japa-stage/me. Auth-gated: redirects to login when not

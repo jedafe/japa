@@ -1,10 +1,10 @@
 <script lang="ts">
   import { Accordion } from "bits-ui";
-  import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
-  import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
-  import { Button } from "$lib/components/ui/button";
+  import Autocomplete from "#lib/components/ui/Autocomplete.svelte";
+  import type { AutocompleteItem } from "#lib/components/ui/Autocomplete.svelte";
+  import { Button } from "#lib/components/ui/button/index.js";
   import { Filter, X } from "lucide-svelte";
-  import { t } from "$lib/stores/i18n.svelte";
+  import { t } from "#lib/stores/i18n.svelte.js";
   import type { FilterDef } from "./types";
 
   let {

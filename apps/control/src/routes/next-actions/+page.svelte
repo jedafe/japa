@@ -1,15 +1,15 @@
 <!-- §122 Next-Action Suggestions — rule management -->
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import SearchInput from '$lib/components/ui/SearchInput.svelte';
-	import { t, translations } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import AlertBanner from '#lib/components/ui/AlertBanner.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import SearchInput from '#lib/components/ui/SearchInput.svelte';
+	import { t, translations } from '#lib/stores/i18n.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
 	import { Plus, RefreshCw } from 'lucide-svelte';
-	import { listRules, getStats, updateRule, deleteRule, type NextActionRule, type NextActionStat } from '$lib/api/nextactions';
-	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
+	import { listRules, getStats, updateRule, deleteRule, type NextActionRule, type NextActionStat } from '#lib/api/nextactions.js';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '#lib/api/types.js';
 	import { goto } from '$app/navigation';
 
 	let rules = $state<NextActionRule[]>([]);

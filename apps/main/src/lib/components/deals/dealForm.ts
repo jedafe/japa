@@ -6,7 +6,7 @@
  * and organization deal submissions (POST /organizations/{id}/deals).
  * Kept free of Svelte/DOM imports so the payload contract is unit-testable.
  */
-import type { Coupon, DealPartnerRef } from '$lib/types';
+import type { Coupon, DealPartnerRef } from '#lib/types/index.js';
 
 /**
  * Props contract for DealForm.svelte — consumed by the staff create/edit

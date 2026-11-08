@@ -2,17 +2,17 @@
 	// /comparison-data-sources — admin registry for JCE comparison data sources.
 	// Uses the EntityPage scaffold; the form is a custom snippet because the config
 	// field must be edited as JSON text and parsed before submission.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
 	import {
 		listDataSources,
 		createDataSource,
 		updateDataSource,
 		deleteDataSource
-	} from '$lib/api/comparison-data-sources';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import DataSourceForm from '$lib/components/jce/DataSourceForm.svelte';
-	import type { DataSource } from '$lib/types/jce';
+	} from '#lib/api/comparison-data-sources.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import DataSourceForm from '#lib/components/jce/DataSourceForm.svelte';
+	import type { DataSource } from '#lib/types/jce.js';
 	import { Trash2 } from 'lucide-svelte';
 
 	type Source = DataSource;

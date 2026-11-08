@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { untrack, onMount } from 'svelte';
-	import { t, siteName, i18n } from '$lib/i18n';
+	import { t, siteName, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import {
 		BellRing,
 		MapPin,
@@ -16,13 +16,13 @@
 		X,
 		Lock
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import type { Embassy, AppointmentAlert, GeoCountry, CatalogOption } from '$lib/types';
+	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import type { Embassy, AppointmentAlert, GeoCountry, CatalogOption } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Embassy Appointment Alerter tool — §91, ADR-099.
@@ -106,10 +106,11 @@
 	function onDestChange(id: string) {
 		selectedDestId = id;
 		error = null;
-		const url = new URL(page.url);
-		if (id) url.searchParams.set('dest', id);
-		else url.searchParams.delete('dest');
-		replaceState(url, {});
+		const url = new URL(page.url.href);
+
+		if (id) url.searchParams.set('dest', id); else url.searchParams.delete('dest');
+
+		goto(url, { shallow: true, replace: true });
 		loadEmbassies();
 	}
 
@@ -187,7 +188,7 @@
 			error = res.error.message;
 		} else if (res.data) {
 			const updated = res.data!;
-			alerts = alerts.map((a) => (a.id === id ? updated : a));
+			alerts = alerts.map((a) => a.id === id ? updated : a);
 			editingAlertId = null;
 		}
 	}
@@ -269,7 +270,12 @@
 		)}
 	/>
 	<link rel="canonical" href={page.url.href} />
-	<meta property="og:title" content="{title} — {siteName()} Tools" />
+
+	<meta
+		property="og:title"
+		content="{title} — {siteName()} Tools"
+	/>
+
 	<meta
 		property="og:description"
 		content={t(
@@ -280,7 +286,12 @@
 	<meta property="og:url" content={page.url.href} />
 	<meta property="og:type" content="website" />
 	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content="{title} — {siteName()} Tools" />
+
+	<meta
+		name="twitter:title"
+		content="{title} — {siteName()} Tools"
+	/>
+
 	<meta
 		name="twitter:description"
 		content={t(
@@ -499,7 +510,7 @@
 															<input
 																type="checkbox"
 																checked={editChannels.includes(opt.value)}
-																onchange={() => (editChannels = toggleChannel(editChannels, opt.value))}
+																onchange={() => editChannels = toggleChannel(editChannels, opt.value)}
 																class="accent-[var(--color-primary)]"
 															/>
 															{opt.label}
@@ -517,7 +528,7 @@
 												</button>
 												<button
 													type="button"
-													onclick={() => (editingAlertId = null)}
+													onclick={() => editingAlertId = null}
 													class="px-3 py-1 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 												>
 													{t('common.cancel', 'Cancel')}
@@ -672,7 +683,7 @@
 										<input
 											type="checkbox"
 											checked={alertChannels.includes(opt.value)}
-											onchange={() => (alertChannels = toggleChannel(alertChannels, opt.value))}
+											onchange={() => alertChannels = toggleChannel(alertChannels, opt.value)}
 											class="accent-[var(--color-primary)]"
 										/>
 										{opt.label}

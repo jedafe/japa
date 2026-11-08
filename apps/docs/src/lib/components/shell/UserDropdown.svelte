@@ -8,12 +8,12 @@
 		LogIn,
 		Compass
 	} from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { env } from '$env/dynamic/public';
+	import { t } from '#lib/i18n/index.js';
+	import { PUBLIC_MAIN_ORIGIN } from '$app/env/public';
 	import { page } from '$app/state';
-	import type { SessionUser } from '$lib/types';
+	import type { SessionUser } from '#lib/types/index.js';
 
-	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+	const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 
 	interface Props {
 		user: SessionUser | null;

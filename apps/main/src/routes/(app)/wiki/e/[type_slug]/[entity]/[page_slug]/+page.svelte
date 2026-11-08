@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { t, siteName } from '$lib/i18n';
+	import { t, siteName } from '#lib/i18n/index.js';
 	import { page as pageStore } from '$app/state';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { ChevronRight, Lock, Pencil } from 'lucide-svelte';
-	import SuggestEdit from '$lib/components/wiki/SuggestEdit.svelte';
-	import WikiHelpfulWidget from '$lib/components/wiki/WikiHelpfulWidget.svelte';
-	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
-	import { tiptapToText, type TipTapDoc as TipDoc } from '$lib/tiptap/serialize';
-	import { tiptapToHtml, type TipTapDoc } from '$lib/tiptap/serialize';
-	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
-	import { entityPageHref } from '$lib/utils/wikiEntityLinks';
+	import SuggestEdit from '#lib/components/wiki/SuggestEdit.svelte';
+	import WikiHelpfulWidget from '#lib/components/wiki/WikiHelpfulWidget.svelte';
+	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
+	import { tiptapToText, type TipTapDoc as TipDoc } from '#lib/tiptap/serialize.js';
+	import { tiptapToHtml, type TipTapDoc } from '#lib/tiptap/serialize.js';
+	import { sanitizeContentHtml, safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
+	import { entityPageHref } from '#lib/utils/wikiEntityLinks.js';
 	import type { PageData } from './$types';
 	import type { EntityWikiPage } from './+page.server';
 

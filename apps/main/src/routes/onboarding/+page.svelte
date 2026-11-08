@@ -1,18 +1,18 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import { navigatePostLogin } from '$lib/auth/redirect';
-	import { t } from '$lib/i18n';
+	import { api } from '#lib/api/client.js';
+	import { navigatePostLogin } from '#lib/auth/redirect.js';
+	import { t } from '#lib/i18n/index.js';
 	import { Check, ChevronLeft, ChevronRight, Sparkles, MapPin, Trophy, Heart, ShieldCheck, Plane, Globe, Landmark, Luggage, Lightbulb } from 'lucide-svelte';
-	import { destinationMarkets, pinMarketsFirst, servedMarkets } from '$lib/utils/geoMarkets';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { destinationMarkets, pinMarketsFirst, servedMarkets } from '#lib/utils/geoMarkets.js';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import type { PageData } from './$types';
-	import type { GeoCity, GeoState } from '$lib/types';
+	import type { GeoCity, GeoState } from '#lib/types/index.js';
 
 	let { data }: { data: PageData } = $props();
 

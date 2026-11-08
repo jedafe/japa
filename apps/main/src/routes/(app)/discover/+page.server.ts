@@ -1,15 +1,15 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiRadarList } from '$lib/server/api';
+import { apiContext, apiList, apiRadarList } from '#lib/server/api.js';
 import type {
 	SuggestedUser,
 	SuggestedSpace,
 	SuggestedTag,
 	SuggestedContent,
 	PublicOrgListItem
-} from '$lib/types';
-import type { Source } from '$lib/types/sources';
-import type { RadarItem } from '$lib/types';
+} from '#lib/types/index.js';
+import type { Source } from '#lib/types/sources.js';
+import type { RadarItem } from '#lib/types/index.js';
 
 /**
  * Discover at /discover — auth-gated frontend route (ADR-058). Consumes the

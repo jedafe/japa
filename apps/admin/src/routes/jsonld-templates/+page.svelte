@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /jsonld-templates — migrated to the EntityPage scaffold.
 	//
 	// The form has a JSON content editor with live JSON-validation feedback, so
 	// it is rendered via the `formSnippet` escape hatch (a `fields` array is still
 	// passed so EntityPage seeds the edit-form value). Export/import are kept as
 	// page-local header actions rendered above the scaffold.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Button } from '$lib/components/ui/button';
-	import { api, jsonLdApi, contentAdminApi, type JsonLdTemplate } from '$lib/api';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { api, jsonLdApi, contentAdminApi, type JsonLdTemplate } from '#lib/api.js';
 	import { JsonValueEditor } from '@japaconnect/ui';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Trash2, Download, Upload } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type Template = JsonLdTemplate & { content: string };
 

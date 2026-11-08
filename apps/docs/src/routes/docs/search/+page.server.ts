@@ -1,9 +1,9 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import { buildMeta } from '$lib/seo/meta';
-import type { DocSearchResult, DocAudience } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import { buildMeta } from '#lib/seo/meta.js';
+import type { DocSearchResult, DocAudience } from '#lib/types/index.js';
 
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 
 /**
  * Server-side search results page (the ⌘K palette is the in-app search; this

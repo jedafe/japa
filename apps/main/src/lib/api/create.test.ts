@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('$lib/api/client', () => ({
+vi.mock('#lib/api/client.js', () => ({
 	api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn(), put: vi.fn() }
 }));
 
-import { api } from '$lib/api/client';
+import { api } from '#lib/api/client.js';
 import { classifyError, createContent, searchHits, initiateUpload } from './create';
 
 describe('classifyError', () => {

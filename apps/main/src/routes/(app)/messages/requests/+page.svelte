@@ -1,15 +1,15 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { EmptyState, AutocompleteSelect, ListPageBar } from '$lib/components/ui';
-	import MessagesTabs from '$lib/components/messages/MessagesTabs.svelte';
+	import { EmptyState, AutocompleteSelect, ListPageBar } from '#lib/components/ui/index.js';
+	import MessagesTabs from '#lib/components/messages/MessagesTabs.svelte';
 	import { UserX, Search, Loader2 } from 'lucide-svelte';
-	import type { DMRequest } from '$lib/types';
+	import type { DMRequest } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -59,7 +59,7 @@
 		searchValue = value;
 		clearTimeout(searchTimer);
 		searchTimer = setTimeout(() => {
-			goto(listHref({ q: value.trim() }), { keepFocus: true, noScroll: true });
+			goto(listHref({ q: value.trim() }), { reset: false });
 		}, 300);
 	}
 
@@ -143,7 +143,7 @@
 				<AutocompleteSelect
 					options={sortOptions}
 					value={data.query.sort}
-					onValueChange={(v) => goto(listHref({ sort: v }), { noScroll: true })}
+					onValueChange={(v) => goto(listHref({ sort: v }), { reset: false })}
 					ariaLabel={t('messages.sort_label', 'Sort requests')}
 				/>
 			</div>
@@ -243,7 +243,7 @@
 					<AutocompleteSelect
 						options={pageSizeOptions}
 						value={String(data.query.pageSize)}
-						onValueChange={(v) => goto(listHref({ pageSize: Number(v) }), { noScroll: true })}
+						onValueChange={(v) => goto(listHref({ pageSize: Number(v) }), { reset: false })}
 						ariaLabel={t('messages.page_size', 'Requests per page')}
 						openUp
 					/>

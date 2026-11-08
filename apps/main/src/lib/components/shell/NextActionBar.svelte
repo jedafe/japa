@@ -3,7 +3,7 @@
 	// unclaimed suggestion whose channels include announcement_bar, for
 	// guests and members alike (the API does the filtering).
 	import { onMount } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		getNextActions,
 		dismissNextAction,
@@ -15,9 +15,9 @@
 		nextActionsViewer,
 		nextActionsSurface,
 		goToNextAction
-	} from '$lib/api/nextActions';
-	import type { NextAction } from '$lib/types';
-	import { nextActionIcon } from '$lib/icons/nextActionIcon';
+	} from '#lib/api/nextActions.js';
+	import type { NextAction } from '#lib/types/index.js';
+	import { nextActionIcon } from '#lib/icons/nextActionIcon.js';
 
 	let action = $state<NextAction | null>(null);
 	let dismissed = $state(false);

@@ -1,15 +1,15 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import MetricCard from '$lib/components/MetricCard.svelte';
-	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
-	import Tabs from '$lib/components/ui/Tabs.svelte';
-	import TabsContent from '$lib/components/ui/TabsContent.svelte';
-	import { api } from '$lib/api';
-	import type { QueueInfo, QueueStats, QueueTask, QueueTaskState, QueueTasksResponse } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n.svelte';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import MetricCard from '#lib/components/MetricCard.svelte';
+	import StatusBadge from '#lib/components/StatusBadge.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import AlertBanner from '#lib/components/ui/AlertBanner.svelte';
+	import Tabs from '#lib/components/ui/Tabs.svelte';
+	import TabsContent from '#lib/components/ui/TabsContent.svelte';
+	import { api } from '#lib/api.js';
+	import type { QueueInfo, QueueStats, QueueTask, QueueTaskState, QueueTasksResponse } from '#lib/api/types.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { ListTodo, Clock, RefreshCw, AlertTriangle, CheckCircle, Timer, RotateCw, RotateCcw, Archive, Trash2, Play } from 'lucide-svelte';
 
 	let {} = $props();

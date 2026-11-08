@@ -4,10 +4,10 @@
 	// so admins can add/remove/reorder links from the admin panel without
 	// touching frontend code.
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { env } from '$env/dynamic/public';
-	import { resolveMenuHref } from '$lib/utils/safeHtml';
-	import type { Menu, MenuItem, SessionUser } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import { PUBLIC_MAIN_ORIGIN } from '$app/env/public';
+	import { resolveMenuHref } from '#lib/utils/safeHtml.js';
+	import type { Menu, MenuItem, SessionUser } from '#lib/types/index.js';
 
 	interface Props {
 		/** Navigation menu from GET /menus/docs_footer. */
@@ -22,7 +22,7 @@
 
 	// Root-relative URLs that aren't docs-local (/, /privacy, /signup, …) live
 	// on the main app — resolve them against the main origin (ADR-054).
-	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+	const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 
 	// Guests see 'all' + 'guest'; authenticated users see 'all' + 'authenticated'.
 	const footerItems = $derived(
@@ -36,7 +36,7 @@
 <footer class="guest-footer" class:rail>
 	<div class="guest-footer-inner">
 		<div class="footer-copy">
-			&copy; {new Date(page.data.serverNow ?? Date.now()).getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
+			© {new Date(page.data.serverNow ?? Date.now()).getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
 		</div>
 		{#if footerItems.length > 0}
 			<nav class="footer-nav" aria-label={t('landing.footer_nav', 'Footer navigation')}>
@@ -45,16 +45,14 @@
 						{@const href = resolveMenuHref(item.url, mainOrigin)}
 						<li>
 							<a
-								{href}
+								href={href}
 								class="footer-link"
 								target={item.target === '_blank' ? '_blank' : undefined}
 								rel={item.target === '_blank' ? 'noopener noreferrer' : undefined}
 								data-sveltekit-reload={item.target === '_blank' || href.startsWith('http')
 									? undefined
-									: /\.[a-z0-9]+$/i.test(href.split('/').pop() ?? '') || undefined}
-							>
-								{item.label}
-							</a>
+									: (/\.[a-z0-9]+$/i).test(href.split('/').pop() ?? '') || undefined}
+							>{item.label}</a>
 						</li>
 					{/each}
 				</ul>

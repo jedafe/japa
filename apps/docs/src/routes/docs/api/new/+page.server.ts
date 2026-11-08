@@ -1,8 +1,8 @@
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext } from '$lib/server/api';
-import { assertDocEditor, fetchAuthoringData, createDocPageAction } from '$lib/server/docs-author';
-import { buildMeta } from '$lib/seo/meta';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
+import { apiContext } from '#lib/server/api.js';
+import { assertDocEditor, fetchAuthoringData, createDocPageAction } from '#lib/server/docs-author.js';
+import { buildMeta } from '#lib/seo/meta.js';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 
 /**
  * /docs/api/new — the api audience's create route. A dedicated static route

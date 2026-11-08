@@ -13,8 +13,8 @@
 // submission fee for a claim that would be rejected as a duplicate.
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { PublicOrganization, FormEmbed, MyOwnershipClaim } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { PublicOrganization, FormEmbed, MyOwnershipClaim } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {

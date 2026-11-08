@@ -6,20 +6,20 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { Clock, History, Pencil, Table2 } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		getEntityFields,
 		getEntityRevisions,
 		type WikiEntityField,
 		type WikiEntityFields,
 		type WikiEntityRevision
-	} from '$lib/api/wiki';
-	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
+	} from '#lib/api/wiki.js';
+	import LoadingSkeleton from '#lib/components/ui/LoadingSkeleton.svelte';
 	import SuggestEdit from './SuggestEdit.svelte';
-	import { formatWikiFieldValue, isMediaFieldType, mediaFieldItems } from '$lib/utils/wikiFieldValue';
-	import { openLightbox } from '$lib/lightbox.svelte';
-	import type { LightboxItem } from '$lib/components/ui/MediaLightbox.svelte';
-	import type { CurrencyInfo } from '$lib/utils/currency';
+	import { formatWikiFieldValue, isMediaFieldType, mediaFieldItems } from '#lib/utils/wikiFieldValue.js';
+	import { openLightbox } from '#lib/lightbox.svelte.js';
+	import type { LightboxItem } from '#lib/components/ui/MediaLightbox.svelte';
+	import type { CurrencyInfo } from '#lib/utils/currency.js';
 
 	let {
 		entityType,

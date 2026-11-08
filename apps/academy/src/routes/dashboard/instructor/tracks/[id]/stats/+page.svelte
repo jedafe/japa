@@ -4,12 +4,12 @@
 	// LayerChart for revenue & enrollment over time (ADR-059).
 	import { LineChart } from 'layerchart';
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
-	import { formatPriceKobo, formatCount } from '$lib/format';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { LoadingSkeleton, EmptyState } from '#lib/components/ui/index.js';
+	import { formatPriceKobo, formatCount } from '#lib/format.js';
 	import { TrendingUp, Users, DollarSign, ArrowLeft, BarChart3 } from 'lucide-svelte';
-	import type { InstructorTrackStats } from '$lib/types';
+	import type { InstructorTrackStats } from '#lib/types/index.js';
 
 	const trackId = page.params.id;
 

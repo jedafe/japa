@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Users, FileText, ScrollText, LogIn, Shield } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { decodeBase64Text } from '$lib/tiptap/serialize';
-	import AchievementWidget from '$lib/components/spaces/AchievementWidget.svelte';
-	import TipButton from '$lib/components/tips/TipButton.svelte';
-	import SpaceFollowListModal from '$lib/components/spaces/SpaceFollowListModal.svelte';
-	import type { Space, SpaceMember, SpaceRule, Achievement } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { decodeBase64Text } from '#lib/tiptap/serialize.js';
+	import AchievementWidget from '#lib/components/spaces/AchievementWidget.svelte';
+	import TipButton from '#lib/components/tips/TipButton.svelte';
+	import SpaceFollowListModal from '#lib/components/spaces/SpaceFollowListModal.svelte';
+	import type { Space, SpaceMember, SpaceRule, Achievement } from '#lib/types/index.js';
 
 	interface Props {
 		space: Space;

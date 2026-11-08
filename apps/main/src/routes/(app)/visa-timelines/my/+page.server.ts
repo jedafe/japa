@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { VisaTimeline, GeoCountry } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { VisaTimeline, GeoCountry } from '#lib/types/index.js';
 
 /**
  * My Visa Timelines at /visa-timelines/my (Section 83).

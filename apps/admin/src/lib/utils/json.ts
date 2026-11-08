@@ -1,4 +1,4 @@
-import { t } from '$lib/stores/i18n.svelte';
+import { t } from '#lib/stores/i18n.svelte.js';
 
 /** Thrown when a user-supplied JSON string cannot be parsed. */
 export class JsonParseError extends Error {

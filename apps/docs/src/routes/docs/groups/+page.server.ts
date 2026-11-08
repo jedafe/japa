@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { audienceStats } from '$lib/docs/catalog';
-import { buildMeta } from '$lib/seo/meta';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
+import { audienceStats } from '#lib/docs/catalog.js';
+import { buildMeta } from '#lib/seo/meta.js';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 
 /**
  * User-groups index: every audience the visitor can read, derived from the

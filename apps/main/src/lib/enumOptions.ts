@@ -20,7 +20,7 @@ import type {
 	CalendarCategory,
 	TrendingWindow,
 	RoadmapStatus
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 type Translator = (key: string, fallback?: string) => string;
 

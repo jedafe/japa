@@ -1,5 +1,5 @@
-import { api } from '$lib/api/client';
-import type { VideoChannelClaim, VideoImportJob, VideoSource } from '$lib/types';
+import { api } from '#lib/api/client.js';
+import type { VideoChannelClaim, VideoImportJob, VideoSource } from '#lib/types/index.js';
 
 /**
  * §106 video — resolve/upload helpers for the /create composer's VideoField.

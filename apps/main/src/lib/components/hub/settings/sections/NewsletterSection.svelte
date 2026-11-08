@@ -12,14 +12,14 @@
 	 * Ref: japaconnect-engineering/sections/62-newsletter-digest.md
 	 *      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 	 */
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { untrack } from 'svelte';
 	import { beforeNavigate, goto, invalidateAll } from '$app/navigation';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
-	import { patchNewsletterPreferences, unsubscribeNewsletter } from '$lib/api/hub';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
+	import { DirtyForm } from '#lib/components/hub/useDirtyForm.svelte.js';
+	import { patchNewsletterPreferences, unsubscribeNewsletter } from '#lib/api/hub.js';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
 	import { Mail, Rss, Megaphone } from 'lucide-svelte';
 
 	type NewsletterPrefs = {
@@ -30,7 +30,7 @@
 	};
 
 	let { data }: { data: unknown } = $props();
-	const sectionData = $derived((data as { preferences: NewsletterPrefs | null } | null) ?? null);
+	const sectionData = $derived(data as { preferences: NewsletterPrefs | null } | null ?? null);
 	const prefs = $derived(sectionData?.preferences ?? null);
 
 	const form = new DirtyForm<NewsletterPrefs>(
@@ -48,6 +48,7 @@
 
 	let bypassGuard = false;
 	beforeNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
 		if (!form.dirty || bypassGuard || nav.type === 'leave') return;
 		nav.cancel();
 		const target = nav.to?.url;
@@ -163,7 +164,7 @@
 				</p>
 				<button
 					type="button"
-					onclick={() => (unsubscribeOpen = true)}
+					onclick={() => unsubscribeOpen = true}
 					class="text-xs font-medium text-[var(--color-danger,#dc2626)] hover:underline"
 				>
 					{t('settings.newsletter.unsubscribe', 'Unsubscribe')}

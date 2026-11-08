@@ -45,19 +45,19 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Bookmark, Flag, MessageSquare, MoreVertical, Play } from 'lucide-svelte';
-	import { Menu, MenuItem } from '$lib/components/ui';
-	import { t, i18n } from '$lib/i18n';
-	import { relativeTime } from '$lib/feed/time';
-	import { contentTypeMeta, readPostLabel } from '$lib/feed/contentTypeMeta';
-	import { contentHref } from '$lib/utils/contentLink';
-	import { formatDuration } from '$lib/utils/duration';
-	import { api } from '$lib/api/client';
-	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
-	import ReactionButton from '$lib/components/ui/ReactionButton.svelte';
-	import VoteRail from '$lib/components/forum/VoteRail.svelte';
-	import ShareButton from '$lib/components/ui/ShareButton.svelte';
-	import type { FeedItem } from '$lib/types';
+	import { Menu, MenuItem } from '#lib/components/ui/index.js';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { contentTypeMeta, readPostLabel } from '#lib/feed/contentTypeMeta.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import { formatDuration } from '#lib/utils/duration.js';
+	import { api } from '#lib/api/client.js';
+	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
+	import ReactionButton from '#lib/components/ui/ReactionButton.svelte';
+	import VoteRail from '#lib/components/forum/VoteRail.svelte';
+	import ShareButton from '#lib/components/ui/ShareButton.svelte';
+	import type { FeedItem } from '#lib/types/index.js';
 
 	interface Props {
 		item: FeedItem;
@@ -74,7 +74,7 @@
 
 	const authed = $derived(page.data.isAuthed as boolean);
 
-	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
+	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
 
 	const time = $derived(relativeTime(item.created_at, new Date(), i18n.locale));
 

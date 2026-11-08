@@ -1,12 +1,13 @@
 /// <reference types="@sveltejs/kit" />
 /// <reference lib="webworker" />
 
-// §124 — PWA service worker for the Academy surface: precache + runtime
-// caching + offline fallback. No push handlers (browser push subscriptions
-// are managed on the main app's Devices settings page).
+// §124 — PWA service worker for the Docs surface: precache + runtime
+// caching + offline fallback. Docs pages are the highest-value offline
+// content (readers on planes/bad connections), so navigations get
+// network-first with a cached-page fallback.
 // Ref: .jeos/sections/124-progressive-web-app.md
 
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 // §124 — build/start timestamp injected via vite `define`, used only for
 // cache namespacing. `$service-worker` is deliberately NOT imported: its dev
 // shim guards on `self instanceof ServiceWorkerGlobalScope`, which throws at

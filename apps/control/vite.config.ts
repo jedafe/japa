@@ -1,3 +1,5 @@
+import adapter from '@sveltejs/adapter-static';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
@@ -24,8 +26,39 @@ function authProxyPlugin(): Plugin {
 	};
 }
 
+const dev = process.argv.includes('dev');
+
+// Origins the browser legitimately connects to (API, realtime WS, Umami,
+// GlitchTip/Sentry). PUBLIC_* vars are build-time constants — CSP origins
+// derived from them cannot drift from what the client bundle calls.
+const envOrigin = (v: string | undefined) => {
+	try {
+		const u = new URL(v ?? '');
+
+		return (/^https?:|^wss?:/).test(u.protocol) ? `${u.protocol}//${u.host}` : '';
+	} catch {
+		return '';
+	}
+};
+
+const connectOrigins = [
+	envOrigin(process.env.PUBLIC_JC_API_URL),
+	envOrigin(process.env.PUBLIC_JC_WS_URL),
+	envOrigin(process.env.PUBLIC_JC_UMAMI_URL),
+	envOrigin(process.env.PUBLIC_JC_GLITCHTIP_DSN)
+].filter(Boolean);
+
+const umamiOrigin = envOrigin(process.env.PUBLIC_JC_UMAMI_URL);
+
 export default defineConfig({
-	plugins: [tailwindcss(), authProxyPlugin(), sveltekit()],
+	plugins: [
+		tailwindcss(),
+		authProxyPlugin(),
+		sveltekit({
+			preprocess: vitePreprocess(),
+			adapter: adapter({ fallback: 'index.html' })
+		})
+	],
 	resolve: {
 		conditions: ['browser'],
 		// Dedupe svelte: workspace packages carry stale bun-installed

@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/88-ask-an-expat.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { AMAThread, ForumReply, GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { AMAThread, ForumReply, GeoCountry } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();

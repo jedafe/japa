@@ -18,7 +18,7 @@ import {
 	Users,
 	UsersRound
 } from 'lucide-svelte';
-import type { IconComponent } from '$lib/components/ui/icons';
+import type { IconComponent } from '#lib/components/ui/icons.js';
 
 const CATEGORY_ICONS: Record<string, IconComponent> = {
 	'book-open': BookOpen,

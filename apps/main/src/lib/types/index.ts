@@ -3715,7 +3715,7 @@ export interface WikiPage extends WikiPageIndex {
 	/** §80 Wiki Types: the page category's bound field group — schema + this
 	 *  space's stored values. The group is the page's schema (always bound);
 	 *  a prose-only page has a group with no fields. */
-	fields?: import('$lib/api/wiki').WikiEntityFieldGroup | null;
+	fields?: import('#lib/api/wiki.js').WikiEntityFieldGroup | null;
 	/** The bound group's id — present even when the group has no fields so
 	 *  the entity-fields panel can scope itself (absent = unscoped). */
 	field_group_id?: string;

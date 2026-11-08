@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /ads — migrated to shared components (ActionMenu, BulkBar, Modal).
 	// Tabbed page (campaigns + boosts) — not an EntityPage candidate; keeps the
 	// tab structure but uses the shared DataTable `actions`/`bulkActionsList` props
 	// and Modal for the stats view-detail.
-	import { adsAdminApi, api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
+	import { adsAdminApi, api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import type { ActionItem, BulkAction } from '#lib/components/ui/data-table/index.js';
 	import { BarChart3, Zap, Pause, Play, StopCircle, Plus, Eye, Trash2, Check, XCircle } from 'lucide-svelte';
 
 	type Campaign = {

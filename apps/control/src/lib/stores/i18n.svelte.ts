@@ -1,5 +1,5 @@
-import { browser } from '$app/environment';
-import { apiFetch } from '$lib/api/client';
+import { browser } from '$app/env';
+import { apiFetch } from '#lib/api/client.js';
 import { substituteSiteName } from './site.svelte';
 
 type Locale = string;

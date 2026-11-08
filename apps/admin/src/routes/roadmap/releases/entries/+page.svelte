@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /roadmap/releases/entries — commit-entry triage queue (§113, ADR-135).
 	// Entries land via CI ingest (roadmap.entries.ingest) into the
 	// unreleased queue; admins retype/retitle/relink to promote 'other'
 	// commits onto public release pages, or delete noise.
-	import { EntityPage, type EntityPageConfig } from '$lib/components/entity';
-	import { roadmapEntriesAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import type { FilterDef } from '$lib/components/ui/data-table';
+	import { EntityPage, type EntityPageConfig } from '#lib/components/entity/index.js';
+	import { roadmapEntriesAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import type { FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	type ReleaseEntry = {
 		id: string;

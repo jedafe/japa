@@ -1,17 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/38-tickets.md (user portal)
 	// Full-page new-ticket form. Submits via the browser API client (POST /tickets),
 	// then redirects to the new ticket's thread view. The type selector is a
 	// Bits UI Select populated from GET /ticket-types?is_public=true.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import { ticketHref } from '$lib/tickets';
-	import type { TicketPriority, TicketType } from '$lib/types';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { api } from '#lib/api/client.js';
+	import { ticketHref } from '#lib/tickets.js';
+	import type { TicketPriority, TicketType } from '#lib/types/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	let { data } = $props();
 	const types = $derived(data.types as TicketType[]);

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-svelte';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import { replaceState } from '$app/navigation';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import { goto } from '$app/navigation';
 
 	let {
 		page = $bindable(0),
@@ -12,18 +12,19 @@
 		pageSizeOptions = [10, 25, 50, 100],
 		urlSync = true,
 		defaultPageSize = 10
-	}: {
+
+		// Page size treated as the app's default — the ?pageSize param is only
+		// written when the selection differs from it (matches EntityPage's
+		// pageSize omission logic so the two writers agree).
+	}: { 
 		page: number;
 		totalPages: number;
 		totalItems?: number;
 		pageSize?: number;
 		pageSizeOptions?: number[];
 		urlSync?: boolean;
-		// Page size treated as the app's default — the ?pageSize param is only
-		// written when the selection differs from it (matches EntityPage's
-		// pageSize omission logic so the two writers agree).
-		defaultPageSize?: number;
-	} = $props();
+		defaultPageSize?: number
+	 } = $props();
 
 	function syncToUrl() {
 		if (!urlSync || typeof window === 'undefined') return;
@@ -37,7 +38,7 @@
 		const qs = params.toString();
 		const url = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
 		try {
-			replaceState(url, {});
+			goto(url, { shallow: true, replace: true });
 		} catch {
 			// Fallback for SSR or edge cases
 		}

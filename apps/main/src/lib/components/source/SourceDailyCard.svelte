@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { ExternalLink } from 'lucide-svelte';
-	import { t, i18n } from '$lib/i18n';
-	import { relativeTime } from '$lib/feed/time';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
-	import ReactionButton from '$lib/components/ui/ReactionButton.svelte';
-	import ShareButton from '$lib/components/ui/ShareButton.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { relativeTime } from '#lib/feed/time.js';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
+	import ReactionButton from '#lib/components/ui/ReactionButton.svelte';
+	import ShareButton from '#lib/components/ui/ShareButton.svelte';
 	import SourceActions from './SourceActions.svelte';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import type { Source, SourceItem } from '$lib/types/sources';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import type { Source, SourceItem } from '#lib/types/sources.js';
 
 	interface Props {
 		item: SourceItem;

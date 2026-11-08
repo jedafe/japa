@@ -14,12 +14,12 @@
 	 * Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 10, task 10.05)
 	 */
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
-	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import SettingsSection from '#lib/components/hub/SettingsSection.svelte';
+	import { DirtyForm } from '#lib/components/hub/useDirtyForm.svelte.js';
 	import { Shield, ShieldCheck } from 'lucide-svelte';
-	import type { AIPrivacyStatus, AIPrivacyUpdateResult } from '$lib/ai/agentTypes';
+	import type { AIPrivacyStatus, AIPrivacyUpdateResult } from '#lib/ai/agentTypes.js';
 
 	let { data, embedded = false }: { data: unknown; embedded?: boolean } = $props();
 

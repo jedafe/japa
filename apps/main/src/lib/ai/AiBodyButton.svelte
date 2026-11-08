@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Sparkles } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 
 	interface Props {
 		disabled?: boolean;

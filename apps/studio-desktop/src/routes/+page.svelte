@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	import { onMount } from 'svelte';
 	import {
 		RefreshCw,
@@ -23,18 +23,18 @@
 	import { join } from '@tauri-apps/api/path';
 	import { confirmDialog } from '@japaconnect/ui';
 	import { mkdir, readTextFile, writeTextFile, remove } from '@tauri-apps/plugin-fs';
-	import { queueStore } from '$lib/stores/queue.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { scanProject } from '$lib/services/file-scanner';
-	import { parseFrontmatter, buildMarkdown, markdownToHtml, escapeHtml } from '$lib/services/markdown';
-	import { isPublishing, publishWorker } from '$lib/services/publisher';
-	import { initSettingsDb, loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
-	import { isHighStakes } from '$lib/services/validation';
-	import { createApiClient, mapPublicContentType } from '$lib/services/api';
-	import { hashFile } from '$lib/services/hash';
-	import { slugify } from '$lib/services/prompt';
-	import type { FileState } from '$lib/types/queue';
-	import type { Persona, Space, StudioContentType } from '$lib/types/prompt';
+	import { queueStore } from '#lib/stores/queue.svelte.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { scanProject } from '#lib/services/file-scanner.js';
+	import { parseFrontmatter, buildMarkdown, markdownToHtml, escapeHtml } from '#lib/services/markdown.js';
+	import { isPublishing, publishWorker } from '#lib/services/publisher.js';
+	import { initSettingsDb, loadSettings, saveSettings, type StudioSettings } from '#lib/services/settings.js';
+	import { isHighStakes } from '#lib/services/validation.js';
+	import { createApiClient, mapPublicContentType } from '#lib/services/api.js';
+	import { hashFile } from '#lib/services/hash.js';
+	import { slugify } from '#lib/services/prompt.js';
+	import type { FileState } from '#lib/types/queue.js';
+	import type { Persona, Space, StudioContentType } from '#lib/types/prompt.js';
 
 	const stateOptions: { value: FileState['syncState']; label: string }[] = [
 		{ value: 'new', label: 'New' },

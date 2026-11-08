@@ -1,5 +1,5 @@
-import { browser } from '$app/environment';
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { browser } from '$app/env';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
 import { substituteSiteName } from './site.svelte';
 

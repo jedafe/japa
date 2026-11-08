@@ -1,40 +1,40 @@
 <script lang="ts">
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto, invalidate, invalidateAll } from '$app/navigation';
 	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark, Globe, TriangleAlert, Trash2, Loader2 } from 'lucide-svelte';
-	import { MenuItem, Modal } from '$lib/components/ui';
+	import { MenuItem, Modal } from '#lib/components/ui/index.js';
 	import { Chart, Bars, LineChart, Tooltip } from 'layerchart';
-	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
-	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
-	import FollowButton from '$lib/components/ui/FollowButton.svelte';
-	import { api } from '$lib/api/client';
-	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
-	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
-	import MessageUserDialog from '$lib/components/profile/MessageUserDialog.svelte';
-	import TipButton from '$lib/components/tips/TipButton.svelte';
-	import VideoGrid from '$lib/components/profile/VideoGrid.svelte';
-	import { EmptyState, LoadingSkeleton, UrlTabs, PaginationControls, SearchInput } from '$lib/components/ui';
-	import { openLightbox } from '$lib/lightbox.svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import type { UrlTab } from '$lib/components/ui';
-	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem, Badge, EarnedBadge, ProfileMedia } from '$lib/types';
-	import FeedCard from '$lib/components/feed/FeedCard.svelte';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-	import { tiptapExcerpt, decodeTipTapDoc, tiptapToText } from '$lib/tiptap/serialize';
-	import { blockUser, unblockUser, muteUser, unmuteUser } from '$lib/api/hub';
-	import { deleteMedia } from '$lib/api/create';
-	import type { FollowableType } from '$lib/api/hub';
+	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
+	import ProfileHeader from '#lib/components/profile/ProfileHeader.svelte';
+	import FollowButton from '#lib/components/ui/FollowButton.svelte';
+	import { api } from '#lib/api/client.js';
+	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
+	import UserProfileSidebar from '#lib/components/profile/UserProfileSidebar.svelte';
+	import MessageUserDialog from '#lib/components/profile/MessageUserDialog.svelte';
+	import TipButton from '#lib/components/tips/TipButton.svelte';
+	import VideoGrid from '#lib/components/profile/VideoGrid.svelte';
+	import { EmptyState, LoadingSkeleton, UrlTabs, PaginationControls, SearchInput } from '#lib/components/ui/index.js';
+	import { openLightbox } from '#lib/lightbox.svelte.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import type { UrlTab } from '#lib/components/ui/index.js';
+	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem, Badge, EarnedBadge, ProfileMedia } from '#lib/types/index.js';
+	import FeedCard from '#lib/components/feed/FeedCard.svelte';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+	import { tiptapExcerpt, decodeTipTapDoc, tiptapToText } from '#lib/tiptap/serialize.js';
+	import { blockUser, unblockUser, muteUser, unmuteUser } from '#lib/api/hub.js';
+	import { deleteMedia } from '#lib/api/create.js';
+	import type { FollowableType } from '#lib/api/hub.js';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { journeyIntentKey, journeyPercent } from '$lib/components/profile/journey';
-	import JourneyTimeline from '$lib/components/profile/JourneyTimeline.svelte';
-	import { bookmarkUrl, bookmarkLabel } from '$lib/components/profile/bookmarks';
-	import { contentHref } from '$lib/utils/contentLink';
-	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { journeyIntentKey, journeyPercent } from '#lib/components/profile/journey.js';
+	import JourneyTimeline from '#lib/components/profile/JourneyTimeline.svelte';
+	import { bookmarkUrl, bookmarkLabel } from '#lib/components/profile/bookmarks.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import RelativeTime from '#lib/components/ui/RelativeTime.svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -96,7 +96,7 @@
 		const all: NonNullable<PageData['media']> = [];
 		for (let p = 0; p < 2; p++) {
 			const res = await api.get<unknown>(`/users/${user.id}/media?page_size=100&page_offset=${p * 100}`);
-			const items = (Array.isArray(res) ? res : ((res as { data?: unknown[] })?.data ?? [])) as NonNullable<PageData['media']>;
+			const items = (Array.isArray(res) ? res : (res as { data?: unknown[] })?.data ?? []) as NonNullable<PageData['media']>;
 			all.push(...items);
 			if (items.length < 100) break;
 		}
@@ -153,7 +153,9 @@
 	// on popstate to a replaceState-written entry, SvelteKit reports the URL from
 	// the entry's original navigation (without the shallow ?tab= param), while
 	// the browser location already carries the real URL.
-	afterNavigate(() => {
+	afterNavigate(({ shallow, type }) => {
+		if (shallow && type === 'goto') return;
+
 		const urlTab = new URL(location.href).searchParams.get('tab') ?? 'overview';
 		if (urlTab !== activeTab && tabs.some((tab) => tab.value === urlTab)) {
 			activeTab = urlTab;
@@ -207,7 +209,7 @@
 			// BLK-010: surface the failure — previously the toggle silently
 			// reverted and the user could not tell the action failed.
 			blockError = t('profile.block_error', 'The action could not be completed. Please try again.');
-			setTimeout(() => (blockError = ''), 6000);
+			setTimeout(() => blockError = '', 6000);
 		} finally {
 			blockPending = false;
 		}
@@ -266,7 +268,7 @@
 	}
 	const unearnedBadges = $derived(
 		isOwnProfile
-			? (data.allBadges ?? []).filter((b) => b.is_active && !earnedSlugs.has(b.slug))
+		? (data.allBadges ?? []).filter((b) => b.is_active && !earnedSlugs.has(b.slug))
 			: []
 	);
 
@@ -426,36 +428,34 @@
 	}
 	const activityItems = $derived<ActivityItem[]>(
 		[
-			...data.posts.map((p): ActivityItem => ({
-				kind: 'posted',
-				title: p.title,
-				href: contentHref(p),
-				when: p.published_at || p.created_at
-			})),
-			...data.replies.map((r): ActivityItem => ({
-				kind: 'replied',
-				title: r.content_title,
-				href: `/content/${r.content_slug}`,
-				when: r.created_at
-			})),
-			...data.likes.map((l): ActivityItem => ({
-				kind: 'liked',
-				title: l.title,
-				href: contentHref(l),
-				when: l.reacted_at || l.created_at
-			})),
-			...(isOwnProfile
-				? data.bookmarks.map((b): ActivityItem => ({
-						kind: 'saved',
-						title: bookmarkLabel(b),
-						href: bookmarkUrl(b),
-						when: b.created_at
-					}))
-				: [])
-		]
-			.filter((a) => a.when)
-			.sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime())
-	);
+		...data.posts.map((p): ActivityItem => ({
+			kind: 'posted',
+			title: p.title,
+			href: contentHref(p),
+			when: p.published_at || p.created_at
+		})),
+		...data.replies.map((r): ActivityItem => ({
+			kind: 'replied',
+			title: r.content_title,
+			href: `/content/${r.content_slug}`,
+			when: r.created_at
+		})),
+		...data.likes.map((l): ActivityItem => ({
+			kind: 'liked',
+			title: l.title,
+			href: contentHref(l),
+			when: l.reacted_at || l.created_at
+		})),
+		...isOwnProfile
+			? data.bookmarks.map((b): ActivityItem => ({
+				kind: 'saved',
+				title: bookmarkLabel(b),
+				href: bookmarkUrl(b),
+				when: b.created_at
+			}))
+			: []
+	].filter((a) => a.when).sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime()));
+
 	const recentActivity = $derived(activityItems.slice(0, 6));
 
 	const activityIcons = { posted: FileText, replied: MessageSquare, liked: Heart, saved: Bookmark } as const;
@@ -480,9 +480,11 @@
 		// §106 video — Videos tab. Always shown for synthetic (imported)
 		// channels; for real users only when they have video sources, video
 		// posts, or the viewer is the profile owner (so they can see the empty state).
-		...(user.is_synthetic || (data.videos && data.videos.length > 0) || videoPosts.length > 0 || isOwnProfile
-			? [{ value: 'videos', label: t('profile.tab.videos', 'Videos') }]
-			: []),
+		...user.is_synthetic || data.videos && data.videos.length > 0 || videoPosts.length > 0 || isOwnProfile
+			? [
+				{ value: 'videos', label: t('profile.tab.videos', 'Videos') }
+			]
+			: [],
 		{ value: 'likes', label: t('profile.tab.likes', 'Likes') },
 		{ value: 'spaces', label: t('profile.tab.spaces', 'Spaces') },
 		// §31 — Follower/following lists are public and expose an `is_following`
@@ -492,14 +494,22 @@
 		// Phase 34.03 — Badges tab (Section 64, ADR-080). Always visible on the
 		// own profile — it's the entry point to the achievement centre —
 		// and on public profiles when the member holds earned badges.
-		...(isOwnProfile || (data.badges && data.badges.length > 0) || unearnedBadges.length > 0
-			? [{ value: 'badges', label: t('profile.tab.badges', 'Badges') }]
-			: []),
+		...isOwnProfile || data.badges && data.badges.length > 0 || unearnedBadges.length > 0
+			? [
+				{ value: 'badges', label: t('profile.tab.badges', 'Badges') }
+			]
+			: [],
+
 		// Analytics is a self-dashboard — owner-only per JEOS §342 [auth, self].
 		// Hidden from guests and from other authenticated users.
-		...(isOwnProfile
-			? [{ value: 'analytics', label: t('profile.tab.analytics', 'Analytics') }]
-			: [])
+		...isOwnProfile
+			? [
+				{
+					value: 'analytics',
+					label: t('profile.tab.analytics', 'Analytics')
+				}
+			]
+			: []
 	]);
 
 	const analytics = $derived(data.analytics as ProfileAnalytics | null);
@@ -532,12 +542,12 @@
 		topContent
 			.slice(0, 10)
 			.map((item, i) => ({
-				id: item.id,
-				x: i,
-				y: item.view_count ?? 0,
-				title: item.title || item.id,
-				label: item.title?.length > 30 ? item.title.slice(0, 30) + '…' : item.title ?? item.id,
-				href: topContentHrefs.get(item.id) ?? null
+		id: item.id,
+		x: i,
+		y: item.view_count ?? 0,
+		title: item.title || item.id,
+		label: item.title?.length > 30 ? item.title.slice(0, 30) + '…' : item.title ?? item.id,
+		href: topContentHrefs.get(item.id) ?? null
 			}))
 	);
 
@@ -552,17 +562,16 @@
 	// `json_ld` sidecar. Fall back to a basic schema when absent.
 	const jsonLd = $derived(
 		data.jsonLd
-			? JSON.stringify(data.jsonLd)
-			: JSON.stringify({
-					'@context': 'https://schema.org',
-					'@type': 'Person',
-					name: displayName,
-					alternateName: user.username ? `@${user.username}` : undefined,
-					url: canonical,
-					description: user.bio ?? '',
-					...(user.avatar_url ? { image: user.avatar_url } : {})
-				})
-	);
+		? JSON.stringify(data.jsonLd)
+		: JSON.stringify({
+			'@context': 'https://schema.org',
+			'@type': 'Person',
+			name: displayName,
+			alternateName: user.username ? `@${user.username}` : undefined,
+			url: canonical,
+			description: user.bio ?? '',
+			...user.avatar_url ? { image: user.avatar_url } : {}
+		}));
 
 	// ---- Per-tab list controls: filter + search + pagination -----------------
 	// Generic, zero-`any` client-side view over an already-loaded list. Filters by
@@ -588,10 +597,8 @@
 		let filtered = items.filter((item) => {
 			if (opts.fv !== 'all' && !opts.filter(item, opts.fv)) return false;
 			if (needle.length > 0) {
-				const hay = opts.searchFields
-					.map((f) => (item[f] as unknown as string) ?? '')
-					.join(' ')
-					.toLowerCase();
+				const hay = opts.searchFields.map((f) => item[f] as unknown as string ?? '').join(' ').toLowerCase();
+
 				if (!hay.includes(needle)) return false;
 			}
 			return true;
@@ -724,35 +731,35 @@
 
 	const repliesView = $derived(
 		view(repliesDecoded, {
-			searchFields: ['search_text', 'content_title'],
-			filter: (i, fv) => (fv === 'top' ? i.parent_id === null : i.parent_id !== null),
-			q,
-			fv: filterVal,
-			currentPage,
-			pageSize,
-			sortField: 'created_at',
-			sortDir: sortVal
+		searchFields: ['search_text', 'content_title'],
+		filter: (i, fv) => fv === 'top' ? i.parent_id === null : i.parent_id !== null,
+		q,
+		fv: filterVal,
+		currentPage,
+		pageSize,
+		sortField: 'created_at',
+		sortDir: sortVal
 		})
 	);
 
 	const mediaView = $derived(
 		view(mediaItems ?? [], {
-			searchFields: ['alt_text', 'filename'],
-			filter: (i, fv) => {
-				const mt = i.mime_type ?? '';
-				if (fv === 'image') return mt.startsWith('image/');
-				if (fv === 'video') return mt.startsWith('video/');
-				if (fv === 'audio') return mt.startsWith('audio/');
+		searchFields: ['alt_text', 'filename'],
+		filter: (i, fv) => {
+			const mt = i.mime_type ?? '';
+			if (fv === 'image') return mt.startsWith('image/');
+			if (fv === 'video') return mt.startsWith('video/');
+			if (fv === 'audio') return mt.startsWith('audio/');
 				if (fv === 'other')
 					return !mt.startsWith('image/') && !mt.startsWith('video/') && !mt.startsWith('audio/');
-				return false;
-			},
-			q,
-			fv: filterVal,
-			currentPage,
-			pageSize,
-			sortField: 'created_at',
-			sortDir: sortVal
+			return false;
+		},
+		q,
+		fv: filterVal,
+		currentPage,
+		pageSize,
+		sortField: 'created_at',
+		sortDir: sortVal
 		})
 	);
 
@@ -877,68 +884,74 @@
 
 <SetSidebar>
 	<UserProfileSidebar
-		{user}
-		{isOwnProfile}
-		{isAuthenticated}
+		user={user}
+		isOwnProfile={isOwnProfile}
+		isAuthenticated={isAuthenticated}
 		badges={data.badges ?? []}
 		lockedBadges={unearnedBadges}
 		posts={data.posts}
 		likes={data.likes}
 		bookmarks={data.bookmarks}
-		{connections}
+		connections={connections}
 		spaces={data.spaces}
 		certificates={data.certificates}
-		{stats}
-		{savedLabel}
+		stats={stats}
+		savedLabel={savedLabel}
 		journey={journeyCard}
 		onMessage={isBlocked || isBlockedBy ? undefined : openMessage}
-		onReport={() => (reportOpen = true)}
+		onReport={() => reportOpen = true}
 		onToggleBlock={requestBlockToggle}
-		{isBlocked}
-		{blockPending}
+		isBlocked={isBlocked}
+		blockPending={blockPending}
 	/>
 </SetSidebar>
 
 <!-- Centered to the same max-w-3xl column as the tab body so the header's
      left/right margins stay symmetric when the side nav is collapsed. -->
 <div class="mx-auto w-full max-w-3xl">
-<ProfileHeader {user} {isOwnProfile} {followedBy} followers={data.followers} following={data.following}>
-	{#if !isOwnProfile}
-		{#if isBlocked}
-			<!-- BLK-011/012: blocked state — replace interaction buttons with
+	<ProfileHeader
+		user={user}
+		isOwnProfile={isOwnProfile}
+		followedBy={followedBy}
+		followers={data.followers}
+		following={data.following}
+	>
+		{#if !isOwnProfile}
+			{#if isBlocked}
+				<!-- BLK-011/012: blocked state — replace interaction buttons with
 			     an unblock affordance, matching X's "blocked" profile state. -->
-			<button
-				type="button"
-				class="rounded-full border border-[var(--color-danger)] px-4 py-1.5 text-sm font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)]/10 disabled:opacity-50"
-				disabled={blockPending}
-				onclick={toggleBlock}
-			>{t('profile.blocked_state', 'Blocked')}</button>
-		{:else if !isBlockedBy}
-			<FollowButton
-				entityType="user"
-				entityId={user.id}
-				{initiallyFollowing}
-				onChange={() => invalidate(`/api/v1/users/${user.username}`)}
-			/>
-			{#if data.features?.['tips.enabled']}
+				<button
+					type="button"
+					class="rounded-full border border-[var(--color-danger)] px-4 py-1.5 text-sm font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)]/10 disabled:opacity-50"
+					disabled={blockPending}
+					onclick={toggleBlock}
+				>{t('profile.blocked_state', 'Blocked')}</button>
+			{:else if !isBlockedBy}
+				<FollowButton
+					entityType="user"
+					entityId={user.id}
+					initiallyFollowing={initiallyFollowing}
+					onChange={() => invalidate(`/api/v1/users/${user.username}`)}
+				/>
+				{#if data.features?.['tips.enabled']}
 				<TipButton recipientType="user" recipientKey={user.username} recipientId={user.id} recipientName={user.display_name ?? user.username} />
+				{/if}
 			{/if}
 		{/if}
-	{/if}
-	{#snippet menuItems()}
-		{#if isAuthenticated && !isOwnProfile}
+		{#snippet menuItems()}
+			{#if isAuthenticated && !isOwnProfile}
 			<MenuItem icon={VolumeX} disabled={mutePending} onSelect={toggleMute}>
 				{isMuted ? t('profile.unmute', 'Unmute') : t('profile.mute', 'Mute')}
-			</MenuItem>
+				</MenuItem>
 			<MenuItem icon={Ban} destructive disabled={blockPending} onSelect={requestBlockToggle}>
 				{isBlocked ? t('profile.unblock', 'Unblock') : t('profile.block', 'Block')}
-			</MenuItem>
-			<MenuItem icon={Flag} onSelect={() => (reportOpen = true)}>
-				{t('profile.report', 'Report')}
-			</MenuItem>
-			{#if data.features?.['scam_alert.enabled']}
-				<MenuItem
-					icon={TriangleAlert}
+				</MenuItem>
+
+				<MenuItem icon={Flag} onSelect={() => reportOpen = true}>{t('profile.report', 'Report')}</MenuItem>
+
+				{#if data.features?.['scam_alert.enabled']}
+					<MenuItem
+						icon={TriangleAlert}
 					onSelect={() =>
 						goto(
 							`/scam-alerts/new?platform=internal&subject_type=user&subject_id=${user.id}&subject_label=${encodeURIComponent('@' + user.username)}`
@@ -946,10 +959,10 @@
 				>
 					{t('scam_alerts.report_button', 'Report a Scam')}
 				</MenuItem>
+				{/if}
 			{/if}
-		{/if}
-	{/snippet}
-</ProfileHeader>
+		{/snippet}
+	</ProfileHeader>
 </div>
 
 <!-- BLK-010: transient error notice for failed block/unblock attempts. -->
@@ -1009,8 +1022,19 @@
 	{/snippet}
 </Modal>
 
-<ReportDialog bind:open={reportOpen} entityType="user" entityId={user.id} entityName={user.display_name ?? user.username} />
-<MessageUserDialog bind:open={messageOpen} recipientId={messageRecipient.id} recipientName={messageRecipient.name} authed={isAuthenticated} />
+<ReportDialog
+	bind:open={reportOpen}
+	entityType="user"
+	entityId={user.id}
+	entityName={user.display_name ?? user.username}
+/>
+
+<MessageUserDialog
+	bind:open={messageOpen}
+	recipientId={messageRecipient.id}
+	recipientName={messageRecipient.name}
+	authed={isAuthenticated}
+/>
 
 <!-- Media tab delete confirmation — DELETE /media/{id} is soft-delete and
      ownership-scoped; only reachable on the owner's own profile. -->
@@ -1067,7 +1091,7 @@ profile is private, or no stage is set. -->
 	</div>
 {/if}
 
-<div class="mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} autoOverflow /></div>
+<div class="mx-auto w-full max-w-3xl"><UrlTabs tabs={tabs} bind:value={activeTab} autoOverflow /></div>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	{#snippet toolbar(options: FilterOption[], count: number, sortable = false)}
@@ -1075,63 +1099,63 @@ profile is private, or no stage is set. -->
 		     A single-option filter dropdown (e.g. followers = "All users")
 		     adds no value, so it renders only when a real choice exists. -->
 		{#if count > 10}
-		{@const items = toAutocompleteItems(options)}
+			{@const items = toAutocompleteItems(options)}
 		<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-			<div class="flex flex-wrap items-center gap-2">
-				{#if options.length > 1}
-					<div class="w-full sm:w-44">
-						<Autocomplete
-							placeholder={t('profile.filter.label', 'Filter')}
-							emptyMessage={t('profile.empty.no_results', 'No results')}
-							fetcher={staticFilterFetcher(items)}
-							initialFetcher={() => Promise.resolve(items)}
-							selectedId={filterVal}
-							selectedLabel={options.find((o) => o.value === filterVal)?.label}
-							onSelect={(item) => {
-								filterVal = item.id;
-								currentPage = 1;
-							}}
-							onClear={() => {
-								filterVal = 'all';
-								currentPage = 1;
-							}}
-						/>
-					</div>
-				{/if}
-				{#if sortable}
-					<div class="w-full sm:w-40">
-						<Autocomplete
-							placeholder={t('profile.sort.label', 'Sort')}
-							ariaLabel={t('profile.sort.label', 'Sort')}
-							emptyMessage={t('profile.empty.no_results', 'No results')}
-							fetcher={staticFilterFetcher(sortItems)}
-							initialFetcher={() => Promise.resolve(sortItems)}
-							selectedId={sortVal}
-							selectedLabel={sortOptions.find((o) => o.value === sortVal)?.label}
-							onSelect={(item) => {
-								sortVal = item.id === 'oldest' ? 'oldest' : 'newest';
-								currentPage = 1;
-							}}
-							onClear={() => {
-								sortVal = 'newest';
-								currentPage = 1;
-							}}
-						/>
-					</div>
-				{/if}
+				<div class="flex flex-wrap items-center gap-2">
+					{#if options.length > 1}
+						<div class="w-full sm:w-44">
+							<Autocomplete
+								placeholder={t('profile.filter.label', 'Filter')}
+								emptyMessage={t('profile.empty.no_results', 'No results')}
+								fetcher={staticFilterFetcher(items)}
+								initialFetcher={() => Promise.resolve(items)}
+								selectedId={filterVal}
+								selectedLabel={options.find((o) => o.value === filterVal)?.label}
+								onSelect={(item) => {
+									filterVal = item.id;
+									currentPage = 1;
+								}}
+								onClear={() => {
+									filterVal = 'all';
+									currentPage = 1;
+								}}
+							/>
+						</div>
+					{/if}
+					{#if sortable}
+						<div class="w-full sm:w-40">
+							<Autocomplete
+								placeholder={t('profile.sort.label', 'Sort')}
+								ariaLabel={t('profile.sort.label', 'Sort')}
+								emptyMessage={t('profile.empty.no_results', 'No results')}
+								fetcher={staticFilterFetcher(sortItems)}
+								initialFetcher={() => Promise.resolve(sortItems)}
+								selectedId={sortVal}
+								selectedLabel={sortOptions.find((o) => o.value === sortVal)?.label}
+								onSelect={(item) => {
+									sortVal = item.id === 'oldest' ? 'oldest' : 'newest';
+									currentPage = 1;
+								}}
+								onClear={() => {
+									sortVal = 'newest';
+									currentPage = 1;
+								}}
+							/>
+						</div>
+					{/if}
+				</div>
+				<div class="w-full sm:w-64">
+					<SearchInput
+						bind:value={q}
+						onInput={() => {
+							currentPage = 1;
+						}}
+						fetcher={() => Promise.resolve([])}
+						placeholder={t('profile.search.placeholder', 'Search')}
+						ariaLabel={t('profile.search.placeholder', 'Search')}
+					/>
+				</div>
 			</div>
-			<div class="w-full sm:w-64">
-				<SearchInput
-					bind:value={q}
-					onInput={() => {
-						currentPage = 1;
-					}}
-					fetcher={() => Promise.resolve([])}
-					placeholder={t('profile.search.placeholder', 'Search')}
-					ariaLabel={t('profile.search.placeholder', 'Search')}
-				/>
-			</div>
-		</div>
 		{/if}
 	{/snippet}
 
@@ -1296,7 +1320,7 @@ profile is private, or no stage is set. -->
 								{t('profile.earned_badges', 'Earned Badges')}
 							</h2>
 							<button
-								onclick={() => (activeTab = 'badges')}
+								onclick={() => activeTab = 'badges'}
 								class="text-xs font-semibold text-[var(--color-primary-text)] hover:underline"
 							>
 								{t('profile.view_all', 'View all')} ({data.badges.length})
@@ -1319,9 +1343,10 @@ profile is private, or no stage is set. -->
 								</span>
 							{/each}
 							{#if data.badges.length > 8}
-								<button onclick={() => (activeTab = 'badges')} class="inline-flex items-center rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]">
-									+{data.badges.length - 8}
-								</button>
+								<button
+									onclick={() => activeTab = 'badges'}
+									class="inline-flex items-center rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+								>+{data.badges.length - 8}</button>
 							{/if}
 						</div>
 					</section>
@@ -1593,7 +1618,7 @@ profile is private, or no stage is set. -->
 					</a>
 				</div>
 			{/if}
-			{#if (data.badges && data.badges.length > 0) || unearnedBadges.length > 0}
+			{#if data.badges && data.badges.length > 0 || unearnedBadges.length > 0}
 				<div class="space-y-4">
 					{#if data.badges && data.badges.length > 0}
 						<div>

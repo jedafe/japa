@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// /ai/sessions/[id] — single agent session detail. Shows the session
 	// metadata (prompt, status, cost, tokens, pre-search level) and the full
 	// tool-call audit log with arguments, results, latency, and HITL links.
@@ -7,7 +7,7 @@
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 	// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 10, task 10.04)
 
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName} from '#lib/i18n/index.js';
 	import {
 		Sparkles,
 		Clock,
@@ -25,7 +25,7 @@
 		Folder
 	} from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import type { AgentSession, AgentToolCall } from '$lib/ai/agentTypes';
+	import type { AgentSession, AgentToolCall } from '#lib/ai/agentTypes.js';
 
 	let { data }: { data: PageData } = $props();
 

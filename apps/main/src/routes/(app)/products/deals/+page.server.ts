@@ -1,8 +1,8 @@
 import type { PageServerLoad } from './$types';
 import { error } from '@sveltejs/kit';
-import { apiContext, apiList } from '$lib/server/api';
-import { hasPerm } from '$lib/server/auth';
-import type { Coupon, DealPartnerRef, MyOrganization } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import { hasPerm } from '#lib/server/auth.js';
+import type { Coupon, DealPartnerRef, MyOrganization } from '#lib/types/index.js';
 
 /**
  * Deals index at /products/deals — canonical public listing for live

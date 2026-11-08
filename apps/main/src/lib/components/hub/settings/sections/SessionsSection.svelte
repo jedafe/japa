@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { revokeSession, revokeOtherSessions } from '$lib/api/hub';
-	import { optimisticAction } from '$lib/components/hub/optimisticAction';
+	import { t } from '#lib/i18n/index.js';
+	import { revokeSession, revokeOtherSessions } from '#lib/api/hub.js';
+	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
 
 	// Matches the JEOS §50 contract: id, device_name, ip_address,
 	// last_used_at, created_at, expires_at, current.

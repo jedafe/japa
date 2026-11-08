@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (bookmarks)
 	// Lists the user's bookmarks with folder management. The backend returns
 	// bookmark records enriched with the entity's title + slug (joined
@@ -7,13 +7,13 @@
 	// title and links to its canonical URL.
 	// Folders are managed client-side via POST/PATCH/DELETE /me/bookmark-folders.
 	// Filtering is done server-side via ?folder_id=uuid (BL-002/BL-007).
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { academyUrl, docsUrl } from '$lib/appOrigins';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { academyUrl, docsUrl } from '#lib/appOrigins.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { Bookmark as BookmarkIcon, ExternalLink, FolderPlus, Trash2, Loader2, Folder, Pencil, Check, X, ChevronRight, ChevronDown } from 'lucide-svelte';
-	import type { Bookmark, BookmarkFolder } from '$lib/types';
+	import type { Bookmark, BookmarkFolder } from '#lib/types/index.js';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 
@@ -152,7 +152,7 @@
 		} else {
 			url.searchParams.delete('folder');
 		}
-		goto(url.pathname + url.search, { keepFocus: true, noScroll: true, replaceState: false });
+		goto(url.pathname + url.search, { reset: false });
 	}
 
 	function selectType(type: string) {
@@ -164,7 +164,7 @@
 		} else {
 			url.searchParams.delete('type');
 		}
-		goto(url.pathname + url.search, { keepFocus: true, noScroll: true });
+		goto(url.pathname + url.search, { reset: false });
 	}
 
 	// academyUrl/docsUrl throw when the cross-app origin env var is unset — a

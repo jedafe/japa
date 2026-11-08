@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { GraduationCap, MessageSquare, MessagesSquare, Info, ArrowRight, FileText, Star, GitCompare, BookOpen, UsersRound, ExternalLink, Pencil, Trash2, Heart } from 'lucide-svelte';
-	import { EmptyState, UrlTabs, type UrlTab, SpaceJoinButton } from '$lib/components/ui';
-	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
-	import { decodeBase64Text } from '$lib/tiptap/serialize';
-	import ReviewForm from '$lib/components/reviews/ReviewForm.svelte';
+	import { EmptyState, UrlTabs, type UrlTab, SpaceJoinButton } from '#lib/components/ui/index.js';
+	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
+	import { decodeBase64Text } from '#lib/tiptap/serialize.js';
+	import ReviewForm from '#lib/components/reviews/ReviewForm.svelte';
 	import type { PageData } from './$types';
-	import type { Review, CourseOffering, WikiPageIndex } from '$lib/types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { formatMoney } from '$lib/utils/currency';
-	import { imgLightbox } from '$lib/lightbox.svelte';
+	import type { Review, CourseOffering, WikiPageIndex } from '#lib/types/index.js';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { formatMoney } from '#lib/utils/currency.js';
+	import { imgLightbox } from '#lib/lightbox.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 

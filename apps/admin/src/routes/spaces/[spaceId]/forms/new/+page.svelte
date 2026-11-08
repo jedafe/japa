@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { api, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { api, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	const spaceId = $derived(page.params.spaceId);
 

@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { CalendarEntry } from '$lib/types';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import type { CalendarEntry } from '#lib/types/index.js';
 
 /**
  * Calendar entry detail at /calendar/{id} — SSR. Shows the full entry with

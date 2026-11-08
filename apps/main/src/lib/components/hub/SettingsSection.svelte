@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import type { DirtyForm } from './useDirtyForm.svelte';
 
 	interface Props {
@@ -23,6 +23,7 @@
 	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
 	let bypassGuard = false;
 	beforeNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
 		if (!form?.dirty || bypassGuard || nav.type === 'leave') return;
 		nav.cancel();
 		const target = nav.to?.url;

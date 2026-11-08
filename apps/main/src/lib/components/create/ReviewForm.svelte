@@ -3,9 +3,9 @@
 	// field_values carries {product_slug, product_type_slug, rating, providers[]}
 	// through CreateShell → POST /content; the providers repeater auto-populates
 	// from GET /products/{slug}/providers on product select.
-	import { onMount } from 'svelte';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
+	import { onMount, untrack } from 'svelte';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
 	import PostEditor, { type EditorMode } from './editors/PostEditor.svelte';
 
 	let { initial = null, defaultEditor = 'markdown' as EditorMode, onvalues = (fv: Record<string, unknown>) => {}, onhtml = (v: string) => {}, onedit = () => {} } = $props();
@@ -15,12 +15,14 @@
 	interface Provider { provider_id: string; name: string; price_from?: string; offer_url?: string }
 
 	let types = $state<ProductType[]>([]);
-	let typeSlug = $state(initial?.product_type_slug ?? '');
+	// `initial` seeds an edit — capture once; a later prop change must not
+	// clobber in-progress edits.
+	let typeSlug = $state(untrack(() => initial?.product_type_slug ?? ''));
 	let products = $state<Product[]>([]);
-	let productSlug = $state(initial?.product_slug ?? '');
-	let rating = $state<number>(initial?.rating ?? 0);
-	let providers = $state<Provider[]>(initial?.providers ?? []);
-	let picked = $state<Set<string>>(new Set((initial?.providers ?? []).map((p: Provider) => p.provider_id)));
+	let productSlug = $state(untrack(() => initial?.product_slug ?? ''));
+	let rating = $state<number>(untrack(() => initial?.rating ?? 0));
+	let providers = $state<Provider[]>(untrack(() => initial?.providers ?? []));
+	let picked = $state<Set<string>>(untrack(() => new Set((initial?.providers ?? []).map((p: Provider) => p.provider_id))));
 	let bodyHtml = $state('');
 
 	onMount(async () => {

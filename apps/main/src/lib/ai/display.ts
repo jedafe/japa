@@ -1,7 +1,7 @@
 // Presentation helpers for the Japa AI chat surface — extracted from
 // JapaAIChat.svelte so the 2600-line component shrinks and the helpers stay
 // testable/shareable (BUG-AI-006, incremental decomposition step 1).
-import { t } from '$lib/i18n';
+import { t } from '#lib/i18n/index.js';
 import {
 	BookOpen,
 	FileText,

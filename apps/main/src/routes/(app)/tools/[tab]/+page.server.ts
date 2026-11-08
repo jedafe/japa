@@ -1,6 +1,6 @@
 import { redirect, error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { TOOL_SECTIONS, type ToolSection } from '$lib/tools/registry';
+import { TOOL_SECTIONS, type ToolSection } from '#lib/tools/registry.js';
 
 /**
  * /tools/:tab — shareable hub section permalink (§78 Tools Web Surface).

@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission, getPermissionState } from '$lib/stores/permissions.svelte';
-	import { replaceState } from '$app/navigation';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { TableSkeleton } from '$lib/components/ui/skeleton';
-	import Pagination from '$lib/components/ui/Pagination.svelte';
-	import FilterPanel from '$lib/components/ui/data-table/filter-panel.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission, getPermissionState } from '#lib/stores/permissions.svelte.js';
+	import { goto } from '$app/navigation';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { TableSkeleton } from '#lib/components/ui/skeleton/index.js';
+	import Pagination from '#lib/components/ui/Pagination.svelte';
+	import FilterPanel from '#lib/components/ui/data-table/filter-panel.svelte';
 	import { Search } from 'lucide-svelte';
 	import { Eye, Pencil, Trash2, RefreshCw, Plus, Download, RotateCcw, Trash, Grid, List } from 'lucide-svelte';
 	import EntityForm from './entity-form.svelte';
 	import type { FieldDef } from './index';
-	import type { Column, ActionItem, ActionContext, FilterDef, BulkAction } from '$lib/components/ui/data-table';
+	import type { Column, ActionItem, ActionContext, FilterDef, BulkAction } from '#lib/components/ui/data-table/index.js';
 	import { untrack } from 'svelte';
 	import type { Snippet } from 'svelte';
 
@@ -149,9 +149,9 @@
 	// restore one — otherwise the first load fires with the default and the
 	// config-size effect immediately re-fires a second fetch (e.g. a 15-row
 	// page first requests page_size=25, then 15).
-	let pageSize = $state(
-		pageSizeSeededFromUrl ? initialPageSize : (untrack(() => config.pageSize) ?? DEFAULT_PAGE_SIZE)
-	);
+	let pageSize = $state(pageSizeSeededFromUrl
+		? initialPageSize
+		: untrack(() => config.pageSize) ?? DEFAULT_PAGE_SIZE);
 	let searchQuery = $state(initialParams.get('q') ?? '');
 	let filterValue = $state<Record<string, string>>(initialFilters);
 	let sortKey = $state(initialParams.get('sort') ?? '');
@@ -212,18 +212,13 @@
 	});
 	const canEdit = $derived.by(() => {
 		void getPermissionState();
-		return (
-			!config.readonly &&
-			(!(config.editPermission ?? config.createPermission) ||
-				hasPermission(config.editPermission ?? config.createPermission!))
-		);
+
+		return !config.readonly && (!(config.editPermission ?? config.createPermission) || hasPermission(config.editPermission ?? config.createPermission!));
 	});
 	const canDelete = $derived.by(() => {
 		void getPermissionState();
-		return (
-			!(config.deletePermission ?? config.createPermission) ||
-			hasPermission(config.deletePermission ?? config.createPermission!)
-		);
+
+		return !(config.deletePermission ?? config.createPermission) || hasPermission(config.deletePermission ?? config.createPermission!);
 	});
 	// Hard delete is fail-closed: the button appears ONLY when the page sets an
 	// explicit hardDeletePermission AND the viewer holds it. No fallback to
@@ -231,19 +226,13 @@
 	// permanent-erase action must never be granted by a weaker permission.
 	const canHardDelete = $derived.by(() => {
 		void getPermissionState();
-		return (
-			!!config.hardRemove &&
-			!!config.hardDeletePermission &&
-			hasPermission(config.hardDeletePermission)
-		);
+
+		return !!config.hardRemove && !!config.hardDeletePermission && hasPermission(config.hardDeletePermission);
 	});
 	const canRestore = $derived.by(() => {
 		void getPermissionState();
-		return (
-			!!config.restore &&
-			(!(config.restorePermission ?? config.deletePermission ?? config.createPermission) ||
-				hasPermission(config.restorePermission ?? config.deletePermission ?? config.createPermission!))
-		);
+
+		return !!config.restore && (!(config.restorePermission ?? config.deletePermission ?? config.createPermission) || hasPermission(config.restorePermission ?? config.deletePermission ?? config.createPermission!));
 	});
 
 	// ── Data loading ────────────────────────────────────────────────────────
@@ -349,7 +338,7 @@
 		// effects see new params), falling back to window.history.replaceState
 		// if the SvelteKit router isn't initialized (e.g. in test environments).
 		try {
-			replaceState(url, {});
+			goto(url, { shallow: true, replace: true });
 		} catch {
 			// ignore URL sync failures in non-browser contexts
 		}
@@ -519,9 +508,9 @@
 		// per-field errors.
 		const errs: Record<string, string> = {};
 		for (const f of config.fields) {
-			if (!f.required || (editing != null && f.hideInEdit)) continue;
+			if (!f.required || editing != null && f.hideInEdit) continue;
 			const v = formValue[f.key];
-			if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) {
+			if (v == null || v === '' || Array.isArray(v) && v.length === 0) {
 				errs[f.key] = t('common.required', 'Required');
 			}
 		}
@@ -670,8 +659,8 @@
 	function csvEscape(value: any): string {
 		if (value == null) return '';
 		let s = typeof value === 'object' ? JSON.stringify(value) : String(value);
-		if (/^[=+\-@\t|]/.test(s) || /^cmd\|/i.test(s)) s = `'${s}`;
-		if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+		if ((/^[=+\-@\t|]/).test(s) || (/^cmd\|/i).test(s)) s = `'${s}`;
+		if ((/[",\n\r]/).test(s)) return `"${s.replace(/"/g, '""')}"`;
 		return s;
 	}
 
@@ -696,7 +685,7 @@
 					allRows.push(...result);
 					break;
 				}
-				allRows.push(...(result.data ?? []));
+				allRows.push(...result.data ?? []);
 				const tp = result.totalPages ?? 1;
 				if (page + 1 >= tp) break;
 				page++;
@@ -917,13 +906,13 @@
 				label: 'Grid',
 				icon: Grid,
 				variant: viewMode === 'grid' ? 'default' : 'ghost',
-				onclick: () => (viewMode = 'grid')
+				onclick: () => viewMode = 'grid'
 			});
 			acts.push({
 				label: 'List',
 				icon: List,
 				variant: viewMode === 'list' ? 'default' : 'ghost',
-				onclick: () => (viewMode = 'list')
+				onclick: () => viewMode = 'list'
 			});
 		}
 		if (config.headerActions) {
@@ -933,7 +922,9 @@
 		return acts;
 	});
 
-	const formTitle = $derived(editing ? t('common.edit', 'Edit') : (config.createLabel ?? t('common.create', 'Create')));
+	const formTitle = $derived(editing
+		? t('common.edit', 'Edit')
+		: config.createLabel ?? t('common.create', 'Create'));
 </script>
 
 <PageHeader title={config.title} description={config.description} actions={headerActions} />
@@ -1020,7 +1011,7 @@
 					<div class="mt-4">
 						<Pagination
 							bind:page={currentPage}
-							{totalPages}
+							totalPages={totalPages}
 							totalItems={totalRows}
 							bind:pageSize
 							pageSizeOptions={config.pageSizeOptions ?? [10, 25, 50, 100]}
@@ -1050,7 +1041,7 @@
 					bulkActionsList={wiredBulkActions}
 					selectable={wiredBulkActions.length > 0}
 					bind:selectedIds
-					{urlSync}
+					urlSync={urlSync}
 					defaultPageSize={config.pageSize ?? DEFAULT_PAGE_SIZE}
 				/>
 			{/if}
@@ -1072,13 +1063,23 @@
 	{#if config.formSnippet}
 		{@render config.formSnippet({ value: formValue, editing })}
 	{:else}
-		<EntityForm fields={config.fields} bind:value={formValue} errors={formErrors} disabled={saving} {editing} onsubmit={submitForm} />
+		<EntityForm
+			fields={config.fields}
+			bind:value={formValue}
+			errors={formErrors}
+			disabled={saving}
+			editing={editing}
+			onsubmit={submitForm}
+		/>
 	{/if}
 
 	{#snippet footer()}
-		<Button variant="outline" onclick={() => (formOpen = false)} disabled={saving}>
-			{t('common.cancel', 'Cancel')}
-		</Button>
+		<Button
+			variant="outline"
+			onclick={() => formOpen = false}
+			disabled={saving}
+		>{t('common.cancel', 'Cancel')}</Button>
+
 		<Button onclick={submitForm} disabled={saving}>
 			{editing ? t('common.save', 'Save Changes') : t('common.create', 'Create')}
 		</Button>
@@ -1107,9 +1108,7 @@
 	{/if}
 
 	{#snippet footer()}
-		<Button variant="outline" onclick={() => (viewOpen = false)}>
-			{t('common.close', 'Close')}
-		</Button>
+		<Button variant="outline" onclick={() => viewOpen = false}>{t('common.close', 'Close')}</Button>
 	{/snippet}
 </Modal>
 
@@ -1123,11 +1122,19 @@
 			{t('common.forceDeleteWarning', 'Deleting anyway permanently removes this record and every stored value referencing it. This cannot be undone.')}
 		</p>
 		<div class="mt-6 flex justify-end gap-2">
-			<Button variant="outline" onclick={() => (confirmOpen = false)}>
-				{t('common.cancel', 'Cancel')}
-			</Button>
-			<Button variant="destructive" onclick={confirmForceDelete} disabled={confirmBusy}>
-				{confirmBusy ? t('common.deleting', 'Deleting…') : t('common.forceDelete', 'Delete Anyway')}
+			<Button
+				variant="outline"
+				onclick={() => confirmOpen = false}
+			>{t('common.cancel', 'Cancel')}</Button>
+
+			<Button
+				variant="destructive"
+				onclick={confirmForceDelete}
+				disabled={confirmBusy}
+			>
+				{confirmBusy
+					? t('common.deleting', 'Deleting…')
+					: t('common.forceDelete', 'Delete Anyway')}
 			</Button>
 		</div>
 	{:else}
@@ -1135,11 +1142,19 @@
 			{t('common.confirmDelete', 'Confirm Delete')}. {t('common.cannotUndo', 'This cannot be undone.')}
 		</p>
 		<div class="mt-6 flex justify-end gap-2">
-			<Button variant="outline" onclick={() => (confirmOpen = false)}>
-				{t('common.cancel', 'Cancel')}
-			</Button>
-			<Button variant="destructive" onclick={confirmDelete} disabled={confirmBusy}>
-				{confirmBusy ? t('common.deleting', 'Deleting…') : t('common.confirm', 'Confirm')}
+			<Button
+				variant="outline"
+				onclick={() => confirmOpen = false}
+			>{t('common.cancel', 'Cancel')}</Button>
+
+			<Button
+				variant="destructive"
+				onclick={confirmDelete}
+				disabled={confirmBusy}
+			>
+				{confirmBusy
+					? t('common.deleting', 'Deleting…')
+					: t('common.confirm', 'Confirm')}
 			</Button>
 		</div>
 	{/if}
@@ -1151,11 +1166,20 @@
 		{t('common.confirmBulkDelete', 'Delete {n} selected items? This cannot be undone.').replace('{n}', String(bulkDeleteIds.size))}
 	</p>
 	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => (bulkDeleteConfirmOpen = false)} disabled={bulkDeleting}>
-			{t('common.cancel', 'Cancel')}
-		</Button>
-		<Button variant="destructive" onclick={confirmBulkDelete} disabled={bulkDeleting}>
-			{bulkDeleting ? t('common.deleting', 'Deleting…') : t('common.delete', 'Delete')}
+		<Button
+			variant="outline"
+			onclick={() => bulkDeleteConfirmOpen = false}
+			disabled={bulkDeleting}
+		>{t('common.cancel', 'Cancel')}</Button>
+
+		<Button
+			variant="destructive"
+			onclick={confirmBulkDelete}
+			disabled={bulkDeleting}
+		>
+			{bulkDeleting
+				? t('common.deleting', 'Deleting…')
+				: t('common.delete', 'Delete')}
 		</Button>
 	</div>
 </Modal>
@@ -1175,11 +1199,16 @@
 				selectedIds = new Set();
 			}}
 			disabled={bulkForceDeleting}
+		>{t('common.cancel', 'Cancel')}</Button>
+
+		<Button
+			variant="destructive"
+			onclick={confirmBulkForceDelete}
+			disabled={bulkForceDeleting}
 		>
-			{t('common.cancel', 'Cancel')}
-		</Button>
-		<Button variant="destructive" onclick={confirmBulkForceDelete} disabled={bulkForceDeleting}>
-			{bulkForceDeleting ? t('common.deleting', 'Deleting…') : t('common.forceDelete', 'Delete Anyway')}
+			{bulkForceDeleting
+				? t('common.deleting', 'Deleting…')
+				: t('common.forceDelete', 'Delete Anyway')}
 		</Button>
 	</div>
 </Modal>
@@ -1195,11 +1224,19 @@
 		{t('common.hardDeleteWarning', 'This will permanently erase the record and all related data. This action cannot be undone.')}
 	</p>
 	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => (hardDeleteConfirmOpen = false)}>
-			{t('common.cancel', 'Cancel')}
-		</Button>
-		<Button variant="destructive" onclick={confirmHardDelete} disabled={confirmBusy}>
-			{confirmBusy ? t('common.deleting', 'Deleting…') : t('common.hardDelete', 'Hard Delete')}
+		<Button
+			variant="outline"
+			onclick={() => hardDeleteConfirmOpen = false}
+		>{t('common.cancel', 'Cancel')}</Button>
+
+		<Button
+			variant="destructive"
+			onclick={confirmHardDelete}
+			disabled={confirmBusy}
+		>
+			{confirmBusy
+				? t('common.deleting', 'Deleting…')
+				: t('common.hardDelete', 'Hard Delete')}
 		</Button>
 	</div>
 </Modal>
@@ -1215,9 +1252,11 @@
 		{t('common.restoreConfirm', 'Are you sure you want to restore this record?')}.
 	</p>
 	<div class="mt-6 flex justify-end gap-2">
-		<Button variant="outline" onclick={() => (restoreConfirmOpen = false)}>
-			{t('common.cancel', 'Cancel')}
-		</Button>
+		<Button
+			variant="outline"
+			onclick={() => restoreConfirmOpen = false}
+		>{t('common.cancel', 'Cancel')}</Button>
+
 		<Button onclick={confirmRestore} disabled={confirmBusy}>
 			{confirmBusy ? t('common.loading', 'Loading…') : t('common.restore', 'Restore')}
 		</Button>

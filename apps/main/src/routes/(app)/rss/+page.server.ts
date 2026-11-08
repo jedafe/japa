@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { Space, TagDetail } from '$lib/types';
+import { apiContext, apiList, ApiError } from '#lib/server/api.js';
+import type { Space, TagDetail } from '#lib/types/index.js';
 
 /**
  * RSS directory at /rss — public, SSR. Lists every feed surface the

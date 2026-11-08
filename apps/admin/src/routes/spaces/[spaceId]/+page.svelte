@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import type { ActionItem, BulkAction } from "$lib/components/ui/data-table";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "#lib/components/ui/card/index.js";
+	import { DataTable } from "#lib/components/ui/data-table/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { TableSkeleton } from "#lib/components/ui/skeleton/index.js";
+	import type { ActionItem, BulkAction } from "#lib/components/ui/data-table/index.js";
 	import { Plus, Trash2, RefreshCw, ArrowLeft, Shield } from "lucide-svelte";
-	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
-	import { apiFetch } from "$lib/api";
+	import Autocomplete, { type AutocompleteItem } from "#lib/components/ui/Autocomplete.svelte";
+	import { apiFetch } from "#lib/api.js";
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
-	import { spacesAdminApi, spacesModeratorsAdminApi } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { spacesAdminApi, spacesModeratorsAdminApi } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 
 	const spaceId = $derived(page.params.spaceId ?? "");
 

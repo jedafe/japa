@@ -1,4 +1,4 @@
-import type { SearchHit } from '$lib/types';
+import type { SearchHit } from '#lib/types/index.js';
 
 const MIN_QUERY = 2;
 

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { invalidateAll } from '$app/navigation';
-	import { purchaseCredits, setCurrencyPreference } from '$lib/api/hub';
+	import { purchaseCredits, setCurrencyPreference } from '#lib/api/hub.js';
 	import { Wallet, Sparkles } from 'lucide-svelte';
 	import type { WalletData } from './types';
 

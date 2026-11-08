@@ -1,10 +1,10 @@
 // §115 AI Quick Panel — wires the shared @japaconnect/ai-panel package to
 // main's api/csrf/i18n. Called once from the (app) layout onMount on every
 // page: /ai hides the FAB but JapaAIChat streams through the same factory.
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { initAiPanelDeps } from '@japaconnect/ai-panel';
-import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
-import { t } from '$lib/i18n';
+import { getCsrfToken, refreshCsrfToken } from '#lib/api/csrf.svelte.js';
+import { t } from '#lib/i18n/index.js';
 
 let inited = false;
 
@@ -17,6 +17,6 @@ export function ensureAiPanelDeps(): void {
 		getCsrfToken,
 		refreshCsrfToken,
 		t,
-		fullChatUrl: (c) => (c ? `/ai?c=${encodeURIComponent(c)}` : '/ai')
+		fullChatUrl: (c) => c ? `/ai?c=${encodeURIComponent(c)}` : '/ai'
 	});
 }

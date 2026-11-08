@@ -4,9 +4,9 @@
 // visit when clicking the email verification link.
 import { redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import { resolvePostLoginRedirect } from '$lib/server/auth';
-import type { OnboardingStatus } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import { resolvePostLoginRedirect } from '#lib/server/auth.js';
+import type { OnboardingStatus } from '#lib/types/index.js';
 
 export const load: LayoutServerLoad = async (event) => {
 	const user = event.locals.user;
@@ -27,7 +27,8 @@ export const load: LayoutServerLoad = async (event) => {
 		// through /onboarding when the wizard hasn't run yet.
 		throw redirect(
 			303,
-			resolvePostLoginRedirect(onboarding, event.url.searchParams.get('redirect'))
+			resolvePostLoginRedirect(onboarding, event.url.searchParams.get('redirect')),
+			{ external: true }
 		);
 	}
 

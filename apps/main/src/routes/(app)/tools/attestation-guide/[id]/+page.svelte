@@ -1,9 +1,9 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, i18n } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Stamp, ArrowLeft, Download, Globe, AlertTriangle } from 'lucide-svelte';
-	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
 	import type { PageData } from './$types';
 
@@ -123,10 +123,11 @@
 						<li class="flex items-start gap-3">
 							<span
 								class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary-text)]"
+							>{i + 1}</span>
+
+							<div
+								class="min-w-0 flex-1 text-sm text-[var(--color-text)]"
 							>
-								{i + 1}
-							</span>
-							<div class="min-w-0 flex-1 text-sm text-[var(--color-text)]">
 								{#if isStepObject(step)}
 									{#each pathwayStepEntries(step) as [key, val] (key)}
 										<div class="flex items-start gap-1.5">

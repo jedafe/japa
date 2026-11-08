@@ -1,19 +1,19 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { PenSquare, Tag, X } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import ForumList from '$lib/components/forum/ForumList.svelte';
-	import FeedCard from '$lib/components/feed/FeedCard.svelte';
-	import { compose } from '$lib/components/shell/compose.svelte';
-	import { t } from '$lib/i18n';
-	import { tiptapJsonFirstImageSrc } from '$lib/tiptap/serialize';
-	import type { FeedItem } from '$lib/types';
-	import type { GuideListItem } from '$lib/types/content';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import ForumList from '#lib/components/forum/ForumList.svelte';
+	import FeedCard from '#lib/components/feed/FeedCard.svelte';
+	import { compose } from '#lib/components/shell/compose.svelte.js';
+	import { t } from '#lib/i18n/index.js';
+	import { tiptapJsonFirstImageSrc } from '#lib/tiptap/serialize.js';
+	import type { FeedItem } from '#lib/types/index.js';
+	import type { GuideListItem } from '#lib/types/content.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

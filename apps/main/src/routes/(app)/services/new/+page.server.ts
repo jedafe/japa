@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/98-service-directory.md
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { GeoCountry, ServiceCategoryInfo } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { GeoCountry, ServiceCategoryInfo } from '#lib/types/index.js';
 
 /**
  * Create-service form at /services/new — auth-gated. Guests are

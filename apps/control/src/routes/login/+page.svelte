@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { setToken } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { setChallenge } from '$lib/api/challenge';
-	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { setToken } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { setChallenge } from '#lib/api/challenge.js';
+	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
 
 	let email = $state('');
@@ -13,7 +13,7 @@
 
 	async function handleLogin() {
 		if (!email || !password) return;
-		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+		if (!(/^[^\s@]+@[^\s@]+\.[^\s@]+$/).test(email)) {
 			error = t('login.invalid_email', 'Please enter a valid email address.');
 			return;
 		}
@@ -80,9 +80,16 @@
 </svelte:head>
 
 <div class="px-4">
-	<div class="border-border-card bg-background-alt w-full max-w-sm rounded-lg border p-6">
-		<h1 class="text-foreground mb-1 text-center text-xl font-bold tracking-tight">{t('control.brand', 'Control Panel')}</h1>
-		<p class="text-muted-foreground mb-6 text-center text-sm">{t('control.login.title', 'Sign in to the control panel')}</p>
+	<div
+		class="border-border-card bg-background-alt w-full max-w-sm rounded-lg border p-6"
+	>
+		<h1
+			class="text-foreground mb-1 text-center text-xl font-bold tracking-tight"
+		>{t('control.brand', 'Control Panel')}</h1>
+
+		<p
+			class="text-muted-foreground mb-6 text-center text-sm"
+		>{t('control.login.title', 'Sign in to the control panel')}</p>
 
 		{#if error}
 			<div class="border-destructive bg-destructive/10 text-destructive mb-4 rounded-md border px-3 py-2 text-sm">

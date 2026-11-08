@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { BookOpen } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import type { AiCitationSource } from './types';
 
 	/**

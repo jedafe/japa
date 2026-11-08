@@ -4,13 +4,22 @@
 // are excluded by construction. Env-gated like robots.txt: non-production
 // deployments 404. Fails open to a minimal file on API error.
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
-import { API_V1 } from '$lib/server/api';
-import { DOCS_ORIGIN } from '$lib/seo/meta';
-import type { DocNavTree, DocNavItem } from '$lib/types';
+import { PUBLIC_JC_ENV, JC_ENV } from '$app/env/private';
+import { API_V1 } from '#lib/server/api.js';
+import { DOCS_ORIGIN } from '#lib/seo/meta.js';
+import type { DocNavTree, DocNavItem } from '#lib/types/index.js';
 
-const NON_PROD_ENVS = new Set(['development', 'dev', 'staging', 'stage', 'test', 'preview', 'local']);
-const blocksIndexing = NON_PROD_ENVS.has((env.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase());
+const NON_PROD_ENVS = new Set([
+	'development',
+	'dev',
+	'staging',
+	'stage',
+	'test',
+	'preview',
+	'local'
+]);
+
+const blocksIndexing = NON_PROD_ENVS.has((PUBLIC_JC_ENV ?? JC_ENV ?? '').toLowerCase());
 
 const AUDIENCE_HEADINGS: Record<string, string> = {
 	users: 'User Guides',

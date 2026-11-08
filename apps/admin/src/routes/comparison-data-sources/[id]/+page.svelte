@@ -5,14 +5,14 @@
 		getDataSource,
 		updateDataSource,
 		deleteDataSource
-	} from '$lib/api/comparison-data-sources';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import DataSourceForm from '$lib/components/jce/DataSourceForm.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
+	} from '#lib/api/comparison-data-sources.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import DataSourceForm from '#lib/components/jce/DataSourceForm.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
 	import { ArrowLeft, Trash2 } from 'lucide-svelte';
-	import type { DataSource } from '$lib/types/jce';
+	import type { DataSource } from '#lib/types/jce.js';
 
 	const id = $derived(page.params.id ?? '');
 	const canManage = $derived(hasPermission('jce.data_source.manage'));

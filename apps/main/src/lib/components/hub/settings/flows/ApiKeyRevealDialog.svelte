@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Modal } from '$lib/components/ui';
-	import { t } from '$lib/i18n';
+	import { Modal } from '#lib/components/ui/index.js';
+	import { t } from '#lib/i18n/index.js';
 
 	interface Props {
 		open: boolean;

@@ -3,7 +3,7 @@
   import { MoreVertical } from 'lucide-svelte';
   import { clsx } from 'clsx';
   import type { ActionItem } from './types';
-  import { t } from '$lib/stores/i18n.svelte';
+  import { t } from '#lib/stores/i18n.svelte.js';
 
   let { actions, row }: { actions: ActionItem[]; row: any } = $props();
 

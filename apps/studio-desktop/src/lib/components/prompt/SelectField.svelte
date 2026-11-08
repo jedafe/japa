@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { SelectOption } from '$lib/types/prompt';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import type { SelectOption } from '#lib/types/prompt.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	interface Props {
 		label: string;

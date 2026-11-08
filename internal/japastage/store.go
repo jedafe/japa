@@ -53,6 +53,9 @@ type ProfileRow struct {
 }
 
 // DirectoryRow is the trimmed shape returned by ListByStage (public directory).
+// The avatar media bucket/path fields come from LEFT JOINs on
+// user_profiles.avatar_media_id — when present the service re-signs a
+// display-sized derivative instead of emitting the stored 640px URL.
 type DirectoryRow struct {
 	UserID            pgtype.UUID
 	Username          *string
@@ -70,6 +73,8 @@ type DirectoryRow struct {
 	Verified          bool
 	CoverURL          *string
 	LastActiveAt      pgtype.Timestamptz
+	AvatarMediaBucket *string
+	AvatarMediaPath   *string
 }
 
 // GetUserProfile fetches the user_profiles row (with japa_stage columns)
@@ -451,11 +456,13 @@ SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        up.japa_stage_updated_at,
        up.bio, up.profession, up.interests, u.verified, up.cover_url,
-       CASE WHEN COALESCE(ups.show_online_status, true) THEN u.last_login_at END AS last_active_at
+       CASE WHEN COALESCE(ups.show_online_status, true) THEN u.last_login_at END AS last_active_at,
+       am.storage_bucket AS avatar_media_bucket, am.storage_path AS avatar_media_path
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
 LEFT JOIN user_privacy_settings ups ON ups.user_id = up.user_id
+LEFT JOIN media am ON am.id = up.avatar_media_id AND am.deleted_at IS NULL
 WHERE %s
 ORDER BY %s
 LIMIT $%d OFFSET $%d
@@ -589,7 +596,7 @@ func scanDirectoryRows(rows pgx.Rows) ([]DirectoryRow, error) {
 			&r.JapaStageDestName, &r.JapaStageDestCode,
 			&r.JapaStageUpdated,
 			&r.Bio, &r.Profession, &r.Interests, &r.Verified, &r.CoverURL,
-			&r.LastActiveAt,
+			&r.LastActiveAt, &r.AvatarMediaBucket, &r.AvatarMediaPath,
 		); err != nil {
 			return nil, fmt.Errorf("japastage: scan directory row: %w", err)
 		}

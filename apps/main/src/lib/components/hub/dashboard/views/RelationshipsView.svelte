@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto, invalidate } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import type { SpaceType } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import type { SpaceType } from '#lib/types/index.js';
 	import {
 		toggleFollow,
 		leaveSpace,
@@ -11,12 +11,12 @@
 		unblockUser,
 		unmuteUser,
 		unmuteSpace
-	} from '$lib/api/hub';
-	import type { FollowableType } from '$lib/api/hub';
-	import { optimisticAction } from '$lib/components/hub/optimisticAction';
-	import MetricCard from '$lib/components/hub/MetricCard.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	} from '#lib/api/hub.js';
+	import type { FollowableType } from '#lib/api/hub.js';
+	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
+	import MetricCard from '#lib/components/hub/MetricCard.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Users, ChevronLeft, ChevronRight, Search } from 'lucide-svelte';
 
 	// The backend returns a uniform FollowingInfo shape for /me/following and
@@ -186,7 +186,7 @@
 	}
 
 	function setSearchParams(updates: Record<string, string | null>) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		for (const [k, v] of Object.entries(updates)) {
 			if (v === null || v === '') {
 				url.searchParams.delete(k);
@@ -198,7 +198,7 @@
 		if (!('page' in updates)) {
 			url.searchParams.delete('page');
 		}
-		goto(`${url.pathname}${url.search}`, { keepFocus: true, noScroll: true });
+		goto(`${url.pathname}${url.search}`, { reset: false });
 	}
 
 	let searchTimer: ReturnType<typeof setTimeout> | null = null;

@@ -1,17 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName} from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Send } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { untrack } from 'svelte';
-	import { mutualAidCategoryOptions } from '$lib/enumOptions';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '$lib/types';
-	import { destinationMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
+	import { mutualAidCategoryOptions } from '#lib/enumOptions.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '#lib/types/index.js';
+	import { destinationMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 	import type { PageData } from './$types';
-	import AiBodyField from '$lib/ai/AiBodyField.svelte';
+	import AiBodyField from '#lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 

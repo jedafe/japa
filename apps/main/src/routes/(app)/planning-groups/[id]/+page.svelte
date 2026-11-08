@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { confirmDialog } from '@japaconnect/ui';
 	import {
 		Users,
@@ -22,8 +22,8 @@
 		Target,
 		ClipboardList
 	} from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
-	import type { PlanningMilestone, PlanningCheckin } from '$lib/types';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import type { PlanningMilestone, PlanningCheckin } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

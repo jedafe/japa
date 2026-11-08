@@ -1,10 +1,10 @@
-import { env } from '$env/dynamic/private';
+import { PRIVATE_API_BASE_URL } from '$app/env/private';
 import { buildApiUrl } from '@japaconnect/api-url';
 import type { RequestEvent } from '@sveltejs/kit';
-import type { ApiErr, ApiOk, ListMeta } from '$lib/types';
+import type { ApiErr, ApiOk, ListMeta } from '#lib/types/index.js';
 
 /** Server-only base URL for the Go backend (no /api/v1 suffix). */
-export const API_BASE = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
+export const API_BASE = PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
 export const API_V1 = `${API_BASE}/api/v1`;
 
 /**

@@ -2,29 +2,29 @@
 	// Shared content single-page layout — used by /content/[slug] (fallback
 	// family) and /guide/[slug]. Ref: §14, §49, ADR-058 Exception #1.
 	import { page } from '$app/state';
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { ArrowLeft, Bot, Clock, Eye, ExternalLink, Pencil, GraduationCap, Maximize2 } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
-	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
-	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
-	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
-	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
-	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
-	import CommentThread from '$lib/components/comments/CommentThread.svelte';
-	import VideoEmbed from '$lib/components/content/VideoEmbed.svelte';
-	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
-	import { imgLightbox, openLightbox } from '$lib/lightbox.svelte';
-	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
-	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
-	import { hydrateContentEmbeds } from '$lib/tiptap/hydrateContentEmbeds';
-	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
-	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
-	import { mergeJsonLd } from '$lib/seo/jsonld';
-	import { contentHref } from '$lib/utils/contentLink';
-	import type { ContentArticle, ContentAnalytics, SeriesPost } from '$lib/types/content';
-	import type { Comment, SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
+	import ReactionRail from '#lib/components/blog/ReactionRail.svelte';
+	import CreatorCard from '#lib/components/blog/CreatorCard.svelte';
+	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
+	import BlogSeriesNav from '#lib/components/blog/BlogSeriesNav.svelte';
+	import SidebarWidgetRenderer from '#lib/components/shell/SidebarWidgetRenderer.svelte';
+	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import VideoEmbed from '#lib/components/content/VideoEmbed.svelte';
+	import { hydrateLinkPreviews } from '#lib/tiptap/hydrateLinkPreviews.js';
+	import { imgLightbox, openLightbox } from '#lib/lightbox.svelte.js';
+	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
+	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
+	import { hydrateContentEmbeds } from '#lib/tiptap/hydrateContentEmbeds.js';
+	import { safeJsonLdScript, sanitizeContentHtml } from '#lib/utils/safeHtml.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
+	import { mergeJsonLd } from '#lib/seo/jsonld.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import type { ContentArticle, ContentAnalytics, SeriesPost } from '#lib/types/content.js';
+	import type { Comment, SessionUser, TrendingTag, SpaceSuggestion, VideoSource } from '#lib/types/index.js';
 
 	// Mirrors the loadContentArticle() return shape ($lib/server/content-article.ts).
 	// Type-only imports from $lib/server are avoided so the component stays

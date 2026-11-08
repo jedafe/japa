@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// /ai/sessions — agent session history list. Displays the user's past
 	// agent sessions with status, tool-call count, cost, and a link to the
 	// detail view. Data comes from the server load (no client fetch needed
@@ -8,11 +8,11 @@
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 	// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 10, task 10.04)
 
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName} from '#lib/i18n/index.js';
 	import { Sparkles, Clock, Cpu, Database, Wrench, ChevronRight, AlertCircle, CheckCircle2, XCircle, Loader2, Folder, FolderInput } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import type { AgentSession, AiProject } from '$lib/ai/agentTypes';
-	import { api } from '$lib/api/client';
+	import type { AgentSession, AiProject } from '#lib/ai/agentTypes.js';
+	import { api } from '#lib/api/client.js';
 
 	let { data }: { data: PageData } = $props();
 

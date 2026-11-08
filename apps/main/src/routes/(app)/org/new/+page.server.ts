@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
-import type { GeoCountry, OrgMeta, PublicOrganization } from '$lib/types';
+import { apiContext, apiGet, apiList, apiPost, ApiError } from '#lib/server/api.js';
+import type { GeoCountry, OrgMeta, PublicOrganization } from '#lib/types/index.js';
 
 /**
  * Create-organization form at /org/new — auth-gated. POST

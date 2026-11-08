@@ -3,12 +3,12 @@
 	// Migrated to the EntityPage scaffold per apps/admin/AGENTS.md.
 	// Non-standard CRUD: no edit, custom create form (select/file-url),
 	// status filter, summary cards, error log in view modal.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Select } from '$lib/components/ui/select';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
 	import { RefreshCw, Clock, CheckCircle, XCircle, Trash2, FileUp } from 'lucide-svelte';
 
 	type ImportErrorEntry = {

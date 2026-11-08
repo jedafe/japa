@@ -11,8 +11,8 @@
 // h3, span[class], p, a[href], img[src,alt]. `loading` is NOT whitelisted
 // on img — emitting it would produce a silent diff on save.
 
-import type { ListItem, ListMode } from '$lib/types';
-import { contentHref } from '$lib/utils/contentLink';
+import type { ListItem, ListMode } from '#lib/types/index.js';
+import { contentHref } from '#lib/utils/contentLink.js';
 
 const esc = (s: string) =>
 	s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

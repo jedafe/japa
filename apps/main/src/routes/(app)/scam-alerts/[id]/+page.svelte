@@ -2,17 +2,17 @@
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { page } from '$app/state';
 	import { ArrowLeft, Pin, Bell, BellOff, TriangleAlert, ShieldCheck, Pencil, Link2, Check } from 'lucide-svelte';
-	import { t, siteName} from '$lib/i18n';
-	import { i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { relativeTime } from '$lib/feed/time';
-	import { EmptyState } from '$lib/components/ui';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
-	import { scamTypeLabel, scamPlatformLabel } from '$lib/enumOptions';
-	import type { ScamReport, ScamPlatform, ScamStatus, ScamType } from '$lib/types';
+	import { t, siteName} from '#lib/i18n/index.js';
+	import { i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
+	import { scamTypeLabel, scamPlatformLabel } from '#lib/enumOptions.js';
+	import type { ScamReport, ScamPlatform, ScamStatus, ScamType } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
 
 	let { data }: { data: PageData } = $props();
 

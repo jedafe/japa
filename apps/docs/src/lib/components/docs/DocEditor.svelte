@@ -4,8 +4,8 @@
 	// composer). Keeps this app's bind:value JSON contract: the docs
 	// backend stores doc_pages.content as TipTap JSON (§44).
 	import { RichTextEditor, MediaPickerModal } from '@japaconnect/ui';
-	import { t } from '$lib/i18n';
-	import { listMyMedia, uploadMediaImage, updateMediaImage, stockApi } from '$lib/api/media';
+	import { t } from '#lib/i18n/index.js';
+	import { listMyMedia, uploadMediaImage, updateMediaImage, stockApi } from '#lib/api/media.js';
 
 	interface Props {
 		/**

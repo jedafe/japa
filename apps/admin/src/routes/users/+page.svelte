@@ -1,20 +1,20 @@
 <script lang="ts">
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { siteName } from '$lib/stores/site.svelte';
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Button } from "$lib/components/ui/button";
-	import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
-	import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
-	import { userManagementApi, impersonationApi, verificationAdminApi } from "$lib/api";
-	import type { ModerationConfig } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "#lib/components/entity/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import Autocomplete from "#lib/components/ui/Autocomplete.svelte";
+	import type { AutocompleteItem } from "#lib/components/ui/Autocomplete.svelte";
+	import { userManagementApi, impersonationApi, verificationAdminApi } from "#lib/api.js";
+	import type { ModerationConfig } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { goto, invalidateAll } from "$app/navigation";
 	import {
 		Eye, Pencil, Trash2, Ban, AlertTriangle, RotateCcw, Trash, UserPlus, BadgeCheck
 	} from "lucide-svelte";
-	import type { ActionItem, ActionContext, FilterDef } from "$lib/components/ui/data-table";
+	import type { ActionItem, ActionContext, FilterDef } from "#lib/components/ui/data-table/index.js";
 
 	type User = {
 		id: string;
@@ -175,7 +175,7 @@
 	// §07 Verification Requests — badge grant with type picker.
 	let showVerifyModal = $state(false);
 	let verifyType = $state("");
-	let verificationTypes = $state<import("$lib/api").VerificationTypeItem[]>([]);
+	let verificationTypes = $state<import("#lib/api.js").VerificationTypeItem[]>([]);
 	let showHardDeleteConfirm = $state(false);
 	let showRestoreConfirm = $state(false);
 	let showDeleteConfirm = $state(false);

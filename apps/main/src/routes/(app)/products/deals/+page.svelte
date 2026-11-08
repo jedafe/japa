@@ -1,27 +1,32 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md (Deal Pages)
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { goto, replaceState } from '$app/navigation';
-	import { t, i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { goto } from '$app/navigation';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { Ticket, Tag, House, Scissors, Music, UtensilsCrossed, LayoutGrid, List, Copy, Check, BadgeCheck, ExternalLink, Plus, Loader2, Search, Pencil } from 'lucide-svelte';
-	import { EmptyState, ListPageBar, Modal, PageAction, UrlTabs, type UrlTab } from '$lib/components/ui';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import DealForm from '$lib/components/deals/DealForm.svelte';
+	import { EmptyState, ListPageBar, Modal, PageAction, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import DealForm from '#lib/components/deals/DealForm.svelte';
 	import type { PageData } from './$types';
-	import { dealPath, type Coupon } from '$lib/types';
-	import { currencySymbol } from '$lib/utils/currency';
+	import { dealPath, type Coupon } from '#lib/types/index.js';
+	import { currencySymbol } from '#lib/utils/currency.js';
 
 	let { data }: { data: PageData } = $props();
 
 	// Surface tabs — /products is the sibling directory; the Products tab
 	// hides when the wiki surface is off so the bar never dead-ends.
 	const surfaceTabs = $derived<UrlTab[]>([
-		...(data.features?.['wiki.enabled']
-			? [{ value: 'products', label: t('products.tab_products', 'Products') }]
-			: []),
+		...data.features?.['wiki.enabled']
+			? [
+				{
+					value: 'products',
+					label: t('products.tab_products', 'Products')
+				}
+			]
+			: [],
 		{ value: 'deals', label: t('products.tab_deals', 'Deals') }
 	]);
 	function goSurface(v: string) {
@@ -128,7 +133,7 @@
 		setParam(url, 'provider_id', selectedProvider);
 		setParam(url, 'type', selectedType);
 		setParam(url, 'sort', selectedSort === 'newest' ? '' : selectedSort);
-		goto(`${url.pathname}${url.search}`, { keepFocus: true, noScroll: true });
+		goto(`${url.pathname}${url.search}`, { reset: false });
 	}
 
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -211,7 +216,7 @@
 		} else {
 			url.searchParams.delete('category');
 		}
-		replaceState(url, {});
+		goto(url, { shallow: true, replace: true });
 	}
 
 	// "Last updated" in the page bar — newest updated_at across the listing.
@@ -253,11 +258,12 @@
 	// provider_category), so map by keyword with a Ticket fallback.
 	function categoryIcon(cat: string): typeof Ticket {
 		const c = cat.toLowerCase();
-		if (/apart|hous|rent|estate|hotel|stay|room|bnb/.test(c)) return House;
-		if (/barber|salon|beauty|spa|hair|nail/.test(c)) return Scissors;
-		if (/event|music|concert|show|band|party|night|club/.test(c)) return Music;
-		if (/food|eat|drink|restaur|caf|bar|pizza|burger|bakery|coffee|dining/.test(c))
-			return UtensilsCrossed;
+
+		if ((/apart|hous|rent|estate|hotel|stay|room|bnb/).test(c)) return House;
+		if ((/barber|salon|beauty|spa|hair|nail/).test(c)) return Scissors;
+		if ((/event|music|concert|show|band|party|night|club/).test(c)) return Music;
+		if ((/food|eat|drink|restaur|caf|bar|pizza|burger|bakery|coffee|dining/).test(c)) return UtensilsCrossed;
+
 		return Ticket;
 	}
 
@@ -321,7 +327,7 @@
 		if (updated.status !== 'active') {
 			coupons = coupons.filter((c) => c.id !== updated.id);
 		} else {
-			coupons = coupons.map((c) => (c.id === updated.id ? updated : c));
+			coupons = coupons.map((c) => c.id === updated.id ? updated : c);
 		}
 		closeEdit();
 	}
@@ -384,9 +390,8 @@
 		>
 			<button
 				type="button"
-				onclick={() => (viewMode = 'grid')}
-				class="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius)-2px)] transition-colors {viewMode ===
-				'grid'
+				onclick={() => viewMode = 'grid'}
+				class="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius)-2px)] transition-colors {viewMode === 'grid'
 					? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
 					: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 				aria-label={t('deals.view_grid', 'Grid view')}
@@ -396,9 +401,8 @@
 			</button>
 			<button
 				type="button"
-				onclick={() => (viewMode = 'list')}
-				class="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius)-2px)] transition-colors {viewMode ===
-				'list'
+				onclick={() => viewMode = 'list'}
+				class="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius)-2px)] transition-colors {viewMode === 'list'
 					? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
 					: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 				aria-label={t('deals.view_list', 'List view')}
@@ -590,10 +594,11 @@
 									</h2>
 									<p
 										class="mt-0.5 line-clamp-2 min-h-[2.5rem] text-[13px] text-[var(--color-text-subtle)]"
+									>{sub}</p>
+
+									<p
+										class="mt-1.5 text-xs font-medium text-[var(--color-success)]"
 									>
-										{sub}
-									</p>
-									<p class="mt-1.5 text-xs font-medium text-[var(--color-success)]">
 										{#if coupon.expires_at}
 											{t('deals.valid_till', 'Valid till: {date}', {
 												date: expiryDate(coupon)
@@ -631,144 +636,144 @@
 					</div>
 				{:else}
 					<!-- List view: costgoat-style table (Provider / Category / Deal / Details / Claim) -->
-				<div class="hidden overflow-x-auto sm:block">
-					<table class="w-full border-collapse text-start text-sm">
-						<thead>
-							<tr
-								class="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-text-subtle)]"
-							>
-								<th class="px-3 py-2 font-medium">{t('deals.table.provider', 'Provider')}</th>
-								<th class="px-3 py-2 font-medium">{t('deals.table.category', 'Category')}</th>
-								<th class="px-3 py-2 font-medium">{t('deals.table.deal', 'Deal')}</th>
-								<th class="px-3 py-2 font-medium">{t('deals.table.details', 'Details')}</th>
-								<th class="px-3 py-2 font-medium">{t('deals.table.claim', 'Claim')}</th>
-								{#if data.canManage}
-									<th class="px-3 py-2 font-medium"><span class="sr-only">{t('deal.edit', 'Edit')}</span></th>
-								{/if}
-							</tr>
-						</thead>
-						<tbody>
-							{#each filteredCoupons as coupon (coupon.id)}
+					<div class="hidden overflow-x-auto sm:block">
+						<table class="w-full border-collapse text-start text-sm">
+							<thead>
 								<tr
-									role="link"
-									tabindex="0"
-									onclick={(e) => onRowClick(e, coupon)}
-									onkeydown={(e) => onRowKeydown(e, coupon)}
-									class="cursor-pointer border-b border-[var(--color-border)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+									class="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-text-subtle)]"
 								>
+									<th class="px-3 py-2 font-medium">{t('deals.table.provider', 'Provider')}</th>
+									<th class="px-3 py-2 font-medium">{t('deals.table.category', 'Category')}</th>
+									<th class="px-3 py-2 font-medium">{t('deals.table.deal', 'Deal')}</th>
+									<th class="px-3 py-2 font-medium">{t('deals.table.details', 'Details')}</th>
+									<th class="px-3 py-2 font-medium">{t('deals.table.claim', 'Claim')}</th>
+									{#if data.canManage}
+										<th class="px-3 py-2 font-medium"><span class="sr-only">{t('deal.edit', 'Edit')}</span></th>
+									{/if}
+								</tr>
+							</thead>
+							<tbody>
+								{#each filteredCoupons as coupon (coupon.id)}
+									<tr
+										role="link"
+										tabindex="0"
+										onclick={(e) => onRowClick(e, coupon)}
+										onkeydown={(e) => onRowKeydown(e, coupon)}
+										class="cursor-pointer border-b border-[var(--color-border)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+									>
 									<td class="px-3 py-3 font-medium text-[var(--color-text)]">
 										{providerName(coupon)}
 									</td>
-									<td class="px-3 py-3">
-										{#if coupon.provider_category}
-											<span
-												class="inline-flex items-center rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-text)]"
+										<td class="px-3 py-3">
+											{#if coupon.provider_category}
+												<span
+													class="inline-flex items-center rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-text)]"
 											>
 												{coupon.provider_category}
 											</span>
-										{:else}
-											<span class="text-[var(--color-text-subtle)]">—</span>
-										{/if}
-									</td>
-									<td class="px-3 py-3">
-										<div class="flex items-center gap-1.5">
-											<a
-												href={dealPath(coupon)}
-												class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)] hover:underline"
+											{:else}
+												<span class="text-[var(--color-text-subtle)]">—</span>
+											{/if}
+										</td>
+										<td class="px-3 py-3">
+											<div class="flex items-center gap-1.5">
+												<a
+													href={dealPath(coupon)}
+													class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)] hover:underline"
 											>
 												{coupon.title}
 											</a>
-											{#if coupon.is_verified}
+												{#if coupon.is_verified}
 												<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary-text)]" />
-											{/if}
-										</div>
-										{#if discountLabel(coupon)}
+												{/if}
+											</div>
+											{#if discountLabel(coupon)}
 											<span class="text-xs font-medium text-[var(--color-primary-text)]">
 												{discountLabel(coupon)}
 											</span>
-										{/if}
-									</td>
-									<td class="max-w-64 px-3 py-3">
-										{#if coupon.description}
+											{/if}
+										</td>
+										<td class="max-w-64 px-3 py-3">
+											{#if coupon.description}
 											<p class="line-clamp-1 text-xs text-[var(--color-text-subtle)]">
 												{coupon.description}
 											</p>
-										{:else}
-											<span class="text-[var(--color-text-subtle)]">—</span>
-										{/if}
-									</td>
-									<td class="px-3 py-3">
-										<span
-											class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)]"
-										>
-											<ExternalLink class="rtl:-scale-x-100" size={12} />
-											{t('coupons.claim', 'Claim')}
-										</span>
-									</td>
-									{#if data.canManage}
+											{:else}
+												<span class="text-[var(--color-text-subtle)]">—</span>
+											{/if}
+										</td>
 										<td class="px-3 py-3">
-											<button
-												type="button"
-												onclick={(e) => openEdit(e, coupon)}
-												class="grid h-7 w-7 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
-												aria-label={t('deal.edit', 'Edit')}
+											<span
+												class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)]"
+											>
+												<ExternalLink class="rtl:-scale-x-100" size={12} />
+												{t('coupons.claim', 'Claim')}
+											</span>
+										</td>
+										{#if data.canManage}
+											<td class="px-3 py-3">
+												<button
+													type="button"
+													onclick={(e) => openEdit(e, coupon)}
+													class="grid h-7 w-7 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+													aria-label={t('deal.edit', 'Edit')}
 											>
 												<Pencil size={14} />
 											</button>
-										</td>
-									{/if}
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
+											</td>
+										{/if}
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
 
-				<!-- Mobile: compact stacked rows, same click-through -->
-				<div class="sm:hidden">
-					{#each filteredCoupons as coupon (coupon.id)}
+					<!-- Mobile: compact stacked rows, same click-through -->
+					<div class="sm:hidden">
+						{#each filteredCoupons as coupon (coupon.id)}
 						<div class="flex items-start justify-between gap-3 border-b border-[var(--color-border)] py-3">
-							<a href={dealPath(coupon)} class="min-w-0 flex-1">
-								<div class="flex items-center gap-1.5">
+								<a href={dealPath(coupon)} class="min-w-0 flex-1">
+									<div class="flex items-center gap-1.5">
 									<h2 class="truncate text-sm font-semibold text-[var(--color-text)]">
 										{coupon.title}
 									</h2>
-									{#if coupon.is_verified}
+										{#if coupon.is_verified}
 										<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary-text)]" />
-									{/if}
-								</div>
+										{/if}
+									</div>
 								<p class="mt-0.5 truncate text-xs text-[var(--color-text-subtle)]">
-									{providerName(coupon)}{#if coupon.provider_category}
+										{providerName(coupon)}{#if coupon.provider_category}
 										· {coupon.provider_category}{/if}
-								</p>
-								{#if coupon.description}
+									</p>
+									{#if coupon.description}
 									<p class="mt-1 line-clamp-1 text-xs text-[var(--color-text-subtle)]">
 										{coupon.description}
 									</p>
-								{/if}
-							</a>
-							<div class="flex shrink-0 items-center gap-1">
-								<span
-									class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)]"
-								>
-									{#if discountLabel(coupon)}
-										{discountLabel(coupon)}
-									{:else}
-										<ExternalLink class="rtl:-scale-x-100" size={14} />
 									{/if}
-								</span>
-								{#if data.canManage}
-									<button
-										type="button"
-										onclick={(e) => openEdit(e, coupon)}
-										class="grid h-7 w-7 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
-										aria-label={t('deal.edit', 'Edit')}
+								</a>
+								<div class="flex shrink-0 items-center gap-1">
+									<span
+										class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary-text)]"
+									>
+										{#if discountLabel(coupon)}
+											{discountLabel(coupon)}
+										{:else}
+											<ExternalLink class="rtl:-scale-x-100" size={14} />
+										{/if}
+									</span>
+									{#if data.canManage}
+										<button
+											type="button"
+											onclick={(e) => openEdit(e, coupon)}
+											class="grid h-7 w-7 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+											aria-label={t('deal.edit', 'Edit')}
 									>
 										<Pencil size={14} />
 									</button>
-								{/if}
+									{/if}
+								</div>
 							</div>
-						</div>
-					{/each}
+						{/each}
 					</div>
 				{/if}
 			{/if}

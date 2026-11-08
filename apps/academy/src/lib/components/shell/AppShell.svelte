@@ -2,12 +2,12 @@
 	import type { Snippet } from 'svelte';
 	import { Menu as MenuIcon } from 'lucide-svelte';
 	import LeftNav from './LeftNav.svelte';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
 	import RightSidebar from './RightSidebar.svelte';
 	import LeftRail from './LeftRail.svelte';
 	import { routeSidebar } from './sidebar.svelte';
-	import { t } from '$lib/i18n';
-	import type { Menu, SessionUser } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import type { Menu, SessionUser } from '#lib/types/index.js';
 
 	interface Props {
 		menu: Menu | null;

@@ -1,13 +1,13 @@
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { apiList, apiGet, apiGetEnvelope, apiContext } from '$lib/server/api';
-import { buildGuestHome, emptyGuestHome } from '$lib/server/guest-home';
-import { feedQueryString, resolveTab, resolveSort, PAGE_SIZE, type FeedTab, type SortValue } from '$lib/feed/endpoint';
+import { apiList, apiGet, apiGetEnvelope, apiContext } from '#lib/server/api.js';
+import { buildGuestHome, emptyGuestHome } from '#lib/server/guest-home.js';
+import { feedQueryString, resolveTab, resolveSort, PAGE_SIZE, type FeedTab, type SortValue } from '#lib/feed/endpoint.js';
 import type {
 	FeedItem,
 	GeoContext,
 	GeoCountry,
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 import {
 	resolveGeoCopy,

@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
 import { error, redirect } from '@sveltejs/kit';
-import type { Lesson, TrackDetail } from '$lib/types';
+import type { Lesson, TrackDetail } from '#lib/types/index.js';
 
 /**
  * Lesson Player — SSR fetches the lesson content (ADR-060 reading exception).

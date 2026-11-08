@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /universities/course-offerings — per-university course offerings
 	// (university_course_offerings, Section 39). EntityPage scaffold; the
 	// course + university selects are hydrated from the API on mount (Rule 16 —
 	// no hardcoded option lists).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { courseCatalogAdminApi, courseOfferingsAdminApi, universitiesAdminApi, type CourseOffering } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { loadCurrencies, currencyOptions, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { courseCatalogAdminApi, courseOfferingsAdminApi, universitiesAdminApi, type CourseOffering } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { loadCurrencies, currencyOptions, formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
 	import { CheckCircle, EyeOff, Trash2 } from 'lucide-svelte';
 
 	type SelectOption = { value: string; label: string };

@@ -4,7 +4,7 @@
 	// (§114 2026-10-10 mockup hero). Icons resolve through the fixed
 	// marketplaceIcon whitelist.
 	import { marketplaceIcon } from './marketplaceIcon';
-	import type { ServiceIconEntry } from '$lib/types';
+	import type { ServiceIconEntry } from '#lib/types/index.js';
 
 	interface Props {
 		points: ServiceIconEntry[];

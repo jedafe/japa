@@ -7,8 +7,8 @@
 	// included").
 	import { Check, ChevronDown } from 'lucide-svelte';
 	import { marketplaceIcon } from './marketplaceIcon';
-	import { t } from '$lib/i18n';
-	import type { PackageItem, ServiceIconEntry } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import type { PackageItem, ServiceIconEntry } from '#lib/types/index.js';
 
 	interface Props {
 		heading: string;

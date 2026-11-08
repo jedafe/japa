@@ -1,8 +1,8 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiPost, ApiError } from '#lib/server/api.js';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
-import type { University, ListMeta, GeoCountry, GeoState, GeoCity, SpaceDetail } from '$lib/types';
+import type { University, ListMeta, GeoCountry, GeoState, GeoCity, SpaceDetail } from '#lib/types/index.js';
 
 /**
  * Universities at /universities — public, SSR, indexable. Lists university

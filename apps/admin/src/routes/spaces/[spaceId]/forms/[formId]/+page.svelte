@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { api, apiRaw, formsAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import type { FilterDef } from '$lib/components/ui/data-table';
-	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { api, apiRaw, formsAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import type { FilterDef } from '#lib/components/ui/data-table/index.js';
+	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
 
 	// Seeded form nodes are forms.edit/forms.delete/forms.submissions.view —
 	// "space.forms.manage" does not exist.

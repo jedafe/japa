@@ -1,18 +1,18 @@
 <script lang="ts">
 	// /tools/attestation-guide — HITL review queue with Approve, Generate, and
 	// community update review actions. Aligned with backend PathwayDTO fields.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { attestationGuideAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { useCountries } from '$lib/utils/countries.svelte';
-	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import { attestationGuideAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
+	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	type PathwayItem = {
 		id: string;

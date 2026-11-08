@@ -2,8 +2,8 @@
 	// ADR-058 4th exception: split-screen auth layout (not AppShell).
 	// brandSlides comes from the root layout's siteSettings fetch
 	// (GET /site/settings/public → appearance.auth_brand_slides).
-	import AuthShell from '$lib/components/auth/AuthShell.svelte';
-	import { parseBrandSlides } from '$lib/auth/brandSlides';
+	import AuthShell from '#lib/components/auth/AuthShell.svelte';
+	import { parseBrandSlides } from '#lib/auth/brandSlides.js';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
 

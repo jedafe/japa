@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /products — product management list (§80 Product Domain). DataTable via
 	// the EntityPage scaffold; create lives on the dedicated /products/new page.
-	import { EntityPage, type EntityPageConfig } from '$lib/components/entity';
-	import { productsAdminApi, productTypesAdminApi } from '$lib/api';
+	import { EntityPage, type EntityPageConfig } from '#lib/components/entity/index.js';
+	import { productsAdminApi, productTypesAdminApi } from '#lib/api.js';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { onMount } from 'svelte';
 	import { Pencil, Plus } from 'lucide-svelte';
 

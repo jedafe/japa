@@ -2,13 +2,13 @@
 	// /tools/appointment-alert — admin management for embassy appointment alerter (§91, ADR-099).
 	// Full CRUD for monitored embassies + immediate poll trigger.
 	// Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, RefreshCw, Pencil } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { appointmentAlertAdminApi } from '$lib/api';
-	import { useCountries } from '$lib/utils/countries.svelte';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
+	import { appointmentAlertAdminApi } from '#lib/api.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
 
 	// EmbassyDTO — matches the backend EmbassyDTO shape (§91).
 	// Ref: internal/appointmentalert/service.go EmbassyDTO

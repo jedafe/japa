@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
-	import { Select } from '$lib/components/ui/select';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { Select } from '#lib/components/ui/select/index.js';
 
 	let {
 		filters,

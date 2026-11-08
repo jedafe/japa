@@ -2,9 +2,9 @@
 // Server-side proxy for the modal login flow. Calls the backend, sets the
 // jc_token cookie, and returns { user, redirect }. Routes use form actions
 // that call the same authenticateLogin helper.
-import { json } from '@sveltejs/kit';
+
 import type { RequestHandler } from './$types';
-import { apiContext, authenticateLogin, getOnboardingStatus, resolvePostLoginRedirect, sanitizePostLoginTarget, setRefreshCookie, setSessionCookie } from '$lib/server/auth';
+import { apiContext, authenticateLogin, getOnboardingStatus, resolvePostLoginRedirect, sanitizePostLoginTarget, setRefreshCookie, setSessionCookie } from '#lib/server/auth.js';
 
 export const POST: RequestHandler = async (event) => {
 	const body = await event.request.json().catch(() => ({}));
@@ -16,7 +16,7 @@ export const POST: RequestHandler = async (event) => {
 	const website = body?.website; // §41 Layer 2 honeypot
 
 	if (!email || !password) {
-		return json({ error: { code: 'missing_fields', message: 'Email and password are required.', status: 400 } }, { status: 400 });
+		return Response.json({ error: { code: 'missing_fields', message: 'Email and password are required.', status: 400 } }, { status: 400 });
 	}
 
 	const ctx = apiContext(event);
@@ -25,7 +25,7 @@ export const POST: RequestHandler = async (event) => {
 		// 2FA-enabled accounts: backend returns { totp_required, challenge_token, user }
 		// instead of an access_token. The client redirects to /verify-totp.
 		if (result.totp_required) {
-			return json({
+			return Response.json({
 				totp_required: true,
 				challenge_token: result.challenge_token,
 				user: result.user,
@@ -39,11 +39,11 @@ export const POST: RequestHandler = async (event) => {
 		const onboarding = await getOnboardingStatus({ ...ctx, token: result.access_token });
 		const target = resolvePostLoginRedirect(onboarding, redirect);
 
-		return json({ user: result.user, redirect: target });
+		return Response.json({ user: result.user, redirect: target });
 	} catch (err) {
 		const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 500;
 		const code = err instanceof Error && 'code' in err ? (err as { code: string }).code : 'api_error';
 		const message = err instanceof Error ? err.message : 'Login failed';
-		return json({ error: { code: code || 'api_error', message: message || 'Request failed', status } }, { status });
+		return Response.json({ error: { code: code || 'api_error', message: message || 'Request failed', status } }, { status });
 	}
 };

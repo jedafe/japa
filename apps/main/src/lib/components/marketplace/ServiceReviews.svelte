@@ -6,8 +6,8 @@
 	// "View all reviews" links to /services/[slug]/reviews when the
 	// aggregate count exceeds the embedded rows.
 	import { ArrowRight, ChevronLeft, ChevronRight, Quote, Star } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import type { ServiceReview, ServiceReviewAggregate } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import type { ServiceReview, ServiceReviewAggregate } from '#lib/types/index.js';
 
 	interface Props {
 		reviews: ServiceReview[];

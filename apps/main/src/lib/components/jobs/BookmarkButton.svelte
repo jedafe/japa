@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Bookmark } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
 	import { untrack } from 'svelte';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
 	import { page } from '$app/state';
 
 	interface Props {

@@ -3,8 +3,8 @@
 	// page (§84, ADR-092). Fetches /digest/latest?dest={spaceId} and renders
 	// a compact card with a link to the full digest page.
 	import { page } from '$app/state';
-	import { t, i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { Newspaper, ChevronRight } from 'lucide-svelte';
 
 	type DigestEdition = {

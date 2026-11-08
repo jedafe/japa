@@ -20,7 +20,7 @@
 		CheckCircle, XCircle, PlusCircle, MinusCircle, Dot, Circle,
 		CircleDot, Square, Triangle, Diamond, Hexagon, Octagon, Cylinder,
 	} from 'lucide-svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	// Curated list of icons useful for navigation menus.
 	// Keys are kebab-case names matching the backend menu_items.icon column.

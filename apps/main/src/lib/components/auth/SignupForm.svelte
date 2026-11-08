@@ -2,16 +2,16 @@
 	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 	// Presentational signup form — calls the /api/auth/signup proxy, sets the
 	// cookie server-side, and redirects to /onboarding for new users.
-	import { t } from '$lib/i18n/store.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
 	import { invalidateAll } from '$app/navigation';
 	import { goto } from '$app/navigation';
-	import { validateSignup } from '$lib/auth/validation';
-	import { mapAuthError } from '$lib/auth/errors';
+	import { validateSignup } from '#lib/auth/validation.js';
+	import { mapAuthError } from '#lib/auth/errors.js';
 	import PasswordField from './PasswordField.svelte';
 	import OAuthButtons from './OAuthButtons.svelte';
 	import AuthFooter from './AuthFooter.svelte';
 	import HoneypotField from './HoneypotField.svelte';
-	import { completePendingNextAction } from '$lib/api/nextActions';
+	import { completePendingNextAction } from '#lib/api/nextActions.js';
 
 	let {
 		redirectTarget = '/onboarding',

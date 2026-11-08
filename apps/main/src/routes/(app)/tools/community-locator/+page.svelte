@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack, onMount } from 'svelte';
-	import { replaceState } from '$app/navigation';
-	import { t, siteName} from '$lib/i18n';
+	import { goto } from '$app/navigation';
+	import { t, siteName } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import {
 		Users,
@@ -21,15 +21,15 @@
 		MapPinOff,
 		Map as MapIcon
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, PaginationControls, Modal } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import type { CommunityOrgWithAi, GeoCountry, GeoSpaceOption, OrgTypeOption } from '$lib/types';
-	import OrgMap from '$lib/components/tools/OrgMap.svelte';
+	import { EmptyState, LoadingSkeleton, PaginationControls, Modal } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import type { CommunityOrgWithAi, GeoCountry, GeoSpaceOption, OrgTypeOption } from '#lib/types/index.js';
+	import OrgMap from '#lib/components/tools/OrgMap.svelte';
 	import 'leaflet/dist/leaflet.css';
 	import type { PageData } from './$types';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Diaspora Community Locator tool — §101, ADR-088.
@@ -146,14 +146,18 @@
 
 	// Keep the URL in sync so filtered/paginated views are shareable.
 	function syncUrl() {
-		const url = new URL(page.url);
-		const set = (k: string, v: string) => (v ? url.searchParams.set(k, v) : url.searchParams.delete(k));
+		const url = new URL(page.url.href);
+
+		const set = (k: string, v: string) => v
+			? url.searchParams.set(k, v)
+			: url.searchParams.delete(k);
+
 		set('dest', selectedDestId);
 		set('type', typeFilter);
 		set('origin', originFilter.trim());
 		set('city', cityFilter);
 		set('page', currentPage > 1 ? String(currentPage) : '');
-		replaceState(url, {});
+		goto(url, { shallow: true, replace: true });
 	}
 
 	function onDestChange(id: string) {
@@ -333,7 +337,12 @@
 		)}
 	/>
 	<link rel="canonical" href={page.url.href} />
-	<meta property="og:title" content="{title} — {siteName()} Tools" />
+
+	<meta
+		property="og:title"
+		content="{title} — {siteName()} Tools"
+	/>
+
 	<meta
 		property="og:description"
 		content={t(
@@ -344,7 +353,12 @@
 	<meta property="og:url" content={page.url.href} />
 	<meta property="og:type" content="website" />
 	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content="{title} — {siteName()} Tools" />
+
+	<meta
+		name="twitter:title"
+		content="{title} — {siteName()} Tools"
+	/>
+
 	<meta
 		name="twitter:description"
 		content={t(
@@ -471,9 +485,7 @@
 				{/if}
 
 				{#if orgs.some((o) => o.latitude != null && o.longitude != null)}
-					<div class="mb-6">
-						<OrgMap {orgs} />
-					</div>
+					<div class="mb-6"><OrgMap orgs={orgs} /></div>
 				{/if}
 
 				<!-- Add organisation toggle -->
@@ -484,7 +496,7 @@
 					{#if authed}
 						<button
 							type="button"
-							onclick={() => (showSubmitForm = !showSubmitForm)}
+							onclick={() => showSubmitForm = !showSubmitForm}
 							class="inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-[var(--radius)] text-sm font-medium hover:bg-[var(--color-primary-hover)] transition-colors"
 						>
 							{#if showSubmitForm}
@@ -499,7 +511,7 @@
 					{:else}
 						<button
 							type="button"
-							onclick={() => (showRegisterPrompt = true)}
+							onclick={() => showRegisterPrompt = true}
 							class="inline-flex items-center gap-1.5 px-4 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-[var(--radius)] text-sm font-medium hover:bg-[var(--color-primary-hover)] transition-colors"
 						>
 							<Plus size={16} />
@@ -541,8 +553,8 @@
 									initialFetcher={fetchOrgTypesInitial}
 									selectedId={form.org_type || null}
 									selectedLabel={form.org_type ? orgTypeLabel(form.org_type) : null}
-									onSelect={(item) => (form.org_type = item.id)}
-									onClear={() => (form.org_type = '')}
+									onSelect={(item) => form.org_type = item.id}
+									onClear={() => form.org_type = ''}
 								/>
 							</div>
 							<div>
@@ -569,8 +581,8 @@
 									initialFetcher={fetchCitiesInitial}
 									selectedId={form.city_space_id || null}
 									selectedLabel={form.city_space_id ? getCityLabel(form.city_space_id) : null}
-									onSelect={(item) => (form.city_space_id = item.id)}
-									onClear={() => (form.city_space_id = '')}
+									onSelect={(item) => form.city_space_id = item.id}
+									onClear={() => form.city_space_id = ''}
 									disabled={cities.length === 0}
 								/>
 								{#if cities.length === 0 && selectedDestId}
@@ -762,20 +774,20 @@
 											{t('common.view_details', 'View details')}
 										</a>
 
-									{#if org.claim_status === 'claimed' && (org.japaconnect_space_slug || org.japaconnect_space_id)}
+										{#if org.claim_status === 'claimed' && (org.japaconnect_space_slug || org.japaconnect_space_id)}
 										<div class="pt-2 border-t border-[var(--color-border)] mt-2">
 											<p class="text-xs font-medium uppercase tracking-wider text-[var(--color-muted)] mb-1">
 												{t('community_locator.space_integration', '{site} Space')}
 											</p>
-											<a
-												href={`/spaces/${org.japaconnect_space_slug || org.japaconnect_space_id}`}
-												class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
-											>
-												<Users size={14} />
-												{t('community_locator.view_space', 'View Space — posts, members & events')}
-											</a>
-										</div>
-									{/if}
+												<a
+													href={`/spaces/${org.japaconnect_space_slug || org.japaconnect_space_id}`}
+													class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary-text)] hover:underline"
+												>
+													<Users size={14} />
+													{t('community_locator.view_space', 'View Space — posts, members & events')}
+												</a>
+											</div>
+										{/if}
 
 										<!-- Claim action — only meaningful while unclaimed -->
 										<div class="pt-2">
@@ -815,7 +827,7 @@
 											{:else}
 												<button
 													type="button"
-													onclick={() => (showRegisterPrompt = true)}
+													onclick={() => showRegisterPrompt = true}
 													class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[var(--color-border)] rounded-[var(--radius)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)] transition-colors"
 												>
 													<Hand size={14} />
@@ -833,7 +845,7 @@
 						<div class="mt-6 flex justify-center">
 							<PaginationControls
 								page={currentPage}
-								{totalPages}
+								totalPages={totalPages}
 								onPageChange={onPageChange}
 							/>
 						</div>

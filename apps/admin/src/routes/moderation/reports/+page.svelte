@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /moderation/reports — migrated to the EntityPage scaffold.
 	// Distinct from /reports: this view is focused on resolving pending reports
 	// via state actions (dismiss / warn / ban / remove content) issued through
 	// PATCH /admin/reports/{id}. Read-only list + ActionMenu state actions +
 	// page-local confirm Modal with an optional reason textarea.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { safeHref } from '$lib/utils/html';
-	import { Button } from '$lib/components/ui/button';
-	import { moderationAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { PUBLIC_JC_SITE_URL } from '$env/static/public';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { safeHref } from '#lib/utils/html.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { moderationAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { PUBLIC_JC_SITE_URL } from '$app/env/public';
 	import { Eye, Ban, AlertTriangle, Trash2, XCircle } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 
 	type Report = {
 		id: string;
@@ -57,16 +57,16 @@
 			case 'source': return `${PUBLIC_JC_SITE_URL}/sources/${slug}`;
 			case 'message': return null;
 			default: {
-				if (row.thread_slug) return `${PUBLIC_JC_SITE_URL}/forum/${row.thread_slug}`;
-				const prefixes: Record<string, string> = {
+					if (row.thread_slug) return `${PUBLIC_JC_SITE_URL}/forum/${row.thread_slug}`;
+					const prefixes: Record<string, string> = {
 					blog_post: '/blog', guide: '/guide', discussion: '/forum', forum_thread: '/forum',
 					comparison: '/comparisons', story: '/story', achievement: '/achievements',
 					page: '/pages', job_listing: '/jobs', service_listing: '/services',
 					video: '/video', list: '/list'
-				};
-				const prefix = (row.entity_content_type && prefixes[row.entity_content_type]) || '/content';
-				return `${PUBLIC_JC_SITE_URL}${prefix}/${slug}`;
-			}
+					};
+					const prefix = row.entity_content_type && prefixes[row.entity_content_type] || '/content';
+					return `${PUBLIC_JC_SITE_URL}${prefix}/${slug}`;
+				}
 		}
 	}
 
@@ -283,10 +283,17 @@
 			if (q) params.set('q', q);
 			const result = await moderationAdminApi.listReports(params.toString() || undefined);
 			if (result.ok) {
-				const d = result.data as { items: Report[]; total?: number; total_pages?: number } | Report[];
-				const items = Array.isArray(d) ? d : (d.items ?? []);
-				const total = Array.isArray(d) ? items.length : (d.total ?? items.length);
-				const totalPages = Array.isArray(d) ? 1 : (d.total_pages ?? Math.max(1, Math.ceil(total / pageSize)));
+				const d = result.data as 
+					{ items: Report[]; total?: number; total_pages?: number } |
+					Report[];
+
+				const items = Array.isArray(d) ? d : d.items ?? [];
+				const total = Array.isArray(d) ? items.length : d.total ?? items.length;
+
+				const totalPages = Array.isArray(d)
+					? 1
+					: d.total_pages ?? Math.max(1, Math.ceil(total / pageSize));
+
 				return { data: items, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load reports'));
@@ -300,7 +307,11 @@
 </svelte:head>
 
 <div class="mb-4">
-	<a href="/moderation" class="text-xs hover:underline" style="color: var(--color-muted)">&larr; {t('moderation.back', 'Back')}</a>
+	<a
+		href="/moderation"
+		class="text-xs hover:underline"
+		style="color: var(--color-muted)"
+	>← {t('moderation.back', 'Back')}</a>
 </div>
 
 {#if pageError}
@@ -312,7 +323,7 @@
 	</div>
 {/if}
 
-<EntityPage {config} bind:controller={entityController} />
+<EntityPage config={config} bind:controller={entityController} />
 
 <!-- ── State-action confirmation modal ─────────────────────────────────── -->
 <Modal bind:open={showActionModal} title={actionLabel(actionType)}>
@@ -327,9 +338,11 @@
 		bind:value={actionReason}
 	></textarea>
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showActionModal = false)}>
-			{t('common.cancel', 'Cancel')}
-		</Button>
+		<Button
+			variant="ghost"
+			onclick={() => showActionModal = false}
+		>{t('common.cancel', 'Cancel')}</Button>
+
 		<Button
 			variant={actionType === 'dismiss' || actionType === 'review' ? 'default' : 'destructive'}
 			onclick={executeAction}

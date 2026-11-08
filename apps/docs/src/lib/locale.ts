@@ -1,6 +1,6 @@
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
-import { i18n } from '$lib/i18n';
+import { i18n } from '#lib/i18n/index.js';
 
 /**
  * Locale helpers shared by the header language menu and the sidebar

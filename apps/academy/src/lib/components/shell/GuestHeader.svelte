@@ -3,14 +3,14 @@
 	// Replaces the LeftNav + RightSidebar shell for guests.
 	// Ref: ADR-060 — Academy shell for guests should show a top bar with search,
 	// theme toggle, language toggle, and auth buttons.
-	import { t, i18n } from '$lib/i18n';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { loginUrl, MAIN_ORIGIN } from '$lib/appOrigins';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { loginUrl, MAIN_ORIGIN } from '#lib/appOrigins.js';
 	import { page } from '$app/state';
 	import { Menu as UiMenu, MenuItem as UiMenuItem } from '@japaconnect/ui';
 	import { Sun, Moon, LogIn, UserPlus, Languages, GraduationCap, Check } from 'lucide-svelte';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
-	import type { Menu, MenuItem } from '$lib/types';
+	import type { Menu, MenuItem } from '#lib/types/index.js';
 
 	interface Props {
 		logoUrl?: string;

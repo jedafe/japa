@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { GeoCountry, CvStandard, CatalogOption } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { GeoCountry, CvStandard, CatalogOption } from '#lib/types/index.js';
 
 /**
  * CV Formatter — §95.

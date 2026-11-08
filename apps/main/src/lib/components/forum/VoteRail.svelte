@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { ArrowBigUp, ArrowBigDown } from 'lucide-svelte';
 	import { untrack } from 'svelte';
-	import { api } from '$lib/api/client';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import { t } from '$lib/i18n';
-	import type { ForumThread, ForumVoteEntity, ForumVote } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import { t } from '#lib/i18n/index.js';
+	import type { ForumThread, ForumVoteEntity, ForumVote } from '#lib/types/index.js';
 
 	interface Props {
 		/** The entity being voted on. */

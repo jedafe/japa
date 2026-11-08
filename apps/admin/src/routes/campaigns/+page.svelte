@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import CampaignManager from '$lib/components/campaigns/campaign-manager.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import CampaignManager from '#lib/components/campaigns/campaign-manager.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 </script>
 
 <svelte:head>

@@ -1,12 +1,12 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// /donate — platform donation page (§125). Loads GET /donate config and
 	// opens the TipDialog pointed at the platform recipient.
 	//
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
-	import { t } from '$lib/i18n';
-	import { getAccessToken } from '$lib/api/token.svelte';
-	import TipDialog from '$lib/components/tips/TipDialog.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { getAccessToken } from '#lib/api/token.svelte.js';
+	import TipDialog from '#lib/components/tips/TipDialog.svelte';
 	import { ExternalLink, Heart } from 'lucide-svelte';
 
 	let { data } = $props();

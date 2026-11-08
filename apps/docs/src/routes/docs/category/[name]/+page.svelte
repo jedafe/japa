@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import { t } from '$lib/i18n';
-	import { persistNavCollapse } from '$lib/nav-collapse';
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { categoryIcon, namedCategoryIcon } from '$lib/category-meta';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { categoryIcon, namedCategoryIcon } from '#lib/category-meta.js';
 	import { ArrowRight, ChevronRight, FileText } from 'lucide-svelte';
 	import type { PageData } from './$types';
 

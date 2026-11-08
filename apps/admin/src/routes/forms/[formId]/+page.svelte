@@ -1,22 +1,22 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { t, locale } from '$lib/stores/i18n.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { t, locale } from '#lib/stores/i18n.svelte.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Select } from '$lib/components/ui/select';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 	import { ArrowUp, ArrowDown, Plus, Trash2, Pencil, Eye } from 'lucide-svelte';
-	import { formsAdminApi, fieldGroupsAdminApiExtended } from '$lib/api';
-	import { PUBLIC_JC_SITE_URL } from '$env/static/public';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { TableSkeleton } from '$lib/components/ui/skeleton';
+	import { formsAdminApi, fieldGroupsAdminApiExtended } from '#lib/api.js';
+	import { PUBLIC_JC_SITE_URL } from '$app/env/public';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { TableSkeleton } from '#lib/components/ui/skeleton/index.js';
 
 	// --- Types ---
 
@@ -205,7 +205,7 @@
 				map.set(dim, []);
 				order.push(dim);
 			}
-			map.get(dim)!.push(f);
+			(map.get(dim)!).push(f);
 		}
 		return order.map((name) => ({ name, fields: map.get(name)! }));
 	});
@@ -598,7 +598,7 @@
 		[reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]];
 		// Update position fields in-place so downstream edits (which send
 		// editingStep.position) use the new index, not the stale pre-swap value.
-		reordered.forEach((s, i) => (s.position = i));
+		reordered.forEach((s, i) => s.position = i);
 		steps = reordered;
 		try {
 			await formsAdminApi.reorderSteps(formId, {
@@ -639,7 +639,7 @@
 			});
 			if (result.ok) {
 				saveMsg = t('common.saved', 'Saved');
-				setTimeout(() => (saveMsg = ''), 3000);
+				setTimeout(() => saveMsg = '', 3000);
 				loadForm();
 			} else {
 				errorMessage = result.error;
@@ -881,12 +881,32 @@
 	title={form?.name ?? t('forms.loading', 'Loading...')}
 	description={form ? `${t('forms.slug', 'Slug')}: ${form.slug ?? form.id ?? ''}` : ''}
 	actions={[
-		{ label: t('common.back', 'Back'), icon: ArrowUp, onclick: () => goto('/forms'), variant: 'outline' as const },
-		...(canManage ? [{ label: t('common.delete', 'Delete'), icon: Trash2, onclick: () => (showDeleteModal = true), variant: 'destructive' as const }] : []),
+		{
+			label: t('common.back', 'Back'),
+			icon: ArrowUp,
+			onclick: () => goto('/forms'),
+			variant: 'outline' as const
+		},
+
+		...canManage
+			? [
+				{
+					label: t('common.delete', 'Delete'),
+					icon: Trash2,
+					onclick: () => showDeleteModal = true,
+					variant: 'destructive' as const
+				}
+			]
+			: []
 	]}
 />
 
-<Tabs {tabs} bind:value={activeTab} tabParam="tab" tabPreserve={[]} />
+<Tabs
+	tabs={tabs}
+	bind:value={activeTab}
+	tabParam="tab"
+	tabPreserve={[]}
+/>
 
 {#if loading}
 	<TableSkeleton />
@@ -1070,9 +1090,18 @@
 				</div>
 			</div>
 			<div class="mt-6 flex justify-end gap-3">
-				<Button variant="outline" onclick={() => (showAddStepModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={addStep} disabled={savingStep || !newStepTitle.trim()}>
-					{savingStep ? t('common.creating', 'Adding...') : t('forms.addStep', 'Add Step')}
+				<Button
+					variant="outline"
+					onclick={() => showAddStepModal = false}
+				>{t('common.cancel', 'Cancel')}</Button>
+
+				<Button
+					onclick={addStep}
+					disabled={savingStep || !newStepTitle.trim()}
+				>
+					{savingStep
+						? t('common.creating', 'Adding...')
+						: t('forms.addStep', 'Add Step')}
 				</Button>
 			</div>
 		</Modal>
@@ -1089,9 +1118,18 @@
 				</div>
 			</div>
 			<div class="mt-6 flex justify-end gap-3">
-				<Button variant="outline" onclick={() => (showEditStepModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={updateStep} disabled={savingStep || !editStepTitle.trim()}>
-					{savingStep ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+				<Button
+					variant="outline"
+					onclick={() => showEditStepModal = false}
+				>{t('common.cancel', 'Cancel')}</Button>
+
+				<Button
+					onclick={updateStep}
+					disabled={savingStep || !editStepTitle.trim()}
+				>
+					{savingStep
+						? t('common.saving', 'Saving...')
+						: t('common.save', 'Save')}
 				</Button>
 			</div>
 		</Modal>
@@ -1110,19 +1148,29 @@
 						<div>
 							<p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted">{t('forms.publicUrl', 'Public URL')}</p>
 							<div class="flex items-center gap-2">
-								<code class="flex-1 break-all rounded-md border border-border bg-surface px-3 py-2 text-sm font-mono text-foreground">{PUBLIC_JC_SITE_URL}/forms/{form!.slug}</code>
-								<Button variant="outline" size="sm" onclick={() => navigator.clipboard.writeText(`${PUBLIC_JC_SITE_URL}/forms/${form!.slug}`)}>
-									{t('common.copy', 'Copy')}
-								</Button>
+								<code
+									class="flex-1 break-all rounded-md border border-border bg-surface px-3 py-2 text-sm font-mono text-foreground"
+								>{PUBLIC_JC_SITE_URL}/forms/{(form!).slug}</code>
+
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => navigator.clipboard.writeText(`${PUBLIC_JC_SITE_URL}/forms/${(form!).slug}`)}
+								>{t('common.copy', 'Copy')}</Button>
 							</div>
 						</div>
 						<div>
 							<p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted">{t('forms.embedCode', 'Embed Code')}</p>
 							<div class="flex items-center gap-2">
-								<code class="flex-1 rounded-md border border-border bg-surface px-3 py-2 text-xs font-mono text-foreground break-all">&lt;iframe src="{PUBLIC_JC_SITE_URL}/forms/{form!.slug}" width="100%" height="600" frameborder="0"&gt;&lt;/iframe&gt;</code>
-								<Button variant="outline" size="sm" onclick={() => navigator.clipboard.writeText(`<iframe src="${PUBLIC_JC_SITE_URL}/forms/${form!.slug}" width="100%" height="600" frameborder="0"></iframe>`)}>
-									{t('common.copy', 'Copy')}
-								</Button>
+								<code
+									class="flex-1 rounded-md border border-border bg-surface px-3 py-2 text-xs font-mono text-foreground break-all"
+								><iframe src="{PUBLIC_JC_SITE_URL}/forms/{(form!).slug}" width="100%" height="600" frameborder="0"></iframe></code>
+
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => navigator.clipboard.writeText(`<iframe src="${PUBLIC_JC_SITE_URL}/forms/${(form!).slug}" width="100%" height="600" frameborder="0"></iframe>`)}
+								>{t('common.copy', 'Copy')}</Button>
 							</div>
 						</div>
 					</div>
@@ -1139,34 +1187,34 @@
 				 steps yet can still hold form-level fields (e.g. the seeded
 				 readiness assessment) — those fall through to the flat list. -->
 			{#each steps as step, stepIdx (stepIdx)}
-					<Card class="mt-4">
-						<CardContent class="p-4">
+				<Card class="mt-4">
+					<CardContent class="p-4">
 							<div class="mb-4 flex items-center justify-between gap-2 flex-wrap">
-								<div class="flex items-center gap-2">
+							<div class="flex items-center gap-2">
 									<span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{stepIdx + 1}</span>
-									<h4 class="text-sm font-semibold text-foreground">{step.title}</h4>
-								</div>
-								{#if canManage}
+								<h4 class="text-sm font-semibold text-foreground">{step.title}</h4>
+							</div>
+							{#if canManage}
 									<Button size="sm" onclick={() => { selectedStepForField = step; newFieldLabel = ''; newFieldType = 'text'; newFieldRequired = false; newFieldPlaceholder = ''; showAddFieldModal = true; }}>
 										<Plus class="me-1 h-4 w-4" /> {t('forms.addFieldToStep', 'Add Field to Step')}
-									</Button>
-								{/if}
-							</div>
-							{#if !step.fields || step.fields.length === 0}
-								<p class="py-4 text-center text-sm text-muted">{t('forms.noFieldsInStep', 'No fields in this step yet')}</p>
-							{:else}
-								<div class="space-y-2">
-									{#each step.fields as field, idx (idx)}
+								</Button>
+							{/if}
+						</div>
+						{#if !step.fields || step.fields.length === 0}
+							<p class="py-4 text-center text-sm text-muted">{t('forms.noFieldsInStep', 'No fields in this step yet')}</p>
+						{:else}
+							<div class="space-y-2">
+								{#each step.fields as field, idx (idx)}
 										<div class="flex items-center justify-between gap-2 flex-wrap rounded-md border border-border bg-surface px-4 py-3">
-											<div class="flex items-center gap-3">
-												<span class="text-sm font-medium">{field.label}</span>
-												<Badge variant="secondary">{field.type}</Badge>
-												{#if field.required}
-													<Badge variant="destructive">{t('forms.required', 'Required')}</Badge>
-												{/if}
-											</div>
-											{#if canManage}
-												<div class="flex items-center gap-1">
+										<div class="flex items-center gap-3">
+											<span class="text-sm font-medium">{field.label}</span>
+											<Badge variant="secondary">{field.type}</Badge>
+											{#if field.required}
+												<Badge variant="destructive">{t('forms.required', 'Required')}</Badge>
+											{/if}
+										</div>
+										{#if canManage}
+											<div class="flex items-center gap-1">
 													<Button variant="ghost" size="sm" onclick={() => openEditField(field, step.field_group_id)}>
 														<Pencil class="h-3.5 w-3.5" />
 													</Button>
@@ -1179,14 +1227,14 @@
 													<Button variant="ghost" size="sm" style="color: var(--color-danger)" onclick={() => deleteField(field.id, step.field_group_id)}>
 														<Trash2 class="h-3.5 w-3.5" />
 													</Button>
-												</div>
-											{/if}
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</CardContent>
-					</Card>
+											</div>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</CardContent>
+				</Card>
 			{/each}
 		{:else if form?.form_type === 'assessment' && assessmentSteps.length > 0}
 			<!-- Assessment: fields grouped by derived dimension step (mirrors the
@@ -1195,8 +1243,14 @@
 				 never crosses step boundaries. New fields have no dimension and
 				 land in the General step. -->
 			<div class="mt-4 flex justify-end">
-				<Button onclick={() => { selectedStepForField = null; (showAddFieldModal = true); }}>
-					<Plus class="me-1 h-4 w-4" /> {t('forms.addField', 'Add Field')}
+				<Button
+					onclick={() => {
+						selectedStepForField = null;
+						showAddFieldModal = true;
+					}}
+				>
+					<Plus class="me-1 h-4 w-4" />
+					{t('forms.addField', 'Add Field')}
 				</Button>
 			</div>
 			{#each assessmentSteps as astep, stepIdx (astep.name)}
@@ -1244,8 +1298,14 @@
 			<Card class="mt-4">
 				<CardContent class="p-4">
 					<div class="mb-4 flex justify-end">
-						<Button onclick={() => { selectedStepForField = null; (showAddFieldModal = true); }}>
-							<Plus class="me-1 h-4 w-4" /> {t('forms.addField', 'Add Field')}
+						<Button
+							onclick={() => {
+								selectedStepForField = null;
+								showAddFieldModal = true;
+							}}
+						>
+							<Plus class="me-1 h-4 w-4" />
+							{t('forms.addField', 'Add Field')}
 						</Button>
 					</div>
 					{#if fields.length === 0}
@@ -1310,9 +1370,18 @@
 				</div>
 			</div>
 			<div class="mt-6 flex justify-end gap-3">
-				<Button variant="outline" onclick={() => (showAddFieldModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={addField} disabled={savingField || !newFieldLabel.trim()}>
-					{savingField ? t('common.creating', 'Adding...') : t('forms.addField', 'Add Field')}
+				<Button
+					variant="outline"
+					onclick={() => showAddFieldModal = false}
+				>{t('common.cancel', 'Cancel')}</Button>
+
+				<Button
+					onclick={addField}
+					disabled={savingField || !newFieldLabel.trim()}
+				>
+					{savingField
+						? t('common.creating', 'Adding...')
+						: t('forms.addField', 'Add Field')}
 				</Button>
 			</div>
 		</Modal>
@@ -1338,9 +1407,18 @@
 				</div>
 			</div>
 			<div class="mt-6 flex justify-end gap-3">
-				<Button variant="outline" onclick={() => (showEditFieldModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={updateField} disabled={savingField || !editFieldLabel.trim()}>
-					{savingField ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+				<Button
+					variant="outline"
+					onclick={() => showEditFieldModal = false}
+				>{t('common.cancel', 'Cancel')}</Button>
+
+				<Button
+					onclick={updateField}
+					disabled={savingField || !editFieldLabel.trim()}
+				>
+					{savingField
+						? t('common.saving', 'Saving...')
+						: t('common.save', 'Save')}
 				</Button>
 			</div>
 		</Modal>
@@ -1394,18 +1472,34 @@
 				{/if}
 				{#snippet footer()}
 					<div class="flex flex-wrap justify-end gap-3">
-						<Button variant="outline" onclick={() => (showSubmissionModal = false)}>{t('common.close', 'Close')}</Button>
+						<Button
+							variant="outline"
+							onclick={() => showSubmissionModal = false}
+						>{t('common.close', 'Close')}</Button>
+
 						{#if selectedSubmission && selectedSubmission.status !== 'reviewed'}
-							<Button variant="outline" onclick={() => updateSubmissionStatus(selectedSubmission!.id, 'reviewed')}>{t('forms.markReviewed', 'Mark Reviewed')}</Button>
+							<Button
+								variant="outline"
+								onclick={() => updateSubmissionStatus((selectedSubmission!).id, 'reviewed')}
+							>{t('forms.markReviewed', 'Mark Reviewed')}</Button>
 						{/if}
 						{#if selectedSubmission && selectedSubmission.status !== 'actioned'}
-							<Button variant="outline" onclick={() => updateSubmissionStatus(selectedSubmission!.id, 'actioned')}>{t('forms.markActioned', 'Mark Actioned')}</Button>
+							<Button
+								variant="outline"
+								onclick={() => updateSubmissionStatus((selectedSubmission!).id, 'actioned')}
+							>{t('forms.markActioned', 'Mark Actioned')}</Button>
 						{/if}
 						{#if selectedSubmission && selectedSubmission.status !== 'spam'}
-							<Button variant="destructive" onclick={() => updateSubmissionStatus(selectedSubmission!.id, 'spam')}>{t('forms.markSpam', 'Mark Spam')}</Button>
+							<Button
+								variant="destructive"
+								onclick={() => updateSubmissionStatus((selectedSubmission!).id, 'spam')}
+							>{t('forms.markSpam', 'Mark Spam')}</Button>
 						{/if}
 						{#if selectedSubmission}
-							<Button variant="destructive" onclick={() => deleteSubmission(selectedSubmission!.id)}>{t('common.delete', 'Delete')}</Button>
+							<Button
+								variant="destructive"
+								onclick={() => deleteSubmission((selectedSubmission!).id)}
+							>{t('common.delete', 'Delete')}</Button>
 						{/if}
 					</div>
 				{/snippet}
@@ -1515,7 +1609,11 @@
 					{/if}
 				</div>
 				<div class="mt-6 flex justify-end gap-3">
-					<Button variant="outline" onclick={() => (showAddTriggerModal = false)}>{t('common.cancel', 'Cancel')}</Button>
+					<Button
+						variant="outline"
+						onclick={() => showAddTriggerModal = false}
+					>{t('common.cancel', 'Cancel')}</Button>
+
 					<Button onclick={addTrigger} disabled={savingTrigger}>
 						{savingTrigger ? t('common.creating', 'Adding...') : t('common.create', 'Create Trigger')}
 					</Button>
@@ -1529,9 +1627,19 @@
 <Modal bind:open={showDeleteModal} title={t('forms.deleteForm', 'Delete Form')} size="sm">
 	<p class="text-sm">{t('forms.deleteConfirm', 'Are you sure you want to delete this form? All submissions will be permanently lost.')}</p>
 	<div class="mt-6 flex justify-end gap-3">
-		<Button variant="outline" onclick={() => (showDeleteModal = false)}>{t('common.cancel', 'Cancel')}</Button>
-		<Button variant="destructive" onclick={deleteForm} disabled={deleting}>
-			{deleting ? t('common.deleting', 'Deleting...') : t('common.delete', 'Delete')}
+		<Button
+			variant="outline"
+			onclick={() => showDeleteModal = false}
+		>{t('common.cancel', 'Cancel')}</Button>
+
+		<Button
+			variant="destructive"
+			onclick={deleteForm}
+			disabled={deleting}
+		>
+			{deleting
+				? t('common.deleting', 'Deleting...')
+				: t('common.delete', 'Delete')}
 		</Button>
 	</div>
 </Modal>

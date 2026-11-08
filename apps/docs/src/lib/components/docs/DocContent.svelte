@@ -1,8 +1,8 @@
 <script lang="ts">
 	import HelpfulWidget from './HelpfulWidget.svelte';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
-	import type { TocHeading } from '$lib/tiptap/serialize';
-	import type { DocFeedback } from '$lib/types';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
+	import type { TocHeading } from '#lib/tiptap/serialize.js';
+	import type { DocFeedback } from '#lib/types/index.js';
 
 	interface Props {
 		/** Page ID for helpful-vote localStorage persistence. */

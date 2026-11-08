@@ -1,5 +1,5 @@
 <script module lang="ts">
-	import { api as moduleApi } from '$lib/api/client';
+	import { api as moduleApi } from '#lib/api/client.js';
 	type ApiGetResult<T> = Awaited<ReturnType<typeof moduleApi.get<T>>>;
 	// Deduplicate identical in-flight GETs across widget instances — two
 	// widgets of the same type resolving to the same URL share one request.
@@ -23,12 +23,12 @@
 	// props, since the data is already fetched SSR in +layout.server.ts.
 
 	import { Sun, Moon, Languages, Check, Bell, Mail, Share2, Calendar, Trophy, Hash, Star, Bookmark, BarChart3, MousePointerClick, UserCircle, FolderTree, MessageSquare, PlayCircle, GraduationCap, BookOpen, AtSign, Globe, Link, Rss, Users, TrendingUp, Activity } from 'lucide-svelte';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { t, i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { trackNextAction, dismissNextAction, getNextActions, claimNextAction, releaseNextAction, isNextActionClaimed, markNextActionPending, nextActionsViewer, nextActionsSurface } from '$lib/api/nextActions';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { trackNextAction, dismissNextAction, getNextActions, claimNextAction, releaseNextAction, isNextActionClaimed, markNextActionPending, nextActionsViewer, nextActionsSurface } from '#lib/api/nextActions.js';
 	import { page } from '$app/state';
-	import { Menu, MenuItem } from '$lib/components/ui';
+	import { Menu, MenuItem } from '#lib/components/ui/index.js';
 	import { untrack } from 'svelte';
 	import SearchLauncher from './SearchLauncher.svelte';
 	// Self-import enables configured_widget delegation: a sidebar-typed
@@ -37,13 +37,14 @@
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import NotificationCentre from './NotificationCentre.svelte';
-	import { AdSlot } from '$lib/components/ui';
-	import ProgressRing from '$lib/components/shell/ProgressRing.svelte';
-	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
+	import { AdSlot } from '#lib/components/ui/index.js';
+	import ProgressRing from '#lib/components/shell/ProgressRing.svelte';
+	import { sanitizeSidebarHtml, safeHref } from '#lib/utils/safeHtml.js';
 	import { routeFeatureGateVisible } from './routeFeatureFlags';
-	import { contentHref } from '$lib/utils/contentLink';
-	import { academyUrl } from '$lib/appOrigins';
-	import type { SessionUser, TrendingTag, SpaceSuggestion, AcademyEnrollment, CatalogTrack } from '$lib/types';
+	import { railGate } from './railVisibility.svelte';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import { academyUrl } from '#lib/appOrigins.js';
+	import type { SessionUser, TrendingTag, SpaceSuggestion, AcademyEnrollment, CatalogTrack } from '#lib/types/index.js';
 
 	interface SidebarWidget {
 		id: string;
@@ -205,6 +206,10 @@
 	// Each fetchable widget type has its own $state + $effect. Widgets without a
 	// backend endpoint render an empty state instead of a permanent "Loading…".
 
+	// Rail context: set when this renderer lives inside RightSidebar/LeftRail
+	// (display:none below 1280px); undefined for in-page renderers.
+	const gate = railGate();
+
 	interface FeaturedPost { id: string; title: string; slug: string; content_type?: string; }
 	interface SpaceItem { id: string; name: string; slug: string; member_count: number; }
 	interface SpaceTypeItem { id: string; name: string; slug: string; icon?: string | null; }
@@ -220,7 +225,7 @@
 	let spaces = $state<SpaceItem[]>([]);
 	let recentContent = $state<RecentContentItem[]>([]);
 	let suggestedContent = $state<RecentContentItem[]>([]);
-	let nextActions = $state<import('$lib/types').NextAction[]>([]);
+	let nextActions = $state<import('#lib/types/index.js').NextAction[]>([]);
 	let bookmarkFolders = $state<BookmarkFolderItem[]>([]);
 	// Match the dashboard bookmarks page: empty folders stay hidden — a
 	// folder only surfaces here once it holds at least one bookmark.
@@ -573,6 +578,11 @@
 	}
 
 	$effect(() => {
+		// Inside a rail that is display:none (<1280px) the widget can never be
+		// visible — skip the fetch until the viewport crosses up. The gate()
+		// read is tracked, so the effect re-runs on the hidden→visible flip;
+		// in-page renderers get no context and fetch unconditionally.
+		if (gate && !gate()) return;
 		const wt = widget.widget_type;
 		const currentUrl = page.url.pathname + page.url.search;
 		const currentDest = page.url.searchParams.get('dest') ?? '';

@@ -1,9 +1,9 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { loadContentArticle } from '$lib/server/content-article';
-import { contentHref } from '$lib/utils/contentLink';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { Scholarship } from '$lib/types';
+import { loadContentArticle } from '#lib/server/content-article.js';
+import { contentHref } from '#lib/utils/contentLink.js';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import type { Scholarship } from '#lib/types/index.js';
 
 /**
  * Guide single page at /guide/{slug} — the canonical detail route for

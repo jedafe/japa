@@ -12,8 +12,8 @@
 	// Ref: japaconnect-engineering/sections/28-wallet-credits.md —
 	// activity_rules registry (activity_key → point_value).
 	// Ref: AGENTS.md — never hardcode activity keys; always source from API.
-	import { apiFetch } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { apiFetch } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	type ActivityRule = {
 		id: string;

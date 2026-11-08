@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { Popover } from 'bits-ui';
 	import { Heart } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { getReactionTypes, type ReactionType } from '$lib/api/reactions';
-	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { getReactionTypes, type ReactionType } from '#lib/api/reactions.js';
+	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
 	import { page } from '$app/state';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 
 	interface ReactionCount {
 		reaction_key: string;

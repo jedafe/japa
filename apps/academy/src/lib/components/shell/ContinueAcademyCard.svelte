@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { formatDuration } from '$lib/format';
+	import { t } from '#lib/i18n/index.js';
+	import { formatDuration } from '#lib/format.js';
 	import { PlayCircle, Flame } from 'lucide-svelte';
-	import type { Enrollment, SessionUser } from '$lib/types';
-	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
+	import type { Enrollment, SessionUser } from '#lib/types/index.js';
+	import { enrollmentsStore } from '#lib/stores/enrollments.svelte.js';
 
 	interface Props {
 		user: SessionUser | null;

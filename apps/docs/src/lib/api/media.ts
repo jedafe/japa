@@ -3,7 +3,7 @@
 // /create composer. Mirrors the two-step presigned-URL upload and the stock
 // photo endpoints used by main; client-side only.
 
-import { env } from '$env/dynamic/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
 import { apiPost } from './client';
 import type {
@@ -13,7 +13,7 @@ import type {
 	StockSearchResult
 } from '@japaconnect/ui';
 
-const API_BASE = (env.PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
+const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 const JC_SURFACE = 'docs';
 
 async function apiGetAuthed<T>(path: string): Promise<T> {
@@ -80,7 +80,7 @@ export async function uploadMediaImage(
 		headers: { Accept: 'application/json', 'X-JC-Surface': JC_SURFACE }
 	});
 	const json = await res.json().catch(() => null);
-	const asset = res.ok ? ((json?.data ?? json) as MediaPickerItem | null) : null;
+	const asset = res.ok ? (json?.data ?? json) as MediaPickerItem | null : null;
 
 	// Fallback: initiateUpload carries no bucket, but the presigned URL
 	// embeds it as /seaweedfs/upload/{bucket}/{path} — a hardcoded 'media'
@@ -115,7 +115,7 @@ export async function updateMediaImage(
 export const stockApi: StockApi = {
 	listProviders: async () => {
 		const res = await apiGetAuthed<{ providers?: StockProvider[] } | StockProvider[]>('/stock/providers');
-		return Array.isArray(res) ? res : (res.providers ?? []);
+		return Array.isArray(res) ? res : res.providers ?? [];
 	},
 	search: async (params) => {
 		const qs = new URLSearchParams({ q: params.q });

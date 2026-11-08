@@ -1,13 +1,13 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	// Release-notes style changelog — shipped roadmap items grouped by the
 	// month of shipped_at. All data from GET /roadmap/changelog (Rule 16).
 	import { page } from '$app/state';
-	import { t, i18n, siteName} from '$lib/i18n';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { t, i18n, siteName} from '#lib/i18n/index.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { ArrowLeft, History, PackageOpen, TriangleAlert } from 'lucide-svelte';
-	import type { RoadmapChangelogItem } from '$lib/types';
+	import type { RoadmapChangelogItem } from '#lib/types/index.js';
 
 	let { data } = $props();
 	const items = $derived(data.items ?? []);

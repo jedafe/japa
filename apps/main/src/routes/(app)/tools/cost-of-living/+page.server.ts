@@ -1,7 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiPost, apiPut, ApiError } from '$lib/server/api';
-import { formatMoney } from '$lib/utils/currency';
+import { apiContext, apiGet, apiPost, apiPut, ApiError } from '#lib/server/api.js';
+import { formatMoney } from '#lib/utils/currency.js';
 import type {
 	ColCity,
 	ColCitiesListResponse,
@@ -12,7 +12,7 @@ import type {
 	ComparisonCreated,
 	ComparisonItem,
 	ComparisonDimension
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Cost of Living Calculator at /tools/cost-of-living (Section 72, ADR-072).

@@ -1,10 +1,10 @@
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { page } from '$app/state';
 import { untrack } from 'svelte';
-import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
-import { getAccessToken, seedAccessToken, clearAccessToken } from '$lib/api/token.svelte';
+import { getCsrfToken, refreshCsrfToken } from '#lib/api/csrf.svelte.js';
+import { getAccessToken, seedAccessToken, clearAccessToken } from '#lib/api/token.svelte.js';
 import { buildApiUrl } from '@japaconnect/api-url';
-import type { ListMeta } from '$lib/types';
+import type { ListMeta } from '#lib/types/index.js';
 
 /**
  * Browser-side API client for mutations and client-initiated reads.
@@ -111,7 +111,7 @@ async function refreshSession(): Promise<boolean> {
 			// The endpoint returns the freshly minted access token in the body —
 			// seed the in-memory store so retried requests carry the new Bearer.
 			try {
-				const body = (await res.clone().json()) as { access_token?: string };
+				const body = await res.clone().json() as { access_token?: string };
 				if (body?.access_token) seedAccessToken(body.access_token);
 			} catch {
 				// Body absent/unparseable — the cookie was still rotated; the
@@ -156,13 +156,13 @@ async function clientFetchRaw<T>(
 	// Opt-out for fire-and-forget calls: pass { 'x-silent-error': '1' } in
 	// headers to skip the global toast on failure. Client-side only — it is
 	// stripped before the request goes out.
-	const h = { ...((init.headers ?? {}) as Record<string, string>) };
+	const h = { ...(init.headers ?? {}) as Record<string, string> };
 	const silent = h['x-silent-error'] === '1' || h['X-Silent-Error'] === '1';
 	delete h['x-silent-error'];
 	delete h['X-Silent-Error'];
 	const baseHeaders: Record<string, string> = {
 		// For FormData, let the browser set the multipart boundary.
-		...(isFormData ? {} : { 'content-type': 'application/json' }),
+		...isFormData ? {} : { 'content-type': 'application/json' },
 		// Identify this surface for scoped feature-flag resolution.
 		'x-jc-surface': JC_SURFACE,
 		...h
@@ -199,7 +199,7 @@ async function clientFetchRaw<T>(
 		if (res.status === 401) {
 			let errBody: { error?: { code?: string } } | null = null;
 			try {
-				errBody = (await res.clone().json()) as { error?: { code?: string } };
+				errBody = await res.clone().json() as { error?: { code?: string } };
 			} catch {
 				errBody = null;
 			}
@@ -229,7 +229,7 @@ async function clientFetchRaw<T>(
 		if (res.status === 403 && MUTATING_METHODS.has(method)) {
 			let errBody: { error?: { code?: string } } | null = null;
 			try {
-				errBody = (await res.clone().json()) as { error?: { code?: string } };
+				errBody = await res.clone().json() as { error?: { code?: string } };
 			} catch {
 				errBody = null;
 			}
@@ -251,15 +251,24 @@ async function clientFetchRaw<T>(
 			if (contentType.includes('json') || contentType.includes('text') || contentType === '') {
 				try {
 					const text = await res.text();
-					body = text.trim() === '' ? null : (JSON.parse(text) as unknown);
+					body = text.trim() === '' ? null : JSON.parse(text) as unknown;
 				} catch {
 					body = null;
 				}
 			}
 		}
 
-		if (!res.ok || (body && typeof body === 'object' && 'error' in body)) {
-			const err = (body as { error?: { code?: string; message?: string; data?: Record<string, unknown> } } | null)?.error;
+		if (!res.ok || body && typeof body === 'object' && 'error' in body) {
+			const err = (body as 
+				{ 
+					error?: { 
+						code?: string;
+						message?: string;
+						data?: Record<string, unknown>
+					 }
+				 } |
+				null)?.error;
+
 			const code = err?.code ?? 'request_failed';
 			const message = err?.message ?? res.statusText;
 			if (
@@ -283,7 +292,7 @@ async function clientFetchRaw<T>(
 
 		return {
 			data: (body as { data: T } | null)?.data ?? null,
-			envelope: (body as Record<string, unknown> | null) ?? null,
+			envelope: body as Record<string, unknown> | null ?? null,
 			error: null,
 			status: res.status
 		};

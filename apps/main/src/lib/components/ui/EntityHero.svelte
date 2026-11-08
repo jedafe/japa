@@ -9,7 +9,7 @@
 	 * compose CTAs that share the panel's accent without re-declaring styles.
 	 */
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Check, ChevronRight, Share2 } from 'lucide-svelte';
 	import type { Snippet } from 'svelte';
 	import type { IconComponent } from './icons';

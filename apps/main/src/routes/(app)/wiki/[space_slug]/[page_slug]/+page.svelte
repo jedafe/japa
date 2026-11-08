@@ -3,29 +3,29 @@
 	import { page } from '$app/state';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { t, siteName, i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
-	import SuggestEdit from '$lib/components/wiki/SuggestEdit.svelte';
-	import WikiItemTables from '$lib/components/wiki/WikiItemTables.svelte';
-	import WikiHelpfulWidget from '$lib/components/wiki/WikiHelpfulWidget.svelte';
-	import WikiRollupPanel from '$lib/components/wiki/WikiRollupPanel.svelte';
-	import WikiDirectoryPanel from '$lib/components/wiki/WikiDirectoryPanel.svelte';
-	import InArticleAd from '$lib/components/ads/InArticleAd.svelte';
-	import NextActionInline from '$lib/components/shell/NextActionInline.svelte';
-	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
-	import WikiTabs from '$lib/components/wiki/WikiTabs.svelte';
-	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
-	import { searchEntities } from '$lib/api/jce';
-	import type { ResolvedItem } from '$lib/types/jce';
+	import { t, siteName, i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
+	import SuggestEdit from '#lib/components/wiki/SuggestEdit.svelte';
+	import WikiItemTables from '#lib/components/wiki/WikiItemTables.svelte';
+	import WikiHelpfulWidget from '#lib/components/wiki/WikiHelpfulWidget.svelte';
+	import WikiRollupPanel from '#lib/components/wiki/WikiRollupPanel.svelte';
+	import WikiDirectoryPanel from '#lib/components/wiki/WikiDirectoryPanel.svelte';
+	import InArticleAd from '#lib/components/ads/InArticleAd.svelte';
+	import NextActionInline from '#lib/components/shell/NextActionInline.svelte';
+	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
+	import WikiTabs from '#lib/components/wiki/WikiTabs.svelte';
+	import WikiSidebar from '#lib/components/wiki/WikiSidebar.svelte';
+	import { searchEntities } from '#lib/api/jce.js';
+	import type { ResolvedItem } from '#lib/types/jce.js';
 	import { BookOpen, Calculator, ChevronLeft, ChevronRight, Lock, Pencil, History, Send, Trash2 } from 'lucide-svelte';
-	import type { WikiCategory, WikiPage } from '$lib/types';
+	import type { WikiCategory, WikiPage } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
-	import { tiptapToHtml, tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
-	import { imgLightbox } from '$lib/lightbox.svelte';
+	import { sanitizeContentHtml, safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
+	import { tiptapToHtml, tiptapToText, type TipTapDoc } from '#lib/tiptap/serialize.js';
+	import { imgLightbox } from '#lib/lightbox.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -45,15 +45,15 @@
 	const spaceLevel = $derived(data.spaceDetail?.space?.level ?? '');
 	const crumbKind = $derived(
 		data.wikiScope === 'university'
-			? t('wiki.breadcrumb_university_guides', 'University Guides')
-			: data.wikiScope === 'attraction'
-				? t('wiki.breadcrumb_attractions', 'Attractions')
-				: spaceLevel === 'region'
-					? ''
-					: spaceLevel === 'city'
-						? t('wiki.breadcrumb_city_guides', 'City Guides')
-						: spaceLevel === 'state'
-							? t('wiki.breadcrumb_state_guides', 'State Guides')
+		? t('wiki.breadcrumb_university_guides', 'University Guides')
+		: data.wikiScope === 'attraction'
+			? t('wiki.breadcrumb_attractions', 'Attractions')
+			: spaceLevel === 'region'
+				? ''
+				: spaceLevel === 'city'
+					? t('wiki.breadcrumb_city_guides', 'City Guides')
+					: spaceLevel === 'state'
+						? t('wiki.breadcrumb_state_guides', 'State Guides')
 							: t('wiki.breadcrumb_country_guides', 'Country Guides')
 	);
 
@@ -101,6 +101,7 @@
 	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
 	let bypassGuard = false;
 	beforeNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
 		if (!editing || !(editDirty || summary.trim()) || bypassGuard || nav.type === 'leave') return;
 		nav.cancel();
 		const target = nav.to?.url;
@@ -242,11 +243,8 @@
 	// node (the resolved list holds no per-node keys), bypasses lock state,
 	// and publishes directly without review.
 	const isSuperAdmin = $derived(data.userPermissions?.includes('*') === true);
-	const canEdit = $derived(
-		!!data.page &&
-			data.authed &&
-			(isSuperAdmin || (!data.page.is_locked && data.userPermissions?.includes('wiki.edit') === true))
-	);
+
+	const canEdit = $derived(!!data.page && data.authed && (isSuperAdmin || !data.page.is_locked && data.userPermissions?.includes('wiki.edit') === true));
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
 	const minReputation = $derived(Number(data.siteSettings?.['wiki.min_reputation_to_edit'] ?? 100));
 
@@ -363,10 +361,7 @@
 			return;
 		}
 		childEntitiesLoading = true;
-		searchEntities(type, '', { geo_space_id: spaceId }, { pageSize: 50 })
-			.then((items) => (childEntities = items))
-			.catch(() => (childEntities = []))
-			.finally(() => (childEntitiesLoading = false));
+		searchEntities(type, '', { geo_space_id: spaceId }, { pageSize: 50 }).then((items) => childEntities = items).catch(() => childEntities = []).finally(() => childEntitiesLoading = false);
 	});
 
 	// This component instance is reused across /wiki/{space}/{page}
@@ -402,7 +397,7 @@
 		<meta name="twitter:card" content="summary_large_image" />
 	{/if}
 	<link rel="canonical" href={canonicalUrl} />
-	{#if (data.page && !data.page.indexable) || data.loadError || data.removed}
+	{#if data.page && !data.page.indexable || data.loadError || data.removed}
 		<meta
 			name="robots"
 			content={data.loadError || data.removed ? 'noindex,nofollow' : 'noindex,follow'}
@@ -417,12 +412,12 @@
 <SetSidebar>
 	<WikiSidebar
 		spaceSlug={data.spaceSlug}
-		{spaceName}
-		{spaceId}
-		{spaceLevel}
+		spaceName={spaceName}
+		spaceId={spaceId}
+		spaceLevel={spaceLevel}
 		pages={sidebarPages}
 		currentPageSlug={data.pageSlug}
-		{toc}
+		toc={toc}
 		wikiOnly={data.spaceDetail?.wiki_only ?? false}
 	/>
 </SetSidebar>
@@ -536,7 +531,7 @@
 					</a>
 					<button
 						type="button"
-						onclick={() => (submitted = false)}
+						onclick={() => submitted = false}
 						class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 					>
 						{t('wiki.edit', 'Edit again')}
@@ -648,9 +643,9 @@
 							<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] focus-within:border-[var(--color-primary)]">
 								<PostEditor
 									html={editBodyHtml}
-									onedit={() => (editDirty = true)}
-									onhtml={(v) => (editBodyHtml = v)}
-									onjson={(v) => (editBodyJson = v)}
+									onedit={() => editDirty = true}
+									onhtml={(v) => editBodyHtml = v}
+									onjson={(v) => editBodyJson = v}
 								/>
 							</div>
 						</div>
@@ -663,7 +658,7 @@
 								type="text"
 								value={summary}
 								placeholder={t('wiki.edit_summary_placeholder', 'Briefly describe your changes')}
-								oninput={(e) => (summary = e.currentTarget.value)}
+								oninput={(e) => summary = e.currentTarget.value}
 								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 							/>
 						</div>
@@ -701,7 +696,7 @@
 					{#if htmlContent}
 						<div class="prose max-w-none text-sm leading-relaxed text-[var(--color-text)]" use:imgLightbox>
 							<NextActionInline />
-							<InArticleAd html={htmlContent} {spaceId} />
+							<InArticleAd html={htmlContent} spaceId={spaceId} />
 						</div>
 					{:else if !data.page.directory}
 						<!-- Directory pages have no prose by design — the child
@@ -798,7 +793,7 @@
 					     "Was this page helpful?" card's trailing slot; on lazy pages
 					     (no wiki_pages row to vote on) the card is absent and the
 					     affordance renders standalone. -->
-					{#if data.page.helpful !== undefined || (structuredEditsOn && panelSpaceId)}
+					{#if data.page.helpful !== undefined || structuredEditsOn && panelSpaceId}
 						<div class="mt-8">
 							{#if data.page.helpful !== undefined}
 								<WikiHelpfulWidget

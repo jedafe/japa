@@ -7,11 +7,11 @@
 	 * backend validates against the same setting.
 	 */
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { reportContent, reportComment, reportSpace, reportUser, reportSource, reportDMMessage, reportForumReply } from '$lib/api/hub';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { t } from '#lib/i18n/index.js';
+	import { reportContent, reportComment, reportSpace, reportUser, reportSource, reportDMMessage, reportForumReply } from '#lib/api/hub.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 	import { Flag, Loader2, AlertCircle } from 'lucide-svelte';
-	import { AutocompleteSelect, Modal } from '$lib/components/ui';
+	import { AutocompleteSelect, Modal } from '#lib/components/ui/index.js';
 
 	interface Props {
 		open?: boolean;

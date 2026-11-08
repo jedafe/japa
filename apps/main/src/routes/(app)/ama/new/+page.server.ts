@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/88-ask-an-expat.md
 import type { PageServerLoad } from './$types';
 import { redirect, error } from '@sveltejs/kit';
-import { apiContext, apiList } from '$lib/server/api';
-import type { GeoCountry } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { GeoCountry } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();

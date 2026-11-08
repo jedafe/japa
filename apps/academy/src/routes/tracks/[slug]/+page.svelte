@@ -4,20 +4,20 @@
 	// instructor card · enroll CTA · Course JSON-LD.
 	// Enrollment is CSR-only (ADR-060 SSR/CSR boundary).
 	import { Tabs, Accordion } from 'bits-ui';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { goto } from '$app/navigation';
-	import LevelBadge from '$lib/components/academy/LevelBadge.svelte';
-	import StarRating from '$lib/components/academy/StarRating.svelte';
-	import CheckoutModal from '$lib/components/academy/CheckoutModal.svelte';
-	import { LoadingSkeleton } from '$lib/components/ui';
-	import { formatDuration, formatCount, formatPriceKobo, isFreeForUser } from '$lib/format';
-	import { loginUrl, ACADEMY_ORIGIN } from '$lib/appOrigins';
+	import LevelBadge from '#lib/components/academy/LevelBadge.svelte';
+	import StarRating from '#lib/components/academy/StarRating.svelte';
+	import CheckoutModal from '#lib/components/academy/CheckoutModal.svelte';
+	import { LoadingSkeleton } from '#lib/components/ui/index.js';
+	import { formatDuration, formatCount, formatPriceKobo, isFreeForUser } from '#lib/format.js';
+	import { loginUrl, ACADEMY_ORIGIN } from '#lib/appOrigins.js';
 	import { Star, Users, Clock, PlayCircle, CheckCircle, ChevronDown, Lock, Bookmark as BookmarkIcon, Loader2 } from 'lucide-svelte';
-	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
+	import { enrollmentsStore } from '#lib/stores/enrollments.svelte.js';
 	import type { PageData } from './$types';
-	import type { Bookmark, Enrollment, TrackReview, ReviewAggregate } from '$lib/types';
-	import { safeJsonLd } from '$lib/seo';
+	import type { Bookmark, Enrollment, TrackReview, ReviewAggregate } from '#lib/types/index.js';
+	import { safeJsonLd } from '#lib/seo/index.js';
 
 	let { data }: { data: PageData } = $props();
 	const track = $derived(data.track);

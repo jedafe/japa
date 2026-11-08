@@ -1,5 +1,5 @@
-import { browser } from '$app/environment';
-import { apiFetch } from '$lib/api/client';
+import { browser } from '$app/env';
+import { apiFetch } from '#lib/api/client.js';
 
 export interface AdminNotification {
 	id: string;
@@ -93,14 +93,14 @@ export function addNotification(notification: Omit<AdminNotification, 'id' | 're
 }
 
 export async function markRead(id: string) {
-	_notifications = _notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
+	_notifications = _notifications.map((n) => n.id === id ? { ...n, read: true } : n);
 	// Local notifications (WS events, permission warnings) have no server row.
 	if (id.startsWith('local-')) return;
 	try {
 		const res = await apiFetch(`/me/notifications/${id}/read`, { method: 'POST' });
 		if (res.error) {
 			// Roll back the optimistic read on failure.
-			_notifications = _notifications.map((n) => (n.id === id ? { ...n, read: false } : n));
+			_notifications = _notifications.map((n) => n.id === id ? { ...n, read: false } : n);
 		}
 	} catch {
 		// best effort

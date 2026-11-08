@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Tabs } from 'bits-ui';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import CodeBlock from './CodeBlock.svelte';
 	import MethodBadge from './MethodBadge.svelte';
 

@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { Badge, BadgeCollection } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { Badge, BadgeCollection } from '#lib/types/index.js';
 
 /**
  * Achievement centre at /badges (gamification v2 catalogue).

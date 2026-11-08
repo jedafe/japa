@@ -1,13 +1,13 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md — BUG-016/BUG-019
 	import { ArrowLeft, BellOff, TriangleAlert, Pin } from 'lucide-svelte';
-	import { t, i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { relativeTime } from '$lib/feed/time';
-	import { scamTypeLabel } from '$lib/enumOptions';
-	import { EmptyState } from '$lib/components/ui';
-	import type { ScamReport, ScamType, ScamStatus, ScamAlertSubscription } from '$lib/types';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { scamTypeLabel } from '#lib/enumOptions.js';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import type { ScamReport, ScamType, ScamStatus, ScamAlertSubscription } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	import { untrack } from 'svelte';

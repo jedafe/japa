@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { api } from '$lib/api';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import SearchInput from '$lib/components/ui/SearchInput.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+	import { api } from '#lib/api.js';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import SearchInput from '#lib/components/ui/SearchInput.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
 	import { Key, Plus, Copy, Check } from 'lucide-svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import Tabs from '$lib/components/ui/Tabs.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
-	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import Tabs from '#lib/components/ui/Tabs.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '#lib/api/types.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 
 	interface AdminApiKey {
 		id: string;

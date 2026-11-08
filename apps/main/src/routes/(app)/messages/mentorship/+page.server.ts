@@ -2,7 +2,7 @@
 // mentorship requests are user-provider service_bookings rows)
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { loadBookingsSurface } from '$lib/server/serviceBookings';
+import { loadBookingsSurface } from '#lib/server/serviceBookings.js';
 
 /**
  * Mentorship inbox at /messages/mentorship — auth-gated on

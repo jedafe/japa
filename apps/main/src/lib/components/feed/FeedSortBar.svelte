@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import type { FeedTab, SortValue } from '$lib/feed/endpoint';
+	import { t } from '#lib/i18n/index.js';
+	import type { FeedTab, SortValue } from '#lib/feed/endpoint.js';
 
 	interface Props {
 		tab: FeedTab;
@@ -23,7 +23,7 @@
 	// Preserve other query params (e.g. ?geo=) when switching sort.
 	// Only set ?tab= on the home route (/); /explore has its own route.
 	function hrefFor(value: SortValue): string {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (url.pathname === '/') {
 			url.searchParams.set('tab', tab);
 		}

@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
 // Shared display helpers for the /messages/bookings + /messages/mentorship
 // panes — status vocabulary, counterpart resolution, date formatting.
-import { i18n, t } from '$lib/i18n';
-import type { ServiceBooking } from '$lib/types';
+import { i18n, t } from '#lib/i18n/index.js';
+import type { ServiceBooking } from '#lib/types/index.js';
 
 /** Display status — mentorship-kind rows carry the legacy
  *  mentorship_connections vocabulary (confirmed→active, fulfilled→completed)

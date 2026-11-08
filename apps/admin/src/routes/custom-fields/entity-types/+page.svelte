@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /custom-fields/entity-types — migrated to the EntityPage scaffold.
 	// Simple CRUD entity using declarative `fields` (EntityForm). System entity
 	// types are protected from edit/delete via `show()` predicates; bulk delete
 	// is disabled when any selected row is a system type.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { entityTypesAdminApi, type CustomFieldEntityType } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { entityTypesAdminApi, type CustomFieldEntityType } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Eye, Pencil, Trash2 } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 
 	// ── Bulk delete ───── EntityPage auto-reloads + clears selection after a bulk action handler completes.
 	let entityController = $state<EntityPageController | undefined>(undefined);

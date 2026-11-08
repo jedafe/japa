@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { ThumbsUp, ThumbsDown, LogIn } from 'lucide-svelte';
-	import { t, i18n } from '$lib/i18n';
-	import { getCookie } from '$lib/api/client';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { getCookie } from '#lib/api/client.js';
 	import { page } from '$app/state';
-	import { env } from '$env/dynamic/public';
-	import type { DocFeedback } from '$lib/types';
+	import { PUBLIC_MAIN_ORIGIN } from '$app/env/public';
+	import type { DocFeedback } from '#lib/types/index.js';
 
 	interface Props {
 		/** Page ID — kept for the keyed reset effect. */
@@ -44,10 +44,9 @@
 	// /docs/{audience}/{slug}/feedback POST requires a session (RequireAuth);
 	// guests get a sign-in link instead of vote buttons that can only 401.
 	const user = $derived(page.data?.user ?? null);
-	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
-	const loginHref = $derived(
-		`${mainOrigin}/login?redirect=${encodeURIComponent(page.url.href)}`
-	);
+
+	const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+	const loginHref = $derived(`${mainOrigin}/login?redirect=${encodeURIComponent(page.url.href)}`);
 
 	// Re-sync from fresh server props on client-side navigation (same route,
 	// different params) — keyed on pageId so the previous page's vote doesn't
@@ -84,7 +83,7 @@
 				const json = await res.json().catch(() => ({}));
 				throw new Error(json?.error?.message ?? json?.message ?? 'Feedback failed');
 			}
-			const json = (await res.json()) as { data?: DocFeedback };
+			const json = await res.json() as { data?: DocFeedback };
 			if (json.data) {
 				// A retracted vote comes back as my_vote: null.
 				vote = json.data.my_vote ?? null;

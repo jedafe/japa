@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { loadBookingsSurface } from '$lib/server/serviceBookings';
-import { bookingsInboxEnabled } from '$lib/features';
+import { loadBookingsSurface } from '#lib/server/serviceBookings.js';
+import { bookingsInboxEnabled } from '#lib/features.js';
 
 /**
  * Service bookings inbox at /messages/bookings — auth-gated. NOT gated on

@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { CurrencyInfo } from '$lib/utils/currency';
-import type { Menu } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { CurrencyInfo } from '#lib/utils/currency.js';
+import type { Menu } from '#lib/types/index.js';
 
 /** Onboarding status (Section 09) — only the tour dismissals are read. */
 interface OnboardingStatusLite {

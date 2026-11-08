@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { ServerLoadEvent } from '@sveltejs/kit';
-import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, ApiError } from '#lib/server/api.js';
 import {
 	normalizeLegacyBlocks,
 	resolveGeoCopy,
@@ -9,8 +9,8 @@ import {
 	containsGuestBlocks,
 	type Block,
 } from '@japaconnect/landing-blocks';
-import { buildGuestHome, emptyGuestHome } from '$lib/server/guest-home';
-import type { GeoContext, GeoCountry, PageBuilderPage } from '$lib/types';
+import { buildGuestHome, emptyGuestHome } from '#lib/server/guest-home.js';
+import type { GeoContext, GeoCountry, PageBuilderPage } from '#lib/types/index.js';
 
 /**
  * Shared server loader for published Page Builder pages. Used by both

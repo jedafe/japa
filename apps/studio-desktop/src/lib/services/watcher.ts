@@ -4,11 +4,11 @@
  */
 
 import { watch } from '@tauri-apps/plugin-fs';
-import { scanProject } from '$lib/services/file-scanner';
-import { publishWorker, shouldAutoPublish } from '$lib/services/publisher';
-import { queueStore } from '$lib/stores/queue.svelte';
-import { syncLogStore } from '$lib/stores/sync-log.svelte';
-import { ensureSettingsLoaded, loadSettings, type StudioSettings } from '$lib/services/settings';
+import { scanProject } from '#lib/services/file-scanner.js';
+import { publishWorker, shouldAutoPublish } from '#lib/services/publisher.js';
+import { queueStore } from '#lib/stores/queue.svelte.js';
+import { syncLogStore } from '#lib/stores/sync-log.svelte.js';
+import { ensureSettingsLoaded, loadSettings, type StudioSettings } from '#lib/services/settings.js';
 
 export interface WatcherHandle {
 	stop: () => void;

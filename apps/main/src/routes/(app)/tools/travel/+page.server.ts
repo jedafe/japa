@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/67-travel-search.md (ADR-085)
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { CatalogOption } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { CatalogOption } from '#lib/types/index.js';
 
 /**
  * Travel Search at /tools/travel (Section 67, ADR-085).

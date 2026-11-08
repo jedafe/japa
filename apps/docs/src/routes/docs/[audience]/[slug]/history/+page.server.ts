@@ -1,11 +1,11 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiDelete, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
-import { renderDocContent } from '$lib/tiptap/serialize';
-import { buildMeta } from '$lib/seo/meta';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
-import { AUDIENCE_LABEL_KEY } from '$lib/types';
-import type { DocAudience, DocPage, DocRevision } from '$lib/types';
+import { apiContext, apiDelete, apiGet, apiList, apiPost, ApiError } from '#lib/server/api.js';
+import { renderDocContent } from '#lib/tiptap/serialize.js';
+import { buildMeta } from '#lib/seo/meta.js';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
+import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
+import type { DocAudience, DocPage, DocRevision } from '#lib/types/index.js';
 
 /**
  * Revision history for a doc page (§44 amendment 5). Editor-only surface —

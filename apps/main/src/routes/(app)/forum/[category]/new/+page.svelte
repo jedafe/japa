@@ -1,15 +1,15 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { ArrowLeft, Send, BarChart3, Plus, Trash2 } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import type { PageData, ActionData } from './$types';
-	import LazyCommentEditor from '$lib/components/comments/LazyCommentEditor.svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import TagInput from '$lib/components/create/TagInput.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import LazyCommentEditor from '#lib/components/comments/LazyCommentEditor.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import TagInput from '#lib/components/create/TagInput.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 

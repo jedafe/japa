@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { api, apiList } from '$lib/api';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import SearchInput from '$lib/components/ui/SearchInput.svelte';
-	import AccessDenied from '$lib/components/AccessDenied.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasAnyPermission } from '$lib/stores/auth.svelte';
-	import { escapeHtml } from '$lib/utils';
+	import { api, apiList } from '#lib/api.js';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import SearchInput from '#lib/components/ui/SearchInput.svelte';
+	import AccessDenied from '#lib/components/AccessDenied.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '#lib/api/types.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasAnyPermission } from '#lib/stores/auth.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
 	import { goto } from '$app/navigation';
 	import { page as pageStore } from '$app/state';
 	import { RefreshCw, Eye, CheckCircle2, XCircle, ClipboardList } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	// The review record shape mirrors the IntelRecord row returned by
 	// /api/v1/intel/review/queue. JSON blob fields are kept as-is.

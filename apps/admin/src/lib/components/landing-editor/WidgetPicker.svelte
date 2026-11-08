@@ -3,9 +3,9 @@
 	// fetcher that queries /admin/widgets. Used by the Page Builder's widget
 	// block content editor so the user can search for a widget by name instead
 	// of pasting a UUID.
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { apiRaw } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import { apiRaw } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	interface WidgetListItem {
 		id: string;

@@ -12,19 +12,19 @@
 	 */
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Menu } from '$lib/components/ui';
+	import { Menu } from '#lib/components/ui/index.js';
 	import { Bell, CheckCheck, BellOff, Loader2, X } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { realtime } from '$lib/realtime/realtime.svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { realtime } from '#lib/realtime/realtime.svelte.js';
+	import { EmptyState } from '#lib/components/ui/index.js';
 	import {
 		NOTIFICATION_FILTER_TABS,
 		notificationFilterFor,
 		notificationIconFor,
 		type NotificationFilterTab
-	} from '$lib/components/notifications/notificationType';
-	import type { Notification } from '$lib/types';
+	} from '#lib/components/notifications/notificationType.js';
+	import type { Notification } from '#lib/types/index.js';
 
 	interface Props {
 		/** Anchor side for the dropdown panel (desktop right, mobile can flip). */

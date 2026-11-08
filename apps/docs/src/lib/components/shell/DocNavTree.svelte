@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { PanelLeftClose, PanelLeft, ChevronDown, BookOpen, Plus, House, ArrowRight, Compass, FileText, Rocket, Star, User, X } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { theme } from '$lib/stores/theme.svelte';
-	import type { DocNavTree as DocNavTreeType, DocAudience, DocNavItem } from '$lib/types';
-	import { AUDIENCE_LABEL_KEY } from '$lib/types';
-	import { AUDIENCE_ICON } from '$lib/audience-meta';
-	import { groupNavItems } from '$lib/docs/grouping';
-	import { collectCategories, categoryHref, parsePinnedPages, resolvePinnedPages } from '$lib/docs/catalog';
-	import { categoryIcon } from '$lib/category-meta';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import type { DocNavTree as DocNavTreeType, DocAudience, DocNavItem } from '#lib/types/index.js';
+	import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
+	import { AUDIENCE_ICON } from '#lib/audience-meta.js';
+	import { groupNavItems } from '#lib/docs/grouping.js';
+	import { collectCategories, categoryHref, parsePinnedPages, resolvePinnedPages } from '#lib/docs/catalog.js';
+	import { categoryIcon } from '#lib/category-meta.js';
 
 	interface Props {
 		nav: DocNavTreeType[];

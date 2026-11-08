@@ -1,4 +1,4 @@
-import type { HandleClientError } from '@sveltejs/kit';
+import type { HandleClientError } from '@sveltejs/kit/hooks';
 
 // Unexpected client-side errors render the nearest +error.svelte with this
 // message instead of a bare exception. Dependency-free (no Sentry here).

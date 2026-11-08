@@ -1,6 +1,6 @@
-import { apiGet, apiList, ApiError, type ApiContext } from '$lib/server/api';
-import type { MeProfile, PrivacySettings, AffiliateEarnings, GeoCountry, NotificationPreference, MentorProfile, Payment, DeviceInfo } from '$lib/types';
-import type { AIPrivacyStatus } from '$lib/ai/agentTypes';
+import { apiGet, apiList, ApiError, type ApiContext } from '#lib/server/api.js';
+import type { MeProfile, PrivacySettings, AffiliateEarnings, GeoCountry, NotificationPreference, MentorProfile, Payment, DeviceInfo } from '#lib/types/index.js';
+import type { AIPrivacyStatus } from '#lib/ai/agentTypes.js';
 
 /**
  * Server-only loader registry — one entry per settings section that needs

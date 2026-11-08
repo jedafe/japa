@@ -2,13 +2,13 @@
 // Server-only auth helpers: cookie management + proxy functions that call the
 // backend auth endpoints and set the jc_token cookie. Used by both the (auth)
 // route form actions and the /api/auth/* proxy endpoints (for the modal).
+import { dev } from '$app/env';
 
-import { dev } from '$app/environment';
-import { env } from '$env/dynamic/private';
-import { env as publicEnv } from '$env/dynamic/public';
-import { API_BASE, ApiError, apiContext, JC_SURFACE, type ApiContext } from '$lib/server/api';
+import { PRIVATE_COOKIE_SECURE, PRIVATE_API_PUBLIC_ORIGIN } from '$app/env/private';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
+import { API_BASE, ApiError, apiContext, JC_SURFACE, type ApiContext } from '#lib/server/api.js';
 import { buildApiUrl } from '@japaconnect/api-url';
-import type { AuthSession, AuthTotpChallenge, AuthUser, OnboardingStatus } from '$lib/types';
+import type { AuthSession, AuthTotpChallenge, AuthUser, OnboardingStatus } from '#lib/types/index.js';
 import type { RequestEvent } from '@sveltejs/kit';
 
 /** Access token cookie name — read by hooks.server.ts to resolve the session. */
@@ -27,8 +27,8 @@ const REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60;
  * PRIVATE_COOKIE_SECURE.
  */
 function cookieSecure(): boolean {
-	if (env.PRIVATE_COOKIE_SECURE) {
-		return env.PRIVATE_COOKIE_SECURE === 'true';
+	if (PRIVATE_COOKIE_SECURE) {
+		return PRIVATE_COOKIE_SECURE === 'true';
 	}
 	return !dev;
 }
@@ -42,7 +42,7 @@ function cookieSecure(): boolean {
  */
 const SESSION_COOKIE_DOMAIN = (() => {
 	try {
-		const apiHost = new URL(publicEnv.PUBLIC_JC_API_URL ?? '').hostname;
+		const apiHost = new URL(PUBLIC_JC_API_URL ?? '').hostname;
 		return apiHost.startsWith('api.') ? `.${apiHost.slice(4)}` : '';
 	} catch {
 		return '';
@@ -63,7 +63,7 @@ export function hasPerm(perms: string[] | null | undefined, node: string): boole
 export function setSessionCookie(event: RequestEvent, accessToken: string): void {
 	event.cookies.set(SESSION_COOKIE, accessToken, {
 		path: '/',
-		...(SESSION_COOKIE_DOMAIN ? { domain: SESSION_COOKIE_DOMAIN } : {}),
+		...SESSION_COOKIE_DOMAIN ? { domain: SESSION_COOKIE_DOMAIN } : {},
 		httpOnly: true,
 		secure: cookieSecure(),
 		sameSite: 'lax',
@@ -78,7 +78,7 @@ export function setSessionCookie(event: RequestEvent, accessToken: string): void
 export function setRefreshCookie(event: RequestEvent, refreshToken: string): void {
 	event.cookies.set(REFRESH_COOKIE, refreshToken, {
 		path: '/',
-		...(SESSION_COOKIE_DOMAIN ? { domain: SESSION_COOKIE_DOMAIN } : {}),
+		...SESSION_COOKIE_DOMAIN ? { domain: SESSION_COOKIE_DOMAIN } : {},
 		httpOnly: true,
 		secure: cookieSecure(),
 		sameSite: 'strict',
@@ -105,7 +105,7 @@ function extractRefreshToken(res: Response): string | null {
 	for (const c of cookies) {
 		// Parse "jc_refresh=VALUE; Path=/api/v1; ..."
 		if (c.startsWith('jc_refresh=')) {
-			const value = c.split(';')[0].slice('jc_refresh='.length);
+			const value = c.split(';')[0].slice(('jc_refresh=').length);
 			return value || null;
 		}
 	}
@@ -241,7 +241,7 @@ export async function getOnboardingStatus(ctx: ApiContext): Promise<OnboardingSt
 		const res = await fetch(buildApiUrl('/onboarding/status', API_BASE), {
 			headers: {
 				...authHeaders(ctx, { json: false }),
-				...(ctx.token ? { authorization: `Bearer ${ctx.token}` } : {})
+				...ctx.token ? { authorization: `Bearer ${ctx.token}` } : {}
 			}
 		});
 		if (!res.ok) return null;
@@ -487,7 +487,7 @@ export function resolvePostLoginRedirect(
  * backend's JC_MCP_PUBLIC_URL origin; it defaults to API_BASE for the common
  * single-host/dev case.
  */
-const API_PUBLIC_ORIGIN = env.PRIVATE_API_PUBLIC_ORIGIN ?? API_BASE;
+const API_PUBLIC_ORIGIN = PRIVATE_API_PUBLIC_ORIGIN ?? API_BASE;
 
 /**
  * Sanitize a user-supplied post-login redirect target. Allowed: relative

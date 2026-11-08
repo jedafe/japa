@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /media — migrated to the EntityPage scaffold.
 	// Moderation entity: read-only list (no create from EntityPage) with state actions
 	// (approve/reject/quarantine) and a page-local upload button + modal preserved from the legacy page.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { mediaAdminApi, api, apiFetch, apiRaw, stockAdminApi, adminCatalogApi, type StockPhoto, type StockProviderAdmin, type CatalogOption } from '$lib/api';
-	import { t, locale } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { mediaAdminApi, api, apiFetch, apiRaw, stockAdminApi, adminCatalogApi, type StockPhoto, type StockProviderAdmin, type CatalogOption } from '#lib/api.js';
+	import { t, locale } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, CheckCircle, XCircle, Shield, Trash2, Upload, Image as ImageIcon, FileText, Film, Music, Search, Download, Loader2, Check, RefreshCw, ZoomIn, ZoomOut, Maximize, Pencil, Save, X } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
-	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
+	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
+	import { convertImageToModernFormat } from '#lib/utils/imageConvert.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type MediaItem = {
 		id: string;

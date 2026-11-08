@@ -5,12 +5,12 @@
 	// (configured by an admin in the Sidebar Management System). If no slug is
 	// configured, falls back to the first track from GET /academy/tracks so the
 	// widget is never stuck at "Loading track…".
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { BookOpen, Clock, BarChart3 } from 'lucide-svelte';
-	import LevelBadge from '$lib/components/academy/LevelBadge.svelte';
-	import { formatDuration } from '$lib/format';
-	import type { TrackSummary } from '$lib/types';
+	import LevelBadge from '#lib/components/academy/LevelBadge.svelte';
+	import { formatDuration } from '#lib/format.js';
+	import type { TrackSummary } from '#lib/types/index.js';
 
 	interface Props {
 		title?: string;

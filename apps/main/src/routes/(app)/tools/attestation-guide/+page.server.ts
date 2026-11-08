@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { AttestationPathwayWithAi, GeoCountry } from '$lib/types';
+import { apiContext, apiList, ApiError } from '#lib/server/api.js';
+import type { AttestationPathwayWithAi, GeoCountry } from '#lib/types/index.js';
 
 /**
  * Attestation Guide — §97, ADR-088.

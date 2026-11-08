@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { DEFAULT_VIEW } from '$lib/components/hub/dashboard/dashboardViews';
+import { DEFAULT_VIEW } from '#lib/components/hub/dashboard/dashboardViews.js';
 
 // /dashboard redirects to the default view. SvelteKit 2: redirect() throws.
 export const load = () => {

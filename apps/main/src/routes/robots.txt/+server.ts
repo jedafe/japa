@@ -14,14 +14,22 @@
 //
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
-import { API_BASE, JC_SURFACE } from '$lib/server/api';
+import { PUBLIC_JC_ENV, JC_ENV } from '$app/env/private';
+import { API_BASE, JC_SURFACE } from '#lib/server/api.js';
 
 // Fails open: only explicitly non-production environments are blocked, so a
 // misconfigured production deploy cannot accidentally deindex itself.
-const NON_PROD_ENVS = new Set(['development', 'dev', 'staging', 'stage', 'test', 'preview', 'local']);
-const blocksIndexing = NON_PROD_ENVS.has((env.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase());
+const NON_PROD_ENVS = new Set([
+	'development',
+	'dev',
+	'staging',
+	'stage',
+	'test',
+	'preview',
+	'local'
+]);
 
+const blocksIndexing = NON_PROD_ENVS.has((PUBLIC_JC_ENV ?? JC_ENV ?? '').toLowerCase());
 const DISALLOW_ALL = 'User-agent: *\nDisallow: /\n';
 
 // Mirrors bots.defaultDisallowPaths in internal/bots/robots.go — keep in sync.

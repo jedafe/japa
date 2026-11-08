@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { MutualAidPost } from '$lib/types';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import type { MutualAidPost } from '#lib/types/index.js';
 
 /**
  * Single mutual aid post at /mutual-aid/[id] — rendered inside the app shell.

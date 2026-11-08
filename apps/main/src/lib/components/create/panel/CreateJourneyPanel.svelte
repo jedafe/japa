@@ -5,11 +5,11 @@
 	// journey this CONTENT covers — never auto-filled from the author's own
 	// context (§14 Global Template Literals: an author can write about
 	// destinations unrelated to their own journey).
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { getJourneyOptions } from '$lib/api/journey';
-	import type { JourneyOptions, JourneyOption } from '$lib/api/journey';
-	import type { GeoCountry } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { getJourneyOptions } from '#lib/api/journey.js';
+	import type { JourneyOptions, JourneyOption } from '#lib/api/journey.js';
+	import type { GeoCountry } from '#lib/types/index.js';
 	import Autocomplete from '../Autocomplete.svelte';
 	import type { AutocompleteItem } from '../Autocomplete.svelte';
 

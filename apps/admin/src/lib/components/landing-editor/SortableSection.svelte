@@ -3,7 +3,7 @@
 	import { createSortable } from '@dnd-kit/svelte/sortable';
 	import { GripVertical, Trash2 } from 'lucide-svelte';
 	import type { Component } from 'svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import type { Block, BlockMeta } from '@japaconnect/landing-blocks';
 
 	let {

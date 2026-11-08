@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Modal } from '$lib/components/ui';
-	import { t } from '$lib/i18n';
-	import { deleteAccount } from '$lib/api/hub';
+	import { Modal } from '#lib/components/ui/index.js';
+	import { t } from '#lib/i18n/index.js';
+	import { deleteAccount } from '#lib/api/hub.js';
 	import { goto } from '$app/navigation';
 	import { matchesConfirmation } from '../danger';
 

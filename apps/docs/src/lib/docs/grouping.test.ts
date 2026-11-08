@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { groupByCategory } from './grouping';
-import type { DocNavItem } from '$lib/types';
+import type { DocNavItem } from '#lib/types/index.js';
 
 function item(id: string, category?: string, subcategory?: string): DocNavItem {
 	return {

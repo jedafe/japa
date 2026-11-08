@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent } from "$lib/components/ui/card";
-	import { Tabs } from "$lib/components/ui/tabs";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import type { ActionItem, BulkAction } from "$lib/components/ui/data-table";
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Card, CardContent } from "#lib/components/ui/card/index.js";
+	import { Tabs } from "#lib/components/ui/tabs/index.js";
+	import { DataTable } from "#lib/components/ui/data-table/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import type { ActionItem, BulkAction } from "#lib/components/ui/data-table/index.js";
 	import { Plus, GraduationCap, Layers, FileText, Trash2, Send, Pencil, Users } from "lucide-svelte";
 	import { onMount } from "svelte";
-	import { api } from "$lib/api";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { api } from "#lib/api.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	// ── Types ──────────────────────────────────────────────────────────────
 

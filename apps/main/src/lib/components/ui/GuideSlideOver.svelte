@@ -10,8 +10,8 @@
 	 */
 	import { Dialog } from 'bits-ui';
 	import { X, Pencil, BookOpen, Check, Loader2, ChevronRight, Plus, Trash2 } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { markdownToHtml } from '$lib/studio/markdown-html';
+	import { t } from '#lib/i18n/index.js';
+	import { markdownToHtml } from '#lib/studio/markdown-html.js';
 
 	export interface GuideCta {
 		title: string;

@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	// §122 Next-Action renderer (docs surface) — announcement_bar + popup
 	// (+ an in_article card slot the page can opt into via the `inline` flag
 	// on tools pages that render article-style content). The API does all
 	// audience/state filtering; popup cap comes from meta.popup_max_per_session.
 	import { onMount } from 'svelte';
-	import { env } from '$env/dynamic/public';
+	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { Dialog } from 'bits-ui';
 	import { ArrowRight, Clock, X } from 'lucide-svelte';
-	import { nextActionIcon } from '$lib/icons/nextActionIcon';
+	import { nextActionIcon } from '#lib/icons/nextActionIcon.js';
 
-	const API_BASE = (env.PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
+	const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
 	interface NextAction {
 		id: string;
@@ -58,7 +58,7 @@
 					headers: {
 						'content-type': 'application/json',
 						'X-JC-Surface': 'docs',
-						...(csrfToken ? { 'x-csrf-token': csrfToken } : {})
+						...csrfToken ? { 'x-csrf-token': csrfToken } : {}
 					},
 					body: JSON.stringify(body)
 				});
@@ -133,13 +133,21 @@
 		</span>
 		<a href={bar.cta_url} onclick={() => cta(bar!)} class="shrink-0 rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-white transition hover:bg-[var(--color-primary-hover)]">{bar.cta_label}</a>
 		{#if bar.snooze_default_hours > 0}
-			<button onclick={() => act(bar!, bar!.snooze_default_hours)} class="shrink-0 rounded-full px-2 py-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]">{t('nextaction.later', 'Later')}</button>
+			<button
+				onclick={() => act(bar!, (bar!).snooze_default_hours)}
+				class="shrink-0 rounded-full px-2 py-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+			>{t('nextaction.later', 'Later')}</button>
 		{/if}
 		<button onclick={() => act(bar!)} class="shrink-0 rounded-full p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]" aria-label={t('nextaction.dismiss_suggestion', 'Dismiss suggestion')}>✕</button>
 	</div>
 {/if}
 
-<Dialog.Root {open} onOpenChange={(v) => { if (!v) softClose(); else open = true; }}>
+<Dialog.Root
+	open={open}
+	onOpenChange={(v) => {
+		if (!v) softClose(); else open = true;
+	}}
+>
 	<Dialog.Portal>
 		<Dialog.Overlay class="jc-na-overlay fixed inset-0 z-[90] bg-black/55 backdrop-blur-[2px]" />
 		<Dialog.Content class="jc-na-content fixed left-1/2 top-1/2 z-[91] w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl focus:outline-none">
@@ -171,7 +179,10 @@
 					</a>
 					<div class="mt-3 flex items-center justify-center gap-1.5">
 						{#if popup.snooze_default_hours > 0}
-							<button onclick={() => act(popup!, popup!.snooze_default_hours)} class="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs text-[var(--color-muted)] transition hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]">
+							<button
+								onclick={() => act(popup!, (popup!).snooze_default_hours)}
+								class="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs text-[var(--color-muted)] transition hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+							>
 								<Clock size={12} />
 								{t('nextaction.later', 'Later')}
 							</button>
@@ -203,10 +214,10 @@
 <style>
 	/* data-state is set at runtime by Bits UI — :global keeps Svelte from
 	   tree-shaking these selectors. */
-	:global(.jc-na-overlay[data-state='open']) {
+	:global(.jc-na-overlay[data-state="open"]) {
 		animation: jc-na-fade 160ms ease-out;
 	}
-	:global(.jc-na-content[data-state='open']) {
+	:global(.jc-na-content[data-state="open"]) {
 		animation: jc-na-pop 220ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
 	.jc-na-dots {
@@ -225,8 +236,8 @@
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
-		:global(.jc-na-overlay[data-state='open']),
-		:global(.jc-na-content[data-state='open']) {
+		:global(.jc-na-overlay[data-state="open"]),
+		:global(.jc-na-content[data-state="open"]) {
 			animation: none;
 		}
 	}

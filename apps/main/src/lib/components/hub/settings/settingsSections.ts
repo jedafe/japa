@@ -1,5 +1,5 @@
 import type { Component } from 'svelte';
-import type { HubGroup } from '$lib/types';
+import type { HubGroup } from '#lib/types/index.js';
 import ProfileSection from './sections/ProfileSection.svelte';
 import AccountSection from './sections/AccountSection.svelte';
 import PrivacySection from './sections/PrivacySection.svelte';

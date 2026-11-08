@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import { t } from '$lib/i18n';
-	import { persistNavCollapse } from '$lib/nav-collapse';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
 	import type { LayoutData } from '../$types';
 	import { AlertTriangle } from 'lucide-svelte';
 

@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
-	import { t } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Users, Plus, Plane, Calendar, Lock, Unlock } from 'lucide-svelte';
-	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
-	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
+	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { staticAutocompleteFetcher, autocompleteItems } from '#lib/autocomplete.js';
 	import type { PageData } from './$types';
 
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('planning_groups.title', 'Planning Groups — {site}'));

@@ -2,9 +2,9 @@
 	// AcademyEnrollmentsWidget — admin-managed sidebar widget (Section 59, ADR-066).
 	// Uses the shared academy_enrollments store so it stays in sync with other widgets
 	// after mutations (enroll, mark-complete, progress update).
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { GraduationCap } from 'lucide-svelte';
-	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
+	import { enrollmentsStore } from '#lib/stores/enrollments.svelte.js';
 
 	interface Props {
 		title?: string;

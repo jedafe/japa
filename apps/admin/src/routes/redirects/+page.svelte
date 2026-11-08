@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /redirects — migrated to the EntityPage scaffold; simple CRUD entity using declarative `fields` (EntityForm).
 	// Ref: japaconnect-engineering/adr/ADR-056-url-redirects.md
 	// Field names mirror the backend gen.Redirect JSON contract:
 	// source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { redirectsAdminApi } from '$lib/api';
-	import { apiRaw } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { redirectsAdminApi } from '#lib/api.js';
+	import { apiRaw } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Trash2, CheckCircle2, XCircle } from 'lucide-svelte';
 
 	type Redirect = {

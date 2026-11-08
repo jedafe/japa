@@ -18,21 +18,21 @@
 	// double-booking; regenerated after success.
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { Modal } from '$lib/components/ui';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
-	import { safeSameOriginHref } from '$lib/utils/safeUrl';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { Modal } from '#lib/components/ui/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import { formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
+	import { safeSameOriginHref } from '#lib/utils/safeUrl.js';
 	import { AlertCircle, CheckCircle2, Loader2, Send, TicketPercent } from 'lucide-svelte';
 	import type {
 		PackageTier,
 		ServiceBookingResult,
 		ServiceListing,
 		ServicePricePreview
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 
 	interface Props {
 		service: ServiceListing;

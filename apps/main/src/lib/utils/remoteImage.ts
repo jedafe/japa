@@ -1,4 +1,4 @@
-import { apiBaseUrl } from '$lib/api/client';
+import { apiBaseUrl } from '#lib/api/client.js';
 
 // First-party image hosts — the API host itself plus every sibling host on
 // its registrable domain (api.japa.to → img.japa.to, cdn.japa.to, …). Our own

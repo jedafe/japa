@@ -2,18 +2,18 @@
 	// §07 Verification Requests — admin review queue.
 	// Two-step flow: approve/reject records the review only; "Grant badge"
 	// on approved rows calls POST /admin/{organizations|users}/{id}/verify.
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { siteName } from '$lib/stores/site.svelte';
-	import { EntityPage, type EntityPageConfig, type EntityPageController } from "$lib/components/entity";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Button } from "$lib/components/ui/button";
-	import { verificationAdminApi, organisationsAdminApi, type VerificationTypeItem } from "$lib/api";
-	import { Tabs, TabsContent } from "$lib/components/ui/tabs";
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from "#lib/components/entity/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { verificationAdminApi, organisationsAdminApi, type VerificationTypeItem } from "#lib/api.js";
+	import { Tabs, TabsContent } from "#lib/components/ui/tabs/index.js";
 	import BadgeTypesPanel from "./BadgeTypesPanel.svelte";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { Eye, Check, X, BadgeCheck } from "lucide-svelte";
-	import type { ActionItem, ActionContext } from "$lib/components/ui/data-table";
+	import type { ActionItem, ActionContext } from "#lib/components/ui/data-table/index.js";
 
 	type VRequest = {
 		id: string;

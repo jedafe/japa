@@ -2,7 +2,7 @@
 // (Section 58, ADR-065). The active list is loaded once from the public
 // GET /api/v1/currencies endpoint — server pages receive it via the root
 // layout (page.data.currencies), client components via loadCurrencies().
-import { api } from '$lib/api/client';
+import { api } from '#lib/api/client.js';
 
 export interface CurrencyInfo {
 	code: string;

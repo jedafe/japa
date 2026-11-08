@@ -6,11 +6,11 @@
 	// snapshot (`initial`) or an unavailable notice.
 	// Ref: docs/superpowers/specs/2026-09-28-list-content-type-design.md
 	//      .jeos/sections/14-content-type-system.md (List amendment)
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { contentHref } from '$lib/utils/contentLink';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
 	import { Loader2 } from 'lucide-svelte';
-	import type { ListEmbedSnapshot } from '$lib/types';
+	import type { ListEmbedSnapshot } from '#lib/types/index.js';
 
 	// GET /content/{slug} detail DTO — the subset this card renders.
 	interface EmbedContentDTO {

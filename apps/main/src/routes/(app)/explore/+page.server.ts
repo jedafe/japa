@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import { feedPath, resolveSort, PAGE_SIZE } from '$lib/feed/endpoint';
-import type { FeedItem } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import { feedPath, resolveSort, PAGE_SIZE } from '#lib/feed/endpoint.js';
+import type { FeedItem } from '#lib/types/index.js';
 
 /**
  * Explore timeline at /explore — the ADR-058 §5 fallback for unauthenticated

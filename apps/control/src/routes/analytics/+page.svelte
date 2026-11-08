@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { api } from '$lib/api';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { api } from '#lib/api.js';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { onMount } from 'svelte';
 
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	// Native Umami dashboard — the Go API proxies /api/v1/analytics/umami/*
 	// to the self-hosted Umami instance (service creds stay server-side).

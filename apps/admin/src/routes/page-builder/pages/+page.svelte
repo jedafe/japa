@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /page-builder/pages — migrated to the EntityPage scaffold.
 	// List + page metadata CRUD via EntityPage; state actions (publish/archive)
 	// keep page-local confirm Modals and refetch via entityController.reload().
 	// The block-editor detail page lives at /page-builder/pages/[id] (untouched):
 	// Edit navigates there rather than opening a Modal form.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { pagesApi, pageTemplatesAdminApiExtended, pageBuilderAdminApiExtended, api, apiRaw, contentAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { pagesApi, pageTemplatesAdminApiExtended, pageBuilderAdminApiExtended, api, apiRaw, contentAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { Eye, Pencil, Trash2, Send, Archive, Rocket, Copy } from 'lucide-svelte';
 	import { landingPalettes, type Block } from '@japaconnect/landing-blocks';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 
 	type Page = {
 		id: string;

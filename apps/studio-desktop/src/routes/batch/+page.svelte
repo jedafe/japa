@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Sparkles, Copy, Save, Loader2, AlertCircle } from 'lucide-svelte';
-	import { initSettingsDb, loadSettings, type StudioSettings } from '$lib/services/settings';
-	import { createApiClient, mapPublicContentType } from '$lib/services/api';
-	import { copyToClipboard } from '$lib/services/clipboard';
-	import { saveProjectInstruction } from '$lib/services/claude-md';
-	import { buildProjectInstruction } from '$lib/services/prompt';
-	import { parseBatchTopics, buildBatchPrompt } from '$lib/services/batch';
-	import type { Persona, PersonaVoice, Space, StudioContentType } from '$lib/types/prompt';
-	import type { BatchTopic } from '$lib/types/batch';
-	import type { PromptLookups } from '$lib/services/prompt';
-	import Preview from '$lib/components/prompt/Preview.svelte';
+	import { initSettingsDb, loadSettings, type StudioSettings } from '#lib/services/settings.js';
+	import { createApiClient, mapPublicContentType } from '#lib/services/api.js';
+	import { copyToClipboard } from '#lib/services/clipboard.js';
+	import { saveProjectInstruction } from '#lib/services/claude-md.js';
+	import { buildProjectInstruction } from '#lib/services/prompt.js';
+	import { parseBatchTopics, buildBatchPrompt } from '#lib/services/batch.js';
+	import type { Persona, PersonaVoice, Space, StudioContentType } from '#lib/types/prompt.js';
+	import type { BatchTopic } from '#lib/types/batch.js';
+	import type { PromptLookups } from '#lib/services/prompt.js';
+	import Preview from '#lib/components/prompt/Preview.svelte';
 
 	let settings = $state<StudioSettings>(loadSettings());
 	let contentTypes = $state<StudioContentType[]>([]);

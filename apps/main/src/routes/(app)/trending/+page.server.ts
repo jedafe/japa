@@ -1,12 +1,12 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
+import { apiContext, apiList } from '#lib/server/api.js';
 import type {
 	TrendingContent,
 	TrendingTag,
 	TrendingSpace,
 	TrendingUser,
 	TrendingWindow
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Trending hub at /trending — public, SSR, indexable. Four leaderboards

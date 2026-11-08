@@ -238,8 +238,9 @@ func ServeURLFromParts(storageBucket, storagePath *string) *string {
 // the first visitor never pays imgproxy's cold source-fetch + resize latency
 // (the featured-image LCP regression seen in PageSpeed traces — ~2s for a
 // 28KB derivative on a cold cache). 640 is the emitted default; 1280 covers
-// hi-dpi cards and full-width heroes.
-var warmWidths = []int{640, 1280}
+// hi-dpi cards and full-width heroes; 128 covers the display-sized avatar
+// derivatives emitted by list endpoints (e.g. /members/by-stage).
+var warmWidths = []int{640, 1280, 128}
 
 // WarmImageDerivatives fires a best-effort background fetch of the standard
 // derivative URLs for a freshly uploaded image. Fire-and-forget: imgproxy's

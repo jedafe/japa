@@ -5,9 +5,9 @@
 // author (backend enforces ownership).
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
-import type { Achievement, Comment } from '$lib/types';
-import type { ContentArticle } from '$lib/types/content';
+import { apiContext, apiGet, apiGetEnvelope, ApiError } from '#lib/server/api.js';
+import type { Achievement, Comment } from '#lib/types/index.js';
+import type { ContentArticle } from '#lib/types/content.js';
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	// Submit-a-request form (auth required — guests are redirected to login by
 	// the server load). Posts to /roadmap/submissions which creates a
@@ -7,11 +7,11 @@
 	// /roadmap/board via the load function (Rule 16 — no hardcoded options).
 	// The body is encoded as base64 TipTap JSON via encodeReplyBody, matching
 	// the §49 comments convention so the detail page renders it rich.
-	import { t, siteName} from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { roadmapErrorKey } from '$lib/enumOptions';
-	import { encodeReplyBody } from '$lib/tiptap/serialize';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { t, siteName} from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { roadmapErrorKey } from '#lib/enumOptions.js';
+	import { encodeReplyBody } from '#lib/tiptap/serialize.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { CheckCircle, Lightbulb, Send } from 'lucide-svelte';
 
 	let { data } = $props();

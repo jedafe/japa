@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { t, i18n } from '$lib/i18n';
-	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import DashboardPanel from '#lib/components/hub/DashboardPanel.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { Award } from 'lucide-svelte';
-	import type { Certificate } from '$lib/types';
+	import type { Certificate } from '#lib/types/index.js';
 
 	let { data }: { data: unknown } = $props();
 	const certificates = $derived((data as Certificate[] | null) ?? []);

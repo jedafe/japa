@@ -1,11 +1,11 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiList, ApiError } from '#lib/server/api.js';
 import type {
 	GeoCountry,
 	CredentialProfession,
 	CredentialPathwayWithAi
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Professional Credential Checker — §94.

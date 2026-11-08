@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { createAffiliate, deleteAffiliate, enrollAffiliate } from '$lib/api/hub';
-	import { optimisticAction } from '$lib/components/hub/optimisticAction';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { createAffiliate, deleteAffiliate, enrollAffiliate } from '#lib/api/hub.js';
+	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Share2, MousePointerClick, TrendingUp, Wallet, MessageCircle, AtSign, Link as LinkIcon, Copy, Check } from 'lucide-svelte';
-	import type { AffiliateEarnings } from '$lib/types';
+	import type { AffiliateEarnings } from '#lib/types/index.js';
 
 	// Ref: japaconnect-engineering/sections/56-user-affiliate-program.md.
 	// The backend UserAffiliateLink row returns { id, product_type, code,

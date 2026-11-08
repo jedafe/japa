@@ -3,14 +3,14 @@
 	// Bits UI Dialog hosting LoginForm | SignupForm via an internal tab.
 	// Triggered from the guest homepage header and any "Sign in to continue"
 	// affordance in the shell. On success, invalidates all data and closes.
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { untrack } from 'svelte';
 	import { X } from 'lucide-svelte';
-	import { t } from '$lib/i18n/store.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
 	import { invalidateAll } from '$app/navigation';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
 	import LoginForm from './LoginForm.svelte';
 	import SignupForm from './SignupForm.svelte';
 

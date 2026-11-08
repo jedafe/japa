@@ -7,15 +7,15 @@
 	// detected-method chips + proposed channels preview; the last successful
 	// report is attached to the proposal as probe_snapshot. Rendered inline
 	// by the /sources/submit page and inside ProposeSourceModal.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 	import { Loader2, ScanSearch, AlertTriangle, X } from 'lucide-svelte';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import { sourceCategoryOptions, sourceCategoryLabel } from '$lib/sources';
-	import type { SourceMeta, ProbeReport } from '$lib/types/sources';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import { sourceCategoryOptions, sourceCategoryLabel } from '#lib/sources.js';
+	import type { SourceMeta, ProbeReport } from '#lib/types/sources.js';
 
 	let {
 		meta,

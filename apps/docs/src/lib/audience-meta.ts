@@ -7,7 +7,7 @@ import {
 	Settings,
 	ShieldCheck
 } from 'lucide-svelte';
-import type { DocAudience } from '$lib/types';
+import type { DocAudience } from '#lib/types/index.js';
 
 /**
  * Presentation metadata per canonical docs audience (§44). Icons and the i18n

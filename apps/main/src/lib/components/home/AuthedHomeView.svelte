@@ -5,13 +5,13 @@
 	// renders it for signed-in users; the split only changes client loading.
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { UrlTabs, type UrlTab } from '$lib/components/ui';
-	import FeedGeoControl from '$lib/components/feed/FeedGeoControl.svelte';
-	import FeedSortBar from '$lib/components/feed/FeedSortBar.svelte';
-	import FeedList from '$lib/components/feed/FeedList.svelte';
-	import FeedUpdatePill from '$lib/components/feed/FeedUpdatePill.svelte';
-	import OnboardingSetupCard from '$lib/components/onboarding/OnboardingSetupCard.svelte';
-	import type { CardStyleConfig } from '$lib/feed/cardStyle';
+	import { UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
+	import FeedGeoControl from '#lib/components/feed/FeedGeoControl.svelte';
+	import FeedSortBar from '#lib/components/feed/FeedSortBar.svelte';
+	import FeedList from '#lib/components/feed/FeedList.svelte';
+	import FeedUpdatePill from '#lib/components/feed/FeedUpdatePill.svelte';
+	import OnboardingSetupCard from '#lib/components/onboarding/OnboardingSetupCard.svelte';
+	import type { CardStyleConfig } from '#lib/feed/cardStyle.js';
 	import type { PageData } from '../../../routes/(app)/$types';
 
 	let {
@@ -36,10 +36,10 @@
 			value={data.tab}
 			onValueChange={(v) => {
 				// Preserve non-tab query params (especially ?geo=) while switching tabs.
-				const url = new URL(page.url);
+				const url = new URL(page.url.href);
 				url.searchParams.set('tab', v);
 				url.searchParams.set('sort', data.sort);
-				goto(`${url.pathname}${url.search}`, { keepFocus: true });
+				goto(`${url.pathname}${url.search}`, { reset: false });
 			}}
 			class="border-b-0"
 		/>

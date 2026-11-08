@@ -4,7 +4,7 @@
 	// image (icon | label — value). 'grid' is the package mockup's stat
 	// row overlaid at the bottom of the hero image.
 	import { marketplaceIcon } from './marketplaceIcon';
-	import type { ServiceFact } from '$lib/types';
+	import type { ServiceFact } from '#lib/types/index.js';
 
 	interface Props {
 		facts: ServiceFact[];

@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	import { onMount } from 'svelte';
 	import { Save, FolderOpen, TestTube, Loader2, Check, AlertCircle, Trash2 } from 'lucide-svelte';
-	import { promptStore } from '$lib/stores/prompt.svelte';
+	import { promptStore } from '#lib/stores/prompt.svelte.js';
 	import { open } from '@tauri-apps/plugin-dialog';
-	import { initSettingsDb, loadSettings, saveSettings, type StudioSettings } from '$lib/services/settings';
-	import { createApiClient, mapPublicContentType } from '$lib/services/api';
-	import { refreshAuth } from '$lib/api/auth';
+	import { initSettingsDb, loadSettings, saveSettings, type StudioSettings } from '#lib/services/settings.js';
+	import { createApiClient, mapPublicContentType } from '#lib/services/api.js';
+	import { refreshAuth } from '#lib/api/auth.js';
 	import {
 		type StudioContentType,
 		type Persona,
 		type PersonaVoice,
 		type Space,
 		type SelectOption
-	} from '$lib/types/prompt';
-	import SelectField from '$lib/components/prompt/SelectField.svelte';
-	import TextField from '$lib/components/prompt/TextField.svelte';
+	} from '#lib/types/prompt.js';
+	import SelectField from '#lib/components/prompt/SelectField.svelte';
+	import TextField from '#lib/components/prompt/TextField.svelte';
 
 	let settings = $state<StudioSettings>(loadSettings());
 	let saving = $state(false);

@@ -2,12 +2,12 @@
 	import clsx from 'clsx';
 	import { page } from '$app/state';
 	import { PanelLeftClose, PanelLeftOpen, LogIn, GraduationCap } from 'lucide-svelte';
-	import { resolveIcon } from '$lib/components/ui/icons';
-	import { t } from '$lib/i18n';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { loginUrl, profileUrl, resolveMenuUrl } from '$lib/appOrigins';
-	import type { Menu, MenuItem, SessionUser } from '$lib/types';
+	import { resolveIcon } from '#lib/components/ui/icons.js';
+	import { t } from '#lib/i18n/index.js';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { loginUrl, profileUrl, resolveMenuUrl } from '#lib/appOrigins.js';
+	import type { Menu, MenuItem, SessionUser } from '#lib/types/index.js';
 
 	interface Props {
 		menu: Menu | null;

@@ -1,11 +1,11 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext } from '$lib/server/api';
-import { assertDocEditor, fetchAuthoringData, createDocPageAction } from '$lib/server/docs-author';
-import { buildMeta } from '$lib/seo/meta';
-import type { DocAudience } from '$lib/types';
-import { AUDIENCE_LABEL_KEY } from '$lib/types';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
+import { apiContext } from '#lib/server/api.js';
+import { assertDocEditor, fetchAuthoringData, createDocPageAction } from '#lib/server/docs-author.js';
+import { buildMeta } from '#lib/seo/meta.js';
+import type { DocAudience } from '#lib/types/index.js';
+import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 
 /**
  * /docs/{audience}/new — in-app page authoring (§44 amendment 2).

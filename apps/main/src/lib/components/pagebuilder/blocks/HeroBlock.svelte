@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { HeroProps } from '../types';
-	import { safeHref } from '$lib/utils/safeHtml';
+	import { safeHref } from '#lib/utils/safeHtml.js';
 
 	interface Props {
 		props: HeroProps;

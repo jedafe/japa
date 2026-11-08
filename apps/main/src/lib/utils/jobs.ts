@@ -1,4 +1,4 @@
-import { t } from '$lib/i18n';
+import { t } from '#lib/i18n/index.js';
 
 // salary_period is a seeded select (hourly|daily|weekly|biweekly|monthly|
 // yearly); this map also tolerates the legacy aliases some imported

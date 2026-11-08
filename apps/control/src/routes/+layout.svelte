@@ -17,17 +17,17 @@
 			window.location.href = '/login';
 		}
 	}
-	import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
-	import { t, translations, initLocale, loadTranslations } from '$lib/stores/i18n.svelte';
-	import { initSiteSettings, siteName, faviconUrl, faviconForTheme } from '$lib/stores/site.svelte';
-	import { getTheme } from '$lib/stores/theme.svelte';
-	import { setToken, getToken } from '$lib/api';
-	import { apiFetch, setGlobalErrorHandler } from '$lib/api/client';
+	import { setUser, setPermissions, clearUser } from '#lib/stores/auth.svelte.js';
+	import { t, translations, initLocale, loadTranslations } from '#lib/stores/i18n.svelte.js';
+	import { initSiteSettings, siteName, faviconUrl, faviconForTheme } from '#lib/stores/site.svelte.js';
+	import { getTheme } from '#lib/stores/theme.svelte.js';
+	import { setToken, getToken } from '#lib/api.js';
+	import { apiFetch, setGlobalErrorHandler } from '#lib/api/client.js';
 	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
-	import { env } from '$env/dynamic/public';
-	import TopBar from '$lib/components/layout/TopBar.svelte';
-	import AccessDenied from '$lib/components/AccessDenied.svelte';
-	import Tooltip from '$lib/components/ui/Tooltip.svelte';
+	import { PUBLIC_JC_UMAMI_URL, PUBLIC_JC_UMAMI_SITE_ID_CONTROL } from '$app/env/public';
+	import TopBar from '#lib/components/layout/TopBar.svelte';
+	import AccessDenied from '#lib/components/AccessDenied.svelte';
+	import Tooltip from '#lib/components/ui/Tooltip.svelte';
 	import '../app.css';
 	import {
 		Menu,
@@ -141,7 +141,7 @@
 
 	async function initAuth() {
 		try {
-			const { api } = await import('$lib/api');
+			const { api } = await import('#lib/api.js');
 			// If we don't have an in-memory token, try to refresh using
 			// the httpOnly jc_refresh cookie.
 			if (!getToken()) {
@@ -191,7 +191,7 @@
 					user_group_name: userData.user_group_name,
 					avatar_url: userData.avatar_url,
 					user_group_id: userData.user_group_id,
-					theme_preference: (userData.theme_preference as 'light' | 'dark' | 'system') ?? 'dark',
+					theme_preference: userData.theme_preference as 'light' | 'dark' | 'system' ?? 'dark',
 					timezone: userData.timezone ?? 'UTC',
 					is_verified: userData.is_verified,
 					created_at: userData.created_at,
@@ -296,7 +296,7 @@
 
 	// Umami analytics — Control Panel surface (§40).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
-	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID_CONTROL);
+	const umamiEnabled = $derived(!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_CONTROL);
 </script>
 
 <svelte:head>
@@ -307,8 +307,8 @@
 		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
 		<script
 			defer
-			src="{env.PUBLIC_JC_UMAMI_URL}/script.js"
-			data-website-id={env.PUBLIC_JC_UMAMI_SITE_ID_CONTROL}
+			src="{PUBLIC_JC_UMAMI_URL}/script.js"
+			data-website-id={PUBLIC_JC_UMAMI_SITE_ID_CONTROL}
 		></script>
 	{/if}
 </svelte:head>
@@ -326,7 +326,7 @@
 		<button
 			class="bg-background-alt border-border fixed start-4 top-4 z-50 rounded-lg border p-2 shadow-mini md:hidden"
 			aria-label={t('common.toggle_menu')}
-			onclick={() => (sidebarOpen = !sidebarOpen)}
+			onclick={() => sidebarOpen = !sidebarOpen}
 		>
 			{#if sidebarOpen}
 				<X class="size-5" />
@@ -349,12 +349,11 @@
 					<Tooltip content={item.tooltip} side="right">
 						<a
 							href={item.href}
-							class="hover:bg-dark-04 data-[state=active]:bg-accent flex items-center gap-3 rounded-9px px-3 py-2.5 text-base font-medium transition-colors {isActive ? 'bg-accent text-accent-foreground' : 'text-foreground-alt'}"
-							onclick={() => (sidebarOpen = false)}
-						>
-							<item.icon class="size-4" />
-							{item.label}
-						</a>
+							class="hover:bg-dark-04 data-[state=active]:bg-accent flex items-center gap-3 rounded-9px px-3 py-2.5 text-base font-medium transition-colors {isActive
+								? 'bg-accent text-accent-foreground'
+								: 'text-foreground-alt'}"
+							onclick={() => sidebarOpen = false}
+						><item.icon class="size-4" /> {item.label}</a>
 					</Tooltip>
 				{/each}
 			</nav>
@@ -364,7 +363,7 @@
 			<button
 				class="fixed inset-0 z-30 bg-black/50 md:hidden"
 				aria-label={t('common.close_sidebar', 'Close sidebar')}
-				onclick={() => (sidebarOpen = false)}
+				onclick={() => sidebarOpen = false}
 			></button>
 		{/if}
 

@@ -1,17 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { ClipboardCheck, Check, Lock, RotateCcw, MessageSquarePlus, ArrowLeft } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
-	import AuthDialog from '$lib/components/auth/AuthDialog.svelte';
-	import { api } from '$lib/api/client';
-	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
-	import type { ChecklistGuide, ChecklistItem, ChecklistSelector } from '$lib/types';
+	import { EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
+	import AuthDialog from '#lib/components/auth/AuthDialog.svelte';
+	import { api } from '#lib/api/client.js';
+	import { destinationMarkets, originMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
+	import type { ChecklistGuide, ChecklistItem, ChecklistSelector } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -50,27 +50,17 @@
 	);
 	const originOptions = $derived(
 		(data.countries ?? []).length > 0
-			? pinMarketsFirst(data.countries, originMarkets(siteSettings), (o) => o.code ?? '')
-			: (selector?.origins ?? [])
-	);
+		? pinMarketsFirst(data.countries, originMarkets(siteSettings), (o) => o.code ?? '')
+		: selector?.origins ?? []);
+
 	// Destinations only include countries with published guides; pin curated
 	// destination markets by mapping guide country name → ISO geo_code.
-	const destCodeByName = $derived(
-		new Map((data.countries ?? []).map((c) => [c.name.toLowerCase(), c.code]))
-	);
-	const destinations = $derived(
-		pinMarketsFirst(
-			selector?.destinations ?? [],
-			destinationMarkets(siteSettings),
-			(d) => destCodeByName.get(d.name.toLowerCase()) ?? ''
-		)
-	);
-	const visaTypes = $derived(
-		destinations.find((d) => d.id === selectedDestination)?.visa_types ?? []
-	);
+	const destCodeByName = $derived(new Map((data.countries ?? []).map((c) => [c.name.toLowerCase(), c.code])));
 
+	const destinations = $derived(pinMarketsFirst(selector?.destinations ?? [], destinationMarkets(siteSettings), (d) => destCodeByName.get(d.name.toLowerCase()) ?? ''));
+	const visaTypes = $derived(destinations.find((d) => d.id === selectedDestination)?.visa_types ?? []);
 	const completedCount = $derived(items.filter((i) => i.completed).length);
-	const progressPct = $derived(items.length > 0 ? Math.round((completedCount / items.length) * 100) : 0);
+	const progressPct = $derived(items.length > 0 ? Math.round(completedCount / items.length * 100) : 0);
 
 	// Items grouped by the API-provided category (§70 contract); uncategorised
 	// items fall back to "General".
@@ -103,18 +93,19 @@
 	$effect(() => {
 		if (data.guide && selectedGuideId !== data.guide.guide_id) {
 			untrack(() => {
-				selectedGuideId = data.guide!.guide_id;
-				guideTitle = data.guide!.title;
-				items = applyProgress(data.guide!.items, data.progressItems);
+				selectedGuideId = (data.guide!).guide_id;
+				guideTitle = (data.guide!).title;
+				items = applyProgress((data.guide!).items, data.progressItems);
 			});
 		}
 	});
 
 	function syncGuideParam(guideId: string | null) {
-		const url = new URL(page.url);
-		if (guideId) url.searchParams.set('guide_id', guideId);
-		else url.searchParams.delete('guide_id');
-		replaceState(url, {});
+		const url = new URL(page.url.href);
+
+		if (guideId) url.searchParams.set('guide_id', guideId); else url.searchParams.delete('guide_id');
+
+		goto(url, { shallow: true, replace: true });
 	}
 
 	async function loadChecklist(guideId: string) {
@@ -414,7 +405,7 @@
 		<!-- Request-a-guide CTA (§70): shown whenever the user's combination has
 		     no guide — no destinations published at all, none for the chosen
 		     destination, or the visa type they need is unlisted. -->
-		{#if selectedOrigin && (destinations.length === 0 || (selectedDestination && visaTypes.length === 0))}
+		{#if selectedOrigin && (destinations.length === 0 || selectedDestination && visaTypes.length === 0)}
 			<div class="px-4 pb-3">
 				{#if requestSubmitted}
 					<p class="text-sm text-[var(--color-primary-text)]">

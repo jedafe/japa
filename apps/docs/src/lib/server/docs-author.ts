@@ -1,9 +1,9 @@
 import { error, redirect, fail } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
-import { apiContext, apiGet, apiPost, apiPatch, ApiError } from '$lib/server/api';
-import { renderDocContent, extractTocHeadings, ensureHeadingIds, injectHeadingAnchors } from '$lib/tiptap/serialize';
-import type { TocHeading } from '$lib/tiptap/serialize';
-import type { DocPage, DocPageCreateRequest, DocPageUpdateRequest, DocAudience, DocFeedback } from '$lib/types';
+import { apiContext, apiGet, apiPost, apiPatch, ApiError } from '#lib/server/api.js';
+import { renderDocContent, extractTocHeadings, ensureHeadingIds, injectHeadingAnchors } from '#lib/tiptap/serialize.js';
+import type { TocHeading } from '#lib/tiptap/serialize.js';
+import type { DocPage, DocPageCreateRequest, DocPageUpdateRequest, DocAudience, DocFeedback } from '#lib/types/index.js';
 
 /**
  * Shared authoring plumbing for the docs app (§44 in-app authoring,

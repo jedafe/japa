@@ -3,19 +3,19 @@
 	// bulkActionsList). Tabbed page with state actions (publish/unpublish/restore/
 	// reject/delete); keeps page-local Modals for reject (form input) and delete
 	// (confirmation). View detail opens in a Modal.
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { goto } from '$app/navigation';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { TableSkeleton } from '$lib/components/ui/skeleton';
-	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { TableSkeleton } from '#lib/components/ui/skeleton/index.js';
+	import type { ActionItem, BulkAction } from '#lib/components/ui/data-table/index.js';
 	import { FileText, Plus, RefreshCw, Trash2, ExternalLink, CheckCircle, XCircle } from 'lucide-svelte';
-	import { api, blogAdminApi } from '$lib/api';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { api, blogAdminApi } from '#lib/api.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 
 	type RawBlogPost = {
 		id: string;

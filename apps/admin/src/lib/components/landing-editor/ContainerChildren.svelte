@@ -13,8 +13,8 @@
 	import { GripVertical, ChevronUp, ChevronDown, X, ArrowUpRight } from 'lucide-svelte';
 	import type { Component } from 'svelte';
 	import { blockRegistry, type Block, type BlockMeta } from '@japaconnect/landing-blocks';
-	import { isContainerLike, childrenOf, childSlotsOf, getContainerLayout, getContainerColumns, DEFAULT_SLOT } from '$lib/utils/blocks';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { isContainerLike, childrenOf, childSlotsOf, getContainerLayout, getContainerColumns, DEFAULT_SLOT } from '#lib/utils/blocks.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import ContainerChildren from './ContainerChildren.svelte';
 
 	let {

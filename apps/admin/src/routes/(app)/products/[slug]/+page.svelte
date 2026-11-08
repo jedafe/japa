@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /products/[slug] — product edit page (§80). Loads the admin detail
 	// payload (core + providers + deals + cfv) into the shared ProductForm.
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import ProductForm from '$lib/components/products/product-form.svelte';
-	import { productsAdminApi } from '$lib/api';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import ProductForm from '#lib/components/products/product-form.svelte';
+	import { productsAdminApi } from '#lib/api.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { onMount } from 'svelte';
 	import { Loader2, RotateCcw, Trash2 } from 'lucide-svelte';
 

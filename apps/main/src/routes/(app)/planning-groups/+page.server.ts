@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { PlanningGroup, GeoCountry } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { PlanningGroup, GeoCountry } from '#lib/types/index.js';
 
 const PAGE_SIZE = 20;
 

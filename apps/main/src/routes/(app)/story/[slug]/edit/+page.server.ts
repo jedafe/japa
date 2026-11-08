@@ -5,8 +5,8 @@
 // bookmarks/links to /story/{slug}/edit continue to work.
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { Story } from '$lib/types';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import type { Story } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {

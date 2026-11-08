@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	import { page } from '$app/state';
-	import { api, formsAdminApi } from '$lib/api';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { api, formsAdminApi } from '#lib/api.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 	import { goto } from '$app/navigation';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
 	import { Plus, Trash2 } from 'lucide-svelte';
 
 	// Seeded form nodes are forms.create/forms.edit/forms.delete —

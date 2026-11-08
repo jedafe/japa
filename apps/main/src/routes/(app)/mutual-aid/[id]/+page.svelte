@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
-	import { t } from '$lib/i18n';
-	import { i18n } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
+	import { i18n } from '#lib/i18n/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
@@ -15,10 +15,10 @@
 		Pencil,
 		Trash2
 	} from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { relativeTime } from '$lib/feed/time';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
-	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { relativeTime } from '#lib/feed/time.js';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
+	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

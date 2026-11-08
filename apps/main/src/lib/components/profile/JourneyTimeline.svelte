@@ -5,9 +5,9 @@
 	// later stages upcoming. Only the current stage carries a date — the
 	// API exposes a single `updated_at`, so past milestones have no date.
 	import { Check, CircleDot, CircleDashed } from 'lucide-svelte';
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { journeySteps } from './journey';
-	import type { PublicJapaStage } from '$lib/types';
+	import type { PublicJapaStage } from '#lib/types/index.js';
 
 	let { japaStage }: { japaStage: PublicJapaStage | null } = $props();
 

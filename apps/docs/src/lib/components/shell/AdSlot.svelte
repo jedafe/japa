@@ -2,9 +2,9 @@
 	// AdSlot — serves a real ad campaign via GET /ads/serve (Section 25, §8).
 	// Ported from the Main app's AdSlot so admin-managed ad_slot widgets on
 	// Docs render an actual campaign instead of a placeholder box.
-	import { t } from '$lib/i18n';
-	import { apiGet, apiPost } from '$lib/api/client';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { t } from '#lib/i18n/index.js';
+	import { apiGet, apiPost } from '#lib/api/client.js';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import { page } from '$app/state';
 
 	interface Props {

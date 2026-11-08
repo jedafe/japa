@@ -1,13 +1,13 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import type { PageData } from './$types';
 	import { untrack } from 'svelte';
-	import { t, siteName } from '$lib/i18n';
+	import { t, siteName } from '#lib/i18n/index.js';
 	import { Accordion } from 'bits-ui';
 	import { ArrowLeft, ChevronDown, Package } from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { markdownToHtml } from '$lib/studio/markdown-html';
-	import type { RoadmapReleaseEntry } from '$lib/types';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { markdownToHtml } from '#lib/studio/markdown-html.js';
+	import type { RoadmapReleaseEntry } from '#lib/types/index.js';
 
 	/**
 	 * Release detail — version header with support-state chip, editorial

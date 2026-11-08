@@ -3,14 +3,14 @@
 	// Not an EntityPage candidate (no CRUD); uses DataTable serverSide with a
 	// custom filter card (FilterPanel only supports select-based filters).
 	// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
-	import { t } from '$lib/stores/i18n.svelte';
-	import { walletApi } from '$lib/api';
-	import { loadCurrencies, formatMoney, currencyLabel, type CurrencyInfo } from '$lib/utils/currency';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { walletApi } from '#lib/api.js';
+	import { loadCurrencies, formatMoney, currencyLabel, type CurrencyInfo } from '#lib/utils/currency.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { Search } from 'lucide-svelte';
 
 	type CreditPurchase = {

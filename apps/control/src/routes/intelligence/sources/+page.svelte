@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { api, apiList } from '$lib/api';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import SearchInput from '$lib/components/ui/SearchInput.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import AccessDenied from '$lib/components/AccessDenied.svelte';
-	import SourceForm from '$lib/components/intelligence/SourceForm.svelte';
-	import type { SourceFormValues, SourceKindOption } from '$lib/components/intelligence/SourceForm.svelte';
-	import ChannelsTable from '$lib/components/intelligence/ChannelsTable.svelte';
-	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasAnyPermission } from '$lib/stores/auth.svelte';
-	import { escapeHtml } from '$lib/utils';
+	import { api, apiList } from '#lib/api.js';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import SearchInput from '#lib/components/ui/SearchInput.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import AccessDenied from '#lib/components/AccessDenied.svelte';
+	import SourceForm from '#lib/components/intelligence/SourceForm.svelte';
+	import type { SourceFormValues, SourceKindOption } from '#lib/components/intelligence/SourceForm.svelte';
+	import ChannelsTable from '#lib/components/intelligence/ChannelsTable.svelte';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '#lib/api/types.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasAnyPermission } from '#lib/stores/auth.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
 	import { Plus, Pencil, Trash2, Power, RefreshCw, Database, Zap, Ban, Waypoints } from 'lucide-svelte';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 
 	interface IntelSource {
 		id: string;

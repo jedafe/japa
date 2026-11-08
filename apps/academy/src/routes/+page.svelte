@@ -1,14 +1,14 @@
 <script lang="ts">
 	// Course Catalog — SSR track grid + CSR enrollment state.
 	// Ref: ADR-060 (Explore is the center column), ADR-060 SSR/CSR boundary.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
-	import TrackCard from '$lib/components/academy/TrackCard.svelte';
-	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import TrackCard from '#lib/components/academy/TrackCard.svelte';
+	import { LoadingSkeleton, EmptyState } from '#lib/components/ui/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Compass, GraduationCap, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
-	import { robotsContent, safeJsonLd } from '$lib/seo';
+	import { enrollmentsStore } from '#lib/stores/enrollments.svelte.js';
+	import { robotsContent, safeJsonLd } from '#lib/seo/index.js';
 
 	// JSON-LD payload (CollectionPage + ItemList + BreadcrumbList). Kept as
 	// data in <script> and serialized via safeJsonLd so a script-close

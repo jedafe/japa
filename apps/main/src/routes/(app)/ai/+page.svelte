@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// /ai — unified Japa AI surface (ADR-130): a single chat view whose
 	// composer tools toggle switches between chat and agent turns.
 	// /ai/chat 308-redirects here.
@@ -7,10 +7,10 @@
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 	// Ref: japaconnect-engineering/adr/ADR-130-unified-japa-ai.md
 
-	import { t, siteName} from '$lib/i18n';
+	import { t, siteName} from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Sparkles } from 'lucide-svelte';
-	import JapaAIChat from '$lib/ai/JapaAIChat.svelte';
+	import JapaAIChat from '#lib/ai/JapaAIChat.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

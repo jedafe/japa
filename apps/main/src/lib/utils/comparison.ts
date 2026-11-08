@@ -1,4 +1,4 @@
-import type { JCEDimension, MatrixDimension, MatrixItem, ResolvedItem } from '$lib/types/jce';
+import type { JCEDimension, MatrixDimension, MatrixItem, ResolvedItem } from '#lib/types/jce.js';
 
 /**
  * Return the first occurrence of each item keyed by a computed value.

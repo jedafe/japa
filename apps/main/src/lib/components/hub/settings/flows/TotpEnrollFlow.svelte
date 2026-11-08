@@ -14,10 +14,10 @@
 	 *
 	 * Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP)
 	 */
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { totpEnable, totpConfirm, totpDisable } from '$lib/api/hub';
+	import { t } from '#lib/i18n/index.js';
+	import { totpEnable, totpConfirm, totpDisable } from '#lib/api/hub.js';
 	import QRCode from 'qrcode';
 	import { ShieldCheck, ShieldAlert, Smartphone, Copy, Check } from 'lucide-svelte';
 

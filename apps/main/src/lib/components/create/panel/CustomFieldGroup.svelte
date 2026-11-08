@@ -1,16 +1,16 @@
 <script lang="ts">
-	import type { CustomFieldDef, GeoCountry, MediaAsset } from '$lib/types';
+	import type { CustomFieldDef, GeoCountry, MediaAsset } from '#lib/types/index.js';
 	import Autocomplete from '../Autocomplete.svelte';
 	import type { AutocompleteItem } from '../Autocomplete.svelte';
-	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
 	import { ImagePlus, X } from 'lucide-svelte';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import { listCountries } from '$lib/api/geo';
-	import { listCurrencies } from '$lib/api/hub';
-	import { isoToLocalDateTime } from '$lib/utils/datetime';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import { listCountries } from '#lib/api/geo.js';
+	import { listCurrencies } from '#lib/api/hub.js';
+	import { isoToLocalDateTime } from '#lib/utils/datetime.js';
 	import { page } from '$app/state';
-	import { currencySymbol, type CurrencyInfo } from '$lib/utils/currency';
-	import { t } from '$lib/i18n';
+	import { currencySymbol, type CurrencyInfo } from '#lib/utils/currency.js';
+	import { t } from '#lib/i18n/index.js';
 
 	interface Props {
 		fields: CustomFieldDef[];

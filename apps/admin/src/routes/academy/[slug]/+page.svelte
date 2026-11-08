@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	import { page } from "$app/state";
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { Button } from "$lib/components/ui/button";
-	import { DataTable } from "$lib/components/ui/data-table";
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "#lib/components/ui/card/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { DataTable } from "#lib/components/ui/data-table/index.js";
 	import {
 		ArrowLeft, RefreshCw, GraduationCap, Users, BookOpen,
 		DollarSign, TrendingUp, ExternalLink
 	} from "lucide-svelte";
-	import { universitiesAdminApi, academyAdminApi } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { loadCurrencies, formatMoney, type CurrencyInfo } from "$lib/utils/currency";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { universitiesAdminApi, academyAdminApi } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { loadCurrencies, formatMoney, type CurrencyInfo } from "#lib/utils/currency.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 
 	// Ref: japaconnect-engineering/adr/ADR-063-japa-academy-creator-economy.md
 	// Per-university creator-economy view. The [slug] is a University space slug

@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Button } from "$lib/components/ui/button";
-	import { academyAdminApi, adminCatalogApi, type CatalogOption } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "#lib/components/entity/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { academyAdminApi, adminCatalogApi, type CatalogOption } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { Check, X, Ban, RotateCcw, Eye, Trash2, Pencil } from "lucide-svelte";
-	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import type { ActionItem, FilterDef } from "#lib/components/ui/data-table/index.js";
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type AcademyInstructorProfile = {
 		id: string;

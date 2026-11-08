@@ -1,8 +1,8 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		Ticket,
 		BadgeCheck,
@@ -13,11 +13,11 @@
 		Loader2,
 		AlertCircle
 	} from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
-	import { api, apiBaseUrl } from '$lib/api/client';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import { api, apiBaseUrl } from '#lib/api/client.js';
 	import type { PageData } from './$types';
-	import { dealPath, type AffiliateProviderAdmin, type Coupon } from '$lib/types';
-	import { currencySymbol } from '$lib/utils/currency';
+	import { dealPath, type AffiliateProviderAdmin, type Coupon } from '#lib/types/index.js';
+	import { currencySymbol } from '#lib/utils/currency.js';
 
 	let { data }: { data: PageData } = $props();
 

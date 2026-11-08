@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { Scholarship, SavedScholarship } from '$lib/types';
-import { defaultReminderDays } from '$lib/scholarships/defaultReminder';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { Scholarship, SavedScholarship } from '#lib/types/index.js';
+import { defaultReminderDays } from '#lib/scholarships/defaultReminder.js';
 
 /**
  * Scholarship detail page — Section 73, ADR-073.

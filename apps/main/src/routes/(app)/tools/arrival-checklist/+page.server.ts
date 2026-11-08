@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { ArrivalChecklistSelectorEntry, ArrivalChecklistItem, GeoSpaceOption, UserArrivalChecklist } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { ArrivalChecklistSelectorEntry, ArrivalChecklistItem, GeoSpaceOption, UserArrivalChecklist } from '#lib/types/index.js';
 
 /**
  * Arrival Checklist — §92, ADR-088.

@@ -1,9 +1,9 @@
 // Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 import type { PageServerLoad } from './$types';
 import { error, redirect } from '@sveltejs/kit';
-import { apiContext, apiList } from '$lib/server/api';
-import { hasPerm } from '$lib/server/auth';
-import type { DealPartnerRef, MyOrganization } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import { hasPerm } from '#lib/server/auth.js';
+import type { DealPartnerRef, MyOrganization } from '#lib/types/index.js';
 
 /**
  * /products/deals/new — auth-gated deal creation with two audiences:

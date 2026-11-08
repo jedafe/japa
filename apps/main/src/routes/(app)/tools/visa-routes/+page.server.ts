@@ -2,8 +2,8 @@
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPost, apiPut, ApiError } from '$lib/server/api';
-import type { VisaRouteWithAi, JCEComparison, ComparisonCreated, ComparisonItem, GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList, apiPost, apiPut, ApiError } from '#lib/server/api.js';
+import type { VisaRouteWithAi, JCEComparison, ComparisonCreated, ComparisonItem, GeoCountry } from '#lib/types/index.js';
 
 /**
  * Visa Route Comparison — §90, ADR-088.

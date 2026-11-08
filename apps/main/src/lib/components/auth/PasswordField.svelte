@@ -1,9 +1,9 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 	// Password input with show/hide toggle and optional strength meter (signup).
-	import { t } from '$lib/i18n/store.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
 	import { Eye, EyeOff } from 'lucide-svelte';
-	import { passwordStrength } from '$lib/auth/validation';
+	import { passwordStrength } from '#lib/auth/validation.js';
 
 	let {
 		value = $bindable(),

@@ -8,16 +8,16 @@
 	// Gated by `import.manage`.
 	//
 	// Ref: japaconnect-engineering/sections/65-content-import.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { Select } from '$lib/components/ui/select';
-	import UserAutocomplete from '$lib/components/ui/UserAutocomplete.svelte';
-	import { api, apiRaw } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import UserAutocomplete from '#lib/components/ui/UserAutocomplete.svelte';
+	import { api, apiRaw } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, RotateCw } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	type ImportErrorEntry = {
 		item_title?: string;

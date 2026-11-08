@@ -7,10 +7,10 @@
 	//
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { Modal } from '$lib/components/ui';
-	import { sendTip, newIdempotencyKey, fiatExponent, getWalletBalance, type TipConfig } from '$lib/api/tips';
-	import { getAccessToken } from '$lib/api/token.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { Modal } from '#lib/components/ui/index.js';
+	import { sendTip, newIdempotencyKey, fiatExponent, getWalletBalance, type TipConfig } from '#lib/api/tips.js';
+	import { getAccessToken } from '#lib/api/token.svelte.js';
 	import { AlertCircle, CheckCircle2, Clock, Coins, CreditCard, ExternalLink, Heart, Loader2, LogIn } from 'lucide-svelte';
 
 	interface Props {

@@ -1,22 +1,22 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
   import { page } from "$app/state";
   import { goto, invalidateAll } from "$app/navigation";
-  import PageHeader from "$lib/components/layout/page-header.svelte";
-  import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-  import { Tabs } from "$lib/components/ui/tabs";
-  import { Badge } from "$lib/components/ui/badge";
-  import { Button } from "$lib/components/ui/button";
-  import { Modal } from "$lib/components/ui/modal";
-  import { DataTable } from "$lib/components/ui/data-table";
-  import type { ActionItem } from "$lib/components/ui/data-table";
-  import Pagination from "$lib/components/ui/Pagination.svelte";
-  import Autocomplete from "$lib/components/ui/Autocomplete.svelte";
-  import type { AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
+  import PageHeader from "#lib/components/layout/page-header.svelte";
+  import { Card, CardContent, CardHeader } from "#lib/components/ui/card/index.js";
+  import { Tabs } from "#lib/components/ui/tabs/index.js";
+  import { Badge } from "#lib/components/ui/badge/index.js";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Modal } from "#lib/components/ui/modal/index.js";
+  import { DataTable } from "#lib/components/ui/data-table/index.js";
+  import type { ActionItem } from "#lib/components/ui/data-table/index.js";
+  import Pagination from "#lib/components/ui/Pagination.svelte";
+  import Autocomplete from "#lib/components/ui/Autocomplete.svelte";
+  import type { AutocompleteItem } from "#lib/components/ui/Autocomplete.svelte";
   import { UserPlus, Users, Shield, AlertTriangle, Trash2, Ban, Play, RotateCcw, Coins, BadgeCheck } from "lucide-svelte";
-   import { userManagementApi, impersonationApi, usersWarningsAdminApi, verificationAdminApi, type UserSession, type WalletLedgerEntry, type ModerationConfigOption, type VerificationTypeItem } from "$lib/api";
-  import { hasPermission } from "$lib/stores/permissions.svelte";
+   import { userManagementApi, impersonationApi, usersWarningsAdminApi, verificationAdminApi, type UserSession, type WalletLedgerEntry, type ModerationConfigOption, type VerificationTypeItem } from "#lib/api.js";
+  import { hasPermission } from "#lib/stores/permissions.svelte.js";
 
   type UserDetail = {
     id: string;

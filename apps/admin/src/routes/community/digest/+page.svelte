@@ -2,16 +2,16 @@
 	// /community/digest — admin HITL review queue for community digests (§84).
 	// Lists digest editions with server-side pagination, filter, and sort.
 	// Admin can publish drafts/reviews and trigger manual generation.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { digestAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { digestAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
 	import { JsonValueEditor } from '@japaconnect/ui';
-	import { useCountries } from '$lib/utils/countries.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, CheckCircle, Sparkles, Pencil } from 'lucide-svelte';
-	import type { ActionContext, ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import type { ActionContext, ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	// DigestItem matches the backend DigestEditionDTO (§84 API contract).
 	// §84 is metrics-driven (no AI generation), so the digest_editions table

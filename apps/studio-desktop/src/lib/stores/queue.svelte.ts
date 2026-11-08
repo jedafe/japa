@@ -4,9 +4,9 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import { type FileState } from '$lib/types/queue';
-import type { ScannedFile } from '$lib/services/file-scanner';
-import * as db from '$lib/services/db';
+import { type FileState } from '#lib/types/queue.js';
+import type { ScannedFile } from '#lib/services/file-scanner.js';
+import * as db from '#lib/services/db.js';
 
 // Keeps the queue UI's canonical fields (modifiedAt, lastPublishedAt, syncState,
 // status) in sync with their display aliases.

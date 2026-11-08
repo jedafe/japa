@@ -5,7 +5,7 @@
 	// field_values.items is the editing source; serializeListBodyHtml produces
 	// the canonical body_html persisted on the contents row.
 	import { onMount, untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		Plus,
 		X,
@@ -18,13 +18,13 @@
 		Loader2
 	} from 'lucide-svelte';
 	import PostEditor, { type EditorMode } from './PostEditor.svelte';
-	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
 	import Autocomplete, { type AutocompleteItem } from '../Autocomplete.svelte';
-	import { api } from '$lib/api/client';
-	import { resolveVideo } from '$lib/api/videos';
+	import { api } from '#lib/api/client.js';
+	import { resolveVideo } from '#lib/api/videos.js';
 	import { displayNumber, isEmptyHtml, serializeListBodyHtml } from './listSerialize';
-	import type { ListFieldValues, ListItem, ListMode, MediaAsset } from '$lib/types';
-	import type { ContentArticle, GuideListItem } from '$lib/types/content';
+	import type { ListFieldValues, ListItem, ListMode, MediaAsset } from '#lib/types/index.js';
+	import type { ContentArticle, GuideListItem } from '#lib/types/content.js';
 
 	type VisualTab = 'image' | 'content' | 'link' | 'video';
 

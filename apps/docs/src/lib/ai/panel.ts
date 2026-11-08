@@ -1,13 +1,13 @@
 // §115 AI Quick Panel — wires @japaconnect/ai-panel to the Docs app's
 // api/csrf/i18n. Called once from the root layout onMount.
-import { env } from '$env/dynamic/public';
+import { PUBLIC_JC_API_URL, PUBLIC_MAIN_ORIGIN } from '$app/env/public';
 import { initAiPanelDeps } from '@japaconnect/ai-panel';
-import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf';
-import { t } from '$lib/i18n';
+import { getCsrfToken, refreshCsrfToken } from '#lib/api/csrf.js';
+import { t } from '#lib/i18n/index.js';
 
-const API_BASE = (env.PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
+const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 // Same convention as GuestAuthButtons/UserDropdown/GuestHeader/GuestFooter.
-const MAIN_ORIGIN = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+const MAIN_ORIGIN = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 
 let inited = false;
 

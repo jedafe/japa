@@ -3,15 +3,15 @@
 	// quiz questions on their own track (ADR-063). Platform admins may edit
 	// any track's curriculum (the backend bypasses ownership for them).
 	// CSR ONLY: /academy/my/* endpoints.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { uploadLessonFile, listMyMedia, uploadMediaImage, updateMediaImage, stockApi } from '$lib/api/media';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { uploadLessonFile, listMyMedia, uploadMediaImage, updateMediaImage, stockApi } from '#lib/api/media.js';
 	import { page } from '$app/state';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { confirmDialog } from '@japaconnect/ui';
 	import { onMount } from 'svelte';
 	import { RichTextEditor, MediaPickerModal } from '@japaconnect/ui';
-	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
+	import { LoadingSkeleton, EmptyState } from '#lib/components/ui/index.js';
 	import {
 		ArrowLeft,
 		Plus,
@@ -30,9 +30,9 @@
 		Send,
 		ExternalLink
 	} from 'lucide-svelte';
-	import type { Curriculum, CurriculumModule, CurriculumLesson, QuizEditQuestion, LessonType } from '$lib/types';
+	import type { Curriculum, CurriculumModule, CurriculumLesson, QuizEditQuestion, LessonType } from '#lib/types/index.js';
 
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	const trackId = page.params.id;
 
@@ -133,6 +133,7 @@
 	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
 	let bypassGuard = false;
 	beforeNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
 		if (!lessonDirty || nav.type === 'leave' || bypassGuard) return;
 		nav.cancel();
 		const target = nav.to?.url;
@@ -152,7 +153,7 @@
 
 	function flash(msg: string) {
 		notice = msg;
-		setTimeout(() => (notice = null), 4000);
+		setTimeout(() => notice = null, 4000);
 	}
 
 	// ---------------- track submit-for-review ----------------
@@ -209,7 +210,7 @@
 	}
 
 	async function deleteModule(m: CurriculumModule) {
-		if (!(await confirmDialog(t('curriculum.confirm_delete_module', `Delete module "${m.title}" and all its lessons?`)))) return;
+		if (!await confirmDialog(t('curriculum.confirm_delete_module', `Delete module "${m.title}" and all its lessons?`))) return;
 		const r = await api.delete(`/academy/my/modules/${m.id}`);
 		if (r.error) {
 			error = r.error.message;
@@ -274,11 +275,11 @@
 	}
 
 	async function openLessonEditor(moduleId: string, lesson: CurriculumLesson | null) {
-		if (!(await confirmDiscardLesson())) return;
+		if (!await confirmDiscardLesson()) return;
 		lessonModuleId = moduleId;
 		editingLessonId = lesson?.id ?? null;
 		// Seed only for article lessons — other types don't use the editor.
-		articleSeed = lesson?.lesson_type === 'article' ? (lesson.content ?? '') : '';
+		articleSeed = lesson?.lesson_type === 'article' ? lesson.content ?? '' : '';
 		quizDirty = false;
 		lessonContentEdited = false;
 		openedLessonType = lesson?.lesson_type ?? null;
@@ -339,7 +340,7 @@
 	}
 
 	async function cancelLessonEditor() {
-		if (!(await confirmDiscardLesson())) return;
+		if (!await confirmDiscardLesson()) return;
 		resetLessonEditor();
 	}
 
@@ -394,7 +395,7 @@
 		const urlTypes = ['youtube', 'screencast', 'video', 'document', 'audio', 'link'];
 		if (urlTypes.includes(lessonForm.lesson_type)) {
 			const required = lessonForm.lesson_type === 'youtube' || lessonForm.lesson_type === 'link';
-			const ok = !url ? !required : /^https?:\/\/\S+$/i.test(url);
+			const ok = !url ? !required : (/^https?:\/\/\S+$/i).test(url);
 			if (!ok) {
 				error = required
 					? t('curriculum.url_required', 'A valid https:// URL is required for this lesson type.')
@@ -439,7 +440,7 @@
 	}
 
 	async function deleteLesson(lesson: CurriculumLesson) {
-		if (!(await confirmDialog(t('curriculum.confirm_delete_lesson', `Delete lesson "${lesson.title}"?`)))) return;
+		if (!await confirmDialog(t('curriculum.confirm_delete_lesson', `Delete lesson "${lesson.title}"?`))) return;
 		const r = await api.delete(`/academy/my/lessons/${lesson.id}`);
 		if (r.error) {
 			error = r.error.message;
@@ -616,12 +617,21 @@
 					<!-- Module header -->
 					<div class="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-3">
 						<div class="flex flex-col">
-							<button type="button" class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={mi === 0} onclick={() => moveModule(curriculum!.modules, mi, -1)} aria-label={t('curriculum.move_module_up', 'Move module up')}>
-								<ChevronUp size={16} />
-							</button>
-							<button type="button" class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={mi === curriculum!.modules.length - 1} onclick={() => moveModule(curriculum!.modules, mi, 1)} aria-label={t('curriculum.move_module_down', 'Move module down')}>
-								<ChevronDown size={16} />
-							</button>
+							<button
+								type="button"
+								class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30"
+								disabled={mi === 0}
+								onclick={() => moveModule((curriculum!).modules, mi, -1)}
+								aria-label={t('curriculum.move_module_up', 'Move module up')}
+							><ChevronUp size={16} /></button>
+
+							<button
+								type="button"
+								class="text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30"
+								disabled={mi === (curriculum!).modules.length - 1}
+								onclick={() => moveModule((curriculum!).modules, mi, 1)}
+								aria-label={t('curriculum.move_module_down', 'Move module down')}
+							><ChevronDown size={16} /></button>
 						</div>
 						<div class="flex-1">
 							{#if editingModuleId === m.id}
@@ -639,8 +649,18 @@
 										placeholder={t('curriculum.module_description', 'Description (optional)')}
 									/>
 									<div class="flex gap-2">
-										<button type="button" onclick={saveModule} disabled={busyModule} class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] disabled:opacity-50">{t('common.save', 'Save')}</button>
-										<button type="button" onclick={() => (editingModuleId = null)} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-text)]">{t('common.cancel', 'Cancel')}</button>
+										<button
+											type="button"
+											onclick={saveModule}
+											disabled={busyModule}
+											class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] disabled:opacity-50"
+										>{t('common.save', 'Save')}</button>
+
+										<button
+											type="button"
+											onclick={() => editingModuleId = null}
+											class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-text)]"
+										>{t('common.cancel', 'Cancel')}</button>
 									</div>
 								</div>
 							{:else}
@@ -737,24 +757,32 @@
 									<span class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]">{t('curriculum.content', 'Content')}</span>
 									<RichTextEditor
 										content={articleSeed}
-										{t}
+										t={t}
 										placeholder={t('curriculum.article_placeholder', 'Write the lesson…')}
 										ariaLabel={t('curriculum.content', 'Content')}
 										defaultMode="wysiwyg"
 										minHeight={220}
 										features={{ image: true, youtube: true, markdown: true }}
-										onmarkdown={(md) => (lessonForm.content = md)}
+										onmarkdown={(md) => lessonForm.content = md}
 										onPickImage={(insert) => {
 											pendingImageInsert = insert;
 											mediaPickerOpen = true;
 										}}
-										onedit={() => (lessonContentEdited = true)}
+										onedit={() => lessonContentEdited = true}
 									/>
 								</div>
 							{:else if lessonForm.lesson_type === 'checklist'}
 								<label class="mt-3 block">
-									<span class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]">{t('curriculum.checklist_items', 'Checklist items (one per line)')}</span>
-									<textarea bind:value={lessonForm.content} oninput={() => (lessonContentEdited = true)} rows="6" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"></textarea>
+									<span
+										class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]"
+									>{t('curriculum.checklist_items', 'Checklist items (one per line)')}</span>
+
+									<textarea
+										bind:value={lessonForm.content}
+										oninput={() => lessonContentEdited = true}
+										rows="6"
+										class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+									></textarea>
 								</label>
 							{:else if lessonForm.lesson_type === 'quiz'}
 								<div class="mt-3">
@@ -769,7 +797,15 @@
 													<span class="text-xs font-semibold text-[var(--color-muted)]">Q{qi + 1}</span>
 													<button type="button" onclick={() => removeQuestion(qi)} class="text-[var(--color-muted)] hover:text-[var(--color-destructive)]" aria-label={t('curriculum.remove_question', 'Remove question')}><Trash2 size={14} /></button>
 												</div>
-												<input type="text" bind:value={q.question} placeholder={t('curriculum.question_text', 'Question')} oninput={() => (quizDirty = true)} class="mb-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-sm text-[var(--color-text)]" />
+
+												<input
+													type="text"
+													bind:value={q.question}
+													placeholder={t('curriculum.question_text', 'Question')}
+													oninput={() => quizDirty = true}
+													class="mb-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-sm text-[var(--color-text)]"
+												/>
+
 												<div class="space-y-1.5">
 													{#each q.options as _opt, oi (oi)}
 														<div class="flex items-center gap-2">
@@ -781,13 +817,42 @@
 																class="shrink-0"
 																title={t('curriculum.mark_correct', 'Mark as correct answer')}
 															/>
-															<input type="text" bind:value={q.options[oi]} oninput={() => (quizDirty = true)} placeholder={t('curriculum.option_ph', 'Option {n}').replace('{n}', String(oi + 1))} class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-sm text-[var(--color-text)]" />
-															<button type="button" onclick={() => removeOption(q, oi)} class="text-[var(--color-muted)] hover:text-[var(--color-destructive)]" aria-label={t('curriculum.remove_option', 'Remove option')}><Trash2 size={13} /></button>
+
+															<input
+																type="text"
+																bind:value={q.options[oi]}
+																oninput={() => quizDirty = true}
+																placeholder={t('curriculum.option_ph', 'Option {n}').replace('{n}', String(oi + 1))}
+																class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-sm text-[var(--color-text)]"
+															/>
+
+															<button
+																type="button"
+																onclick={() => removeOption(q, oi)}
+																class="text-[var(--color-muted)] hover:text-[var(--color-destructive)]"
+																aria-label={t('curriculum.remove_option', 'Remove option')}
+															><Trash2 size={13} /></button>
 														</div>
 													{/each}
 												</div>
-												<button type="button" onclick={() => addOption(q)} class="mt-1.5 inline-flex items-center gap-1 text-xs text-[var(--color-primary)]"><Plus size={12} /> {t('curriculum.add_option', 'Add option')}</button>
-												<input type="text" bind:value={q.explanation} oninput={() => (quizDirty = true)} placeholder={t('curriculum.explanation', 'Explanation shown after submit (optional)')} class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-xs text-[var(--color-text)]" />
+
+												<button
+													type="button"
+													onclick={() => addOption(q)}
+													class="mt-1.5 inline-flex items-center gap-1 text-xs text-[var(--color-primary)]"
+												>
+													<Plus size={12} />
+													{t('curriculum.add_option', 'Add option')}
+												</button>
+
+												<input
+													type="text"
+													bind:value={q.explanation}
+													oninput={() => quizDirty = true}
+													placeholder={t('curriculum.explanation', 'Explanation shown after submit (optional)')}
+													class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-xs text-[var(--color-text)]"
+												/>
+
 												<p class="mt-1 text-[10px] text-[var(--color-muted)]">{t('curriculum.answer_hint', 'Select the radio next to the correct option')}</p>
 											</div>
 										{/each}
@@ -815,7 +880,12 @@
 												{#if uploadingFile}<span class="text-xs text-[var(--color-muted)]">{t('curriculum.uploading', 'Uploading…')}</span>{/if}
 												{#if lessonMediaId}
 													<span class="text-xs text-[var(--color-progress)]">✓ {t('curriculum.file_attached', 'File attached')}</span>
-													<button type="button" onclick={() => (lessonMediaId = null)} class="text-xs text-[var(--color-destructive)]">{t('common.remove', 'Remove')}</button>
+
+													<button
+														type="button"
+														onclick={() => lessonMediaId = null}
+														class="text-xs text-[var(--color-destructive)]"
+													>{t('common.remove', 'Remove')}</button>
 												{/if}
 											</div>
 										</div>
@@ -853,13 +923,24 @@
 						class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-1.5 text-sm text-[var(--color-text)]"
 						onkeydown={(e) => e.key === 'Enter' && createModule()}
 					/>
-					<button type="button" onclick={createModule} disabled={busyModule || !newModuleTitle.trim()} class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-50">{t('common.add', 'Add')}</button>
-					<button type="button" onclick={() => (addingModule = false)} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">{t('common.cancel', 'Cancel')}</button>
+
+					<button
+						type="button"
+						onclick={createModule}
+						disabled={busyModule || !newModuleTitle.trim()}
+						class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-50"
+					>{t('common.add', 'Add')}</button>
+
+					<button
+						type="button"
+						onclick={() => addingModule = false}
+						class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]"
+					>{t('common.cancel', 'Cancel')}</button>
 				</div>
 			{:else}
 				<button
 					type="button"
-					onclick={() => (addingModule = true)}
+					onclick={() => addingModule = true}
 					class="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface)]"
 				>
 					<Plus size={16} /> {t('curriculum.add_module', 'Add module')}
@@ -871,7 +952,7 @@
 
 {#if mediaPickerOpen}
 	<MediaPickerModal
-		{t}
+		t={t}
 		allowedType="image"
 		fetchItems={listMyMedia}
 		onUpload={uploadMediaImage}

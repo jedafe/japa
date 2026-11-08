@@ -1,7 +1,7 @@
-import { json, error } from '@sveltejs/kit';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { error } from '@sveltejs/kit';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
 import type { RequestHandler } from './$types';
-import type { DocSearchResult } from '$lib/types';
+import type { DocSearchResult } from '#lib/types/index.js';
 
 /**
  * Same-origin search proxy for the docs command palette.
@@ -28,7 +28,7 @@ export const GET: RequestHandler = async (event) => {
 
 	try {
 		const results = await apiGet<DocSearchResult[]>(apiContext(event), `/docs/search?${params}`);
-		return json({ data: results });
+		return Response.json({ data: results });
 	} catch (err) {
 		if (err instanceof ApiError) {
 			throw error(err.status, { code: err.code, message: err.message });

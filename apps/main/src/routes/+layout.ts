@@ -1,5 +1,5 @@
 import type { LayoutLoad } from './$types';
-import { ensureLocale } from '$lib/i18n';
+import { ensureLocale } from '#lib/i18n/index.js';
 
 /**
  * Root universal load — runs after +layout.server.ts on both SSR and client

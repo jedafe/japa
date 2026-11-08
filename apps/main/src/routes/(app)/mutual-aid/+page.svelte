@@ -1,19 +1,19 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { i18n } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { i18n } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { HandHeart, Plus, MapPin, Clock, X } from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
-	import { relativeTime } from '$lib/feed/time';
-	import { mutualAidPostTypeLabel, mutualAidCategoryLabel } from '$lib/enumOptions';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '$lib/types';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { mutualAidPostTypeLabel, mutualAidCategoryLabel } from '#lib/enumOptions.js';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

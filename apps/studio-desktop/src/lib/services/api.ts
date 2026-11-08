@@ -3,7 +3,7 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import { createClient } from '$lib/api/client';
+import { createClient } from '#lib/api/client.js';
 import type {
 	PublicContentType,
 	StudioContentType,
@@ -13,7 +13,7 @@ import type {
 	ContentRecord,
 	ContentDetail,
 	SelectOption
-} from '$lib/types/prompt';
+} from '#lib/types/prompt.js';
 
 // ADR-130 Phase 3: unified Japa AI chat — the JSON contract returned by
 // POST /ai/chat for non-SSE clients. sources are §69 RAG citations.

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /deletions — read-only audit log of soft-deleted and removed content.
 	// Backend: GET /admin/deletions → adminHandlers.ListDeletedContents (RBAC: admin.moderation).
 	// Ref: sections/19-gdpr-ndpr-compliance.md, Rule 11 (soft deletes only for user content)
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Eye } from 'lucide-svelte';
 
 	// Matches gen.ListDeletedContentsRow JSON output.

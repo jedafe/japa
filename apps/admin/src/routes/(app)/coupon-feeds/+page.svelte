@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /coupon-feeds — deal feed source management (EntityPage scaffold).
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md (Deal Feed Import)
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import type { ActionContext } from '$lib/components/ui/data-table';
-	import { couponFeedsAdminApi, affiliateProvidersAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import type { ActionContext } from '#lib/components/ui/data-table/index.js';
+	import { couponFeedsAdminApi, affiliateProvidersAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Eye, Pencil, RefreshCw, Trash2 } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 

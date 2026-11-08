@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { changePassword } from '$lib/api/hub';
+	import { t } from '#lib/i18n/index.js';
+	import { changePassword } from '#lib/api/hub.js';
 	import { validatePassword } from '../security';
 
 	let current = $state('');

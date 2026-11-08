@@ -2,10 +2,10 @@
 	// /tools/cost-of-living — data completeness + staleness report for the Cost
 	// of Living Calculator (Section 72, ADR-072). The backend returns a paginated
 	// per-city report (AdminStatsResponse) rendered through the shared DataTable.
-	import { t } from '$lib/stores/i18n.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { costOfLivingAdminApi, type ColAdminStatsItem } from '$lib/api';
-	import type { Column } from '$lib/components/ui/data-table/types';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import { costOfLivingAdminApi, type ColAdminStatsItem } from '#lib/api.js';
+	import type { Column } from '#lib/components/ui/data-table/types.js';
 
 	// ── State ───────────────────────────────────────────────────────────────
 	let pageError = $state('');

@@ -1,4 +1,4 @@
-import type { SaveErrorClass } from '$lib/types';
+import type { SaveErrorClass } from '#lib/types/index.js';
 
 type Res = { data: unknown; error: { message: string; status: number } | null; status: number };
 

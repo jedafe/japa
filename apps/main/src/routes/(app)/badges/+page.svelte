@@ -1,20 +1,20 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Achievement centre — gamification v2 catalogue (migration 001016).
 	// Shield-grid of every active badge grouped by category, with earned /
 	// locked / secret states and progress toward each goal (mockup-aligned).
 	import { page } from '$app/state';
-	import { t, i18n } from '$lib/i18n';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import {
 		Award, Lock, Trophy, Compass, GraduationCap, Briefcase, Users,
 		BookOpen, MessageSquare, HeartHandshake, Package, PiggyBank, Plane,
 		ShieldCheck, Flame, Star, GitCompare, Bot, Home, FileCheck, Sparkles,
 		MapPin, TrendingUp, Flag
 	} from 'lucide-svelte';
-	import type { IconComponent } from '$lib/components/ui/icons';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import type { Badge, CollectionBadge } from '$lib/types';
+	import type { IconComponent } from '#lib/components/ui/icons.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import type { Badge, CollectionBadge } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

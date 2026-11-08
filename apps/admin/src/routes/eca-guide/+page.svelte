@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	// /eca-guide — ECA provider + guide management + community update moderation (§109).
 	// Backend: GET/POST/PATCH/DELETE /admin/eca-providers, GET/POST/PATCH/DELETE /admin/eca-guides,
 	//          GET/PATCH /admin/eca-guides/updates.
 	// Ref: sections/109-eca-guide.md, ADR-120.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { api, apiRaw } from '$lib/api';
-	import { loadCurrencies, currencyOptions, currencyLabel, currencySymbol, type CurrencyInfo } from '$lib/utils/currency';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { api, apiRaw } from '#lib/api.js';
+	import { loadCurrencies, currencyOptions, currencyLabel, currencySymbol, type CurrencyInfo } from '#lib/utils/currency.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
 	import { CheckCircle, XCircle, Eye } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type Provider = {
 		id: string;

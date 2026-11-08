@@ -9,12 +9,12 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { DropdownMenu } from 'bits-ui';
-	import { t, i18n } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { setContentCountry } from '$lib/api/geo';
-	import { pinMarketsFirst, servedMarkets } from '$lib/utils/geoMarkets';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { setContentCountry } from '#lib/api/geo.js';
+	import { pinMarketsFirst, servedMarkets } from '#lib/utils/geoMarkets.js';
 	import { Globe, ChevronDown } from 'lucide-svelte';
-	import type { GeoCountry } from '$lib/types';
+	import type { GeoCountry } from '#lib/types/index.js';
 
 	let open = $state(false);
 	let saving = $state(false);

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import {
 		Languages,
@@ -20,20 +20,20 @@
 		GitCompare,
 		Loader2
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import AiBodyField from '$lib/ai/AiBodyField.svelte';
+	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import AiBodyField from '#lib/ai/AiBodyField.svelte';
 	import type {
 		LanguageTest,
 		LanguageTestRequirementWithAi,
 		LanguageTestResource,
 		LanguageTestScoreStory,
 		GeoCountry
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { PageData, ActionData } from './$types';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Language Test Hub tool — §99, ADR-088.
@@ -130,7 +130,7 @@
 		);
 		if (token !== requirementsToken) return;
 		loadingRequirements = false;
-		allRequirements = res.error ? [] : (res.data ?? []);
+		allRequirements = res.error ? [] : res.data ?? [];
 	}
 
 	function onDestChange(id: string) {
@@ -139,10 +139,11 @@
 		selectedTestSlug = null;
 		selectedTestSlugs = new Set();
 		loadRequirements();
-		const url = new URL(page.url);
-		if (id) url.searchParams.set('dest', id);
-		else url.searchParams.delete('dest');
-		replaceState(url, {});
+		const url = new URL(page.url.href);
+
+		if (id) url.searchParams.set('dest', id); else url.searchParams.delete('dest');
+
+		goto(url, { shallow: true, replace: true });
 	}
 
 	function toggleTestSelection(slug: string) {
@@ -421,10 +422,11 @@
 											target="_blank"
 											rel="noopener noreferrer"
 											class="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary-text)] transition-colors"
+										>{resource.title}</a>
+
+										<div
+											class="flex items-center gap-2 text-xs text-[var(--color-muted)] mt-0.5"
 										>
-											{resource.title}
-										</a>
-										<div class="flex items-center gap-2 text-xs text-[var(--color-muted)] mt-0.5">
 											{#if resource.resource_type}
 												<span>{resource.resource_type}</span>
 											{/if}
@@ -533,7 +535,7 @@
 									contentType="language_test"
 									title={testDetail.name}
 									body={storyAdvice}
-									onBody={(v) => (storyAdvice = v)}
+									onBody={(v) => storyAdvice = v}
 									placeholder={t('language_test.advice_placeholder', 'Share your prep advice for others...')}
 									rows={3}
 									user={data.user}
@@ -658,8 +660,8 @@
 						initialFetcher={fetchVisaCategoriesInitial}
 						selectedId={selectedVisaCategory || null}
 						selectedLabel={selectedVisaCategory || null}
-						onSelect={(item) => (selectedVisaCategory = item.id)}
-						onClear={() => (selectedVisaCategory = '')}
+						onSelect={(item) => selectedVisaCategory = item.id}
+						onClear={() => selectedVisaCategory = ''}
 						compact
 					/>
 				</div>

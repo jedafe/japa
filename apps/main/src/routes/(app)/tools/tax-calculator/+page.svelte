@@ -1,7 +1,7 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import {
 		Receipt,
@@ -12,14 +12,14 @@
 		ExternalLink,
 		Lock
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import type { TaxGuideWithAi, TaxTreaty, GeoCountry, CatalogOption } from '$lib/types';
+	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import type { TaxGuideWithAi, TaxTreaty, GeoCountry, CatalogOption } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Tax Calculator tool — §100, ADR-088.

@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { ScamReport, ScamAlertSubscription } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { ScamReport, ScamAlertSubscription } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {

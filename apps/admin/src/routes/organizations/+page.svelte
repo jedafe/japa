@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /organisations — migrated to the EntityPage scaffold; CRUD entity with state actions (verify/unverify) and an approve-claim sub-flow.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
-	import { Modal } from "$lib/components/ui/modal";
-	import { safeHref } from "$lib/utils/html";
-	import { Button } from "$lib/components/ui/button";
-	import { Tabs } from "$lib/components/ui/tabs";
-	import { organisationsAdminApi, apiRaw, fieldGroupsAdminApiExtended, geoApi } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "#lib/components/entity/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { safeHref } from "#lib/utils/html.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { Tabs } from "#lib/components/ui/tabs/index.js";
+	import { organisationsAdminApi, apiRaw, fieldGroupsAdminApiExtended, geoApi } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { Eye, Pencil, Trash2, ShieldCheck, ShieldOff, RefreshCw, Building2, ListChecks, Plus } from "lucide-svelte";
-	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
+	import type { ActionItem, FilterDef } from "#lib/components/ui/data-table/index.js";
 
 	type Organisation = {
 		id: string;

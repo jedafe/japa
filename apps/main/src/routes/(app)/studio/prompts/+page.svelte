@@ -1,21 +1,21 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md — Prompts tab in
 	// the composer idiom: content type / guide category / title / generated
 	// prompt / import panel in the main column, the Prompt|Structure|Journey|
 	// Settings inspector in the right rail — same contract as /studio/create.
 	import { onMount, untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import PromptBuilder from '$lib/components/studio/PromptBuilder.svelte';
-	import PromptRightPanel from '$lib/components/studio/PromptRightPanel.svelte';
-	import ImportPanel from '$lib/components/studio/ImportPanel.svelte';
-	import { loadStudioDefaults } from '$lib/studio/defaults';
-	import { studioMobile, resetStudioMobileBridge } from '$lib/studio/mobileView.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import PromptBuilder from '#lib/components/studio/PromptBuilder.svelte';
+	import PromptRightPanel from '#lib/components/studio/PromptRightPanel.svelte';
+	import ImportPanel from '#lib/components/studio/ImportPanel.svelte';
+	import { loadStudioDefaults } from '#lib/studio/defaults.js';
+	import { studioMobile, resetStudioMobileBridge } from '#lib/studio/mobileView.svelte.js';
 	import {
 		DEFAULT_PROMPT_VALUES,
 		promptFromDefaults,
 		type PromptFormValues
-	} from '$lib/studio/types';
+	} from '#lib/studio/types.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

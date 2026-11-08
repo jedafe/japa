@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
-	import { apiPost } from '$lib/api/client';
-	import { t } from '$lib/i18n';
+	import { goto } from '$app/navigation';
+	import { apiPost } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
 	import { driver, type DriveStep } from 'driver.js';
 	import 'driver.js/dist/driver.css';
 
@@ -37,17 +37,15 @@
 	const tourSteps = $derived(
 		(steps == null ? defaultStepKeys : steps)
 			.map((key) => {
-				const prefix = key.replaceAll('-', '_');
-				return {
-					selector: `[data-tour="${key}"]`,
-					title: t(`tour.${prefix}_title`, ''),
-					description: t(`tour.${prefix}_desc`, '')
-				};
-			})
-			// Skip keys with no translation — admin-added targets without
-			// i18n entries would otherwise render an empty popover.
-			.filter((s) => s.title !== '')
-	);
+		const prefix = key.replaceAll('-', '_');
+		return {
+			selector: `[data-tour="${key}"]`,
+			title: t(`tour.${prefix}_title`, ''),
+			description: t(`tour.${prefix}_desc`, '')
+		};
+	}).// Skip keys with no translation — admin-added targets without
+	// i18n entries would otherwise render an empty popover.
+	filter((s) => s.title !== ''));
 
 	// driver.js resolves string selectors via querySelector, which always
 	// returns the first DOM match — but the shell mounts [data-tour] targets
@@ -65,10 +63,10 @@
 	// page refresh re-runs it, and ?tour=replay would loop forever since it
 	// intentionally bypasses the dismissed guard.
 	function cleanupUrl() {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (!url.searchParams.has('tour')) return;
 		url.searchParams.delete('tour');
-		replaceState(url, page.state);
+		goto(url, { shallow: true, replace: true, state: page.state });
 	}
 
 	// Auto-retry: when a mounted tour finds no visible targets (exception

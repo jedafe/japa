@@ -9,10 +9,10 @@
 	// Ref: internal/control/handlers_seeds.go (SeedOp/SeedParam contract)
 	import { onMount } from 'svelte';
 	import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-svelte';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	interface SeedParam {
 		key: string;

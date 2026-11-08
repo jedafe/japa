@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { ChevronRight, SlidersHorizontal, X } from 'lucide-svelte';
 	import type { Component } from 'svelte';
 

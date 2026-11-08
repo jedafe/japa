@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent, CardHeader } from '#lib/components/ui/card/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Brain, RefreshCw, Trash2, Database, FileText, Settings } from 'lucide-svelte';
-	import { Modal } from '$lib/components/ui/modal';
-	import { api } from '$lib/api';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { api } from '#lib/api.js';
 
 	type EntityTypeStats = {
 		entity_type: string;

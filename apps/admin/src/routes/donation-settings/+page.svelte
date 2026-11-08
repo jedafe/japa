@@ -6,8 +6,8 @@
 	//
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { onMount } from 'svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { tipsAdminApi } from '$lib/api';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { tipsAdminApi } from '#lib/api.js';
 	import { Loader2, CheckCircle2, AlertCircle } from 'lucide-svelte';
 
 	interface PlatformSettings {

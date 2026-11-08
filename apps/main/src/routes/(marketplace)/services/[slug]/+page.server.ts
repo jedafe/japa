@@ -2,14 +2,14 @@
 // Ref: japaconnect-engineering/sections/114-services-marketplace.md
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '#lib/server/api.js';
 import type {
 	ServiceListing,
 	ServiceReview,
 	ServiceReviewAggregate,
 	ServiceCategoryInfo
-} from '$lib/types';
-import type { ContentArticle } from '$lib/types/content';
+} from '#lib/types/index.js';
+import type { ContentArticle } from '#lib/types/content.js';
 
 /**
  * Service detail at /services/[slug] — SSR detail. Fetches

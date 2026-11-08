@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { replaceState } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import AiBodyField from '$lib/ai/AiBodyField.svelte';
-	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { goto } from '$app/navigation';
+	import { api } from '#lib/api/client.js';
+	import AiBodyField from '#lib/ai/AiBodyField.svelte';
+	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
-	import { t, siteName, i18n } from '$lib/i18n';
+	import { t, siteName, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import {
 		Stamp,
@@ -16,12 +16,12 @@
 		MessageSquarePlus,
 		Lock
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
-	import type { AttestationPathwayWithAi, AttestationCommunityUpdate, GeoCountry } from '$lib/types';
+	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
+	import type { AttestationPathwayWithAi, AttestationCommunityUpdate, GeoCountry } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Attestation Guide tool — §97, ADR-088.
@@ -108,7 +108,7 @@
 		);
 		loadingMore = false;
 		if (!res.error) {
-			pathways = [...pathways, ...(res.data ?? [])];
+			pathways = [...pathways, ...res.data ?? []];
 			currentPage = nextPage;
 			pathwaysTotal = readTotal(res.envelope) ?? pathwaysTotal;
 		}
@@ -147,14 +147,13 @@
 	}
 
 	function updateUrl() {
-		const url = new URL(page.url);
-		if (selectedDestId) url.searchParams.set('dest', selectedDestId);
-		else url.searchParams.delete('dest');
-		if (selectedIssuingId) url.searchParams.set('issuing', selectedIssuingId);
-		else url.searchParams.delete('issuing');
-		if (docTypeFilter.trim()) url.searchParams.set('doc_type', docTypeFilter.trim());
-		else url.searchParams.delete('doc_type');
-		replaceState(url, {});
+		const url = new URL(page.url.href);
+
+		if (selectedDestId) url.searchParams.set('dest', selectedDestId); else url.searchParams.delete('dest');
+		if (selectedIssuingId) url.searchParams.set('issuing', selectedIssuingId); else url.searchParams.delete('issuing');
+		if (docTypeFilter.trim()) url.searchParams.set('doc_type', docTypeFilter.trim()); else url.searchParams.delete('doc_type');
+
+		goto(url, { shallow: true, replace: true });
 	}
 
 	function toggleExpand(id: string) {
@@ -275,7 +274,12 @@
 		)}
 	/>
 	<link rel="canonical" href={page.url.href} />
-	<meta property="og:title" content="{title} — {siteName()} Tools" />
+
+	<meta
+		property="og:title"
+		content="{title} — {siteName()} Tools"
+	/>
+
 	<meta
 		property="og:description"
 		content={t(
@@ -286,7 +290,12 @@
 	<meta property="og:url" content={page.url.href} />
 	<meta property="og:type" content="website" />
 	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content="{title} — {siteName()} Tools" />
+
+	<meta
+		name="twitter:title"
+		content="{title} — {siteName()} Tools"
+	/>
+
 	<meta
 		name="twitter:description"
 		content={t(
@@ -584,7 +593,7 @@
 													contentType="attestation_guide"
 													title={pathway.document_type}
 													body={updateNote}
-													onBody={(v) => (updateNote = v)}
+													onBody={(v) => updateNote = v}
 													placeholder={t('attestation_guide.note_placeholder', 'Share your experience with this step...')}
 													rows={3}
 													user={data.user}

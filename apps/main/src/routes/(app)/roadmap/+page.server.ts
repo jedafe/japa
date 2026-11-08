@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { RoadmapBoard } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { RoadmapBoard } from '#lib/types/index.js';
 
 /**
  * Public product roadmap board — GET /api/v1/roadmap/board (OptionalAuth;

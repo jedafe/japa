@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { listIngestionJobs } from '$lib/api/comparison-data-sources';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import type { IngestionJob } from '$lib/types/jce';
-	import type { Column } from '$lib/components/ui/data-table';
+	import { goto } from '$app/navigation';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { listIngestionJobs } from '#lib/api/comparison-data-sources.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import type { IngestionJob } from '#lib/types/jce.js';
+	import type { Column } from '#lib/components/ui/data-table/index.js';
 	import { onMount, untrack } from 'svelte';
 
 	const canView = $derived(hasPermission('jce.ingestion_job.view'));
@@ -94,7 +94,7 @@
 		try {
 			jobs = await listIngestionJobs(trimmed);
 			if (typeof window !== 'undefined') {
-				replaceState(`/comparison-ingestion-jobs?content_id=${encodeURIComponent(trimmed)}`, {});
+				goto(`/comparison-ingestion-jobs?content_id=${encodeURIComponent(trimmed)}`, { shallow: true, replace: true });
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('common.error', 'Failed to load ingestion jobs');
@@ -180,7 +180,7 @@
 				</p>
 			</div>
 		{:else if jobs.length > 0}
-			<DataTable {columns} data={jobs} pageSize={25} />
+			<DataTable columns={columns} data={jobs} pageSize={25} />
 		{/if}
 	</div>
 {/if}

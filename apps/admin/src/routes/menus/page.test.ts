@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.js', () => ({
 	menusAdminApi: {
 		list: vi.fn().mockResolvedValue({ ok: true, data: { items: [], total: 0, total_pages: 1, page: 0 } }),
 		get: vi.fn().mockResolvedValue({ ok: true, data: { items: [] } }),
@@ -22,7 +22,7 @@ vi.mock('$app/state', () => ({
 	page: { params: {}, url: new URL('http://localhost/') },
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn(), pushState: vi.fn() }));
-vi.mock('$lib/stores/permissions.svelte', () => ({
+vi.mock('#lib/stores/permissions.svelte.js', () => ({
 	hasPermission: () => true,
 	getPermissions: () => ['*'],
 	getPermissionState: () => ({}),

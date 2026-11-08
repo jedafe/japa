@@ -1,25 +1,25 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { goto, invalidate, replaceState } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { goto, invalidate } from '$app/navigation';
+	import { t } from '#lib/i18n/index.js';
 	import { Radar, Pin, Loader2, Lock, Globe, Search, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, EntityHero, UrlTabs, SelectField, type UrlTab } from '$lib/components/ui';
-	import { GuideSlideOver, Modal, type GuideContent } from '$lib/components/ui';
+	import { EmptyState, EntityHero, UrlTabs, SelectField, type UrlTab } from '#lib/components/ui/index.js';
+	import { GuideSlideOver, Modal, type GuideContent } from '#lib/components/ui/index.js';
 	import { Filter } from 'lucide-svelte';
-	import HeroArtRadar from '$lib/components/heroes/HeroArtRadar.svelte';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-	import { api } from '$lib/api/client';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import RadarItemRow from '$lib/components/RadarItemRow.svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import type { GeoCountry, RadarItem } from '$lib/types';
+	import HeroArtRadar from '#lib/components/heroes/HeroArtRadar.svelte';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+	import { api } from '#lib/api/client.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import RadarItemRow from '#lib/components/RadarItemRow.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import type { GeoCountry, RadarItem } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import { servedMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
-	import { flagUrl, flagEmoji } from '$lib/utils/flags';
+	import { servedMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
+	import { flagUrl, flagEmoji } from '#lib/utils/flags.js';
 
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('radar.title', 'Japa Opportunities — {site}'));
@@ -89,13 +89,14 @@
 	function handleTabChange(v: string) {
 		activeTab = v;
 		if (hasGeoFilter) {
-			goto(v === 'opportunities' ? '/radar' : `/radar?tab=${v}`, { keepFocus: true });
+			goto(v === 'opportunities' ? '/radar' : `/radar?tab=${v}`, { reset: false });
 			return;
 		}
-		const url = new URL(page.url);
-		if (v === 'opportunities') url.searchParams.delete('tab');
-		else url.searchParams.set('tab', v);
-		replaceState(`${url.pathname}${url.search}`, {});
+		const url = new URL(page.url.href);
+
+		if (v === 'opportunities') url.searchParams.delete('tab'); else url.searchParams.set('tab', v);
+
+		goto(`${url.pathname}${url.search}`, { shallow: true, replace: true });
 	}
 
 	// The resolved space for the geo filter — enables the follow button in
@@ -107,11 +108,8 @@
 		}
 		if (selectedDest) {
 			const d = selectedDest.trim().toLowerCase();
-			return (
-				countries.find(
-					(c) => c.geo_code.toLowerCase() === d || c.slug === d || c.name.toLowerCase() === d
-				) ?? null
-			);
+
+			return countries.find((c) => c.geo_code.toLowerCase() === d || c.slug === d || c.name.toLowerCase() === d) ?? null;
 		}
 		return null;
 	});
@@ -150,20 +148,9 @@
 
 	// Countries the user follows — pinned to the top of the browse list.
 	// ADR-064 served markets pin first, matching the country autocomplete.
-	const followedCountries = $derived(
-		pinMarketsFirst(
-			countries.filter((c) => followedSpaceIds.has(c.id)),
-			servedMarkets(data.siteSettings),
-			(c) => c.geo_code
-		)
-	);
-	const browseCountries = $derived(
-		pinMarketsFirst(
-			countries.filter((c) => !followedSpaceIds.has(c.id)),
-			servedMarkets(data.siteSettings),
-			(c) => c.geo_code
-		)
-	);
+	const followedCountries = $derived(pinMarketsFirst(countries.filter((c) => followedSpaceIds.has(c.id)), servedMarkets(data.siteSettings), (c) => c.geo_code));
+
+	const browseCountries = $derived(pinMarketsFirst(countries.filter((c) => !followedSpaceIds.has(c.id)), servedMarkets(data.siteSettings), (c) => c.geo_code));
 
 	// Authed layout — feed, followed countries, and the country gallery
 	// render as tabs. Instant client-side switch; ?tab= deep-links.
@@ -319,7 +306,7 @@
 	// (followed feed + followed_space_ids) re-fetches from the server.
 	async function toggleFollow(space: GeoCountry) {
 		if (pendingSpaceId) return;
-		if (!(await requireAuthOrRedirect())) return;
+		if (!await requireAuthOrRedirect()) return;
 		const wasFollowing = followedSpaceIds.has(space.id);
 		// optimistic
 		const next = new Set(followedSpaceIds);
@@ -407,9 +394,9 @@
 		stats={[
 			{
 				icon: Radar,
-				value: formatMetric(
-					Object.values(hasGeoFilter ? (data.geoCountsByType ?? {}) : (data.followedCountsByType ?? {})).reduce((a, b) => a + b, 0)
-				),
+				value: formatMetric(Object.values(hasGeoFilter
+					? data.geoCountsByType ?? {}
+					: data.followedCountsByType ?? {}).reduce((a, b) => a + b, 0)),
 				label: t('radar.stats_opportunities', 'Opportunities')
 			},
 			{ icon: Globe, value: formatMetric(countries.length), label: t('radar.stats_countries', 'Countries') }
@@ -422,10 +409,15 @@
 			<div class="grid w-full grid-cols-2 gap-3 sm:flex sm:items-center">
 			<a href="#radar-feed" class="{c.primary} flex-1 justify-center whitespace-nowrap">
 				<Search size={15} /> {t('radar.view_feed', 'View opportunities')}
-			</a>
-			<button type="button" onclick={() => (guideOpen = true)} class="{c.ghost} flex-1 justify-center whitespace-nowrap">
-				{t('common.how_it_works', 'How it works')}
-				<ChevronRight size={14} class="rtl:-scale-x-100" />
+				</a>
+
+				<button
+					type="button"
+					onclick={() => guideOpen = true}
+					class="{c.ghost} flex-1 justify-center whitespace-nowrap"
+				>
+					{t('common.how_it_works', 'How it works')} 
+					<ChevronRight size={14} class="rtl:-scale-x-100" />
 				</button>
 			</div>
 		{/snippet}
@@ -437,7 +429,7 @@
 				value={selectedItemType}
 				options={typeSelectOptions}
 				placeholder={t('radar.filter_type', 'Filter by type')}
-				onValueChange={(v) => { filtersModalOpen = false; goto(typeUrl(v), { keepFocus: true }); }}
+				onValueChange={(v) => { filtersModalOpen = false; goto(typeUrl(v), { reset: false }); }}
 				class="mb-3 w-full"
 			/>
 			<Autocomplete
@@ -449,15 +441,15 @@
 				selectedLabel={selectedCountryName || null}
 				onSelect={(item) => {
 					filtersModalOpen = false;
-					if (item.id) goto(radarUrl(item.id), { keepFocus: true });
-					else goto(radarUrl(), { keepFocus: true });
+					if (item.id) goto(radarUrl(item.id), { reset: false });
+					else goto(radarUrl(), { reset: false });
 				}}
-				onClear={() => { filtersModalOpen = false; goto(radarUrl(), { keepFocus: true }); }}
+				onClear={() => { filtersModalOpen = false; goto(radarUrl(), { reset: false }); }}
 			/>
 			{#if hasGeoFilter}
 				<button
 					type="button"
-					onclick={() => goto(radarUrl(), { keepFocus: true })}
+					onclick={() => goto(radarUrl(), { reset: false })}
 					class="mt-3 text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
 				>
 					{t('common.clear', 'Clear')}
@@ -475,51 +467,59 @@
 			     jumps when a country is picked; the Clear button restores
 			     the default feed. -->
 			<div class="relative z-20 flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur">
-				<div class="min-w-0 flex-1">
+					<div class="min-w-0 flex-1">
 					<UrlTabs tabs={radarTabs} value={activeTab} onValueChange={handleTabChange} urlParam="tab" class="!border-b-0 !bg-transparent" />
-				</div>
-				<div class="flex shrink-0 items-center gap-2 px-3" style="min-height: var(--nav-height)">
-				<button type="button" onclick={() => (filtersModalOpen = true)} class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]">
-				{t('common.filters', 'Filters')}
-				{#if hasGeoFilter}<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>{/if}
-				<Filter size={16} />
-			</button>
-			</div>
-		</div>
-		{:else}
-			<!-- Guest / geo-filtered — country selector row (first input,
-			     §31 spaces / §32 feed geo-aware pattern). -->
-			<div class="border-b border-[var(--color-border)] px-4 py-3">
-				<div class="flex flex-wrap items-center gap-2">
-					<Autocomplete
-						placeholder={t('radar.browse_countries', 'Browse countries')}
-						emptyMessage={t('common.no_results', 'No results found')}
-						fetcher={fetchCountries}
-						initialFetcher={fetchCountriesInitial}
-						selectedId={selectedSpaceId || null}
-						selectedLabel={selectedCountryName || null}
-						onSelect={(item) => {
-							if (item.id) goto(radarUrl(item.id), { keepFocus: true });
-							else goto(radarUrl(), { keepFocus: true });
-						}}
-						onClear={() => goto(radarUrl(), { keepFocus: true })}
-					/>
-					{#if hasGeoFilter}
+					</div>
+
+					<div
+						class="flex shrink-0 items-center gap-2 px-3"
+						style="min-height: var(--nav-height)"
+					>
 						<button
 							type="button"
-							onclick={() => goto(radarUrl(), { keepFocus: true })}
-							class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+							onclick={() => filtersModalOpen = true}
+							class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							{t('common.filters', 'Filters')} 
+				{#if hasGeoFilter}<span class="ms-0.5 h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true"></span>{/if}
+							<Filter size={16} />
+						</button>
+					</div>
+				</div>
+			{:else}
+				<!-- Guest / geo-filtered — country selector row (first input,
+			     §31 spaces / §32 feed geo-aware pattern). -->
+			<div class="border-b border-[var(--color-border)] px-4 py-3">
+					<div class="flex flex-wrap items-center gap-2">
+						<Autocomplete
+							placeholder={t('radar.browse_countries', 'Browse countries')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchCountries}
+							initialFetcher={fetchCountriesInitial}
+							selectedId={selectedSpaceId || null}
+							selectedLabel={selectedCountryName || null}
+							onSelect={(item) => {
+							if (item.id) goto(radarUrl(item.id), { reset: false });
+							else goto(radarUrl(), { reset: false });
+							}}
+							onClear={() => goto(radarUrl(), { reset: false })}
+						/>
+						{#if hasGeoFilter}
+							<button
+								type="button"
+								onclick={() => goto(radarUrl(), { reset: false })}
+								class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							{t('common.clear', 'Clear')}
 						</button>
-					{/if}
-				</div>
+						{/if}
+					</div>
 
-				<!-- Domain filter — ?item_type= per catalog. Guest/geo view
+					<!-- Domain filter — ?item_type= per catalog. Guest/geo view
 				     renders it here; the authed feed renders it in the panel. -->
-			</div>
+				</div>
+			{/if}
 		{/if}
-	{/if}
 
 	{#if intelUnavailable}
 		<div class="p-4">
@@ -535,141 +535,64 @@
 		     specific country's opportunities. BUG-012 fix. -->
 		<div class="border-b border-[var(--color-border)] px-4 py-4">
 			<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-				<Globe size={16} class="text-[var(--color-primary-text)]" />
-				{#if selectedSpace?.slug}
+					<Globe size={16} class="text-[var(--color-primary-text)]" />
+					{#if selectedSpace?.slug}
 					<a href={`/spaces/${selectedSpace.slug}?tab=opportunities`} class="hover:text-[var(--color-primary-text)] hover:underline">{selectedCountryName}</a>
-				{:else}
-					{selectedCountryName}
-				{/if}
-				{#if allGeoItems.length > 0}
+					{:else}
+						{selectedCountryName}
+					{/if}
+					{#if allGeoItems.length > 0}
 					<span class="text-xs font-normal text-[var(--color-muted)]">({allGeoItems.length})</span>
-				{/if}
-				{#if typeBreakdown(data.geoCountsByType)}
+					{/if}
+					{#if typeBreakdown(data.geoCountsByType)}
 					<span class="text-xs font-normal normal-case text-[var(--color-muted)]">
 						{typeBreakdown(data.geoCountsByType)}
 					</span>
-				{/if}
-				{#if selectedSpace}
-					<button
-						type="button"
-						onclick={() => toggleFollow(selectedSpace!)}
-						disabled={pendingSpaceId === selectedSpace!.id}
-						aria-busy={pendingSpaceId === selectedSpace!.id}
-						class="ms-auto shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 {followedSpaceIds.has(selectedSpace!.id)
-							? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
-							: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
-					>
-						{#if pendingSpaceId === selectedSpace!.id}
-							<Loader2 size={14} class="inline animate-spin" />
-						{:else}
-							{followedSpaceIds.has(selectedSpace!.id) ? t('radar.unfollow', 'Unfollow') : t('radar.follow', 'Follow')}
-						{/if}
-					</button>
-				{/if}
-			</h2>
-
-			{#if allGeoItems.length === 0}
-				<EmptyState
-					icon={Radar}
-					title={t('radar.empty_geo', 'No opportunities for {country} yet', { country: selectedCountryName })}
-					body={t('radar.empty_geo_body', "We'll surface new items here as sources publish them.", { country: selectedCountryName })}
-				/>
-			{:else}
-				<div class="space-y-2">
-					{#each allGeoItems as item (item.id)}
-						<RadarItemRow {item} />
-					{/each}
-				</div>
-
-				{#if geoHasMore}
-					<div class="mt-4 flex justify-center">
+					{/if}
+					{#if selectedSpace}
 						<button
 							type="button"
-							onclick={loadMoreGeo}
-							disabled={loadingGeoMore}
-							aria-busy={loadingGeoMore}
-							class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+							onclick={() => toggleFollow(selectedSpace!)}
+							disabled={pendingSpaceId === (selectedSpace!).id}
+							aria-busy={pendingSpaceId === (selectedSpace!).id}
+							class="ms-auto shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 {followedSpaceIds.has((selectedSpace!).id)
+								? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
+								: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
 						>
-							{#if loadingGeoMore}
-								<Loader2 size={16} class="animate-spin" />
+							{#if pendingSpaceId === (selectedSpace!).id}
+								<Loader2 size={14} class="inline animate-spin" />
+							{:else}
+								{followedSpaceIds.has((selectedSpace!).id)
+									? t('radar.unfollow', 'Unfollow')
+									: t('radar.follow', 'Follow')}
 							{/if}
-							{t('radar.load_more', 'Load more')}
 						</button>
-					</div>
-				{/if}
-			{/if}
-		</div>
-	{:else}
-		{#if !authed}
-			<div class="border-b border-[var(--color-border)] px-4 py-3">
-				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-text-subtle)]">
-					{t('radar.signin_prompt', 'Sign in to follow countries and get a personalized radar feed.')}
-				</div>
-			</div>
-		{/if}
-
-		{#if !authed || activeTab === 'countries'}
-			<!-- Countries gallery — all countries for guests; un-followed
-			     countries for authed (followed ones live in the Following tab). -->
-			{@render countryList(authed ? browseCountries : galleryCountries)}
-		{:else if activeTab === 'following'}
-			<div class="p-4">
-				<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-					<Pin size={16} class="text-[var(--color-primary-text)]" />
-					{t('radar.followed', 'Following')}
-					{#if followedCountries.length > 0}
-						<span class="text-xs font-normal text-[var(--color-muted)]">({followedCountries.length})</span>
 					{/if}
 				</h2>
-				{#if followedCountries.length === 0}
-					<EmptyState
-						icon={Pin}
-						title={t('radar.following_empty', 'No followed countries yet')}
-						body={t('radar.following_empty_body', 'Follow countries from the Browse countries tab to pin them here.')}
-					/>
-				{:else}
-					{@render countryGallery(followedCountries)}
-				{/if}
-			</div>
-		{:else}
-			<div class="border-b border-[var(--color-border)] px-4 py-4">
-				<!-- Domain filter chips — ?item_type=, scoped to the
-				     opportunities feed. -->
-				<div class="mb-3">
-				</div>
-				{#if allFollowedItems.length === 0}
+
+				{#if allGeoItems.length === 0}
 					<EmptyState
 						icon={Radar}
-						title={t('radar.empty_followed', 'No opportunities in your followed countries yet')}
-						body={t('radar.empty_followed_body', 'Follow countries below to surface their latest scholarships here.')}
+						title={t('radar.empty_geo', 'No opportunities for {country} yet', { country: selectedCountryName })}
+						body={t('radar.empty_geo_body', "We'll surface new items here as sources publish them.", { country: selectedCountryName })}
 					/>
 				{:else}
-					<div class="space-y-5">
-						{#each followedByCountry as group (group.key)}
-							<section>
-								<h3 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-									<Globe size={12} /> {group.country || t('radar.uncategorized', 'Uncategorized')}
-									<span class="font-normal normal-case text-[var(--color-muted)]">· {group.items.length}</span>
-								</h3>
-								<div class="space-y-2">
-									{#each group.items as item (item.id)}
-										<RadarItemRow {item} />
-									{/each}
-								</div>
-							</section>
+					<div class="space-y-2">
+						{#each allGeoItems as item (item.id)}
+							<RadarItemRow item={item} />
 						{/each}
 					</div>
 
-					{#if hasMore}
+					{#if geoHasMore}
 						<div class="mt-4 flex justify-center">
 							<button
 								type="button"
-								onclick={loadMore}
-								disabled={loadingMore}
-								aria-busy={loadingMore}
+								onclick={loadMoreGeo}
+								disabled={loadingGeoMore}
+								aria-busy={loadingGeoMore}
 								class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 							>
-								{#if loadingMore}
+								{#if loadingGeoMore}
 									<Loader2 size={16} class="animate-spin" />
 								{/if}
 								{t('radar.load_more', 'Load more')}
@@ -678,8 +601,89 @@
 					{/if}
 				{/if}
 			</div>
+		{:else}
+			{#if !authed}
+				<div
+					class="border-b border-[var(--color-border)] px-4 py-3"
+				>
+					<div
+						class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-text-subtle)]"
+					>{t('radar.signin_prompt', 'Sign in to follow countries and get a personalized radar feed.')}</div>
+				</div>
+			{/if}
+
+			{#if !authed || activeTab === 'countries'}
+				<!-- Countries gallery — all countries for guests; un-followed
+			     countries for authed (followed ones live in the Following tab). -->
+				{@render countryList(authed ? browseCountries : galleryCountries)}
+			{:else if activeTab === 'following'}
+				<div class="p-4">
+				<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+						<Pin size={16} class="text-[var(--color-primary-text)]" />
+						{t('radar.followed', 'Following')} 
+						{#if followedCountries.length > 0}
+						<span class="text-xs font-normal text-[var(--color-muted)]">({followedCountries.length})</span>
+						{/if}
+					</h2>
+					{#if followedCountries.length === 0}
+						<EmptyState
+							icon={Pin}
+							title={t('radar.following_empty', 'No followed countries yet')}
+							body={t('radar.following_empty_body', 'Follow countries from the Browse countries tab to pin them here.')}
+						/>
+					{:else}
+						{@render countryGallery(followedCountries)}
+					{/if}
+				</div>
+			{:else}
+			<div class="border-b border-[var(--color-border)] px-4 py-4">
+					<!-- Domain filter chips — ?item_type=, scoped to the
+				     opportunities feed. -->
+				<div class="mb-3">
+				</div>
+					{#if allFollowedItems.length === 0}
+						<EmptyState
+							icon={Radar}
+							title={t('radar.empty_followed', 'No opportunities in your followed countries yet')}
+							body={t('radar.empty_followed_body', 'Follow countries below to surface their latest scholarships here.')}
+						/>
+					{:else}
+						<div class="space-y-5">
+							{#each followedByCountry as group (group.key)}
+								<section>
+								<h3 class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+									<Globe size={12} /> {group.country || t('radar.uncategorized', 'Uncategorized')}
+									<span class="font-normal normal-case text-[var(--color-muted)]">· {group.items.length}</span>
+									</h3>
+									<div class="space-y-2">
+										{#each group.items as item (item.id)}
+											<RadarItemRow item={item} />
+										{/each}
+									</div>
+								</section>
+							{/each}
+						</div>
+
+						{#if hasMore}
+							<div class="mt-4 flex justify-center">
+								<button
+									type="button"
+									onclick={loadMore}
+									disabled={loadingMore}
+									aria-busy={loadingMore}
+									class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+								>
+									{#if loadingMore}
+										<Loader2 size={16} class="animate-spin" />
+									{/if}
+									{t('radar.load_more', 'Load more')}
+								</button>
+							</div>
+						{/if}
+					{/if}
+				</div>
+			{/if}
 		{/if}
-	{/if}
 	</div>
 </div>
 

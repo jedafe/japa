@@ -4,7 +4,7 @@
  * Ref: sections/105-japa-content-studio-desktop.md
  */
 
-import * as db from '$lib/services/db';
+import * as db from '#lib/services/db.js';
 
 export interface SyncLogEntry {
 	id: string;

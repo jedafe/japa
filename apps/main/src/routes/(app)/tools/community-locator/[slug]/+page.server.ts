@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { CommunityOrgWithAi } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { CommunityOrgWithAi } from '#lib/types/index.js';
 
 /**
  * Community Locator organisation detail page — Section 101, ADR-109.

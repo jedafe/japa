@@ -1,14 +1,14 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// /product/{slug} — product detail page (§80 Product Domain). Products
 	// are comparison entities, not wiki kinds: hero + provider offers
 	// matrix + the type's cfv field groups, plus a /compare deep link.
 	import { page } from '$app/state';
-	import { t, siteName } from '$lib/i18n';
-	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { safeHttpUrl } from '$lib/utils/safeUrl';
-	import { EntityHero } from '$lib/components/ui';
+	import { t, siteName } from '#lib/i18n/index.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { safeHttpUrl } from '#lib/utils/safeUrl.js';
+	import { EntityHero } from '#lib/components/ui/index.js';
 	import { ExternalLink, GitCompareArrows, Package, Star, Store } from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import type { ProductProvider } from './+page.server';

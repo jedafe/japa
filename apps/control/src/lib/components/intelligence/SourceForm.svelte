@@ -1,10 +1,10 @@
 <script lang="ts">
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Loader2 } from 'lucide-svelte';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 
 	// SourceForm is the create/edit dialog for the intel_sources registry.
 	// It is a controlled dialog: the parent owns the `open` state and passes

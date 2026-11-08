@@ -10,7 +10,7 @@ import {
 	promoteComparison
 } from './jce';
 import { api } from './client';
-import type { ComparisonType, CreateQuickComparisonInput, JCEComparisonSummary } from '$lib/types/jce';
+import type { ComparisonType, CreateQuickComparisonInput, JCEComparisonSummary } from '#lib/types/jce.js';
 
 vi.mock('./client', () => ({
 	api: {

@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { getFreshness } from '$lib/api/jce';
-	import { i18n, t } from '$lib/i18n';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import { getFreshness } from '#lib/api/jce.js';
+	import { i18n, t } from '#lib/i18n/index.js';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import {
 		deduplicateMatrix,
 		uniqueDimensions,
 		uniqueResolvedItems
-	} from '$lib/utils/comparison';
+	} from '#lib/utils/comparison.js';
 	import type {
 		FreshnessSummary,
 		JCEComparisonDetail,
@@ -15,27 +15,27 @@
 		MatrixDimension,
 		MatrixItem,
 		ResolvedItem
-	} from '$lib/types/jce';
+	} from '#lib/types/jce.js';
 	import type { PageData } from './$types';
-	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
-	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
-	import CommentThread from '$lib/components/comments/CommentThread.svelte';
-	import AdSlot from '$lib/components/ui/AdSlot.svelte';
-	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
-	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
-	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
-	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
+	import FreshnessChip from '#lib/components/compare/FreshnessChip.svelte';
+	import RefreshButton from '#lib/components/compare/RefreshButton.svelte';
+	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import AdSlot from '#lib/components/ui/AdSlot.svelte';
+	import ReactionRail from '#lib/components/blog/ReactionRail.svelte';
+	import CreatorCard from '#lib/components/blog/CreatorCard.svelte';
+	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
+	import SidebarWidgetRenderer from '#lib/components/shell/SidebarWidgetRenderer.svelte';
 	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil } from 'lucide-svelte';
 	import { page } from '$app/state';
-	import { api } from '$lib/api/client';
-	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
-	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
-	import { formatMoney } from '$lib/utils/currency';
-	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
-	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
-	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
-	import { hydrateContentEmbeds } from '$lib/tiptap/hydrateContentEmbeds';
-	import { imgLightbox } from '$lib/lightbox.svelte';
+	import { api } from '#lib/api/client.js';
+	import { safeJsonLdScript, sanitizeContentHtml } from '#lib/utils/safeHtml.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
+	import { formatMoney } from '#lib/utils/currency.js';
+	import { hydrateLinkPreviews } from '#lib/tiptap/hydrateLinkPreviews.js';
+	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
+	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
+	import { hydrateContentEmbeds } from '#lib/tiptap/hydrateContentEmbeds.js';
+	import { imgLightbox } from '#lib/lightbox.svelte.js';
 
 	let { data }: { data: PageData } = $props();
 

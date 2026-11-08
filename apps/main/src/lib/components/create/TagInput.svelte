@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { X, Search } from 'lucide-svelte';
-	import { searchHits } from '$lib/api/create';
-	import type { SearchHit } from '$lib/types';
+	import { searchHits } from '#lib/api/create.js';
+	import type { SearchHit } from '#lib/types/index.js';
 
 	interface Props {
 		tags: string[];

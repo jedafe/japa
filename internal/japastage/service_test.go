@@ -1,6 +1,9 @@
 package japastage
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidIntent(t *testing.T) {
 	valid := []string{"relocation", "study", "work", "family", "visit", "business"}
@@ -121,4 +124,39 @@ func TestStagesFilteredByIntent(t *testing.T) {
 	if work[len(work)-1].Value != "settled" {
 		t.Errorf("expected last relocation stage %q, got %q", "settled", work[len(work)-1].Value)
 	}
+}
+
+func TestDirectoryRowToDTO_AvatarSizing(t *testing.T) {
+	// Imgproxy config must be set before the first MediaURL call in this
+	// test binary — loadKeySalt decodes env vars once via sync.Once.
+	t.Setenv("JC_IMGPROXY_KEY", "736563726574") // "secret"
+	t.Setenv("JC_IMGPROXY_SALT", "68656c6c6f")  // "hello"
+	t.Setenv("JC_IMGPROXY_BASE_URL", "https://img.example.com")
+
+	t.Run("media-backed avatar emits display-sized derivative", func(t *testing.T) {
+		bucket, path, stored := "avatars", "u/42.webp", "https://img.example.com/old/sig/rs:auto:640:0/abc.webp"
+		dto := directoryRowToDTO(DirectoryRow{
+			AvatarURL:         &stored,
+			AvatarMediaBucket: &bucket,
+			AvatarMediaPath:   &path,
+		})
+		// Signed imgproxy URL when key/salt are configured, local serve
+		// endpoint otherwise — either way the stored URL is replaced by a
+		// media-derived one.
+		if dto.AvatarURL == stored {
+			t.Fatalf("expected media-derived url, got stored %s", dto.AvatarURL)
+		}
+		if !strings.Contains(dto.AvatarURL, "/rs:auto:128:0/") &&
+			!strings.Contains(dto.AvatarURL, "/api/v1/media/serve/avatars/u/42.webp") {
+			t.Fatalf("expected 128px derivative or serve fallback, got %s", dto.AvatarURL)
+		}
+	})
+
+	t.Run("no media row falls back to stored url", func(t *testing.T) {
+		stored := "https://cdn.example.com/avatar.jpg"
+		dto := directoryRowToDTO(DirectoryRow{AvatarURL: &stored})
+		if dto.AvatarURL != stored {
+			t.Fatalf("expected stored url passthrough, got %s", dto.AvatarURL)
+		}
+	})
 }

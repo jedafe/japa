@@ -3,24 +3,24 @@
 	import { page } from '$app/state';
 	import { beforeNavigate } from '$app/navigation';
 	import { Sparkles } from 'lucide-svelte';
-	import { t, isRtl } from '$lib/i18n';
+	import { t, isRtl } from '#lib/i18n/index.js';
 	import { AiPanel, setAiPageContext } from '@japaconnect/ai-panel';
-	import { ensureAiPanelDeps } from '$lib/ai/panel';
-	import { resolveAiPageContext } from '$lib/ai/pageContext';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import NextActions from '$lib/components/shell/NextActions.svelte';
-	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
-	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
+	import { ensureAiPanelDeps } from '#lib/ai/panel.js';
+	import { resolveAiPageContext } from '#lib/ai/pageContext.js';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import NextActions from '#lib/components/shell/NextActions.svelte';
+	import MobileBottomTabBar from '#lib/components/shell/MobileBottomTabBar.svelte';
+	import ProductTour from '#lib/components/onboarding/ProductTour.svelte';
 
-	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
-	import { api, setGlobalErrorHandler } from '$lib/api/client';
+	import { sidebarStore } from '#lib/components/shell/sidebar.svelte.js';
+	import { api, setGlobalErrorHandler } from '#lib/api/client.js';
 	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
 	import { pwaInstall, moduleServiceWorkerSupported } from '@japaconnect/ui/pwa-install';
-	import PwaInstallBanner from '$lib/pwa/PwaInstallBanner.svelte';
-	import { realtime } from '$lib/realtime/realtime.svelte';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { seedCsrfToken } from '$lib/api/csrf.svelte';
-	import { env } from '$env/dynamic/public';
+	import PwaInstallBanner from '#lib/pwa/PwaInstallBanner.svelte';
+	import { realtime } from '#lib/realtime/realtime.svelte.js';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { seedCsrfToken } from '#lib/api/csrf.svelte.js';
+	import { PUBLIC_JC_UMAMI_URL, PUBLIC_JC_UMAMI_SITE_ID_ACADEMY } from '$app/env/public';
 	import '../app.css';
 	import type { LayoutData } from './$types';
 
@@ -87,28 +87,19 @@
 	$effect(() => {
 		setAiPageContext(resolveAiPageContext(page.url.pathname, page.data));
 	});
-	beforeNavigate(() => setAiPageContext(null));
+
+	beforeNavigate(({ shallow, type }) => {
+		if (shallow && type === 'goto') return;
+
+		return setAiPageContext(null);
+	});
 
 	onMount(() => ensureAiPanelDeps());
 
-	// Route-specific right-sidebar snippet (set by child routes via setSidebar).
 	const routeSidebar = $derived(sidebarStore.current);
-
-	// Section 09 Product Tour (academy surface): `?tour=1` starts the tour once
-	// for signed-in users until dismissed; `?tour=replay` always replays it
-	// (account dropdown replay link). Authed users who have not dismissed it
-	// get one auto-run.
 	const tourParam = $derived(page.url.searchParams.get('tour'));
-	const tourActive = $derived(
-		!!data.user &&
-			(tourParam === 'replay' ||
-				(!data.tourDismissed && (tourParam === '1' || tourParam === null)))
-	);
 
-	// Latch: ProductTour strips the ?tour param once the tour starts, which
-	// flips tourActive back to false for replay+dismissed users — keep the
-	// component mounted so its navigation guard can tear the driver down
-	// cleanly instead of leaving an orphaned overlay.
+	const tourActive = $derived(!!data.user && (tourParam === 'replay' || !data.tourDismissed && (tourParam === '1' || tourParam === null)));
 	let tourMounted = $state(false);
 	$effect(() => {
 		if (tourActive) tourMounted = true;
@@ -141,15 +132,12 @@
 		// offline layer is dead code.
 		// Ref: .jeos/sections/124-progressive-web-app.md
 		if (installPromptEnabled) pwaInstall.init();
-		if (
-			typeof navigator !== 'undefined' &&
-			'serviceWorker' in navigator &&
-			// Firefox ≤146 / ESR 140 can't run module service workers — it
-			// falls back to classic evaluation of the ES-module dev stub and
-			// throws "script threw an exception during script evaluation" on
-			// every load. Production serves a classic IIFE, so only dev gates.
-			(!import.meta.env.DEV || moduleServiceWorkerSupported())
-		) {
+
+		if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && (// Firefox ≤146 / ESR 140 can't run module service workers — it
+		// falls back to classic evaluation of the ES-module dev stub and
+		// throws "script threw an exception during script evaluation" on
+		// every load. Production serves a classic IIFE, so only dev gates.
+		!import.meta.env.DEV || moduleServiceWorkerSupported())) {
 			// SvelteKit/Vite serves the source service worker as an ES module in dev,
 			// but compiles it to a classic IIFE for production. Use the matching
 			// registration type so the browser does not fail to evaluate the script.
@@ -197,16 +185,13 @@
 	// Custom favicon from appearance.favicon_url — overrides the default
 	// favicon links in app.html when set.
 	// Ref: conventions/system-settings-catalog.md (appearance.favicon_url)
-	let faviconUrl = $derived(
-		((theme.resolved === 'dark'
-			? (data.siteSettings?.['appearance.favicon_url_dark'] as string | undefined)
-			: undefined) ??
-			(data.siteSettings?.['appearance.favicon_url'] as string | undefined) ?? '')
-	);
+	let faviconUrl = $derived((theme.resolved === 'dark'
+		? data.siteSettings?.['appearance.favicon_url_dark'] as string | undefined
+		: undefined) ?? data.siteSettings?.['appearance.favicon_url'] as string | undefined ?? '');
 
 	// Umami analytics — Academy surface (§40, ROADMAP-ACADEMY 01.08).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
-	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID_ACADEMY);
+	const umamiEnabled = $derived(!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_ACADEMY);
 </script>
 
 <svelte:head>
@@ -217,8 +202,8 @@
 		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
 		<script
 			defer
-			src="{env.PUBLIC_JC_UMAMI_URL}/script.js"
-			data-website-id={env.PUBLIC_JC_UMAMI_SITE_ID_ACADEMY}
+			src="{PUBLIC_JC_UMAMI_URL}/script.js"
+			data-website-id={PUBLIC_JC_UMAMI_SITE_ID_ACADEMY}
 		></script>
 	{/if}
 </svelte:head>
@@ -227,7 +212,7 @@
 	menu={data.menu}
 	footerMenu={data.footerMenu}
 	user={data.user}
-	{collapsed}
+	collapsed={collapsed}
 	onToggleCollapse={toggleCollapse}
 	logoUrl={data.logoUrl}
 	logoDarkUrl={data.logoDarkUrl}
@@ -251,15 +236,18 @@
 	<!-- §115 Japa AI FAB — opens the page-aware quick panel. -->
 	<button
 		type="button"
-		onclick={() => (aiPanelOpen = !aiPanelOpen)}
+		onclick={() => aiPanelOpen = !aiPanelOpen}
 		aria-label={t('ai.panel.title', 'Japa AI')}
 		title={t('ai.panel.title', 'Japa AI')}
 		aria-expanded={aiPanelOpen}
 		class="fixed bottom-20 end-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5"
-	>
-		<Sparkles size={22} />
-	</button>
-	<AiPanel open={aiPanelOpen} user={data.user ?? null} onclose={() => (aiPanelOpen = false)} />
+	><Sparkles size={22} /></button>
+
+	<AiPanel
+		open={aiPanelOpen}
+		user={data.user ?? null}
+		onclose={() => aiPanelOpen = false}
+	/>
 {/if}
 
 {#if installPromptEnabled}

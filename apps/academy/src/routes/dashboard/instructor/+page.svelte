@@ -3,14 +3,14 @@
 	// CSR ONLY: instructor profile, tracks, earnings, payouts.
 	// LayerChart for revenue over time (ADR-059).
 	import { LineChart } from 'layerchart';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { page } from '$app/state';
-	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
-	import { formatPriceKobo, formatCount } from '$lib/format';
+	import { LoadingSkeleton, EmptyState } from '#lib/components/ui/index.js';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
+	import { formatPriceKobo, formatCount } from '#lib/format.js';
 	import { GraduationCap, DollarSign, Users, TrendingUp, PenLine, CheckCircle, Clock, XCircle, Plus, Pencil, BarChart3, BookOpen } from 'lucide-svelte';
-	import type { AcademyInstructorProfile, InstructorTrack, EarningsSummary, Payout } from '$lib/types';
+	import type { AcademyInstructorProfile, InstructorTrack, EarningsSummary, Payout } from '#lib/types/index.js';
 
 	let profile = $state<AcademyInstructorProfile | null>(null);
 	let tracks = $state<InstructorTrack[]>([]);

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Search } from 'lucide-svelte';
 	import type { Snippet } from 'svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	let {
 		value = $bindable(''),

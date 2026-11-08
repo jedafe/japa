@@ -1,22 +1,22 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/89-achievement-feed.md
 	// Create achievement form. Submits via the browser API client (POST /achievements,
 	// auth required). On success navigates to the new achievement's detail page.
 	// The milestone_type select options mirror the schema-defined enum (Rule 16).
-	import { t } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { Trophy, Plus, Loader2 } from 'lucide-svelte';
-	import type { Achievement, AchievementMilestoneType } from '$lib/types';
-	import { milestoneOptions } from '$lib/achievement';
-	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
+	import type { Achievement, AchievementMilestoneType } from '#lib/types/index.js';
+	import { milestoneOptions } from '#lib/achievement.js';
+	import { destinationMarkets, originMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 	import type { PageData } from './$types';
-	import AiBodyField from '$lib/ai/AiBodyField.svelte';
+	import AiBodyField from '#lib/ai/AiBodyField.svelte';
 
 	let { data }: { data: PageData } = $props();
 

@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { GeoCountry, GeoSpaceOption, SopTemplate, SopSample, SopField, SopDraft, SopQuota } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { GeoCountry, GeoSpaceOption, SopTemplate, SopSample, SopField, SopDraft, SopQuota } from '#lib/types/index.js';
 
 /**
  * AI SOP Generator at /tools/sop-generator (§110, ADR-121).

@@ -1,17 +1,27 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack, onMount } from 'svelte';
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
-	import { Home, MapPin, ChevronDown, ChevronUp, Globe, AlertTriangle, Lock } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import type { HousingGuideWithAi, GeoCountry } from '$lib/types';
+	import { goto } from '$app/navigation';
+
+	import {
+		Home,
+		MapPin,
+		ChevronDown,
+		ChevronUp,
+		Globe,
+		AlertTriangle,
+		Lock
+	} from 'lucide-svelte';
+
+	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import type { HousingGuideWithAi, GeoCountry } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Housing Guide tool — §96, ADR-088.
@@ -58,10 +68,11 @@
 		expandedId = null;
 		selectedDestId = id;
 		// Update URL for shareability (shallow — SvelteKit replaceState keeps page.url in sync)
-		const url = new URL(page.url);
-		if (id) url.searchParams.set('dest', id);
-		else url.searchParams.delete('dest');
-		replaceState(url, {});
+		const url = new URL(page.url.href);
+
+		if (id) url.searchParams.set('dest', id); else url.searchParams.delete('dest');
+
+		goto(url, { shallow: true, replace: true });
 		loadGuides();
 	}
 

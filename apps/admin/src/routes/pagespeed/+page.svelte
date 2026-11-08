@@ -1,8 +1,8 @@
 <script lang="ts">
 	// PageSpeed dashboard — backed by GET/POST /admin/pagespeed (PSI proxy;
 	// the Google API key stays server-side and reports cache for 30m).
-	import { api } from '$lib/api';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { api } from '#lib/api.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { onDestroy } from 'svelte';
 
 	let alive = true;

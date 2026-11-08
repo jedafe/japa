@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, ApiError } from '$lib/server/api';
-import type { CommunityOrgWithAi, GeoCountry, OrgTypeOption } from '$lib/types';
+import { apiContext, apiList, ApiError } from '#lib/server/api.js';
+import type { CommunityOrgWithAi, GeoCountry, OrgTypeOption } from '#lib/types/index.js';
 
 /**
  * Diaspora Community Locator — §101, ADR-088.

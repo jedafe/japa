@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
-	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
-	import { patchPrivacy } from '$lib/api/hub';
-	import { t } from '$lib/i18n';
-	import type { PrivacySettings } from '$lib/types';
+	import { DirtyForm } from '#lib/components/hub/useDirtyForm.svelte.js';
+	import SettingsSection from '#lib/components/hub/SettingsSection.svelte';
+	import { patchPrivacy } from '#lib/api/hub.js';
+	import { t } from '#lib/i18n/index.js';
+	import type { PrivacySettings } from '#lib/types/index.js';
 
 	interface PrivacySectionData {
 		settings?: PrivacySettings | null;

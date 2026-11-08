@@ -1,6 +1,6 @@
 import type { LayoutServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { Menu } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { Menu } from '#lib/types/index.js';
 
 /**
  * Dashboard hub: loads the admin-configurable `dashboard_rail` menu so the

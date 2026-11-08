@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { RefreshCw, AlertCircle, Check, Loader2, Trash2 } from 'lucide-svelte';
-	import { syncLogStore, type SyncLogEntry } from '$lib/stores/sync-log.svelte';
+	import { syncLogStore, type SyncLogEntry } from '#lib/stores/sync-log.svelte.js';
 
 	let loading = $state(false);
 

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import type { ResolvedItem } from '$lib/types/jce';
+	import { t } from '#lib/i18n/index.js';
+	import type { ResolvedItem } from '#lib/types/jce.js';
 	import { ArrowRight, Sparkles, X } from 'lucide-svelte';
 	import type { Component } from 'svelte';
 

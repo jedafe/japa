@@ -7,7 +7,7 @@
 //
 // Ref: japaconnect-engineering/sections/89-achievement-feed.md
 
-import type { AchievementMilestoneType } from '$lib/types';
+import type { AchievementMilestoneType } from '#lib/types/index.js';
 
 /** Spec-defined milestone type enum (§89 Schema). Single source of truth. */
 export const milestoneTypes: AchievementMilestoneType[] = [

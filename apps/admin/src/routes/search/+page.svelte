@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { api } from '$lib/api';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import Pagination from '$lib/components/ui/Pagination.svelte';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
-	import { CardSkeleton } from '$lib/components/ui/skeleton';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { api } from '#lib/api.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import Pagination from '#lib/components/ui/Pagination.svelte';
+	import { Card, CardContent, CardHeader } from '#lib/components/ui/card/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { CardSkeleton } from '#lib/components/ui/skeleton/index.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
+	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
 	import { RefreshCw } from 'lucide-svelte';
 	import { LineChart, BarChart } from 'layerchart';
 	import { curveMonotoneX } from 'd3-shape';
@@ -161,20 +161,20 @@
 	}
 
 	function setPeriod(p: string) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('period', p);
 		url.searchParams.delete('from');
 		url.searchParams.delete('to');
-		goto(url, { keepFocus: true, noScroll: true });
+		goto(url, { reset: false });
 	}
 
 	function applyRange() {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (from) url.searchParams.set('from', from);
 		else url.searchParams.delete('from');
 		if (to) url.searchParams.set('to', to);
 		else url.searchParams.delete('to');
-		goto(url, { keepFocus: true, noScroll: true });
+		goto(url, { reset: false });
 	}
 
 	$effect(() => {

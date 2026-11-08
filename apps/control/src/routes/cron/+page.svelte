@@ -1,17 +1,17 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { api } from '$lib/api';
-	import { t, translations } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import AlertBanner from '#lib/components/ui/AlertBanner.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { api } from '#lib/api.js';
+	import { t, translations } from '#lib/stores/i18n.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
 	import { Play, Pause, PlayCircle, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
-	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '#lib/api/types.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import { JsonValueEditor } from '@japaconnect/ui';
 
 	let {} = $props();

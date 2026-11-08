@@ -1,8 +1,8 @@
 import type { RequestHandler } from './$types';
-import { API_V1 } from '$lib/server/api';
-import { DOCS_ORIGIN } from '$lib/seo/meta';
-import { categoryHref } from '$lib/docs/catalog';
-import type { DocNavTree, DocNavItem } from '$lib/types';
+import { API_V1 } from '#lib/server/api.js';
+import { DOCS_ORIGIN } from '#lib/seo/meta.js';
+import { categoryHref } from '#lib/docs/catalog.js';
+import type { DocNavTree, DocNavItem } from '#lib/types/index.js';
 
 /**
  * Per-host sitemap for docs.japa.to (sitemap-protocol same-host rule:

@@ -6,8 +6,8 @@
 	 * `verified` is falsy.
 	 */
 	import { BadgeCheck } from 'lucide-svelte';
-	import { verificationBadgeUrl, verificationBadgeLabel } from '$lib/stores/verification-badges.svelte';
-	import { t } from '$lib/i18n';
+	import { verificationBadgeUrl, verificationBadgeLabel } from '#lib/stores/verification-badges.svelte.js';
+	import { t } from '#lib/i18n/index.js';
 
 	interface Props {
 		verified?: boolean;

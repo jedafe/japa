@@ -1,6 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPost, apiPut, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiPost, apiPut, ApiError } from '#lib/server/api.js';
 import type {
 	Scholarship,
 	SavedScholarship,
@@ -9,8 +9,8 @@ import type {
 	ComparisonCreated,
 	ComparisonItem,
 	ComparisonDimension
-} from '$lib/types';
-import { defaultReminderDays } from '$lib/scholarships/defaultReminder';
+} from '#lib/types/index.js';
+import { defaultReminderDays } from '#lib/scholarships/defaultReminder.js';
 
 /**
  * Scholarship Finder at /scholarships (Section 73, ADR-073).

@@ -1,10 +1,10 @@
-import { api } from '$lib/api/client';
+import { api } from '#lib/api/client.js';
 import type {
 	StockPhoto,
 	StockSearchResult,
 	StockImportResult,
 	StockProvidersResponse
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Stock photo API client wrappers. Each returns the standard ClientResult

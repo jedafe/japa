@@ -1,34 +1,34 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/79-community-story-wall.md
 	//      ADR-058 Exception #1 (dev.to reading layout — CPT singles)
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
-	import { relativeTime } from '$lib/feed/time';
+	import { api } from '#lib/api/client.js';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import { relativeTime } from '#lib/feed/time.js';
 	import { ArrowLeft, BadgeCheck, MapPin, Calendar, CreditCard, Briefcase, Lightbulb, BookMarked, Quote, Pencil, Trash2, Loader2, Eye, ExternalLink, Maximize2 } from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
-	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
-	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
-	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
-	import CommentThread from '$lib/components/comments/CommentThread.svelte';
-	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
-	import InArticleAd from '$lib/components/ads/InArticleAd.svelte';
-	import NextActionInline from '$lib/components/shell/NextActionInline.svelte';
-	import AdSlot from '$lib/components/ui/AdSlot.svelte';
-	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
-	import { mergeJsonLd } from '$lib/seo/jsonld';
-	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
-	import { contentHref } from '$lib/utils/contentLink';
-	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
-	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
-	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
-	import { imgLightbox, openLightbox } from '$lib/lightbox.svelte';
-	import { parseMostUsefulResource } from '$lib/utils/storyResources';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import ReactionRail from '#lib/components/blog/ReactionRail.svelte';
+	import CreatorCard from '#lib/components/blog/CreatorCard.svelte';
+	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
+	import SidebarWidgetRenderer from '#lib/components/shell/SidebarWidgetRenderer.svelte';
+	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import BlogSeriesNav from '#lib/components/blog/BlogSeriesNav.svelte';
+	import InArticleAd from '#lib/components/ads/InArticleAd.svelte';
+	import NextActionInline from '#lib/components/shell/NextActionInline.svelte';
+	import AdSlot from '#lib/components/ui/AdSlot.svelte';
+	import { safeJsonLdScript, sanitizeContentHtml } from '#lib/utils/safeHtml.js';
+	import { mergeJsonLd } from '#lib/seo/jsonld.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import { hydrateLinkPreviews } from '#lib/tiptap/hydrateLinkPreviews.js';
+	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
+	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
+	import { imgLightbox, openLightbox } from '#lib/lightbox.svelte.js';
+	import { parseMostUsefulResource } from '#lib/utils/storyResources.js';
 	import type { PageData } from './$types';
-	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
+	import type { SessionUser, TrendingTag, SpaceSuggestion } from '#lib/types/index.js';
 
 	let { data }: { data: PageData } = $props();
 

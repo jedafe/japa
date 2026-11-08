@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { PUBLIC_JC_ENV } from '$env/static/public';
-	import { getUser } from '$lib/stores/auth.svelte';
-	import { getTheme, toggleTheme } from '$lib/stores/theme.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import Avatar from '$lib/components/ui/Avatar.svelte';
+	import { PUBLIC_JC_ENV } from '$app/env/public';
+	import { getUser } from '#lib/stores/auth.svelte.js';
+	import { getTheme, toggleTheme } from '#lib/stores/theme.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import Avatar from '#lib/components/ui/Avatar.svelte';
 	import { Menu, MenuItem, MenuSeparator } from '@japaconnect/ui';
 	import { goto } from '$app/navigation';
 
@@ -42,13 +42,17 @@
 						{...props}
 						class="hover:bg-dark-04 flex items-center gap-2 rounded-9px p-1.5 transition-colors outline-none"
 					>
-						<Avatar src={getUser()!.avatar_url} alt={getUser()!.display_name} size="sm" />
-						<span class="text-foreground text-sm">{getUser()!.display_name}</span>
+						<Avatar
+							src={(getUser()!).avatar_url}
+							alt={(getUser()!).display_name}
+							size="sm"
+						/>
+
+						<span class="text-foreground text-sm">{(getUser()!).display_name}</span>
 					</button>
 				{/snippet}
-				<MenuItem class="text-foreground">
-					{getUser()!.email}
-				</MenuItem>
+
+				<MenuItem class="text-foreground">{(getUser()!).email}</MenuItem>
 				<MenuSeparator />
 				<MenuItem>
 					<button type="button" class="w-full text-start" onclick={() => { showDropdown = false; void goto('/logout'); }}>{t('nav.sign_out')}</button>

@@ -6,10 +6,10 @@
 	// Uses the shared Autocomplete.svelte component for a live debounced
 	// search over the catalog (client-side filter, debounced by the
 	// Autocomplete component). Mirrors the CountryMultiSelect pattern.
-	import { t } from '$lib/stores/i18n.svelte';
-	import { api } from '$lib/api';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { api } from '#lib/api.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 	import { X } from 'lucide-svelte';
 
 	interface WebhookEventDef {

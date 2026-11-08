@@ -1,20 +1,20 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack, onMount } from 'svelte';
-	import { goto, replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Bell, CheckCheck, Settings, Loader2, BellOff } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { EmptyState } from '$lib/components/ui';
-	import { realtime } from '$lib/realtime/realtime.svelte';
-	import NotificationItem from '$lib/components/notifications/NotificationItem.svelte';
+	import { api } from '#lib/api/client.js';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import { realtime } from '#lib/realtime/realtime.svelte.js';
+	import NotificationItem from '#lib/components/notifications/NotificationItem.svelte';
 	import {
 		NOTIFICATION_FILTER_TABS,
 		notificationFilterFor,
 		type NotificationFilterTab
-	} from '$lib/components/notifications/notificationType';
-	import type { Notification } from '$lib/types';
+	} from '#lib/components/notifications/notificationType.js';
+	import type { Notification } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -54,8 +54,8 @@
 	// Active type filter, persisted in the URL query string.
 	let activeFilter = $state<NotificationFilterTab>(
 		untrack(() => {
-			const param = page.url.searchParams.get('filter') as NotificationFilterTab;
-			return NOTIFICATION_FILTER_TABS.some((tab) => tab.key === param) ? param : 'all';
+		const param = page.url.searchParams.get('filter') as NotificationFilterTab;
+		return NOTIFICATION_FILTER_TABS.some((tab) => tab.key === param) ? param : 'all';
 		})
 	);
 
@@ -108,13 +108,13 @@
 	function setFilter(filter: NotificationFilterTab) {
 		if (activeFilter === filter) return;
 		activeFilter = filter;
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (filter === 'all') {
 			url.searchParams.delete('filter');
 		} else {
 			url.searchParams.set('filter', filter);
 		}
-		replaceState(url, {});
+		goto(url, { shallow: true, replace: true });
 	}
 
 	async function loadMore() {
@@ -310,7 +310,11 @@
 				role="list"
 			>
 				{#each filteredNotifications as n (n.id)}
-					<NotificationItem {n} onOpen={openNotification} onDelete={deleteNotification} />
+					<NotificationItem
+						n={n}
+						onOpen={openNotification}
+						onDelete={deleteNotification}
+					/>
 				{/each}
 			</ul>
 			{#if hasMore && !loadingMore}

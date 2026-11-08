@@ -6,8 +6,8 @@
 	// so admins can add/remove/reorder links from the admin panel without
 	// touching frontend code.
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import type { Menu, MenuItem } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import type { Menu, MenuItem } from '#lib/types/index.js';
 	import { routeFeatureGateVisible } from './routeFeatureFlags';
 
 	interface Props {

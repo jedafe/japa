@@ -1,10 +1,10 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		Building2,
 		Check,
@@ -18,10 +18,10 @@
 		GitCompare,
 		Filter
 	} from 'lucide-svelte';
-	import { EmptyState, EntityHero, FollowButton, GuideSlideOver, ListPageBar, Modal, SearchInput, UrlTabs, DirectoryCard, type GuideContent, type SearchSuggestion, type CardMetaItem } from '$lib/components/ui';
-	import HeroArtOrganizations from '$lib/components/heroes/HeroArtOrganizations.svelte';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-	import { api } from '$lib/api/client';
+	import { EmptyState, EntityHero, FollowButton, GuideSlideOver, ListPageBar, Modal, SearchInput, UrlTabs, DirectoryCard, type GuideContent, type SearchSuggestion, type CardMetaItem } from '#lib/components/ui/index.js';
+	import HeroArtOrganizations from '#lib/components/heroes/HeroArtOrganizations.svelte';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+	import { api } from '#lib/api/client.js';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();

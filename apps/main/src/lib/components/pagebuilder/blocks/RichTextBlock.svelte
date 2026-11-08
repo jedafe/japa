@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { RichTextProps } from '../types';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 
 	interface Props {
 		props: RichTextProps;

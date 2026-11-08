@@ -4,7 +4,7 @@
 // (GET /wiki/types → parent_type_ids), not a hardcoded level set — enabling
 // a new child type (e.g. neighborhood under city) extends the chooser with
 // zero code.
-import type { WikiTypeItem } from '$lib/types';
+import type { WikiTypeItem } from '#lib/types/index.js';
 
 /** Enabled types that are declared children of the given type id,
  *  position-ordered. */

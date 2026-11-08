@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /deals — migrated to the EntityPage scaffold; declarative CRUD entity with date conversion.
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import type { ActionContext } from '$lib/components/ui/data-table';
-	import { couponsAdminApiExtended, affiliateProvidersAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import type { ActionContext } from '#lib/components/ui/data-table/index.js';
+	import { couponsAdminApiExtended, affiliateProvidersAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { CheckCircle, Eye, Pencil, Trash2, XCircle } from 'lucide-svelte';
-	import { dateInputToStartOfDayISO, dateInputToEndOfDayISO, isoTimestampToDateInput } from '$lib/utils/date';
-	import { loadCurrencies, currencyOptions, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
+	import { dateInputToStartOfDayISO, dateInputToEndOfDayISO, isoTimestampToDateInput } from '#lib/utils/date.js';
+	import { loadCurrencies, currencyOptions, formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
 	import { onMount } from 'svelte';
 
 	type Coupon = {

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { MenuItem } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
-	import { shareContrastColor } from '$lib/utils/shareColor';
+	import { MenuItem } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
+	import { shareContrastColor } from '#lib/utils/shareColor.js';
 
 	interface SharePlatform {
 		key: string;

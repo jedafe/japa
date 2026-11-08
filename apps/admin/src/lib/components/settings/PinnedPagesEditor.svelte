@@ -4,9 +4,9 @@
 	// Serializes to the same JSON array shape the docs app consumes:
 	// [{audience, slug, label?}]. Audience and page are picked from real data
 	// (docsApi.audiences / docsApi.list) so admins can't fat-finger a slug.
-	import { t } from '$lib/stores/i18n.svelte';
-	import { docsApi } from '$lib/api';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { docsApi } from '#lib/api.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-svelte';
 
 	interface Pin {

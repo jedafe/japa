@@ -1,5 +1,4 @@
-import { PUBLIC_MAIN_ORIGIN } from '$env/static/public';
-import { env } from '$env/dynamic/public';
+import { PUBLIC_MAIN_ORIGIN, PUBLIC_JC_ACADEMY_ORIGIN } from '$app/env/public';
 
 /**
  * Cross-app origin helpers.
@@ -49,10 +48,7 @@ export function loginUrl(redirectPath?: string): string {
  * academy host (custom-domain aware via PUBLIC_JC_ACADEMY_ORIGIN); falls
  * back to the default academy subdomain.
  */
-export const ACADEMY_ORIGIN = (env.PUBLIC_JC_ACADEMY_ORIGIN || 'https://academy.japa.to').replace(
-	/\/$/,
-	''
-);
+export const ACADEMY_ORIGIN = (PUBLIC_JC_ACADEMY_ORIGIN || 'https://academy.japa.to').replace(/\/$/, '');
 
 /** Build a Main app user-profile URL. */
 export function profileUrl(username: string): string {
@@ -91,7 +87,7 @@ export function resolveMenuUrl(url: string): string {
 	// the generic scheme pass-through below.
 	if (url.startsWith('main:')) return `${MAIN_ORIGIN}${url.slice(5) || '/'}`;
 	// External URL, anchor, or non-http scheme (mailto:, tel:) — leave as-is.
-	if (/^([a-z][a-z0-9+.-]*:|#)/i.test(url)) return url;
+	if ((/^([a-z][a-z0-9+.-]*:|#)/i).test(url)) return url;
 	if (!url.startsWith('/')) return url;
 
 	const path = url.split(/[?#]/)[0];
@@ -117,4 +113,3 @@ export function switchLocale(locale: string, defaultLang = 'en'): void {
 	const href = locale === defaultLang ? `/${path}` : `/${locale}/${path}`;
 	window.location.href = href;
 }
-

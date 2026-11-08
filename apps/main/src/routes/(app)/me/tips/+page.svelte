@@ -1,9 +1,9 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// /me/tips — sent & received tip history (§125).
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
-	import { t } from '$lib/i18n';
-	import { listTipsSent, listTipsReceived, fiatDisplay, type Tip } from '$lib/api/tips';
+	import { t } from '#lib/i18n/index.js';
+	import { listTipsSent, listTipsReceived, fiatDisplay, type Tip } from '#lib/api/tips.js';
 	import { Loader2 } from 'lucide-svelte';
 
 	let tab = $state<'received' | 'sent'>('received');

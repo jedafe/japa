@@ -2,7 +2,7 @@
 	// CsvRepeater — edit a comma-separated list as a set of text inputs with
 	// add/remove controls. Used for settings such as the iframe host allowlist
 	// (content.sanitization.allowed_iframe_hosts).
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Plus, Trash2 } from 'lucide-svelte';
 	import { tick } from 'svelte';
 

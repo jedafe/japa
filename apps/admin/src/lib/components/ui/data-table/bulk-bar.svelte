@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { Button } from "$lib/components/ui/button";
-  import { t } from "$lib/stores/i18n.svelte";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { t } from "#lib/stores/i18n.svelte.js";
   import type { BulkAction } from "./types";
 
   let {

@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { Button } from '$lib/components/ui/button';
-	import StatCard from '$lib/components/ui/StatCard.svelte';
-	import { CardSkeleton } from '$lib/components/ui/skeleton';
-	import { analyticsAdminApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent, CardHeader } from '#lib/components/ui/card/index.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import StatCard from '#lib/components/ui/StatCard.svelte';
+	import { CardSkeleton } from '#lib/components/ui/skeleton/index.js';
+	import { analyticsAdminApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Users, TrendingUp, Shield, RefreshCw, Zap } from 'lucide-svelte';
@@ -179,17 +179,17 @@
 
 	function setPeriod(p: string) {
 		// Selecting a period clears any explicit date range via the URL
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('period', p);
 		url.searchParams.delete('from');
 		url.searchParams.delete('to');
-		goto(url, { keepFocus: true, noScroll: true });
+		goto(url, { reset: false });
 	}
 
 	// Push the chosen date range to the URL (?from=&to=) so it drives the fetch.
 	// Clear the period param when a date range is active so the URL stays clean.
 	function applyRange() {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (from) {
 			url.searchParams.set('from', from);
 			url.searchParams.delete('period');
@@ -202,7 +202,7 @@
 		} else {
 			url.searchParams.delete('to');
 		}
-		goto(url, { keepFocus: true, noScroll: true });
+		goto(url, { reset: false });
 	}
 
 	$effect(() => {

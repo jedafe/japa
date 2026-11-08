@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { clearUser } from '$lib/stores/auth.svelte';
-	import { clearAccessToken } from '$lib/api/token';
-	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { clearUser } from '#lib/stores/auth.svelte.js';
+	import { clearAccessToken } from '#lib/api/token.js';
+	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
 
 	(async () => {

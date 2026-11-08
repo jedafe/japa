@@ -2,8 +2,8 @@
 	import type { SliderProps } from '../types';
 	import { onMount } from 'svelte';
 	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { safeHref } from '$lib/utils/safeHtml';
+	import { t } from '#lib/i18n/index.js';
+	import { safeHref } from '#lib/utils/safeHtml.js';
 
 	let { props }: { props: SliderProps } = $props();
 	let current = $state(0);

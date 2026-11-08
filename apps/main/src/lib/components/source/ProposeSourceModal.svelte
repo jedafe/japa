@@ -4,11 +4,11 @@
 	// SpaceCreationModal (bits-ui Dialog, icon header, close button). The
 	// form itself lives in ProposeSourceForm so the /sources/submit page
 	// and this modal share one implementation.
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { Rss } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import ProposeSourceForm from './ProposeSourceForm.svelte';
-	import type { SourceMeta } from '$lib/types/sources';
+	import type { SourceMeta } from '#lib/types/sources.js';
 
 	let {
 		open = $bindable(false),

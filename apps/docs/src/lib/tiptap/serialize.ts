@@ -1,7 +1,7 @@
 import { generateHTML } from '@tiptap/html';
 import { marked } from 'marked';
 import { docExtensions } from './extensions';
-import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 
 /**
  * Extensions shared between the docs prose renderer and the editor (admin).

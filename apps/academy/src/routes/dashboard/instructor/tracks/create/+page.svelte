@@ -4,18 +4,18 @@
 	// Payload matches backend CreateTrackInput (internal/academy/creator/store.go):
 	//   title (required), slug (required), description, difficulty,
 	//   price_kobo, currency, category, language, geo_space_id.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { Plus, Save, ArrowLeft } from 'lucide-svelte';
-	import { formatPriceKobo } from '$lib/format';
-	import { loadCurrencies, currencyLabel, type CurrencyInfo } from '$lib/utils/currency';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import type { GeoCountry, CatalogOption } from '$lib/types';
+	import { formatPriceKobo } from '#lib/format.js';
+	import { loadCurrencies, currencyLabel, type CurrencyInfo } from '#lib/utils/currency.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import type { GeoCountry, CatalogOption } from '#lib/types/index.js';
 
 	type Category = { id: string; slug: string; name: string; sort_order: number };
 

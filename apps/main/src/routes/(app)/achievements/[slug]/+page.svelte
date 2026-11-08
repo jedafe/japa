@@ -5,11 +5,11 @@
 	// author. Mutations go through the browser API client (PATCH/DELETE).
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t, i18n } from '$lib/i18n';
-	import { relativeTime } from '$lib/feed/time';
-	import { api } from '$lib/api/client';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { api } from '#lib/api/client.js';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 	import {
 		ArrowLeft,
 		Trophy,
@@ -27,10 +27,10 @@
 		MessageCircle,
 		Eye
 	} from 'lucide-svelte';
-	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
-	import CommentThread from '$lib/components/comments/CommentThread.svelte';
-	import type { AchievementMilestoneType } from '$lib/types';
-	import type { IconComponent } from '$lib/components/ui/icons';
+	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
+	import CommentThread from '#lib/components/comments/CommentThread.svelte';
+	import type { AchievementMilestoneType } from '#lib/types/index.js';
+	import type { IconComponent } from '#lib/components/ui/icons.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

@@ -2,18 +2,18 @@
 	// /pof-calculator — POF requirement management (§108).
 	// Backend: GET/POST/PATCH/DELETE /admin/pof-requirements, POST .../generate.
 	// Ref: sections/108-pof-calculator.md, ADR-119, ADR-088 (HITL review).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import { useCountries } from '$lib/utils/countries.svelte';
-	import { loadCurrencies, currencyOptions, currencyLabel, type CurrencyInfo } from '$lib/utils/currency';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
+	import { loadCurrencies, currencyOptions, currencyLabel, type CurrencyInfo } from '#lib/utils/currency.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { CheckCircle, XCircle, Eye, Pencil, Trash2, Sparkles } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 
 	type Requirement = {
 		id: string;

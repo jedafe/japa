@@ -4,8 +4,8 @@
 // passes through the active query params so the filter bar reflects state.
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { Achievement, GeoCountry } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { Achievement, GeoCountry } from '#lib/types/index.js';
 
 const PAGE_SIZE = 20;
 

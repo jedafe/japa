@@ -4,11 +4,11 @@
 	// On success it fills title/description/featured image and asks the parent
 	// to append the backend-built TipTap `video` node to the editor body.
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Link2, Upload, Loader2, CheckCircle2, Play } from 'lucide-svelte';
-	import { resolveVideo, uploadVideo, type VideoResolveResult } from '$lib/api/videos';
-	import { formatDuration } from '$lib/utils/duration';
-	import type { VideoSource } from '$lib/types';
+	import { resolveVideo, uploadVideo, type VideoResolveResult } from '#lib/api/videos.js';
+	import { formatDuration } from '#lib/utils/duration.js';
+	import type { VideoSource } from '#lib/types/index.js';
 
 	interface Props {
 		/** Bound composer fields, auto-filled from the resolved source. */

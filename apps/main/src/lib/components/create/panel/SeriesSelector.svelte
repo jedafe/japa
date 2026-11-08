@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Plus, X } from 'lucide-svelte';
 	import Autocomplete from '../Autocomplete.svelte';
 	import type { AutocompleteItem } from '../Autocomplete.svelte';
-	import type { BlogSeries } from '$lib/types';
-	import { searchSeries } from '$lib/api/create';
+	import type { BlogSeries } from '#lib/types/index.js';
+	import { searchSeries } from '#lib/api/create.js';
 	import SeriesCreationModal from './SeriesCreationModal.svelte';
 
 	interface Props {

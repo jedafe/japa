@@ -2,8 +2,8 @@
 	// GeoSpaceCascade — cascading country → state → city picker backed by the
 	// public /geo/* endpoints (same source as the member location picker,
 	// ADR-064a). `value` binds the deepest selected space UUID; '' = unset.
-	import { geoApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { geoApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	type GeoSpace = { id: string; name: string; slug: string; level: string; geo_code?: string | null };
 

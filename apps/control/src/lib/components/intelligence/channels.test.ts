@@ -5,11 +5,11 @@ import ChannelEditor from './ChannelEditor.svelte';
 
 const apiMock = vi.fn().mockResolvedValue({ ok: true, data: [] });
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.js', () => ({
 	api: (...args: unknown[]) => apiMock(...args)
 }));
 
-vi.mock('$lib/stores/auth.svelte', () => ({
+vi.mock('#lib/stores/auth.svelte.js', () => ({
 	hasAnyPermission: vi.fn(() => true)
 }));
 

@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Terms/Privacy footer for auth forms. The login/signup switch affordance
 	// moved into the form header (see LoginForm / SignupForm).
-	import { t } from '$lib/i18n/store.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
 </script>
 
 <div class="flex items-center justify-center gap-4 pt-2 text-xs text-[var(--color-muted)]">

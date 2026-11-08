@@ -1,24 +1,24 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 	// Japa Stage discovery hub. SSR member directory from GET /members/by-stage
 	// enriched with stats (GET /japa-stage/stats), a GuideSlideOver fed by the
 	// japa_stage.guide public setting, and inline trending/popular sections
 	// (wide no-right-sidebar route — see gate.isNoRightSidebarRoute).
-	import { t } from '$lib/i18n';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import MessageUserDialog from '$lib/components/profile/MessageUserDialog.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import MessageUserDialog from '#lib/components/profile/MessageUserDialog.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
-	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import PaginationControls from '#lib/components/ui/PaginationControls.svelte';
+	import RelativeTime from '#lib/components/ui/RelativeTime.svelte';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
 	import {
 		Compass, Users, UserPlus, BadgeCheck, Check,
 		MapPin, MessageCircle, MessagesSquare, Bookmark,
@@ -33,13 +33,13 @@
 		SearchInput,
 		type GuideContent,
 		type SearchSuggestion
-	} from '$lib/components/ui';
-	import HeroArtJapaStage from '$lib/components/heroes/HeroArtJapaStage.svelte';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-	import { flagEmoji } from '$lib/utils/flags';
-	import { api } from '$lib/api/client';
-	import { japaStageColors, japaStageLabel, japaStageOptions, japaStagesForIntent, japaIntentLabel, japaIntentOptions } from '$lib/enumOptions';
-	import type { JapaStage, JapaIntent, MemberStage, TrendingContent } from '$lib/types';
+	} from '#lib/components/ui/index.js';
+	import HeroArtJapaStage from '#lib/components/heroes/HeroArtJapaStage.svelte';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+	import { flagEmoji } from '#lib/utils/flags.js';
+	import { api } from '#lib/api/client.js';
+	import { japaStageColors, japaStageLabel, japaStageOptions, japaStagesForIntent, japaIntentLabel, japaIntentOptions } from '#lib/enumOptions.js';
+	import type { JapaStage, JapaIntent, MemberStage, TrendingContent } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -250,6 +250,23 @@
 	);
 	const totalMembers = $derived(data.stats?.total ?? data.total);
 
+	// Preconnect to the media/CDN origin serving member images — derived
+	// from the emitted URLs so it follows the configured imgproxy host
+	// without a new contract. Empty for relative/local asset URLs.
+	const mediaOrigin = $derived.by(() => {
+		for (const m of data.members) {
+			const u = m.avatar_url ?? m.cover_url;
+			if (!u) continue;
+			try {
+				const o = new URL(u).origin;
+				if (o !== 'null' && o !== page.url.origin) return o;
+			} catch {
+				// relative URL — keep scanning
+			}
+		}
+		return '';
+	});
+
 	// Member-card chip palette — decorative tints only (mockup's pastel tags).
 	const chipPalette = ['#8b5cf6', '#0d9488', '#d97706', '#2563eb', '#db2777', '#16a34a'];
 	function chipStyle(i: number) {
@@ -262,6 +279,10 @@
 </script>
 
 <SeoHead title={title} description={description} ogTitle={title} />
+
+<svelte:head>
+	{#if mediaOrigin}<link rel="preconnect" href={mediaOrigin} />{/if}
+</svelte:head>
 
 <div class="mx-auto w-full max-w-7xl px-4 pb-10 sm:px-6">
 	<h1 class="sr-only">{t('japa_stage.heading', 'Japa Stage — Find Members by Stage')}</h1>
@@ -289,6 +310,7 @@
 								width="32"
 								height="32"
 								loading="lazy"
+								decoding="async"
 							/>
 						{/each}
 					</span>
@@ -729,11 +751,11 @@
 
 {#snippet memberCard(m: MemberStage)}
 	{@const color = m.stage ? japaStageColors[m.stage as JapaStage] : undefined}
-	<li class="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] transition-shadow hover:shadow-md">
+	<li class="member-card overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] transition-shadow hover:shadow-md">
 		<!-- Cover -->
 		<div class="relative h-24 w-full" style="background: {color ? `linear-gradient(120deg, color-mix(in srgb, ${color} 24%, transparent), color-mix(in srgb, ${color} 8%, transparent))` : 'var(--color-surface-subtle)'}">
 			{#if m.cover_url}
-				<img src={m.cover_url} alt="" class="h-full w-full object-cover" width="640" height="96" loading="lazy" />
+				<img src={m.cover_url} alt="" class="h-full w-full object-cover" width="640" height="96" loading="lazy" decoding="async" />
 			{/if}
 			{#if m.stage}
 				<span
@@ -757,7 +779,7 @@
 				{#snippet trigger()}
 					<span class="grid h-16 w-16 place-items-center overflow-hidden rounded-full border-[3px] border-[var(--color-surface)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)] shadow-sm">
 						{#if m.avatar_url}
-							<img src={m.avatar_url} alt={m.username} class="h-full w-full object-cover" width="64" height="64" loading="lazy" />
+							<img src={m.avatar_url} alt={m.username} class="h-full w-full object-cover" width="64" height="64" loading="lazy" decoding="async" />
 						{:else}
 							<Users size={26} />
 						{/if}
@@ -872,5 +894,13 @@
 				color-mix(in srgb, var(--color-primary) 7%, var(--color-surface)) 0%,
 				color-mix(in srgb, var(--color-primary) 4%, var(--color-surface)) 100%
 			);
+	}
+
+	/* Skip style/layout/paint for below-fold member cards — the browser
+	   renders each card only as it nears the viewport. contain-intrinsic-size
+	   keeps the scrollbar stable while unrendered cards use the estimate. */
+	.member-card {
+		content-visibility: auto;
+		contain-intrinsic-size: auto 320px;
 	}
 </style>

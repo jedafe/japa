@@ -1,7 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPatch, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiPatch, ApiError } from '#lib/server/api.js';
 import { error, fail, redirect } from '@sveltejs/kit';
-import type { ComposerOrganization, JobApplication, JobListing, PublicOrganization } from '$lib/types';
+import type { ComposerOrganization, JobApplication, JobListing, PublicOrganization } from '#lib/types/index.js';
 
 // Application management is org-admin only — mirrors the JOBS-012 check in
 // the backend (requireOrgJobAdmin: owner/admin, job must belong to the org).

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { navigating } from '$app/state';
@@ -19,17 +19,17 @@
 		ListPageBar,
 		type SearchSuggestion,
 		type CardMetaItem
-	} from '$lib/components/ui';
-	import { GuideSlideOver, Modal, type GuideContent } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import HeroArtUniversities from '$lib/components/heroes/HeroArtUniversities.svelte';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-	import type { University } from '$lib/types';
+	} from '#lib/components/ui/index.js';
+	import { GuideSlideOver, Modal, type GuideContent } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import HeroArtUniversities from '#lib/components/heroes/HeroArtUniversities.svelte';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+	import type { University } from '#lib/types/index.js';
 	import type { PageData, ActionData } from './$types';
-	import { destinationMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { destinationMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
@@ -56,7 +56,7 @@
 		if (loadingMore || allUnis.length >= total) return;
 		loadingMore = true;
 		try {
-			const params = new URLSearchParams(page.url.searchParams);
+			const params = new URLSearchParams(page.url.search);
 			params.set('page', String(Math.floor(allUnis.length / data.pageSize) + 1));
 			params.set('limit', String(data.pageSize));
 			const res = await api.get<{ items?: University[]; data?: University[] } | University[]>(
@@ -183,7 +183,7 @@
 
 	function applySearch() {
 		const params = buildParams();
-		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true, noScroll: true });
+		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { reset: false });
 	}
 
 	// Debounced auto-apply for the free-text search field.
@@ -195,7 +195,7 @@
 
 	function setSort(value: string) {
 		const params = buildParams({ sort: value });
-		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true });
+		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { reset: false });
 	}
 
 	function setCountry(value: string) {
@@ -204,7 +204,7 @@
 		stateInput = '';
 		cityInput = '';
 		const params = buildParams({ country: value, state: '', city: '' });
-		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true });
+		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { reset: false });
 	}
 
 	function setState(value: string) {
@@ -212,13 +212,13 @@
 		// A new state invalidates the old city selection.
 		cityInput = '';
 		const params = buildParams({ state: value, city: '' });
-		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true });
+		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { reset: false });
 	}
 
 	function setCity(value: string) {
 		cityInput = value;
 		const params = buildParams({ city: value });
-		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true });
+		goto(`/universities${params.toString() ? `?${params.toString()}` : ''}`, { reset: false });
 	}
 
 	function clearFilters() {

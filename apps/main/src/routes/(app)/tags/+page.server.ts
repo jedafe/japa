@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { TagDetail } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { TagDetail } from '#lib/types/index.js';
 
 /**
  * Tags index at /tags — public, SSR, indexable. Lists every tag with

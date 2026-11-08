@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGetEnvelope, apiList } from '$lib/server/api';
-import type { ForumThread } from '$lib/types';
-import type { GuideListItem } from '$lib/types/content';
+import { apiContext, apiGetEnvelope, apiList } from '#lib/server/api.js';
+import type { ForumThread } from '#lib/types/index.js';
+import type { GuideListItem } from '#lib/types/content.js';
 
 /**
  * Forum list at /forum — Reddit-style compact thread list inside the app shell.

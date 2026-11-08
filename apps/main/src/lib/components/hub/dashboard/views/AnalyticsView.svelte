@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
 	import { AreaChart, BarChart, LineChart } from 'layerchart';
 	import { Tabs } from 'bits-ui';
-	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
-	import MetricCard from '$lib/components/hub/MetricCard.svelte';
-	import { LoadingSkeleton } from '$lib/components/ui';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-	import type { MeAnalytics, FollowerGrowthItem, TopContentItem, UserDashboard } from '$lib/types';
+	import DashboardPanel from '#lib/components/hub/DashboardPanel.svelte';
+	import MetricCard from '#lib/components/hub/MetricCard.svelte';
+	import { LoadingSkeleton } from '#lib/components/ui/index.js';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+	import type { MeAnalytics, FollowerGrowthItem, TopContentItem, UserDashboard } from '#lib/types/index.js';
 
 	interface AnalyticsData {
 		period: '7d' | '30d' | '90d' | 'custom';

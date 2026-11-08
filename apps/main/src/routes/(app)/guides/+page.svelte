@@ -1,16 +1,16 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { ArrowRight, BookOpen, ChevronDown, PenSquare, X } from 'lucide-svelte';
-	import { EmptyState, FilterToggle, ListPageBar, PageAction, UrlTabs, type UrlTab } from '$lib/components/ui';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import type { FeedItem } from '$lib/types';
-	import type { GuideListItem } from '$lib/types/content';
-	import ContentGridCard from '$lib/components/feed/ContentGridCard.svelte';
-	import { api } from '$lib/api/client';
+	import { EmptyState, FilterToggle, ListPageBar, PageAction, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import type { FeedItem } from '#lib/types/index.js';
+	import type { GuideListItem } from '#lib/types/content.js';
+	import ContentGridCard from '#lib/components/feed/ContentGridCard.svelte';
+	import { api } from '#lib/api/client.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

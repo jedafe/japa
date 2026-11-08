@@ -3,21 +3,21 @@
 	import { enhance } from '$app/forms';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { confirmDialog } from '@japaconnect/ui';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import DocEditor from '$lib/components/docs/DocEditor.svelte';
-	import FeatureImageField from '$lib/components/docs/FeatureImageField.svelte';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { parseManagedCategories } from '$lib/docs/catalog';
-	import { t } from '$lib/i18n';
-	import { persistNavCollapse } from '$lib/nav-collapse';
-	import { AUDIENCE_ICON } from '$lib/audience-meta';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import DocEditor from '#lib/components/docs/DocEditor.svelte';
+	import FeatureImageField from '#lib/components/docs/FeatureImageField.svelte';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
+	import { parseManagedCategories } from '#lib/docs/catalog.js';
+	import { t } from '#lib/i18n/index.js';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
+	import { AUDIENCE_ICON } from '#lib/audience-meta.js';
 	import { ChevronRight } from 'lucide-svelte';
-	import type { DocAudience, DocNavTree, Menu, SessionUser } from '$lib/types';
-	import type { ExistingPage } from '$lib/server/docs-author';
-	import type { SeoMeta } from '$lib/seo/meta';
+	import type { DocAudience, DocNavTree, Menu, SessionUser } from '#lib/types/index.js';
+	import type { ExistingPage } from '#lib/server/docs-author.js';
+	import type { SeoMeta } from '#lib/seo/meta.js';
 
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	interface FormValues {
 		title?: string;
@@ -94,15 +94,8 @@
 	);
 
 	function slugify(s: string): string {
-		return s
-			.normalize('NFD')
-			.replace(/[̀-ͯ]/g, '') // fold diacritics — "Guides d'étude" → "guides-detude"
-			.toLowerCase()
-			.trim()
-			.replace(/[^a-z0-9\s-]/g, '')
-			.replace(/[\s_]+/g, '-')
-			.replace(/-+/g, '-')
-			.replace(/^-|-$/g, '');
+		return s.normalize('NFD').replace(/[̀-ͯ]/g, '').// fold diacritics — "Guides d'étude" → "guides-detude"
+		toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/[\s_]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
 	}
 
 	function onTitleInput() {
@@ -120,69 +113,36 @@
 		[
 			...new Map(
 				[
-					...managedCategories.map((c) => c.name),
-					...data.existingPages.map((p) => p.category?.trim())
-				]
-					.filter((c): c is string => !!c)
-					.map((c) => [c.toLowerCase(), c])
-			).values()
-		]
-	);
-	const subcategorySuggestions = $derived(
-		[
-			...new Map(
-				[
-					...(category.trim()
-						? (managedCategories.find(
-								(c) => c.name.toLowerCase() === category.trim().toLowerCase()
-							)?.subcategories ?? [])
-						: managedCategories.flatMap((c) => c.subcategories)),
-					...data.existingPages
-						.filter(
-							(p) =>
-								!category.trim() ||
-								(p.category ?? '').trim().toLowerCase() ===
-									category.trim().toLowerCase()
-						)
-						.map((p) => p.subcategory?.trim())
-				]
-					.filter((c): c is string => !!c)
-					.map((c) => [c.toLowerCase(), c])
-			).values()
-		]
-	);
+			...managedCategories.map((c) => c.name),
+			...data.existingPages.map((p) => p.category?.trim())
+		].filter((c): c is string => !!c).map((c) => [c.toLowerCase(), c])).values()
+	]);
 
-	const toItems = (list: string[]): AutocompleteItem[] =>
-		list.map((s) => ({ id: s, label: s }));
-	const suggestItems =
-		(list: string[]) =>
-		(q: string): Promise<AutocompleteItem[]> =>
-			Promise.resolve(
-				toItems(list.filter((s) => s.toLowerCase().includes(q.toLowerCase())))
-			);
-	const suggestInitial =
-		(list: string[]) =>
-		(): Promise<AutocompleteItem[]> =>
-			Promise.resolve(toItems(list));
+	const subcategorySuggestions = $derived([
+		...new Map([
+			...category.trim()
+				? managedCategories.find((c) => c.name.toLowerCase() === category.trim().toLowerCase())?.subcategories ?? []
+				: managedCategories.flatMap((c) => c.subcategories),
+			...data.existingPages.filter((p) => !category.trim() || (p.category ?? '').trim().toLowerCase() === category.trim().toLowerCase()).map((p) => p.subcategory?.trim())
+		].filter((c): c is string => !!c).map((c) => [c.toLowerCase(), c])).values()
+	]);
 
-	const parentItems = $derived(
-		data.existingPages.map((p) => ({
-			id: p.id,
-			label: p.title,
+	const toItems = (list: string[]): AutocompleteItem[] => list.map((s) => ({ id: s, label: s }));
+	const suggestItems = (list: string[]) => (q: string): Promise<AutocompleteItem[]> => Promise.resolve(toItems(list.filter((s) => s.toLowerCase().includes(q.toLowerCase()))));
+	const suggestInitial = (list: string[]) => (): Promise<AutocompleteItem[]> => Promise.resolve(toItems(list));
+
+	const parentItems = $derived(data.existingPages.map((p) => ({
+		id: p.id,
+		label: p.title,
 			sublabel:
 				p.slug +
 				(p.review_status !== 'published'
-					? ` · ${t(`new_page.status.${p.review_status}`, p.review_status)}`
-					: '')
-		}))
-	);
-	const parentFetcher = (q: string): Promise<AutocompleteItem[]> =>
-		Promise.resolve(
-			parentItems.filter((p) => p.label.toLowerCase().includes(q.toLowerCase()))
-		);
-	const parentLabel = $derived(
-		data.existingPages.find((p) => p.id === parentId)?.title ?? null
-	);
+			? ` · ${t(`new_page.status.${p.review_status}`, p.review_status)}`
+			: '')
+	})));
+
+	const parentFetcher = (q: string): Promise<AutocompleteItem[]> => Promise.resolve(parentItems.filter((p) => p.label.toLowerCase().includes(q.toLowerCase())));
+	const parentLabel = $derived(data.existingPages.find((p) => p.id === parentId)?.title ?? null);
 
 	// Unsaved-changes guard: dirty once any field diverges from its seed.
 	const dirty = $derived(
@@ -209,6 +169,8 @@
 	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
 	let bypassGuard = false;
 	beforeNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
+
 		// Cover back/forward (popstate) and goto too — 'form' is our own
 		// submit (submitting) and 'leave' is handled by beforeunload.
 		if (!dirty || submitting || nav.type === 'form' || nav.type === 'leave' || bypassGuard) return;
@@ -237,7 +199,7 @@
 <AppShell
 	nav={data.nav}
 	accessibleAudiences={data.accessibleAudiences}
-	logoUrl={(data.siteSettings?.["appearance.logo_url"] as string | undefined) ?? ""}
+	logoUrl={data.siteSettings?.["appearance.logo_url"] as string | undefined ?? ""}
 	footerMenu={data.footerMenu}
 	rightSidebarWidgets={data.rightSidebarWidgets}
 	leftSidebarWidgets={data.leftSidebarWidgets}
@@ -321,7 +283,7 @@
 						required
 						pattern="[a-z0-9]+(-[a-z0-9]+)*"
 						bind:value={slug}
-						oninput={() => (slugTouched = true)}
+						oninput={() => slugTouched = true}
 						placeholder="getting-started"
 					/>
 					<span class="field-hint">/docs/{data.audience}/<strong>{slug || '…'}</strong></span>
@@ -339,10 +301,10 @@
 						selectedLabel={category || null}
 						freeText
 						allowFreeText
-						onSelect={(item) => (category = item.id)}
-						onInput={(v) => (category = v)}
-						onFreeTextBlur={(v) => (category = v.trim())}
-						onClear={() => (category = '')}
+						onSelect={(item) => category = item.id}
+						onInput={(v) => category = v}
+						onFreeTextBlur={(v) => category = v.trim()}
+						onClear={() => category = ''}
 					/>
 				</div>
 
@@ -359,10 +321,10 @@
 						selectedLabel={subcategory || null}
 						freeText
 						allowFreeText
-						onSelect={(item) => (subcategory = item.id)}
-						onInput={(v) => (subcategory = v)}
-						onFreeTextBlur={(v) => (subcategory = v.trim())}
-						onClear={() => (subcategory = '')}
+						onSelect={(item) => subcategory = item.id}
+						onInput={(v) => subcategory = v}
+						onFreeTextBlur={(v) => subcategory = v.trim()}
+						onClear={() => subcategory = ''}
 					/>
 				</div>
 
@@ -376,8 +338,8 @@
 						initialFetcher={() => Promise.resolve(parentItems)}
 						selectedId={parentId || null}
 						selectedLabel={parentLabel}
-						onSelect={(item) => (parentId = item.id)}
-						onClear={() => (parentId = '')}
+						onSelect={(item) => parentId = item.id}
+						onClear={() => parentId = ''}
 					/>
 					<span class="field-hint">
 						{t('new_page.parent_hint', 'A non-published parent hides this page from the nav until it publishes.')}
@@ -425,7 +387,7 @@
 				<span class="field-label">{t('new_page.field_content', 'Content')}</span>
 				<DocEditor
 					bind:value={contentJson}
-					onUpdate={() => (contentEdited = true)}
+					onUpdate={() => contentEdited = true}
 					placeholder={t('new_page.content_placeholder', 'Start writing the documentation…')}
 				/>
 			</div>
@@ -547,9 +509,15 @@
 		font-size: 0.75rem;
 		color: var(--color-muted);
 	}
-	.field-hint strong { font-weight: 600; color: var(--color-text-subtle); }
 
-	.new-form .field-wide { margin-bottom: 1.25rem; }
+	.field-hint strong {
+		font-weight: 600;
+		color: var(--color-text-subtle);
+	}
+
+	.new-form .field-wide {
+		margin-bottom: 1.25rem;
+	}
 
 	.form-actions {
 		display: flex;

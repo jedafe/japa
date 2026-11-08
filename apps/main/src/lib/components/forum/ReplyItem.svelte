@@ -11,24 +11,24 @@
 		Check, Flag } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import { Menu, MenuItem } from '$lib/components/ui';
-	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
-	import { relativeTime } from '$lib/feed/time';
-	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
-	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
-	import { imgLightbox } from '$lib/lightbox.svelte';
-	import { api } from '$lib/api/client';
-	import { t, i18n } from '$lib/i18n';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
-	import type { ForumReply } from '$lib/types';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import { Menu, MenuItem } from '#lib/components/ui/index.js';
+	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { tiptapBodyToHtml } from '#lib/tiptap/serialize.js';
+	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
+	import { imgLightbox } from '#lib/lightbox.svelte.js';
+	import { api } from '#lib/api/client.js';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
+	import type { ForumReply } from '#lib/types/index.js';
 	import VoteRail from './VoteRail.svelte';
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
 	// Reply view count is recorded via POST /forum/replies/{id}/view when the
 	// reply is first visible in the viewport.
 	// Self-import replaces the deprecated <svelte:self> for recursive nesting.
 	import ReplyItem from './ReplyItem.svelte';
-	import LazyCommentEditor from '$lib/components/comments/LazyCommentEditor.svelte';
+	import LazyCommentEditor from '#lib/components/comments/LazyCommentEditor.svelte';
 
 	interface Props {
 		reply: ForumReply;

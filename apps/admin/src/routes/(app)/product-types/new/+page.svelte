@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /product-types/new — create a product type (§80). The backend provisions
 	// a custom_field_groups row per category (+ cfga assignment + comparison pool).
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { productTypesAdminApi } from '$lib/api';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { productTypesAdminApi } from '#lib/api.js';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Plus, Trash2 } from 'lucide-svelte';
 
 	const inp =

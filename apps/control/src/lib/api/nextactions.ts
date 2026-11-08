@@ -1,6 +1,6 @@
 // §122 Next-Action Suggestions — admin rule management client.
-import { api } from '$lib/api';
-import type { ApiResult } from '$lib/api/client';
+import { api } from '#lib/api.js';
+import type { ApiResult } from '#lib/api/client.js';
 
 export interface NextActionRule {
 	id: string;

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Route, ArrowLeft, ExternalLink, DollarSign, Map, RefreshCw, AlertTriangle, ClipboardCheck, GitCompare } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
 	/**
 	 * Visa Route detail page — Section 90, ADR-098.

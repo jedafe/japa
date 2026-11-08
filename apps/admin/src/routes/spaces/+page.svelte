@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /spaces — migrated to EntityPage scaffold. EntityPage owns list/pagination/
 	// search/filter state and URL sync. Page keeps local Modals for Suspend
 	// (reason input) and Delete confirmation, plus a page-local Edit Modal
 	// (name + visibility). View opens via ctx.openView; Manage navigates to the
 	// dedicated detail route.
-	import { EntityPage, type EntityPageConfig, type EntityPageController } from "$lib/components/entity";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Button } from "$lib/components/ui/button";
-	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
-	import { spacesAdminApi, adminCatalogApi, spaceTypesApi, type CatalogOption } from "$lib/api";
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from "#lib/components/entity/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import Autocomplete, { type AutocompleteItem } from "#lib/components/ui/Autocomplete.svelte";
+	import { spacesAdminApi, adminCatalogApi, spaceTypesApi, type CatalogOption } from "#lib/api.js";
 	import { goto } from "$app/navigation";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { Eye, Pencil, Plus, Trash2, SlidersHorizontal } from "lucide-svelte";
-	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
+	import type { ActionItem, FilterDef } from "#lib/components/ui/data-table/index.js";
 
 	type Space = {
 		id: string;

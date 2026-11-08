@@ -1,8 +1,8 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetBody, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetBody, ApiError } from '#lib/server/api.js';
 import { error } from '@sveltejs/kit';
-import type { TrackDetail, TrackReview, ReviewAggregate } from '$lib/types';
-import { courseJsonLd, breadcrumbJsonLd } from '$lib/seo';
+import type { TrackDetail, TrackReview, ReviewAggregate } from '#lib/types/index.js';
+import { courseJsonLd, breadcrumbJsonLd } from '#lib/seo/index.js';
 
 /**
  * Track Detail — SSR public content only (ADR-060 SSR/CSR boundary).

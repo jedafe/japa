@@ -1,6 +1,6 @@
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
-import { DEFAULT_SITE_NAME } from '$lib/brand';
+import { DEFAULT_SITE_NAME } from '#lib/brand.js';
 
 /** Default brand name — re-exported from $lib/brand so server modules can
  * use it without importing this runes-based store. */
@@ -13,7 +13,7 @@ let initStarted = false;
 
 /** Configured brand name (general.site_name). */
 export function siteName(): string {
-	return (settings['general.site_name'] as string | undefined) || DEFAULT_SITE_NAME;
+	return settings['general.site_name'] as string | undefined || DEFAULT_SITE_NAME;
 }
 
 /**
@@ -31,20 +31,16 @@ export function substituteSiteName(value: string): string {
 
 /** Configured favicon URL (appearance.favicon_url) — empty string when unset. */
 export function faviconUrl(): string {
-	return (settings['appearance.favicon_url'] as string | undefined) || '';
+	return settings['appearance.favicon_url'] as string | undefined || '';
 }
 
 /** Theme-specific favicon URL — appearance.favicon_url_dark overrides the
  * base favicon_url in dark mode; light always uses the base key. */
 export function faviconForTheme(theme: 'light' | 'dark'): string {
 	if (theme === 'dark') {
-		return (
-			(settings['appearance.favicon_url_dark'] as string | undefined) ||
-			(settings['appearance.favicon_url'] as string | undefined) ||
-			''
-		);
+		return settings['appearance.favicon_url_dark'] as string | undefined || settings['appearance.favicon_url'] as string | undefined || '';
 	}
-	return (settings['appearance.favicon_url'] as string | undefined) || '';
+	return settings['appearance.favicon_url'] as string | undefined || '';
 }
 
 /** Fetch public site settings once. Safe to call from any layout onMount. */

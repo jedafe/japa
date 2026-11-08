@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { Calculator, GitCompare, Loader2, Lock, Share2, X } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { api } from '$lib/api/client';
-	import type { ColCity, ColCitiesListResponse, ColCityData, ColComparisonMatrix } from '$lib/types';
+	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { api } from '#lib/api/client.js';
+	import type { ColCity, ColCitiesListResponse, ColCityData, ColComparisonMatrix } from '#lib/types/index.js';
 	import type { PageData, ActionData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+	import { formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
@@ -136,12 +136,11 @@
 	// restore the same comparison. Called only from user actions —
 	// replaceState throws during hydration before the router is initialized.
 	function syncUrl() {
-		const url = new URL(page.url);
-		if (selectedIds.length >= 1) url.searchParams.set('city_ids', selectedIds.map(refForUrl).join(','));
-		else url.searchParams.delete('city_ids');
-		if (effectiveBaselineId) url.searchParams.set('baseline_id', refForUrl(effectiveBaselineId));
-		else url.searchParams.delete('baseline_id');
-		if (url.href !== page.url.href) replaceState(url, page.state);
+		const url = new URL(page.url.href);
+
+		if (selectedIds.length >= 1) url.searchParams.set('city_ids', selectedIds.map(refForUrl).join(',')); else url.searchParams.delete('city_ids');
+		if (effectiveBaselineId) url.searchParams.set('baseline_id', refForUrl(effectiveBaselineId)); else url.searchParams.delete('baseline_id');
+		if (url.href !== page.url.href) goto(url, { shallow: true, replace: true, state: page.state });
 	}
 
 	async function fetchComparison() {
@@ -234,19 +233,13 @@
 	}
 
 	function matchesCity(c: ColCity, query: string): boolean {
-		return (
-			query === '' ||
-			cityLabel(c).toLowerCase().includes(query) ||
-			c.geo_space_name.toLowerCase().includes(query) ||
-			c.description.toLowerCase().includes(query)
-		);
+		return query === '' || cityLabel(c).toLowerCase().includes(query) || c.geo_space_name.toLowerCase().includes(query) || c.description.toLowerCase().includes(query);
 	}
 
 	async function searchCities(q: string): Promise<ColCity[]> {
-		const res = await api.get<ColCitiesListResponse>(
-			`/calculator/cost-of-living/cities?search=${encodeURIComponent(q.trim())}&page=1&limit=50`
-		);
-		const fetched = res.error ? [] : (res.data?.cities ?? []);
+		const res = await api.get<ColCitiesListResponse>(`/calculator/cost-of-living/cities?search=${encodeURIComponent(q.trim())}&page=1&limit=50`);
+		const fetched = res.error ? [] : res.data?.cities ?? [];
+
 		if (fetched.length > 0) {
 			const known = new Set(allCities.map((c) => c.id));
 			const fresh = fetched.filter((c) => !known.has(c.id));
@@ -281,7 +274,7 @@
 		try {
 			await navigator.clipboard.writeText(url);
 			copied = true;
-			setTimeout(() => (copied = false), 2000);
+			setTimeout(() => copied = false, 2000);
 		} catch {
 			// Clipboard may be blocked; ignore.
 		}
@@ -294,7 +287,7 @@
 	// Active currency table (Section 58) from the root layout — formatMoney
 	// resolves symbols from it. Money cells are denominated in the matrix's
 	// display_currency (FX base) when the backend normalized them, else USD.
-	const currencies = $derived((page.data.currencies as CurrencyInfo[] | undefined) ?? []);
+	const currencies = $derived(page.data.currencies as CurrencyInfo[] | undefined ?? []);
 	const displayCurrency = $derived(matrix?.display_currency || 'USD');
 
 	function formatValue(v: number | undefined): string {
@@ -321,11 +314,8 @@
 	function formatDate(iso: string): string {
 		const d = new Date(iso);
 		if (Number.isNaN(d.getTime())) return '';
-		return d.toLocaleDateString((page.data.locale as string) || undefined, {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric'
-		});
+
+		return d.toLocaleDateString(page.data.locale as string || undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 	}
 
 	function lastVerified(city: ColCityData): string {

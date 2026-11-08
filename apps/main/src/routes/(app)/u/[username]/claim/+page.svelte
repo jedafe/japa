@@ -1,16 +1,16 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// §106 video — channel claim / takedown form.
 	// Authenticated users can claim a synthetic channel or request a takedown
 	// of a specific video source on a channel.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { ShieldQuestion, Loader2, Send, FileCheck, Video } from 'lucide-svelte';
-	import { listMyVideoClaims, submitChannelClaim } from '$lib/api/videos';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
-	import type { PublicUser, VideoChannelClaim, VideoSource } from '$lib/types';
+	import { listMyVideoClaims, submitChannelClaim } from '#lib/api/videos.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
+	import type { PublicUser, VideoChannelClaim, VideoSource } from '#lib/types/index.js';
 
 	const username = $derived(page.params.username);
 	const currentUser = $derived(page.data.user as PublicUser | null | undefined);

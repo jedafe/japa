@@ -5,9 +5,9 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Loader2, Send } from 'lucide-svelte';
-	import { Modal } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
+	import { Modal } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
 
 	interface Props {
 		recipientId: string;

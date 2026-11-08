@@ -8,14 +8,14 @@
 	// Ref: docs/superpowers/plans/2026-10-07-services-marketplace-frontend.md (Task 2)
 	import { untrack, onMount, type Snippet } from 'svelte';
 	import { page } from '$app/state';
-	import LeftNav from '$lib/components/shell/LeftNav.svelte';
-	import ComposeModal from '$lib/components/shell/ComposeModal.svelte';
-	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
-	import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
-	import AdConversionTracker from '$lib/components/ads/AdConversionTracker.svelte';
-	import { lightbox } from '$lib/lightbox.svelte';
-	import { realtime } from '$lib/realtime/realtime.svelte';
-	import { api } from '$lib/api/client';
+	import LeftNav from '#lib/components/shell/LeftNav.svelte';
+	import ComposeModal from '#lib/components/shell/ComposeModal.svelte';
+	import ProductTour from '#lib/components/onboarding/ProductTour.svelte';
+	import MediaLightbox from '#lib/components/ui/MediaLightbox.svelte';
+	import AdConversionTracker from '#lib/components/ads/AdConversionTracker.svelte';
+	import { lightbox } from '#lib/lightbox.svelte.js';
+	import { realtime } from '#lib/realtime/realtime.svelte.js';
+	import { api } from '#lib/api/client.js';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();

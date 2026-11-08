@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGet, ApiError } from '$lib/server/api';
-import type { Space, SpaceType, GeoCountry, GeoState, GeoCity, SpaceDetail } from '$lib/types';
+import { apiContext, apiList, apiGet, ApiError } from '#lib/server/api.js';
+import type { Space, SpaceType, GeoCountry, GeoState, GeoCity, SpaceDetail } from '#lib/types/index.js';
 
 /**
  * Spaces index at /spaces — public (OptionalAuth), SSR. Lists every

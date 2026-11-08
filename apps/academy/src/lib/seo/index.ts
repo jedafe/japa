@@ -1,4 +1,4 @@
-import { DEFAULT_SITE_NAME } from '$lib/brand';
+import { DEFAULT_SITE_NAME } from '#lib/brand.js';
 /**
  * SEO helpers for the Academy app.
  * Ref: ADR-060 (canonical URLs on academy.japa.to), Rule 16 (no hardcoded

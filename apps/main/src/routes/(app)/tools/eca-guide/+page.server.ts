@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { GeoCountry, GeoSpaceOption, EcaProvider, EcaGuide } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { GeoCountry, GeoSpaceOption, EcaProvider, EcaGuide } from '#lib/types/index.js';
 
 /**
  * ECA Evaluation Guide at /tools/eca-guide (§109, ADR-120).

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import type { CompareEntitiesResult } from '$lib/ai/compareApi';
+	import { t } from '#lib/i18n/index.js';
+	import type { CompareEntitiesResult } from '#lib/ai/compareApi.js';
 	import { X } from 'lucide-svelte';
 
 	interface Props {

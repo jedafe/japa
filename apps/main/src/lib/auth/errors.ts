@@ -1,7 +1,7 @@
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 // Maps backend ApiError codes to field-level i18n message keys.
 
-import type { AuthErrorCode } from '$lib/types';
+import type { AuthErrorCode } from '#lib/types/index.js';
 
 export interface FieldError {
 	field: 'email' | 'username' | 'password' | 'form' | null;

@@ -3,11 +3,11 @@
 	// "Was this page helpful?" — per-member up/down votes with aggregate
 	// counts. Re-clicking the active vote retracts it (server-side toggle).
 	// Guests see a sign-in hint.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { ThumbsUp, ThumbsDown } from 'lucide-svelte';
 	import type { Snippet } from 'svelte';
-	import type { WikiHelpful } from '$lib/types';
+	import type { WikiHelpful } from '#lib/types/index.js';
 
 	let {
 		spaceSlug,

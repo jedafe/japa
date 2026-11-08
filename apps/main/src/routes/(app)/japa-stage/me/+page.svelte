@@ -1,21 +1,21 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
 	// Ref: japaconnect-engineering/sections/87-japa-stage-profiles.md
 	// My Japa Stage. Server-preloaded via GET /me/japa-stage; updates go through
 	// the browser API client to PATCH /me/japa-stage (auth). Shows the current
 	// stage, a visual stepper of the 7-stage progression, and stage history.
-	import { t, siteName} from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { api } from '$lib/api/client';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+	import { t, siteName} from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { api } from '#lib/api/client.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import RelativeTime from '#lib/components/ui/RelativeTime.svelte';
 	import { ArrowLeft, Compass, Save } from 'lucide-svelte';
-	import JourneysPanel from '$lib/components/profile/JourneysPanel.svelte';
-	import { japaStageColors, japaStageLabel, japaStageOptions, japaStagesForIntent, japaIntentLabel, japaIntentOptions } from '$lib/enumOptions';
-	import type { JapaStage, JapaIntent, MyJapaStage } from '$lib/types';
+	import JourneysPanel from '#lib/components/profile/JourneysPanel.svelte';
+	import { japaStageColors, japaStageLabel, japaStageOptions, japaStagesForIntent, japaIntentLabel, japaIntentOptions } from '#lib/enumOptions.js';
+	import type { JapaStage, JapaIntent, MyJapaStage } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

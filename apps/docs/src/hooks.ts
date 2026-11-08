@@ -1,4 +1,4 @@
-import type { Reroute } from '@sveltejs/kit';
+import type { Reroute } from '@sveltejs/kit/hooks';
 
 /**
  * Locale-prefixed URLs (/fr/docs/..., /yo/docs/...) route to the same page

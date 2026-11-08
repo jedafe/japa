@@ -1,10 +1,10 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { page } from '$app/state';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		Flame,
 		Hash,
@@ -14,11 +14,11 @@
 		ArrowUp,
 		Building2
 	} from 'lucide-svelte';
-	import { EmptyState, ListPageBar, UrlTabs, AutocompleteSelect, type UrlTab } from '$lib/components/ui';
-	import { trendingWindowOptions, trendingTabs } from '$lib/enumOptions';
-	import { contentHref } from '$lib/utils/contentLink';
+	import { EmptyState, ListPageBar, UrlTabs, AutocompleteSelect, type UrlTab } from '#lib/components/ui/index.js';
+	import { trendingWindowOptions, trendingTabs } from '#lib/enumOptions.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
 	import type { PageData } from './$types';
-	import type { TrendingWindow } from '$lib/types';
+	import type { TrendingWindow } from '#lib/types/index.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -65,7 +65,7 @@
 	}
 
 	function windowHref(w: TrendingWindow): string {
-		const params = new URLSearchParams(page.url.searchParams);
+		const params = new URLSearchParams(page.url.search);
 		params.set('window', w);
 		return `?${params.toString()}`;
 	}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Search } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import SearchPalette from '$lib/components/docs/SearchPalette.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import SearchPalette from '#lib/components/docs/SearchPalette.svelte';
 
 	interface Props {
 		/** Whether this launcher registers the global ⌘/Ctrl+K shortcut. */

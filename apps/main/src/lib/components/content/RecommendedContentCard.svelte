@@ -4,9 +4,9 @@
 	// as the current article, ranked by the backend's embedding-similarity
 	// related endpoint (GET /content/{id}/related?content_type=…). Renders
 	// nothing when the list is empty.
-	import { t } from '$lib/i18n';
-	import { contentHref } from '$lib/utils/contentLink';
-	import type { ContentArticle } from '$lib/types/content';
+	import { t } from '#lib/i18n/index.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import type { ContentArticle } from '#lib/types/content.js';
 
 	interface Props {
 		items: ContentArticle[];

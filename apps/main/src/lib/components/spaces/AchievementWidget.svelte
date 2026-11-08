@@ -6,11 +6,11 @@
 	// has at least one achievement — empty state is hidden to avoid
 	// cluttering the sidebar.
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { page } from '$app/state';
 	import { Trophy, Heart, ArrowRight } from 'lucide-svelte';
-	import type { Achievement } from '$lib/types';
+	import type { Achievement } from '#lib/types/index.js';
 
 	interface Props {
 		spaceSlug: string;

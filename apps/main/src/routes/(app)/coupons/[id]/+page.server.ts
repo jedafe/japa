@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import { dealPath, type Coupon } from '$lib/types';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import { dealPath, type Coupon } from '#lib/types/index.js';
 
 /**
  * Legacy coupon detail at /coupons/{id} — permanently redirects to the

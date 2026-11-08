@@ -1,6 +1,6 @@
-import { api } from '$lib/api/client';
-import { classifyError } from '$lib/api/create';
-import type { MeProfile, PrivacySettings } from '$lib/types';
+import { api } from '#lib/api/client.js';
+import { classifyError } from '#lib/api/create.js';
+import type { MeProfile, PrivacySettings } from '#lib/types/index.js';
 
 export { classifyError };
 
@@ -50,7 +50,7 @@ export const patchNotifications = (v: Record<string, unknown>) =>
 	api.patch('/me/notification-preferences', v);
 
 /* ---- devices (mobile push tokens) ---- */
-export const listDevices = () => api.get<import('$lib/types').DeviceInfo[]>('/me/devices');
+export const listDevices = () => api.get<import('#lib/types/index.js').DeviceInfo[]>('/me/devices');
 export const deleteDevice = (deviceID: string) =>
 	api.delete(`/me/devices/${encodeURIComponent(deviceID)}`);
 

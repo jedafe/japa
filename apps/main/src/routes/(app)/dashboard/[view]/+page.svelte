@@ -1,10 +1,10 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
-	import { resolveView } from '$lib/components/hub/dashboard/dashboardViews';
-	import { DASHBOARD_VIEW_COMPONENTS } from '$lib/components/hub/dashboard/dashboardComponents';
+	import { t } from '#lib/i18n/index.js';
+	import { resolveView } from '#lib/components/hub/dashboard/dashboardViews.js';
+	import { DASHBOARD_VIEW_COMPONENTS } from '#lib/components/hub/dashboard/dashboardComponents.js';
 
 	let { data } = $props();
 	const meta = $derived(resolveView(data.view, data.dashboardMenu?.items));

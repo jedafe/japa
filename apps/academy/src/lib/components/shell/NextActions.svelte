@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	// §122 Next-Action renderer (academy surface) — announcement_bar + popup
 	// (+ an in_article card slot the page can opt into via the `inline` flag
 	// on tools pages that render article-style content). The API does all
 	// audience/state filtering; popup cap comes from meta.popup_max_per_session.
 	import { onMount } from 'svelte';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { Dialog } from 'bits-ui';
 	import { ArrowRight, Clock, X } from 'lucide-svelte';
-	import { nextActionIcon } from '$lib/icons/nextActionIcon';
+	import { nextActionIcon } from '#lib/icons/nextActionIcon.js';
 
 	interface NextAction {
 		id: string;

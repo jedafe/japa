@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// /products — product directory surface (§80 Product Domain). Products
 	// are comparison entities, not wiki kinds; each card links to the
 	// /product/{slug} detail page. The Deals tab is the moved /deals
@@ -7,8 +7,8 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import {
 		Box,
 		Briefcase,
@@ -30,8 +30,8 @@
 		Tag,
 		Wrench
 	} from 'lucide-svelte';
-	import { EmptyState, ListPageBar, PageAction, UrlTabs, type UrlTab } from '$lib/components/ui';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { EmptyState, ListPageBar, PageAction, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import type { PageData } from './$types';
 
 	type ProductItem = PageData['items'][number];
@@ -144,7 +144,7 @@
 		setParam(url, 'q', searchInput.trim());
 		setParam(url, 'type', selectedType);
 		url.searchParams.delete('page');
-		goto(`${url.pathname}${url.search}`, { keepFocus: true, noScroll: true });
+		goto(`${url.pathname}${url.search}`, { reset: false });
 	}
 
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;

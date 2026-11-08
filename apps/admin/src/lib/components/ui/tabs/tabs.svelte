@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { syncTabToUrl } from '$lib/utils/url-sync.svelte';
+	import { syncTabToUrl } from '#lib/utils/url-sync.svelte.js';
   import { Tabs } from "bits-ui";
   import { clsx, type ClassValue } from "clsx";
   

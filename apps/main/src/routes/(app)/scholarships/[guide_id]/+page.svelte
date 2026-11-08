@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t, i18n } from '$lib/i18n';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import {
@@ -19,11 +19,11 @@
 		ClipboardList,
 		BookOpen
 	} from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
-	import type { Scholarship, SavedScholarship } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { EmptyState, AutocompleteSelect } from '#lib/components/ui/index.js';
+	import type { Scholarship, SavedScholarship } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
 	/**
 	 * Scholarship detail page — Section 73, ADR-073.

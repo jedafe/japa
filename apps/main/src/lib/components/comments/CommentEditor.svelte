@@ -17,13 +17,13 @@
 	import Mention from '@tiptap/extension-mention';
 	import { PluginKey } from '@tiptap/pm/state';
 	import { Bold, Italic, Link as LinkIcon, Code, Strikethrough, ImagePlus } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { searchHits } from '$lib/api/create';
+	import { t } from '#lib/i18n/index.js';
+	import { searchHits } from '#lib/api/create.js';
 	import { createSuggestionRenderer } from '@japaconnect/ui';
-	import { encodeTiptapDoc, decodeTipTapDoc, type TipTapDoc } from '$lib/tiptap/serialize';
+	import { encodeTiptapDoc, decodeTipTapDoc, type TipTapDoc } from '#lib/tiptap/serialize.js';
 	import { EmojiPicker, EditorInsertModal } from '@japaconnect/ui';
-	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
-	import type { MediaAsset } from '$lib/types';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
+	import type { MediaAsset } from '#lib/types/index.js';
 
 	interface Props {
 		/** Placeholder text for the editor. */

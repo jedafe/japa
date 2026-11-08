@@ -1,5 +1,5 @@
 import type { Action } from 'svelte/action';
-import type { LightboxItem } from '$lib/components/ui/MediaLightbox.svelte';
+import type { LightboxItem } from '#lib/components/ui/MediaLightbox.svelte';
 
 // Ref: §23 main-site-frontend — shared fullscreen media viewer.
 // One MediaLightbox instance is mounted in (app)/+layout.svelte; any surface

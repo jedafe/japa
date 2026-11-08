@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /moderation/content — migrated to the EntityPage scaffold.
 	// Distinct moderation-focused view of platform content (open-report count,
 	// featured badge, type/status/deleted filters) with read-only list +
 	// Remove/Restore state actions. Uses apiRaw because GET /admin/content
 	// returns { data, total, total_pages } with totals alongside `data`.
-	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { contentAdminApi, apiRaw } from '$lib/api';
-	import { escapeHtml } from '$lib/utils/html';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { contentAdminApi, apiRaw } from '#lib/api.js';
+	import { escapeHtml } from '#lib/utils/html.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Trash2, RotateCcw } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	type ContentItem = {
 		id: string;

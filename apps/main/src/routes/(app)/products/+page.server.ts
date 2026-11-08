@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md (Product Domain)
 // and docs/superpowers/specs/2026-11-06-wiki-dynamic-entity-kinds.md
 import { error } from '@sveltejs/kit';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import { hasPerm } from '$lib/server/auth';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import { hasPerm } from '#lib/server/auth.js';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -68,7 +68,7 @@ export const load: PageServerLoad = async (event) => {
 		apiGet<EntitiesResponse>(ctx, `/products?${params}`).catch((err) => {
 			// An unknown ?type= slug 404s upstream — surface it rather than
 			// silently listing every product.
-			if (err instanceof ApiError && err.status === 404) throw error(404);
+			if (err instanceof ApiError && err.status === 404) throw error(404, { code: 'not_found', message: 'Not found' });
 			return null;
 		})
 	]);

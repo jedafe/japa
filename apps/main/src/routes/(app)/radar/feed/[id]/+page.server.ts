@@ -7,8 +7,8 @@
 // Renders inside the unified app shell (ADR-058) via the (app) layout group.
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { RadarItem } from '$lib/types';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import type { RadarItem } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);

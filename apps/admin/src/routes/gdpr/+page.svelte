@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /gdpr — read-only deletion-request list with an "Execute" state action.
 	// Backend: GET /admin/gdpr/deletion-requests → gdprHandlers.ListPendingDeletions (RBAC: gdpr.deletions.view)
 	//          POST /admin/gdpr/deletion-requests/{id}/execute → gdprHandlers.ExecuteDeletion
 	// Ref: sections/19-gdpr-ndpr-compliance.md, ADR-057
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { gdprAdminApiExtended } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { gdprAdminApiExtended } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Play } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 
 	// Matches gen.ListPendingDeletionRequestsRow JSON output.
 	type DeletionRequest = {

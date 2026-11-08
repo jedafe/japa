@@ -2,22 +2,22 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Filter, Layers, Users, MessageSquare, Plus, ShieldX, ChevronDown, ChevronRight, X, Search, Globe } from 'lucide-svelte';
-	import { EmptyState, EntityHero, SpaceJoinButton, SearchInput, DirectoryCard, ListPageBar, SelectField, UrlTabs, type SearchSuggestion, type CardMetaItem, type UrlTab } from '$lib/components/ui';
-	import { GuideSlideOver, Modal, type GuideContent } from '$lib/components/ui';
-	import HeroArtSpaces from '$lib/components/heroes/HeroArtSpaces.svelte';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-	import { api } from '$lib/api/client';
-	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { decodeBase64Text } from '$lib/tiptap/serialize';
-	import { flagUrl } from '$lib/utils/flags';
-	import type { Space } from '$lib/types';
+	import { EmptyState, EntityHero, SpaceJoinButton, SearchInput, DirectoryCard, ListPageBar, SelectField, UrlTabs, type SearchSuggestion, type CardMetaItem, type UrlTab } from '#lib/components/ui/index.js';
+	import { GuideSlideOver, Modal, type GuideContent } from '#lib/components/ui/index.js';
+	import HeroArtSpaces from '#lib/components/heroes/HeroArtSpaces.svelte';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+	import { api } from '#lib/api/client.js';
+	import SpaceCreationModal from '#lib/components/spaces/SpaceCreationModal.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { decodeBase64Text } from '#lib/tiptap/serialize.js';
+	import { flagUrl } from '#lib/utils/flags.js';
+	import type { Space } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	let { data }: { data: PageData } = $props();
 
 	let showCreateModal = $state(false);
@@ -210,7 +210,7 @@
 		if (selectedSort) params.set('sort', selectedSort);
 		if (joinedOnly) params.set('joined', '1');
 		const qs = params.toString();
-		goto(qs ? `/spaces?${qs}` : '/spaces', { keepFocus: true });
+		goto(qs ? `/spaces?${qs}` : '/spaces', { reset: false });
 	}
 
 	// Clear keeps the search query and scope tab — only the panel resets.

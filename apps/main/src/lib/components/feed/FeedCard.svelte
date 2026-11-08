@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { ArrowUp, ArrowDown, MessageSquare, Eye, Bookmark, Play, ExternalLink, Maximize2 } from 'lucide-svelte';
-	import { openLightbox } from '$lib/lightbox.svelte';
+	import { openLightbox } from '#lib/lightbox.svelte.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { relativeTime } from '$lib/feed/time';
-	import { t, i18n } from '$lib/i18n';
-	import { contentHref } from '$lib/utils/contentLink';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import { formatDuration } from '$lib/utils/duration';
-	import type { CardStyle } from '$lib/feed/cardStyle';
-	import type { FeedItem } from '$lib/types';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import { formatDuration } from '#lib/utils/duration.js';
+	import type { CardStyle } from '#lib/feed/cardStyle.js';
+	import type { FeedItem } from '#lib/types/index.js';
 	import DailyFeedCard from './DailyFeedCard.svelte';
-	import VerifiedBadge from '$lib/components/ui/VerifiedBadge.svelte';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
-	import VoteRail from '$lib/components/forum/VoteRail.svelte';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
+	import VoteRail from '#lib/components/forum/VoteRail.svelte';
 
 	interface Props {
 		item: FeedItem;

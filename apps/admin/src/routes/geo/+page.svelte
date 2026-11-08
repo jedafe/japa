@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Button } from "$lib/components/ui/button";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import type { ActionItem } from "$lib/components/ui/data-table";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { DataTable } from "#lib/components/ui/data-table/index.js";
+	import type { ActionItem } from "#lib/components/ui/data-table/index.js";
+	import { TableSkeleton } from "#lib/components/ui/skeleton/index.js";
 	import { Search, Globe, MapPin, ChevronRight, Loader2, Plus } from "lucide-svelte";
-	import { geoApi } from "$lib/api";
+	import { geoApi } from "#lib/api.js";
 	import { goto } from "$app/navigation";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import { initTabParam, bindTabParam } from "$lib/utils/url-sync.svelte";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
+	import { initTabParam, bindTabParam } from "#lib/utils/url-sync.svelte.js";
 
 	type GeoContext = {
 		country_code: string;

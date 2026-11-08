@@ -4,14 +4,14 @@
 	// recommendations. Data is fetched server-side by the overview dashboard
 	// loader (Rule 16 — no hardcoded/mock data). Renders nothing when the
 	// recommendations endpoint is unavailable (null) or returns empty arrays.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Wrench, Sparkles, FileText, Users } from 'lucide-svelte';
 	import type {
 		RecommendationsResponse,
 		RecommendationItem,
 		RecommendationContentItem,
 		RecommendationSpaceItem
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 
 	interface Props {
 		data: RecommendationsResponse | null;

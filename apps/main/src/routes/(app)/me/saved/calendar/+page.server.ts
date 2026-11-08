@@ -4,8 +4,8 @@
 // alongside visa checklists."
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { CalendarEntry } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { CalendarEntry } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {

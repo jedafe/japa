@@ -1,4 +1,4 @@
-import type { DocNavItem } from '$lib/types';
+import type { DocNavItem } from '#lib/types/index.js';
 
 /**
  * Category/subcategory grouping for docs nav trees and audience listings.

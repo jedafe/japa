@@ -2,13 +2,13 @@
 	// Search results — Phase 10 (ROADMAP-ACADEMY.md).
 	// SSR results grid + CSR enrollment state (ADR-060 SSR/CSR boundary).
 	// Filters (level) are URL params → re-triggers load().
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
-	import TrackCard from '$lib/components/academy/TrackCard.svelte';
-	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import TrackCard from '#lib/components/academy/TrackCard.svelte';
+	import { LoadingSkeleton, EmptyState } from '#lib/components/ui/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Search, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
+	import { enrollmentsStore } from '#lib/stores/enrollments.svelte.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/98-service-directory.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { ServiceListing, ServiceCategoryInfo, GeoCountry, Space } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { ServiceListing, ServiceCategoryInfo, GeoCountry, Space } from '#lib/types/index.js';
 
 /**
  * Service Directory list at /services — geo-indexed directory of

@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /broadcasts — migrated to shared components (ActionMenu, FilterPanel,
 	// Modal, bulkActionsList). Tabbed page (all/drafts/sent); keeps
 	// page-local Modals for create broadcast (form) and send confirmation.
 	// View detail opens in a Modal.
-	import { t, locale } from '$lib/stores/i18n.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Select } from '$lib/components/ui/select';
-	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
+	import { t, locale } from '#lib/stores/i18n.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
+	import type { ActionItem, BulkAction } from '#lib/components/ui/data-table/index.js';
 	import { Send, Plus, Radio, Clock, CheckCircle, Trash2, Eye } from 'lucide-svelte';
-	import { api } from '$lib/api';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { api } from '#lib/api.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 
 	const canManage = $derived(hasPermission('admin.broadcast'));
 

@@ -2,15 +2,15 @@
 // non-httpOnly csrf_token cookie — mirrored onto the browser by
 // hooks.server.ts — so reads come from document.cookie and refreshes hit
 // GET /csrf directly.
-import { env } from '$env/dynamic/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
-import { getCookie } from '$lib/api/client';
+import { getCookie } from '#lib/api/client.js';
 
 export function getCsrfToken(): string | null {
 	return getCookie('csrf_token') ?? null;
 }
 
 export async function refreshCsrfToken(): Promise<void> {
-	const base = (env.PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
+	const base = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 	await fetch(buildApiUrl('/csrf', base), { credentials: 'include' });
 }

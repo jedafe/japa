@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /product-types/[slug] — type edit + bound field-group management (§80).
 	// Fields are edited via the existing /custom-field-groups endpoints.
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import Modal from '$lib/components/ui/modal/modal.svelte';
-	import { api, productTypesAdminApi, fieldGroupsAdminApiExtended, fieldTypesAdminApi, type FieldTypeInfo } from '$lib/api';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import Modal from '#lib/components/ui/modal/modal.svelte';
+	import { api, productTypesAdminApi, fieldGroupsAdminApiExtended, fieldTypesAdminApi, type FieldTypeInfo } from '#lib/api.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { onMount } from 'svelte';
 	import { ExternalLink, Loader2, Plus, Trash2 } from 'lucide-svelte';
 

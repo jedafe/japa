@@ -1,14 +1,14 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import Switch from '$lib/components/ui/Switch.svelte';
-	import ManageSheet from '$lib/components/extensions/manage-sheet.svelte';
-	import { env } from '$env/dynamic/public';
-	import { SURFACES, type Extension } from '$lib/components/extensions/types';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import Switch from '#lib/components/ui/Switch.svelte';
+	import ManageSheet from '#lib/components/extensions/manage-sheet.svelte';
+	import { PUBLIC_JC_MAIN_URL } from '$app/env/public';
+	import { SURFACES, type Extension } from '#lib/components/extensions/types.js';
 
-	const mainSiteUrl = env.PUBLIC_JC_MAIN_URL ?? '';
-	import { api } from '$lib/api';
-	import { t, translations } from '$lib/stores/i18n.svelte';
+	const mainSiteUrl = PUBLIC_JC_MAIN_URL ?? '';
+	import { api } from '#lib/api.js';
+	import { t, translations } from '#lib/stores/i18n.svelte.js';
 	import {
 		Puzzle,
 		ToggleLeft,
@@ -116,11 +116,11 @@
 				if (result.data && typeof result.data.enabled === 'boolean') {
 					extensions = extensions.map((e) =>
 						e.key === ext.key
-							? {
-								...e,
-								enabled: result.data!.enabled,
-								version: result.data!.version ?? e.version
-							}
+						? {
+							...e,
+							enabled: (result.data!).enabled,
+							version: (result.data!).version ?? e.version
+						}
 							: e
 					);
 				}
@@ -238,7 +238,7 @@
 	}
 
 	function applyExtPatch(key: string, patch: Partial<Extension>) {
-		extensions = extensions.map((e) => (e.key === key ? { ...e, ...patch } : e));
+		extensions = extensions.map((e) => e.key === key ? { ...e, ...patch } : e);
 	}
 
 	function handleExtSaved(key: string, warning?: string) {
@@ -329,18 +329,18 @@
 {#if categories.length > 1}
 	<div class="bg-muted mb-4 inline-flex flex-wrap gap-1 rounded-9px p-1">
 		<button
-			class="rounded-7px px-4 py-2 text-sm font-medium transition-all {activeCategory === 'all' ? 'bg-background text-foreground shadow-mini' : 'text-muted-foreground hover:text-foreground'}"
-			onclick={() => (activeCategory = 'all')}
-		>
-			{t('common.all', 'All')} ({extensions.length})
-		</button>
+			class="rounded-7px px-4 py-2 text-sm font-medium transition-all {activeCategory === 'all'
+				? 'bg-background text-foreground shadow-mini'
+				: 'text-muted-foreground hover:text-foreground'}"
+			onclick={() => activeCategory = 'all'}
+		>{t('common.all', 'All')} ({extensions.length})</button>
 		{#each categories as cat}
 			<button
-				class="rounded-7px px-4 py-2 text-sm font-medium transition-all {activeCategory === cat ? 'bg-background text-foreground shadow-mini' : 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => (activeCategory = cat)}
-			>
-				{cat}
-			</button>
+				class="rounded-7px px-4 py-2 text-sm font-medium transition-all {activeCategory === cat
+					? 'bg-background text-foreground shadow-mini'
+					: 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => activeCategory = cat}
+			>{cat}</button>
 		{/each}
 	</div>
 {/if}

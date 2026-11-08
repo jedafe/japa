@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { setAccessToken } from '$lib/api/token';
-	import { restoreSession } from '$lib/stores/session.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { setAccessToken } from '#lib/api/token.js';
+	import { restoreSession } from '#lib/stores/session.svelte.js';
 	import { goto } from '$app/navigation';
-	import { getPermissions } from '$lib/stores/permissions.svelte';
-	import { setChallenge } from '$lib/api/challenge';
-	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { getPermissions } from '#lib/stores/permissions.svelte.js';
+	import { setChallenge } from '#lib/api/challenge.js';
+	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
 
 	let email = $state('');
@@ -80,10 +80,22 @@
 	<title>Login — {siteName()} Admin</title>
 </svelte:head>
 
-<div class="flex min-h-screen items-center justify-center px-4">
-	<div class="w-full max-w-sm rounded-lg border p-6" style="border-color: var(--color-border); background: var(--color-surface)">
-		<h1 class="mb-1 text-center text-xl font-bold tracking-tight" style="color: var(--color-foreground)">{t('auth.login.japaconnect_admin')}</h1>
-		<p class="mb-6 text-center text-sm" style="color: var(--color-muted)">{t('auth.login.content_moderation_management')}</p>
+<div
+	class="flex min-h-screen items-center justify-center px-4"
+>
+	<div
+		class="w-full max-w-sm rounded-lg border p-6"
+		style="border-color: var(--color-border); background: var(--color-surface)"
+	>
+		<h1
+			class="mb-1 text-center text-xl font-bold tracking-tight"
+			style="color: var(--color-foreground)"
+		>{t('auth.login.japaconnect_admin')}</h1>
+
+		<p
+			class="mb-6 text-center text-sm"
+			style="color: var(--color-muted)"
+		>{t('auth.login.content_moderation_management')}</p>
 
 		{#if error}
 			<div class="mb-4 rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">

@@ -5,10 +5,10 @@
 	// (roadmap.moderate) get an inline status select that hits the admin
 	// status endpoint — there is no separate public mutation (§113).
 	import { Pin } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import VoteButton from './VoteButton.svelte';
 	import StatusSelect from './StatusSelect.svelte';
-	import type { RoadmapBoardItem } from '$lib/types';
+	import type { RoadmapBoardItem } from '#lib/types/index.js';
 
 	interface Props {
 		item: RoadmapBoardItem;

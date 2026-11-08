@@ -1,14 +1,14 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
-	import { hasAnyPermission } from '$lib/stores/auth.svelte';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
+	import { hasAnyPermission } from '#lib/stores/auth.svelte.js';
 	import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import type { DataTableColumn, DataTableRowAction } from '#lib/api/types.js';
 	import { onMount } from 'svelte';
 
 	type Currency = {

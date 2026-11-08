@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
-	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
-	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { patchProfile } from '$lib/api/hub';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
+	import { DirtyForm } from '#lib/components/hub/useDirtyForm.svelte.js';
+	import SettingsSection from '#lib/components/hub/SettingsSection.svelte';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { patchProfile } from '#lib/api/hub.js';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
 	import { Camera, Image as ImageIcon, Loader2 } from 'lucide-svelte';
-	import type { MeProfile, MediaAsset } from '$lib/types';
+	import type { MeProfile, MediaAsset } from '#lib/types/index.js';
 
 	let { data }: { data: unknown } = $props();
 	const profile = $derived(data as MeProfile | null);

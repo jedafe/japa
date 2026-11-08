@@ -10,10 +10,10 @@
 	 *      japaconnect-engineering/sections/31-follow-system.md (follow endpoint)
 	 */
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { LogIn, LogOut, UserPlus, UserCheck, Loader2 } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { api } from '#lib/api/client.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 
 	interface Props {
 		entityId: string;

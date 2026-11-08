@@ -1,6 +1,6 @@
 import { mount, unmount } from 'svelte';
-import ContentEmbedCard from '$lib/components/content/ContentEmbedCard.svelte';
-import type { ListEmbedSnapshot } from '$lib/types';
+import ContentEmbedCard from '#lib/components/content/ContentEmbedCard.svelte';
+import type { ListEmbedSnapshot } from '#lib/types/index.js';
 
 /**
  * Svelte action that scans a container for

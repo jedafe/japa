@@ -2,16 +2,16 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Bookmark, Play } from 'lucide-svelte';
-	import { t, i18n } from '$lib/i18n';
-	import { contentHref } from '$lib/utils/contentLink';
-	import { formatDuration } from '$lib/utils/duration';
-	import { api } from '$lib/api/client';
-	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
-	import type { FeedItem } from '$lib/types';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
-	import ReactionButton from '$lib/components/ui/ReactionButton.svelte';
-	import ShareButton from '$lib/components/ui/ShareButton.svelte';
-	import TipButton from '$lib/components/tips/TipButton.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import { formatDuration } from '#lib/utils/duration.js';
+	import { api } from '#lib/api/client.js';
+	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
+	import type { FeedItem } from '#lib/types/index.js';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
+	import ReactionButton from '#lib/components/ui/ReactionButton.svelte';
+	import ShareButton from '#lib/components/ui/ShareButton.svelte';
+	import TipButton from '#lib/components/tips/TipButton.svelte';
 
 	interface Props {
 		item: FeedItem;

@@ -1,9 +1,9 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import { isMainToolEnabled, MAIN_TOOLS } from '$lib/tools/registry';
-import type { AgentCapabilities, AIPrefs, AiProject, ByokProviderOption } from '$lib/ai/agentTypes';
-import type { MeSpace, BlogSeries, AssessmentForm, ContentTypeMeta } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import { isMainToolEnabled, MAIN_TOOLS } from '#lib/tools/registry.js';
+import type { AgentCapabilities, AIPrefs, AiProject, ByokProviderOption } from '#lib/ai/agentTypes.js';
+import type { MeSpace, BlogSeries, AssessmentForm, ContentTypeMeta } from '#lib/types/index.js';
 
 /**
  * /ai — the unified AI surface (ADR-130): a single chat view served by

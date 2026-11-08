@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /sop-generator — SOP template + sample + field management (§110).
 	// Backend: GET/POST/PATCH/DELETE /admin/sop/templates, /admin/sop/samples, /admin/sop/fields.
 	// Ref: sections/110-sop-generator.md, ADR-121.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { api, apiRaw } from '$lib/api';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
-	import { useCountries } from '$lib/utils/countries.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { api, apiRaw } from '#lib/api.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
+	import { useCountries } from '#lib/utils/countries.svelte.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { CheckCircle, XCircle, Eye } from 'lucide-svelte';
 
 	type Template = {

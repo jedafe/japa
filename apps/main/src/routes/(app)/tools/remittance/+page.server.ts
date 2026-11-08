@@ -1,6 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiList, apiGet, apiPost, apiPut, ApiError } from '$lib/server/api';
+import { apiContext, apiList, apiGet, apiPost, apiPut, ApiError } from '#lib/server/api.js';
 import type {
 	RemittanceCorridor,
 	RemittanceProvider,
@@ -13,7 +13,7 @@ import type {
 	ComparisonItem,
 	ComparisonDimension,
 	CatalogOption
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Remittance Rate Tracker at /tools/remittance (Section 74, ADR-075).

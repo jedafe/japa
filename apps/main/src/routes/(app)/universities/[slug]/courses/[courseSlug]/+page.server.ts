@@ -2,8 +2,8 @@
 //      (university_course_offerings — public offering detail)
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { CourseOffering } from '$lib/types';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import type { CourseOffering } from '#lib/types/index.js';
 
 /**
  * Institutional course offering detail at

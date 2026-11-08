@@ -3,7 +3,7 @@
 	// (searchable dropdown + selected chip), so every select-style field in
 	// the app shares one interaction. Same value/options/onValueChange
 	// contract as the previous Bits UI wrapper — call sites are unchanged.
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	interface Option {
 		value: string;

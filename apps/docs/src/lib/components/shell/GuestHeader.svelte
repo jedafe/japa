@@ -3,18 +3,18 @@
 	// Replaces the DocNavTree + right sidebar shell for guests.
 	// Ref: ADR-060 — docs shell for guests should show a top bar with search,
 	// audience switcher, theme toggle, and auth buttons.
-	import { t } from '$lib/i18n';
-	import { theme } from '$lib/stores/theme.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { theme } from '#lib/stores/theme.svelte.js';
 	import { Sun, Moon, LogIn, UserPlus } from 'lucide-svelte';
 	import SearchLauncher from './SearchLauncher.svelte';
 	import AudienceSwitcher from './AudienceSwitcher.svelte';
-	import type { DocAudience } from '$lib/types';
-	import { env } from '$env/dynamic/public';
+	import type { DocAudience } from '#lib/types/index.js';
+	import { PUBLIC_MAIN_ORIGIN } from '$app/env/public';
 	import { page } from '$app/state';
 
 	// Login/signup live on the Main app. Build full URLs against the main origin
 	// so these links do not 404 when the guest header is rendered.
-	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+	const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 	const returnTo = encodeURIComponent(page.url.href);
 
 	interface Props {
@@ -41,7 +41,10 @@
 			<a href="/docs" class="guest-nav-link">{t('nav.docs_home')}</a>
 			{#if accessibleAudiences.length > 0}
 				<div class="guest-audience">
-					<AudienceSwitcher {accessibleAudiences} {activeAudience} />
+					<AudienceSwitcher
+						accessibleAudiences={accessibleAudiences}
+						activeAudience={activeAudience}
+					/>
 				</div>
 			{/if}
 		</nav>

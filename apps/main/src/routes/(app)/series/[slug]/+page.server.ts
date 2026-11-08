@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { BlogSeries } from '$lib/types';
-import type { SeriesPost } from '$lib/types/content';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { BlogSeries } from '#lib/types/index.js';
+import type { SeriesPost } from '#lib/types/content.js';
 
 /**
  * Series detail at /series/[slug] — public, SSR, indexable.

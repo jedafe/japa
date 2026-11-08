@@ -1,7 +1,7 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack, onMount, tick } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import {
@@ -17,20 +17,20 @@
 		Flag,
 		Package
 	} from 'lucide-svelte';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import {
 		EmptyState,
 		LiteralSuggest,
 		Modal,
 		AutocompleteSelect,
 		ListPageBar
-	} from '$lib/components/ui';
-	import MessagesTabs from '$lib/components/messages/MessagesTabs.svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { realtime, type DMMessageEvent } from '$lib/realtime/realtime.svelte';
-	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
-	import type { DMConversation, DMMessage, PublicUser } from '$lib/types';
+	} from '#lib/components/ui/index.js';
+	import MessagesTabs from '#lib/components/messages/MessagesTabs.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { realtime, type DMMessageEvent } from '#lib/realtime/realtime.svelte.js';
+	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
+	import type { DMConversation, DMMessage, PublicUser } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -138,7 +138,7 @@
 		searchValue = value;
 		clearTimeout(searchTimer);
 		searchTimer = setTimeout(() => {
-			goto(listHref({ q: value.trim() }), { keepFocus: true, noScroll: true });
+			goto(listHref({ q: value.trim() }), { reset: false });
 		}, 300);
 	}
 
@@ -180,11 +180,11 @@
 	}
 
 	function selectConversation(id: string) {
-		goto(listHref({ c: id }), { noScroll: true });
+		goto(listHref({ c: id }), { reset: false });
 	}
 
 	function closeConversation() {
-		goto(listHref({ c: null }), { noScroll: true });
+		goto(listHref({ c: null }), { reset: false });
 	}
 
 	// Mark the active conversation read once the server payload has it.
@@ -471,7 +471,7 @@
 						<AutocompleteSelect
 							options={sortOptions}
 							value={data.query.sort}
-							onValueChange={(v) => goto(listHref({ sort: v }), { noScroll: true })}
+							onValueChange={(v) => goto(listHref({ sort: v }), { reset: false })}
 							ariaLabel={t('messages.sort_label', 'Sort conversations')}
 						/>
 					</div>
@@ -479,7 +479,7 @@
 						<AutocompleteSelect
 							options={filterOptions}
 							value={data.query.filter ?? ''}
-							onValueChange={(v) => goto(listHref({ filter: v || null }), { noScroll: true })}
+							onValueChange={(v) => goto(listHref({ filter: v || null }), { reset: false })}
 							ariaLabel={t('messages.filter_label', 'Filter conversations')}
 						/>
 					</div>
@@ -566,7 +566,7 @@
 						<AutocompleteSelect
 							options={pageSizeOptions}
 							value={String(data.query.pageSize)}
-							onValueChange={(v) => goto(listHref({ pageSize: Number(v) }), { noScroll: true })}
+							onValueChange={(v) => goto(listHref({ pageSize: Number(v) }), { reset: false })}
 							ariaLabel={t('messages.page_size', 'Conversations per page')}
 							openUp
 						/>

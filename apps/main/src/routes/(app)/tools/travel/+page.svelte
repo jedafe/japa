@@ -1,28 +1,22 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { afterNavigate } from '$app/navigation';
-	import {
-		Plane,
-		Lock,
-		Hotel,
-		ExternalLink,
-		Search,
-		Hourglass
-	} from 'lucide-svelte';
+	import { Plane, Lock, Hotel, ExternalLink, Search, Hourglass } from 'lucide-svelte';
+
 	import {
 		EmptyState,
 		LoadingSkeleton,
 		UrlTabs,
 		PaginationControls,
 		AutocompleteSelect
-	} from '$lib/components/ui';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import type { Space } from '$lib/types';
-	import { api } from '$lib/api/client';
-	import { formatMoney } from '$lib/utils/currency';
+	} from '#lib/components/ui/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import type { Space } from '#lib/types/index.js';
+	import { api } from '#lib/api/client.js';
+	import { formatMoney } from '#lib/utils/currency.js';
 	import type {
 		TravelFlightResult,
 		TravelHotelResult,
@@ -31,9 +25,9 @@
 		TravelHotelDirectoryResponse,
 		TravelAirlineItem,
 		TravelAirlineDirectoryResponse
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -76,6 +70,8 @@
 	// page.url) avoids racing the async page-state update after
 	// replaceState, which previously reset the tab to the stale param.
 	afterNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
+
 		const param = nav.to?.url.searchParams.get('tab') as Tab | null;
 		const next = param && TAB_VALUES.includes(param) ? param : 'flights';
 		if (next !== tab) tab = next;
@@ -87,9 +83,9 @@
 	const PAGE_SIZE_OPTIONS = [10, 25, 50].map((n) => ({ value: String(n), label: String(n) }));
 	const numberOptions = (from: number, to: number) =>
 		Array.from({ length: to - from + 1 }, (_, i) => {
-			const n = from + i;
-			return { value: String(n), label: String(n) };
-		});
+		const n = from + i;
+		return { value: String(n), label: String(n) };
+	});
 
 	const cabinOptions = $derived([
 		{ value: '', label: t('travel.any_cabin', 'Any cabin') },
@@ -208,7 +204,7 @@
 			const raw = f.airline || '';
 			if (!key || !raw) continue;
 			const prev = labels.get(key);
-			if (prev === undefined || (isBareCode(prev) && !isBareCode(raw))) {
+			if (prev === undefined || isBareCode(prev) && !isBareCode(raw)) {
 				labels.set(key, raw);
 			}
 		}
@@ -347,7 +343,7 @@
 			flightError = res.error.message;
 			return;
 		}
-		flights = (res.data?.results as TravelFlightResult[] | undefined) ?? [];
+		flights = res.data?.results as TravelFlightResult[] | undefined ?? [];
 		flightTotal = res.data?.total ?? flights.length;
 		flightMeta = res.data
 			? { cache_hit: res.data.cache_hit, source: res.data.source, search_time_ms: res.data.search_time_ms, total: res.data.total, page: res.data.page, page_size: res.data.page_size }
@@ -407,7 +403,7 @@
 			hotelError = res.error.message;
 			return;
 		}
-		hotels = (res.data?.results as TravelHotelResult[] | undefined) ?? [];
+		hotels = res.data?.results as TravelHotelResult[] | undefined ?? [];
 		hotelTotal = res.data?.total ?? hotels.length;
 		hotelMeta = res.data
 			? { cache_hit: res.data.cache_hit, source: res.data.source, search_time_ms: res.data.search_time_ms, total: res.data.total, page: res.data.page, page_size: res.data.page_size }
@@ -532,13 +528,13 @@
 	// ── Formatting helpers ──────────────────────────────────────────────────
 	function durationMinutes(s: string): number {
 		if (!s) return Number.MAX_SAFE_INTEGER;
-		const iso = /^PT(?:(\d+)H)?(?:(\d+)M)?/i.exec(s);
+		const iso = (/^PT(?:(\d+)H)?(?:(\d+)M)?/i).exec(s);
 		if (iso && (iso[1] || iso[2])) return Number(iso[1] ?? 0) * 60 + Number(iso[2] ?? 0);
-		const hm = /(\d+)\s*h(?:ours?)?\s*(\d+)?\s*m?/i.exec(s);
+		const hm = (/(\d+)\s*h(?:ours?)?\s*(\d+)?\s*m?/i).exec(s);
 		if (hm) return Number(hm[1]) * 60 + Number(hm[2] ?? 0);
-		const colon = /(\d+):(\d+)/.exec(s);
+		const colon = (/(\d+):(\d+)/).exec(s);
 		if (colon) return Number(colon[1]) * 60 + Number(colon[2]);
-		const mins = /(\d+)\s*m(?:in(?:ute)?s?)?\b/i.exec(s);
+		const mins = (/(\d+)\s*m(?:in(?:ute)?s?)?\b/i).exec(s);
 		if (mins) return Number(mins[1]);
 		return Number.MAX_SAFE_INTEGER;
 	}
@@ -550,7 +546,7 @@
 	// A 2–3 char all-caps code reads as an identifier, not a carrier name —
 	// used to prefer "Air Peace" over "P4" as an airline-option label.
 	function isBareCode(s: string): boolean {
-		return /^[A-Z0-9]{2,3}$/.test(s);
+		return (/^[A-Z0-9]{2,3}$/).test(s);
 	}
 
 	// Provider names falling back to raw endpoint URLs are a debug aid from
@@ -594,8 +590,8 @@
 							fetcher={fetchAirportOptions}
 							selectedId={null}
 							selectedLabel={flightOrigin}
-							onSelect={(item) => (flightOrigin = item.id)}
-							onFreeTextBlur={(q) => (flightOrigin = q)}
+							onSelect={(item) => flightOrigin = item.id}
+							onFreeTextBlur={(q) => flightOrigin = q}
 						/>
 					</div>
 					<div>
@@ -608,8 +604,8 @@
 							fetcher={fetchAirportOptions}
 							selectedId={null}
 							selectedLabel={flightDest}
-							onSelect={(item) => (flightDest = item.id)}
-							onFreeTextBlur={(q) => (flightDest = q)}
+							onSelect={(item) => flightDest = item.id}
+							onFreeTextBlur={(q) => flightDest = q}
 						/>
 					</div>
 					<div>
@@ -668,10 +664,36 @@
 							{t('travel.results', '{count} results', { count: sortedFlights.length })}
 							{#if flightMeta?.source === 'stale'}· {t('travel.stale_results', 'results may be outdated')}{:else if flightMeta?.cache_hit}· {t('travel.cached', 'cached')}{/if}
 						</p>
-						<div class="w-36"><AutocompleteSelect options={airlineOptions} bind:value={flightAirline} onValueChange={() => (flightPage = 1)} ariaLabel={t('travel.filter_airline', 'Filter by airline')} placeholder={t('travel.filter_airline', 'Filter by airline')} /></div>
-						<div class="w-44"><AutocompleteSelect options={flightSortOptions} bind:value={flightSort} onValueChange={() => (flightPage = 1)} ariaLabel={t('travel.sort_by', 'Sort results')} /></div>
-						<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={flightPageSize} onValueChange={() => (flightPage = 1)} ariaLabel={t('travel.per_page', 'Results per page')} /></div>
+
+						<div class="w-36">
+							<AutocompleteSelect
+								options={airlineOptions}
+								bind:value={flightAirline}
+								onValueChange={() => flightPage = 1}
+								ariaLabel={t('travel.filter_airline', 'Filter by airline')}
+								placeholder={t('travel.filter_airline', 'Filter by airline')}
+							/>
+						</div>
+
+						<div class="w-44">
+							<AutocompleteSelect
+								options={flightSortOptions}
+								bind:value={flightSort}
+								onValueChange={() => flightPage = 1}
+								ariaLabel={t('travel.sort_by', 'Sort results')}
+							/>
+						</div>
+
+						<div class="w-24">
+							<AutocompleteSelect
+								options={PAGE_SIZE_OPTIONS}
+								bind:value={flightPageSize}
+								onValueChange={() => flightPage = 1}
+								ariaLabel={t('travel.per_page', 'Results per page')}
+							/>
+						</div>
 					</div>
+
 					<div class="space-y-2">
 						{#each pagedFlights as f, i (i)}
 							<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
@@ -696,7 +718,11 @@
 					</div>
 					{#if flightTotalPages > 1}
 						<div class="mt-4 flex justify-center">
-							<PaginationControls page={flightPage} totalPages={flightTotalPages} onPageChange={(p) => (flightPage = p)} />
+							<PaginationControls
+								page={flightPage}
+								totalPages={flightTotalPages}
+								onPageChange={(p) => flightPage = p}
+							/>
 						</div>
 					{/if}
 				{:else if flightsSearched && !flightError}
@@ -718,8 +744,8 @@
 							fetcher={fetchCityOptions}
 							selectedId={null}
 							selectedLabel={hotelDest}
-							onSelect={(item) => (hotelDest = item.label)}
-							onFreeTextBlur={(q) => (hotelDest = q)}
+							onSelect={(item) => hotelDest = item.label}
+							onFreeTextBlur={(q) => hotelDest = q}
 						/>
 					</div>
 					<div>
@@ -772,9 +798,26 @@
 							{t('travel.results', '{count} results', { count: sortedHotels.length })}
 							{#if hotelMeta?.source === 'stale'}· {t('travel.stale_results', 'results may be outdated')}{:else if hotelMeta?.cache_hit}· {t('travel.cached', 'cached')}{/if}
 						</p>
-						<div class="w-44"><AutocompleteSelect options={hotelSortOptions} bind:value={hotelSort} onValueChange={() => (hotelPage = 1)} ariaLabel={t('travel.sort_by', 'Sort results')} /></div>
-						<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={hotelPageSize} onValueChange={() => (hotelPage = 1)} ariaLabel={t('travel.per_page', 'Results per page')} /></div>
+
+						<div class="w-44">
+							<AutocompleteSelect
+								options={hotelSortOptions}
+								bind:value={hotelSort}
+								onValueChange={() => hotelPage = 1}
+								ariaLabel={t('travel.sort_by', 'Sort results')}
+							/>
+						</div>
+
+						<div class="w-24">
+							<AutocompleteSelect
+								options={PAGE_SIZE_OPTIONS}
+								bind:value={hotelPageSize}
+								onValueChange={() => hotelPage = 1}
+								ariaLabel={t('travel.per_page', 'Results per page')}
+							/>
+						</div>
 					</div>
+
 					<div class="space-y-2">
 						{#each pagedHotels as h, i (i)}
 							<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
@@ -782,11 +825,24 @@
 									<img src={h.image_url} alt="" loading="lazy" class="hidden h-14 w-20 shrink-0 rounded-[var(--radius)] object-cover sm:block" />
 								{/if}
 								<div class="min-w-0 flex-1">
-									<span class="block text-sm font-medium text-[var(--color-text)]">{h.name}</span>
-									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
-										{#if h.star_rating > 0}{'★'.repeat(Math.min(5, Math.floor(h.star_rating)))} · {/if}{h.address}
-										{#if h.check_in && h.check_out} · {formatDate(h.check_in)} → {formatDate(h.check_out)}{/if}
-										{#if displayProvider(h.provider)} · {displayProvider(h.provider)}{/if}
+									<span
+										class="block text-sm font-medium text-[var(--color-text)]"
+									>{h.name}</span>
+
+									<span
+										class="mt-0.5 block text-xs text-[var(--color-muted)]"
+									>
+										{#if h.star_rating > 0}
+											{('★').repeat(Math.min(5, Math.floor(h.star_rating)))} ·
+										{/if}{h.address} 
+
+										{#if h.check_in && h.check_out}
+											· {formatDate(h.check_in)} → {formatDate(h.check_out)}
+										{/if}
+
+										{#if displayProvider(h.provider)}
+											· {displayProvider(h.provider)}
+										{/if}
 									</span>
 								</div>
 								<div class="flex items-center gap-3">
@@ -802,7 +858,11 @@
 					</div>
 					{#if hotelTotalPages > 1}
 						<div class="mt-4 flex justify-center">
-							<PaginationControls page={hotelPage} totalPages={hotelTotalPages} onPageChange={(p) => (hotelPage = p)} />
+							<PaginationControls
+								page={hotelPage}
+								totalPages={hotelTotalPages}
+								onPageChange={(p) => hotelPage = p}
+							/>
 						</div>
 					{/if}
 				{:else if hotelsSearched && !hotelError}
@@ -825,8 +885,11 @@
 							fetcher={fetchCityOptions}
 							selectedId={null}
 							selectedLabel={dirCity}
-							onSelect={(item) => { dirCity = item.label; dirSearch(); }}
-							onFreeTextBlur={(q) => (dirCity = q)}
+							onSelect={(item) => {
+								dirCity = item.label;
+								dirSearch();
+							}}
+							onFreeTextBlur={(q) => dirCity = q}
 						/>
 					</div>
 					<div>
@@ -866,10 +929,21 @@
 									<img src={h.image_url} alt="" loading="lazy" class="hidden h-14 w-20 shrink-0 rounded-[var(--radius)] object-cover sm:block" />
 								{/if}
 								<div class="min-w-0 flex-1">
-									<span class="block text-sm font-medium text-[var(--color-text)]">{h.name}</span>
-									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
-										{#if (h.star_rating ?? 0) > 0}{'★'.repeat(Math.min(5, Math.floor(h.star_rating ?? 0)))} · {/if}
-										{#if h.address}{h.address} · {/if}
+									<span
+										class="block text-sm font-medium text-[var(--color-text)]"
+									>{h.name}</span>
+
+									<span
+										class="mt-0.5 block text-xs text-[var(--color-muted)]"
+									>
+										{#if (h.star_rating ?? 0) > 0}
+											{('★').repeat(Math.min(5, Math.floor(h.star_rating ?? 0)))} ·
+										{/if}
+
+										{#if h.address}
+											{h.address} ·
+										{/if}
+
 										{h.city}
 									</span>
 								</div>

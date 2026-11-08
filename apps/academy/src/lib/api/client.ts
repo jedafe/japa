@@ -1,5 +1,5 @@
-import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
-import { loginUrl } from '$lib/appOrigins';
+import { getCsrfToken, refreshCsrfToken } from '#lib/api/csrf.svelte.js';
+import { loginUrl } from '#lib/appOrigins.js';
 
 /**
  * Browser-side API client for mutations and client-initiated reads.

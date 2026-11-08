@@ -4,9 +4,9 @@
 	// placeholder (the server sanitizer strips the data-* attributes), so the
 	// page resolves the source via GET /videos/{id} and renders the player
 	// here instead of relying on sanitized markup.
-	import { t } from '$lib/i18n';
-	import { formatDuration } from '$lib/utils/duration';
-	import type { VideoSource } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import { formatDuration } from '#lib/utils/duration.js';
+	import type { VideoSource } from '#lib/types/index.js';
 
 	interface Props {
 		source: VideoSource;

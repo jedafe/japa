@@ -4,11 +4,11 @@
 	// GET /academy/catalog?q=...&limit=8 and shows a dropdown of
 	// course suggestions.
 	// Selecting a suggestion navigates to the track detail page.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { Search } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
-	import type { TrackSummary } from '$lib/types';
+	import type { TrackSummary } from '#lib/types/index.js';
 
 	interface Props {
 		/** Optional override for the empty-input hint (sidebar widget `placeholder` prop). */

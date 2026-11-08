@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('$lib/api/client', () => ({
+vi.mock('#lib/api/client.js', () => ({
 	apiFetch: vi.fn()
 }));
 
-import { apiFetch } from '$lib/api/client';
+import { apiFetch } from '#lib/api/client.js';
 import { fetchPermissions, getPermissions, isPermissionsLoaded, hasPermission } from './permissions.svelte';
 
 describe('fetchPermissions', () => {

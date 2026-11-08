@@ -4,8 +4,8 @@
 // hardcoding them (Rule 16).
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { SourceMeta } from '$lib/types/sources';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { SourceMeta } from '#lib/types/sources.js';
 
 export const load: PageServerLoad = async (event) => {
 	// Proposals require auth — without this gate guests could fill the whole

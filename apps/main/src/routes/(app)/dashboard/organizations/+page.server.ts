@@ -3,8 +3,8 @@
 // returns the org row + the caller's member_role.
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { GeoCountry, OrganizationAdmin, OrgMeta } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { GeoCountry, OrganizationAdmin, OrgMeta } from '#lib/types/index.js';
 
 /** GET /me/organizations row — org + member_role. */
 export interface MyOrganizationRow extends OrganizationAdmin {

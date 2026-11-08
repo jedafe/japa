@@ -16,7 +16,7 @@ import {
 	audienceStats,
 	popularPages
 } from './catalog';
-import type { DocNavItem, DocNavTree, DocPageSummary } from '$lib/types';
+import type { DocNavItem, DocNavTree, DocPageSummary } from '#lib/types/index.js';
 
 function item(id: string, category?: string, subcategory?: string, children?: DocNavItem[]): DocNavItem {
 	return {

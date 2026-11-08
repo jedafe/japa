@@ -4,16 +4,16 @@
 	// guide-category Autocomplete, TitleField, generated prompt preview.
 	// All generation + metadata fields live in the right rail tabs
 	// (PromptRightPanel).
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import type { ContentTypeMeta, CustomFieldGroup } from '$lib/types';
-	import type { Persona, PromptFormValues } from '$lib/studio/types';
-	import { defaultFrameworkFor, buildPrompt, buildProjectInstruction, type PromptLookups } from '$lib/studio/prompt';
-	import type { StudioMode } from '$lib/studio/types';
-	import { isHighStakesCategory } from '$lib/studio/validation';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import TitleField from '$lib/components/create/TitleField.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import type { ContentTypeMeta, CustomFieldGroup } from '#lib/types/index.js';
+	import type { Persona, PromptFormValues } from '#lib/studio/types.js';
+	import { defaultFrameworkFor, buildPrompt, buildProjectInstruction, type PromptLookups } from '#lib/studio/prompt.js';
+	import type { StudioMode } from '#lib/studio/types.js';
+	import { isHighStakesCategory } from '#lib/studio/validation.js';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import TitleField from '#lib/components/create/TitleField.svelte';
 	import { Copy, Download, Check } from 'lucide-svelte';
 
 	interface VoiceOption {

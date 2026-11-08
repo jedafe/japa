@@ -1,28 +1,28 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { onMount } from 'svelte';
-	import { clearUser, user } from '$lib/stores/auth.svelte';
-	import { getPermissions } from '$lib/stores/permissions.svelte';
-	import { restoreSession } from '$lib/stores/session.svelte';
+	import { clearUser, user } from '#lib/stores/auth.svelte.js';
+	import { getPermissions } from '#lib/stores/permissions.svelte.js';
+	import { restoreSession } from '#lib/stores/session.svelte.js';
 
-	import { initNotifications, addNotification } from '$lib/stores/notifications.svelte';
-	import { setGlobalErrorHandler } from '$lib/api/client';
+	import { initNotifications, addNotification } from '#lib/stores/notifications.svelte.js';
+	import { setGlobalErrorHandler } from '#lib/api/client.js';
 	import { ToastHost, ConfirmHost, toast } from '@japaconnect/ui';
-	import { wsClient } from '$lib/websocket';
-	import { initSidebarFromStorage, toggleSidebar, sidebarCollapsed } from '$lib/stores/sidebar.svelte';
-	import Sidebar from '$lib/components/layout/sidebar.svelte';
-	import TopBar from '$lib/components/layout/TopBar.svelte';
-	import Breadcrumb from '$lib/components/layout/Breadcrumb.svelte';
-	import ImpersonationBanner from '$lib/components/layout/ImpersonationBanner.svelte';
-	import AccessDenied from '$lib/components/AccessDenied.svelte';
-	import { CardSkeleton } from '$lib/components/ui/skeleton';
+	import { wsClient } from '#lib/websocket.js';
+	import { initSidebarFromStorage, toggleSidebar, sidebarCollapsed } from '#lib/stores/sidebar.svelte.js';
+	import Sidebar from '#lib/components/layout/sidebar.svelte';
+	import TopBar from '#lib/components/layout/TopBar.svelte';
+	import Breadcrumb from '#lib/components/layout/Breadcrumb.svelte';
+	import ImpersonationBanner from '#lib/components/layout/ImpersonationBanner.svelte';
+	import AccessDenied from '#lib/components/AccessDenied.svelte';
+	import { CardSkeleton } from '#lib/components/ui/skeleton/index.js';
 	import '../app.css';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { fetchCsrfToken } from '$lib/api/csrf';
-	import { initSiteSettings, siteName, faviconUrl, faviconForTheme } from '$lib/stores/site.svelte';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { env } from '$env/dynamic/public';
+	import { fetchCsrfToken } from '#lib/api/csrf.js';
+	import { initSiteSettings, siteName, faviconUrl, faviconForTheme } from '#lib/stores/site.svelte.js';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { PUBLIC_JC_UMAMI_URL, PUBLIC_JC_UMAMI_SITE_ID_ADMIN } from '$app/env/public';
 
 	let { children } = $props();
 	let loading = $state(true);
@@ -276,7 +276,7 @@
 
 	// Umami analytics — Admin surface (§40).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
-	const umamiEnabled = $derived(!!env.PUBLIC_JC_UMAMI_URL && !!env.PUBLIC_JC_UMAMI_SITE_ID_ADMIN);
+	const umamiEnabled = $derived(!!PUBLIC_JC_UMAMI_URL && !!PUBLIC_JC_UMAMI_SITE_ID_ADMIN);
 
 	// Connect WebSocket + start the notification poller only once an
 	// authenticated session exists — on /login (or post-logout) there is no
@@ -323,8 +323,8 @@
 		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
 		<script
 			defer
-			src="{env.PUBLIC_JC_UMAMI_URL}/script.js"
-			data-website-id={env.PUBLIC_JC_UMAMI_SITE_ID_ADMIN}
+			src="{PUBLIC_JC_UMAMI_URL}/script.js"
+			data-website-id={PUBLIC_JC_UMAMI_SITE_ID_ADMIN}
 		></script>
 	{/if}
 </svelte:head>
@@ -336,7 +336,7 @@
 			toggleSidebar();
 		}
 	}}
-/>
+></svelte:window>
 
 {#if isAuthPage}
 	{@render children()}
@@ -359,7 +359,7 @@
 						<ImpersonationBanner />
 						{@render children()}
 					{:else}
-						<AccessDenied {requiredPermission} />
+						<AccessDenied requiredPermission={requiredPermission} />
 					{/if}
 				</div>
 			</main>

@@ -1,8 +1,8 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
-import { suggestSlug } from '$lib/components/create/slug';
-import type { MeSpace, ForumThread, SpaceDetail } from '$lib/types';
+import { apiContext, apiGet, apiList, apiPost, ApiError } from '#lib/server/api.js';
+import { suggestSlug } from '#lib/components/create/slug.js';
+import type { MeSpace, ForumThread, SpaceDetail } from '#lib/types/index.js';
 
 /**
  * Full-page new forum thread composer at /forum/[category]/new — the

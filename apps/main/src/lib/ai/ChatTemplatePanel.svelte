@@ -25,20 +25,20 @@
 		ChevronDown,
 		ChevronRight
 	} from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { AutocompleteSelect, Modal } from '$lib/components/ui';
+	import { t } from '#lib/i18n/index.js';
+	import { AutocompleteSelect, Modal } from '#lib/components/ui/index.js';
 	// Shared option vocabularies + the composer's own Journey/Settings
 	// pickers — same components the studio prompt rail embeds (Rule 16).
-	import { TONE_OPTIONS, FRAMEWORK_OPTIONS, HUMANIZE_OPTIONS, type SelectOption } from '$lib/studio/types';
-	import type { MeSpace, BlogSeries, ContentTypeMeta, CustomFieldGroup } from '$lib/types';
-	import { isHighStakesCategory } from '$lib/studio/validation';
-	import { api } from '$lib/api/client';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import SpaceSelector from '$lib/components/create/SpaceSelector.svelte';
-	import TagInput from '$lib/components/create/TagInput.svelte';
-	import SeriesSelector from '$lib/components/create/panel/SeriesSelector.svelte';
-	import CreateJourneyPanel from '$lib/components/create/panel/CreateJourneyPanel.svelte';
+	import { TONE_OPTIONS, FRAMEWORK_OPTIONS, HUMANIZE_OPTIONS, type SelectOption } from '#lib/studio/types.js';
+	import type { MeSpace, BlogSeries, ContentTypeMeta, CustomFieldGroup } from '#lib/types/index.js';
+	import { isHighStakesCategory } from '#lib/studio/validation.js';
+	import { api } from '#lib/api/client.js';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import Autocomplete, { type AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import SpaceSelector from '#lib/components/create/SpaceSelector.svelte';
+	import TagInput from '#lib/components/create/TagInput.svelte';
+	import SeriesSelector from '#lib/components/create/panel/SeriesSelector.svelte';
+	import CreateJourneyPanel from '#lib/components/create/panel/CreateJourneyPanel.svelte';
 	import {
 		DEFAULT_CHAT_TEMPLATE_VALUES,
 		normalizeTemplateFolder,

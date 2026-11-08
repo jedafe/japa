@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { AgentSession, AiProject } from '$lib/ai/agentTypes';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { AgentSession, AiProject } from '#lib/ai/agentTypes.js';
 
 /**
  * /ai/sessions — agent session history list. Auth-gated. Loads the first

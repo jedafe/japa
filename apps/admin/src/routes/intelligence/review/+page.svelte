@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /intelligence/review — intelligence review queue moderation page.
 	// Lists extracted intel records pending review, with approve/reject/edit
 	// actions. Backed by /intel/records (defaults to review_required) and
 	// /intel/review/{id}/*.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Check, X, Eye, Pencil, Wand } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
-	import { intelReviewApi, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
+	import { intelReviewApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
 	import { JsonValueEditor } from '@japaconnect/ui';
 
 	type ReviewRecord = {

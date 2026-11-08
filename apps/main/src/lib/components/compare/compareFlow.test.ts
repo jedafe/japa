@@ -7,7 +7,7 @@ import {
 	scopeSummary,
 	sourceOptions
 } from './compareFlow';
-import type { ComparisonType } from '$lib/types/jce';
+import type { ComparisonType } from '#lib/types/jce.js';
 
 const type = (config: Record<string, unknown>): ComparisonType => ({
 	id: '1', name: 'T', slug: 't', item_label: 'Item', config: config as never

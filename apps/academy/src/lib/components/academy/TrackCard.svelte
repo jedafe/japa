@@ -6,13 +6,13 @@
 	// The action state is CSR (enrollment status is user-specific — ADR-060 SSR/CSR
 	// boundary). The card receives the public track data via props; the parent page
 	// passes the enrollment state down after fetching it client-side.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { formatDuration, formatCount, formatPriceKobo, isFreeForUser } from '$lib/format';
+	import { formatDuration, formatCount, formatPriceKobo, isFreeForUser } from '#lib/format.js';
 	import { Star, Users, Clock, PlayCircle, CheckCircle } from 'lucide-svelte';
 	import LevelBadge from './LevelBadge.svelte';
-	import type { TrackSummary, SessionUser } from '$lib/types';
+	import type { TrackSummary, SessionUser } from '#lib/types/index.js';
 
 	interface Props {
 		track: TrackSummary;

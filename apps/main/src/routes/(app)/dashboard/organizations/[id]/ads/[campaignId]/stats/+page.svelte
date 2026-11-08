@@ -2,8 +2,8 @@
 <!-- Campaign stats page: impressions, clicks, CTR, spend, budget.
      Calls GET /org/{org_id}/ads/campaigns/{id}/stats (§61 API Routes). -->
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { ArrowLeft, BarChart3, MousePointer, Eye, TrendingUp, Wallet } from 'lucide-svelte';
 	import type { CampaignStats } from './+page.server';
 

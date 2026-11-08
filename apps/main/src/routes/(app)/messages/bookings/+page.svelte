@@ -1,16 +1,16 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
 	// Two-pane bookings inbox — left list (BookingListPane) selects ?b=<id>,
 	// right detail (BookingDetailPane) carries the booker/provider actions.
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Package } from 'lucide-svelte';
-	import { EmptyState, ListPageBar } from '$lib/components/ui';
-	import MessagesTabs from '$lib/components/messages/MessagesTabs.svelte';
-	import BookingListPane from '$lib/components/messages/BookingListPane.svelte';
-	import BookingDetailPane from '$lib/components/messages/BookingDetailPane.svelte';
+	import { EmptyState, ListPageBar } from '#lib/components/ui/index.js';
+	import MessagesTabs from '#lib/components/messages/MessagesTabs.svelte';
+	import BookingListPane from '#lib/components/messages/BookingListPane.svelte';
+	import BookingDetailPane from '#lib/components/messages/BookingDetailPane.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -54,10 +54,10 @@
 	);
 
 	function closeDetail() {
-		const sp = new URLSearchParams(page.url.searchParams);
+		const sp = new URLSearchParams(page.url.search);
 		sp.delete('b');
 		const qs = sp.toString();
-		void goto(`${basePath}${qs ? `?${qs}` : ''}`, { noScroll: true });
+		void goto(`${basePath}${qs ? `?${qs}` : ''}`, { reset: false });
 	}
 </script>
 

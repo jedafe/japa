@@ -4,7 +4,7 @@
 	// APIs and i18n; keeps the MediaAsset-typed onSelect contract unchanged.
 	import { MediaPickerModal } from '@japaconnect/ui';
 	import type { MediaPickerItem } from '@japaconnect/ui';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		listMyMedia,
 		initiateUpload,
@@ -13,9 +13,9 @@
 		getMedia,
 		updateMedia,
 		deleteMedia
-	} from '$lib/api/create';
-	import { listStockProviders, searchStock, importStockPhoto } from '$lib/api/stock';
-	import type { MediaAsset } from '$lib/types';
+	} from '#lib/api/create.js';
+	import { listStockProviders, searchStock, importStockPhoto } from '#lib/api/stock.js';
+	import type { MediaAsset } from '#lib/types/index.js';
 
 	interface Props {
 		/** Called with the selected media when the user confirms. */

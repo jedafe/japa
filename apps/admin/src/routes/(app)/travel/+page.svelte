@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /travel — Travel Search providers (Section 67, ADR-085).
 	// Migrated to the EntityPage scaffold. Uses `formSnippet` for structured
 	// config editing — api_config renders as endpoint/key inputs plus an
@@ -11,11 +11,11 @@
 	//
 	// Ref: japaconnect-engineering/sections/67-travel-search.md
 	//      japaconnect-engineering/adr/ADR-085-travel-search.md
-	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
-	import { travelAdminApi, adminCatalogApi, type TravelProvider, type CatalogOption } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { EntityPage, type EntityPageConfig, type FieldDef } from '#lib/components/entity/index.js';
+	import { travelAdminApi, adminCatalogApi, type TravelProvider, type CatalogOption } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 
 	// Key/value rows edited by the config form (api_config.extra and
 	// affiliate_config are flat string maps in the API contract).

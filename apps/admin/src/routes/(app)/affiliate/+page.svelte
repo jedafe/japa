@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /affiliate — migrated to shared components (ActionMenu, BulkBar, Modal, FilterPanel).
 	// Tabbed page (6 tabs) — not an EntityPage candidate; keeps the tab structure but
 	// uses DataTable `actions`/`bulkActionsList`/`filters` props and Modal for create.
-	import { api, affiliateProvidersAdminApi, affiliateProgramAdminApi, affiliateLinksAdminApi, affiliateEnhancementsAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import type { ActionItem, BulkAction, FilterDef } from '$lib/components/ui/data-table';
+	import { api, affiliateProvidersAdminApi, affiliateProgramAdminApi, affiliateLinksAdminApi, affiliateEnhancementsAdminApi, adminCatalogApi, type CatalogOption } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import type { ActionItem, BulkAction, FilterDef } from '#lib/components/ui/data-table/index.js';
 	import { Plus, Trash2, Link2, Users, Percent, DollarSign, BarChart3, Pencil } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type AffiliateProvider = {
 		id: string;

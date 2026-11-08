@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import HubRail from '$lib/components/hub/HubRail.svelte';
-	import { viewsByGroup } from '$lib/components/hub/dashboard/dashboardViews';
+	import HubRail from '#lib/components/hub/HubRail.svelte';
+	import { viewsByGroup } from '#lib/components/hub/dashboard/dashboardViews.js';
 
 	let { data, children } = $props();
 

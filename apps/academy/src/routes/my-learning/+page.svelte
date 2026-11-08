@@ -8,11 +8,11 @@
 	// require a backend analytics endpoint not yet built. Those sections are
 	// hidden — NO mocked data (Rule 16, API-Readiness Gate).
 	import { BarChart } from 'layerchart';
-	import { t } from '$lib/i18n';
-	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
-	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
+	import { t } from '#lib/i18n/index.js';
+	import { enrollmentsStore } from '#lib/stores/enrollments.svelte.js';
+	import { LoadingSkeleton, EmptyState } from '#lib/components/ui/index.js';
 	import { LayoutDashboard, CheckCircle, AlertTriangle, RotateCw } from 'lucide-svelte';
-	import type { Enrollment } from '$lib/types';
+	import type { Enrollment } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

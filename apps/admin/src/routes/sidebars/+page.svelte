@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /sidebars — migrated to the EntityPage scaffold.
 	//
 	// The sidebar list + sidebar CRUD use EntityPage. The sidebar create/edit
@@ -8,15 +8,15 @@
 	// render. The rich WIDGET editor is kept as a page-local `<Modal>`
 	// sub-flow (mirrors the /tags moderators Modal pattern).
 	// Ref: Section 59 (Sidebar Management System), ADR-066.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Button } from "$lib/components/ui/button";
-	import AutocompleteSelect from "$lib/components/ui/AutocompleteSelect.svelte";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { sidebarsAdminApi, userManagementApi, permissionsApi, apiRaw, type UserGroup, type SidebarOptions } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "#lib/components/entity/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import AutocompleteSelect from "#lib/components/ui/AutocompleteSelect.svelte";
+	import { TableSkeleton } from "#lib/components/ui/skeleton/index.js";
+	import { sidebarsAdminApi, userManagementApi, permissionsApi, apiRaw, type UserGroup, type SidebarOptions } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
+	import Autocomplete, { type AutocompleteItem } from "#lib/components/ui/Autocomplete.svelte";
 	import { JsonValueEditor } from "@japaconnect/ui";
 	import { Eye, Pencil, Trash2, Plus, ArrowUp, ArrowDown, LayoutGrid, X } from "lucide-svelte";
 

@@ -1,4 +1,4 @@
-import type { ComparisonType } from '$lib/types/jce';
+import type { ComparisonType } from '#lib/types/jce.js';
 
 export function scopeChainOf(type: ComparisonType | null | undefined): string[] {
 	return (type?.config?.scope_chain as string[] | undefined) ?? [];

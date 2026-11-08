@@ -2,12 +2,12 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Hash, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, FollowButton, SearchInput, DirectoryCard, FilterToggle, type SearchSuggestion } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
+	import { EmptyState, FollowButton, SearchInput, DirectoryCard, FilterToggle, type SearchSuggestion } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
 	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
 	let { data }: { data: PageData } = $props();
 

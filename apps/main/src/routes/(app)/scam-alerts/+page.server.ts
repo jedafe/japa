@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { ScamReport, ScamAlertSubscription, ScamType, ScamPlatform, GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { ScamReport, ScamAlertSubscription, ScamType, ScamPlatform, GeoCountry } from '#lib/types/index.js';
 
 const PAGE_SIZE = 20;
 

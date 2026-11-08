@@ -13,7 +13,7 @@
 	 */
 	import { onMount, untrack, type Component } from 'svelte';
 	import { Bold, Code, ImagePlus, Italic, Link as LinkIcon, Loader2, Strikethrough } from 'lucide-svelte';
-	import { encodeTiptapDoc, type TipTapDoc } from '$lib/tiptap/serialize';
+	import { encodeTiptapDoc, type TipTapDoc } from '#lib/tiptap/serialize.js';
 
 	interface Props {
 		/** Placeholder text for the editor. */

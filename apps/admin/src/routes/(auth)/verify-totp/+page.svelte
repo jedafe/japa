@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// Ref: japaconnect-engineering/sections/02-authentication-sessions.md (TOTP login challenge)
 	// Completes the second factor of a 2FA login for the admin panel. The login
 	// page stashes the challenge token + email in the challenge store and
@@ -9,13 +9,13 @@
 	// success the access token is set and the user is forwarded to the admin
 	// root. Without this page, any admin who enables 2FA (mandatory per §22)
 	// is permanently locked out of the admin panel.
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { setAccessToken } from '$lib/api/token';
-	import { clearChallenge, getChallengeEmail, getChallengeToken } from '$lib/api/challenge';
-	import { restoreSession } from '$lib/stores/session.svelte';
-	import { getPermissions } from '$lib/stores/permissions.svelte';
-	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import { setAccessToken } from '#lib/api/token.js';
+	import { clearChallenge, getChallengeEmail, getChallengeToken } from '#lib/api/challenge.js';
+	import { restoreSession } from '#lib/stores/session.svelte.js';
+	import { getPermissions } from '#lib/stores/permissions.svelte.js';
+	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
 
 	let code = $state('');
@@ -128,14 +128,22 @@
 	<title>{t('auth.totp.title', 'Two-Factor Authentication')} — {siteName()} Admin</title>
 </svelte:head>
 
-<div class="flex min-h-screen items-center justify-center px-4">
-	<div class="w-full max-w-sm rounded-lg border p-6" style="border-color: var(--color-border); background: var(--color-surface)">
-		<h1 class="mb-1 text-center text-xl font-bold tracking-tight" style="color: var(--color-foreground)">
-			{t('auth.totp.title', 'Two-Factor Authentication')}
-		</h1>
-		<p class="mb-6 text-center text-sm" style="color: var(--color-muted)">
-			{t('auth.totp.subtitle', 'Enter the 6-digit code from your authenticator app')}
-		</p>
+<div
+	class="flex min-h-screen items-center justify-center px-4"
+>
+	<div
+		class="w-full max-w-sm rounded-lg border p-6"
+		style="border-color: var(--color-border); background: var(--color-surface)"
+	>
+		<h1
+			class="mb-1 text-center text-xl font-bold tracking-tight"
+			style="color: var(--color-foreground)"
+		>{t('auth.totp.title', 'Two-Factor Authentication')}</h1>
+
+		<p
+			class="mb-6 text-center text-sm"
+			style="color: var(--color-muted)"
+		>{t('auth.totp.subtitle', 'Enter the 6-digit code from your authenticator app')}</p>
 
 		{#if email}
 			<p class="mb-4 text-center text-sm" style="color: var(--color-muted)">
@@ -162,7 +170,7 @@
 						autocapitalize="none"
 						placeholder="000000"
 						value={code}
-						oninput={(e) => (code = sanitizeCode(e.currentTarget.value))}
+						oninput={(e) => code = sanitizeCode(e.currentTarget.value)}
 						class="w-full rounded-md border px-3 py-2 text-center text-lg tracking-[0.5em]"
 						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 					/>
@@ -197,7 +205,7 @@
 						autocomplete="off"
 						placeholder="xxxx-xxxx"
 						value={backupCode}
-						oninput={(e) => (backupCode = e.currentTarget.value)}
+						oninput={(e) => backupCode = e.currentTarget.value}
 						class="w-full rounded-md border px-3 py-2"
 						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 					/>

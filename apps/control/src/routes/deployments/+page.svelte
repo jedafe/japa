@@ -1,10 +1,10 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import { api } from '$lib/api';
-	import type { Deployment, DataTableColumn } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import { api } from '#lib/api.js';
+	import type { Deployment, DataTableColumn } from '#lib/api/types.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
 	import { Rocket, RefreshCw } from 'lucide-svelte';
 
 	let deployments = $state<Deployment[]>([]);

@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
-	import { Badge } from "$lib/components/ui/badge";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Select } from "$lib/components/ui/select";
-	import Pagination from "$lib/components/ui/Pagination.svelte";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "#lib/components/ui/card/index.js";
+	import { DataTable } from "#lib/components/ui/data-table/index.js";
+	import type { ActionItem, FilterDef } from "#lib/components/ui/data-table/index.js";
+	import { Badge } from "#lib/components/ui/badge/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { Select } from "#lib/components/ui/select/index.js";
+	import Pagination from "#lib/components/ui/Pagination.svelte";
+	import { TableSkeleton } from "#lib/components/ui/skeleton/index.js";
 	import { RefreshCw, Eye, Pencil, Trash2, Ticket, Clock, CheckCircle, AlertCircle, MessageSquare, StickyNote } from "lucide-svelte";
-	import { ticketsAdminApi, adminCatalogApi, type CatalogOption } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import { pageFromUrl, pageSizeFromUrl, searchFromUrl, filterFromUrl, syncListStateToUrl } from "$lib/utils/url-sync.svelte";
+	import { ticketsAdminApi, adminCatalogApi, type CatalogOption } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
+	import { pageFromUrl, pageSizeFromUrl, searchFromUrl, filterFromUrl, syncListStateToUrl } from "#lib/utils/url-sync.svelte.js";
 
 	type TicketItem = {
 		id: string;

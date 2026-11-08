@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { apiFetch } from "$lib/api";
+	import { apiFetch } from "#lib/api.js";
 	import { onMount } from "svelte";
 
 	let {

@@ -1,8 +1,8 @@
 import type { LayoutServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import { normalizeConfig, type CardStyleConfig } from '$lib/feed/cardStyle';
-import type { Menu, OnboardingStatus, SpaceSuggestion, TrendingTag, UserSpaceRef } from '$lib/types';
-import type { CurrencyInfo } from '$lib/utils/currency';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import { normalizeConfig, type CardStyleConfig } from '#lib/feed/cardStyle.js';
+import type { Menu, OnboardingStatus, SpaceSuggestion, TrendingTag, UserSpaceRef } from '#lib/types/index.js';
+import type { CurrencyInfo } from '#lib/utils/currency.js';
 
 /**
  * Module-level caches for global, non-user-specific data that rarely changes.

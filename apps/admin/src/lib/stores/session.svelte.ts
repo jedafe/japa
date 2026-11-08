@@ -1,7 +1,7 @@
-import { api } from '$lib/api';
-import { refreshAccessToken } from '$lib/api/client';
-import { setUser, setPermissions, clearUser } from '$lib/stores/auth.svelte';
-import { getAccessToken } from '$lib/api/token';
+import { api } from '#lib/api.js';
+import { refreshAccessToken } from '#lib/api/client.js';
+import { setUser, setPermissions, clearUser } from '#lib/stores/auth.svelte.js';
+import { getAccessToken } from '#lib/api/token.js';
 
 /**
  * Restore the session by fetching /me and /me/permissions and updating the

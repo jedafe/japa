@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { RoadmapChangelogItem } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { RoadmapChangelogItem } from '#lib/types/index.js';
 
 /**
  * Public roadmap changelog — GET /api/v1/roadmap/changelog returns every

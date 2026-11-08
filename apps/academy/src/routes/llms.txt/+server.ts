@@ -5,13 +5,22 @@
 // robots.txt: non-production deployments 404. Fails open to a minimal file
 // on API error.
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
-import { API_V1 } from '$lib/server/api';
-import { canonicalUrl } from '$lib/seo';
-import type { TrackSummary } from '$lib/types';
+import { PUBLIC_JC_ENV, JC_ENV } from '$app/env/private';
+import { API_V1 } from '#lib/server/api.js';
+import { canonicalUrl } from '#lib/seo/index.js';
+import type { TrackSummary } from '#lib/types/index.js';
 
-const NON_PROD_ENVS = new Set(['development', 'dev', 'staging', 'stage', 'test', 'preview', 'local']);
-const blocksIndexing = NON_PROD_ENVS.has((env.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase());
+const NON_PROD_ENVS = new Set([
+	'development',
+	'dev',
+	'staging',
+	'stage',
+	'test',
+	'preview',
+	'local'
+]);
+
+const blocksIndexing = NON_PROD_ENVS.has((PUBLIC_JC_ENV ?? JC_ENV ?? '').toLowerCase());
 
 // Markdown link text must not contain [ ] or newlines.
 const clean = (s: string) => s.replace(/[\r\n]+/g, ' ').replace(/\[/g, '(').replace(/\]/g, ')').trim();

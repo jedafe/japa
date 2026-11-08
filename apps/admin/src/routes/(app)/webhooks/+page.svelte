@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import type { ActionItem } from "$lib/components/ui/data-table";
-	import { Badge } from "$lib/components/ui/badge";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "#lib/components/ui/card/index.js";
+	import { DataTable } from "#lib/components/ui/data-table/index.js";
+	import type { ActionItem } from "#lib/components/ui/data-table/index.js";
+	import { Badge } from "#lib/components/ui/badge/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { TableSkeleton } from "#lib/components/ui/skeleton/index.js";
 	import { Webhook, Plus, RefreshCw, Send, Trash2, Pencil, Play, ShieldCheck, ScrollText } from "lucide-svelte";
-	import { webhooksAdminApiExtended, api } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { webhooksAdminApiExtended, api } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 
 	type WebhookEndpoint = {
 		id: string;

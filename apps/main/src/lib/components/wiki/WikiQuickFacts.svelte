@@ -17,12 +17,12 @@
 		Plug,
 		Users
 	} from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { getEntityFields, type WikiEntityField, type WikiEntityFieldGroup } from '$lib/api/wiki';
-	import { formatWikiFieldValue, isMediaFieldType } from '$lib/utils/wikiFieldValue';
-	import type { CurrencyInfo } from '$lib/utils/currency';
-	import type { IconComponent } from '$lib/components/ui/icons';
+	import { getEntityFields, type WikiEntityField, type WikiEntityFieldGroup } from '#lib/api/wiki.js';
+	import { formatWikiFieldValue, isMediaFieldType } from '#lib/utils/wikiFieldValue.js';
+	import type { CurrencyInfo } from '#lib/utils/currency.js';
+	import type { IconComponent } from '#lib/components/ui/icons.js';
 
 	let {
 		entityType = 'space',

@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { LeaderboardEntry } from '$lib/types';
+import { apiContext, apiList } from '#lib/server/api.js';
+import type { LeaderboardEntry } from '#lib/types/index.js';
 
 /**
  * Leaderboard page at /leaderboard (Section 64, ADR-080).

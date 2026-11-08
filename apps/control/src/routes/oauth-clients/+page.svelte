@@ -1,14 +1,14 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { api } from '$lib/api';
-	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
-	import { t, translations } from '$lib/stores/i18n.svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import { escapeHtml } from '$lib/utils';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import { api } from '#lib/api.js';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '#lib/api/types.js';
+	import { t, translations } from '#lib/stores/i18n.svelte.js';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import { escapeHtml } from '#lib/utils.js';
 	import { KeyRound, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Copy, Check } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	// RBAC CRUD: OAuth Clients management
 

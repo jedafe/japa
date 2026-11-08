@@ -1,15 +1,15 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/05-spaces.md (user's joined spaces)
 	import { page } from '$app/state';
 	import { goto, invalidate } from '$app/navigation';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { EmptyState, UrlTabs, type UrlTab, PaginationControls } from '$lib/components/ui';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { EmptyState, UrlTabs, type UrlTab, PaginationControls } from '#lib/components/ui/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
 	import { UsersRound, Plus, Search, Volume2 } from 'lucide-svelte';
-	import type { MeSpace } from '$lib/types';
+	import type { MeSpace } from '#lib/types/index.js';
 
 	let { data } = $props();
 
@@ -80,7 +80,7 @@
 	});
 
 	function buildURL(overrides: Record<string, string | null | undefined>) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		for (const [key, value] of Object.entries(overrides)) {
 			if (value === null || value === undefined || value === '') {
 				url.searchParams.delete(key);

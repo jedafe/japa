@@ -1,6 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList } from '#lib/server/api.js';
 import type {
 	PublicUser,
 	ProfilePost,
@@ -19,7 +19,7 @@ import type {
 	ProfileFollowing,
 	VideoSource,
 	Bookmark
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 // Raw shape returned by GET /users/{id}/following (FollowingInfo). The backend
 // emits entity-scoped fields rather than a PublicUser, so we map it into the

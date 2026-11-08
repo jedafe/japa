@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { ComparisonEmbedProps } from '../types';
 	import { ArrowRight } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 
 	let { props }: { props: ComparisonEmbedProps } = $props();
 </script>

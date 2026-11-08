@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import { aiAdminApi, type AiTool, type AiUsageSummary } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import { aiAdminApi, type AiTool, type AiUsageSummary } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 	import { Pencil, Trash2, Loader2, AlertCircle } from 'lucide-svelte';
-	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
+	import { initTabParam, bindTabParam } from '#lib/utils/url-sync.svelte.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 

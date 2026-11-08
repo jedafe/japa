@@ -1,5 +1,5 @@
-import { api } from '$lib/api/client';
-import type { ClientResult } from '$lib/api/client';
+import { api } from '#lib/api/client.js';
+import type { ClientResult } from '#lib/api/client.js';
 
 /**
  * Client wrappers for the Section 20 V1 in-editor assist endpoints:

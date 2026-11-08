@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import AiBodyButton from './AiBodyButton.svelte';
 	import AiDraftPanel from './AiDraftPanel.svelte';
 	import { canUseAI } from './canUseAI';
 	import type { FieldSchema } from './types';
-	import type { SessionUser } from '$lib/types';
+	import type { SessionUser } from '#lib/types/index.js';
 
 	interface Props {
 		id: string;

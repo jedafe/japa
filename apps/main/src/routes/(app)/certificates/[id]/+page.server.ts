@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { Certificate, PublicUser } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { Certificate, PublicUser } from '#lib/types/index.js';
 
 /**
  * Public certificate page at /certificates/[id] — SSR, indexable, shareable.

@@ -2,11 +2,11 @@
 	// Certificates — CSR-only (GET /me/certificates, ADR-060 SSR/CSR boundary).
 	// Earned certificates grid, each linking to its public shareable page
 	// (/certificates/:id). Per ADR-060 §4, certificates are shareable social proof.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { LoadingSkeleton, EmptyState } from '#lib/components/ui/index.js';
 	import { Trophy, ExternalLink, Award } from 'lucide-svelte';
-	import type { Certificate } from '$lib/types';
+	import type { Certificate } from '#lib/types/index.js';
 
 	let certificates = $state<Certificate[]>([]);
 	let loading = $state(true);

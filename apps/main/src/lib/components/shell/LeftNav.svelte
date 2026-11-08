@@ -1,7 +1,7 @@
 <script lang="ts">
 	import clsx from 'clsx';
 	import { page } from '$app/state';
-	import { Menu as UiMenu, MenuItem as UiMenuItem, MenuSeparator as UiMenuSeparator } from '$lib/components/ui';
+	import { Menu as UiMenu, MenuItem as UiMenuItem, MenuSeparator as UiMenuSeparator } from '#lib/components/ui/index.js';
 	import {
 		PanelLeftOpen,
 		PenSquare,
@@ -10,16 +10,18 @@
 		ChevronsUpDown,
 		ExternalLink
 	} from 'lucide-svelte';
-	import { resolveIcon } from '$lib/components/ui/icons';
+	import { resolveIcon } from '#lib/components/ui/icons.js';
 	import NotificationCentre from './NotificationCentre.svelte';
 	import { compose } from './compose.svelte';
-	import { t } from '$lib/i18n';
-	import { realtime } from '$lib/realtime/realtime.svelte';
-	import type { Menu, MenuItem, SessionUser, UserSpaceRef } from '$lib/types';
-	import { routeFeatureGateVisible } from '$lib/components/shell/routeFeatureFlags';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
-	import { theme } from '$lib/stores/theme.svelte';
-	import AdSlot from '$lib/components/ui/AdSlot.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { untrack } from 'svelte';
+	import { realtime } from '#lib/realtime/realtime.svelte.js';
+	import type { Menu, MenuItem, SessionUser, UserSpaceRef } from '#lib/types/index.js';
+	import { routeFeatureGateVisible } from '#lib/components/shell/routeFeatureFlags.js';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import AdSlot from '#lib/components/ui/AdSlot.svelte';
+	import { provideRailGate, navRailVisible } from './railVisibility.svelte';
 
 	interface Props {
 		menu: Menu | null;
@@ -44,10 +46,21 @@
 		 *  transient expansions (hover peek/expand) — the toggle shows an
 		 *  outline pin that pins the nav open on click. */
 		pinned?: boolean;
+		/** True for the .shell-nav mount, which is display:none below 768px —
+		 *  gates its AdSlot subtrees on the nav breakpoint. The mobile drawer
+		 *  mount leaves this off: it only renders while open and visible. */
+		shellRail?: boolean;
 		onToggle: () => void;
 	}
 
-	let { menu, user, collapsed, userSpaces = [], logoUrl = '', logoDarkUrl = '', logoWidth = 0, logoHeight = 0, logoDarkWidth = 0, logoDarkHeight = 0, features = {}, showBrand = true, pinned = true, onToggle }: Props = $props();
+	let { menu, user, collapsed, userSpaces = [], logoUrl = '', logoDarkUrl = '', logoWidth = 0, logoHeight = 0, logoDarkWidth = 0, logoDarkHeight = 0, features = {}, showBrand = true, pinned = true, shellRail = false, onToggle }: Props = $props();
+
+	// Shell-nav mount: gate menu AdSlots on the 768px nav breakpoint so a
+	// mobile page view doesn't fetch ads for a rail that can't be seen. The
+	// mount identity never changes, so the initial prop value is the intent.
+	untrack(() => {
+		if (shellRail) provideRailGate(navRailVisible);
+	});
 
 	// Collapsed rail shows the theme-aware favicon icon (appearance.favicon_url_*),
 	// falling back to the bundled favicon.

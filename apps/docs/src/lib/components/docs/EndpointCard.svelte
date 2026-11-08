@@ -8,8 +8,8 @@
 	 * Ref: §44, §47 ROADMAP 03.03.
 	 */
 	import MethodBadge from './MethodBadge.svelte';
-	import { t } from '$lib/i18n';
-	import { env } from '$env/dynamic/public';
+	import { t } from '#lib/i18n/index.js';
+	import { PUBLIC_JC_API_URL, PUBLIC_MAIN_ORIGIN } from '$app/env/public';
 	import { Copy, ChevronDown } from 'lucide-svelte';
 
 	interface EndpointParam {
@@ -59,8 +59,8 @@
 	// In dev this is a relative path (/api/v1); in production it's the full
 	// API gateway URL. For curl examples, ensure an absolute URL by joining it
 	// with PUBLIC_MAIN_ORIGIN when the API base is relative.
-	const apiBaseUrl = env.PUBLIC_JC_API_URL ?? '/api/v1';
-	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? '').replace(/\/$/, '');
+	const apiBaseUrl = PUBLIC_JC_API_URL ?? '/api/v1';
+	const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? '').replace(/\/$/, '');
 	const curlBaseUrl = apiBaseUrl.startsWith('http')
 		? apiBaseUrl
 		: mainOrigin
@@ -80,7 +80,7 @@
 		try {
 			await navigator.clipboard.writeText(curlExample);
 			copied = true;
-			copyTimer = setTimeout(() => (copied = false), 2000);
+			copyTimer = setTimeout(() => copied = false, 2000);
 		} catch {
 			// clipboard not available
 		}
@@ -89,10 +89,10 @@
 
 <div class="endpoint-card">
 	<div class="endpoint-head">
-		<MethodBadge {method} />
+		<MethodBadge method={method} />
 		<code class="endpoint-path">
 			{#each pathSegments as seg}
-				{#if /^\{.+\}$/.test(seg)}
+				{#if (/^\{.+\}$/).test(seg)}
 					<span class="path-param">{seg}</span>
 				{:else}
 					{seg}
@@ -109,7 +109,11 @@
 	{/if}
 
 	{#if parameters.length > 0}
-		<button type="button" class="collapse-toggle" onclick={() => (showParams = !showParams)}>
+		<button
+			type="button"
+			class="collapse-toggle"
+			onclick={() => showParams = !showParams}
+		>
 			<ChevronDown size={14} class={showParams ? 'rotated' : ''} />
 			{t('api.request_params', 'Request Parameters')}
 			<span class="count">({parameters.length})</span>
@@ -141,7 +145,11 @@
 	{/if}
 
 	{#if responseSchema}
-		<button type="button" class="collapse-toggle" onclick={() => (showResponse = !showResponse)}>
+		<button
+			type="button"
+			class="collapse-toggle"
+			onclick={() => showResponse = !showResponse}
+		>
 			<ChevronDown size={14} class={showResponse ? 'rotated' : ''} />
 			{t('api.response_schema', 'Response Schema')}
 		</button>
@@ -152,7 +160,11 @@
 
 	<div class="example-section">
 		<div class="example-head">
-			<button type="button" class="collapse-toggle" onclick={() => (showExample = !showExample)}>
+			<button
+				type="button"
+				class="collapse-toggle"
+				onclick={() => showExample = !showExample}
+			>
 				<ChevronDown size={14} class={showExample ? 'rotated' : ''} />
 				{t('api.example', 'Example')}
 			</button>

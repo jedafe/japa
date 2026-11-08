@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { ServiceBooking, MyOrganization, PublicOrganization } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { ServiceBooking, MyOrganization, PublicOrganization } from '#lib/types/index.js';
 
 /**
  * Org bookings inbox at /org/[slug]/service-bookings (§111) — the selling

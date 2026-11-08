@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { FileText, Copy, Check } from 'lucide-svelte';
 
 	// RawContentPane renders the raw fetched document for an intel record.

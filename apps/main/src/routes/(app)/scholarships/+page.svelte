@@ -1,22 +1,22 @@
 <script lang="ts">
-	import { t, i18n } from '$lib/i18n';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { GraduationCap, Lock, Bookmark, BookmarkCheck, ClipboardList, GitCompare, Loader2, ExternalLink, Clock, ShieldCheck, ShieldAlert, Search, Globe, ChevronRight } from 'lucide-svelte';
 	import { Filter } from 'lucide-svelte';
-	import { EmptyState, EntityHero, ListPageBar, PaginationControls, SearchInput, AutocompleteSelect, SelectField, UrlTabs, type SearchSuggestion } from '$lib/components/ui';
-	import { GuideSlideOver, Modal, type GuideContent } from '$lib/components/ui';
-	import HeroArtScholarships from '$lib/components/heroes/HeroArtScholarships.svelte';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-		import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { api } from '$lib/api/client';
+	import { EmptyState, EntityHero, ListPageBar, PaginationControls, SearchInput, AutocompleteSelect, SelectField, UrlTabs, type SearchSuggestion } from '#lib/components/ui/index.js';
+	import { GuideSlideOver, Modal, type GuideContent } from '#lib/components/ui/index.js';
+	import HeroArtScholarships from '#lib/components/heroes/HeroArtScholarships.svelte';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+		import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { api } from '#lib/api/client.js';
 	import { goto } from '$app/navigation';
-	import type { Scholarship } from '$lib/types';
+	import type { Scholarship } from '#lib/types/index.js';
 	import type { PageData, ActionData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
 	// SavedScholarship is exported from +page.server.ts as
 	// SavedScholarshipView and inferred by $types via PageData, but we
@@ -152,7 +152,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (deadlineTo) params.set('deadline_to', deadlineTo);
 		if (sort) params.set('sort', sort);
 		if (includeExpired) params.set('include_expired', 'true');
-		goto(`/scholarships?${params.toString()}`, { keepFocus: true, noScroll: true });
+		goto(`/scholarships?${params.toString()}`, { reset: false });
 	}
 
 	// Debounced auto-apply for the free-text search field.
@@ -774,7 +774,7 @@ const hasActiveFilters = $derived(
 							page={data.currentPage}
 							totalPages={Math.ceil(data.total / data.pageSize)}
 							onPageChange={(p) => {
-								const params = new URLSearchParams(page.url.searchParams);
+								const params = new URLSearchParams(page.url.search);
 								params.set('page', String(p));
 								goto(`/scholarships?${params.toString()}`);
 							}}

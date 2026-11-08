@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Gift, Copy, Check, Users, MousePointerClick, CheckCircle2, Clock } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { page } from '$app/state';
-	import type { ReferralStats, ReferralHistoryEntry } from '$lib/types';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
+	import type { ReferralStats, ReferralHistoryEntry } from '#lib/types/index.js';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
 
 	let stats = $state<ReferralStats | null>(null);
 	let history = $state<ReferralHistoryEntry[]>([]);

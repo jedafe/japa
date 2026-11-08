@@ -3,8 +3,8 @@
 	// (§44 amendment 5). Reuses the shared MediaPickerModal with the same
 	// helpers DocEditor wires for inline images.
 	import { MediaPickerModal } from '@japaconnect/ui';
-	import { t } from '$lib/i18n';
-	import { listMyMedia, uploadMediaImage, updateMediaImage, stockApi } from '$lib/api/media';
+	import { t } from '#lib/i18n/index.js';
+	import { listMyMedia, uploadMediaImage, updateMediaImage, stockApi } from '#lib/api/media.js';
 	import { ImagePlus, X } from 'lucide-svelte';
 
 	interface Props {

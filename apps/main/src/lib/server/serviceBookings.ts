@@ -6,8 +6,8 @@
 // b=<booking id> deep-link) and fetches GET /me/service-bookings plus the
 // ?b= detail via GET /me/service-bookings/:id.
 import type { RequestEvent } from '@sveltejs/kit';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { ListMeta, ServiceBooking } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { ListMeta, ServiceBooking } from '#lib/types/index.js';
 
 const BOOKING_STATUSES = new Set([
 	'pending',

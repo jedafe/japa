@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Sparkles, AlertTriangle, CheckCircle2 } from 'lucide-svelte';
 
 	// ExtractionPane renders the extraction results for an intel record.

@@ -3,7 +3,7 @@
 // (scope, value); components look artwork up by an entity's stored
 // verification_type and fall back to the generic check when a type has no
 // custom image.
-import { api } from '$lib/api/client';
+import { api } from '#lib/api/client.js';
 
 interface BadgeType {
 	scope: string;

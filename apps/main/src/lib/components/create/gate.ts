@@ -1,4 +1,4 @@
-import type { ComposerStatus } from '$lib/types';
+import type { ComposerStatus } from '#lib/types/index.js';
 import type { FormKind } from './contentTypeRegistry';
 
 export interface PublishInput {

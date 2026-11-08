@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { DocAudience } from '$lib/types';
-	import { AUDIENCE_LABEL_KEY } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { DocAudience } from '#lib/types/index.js';
+	import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
 
 	interface Props {
 		accessibleAudiences: DocAudience[];

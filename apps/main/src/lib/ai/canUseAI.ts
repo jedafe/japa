@@ -1,4 +1,4 @@
-import type { SessionUser } from '$lib/types';
+import type { SessionUser } from '#lib/types/index.js';
 
 /**
  * Determine whether the active user can use the inline AI body assistant.

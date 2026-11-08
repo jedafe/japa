@@ -1,7 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiList, apiPost, ApiError } from '$lib/server/api';
+import { apiContext, apiList, apiPost, ApiError } from '#lib/server/api.js';
 import { redirect } from '@sveltejs/kit';
-import type { ContentImport, ImportSource } from '$lib/types';
+import type { ContentImport, ImportSource } from '#lib/types/index.js';
 
 /**
  * Content Import page at /me/import (Section 65, ADR-083).

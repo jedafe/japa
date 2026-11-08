@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 	import { Bot, RefreshCw, Check, X } from 'lucide-svelte';
-	import { api, apiRaw } from '$lib/api';
+	import { api, apiRaw } from '#lib/api.js';
 
 	// QueueItem matches the backend participation.QueueItem DTO (§76).
 	type QueueItem = {

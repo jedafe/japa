@@ -1,18 +1,18 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack, onMount } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import { Route, MapPin, GitCompare, DollarSign, Map, ExternalLink, Lock, Loader2 } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import type { VisaRouteWithAi, GeoCountry } from '$lib/types';
+	import { EmptyState, LoadingSkeleton } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import type { VisaRouteWithAi, GeoCountry } from '#lib/types/index.js';
 	import type { PageData, ActionData } from './$types';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Visa Route Comparison tool — §90, ADR-088.
@@ -85,7 +85,7 @@
 		const ids = Array.from(selectedRouteIds).join(',');
 		const res = await api.getEnvelope<VisaRouteWithAi[]>(`/visa-routes/compare?dest=${selectedDestId}&ids=${ids}`);
 		// 207 multi-status: surface missing_ids instead of silently dropping routes.
-		const missing = (res.envelope?.missing_ids as string[] | undefined) ?? [];
+		const missing = res.envelope?.missing_ids as string[] | undefined ?? [];
 		if (missing.length > 0) console.warn('visa compare: missing routes', missing);
 		loadingComparison = false;
 		if (!res.error) comparisonData = res.data ?? [];
@@ -96,10 +96,11 @@
 	function onDestChange(id: string) {
 		selectedDestId = id;
 		// Update URL ?dest= for shareable state
-		const url = new URL(page.url);
-		if (id) url.searchParams.set('dest', id);
-		else url.searchParams.delete('dest');
-		replaceState(url, {});
+		const url = new URL(page.url.href);
+
+		if (id) url.searchParams.set('dest', id); else url.searchParams.delete('dest');
+
+		goto(url, { shallow: true, replace: true });
 		loadRoutes();
 	}
 
@@ -316,10 +317,10 @@
 											>
 												<ExternalLink class="rtl:-scale-x-100" size={12} />
 												{t('visa_routes.source', 'Source')}</a>
-									<a
-										href="/tools/visa-routes/{route.id}"
-										class="text-[var(--color-primary-text)] hover:underline"
-										onclick={(e) => e.stopPropagation()}
+											<a
+												href="/tools/visa-routes/{route.id}"
+												class="text-[var(--color-primary-text)] hover:underline"
+												onclick={(e) => e.stopPropagation()}
 									>
 										{t('common.view', 'View')}
 											</a>

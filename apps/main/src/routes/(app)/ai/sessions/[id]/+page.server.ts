@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { AgentSessionDetail } from '$lib/ai/agentTypes';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import type { AgentSessionDetail } from '#lib/ai/agentTypes.js';
 
 /**
  * /ai/sessions/[id] — single agent session detail. SSR fetches

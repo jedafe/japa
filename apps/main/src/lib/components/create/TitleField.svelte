@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { LiteralSuggest } from '$lib/components/ui';
+	import { t } from '#lib/i18n/index.js';
+	import { LiteralSuggest } from '#lib/components/ui/index.js';
 
 	interface Props {
 		title: string;

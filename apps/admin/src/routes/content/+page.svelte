@@ -1,18 +1,26 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /content — migrated to the EntityPage scaffold; read-only moderation list
 	// (content is created by users, not from this page) with Remove/Restore/Feature
 	// state actions driven by a custom `actions` array + page-local confirm Modals.
 	import { page } from "$app/state";
-	import { replaceState } from "$app/navigation";
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Button } from "$lib/components/ui/button";
-	import { contentAdminApi, apiRaw } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+
+	import { goto } from "$app/navigation";
+
+	import {
+		EntityPage,
+		type EntityPageConfig,
+		type EntityPageController,
+		type FieldDef
+	} from "#lib/components/entity/index.js";
+
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { contentAdminApi, apiRaw } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { Eye, Trash2, RotateCcw, Star } from "lucide-svelte";
-	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
+	import type { ActionItem, FilterDef } from "#lib/components/ui/data-table/index.js";
 
 	// §22 moderation-history projection — one entry per moderation event on the
 	// content (reports + resolutions, admin audit actions, appeals, editorial
@@ -149,7 +157,7 @@
 		if (!url.searchParams.has("view")) return;
 		url.searchParams.delete("view");
 		try {
-			replaceState(url, {});
+			goto(url, { shallow: true, replace: true });
 		} catch {
 			// ignore URL sync failures in non-browser contexts
 		}
@@ -380,12 +388,19 @@
 		readonly: true,
 		pageSize: 25,
 		columns: [
-			{ key: "title", label: t("content.column.title", "Title"), sortable: true },
+			{
+				key: "title",
+				label: t("content.column.title", "Title"),
+				sortable: true
+			},
+
 			{
 				key: "content_type",
 				label: t("content.type", "Type"),
 				sortable: true,
-				render: (v: string) => (v ? v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "—")
+				render: (v: string) => v
+					? v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+					: "—"
 			},
 			{
 				key: "author_display_name",
@@ -438,31 +453,31 @@
 		filters: filterDefs,
 		actions: rowActions,
 		bulkActions: [
-			...(canModerate
+			...canModerate
 				? [
-						{
-							label: t("content.remove_selected", "Remove Selected"),
-							icon: Trash2,
-							variant: "destructive" as const,
-							onclick: bulkRemove,
-							// Rows already soft-deleted can't be removed again.
+					{
+						label: t("content.remove_selected", "Remove Selected"),
+						icon: Trash2,
+						variant: "destructive" as const,
+						onclick: bulkRemove,
+						// Rows already soft-deleted can't be removed again.
 							disabled: (_ids: Set<string>, rows?: ContentItem[]) =>
 								(rows ?? []).some((r) => !!r.deleted_at)
-						}
-					]
-				: []),
-			...(canHardDelete
+					}
+				]
+				: [],
+			...canHardDelete
 				? [
-						{
-							label: t("common.force_delete", "Force Delete Selected"),
-							icon: Trash2,
-							variant: "destructive" as const,
-							onclick: openBulkForceDelete,
+					{
+						label: t("common.force_delete", "Force Delete Selected"),
+						icon: Trash2,
+						variant: "destructive" as const,
+						onclick: openBulkForceDelete,
 							disabled: (ids: Set<string>) =>
 								acting || !contentRowsFor(ids).some((r) => !!r.deleted_at)
-						}
-					]
-				: [])
+					}
+				]
+				: []
 		],
 		fields,
 		load: async ({ page, pageSize, q, sort, filter }) => {
@@ -512,7 +527,7 @@
 	</div>
 {/if}
 
-<EntityPage {config} bind:controller={entityController} />
+<EntityPage config={config} bind:controller={entityController} />
 
 <!-- ── State-action confirmation modals ─────────────────────────────────── -->
 
@@ -531,8 +546,16 @@
 		></textarea>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showRemoveModal = false)}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="destructive" onclick={confirmRemove} disabled={acting}>{t("content.remove", "Remove")}</Button>
+		<Button
+			variant="ghost"
+			onclick={() => showRemoveModal = false}
+		>{t("common.cancel", "Cancel")}</Button>
+
+		<Button
+			variant="destructive"
+			onclick={confirmRemove}
+			disabled={acting}
+		>{t("content.remove", "Remove")}</Button>
 	</div>
 </Modal>
 
@@ -544,8 +567,16 @@
 		</p>
 	{/if}
 	<div class="mt-4 flex justify-end gap-2">
-		<Button variant="ghost" onclick={() => (showRestoreModal = false)}>{t("common.cancel", "Cancel")}</Button>
-		<Button variant="default" onclick={confirmRestore} disabled={acting}>{t("content.restore", "Restore")}</Button>
+		<Button
+			variant="ghost"
+			onclick={() => showRestoreModal = false}
+		>{t("common.cancel", "Cancel")}</Button>
+
+		<Button
+			variant="default"
+			onclick={confirmRestore}
+			disabled={acting}
+		>{t("content.restore", "Restore")}</Button>
 	</div>
 </Modal>
 

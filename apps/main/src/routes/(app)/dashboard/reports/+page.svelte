@@ -1,19 +1,19 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// /dashboard/reports — the user's own submitted content reports and their
 	// current status (pending / reviewing / actioned / dismissed). Read-only;
 	// users cannot edit or withdraw reports after submission.
 	//
 	// Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Flag, FileText } from 'lucide-svelte';
-	import { EmptyState, RelativeTime, PaginationControls } from '$lib/components/ui';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
-	import { contentHref } from '$lib/utils/contentLink';
-	import type { MyReport } from '$lib/types';
+	import { EmptyState, RelativeTime, PaginationControls } from '#lib/components/ui/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import type { MyReport } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -31,7 +31,7 @@
 	];
 
 	function buildURL(overrides: Record<string, string | null>) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		for (const [key, value] of Object.entries(overrides)) {
 			if (value === null || value === '') url.searchParams.delete(key);
 			else url.searchParams.set(key, value);

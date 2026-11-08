@@ -1,14 +1,14 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { CalendarDays, Users, Inbox, AlertCircle, Layers, BadgePercent } from 'lucide-svelte';
-	import { EmptyState, PaginationControls, RelativeTime } from '$lib/components/ui';
-	import { formatMoney } from '$lib/utils/currency';
-	import type { ServiceBooking } from '$lib/types';
+	import { EmptyState, PaginationControls, RelativeTime } from '#lib/components/ui/index.js';
+	import { formatMoney } from '#lib/utils/currency.js';
+	import type { ServiceBooking } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -35,7 +35,7 @@
 	];
 
 	function filterHref(params: Record<string, string>): string {
-		const sp = new URLSearchParams(page.url.searchParams);
+		const sp = new URLSearchParams(page.url.search);
 		for (const [k, v] of Object.entries(params)) {
 			if (v) sp.set(k, v);
 			else sp.delete(k);
@@ -257,7 +257,7 @@
 						page={data.currentPage}
 						totalPages={Math.ceil((meta.total ?? 0) / (meta.limit ?? 20))}
 						onPageChange={(p) => {
-							const params = new URLSearchParams(page.url.searchParams);
+							const params = new URLSearchParams(page.url.search);
 							params.set('page', String(p));
 							goto(`/org/${org.slug}/service-bookings?${params.toString()}`);
 						}}

@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList, apiGet } from '$lib/server/api';
-import type { TrackSummary, CatalogOption, TrackCategory, CatalogOptionsResponse } from '$lib/types';
+import { apiContext, apiList, apiGet } from '#lib/server/api.js';
+import type { TrackSummary, CatalogOption, TrackCategory, CatalogOptionsResponse } from '#lib/types/index.js';
 
 const DEFAULT_LIMIT = 24;
 

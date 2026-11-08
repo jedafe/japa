@@ -1,4 +1,4 @@
-import { json, error } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 /**
@@ -26,5 +26,5 @@ export const POST: RequestHandler = async (event) => {
 		sameSite: 'lax'
 	});
 
-	return json({ ok: true, persisted: true });
+	return Response.json({ ok: true, persisted: true });
 };

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { startWatcher, stopWatcher, isWatching } from './watcher';
-import { scanProject, type ScannedFile } from '$lib/services/file-scanner';
-import { queueStore } from '$lib/stores/queue.svelte';
-import { syncLogStore } from '$lib/stores/sync-log.svelte';
+import { scanProject, type ScannedFile } from '#lib/services/file-scanner.js';
+import { queueStore } from '#lib/stores/queue.svelte.js';
+import { syncLogStore } from '#lib/stores/sync-log.svelte.js';
 import { watch } from '@tauri-apps/plugin-fs';
 import {
 	SETTINGS_KEY,
@@ -23,13 +23,13 @@ vi.mock('@tauri-apps/api/path', () => ({
 	join: vi.fn((...parts: string[]) => parts.join('/'))
 }));
 
-vi.mock('$lib/services/file-scanner', () => ({
+vi.mock('#lib/services/file-scanner.js', () => ({
 	scanProject: vi.fn()
 }));
 
 const mockEnqueue = vi.hoisted(() => vi.fn());
 
-vi.mock('$lib/services/publisher', () => ({
+vi.mock('#lib/services/publisher.js', () => ({
 	publishWorker: {
 		enqueue: mockEnqueue,
 		get current() {

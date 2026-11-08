@@ -2,13 +2,13 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
-	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { patchAccount, putPreferences } from '$lib/api/hub';
-	import { theme as themeStore } from '$lib/stores/theme.svelte';
-	import { t } from '$lib/i18n';
-	import type { MeProfile, ThemeName } from '$lib/types';
+	import { DirtyForm } from '#lib/components/hub/useDirtyForm.svelte.js';
+	import SettingsSection from '#lib/components/hub/SettingsSection.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { patchAccount, putPreferences } from '#lib/api/hub.js';
+	import { theme as themeStore } from '#lib/stores/theme.svelte.js';
+	import { t } from '#lib/i18n/index.js';
+	import type { MeProfile, ThemeName } from '#lib/types/index.js';
 
 	let { data }: { data: unknown } = $props();
 	const profile = $derived(data as MeProfile | null);

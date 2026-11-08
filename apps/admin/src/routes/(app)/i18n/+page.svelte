@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
-	import { api, i18nAdminApiExtended } from '$lib/api';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Select } from '$lib/components/ui/select';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { api, i18nAdminApiExtended } from '#lib/api.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Select } from '#lib/components/ui/select/index.js';
 	import { Globe, Plus, Download, RefreshCw, FileText, Eye, Pencil, Trash2 } from 'lucide-svelte';
 
 	type Language = {

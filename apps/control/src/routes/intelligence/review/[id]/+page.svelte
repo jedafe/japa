@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { api } from '$lib/api';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import AccessDenied from '$lib/components/AccessDenied.svelte';
-	import RawContentPane from '$lib/components/intelligence/RawContentPane.svelte';
-	import ExtractionPane from '$lib/components/intelligence/ExtractionPane.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasAnyPermission } from '$lib/stores/auth.svelte';
-	import { isSafeUrl } from '$lib/utils';
+	import { api } from '#lib/api.js';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import AccessDenied from '#lib/components/AccessDenied.svelte';
+	import RawContentPane from '#lib/components/intelligence/RawContentPane.svelte';
+	import ExtractionPane from '#lib/components/intelligence/ExtractionPane.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasAnyPermission } from '#lib/stores/auth.svelte.js';
+	import { isSafeUrl } from '#lib/utils.js';
 	import { JsonValueEditor } from '@japaconnect/ui';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';

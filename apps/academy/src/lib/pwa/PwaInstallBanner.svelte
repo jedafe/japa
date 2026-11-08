@@ -6,7 +6,7 @@
 	// Ref: .jeos/sections/124-progressive-web-app.md
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { pwaInstall } from '@japaconnect/ui/pwa-install';
 	import { X, Download, Share } from 'lucide-svelte';
 

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
 	import { Check, ChevronDown } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import type { HubGroup } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import type { HubGroup } from '#lib/types/index.js';
 
 	interface GroupItem {
 		group: HubGroup;

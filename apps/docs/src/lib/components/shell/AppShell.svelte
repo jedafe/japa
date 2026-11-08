@@ -6,8 +6,8 @@
 	import DocsHeader from './DocsHeader.svelte';
 	import GuestFooter from './GuestFooter.svelte';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
-	import { t } from '$lib/i18n';
-	import type { DocNavTree as DocNavTreeType, DocAudience, SessionUser, Menu } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import type { DocNavTree as DocNavTreeType, DocAudience, SessionUser, Menu } from '#lib/types/index.js';
 
 	interface Props {
 		nav: DocNavTreeType[];

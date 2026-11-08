@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { displayNumber, serializeListBodyHtml } from './listSerialize';
-import type { ListItem } from '$lib/types';
+import type { ListItem } from '#lib/types/index.js';
 
 const item = (over: Partial<ListItem> = {}): ListItem => ({ heading: 'Item', ...over });
 

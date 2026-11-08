@@ -1,10 +1,10 @@
 import { error } from '@sveltejs/kit';
-import { apiContext, apiGet, ApiError, API_BASE } from '$lib/server/api';
+import { apiContext, apiGet, ApiError, API_BASE } from '#lib/server/api.js';
 import type {
 	JCEComparisonDetail,
 	MatrixItem,
 	ResolvedItem
-} from '$lib/types/jce';
+} from '#lib/types/jce.js';
 import type { PageServerLoad } from './$types';
 
 function resolvedItem(cmp: JCEComparisonDetail): ResolvedItem[] {

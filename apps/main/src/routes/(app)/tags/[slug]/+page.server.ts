@@ -1,9 +1,9 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { TagDetail } from '$lib/types';
-import type { SearchResponse } from '$lib/types/search';
-import type { ContentArticle } from '$lib/types/content';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { TagDetail } from '#lib/types/index.js';
+import type { SearchResponse } from '#lib/types/search.js';
+import type { ContentArticle } from '#lib/types/content.js';
 
 /**
  * Tag hub at /tags/[slug] — SSR, indexable. Center column shows the tag

@@ -6,8 +6,8 @@
 // of a dead 404.
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { ServiceListing } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { ServiceListing } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();

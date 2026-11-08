@@ -5,8 +5,8 @@
 	// /wiki/entities/:type/:id/fields so the reviewer sees current → proposed;
 	// a failed fetch degrades to showing the proposed value alone.
 	import { untrack } from 'svelte';
-	import { wikiAdminApi, type WikiFieldOp } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { wikiAdminApi, type WikiFieldOp } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
 	type RevisionLike = {
 		id?: string;

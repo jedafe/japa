@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { page } from '$app/state';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
-	import { trackedAdUrl } from '$lib/ads/trackedUrl';
-	import { fetchAdCampaigns, type AdCampaign } from '$lib/ads/serve';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
+	import { trackedAdUrl } from '#lib/ads/trackedUrl.js';
+	import { fetchAdCampaigns, type AdCampaign } from '#lib/ads/serve.js';
+	import { railGate } from '#lib/components/shell/railVisibility.svelte.js';
 
 	interface Props {
 		/** Ad slot identifier, surfaced as the label. */
@@ -19,6 +20,10 @@
 	}
 
 	let { slot, format = 'banner', spaceId = '', pickIndex = 0 }: Props = $props();
+
+	// Rail context: set when this unit lives inside a hidden-below-1280px rail
+	// (RightSidebar/LeftRail); undefined for in-article/page placements.
+	const gate = railGate();
 
 	let campaign = $state<AdCampaign | null>(null);
 	let loading = $state(true);
@@ -89,6 +94,10 @@
 	// The returned cleanup function disconnects the IntersectionObserver when
 	// the component unmounts or the effect re-runs.
 	$effect(() => {
+		// In a hidden rail the unit can never be seen — hold the serve call
+		// (and the impression observer) until the viewport crosses 1280px.
+		// Tracked read: the effect re-runs on the hidden→visible flip.
+		if (gate && !gate()) return;
 		const fetchKey = `${slot}|${spaceId}`;
 		if (fetchedSlot !== fetchKey) {
 			fetchedSlot = fetchKey;

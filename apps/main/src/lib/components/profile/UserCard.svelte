@@ -8,11 +8,11 @@
 	 */
 	import { page } from '$app/state';
 	import { ArrowRight, BadgeCheck, GraduationCap, MapPin } from 'lucide-svelte';
-	import { t, i18n } from '$lib/i18n';
-	import { verificationBadgeUrl, verificationBadgeLabel } from '$lib/stores/verification-badges.svelte';
-	import FollowButton from '$lib/components/ui/FollowButton.svelte';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import type { PublicUser } from '$lib/types';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import { verificationBadgeUrl, verificationBadgeLabel } from '#lib/stores/verification-badges.svelte.js';
+	import FollowButton from '#lib/components/ui/FollowButton.svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import type { PublicUser } from '#lib/types/index.js';
 
 	let { user }: { user: PublicUser } = $props();
 

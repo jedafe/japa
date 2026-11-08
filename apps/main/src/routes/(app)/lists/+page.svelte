@@ -1,5 +1,5 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Lists hub at /lists — modeled on /guides minus categories, series, and
 	// roadmap (lists carry no taxonomy). GET /content?type=list drives all
 	// three tabs; popular paginates by offset (view_count order has no
@@ -7,13 +7,13 @@
 	// Ref: japaconnect-engineering/sections/14-content-type-system.md (List amendment)
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { ChevronDown, ListOrdered, PenSquare } from 'lucide-svelte';
-	import { EmptyState, ListPageBar, PageAction, UrlTabs, type UrlTab } from '$lib/components/ui';
-	import type { FeedItem } from '$lib/types';
-	import type { GuideListItem } from '$lib/types/content';
-	import ContentGridCard from '$lib/components/feed/ContentGridCard.svelte';
-	import { api } from '$lib/api/client';
+	import { EmptyState, ListPageBar, PageAction, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
+	import type { FeedItem } from '#lib/types/index.js';
+	import type { GuideListItem } from '#lib/types/content.js';
+	import ContentGridCard from '#lib/components/feed/ContentGridCard.svelte';
+	import { api } from '#lib/api/client.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

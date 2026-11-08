@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
-import type { ForumThread, ForumReply, ForumTag, PollWithResults } from '$lib/types';
+import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '#lib/server/api.js';
+import type { ForumThread, ForumReply, ForumTag, PollWithResults } from '#lib/types/index.js';
 
 /**
  * Single forum discussion at /forum/[slug] — rendered inside the app shell

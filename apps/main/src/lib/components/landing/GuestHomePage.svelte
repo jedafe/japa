@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { page } from '$app/state';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
-	import heroCommunity from '$lib/assets/branding/hero-community.webp';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
+	import heroCommunity from '#lib/assets/branding/hero-community.webp';
 	import type {
 		GuestHomeData,
 		GuestHomeOpportunity,
@@ -11,7 +11,7 @@
 		GuestHomeTool,
 		GuestHomeStat,
 		GuestHomeCategory
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import {
 		Briefcase,
 		GraduationCap,

@@ -5,7 +5,7 @@
 	import { onMount } from 'svelte';
 	import { Dialog } from 'bits-ui';
 	import { ArrowRight, Clock, X } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		getNextActions,
 		getPopupMaxPerSession,
@@ -18,9 +18,9 @@
 		nextActionsViewer,
 		nextActionsSurface,
 		goToNextAction
-	} from '$lib/api/nextActions';
-	import type { NextAction } from '$lib/types';
-	import { nextActionIcon } from '$lib/icons/nextActionIcon';
+	} from '#lib/api/nextActions.js';
+	import type { NextAction } from '#lib/types/index.js';
+	import { nextActionIcon } from '#lib/icons/nextActionIcon.js';
 
 	const SESSION_KEY = 'jc_nextaction_popup_count';
 

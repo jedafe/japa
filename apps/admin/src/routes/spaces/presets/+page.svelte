@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { Button } from "$lib/components/ui/button";
-	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "#lib/components/ui/card/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import Autocomplete, { type AutocompleteItem } from "#lib/components/ui/Autocomplete.svelte";
 	import { ArrowLeft, Save, RefreshCw, Lock } from "lucide-svelte";
-	import { permissionPresetsApi, adminCatalogApi, type CatalogOption, type PermissionPreset } from "$lib/api";
+	import { permissionPresetsApi, adminCatalogApi, type CatalogOption, type PermissionPreset } from "#lib/api.js";
 	import { goto } from "$app/navigation";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 
 	let presets = $state<PermissionPreset[]>([]);
 	let loading = $state(true);

@@ -5,8 +5,8 @@
 	// ad clicks), posts a `conversion` event to /ads/events, then strips the
 	// param so a refresh or shared URL does not double-count.
 	import { page } from '$app/state';
-	import { api } from '$lib/api/client';
-	import { AD_ATTRIBUTION_PARAM } from '$lib/ads/trackedUrl';
+	import { api } from '#lib/api/client.js';
+	import { AD_ATTRIBUTION_PARAM } from '#lib/ads/trackedUrl.js';
 
 	let handled = $state('');
 
@@ -18,7 +18,7 @@
 		if (!document.referrer.startsWith(window.location.origin)) return;
 		handled = cid;
 
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.delete(AD_ATTRIBUTION_PARAM);
 		history.replaceState(history.state, '', url.pathname + url.search + url.hash);
 

@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /users/roles — migrated to the EntityPage scaffold.
 	//
 	// The role form has a searchable permissions checkbox grid that EntityForm
 	// cannot express, so it is rendered via the `formSnippet` escape hatch.
 	// The full permissions list is fetched on mount (mirrors the legacy load).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { userManagementApi, permissionsApi } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { user } from '$lib/stores/auth.svelte';
-	import PermissionGrid from '$lib/components/ui/PermissionGrid.svelte';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { userManagementApi, permissionsApi } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { user } from '#lib/stores/auth.svelte.js';
+	import PermissionGrid from '#lib/components/ui/PermissionGrid.svelte';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { Trash2 } from 'lucide-svelte';
 
 	// The wildcard grant is owner-only on the backend — mirror that in the

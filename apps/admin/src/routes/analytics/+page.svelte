@@ -1,24 +1,24 @@
 <script lang="ts">
-	import { t, locale } from '$lib/stores/i18n.svelte';
+	import { t, locale } from '#lib/stores/i18n.svelte.js';
 	import { page } from "$app/state";
 	import { goto } from "$app/navigation";
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
-	import { Tabs } from "$lib/components/ui/tabs";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import { Button } from "$lib/components/ui/button";
-	import { Modal } from "$lib/components/ui/modal";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Card, CardContent, CardHeader } from "#lib/components/ui/card/index.js";
+	import { Tabs } from "#lib/components/ui/tabs/index.js";
+	import { DataTable } from "#lib/components/ui/data-table/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { 
 		BarChart3, Users, Eye, MessageSquare, TrendingUp, 
 		Download, RefreshCw, Shield, DollarSign, Search, UserPlus
 	} from "lucide-svelte";
-	import { analyticsAdminApi } from "$lib/api";
+	import { analyticsAdminApi } from "#lib/api.js";
 	import { LineChart, AreaChart, BarChart } from "layerchart";
 	import { curveMonotoneX } from "d3-shape";
-	import StatCard from "$lib/components/ui/StatCard.svelte";
-	import { CardSkeleton } from "$lib/components/ui/skeleton";
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import StatCard from "#lib/components/ui/StatCard.svelte";
+	import { CardSkeleton } from "#lib/components/ui/skeleton/index.js";
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	
 	let activeTab = $state("overview");
 	let flushModalOpen = $state(false);
@@ -224,12 +224,12 @@
 
 	// Push the chosen date range to the URL (?from=&to=) to drive the reload
 	function applyRange() {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (from) url.searchParams.set("from", from);
 		else url.searchParams.delete("from");
 		if (to) url.searchParams.set("to", to);
 		else url.searchParams.delete("to");
-		goto(url, { keepFocus: true, noScroll: true });
+		goto(url, { reset: false });
 	}
 
 	$effect(() => {

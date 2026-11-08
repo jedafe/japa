@@ -5,13 +5,13 @@
 	// client-side via POST /forum/polls/{id}/vote; changing or retracting a
 	// vote uses POST /poll-options/{id}/vote / DELETE /poll-options/{id}/vote.
 	// Live updates are pushed over the WebSocket room for the thread's space.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { untrack } from 'svelte';
 	import { BarChart3, Loader2 } from 'lucide-svelte';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import { realtime } from '$lib/realtime/realtime.svelte';
-	import type { PollWithResults, PollResult } from '$lib/types';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import { realtime } from '#lib/realtime/realtime.svelte.js';
+	import type { PollWithResults, PollResult } from '#lib/types/index.js';
 
 	interface Props {
 		pollData: PollWithResults;

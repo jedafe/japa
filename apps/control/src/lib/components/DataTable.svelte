@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import {
 		ChevronLeft,
 		ChevronRight,
@@ -13,9 +13,9 @@
 		Inbox
 	} from 'lucide-svelte';
 	import { Menu, MenuItem } from '@japaconnect/ui';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
-	import { sanitizeHtml } from '$lib/utils';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '#lib/api/types.js';
+	import { sanitizeHtml } from '#lib/utils.js';
 
 	let {
 		columns = [],

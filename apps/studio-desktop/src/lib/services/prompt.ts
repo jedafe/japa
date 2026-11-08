@@ -8,11 +8,11 @@ import {
 	DEFAULT_PROMPT_VALUES,
 	type PromptFormValues,
 	type SelectOption
-} from '$lib/types/prompt';
-import { isHighStakes } from '$lib/services/validation';
-import type { StudioMode } from '$lib/services/settings';
+} from '#lib/types/prompt.js';
+import { isHighStakes } from '#lib/services/validation.js';
+import type { StudioMode } from '#lib/services/settings.js';
 import * as yaml from 'js-yaml';
-import { siteName } from '$lib/stores/site.svelte';
+import { siteName } from '#lib/stores/site.svelte.js';
 
 export interface PromptLookups {
 	contentTypeName: string;

@@ -1,14 +1,14 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiPost, apiPatch, apiDelete, ApiError } from '$lib/server/api';
-import { buildMeta } from '$lib/seo/meta';
-import type { ApiKeySummary, ApiKeyCreated, ApiScopeOption, ApiKeyIpEntry } from '$lib/types';
-import { env } from '$env/dynamic/public';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
+import { apiContext, apiGet, apiPost, apiPatch, apiDelete, ApiError } from '#lib/server/api.js';
+import { buildMeta } from '#lib/seo/meta.js';
+import type { ApiKeySummary, ApiKeyCreated, ApiScopeOption, ApiKeyIpEntry } from '#lib/types/index.js';
+import { PUBLIC_MAIN_ORIGIN } from '$app/env/public';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
 
 // Login lives on the Main app, not the Docs app. Any /login redirect relative
 // to the docs origin 404s, so always build the full URL against the main origin.
-const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
 
 /**
  * Developer Self-Service API Keys page (Ref: §47 ROADMAP Phase 06).
@@ -20,7 +20,7 @@ const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/
 export const load: PageServerLoad = async (event) => {
 	const site = (((await event.parent())?.siteSettings ?? {}) as Record<string, string>)['general.site_name'] ?? DEFAULT_SITE_NAME;
 	if (!event.locals.user) {
-		throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+		throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
 	}
 
 	const ctx = apiContext(event);
@@ -47,14 +47,14 @@ export const load: PageServerLoad = async (event) => {
 	const allowlists: Record<string, ApiKeyIpEntry[]> = {};
 	await Promise.all(
 		keys.map(async (k) => {
-			try {
+		try {
 				allowlists[k.id] = await apiGet<ApiKeyIpEntry[]>(
 					ctx,
 					`/me/api-keys/${k.id}/ip-allowlist`
 				);
-			} catch {
-				allowlists[k.id] = [];
-			}
+		} catch {
+			allowlists[k.id] = [];
+		}
 		})
 	);
 
@@ -75,19 +75,8 @@ export const load: PageServerLoad = async (event) => {
 	const locale = event.locals.locale;
 	const appName = tServer(locale, 'app.name', '{site} Docs', undefined, site);
 	const title = `${tServer(locale, 'api.keys_title', 'API Keys', undefined, site)} · ${appName}`;
-	const description = tServer(
-		locale,
-		'api.keys_desc',
-		'Manage your developer API keys for the {site} platform.',
-		undefined,
-		site
-	);
-
-	const meta = buildMeta({
-		title,
-		description,
-		path: '/docs/api/keys'
-	});
+	const description = tServer(locale, 'api.keys_desc', 'Manage your developer API keys for the {site} platform.', undefined, site);
+	const meta = buildMeta({ title, description, path: '/docs/api/keys' });
 
 	return { keys, scopes, allowlists, maxKeys, meta };
 };
@@ -101,12 +90,12 @@ export const actions: Actions = {
 	/** Create a new API key (Ref: §47 ROADMAP 06.02). */
 	create: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
 		const name = (form.get('name') as string | null)?.trim();
-		const rate_limit_tier = (form.get('rate_limit_tier') as string | null) ?? 'basic';
+		const rate_limit_tier = form.get('rate_limit_tier') as string | null ?? 'basic';
 		const scopesRaw = form.get('scopes') as string | null;
 		const scopes = scopesRaw
 			? scopesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -133,7 +122,7 @@ export const actions: Actions = {
 	/** Rename an API key — PATCH /me/api-keys/{id} (P5.6, name only). */
 	rename: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
@@ -153,7 +142,7 @@ export const actions: Actions = {
 	 *  secret is returned once; the old key expires after a 24h grace. */
 	rotate: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
@@ -171,7 +160,7 @@ export const actions: Actions = {
 	/** Add a CIDR entry to a key's IP allowlist (§47). */
 	addIp: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
@@ -191,7 +180,7 @@ export const actions: Actions = {
 	/** Remove an IP allowlist entry (§47). */
 	removeIp: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
@@ -210,7 +199,7 @@ export const actions: Actions = {
 	/** Revoke an API key (Ref: §47 ROADMAP 06.03). */
 	revoke: async (event) => {
 		if (!event.locals.user) {
-			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`, { external: true });
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();

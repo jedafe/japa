@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Globe, ExternalLink, Users, FileText, Tag } from 'lucide-svelte';
-	import { FollowButton, UrlTabs, type UrlTab } from '$lib/components/ui';
-	import SourceActions from '$lib/components/source/SourceActions.svelte';
-	import SourceBlockButton from '$lib/components/source/SourceBlockButton.svelte';
-	import SourceDailyCard from '$lib/components/source/SourceDailyCard.svelte';
-	import { sourceTrustLabel } from '$lib/sources';
-	import { api } from '$lib/api/client';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { FollowButton, UrlTabs, type UrlTab } from '#lib/components/ui/index.js';
+	import SourceActions from '#lib/components/source/SourceActions.svelte';
+	import SourceBlockButton from '#lib/components/source/SourceBlockButton.svelte';
+	import SourceDailyCard from '#lib/components/source/SourceDailyCard.svelte';
+	import { sourceTrustLabel } from '#lib/sources.js';
+	import { api } from '#lib/api/client.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 	import type { PageData } from './$types';
-	import type { Source, SourceItemEnvelope } from '$lib/types/sources';
+	import type { Source, SourceItemEnvelope } from '#lib/types/sources.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -82,14 +82,14 @@
 	const title = $derived(source.name);
 
 	function setQuery(key: string, value: string) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (value === '') {
 			url.searchParams.delete(key);
 		} else {
 			url.searchParams.set(key, value);
 		}
 		if (key !== 'sort') url.searchParams.delete('page_offset');
-		goto(url, { keepFocus: true });
+		goto(url, { reset: false });
 	}
 
 	// Item-card badges reuse the same localized label as the filter pills —

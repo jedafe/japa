@@ -1,6 +1,6 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n/store.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
 	import { page } from '$app/state';
 
 	const status = $derived(page.data.status);

@@ -5,18 +5,18 @@
 	// aggregate summary cards ("Average monthly expenses"), an estimated
 	// total + share-of-total donut for money fields, and the per-descendant
 	// values table ("Cost of Living by City") with a compare-preselect rail.
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { PieChart } from 'layerchart';
-	import type { WikiRollup, WikiRollupField } from '$lib/types';
+	import type { WikiRollup, WikiRollupField } from '#lib/types/index.js';
 	import {
 		formatPricePart,
 		formatPriceRange,
 		pricePartsValue,
 		priceRangeParts,
 		type FxEquiv
-	} from '$lib/utils/wikiFieldValue';
-	import { currencySymbol, type CurrencyInfo } from '$lib/utils/currency';
+	} from '#lib/utils/wikiFieldValue.js';
+	import { currencySymbol, type CurrencyInfo } from '#lib/utils/currency.js';
 	import { categoryIcon, categoryTint } from './icons';
 	import { GitCompareArrows, Wallet } from 'lucide-svelte';
 

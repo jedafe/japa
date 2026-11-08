@@ -7,13 +7,13 @@
 	 * domain, description, follower/post counts, and trust level.
 	 */
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
 	import { Users, FileText, Shield } from 'lucide-svelte';
-	import { FollowButton } from '$lib/components/ui';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import { sourceTrustLabel } from '$lib/sources';
-	import type { Source } from '$lib/types/sources';
+	import { FollowButton } from '#lib/components/ui/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import { sourceTrustLabel } from '#lib/sources.js';
+	import type { Source } from '#lib/types/sources.js';
 
 	interface Props {
 		source: Source;

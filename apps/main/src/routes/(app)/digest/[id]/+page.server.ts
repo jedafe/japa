@@ -3,8 +3,8 @@
 // Returns the edition or throws a 404 when not found.
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { DigestEdition } from '$lib/types';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import type { DigestEdition } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();

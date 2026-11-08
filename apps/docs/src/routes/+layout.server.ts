@@ -1,8 +1,8 @@
 import type { LayoutServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import { setRuntimePack } from '$lib/i18n/dict';
-import { fetchDocNav } from '$lib/server/nav';
-import type { DocNavTree, Menu } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import { setRuntimePack } from '#lib/i18n/dict.js';
+import { fetchDocNav } from '#lib/server/nav.js';
+import type { DocNavTree, Menu } from '#lib/types/index.js';
 
 /** Onboarding status (Section 09) — only the tour dismissals are read. */
 interface OnboardingStatusLite {

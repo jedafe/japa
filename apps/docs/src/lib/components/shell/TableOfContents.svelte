@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import type { TocHeading } from '$lib/tiptap/serialize';
+	import { t } from '#lib/i18n/index.js';
+	import type { TocHeading } from '#lib/tiptap/serialize.js';
 
 	interface Props {
 		headings: TocHeading[];

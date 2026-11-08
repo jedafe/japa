@@ -4,14 +4,19 @@
 	// admin-managed `ad_slot` widgets and is mounted by AppShell solely while
 	// the side nav is collapsed. Other left-position widget types are ignored
 	// — the rail is intentionally ad-only.
-	import AdSlot from '$lib/components/ui/AdSlot.svelte';
-	import { t } from '$lib/i18n';
+	import AdSlot from '#lib/components/ui/AdSlot.svelte';
+	import { provideRailGate } from './railVisibility.svelte';
+	import { t } from '#lib/i18n/index.js';
 
 	interface Props {
 		widgets?: unknown[];
 	}
 
 	let { widgets = [] }: Props = $props();
+
+	// Rail subtree is viewport-gated: the ad units below skip /ads/serve while
+	// the rail is display:none (<1280px). See railVisibility.
+	provideRailGate();
 
 	interface AdWidget {
 		id: string;

@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { apiContext, API_BASE, API_V1 } from '$lib/server/api';
+import { apiContext, API_BASE, API_V1 } from '#lib/server/api.js';
 import type { RequestHandler } from './$types';
 
 /**

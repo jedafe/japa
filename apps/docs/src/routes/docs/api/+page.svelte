@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { t } from '$lib/i18n';
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { persistNavCollapse } from '$lib/nav-collapse';
-	import { groupNavItems } from '$lib/docs/grouping';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
+	import { groupNavItems } from '#lib/docs/grouping.js';
 	import { ArrowRight, ArrowUpRight, FileText, Play, Download, Plus, Search } from 'lucide-svelte';
 	import type { PageData } from './$types';
-	import type { DocNavItem } from '$lib/types';
+	import type { DocNavItem } from '#lib/types/index.js';
 
 	let { data }: { data: PageData } = $props();
 

@@ -2,12 +2,12 @@
 <!-- Self-serve ads dashboard: list campaigns, create new campaigns, view stats.
      Calls /org/{org_id}/ads/* endpoints (§61 API Routes). -->
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import AppealButton from '#lib/components/appeals/AppealButton.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { Megaphone, Plus, Pause, Play, BarChart3, ArrowLeft, Check, X } from 'lucide-svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { goto } from '$app/navigation';

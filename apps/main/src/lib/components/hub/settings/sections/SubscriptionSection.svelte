@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { Modal } from '$lib/components/ui';
-	import { t, i18n } from '$lib/i18n';
+	import { Modal } from '#lib/components/ui/index.js';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import {
 		cancelSubscription,
 		reactivateSubscription,
 		createSubscription,
 		type PaymentProvider
-	} from '$lib/api/hub';
-	import { optimisticAction } from '$lib/components/hub/optimisticAction';
+	} from '#lib/api/hub.js';
+	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
 	import { invalidateAll } from '$app/navigation';
 
 	// Contract: GET /me/subscription returns gen.Subscription with fields

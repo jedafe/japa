@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { api } from '$lib/api/client';
-	import type { TipConfig, TipSettings } from '$lib/api/tips';
-	import { t } from '$lib/i18n';
+	import { api } from '#lib/api/client.js';
+	import type { TipConfig, TipSettings } from '#lib/api/tips.js';
+	import { t } from '#lib/i18n/index.js';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -10,15 +10,15 @@
 		Camera, Loader2, Image as ImageIcon, Shield, ShieldCheck, UserMinus, UserPlus,
 		Plus, Trash2, Pencil, ArrowUp, ArrowDown, AlertTriangle, Link2, Unlink
 	} from 'lucide-svelte';
-	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
-	import SpaceCombobox from '$lib/components/spaces/SpaceCombobox.svelte';
-	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { decodeBase64Text } from '$lib/tiptap/serialize';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
+	import SpaceCombobox from '#lib/components/spaces/SpaceCombobox.svelte';
+	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import { decodeBase64Text } from '#lib/tiptap/serialize.js';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 	import type {
 		Space, SpaceModerator, SpaceRule, SpacePermissionPreset, MediaAsset
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 
 	function escapeHtml(s: string): string {
 		return s

@@ -4,10 +4,10 @@
 	// (PATCH /me/ai-keys/{id}).
 	//
 	// Spec: docs/superpowers/specs/2026-10-19-ai-byok-design.md
-	import { t } from '$lib/i18n';
-	import { Modal } from '$lib/components/ui';
-	import { updateAIKey } from '$lib/api/byok';
-	import type { UserAIKeyView } from '$lib/ai/agentTypes';
+	import { t } from '#lib/i18n/index.js';
+	import { Modal } from '#lib/components/ui/index.js';
+	import { updateAIKey } from '#lib/api/byok.js';
+	import type { UserAIKeyView } from '#lib/ai/agentTypes.js';
 
 	interface Props {
 		open: boolean;

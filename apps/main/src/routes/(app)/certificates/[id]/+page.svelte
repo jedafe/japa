@@ -1,11 +1,11 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, i18n } from '$lib/i18n';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
 	import { Award, Download, ExternalLink } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { academyUrl } from '$lib/appOrigins';
+	import { api } from '#lib/api/client.js';
+	import { academyUrl } from '#lib/appOrigins.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

@@ -1,6 +1,6 @@
 import type { ServerLoadEvent } from '@sveltejs/kit';
-import { apiList, apiContext } from '$lib/server/api';
-import { DEFAULT_SITE_NAME } from '$lib/brand';
+import { apiList, apiContext } from '#lib/server/api.js';
+import { DEFAULT_SITE_NAME } from '#lib/brand.js';
 import type {
 	GuestHomeData,
 	GuestHomeOpportunity,
@@ -10,7 +10,7 @@ import type {
 	GuestHomeCategory,
 	SpaceSuggestion,
 	Story
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 export const emptyGuestHome: GuestHomeData = {
 	topDestinations: [],

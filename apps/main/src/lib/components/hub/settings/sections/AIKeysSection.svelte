@@ -5,15 +5,15 @@
 	//
 	// Spec: docs/superpowers/specs/2026-10-19-ai-byok-design.md
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { Modal } from '$lib/components/ui';
-	import { deleteAIKey, verifyAIKey } from '$lib/api/byok';
-	import { optimisticAction } from '$lib/components/hub/optimisticAction';
+	import { t } from '#lib/i18n/index.js';
+	import { Modal } from '#lib/components/ui/index.js';
+	import { deleteAIKey, verifyAIKey } from '#lib/api/byok.js';
+	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
 	import { invalidateAll } from '$app/navigation';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import AddAiKeyDialog from '$lib/ai/AddAiKeyDialog.svelte';
-	import EditAiKeyDialog from '$lib/ai/EditAiKeyDialog.svelte';
-	import type { ByokProviderOption, UserAIKeyView } from '$lib/ai/agentTypes';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import AddAiKeyDialog from '#lib/ai/AddAiKeyDialog.svelte';
+	import EditAiKeyDialog from '#lib/ai/EditAiKeyDialog.svelte';
+	import type { ByokProviderOption, UserAIKeyView } from '#lib/ai/agentTypes.js';
 	import { KeyRound, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
 
 	interface SectionData {

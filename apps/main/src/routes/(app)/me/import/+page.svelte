@@ -1,15 +1,15 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { untrack } from 'svelte';
 	import { Download, FileUp, CheckCircle2, AlertCircle, Loader2 } from 'lucide-svelte';
-	import { EmptyState, RelativeTime } from '$lib/components/ui';
+	import { EmptyState, RelativeTime } from '#lib/components/ui/index.js';
 	import { enhance } from '$app/forms';
 	import { invalidate } from '$app/navigation';
-	import type { ContentImport, ImportSource } from '$lib/types';
+	import type { ContentImport, ImportSource } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 
 	let { data }: { data: PageData } = $props();
 

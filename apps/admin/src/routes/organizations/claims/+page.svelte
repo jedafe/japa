@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /organizations/claims — migrated to the EntityPage scaffold. Read-only
 	// review queue: the endpoint only supports ?status= (no pagination), so
 	// search/sort/page are applied client-side inside load().
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
-	import { Modal } from "$lib/components/ui/modal";
-	import { safeHref } from "$lib/utils/html";
-	import { Button } from "$lib/components/ui/button";
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "#lib/components/entity/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { safeHref } from "#lib/utils/html.js";
+	import { Button } from "#lib/components/ui/button/index.js";
 	import { Check, X, Eye } from "lucide-svelte";
-	import { organisationsAdminApi } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
+	import { organisationsAdminApi } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
+	import type { ActionItem, FilterDef } from "#lib/components/ui/data-table/index.js";
 
 	type PendingClaim = {
 		id: string;

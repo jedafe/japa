@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
   import { Dialog } from "bits-ui";
   import { X } from "lucide-svelte";
   import { clsx, type ClassValue } from "clsx";

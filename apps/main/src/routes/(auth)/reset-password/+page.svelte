@@ -1,11 +1,11 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n/store.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/store.svelte.js';
 	import { page } from '$app/state';
-	import { validateResetPassword } from '$lib/auth/validation';
-	import { mapAuthError } from '$lib/auth/errors';
-	import PasswordField from '$lib/components/auth/PasswordField.svelte';
-	import HoneypotField from '$lib/components/auth/HoneypotField.svelte';
+	import { validateResetPassword } from '#lib/auth/validation.js';
+	import { mapAuthError } from '#lib/auth/errors.js';
+	import PasswordField from '#lib/components/auth/PasswordField.svelte';
+	import HoneypotField from '#lib/components/auth/HoneypotField.svelte';
 
 	const token = $derived(page.data.token);
 

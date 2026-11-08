@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { AutocompleteSelect } from '$lib/components/ui';
-	import { t } from '$lib/i18n';
+	import { AutocompleteSelect } from '#lib/components/ui/index.js';
+	import { t } from '#lib/i18n/index.js';
 
 	/**
 	 * Shared model + voice pickers for the AI surfaces (JapaBot chat,

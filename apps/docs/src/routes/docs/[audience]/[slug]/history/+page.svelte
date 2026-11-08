@@ -5,13 +5,13 @@
 	import { enhance } from '$app/forms';
 	import { goto } from '$app/navigation';
 	import { confirmDialog } from '@japaconnect/ui';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import DocContent from '$lib/components/docs/DocContent.svelte';
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
-	import { persistNavCollapse } from '$lib/nav-collapse';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import DocContent from '#lib/components/docs/DocContent.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
 	import { ArrowLeft, ChevronRight, Eye, History, RotateCcw, Trash2 } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

@@ -1,7 +1,7 @@
 // Currency name/symbol helpers driven by the platform currency table
 // (Section 58, ADR-065). loadCurrencies() fetches the active list once per
 // session from the public GET /api/v1/currencies reference endpoint.
-import { api } from '$lib/api';
+import { api } from '#lib/api.js';
 
 export interface CurrencyInfo {
 	code: string;

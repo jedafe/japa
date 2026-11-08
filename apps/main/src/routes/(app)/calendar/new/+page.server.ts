@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
 import type { PageServerLoad } from './$types';
 import { error, redirect } from '@sveltejs/kit';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { GeoCountry } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {

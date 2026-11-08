@@ -1,5 +1,5 @@
-import { api } from '$lib/api/client';
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { api } from '#lib/api/client.js';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
 import type {
 	MediaPickerItem,
@@ -38,11 +38,8 @@ export interface InitiateUploadResult {
 	expires_at: string;
 }
 
-export const initiateUpload = (input: InitiateUploadInput) =>
-	api.post<InitiateUploadResult>('/media/upload', input);
-
-export const confirmMedia = (id: string) =>
-	api.post<{ confirmed: boolean }>(`/media/confirm/${id}`);
+export const initiateUpload = (input: InitiateUploadInput) => api.post<InitiateUploadResult>('/media/upload', input);
+export const confirmMedia = (id: string) => api.post<{ confirmed: boolean }>(`/media/confirm/${id}`);
 
 /** PUT the raw file bytes through the same-origin session proxy. The
  * presigned URL targets the API's /seaweedfs/upload/{bucket}/{path} route —
@@ -124,7 +121,7 @@ export async function uploadMediaImage(
 		context
 	});
 	if (init.error || !init.data) throw new Error(init.error?.message ?? 'Upload initiation failed');
-	if (!(await uploadToPresigned(init.data.presigned_url, file))) throw new Error('File transfer failed');
+	if (!await uploadToPresigned(init.data.presigned_url, file)) throw new Error('File transfer failed');
 	const conf = await confirmMedia(init.data.media_id);
 	if (conf.error) throw new Error(conf.error.message);
 

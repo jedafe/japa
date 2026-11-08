@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /newsletter — migrated to the EntityPage scaffold.
 	// Tabbed page: Subscribers (view/edit/delete + import) and Campaigns
 	// (view/send + bulk delete + create-via-modal), plus an Analytics tab
@@ -7,18 +7,18 @@
 	// Create-campaign and import-subscribers keep page-local Modals because
 	// their forms use rich inputs (HTML textarea / bulk paste) that EntityForm
 	// does not support; they are triggered via EntityPage `headerActions`.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { t, locale } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { t, locale } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { Card, CardContent, CardHeader } from '#lib/components/ui/card/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
 	import { BarChart } from 'layerchart';
-	import { api } from '$lib/api';
-	import { sanitizeHtml } from '$lib/utils/html';
+	import { api } from '#lib/api.js';
+	import { sanitizeHtml } from '#lib/utils/html.js';
 	import { Mail, Plus, Send, Users, BarChart3, Trash2, Eye, Pencil, Upload } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import type { ActionItem, FilterDef } from '#lib/components/ui/data-table/index.js';
 
 	type Subscriber = {
 		id: string;

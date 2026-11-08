@@ -1,7 +1,7 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack, onMount } from 'svelte';
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import {
 		BadgeCheck,
@@ -15,18 +15,18 @@
 		ThumbsUp,
 		Lock
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import AiBodyField from '$lib/ai/AiBodyField.svelte';
+	import { EmptyState, LoadingSkeleton, SelectField } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import AiBodyField from '#lib/ai/AiBodyField.svelte';
 	import type {
 		GeoCountry,
 		CredentialProfession,
 		CredentialPathwayWithAi,
 		CredentialCommunityNote,
 		CredentialPathwayDetail
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import ToolHeader from '$lib/components/tools/ToolHeader.svelte';
+	import ToolHeader from '#lib/components/tools/ToolHeader.svelte';
 
 	/**
 	 * Professional Credential Checker tool — §94.

@@ -5,13 +5,13 @@
 	// primary profile journey. Lists GET /me/japa-stage/journeys, creates via
 	// POST, and advances lifecycle state via PATCH status transitions
 	// (planned → active → completed/cancelled; cancelled → planned).
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import RelativeTime from '#lib/components/ui/RelativeTime.svelte';
 	import { CalendarRange, Plus, Trash2, X } from 'lucide-svelte';
 	import {
 		japaStageColors,
@@ -20,8 +20,8 @@
 		japaStagesForIntent,
 		japaIntentLabel,
 		japaIntentOptions
-	} from '$lib/enumOptions';
-	import type { GeoCountry, JapaIntent, JapaStage, JapaStageOption, JourneyStatus, UserJourney } from '$lib/types';
+	} from '#lib/enumOptions.js';
+	import type { GeoCountry, JapaIntent, JapaStage, JapaStageOption, JourneyStatus, UserJourney } from '#lib/types/index.js';
 
 	let {
 		journeys: initialJourneys,

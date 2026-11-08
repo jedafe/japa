@@ -5,11 +5,20 @@
 // crawlers retry rather than caching a shell. Returns 404 on non-indexable
 // deployments, matching the backend handler.
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
-import { API_BASE, JC_SURFACE } from '$lib/server/api';
+import { PUBLIC_JC_ENV, JC_ENV } from '$app/env/private';
+import { API_BASE, JC_SURFACE } from '#lib/server/api.js';
 
-const NON_PROD_ENVS = new Set(['development', 'dev', 'staging', 'stage', 'test', 'preview', 'local']);
-const blocksIndexing = NON_PROD_ENVS.has((env.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase());
+const NON_PROD_ENVS = new Set([
+	'development',
+	'dev',
+	'staging',
+	'stage',
+	'test',
+	'preview',
+	'local'
+]);
+
+const blocksIndexing = NON_PROD_ENVS.has((PUBLIC_JC_ENV ?? JC_ENV ?? '').toLowerCase());
 
 export const GET: RequestHandler = async ({ request, url }) => {
 	if (blocksIndexing) {

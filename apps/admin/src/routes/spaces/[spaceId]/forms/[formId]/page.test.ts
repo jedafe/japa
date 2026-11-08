@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.js', () => ({
 	api: vi.fn().mockRejectedValue(new Error('not connected')),
 	apiRaw: vi.fn().mockRejectedValue(new Error('not connected')),
 	formsAdminApi: {
@@ -22,7 +22,7 @@ vi.mock('$app/state', () => ({
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
-vi.mock('$lib/stores/permissions.svelte', () => ({
+vi.mock('#lib/stores/permissions.svelte.js', () => ({
 	hasPermission: () => true,
 	getPermissions: () => ['*'],
 	getPermissionState: () => ({ permissions: ['*'], loaded: true })

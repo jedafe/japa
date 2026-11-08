@@ -1,15 +1,15 @@
 <!-- §122 Next-Action rule editor -->
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import AlertBanner from '#lib/components/ui/AlertBanner.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { getRule, createRule, updateRule, deleteRule, getVocab, type NextActionRule } from '$lib/api/nextactions';
-	import PredicateGroupEditor from '$lib/components/PredicateGroupEditor.svelte';
-	import AudienceEditor from '$lib/components/AudienceEditor.svelte';
-	import FrequencyEditor from '$lib/components/FrequencyEditor.svelte';
+	import { getRule, createRule, updateRule, deleteRule, getVocab, type NextActionRule } from '#lib/api/nextactions.js';
+	import PredicateGroupEditor from '#lib/components/PredicateGroupEditor.svelte';
+	import AudienceEditor from '#lib/components/AudienceEditor.svelte';
+	import FrequencyEditor from '#lib/components/FrequencyEditor.svelte';
 
 	const id = $derived(page.params.id ?? '');
 	const isNew = $derived(id === 'new');

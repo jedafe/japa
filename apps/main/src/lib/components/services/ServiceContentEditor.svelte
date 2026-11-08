@@ -13,12 +13,12 @@
 	// Icons pick from the marketplaceIcon whitelist — server-provided
 	// names resolve through it at render time.
 	import { ChevronDown, Plus, Trash2 } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import {
 		marketplaceIcon,
 		MARKETPLACE_ICON_NAMES
-	} from '$lib/components/marketplace/marketplaceIcon';
-	import { SelectField } from '$lib/components/ui';
+	} from '#lib/components/marketplace/marketplaceIcon.js';
+	import { SelectField } from '#lib/components/ui/index.js';
 
 	export interface IconEntry {
 		icon: string;

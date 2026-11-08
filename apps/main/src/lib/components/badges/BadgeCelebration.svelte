@@ -4,13 +4,13 @@
 	// since the last check pops a congratulatory modal. First run only
 	// records the snapshot (no celebration for pre-existing awards).
 	import { onMount } from 'svelte';
-	import { browser } from '$app/environment';
-	import { api } from '$lib/api/client';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import { realtime } from '$lib/realtime/realtime.svelte';
-	import { t } from '$lib/i18n';
+	import { browser } from '$app/env';
+	import { api } from '#lib/api/client.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import { realtime } from '#lib/realtime/realtime.svelte.js';
+	import { t } from '#lib/i18n/index.js';
 	import { Award, X } from 'lucide-svelte';
-	import type { BadgeCollection, EarnedBadge, Notification } from '$lib/types';
+	import type { BadgeCollection, EarnedBadge, Notification } from '#lib/types/index.js';
 
 	const SEEN_KEY = 'jc.seen_badges.v1';
 	const POLL_MS = 45_000;
@@ -86,30 +86,30 @@
 			const badges = res.data ?? [];
 			if (res.error) return;
 
-		const seen = seenIds();
-		const firstRun = !localStorage.getItem(SEEN_KEY);
+			const seen = seenIds();
+			const firstRun = !localStorage.getItem(SEEN_KEY);
 
-		const fresh = badges.filter((b: EarnedBadge) => !seen.has(b.id));
-		for (const b of fresh) seen.add(b.id);
-		saveSeen(seen);
+			const fresh = badges.filter((b: EarnedBadge) => !seen.has(b.id));
+			for (const b of fresh) seen.add(b.id);
+			saveSeen(seen);
 
-		// First-ever snapshot: record, don't celebrate past awards.
-		if (firstRun || fresh.length === 0) return;
+			// First-ever snapshot: record, don't celebrate past awards.
+			if (firstRun || fresh.length === 0) return;
 
-		// Merge points_reward from the collection (earned list doesn't carry it).
-		const rewards = new Map<string, number>();
-		try {
-			const col = await api.get<BadgeCollection>('/me/badge-collection');
+			// Merge points_reward from the collection (earned list doesn't carry it).
+			const rewards = new Map<string, number>();
+			try {
+				const col = await api.get<BadgeCollection>('/me/badge-collection');
 			for (const cat of col.data?.categories ?? [])
 				for (const b of cat.badges) rewards.set(b.id, b.points_reward);
 		} catch { /* points just won't show */ }
 
-		for (const b of fresh) {
-			const mb = { ...b, points_reward: rewards.get(b.id) };
-			await resolveIcon(mb);
-			queue = [...queue, mb];
-		}
-		showNext();
+			for (const b of fresh) {
+				const mb = { ...b, points_reward: rewards.get(b.id) };
+				await resolveIcon(mb);
+				queue = [...queue, mb];
+			}
+			showNext();
 		} finally {
 			inflight = false;
 		}
@@ -151,13 +151,6 @@
 	});
 </script>
 
-<style>
-	@keyframes badge-pop {
-		from { transform: scale(0.85); opacity: 0; }
-		to { transform: scale(1); opacity: 1; }
-	}
-</style>
-
 {#if current}
 	{@const c = accent(current)}
 	<div
@@ -167,11 +160,20 @@
 		tabindex="-1"
 		onkeydown={(e) => e.key === 'Escape' && dismiss()}
 	>
-		<button class="absolute inset-0 h-full w-full cursor-default" onclick={dismiss} aria-label={t('common.close', 'Close')}></button>
-		<div class="relative w-full max-w-sm animate-[badge-pop_.3s_ease-out] rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center shadow-xl">
-			<button onclick={dismiss} class="absolute top-3 right-3 rounded-full p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]" aria-label={t('common.close', 'Close')}>
-				<X size={16} />
-			</button>
+		<button
+			class="absolute inset-0 h-full w-full cursor-default"
+			onclick={dismiss}
+			aria-label={t('common.close', 'Close')}
+		></button>
+
+		<div
+			class="relative w-full max-w-sm animate-[badge-pop_.3s_ease-out] rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center shadow-xl"
+		>
+			<button
+				onclick={dismiss}
+				class="absolute top-3 right-3 rounded-full p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+				aria-label={t('common.close', 'Close')}
+			><X size={16} /></button>
 
 			<div
 				class="mx-auto grid h-20 w-20 place-items-center overflow-hidden rounded-full border-2"
@@ -206,3 +208,16 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	@keyframes badge-pop {
+		from {
+			transform: scale(0.85);
+			opacity: 0;
+		}
+		to {
+			transform: scale(1);
+			opacity: 1;
+		}
+	}
+</style>

@@ -1,18 +1,18 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
-	import { api } from '$lib/api/client';
-	import { t, i18n } from '$lib/i18n';
+	import { api } from '#lib/api/client.js';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
-	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
+	import { EmptyState, AutocompleteSelect } from '#lib/components/ui/index.js';
+	import DestinationSelector from '#lib/components/tools/DestinationSelector.svelte';
 	import { Timer, ArrowLeft, Plus, ChevronUp, ChevronDown, Pencil } from 'lucide-svelte';
 	import type {
 		VisaTimeline,
 		VisaTimelineMilestone,
 		GeoSpaceOption,
 		CatalogOption
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	/**

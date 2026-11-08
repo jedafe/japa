@@ -1,4 +1,4 @@
-import { api } from '$lib/api/client';
+import { api } from '#lib/api/client.js';
 
 export interface ReactionType {
 	key: string;

@@ -1,18 +1,18 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { goto, replaceState, beforeNavigate } from '$app/navigation';
+	import { goto, beforeNavigate } from '$app/navigation';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { contentHref } from '$lib/utils/contentLink';
-	import { t } from '$lib/i18n';
+	import { contentHref } from '#lib/utils/contentLink.js';
+	import { t } from '#lib/i18n/index.js';
 	import { ComposerState, type ComposerDeps } from './composerState.svelte';
 	import { evaluatePublish } from './gate';
 	import { resolveType } from './contentTypeRegistry';
-	import * as createApi from '$lib/api/create';
-	import { classifyError } from '$lib/api/create';
-	import { api } from '$lib/api/client';
-	import { excerpt } from '$lib/utils/seo-score';
-	import { localDateTimeToIso, isoToLocalDateTime } from '$lib/utils/datetime';
+	import * as createApi from '#lib/api/create.js';
+	import { classifyError } from '#lib/api/create.js';
+	import { api } from '#lib/api/client.js';
+	import { excerpt } from '#lib/utils/seo-score.js';
+	import { localDateTimeToIso, isoToLocalDateTime } from '#lib/utils/datetime.js';
 	import type {
 		ContentRecord,
 		ContentSpace,
@@ -27,7 +27,7 @@
 		ComparisonDetail,
 		ComparisonType,
 		ListFieldValues
-	} from '$lib/types';
+	} from '#lib/types/index.js';
 	import type { TypeEntry } from './contentTypeRegistry';
 	import SaveBar from './SaveBar.svelte';
 	import TitleField from './TitleField.svelte';
@@ -38,16 +38,16 @@
 	import ListBuilder from './editors/ListBuilder.svelte';
 	import ReviewForm from './ReviewForm.svelte';
 	import VideoField from './VideoField.svelte';
-	import type { VideoSource } from '$lib/types';
+	import type { VideoSource } from '#lib/types/index.js';
 	import CreateRightPanel from './panel/CreateRightPanel.svelte';
 	import CustomFieldGroupCmp from './panel/CustomFieldGroup.svelte';
 	import Autocomplete, { type AutocompleteItem } from './Autocomplete.svelte';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import AiBodyButton from '$lib/ai/AiBodyButton.svelte';
-	import AiDraftPanel from '$lib/ai/AiDraftPanel.svelte';
-	import { canUseAI } from '$lib/ai/canUseAI';
-	import { studioMobile, resetStudioMobileBridge } from '$lib/studio/mobileView.svelte';
-	import type { SessionUser } from '$lib/types';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import AiBodyButton from '#lib/ai/AiBodyButton.svelte';
+	import AiDraftPanel from '#lib/ai/AiDraftPanel.svelte';
+	import { canUseAI } from '#lib/ai/canUseAI.js';
+	import { studioMobile, resetStudioMobileBridge } from '#lib/studio/mobileView.svelte.js';
+	import type { SessionUser } from '#lib/types/index.js';
 
 	interface Props {
 		types: TypeEntry[];
@@ -163,10 +163,9 @@
 	// bot-authored (the author_id override is bots-only, SEC-002), so a
 	// stored bot that isn't a selectable option still restores in persona
 	// mode and "Keep current author" remains the honest selection.
-	let postAsPersona = $state<boolean>(
-		untrack(() => authorId != null || (!!draft?.author_id && draft.author_id !== user?.id))
-	);
-	let visibility = $state<Visibility>(untrack(() => (draft?.visibility as Visibility) ?? 'public'));
+	let postAsPersona = $state<boolean>(untrack(() => authorId != null || !!draft?.author_id && draft.author_id !== user?.id));
+
+	let visibility = $state<Visibility>(untrack(() => draft?.visibility as Visibility ?? 'public'));
 	let canonicalUrl = $state(untrack(() => draft?.canonical_url ?? ''));
 	// draft.publish_at is a zoned ISO instant (timestamptz) — convert to the
 	// browser-local "YYYY-MM-DDTHH:mm" the datetime-local input requires.
@@ -209,20 +208,14 @@
 	// mechanism as the guide dimension/purpose keys). field_values is typed
 	// Record<string, unknown> — the double cast is required because
 	// ListFieldValues has no index signature (plain `as` fails typecheck).
-	let listFieldValues = $state<ListFieldValues>(
-		untrack(() =>
-			draft?.content_type === 'list'
-				? ((draft.field_values as unknown as ListFieldValues | null) ?? {
-						list_mode: 'numbered',
-						items: []
-					})
-				: { list_mode: 'numbered', items: [] }
-		)
-	);
+	let listFieldValues = $state<ListFieldValues>(untrack(() => draft?.content_type === 'list'
+		? draft.field_values as unknown as ListFieldValues | null ?? { list_mode: 'numbered', items: [] }
+		: { list_mode: 'numbered', items: [] }));
+
 	let listItemCount = $state(untrack(() => listFieldValues.items?.length ?? 0));
 	// §14 review CT — product/rating/providers ride field_values (same
 	// bypass mechanism as the list snapshot).
-	let reviewFieldValues = $state<Record<string, unknown>>(untrack(() => (draft?.content_type === 'review' ? (draft.field_values ?? {}) : {})));
+	let reviewFieldValues = $state<Record<string, unknown>>(untrack(() => draft?.content_type === 'review' ? draft.field_values ?? {} : {}));
 
 
 	// AI drafting panel (Task 7)
@@ -235,8 +228,8 @@
 	let visaRoute = $state<string | null>(untrack(() => draft?.visa_route ?? null));
 	let sourceCountry = $state<string | null>(untrack(() => draft?.source_country ?? null));
 	let targetCountry = $state<string | null>(untrack(() => draft?.target_country ?? null));
-	let roadmapDimension = $state<string | null>(untrack(() => (draft?.field_values?.dimension as string) ?? null));
-	let roadmapPurpose = $state<string | null>(untrack(() => (draft?.field_values?.purpose as string) ?? null));
+	let roadmapDimension = $state<string | null>(untrack(() => draft?.field_values?.dimension as string ?? null));
+	let roadmapPurpose = $state<string | null>(untrack(() => draft?.field_values?.purpose as string ?? null));
 	// Category-specific field groups loaded on-demand when a guide category is selected.
 	// These are merged with the base content field groups for rendering in the settings panel.
 	let categoryFieldGroups = $state<CustomFieldGroup[]>([]);
@@ -320,10 +313,10 @@
 		body_html: bodyHtml,
 		field_values: {
 			...activeFieldValues,
-			...(isGuide && roadmapDimension ? { dimension: roadmapDimension } : {}),
-			...(isGuide && roadmapPurpose ? { purpose: roadmapPurpose } : {}),
-			...(isList ? listFieldValues : {}),
-			...(isReview ? reviewFieldValues : {})
+			...isGuide && roadmapDimension ? { dimension: roadmapDimension } : {},
+			...isGuide && roadmapPurpose ? { purpose: roadmapPurpose } : {},
+			...isList ? listFieldValues : {},
+			...isReview ? reviewFieldValues : {}
 		},
 		canonical_url: canonicalUrl || null,
 		featured_image_id: featuredImageId,
@@ -347,9 +340,7 @@
 		// Self-authored drafts keep null (no-op: self on create, stored on edit).
 		author_id: postAsPersona
 			? authorId
-			: draft?.author_id && draft.author_id !== user?.id
-				? (user?.id ?? null)
-				: authorId,
+			: draft?.author_id && draft.author_id !== user?.id ? user?.id ?? null : authorId,
 		visibility,
 		// Preserve the existing status so PATCH doesn't overwrite it with
 		// an empty string (which clears the published/scheduled state).
@@ -436,6 +427,7 @@
 	// failures snuck back in.
 	let bypassGuard = false;
 	beforeNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
 		if (!composer || bypassGuard || nav.type === 'leave') return;
 		if (composer.status === 'dirty' || composer.status === 'saving' || composer.status === 'creating' || composer.status === 'error') {
 			nav.cancel();
@@ -505,9 +497,9 @@
 	// content-type modal — both keep the ?type= param and dirty state in sync.
 	function selectTypeByValue(value: string) {
 		selectedType = types.find((ty) => ty.value === value) ?? resolveType(value);
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('type', selectedType.value);
-		replaceState(url, {});
+		goto(url, { shallow: true, replace: true });
 		markDirty();
 	}
 
@@ -629,7 +621,7 @@
 
 {#snippet aiButtonSnippet()}
 	{#if canUseAI(user, features)}
-		<AiBodyButton floating onclick={() => (aiPanelOpen = true)} />
+		<AiBodyButton floating onclick={() => aiPanelOpen = true} />
 	{/if}
 {/snippet}
 
@@ -673,7 +665,7 @@
 			</div>
 		{/if}
 
-		<TitleField {title} onTitle={handleTitle} />
+		<TitleField title={title} onTitle={handleTitle} />
 
 		{#if isVideo}
 			<VideoField
@@ -694,23 +686,36 @@
 				initialItems={comparisonDetail?.items ?? []}
 				initialDimensions={comparisonDetail?.dimensions ?? []}
 				initialCells={comparisonDetail?.matrixValues ?? {}}
-				{comparisonTypes}
-				{dimensionTypes}
-				{bodyHtml}
-				onhtml={(v) => { bodyHtml = v; }}
-				{defaultEditor}
-				oncounts={(n, d) => { items = new Array(n).fill({ label: '' }); dimensions = new Array(d).fill({ label: '' }); }}
+				comparisonTypes={comparisonTypes}
+				dimensionTypes={dimensionTypes}
+				bodyHtml={bodyHtml}
+				onhtml={(v) => {
+					bodyHtml = v;
+				}}
+				defaultEditor={defaultEditor}
+				oncounts={(n, d) => {
+					items = new Array(n).fill({ label: '' });
+					dimensions = new Array(d).fill({ label: '' });
+				}}
 				onedit={markDirty}
 				aiTrigger={aiButtonSnippet}
 			/>
 		{:else if selectedType.formKind === 'list'}
 			<ListBuilder
-				initial={draft?.content_type === 'list' ? (draft.field_values as unknown as ListFieldValues) : null}
+				initial={draft?.content_type === 'list'
+					? draft.field_values as unknown as ListFieldValues
+					: null}
 				defaultEditor={defaultEditor}
-				{features}
-				onvalues={(fv) => { listFieldValues = fv; }}
-				onhtml={(v) => { bodyHtml = v; }}
-				oncounts={(n) => { listItemCount = n; }}
+				features={features}
+				onvalues={(fv) => {
+					listFieldValues = fv;
+				}}
+				onhtml={(v) => {
+					bodyHtml = v;
+				}}
+				oncounts={(n) => {
+					listItemCount = n;
+				}}
 				onedit={markDirty}
 			/>
 		{:else if selectedType.formKind === 'review'}
@@ -726,8 +731,10 @@
 				bind:this={postEditor}
 				html={bodyHtml}
 				onedit={markDirty}
-				onhtml={(v) => { bodyHtml = v; }}
-				onfocus={() => (focusedField = 'body')}
+				onhtml={(v) => {
+					bodyHtml = v;
+				}}
+				onfocus={() => focusedField = 'body'}
 				defaultMode={defaultEditor}
 				aiTrigger={aiButtonSnippet}
 				postTitle={title}
@@ -737,15 +744,15 @@
 		<AiDraftPanel
 			open={aiPanelOpen}
 			contentType={selectedType.value}
-			{title}
+			title={title}
 			body={bodyHtml}
 			fieldSchema={allFieldGroups.flatMap((g) => g.fields).map((f) => ({
 				key: f.key,
 				type: f.field_type,
 				label: f.label,
 				options: Array.isArray(f.options)
-					? f.options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o))
-					: undefined,
+					? f.options.map((o) => typeof o === 'string' ? { value: o, label: o } : o)
+					: undefined
 			}))}
 			onApply={(payload) => {
 				if (payload.title) {
@@ -768,7 +775,7 @@
 				}
 				markDirty();
 			}}
-			onClose={() => (aiPanelOpen = false)}
+			onClose={() => aiPanelOpen = false}
 		/>
 
 		{#if allFieldGroups.length > 0}
@@ -788,14 +795,17 @@
 		{/if}
 
 		<SaveBar
-			status={composer?.status ?? ('pristine' as ComposerStatus)}
+			status={composer?.status ?? 'pristine' as ComposerStatus}
 			savedAt={composer?.savedAt ?? null}
 			canPublish={gate.ok}
 			publishReason={gate.reason}
 			orgs={organizations}
 			selectedOrgId={organizationId}
-			onSelectOrg={(id) => { organizationId = id; markDirty(); }}
-			{botAuthors}
+			onSelectOrg={(id) => {
+				organizationId = id;
+				markDirty();
+			}}
+			botAuthors={botAuthors}
 			selectedAuthorId={authorId}
 			authorNoneLabel={draft?.id
 				? t('create.author_keep_current', 'Keep current author')
@@ -807,47 +817,65 @@
 			onSaveDraft={saveDraft}
 			onPublish={publish}
 			errorMessage={composer?.lastError?.message ?? null}
-			{publishing}
+			publishing={publishing}
 			isPublished={draft?.status === 'published'}
 		/>
 	</div>
 
 	<div class="composer-right">
 		<CreateRightPanel
-			{focusedField}
-			{journeyStage}
-			{visaRoute}
-			{sourceCountry}
-			{targetCountry}
+			focusedField={focusedField}
+			journeyStage={journeyStage}
+			visaRoute={visaRoute}
+			sourceCountry={sourceCountry}
+			targetCountry={targetCountry}
 			dimension={roadmapDimension}
 			purpose={roadmapPurpose}
 			assessmentDimensions={assessmentDimensions}
-			onjourney={(v) => { journeyStage = v; markDirty(); }}
-			onvisa={(v) => { visaRoute = v; markDirty(); }}
-			onsource={(v) => { sourceCountry = v; markDirty(); }}
-			ontarget={(v) => { targetCountry = v; markDirty(); }}
-			ondimension={(v) => { roadmapDimension = v; markDirty(); }}
-			onpurpose={(v) => { roadmapPurpose = v; markDirty(); }}
-			{slug}
-			{visibility}
-			{canonicalUrl}
-			{publishAt}
-			{visibilityOptions}
+			onjourney={(v) => {
+				journeyStage = v;
+				markDirty();
+			}}
+			onvisa={(v) => {
+				visaRoute = v;
+				markDirty();
+			}}
+			onsource={(v) => {
+				sourceCountry = v;
+				markDirty();
+			}}
+			ontarget={(v) => {
+				targetCountry = v;
+				markDirty();
+			}}
+			ondimension={(v) => {
+				roadmapDimension = v;
+				markDirty();
+			}}
+			onpurpose={(v) => {
+				roadmapPurpose = v;
+				markDirty();
+			}}
+			slug={slug}
+			visibility={visibility}
+			canonicalUrl={canonicalUrl}
+			publishAt={publishAt}
+			visibilityOptions={visibilityOptions}
 			bind:series
-			{seriesId}
+			seriesId={seriesId}
 			bind:spaces
-			{spaceIds}
-			{tags}
-			{maxTags}
-			{coverMediaId}
-			{coverPreviewUrl}
-			{metaTitle}
-			{metaDescription}
-			{ogImageUrl}
-			{ogImagePreviewUrl}
-			{seoIndexable}
-			{title}
-			{bodyHtml}
+			spaceIds={spaceIds}
+			tags={tags}
+			maxTags={maxTags}
+			coverMediaId={coverMediaId}
+			coverPreviewUrl={coverPreviewUrl}
+			metaTitle={metaTitle}
+			metaDescription={metaDescription}
+			ogImageUrl={ogImageUrl}
+			ogImagePreviewUrl={ogImagePreviewUrl}
+			seoIndexable={seoIndexable}
+			title={title}
+			bodyHtml={bodyHtml}
 			contentType={selectedType.value}
 			typeLabel={selectedType.label}
 			supportsSeries={selectedType.supportsSeries}
@@ -855,12 +883,21 @@
 			oncanonical={(v) => { canonicalUrl = v; markDirty(); }}
 			onpublishat={(v) => { publishAt = v; markDirty(); }}
 			onslug={handleSlug}
-			onseries={(id) => { seriesId = id; markDirty(); }}
-			onseriesfocus={() => (focusedField = 'series')}
-			onspace={(ids) => { spaceIds = ids; markDirty(); }}
-			onspacefocus={() => (focusedField = 'space')}
-			ontags={(next) => { tags = next; markDirty(); }}
-			ontagsfocus={() => (focusedField = 'tags')}
+			onseries={(id) => {
+				seriesId = id;
+				markDirty();
+			}}
+			onseriesfocus={() => focusedField = 'series'}
+			onspace={(ids) => {
+				spaceIds = ids;
+				markDirty();
+			}}
+			onspacefocus={() => focusedField = 'space'}
+			ontags={(next) => {
+				tags = next;
+				markDirty();
+			}}
+			ontagsfocus={() => focusedField = 'tags'}
 			oncoveruploaded={(asset: MediaAsset) => {
 				coverMediaId = asset.id;
 				coverPreviewUrl = asset.url;
@@ -981,10 +1018,10 @@
 
 	/* Mobile: the /studio layout's swap FAB shows one column at a time. */
 	@media (max-width: 639px) {
-		.composer-grid[data-mobile-section='editor'] > .composer-right {
+		.composer-grid[data-mobile-section="editor"] > .composer-right {
 			display: none;
 		}
-		.composer-grid[data-mobile-section='config'] > .composer-main {
+		.composer-grid[data-mobile-section="config"] > .composer-main {
 			display: none;
 		}
 	}

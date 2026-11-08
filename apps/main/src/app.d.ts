@@ -1,5 +1,5 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
-import type { SessionUser, ThemeName, Locale } from '$lib/types';
+import type { SessionUser, ThemeName, Locale } from '#lib/types/index.js';
 
 declare global {
 	namespace App {

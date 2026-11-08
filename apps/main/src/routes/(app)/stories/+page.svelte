@@ -1,21 +1,21 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/79-community-story-wall.md
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { BookOpen, PenSquare, ArrowRight, Loader2, X } from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
-	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
-	import type { FeedItem, Story } from '$lib/types';
-	import type { GuideListItem } from '$lib/types/content';
-	import ContentGridCard from '$lib/components/feed/ContentGridCard.svelte';
-	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { staticAutocompleteFetcher, autocompleteItems } from '#lib/autocomplete.js';
+	import type { FeedItem, Story } from '#lib/types/index.js';
+	import type { GuideListItem } from '#lib/types/content.js';
+	import ContentGridCard from '#lib/components/feed/ContentGridCard.svelte';
+	import { destinationMarkets, originMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -74,7 +74,7 @@
 	}
 
 	function navigate(params: URLSearchParams) {
-		goto(`/stories${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true });
+		goto(`/stories${params.toString() ? `?${params.toString()}` : ''}`, { reset: false });
 	}
 
 	function setSort(value: string) {
@@ -117,7 +117,7 @@
 	function switchTab(value: string) {
 		if (value === 'featured' || value === 'series') {
 			// Curated views — filters don't apply; keep the URL minimal.
-			goto(`/stories?tab=${value}`, { keepFocus: true });
+			goto(`/stories?tab=${value}`, { reset: false });
 			return;
 		}
 		setSort(value);

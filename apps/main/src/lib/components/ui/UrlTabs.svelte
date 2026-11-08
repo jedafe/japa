@@ -15,9 +15,9 @@
 	import { Menu, MenuItem } from '@japaconnect/ui';
 	import { ChevronDown, Check } from 'lucide-svelte';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 
 	export interface UrlTab {
 		value: string;
@@ -55,9 +55,9 @@
 	// Initialise from URL param or default (only used when value is not bound).
 	let internalValue = $state<string>(
 		untrack(() => {
-			const param = page.url.searchParams.get(urlParam);
-			if (param && tabs.some((t) => t.value === param)) return param;
-			return resolvedDefault;
+		const param = page.url.searchParams.get(urlParam);
+		if (param && tabs.some((t) => t.value === param)) return param;
+		return resolvedDefault;
 		})
 	);
 
@@ -128,20 +128,20 @@
 			internalValue = newValue;
 		}
 		// Sync to URL via replaceState (no navigation).
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (newValue === resolvedDefault) {
 			url.searchParams.delete(urlParam);
 		} else {
 			url.searchParams.set(urlParam, newValue);
 		}
-		replaceState(`${url.pathname}${url.search}`, {});
+		goto(`${url.pathname}${url.search}`, { shallow: true, replace: true });
 	}
 </script>
 
 <!-- Mobile: single trigger showing the active option; opens a picker modal. -->
 <button
 	type="button"
-	onclick={() => (mobilePickerOpen = true)}
+	onclick={() => mobilePickerOpen = true}
 	aria-haspopup="dialog"
 	class="flex shrink-0 cursor-pointer items-center gap-1.5 px-4 text-sm font-medium text-[var(--color-text)] sm:hidden"
 	style="min-height: var(--nav-height)"

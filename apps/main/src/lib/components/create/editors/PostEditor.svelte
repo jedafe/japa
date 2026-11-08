@@ -10,11 +10,11 @@
 	// Ref: japaconnect-engineering/sections/15-tiptap-rich-text.md
 	import { RichTextEditor } from '@japaconnect/ui';
 	import type { EditorMode, LinkPreviewData } from '@japaconnect/ui';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { searchHits } from '$lib/api/create';
-	import type { MediaAsset } from '$lib/types';
-	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { searchHits } from '#lib/api/create.js';
+	import type { MediaAsset } from '#lib/types/index.js';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
 
 	interface Props {
 		html: string;

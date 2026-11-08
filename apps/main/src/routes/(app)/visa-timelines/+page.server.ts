@@ -1,7 +1,7 @@
 // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { VisaProcessingStats, TrendPoint, GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import type { VisaProcessingStats, TrendPoint, GeoCountry } from '#lib/types/index.js';
 
 /**
  * Visa Timeline aggregate stats at /visa-timelines (Section 83).

@@ -4,11 +4,11 @@
 // draft via POST/PATCH /content.
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiList, apiPost, apiPatch, apiDelete, ApiError } from '$lib/server/api';
-import type { ContentTypeMeta, MeSpace, ContentRecord, ContentTag, Visibility, BlogSeries, AssessmentForm } from '$lib/types';
-import type { Persona } from '$lib/studio/types';
-import { validateFrontmatter, validateBody, isHighStakesCategory } from '$lib/studio/validation';
-import { markdownToHtml } from '$lib/studio/markdown-html';
+import { apiContext, apiGet, apiList, apiPost, apiPatch, apiDelete, ApiError } from '#lib/server/api.js';
+import type { ContentTypeMeta, MeSpace, ContentRecord, ContentTag, Visibility, BlogSeries, AssessmentForm } from '#lib/types/index.js';
+import type { Persona } from '#lib/studio/types.js';
+import { validateFrontmatter, validateBody, isHighStakesCategory } from '#lib/studio/validation.js';
+import { markdownToHtml } from '#lib/studio/markdown-html.js';
 
 const STUDIO_PROMPTS_TAG = 'app:studio-prompts';
 

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { t, i18n } from '$lib/i18n';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { statusLabel } from './gate';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import type { ComposerStatus, ComposerOrganization } from '$lib/types';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import type { ComposerStatus, ComposerOrganization } from '#lib/types/index.js';
 
 	interface Props {
 		status: ComposerStatus;

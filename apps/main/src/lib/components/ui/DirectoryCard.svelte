@@ -12,10 +12,10 @@
 	 */
 	import type { Snippet } from 'svelte';
 	import { BadgeCheck } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import type { IconComponent } from './icons';
 
 	export interface CardMetaItem {

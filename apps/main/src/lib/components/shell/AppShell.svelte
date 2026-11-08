@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type Snippet } from 'svelte';
+	import { type Snippet, onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { Menu as MenuIcon, Sun, Moon } from 'lucide-svelte';
 	import LeftNav from './LeftNav.svelte';
@@ -14,11 +14,11 @@
 	// BadgeCelebration watches /me/badges and pops the congrats modal on a
 	// fresh award — dynamic import keeps it out of the guest bundle.
 	const loadBadgeCelebration = () => import('../badges/BadgeCelebration.svelte');
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
-	import { t } from '$lib/i18n';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { createScrollHide } from '$lib/stores/scrollDirection.svelte';
-	import type { Menu, SessionUser, TrendingTag, SpaceSuggestion, UserSpaceRef } from '$lib/types';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { theme } from '#lib/stores/theme.svelte.js';
+	import { createScrollHide } from '#lib/stores/scrollDirection.svelte.js';
+	import type { Menu, SessionUser, TrendingTag, SpaceSuggestion, UserSpaceRef } from '#lib/types/index.js';
 
 	interface Props {
 		menu: Menu | null;
@@ -53,6 +53,13 @@
 		/** Feature flags from /feature-flags — passed to LeftNav to hide
 		 *  nav items for disabled features. */
 		features?: Record<string, boolean>;
+		/** Server viewport-class flags (UA + Sec-CH-UA-Mobile): true when the
+		 *  device can never show the corresponding rail — the subtree is not
+		 *  mounted at all (no hydration, no widget fetches). A matchMedia flip
+		 *  mounts it if the viewport ever crosses up, so misdetected UAs and
+		 *  resizes self-heal. See (app)/+layout.server.ts. */
+		shellHideNav?: boolean;
+		shellHideSidebar?: boolean;
 	}
 
 	let {
@@ -76,7 +83,9 @@
 		rightSidebarWidgets = [],
 		leftSidebarWidgets = [],
 		composeEnabled = false,
-		features = {}
+		features = {},
+		shellHideNav = false,
+		shellHideSidebar = false
 	}: Props = $props();
 
 	let mobileNavOpen = $state(false);
@@ -131,6 +140,46 @@
 	// registration can never leak into a route that mounts no SetSidebar.
 	routeSidebar.owner = null;
 	routeSidebar.snippet = null;
+
+	// Rail mount gating — mount-on-first-visible. The initial values mirror
+	// SSR exactly (same props → same branch, no hydration mismatch), then
+	// matchMedia listeners flip them on if the viewport ever crosses the
+	// rail's breakpoint. railMounted/leftRailMounted/navMounted are one-way:
+	// once mounted a rail stays mounted so /ai toggles and exception-route
+	// returns don't replay widget fetches + empty-state flashes. railViewport
+	// is the live two-way media state — it drives the route-hide → show
+	// effect below, which is why a UA-compact device docked to a big display
+	// still self-heals even though shellHideSidebar stays true for the
+	// session.
+	let navMounted = $state(untrack(() => !shellHideNav));
+	let railMounted = $state(untrack(() => !shellHideSidebar && !hideRightSidebar));
+	let leftRailMounted = $state(untrack(() => !shellHideSidebar));
+	let railViewport = $state(false);
+	onMount(() => {
+		const mqNav = window.matchMedia('(min-width: 768px)');
+		const mqRail = window.matchMedia('(min-width: 1280px)');
+		railViewport = mqRail.matches;
+		if (mqNav.matches) navMounted = true;
+		if (mqRail.matches) leftRailMounted = true;
+		const onNav = (e: MediaQueryListEvent) => {
+			if (e.matches) navMounted = true;
+		};
+		const onRail = (e: MediaQueryListEvent) => {
+			railViewport = e.matches;
+			if (e.matches) leftRailMounted = true;
+		};
+		mqNav.addEventListener('change', onNav);
+		mqRail.addEventListener('change', onRail);
+		return () => {
+			mqNav.removeEventListener('change', onNav);
+			mqRail.removeEventListener('change', onRail);
+		};
+	});
+	// Route hide → show flips mount the right rail once. Visibility itself is
+	// the `hidden` class — this flag only decides whether the subtree exists.
+	$effect(() => {
+		if (railViewport && !hideRightSidebar) railMounted = true;
+	});
 </script>
 
 <div class="shell" class:hide-sidebar={hideRightSidebar} class:show-left-rail={showLeftRail} style="--current-nav-width: {navWidth}" data-nav-collapsed={effectiveCollapsed}>
@@ -144,7 +193,9 @@
 		}}
 		onmouseleave={() => (navHoverExpand = false)}
 	>
-		<LeftNav {menu} {user} collapsed={effectiveCollapsed} pinned={!collapsed} {userSpaces} {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} {features} onToggle={onToggleCollapse} />
+		{#if navMounted}
+			<LeftNav {menu} {user} collapsed={effectiveCollapsed} pinned={!collapsed} {userSpaces} {logoUrl} {logoDarkUrl} {logoWidth} {logoHeight} {logoDarkWidth} {logoDarkHeight} {features} shellRail onToggle={onToggleCollapse} />
+		{/if}
 	</div>
 
 	{#if collapsed && navHoverPeek && overlayAllowed}
@@ -155,7 +206,7 @@
 		</div>
 	{/if}
 
-	{#if showLeftRail}
+	{#if showLeftRail && leftRailMounted}
 		<LeftRail widgets={leftSidebarWidgets} />
 	{/if}
 
@@ -197,12 +248,17 @@
 		{/if}
 	</main>
 
-	<!-- The rail stays mounted while hidden (hide-sidebar collapses the grid
-	     column) — unmounting on /ai rail toggles or exception routes would
-	     destroy every widget's loaded state and replay fetch + empty-state
-	     flashes on the way back. -->
+	<!-- Once mounted the rail stays mounted while hidden (hide-sidebar
+	     collapses the grid column) — unmounting on /ai rail toggles or
+	     exception routes would destroy every widget's loaded state and
+	     replay fetch + empty-state flashes on the way back. Before first
+	     visibility it is not mounted at all (railMounted gate): routes and
+	     viewports that can never show it never pay its hydration/fetch
+	     cost. -->
 	<div class="shell-sidebar" class:hidden={hideRightSidebar} data-tour="sidebar" aria-hidden={hideRightSidebar || undefined}>
-		<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {rightSidebarWidgets} {footerMenu} {features} />
+		{#if railMounted}
+			<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {rightSidebarWidgets} {footerMenu} {features} />
+		{/if}
 	</div>
 </div>
 

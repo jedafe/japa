@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /content/videos — admin DataTable for video_sources.
 	// Ref: japaconnect-engineering/sections/106-video-content-and-import.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { videoSourcesAdminApi } from '$lib/api';
-	import { escapeHtml } from '$lib/utils/html';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { videoSourcesAdminApi } from '#lib/api.js';
+	import { escapeHtml } from '#lib/utils/html.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { RotateCcw, Trash2 } from 'lucide-svelte';
 
 	type VideoSource = {

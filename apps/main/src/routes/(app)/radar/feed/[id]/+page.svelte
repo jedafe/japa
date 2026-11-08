@@ -1,13 +1,13 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering — Japa Intelligence System spec §7
 	// Single radar item detail. Renders inside the unified app shell (ADR-058).
 	// All data comes from the SSR load() — no client fetch, no hardcoded data
 	// (Rule 16). The "signal strip" is the signature element: a three-segment
 	// readout of confidence / trust tier / freshness that encodes the
 	// provenance quality the intelligence system exists to surface.
-	import { t } from '$lib/i18n';
-	import { i18n } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
+	import { i18n } from '#lib/i18n/index.js';
 	import {
 		ArrowLeft,
 		CalendarClock,
@@ -22,10 +22,10 @@
 		Bookmark,
 		BookmarkCheck
 	} from 'lucide-svelte';
-	import type { RadarItem } from '$lib/types';
-	import { api } from '$lib/api/client';
+	import type { RadarItem } from '#lib/types/index.js';
+	import { api } from '#lib/api/client.js';
 	import { invalidate } from '$app/navigation';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 
 	let { data } = $props();
 	const item = $derived(data.item as RadarItem);

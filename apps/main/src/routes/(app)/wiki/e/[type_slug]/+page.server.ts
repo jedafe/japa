@@ -1,7 +1,7 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md (Entity Directory amendment)
 import { error } from '@sveltejs/kit';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import { hasPerm } from '$lib/server/auth';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import { hasPerm } from '#lib/server/auth.js';
 import type { PageServerLoad } from './$types';
 
 export interface EntityDirectoryItem {
@@ -34,7 +34,7 @@ export const load: PageServerLoad = async (event) => {
 	try {
 		res = (await apiGet<EntitiesResponse>(ctx, `/wiki/entity-kinds/${kind}/entities?${params}`)) ?? res;
 	} catch (err) {
-		if (err instanceof ApiError && err.status === 404) throw error(404);
+		if (err instanceof ApiError && err.status === 404) throw error(404, { code: 'not_found', message: 'Not found' });
 	}
 
 	const creatableKinds = ['program', 'course', 'embassy', 'bank', 'visa_route', 'scholarship'];

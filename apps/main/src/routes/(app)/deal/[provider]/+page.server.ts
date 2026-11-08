@@ -1,8 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import { hasPerm } from '$lib/server/auth';
-import type { DealPartner } from '$lib/types';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import { hasPerm } from '#lib/server/auth.js';
+import type { DealPartner } from '#lib/types/index.js';
 
 /**
  * Partner landing page at /deal/{provider} — public, SSR, indexable. Shows

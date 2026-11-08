@@ -5,11 +5,11 @@
 	// campaign, IntersectionObserver fires the impression, clicks go through
 	// /ads/events. Hidden entirely when nothing is served — native slots must
 	// never leave a "Sponsored" shell with no ad inside.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
 	import { page } from '$app/state';
-	import { trackedAdUrl } from '$lib/ads/trackedUrl';
-	import { fetchAdCampaigns, type AdCampaign } from '$lib/ads/serve';
+	import { trackedAdUrl } from '#lib/ads/trackedUrl.js';
+	import { fetchAdCampaigns, type AdCampaign } from '#lib/ads/serve.js';
 
 	interface Props {
 		/** Ad slot name (native_feed, native_discover, native_space_feed, native_forum). */

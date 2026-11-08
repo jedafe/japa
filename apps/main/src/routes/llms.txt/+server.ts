@@ -5,37 +5,44 @@
 // unreachable. Returns 404 on non-indexable deployments, matching the
 // backend handler.
 import type { RequestHandler } from './$types';
-import { env } from '$env/dynamic/private';
-import { API_BASE, JC_SURFACE } from '$lib/server/api';
+import { PUBLIC_JC_ENV, JC_ENV } from '$app/env/private';
+import { API_BASE, JC_SURFACE } from '#lib/server/api.js';
 
-const NON_PROD_ENVS = new Set(['development', 'dev', 'staging', 'stage', 'test', 'preview', 'local']);
-const blocksIndexing = NON_PROD_ENVS.has((env.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase());
+const NON_PROD_ENVS = new Set([
+	'development',
+	'dev',
+	'staging',
+	'stage',
+	'test',
+	'preview',
+	'local'
+]);
 
-const fallback = (origin: string) =>
-	[
-		'# JapaConnect',
-		'',
-		'> Joining Africa\'s People Abroad.',
-		'',
-		'## Top Links',
-		'',
-		`- [Blog](${origin}/blog)`,
-		`- [Forum](${origin}/forum)`,
-		`- [Spaces](${origin}/spaces)`,
-		`- [Tags](${origin}/tags)`,
-		`- [Deals](${origin}/products/deals)`,
-		`- [Tools](${origin}/tools)`,
-		`- [Roadmap](${origin}/roadmap)`,
-		`- [Academy](${origin}/academy)`,
-		`- [Docs](${origin}/docs)`,
-		'',
-		'## Optional',
-		'',
-		`- [Extended content index](${origin}/llms-full.txt)`,
-		`- [RSS feed](${origin}/feed.xml)`,
-		`- [Sitemap](${origin}/sitemap.xml)`,
-		''
-	].join('\n');
+const blocksIndexing = NON_PROD_ENVS.has((PUBLIC_JC_ENV ?? JC_ENV ?? '').toLowerCase());
+const fallback = (origin: string) => [
+	'# JapaConnect',
+	'',
+	'> Joining Africa\'s People Abroad.',
+	'',
+	'## Top Links',
+	'',
+	`- [Blog](${origin}/blog)`,
+	`- [Forum](${origin}/forum)`,
+	`- [Spaces](${origin}/spaces)`,
+	`- [Tags](${origin}/tags)`,
+	`- [Deals](${origin}/products/deals)`,
+	`- [Tools](${origin}/tools)`,
+	`- [Roadmap](${origin}/roadmap)`,
+	`- [Academy](${origin}/academy)`,
+	`- [Docs](${origin}/docs)`,
+	'',
+	'## Optional',
+	'',
+	`- [Extended content index](${origin}/llms-full.txt)`,
+	`- [RSS feed](${origin}/feed.xml)`,
+	`- [Sitemap](${origin}/sitemap.xml)`,
+	''
+].join('\n');
 
 export const GET: RequestHandler = async ({ request, url }) => {
 	if (blocksIndexing) {

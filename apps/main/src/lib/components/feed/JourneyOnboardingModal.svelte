@@ -3,19 +3,19 @@
 	// Guest journey onboarding modal. Appears automatically after 1 minute
 	// when a guest has not set their destination, and can be opened manually
 	// via the JourneyContextBar.
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
-	import { getFeedContextCached, getGeoCountriesCached, getJourneyOptionsCached, setFeedContext } from '$lib/api/journey';
-	import { journeyModal, JOURNEY_MODAL_DELAY_MS } from '$lib/stores/journey.svelte';
-	import type { GeoCountry, VisitorContextSummary } from '$lib/types';
-	import type { JourneyOptions, JourneyOption } from '$lib/api/journey';
+	import { t } from '#lib/i18n/index.js';
+	import { destinationMarkets, originMarkets, pinMarketsFirst } from '#lib/utils/geoMarkets.js';
+	import { getFeedContextCached, getGeoCountriesCached, getJourneyOptionsCached, setFeedContext } from '#lib/api/journey.js';
+	import { journeyModal, JOURNEY_MODAL_DELAY_MS } from '#lib/stores/journey.svelte.js';
+	import type { GeoCountry, VisitorContextSummary } from '#lib/types/index.js';
+	import type { JourneyOptions, JourneyOption } from '#lib/api/journey.js';
 	import Autocomplete from '../create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '../create/Autocomplete.svelte';
-	import { Modal } from '$lib/components/ui';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
+	import { Modal } from '#lib/components/ui/index.js';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
 	import { Compass, Flag, Heart, CircleCheck, ShieldCheck, Plane, GraduationCap, Briefcase, MapPin, Globe, ChevronRight, X } from 'lucide-svelte';
 
 	let loaded = $state(false);
@@ -41,7 +41,7 @@
 		{ icon: Heart, label: t('journey.step_preferences', 'Preferences') },
 		{ icon: CircleCheck, label: t('journey.step_done', "You're All Set") }
 	]);
-	const canContinue = $derived(step !== 1 || (origin.trim() !== '' && destination.trim() !== ''));
+	const canContinue = $derived(step !== 1 || origin.trim() !== '' && destination.trim() !== '');
 
 	function next() {
 		if (!canContinue) {
@@ -192,7 +192,7 @@
 				destination_country: destination,
 				japa_stage: japaStage,
 				visa_route: visaRoute,
-				purpose: purpose,
+				purpose,
 				travel_date: travelDate
 			});
 			if (res.error) {
@@ -225,9 +225,21 @@
 >
 	{#snippet children(close)}
 		<!-- Header: brand + stepper + close -->
-		<div class="flex items-center gap-4 border-b border-[var(--color-border)] px-5 py-4 sm:px-7">
-			<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name', '{site}')} class="h-6 w-auto shrink-0" />
-			<nav aria-label={t('journey.steps_label', 'Journey setup steps')} class="mx-auto flex items-center">
+
+		<div
+			class="flex items-center gap-4 border-b border-[var(--color-border)] px-5 py-4 sm:px-7"
+		>
+			<ThemeLogo
+				logoUrl={logoUrl}
+				logoDarkUrl={logoDarkUrl}
+				alt={t('app.name', '{site}')}
+				class="h-6 w-auto shrink-0"
+			/>
+
+			<nav
+				aria-label={t('journey.steps_label', 'Journey setup steps')}
+				class="mx-auto flex items-center"
+			>
 				{#each steps as s, i (i)}
 					{@const n = i + 1}
 					<button
@@ -265,11 +277,40 @@
 
 		<div class="grid grid-cols-1 sm:grid-cols-[230px_1fr]">
 			<!-- Decorative panel — CSS illustration: flight route + floating chips. -->
-			<aside aria-hidden="true" class="journey-scene relative hidden overflow-hidden sm:block">
-				<svg class="journey-arc" viewBox="0 0 200 220" fill="none">
-					<path d="M30 200 C 30 120, 90 90, 160 40" stroke="var(--color-primary)" stroke-width="1.5" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.45" />
-					<circle cx="30" cy="200" r="4" fill="var(--color-primary)" opacity="0.5" />
-					<circle cx="160" cy="40" r="4" fill="var(--color-primary)" opacity="0.5" />
+
+			<aside
+				aria-hidden="true"
+				class="journey-scene relative hidden overflow-hidden sm:block"
+			>
+				<svg
+					class="journey-arc"
+					viewBox="0 0 200 220"
+					fill="none"
+				>
+					<path
+						d="M30 200 C 30 120, 90 90, 160 40"
+						stroke="var(--color-primary)"
+						stroke-width="1.5"
+						stroke-dasharray="5 6"
+						stroke-linecap="round"
+						opacity="0.45"
+					></path>
+
+					<circle
+						cx="30"
+						cy="200"
+						r="4"
+						fill="var(--color-primary)"
+						opacity="0.5"
+					></circle>
+
+					<circle
+						cx="160"
+						cy="40"
+						r="4"
+						fill="var(--color-primary)"
+						opacity="0.5"
+					></circle>
 				</svg>
 				<div class="journey-globe">
 					<Globe size={56} strokeWidth={1.2} class="text-[var(--color-primary-text)]" />
@@ -393,15 +434,51 @@
 					</div>
 				{:else}
 					<h2 class="text-xl font-bold text-[var(--color-text)]">{t('journey.step4_title', "You're all set!")}</h2>
-					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('journey.step4_subtitle', 'Review your journey details — you can change them anytime in your profile.')}</p>
 
-					<dl class="mt-6 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
-						<div class="summary-row"><dt>{t('journey.banner.origin_country', 'Where are you now?')}</dt><dd>{countryLabel(origin)}</dd></div>
-						<div class="summary-row"><dt>{t('journey.banner.destination_country', 'Where do you want to go?')}</dt><dd>{countryLabel(destination)}</dd></div>
-						{#if purpose}<div class="summary-row"><dt>{t('journey.banner.purpose', 'Why are you traveling?')}</dt><dd>{optionLabel(options?.purposes ?? [], purpose)}</dd></div>{/if}
-						{#if visaRoute}<div class="summary-row"><dt>{t('journey.banner.visa_route', 'Which visa route?')}</dt><dd>{optionLabel(options?.visa_routes ?? [], visaRoute)}</dd></div>{/if}
-						{#if japaStage}<div class="summary-row"><dt>{t('journey.banner.stage', 'Where are you in the journey?')}</dt><dd>{optionLabel(options?.stages ?? [], japaStage)}</dd></div>{/if}
-						{#if travelDate}<div class="summary-row"><dt>{t('journey.banner.travel_date', 'Planned travel date (optional)')}</dt><dd>{travelDate}</dd></div>{/if}
+					<p
+						class="mt-1 text-sm text-[var(--color-text-subtle)]"
+					>{t('journey.step4_subtitle', 'Review your journey details — you can change them anytime in your profile.')}</p>
+
+					<dl
+						class="mt-6 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2"
+					>
+						<div class="summary-row">
+							<dt>{t('journey.banner.origin_country', 'Where are you now?')}</dt>
+							<dd>{countryLabel(origin)}</dd>
+						</div>
+
+						<div class="summary-row">
+							<dt>{t('journey.banner.destination_country', 'Where do you want to go?')}</dt>
+							<dd>{countryLabel(destination)}</dd>
+						</div>
+
+						{#if purpose}
+							<div class="summary-row">
+								<dt>{t('journey.banner.purpose', 'Why are you traveling?')}</dt>
+								<dd>{optionLabel(options?.purposes ?? [], purpose)}</dd>
+							</div>
+						{/if}
+
+						{#if visaRoute}
+							<div class="summary-row">
+								<dt>{t('journey.banner.visa_route', 'Which visa route?')}</dt>
+								<dd>{optionLabel(options?.visa_routes ?? [], visaRoute)}</dd>
+							</div>
+						{/if}
+
+						{#if japaStage}
+							<div class="summary-row">
+								<dt>{t('journey.banner.stage', 'Where are you in the journey?')}</dt>
+								<dd>{optionLabel(options?.stages ?? [], japaStage)}</dd>
+							</div>
+						{/if}
+
+						{#if travelDate}
+							<div class="summary-row">
+								<dt>{t('journey.banner.travel_date', 'Planned travel date (optional)')}</dt>
+								<dd>{travelDate}</dd>
+							</div>
+						{/if}
 					</dl>
 				{/if}
 
@@ -432,8 +509,10 @@
 						disabled={saving}
 					>
 						{step === 4
-							? (saving ? t('journey.banner.saving', 'Saving...') : t('journey.banner.submit', 'Show me relevant content'))
-							: t('common.continue', 'Continue')}
+							? saving
+								? t('journey.banner.saving', 'Saving...')
+								: t('journey.banner.submit', 'Show me relevant content')
+							: t('common.continue', 'Continue')} 
 						<ChevronRight class="rtl:-scale-x-100" size={15} />
 					</button>
 				</div>

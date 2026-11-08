@@ -3,9 +3,9 @@
 	// don't use the TipTap editor. Typing "{{" opens a suggestion list of
 	// active template literals (GET /literals?q=); picking one inserts the
 	// raw {{Token}} source — the server resolves it at the response boundary.
-	import { api } from '$lib/api/client';
-	import { mapLiteralHits, searchPath } from '$lib/tiptap/search';
-	import type { SearchHit } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { mapLiteralHits, searchPath } from '#lib/tiptap/search.js';
+	import type { SearchHit } from '#lib/types/index.js';
 
 	let {
 		value = $bindable(''),

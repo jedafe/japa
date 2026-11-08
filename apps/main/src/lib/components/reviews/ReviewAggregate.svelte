@@ -3,9 +3,9 @@
 	// Renders the rolled-up rating for an entity: average star fill, review
 	// count, and a small label. The aggregate is fetched by the parent and
 	// passed in (or null when there are no reviews yet).
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { Star } from 'lucide-svelte';
-	import type { ReviewAggregate } from '$lib/types';
+	import type { ReviewAggregate } from '#lib/types/index.js';
 
 	interface Props {
 		aggregate: ReviewAggregate | null;

@@ -1,16 +1,16 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import MetricCard from '$lib/components/MetricCard.svelte';
-	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import { api } from '$lib/api';
-	import type { DbHealth, DataTableColumn } from '$lib/api/types';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { escapeHtml } from '$lib/utils';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import Tabs from '$lib/components/ui/Tabs.svelte';
-	import TabsContent from '$lib/components/ui/TabsContent.svelte';
-	import Tooltip from '$lib/components/ui/Tooltip.svelte';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import MetricCard from '#lib/components/MetricCard.svelte';
+	import StatusBadge from '#lib/components/StatusBadge.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import { api } from '#lib/api.js';
+	import type { DbHealth, DataTableColumn } from '#lib/api/types.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { escapeHtml } from '#lib/utils.js';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
+	import Tabs from '#lib/components/ui/Tabs.svelte';
+	import TabsContent from '#lib/components/ui/TabsContent.svelte';
+	import Tooltip from '#lib/components/ui/Tooltip.svelte';
 	import {
 		Database,
 		RefreshCw,

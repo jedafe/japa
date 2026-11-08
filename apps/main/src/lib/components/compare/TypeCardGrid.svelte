@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import type { ComparisonType } from '$lib/types/jce';
+	import { t } from '#lib/i18n/index.js';
+	import type { ComparisonType } from '#lib/types/jce.js';
 	import type { Component } from 'svelte';
 
 	interface Props {

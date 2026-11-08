@@ -1,8 +1,8 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t, i18n } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
 	import { FileText, ArrowRight } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState } from '#lib/components/ui/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

@@ -1,5 +1,5 @@
-import type { ComposerStatus, SaveErrorClass } from '$lib/types';
-import type { CreateContentInput } from '$lib/api/create';
+import type { ComposerStatus, SaveErrorClass } from '#lib/types/index.js';
+import type { CreateContentInput } from '#lib/api/create.js';
 
 type Res<T = unknown> = { data: T | null; error: { message: string; status: number } | null; status: number };
 

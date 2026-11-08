@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { api } from '$lib/api';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import DataTable from '$lib/components/DataTable.svelte';
-	import SearchInput from '$lib/components/ui/SearchInput.svelte';
-	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
+	import { api } from '#lib/api.js';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import DataTable from '#lib/components/DataTable.svelte';
+	import SearchInput from '#lib/components/ui/SearchInput.svelte';
+	import ConfirmModal from '#lib/components/ui/ConfirmModal.svelte';
 	import { Cpu, Plus, Pencil, Trash2, Zap, Check, X } from 'lucide-svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import { t } from '$lib/stores/i18n.svelte';
-	import type { AiProvider } from '$lib/api/types';
-	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
-	import { hasAnyPermission } from '$lib/stores/auth.svelte';
-	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import Modal from '#lib/components/ui/Modal.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import type { AiProvider } from '#lib/api/types.js';
+	import type { DataTableColumn, DataTableRowAction } from '#lib/api/types.js';
+	import { hasAnyPermission } from '#lib/stores/auth.svelte.js';
+	import Autocomplete from '#lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '#lib/components/ui/Autocomplete.svelte';
 
 	let {} = $props();
 

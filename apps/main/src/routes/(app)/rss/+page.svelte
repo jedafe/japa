@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { t, siteName } from '$lib/i18n';
+	import { t, siteName } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Rss, Copy, Check, ExternalLink } from 'lucide-svelte';
 	import type { PageData } from './$types';

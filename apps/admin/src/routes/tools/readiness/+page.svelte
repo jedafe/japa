@@ -3,13 +3,13 @@
 	// Readiness Assessment (Section 71, ADR-071).
 	// Shows score distribution stats, result list with server-side pagination,
 	// and a form config editor for scoring_config (weights + thresholds).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 	import { Eye, Settings, BarChart3 } from 'lucide-svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
-	import { Modal } from '$lib/components/ui/modal';
-	import { readinessAdminApi } from '$lib/api';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { readinessAdminApi } from '#lib/api.js';
 	import { JsonValueEditor } from '@japaconnect/ui';
 
 	type ReadinessItem = {

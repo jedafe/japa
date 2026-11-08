@@ -1,9 +1,9 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
-import { sanitizePostLoginTarget } from '$lib/server/auth';
-import type { OnboardingStatus, TagSuggestion, OnboardingRecommendation, GeoContext, GeoCountry, Achievement, OnboardingOptions } from '$lib/types';
-import type { Source } from '$lib/types/sources';
+import { apiContext, apiGet, apiList } from '#lib/server/api.js';
+import { sanitizePostLoginTarget } from '#lib/server/auth.js';
+import type { OnboardingStatus, TagSuggestion, OnboardingRecommendation, GeoContext, GeoCountry, Achievement, OnboardingOptions } from '#lib/types/index.js';
+import type { Source } from '#lib/types/sources.js';
 
 /**
  * Onboarding wizard (Section 09). Seven-step post-login flow that collects
@@ -31,7 +31,7 @@ export const load: PageServerLoad = async (event) => {
 		// If the endpoint fails, let the user through to the wizard.
 	}
 	if (status?.completed) {
-		throw redirect(302, postOnboardingRedirect);
+		throw redirect(302, postOnboardingRedirect, { external: true });
 	}
 
 	// Preload tags for step 3 (interests) — Rule 16: from API, not hardcoded.

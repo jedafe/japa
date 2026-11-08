@@ -1,16 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// /products/new — product create form (§80). Gated server-side by
 	// products.create; submits POST /admin/products with providers, deals and
 	// the selected type's custom field values in one body.
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { ArrowLeft, ImagePlus, Loader2, Plus, Trash2, X } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { MultiAutocomplete } from '@japaconnect/ui';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -26,7 +27,8 @@
 	};
 	type SchemaGroup = { id: string; slug: string; name: string; fields: FieldDef[] };
 
-	let typeSlug = $state(data.types[0]?.slug ?? '');
+	// Seed once from the loaded type list — the picker's selection is mutable.
+	let typeSlug = $state(untrack(() => data.types[0]?.slug ?? ''));
 	let name = $state('');
 	let slug = $state('');
 	let slugTouched = $state(false);

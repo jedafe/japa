@@ -1,19 +1,29 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { onMount } from 'svelte';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import TableOfContents from '$lib/components/shell/TableOfContents.svelte';
-	import DocContent from '$lib/components/docs/DocContent.svelte';
-	import DocEditForm from '$lib/components/docs/DocEditForm.svelte';
-	import ApiRefTabs from '$lib/components/docs/ApiRefTabs.svelte';
-	import MethodBadge from '$lib/components/docs/MethodBadge.svelte';
-	import { t } from '$lib/i18n';
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { parseManagedCategories } from '$lib/docs/catalog';
-	import { persistNavCollapse } from '$lib/nav-collapse';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import TableOfContents from '#lib/components/shell/TableOfContents.svelte';
+	import DocContent from '#lib/components/docs/DocContent.svelte';
+	import DocEditForm from '#lib/components/docs/DocEditForm.svelte';
+	import ApiRefTabs from '#lib/components/docs/ApiRefTabs.svelte';
+	import MethodBadge from '#lib/components/docs/MethodBadge.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { parseManagedCategories } from '#lib/docs/catalog.js';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
 	import { page } from '$app/state';
-	import { CalendarClock, ChevronRight, Clock, Eye, History, ListTree, Pencil } from 'lucide-svelte';
-	import { env } from '$env/dynamic/public';
+
+	import {
+		CalendarClock,
+		ChevronRight,
+		Clock,
+		Eye,
+		History,
+		ListTree,
+		Pencil
+	} from 'lucide-svelte';
+
+	import { PUBLIC_JC_API_URL, PUBLIC_MAIN_ORIGIN } from '$app/env/public';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -29,7 +39,7 @@
 		const status = page.url.searchParams.get('saved') ?? page.url.searchParams.get('created');
 		if (status) {
 			notice = status;
-			const url = new URL(page.url);
+			const url = new URL(page.url.href);
 			url.searchParams.delete('saved');
 			url.searchParams.delete('created');
 			history.replaceState(history.state, '', url);
@@ -45,8 +55,8 @@
 		[
 			...new Map(
 				[
-					...managedCatalog.map((c) => c.name),
-					...data.existingPages.map((p) => p.category?.trim())
+			...managedCatalog.map((c) => c.name),
+			...data.existingPages.map((p) => p.category?.trim())
 				]
 					.filter((c): c is string => !!c)
 					.map((c) => [c.toLowerCase(), c])
@@ -57,8 +67,8 @@
 		[
 			...new Map(
 				[
-					...managedCatalog.flatMap((c) => c.subcategories),
-					...data.existingPages.map((p) => p.subcategory?.trim())
+			...managedCatalog.flatMap((c) => c.subcategories),
+			...data.existingPages.map((p) => p.subcategory?.trim())
 				]
 					.filter((c): c is string => !!c)
 					.map((c) => [c.toLowerCase(), c])
@@ -95,8 +105,8 @@
 	// OpenAPI paths are relative to the spec's server URL (…/api/v1) — prepend
 	// the configured API base so the sample is copy-paste runnable. Join with
 	// PUBLIC_MAIN_ORIGIN when the API base is a relative path.
-	const apiBaseUrl = env.PUBLIC_JC_API_URL ?? '/api/v1';
-	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? '').replace(/\/$/, '');
+	const apiBaseUrl = PUBLIC_JC_API_URL ?? '/api/v1';
+	const mainOrigin = (PUBLIC_MAIN_ORIGIN ?? '').replace(/\/$/, '');
 	const curlBaseUrl = apiBaseUrl.startsWith('http')
 		? apiBaseUrl.replace(/\/$/, '')
 		: mainOrigin
@@ -104,9 +114,9 @@
 			: apiBaseUrl;
 
 	// Derive code-pane samples from the matched operation (best-effort).
-	let method = $derived(
-		data.operation ? (data.operation.method as 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE') : 'GET'
-	);
+	let method = $derived(data.operation
+		? data.operation.method as 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
+		: 'GET');
 	let path = $derived(data.operation?.path ?? '');
 	// DOC-005: public API key auth uses the X-API-Key header.
 	let requestSample = $derived(
@@ -122,7 +132,7 @@
 	let exampleSample = $derived(requestSample);
 
 	// Doc-page meta parity with [audience]/[slug] — updated date + read time.
-	const localeTag = $derived((page.data?.locale as string | undefined) ?? 'en');
+	const localeTag = $derived(page.data?.locale as string | undefined ?? 'en');
 	const readMinutes = $derived.by(() => {
 		const words = data.html.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
 		return Math.max(1, Math.round(words / 200));
@@ -145,7 +155,7 @@
 <AppShell
 	nav={data.nav}
 	accessibleAudiences={data.accessibleAudiences}
-	logoUrl={(data.siteSettings?.["appearance.logo_url"] as string | undefined) ?? ""}
+	logoUrl={data.siteSettings?.["appearance.logo_url"] as string | undefined ?? ""}
 	footerMenu={data.footerMenu}
 	rightSidebarWidgets={data.rightSidebarWidgets}
 	leftSidebarWidgets={data.leftSidebarWidgets}
@@ -169,9 +179,9 @@
 				<ApiRefTabs
 					method={method}
 					path={path}
-					{requestSample}
-					{responseSample}
-					{exampleSample}
+					requestSample={requestSample}
+					responseSample={responseSample}
+					exampleSample={exampleSample}
 				/>
 			{:else}
 				<TableOfContents headings={data.toc} />
@@ -241,8 +251,8 @@
 				categories={existingCategories}
 				subcategories={existingSubcategories}
 				managed={managedCatalog}
-				{form}
-				{viewPath}
+				form={form}
+				viewPath={viewPath}
 			/>
 		{:else}
 			{#if data.toc.length > 0}

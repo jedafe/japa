@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /users/groups — migrated to the EntityPage scaffold (admin AGENTS.md
 	// mandate for entity list pages).
 	//
@@ -10,11 +10,11 @@
 	// removed because the backend materializes each group's permission set as
 	// a hidden "<name> Role" user_roles row, so every group appeared twice —
 	// once here and once on the roles page editing the same grants.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { userManagementApi, api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { userManagementApi, api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { Shield, Trash2, Users2 } from 'lucide-svelte';
 
 	type GroupRole = { id: string; name: string; slug?: string };

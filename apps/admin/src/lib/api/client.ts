@@ -1,4 +1,4 @@
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
 import { csrfHeaders, refreshCsrfToken, isUnsafeMethod } from './csrf';
 import { getAccessToken, setAccessToken, clearAccessToken } from './token';
@@ -13,13 +13,8 @@ export function setGlobalErrorHandler(handler: GlobalErrorHandler | null): void 
 	globalErrorHandler = handler;
 }
 
-export interface ApiOk<T> {
-	data: T;
-}
-
-export interface ApiErr {
-	error: { code: string; message: string; status: number };
-}
+export interface ApiOk<T> { data: T }
+export interface ApiErr { error: { code: string; message: string; status: number } }
 
 export interface ApiResult<T> {
 	data: T | null;
@@ -111,13 +106,13 @@ async function dispatch<T>(
 	silent: boolean = false
 ): Promise<ApiResult<T>> {
 	const baseHeaders = options.headers as Record<string, string> | undefined;
-	const headers = withCsrf ? await csrfHeaders(options.method, baseHeaders) : baseHeaders;
+
+	const headers = withCsrf
+		? await csrfHeaders(options.method, baseHeaders)
+		: baseHeaders;
 
 	const accessToken = getAccessToken();
-	const authHeader: Record<string, string> = accessToken
-		? { Authorization: `Bearer ${accessToken}` }
-		: {};
-
+	const authHeader: Record<string, string> = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 	const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
 	const jsonHeader: Record<string, string> = isFormData ? {} : { 'Content-Type': 'application/json' };
 
@@ -129,8 +124,8 @@ async function dispatch<T>(
 			...authHeader,
 			// Identify this surface for scoped feature-flag resolution.
 			'X-JC-Surface': JC_SURFACE,
-			...(headers ?? {}),
-		},
+			...headers ?? {}
+		}
 	});
 
 	if (res.status === 401 && !skipRefresh) {
@@ -151,7 +146,12 @@ async function dispatch<T>(
 				},
 			});
 			if (responseKind === 'blob' && retryRes.ok) {
-				return { data: (await retryRes.blob()) as T, filename: filenameFromDisposition(retryRes.headers.get('content-disposition')), error: null, status: retryRes.status };
+				return {
+					data: await retryRes.blob() as T,
+					filename: filenameFromDisposition(retryRes.headers.get('content-disposition')),
+					error: null,
+					status: retryRes.status
+				};
 			}
 			if (retryRes.ok) {
 				const body = await retryRes.json();
@@ -174,7 +174,13 @@ async function dispatch<T>(
 			}
 			return { data: null, error: { code: 'download_failed', message: msg, status: res.status }, status: res.status };
 		}
-		return { data: (await res.blob()) as T, filename: filenameFromDisposition(res.headers.get('content-disposition')), error: null, status: res.status };
+
+		return {
+			data: await res.blob() as T,
+			filename: filenameFromDisposition(res.headers.get('content-disposition')),
+			error: null,
+			status: res.status
+		};
 	}
 
 	if (res.status === 204 || res.status === 205 || res.headers.get('content-length') === '0') {
@@ -259,7 +265,7 @@ export async function apiFetch<T>(
 	if (cleanOptions.headers) {
 		// Strip client-side control headers — they steer local behavior and
 		// must not reach the wire (precedent: X-Skip-Refresh).
-		const h = { ...(cleanOptions.headers as Record<string, string>) };
+		const h = { ...cleanOptions.headers as Record<string, string> };
 		delete h['X-Skip-Refresh'];
 		delete h['x-silent-error'];
 		delete h['X-Silent-Error'];

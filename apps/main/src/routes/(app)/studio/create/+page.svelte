@@ -1,10 +1,10 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import CreateShell from '$lib/components/create/CreateShell.svelte';
-	import type { EditorMode } from '$lib/components/create/editors/PostEditor.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import CreateShell from '#lib/components/create/CreateShell.svelte';
+	import type { EditorMode } from '#lib/components/create/editors/PostEditor.svelte';
 	import { PenSquare } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
-	import { t } from '$lib/i18n';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import { t } from '#lib/i18n/index.js';
 
 	let { data } = $props();
 

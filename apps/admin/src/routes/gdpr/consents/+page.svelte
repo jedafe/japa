@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Card, CardContent } from "$lib/components/ui/card";
-	import { DataTable } from "$lib/components/ui/data-table";
-	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
-	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { Modal } from "$lib/components/ui/modal";
-	import { Button } from "$lib/components/ui/button";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Card, CardContent } from "#lib/components/ui/card/index.js";
+	import { DataTable } from "#lib/components/ui/data-table/index.js";
+	import type { ActionItem, FilterDef } from "#lib/components/ui/data-table/index.js";
+	import { TableSkeleton } from "#lib/components/ui/skeleton/index.js";
+	import { Modal } from "#lib/components/ui/modal/index.js";
+	import { Button } from "#lib/components/ui/button/index.js";
 	import { RefreshCw, Eye, Trash2 } from "lucide-svelte";
-	import { gdprAdminApiExtendedV2, api } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { gdprAdminApiExtendedV2, api } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { page } from "$app/state";
 
 	type Consent = {

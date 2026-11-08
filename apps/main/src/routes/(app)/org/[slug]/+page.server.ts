@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
-import type { PublicOrganization, OrgMember, ProfilePost, OrgMedia, ComparisonListItem, JobListing, ComposerOrganization } from '$lib/types';
+import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '#lib/server/api.js';
+import type { PublicOrganization, OrgMember, ProfilePost, OrgMedia, ComparisonListItem, JobListing, ComposerOrganization } from '#lib/types/index.js';
 
 // Job editors = owner/admin/editor members — the same roles the
 // GET/PATCH /org/{id}/jobs endpoints enforce (JOBS-012).

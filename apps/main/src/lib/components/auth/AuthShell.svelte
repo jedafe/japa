@@ -6,10 +6,10 @@
 	// Carousel slides configurable via appearance.auth_brand_slides.
 	import type { Snippet } from 'svelte';
 	import { Compass, ArrowLeft } from 'lucide-svelte';
-	import { t } from '$lib/i18n/store.svelte';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
-	import type { BrandSlide } from '$lib/auth/brandSlides';
-	import authSideImage from '$lib/assets/branding/auth-side.webp';
+	import { t } from '#lib/i18n/store.svelte.js';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
+	import type { BrandSlide } from '#lib/auth/brandSlides.js';
+	import authSideImage from '#lib/assets/branding/auth-side.webp';
 
 	let {
 		children,

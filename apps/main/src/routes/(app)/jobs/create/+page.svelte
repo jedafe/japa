@@ -1,17 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { Briefcase, Lock, Loader2, Save, ArrowLeft } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import { EmptyState } from '$lib/components/ui';
-	import SelectField from '$lib/components/ui/SelectField.svelte';
-	import CustomFieldGroupCmp from '$lib/components/create/panel/CustomFieldGroup.svelte';
-	import JobGeoFields from '$lib/components/jobs/JobGeoFields.svelte';
-	import JobLogoUpload from '$lib/components/jobs/JobLogoUpload.svelte';
-	import type { JobDetail } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { EmptyState } from '#lib/components/ui/index.js';
+	import SelectField from '#lib/components/ui/SelectField.svelte';
+	import CustomFieldGroupCmp from '#lib/components/create/panel/CustomFieldGroup.svelte';
+	import JobGeoFields from '#lib/components/jobs/JobGeoFields.svelte';
+	import JobLogoUpload from '#lib/components/jobs/JobLogoUpload.svelte';
+	import type { JobDetail } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

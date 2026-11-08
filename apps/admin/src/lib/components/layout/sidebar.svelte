@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { page } from "$app/state";
-	import Tooltip from "$lib/components/ui/tooltip/tooltip.svelte";
-	import { hasPermission, getPermissionState, getPermissions } from "$lib/stores/permissions.svelte";
-	import { user } from "$lib/stores/auth.svelte";
+	import Tooltip from "#lib/components/ui/tooltip/tooltip.svelte";
+	import { hasPermission, getPermissionState, getPermissions } from "#lib/stores/permissions.svelte.js";
+	import { user } from "#lib/stores/auth.svelte.js";
 	import {
 		LayoutDashboard, Users, Shield, BarChart3, Settings,
 		FileText, MessageSquare, Ticket, Wallet, Building,
@@ -28,9 +28,9 @@
 		Map as MapIcon
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
-	import { sidebarCollapsed } from "$lib/stores/sidebar.svelte";
-	import { faviconForTheme } from "$lib/stores/site.svelte";
-	import { theme } from "$lib/stores/theme.svelte";
+	import { sidebarCollapsed } from "#lib/stores/sidebar.svelte.js";
+	import { faviconForTheme } from "#lib/stores/site.svelte.js";
+	import { theme } from "#lib/stores/theme.svelte.js";
 
 	let {
 		collapsed = $bindable(false),

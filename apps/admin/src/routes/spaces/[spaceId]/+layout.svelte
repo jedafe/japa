@@ -4,7 +4,7 @@
 	// forms/new and forms/[formId]). Without it the tab routes were
 	// only reachable by direct URL.
 	import { page } from '$app/state';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { Shield, ScrollText, UserPlus, ClipboardList } from 'lucide-svelte';
 
 	let { children } = $props();

@@ -1,13 +1,13 @@
 <script lang="ts">
 	// /mentorship — §102 Mentorship Matching (ADR-110) connections admin.
 	// Ref: japaconnect-engineering/sections/102-mentorship-matching.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { mentorshipAdminApiExtended as mentorshipApi, serviceDirectoryAdminApi } from '$lib/api';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { mentorshipAdminApiExtended as mentorshipApi, serviceDirectoryAdminApi } from '#lib/api.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 
 	// §102 connection — a mentorship-kind service_booking exposed in the
 	// legacy connection vocabulary by the compat layer (000824).

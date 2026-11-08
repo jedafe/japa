@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { X } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { RelativeTime } from '$lib/components/ui';
+	import { t } from '#lib/i18n/index.js';
+	import { RelativeTime } from '#lib/components/ui/index.js';
 	import { notificationIconFor } from './notificationType';
-	import type { Notification } from '$lib/types';
+	import type { Notification } from '#lib/types/index.js';
 
 	interface Props {
 		n: Notification;

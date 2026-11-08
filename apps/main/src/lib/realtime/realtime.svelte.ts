@@ -14,7 +14,7 @@
  */
 
 import { wsClient, type WSEventType } from './wsClient';
-import type { Notification } from '$lib/types';
+import type { Notification } from '#lib/types/index.js';
 
 /** Payload shape broadcast by the backend for `dm_message` events. */
 export interface DMMessageEvent {

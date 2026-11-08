@@ -3,14 +3,14 @@
 	// Simplified member space creation modal. Members choose a flat list of
 	// selectable space types (default: community), enter a name, and the
 	// backend keyword-matches the name against primary geo spaces to auto-link.
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { Rocket, Loader2 } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import { goto } from '$app/navigation';
 	import { suggestSlug } from '../create/slug';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	interface SpaceType {
 		id: string;

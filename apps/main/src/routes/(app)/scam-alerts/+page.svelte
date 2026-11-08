@@ -1,19 +1,19 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { TriangleAlert, Plus, Pin, X, Check, Bell } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import { relativeTime } from '$lib/feed/time';
-	import { i18n } from '$lib/i18n';
-	import { scamTypeLabel, scamPlatformLabel } from '$lib/enumOptions';
-	import { EmptyState, LoadingSkeleton, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
-	import type { ScamReport, ScamAlertSubscription, ScamType, ScamPlatform, ScamStatus } from '$lib/types';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { i18n } from '#lib/i18n/index.js';
+	import { scamTypeLabel, scamPlatformLabel } from '#lib/enumOptions.js';
+	import { EmptyState, LoadingSkeleton, ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import type { ScamReport, ScamAlertSubscription, ScamType, ScamPlatform, ScamStatus } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -135,7 +135,7 @@
 	// is acknowledged so a refresh/back-nav does not resurrect it.
 	$effect(() => {
 		if (!showSubmitted && data.submitted) {
-			const url = new URL(page.url);
+			const url = new URL(page.url.href);
 			url.searchParams.delete('submitted');
 			history.replaceState(history.state, '', url);
 		}

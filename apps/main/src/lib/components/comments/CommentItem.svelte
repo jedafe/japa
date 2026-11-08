@@ -13,15 +13,15 @@
 		Check,
 		Flag
 	} from 'lucide-svelte';
-	import { Menu, MenuItem } from '$lib/components/ui';
-	import { relativeTime } from '$lib/feed/time';
-	import { api } from '$lib/api/client';
-	import { t, i18n } from '$lib/i18n';
-	import type { Comment } from '$lib/types';
-	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
-	import { queueCommentView } from '$lib/comments/viewTracker';
-	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
-	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
+	import { Menu, MenuItem } from '#lib/components/ui/index.js';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { api } from '#lib/api/client.js';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import type { Comment } from '#lib/types/index.js';
+	import { tiptapBodyToHtml } from '#lib/tiptap/serialize.js';
+	import { queueCommentView } from '#lib/comments/viewTracker.js';
+	import EntityHoverChip from '#lib/components/ui/EntityHoverChip.svelte';
+	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
 	import CommentItem from './CommentItem.svelte';
 	import LazyCommentEditor from './LazyCommentEditor.svelte';
 

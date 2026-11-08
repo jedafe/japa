@@ -1,17 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { confirmDialog } from '@japaconnect/ui';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { tiptapToText, type TipTapDoc } from '#lib/tiptap/serialize.js';
 	import { BookOpen, Plus, Send } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import type { PageData } from './$types';
-	import type { WikiCategory } from '$lib/types';
+	import type { WikiCategory } from '#lib/types/index.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -79,6 +79,7 @@
 	// the nav if the user confirms. bypassGuard lets the re-issued nav pass.
 	let bypassGuard = false;
 	beforeNavigate((nav) => {
+		if (nav.shallow && nav.type === 'goto') return;
 		if (created || !dirty || bypassGuard || nav.type === 'leave') return;
 		nav.cancel();
 		const target = nav.to?.url;
@@ -138,7 +139,7 @@
 		const tplSlugVal = tplSlug.trim();
 		// Same charset as the backend's wikiSlugPattern — rejects leading/
 		// trailing/double hyphens before the round-trip.
-		if (!catId || !label || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(tplSlugVal)) {
+		if (!catId || !label || !(/^[a-z0-9]+(-[a-z0-9]+)*$/).test(tplSlugVal)) {
 			tplError = t('wiki.new_template_invalid', 'A label and a lowercase-hyphen slug are required.');
 			return;
 		}
@@ -169,12 +170,22 @@
 					`/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(tplSlugVal)}`
 				);
 				if (pg.data?.title) resolvedLabel = pg.data.title;
-				categories = categories.map((c) =>
-					c.slug === catSlug
-						? { ...c, page_templates: [...(c.page_templates ?? []), { slug: tplSlugVal, label: resolvedLabel, position: tplPosition }] }
-						: c
-				);
+
+				categories = categories.map((c) => c.slug === catSlug
+					? {
+						...c,
+						page_templates: [
+							...c.page_templates ?? [],
+							{
+								slug: tplSlugVal,
+								label: resolvedLabel,
+								position: tplPosition
+							}
+						]
+					}
+					: c);
 			}
+
 			tplLabel = '';
 			tplSlug = '';
 			tplSlugEdited = false;
@@ -256,7 +267,7 @@
 		if (title.trim().length < 2) {
 			fieldErrors.title = t('wiki.create_title_short', 'Title must be at least 2 characters.');
 		}
-		if (slug.length < 1 || !/^[a-z0-9-]+$/.test(slug)) {
+		if (slug.length < 1 || !(/^[a-z0-9-]+$/).test(slug)) {
 			fieldErrors.slug = t('wiki.create_slug_invalid', 'Slug must be lowercase letters, numbers, and hyphens.');
 		}
 		if (category === '') {
@@ -404,7 +415,7 @@
 								<input
 									type="text"
 									bind:value={tplSlug}
-									oninput={() => (tplSlugEdited = true)}
+									oninput={() => tplSlugEdited = true}
 									placeholder={t('wiki.new_template_slug', 'template-slug')}
 									aria-label={t('wiki.create_slug_label', 'URL slug')}
 									class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
@@ -416,7 +427,7 @@
 							<div class="flex justify-end gap-2">
 								<button
 									type="button"
-									onclick={() => (tplOpen = false)}
+									onclick={() => tplOpen = false}
 									class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface)]"
 								>
 									{t('wiki.cancel', 'Cancel')}
@@ -461,7 +472,7 @@
 					id="wiki-create-slug"
 					type="text"
 					bind:value={slug}
-					oninput={() => (dirty = true)}
+					oninput={() => dirty = true}
 					disabled={templateLocked}
 					placeholder={t('wiki.create_slug_placeholder', 'cost-of-living')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-70"
@@ -479,7 +490,7 @@
 					id="wiki-create-summary"
 					type="text"
 					bind:value={summary}
-					oninput={() => (dirty = true)}
+					oninput={() => dirty = true}
 					placeholder={t('wiki.edit_summary_placeholder', 'Briefly describe your changes')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				/>
@@ -491,9 +502,9 @@
 				</span>
 				<PostEditor
 					html={bodyHtml}
-					onedit={() => (dirty = true)}
-					onhtml={(v) => (bodyHtml = v)}
-					onjson={(v) => (bodyJson = v)}
+					onedit={() => dirty = true}
+					onhtml={(v) => bodyHtml = v}
+					onjson={(v) => bodyJson = v}
 				/>
 				{#if fieldErrors.content}
 					<p class="mt-1 text-xs text-red-500">{fieldErrors.content}</p>

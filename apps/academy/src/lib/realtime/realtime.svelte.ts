@@ -10,7 +10,7 @@
  */
 
 import { wsClient, type WSEventType } from './wsClient';
-import type { Notification } from '$lib/types';
+import type { Notification } from '#lib/types/index.js';
 
 type NotificationHandler = (n: Partial<Notification> & { id?: string }) => void;
 

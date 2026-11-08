@@ -4,9 +4,9 @@
 // Mirrors the backend DTO shapes (internal/servicedir Option, ListingCoupon,
 // PackageTierDTO) so every surface reads the same contract.
 
-import { t } from '$lib/i18n';
-import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
-import type { ServiceCategoryInfo, ServiceListing } from '$lib/types';
+import { t } from '#lib/i18n/index.js';
+import { formatMoney, type CurrencyInfo } from '#lib/utils/currency.js';
+import type { ServiceCategoryInfo, ServiceListing } from '#lib/types/index.js';
 
 /**
  * The fixed accent palette admins pick from for service categories

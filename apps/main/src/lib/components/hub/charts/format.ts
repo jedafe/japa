@@ -1,4 +1,4 @@
-import { i18n } from '$lib/i18n';
+import { i18n } from '#lib/i18n/index.js';
 
 /**
  * Number formatting for analytics chart labels. Rounds to the nearest

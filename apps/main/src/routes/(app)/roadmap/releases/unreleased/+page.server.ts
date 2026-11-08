@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
-import type { RoadmapReleaseEntry } from '$lib/types';
+import { apiContext, apiGet } from '#lib/server/api.js';
+import type { RoadmapReleaseEntry } from '#lib/types/index.js';
 
 /**
  * Unreleased commit entries — the "In development" queue of public-type

@@ -2,16 +2,16 @@
 	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { Send, BarChart3, Plus, Trash2, ArrowLeft } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { searchSpaces } from '$lib/api/create';
-	import { encodeTiptapDoc, type TipTapDoc } from '$lib/tiptap/serialize';
-	import { suggestSlug } from '$lib/components/create/slug';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
-	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
-	import TagInput from '$lib/components/create/TagInput.svelte';
-	import type { ForumThread, MeSpace } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { searchSpaces } from '#lib/api/create.js';
+	import { encodeTiptapDoc, type TipTapDoc } from '#lib/tiptap/serialize.js';
+	import { suggestSlug } from '#lib/components/create/slug.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
+	import TagInput from '#lib/components/create/TagInput.svelte';
+	import type { ForumThread, MeSpace } from '#lib/types/index.js';
 
 	/**
 	 * Inline discussion composer — rendered inside the Compose bottom sheet.

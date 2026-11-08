@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { Menu, MenuItem } from '$lib/components/ui';
+	import { Menu, MenuItem } from '#lib/components/ui/index.js';
 	import { MoreVertical, Ban, Flag, Share2, Check, Pencil, Trash2 } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
+	import { api } from '#lib/api/client.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
 	import SourceEditDialog from './SourceEditDialog.svelte';
-	import type { Source } from '$lib/types/sources';
+	import type { Source } from '#lib/types/sources.js';
 
 	interface Props {
 		source: Source;

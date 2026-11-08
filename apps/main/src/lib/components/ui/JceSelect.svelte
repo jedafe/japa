@@ -6,7 +6,7 @@
 	 * unchanged. Per-option `disabled` flags are not supported by the shared
 	 * component; no call site uses them.
 	 */
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	export interface JceSelectOption {
 		value: string;

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { join } from '@tauri-apps/api/path';
 	import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
@@ -15,23 +15,23 @@
 		FormInput,
 		RotateCcw
 	} from 'lucide-svelte';
-	import { initSettingsDb, loadSettings, type StudioSettings } from '$lib/services/settings';
-	import { queueStore } from '$lib/stores/queue.svelte';
-	import { hashFile } from '$lib/services/hash';
-	import { parseFrontmatter, buildMarkdown, markdownToHtml } from '$lib/services/markdown';
-	import { publishContent } from '$lib/services/publisher';
-	import { validateFrontmatter, validateBody, isHighStakes } from '$lib/services/validation';
-	import { createApiClient, mapPublicContentType } from '$lib/services/api';
-	import { slugify } from '$lib/services/prompt';
+	import { initSettingsDb, loadSettings, type StudioSettings } from '#lib/services/settings.js';
+	import { queueStore } from '#lib/stores/queue.svelte.js';
+	import { hashFile } from '#lib/services/hash.js';
+	import { parseFrontmatter, buildMarkdown, markdownToHtml } from '#lib/services/markdown.js';
+	import { publishContent } from '#lib/services/publisher.js';
+	import { validateFrontmatter, validateBody, isHighStakes } from '#lib/services/validation.js';
+	import { createApiClient, mapPublicContentType } from '#lib/services/api.js';
+	import { slugify } from '#lib/services/prompt.js';
 	import {
 		type StudioContentType,
 		type Persona,
 		type PersonaVoice,
 		type Space,
 		type SelectOption
-	} from '$lib/types/prompt';
-	import SelectField from '$lib/components/prompt/SelectField.svelte';
-	import TextField from '$lib/components/prompt/TextField.svelte';
+	} from '#lib/types/prompt.js';
+	import SelectField from '#lib/components/prompt/SelectField.svelte';
+	import TextField from '#lib/components/prompt/TextField.svelte';
 
 	interface EditorOptions {
 		contentTypes: StudioContentType[];
@@ -65,12 +65,12 @@
 		visibilityOptions: [],
 		loaded: false
 	});
-	const pageParam = $derived($page.params.path);
+	const pageParam = $derived(page.params.path);
 
 	const title = $derived(getString('title') || 'Untitled');
 	const preview = $derived(
 		mode === 'source'
-			? markdownToHtml(parseFrontmatter(raw).body, { sanitize: true })
+		? markdownToHtml(parseFrontmatter(raw).body, { sanitize: true })
 			: markdownToHtml(body, { sanitize: true })
 	);
 
@@ -243,10 +243,7 @@
 	function getTags(key: string): string {
 		const value = frontmatter[key];
 		if (Array.isArray(value)) {
-			return value
-				.map((v) => (typeof v === 'string' ? v : String(v)))
-				.filter((v) => v.length > 0)
-				.join(', ');
+			return value.map((v) => typeof v === 'string' ? v : String(v)).filter((v) => v.length > 0).join(', ');
 		}
 		return '';
 	}
@@ -278,14 +275,12 @@
 	function parseFieldValue(raw: string): unknown {
 		const trimmed = raw.trim();
 		if (trimmed === '') return '';
-		if (/^true$/i.test(trimmed)) return true;
-		if (/^false$/i.test(trimmed)) return false;
+		if ((/^true$/i).test(trimmed)) return true;
+		if ((/^false$/i).test(trimmed)) return false;
 		if (trimmed === 'null') return null;
-		if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-		if (
-			(trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-			(trimmed.startsWith('[') && trimmed.endsWith(']'))
-		) {
+		if ((/^-?\d+(\.\d+)?$/).test(trimmed)) return Number(trimmed);
+
+		if (trimmed.startsWith('{') && trimmed.endsWith('}') || trimmed.startsWith('[') && trimmed.endsWith(']')) {
 			try {
 				return JSON.parse(trimmed);
 			} catch {

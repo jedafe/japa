@@ -17,7 +17,7 @@ const getEntityFields = vi.fn(async (_type?: string, _id?: string): Promise<{ ok
 	}
 }));
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.js', () => ({
 	wikiAdminApi: {
 		getEntityFields: (type: string, id: string) => getEntityFields(type, id)
 	}

@@ -1,4 +1,4 @@
-import type { ThemeName } from '$lib/types';
+import type { ThemeName } from '#lib/types/index.js';
 
 /**
  * Client-side theme controller. The initial theme is rendered server-side into

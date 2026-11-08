@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /content/video-claims — admin DataTable for video_channel_claims.
 	// Ref: japaconnect-engineering/sections/106-video-content-and-import.md
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { videoClaimsAdminApi } from '$lib/api';
-	import { safeHref } from '$lib/utils/html';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
+	import { videoClaimsAdminApi } from '#lib/api.js';
+	import { safeHref } from '#lib/utils/html.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 	import { CheckCircle2, XCircle } from 'lucide-svelte';
 
 	type VideoClaim = {

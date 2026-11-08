@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { academyUrl, docsUrl } from '$lib/appOrigins';
+	import { t } from '#lib/i18n/index.js';
+	import DashboardPanel from '#lib/components/hub/DashboardPanel.svelte';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { academyUrl, docsUrl } from '#lib/appOrigins.js';
 	import { BookOpen } from 'lucide-svelte';
-	import type { Bookmark } from '$lib/types';
+	import type { Bookmark } from '#lib/types/index.js';
 
 	let { data }: { data: unknown } = $props();
 	const bookmarks = $derived((data as Bookmark[] | null) ?? []);

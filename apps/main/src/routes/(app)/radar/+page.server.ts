@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, apiRadarList, ApiError } from '$lib/server/api';
-import type { GeoCountry, RadarItem } from '$lib/types';
+import { apiContext, apiGet, apiList, apiRadarList, ApiError } from '#lib/server/api.js';
+import type { GeoCountry, RadarItem } from '#lib/types/index.js';
 
 /**
  * Japa Radar at /radar — the country-grouped intelligence feed (Phase 6,

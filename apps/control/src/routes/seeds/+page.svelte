@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
-	import { api } from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
+	import PageHeader from '#lib/components/PageHeader.svelte';
+	import AlertBanner from '#lib/components/ui/AlertBanner.svelte';
+	import { api } from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
 
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type SeedParam = {
 		key: string;

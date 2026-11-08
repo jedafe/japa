@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import type { WalletData } from './wallet/types';
@@ -50,7 +50,7 @@
 
 	function selectTab(tab: Tab) {
 		activeTab = tab;
-		void goto(`?tab=${tab}`, { replaceState: true, keepFocus: true, noScroll: true });
+		void goto(`?tab=${tab}`, { replace: true, reset: false });
 	}
 </script>
 

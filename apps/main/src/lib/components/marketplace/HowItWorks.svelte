@@ -6,8 +6,8 @@
 	// Rendered only when the listing carries steps — callers gate on
 	// steps.length.
 	import { marketplaceIcon } from './marketplaceIcon';
-	import { t } from '$lib/i18n';
-	import type { ServiceStep } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import type { ServiceStep } from '#lib/types/index.js';
 
 	interface Props {
 		steps: ServiceStep[];

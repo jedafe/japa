@@ -3,7 +3,7 @@
 	import ContinueAcademyCard from './ContinueAcademyCard.svelte';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import GuestFooter from './GuestFooter.svelte';
-	import type { Menu, SessionUser } from '$lib/types';
+	import type { Menu, SessionUser } from '#lib/types/index.js';
 
 	interface SidebarWidget {
 		id: string;

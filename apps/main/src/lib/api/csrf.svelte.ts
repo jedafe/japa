@@ -10,7 +10,7 @@
 // 403 csrf_token_invalid is received. This avoids a boot-time fetch round-trip
 // for authenticated users.
 
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 import { buildApiUrl } from '@japaconnect/api-url';
 
 let token: string | null = $state(null);
@@ -40,7 +40,7 @@ export async function refreshCsrfToken(): Promise<string | null> {
 				headers: { 'x-jc-surface': 'main' }
 			});
 			if (!res.ok) return token;
-			const body = (await res.json()) as { data?: { csrfToken?: string } };
+			const body = await res.json() as { data?: { csrfToken?: string } };
 			const next = body?.data?.csrfToken ?? null;
 			if (next) token = next;
 			return token;

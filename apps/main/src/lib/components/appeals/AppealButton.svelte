@@ -11,10 +11,10 @@
 	//
 	// Ref: japaconnect-engineering/sections/22-admin-panel.md (Appeals)
 	import { page } from '$app/state';
-	import { Modal } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
-	import { t } from '$lib/i18n';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
+	import { Modal } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
+	import { t } from '#lib/i18n/index.js';
+	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
 	import {
 		AlertCircle, Check, CheckCircle2, ChevronRight, FileText, Gavel,
 		Loader2, MessageSquare, Scale, ShieldCheck, X

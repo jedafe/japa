@@ -8,8 +8,8 @@
 // SvelteKit server routes so cookie setting and response shaping stay under
 // SvelteKit control.
 
-import { json, type RequestEvent } from '@sveltejs/kit';
-import { apiContext, ApiError } from '$lib/server/api';
+import { type RequestEvent } from '@sveltejs/kit';
+import { apiContext, ApiError } from '#lib/server/api.js';
 import {
 	authenticateLogin,
 	authenticateSignup,
@@ -24,7 +24,7 @@ import {
 	setRefreshCookie,
 	clearSessionCookie,
 	sanitizePostLoginTarget
-} from '$lib/server/auth';
+} from '#lib/server/auth.js';
 
 const ALLOWED_PATHS = new Set([
 	'login',
@@ -38,16 +38,16 @@ const ALLOWED_PATHS = new Set([
 ]);
 
 function badRequest(code: string, message: string) {
-	return json({ error: { code, message, status: 400 } }, { status: 400 });
+	return Response.json({ error: { code, message, status: 400 } }, { status: 400 });
 }
 
 function serverError(message = 'Internal server error') {
-	return json({ error: { code: 'server_error', message, status: 500 } }, { status: 500 });
+	return Response.json({ error: { code: 'server_error', message, status: 500 } }, { status: 500 });
 }
 
 function apiErrorResponse(err: ApiError | unknown) {
 	if (err instanceof ApiError) {
-		return json({ error: { code: err.code, message: err.message, status: err.status } }, { status: err.status });
+		return Response.json({ error: { code: err.code, message: err.message, status: err.status } }, { status: err.status });
 	}
 	if (err instanceof Error) return serverError(err.message);
 	return serverError();
@@ -56,7 +56,7 @@ function apiErrorResponse(err: ApiError | unknown) {
 export async function POST(event: RequestEvent) {
 	const path = event.params.path ?? '';
 	if (!ALLOWED_PATHS.has(path)) {
-		return json({ error: { code: 'route_not_found', message: 'Not found', status: 404 } }, { status: 404 });
+		return Response.json({ error: { code: 'route_not_found', message: 'Not found', status: 404 } }, { status: 404 });
 	}
 
 	// Read the raw body so empty/missing bodies (e.g. /api/auth/refresh) default
@@ -94,7 +94,7 @@ export async function POST(event: RequestEvent) {
 						redirect
 					});
 					if (result.user?.email) params.set('email', result.user.email);
-					return json({
+					return Response.json({
 						totp_required: true,
 						redirect: `/verify-totp?${params.toString()}`
 					});
@@ -103,7 +103,7 @@ export async function POST(event: RequestEvent) {
 				const session = result as { access_token: string; refresh_token?: string; user: { id: string; email: string; username: string } };
 				setSessionCookie(event, session.access_token);
 				if (session.refresh_token) setRefreshCookie(event, session.refresh_token);
-				return json({ user: session.user, redirect });
+				return Response.json({ user: session.user, redirect });
 			}
 
 			case 'signup': {
@@ -118,7 +118,7 @@ export async function POST(event: RequestEvent) {
 				const session = await authenticateSignup(ctx, email, username, password, website);
 				setSessionCookie(event, session.access_token);
 				if (session.refresh_token) setRefreshCookie(event, session.refresh_token);
-				return json({ user: session.user, redirect });
+				return Response.json({ user: session.user, redirect });
 			}
 
 			case 'forgot-password': {
@@ -126,7 +126,7 @@ export async function POST(event: RequestEvent) {
 				const website = typeof body.website === 'string' ? body.website : '';
 				if (!email) return badRequest('missing_fields', 'Email is required.');
 				await requestPasswordReset(ctx, email, website);
-				return json({ ok: true });
+				return Response.json({ ok: true });
 			}
 
 			case 'reset-password': {
@@ -135,7 +135,7 @@ export async function POST(event: RequestEvent) {
 				const website = typeof body.website === 'string' ? body.website : '';
 				if (!token || !newPassword) return badRequest('missing_fields', 'Token and new password are required.');
 				await resetPassword(ctx, token, newPassword, website);
-				return json({ ok: true });
+				return Response.json({ ok: true });
 			}
 
 			case 'totp/verify': {
@@ -146,7 +146,7 @@ export async function POST(event: RequestEvent) {
 				const result = await verifyTotpChallenge(ctx, challengeToken, code);
 				setSessionCookie(event, result.access_token);
 				if (result.refresh_token) setRefreshCookie(event, result.refresh_token);
-				return json({ redirect });
+				return Response.json({ redirect });
 			}
 
 			case 'totp/backup': {
@@ -159,7 +159,7 @@ export async function POST(event: RequestEvent) {
 				const result = await consumeTotpBackup(ctx, challengeToken, backupCode);
 				setSessionCookie(event, result.access_token);
 				if (result.refresh_token) setRefreshCookie(event, result.refresh_token);
-				return json({ redirect });
+				return Response.json({ redirect });
 			}
 
 			case 'refresh': {
@@ -185,11 +185,11 @@ export async function POST(event: RequestEvent) {
 				// The browser-side token store ($lib/api/token.svelte) needs the
 				// fresh access token — the HttpOnly cookie update alone can't
 				// reach client JS. The api authenticates Bearer only.
-				return json({ ok: true, access_token: result.access_token });
+				return Response.json({ ok: true, access_token: result.access_token });
 			}
 
 			default:
-				return json({ error: { code: 'route_not_found', message: 'Not found', status: 404 } }, { status: 404 });
+				return Response.json({ error: { code: 'route_not_found', message: 'Not found', status: 404 } }, { status: 404 });
 		}
 	} catch (err) {
 		return apiErrorResponse(err);
@@ -199,7 +199,7 @@ export async function POST(event: RequestEvent) {
 export async function GET(event: RequestEvent) {
 	const path = event.params.path ?? '';
 	if (path !== 'oauth') {
-		return json({ error: { code: 'route_not_found', message: 'Not found', status: 404 } }, { status: 404 });
+		return Response.json({ error: { code: 'route_not_found', message: 'Not found', status: 404 } }, { status: 404 });
 	}
 
 	const provider = event.url.searchParams.get('provider') ?? '';
@@ -212,7 +212,7 @@ export async function GET(event: RequestEvent) {
 		// Forward the backend's OAuth flow cookies to the browser (see
 		// /api/auth/oauth — without them the callback fails missing_state).
 		forwardSetCookies(event, setCookies);
-		return json({ redirect_url: authUrl });
+		return Response.json({ redirect_url: authUrl });
 	} catch (err) {
 		return apiErrorResponse(err);
 	}

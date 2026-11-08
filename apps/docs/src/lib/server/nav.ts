@@ -1,6 +1,6 @@
 import { apiGet } from './api';
 import type { ApiContext } from './api';
-import type { DocNavTree } from '$lib/types';
+import type { DocNavTree } from '#lib/types/index.js';
 
 /**
  * Fetch the full nav tree (all audiences) server-side. The layout load filters

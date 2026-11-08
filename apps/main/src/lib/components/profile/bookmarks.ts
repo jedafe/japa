@@ -1,9 +1,9 @@
 // Shared bookmark entity→URL/label mapping for the profile Saved surfaces —
 // resolves each entity to the bookmarked item's canonical page (cross-app
 // deep links per ADR-060).
-import { t } from '$lib/i18n';
-import { academyUrl, docsUrl } from '$lib/appOrigins';
-import type { Bookmark } from '$lib/types';
+import { t } from '#lib/i18n/index.js';
+import { academyUrl, docsUrl } from '#lib/appOrigins.js';
+import type { Bookmark } from '#lib/types/index.js';
 
 function safeAcademyUrl(path: string): string {
 	try {

@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/82-japa-planning-groups.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { PlanningGroup, PlanningMilestone, PlanningCheckin, MemberDTO } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { PlanningGroup, PlanningMilestone, PlanningCheckin, MemberDTO } from '#lib/types/index.js';
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);

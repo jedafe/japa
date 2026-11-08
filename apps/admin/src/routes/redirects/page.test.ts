@@ -4,7 +4,7 @@ import Page from './+page.svelte';
 
 // Mock the API module — the page uses `apiRaw` for the list load and
 // `redirectsAdminApi` for create/update/delete/bulk. Both must be provided.
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.js', () => ({
 	apiRaw: vi.fn().mockResolvedValue({
 		ok: true,
 		data: { data: [], total: 0, total_pages: 0 },
@@ -21,7 +21,7 @@ vi.mock('$app/state', () => ({
 	page: { params: {}, url: new URL('http://localhost/') },
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn(), pushState: vi.fn() }));
-vi.mock('$lib/stores/permissions.svelte', () => ({
+vi.mock('#lib/stores/permissions.svelte.js', () => ({
 	hasPermission: () => true,
 	getPermissions: () => ['*'],
 	getPermissionState: () => ({}),

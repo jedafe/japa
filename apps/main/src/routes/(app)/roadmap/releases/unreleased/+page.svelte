@@ -1,12 +1,12 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import type { PageData } from './$types';
 	import { untrack } from 'svelte';
-	import { t, siteName } from '$lib/i18n';
+	import { t, siteName } from '#lib/i18n/index.js';
 	import { Accordion } from 'bits-ui';
 	import { ArrowLeft, ChevronDown, GitCommitHorizontal } from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import type { RoadmapReleaseEntry } from '$lib/types';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import type { RoadmapReleaseEntry } from '#lib/types/index.js';
 
 	/**
 	 * Unreleased queue — public-type changelog entries landed on main but

@@ -1,11 +1,10 @@
-import type { Handle } from '@sveltejs/kit';
-import { building } from '$app/environment';
-import { env } from '$env/dynamic/private';
-import { env as publicEnv } from '$env/dynamic/public';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import { tryRefreshSession, clearSessionCookies } from '$lib/server/auth';
+import type { Handle } from '@sveltejs/kit/hooks';
+import { building } from '$app/env';
+import { JC_ENV, PUBLIC_JC_ENV } from '$app/env/private';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import { tryRefreshSession, clearSessionCookies } from '#lib/server/auth.js';
 import { buildThemeOverrides } from '@japaconnect/ui/theme';
-import { isRtl } from '$lib/i18n/rtl';
+import { isRtl } from '#lib/i18n/rtl.js';
 
 /**
  * In-process cache for GET /site/settings/public (same pattern as the main
@@ -17,7 +16,7 @@ import { isRtl } from '$lib/i18n/rtl';
  */
 const SETTINGS_TTL_MS = 30_000;
 const settingsCache = new Map<string, { value: Record<string, unknown>; expiresAt: number }>();
-import type { SessionUser } from '$lib/types';
+import type { SessionUser } from '#lib/types/index.js';
 
 /**
  * Japa Academy — the single learning surface (ADR-063 consolidation).
@@ -62,8 +61,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 			siteSettings = cached.value;
 		} else {
 			try {
-				siteSettings =
-					(await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public')) ?? {};
+				siteSettings = await apiGet<Record<string, unknown>>(apiContext(event), '/site/settings/public') ?? {};
 				settingsCache.set(host, { value: siteSettings, expiresAt: now + SETTINGS_TTL_MS });
 			} catch {
 				siteSettings = cached?.value ?? {};
@@ -77,7 +75,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// client theme store corrects data-theme after hydration.
 	event.locals.theme =
 		themeCookie === 'dark' || themeCookie === 'light' || themeCookie === 'system'
-			? themeCookie
+		? themeCookie
 			: siteSettings['appearance.dark_mode_default'] === true
 				? 'dark'
 				: 'light';
@@ -86,17 +84,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 			? siteSettings['appearance.dark_mode_default'] === true
 				? 'dark'
 				: 'light'
-			: event.locals.theme;
+		: event.locals.theme;
 
 	// Locale resolution: URL prefix > cookie > i18n.default_language > 'en'.
 	// Valid prefix → set cookie + rewrite URL so SvelteKit routes to the
 	// unprefixed page tree. Browser URL stays /fr/tracks; page renders French.
 	// Ref: §18, conventions/system-settings-catalog.md (i18n.enabled_languages)
-	const enabledLanguages =
-		((siteSettings['i18n.enabled_languages'] as string | undefined) ?? 'en,fr')
-			.split(',')
-			.map((l) => l.trim())
-			.filter(Boolean);
+	const enabledLanguages = (siteSettings['i18n.enabled_languages'] as string | undefined ?? 'en,fr').split(',').map((l) => l.trim()).filter(Boolean);
 
 	if (pathLocale && enabledLanguages.includes(pathLocale)) {
 		event.locals.locale = pathLocale;
@@ -110,7 +104,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	} else if (localeCookie && enabledLanguages.includes(localeCookie)) {
 		event.locals.locale = localeCookie;
 	} else {
-		const defaultLang = (siteSettings['i18n.default_language'] as string | undefined) ?? 'en';
+		const defaultLang = siteSettings['i18n.default_language'] as string | undefined ?? 'en';
 		event.locals.locale = enabledLanguages.includes(defaultLang) ? defaultLang : 'en';
 	}
 	event.locals.user = null;
@@ -179,8 +173,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// attribute-escaped; colors are hex-whitelist-validated.
 	// Ref: .jeos/sections/124-progressive-web-app.md
 	const pwaThemeColor = (() => {
-		for (const v of [siteSettings['pwa.theme_color'], siteSettings['appearance.primary_color']]) {
-			if (typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v.trim())) return v.trim();
+		for (const v of [
+			siteSettings['pwa.theme_color'],
+			siteSettings['appearance.primary_color']
+		]) {
+			if (typeof v === 'string' && (/^#[0-9a-fA-F]{3,8}$/).test(v.trim())) return v.trim();
 		}
 		return '#3b49df';
 	})();
@@ -215,7 +212,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
-	if (BLOCKS_INDEXING.has((publicEnv.PUBLIC_JC_ENV ?? env.JC_ENV ?? '').toLowerCase())) {
+	if (BLOCKS_INDEXING.has((PUBLIC_JC_ENV ?? JC_ENV ?? '').toLowerCase())) {
 		response.headers.set('X-Robots-Tag', 'noindex');
 	}
 	if (response.headers.get('content-type')?.startsWith('text/html')) {

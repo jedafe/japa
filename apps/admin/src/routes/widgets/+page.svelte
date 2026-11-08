@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /widgets — Page Builder widget_configurations CRUD (Section 16).
 	// Uses EntityPage with a formSnippet because the config field is
 	// dynamic per widget_type (e.g. latest_content has content_type/sort/featured,
 	// forum_threads has sort/space_id, reviews has entity_type, etc.).
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '#lib/components/entity/index.js';
 	import {
 		widgetsAdminApiExtended,
 		apiRaw,
@@ -13,9 +13,9 @@
 		type CardTypeOption,
 		type WidgetConfigField,
 		type WidgetConfigOptions
-	} from '$lib/api';
-	import { t } from '$lib/stores/i18n.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	} from '#lib/api.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type Widget = {
 		id: string;

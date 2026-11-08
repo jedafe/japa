@@ -19,8 +19,8 @@ import {
 	FileText
 } from 'lucide-svelte';
 import { Circle } from 'lucide-svelte';
-import { resolveIcon } from '$lib/components/ui/icons';
-import type { IconComponent } from '$lib/components/ui/icons';
+import { resolveIcon } from '#lib/components/ui/icons.js';
+import type { IconComponent } from '#lib/components/ui/icons.js';
 
 const ICONS: Record<string, IconComponent> = {
 	overview: Globe,

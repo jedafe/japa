@@ -5,10 +5,10 @@
 	// outbound "Go to provider" CTA for external referral coupons.
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
 	import { BadgePercent, Check, Copy, ExternalLink } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { discountLabel } from '$lib/marketplace';
-	import type { CurrencyInfo } from '$lib/utils/currency';
-	import type { ListingCoupon } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import { discountLabel } from '#lib/marketplace.js';
+	import type { CurrencyInfo } from '#lib/utils/currency.js';
+	import type { ListingCoupon } from '#lib/types/index.js';
 
 	interface Props {
 		coupon: ListingCoupon;

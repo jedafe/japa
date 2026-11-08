@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import { EntityPage, type EntityPageConfig, type FieldDef, type EntityPageController } from '$lib/components/entity';
-	import type { ActionItem } from '$lib/components/ui/data-table';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { EntityPage, type EntityPageConfig, type FieldDef, type EntityPageController } from '#lib/components/entity/index.js';
+	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
 	import { Plus, Trash2, Activity, Pencil, Pause, Play, Eye } from 'lucide-svelte';
-	import { api, apiRaw } from '$lib/api';
+	import { api, apiRaw } from '#lib/api.js';
 	import { JsonValueEditor } from '@japaconnect/ui';
-	import type { BulkAction } from '$lib/components/ui/data-table';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import GeoSpaceCascade from '$lib/components/ui/GeoSpaceCascade.svelte';
+	import type { BulkAction } from '#lib/components/ui/data-table/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import GeoSpaceCascade from '#lib/components/ui/GeoSpaceCascade.svelte';
 
 	// Persona type matches the backend PersonaDetail / PersonaListItem DTOs
 	// (internal/personas/service.go). Ref: §68, ADR-068.

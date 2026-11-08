@@ -1,8 +1,8 @@
 <script lang="ts">
 	// Public certificate share page — SSR (ADR-060 §4, shareable social proof).
-	import { t, siteName} from '$lib/i18n';
-	import { safeJsonLd } from '$lib/seo';
-	import { api } from '$lib/api/client';
+	import { t, siteName} from '#lib/i18n/index.js';
+	import { safeJsonLd } from '#lib/seo/index.js';
+	import { api } from '#lib/api/client.js';
 	import { Award, GraduationCap, CheckCircle, Download } from 'lucide-svelte';
 	import type { PageData } from './$types';
 

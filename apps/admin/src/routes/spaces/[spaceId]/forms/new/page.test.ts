@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import Page from './+page.svelte';
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.js', () => ({
 	api: vi.fn().mockRejectedValue(new Error('not connected'))
 }));
 
@@ -11,13 +11,8 @@ vi.mock('$app/navigation', () => ({
 	replaceState: vi.fn(),
 }));
 
-vi.mock('$app/stores', () => ({
-	page: {
-		subscribe: (fn: Function) => {
-			fn({ params: { spaceId: 'test-space' } });
-			return () => {};
-		}
-	}
+vi.mock('$app/state', () => ({
+	page: { params: { spaceId: 'test-space' } }
 }));
 
 describe('Create Form +page.svelte', () => {

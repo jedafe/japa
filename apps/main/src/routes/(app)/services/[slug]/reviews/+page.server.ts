@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/114-services-marketplace.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
-import type { ServiceListing, ServiceReview, ServiceReviewAggregate } from '$lib/types';
+import { apiContext, apiGetEnvelope, apiList, ApiError } from '#lib/server/api.js';
+import type { ServiceListing, ServiceReview, ServiceReviewAggregate } from '#lib/types/index.js';
 
 // Matches the backend's default ?limit= on GET /services/{id}/reviews
 // (parseReviewPageParams — limit 10, max 50).

@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
 import type { PageServerLoad } from './$types';
 import { error, redirect } from '@sveltejs/kit';
-import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
-import type { WikiPage, WikiPageIndex, SpaceDetail } from '$lib/types';
+import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '#lib/server/api.js';
+import type { WikiPage, WikiPageIndex, SpaceDetail } from '#lib/types/index.js';
 
 type WikiApiCategory = {
 	slug: string;

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 </script>
 
 <SeoHead title={t('settings.danger.logged_out_title')} description={t('settings.logged_out_description', 'Your account has been signed out on other devices.')} />

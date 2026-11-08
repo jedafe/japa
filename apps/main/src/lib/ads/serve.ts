@@ -3,7 +3,7 @@
 // Multiple units for the same slot on one page share a single request —
 // concurrent callers join the in-flight promise and results are cached
 // briefly so a blog page doesn't fan out N identical serve calls.
-import { api } from '$lib/api/client';
+import { api } from '#lib/api/client.js';
 
 export interface AdCampaignContent {
 	headline?: string;

@@ -1,13 +1,13 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { i18n } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
+	import { i18n } from '#lib/i18n/index.js';
 	import { Globe, Users, Calendar, MoreVertical } from 'lucide-svelte';
-	import { Menu } from '$lib/components/ui';
-	import VerifiedBadge from '$lib/components/ui/VerifiedBadge.svelte';
-	import { safeHref } from '$lib/utils/safeHtml';
-	import { remoteImageUrl } from '$lib/utils/remoteImage';
-	import type { PublicOrganization } from '$lib/types';
+	import { Menu } from '#lib/components/ui/index.js';
+	import VerifiedBadge from '#lib/components/ui/VerifiedBadge.svelte';
+	import { safeHref } from '#lib/utils/safeHtml.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
+	import type { PublicOrganization } from '#lib/types/index.js';
 
 	interface Props {
 		org: PublicOrganization;

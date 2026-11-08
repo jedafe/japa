@@ -6,7 +6,7 @@
 	// (ads.in_article_after_paragraph / ads.in_article_every). String-only
 	// splitting — SSR-safe, no DOM parsing.
 	import { page } from '$app/state';
-	import AdSlot from '$lib/components/ui/AdSlot.svelte';
+	import AdSlot from '#lib/components/ui/AdSlot.svelte';
 
 	interface Props {
 		/** Sanitized article HTML (run through sanitizeContentHtml upstream). */

@@ -11,9 +11,9 @@
 		GraduationCap,
 		Compass
 	} from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import { loginUrl, profileUrl, MAIN_ORIGIN } from '$lib/appOrigins';
-	import type { SessionUser } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import { loginUrl, profileUrl, MAIN_ORIGIN } from '#lib/appOrigins.js';
+	import type { SessionUser } from '#lib/types/index.js';
 
 	interface Props {
 		user: SessionUser | null;

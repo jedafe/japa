@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { listIngestionJobs, refreshComparison } from '$lib/api/jce';
-	import type { IngestionJob } from '$lib/types/jce';
+	import { t } from '#lib/i18n/index.js';
+	import { listIngestionJobs, refreshComparison } from '#lib/api/jce.js';
+	import type { IngestionJob } from '#lib/types/jce.js';
 	import { RefreshCw } from 'lucide-svelte';
 
 	interface Props {

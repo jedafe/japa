@@ -1,6 +1,6 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import {
@@ -27,14 +27,14 @@
 		ChevronRight,
 		Layers
 	} from 'lucide-svelte';
-	import type { IconComponent, UrlTab } from '$lib/components/ui';
-	import { GuideSlideOver, type GuideContent } from '$lib/components/ui';
+	import type { IconComponent, UrlTab } from '#lib/components/ui/index.js';
+	import { GuideSlideOver, type GuideContent } from '#lib/components/ui/index.js';
 	import { Filter } from 'lucide-svelte';
-	import { api } from '$lib/api/client';
-	import { EntityHero, ListPageBar, UrlTabs } from '$lib/components/ui';
-	import HeroArtTools from '$lib/components/heroes/HeroArtTools.svelte';
-	import { formatMetric } from '$lib/components/hub/charts/format';
-	import { getEnabledToolsBySection, TOOL_SECTIONS, type MainToolMeta, type ToolSection } from '$lib/tools/registry';
+	import { api } from '#lib/api/client.js';
+	import { EntityHero, ListPageBar, UrlTabs } from '#lib/components/ui/index.js';
+	import HeroArtTools from '#lib/components/heroes/HeroArtTools.svelte';
+	import { formatMetric } from '#lib/components/hub/charts/format.js';
+	import { getEnabledToolsBySection, TOOL_SECTIONS, type MainToolMeta, type ToolSection } from '#lib/tools/registry.js';
 	import { FileCheck2, Wallet2, PenLine } from 'lucide-svelte';
 	import type { PageData } from './$types';
 

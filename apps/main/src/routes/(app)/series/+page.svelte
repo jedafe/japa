@@ -1,6 +1,6 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { BookOpen, ArrowRight, Search, X } from 'lucide-svelte';
@@ -10,8 +10,8 @@
 		UrlTabs,
 		type UrlTab,
 		FilterToggle
-	} from '$lib/components/ui';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	} from '#lib/components/ui/index.js';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -75,15 +75,15 @@
 	}
 
 	function switchTab(value: string) {
-		goto(buildUrl({ tab: value, page: 1 }), { keepFocus: true });
+		goto(buildUrl({ tab: value, page: 1 }), { reset: false });
 	}
 
 	function setSort(value: string) {
-		goto(buildUrl({ sort: value, page: 1 }), { keepFocus: true });
+		goto(buildUrl({ sort: value, page: 1 }), { reset: false });
 	}
 
 	function setContentType(value: string) {
-		goto(buildUrl({ contentType: value, page: 1 }), { keepFocus: true });
+		goto(buildUrl({ contentType: value, page: 1 }), { reset: false });
 	}
 
 	function applySearch() {

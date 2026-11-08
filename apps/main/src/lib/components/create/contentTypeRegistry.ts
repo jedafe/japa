@@ -1,4 +1,4 @@
-import type { ContentTypeMeta, GuideCategory } from '$lib/types';
+import type { ContentTypeMeta, GuideCategory } from '#lib/types/index.js';
 
 export type FormKind = 'standard' | 'comparison' | 'list' | 'review';
 

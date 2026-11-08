@@ -1,5 +1,5 @@
-import { t } from '$lib/i18n';
-import { currencyOf, type CurrencyInfo } from '$lib/utils/currency';
+import { t } from '#lib/i18n/index.js';
+import { currencyOf, type CurrencyInfo } from '#lib/utils/currency.js';
 
 /**
  * Academy-specific formatting helpers.

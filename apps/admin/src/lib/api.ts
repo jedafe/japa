@@ -1,7 +1,7 @@
 import { apiFetch as _apiFetch } from './api/client';
 import { getAccessToken } from './api/token';
 import { buildApiUrl } from '@japaconnect/api-url';
-import { PUBLIC_JC_API_URL } from '$env/static/public';
+import { PUBLIC_JC_API_URL } from '$app/env/public';
 
 export { _apiFetch as apiFetch };
 
@@ -12,9 +12,9 @@ type FetchOptions = {
 	headers?: Record<string, string>;
 };
 
-type ApiResult<T> =
-	| { ok: true; data: T }
-	| { ok: false; error: string; code?: string; status?: number };
+type ApiResult<T> = 
+	{ ok: true; data: T } |
+	{ ok: false; error: string; code?: string; status?: number };
 
 // fetchRaw performs a direct fetch that bypasses the JSON envelope parsing in
 // apiFetch. Used for non-JSON responses (e.g. CSV exports from
@@ -57,14 +57,16 @@ export function setToken(token: string | null): void {
 }
 
 export async function api<T>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
-	const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+	const headers: Record<string, string> = { ...opts.headers ?? {} };
 
 	const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
 	const result = await _apiFetch<T>(path, {
 		method: opts.method ?? 'GET',
 		headers,
-		body: opts.body ? (isFormData ? (opts.body as BodyInit) : JSON.stringify(opts.body)) : undefined,
-		signal: opts.signal,
+		body: opts.body
+			? isFormData ? opts.body as BodyInit : JSON.stringify(opts.body)
+			: undefined,
+		signal: opts.signal
 	});
 
 	if (result.error) {
@@ -77,14 +79,16 @@ export async function api<T>(path: string, opts: FetchOptions = {}): Promise<Api
 // access top-level pagination metadata like { total, total_pages } that some
 // backends put alongside `data` instead of nesting it inside `data`.
 export async function apiRaw<T = any>(path: string, opts: FetchOptions = {}): Promise<ApiResult<T>> {
-	const headers: Record<string, string> = { ...(opts.headers ?? {}) };
+	const headers: Record<string, string> = { ...opts.headers ?? {} };
 
 	const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
 	const result = await _apiFetch<any>(path, {
 		method: opts.method ?? 'GET',
 		headers,
-		body: opts.body ? (isFormData ? (opts.body as BodyInit) : JSON.stringify(opts.body)) : undefined,
-		signal: opts.signal,
+		body: opts.body
+			? isFormData ? opts.body as BodyInit : JSON.stringify(opts.body)
+			: undefined,
+		signal: opts.signal
 	});
 
 	if (result.error) {
@@ -96,21 +100,35 @@ export async function apiRaw<T = any>(path: string, opts: FetchOptions = {}): Pr
 
 export const spamApi = {
 	getIpBlocks: (params?: string) => apiRaw<{ data: unknown[]; total: number; total_pages: number }>(`/admin/spam/ip-blocks${params ? `?${params}` : ''}`),
-	createIpBlock: (body: { cidr: string; block_type: string; reason?: string; expires_at?: string }) =>
-		api('/admin/spam/ip-blocks', { method: 'POST', body }),
-	updateIpBlock: (id: string, body: { cidr?: string; block_type?: string; reason?: string; expires_at?: string }) =>
-		api(`/admin/spam/ip-blocks/${id}`, { method: 'PATCH', body }),
-	deleteIpBlock: (id: string) =>
-		api(`/admin/spam/ip-blocks/${id}`, { method: 'DELETE' }),
+	createIpBlock: (
+		body: { 
+			cidr: string;
+			block_type: string;
+			reason?: string;
+			expires_at?: string
+		 }
+	) => api('/admin/spam/ip-blocks', { method: 'POST', body }),
 
+	updateIpBlock: (
+		id: string,
+		body: { 
+			cidr?: string;
+			block_type?: string;
+			reason?: string;
+			expires_at?: string
+		 }
+	) => api(`/admin/spam/ip-blocks/${id}`, { method: 'PATCH', body }),
+	deleteIpBlock: (id: string) => api(`/admin/spam/ip-blocks/${id}`, { method: 'DELETE' }),
 	getCensoredWords: (params?: string) => apiRaw<{ data: unknown[]; total: number; total_pages: number }>(`/admin/spam/censored-words${params ? `?${params}` : ''}`),
-	createCensoredWord: (body: { pattern: string; action: string; replacement?: string }) =>
-		api('/admin/spam/censored-words', { method: 'POST', body }),
-	updateCensoredWord: (id: string, body: { pattern?: string; action?: string; replacement?: string }) =>
-		api(`/admin/spam/censored-words/${id}`, { method: 'PATCH', body }),
-	deleteCensoredWord: (id: string) =>
-		api(`/admin/spam/censored-words/${id}`, { method: 'DELETE' }),
+	createCensoredWord: (
+		body: { pattern: string; action: string; replacement?: string }
+	) => api('/admin/spam/censored-words', { method: 'POST', body }),
 
+	updateCensoredWord: (
+		id: string,
+		body: { pattern?: string; action?: string; replacement?: string }
+	) => api(`/admin/spam/censored-words/${id}`, { method: 'PATCH', body }),
+	deleteCensoredWord: (id: string) => api(`/admin/spam/censored-words/${id}`, { method: 'DELETE' }),
 	getUserBlocks: (params?: string) => apiRaw<{ data: unknown[]; total: number; total_pages: number }>(`/admin/spam/user-blocks${params ? `?${params}` : ''}`),
 	deleteUserBlock: (blockerId: string, blockedId: string) =>
 		api(`/admin/spam/user-blocks/${blockerId}/${blockedId}`, { method: 'DELETE' }),
@@ -205,15 +223,32 @@ export const pagesApi = {
 export const walletApi = {
 	getRules: (params?: string) => api<unknown>(`/admin/wallet/rules${params ? `?${params}` : ''}`),
 	getActivityKeys: () => api<string[]>('/admin/wallet/activity-keys'),
-	createRule: (body: { activity_key: string; point_value: number; is_enabled: boolean; one_time: boolean; description?: string; cap_per_day?: number | null; cap_per_week?: number | null }) =>
-		api('/admin/wallet/rules', { method: 'POST', body }),
-	updateRule: (id: string, body: { activity_key?: string; point_value?: number; is_enabled?: boolean; one_time?: boolean; description?: string; cap_per_day?: number | null; cap_per_week?: number | null }) =>
-		api(`/admin/wallet/rules/${id}`, { method: 'PATCH', body }),
-	toggleRule: (id: string) =>
-		api(`/admin/wallet/rules/${id}/toggle`, { method: 'PATCH' }),
-	deleteRule: (id: string) =>
-		api(`/admin/wallet/rules/${id}`, { method: 'DELETE' }),
+	createRule: (
+		body: { 
+			activity_key: string;
+			point_value: number;
+			is_enabled: boolean;
+			one_time: boolean;
+			description?: string;
+			cap_per_day?: number | null;
+			cap_per_week?: number | null
+		 }
+	) => api('/admin/wallet/rules', { method: 'POST', body }),
 
+	updateRule: (
+		id: string,
+		body: { 
+			activity_key?: string;
+			point_value?: number;
+			is_enabled?: boolean;
+			one_time?: boolean;
+			description?: string;
+			cap_per_day?: number | null;
+			cap_per_week?: number | null
+		 }
+	) => api(`/admin/wallet/rules/${id}`, { method: 'PATCH', body }),
+	toggleRule: (id: string) => api(`/admin/wallet/rules/${id}/toggle`, { method: 'PATCH' }),
+	deleteRule: (id: string) => api(`/admin/wallet/rules/${id}`, { method: 'DELETE' }),
 	getSettings: () => api<unknown>('/admin/wallet/settings'),
 	updateSettings: (body: { daily_earning_cap: number; enable_earning: boolean }) =>
 		api('/admin/wallet/settings', { method: 'PUT', body }),
@@ -304,17 +339,18 @@ export const docsApi = {
 	audiences: () => api<string[]>('/docs/audiences'),
 	statuses: () => api<string[]>('/docs/statuses'),
 	generate: (body: {
-		category: 'docs';
-		prompt: string;
-		context?: {
-			title: string;
-			slug?: string;
-			audience?: string;
-			related_features?: string[];
-			doc_category?: string;
-			doc_subcategory?: string;
-		};
-	}) => api<{ task_id: string; task_type: string }>('/admin/docs/ai-generate', { method: 'POST', body })
+			category: 'docs';
+			prompt: string;
+			context?: { 
+				title: string;
+				slug?: string;
+				audience?: string;
+				related_features?: string[];
+				doc_category?: string;
+				doc_subcategory?: string
+			 }
+		 }
+	) => api<{ task_id: string; task_type: string }>('/admin/docs/ai-generate', { method: 'POST', body })
 };
 
 export type AdNetwork = {
@@ -652,37 +688,44 @@ export const userManagementApi = {
 		api(`/admin/user-groups/${groupId}/roles/${roleId}`, { method: 'DELETE' }),
 	// Additive grant — merges keys into the group's permission role without
 	// replacing existing grants (PATCH permissions = full-set replace).
-	addGroupPermissions: (groupId: string, permissionKeys: string[]) =>
-		api(`/admin/user-groups/${groupId}/permissions`, { method: 'POST', body: { permission_keys: permissionKeys } }),
-	removeRolePermission: (roleId: string, permissionKey: string) =>
-		api(`/admin/roles/${roleId}/permissions/${encodeURIComponent(permissionKey)}`, { method: 'DELETE' }),
-	createUser: (body: { email: string; username: string; password: string; display_name?: string }) =>
-		api<{ id: string; email: string; username: string }>('/admin/users', { method: 'POST', body }),
-	deleteUser: (userId: string) =>
-		api(`/admin/users/${userId}`, { method: 'DELETE' }),
-	hardDeleteUser: (userId: string) =>
-		api(`/admin/users/${userId}/hard`, { method: 'DELETE' }),
+	addGroupPermissions: (groupId: string, permissionKeys: string[]) => api(`/admin/user-groups/${groupId}/permissions`, { method: 'POST', body: { permission_keys: permissionKeys } }),
+	removeRolePermission: (roleId: string, permissionKey: string) => api(`/admin/roles/${roleId}/permissions/${encodeURIComponent(permissionKey)}`, { method: 'DELETE' }),
+	createUser: (
+		body: { 
+			email: string;
+			username: string;
+			password: string;
+			display_name?: string
+		 }
+	) => api<{ id: string; email: string; username: string }>('/admin/users', { method: 'POST', body }),
+	deleteUser: (userId: string) => api(`/admin/users/${userId}`, { method: 'DELETE' }),
+	hardDeleteUser: (userId: string) => api(`/admin/users/${userId}/hard`, { method: 'DELETE' }),
+	listGroups: (params?: string) => api<{ 
+		groups: UserGroup[];
+		total: number;
+		page?: number;
+		total_pages?: number
+	 }>(`/admin/user-groups${params ? `?${params}` : ''}`),
 
-	listGroups: (params?: string) =>
-		api<{ groups: UserGroup[]; total: number; page?: number; total_pages?: number }>(`/admin/user-groups${params ? `?${params}` : ''}`),
-	createGroup: (body: { name: string; description: string; permissions?: string[] }) =>
-		api<UserGroup>('/admin/user-groups', { method: 'POST', body }),
-	updateGroup: (id: string, body: { name?: string; description?: string; permissions?: string[] }) =>
-		api<UserGroup>(`/admin/user-groups/${id}`, { method: 'PATCH', body }),
-	deleteGroup: (id: string) =>
-		api<{ deleted: boolean }>(`/admin/user-groups/${id}`, { method: 'DELETE' }),
+	createGroup: (
+		body: { name: string; description: string; permissions?: string[] }
+	) => api<UserGroup>('/admin/user-groups', { method: 'POST', body }),
 
-	listRoles: (params?: string) =>
-		api<{ roles: UserRole[]; total: number; page: number; total_pages: number }>(`/admin/roles${params ? `?${params}` : ''}`),
-	createRole: (body: { name: string; permissions: string[] }) =>
-		api<UserRole>('/admin/roles', { method: 'POST', body }),
-	updateRole: (id: string, body: { name?: string; permissions?: string[] }) =>
-		api<UserRole>(`/admin/roles/${id}`, { method: 'PATCH', body }),
-	deleteRole: (id: string) =>
-		api<{ deleted: boolean }>(`/admin/roles/${id}`, { method: 'DELETE' }),
-
-	listCustomFieldEntityTypes: () =>
-		api<Array<{ value: string; label: string }>>('/custom-field-entity-types'),
+	updateGroup: (
+		id: string,
+		body: { name?: string; description?: string; permissions?: string[] }
+	) => api<UserGroup>(`/admin/user-groups/${id}`, { method: 'PATCH', body }),
+	deleteGroup: (id: string) => api<{ deleted: boolean }>(`/admin/user-groups/${id}`, { method: 'DELETE' }),
+	listRoles: (params?: string) => api<{ 
+		roles: UserRole[];
+		total: number;
+		page: number;
+		total_pages: number
+	 }>(`/admin/roles${params ? `?${params}` : ''}`),
+	createRole: (body: { name: string; permissions: string[] }) => api<UserRole>('/admin/roles', { method: 'POST', body }),
+	updateRole: (id: string, body: { name?: string; permissions?: string[] }) => api<UserRole>(`/admin/roles/${id}`, { method: 'PATCH', body }),
+	deleteRole: (id: string) => api<{ deleted: boolean }>(`/admin/roles/${id}`, { method: 'DELETE' }),
+	listCustomFieldEntityTypes: () => api<Array<{ value: string; label: string }>>('/custom-field-entity-types'),
 	// Moderation config (profile types, violation types, restriction
 	// operations + durations) — BUG-019/BUG-020/BUG-021
 	getModerationConfig: () =>
@@ -733,25 +776,14 @@ export const aiApi = {
 		if (params?.limit) p.set('limit', String(params.limit));
 		if (params?.offset) p.set('offset', String(params.offset));
 		const q = p.toString();
-		return api<{ reviews: HitlReview[]; total: number }>(
-			`/ai/hitl/pending${q ? '?' + q : ''}`
-		);
+
+		return api<{ reviews: HitlReview[]; total: number }>(`/ai/hitl/pending${q ? '?' + q : ''}`);
 	},
-
-	approveHitlReview: (id: string) =>
-		api<{ approved: boolean }>(`/ai/hitl/${id}/approve`, { method: 'POST' }),
-
-	rejectHitlReview: (id: string, reason: string) =>
-		api<{ rejected: boolean }>(`/ai/hitl/${id}/reject`, { method: 'POST', body: { reason } }),
-
-	verifyHitlClaim: (data: { claim: string; context?: string }) =>
-		api<HitlVerifyResult>('/ai/hitl/verify', { method: 'POST', body: data }),
-
-	listCategories: () =>
-		api<Array<{ value: string; label: string; description: string }>>('/ai/categories'),
-
-	listModels: () =>
-		api<Array<{ id: string; label: string }>>('/admin/ai/models'),
+	approveHitlReview: (id: string) => api<{ approved: boolean }>(`/ai/hitl/${id}/approve`, { method: 'POST' }),
+	rejectHitlReview: (id: string, reason: string) => api<{ rejected: boolean }>(`/ai/hitl/${id}/reject`, { method: 'POST', body: { reason } }),
+	verifyHitlClaim: (data: { claim: string; context?: string }) => api<HitlVerifyResult>('/ai/hitl/verify', { method: 'POST', body: data }),
+	listCategories: () => api<Array<{ value: string; label: string; description: string }>>('/ai/categories'),
+	listModels: () => api<Array<{ id: string; label: string }>>('/admin/ai/models')
 };
 
 export interface JsonLdTemplate {
@@ -1291,13 +1323,8 @@ export interface StockSearchResult {
 	has_next_page: boolean;
 }
 
-export interface StockImportResult {
-	media_id: string;
-}
-
-export interface StockProvidersResponse {
-	providers: { name: string; display_name: string }[];
-}
+export interface StockImportResult { media_id: string }
+export interface StockProvidersResponse { providers: { name: string; display_name: string }[] }
 
 export const stockAdminApi = {
 	listProviders: () => api<{ providers: StockProviderAdmin[] }>('/admin/stock/providers'),
@@ -2797,27 +2824,27 @@ export const verificationAdminApi = {
 	// callers need meta for server-side pagination.
 	list: (params?: string) =>
 		apiRaw<{
-			data: {
-				id: string;
-				requester_user_id: string;
-				entity_type: string;
-				organization_id?: string | null;
-				requested_type?: string | null;
-				form_submission_id: string;
-				status: string;
-				resolution_note?: string | null;
-				created_at: string;
-				reviewed_at?: string | null;
-				requester_username?: string;
-				requester_email?: string;
-				requester_verified?: boolean;
-				org_name?: string | null;
-				org_slug?: string | null;
-				org_verified?: boolean | null;
+		data: { 
+			id: string;
+			requester_user_id: string;
+			entity_type: string;
+			organization_id?: string | null;
+			requested_type?: string | null;
+			form_submission_id: string;
+			status: string;
+			resolution_note?: string | null;
+			created_at: string;
+			reviewed_at?: string | null;
+			requester_username?: string;
+			requester_email?: string;
+			requester_verified?: boolean;
+			org_name?: string | null;
+			org_slug?: string | null;
+			org_verified?: boolean | null;
 				reviewed_by_username?: string | null;
-			}[];
+		 }[];
 			meta: { total: number; page: number; page_size: number; page_count: number };
-		}>(`/admin/verification-requests${params ? `?${params}` : ''}`),
+	 }>(`/admin/verification-requests${params ? `?${params}` : ''}`),
 	review: (id: string, body: { status: 'approved' | 'rejected'; resolution_note?: string }) =>
 		api<unknown>(`/admin/verification-requests/${id}`, { method: 'PATCH', body }),
 	// Backend returns {"data":{"types":[…]}}; api() unwraps body.data → {types}.
@@ -2828,11 +2855,11 @@ export const verificationAdminApi = {
 		api<unknown>(`/admin/users/${id}/verify`, { method: 'DELETE' }),
 	requestSubmission: (requestId: string) =>
 		api<{
-			id: string;
-			form_id: string;
-			field_values: Record<string, unknown> | null;
-			status: string;
-			created_at: string;
+		id: string;
+		form_id: string;
+		field_values: Record<string, unknown> | null;
+		status: string;
+		created_at: string;
 			request_id: string;
 		}>(`/admin/verification-requests/${requestId}/submission`),
 };

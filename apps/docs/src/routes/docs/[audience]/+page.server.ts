@@ -1,11 +1,11 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import { buildMeta, collectionPageLd, DOCS_ORIGIN } from '$lib/seo/meta';
-import type { DocPageSummary, DocAudience, DocNavItem } from '$lib/types';
-import { AUDIENCE_LABEL_KEY } from '$lib/types';
-import { tServer, DEFAULT_SITE_NAME } from '$lib/i18n/dict';
-import type { ExistingPage } from '$lib/server/docs-author';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
+import { buildMeta, collectionPageLd, DOCS_ORIGIN } from '#lib/seo/meta.js';
+import type { DocPageSummary, DocAudience, DocNavItem } from '#lib/types/index.js';
+import { AUDIENCE_LABEL_KEY } from '#lib/types/index.js';
+import { tServer, DEFAULT_SITE_NAME } from '#lib/i18n/dict.js';
+import type { ExistingPage } from '#lib/server/docs-author.js';
 
 /**
  * Audience landing: lists published pages for the given audience. Gated

@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiDelete, ApiError } from '$lib/server/api';
+import { apiContext, apiDelete, ApiError } from '#lib/server/api.js';
 
 /**
  * Newsletter unsubscribe page at /unsubscribe (Section 62, ADR-082).

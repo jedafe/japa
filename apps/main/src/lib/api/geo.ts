@@ -1,4 +1,4 @@
-import { api } from '$lib/api/client';
+import { api } from '#lib/api/client.js';
 import type {
 	GeoContext,
 	GeoDetect,
@@ -6,7 +6,7 @@ import type {
 	GeoState,
 	GeoCity,
 	ContentCountryPreference
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 /**
  * Geo API client (ADR-037 / ADR-064 / ADR-064a). Wraps the /geo/*,

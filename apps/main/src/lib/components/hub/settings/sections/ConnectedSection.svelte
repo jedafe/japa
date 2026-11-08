@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
-	import { unlinkAccount } from '$lib/api/hub';
-	import { optimisticAction } from '$lib/components/hub/optimisticAction';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { unlinkAccount } from '#lib/api/hub.js';
+	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { Link2 } from 'lucide-svelte';
 
 	interface ConnectedAccount {

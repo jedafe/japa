@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
-import { API_V1 } from '$lib/server/api';
-import { canonicalUrl } from '$lib/seo';
-import type { TrackSummary } from '$lib/types';
+import { API_V1 } from '#lib/server/api.js';
+import { canonicalUrl } from '#lib/seo/index.js';
+import type { TrackSummary } from '#lib/types/index.js';
 
 /**
  * Per-host sitemap for academy.japa.to (sitemap-protocol same-host

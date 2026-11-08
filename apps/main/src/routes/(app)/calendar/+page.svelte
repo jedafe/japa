@@ -1,12 +1,12 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	import { untrack } from 'svelte';
-	import { t, i18n } from '$lib/i18n';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 	import {
 		CalendarDays,
 		Plus,
@@ -22,12 +22,12 @@
 		ChevronRight,
 		Repeat
 	} from 'lucide-svelte';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import type { CalendarEntry, CalendarCategory } from '$lib/types';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
+	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '#lib/components/ui/index.js';
+	import { staticAutocompleteFetcher } from '#lib/autocomplete.js';
+	import type { CalendarEntry, CalendarCategory } from '#lib/types/index.js';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 
 	let { data }: { data: PageData } = $props();
 
@@ -131,7 +131,7 @@
 	}
 
 	function navigate(params: URLSearchParams) {
-		goto(`/calendar${params.toString() ? `?${params.toString()}` : ''}`, { keepFocus: true });
+		goto(`/calendar${params.toString() ? `?${params.toString()}` : ''}`, { reset: false });
 	}
 
 	function setView(value: string) {

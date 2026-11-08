@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /forms — migrated to shared components (ActionMenu, FilterPanel,
 	// Modal, bulkActionsList). Tabbed page (all/system/active/inactive);
 	// keeps page-local Modals for create/edit (forms with slug auto-fill) and
 	// delete confirmation. View detail opens in a Modal.
-	import { t, locale } from '$lib/stores/i18n.svelte';
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { DataTable } from '$lib/components/ui/data-table';
-	import { Button } from '$lib/components/ui/button';
-	import { Modal } from '$lib/components/ui/modal';
-	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
+	import { t, locale } from '#lib/stores/i18n.svelte.js';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { Tabs } from '#lib/components/ui/tabs/index.js';
+	import { DataTable } from '#lib/components/ui/data-table/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import type { ActionItem, BulkAction } from '#lib/components/ui/data-table/index.js';
 	import { FileText, Plus, Eye, RefreshCw, Trash2, Pencil, ExternalLink, Settings } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
-	import { formsAdminApi, spacesAdminApi } from '$lib/api';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { formsAdminApi, spacesAdminApi } from '#lib/api.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
 
 	type Form = {
 		id: string;

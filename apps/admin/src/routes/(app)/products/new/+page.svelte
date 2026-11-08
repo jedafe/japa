@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
+	import { siteName } from '#lib/stores/site.svelte.js';
 	// /products/new — dedicated product create page (§80). Gated by
 	// products.create; submits POST /admin/products.
-	import PageHeader from '$lib/components/layout/page-header.svelte';
-	import ProductForm from '$lib/components/products/product-form.svelte';
+	import PageHeader from '#lib/components/layout/page-header.svelte';
+	import ProductForm from '#lib/components/products/product-form.svelte';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/stores/i18n.svelte';
+	import { t } from '#lib/stores/i18n.svelte.js';
 </script>
 
 <svelte:head><title>{t('products.new_product', 'New product')} — {siteName()}</title></svelte:head>

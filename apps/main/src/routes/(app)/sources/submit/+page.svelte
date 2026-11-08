@@ -1,10 +1,10 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: docs/superpowers/plans/2026-09-11-sources-directory-v2-plan.md
 	// Public source proposal page — a standalone deep link for the same
 	// ProposeSourceForm that renders inside ProposeSourceModal on /sources.
-	import { t } from '$lib/i18n';
-	import ProposeSourceForm from '$lib/components/source/ProposeSourceForm.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import ProposeSourceForm from '#lib/components/source/ProposeSourceForm.svelte';
 	import { Rss } from 'lucide-svelte';
 	import type { PageData } from './$types';
 

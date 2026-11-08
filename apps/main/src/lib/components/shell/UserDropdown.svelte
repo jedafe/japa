@@ -8,10 +8,10 @@
 		LogOut,
 		LogIn
 	} from 'lucide-svelte';
-	import { Menu, MenuItem, MenuSeparator } from '$lib/components/ui';
-	import { t } from '$lib/i18n';
+	import { Menu, MenuItem, MenuSeparator } from '#lib/components/ui/index.js';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import type { SessionUser } from '$lib/types';
+	import type { SessionUser } from '#lib/types/index.js';
 
 	interface Props {
 		user: SessionUser | null;

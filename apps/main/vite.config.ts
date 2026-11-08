@@ -1,3 +1,6 @@
+import adapter from '@sveltejs/adapter-node';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
@@ -35,20 +38,54 @@ function apiHeadersPlugin(): Plugin {
 		configureServer(server) {
 			server.middlewares.use(
 				(req: Connect.IncomingMessage, _res, next: Connect.NextFunction) => {
-					const url = req.url ?? '';
-					if (url.startsWith('/api/v1/') || url.startsWith('/ws') || url.startsWith('/seaweedfs')) {
-						const cookie = req.headers.cookie ?? '';
-						const match = /jc_token=([^;]+)/.exec(cookie);
-						if (match) req.headers.authorization = `Bearer ${match[1]}`;
-						const host = (req.headers.host ?? '').split(':')[0];
-						if (host) req.headers['x-forwarded-host'] = host;
-					}
-					next();
+				const url = req.url ?? '';
+				if (url.startsWith('/api/v1/') || url.startsWith('/ws') || url.startsWith('/seaweedfs')) {
+					const cookie = req.headers.cookie ?? '';
+					const match = (/jc_token=([^;]+)/).exec(cookie);
+					if (match) req.headers.authorization = `Bearer ${match[1]}`;
+					const host = (req.headers.host ?? '').split(':')[0];
+					if (host) req.headers['x-forwarded-host'] = host;
 				}
-			);
+				next();
+			});
 		}
 	};
 }
+
+const dev = process.argv.includes('dev') || process.argv.includes('serve');
+
+// PUBLIC_* vars live in .env files — Vite injects them into
+// import.meta.env for client code, but they are NOT in process.env when
+// this config file is evaluated. loadEnv reads .env/.env.local/
+// .env.[mode] so the CSP connect-src origins stay in sync with what the
+// bundle actually calls. Real environment variables (CI/deploy) win over
+// file values.
+const fileEnv = loadEnv(dev ? 'development' : 'production', process.cwd(), 'PUBLIC_');
+
+const env = (key: string) => process.env[key] ?? fileEnv[key];
+
+// Origins the browser legitimately connects to (API, realtime WS, Umami,
+// GlitchTip). PUBLIC_* vars are build-time constants — the same values are
+// compiled into the client bundle, so deriving CSP origins from them can
+// never drift from what the app actually calls.
+const envOrigin = (v: string | undefined) => {
+	try {
+		const u = new URL(v ?? '');
+
+		return (/^https?:|^wss?:/).test(u.protocol) ? `${u.protocol}//${u.host}` : '';
+	} catch {
+		return '';
+	}
+};
+
+const connectOrigins = [
+	envOrigin(env('PUBLIC_JC_API_URL')),
+	envOrigin(env('PUBLIC_JC_WS_URL')),
+	envOrigin(env('PUBLIC_JC_UMAMI_URL')),
+	envOrigin(env('PUBLIC_JC_GLITCHTIP_DSN'))
+].filter(Boolean);
+
+const umamiOrigin = envOrigin(env('PUBLIC_JC_UMAMI_URL'));
 
 export default defineConfig({
 	define: {
@@ -56,7 +93,16 @@ export default defineConfig({
 		// (replaces $service-worker version; see src/service-worker.ts).
 		__SW_VERSION__: JSON.stringify(String(Date.now()))
 	},
-	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit(), svelteTesting()],
+	plugins: [
+		tailwindcss(),
+		apiHeadersPlugin(),
+		sveltekit({
+			preprocess: vitePreprocess(),
+			// Public-facing community app is SSR via adapter-node + Bun (port 3000).
+			adapter: adapter()
+		}),
+		svelteTesting()
+	],
 	resolve: {
 		// The workspace packages (@japaconnect/ui, ai-panel, landing-blocks)
 		// carry stale bun-installed svelte copies in their own node_modules

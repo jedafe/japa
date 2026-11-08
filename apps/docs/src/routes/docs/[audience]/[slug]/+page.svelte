@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { onMount } from 'svelte';
-	import AppShell from '$lib/components/shell/AppShell.svelte';
-	import TableOfContents from '$lib/components/shell/TableOfContents.svelte';
-	import DocContent from '$lib/components/docs/DocContent.svelte';
-	import DocEditForm from '$lib/components/docs/DocEditForm.svelte';
-	import { t } from '$lib/i18n';
+	import AppShell from '#lib/components/shell/AppShell.svelte';
+	import TableOfContents from '#lib/components/shell/TableOfContents.svelte';
+	import DocContent from '#lib/components/docs/DocContent.svelte';
+	import DocEditForm from '#lib/components/docs/DocEditForm.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
-	import { persistNavCollapse } from '$lib/nav-collapse';
+	import { persistNavCollapse } from '#lib/nav-collapse.js';
 	import {
 		ArrowLeft,
 		ArrowRight,
@@ -19,8 +19,8 @@
 		ListTree,
 		Pencil
 	} from 'lucide-svelte';
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { parseManagedCategories } from '$lib/docs/catalog';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { parseManagedCategories } from '#lib/docs/catalog.js';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -45,7 +45,7 @@
 		const status = page.url.searchParams.get('saved') ?? page.url.searchParams.get('created');
 		if (status) {
 			notice = status;
-			const url = new URL(page.url);
+			const url = new URL(page.url.href);
 			url.searchParams.delete('saved');
 			url.searchParams.delete('created');
 			history.replaceState(history.state, '', url);

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import type { Visibility } from '$lib/types';
-	import SelectField from '$lib/components/ui/SelectField.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import type { Visibility } from '#lib/types/index.js';
+	import SelectField from '#lib/components/ui/SelectField.svelte';
 
 	interface Props {
 		slug: string;

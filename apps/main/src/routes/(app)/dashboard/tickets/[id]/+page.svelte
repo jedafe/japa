@@ -1,17 +1,17 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
 	// Ref: japaconnect-engineering/sections/38-tickets.md (user portal)
 	// Single-ticket thread view: header (subject, status, priority, dates) +
 	// the original description as the first post + nested comments. The reply
 	// box posts to /me/tickets/{id}/comments via the browser API client and
 	// prepends the new comment optimistically.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { ticketRef } from '$lib/tickets';
-	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { ticketRef } from '#lib/tickets.js';
+	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import { MessageSquare, Send } from 'lucide-svelte';
 	import { untrack } from 'svelte';
-	import type { TicketComment, TicketPriority, TicketStatus } from '$lib/types';
+	import type { TicketComment, TicketPriority, TicketStatus } from '#lib/types/index.js';
 
 	let { data } = $props();
 	const detail = $derived(data.detail);

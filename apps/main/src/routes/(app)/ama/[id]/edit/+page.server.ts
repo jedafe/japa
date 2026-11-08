@@ -1,8 +1,8 @@
 // Ref: japaconnect-engineering/sections/88-ask-an-expat.md
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { AMAThread, GeoCountry } from '$lib/types';
+import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
+import type { AMAThread, GeoCountry } from '#lib/types/index.js';
 
 /**
  * Edit-AMA form at /ama/[id]/edit — auth-gated, host-or-moderate.

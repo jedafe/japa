@@ -4,9 +4,9 @@
 	// so admins can add/remove/reorder links from the admin panel without
 	// touching frontend code.
 	import { page } from '$app/state';
-	import { t } from '$lib/i18n';
-	import { resolveMenuUrl } from '$lib/appOrigins';
-	import type { Menu, MenuItem } from '$lib/types';
+	import { t } from '#lib/i18n/index.js';
+	import { resolveMenuUrl } from '#lib/appOrigins.js';
+	import type { Menu, MenuItem } from '#lib/types/index.js';
 
 	interface Props {
 		/** Navigation menu from GET /menus/academy_footer — filtered to guest-visible items. */

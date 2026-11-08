@@ -7,16 +7,23 @@
 	// Ref: japaconnect-engineering/sections/25-ad-placement.md —
 	// ad campaign content supports an image_media_id + image_url pair.
 	// Ref: AGENTS.md Rule 16 — media comes from the API, never hardcoded.
-	import { apiFetch, apiRaw, mediaAdminApi, stockAdminApi, type StockPhoto } from '$lib/api';
-	import { PUBLIC_JC_API_URL } from '$env/static/public';
+	import {
+		apiFetch,
+		apiRaw,
+		mediaAdminApi,
+		stockAdminApi,
+		type StockPhoto
+	} from '#lib/api.js';
+
+	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
-	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
-	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Modal } from '$lib/components/ui/modal';
-	import { Button } from '$lib/components/ui/button';
+	import { convertImageToModernFormat } from '#lib/utils/imageConvert.js';
+	import { t } from '#lib/stores/i18n.svelte.js';
+	import { hasPermission } from '#lib/stores/permissions.svelte.js';
+	import { Modal } from '#lib/components/ui/modal/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { Upload, Search, Image as ImageIcon, X, Loader2, Download, Check, ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 
 	type MediaItem = {
 		id: string;
@@ -130,7 +137,7 @@
 				const last = parts[parts.length - 1] ?? '';
 				if (last.includes('@')) {
 					encoded = last.split('@')[0];
-				} else if (/^[A-Za-z0-9_-]+\.[a-z0-9]+$/i.test(last)) {
+				} else if ((/^[A-Za-z0-9_-]+\.[a-z0-9]+$/i).test(last)) {
 					encoded = last.slice(0, last.lastIndexOf('.'));
 				}
 			}
@@ -330,7 +337,7 @@
 		try {
 			const result = await mediaAdminApi.update(id, updates);
 			if (result.ok) {
-				items = items.map((i) => (i.id === id ? { ...i, ...updates } : i));
+				items = items.map((i) => i.id === id ? { ...i, ...updates } : i);
 				if (pickedItem?.id === id) pickedItem = { ...pickedItem, ...updates };
 				if (selectedId === id) editSaved = true;
 			} else {
@@ -508,7 +515,7 @@
 				style={activeTab === 'browse'
 					? 'border-bottom: 2px solid var(--color-primary); color: var(--color-primary)'
 					: 'color: var(--color-muted)'}
-				onclick={() => (activeTab = 'browse')}
+				onclick={() => activeTab = 'browse'}
 			>
 				<ImageIcon class="me-1 inline h-4 w-4" />
 				{t('ads.media_browse', 'Browse Library')}
@@ -519,7 +526,7 @@
 				style={activeTab === 'upload'
 					? 'border-bottom: 2px solid var(--color-primary); color: var(--color-primary)'
 					: 'color: var(--color-muted)'}
-				onclick={() => (activeTab = 'upload')}
+				onclick={() => activeTab = 'upload'}
 			>
 				<Upload class="me-1 inline h-4 w-4" />
 				{t('ads.media_upload', 'Upload New')}
@@ -530,7 +537,7 @@
 				style={activeTab === 'stock'
 					? 'border-bottom: 2px solid var(--color-primary); color: var(--color-primary)'
 					: 'color: var(--color-muted)'}
-				onclick={() => (activeTab = 'stock')}
+				onclick={() => activeTab = 'stock'}
 			>
 				<Search class="me-1 inline h-4 w-4" />
 				{t('ads.media_stock', 'Stock Photos')}
@@ -670,7 +677,7 @@
 								<input
 									type="text"
 									bind:value={editAlt}
-									oninput={() => (editSaved = false)}
+									oninput={() => editSaved = false}
 									placeholder={t('media.picker.alt_placeholder', 'Describe the image for screen readers')}
 									class="mt-1 w-full rounded-md border px-2 py-1.5 text-sm font-normal"
 									style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
@@ -681,7 +688,7 @@
 								<input
 									type="text"
 									bind:value={editCaption}
-									oninput={() => (editSaved = false)}
+									oninput={() => editSaved = false}
 									placeholder={t('media.picker.caption_placeholder', 'Optional caption/title')}
 									class="mt-1 w-full rounded-md border px-2 py-1.5 text-sm font-normal"
 									style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
@@ -749,11 +756,13 @@
 			{/if}
 
 			<!-- Confirm button -->
-			<div class="flex justify-end gap-2 border-t pt-4" style="border-color: var(--color-border)">
-				<Button variant="ghost" onclick={() => (open = false)}>{t('common.cancel', 'Cancel')}</Button>
-				<Button onclick={handleConfirm} disabled={!selectedId}>
-					{t('ads.media_select', 'Select Image')}
-				</Button>
+
+			<div
+				class="flex justify-end gap-2 border-t pt-4"
+				style="border-color: var(--color-border)"
+			>
+				<Button variant="ghost" onclick={() => open = false}>{t('common.cancel', 'Cancel')}</Button>
+				<Button onclick={handleConfirm} disabled={!selectedId}>{t('ads.media_select', 'Select Image')}</Button>
 			</div>
 		{:else if activeTab === 'upload'}
 			<!-- Upload tab -->
@@ -786,7 +795,7 @@
 					<input
 						bind:this={fileInput}
 						type="file"
-						{accept}
+						accept={accept}
 						onchange={handleFileSelect}
 						class="hidden"
 					/>
@@ -799,9 +808,13 @@
 							<p class="truncate text-sm font-medium" style="color: var(--color-foreground)">{uploadFile.name}</p>
 							<p class="text-xs" style="color: var(--color-muted)">{(uploadFile.size / 1024).toFixed(1)} KB</p>
 						</div>
-						<button type="button" onclick={() => (uploadFile = null)} class="hover:opacity-70" aria-label={t('common.remove', 'Remove')}>
-							<X class="h-4 w-4" style="color: var(--color-muted)" />
-						</button>
+
+						<button
+							type="button"
+							onclick={() => uploadFile = null}
+							class="hover:opacity-70"
+							aria-label={t('common.remove', 'Remove')}
+						><X class="h-4 w-4" style="color: var(--color-muted)" /></button>
 					</div>
 				{/if}
 
@@ -809,9 +822,16 @@
 					<p class="text-sm" style="color: var(--color-muted)">{uploadProgress}</p>
 				{/if}
 
-				<div class="flex justify-end gap-2 border-t pt-4" style="border-color: var(--color-border)">
-					<Button variant="ghost" onclick={() => (open = false)}>{t('common.cancel', 'Cancel')}</Button>
-					<Button onclick={handleUpload} disabled={!uploadFile || uploading}>
+				<div
+					class="flex justify-end gap-2 border-t pt-4"
+					style="border-color: var(--color-border)"
+				>
+					<Button variant="ghost" onclick={() => open = false}>{t('common.cancel', 'Cancel')}</Button>
+
+					<Button
+						onclick={handleUpload}
+						disabled={!uploadFile || uploading}
+					>
 						{#if uploading}
 							<Loader2 class="me-1 h-4 w-4 animate-spin" />
 							{t('common.uploading', 'Uploading...')}

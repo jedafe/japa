@@ -1,14 +1,14 @@
 <script lang="ts">
-	import SeoHead from '$lib/seo/SeoHead.svelte';
-	import { t } from '$lib/i18n';
+	import SeoHead from '#lib/seo/SeoHead.svelte';
+	import { t } from '#lib/i18n/index.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { Compass, Users, Building2, Hash, FileText, Globe, BadgeCheck, Radar } from 'lucide-svelte';
-	import { EmptyState, UrlTabs, FollowButton, SpaceJoinButton, DirectoryCard, type UrlTab, type CardMetaItem } from '$lib/components/ui';
-	import RadarItemRow from '$lib/components/RadarItemRow.svelte';
-	import { api } from '$lib/api/client';
+	import { EmptyState, UrlTabs, FollowButton, SpaceJoinButton, DirectoryCard, type UrlTab, type CardMetaItem } from '#lib/components/ui/index.js';
+	import RadarItemRow from '#lib/components/RadarItemRow.svelte';
+	import { api } from '#lib/api/client.js';
 	import type { PageData } from './$types';
-	import type { PublicOrgListItem } from '$lib/types';
+	import type { PublicOrgListItem } from '#lib/types/index.js';
 
 	let { data }: { data: PageData } = $props();
 

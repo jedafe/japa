@@ -1,4 +1,4 @@
-import type { DocAudience, DocNavItem, DocNavTree, DocPageSummary } from '$lib/types';
+import type { DocAudience, DocNavItem, DocNavTree, DocPageSummary } from '#lib/types/index.js';
 
 /**
  * Portal derivations for the docs app landing, sidebar, and category pages.

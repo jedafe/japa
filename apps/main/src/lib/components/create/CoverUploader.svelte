@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { ImagePlus, Loader2, X } from 'lucide-svelte';
-	import type { MediaAsset } from '$lib/types';
-	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
+	import type { MediaAsset } from '#lib/types/index.js';
+	import MediaLibraryModal from '#lib/components/media/MediaLibraryModal.svelte';
 
 	interface Props {
 		/** Current cover media id (null = no cover). */

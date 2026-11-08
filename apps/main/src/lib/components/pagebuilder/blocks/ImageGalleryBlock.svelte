@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { ImageGalleryProps } from '../types';
-	import { safeHref } from '$lib/utils/safeHtml';
+	import { safeHref } from '#lib/utils/safeHtml.js';
 	let { props }: { props: ImageGalleryProps } = $props();
 	const columns = $derived(props.columns ?? 3);
 	const gridClass = $derived(

@@ -5,9 +5,9 @@
 	// /search?q=. Mirrors the Docs app's SearchPalette (ADR-060 ⌘K pattern).
 	import { Dialog, Command } from 'bits-ui';
 	import { Search, X, CornerDownLeft } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
-	import { api } from '$lib/api/client';
+	import { api } from '#lib/api/client.js';
 
 	interface SearchSuggestion {
 		type: string;

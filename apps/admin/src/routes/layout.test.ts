@@ -1,30 +1,30 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
-vi.mock('$app/environment', () => ({ browser: false }));
+vi.mock('$app/env', () => ({ browser: false }));
 
 vi.mock('$env/static/public', () => ({ PUBLIC_JC_ENV: 'development' }));
 
-vi.mock('$lib/api/client', () => ({
+vi.mock('#lib/api/client.js', () => ({
 	apiFetch: vi.fn().mockResolvedValue({ data: null, error: null, status: 200 })
 }));
 
-vi.mock('$lib/stores/auth.svelte', () => ({
+vi.mock('#lib/stores/auth.svelte.js', () => ({
 	user: { current: { username: 'Ada', avatar_url: '' } },
 	clearUser: vi.fn()
 }));
 
-vi.mock('$lib/stores/permissions.svelte', () => ({
+vi.mock('#lib/stores/permissions.svelte.js', () => ({
 	permissions: [],
 	hasPermission: vi.fn().mockReturnValue(false),
 	getPermissionState: vi.fn().mockReturnValue([])
 }));
 
-vi.mock('$lib/stores/theme.svelte', () => ({
+vi.mock('#lib/stores/theme.svelte.js', () => ({
 	theme: 'light'
 }));
 
-vi.mock('$lib/stores/notifications.svelte', () => ({
+vi.mock('#lib/stores/notifications.svelte.js', () => ({
 	getNotifications: () => [],
 	getUnreadCount: () => 0,
 	markRead: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock('$lib/stores/notifications.svelte', () => ({
 }));
 
 import { load } from './+layout';
-import TopBar from '$lib/components/layout/TopBar.svelte';
+import TopBar from '#lib/components/layout/TopBar.svelte';
 
 // The admin app is a pure SPA (ssr=false). The universal +layout.ts load
 // resolves the locale from the jc_locale cookie (client-only) and initializes

@@ -8,10 +8,10 @@
 	 *      japaconnect-engineering/sections/08-spaces.md (space follow)
 	 */
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
+	import { t } from '#lib/i18n/index.js';
 	import { UserPlus, UserCheck, Loader2 } from 'lucide-svelte';
-	import { toggleFollow, type FollowableType } from '$lib/api/hub';
-	import { requireAuthOrRedirect } from '$lib/auth/guest';
+	import { toggleFollow, type FollowableType } from '#lib/api/hub.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 
 	interface Props {
 		entityType: FollowableType;

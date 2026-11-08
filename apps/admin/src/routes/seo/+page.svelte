@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { siteName } from '$lib/stores/site.svelte';
-	import PageHeader from "$lib/components/layout/page-header.svelte";
-	import { Button } from "$lib/components/ui/button";
-	import { Card, CardContent } from "$lib/components/ui/card";
-	import { seoAdminApi, contentSearchApi, type SeoValidationResult, type ContentSearchItem } from "$lib/api";
-	import { t } from "$lib/stores/i18n.svelte";
-	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import { siteName } from '#lib/stores/site.svelte.js';
+	import PageHeader from "#lib/components/layout/page-header.svelte";
+	import { Button } from "#lib/components/ui/button/index.js";
+	import { Card, CardContent } from "#lib/components/ui/card/index.js";
+	import { seoAdminApi, contentSearchApi, type SeoValidationResult, type ContentSearchItem } from "#lib/api.js";
+	import { t } from "#lib/stores/i18n.svelte.js";
+	import { hasPermission } from "#lib/stores/permissions.svelte.js";
 	import { Search, AlertTriangle, CheckCircle2, RefreshCw, Globe, Link2 } from "lucide-svelte";
 
 	const canManage = $derived(hasPermission("admin.settings"));

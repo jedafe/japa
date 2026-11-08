@@ -4,20 +4,20 @@
 	// lesson meta (right sidebar via SetSidebar).
 	// Mark complete → POST /academy/lessons/:id/complete (optimistic Set, marking
 	// guard, rollback, auto-next). No ads. Access verified server-side.
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { loginUrl, ACADEMY_ORIGIN } from '$lib/appOrigins';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { loginUrl, ACADEMY_ORIGIN } from '#lib/appOrigins.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
-	import CurriculumRail from '$lib/components/academy/CurriculumRail.svelte';
-	import ProgressRing from '$lib/components/academy/ProgressRing.svelte';
+	import SetSidebar from '#lib/components/shell/SetSidebar.svelte';
+	import CurriculumRail from '#lib/components/academy/CurriculumRail.svelte';
+	import ProgressRing from '#lib/components/academy/ProgressRing.svelte';
 	import { CheckCircle, ArrowRight, ArrowLeft, ExternalLink, Download, List } from 'lucide-svelte';
-	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
+	import { enrollmentsStore } from '#lib/stores/enrollments.svelte.js';
 	import type { PageData } from './$types';
-	import type { Enrollment, Quiz, QuizQuestion, QuizResult, QuizSubmission } from '$lib/types';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
-	import { excerptFromHtml, safeJsonLd } from '$lib/seo';
+	import type { Enrollment, Quiz, QuizQuestion, QuizResult, QuizSubmission } from '#lib/types/index.js';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
+	import { excerptFromHtml, safeJsonLd } from '#lib/seo/index.js';
 
 	let { data }: { data: PageData } = $props();
 	const track = $derived(data.track);

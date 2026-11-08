@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 import ProposeSourceForm from './ProposeSourceForm.svelte';
-import type { SourceMeta, ProbeReport } from '$lib/types/sources';
+import type { SourceMeta, ProbeReport } from '#lib/types/sources.js';
 
 vi.mock('$app/state', () => ({
 	page: {
@@ -10,15 +10,10 @@ vi.mock('$app/state', () => ({
 	}
 }));
 
-// $lib/auth/guest reads the page through $app/stores + get() — mock an
+// $lib/auth/guest reads the page through $app/state — mock an
 // authenticated viewer so requireAuthOrRedirect() passes in tests.
-vi.mock('$app/stores', () => ({
-	page: {
-		subscribe: (fn: (v: unknown) => void) => {
-			fn({ url: new URL('http://localhost/sources/submit'), data: { isAuthed: true } });
-			return () => {};
-		}
-	}
+vi.mock('$app/state', () => ({
+	page: { url: new URL('http://localhost/sources/submit'), data: { isAuthed: true } }
 }));
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));

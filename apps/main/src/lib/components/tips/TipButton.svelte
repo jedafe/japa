@@ -5,8 +5,8 @@
 	//
 	// Ref: japaconnect-engineering/sections/125-donations-tips.md
 	import { DropdownMenu } from 'bits-ui';
-	import { t } from '$lib/i18n';
-	import { getUserTipConfig, getOrgTipConfig, getSpaceTipConfig, type TipConfig } from '$lib/api/tips';
+	import { t } from '#lib/i18n/index.js';
+	import { getUserTipConfig, getOrgTipConfig, getSpaceTipConfig, type TipConfig } from '#lib/api/tips.js';
 	import TipDialog from './TipDialog.svelte';
 	import { Gift } from 'lucide-svelte';
 

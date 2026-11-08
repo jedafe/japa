@@ -6,9 +6,9 @@
 </script>
 
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
-	import { sanitizeContentHtml, safeHref } from '$lib/utils/safeHtml';
+	import { t } from '#lib/i18n/index.js';
+	import { api } from '#lib/api/client.js';
+	import { sanitizeContentHtml, safeHref } from '#lib/utils/safeHtml.js';
 
 	interface Props {
 		props: {

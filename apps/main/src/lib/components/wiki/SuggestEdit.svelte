@@ -5,13 +5,13 @@
 	// fields as set_value ops to POST /wiki/suggest. Renders nothing unless
 	// the wiki.structured_edits feature flag is on.
 	import { page } from '$app/state';
-	import { Modal } from '$lib/components/ui';
+	import { Modal } from '#lib/components/ui/index.js';
 	import { Pencil, X, Send, Loader2, Plus, Trash2 } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
-	import CustomFieldGroup from '$lib/components/create/panel/CustomFieldGroup.svelte';
-	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { t } from '#lib/i18n/index.js';
+	import CustomFieldGroup from '#lib/components/create/panel/CustomFieldGroup.svelte';
+	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
 	import {
 		getEntityFields,
 		getFieldTypes,
@@ -22,10 +22,10 @@
 		type WikiEntityFields,
 		type WikiFieldDefInput,
 		type WikiFieldOp
-	} from '$lib/api/wiki';
-	import { formatWikiFieldValue } from '$lib/utils/wikiFieldValue';
-	import type { CurrencyInfo } from '$lib/utils/currency';
-	import type { CustomFieldDef } from '$lib/types';
+	} from '#lib/api/wiki.js';
+	import { formatWikiFieldValue } from '#lib/utils/wikiFieldValue.js';
+	import type { CurrencyInfo } from '#lib/utils/currency.js';
+	import type { CustomFieldDef } from '#lib/types/index.js';
 
 	let {
 		entityType,

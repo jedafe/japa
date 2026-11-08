@@ -1,6 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { API_BASE, JC_SURFACE } from '$lib/server/api';
+import { API_BASE, JC_SURFACE } from '#lib/server/api.js';
 import { buildApiUrl } from '@japaconnect/api-url';
 
 /**
