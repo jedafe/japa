@@ -744,6 +744,7 @@ import { contentHref } from '#lib/utils/contentLink.js';
 				<VoteRail
 					entityType="thread"
 					entityId={thread.id}
+					authorId={thread.author_user_id}
 					score={thread.vote_score}
 					layout="rail"
 					authed={data.authed}

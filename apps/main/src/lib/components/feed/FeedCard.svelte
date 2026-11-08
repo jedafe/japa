@@ -37,7 +37,9 @@
 	const itemHref = $derived(href(item));
 	// Forum threads vote (Section 08) rather than react — the card renders a
 	// functional VoteRail wherever a static score would otherwise show.
-	const isForum = $derived(item.content_type === 'forum_thread' || item.content_type === 'discussion');
+	// VoteRail keys on forum_threads.id — §49 contents-typed discussions have
+	// no forum_threads row, so they take the static score path instead.
+	const isForum = $derived(item.content_type === 'forum_thread');
 	const authed = $derived(!!page.data.isAuthed);
 	const authorId = $derived(item.author_id ?? '');
 	const authorSlug = $derived(item.author_username ?? null);
@@ -119,6 +121,7 @@
 					entityType="thread"
 					entityId={item.forum_thread_id ?? ''}
 					slug={item.slug}
+					authorId={item.author_id}
 					score={item.vote_score ?? 0}
 					layout="horizontal"
 					{authed}
@@ -288,6 +291,7 @@
 					entityType="thread"
 					entityId={item.forum_thread_id ?? ''}
 					slug={item.slug}
+					authorId={item.author_id}
 					score={item.vote_score ?? 0}
 					layout="horizontal"
 					{authed}
@@ -363,6 +367,7 @@
 				entityType="thread"
 				entityId={item.forum_thread_id ?? ''}
 				slug={item.slug}
+				authorId={item.author_id}
 				score={item.vote_score ?? 0}
 				layout="vertical"
 				{authed}

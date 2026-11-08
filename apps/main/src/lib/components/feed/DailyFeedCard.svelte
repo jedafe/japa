@@ -104,7 +104,9 @@
 	// Forum threads use up/down votes (Section 08) instead of emoji reactions —
 	// same card chrome, but the engagement bar shows a functional VoteRail in
 	// place of the love button.
-	const isForum = $derived(item.content_type === 'forum_thread' || item.content_type === 'discussion');
+	// VoteRail keys on forum_threads.id — §49 contents-typed discussions have
+	// no forum_threads row, so they take the reaction path instead.
+	const isForum = $derived(item.content_type === 'forum_thread');
 	const canonicalHref = $derived(contentHref(item));
 	const actionLabel = $derived(readPostLabel(item.content_type));
 	const meta = $derived(contentTypeMeta(item.content_type));
@@ -359,6 +361,7 @@
 						entityType="thread"
 						entityId={item.forum_thread_id ?? ''}
 						slug={item.slug}
+						authorId={item.author_id}
 						score={item.vote_score ?? 0}
 						layout="horizontal"
 						{authed}

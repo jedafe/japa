@@ -482,6 +482,7 @@
 					<VoteRail
 						entityType="reply"
 						entityId={reply.id}
+						authorId={reply.author_user_id}
 						score={reply.vote_score}
 						layout="horizontal"
 						{authed}

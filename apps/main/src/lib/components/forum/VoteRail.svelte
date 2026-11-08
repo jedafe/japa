@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ArrowBigUp, ArrowBigDown } from 'lucide-svelte';
 	import { untrack } from 'svelte';
+	import { page } from '$app/state';
 	import { api } from '#lib/api/client.js';
 	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 	import { t } from '#lib/i18n/index.js';
@@ -17,6 +18,10 @@
 		/** Thread slug — used to lazily resolve the thread id when `entityId` is
 		 * not a forum thread id (feed cards). Only applies to entityType 'thread'. */
 		slug?: string;
+		/** Author's users.id — when the viewer authored the entity the API
+		 * rejects the vote (400 "cannot vote on your own …"), so the buttons
+		 * render disabled instead of silently rolling back. */
+		authorId?: string;
 		/** Initial aggregate score from the server. */
 		score: number;
 		/** Optional initial vote direction for the current user (1, -1, or 0). */
@@ -31,6 +36,7 @@
 		entityType,
 		entityId,
 		slug,
+		authorId,
 		score: initialScore,
 		userVote: initialVote = 0,
 		layout = 'horizontal',
@@ -61,6 +67,12 @@
 	let resolvedId = $state('');
 	let resolving: Promise<string | null> | null = null;
 
+	// §08: self-votes are rejected server-side — surface that as a disabled
+	// control rather than a click that silently rolls back.
+	const viewerId = $derived((page.data.viewerId as string | null | undefined) ?? null);
+	const isOwn = $derived(authed && !!viewerId && !!authorId && viewerId === authorId);
+	const ownHint = $derived(isOwn ? t('forum.vote_own_content', 'You cannot vote on your own content') : undefined);
+
 	// Feed cards carry the backing contents.id, but the vote API keys on
 	// forum_threads.id. Resolve the real thread id (and hydrate the viewer's
 	// existing vote) on the first interaction so no extra request is made for
@@ -84,7 +96,7 @@
 	}
 
 	async function vote(value: 1 | -1) {
-		if (pending) return;
+		if (pending || isOwn) return;
 		// Guests can click the buttons — they redirect to /login with a
 		// return-to param instead of being silently disabled.
 		if (!(await requireAuthOrRedirect())) return;
@@ -143,7 +155,8 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={pending}
+			disabled={pending || isOwn}
+			title={ownHint}
 			aria-pressed={upActive}
 			aria-label={t('forum.upvote', 'Upvote')}
 			class={upClass}
@@ -157,7 +170,8 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(-1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={pending}
+			disabled={pending || isOwn}
+			title={ownHint}
 			aria-pressed={downActive}
 			aria-label={t('forum.downvote', 'Downvote')}
 			class={downClass}
@@ -171,7 +185,8 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={pending}
+			disabled={pending || isOwn}
+			title={ownHint}
 			aria-pressed={upActive}
 			aria-label={t('forum.upvote', 'Upvote')}
 			class={railUpClass}
@@ -185,7 +200,8 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(-1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={pending}
+			disabled={pending || isOwn}
+			title={ownHint}
 			aria-pressed={downActive}
 			aria-label={t('forum.downvote', 'Downvote')}
 			class={railDownClass}
@@ -199,7 +215,8 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={pending}
+			disabled={pending || isOwn}
+			title={ownHint}
 			aria-pressed={upActive}
 			aria-label={t('forum.upvote', 'Upvote')}
 			class={upClass}
@@ -213,7 +230,8 @@
 			type="button"
 			onclick={(e) => { e.stopPropagation(); vote(-1); }}
 			onkeydown={(e) => e.stopPropagation()}
-			disabled={pending}
+			disabled={pending || isOwn}
+			title={ownHint}
 			aria-pressed={downActive}
 			aria-label={t('forum.downvote', 'Downvote')}
 			class={downClass}
