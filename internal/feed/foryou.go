@@ -23,6 +23,7 @@ type rankingWeights struct {
 	Space         float64
 	Tag           float64
 	Recency       float64
+	AuthorPoints  float64
 	Geo           float64
 	GeoBoostCap   float64
 	JourneyDest   float64
@@ -44,6 +45,7 @@ func defaultRankingWeights() rankingWeights {
 		Space:         2.5,
 		Tag:           1.5,
 		Recency:       2.0,
+		AuthorPoints:  1.0,
 		Geo:           1.0,
 		GeoBoostCap:   1.5,
 		JourneyDest:   1.5,
@@ -64,6 +66,7 @@ type Candidate struct {
 	VoteScore          int32
 	ReactionCount      int32
 	VelocityScore      float64
+	AuthorPoints       int64
 	IsAuthorFollowed   bool
 	IsSpaceFollowed    bool
 	FollowedTagOverlap int
@@ -144,7 +147,7 @@ func journeyBoost(c Candidate, vc *visitor.VisitorContext, roadmapSlugs map[stri
 // (city > state > country > region > global). vc provides journey-aware
 // context (destination, stage, visa route, roadmap); nil disables journey
 // scoring and global content still competes on other signals.
-func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, vc *visitor.VisitorContext, roadmapSlugs map[string]bool, w rankingWeights) float64 {
+func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, maxPoints int64, vc *visitor.VisitorContext, roadmapSlugs map[string]bool, w rankingWeights) float64 {
 	velNorm := 0.0
 	if maxVelocity > 0 {
 		velNorm = c.VelocityScore / maxVelocity
@@ -167,7 +170,15 @@ func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, vc *vis
 	tag := float64(overlap) / float64(w.TagOverlapCap)
 	rec := recencyDecay(now.Sub(c.CreatedAt).Hours(), w.HalfLifeHours)
 
-	baseScore := w.Velocity*velNorm + w.Author*author + w.Space*space + w.Tag*tag + w.Recency*rec
+	// Author reputation (Section 32): log-scaled points balance normalized
+	// against the candidate pool max, so heavy-tailed balances re-weight
+	// without swamping the other signals. Weight 0 disables the signal.
+	rep := 0.0
+	if maxPoints > 0 && c.AuthorPoints > 0 {
+		rep = math.Log1p(float64(c.AuthorPoints)) / math.Log1p(float64(maxPoints))
+	}
+
+	baseScore := w.Velocity*velNorm + w.Author*author + w.Space*space + w.Tag*tag + w.Recency*rec + w.AuthorPoints*rep
 
 	// Bounded geo boost: city/state/country/region matches increase the score.
 	// Proximity is 1 (none) to 5 (city). Scale the bonus linearly and cap it.
@@ -197,9 +208,13 @@ func rankCandidates(cands []Candidate, sortMode string, now time.Time, vc *visit
 	}
 
 	maxVel := 0.0
+	maxPoints := int64(0)
 	for i := range cands {
 		if cands[i].VelocityScore > maxVel {
 			maxVel = cands[i].VelocityScore
+		}
+		if cands[i].AuthorPoints > maxPoints {
+			maxPoints = cands[i].AuthorPoints
 		}
 	}
 
@@ -213,7 +228,7 @@ func rankCandidates(cands []Candidate, sortMode string, now time.Time, vc *visit
 		// be O(1), not recompute a multi-signal blend per comparison (ALG-017).
 		scores := make([]float64, len(cands))
 		for i := range cands {
-			scores[i] = computeForYouScore(cands[i], now, maxVel, vc, roadmapSlugs, w)
+			scores[i] = computeForYouScore(cands[i], now, maxVel, maxPoints, vc, roadmapSlugs, w)
 		}
 
 		sort.SliceStable(cands, func(i, j int) bool {
@@ -289,45 +304,46 @@ func forYouCacheKey(userID pgtype.UUID, sortMode string, vc *visitor.VisitorCont
 func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 	return Candidate{
 		Item: FeedItem{
-			ID:                 uuidToString(r.ID),
-			Title:              r.Title,
-			Slug:               r.Slug,
-			ContentType:        r.ContentType,
-			AuthorID:           uuidToString(r.AuthorID),
-			AuthorUsername:     r.AuthorUsername,
+			ID:                     uuidToString(r.ID),
+			Title:                  r.Title,
+			Slug:                   r.Slug,
+			ContentType:            r.ContentType,
+			AuthorID:               uuidToString(r.AuthorID),
+			AuthorUsername:         r.AuthorUsername,
 			AuthorVerified:         r.AuthorVerified,
 			AuthorVerificationType: r.AuthorVerificationType,
-			AuthorName:         asString(r.AuthorName),
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceID:            nullableUUIDToString(r.SpaceID),
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
-			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
-			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
-			CreatedAt:          r.CreatedAt.Time.String(),
-			ViewCount:          r.ViewCount,
-			CommentCount:       r.CommentCount,
-			ReactionCount:      r.ReactionCount,
-			VoteScore:          derefInt32(r.VoteScore),
-			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			Excerpt:            CleanExcerpt(r.Excerpt, r.Title),
-			Tags:               splitTags(r.Tags),
-			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
-			BookmarkCount:      derefInt32(r.BookmarkCount),
-			JourneyStage:       r.JourneyStage,
-			VisaRoute:          r.VisaRoute,
-			SourceCountry:      r.SourceCountry,
-			TargetCountry:      r.TargetCountry,
-			VideoSourceURL:     derefStr(r.VideoSourceUrl),
-			VideoSourceType:    derefStr(r.VideoSourceType),
-			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
-			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
+			AuthorName:             asString(r.AuthorName),
+			AuthorAvatarURL:        r.AuthorAvatarUrl,
+			SpaceID:                nullableUUIDToString(r.SpaceID),
+			SpaceName:              asString(r.SpaceName),
+			SpaceSlug:              r.SpaceSlug,
+			SpaceAvatarURL:         mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:           orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
+			CreatedAt:              r.CreatedAt.Time.String(),
+			ViewCount:              r.ViewCount,
+			CommentCount:           r.CommentCount,
+			ReactionCount:          r.ReactionCount,
+			VoteScore:              derefInt32(r.VoteScore),
+			VelocityScore:          pgNumericToFloat64(r.VelocityScore),
+			Excerpt:                CleanExcerpt(r.Excerpt, r.Title),
+			Tags:                   splitTags(r.Tags),
+			ReadingTimeMinutes:     int(r.ReadTimeMinutes),
+			CoverImageURL:          coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
+			BookmarkCount:          derefInt32(r.BookmarkCount),
+			JourneyStage:           r.JourneyStage,
+			VisaRoute:              r.VisaRoute,
+			SourceCountry:          r.SourceCountry,
+			TargetCountry:          r.TargetCountry,
+			VideoSourceURL:         derefStr(r.VideoSourceUrl),
+			VideoSourceType:        derefStr(r.VideoSourceType),
+			VideoDurationSecs:      derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:      derefStr(r.VideoThumbnailUrl),
 		},
 		CreatedAt:          r.CreatedAt.Time,
 		VoteScore:          derefInt32(r.VoteScore),
 		ReactionCount:      r.ReactionCount,
 		VelocityScore:      pgNumericToFloat64(r.VelocityScore),
+		AuthorPoints:       r.AuthorPoints,
 		IsAuthorFollowed:   r.IsAuthorFollowed,
 		IsSpaceFollowed:    r.IsSpaceFollowed,
 		FollowedTagOverlap: int(r.FollowedTagOverlap),

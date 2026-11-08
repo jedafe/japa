@@ -354,6 +354,14 @@ content_geo AS (
  WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
  AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
  GROUP BY cs.content_id
+),
+author_points AS (
+ SELECT c2.author_id,
+ COALESCE(SUM(wl.amount), 0)::bigint AS points_balance
+ FROM candidate_ids ci
+ JOIN contents c2 ON c2.id = ci.id
+ JOIN wallet_ledger wl ON wl.user_id = c2.author_id AND wl.ledger_type = 'points'
+ GROUP BY c2.author_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.created_at, c.view_count, c.comment_count,
@@ -389,10 +397,12 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  WHERE t.id = ANY(COALESCE($3::uuid[], ARRAY[]::uuid[]))
  )::int AS followed_tag_overlap,
  s.geo_code AS space_geo_code,
- COALESCE(cg.geo_proximity, 1) AS geo_proximity
+ COALESCE(cg.geo_proximity, 1) AS geo_proximity,
+ COALESCE(ap.points_balance, 0) AS author_points
 FROM contents c
 JOIN candidate_ids ci ON ci.id = c.id
 LEFT JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN author_points ap ON ap.author_id = c.author_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
@@ -410,6 +420,7 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  c.journey_stage, c.visa_route, c.source_country, c.target_country,
  m.storage_bucket, m.storage_path,
  cg.geo_proximity,
+ ap.points_balance,
  o.name, o.slug, om.storage_bucket, om.storage_path,
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
@@ -475,6 +486,7 @@ type GetForYouCandidatesRow struct {
 	FollowedTagOverlap            int32              `json:"followed_tag_overlap"`
 	SpaceGeoCode                  *string            `json:"space_geo_code"`
 	GeoProximity                  interface{}        `json:"geo_proximity"`
+	AuthorPoints                  int64              `json:"author_points"`
 }
 
 // Bounded personalized candidate pool = UNION of (a) recent content from
@@ -482,6 +494,10 @@ type GetForYouCandidatesRow struct {
 // Emits per-row affinity flags for Go-side ranking. Excludes own posts.
 // Array params are COALESCEd to empty arrays so `= ANY(NULL)` never nullifies
 // the affinity predicate when a user follows nothing of a given type.
+// Author reputation (Section 32 — author points boost): current points
+// balance per candidate author, aggregated only over the bounded candidate
+// pool so the wallet_ledger scan stays small. Same source as the §64
+// leaderboard (SUM of signed points entries, so penalties demote authors).
 func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidatesParams) ([]GetForYouCandidatesRow, error) {
 	rows, err := q.db.Query(ctx, getForYouCandidates,
 		arg.AuthorIds,
@@ -548,6 +564,7 @@ func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidat
 			&i.FollowedTagOverlap,
 			&i.SpaceGeoCode,
 			&i.GeoProximity,
+			&i.AuthorPoints,
 		); err != nil {
 			return nil, err
 		}

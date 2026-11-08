@@ -1339,6 +1339,7 @@ func (s *Service) GetForYouFeed(
 		w.Space = s.settings.GetFloatOr(ctx, "feed.for_you_weight_space", w.Space)
 		w.Tag = s.settings.GetFloatOr(ctx, "feed.for_you_weight_tag", w.Tag)
 		w.Recency = s.settings.GetFloatOr(ctx, "feed.for_you_weight_recency", w.Recency)
+		w.AuthorPoints = s.settings.GetFloatOr(ctx, "feed.for_you_weight_author_points", w.AuthorPoints)
 		w.Geo = s.settings.GetFloatOr(ctx, "feed.for_you_geo_weight", w.Geo)
 		w.GeoBoostCap = s.settings.GetFloatOr(ctx, "feed.for_you_geo_boost_cap", w.GeoBoostCap)
 		w.JourneyDest = s.settings.GetFloatOr(ctx, "feed.for_you_journey_weight_destination", w.JourneyDest)
