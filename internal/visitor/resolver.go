@@ -347,8 +347,8 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 		}
 	}
 
-	// 2. Authenticated user's content_country_preference (explicit override).
-	if user != nil {
+	// 3. Authenticated user's content_country_preference (explicit override).
+	if user != nil && res.read != nil {
 		if pref, err := res.read.GetUserContentCountryPreference(r.Context(),
 
 			user.UserID,
@@ -371,7 +371,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 		}
 	}
 
-	// 3. Archetype resolution — synthesizes ContentCountry from the visitor's
+	// 4. Archetype resolution — synthesizes ContentCountry from the visitor's
 	//    signals (ADR-064). For authenticated users this loads japa_status +
 	//    destination_country custom fields. For guests it classifies from
 	//    GeoIP alone.
@@ -432,19 +432,42 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 	originMarkets := res.marketSet(ctx, "geo_personalization.origin_markets", defaultOriginMarkets)
 	destMarkets := res.marketSet(ctx, "geo_personalization.destination_markets", defaultDestinationMarkets)
 
-	// Load profile signals for authenticated users.
-	if user != nil {
+	// Load profile signals for authenticated users. Every field is applied
+	// only when the profile value is non-empty: enrichGuestJourney may have
+	// already seeded the same fields from a pre-signup jc_journey_token
+	// cookie, and an empty profile field must not erase those seeds
+	// ("profile preferred, cookie seeds defaults" — the function contract).
+	if user != nil && res.read != nil {
 		fields, err := res.read.GetUserGeoProfileFields(ctx,
 			user.UserID,
 		)
 		if err == nil {
-			vc.JapaStage = strings.ToLower(strings.TrimSpace(fields.JapaStatus))
-			vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
-			vc.VisaRoute = normalizeVisaRoute(fields.VisaRoute)
-			vc.Purpose = normalizePurpose(fields.Purpose)
-			vc.JapaIntent = NormalizeIntent(fields.JapaIntent)
-			vc.TravelDate = strings.TrimSpace(fields.PlannedTravelDate)
-			vc.DestinationCountry = normalizeCountry(fields.DestinationCountry)
+			if v := strings.ToLower(strings.TrimSpace(fields.JapaStatus)); v != "" {
+				vc.JapaStage = v
+				vc.JourneyStage = normalizeJourneyStage(v)
+			}
+
+			if v := normalizeVisaRoute(fields.VisaRoute); v != "" {
+				vc.VisaRoute = v
+			}
+
+			if v := normalizePurpose(fields.Purpose); v != "" {
+				vc.Purpose = v
+			}
+
+			if v := NormalizeIntent(fields.JapaIntent); v != "" {
+				vc.JapaIntent = v
+			}
+
+			if v := strings.TrimSpace(fields.PlannedTravelDate); v != "" {
+				if _, perr := time.Parse("2006-01-02", v); perr == nil {
+					vc.TravelDate = v
+				}
+			}
+
+			if v := normalizeCountry(fields.DestinationCountry); v != "" {
+				vc.DestinationCountry = v
+			}
 			// ADR-064a: Use origin_country from profile when set; falls back
 			// to GeoIP country (already set in vc.OriginCountry).
 			if oc := normalizeCountry(fields.OriginCountry); oc != "" {
@@ -851,7 +874,7 @@ func normalizeCountry(c string) string {
 // enrichRegion populates ContentRegion from the resolved ContentCountry by
 // looking up the matching primary country space. Falls back to empty.
 func (res *Resolver) enrichRegion(ctx context.Context, vc *VisitorContext) {
-	if vc.ContentCountry == "" {
+	if vc.ContentCountry == "" || res.read == nil {
 		return
 	}
 
