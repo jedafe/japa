@@ -74,16 +74,17 @@ func (s *Store) getExploreFeed(ctx context.Context, visitorCountryCode, visitorR
 // getPrimaryFeed returns the user's personalized feed from the feeds table.
 //
 
-func (s *Store) getPrimaryFeed(ctx context.Context, userID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetPrimaryFeedRow, error) {
+func (s *Store) getPrimaryFeed(ctx context.Context, userID pgtype.UUID, sort string, halfLifeHours float64, limit, offset int32) ([]gen.GetPrimaryFeedRow, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.GetPrimaryFeed(ctx, gen.GetPrimaryFeedParams{
-		UserID:     userID,
-		Sort:       sort,
-		PageLimit:  limit,
-		PageOffset: offset,
+		UserID:        userID,
+		Sort:          sort,
+		HalfLifeHours: halfLifeHours,
+		PageLimit:     limit,
+		PageOffset:    offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting primary feed: %w", err)

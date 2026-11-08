@@ -93,8 +93,11 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetPrimaryFeed :many
 -- User's personalized feed from feeds table (push side).
--- sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
--- 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
+-- sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC),
+-- 'relevant' (velocity + ln(1+reactions) + recency half-life decay — the same
+-- signals the for-you ranker blends, over rows already fanned out from
+-- followed authors and member spaces). @half_life_hours is the recency-decay
+-- half-life (feed.for_you_half_life_hours, default 48).
 SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
  c.title, c.slug, c.author_id, c.created_at AS content_created_at,
  c.view_count, c.comment_count,
@@ -160,6 +163,11 @@ GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
 ORDER BY
  CASE WHEN @sort = 'top' THEN cs.reaction_count END DESC,
  CASE WHEN @sort = 'rising' THEN cs.velocity_score END DESC,
+ CASE WHEN @sort = 'relevant' THEN
+ COALESCE(cs.velocity_score, 0)::float8
+ + LN(1 + COALESCE(cs.reaction_count, 0)::float8)
+ + 2.0 * POWER(0.5, GREATEST(EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600.0, 0)::float8 / GREATEST(@half_life_hours::float8, 1.0))
+ END DESC,
  f.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 

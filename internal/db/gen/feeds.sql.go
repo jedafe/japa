@@ -682,15 +682,21 @@ GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
 ORDER BY
  CASE WHEN $2 = 'top' THEN cs.reaction_count END DESC,
  CASE WHEN $2 = 'rising' THEN cs.velocity_score END DESC,
+ CASE WHEN $2 = 'relevant' THEN
+ COALESCE(cs.velocity_score, 0)::float8
+ + LN(1 + COALESCE(cs.reaction_count, 0)::float8)
+ + 2.0 * POWER(0.5, GREATEST(EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600.0, 0)::float8 / GREATEST($3::float8, 1.0))
+ END DESC,
  f.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type GetPrimaryFeedParams struct {
-	UserID     pgtype.UUID `json:"user_id"`
-	Sort       interface{} `json:"sort"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	UserID        pgtype.UUID `json:"user_id"`
+	Sort          interface{} `json:"sort"`
+	HalfLifeHours float64     `json:"half_life_hours"`
+	PageOffset    int32       `json:"page_offset"`
+	PageLimit     int32       `json:"page_limit"`
 }
 
 type GetPrimaryFeedRow struct {
@@ -741,12 +747,16 @@ type GetPrimaryFeedRow struct {
 }
 
 // User's personalized feed from feeds table (push side).
-// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
-// 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
+// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC),
+// 'relevant' (velocity + ln(1+reactions) + recency half-life decay — the same
+// signals the for-you ranker blends, over rows already fanned out from
+// followed authors and member spaces). @half_life_hours is the recency-decay
+// half-life (feed.for_you_half_life_hours, default 48).
 func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) ([]GetPrimaryFeedRow, error) {
 	rows, err := q.db.Query(ctx, getPrimaryFeed,
 		arg.UserID,
 		arg.Sort,
+		arg.HalfLifeHours,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

@@ -503,10 +503,20 @@ func (s *Service) getExploreFeed(ctx context.Context, sort, visitorCountryCode, 
 }
 
 // getPrimaryFeedItems returns the user's personalized feed with sort.
-// sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
-// 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
+// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC),
+// 'relevant' (velocity + ln(1+reactions) + recency half-life decay over rows
+// already fanned out from followed authors and member spaces — same signals
+// the for-you ranker blends). The half-life reuses feed.for_you_half_life_hours.
 func (s *Service) getPrimaryFeedItems(ctx context.Context, userID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
-	rows, err := s.store.getPrimaryFeed(ctx, userID, sort, limit, offset)
+	halfLife := defaultRankingWeights().HalfLifeHours
+	if s.settings != nil {
+		halfLife = s.settings.GetFloatOr(ctx, "feed.for_you_half_life_hours", halfLife)
+	}
+	if halfLife <= 0 {
+		halfLife = defaultRankingWeights().HalfLifeHours
+	}
+
+	rows, err := s.store.getPrimaryFeed(ctx, userID, sort, halfLife, limit, offset)
 	if err != nil {
 		return nil, err
 	}
