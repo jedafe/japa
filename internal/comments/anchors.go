@@ -309,6 +309,28 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 	}, nil
 }
 
+// DeleteAnchor drops the entity's backing thread — soft-deletes the
+// contents row so /thread/{slug} drops out of resolve (the anchor query
+// filters deleted contents) and listings, without destroying the data.
+// Called when the anchored entity itself is deleted. No-op when no
+// anchor exists.
+func (s *Service) DeleteAnchor(ctx context.Context, entityType, entityKey string) error {
+	row, err := s.read.GetThreadAnchorByEntity(ctx, gen.GetThreadAnchorByEntityParams{
+		EntityType: entityType,
+		EntityKey:  entityKey,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("resolving thread anchor for delete: %w", err)
+	}
+	if s.creator == nil {
+		return fmt.Errorf("content deleter not wired")
+	}
+	return s.creator.DeleteContent(ctx, row.ContentID)
+}
+
 // ---------------------------------------------------------------------------
 // HTTP Handlers
 // ---------------------------------------------------------------------------

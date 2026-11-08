@@ -1166,3 +1166,7 @@ JOIN space_types st ON st.id = s.space_type_id
 WHERE st.slug = @type_slug AND s.deleted_at IS NULL
   AND (@q::text = '' OR s.name ILIKE '%' || @q || '%')
 ORDER BY s.name LIMIT 500;
+
+-- name: GetWikiPageCreatorID :one
+-- Author of the page's thread anchor — created_by is NULL on seeded pages.
+SELECT created_by FROM wiki_pages WHERE id = @id;

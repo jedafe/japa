@@ -1102,6 +1102,16 @@ var ErrPageNotDeleted = errors.New("wiki page is not soft-deleted")
 // DeleteWikiPage soft-deletes a wiki page: deleted_at is stamped and
 // is_active flips false so every public reader excludes it. Returns
 // pgx.ErrNoRows when the page is missing or already deleted.
+// GetPageCreator returns wiki_pages.created_by (NULL on seeded rows) —
+// used to author the page's thread anchor on first approval.
+func (s *Store) GetPageCreator(ctx context.Context, pageID pgtype.UUID) (pgtype.UUID, error) {
+	id, err := s.read.GetWikiPageCreatorID(ctx, pageID)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return id, nil
+}
+
 func (s *Store) DeleteWikiPage(ctx context.Context, pageID pgtype.UUID) error {
 	affected, err := s.write.SoftDeleteWikiPage(ctx, pageID)
 	if err != nil {

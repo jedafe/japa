@@ -1717,11 +1717,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	wikiService.SetCustomFields(cfService)
 	wikiService.SetPermissionChecker(rbacResolver)
 	wikiService.SetEnqueuer(taskEnqueuer)
-	// Unified-discussion spec: every new wiki page eagerly mints its
-	// /thread anchor (contents row authored by the page creator).
+	// Unified-discussion spec: wiki pages mint their /thread anchor on
+	// first approval (authored by the page creator) and drop it on delete.
 	wikiService.SetThreadAnchorMinter(func(ctx context.Context, userID pgtype.UUID, entityType, entityKey string) error {
 		_, err := commentsService.CreateAnchor(ctx, userID, entityType, entityKey)
 		return err
+	})
+	wikiService.SetThreadAnchorDeleter(func(ctx context.Context, entityType, entityKey string) error {
+		return commentsService.DeleteAnchor(ctx, entityType, entityKey)
 	})
 	// §80: activating wiki.enabled fans out wiki:seed_stub_pages to every
 	// country space (idempotent — existing pages are skipped).

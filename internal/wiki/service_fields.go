@@ -1088,13 +1088,18 @@ func (s *Service) ApproveRevisionByID(ctx context.Context, revID, reviewerID pgt
 	}
 
 	if rev.Kind != "content" && len(ops) > 0 {
-		return s.approveOpsRevision(ctx, revID, reviewerID, notes, ops)
+		if err := s.approveOpsRevision(ctx, revID, reviewerID, notes, ops); err != nil {
+			return err
+		}
+		s.mintAnchorForApprovedPage(ctx, reviewerID, rev.WikiPageID)
+		return nil
 	}
 
 	if _, err := s.store.ApproveRevisionByID(ctx, revID, reviewerID, notes); err != nil {
 		return fmt.Errorf("wiki: approve by id: %w", err)
 	}
 
+	s.mintAnchorForApprovedPage(ctx, reviewerID, rev.WikiPageID)
 	return nil
 }
 

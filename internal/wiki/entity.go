@@ -1142,7 +1142,8 @@ func (s *Service) CreateEntityPageWithRevision(ctx context.Context, userID pgtyp
 	}
 
 	if !s.isSuperAdmin(ctx, userID) {
-		s.mintThreadAnchor(ctx, userID, pageID)
+		// Pending pages mint no thread — the anchor lands on first
+		// approval (ApproveRevisionByID) once the page is public.
 		return pageID.String(), revID.String(), slug, false, nil
 	}
 	if _, err := s.store.ApproveRevisionByID(ctx, revID, userID, "auto-approved (super_admin)"); err != nil {

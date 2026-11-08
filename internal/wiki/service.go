@@ -368,28 +368,63 @@ type Service struct {
 	rag              ragIndexer            // lifecycle-driven embedding sync (§69/ADR-069)
 	fxRates          FxRateProvider        // §112 display base rates for "(base)" equivalents
 
-	// Unified-discussion spec: every wiki page eagerly gets a backing
-	// thread (contents row via thread_anchors). Injected as a callback so
-	// wiki never imports comments; nil disables minting.
-	threadAnchorMinter ThreadAnchorMinter
+	// Unified-discussion spec: every wiki page gets a backing thread
+	// (contents row via thread_anchors) once it goes live — minted on
+	// first approval so pending pages never leak a public thread, and
+	// again on any approval when the anchor is missing (self-healing).
+	// Injected as callbacks so wiki never imports comments.
+	threadAnchorMinter  ThreadAnchorMinter
+	threadAnchorDeleter ThreadAnchorDeleter
 }
 
 // ThreadAnchorMinter mints the /thread page backing an entity — wired to
 // comments.Service.CreateAnchor in server.go. Best-effort semantics.
 type ThreadAnchorMinter func(ctx context.Context, userID pgtype.UUID, entityType, entityKey string) error
 
+// ThreadAnchorDeleter drops an entity's backing thread — wired to
+// comments.Service.DeleteAnchor in server.go. Best-effort semantics.
+type ThreadAnchorDeleter func(ctx context.Context, entityType, entityKey string) error
+
 // SetThreadAnchorMinter injects the anchor minter (unified-discussion
 // spec). Nil disables minting.
 func (s *Service) SetThreadAnchorMinter(m ThreadAnchorMinter) { s.threadAnchorMinter = m }
 
-// mintThreadAnchor best-effort mints the /thread anchor for a freshly
-// created wiki page. Page creation never fails on a mint error.
+// SetThreadAnchorDeleter injects the anchor deleter — fires when a wiki
+// page is deleted so its /thread page drops with it.
+func (s *Service) SetThreadAnchorDeleter(d ThreadAnchorDeleter) { s.threadAnchorDeleter = d }
+
+// mintThreadAnchor best-effort mints the /thread anchor for a wiki page.
+// Never fails the caller on a mint error.
 func (s *Service) mintThreadAnchor(ctx context.Context, userID, pageID pgtype.UUID) {
 	if s.threadAnchorMinter == nil || !pageID.Valid {
 		return
 	}
 	if err := s.threadAnchorMinter(ctx, userID, "wiki_page", pageID.String()); err != nil {
 		slog.WarnContext(ctx, "wiki: thread anchor mint failed", "page_id", pageID.String(), "error", err)
+	}
+}
+
+// mintAnchorForApprovedPage mints the anchor on approval — authored by
+// the page creator when known (created_by), falling back to the actor.
+func (s *Service) mintAnchorForApprovedPage(ctx context.Context, actorID, pageID pgtype.UUID) {
+	if !pageID.Valid {
+		return
+	}
+	author := actorID
+	if creator, err := s.store.GetPageCreator(ctx, pageID); err == nil && creator.Valid {
+		author = creator
+	}
+	s.mintThreadAnchor(ctx, author, pageID)
+}
+
+// deleteThreadAnchor best-effort drops the page's backing thread — called
+// after a page delete so /thread/{slug} disappears with the page.
+func (s *Service) deleteThreadAnchor(ctx context.Context, pageID pgtype.UUID) {
+	if s.threadAnchorDeleter == nil || !pageID.Valid {
+		return
+	}
+	if err := s.threadAnchorDeleter(ctx, "wiki_page", pageID.String()); err != nil {
+		slog.WarnContext(ctx, "wiki: thread anchor delete failed", "page_id", pageID.String(), "error", err)
 	}
 }
 
@@ -1690,7 +1725,8 @@ func (s *Service) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID
 	}
 
 	if !s.isSuperAdmin(ctx, userID) {
-		s.mintThreadAnchor(ctx, userID, pageID)
+		// Pending pages mint no thread — the anchor lands on first
+		// approval (ApproveRevisionByID) once the page is public.
 		return pageID.String(), revID.String(), slug, false, nil
 	}
 
@@ -1973,6 +2009,10 @@ func (s *Service) DeletePage(ctx context.Context, pageID pgtype.UUID, force bool
 		return fmt.Errorf("wiki: delete page: %w", err)
 	}
 
+	// Unified-discussion spec: the page's thread goes down with it —
+	// the backing contents row is soft-deleted so /thread/{slug} drops
+	// out of resolve and listings.
+	s.deleteThreadAnchor(ctx, pageID)
 	return nil
 }
 

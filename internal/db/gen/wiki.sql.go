@@ -1895,6 +1895,18 @@ func (q *Queries) GetWikiPageBySlug(ctx context.Context, arg GetWikiPageBySlugPa
 	return i, err
 }
 
+const getWikiPageCreatorID = `-- name: GetWikiPageCreatorID :one
+SELECT created_by FROM wiki_pages WHERE id = $1
+`
+
+// Author of the page's thread anchor — created_by is NULL on seeded pages.
+func (q *Queries) GetWikiPageCreatorID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getWikiPageCreatorID, id)
+	var created_by pgtype.UUID
+	err := row.Scan(&created_by)
+	return created_by, err
+}
+
 const getWikiPageFeedbackCounts = `-- name: GetWikiPageFeedbackCounts :one
 SELECT
     COUNT(*) FILTER (WHERE f.vote = 'up') AS up_count,

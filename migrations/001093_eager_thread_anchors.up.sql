@@ -21,8 +21,10 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- 2. Wiki pages → thread anchors (one per non-deleted page; ON CONFLICT
---    guards re-runs and rows already anchored by lazy minting).
+-- 2. Wiki pages → thread anchors. Only pages that are live (public,
+--    active space + at least one approved revision) — pending/inactive
+--    pages mint their anchor on first approval in-process instead.
+--    ON CONFLICT guards re-runs and rows already anchored by lazy minting.
 WITH new_threads AS (
     INSERT INTO public.contents (
         author_id, space_id, content_type, title, slug, body, body_html,
@@ -43,6 +45,14 @@ WITH new_threads AS (
     JOIN spaces s ON s.id = wp.space_id AND s.deleted_at IS NULL
         AND s.visibility = 'public' AND s.status = 'active'
     WHERE wp.deleted_at IS NULL
+      AND wp.is_active
+      -- Only live pages get a public thread: pages whose revisions are
+      -- all still pending mint their anchor on first approval instead.
+      AND EXISTS (
+          SELECT 1 FROM wiki_revisions r
+          WHERE r.wiki_page_id = wp.id
+            AND r.status = 'approved' AND r.deleted_at IS NULL
+      )
       AND NOT EXISTS (
           SELECT 1 FROM thread_anchors ta
           WHERE ta.entity_type = 'wiki_page' AND ta.entity_key = wp.id::text

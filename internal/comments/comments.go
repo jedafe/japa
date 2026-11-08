@@ -49,6 +49,9 @@ type FeatureChecker interface {
 // content.require_content_review gate (BUG-008).
 type discussionContentCreator interface {
 	CreateContent(ctx context.Context, input content.CreateContentInput) (gen.CreateContentRow, error)
+	// DeleteContent soft-deletes the backing row when an anchored entity
+	// is deleted — /thread/{slug} drops with the entity (unified spec).
+	DeleteContent(ctx context.Context, id pgtype.UUID) error
 }
 
 // Service provides comment operations with reader/writer pool separation.
