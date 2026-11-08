@@ -52,7 +52,7 @@
 	// Lazy-import it below the fold so the route's initial JS stays lean.
 	let ExploreMapComp = $state<any>(null);
 	$effect(() => {
-		if (browser && !ExploreMapComp) {
+		if (browser && !ExploreMapComp && data.spaceDetail?.space?.geo_code) {
 			import('#lib/components/wiki/WikiExploreMap.svelte').then((m) => (ExploreMapComp = m.default));
 		}
 	});

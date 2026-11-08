@@ -3400,8 +3400,8 @@ func (h *Handlers) ListReactors(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := parsePageSize(r)
 	var offset int32
-	if p, pErr := strconv.Atoi(r.URL.Query().Get("page")); pErr == nil && p > 1 {
-		offset = int32(p-1) * limit // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+	if p, pErr := strconv.ParseInt(r.URL.Query().Get("page"), 10, 32); pErr == nil && p > 1 && p <= 1000000 {
+		offset = int32(p-1) * limit // #nosec G115 -- bounded: page<=1e6, limit<=MaxPageSize
 	}
 
 	rows, err := h.Service.ListReactorsByEntity(r.Context(), EntityContent, contentID, key, limit, offset)

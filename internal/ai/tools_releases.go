@@ -93,7 +93,7 @@ func RoadmapReleasesListHandler(deps *ToolDeps) ToolHandler {
 		}
 		page, limit := 1, 25
 		if a.Page != nil && *a.Page > 0 {
-			page = *a.Page
+			page = min(*a.Page, 1000000)
 		}
 		if a.Limit != nil && *a.Limit > 0 {
 			limit = min(*a.Limit, roadmapListLimitCap)
@@ -312,12 +312,12 @@ func RoadmapEntriesListHandler(deps *ToolDeps) ToolHandler {
 		}
 		page, limit := 1, 25
 		if a.Page != nil && *a.Page > 0 {
-			page = *a.Page
+			page = min(*a.Page, 1000000)
 		}
 		if a.Limit != nil && *a.Limit > 0 {
 			limit = min(*a.Limit, roadmapListLimitCap)
 		}
-		f := RoadmapEntryFilter{PageSize: int32(limit), PageOffset: int32((page - 1) * limit)} // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+		f := RoadmapEntryFilter{PageSize: int32(limit), PageOffset: int32((page - 1) * limit)} // #nosec G115 -- bounded: page<=1e6, limit<=cap
 		if a.Unreleased != nil {
 			f.Unreleased = *a.Unreleased
 		}

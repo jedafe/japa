@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -908,7 +909,7 @@ func (s *Service) ListTiers(ctx context.Context) ([]TierInfo, error) {
 
 // CreateTier inserts a progression row (admin).
 func (s *Service) CreateTier(ctx context.Context, in CreateTierInput) (TierInfo, error) {
-	if strings.TrimSpace(in.BadgeGroup) == "" || !validTier(in.Tier) || in.Threshold < 0 {
+	if strings.TrimSpace(in.BadgeGroup) == "" || !validTier(in.Tier) || in.Threshold < 0 || in.Threshold > math.MaxInt32 {
 		return TierInfo{}, invalidInput("valid badge_group, tier, and non-negative threshold are required")
 	}
 	var badgeID pgtype.UUID
@@ -917,7 +918,7 @@ func (s *Service) CreateTier(ctx context.Context, in CreateTierInput) (TierInfo,
 			return TierInfo{}, invalidInput("invalid badge_id")
 		}
 	}
-	row, err := s.store.CreateBadgeTier(ctx, strings.TrimSpace(in.BadgeGroup), in.Tier, strings.TrimSpace(in.Name), int32(in.Threshold), badgeID) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+	row, err := s.store.CreateBadgeTier(ctx, strings.TrimSpace(in.BadgeGroup), in.Tier, strings.TrimSpace(in.Name), int32(in.Threshold), badgeID) // #nosec G115 -- validated <= math.MaxInt32 above
 	if err != nil {
 		if isUniqueViolation(err) {
 			return TierInfo{}, ErrTierExists
@@ -931,7 +932,10 @@ func (s *Service) CreateTier(ctx context.Context, in CreateTierInput) (TierInfo,
 func (s *Service) UpdateTier(ctx context.Context, id pgtype.UUID, in UpdateTierInput) (TierInfo, error) {
 	arg := gen.UpdateBadgeTierParams{ID: id, BadgeGroup: in.BadgeGroup, Tier: in.Tier, Name: in.Name, ClearBadgeID: in.ClearBadgeID}
 	if in.Threshold != nil {
-		v := int32(*in.Threshold) // #nosec G115 -- bounded: pagination clamp or config/settings value, cannot reach int32 overflow
+		if *in.Threshold < 0 || *in.Threshold > math.MaxInt32 {
+			return TierInfo{}, invalidInput("threshold must be a non-negative 32-bit integer")
+		}
+		v := int32(*in.Threshold)
 		arg.Threshold = &v
 	}
 	if in.BadgeID != nil {
