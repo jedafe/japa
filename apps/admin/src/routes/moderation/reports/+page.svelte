@@ -59,7 +59,7 @@
 			default: {
 					if (row.thread_slug) return `${PUBLIC_JC_SITE_URL}/forum/${row.thread_slug}`;
 					const prefixes: Record<string, string> = {
-					blog_post: '/blog', guide: '/guide', discussion: '/forum', forum_thread: '/forum',
+					blog_post: '/blog', guide: '/guide', discussion: '/content', forum_thread: '/forum',
 					comparison: '/comparisons', story: '/story', achievement: '/achievements',
 					page: '/pages', job_listing: '/jobs', service_listing: '/services',
 					video: '/video', list: '/list'

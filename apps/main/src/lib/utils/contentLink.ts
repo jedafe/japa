@@ -11,8 +11,11 @@
 const CONTENT_ROUTE_PREFIX: Record<string, string> = {
 	blog_post: '/blog',
 	guide: '/guide',
-	discussion: '/forum',
-	forum_thread: '/forum', // legacy alias for 'discussion'
+	// §49 linked discussions are contents rows rendered by the generic
+	// article page + CommentThread — there is no forum_threads row, so
+	// /forum/{slug} 404s. forum_thread (the §08 engine) keeps /forum.
+	discussion: '/content',
+	forum_thread: '/forum',
 	comparison: '/comparisons',
 	story: '/story',
 	achievement: '/achievements',

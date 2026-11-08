@@ -294,7 +294,7 @@ func TestContentURLPath(t *testing.T) {
 		{"blog_post", "my-post", "/blog/my-post"},
 		{"forum_thread", "my-thread", "/forum/my-thread"},
 		{"guide", "my-guide", "/guide/my-guide"},
-		{"discussion", "my-discussion", "/forum/my-discussion"},
+		{"discussion", "my-discussion", "/content/my-discussion"},
 		{"comparison", "my-comparison", "/comparisons/my-comparison"},
 		{"story", "my-story", "/story/my-story"},
 		{"job_listing", "my-job", "/jobs/my-job"},

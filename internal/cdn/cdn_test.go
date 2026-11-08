@@ -185,7 +185,7 @@ func TestContentRoutePrefixParity(t *testing.T) {
 	want := map[string]string{
 		"blog_post":       "/blog",
 		"guide":           "/guide",
-		"discussion":      "/forum",
+		"discussion":      "/content",
 		"forum_thread":    "/forum",
 		"comparison":      "/comparisons",
 		"story":           "/story",

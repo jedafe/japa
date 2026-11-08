@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/features"
@@ -39,6 +40,17 @@ type FeatureChecker interface {
 	EvalFlag(ctx context.Context, key string, sc features.CallerScope) features.EvalResult
 }
 
+// discussionContentCreator is the subset of content.Service used by
+// StartConversation to derive a §49 discussion thread. Defined as an
+// interface so the comments package depends on a narrow contract — the
+// concrete instance must be the shared content service (wired via
+// SetContentCreator) because the raw store path skips field_values
+// defaults, slug uniqueness, the primary content_spaces row, and the
+// content.require_content_review gate (BUG-008).
+type discussionContentCreator interface {
+	CreateContent(ctx context.Context, input content.CreateContentInput) (gen.CreateContentRow, error)
+}
+
 // Service provides comment operations with reader/writer pool separation.
 type Service struct {
 	db              *db.DB
@@ -48,6 +60,7 @@ type Service struct {
 	mentionCheckers *mentions.DBCheckers // nil disables privacy filtering (BUG-004)
 	activity        wallet.ActivityEmitter
 	flags           FeatureChecker // nil disables §42 parent-type gating
+	creator         discussionContentCreator
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -73,6 +86,11 @@ func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e 
 // parent whose content_type is flagged off become invisible (§42).
 // Optional — nil-safe.
 func (s *Service) SetFeatureChecker(c FeatureChecker) { s.flags = c }
+
+// SetContentCreator injects the shared content service so StartConversation
+// can derive discussion threads through the real create path (§49). Required
+// in production — nil only in tests that never call StartConversation.
+func (s *Service) SetContentCreator(c discussionContentCreator) { s.creator = c }
 
 // parentFlagUnreachable reports whether the parent content's type is
 // feature-flagged unreachable for this caller (§42) — the .Enabled Gate

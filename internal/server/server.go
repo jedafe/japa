@@ -729,6 +729,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	commentsService := comments.NewService(database)
 	commentsService.SetSettings(settingsService)      // BL-009: configurable comment edit window
 	commentsService.SetFeatureChecker(featureChecker) // §42: parents on flagged-off types are unreachable
+	// §49: derived discussion threads must go through the shared content
+	// service — slug uniqueness, field_values defaults, content_spaces, and
+	// the require_content_review gate all live there (BUG-008).
+	commentsService.SetContentCreator(contentService)
 	commentsHandlers := comments.NewHandlers(commentsService)
 	commentsHandlers.SetSpamPipeline(spamPipeline)
 	// BL-001: wire comment notification dispatcher (fire-and-forget, Rule 8).

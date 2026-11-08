@@ -341,7 +341,7 @@
 		if (ct) {
 			switch (ct) {
 				case 'blog_post': return slug ? `/blog/${slug}` : '#';
-				case 'discussion': return slug ? `/forum/${slug}` : '#';
+				case 'discussion': return slug ? `/content/${slug}` : '#'; // §49 contents-typed discussion — no forum_threads row
 				case 'comparison': return slug ? `/compare/${slug}` : '#';
 				case 'guide': return slug ? `/content/${slug}` : '#';
 				default: return slug ? `/content/${slug}` : '#';
@@ -1411,7 +1411,7 @@
 		<ul class="space-y-2">
 			{#each relatedDiscussions as disc (disc.id)}
 				<li>
-					<a href={`/forum/${disc.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{disc.title}</a>
+					<a href={`/content/${disc.slug}`} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary-text)]">{disc.title}</a>
 				</li>
 			{/each}
 		</ul>

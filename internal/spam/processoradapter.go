@@ -145,7 +145,7 @@ func (a *WorkerAdapter) queueReport(ctx context.Context, entityType, entityID st
 var contentRoutePrefix = map[string]string{
 	"blog_post":       "/blog",
 	"guide":           "/guide",
-	"discussion":      "/forum",
+	"discussion":      "/content", // §49 linked discussion — no forum_threads row
 	"forum_thread":    "/forum",
 	"comparison":      "/comparisons",
 	"story":           "/story",

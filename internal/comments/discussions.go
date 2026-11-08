@@ -140,6 +140,10 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 			return StartConversationResult{}, fmt.Errorf("fetching content to derive discussion: %w", err)
 		}
 
+		if s.creator == nil {
+			return StartConversationResult{}, fmt.Errorf("content creator not wired")
+		}
+
 		title := "Discussing: " + blog.Title
 
 		// Rule 12 requires a content_hash on every contents insert, but the
@@ -153,18 +157,21 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 		hashSum := sha256.Sum256([]byte(hashInput))
 		contentHash := hex.EncodeToString(hashSum[:])
 
-		thread, err := s.write.CreateContent(ctx, gen.CreateContentParams{
+		// The thread must go through the content service — the raw store path
+		// leaves field_values NULL (a 23502 NOT NULL violation), skips slug
+		// uniqueness (a second conversation on a same-titled parent 409s on
+		// the slug index), and never writes the primary content_spaces row
+		// that space listings and fan-out read (§14, BUG-008).
+		thread, err := s.creator.CreateContent(ctx, content.CreateContentInput{
 			AuthorID:    userID,
 			ContentType: "discussion",
 			Title:       title,
-			Slug:        content.Slugify(title),
 			// Body is empty — users add comments to the thread.
 			Body:        "",
-			BodyHtml:    "",
 			ContentHash: &contentHash,
 			GeoSpaceID:  blog.GeoSpaceID,
 			SpaceID:     blog.SpaceID,
-			Status:      "published",
+			Status:      content.StatusPublished,
 			Visibility:  blog.Visibility,
 		})
 		if err != nil {
@@ -307,13 +314,25 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.Service.StartConversation(r.Context(), contentID, user.UserID, in)
 	if err != nil {
+		switch {
 		// GetContentByID returns ErrNotFound / pgx.ErrNoRows when the thread/content is missing.
-		if errors.Is(err, errpkg.ErrNotFound) || errors.Is(err, pgx.ErrNoRows) {
+		case errors.Is(err, errpkg.ErrNotFound) || errors.Is(err, pgx.ErrNoRows):
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content or thread not found")
-			return
+		// Content-service sentinels the derived-thread path can surface
+		// (mirror of the content handler mapping — these are not errpkg
+		// sentinels so the default branch would 500 them).
+		case errors.Is(err, content.ErrMissingPrimarySpace):
+			errpkg.WriteError(w, http.StatusUnprocessableEntity, "missing_primary_space",
+				"Content requires a primary space before publishing or scheduling")
+		case errors.Is(err, content.ErrInvalidStatus):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", err.Error())
+		case errors.Is(err, content.ErrInvalidVisibility):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility", err.Error())
+		case errors.Is(err, content.ErrDuplicateContent):
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "Content with this body already exists")
+		default:
+			handleServiceError(w, err)
 		}
-
-		handleServiceError(w, err)
 
 		return
 	}

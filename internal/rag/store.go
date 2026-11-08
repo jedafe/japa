@@ -115,8 +115,8 @@ type RetrievedChunk struct {
 var contentRoutePrefix = map[string]string{
 	"blog_post":       "/blog",
 	"guide":           "/guide",
-	"discussion":      "/forum",
-	"forum_thread":    "/forum", // legacy alias for 'discussion'
+	"discussion":      "/content", // §49 linked discussion — no forum_threads row
+	"forum_thread":    "/forum",   // legacy alias for 'discussion'
 	"comparison":      "/comparisons",
 	"story":           "/story",
 	"achievement":     "/achievements",

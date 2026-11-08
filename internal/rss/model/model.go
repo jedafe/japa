@@ -132,10 +132,12 @@ func FormatTime(t pgtype.Timestamptz) string {
 // apps/main/src/lib/utils/contentLink.ts — unknown types fall back to the
 // generic /content/ route, which 301s to the canonical URL.
 var contentRoutePrefix = map[string]string{
-	"blog_post":       "/blog/",
-	"guide":           "/guide/",
-	"discussion":      "/forum/",
-	"forum_thread":    "/forum/", // legacy alias for 'discussion'
+	"blog_post": "/blog/",
+	"guide":     "/guide/",
+	// §49 linked discussions are contents rows rendered by the generic
+	// article page — there is no forum_threads row, so /forum/{slug} 404s.
+	"discussion":      "/content/",
+	"forum_thread":    "/forum/",
 	"comparison":      "/comparisons/",
 	"story":           "/story/",
 	"achievement":     "/achievements/",
