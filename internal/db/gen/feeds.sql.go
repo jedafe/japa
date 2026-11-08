@@ -360,7 +360,13 @@ author_points AS (
  COALESCE(SUM(wl.amount), 0)::bigint AS points_balance
  FROM candidate_ids ci
  JOIN contents c2 ON c2.id = ci.id
+ JOIN users u2 ON u2.id = c2.author_id
+ LEFT JOIN user_privacy_settings ups ON ups.user_id = u2.id
  JOIN wallet_ledger wl ON wl.user_id = c2.author_id AND wl.ledger_type = 'points'
+ WHERE u2.status = 'active'
+ AND u2.is_bot = false
+ AND u2.is_synthetic = false
+ AND COALESCE(ups.show_points_publicly, true) = true
  GROUP BY c2.author_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
@@ -496,8 +502,10 @@ type GetForYouCandidatesRow struct {
 // the affinity predicate when a user follows nothing of a given type.
 // Author reputation (Section 32 — author points boost): current points
 // balance per candidate author, aggregated only over the bounded candidate
-// pool so the wallet_ledger scan stays small. Same source as the §64
-// leaderboard (SUM of signed points entries, so penalties demote authors).
+// pool so the wallet_ledger scan stays small. Same source and eligibility as
+// the §64 leaderboard: SUM of signed points entries (penalties demote), and
+// only active, non-bot, non-synthetic authors who have not opted out of
+// public points display carry reputation weight.
 func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidatesParams) ([]GetForYouCandidatesRow, error) {
 	rows, err := q.db.Query(ctx, getForYouCandidates,
 		arg.AuthorIds,

@@ -147,7 +147,7 @@ func journeyBoost(c Candidate, vc *visitor.VisitorContext, roadmapSlugs map[stri
 // (city > state > country > region > global). vc provides journey-aware
 // context (destination, stage, visa route, roadmap); nil disables journey
 // scoring and global content still competes on other signals.
-func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, maxPoints int64, vc *visitor.VisitorContext, roadmapSlugs map[string]bool, w rankingWeights) float64 {
+func computeForYouScore(c Candidate, now time.Time, maxVelocity, maxPoints float64, vc *visitor.VisitorContext, roadmapSlugs map[string]bool, w rankingWeights) float64 {
 	velNorm := 0.0
 	if maxVelocity > 0 {
 		velNorm = c.VelocityScore / maxVelocity
@@ -175,7 +175,7 @@ func computeForYouScore(c Candidate, now time.Time, maxVelocity float64, maxPoin
 	// without swamping the other signals. Weight 0 disables the signal.
 	rep := 0.0
 	if maxPoints > 0 && c.AuthorPoints > 0 {
-		rep = math.Log1p(float64(c.AuthorPoints)) / math.Log1p(float64(maxPoints))
+		rep = math.Log1p(float64(c.AuthorPoints)) / math.Log1p(maxPoints)
 	}
 
 	baseScore := w.Velocity*velNorm + w.Author*author + w.Space*space + w.Tag*tag + w.Recency*rec + w.AuthorPoints*rep
@@ -207,28 +207,30 @@ func rankCandidates(cands []Candidate, sortMode string, now time.Time, vc *visit
 		w.TagOverlapCap = defaultRankingWeights().TagOverlapCap
 	}
 
-	maxVel := 0.0
-	maxPoints := int64(0)
-	for i := range cands {
-		if cands[i].VelocityScore > maxVel {
-			maxVel = cands[i].VelocityScore
-		}
-		if cands[i].AuthorPoints > maxPoints {
-			maxPoints = cands[i].AuthorPoints
-		}
-	}
-
-	// Pre-compute roadmap lookup for O(1) slug checks.
-	if roadmapSlugs == nil {
-		roadmapSlugs = make(map[string]bool)
-	}
-
 	if sortMode == SortRelevant || (sortMode != SortLatest && sortMode != SortTop && sortMode != SortRising) {
+		// Pool-relative normalizers are only needed by the blended score —
+		// skip both scans for the fixed-semantics sorts below.
+		maxVel := 0.0
+		maxPoints := int64(0)
+		for i := range cands {
+			if cands[i].VelocityScore > maxVel {
+				maxVel = cands[i].VelocityScore
+			}
+			if cands[i].AuthorPoints > maxPoints {
+				maxPoints = cands[i].AuthorPoints
+			}
+		}
+
+		// Pre-compute roadmap lookup for O(1) slug checks.
+		if roadmapSlugs == nil {
+			roadmapSlugs = make(map[string]bool)
+		}
+
 		// Pre-compute each candidate's score once — the sort comparator must
 		// be O(1), not recompute a multi-signal blend per comparison (ALG-017).
 		scores := make([]float64, len(cands))
 		for i := range cands {
-			scores[i] = computeForYouScore(cands[i], now, maxVel, maxPoints, vc, roadmapSlugs, w)
+			scores[i] = computeForYouScore(cands[i], now, maxVel, float64(maxPoints), vc, roadmapSlugs, w)
 		}
 
 		sort.SliceStable(cands, func(i, j int) bool {
