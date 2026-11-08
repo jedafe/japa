@@ -1,0 +1,907 @@
+<script lang="ts">
+	import { untrack } from 'svelte';
+	import { page } from '$app/state';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { t, i18n } from '#lib/i18n/index.js';
+	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus, MoreVertical } from 'lucide-svelte';
+	import { Menu, MenuItem, MenuSeparator } from '#lib/components/ui/index.js';
+	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
+	import { relativeTime } from '#lib/feed/time.js';
+	import { encodeTiptapDoc, tiptapBodyToHtml, tiptapExcerpt, type TipTapDoc } from '#lib/tiptap/serialize.js';
+	import { api } from '#lib/api/client.js';
+	import { optimisticAction } from '#lib/components/hub/optimisticAction.js';
+	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
+	import VoteRail from '#lib/components/forum/VoteRail.svelte';
+	import AdSlot from '#lib/components/ui/AdSlot.svelte';
+	import ReplyThread from '#lib/components/forum/ReplyThread.svelte';
+	import PollBlock from '#lib/components/forum/PollBlock.svelte';
+	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
+	import TagInput from '#lib/components/create/TagInput.svelte';
+	import { hydrateLinkPreviews } from '#lib/tiptap/hydrateLinkPreviews.js';
+	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
+	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
+	import { breadcrumbJsonLd } from '#lib/seo/breadcrumbs.js';
+	import type { ForumThread, ForumReply, ForumTag, PollWithResults } from '#lib/types/index.js';
+import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
+import { contentHref } from '#lib/utils/contentLink.js';
+
+	// /thread/{slug} forum-kind payload — identical to the former
+	// (app)/forum/[slug] page data (thread-rename spec: forum render
+	// unchanged).
+	interface Props {
+		data: {
+			thread: ForumThread;
+			indexable: boolean;
+			seoIndexable: boolean;
+			replies: ForumReply[];
+			tags: ForumTag[];
+			poll: PollWithResults | null;
+			related: { id: string; title: string; slug: string; content_type: string }[];
+			authed: boolean;
+			canSolve: boolean;
+			canEdit: boolean;
+			canDelete: boolean;
+			canModerate: boolean;
+			isBookmarked: boolean;
+			bookmarkId: string;
+			jsonLd: unknown;
+			deletedUserIds: string[] | null;
+			acceptedReplyId: string | null;
+			userVotes: Record<string, number>;
+			currentUserId: string | null;
+		};
+	}
+
+	let { data }: Props = $props();
+
+	const thread = $derived(data.thread);
+	const deletedUserIds = $derived(
+		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
+	);
+	const threadUserVote = $derived((data.userVotes?.[thread.id] ?? 0) as 0 | 1 | -1);
+	const bodyHtml = $derived(
+		tiptapBodyToHtml(thread.body, {
+			deletedUserIds,
+			deletedUserLabel: t('mentions.deleted_user', '[deleted user]')
+		})
+	);
+	const time = $derived(relativeTime(thread.created_at, new Date(), i18n.locale));
+	const authorLabel = $derived(
+		thread.is_anonymous
+			? t('forum.anonymous', 'Anonymous')
+			: thread.author_display_name || thread.author_username || t('forum.member', 'Member')
+	);
+	const spaceHref = $derived(thread.space_slug ? `/spaces/${thread.space_slug}` : null);
+
+	const title = $derived(`${thread.title} — ${t('forum.list_title', 'Forum')}`);
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/thread/${thread.slug}`);
+	const description = $derived(tiptapExcerpt(thread.body, 160));
+
+	// BUG-013: use the backend-provided JSON-LD (which includes the
+	// acceptedAnswer text from the top-voted reply) instead of computing a
+	// client-side version that was missing the answer text and causing double
+	// emission. Fall back to a minimal DiscussionForumPosting when the backend
+	// didn't provide one. Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+	const jsonLd = $derived(
+		data.jsonLd
+			? JSON.stringify(data.jsonLd)
+			: JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'DiscussionForumPosting',
+					headline: thread.title,
+					datePublished: thread.created_at,
+					author: { '@type': 'Person', name: authorLabel },
+					url: canonical,
+					interactionStatistic: {
+						'@type': 'InteractionCounter',
+						interactionType: 'https://schema.org/CommentAction',
+						userInteractionCount: thread.reply_count
+					}
+				})
+	);
+
+	// BreadcrumbList JSON-LD (Section 26 — all pages with hierarchy).
+	// Forum threads live under /thread, optionally within a space.
+	const breadcrumbLd = $derived(
+		JSON.stringify(
+			breadcrumbJsonLd(
+				thread.space_slug
+					? [
+							{ name: 'Home', path: page.url.origin },
+							{ name: 'Forum', path: `${page.url.origin}/thread` },
+							{ name: thread.space_name ?? thread.space_slug, path: `${page.url.origin}/spaces/${thread.space_slug}` },
+							{ name: thread.title, path: canonical }
+						]
+					: [
+							{ name: 'Home', path: page.url.origin },
+							{ name: 'Forum', path: `${page.url.origin}/thread` },
+							{ name: thread.title, path: canonical }
+						]
+			)
+		)
+	);
+
+	// Solve / un-solve (OP or moderator only — backend enforces the permission).
+	// Seed from SSR props — $state(false)+$effect would render the unsolved
+	// label until hydration ran (effects don't run during SSR).
+	let solved = $state(untrack(() => thread.solved));
+	let solving = $state(false);
+
+	// Sync the solved flag from the server payload on client-side navigation.
+	$effect(() => {
+		solved = thread.solved;
+	});
+
+	let acceptedReplyId = $state<string | null>(untrack(() => data.acceptedReplyId));
+	$effect(() => {
+		acceptedReplyId = data.acceptedReplyId;
+	});
+
+	// Tag management — tags are universal (Sections 08/14). Attach/detach go
+	// through the backing content row: POST /content/{id}/tags {tag_slugs}
+	// and DELETE /content/{id}/tags/{tagId} (cap errors surface too_many_tags).
+	const canManageTags = $derived(data.authed && (data.canEdit || data.canModerate) && !!thread.content_id);
+	const tagSlotsLeft = $derived(Math.max(0, 5 - (data.tags?.length ?? 0)));
+	let addingTags = $state(false);
+	let newTagSlugs = $state<string[]>([]);
+	let tagSaving = $state(false);
+	let tagError = $state<string | null>(null);
+	let removingTagId = $state<string | null>(null);
+
+	async function saveTags() {
+		if (tagSaving || newTagSlugs.length === 0 || !thread.content_id) return;
+		tagSaving = true;
+		tagError = null;
+		// Tags are universal (Sections 08/14): the composer's tag flow uses
+		// POST /content/{id}/tags {tag_slugs} — get-or-creates missing slugs
+		// server-side and enforces the per-content cap with too_many_tags.
+		// The /thread/{id}/tags bulk endpoint takes UUIDs and requires
+		// forum.tag.assign, so it cannot serve author-typed slugs.
+		const res = await api.post(`/content/${thread.content_id}/tags`, { tag_slugs: newTagSlugs });
+		tagSaving = false;
+		if (res.error) {
+			tagError =
+				res.error.code === 'too_many_tags'
+					? t('forum.tags.too_many', 'You can add up to 5 tags per discussion.')
+					: res.error.message || t('forum.tags.add_error', 'Failed to add tags.');
+			return;
+		}
+		newTagSlugs = [];
+		addingTags = false;
+		await invalidateAll();
+	}
+
+	async function removeTag(tagId: string) {
+		if (removingTagId || !thread.content_id) return;
+		removingTagId = tagId;
+		// Universal content detach (Section 14) — accepts the tag UUID and is
+		// available to the content author (content.edit_own), unlike the
+		// forum.tag.assign-gated forum endpoint.
+		const res = await api.delete(`/content/${thread.content_id}/tags/${tagId}`);
+		removingTagId = null;
+		if (res.error) {
+			tagError =
+				res.error.code === 'too_many_tags'
+					? t('forum.tags.too_many', 'You can add up to 5 tags per discussion.')
+					: res.error.message || t('forum.tags.remove_error', 'Failed to remove tag.');
+			return;
+		}
+		tagError = null;
+		await invalidateAll();
+	}
+
+	let showPollForm = $state(false);
+	let pollQuestion = $state('');
+	let pollMulti = $state(false);
+	let pollCloseAt = $state('');
+	let pollOptions = $state<string[]>(['', '']);
+	let pollSubmitting = $state(false);
+	let pollError = $state<string | null>(null);
+
+	const canCreatePoll = $derived.by(
+		() => data.authed && !data.poll && (data.canModerate || data.currentUserId === thread.author_user_id)
+	);
+
+	async function createPoll(e: Event) {
+		e.preventDefault();
+		if (pollSubmitting) return;
+		pollSubmitting = true;
+		pollError = null;
+
+		const options = pollOptions.map((label) => label.trim()).filter(Boolean);
+		if (pollQuestion.trim() === '') {
+			pollError = t('forum.poll_question_required', 'Poll question is required');
+			pollSubmitting = false;
+			return;
+		}
+		if (options.length < 2) {
+			pollError = t('forum.poll_options_min', 'Add at least two options');
+			pollSubmitting = false;
+			return;
+		}
+
+		const body: Record<string, any> = {
+			question: pollQuestion.trim(),
+			is_multi_select: pollMulti,
+			options: options.map((label, i) => ({ label, position: i }))
+		};
+		if (pollCloseAt) body.close_at = new Date(pollCloseAt).toISOString();
+
+		const res = await api.post(`/thread/${thread.id}/poll`, body);
+		pollSubmitting = false;
+		if (res.error) {
+			pollError = res.error.message ?? t('forum.poll_create_error', 'Could not create poll');
+		} else {
+			pollQuestion = '';
+			pollMulti = false;
+			pollCloseAt = '';
+			pollOptions = ['', ''];
+			showPollForm = false;
+			await invalidateAll();
+		}
+	}
+
+	async function toggleSolve(replyId?: string) {
+		if (solving || !data.canSolve) return;
+		solving = true;
+		const wasSolved = solved;
+		const prevAccepted = acceptedReplyId;
+		const res = await optimisticAction({
+			apply: () => {
+				solved = !wasSolved;
+				if (!wasSolved && replyId) acceptedReplyId = replyId;
+				else if (wasSolved) acceptedReplyId = null;
+			},
+			rollback: () => {
+				solved = wasSolved;
+				acceptedReplyId = prevAccepted;
+			},
+			call: () =>
+				wasSolved
+					? api.delete(`/thread/${thread.id}/solve`)
+					: api.post(`/thread/${thread.id}/solve`, replyId ? { reply_id: replyId } : {})
+		});
+		solving = false;
+		if (res.ok) await invalidateAll();
+	}
+
+	// Bookmark toggle — POST/DELETE /thread/bookmarks with entity_type=thread.
+	// The backend returns bookmark_id on GetThread so DELETE can target
+	// /thread/bookmarks/{id} directly. Ref: sections/08-forum-qa-solved.md (Bookmarks)
+	// Seed from SSR props (same hydration-flash fix as `solved` above).
+	let bookmarked = $state(untrack(() => data.isBookmarked));
+	let bookmarking = $state(false);
+	let bookmarkCount = $state(untrack(() => thread.bookmark_count));
+	let bookmarkId = $state(untrack(() => data.bookmarkId ?? ''));
+
+	$effect(() => {
+		bookmarked = data.isBookmarked;
+		bookmarkCount = thread.bookmark_count;
+		bookmarkId = data.bookmarkId ?? '';
+	});
+
+	async function toggleBookmark() {
+		if (bookmarking) return;
+		// Guests can click — redirect to /login with a return-to param.
+		if (!(await requireAuthOrRedirect())) return;
+		bookmarking = true;
+		const wasBookmarked = bookmarked;
+		const prevCount = bookmarkCount;
+		const prevId = bookmarkId;
+		if (wasBookmarked && bookmarkId) {
+			const res = await optimisticAction({
+				apply: () => {
+					bookmarked = false;
+					bookmarkCount = prevCount - 1;
+				},
+				rollback: () => {
+					bookmarked = true;
+					bookmarkCount = prevCount;
+				},
+				call: () => api.delete(`/thread/bookmarks/${bookmarkId}`)
+			});
+			if (res.ok) bookmarkId = '';
+			bookmarkId = res.ok ? '' : prevId;
+		} else {
+			const res = await optimisticAction<{ id: string }>({
+				apply: () => {
+					bookmarked = true;
+					bookmarkCount = prevCount + 1;
+				},
+				rollback: () => {
+					bookmarked = false;
+					bookmarkCount = prevCount;
+				},
+				call: () =>
+					api.post<{ id: string }>(`/thread/bookmarks`, {
+						entity_type: 'thread',
+						entity_id: thread.id
+					})
+			});
+			if (res.ok && res.data?.id) bookmarkId = res.data.id;
+		}
+		bookmarking = false;
+	}
+
+	// BUG-015: wire up the Share button with the Web Share API (fallback to
+	// clipboard copy) and the Report button with a navigation to the report
+	// flow. Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+	let shared = $state(false);
+
+	async function shareThread() {
+		const url = page.url.href;
+		const shareData = { title: thread.title, url };
+		try {
+			if (navigator.share) {
+				await navigator.share(shareData);
+			} else {
+				await navigator.clipboard.writeText(url);
+				shared = true;
+				setTimeout(() => (shared = false), 2000);
+			}
+		} catch {
+			// user dismissed the share sheet — no action needed
+		}
+	}
+
+	// Report thread — shared ReportDialog posts to
+	// POST /content/{content_id}/report using the thread's backing contents row.
+	// Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
+	let reportOpen = $state(false);
+
+	async function openReport() {
+		if (!thread.content_id) return;
+		if (!data.authed && !(await requireAuthOrRedirect())) return;
+		reportOpen = true;
+	}
+
+	// Inline edit (author or moderator — backend enforces via can_edit).
+	// Uses the TipTap PostEditor so edits produce valid TipTap JSON for
+	// the forum_threads.body jsonb column.
+	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Editing)
+	let editing = $state(false);
+	let editTitle = $state('');
+	let editBodyHtml = $state('');
+	let editBodyJson = $state<Record<string, unknown>>({ type: 'doc', content: [] });
+	let editAnonymous = $state(false);
+	let savingEdit = $state(false);
+	let editError = $state<string | null>(null);
+	let deleting = $state(false);
+	let deleteError = $state<string | null>(null);
+
+	async function startEdit() {
+		if (!canEditThread) return;
+		editTitle = thread.title;
+		// The PostEditor initialises from HTML. Render the stored TipTap
+		// JSON to HTML so the editor starts with the current content.
+		editBodyHtml = bodyHtml;
+		editBodyJson = { type: 'doc', content: [] };
+		editAnonymous = thread.is_anonymous;
+		editError = null;
+		editing = true;
+		// Fetch the raw (unresolved) thread so {{...}} literals authored via the
+		// token picker survive a re-save — the display payload is resolved.
+		// GET /thread/{slug} resolves by slug, not id — passing the UUID 404s.
+		const res = await api.get<ForumThread>(`/thread/${thread.slug}?raw=1`);
+		if (!editing || !res.data) return;
+		editTitle = res.data.title;
+		editBodyHtml = tiptapBodyToHtml(res.data.body, {
+			deletedUserIds,
+			deletedUserLabel: t('mentions.deleted_user', '[deleted user]')
+		});
+		editAnonymous = res.data.is_anonymous;
+	}
+
+	function cancelEdit() {
+		editing = false;
+		editError = null;
+	}
+
+	// Edit window (edit_window_minutes) — authors see a countdown; the menu
+	// edit entry disables once the window lapses (moderators bypass it).
+	// `now` ticks so the countdown and expiry flip live on a long-lived page.
+	let now = $state(Date.now());
+	$effect(() => {
+		const timer = setInterval(() => {
+			now = Date.now();
+		}, 30_000);
+		return () => clearInterval(timer);
+	});
+	const editWindowMs = $derived((thread.edit_window_minutes ?? 30) * 60 * 1000);
+	const editExpiresAt = $derived(new Date(thread.created_at).getTime() + editWindowMs);
+	const editMsLeft = $derived(editExpiresAt - now);
+	const editWindowExpired = $derived(editMsLeft <= 0);
+	const editCountdown = $derived.by(() => {
+		if (editMsLeft <= 0) return '';
+		const mins = Math.floor(editMsLeft / 60000);
+		if (mins >= 60) return t('forum.edit_hours_left', '{n}h left to edit').replace('{n}', String(Math.floor(mins / 60)));
+		return t('forum.edit_minutes_left', '{n}m left to edit').replace('{n}', String(Math.max(1, mins)));
+	});
+	const canEditThread = $derived(data.canEdit && (data.canModerate || !editWindowExpired));
+
+	async function saveEdit() {
+		if (savingEdit || !editTitle.trim()) return;
+		savingEdit = true;
+		editError = null;
+		const res = await api.patch<ForumThread>(`/thread/${thread.id}`, {
+			title: editTitle.trim(),
+			body: encodeTiptapDoc(editBodyJson as unknown as TipTapDoc),
+			is_anonymous: editAnonymous
+		});
+		savingEdit = false;
+		if (res.error) {
+			editError =
+				res.error.code === 'edit_window_expired'
+					? t('forum.edit_window_expired', 'The edit window has expired.')
+					: res.error.message || t('forum.edit_error', 'Failed to save edits.');
+			return;
+		}
+		editing = false;
+		// Reload to reflect the updated thread + is_edited flag.
+		await invalidateAll();
+	}
+
+	async function deleteThread() {
+		if (deleting || !data.canDelete) return;
+		if (!confirm(t('forum.delete_confirm', 'Delete this discussion? This cannot be undone.'))) return;
+		deleting = true;
+		deleteError = null;
+		const res = await optimisticAction({
+			apply: () => {},
+			rollback: () => {},
+			call: () => api.delete(`/thread/${thread.id}`)
+		});
+		deleting = false;
+		if (res.error) {
+			deleteError = res.error.message || t('forum.delete_error', 'Failed to delete discussion.');
+			return;
+		}
+		await goto('/thread');
+	}
+</script>
+
+<svelte:head>
+	<title>{title}</title>
+	<meta name="description" content={description} />
+	<meta property="og:title" content={thread.title} />
+	<meta property="og:description" content={description} />
+	<meta property="og:type" content="article" />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
+	{@html safeJsonLdScript(jsonLd)}
+	{@html safeJsonLdScript(breadcrumbLd)}
+	{#if data.indexable === false || data.seoIndexable === false || thread?.seo_indexable === false || thread?.indexable === false}
+		<meta name="robots" content="noindex,nofollow" />
+	{/if}
+</svelte:head>
+
+<div class="mx-auto w-full max-w-3xl px-4 py-6 pb-20 sm:pb-6">
+	<a
+		href="/thread"
+		class="mb-5 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+	>
+		<ArrowLeft class="rtl:-scale-x-100" size={16} /> {t('forum.back', 'Back to forum')}
+	</a>
+
+	<article class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-6">
+		<!-- Header — author avatar in the left gutter (universal comment-style
+		     layout; thread voting lives in the footer action row). -->
+		<div class="flex items-start gap-3">
+			{#if thread.is_anonymous}
+				<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]">
+					{authorLabel.charAt(0).toUpperCase()}
+				</span>
+			{:else}
+				<UserHoverCard
+					id={thread.author_user_id}
+					slug={thread.author_username}
+					name={authorLabel}
+					avatar={thread.author_avatar_url}
+					variant="row"
+					class="shrink-0"
+				>
+					{#snippet trigger()}
+						{#if thread.author_avatar_url}
+							<img
+								src={thread.author_avatar_url}
+								alt=""
+								class="h-10 w-10 shrink-0 rounded-full object-cover"
+								loading="lazy"
+							/>
+						{:else}
+							<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]">
+								{authorLabel.charAt(0).toUpperCase()}
+							</span>
+						{/if}
+					{/snippet}
+				</UserHoverCard>
+			{/if}
+
+			<div class="min-w-0 flex-1">
+				<!-- Author line sits directly beside the avatar (universal comment
+				     layout), with badges and edit actions right-aligned on the row. -->
+				<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-muted)]">
+					{#if thread.is_anonymous}
+						<span class="text-sm font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+					{:else}
+						<UserHoverCard
+							id={thread.author_user_id}
+							slug={thread.author_username}
+							name={authorLabel}
+							variant="row"
+						>
+							{#snippet trigger()}
+								<span class="text-sm font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+							{/snippet}
+						</UserHoverCard>
+					{/if}
+					{#if thread.space_name}
+						<span>·</span>
+						<span class="text-[var(--color-text-subtle)]">
+							{#if spaceHref}<a href={spaceHref} class="hover:underline">{thread.space_name}</a>{:else}{thread.space_name}{/if}
+						</span>
+					{/if}
+					{#if time}<span>·</span><span>{time}</span>{/if}
+					{#if thread.is_edited}<span>·</span><span class="italic">{t('forum.edited', 'edited')}</span>{/if}
+					{#if thread.view_count != null}
+						<span>·</span>
+						<span class="flex items-center gap-1">
+							<Eye size={12} /> {thread.view_count} {t('content.views', 'views')}
+						</span>
+					{/if}
+
+					<div class="ms-auto flex flex-wrap items-center gap-2">
+						{#if solved}
+							<span
+								class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-success)]/10 px-2 py-0.5 text-xs font-semibold text-[var(--color-success)]"
+							>
+								<CheckCircle2 size={12} /> {t('forum.solved', 'Solved')}
+							</span>
+						{/if}
+						<span class="rounded border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+							{t('content_type.discussion', 'Discussion')}
+						</span>
+					</div>
+				</div>
+				{#if deleteError}
+					<p class="mt-2 rounded-[var(--radius)] border border-[var(--color-error)]/30 bg-[color-mix(in_srgb,var(--color-error)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-error)]">
+						{deleteError}
+					</p>
+				{/if}
+
+				{#if editing}
+					<!-- Inline edit mode -->
+					<input
+						type="text"
+						bind:value={editTitle}
+						maxlength="120"
+						class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xl font-bold text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+						placeholder={t('forum.new.placeholder_title', 'Title')}
+					/>
+				{:else}
+					<h1 class="mt-2 text-balance text-2xl font-bold leading-tight tracking-tight text-[var(--color-text)] sm:text-3xl">
+						{thread.title}
+					</h1>
+				{/if}
+
+				<!-- Tags (Sections 08/14 — tags are universal; chips link to the
+				     shared tag page, add/remove via /content/{id}/tags) -->
+				{#if (data.tags && data.tags.length > 0) || canManageTags}
+					<div class="mt-3 flex flex-wrap items-center gap-1.5">
+						{#each data.tags ?? [] as tag (tag.id)}
+							<span
+								class="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]"
+							>
+								<a
+									href="/tags/{tag.slug}"
+									class="transition-colors hover:text-[var(--color-primary-text)]"
+								>
+									{tag.name}
+								</a>
+								{#if canManageTags}
+									<button
+										type="button"
+										onclick={() => removeTag(tag.id)}
+										disabled={removingTagId === tag.id}
+										class="rounded-full text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary-text)] disabled:opacity-50"
+										aria-label={t('forum.tags.remove', 'Remove tag')}
+									>
+										{#if removingTagId === tag.id}
+											<Loader2 size={12} class="animate-spin" />
+										{:else}
+											<X size={12} />
+										{/if}
+									</button>
+								{/if}
+							</span>
+						{/each}
+						{#if canManageTags && !addingTags && tagSlotsLeft > 0}
+							<button
+								type="button"
+								onclick={() => { addingTags = true; tagError = null; }}
+								class="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--color-border)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary-text)]"
+							>
+								<Plus size={12} />
+								{t('forum.tags.add', 'Add tag')}
+							</button>
+						{/if}
+					</div>
+					{#if addingTags}
+						<div class="mt-2 space-y-2">
+							<TagInput tags={newTagSlugs} onTags={(next) => (newTagSlugs = next)} maxTags={tagSlotsLeft} />
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									onclick={saveTags}
+									disabled={tagSaving || newTagSlugs.length === 0}
+									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast,var(--color-surface))] transition-opacity disabled:opacity-50"
+								>
+									{#if tagSaving}<Loader2 size={12} class="animate-spin" />{/if}
+									{t('forum.tags.save', 'Save tags')}
+								</button>
+								<button
+									type="button"
+									onclick={() => { addingTags = false; newTagSlugs = []; tagError = null; }}
+									class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+								>
+									{t('common.cancel', 'Cancel')}
+								</button>
+							</div>
+						</div>
+					{/if}
+					{#if tagError}
+						<p class="mt-1.5 text-xs text-[var(--color-primary-text)]">{tagError}</p>
+					{/if}
+				{/if}
+			</div>
+		</div>
+
+		<!-- Body (view mode) / Edit form (edit mode) -->
+		{#if editing}
+			<div class="mt-5 space-y-3">
+				{#if editError}
+					<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary-text)]">
+						{editError}
+					</p>
+				{/if}
+				{#if !data.canModerate && editCountdown}
+					<p class="text-xs text-[var(--color-muted)]">{editCountdown}</p>
+				{/if}
+				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] focus-within:border-[var(--color-primary)]">
+					<PostEditor
+						html={editBodyHtml}
+						onedit={() => {}}
+						onhtml={(v) => { editBodyHtml = v; }}
+						onjson={(v) => { editBodyJson = v; }}
+					/>
+				</div>
+				<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text-subtle)]">
+					<input type="checkbox" bind:checked={editAnonymous} class="h-4 w-4 accent-[var(--color-primary)]" />
+					{t('forum.new.anonymous', 'Post anonymously')}
+				</label>
+				<div class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-3">
+					<button
+						type="button"
+						onclick={cancelEdit}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						<X size={14} /> {t('common.cancel', 'Cancel')}
+					</button>
+					<button
+						type="button"
+						onclick={saveEdit}
+						disabled={savingEdit || !editTitle.trim()}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+					>
+						<Save size={14} /> {savingEdit ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
+					</button>
+				</div>
+			</div>
+		{:else}
+			<div class="prose mt-5 max-w-none text-[var(--color-text)]" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds>
+				{@html bodyHtml}
+			</div>
+		{/if}
+
+		<!-- Poll (if the thread has one) -->
+		{#if data.poll}
+			<div class="mt-5">
+				<PollBlock pollData={data.poll} spaceId={data.thread?.space_id} />
+			</div>
+		{:else if canCreatePoll}
+			<div class="mt-5">
+				{#if showPollForm}
+					<form onsubmit={createPoll} class="space-y-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+						<div>
+							<label for="poll-question" class="mb-1 block text-sm font-medium text-[var(--color-text)]">{t('forum.poll_question', 'Poll question')}</label>
+							<input id="poll-question" type="text" bind:value={pollQuestion} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" placeholder={t('forum.poll_question_placeholder', 'Ask a question…')} />
+						</div>
+						<div class="flex items-center gap-2">
+							<input id="poll-multi" type="checkbox" bind:checked={pollMulti} class="h-4 w-4" />
+							<label for="poll-multi" class="text-sm text-[var(--color-text)]">{t('forum.poll_multi_select', 'Allow multiple choices')}</label>
+						</div>
+						<div>
+							<label for="poll-close" class="mb-1 block text-sm font-medium text-[var(--color-text)]">{t('forum.poll_close_at', 'Close at (optional)')}</label>
+							<input id="poll-close" type="datetime-local" bind:value={pollCloseAt} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" />
+						</div>
+						<div class="space-y-2">
+							<p class="block text-sm font-medium text-[var(--color-text)]">{t('forum.poll_options', 'Options')}</p>
+							{#each pollOptions as label, i (i)}
+								<div class="flex gap-2">
+									<input type="text" bind:value={pollOptions[i]} class="min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" placeholder={`${t('forum.poll_option', 'Option')} ${i + 1}`} />
+									{#if pollOptions.length > 2}
+										<button type="button" onclick={() => pollOptions = pollOptions.filter((_, idx) => idx !== i)} class="text-[var(--color-error)]"><X size={18} /></button>
+									{/if}
+								</div>
+							{/each}
+							<button type="button" onclick={() => pollOptions = [...pollOptions, '']} class="inline-flex items-center gap-1 text-sm text-[var(--color-primary-text)]">
+								<Plus size={14} /> {t('forum.poll_add_option', 'Add option')}
+							</button>
+						</div>
+						{#if pollError}
+							<p class="text-sm text-[var(--color-error)]">{pollError}</p>
+						{/if}
+						<div class="flex gap-2">
+							<button type="submit" disabled={pollSubmitting} class="inline-flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
+								{#if pollSubmitting}<Loader2 size={14} class="animate-spin" />{/if}
+								{t('forum.create_poll', 'Create poll')}
+							</button>
+							<button type="button" onclick={() => showPollForm = false} class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)]">{t('common.cancel', 'Cancel')}</button>
+						</div>
+					</form>
+				{:else}
+					<button type="button" onclick={() => showPollForm = true} class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline">
+						<Plus size={14} /> {t('forum.add_poll', 'Add poll')}
+					</button>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Reaction rail — mimics the blog single-page ReactionRail bar:
+		     bordered strip, evenly distributed controls, round icon cells.
+		     The love/reaction slot is replaced by the forum vote group.
+		     Below sm it is the page's fixed bottom bar — this route is in
+		     gate.NO_TAB_BAR_ROUTES so the shell's mobile tab bar is absent. -->
+		<div class="fixed inset-x-0 bottom-0 z-50 flex w-full flex-row items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-[var(--color-muted)] backdrop-blur sm:relative sm:z-30 sm:mt-6 sm:rounded-[var(--radius-card)] sm:border sm:bg-[var(--color-surface)] sm:py-2 sm:pb-2 sm:backdrop-blur-none">
+			<div class="flex flex-1 items-center justify-center">
+				<VoteRail
+					entityType="thread"
+					entityId={thread.id}
+					authorId={thread.author_user_id}
+					score={thread.vote_score}
+					layout="rail"
+					authed={data.authed}
+					userVote={threadUserVote}
+				/>
+			</div>
+			<a
+				href="#replies"
+				class="flex flex-1 items-center justify-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+				aria-label={t('forum.replies', 'Replies')}
+			>
+				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]">
+					<MessageSquare size={18} />
+				</span>
+				<span class="text-sm font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{thread.reply_count}</span>
+			</a>
+			<!-- Subtle separator between content stats and utility actions -->
+			<div class="h-5 w-px bg-[var(--color-border)]"></div>
+
+			<button
+				type="button"
+				onclick={toggleBookmark}
+				disabled={bookmarking}
+				class="flex flex-1 items-center justify-center transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+				aria-pressed={bookmarked}
+				title={data.authed ? (bookmarked ? t('forum.remove_bookmark', 'Remove bookmark') : t('forum.add_bookmark', 'Bookmark this discussion')) : t('forum.login_to_bookmark', 'Log in to bookmark')}
+			>
+				<span class="grid h-9 w-9 place-items-center rounded-full transition-colors {bookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]'}">
+					<Bookmark size={18} fill={bookmarked ? 'currentColor' : 'none'} />
+				</span>
+				<span class="text-sm font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{bookmarkCount > 0 ? bookmarkCount : ''}</span>
+			</button>
+			<button
+				type="button"
+				onclick={shareThread}
+				class="flex flex-1 items-center justify-center text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+				aria-label={t('forum.share', 'Share')}
+			>
+				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]">
+					<Share2 size={18} />
+				</span>
+				{#if shared}<span class="text-sm text-[var(--color-success)]">{t('forum.shared', 'Copied!')}</span>{/if}
+			</button>
+
+			<!-- Thread actions menu — edit/delete for author or moderator,
+			     report for everyone (can_* flags come from the backend).
+			     Opens upward: the rail is fixed to the viewport bottom below sm. -->
+			{#if !editing && (canEditThread || data.canDelete || thread.content_id)}
+				<Menu side="top" contentClass="min-w-44">
+					{#snippet trigger(props)}
+						<button
+							type="button"
+							{...props}
+							class="flex flex-1 items-center justify-center text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+							aria-label={t('comments.options', 'More options')}
+							title={t('comments.options', 'More options')}
+						>
+							<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]">
+								<MoreVertical size={18} />
+							</span>
+						</button>
+					{/snippet}
+					{#if canEditThread}
+						<MenuItem icon={Pencil} onSelect={startEdit}>{t('forum.edit', 'Edit')}</MenuItem>
+					{/if}
+					{#if data.canDelete}
+						<MenuItem icon={Trash2} onSelect={deleteThread} disabled={deleting} destructive>{t('forum.delete', 'Delete')}</MenuItem>
+					{/if}
+					{#if data.canEdit || data.canDelete}
+						<MenuSeparator />
+					{/if}
+					<MenuItem icon={Flag} onSelect={openReport} disabled={!thread.content_id}>{t('forum.report', 'Report')}</MenuItem>
+				</Menu>
+			{/if}
+		</div>
+		{#if data.canSolve}
+			<div class="mt-3 flex justify-end">
+				<button
+					type="button"
+					onclick={() => toggleSolve()}
+					disabled={solving}
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+				>
+					<CheckCircle2 size={13} />
+					{solved ? t('forum.unsolve', 'Mark unsolved') : t('forum.mark_solved', 'Mark as solved')}
+				</button>
+			</div>
+		{/if}
+	</article>
+
+	<!-- Threaded replies (id anchors the reaction rail's reply count) -->
+	<div id="replies">
+	<ReplyThread
+		replies={data.replies}
+		threadId={thread.id}
+		authed={data.authed}
+		canSolve={data.canSolve}
+		acceptedReplyId={acceptedReplyId}
+		userVotes={data.userVotes}
+		canModerate={data.canModerate}
+		currentUserId={data.currentUserId}
+		{deletedUserIds}
+		onMarkSolved={toggleSolve}
+	/>
+	</div>
+
+	<!-- §25: engagement-area ad slot. -->
+	<AdSlot slot="comments_below" format="banner" />
+
+	<!-- Related posts sidebar (Phase 05.14) -->
+	{#if data.related && data.related.length > 0}
+		<aside class="mt-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">
+				{t('forum.related', 'Related discussions')}
+			</h2>
+			<ul class="space-y-2">
+				{#each data.related as rel (rel.id)}
+					<li>
+						<a
+							href={contentHref(rel)}
+							class="block rounded-[var(--radius)] p-2 transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							<span class="block truncate text-sm text-[var(--color-text)]">{rel.title}</span>
+							<span class="mt-0.5 block text-xs capitalize text-[var(--color-muted)]">{rel.content_type}</span>
+						</a>
+					</li>
+				{/each}
+			</ul>
+		</aside>
+	{/if}
+</div>
+
+<!-- Report thread dialog — POST /content/{content_id}/report (Section 51) -->
+<ReportDialog bind:open={reportOpen} entityType="content" entityId={thread.content_id ?? ''} entityName={thread.title} />

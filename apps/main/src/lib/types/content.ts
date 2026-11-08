@@ -68,6 +68,24 @@ export interface ContentArticle {
 	series_total?: number | null;
 	series_prev_slug?: string | null;
 	series_next_slug?: string | null;
+	/** /thread/{slug} embed context — present on `discussion` anchor rows
+	 *  (thread_anchors: tool/wiki entity threads). */
+	thread_anchor?: {
+		entity_type: string;
+		entity_key: string;
+		entity_url: string;
+		entity_title: string;
+		entity_summary?: string | null;
+	} | null;
+	/** /thread/{slug} embed context — present on §49 linked-discussion rows
+	 *  (the content this thread was started about). */
+	thread_parent?: {
+		slug: string;
+		title: string;
+		content_type: string;
+		excerpt?: string | null;
+		cover_image_url?: string | null;
+	} | null;
 }
 
 /** A single part in a series (returned by /series/{id}/posts). */

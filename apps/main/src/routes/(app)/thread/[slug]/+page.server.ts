@@ -1,14 +1,25 @@
 import { error } from '@sveltejs/kit';
+import type { ServerLoadEvent } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '#lib/server/api.js';
-import type { ForumThread, ForumReply, ForumTag, PollWithResults } from '#lib/types/index.js';
+import { hasPerm } from '#lib/server/auth.js';
+import { contentHref } from '#lib/utils/contentLink.js';
+import type { ForumThread, ForumReply, ForumTag, PollWithResults, Comment } from '#lib/types/index.js';
+import type { ContentArticle } from '#lib/types/content.js';
+import type { ThreadEmbed } from '#lib/components/thread/ThreadEmbedView.svelte';
 
 /**
- * Single forum discussion at /thread/[slug] — rendered inside the app shell
- * (NOT a reading-layout exception; only blog/CPT singles and /create break
- * the shell per ADR-058). Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
+ * Single thread at /thread/[slug] — the one place discussion happens
+ * (thread-rename spec). Two kinds dispatch on the forum API result:
  *
- * Parallel fetches:
+ *   kind 'forum' — a §08 forum_thread: votes, replies, polls, solve.
+ *     Rendered exactly as the old /forum/{slug} page (ForumThreadView).
+ *   kind 'embed' — any other contents row: §49 discussion (possibly a
+ *     thread_anchors row for a tool/wiki page, or a linked-discussion
+ *     thread about a parent content) or another CPT reached via a thread
+ *     URL. Renders ThreadEmbedCard + the CommentThread engine.
+ *
+ * Parallel fetches (forum kind):
  *   - GET /thread/{slug}         → the thread
  *   - GET /thread/{id}/replies   → flat reply list (nested via parent_reply_id)
  *   - GET /thread/{id}/tags      → tags attached to the thread (Section 08)
@@ -52,7 +63,9 @@ export const load: PageServerLoad = async (event) => {
 		userVotes = envelope.user_votes ?? {};
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
-			throw error(404, { code: 'not_found', message: 'Discussion not found' });
+			// Not a forum thread — entity threads and §49 discussions resolve
+			// through the content API instead.
+			return loadEmbedThread(event, slug);
 		}
 		throw error(500, { code: 'internal_error', message: 'Failed to load discussion' });
 	}
@@ -129,6 +142,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	return {
+		kind: 'forum' as const,
 		thread,
 		indexable,
 		seoIndexable,
@@ -150,3 +164,126 @@ export const load: PageServerLoad = async (event) => {
 		currentUserId
 	};
 };
+
+/**
+ * Entity-thread branch — resolves a contents row by slug and builds the
+ * embed card + first page of comments. Covers:
+ *   - thread_anchors rows (`discussion` bound to a tool/wiki entity)
+ *   - §49 linked discussions (`discussion` about a parent content)
+ *   - standalone `discussion` rows (no parent — thread is itself)
+ *   - any other CPT reached via /thread/{slug} (card links to canonical)
+ */
+async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: string) {
+	const ctx = apiContext(event);
+
+	let article: ContentArticle;
+	let jsonLd: unknown = null;
+	let deletedUserIds: string[] | null = null;
+	try {
+		const envelope = await apiGetEnvelope<ContentArticle>(ctx, `/content/${slug}`);
+		article = envelope.data;
+		jsonLd = envelope.json_ld ?? null;
+		deletedUserIds = envelope.deleted_user_ids ?? null;
+	} catch (err) {
+		if (err instanceof ApiError && err.status === 404) {
+			throw error(404, { code: 'not_found', message: 'Discussion not found' });
+		}
+		if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+			throw error(403, { code: 'forbidden', message: 'You do not have access to this thread.' });
+		}
+		throw error(502, { code: 'upstream_error', message: 'Failed to load thread' });
+	}
+
+	const currentUserId = event.locals.user?.id ?? null;
+	const userGroups = event.locals.user?.groups ?? [];
+
+	// Same moderation affordance as the content single — the author and
+	// comments.pin holders can pin/delete. Best-effort /me/permissions call
+	// mirrors loadContentArticle.
+	const isOwner = !!article.author_id && currentUserId === article.author_id;
+	const isSuperAdmin = userGroups.some((g) => g === 'super_admin' || g === 'Super Admin');
+	let canModerate = isOwner || isSuperAdmin;
+	if (!canModerate && event.locals.user) {
+		try {
+			const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
+			canModerate = hasPerm(permRes?.permissions ?? [], 'comments.pin');
+		} catch {
+			canModerate = false;
+		}
+	}
+
+	let comments: Comment[] = [];
+	let commentsLoadError = false;
+	let commentDeletedUserIds: string[] | null = null;
+	let commentsTotal: number | null = null;
+	try {
+		const envelope = await apiGetEnvelope<Comment[]>(ctx, `/content/${article.id}/comments?page_size=50`);
+		comments = envelope.data ?? [];
+		commentDeletedUserIds = envelope.deleted_user_ids ?? null;
+		commentsTotal = (envelope.meta as { total?: number } | undefined)?.total ?? null;
+	} catch {
+		commentsLoadError = true;
+	}
+
+	const allDeletedUserIds = new Set<string>();
+	if (deletedUserIds) for (const id of deletedUserIds) allDeletedUserIds.add(id);
+	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
+	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
+
+	return {
+		kind: 'embed' as const,
+		article,
+		embed: buildThreadEmbed(article),
+		comments,
+		commentsTotal,
+		commentsLoadError,
+		authed: !!event.locals.user,
+		currentUserId,
+		canModerate,
+		deletedUserIds: mergedDeletedUserIds,
+		jsonLd,
+		indexable: article.indexable ?? true,
+		seoIndexable: article.seo_indexable ?? true
+	};
+}
+
+/**
+ * The "what this thread is about" card. Priority: thread_anchors entity →
+ * §49 thread_parent → the row itself (non-discussion rows only — a bare
+ * discussion IS the thread, so no card).
+ */
+function buildThreadEmbed(article: ContentArticle): ThreadEmbed | null {
+	if (article.thread_anchor) {
+		const a = article.thread_anchor;
+		return {
+			kind: 'entity',
+			title: a.entity_title,
+			href: a.entity_url,
+			excerpt: a.entity_summary ?? null,
+			entityType: a.entity_type
+		};
+	}
+
+	if (article.thread_parent) {
+		const p = article.thread_parent;
+		return {
+			kind: 'parent',
+			title: p.title,
+			href: contentHref({ slug: p.slug, content_type: p.content_type }),
+			excerpt: p.excerpt ?? null,
+			imageUrl: p.cover_image_url ?? null,
+			badge: p.content_type
+		};
+	}
+
+	if (article.content_type === 'discussion') return null;
+
+	return {
+		kind: 'self',
+		title: article.title,
+		href: contentHref(article),
+		excerpt: article.excerpt ?? null,
+		imageUrl: article.featured_image_url ?? article.header_image_url ?? null,
+		badge: article.content_type
+	};
+}
