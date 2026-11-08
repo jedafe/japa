@@ -1,6 +1,15 @@
-import type { Handle, HandleServerError } from '@sveltejs/kit/hooks';
-import { building } from '$app/env';
+import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
+import { building, dev } from '$app/env';
+import { PUBLIC_JC_GLITCHTIP_DSN } from '$app/env/public';
 import * as Sentry from '@sentry/sveltekit';
+
+// Server-side error tracking: handleError's captureException is a no-op
+// without init — this was silently dropping every server error.
+export const init: ServerInit = () => {
+	if (PUBLIC_JC_GLITCHTIP_DSN && !dev) {
+		Sentry.init({ dsn: PUBLIC_JC_GLITCHTIP_DSN, tracesSampleRate: 0 });
+	}
+};
 
 export const handle: Handle = async ({ event, resolve }) => {
 	if (building) {

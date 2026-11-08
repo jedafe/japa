@@ -17,7 +17,11 @@ func SecurityHeaders() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("X-Frame-Options", "DENY")
-			w.Header().Set("X-XSS-Protection", "1; mode=block")
+			// X-XSS-Protection is intentionally NOT set: the auditor was removed
+			// from every current browser, and "1; mode=block" can itself be used
+			// for XS-Leaks (the filter blocks/rewrites pages based on reflected
+			// content, leaking information cross-origin).
+			w.Header().Set("X-XSS-Protection", "0")
 			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 			path := r.URL.Path
