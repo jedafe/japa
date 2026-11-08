@@ -91,14 +91,22 @@
 
 	type Tab = 'flights' | 'hotels';
 	const TAB_VALUES: Tab[] = ['flights', 'hotels'];
+	// Retired tab values map onto where their content lives now — keeps
+	// shared ?tab= links landing somewhere useful.
+	const LEGACY_TABS: Record<string, Tab> = {
+		bundle: 'flights',
+		airlines: 'flights',
+		directory: 'hotels'
+	};
 	const TABS = $derived<Array<{ value: Tab; label: string; icon: typeof Plane }>>([
 		{ value: 'flights', label: t('travel.flights', 'Flights'), icon: Plane },
 		{ value: 'hotels', label: t('travel.hotels', 'Hotels'), icon: Hotel }
 	]);
-	const initialTabParam = page.url.searchParams.get('tab') as Tab;
-	let tab = $state<Tab>(
-		TAB_VALUES.includes(initialTabParam) ? initialTabParam : 'flights'
-	);
+	function resolveTab(param: string | null): Tab {
+		if (param && (TAB_VALUES as string[]).includes(param)) return param as Tab;
+		return LEGACY_TABS[param ?? ''] ?? 'flights';
+	}
+	let tab = $state<Tab>(resolveTab(page.url.searchParams.get('tab')));
 
 	const tabLabel = $derived(TABS.find((x) => x.value === tab)?.label ?? '');
 
@@ -113,6 +121,22 @@
 		goto(`${url.pathname}${url.search}`, { shallow: true, replace: true });
 	}
 
+	// Roving tabindex + arrow-key navigation for the tablist (ARIA tabs
+	// pattern): the active tab is the only one in the tab order; arrows
+	// cycle and move focus, Home/End jump to the ends.
+	function onTabKeydown(e: KeyboardEvent, current: Tab) {
+		const i = TAB_VALUES.indexOf(current);
+		let next: Tab | undefined;
+		if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = TAB_VALUES[(i + 1) % TAB_VALUES.length];
+		else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = TAB_VALUES[(i - 1 + TAB_VALUES.length) % TAB_VALUES.length];
+		else if (e.key === 'Home') next = TAB_VALUES[0];
+		else if (e.key === 'End') next = TAB_VALUES[TAB_VALUES.length - 1];
+		if (!next || next === current) return;
+		e.preventDefault();
+		switchTab(next);
+		document.getElementById(`travel-tab-${next}`)?.focus();
+	}
+
 	// Keep the active tab in sync with ?tab= on back/forward and same-page
 	// link/goto navigations. Using afterNavigate (rather than an $effect on
 	// page.url) avoids racing the async page-state update after
@@ -120,8 +144,7 @@
 	afterNavigate((nav) => {
 		if (nav.shallow && nav.type === 'goto') return;
 
-		const param = nav.to?.url.searchParams.get('tab') as Tab | null;
-		const next = param && TAB_VALUES.includes(param) ? param : 'flights';
+		const next = resolveTab(nav.to?.url.searchParams.get('tab') ?? null);
 		if (next !== tab) tab = next;
 	});
 
@@ -493,6 +516,10 @@
 		alItems = res.data.results ?? [];
 		alTotal = res.data.total ?? 0;
 		alPage = res.data.page ?? nextPage;
+		// The popular-airlines row and compare fallback snapshot the first
+		// (observed-first) page once — otherwise directory paging/searching
+		// would silently swap what "popular" means.
+		if (showcaseItems.length === 0) showcaseItems = alItems.slice(0, 12);
 	}
 
 	function alSearch() {
@@ -525,7 +552,10 @@
 	let topStays = $state<TravelHotelDirectoryItem[]>([]);
 	let cityStayCounts = $state<Map<string, number>>(new Map());
 
-	const showcaseAirlines = $derived(alItems.slice(0, 12));
+	// Popular-airlines showcase — a stable snapshot of the catalog's first
+	// page (the directory's default observed-first ordering), seeded by the
+	// first successful load and independent of later paging.
+	let showcaseItems = $state<TravelAirlineItem[]>([]);
 
 	// Compare tray — up to four carriers rendered side-by-side over real
 	// directory fields (no ratings/baggage fabrication: the catalog carries
@@ -533,7 +563,7 @@
 	// held, not keys, so paging the directory doesn't lose selections.
 	let comparePicked = $state<TravelAirlineItem[]>([]);
 	const compareAirlines = $derived(
-		comparePicked.length > 0 ? comparePicked : showcaseAirlines.slice(0, 4)
+		comparePicked.length > 0 ? comparePicked : showcaseItems.slice(0, 4)
 	);
 
 	function toggleCompare(a: TravelAirlineItem) {
@@ -800,13 +830,17 @@
 		<!-- ═══ Search card — overlaps the hero, owns the ?tab= strip ═══ -->
 		<div class="travel-search-wrap">
 			<div class="travel-search-card">
-				<div class="travel-search-tabs" role="tablist" aria-label={t('travel.tabs_label', 'Travel search type')}>
+				<div class="travel-search-tabs" role="tablist" aria-label={t('travel.tabs_label', 'Travel search type')} aria-orientation="horizontal">
 					{#each TABS as tb (tb.value)}
 						{@const Icon = tb.icon}
 						<button
 							type="button"
 							role="tab"
+							id="travel-tab-{tb.value}"
 							aria-selected={tab === tb.value}
+							aria-controls="travel-panel-form travel-panel-results travel-panel-rails"
+							tabindex={tab === tb.value ? 0 : -1}
+							onkeydown={(e) => onTabKeydown(e, tb.value)}
 							onclick={() => switchTab(tb.value)}
 							class="travel-tab"
 							class:travel-tab-active={tab === tb.value}
@@ -854,7 +888,7 @@
 					</div>
 				</div>
 
-				<div class="travel-search-body">
+				<div class="travel-search-body" id="travel-panel-form" role="tabpanel" aria-labelledby="travel-tab-{tab}">
 					{#if tab === 'flights'}
 						<form onsubmit={(e) => { e.preventDefault(); searchFlights(); }} class="travel-form">
 							<div class="travel-field travel-field-wide">
@@ -954,7 +988,7 @@
 		<!-- ═══ Results zone — flights only. The hotels directory sits
 		     below the discovery rails on that tab instead. ═══ -->
 		{#if tab === 'flights'}
-			<div class="travel-content" bind:this={resultsEl}>
+			<div class="travel-content" id="travel-panel-results" role="tabpanel" aria-labelledby="travel-tab-{tab}" bind:this={resultsEl}>
 				{#if flightError}
 					<div class="travel-alert" role="alert">{flightError}</div>
 				{/if}
@@ -1058,7 +1092,7 @@
 		{/if}
 
 		<!-- ═══ Discovery rails (§67 mockups — all data from the directories) ═══ -->
-		<div class="travel-content travel-rails">
+		<div class="travel-content travel-rails" id="travel-panel-rails" role="tabpanel" aria-labelledby="travel-tab-{tab}">
 			{#if tab === 'flights'}
 				<!-- Popular destinations — derived from the hotel directory -->
 				{#if destinations.length > 0}
@@ -1109,7 +1143,7 @@
 							</div>
 						</div>
 						<div class="airline-row">
-							{#each showcaseAirlines as a (a.airline_key)}
+							{#each showcaseItems as a (a.airline_key)}
 								<article class="airline-card">
 									<span class="airline-mark">{a.iata_code ?? a.name.slice(0, 2).toUpperCase()}</span>
 									<h4>{a.name}</h4>
