@@ -44,11 +44,11 @@ func (s *Service) SetSettings(r forumSettingsReader) {
 	s.settings = r
 }
 
-// reservedForumSlugs are first-segment paths under /forum/ that route to
-// endpoints other than GET /forum/{slug} — a thread carrying one of these
+// reservedForumSlugs are first-segment paths under /thread/ that route to
+// endpoints other than GET /thread/{slug} — a thread carrying one of these
 // slugs is unreachable because chi's static segment wins over the {slug}
 // wildcard. Matches both the API routes registered in server.go and the
-// frontend /forum/rss.xml feed route.
+// frontend /thread/rss.xml feed route.
 var reservedForumSlugs = map[string]struct{}{
 	"ama":       {},
 	"bookmarks": {},
@@ -309,7 +309,7 @@ func (s *Service) SolveThread(ctx context.Context, id, solverUserID, parentReply
 	return nil
 }
 
-// UnsolveThread reverts the solved flag (DELETE /forum/{id}/solve).
+// UnsolveThread reverts the solved flag (DELETE /thread/{id}/solve).
 // Ref: Section 08 Solved flag + api-routes-catalog L590.
 func (s *Service) UnsolveThread(ctx context.Context, id, userID pgtype.UUID) error {
 	thread, err := s.store.getThreadByID(ctx, id)
@@ -497,7 +497,7 @@ func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype
 			subjectID := threadID
 			actorName := ""
 			actorAvatar := ""
-			subjectURL := "/forum/" + thread.Slug
+			subjectURL := "/thread/" + thread.Slug
 			_ = s.notifier.DispatchNotification(
 				notifyCtx, thread.AuthorUserID,
 				notifyType, subjectTitle,
@@ -948,7 +948,7 @@ func (s *Service) emitVoteEvents(ctx context.Context, entityType string, entityI
 // RemoveVote retracts the user's vote on a thread or reply and recalculates
 // the entity's score. Returns the thread's backing content ID and the net
 // score delta for the engagement counter (E-006).
-// Ref: api-routes-catalog L591 (DELETE /forum/{id}/vote).
+// Ref: api-routes-catalog L591 (DELETE /thread/{id}/vote).
 func (s *Service) RemoveVote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (pgtype.UUID, int16, error) {
 	if entityType != EntityTypeThread && entityType != EntityTypeReply {
 		return pgtype.UUID{}, 0, fmt.Errorf("%w: entity type must be 'thread' or 'reply'", errpkg.ErrInvalid)
@@ -1097,7 +1097,7 @@ func (s *Service) RemoveBookmark(ctx context.Context, userID pgtype.UUID, entity
 }
 
 // RemoveBookmarkByID removes a bookmark by its primary key
-// (DELETE /forum/bookmarks/{id}). Resolves the entity first so the
+// (DELETE /thread/bookmarks/{id}). Resolves the entity first so the
 // denormalized bookmark_count can be decremented. Ref: api-routes-catalog L610.
 func (s *Service) RemoveBookmarkByID(ctx context.Context, id, userID pgtype.UUID) error {
 	bm, err := s.store.getBookmarkByID(ctx, id, userID)
@@ -1130,14 +1130,14 @@ func (s *Service) IsBookmarked(ctx context.Context, userID pgtype.UUID, entityTy
 }
 
 // GetBookmarkByEntity fetches the bookmark row for a (user, entity) pair.
-// Returns the bookmark so the frontend can call DELETE /forum/bookmarks/{id}.
+// Returns the bookmark so the frontend can call DELETE /thread/bookmarks/{id}.
 // Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks).
 func (s *Service) GetBookmarkByEntity(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Bookmark, error) {
 	return s.store.getBookmarkByEntity(ctx, userID, normalizeForumEntityType(entityType), entityID)
 }
 
 // ListThreadTags returns the tags attached to a thread.
-// Ref: Section 08 (tags are first-class on discussions) — GET /forum/{id}/tags.
+// Ref: Section 08 (tags are first-class on discussions) — GET /thread/{id}/tags.
 func (s *Service) ListThreadTags(ctx context.Context, threadID pgtype.UUID) ([]gen.ListForumThreadTagsRow, error) {
 	return s.store.listThreadTags(ctx, threadID)
 }

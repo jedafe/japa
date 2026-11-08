@@ -538,7 +538,7 @@ func (s *Service) semanticHit(ctx context.Context, c rag.RetrievedChunk) (Public
 
 			title := thread.Title
 			hit.Title = &title
-			href := "/forum/" + thread.Slug
+			href := "/thread/" + thread.Slug
 			hit.Href = &href
 		default:
 			row, err := s.queries.GetContentByID(ctx, entityID)

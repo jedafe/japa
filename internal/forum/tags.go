@@ -128,7 +128,7 @@ func (s *Service) AddThreadTag(ctx context.Context, threadID, tagID pgtype.UUID)
 }
 
 // AddThreadTagsBulk adds multiple tags to a thread in one call
-// (POST /forum/{id}/tags). Enforces the per-thread tag cap across the
+// (POST /thread/{id}/tags). Enforces the per-thread tag cap across the
 // combined set. Ref: api-routes-catalog L596.
 func (s *Service) AddThreadTagsBulk(ctx context.Context, threadID pgtype.UUID, tagIDs []pgtype.UUID) error {
 	maxTags := s.maxTagsForThread(ctx)

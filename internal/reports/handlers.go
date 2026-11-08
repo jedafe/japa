@@ -172,7 +172,7 @@ func (h *Handlers) ReportDMMessage(w http.ResponseWriter, r *http.Request) {
 	h.submitReport(w, r, EntityTypeMessage, "mid")
 }
 
-// ReportForumReply handles POST /api/v1/forum/replies/{id}/report.
+// ReportForumReply handles POST /api/v1/thread/replies/{id}/report.
 func (h *Handlers) ReportForumReply(w http.ResponseWriter, r *http.Request) {
 	h.submitReport(w, r, EntityTypeForumReply, "id")
 }

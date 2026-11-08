@@ -377,8 +377,8 @@ func contentURL(contentType, slug string) string {
 	switch contentType {
 	case "blog_post":
 		return "/blog/" + slug
-	case "discussion":
-		return "/forum/" + slug
+	case "discussion", "forum_thread":
+		return "/thread/" + slug
 	case "page":
 		return "/" + slug
 	default:
@@ -468,7 +468,7 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID [16]byte) erro
 		SpaceID:      row.SpaceID.String(),
 		Solved:       row.Solved,
 		AuthorUserID: authorID,
-		URL:          "/forum/" + row.Slug,
+		URL:          "/thread/" + row.Slug,
 		CreatedAt:    row.CreatedAt.Time.Unix(),
 	}
 

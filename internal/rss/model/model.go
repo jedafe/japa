@@ -134,10 +134,10 @@ func FormatTime(t pgtype.Timestamptz) string {
 var contentRoutePrefix = map[string]string{
 	"blog_post": "/blog/",
 	"guide":     "/guide/",
-	// §49 linked discussions are contents rows rendered by the generic
-	// article page — there is no forum_threads row, so /forum/{slug} 404s.
-	"discussion":      "/content/",
-	"forum_thread":    "/forum/",
+	// §49 linked discussions and forum threads both render at /thread/{slug}
+	// — discussion should only take place on a thread page.
+	"discussion":      "/thread/",
+	"forum_thread":    "/thread/",
 	"comparison":      "/comparisons/",
 	"story":           "/story/",
 	"achievement":     "/achievements/",

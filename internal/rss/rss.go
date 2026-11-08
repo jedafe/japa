@@ -542,13 +542,13 @@ func feedItemsFromUserRows(rows []gen.ListRSSUserFeedItemsRow, siteURL string, g
 }
 
 // feedItemsFromForumRows converts ListRSSForumFeedItemsRow to RSS items —
-// thread links use the canonical /forum/{slug} route, not /content/.
+// thread links use the canonical /thread/{slug} route, not /content/.
 func feedItemsFromForumRows(rows []gen.ListRSSForumFeedItemsRow, siteURL string) []RSSItem {
 	items := make([]RSSItem, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, model.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
-			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/forum/",
+			row.Username, row.PublishedAt, row.CreatedAt, siteURL, "/thread/",
 		))
 	}
 

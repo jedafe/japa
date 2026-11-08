@@ -3931,7 +3931,7 @@ func generateForumRSSForPlatform(ctx context.Context, q *gen.Queries, baseURL st
 	for _, row := range rows {
 		items = append(items, rssmodel.ItemFromRow(
 			row.ID, row.Title, row.Slug, row.BodyHtml, row.Body,
-			row.Username, row.PublishedAt, row.CreatedAt, baseURL, "/forum/",
+			row.Username, row.PublishedAt, row.CreatedAt, baseURL, "/thread/",
 		))
 	}
 
@@ -3940,7 +3940,7 @@ func generateForumRSSForPlatform(ctx context.Context, q *gen.Queries, baseURL st
 		baseURL+"/forum",
 		"Latest discussions from the "+siteName+" community forum.",
 		"en",
-		baseURL+"/forum/feed.xml",
+		baseURL+"/thread/feed.xml",
 		items,
 	)
 

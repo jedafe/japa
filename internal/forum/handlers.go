@@ -538,7 +538,7 @@ type pollOptionInputJSON struct {
 	Position int32  `json:"position"`
 }
 
-// CreateThread handles POST /api/v1/forum/threads.
+// CreateThread handles POST /api/v1/thread/threads.
 func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -735,7 +735,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": thread})
 }
 
-// ListThreads handles GET /api/v1/forum/threads.
+// ListThreads handles GET /api/v1/thread/threads.
 // Supports ?space_id=, ?author_id=, ?tag_id=, ?page_size=, ?cursor_created_at=,
 // ?sort=latest|top and ?solved=true|false.
 // Public: when no user is present, lists all public threads for the platform.
@@ -979,7 +979,7 @@ func (h *Handlers) ListThreads(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetThread handles GET /api/v1/forum/{slug}.
+// GetThread handles GET /api/v1/thread/{slug}.
 func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -1162,7 +1162,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 
 		// Expose whether the current user has bookmarked this thread so the
 		// frontend can render the correct bookmark toggle state, plus the
-		// bookmark's ID so DELETE /forum/bookmarks/{id} can be called
+		// bookmark's ID so DELETE /thread/bookmarks/{id} can be called
 		// without first listing all bookmarks.
 		// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Bookmarks)
 		if bm, err := h.Service.GetBookmarkByEntity(r.Context(), user.UserID, EntityTypeThread, thread.ID); err == nil {
@@ -1341,7 +1341,7 @@ func tsString(t pgtype.Timestamptz) string {
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
-// UpdateThread handles PATCH /api/v1/forum/{id}.
+// UpdateThread handles PATCH /api/v1/thread/{id}.
 func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1404,7 +1404,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
-// DeleteThread handles DELETE /api/v1/forum/{id}.
+// DeleteThread handles DELETE /api/v1/thread/{id}.
 func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1453,7 +1453,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-// SolveThread handles POST /api/v1/forum/{id}/solve.
+// SolveThread handles POST /api/v1/thread/{id}/solve.
 // The request body may include a reply_id to mark as the accepted answer;
 // if omitted, the service defaults to the top-voted reply.
 func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
@@ -1495,7 +1495,7 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "solved"}})
 }
 
-// UnsolveThread handles DELETE /api/v1/forum/{id}/solve.
+// UnsolveThread handles DELETE /api/v1/thread/{id}/solve.
 // Ref: api-routes-catalog L590.
 func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -1526,7 +1526,7 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 // Reply Handlers
 // ---------------------------------------------------------------------------
 
-// CreateReply handles POST /api/v1/forum/{id}/replies.
+// CreateReply handles POST /api/v1/thread/{id}/replies.
 func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1600,7 +1600,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reply})
 }
 
-// ListReplies handles GET /api/v1/forum/{id}/replies.
+// ListReplies handles GET /api/v1/thread/{id}/replies.
 func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 	threadID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1718,7 +1718,7 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
-// UpdateReply handles PATCH /api/v1/forum/replies/{id}.
+// UpdateReply handles PATCH /api/v1/thread/replies/{id}.
 func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1756,7 +1756,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": reply})
 }
 
-// DeleteReply handles DELETE /api/v1/forum/replies/{id}.
+// DeleteReply handles DELETE /api/v1/thread/replies/{id}.
 func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1777,7 +1777,7 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-// RecordReplyView handles POST /api/v1/forum/replies/{id}/view.
+// RecordReplyView handles POST /api/v1/thread/replies/{id}/view.
 // Idempotently records that the current user viewed a reply. The view count is
 // materialised from the reply_views table via trigger (Section 08).
 // Anonymous viewers are accepted but not recorded (the table requires a user_id).
@@ -1807,7 +1807,7 @@ func (h *Handlers) RecordReplyView(w http.ResponseWriter, r *http.Request) {
 // Vote Handler
 // ---------------------------------------------------------------------------
 
-// VoteOnThread handles POST /api/v1/forum/{id}/vote.
+// VoteOnThread handles POST /api/v1/thread/{id}/vote.
 // The entity id is resolved from the URL param; the entity_type defaults to
 // "thread" but may be overridden to "reply" via the body for reply votes.
 // Ref: api-routes-catalog L591.
@@ -1865,7 +1865,7 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": vote})
 }
 
-// RemoveThreadVote handles DELETE /api/v1/forum/{id}/vote.
+// RemoveThreadVote handles DELETE /api/v1/thread/{id}/vote.
 // Retracts the user's vote on the entity resolved from the URL param.
 // Ref: api-routes-catalog L591.
 func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
@@ -1907,7 +1907,7 @@ func (h *Handlers) RemoveThreadVote(w http.ResponseWriter, r *http.Request) {
 // Bookmark Handlers
 // ---------------------------------------------------------------------------
 
-// AddBookmark handles POST /api/v1/forum/bookmarks.
+// AddBookmark handles POST /api/v1/thread/bookmarks.
 func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -1950,7 +1950,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": bm})
 }
 
-// RemoveBookmark handles DELETE /api/v1/forum/bookmarks/{id}.
+// RemoveBookmark handles DELETE /api/v1/thread/bookmarks/{id}.
 // Resolves the bookmark by its primary key from the URL param — no query
 // params required. Ref: api-routes-catalog L610.
 func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
@@ -1973,7 +1973,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-// ListBookmarks handles GET /api/v1/forum/bookmarks.
+// ListBookmarks handles GET /api/v1/thread/bookmarks.
 func (h *Handlers) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -2014,7 +2014,7 @@ func parsePageSizeOffset(r *http.Request) int32 {
 // Poll Handlers
 // ---------------------------------------------------------------------------
 
-// VotePoll handles POST /api/v1/forum/polls/{id}/vote.
+// VotePoll handles POST /api/v1/thread/polls/{id}/vote.
 func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -2055,7 +2055,7 @@ func (h *Handlers) VotePoll(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "voted"}})
 }
 
-// GetPoll handles GET /api/v1/forum/polls/{id}.
+// GetPoll handles GET /api/v1/thread/polls/{id}.
 // The {id} may be either a poll_id (preferred) or a thread_id (legacy).
 // The handler tries the poll_id first and falls back to a thread lookup so
 // both PollBlock refresh (poll.id) and the server load (thread.id) work.
@@ -2110,7 +2110,7 @@ func (h *Handlers) GetPoll(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
-// CreatePoll handles POST /api/v1/forum/{id}/poll.
+// CreatePoll handles POST /api/v1/thread/{id}/poll.
 // Adds a poll to an existing thread. The thread must not already have a poll.
 func (h *Handlers) CreatePoll(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -2251,7 +2251,7 @@ func (h *Handlers) RetractPollVoteHandler(w http.ResponseWriter, r *http.Request
 // Tag Handlers
 // ---------------------------------------------------------------------------
 
-// CreateTag handles POST /api/v1/forum/tags.
+// CreateTag handles POST /api/v1/thread/tags.
 func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -2316,7 +2316,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tag})
 }
 
-// ListTags handles GET /api/v1/forum/tags.
+// ListTags handles GET /api/v1/thread/tags.
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
@@ -2330,7 +2330,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tags})
 }
 
-// GetTagBySlug handles GET /api/v1/forum/tags/{slug}.
+// GetTagBySlug handles GET /api/v1/thread/tags/{slug}.
 func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
@@ -2347,7 +2347,7 @@ func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
-// UpdateTag handles PATCH /api/v1/forum/tags/{id}.
+// UpdateTag handles PATCH /api/v1/thread/tags/{id}.
 func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -2408,7 +2408,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tag})
 }
 
-// DeleteTag handles DELETE /api/v1/forum/tags/{id}.
+// DeleteTag handles DELETE /api/v1/thread/tags/{id}.
 func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -2432,7 +2432,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-// AddThreadTag handles POST /api/v1/forum/{id}/tags/{tagId}.
+// AddThreadTag handles POST /api/v1/thread/{id}/tags/{tagId}.
 func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -2459,7 +2459,7 @@ func (h *Handlers) AddThreadTag(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
-// AddThreadTagsBulk handles POST /api/v1/forum/{id}/tags.
+// AddThreadTagsBulk handles POST /api/v1/thread/{id}/tags.
 // Accepts a JSON array of tag ids and assigns them all to the thread,
 // enforcing the MaxTagsPerThread cap. Ref: api-routes-catalog L596.
 func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
@@ -2508,7 +2508,7 @@ func (h *Handlers) AddThreadTagsBulk(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
-// RemoveThreadTag handles DELETE /api/v1/forum/{id}/tags/{tagId}.
+// RemoveThreadTag handles DELETE /api/v1/thread/{id}/tags/{tagId}.
 func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -2535,7 +2535,7 @@ func (h *Handlers) RemoveThreadTag(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
-// ListThreadTags handles GET /api/v1/forum/{id}/tags.
+// ListThreadTags handles GET /api/v1/thread/{id}/tags.
 // Returns the tags attached to a thread. Public — no auth required.
 // Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (tags are
 // first-class on discussions).

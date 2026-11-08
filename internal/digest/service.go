@@ -644,7 +644,7 @@ func renderDigestEmail(content []byte, baseURL string) string {
 
 	const tmpl = `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
 <h2>Weekly Community Digest</h2>
-{{if .TopThreads}}<h3>Top Threads</h3><ul>{{range .TopThreads}}<li><a href="{{$.BaseURL}}/forum/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
+{{if .TopThreads}}<h3>Top Threads</h3><ul>{{range .TopThreads}}<li><a href="{{$.BaseURL}}/thread/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
 {{if .NewMembers}}<h3>New Members</h3><ul>{{range .NewMembers}}<li>{{if .DisplayName}}{{.DisplayName}}{{else}}{{.Username}}{{end}}</li>{{end}}</ul>{{end}}
 {{if .UpcomingEvents}}<h3>Upcoming Events</h3><ul>{{range .UpcomingEvents}}<li><a href="{{$.BaseURL}}/{{.Slug}}">{{.Title}}</a></li>{{end}}</ul>{{end}}
 {{if .FeaturedStory}}<h3>Featured Story</h3><p><a href="{{$.BaseURL}}/{{.FeaturedStory.Slug}}">{{.FeaturedStory.Title}}</a></p>{{end}}

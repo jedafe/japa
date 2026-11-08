@@ -129,7 +129,7 @@ func absolutizeLinks(links []Link, base string) []Link {
 func topNavLinks(base string) []Link {
 	return []Link{
 		{Title: "Blog", URL: base + "/blog"},
-		{Title: "Forum", URL: base + "/forum"},
+		{Title: "Threads", URL: base + "/thread"},
 		{Title: "Spaces", URL: base + "/spaces"},
 		{Title: "Tags", URL: base + "/tags"},
 		{Title: "Deals", URL: base + "/products/deals"},

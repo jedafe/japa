@@ -151,8 +151,8 @@ func SetCacheTags(w http.ResponseWriter, tags ...string) {
 var contentRoutePrefix = map[string]string{
 	"blog_post":       "/blog",
 	"guide":           "/guide",
-	"discussion":      "/content", // §49 linked discussion — no forum_threads row
-	"forum_thread":    "/forum",   // legacy alias for 'discussion'
+	"discussion":      "/thread", // §49 linked discussion renders at /thread/{slug}
+	"forum_thread":    "/thread", // legacy alias for 'discussion'
 	"comparison":      "/comparisons",
 	"story":           "/story",
 	"achievement":     "/achievements",

@@ -602,14 +602,14 @@ func (h *Handlers) serveFromCache(ctx context.Context, key string, limit int, w 
 }
 
 // contentURL builds the frontend URL for a trending content item. Blog posts
-// use /blog/{slug}, forum threads use /forum/{slug}, everything else uses
+// use /blog/{slug}, forum threads use /thread/{slug}, everything else uses
 // /content/{slug} (matches apps/main OverviewView.contentUrl).
 func contentURL(contentType, slug string) string {
 	switch contentType {
 	case "blog_post":
 		return "/blog/" + slug
 	case "forum_thread":
-		return "/forum/" + slug
+		return "/thread/" + slug
 	default:
 		return "/content/" + slug
 	}

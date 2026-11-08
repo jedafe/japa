@@ -3,10 +3,10 @@
 //
 // Routes:
 //
-//	GET    /api/v1/forum/ama        — list active AMA sessions (?dest=&profession=&page_size=&cursor_created_at=)
-//	GET    /api/v1/forum/ama/:id    — single AMA thread
-//	POST   /api/v1/forum/ama        — create an AMA session (forum.ama.create)
-//	PATCH  /api/v1/forum/ama/:id    — close (empty/closed) or edit title/body (host or forum.ama.moderate)
+//	GET    /api/v1/thread/ama        — list active AMA sessions (?dest=&profession=&page_size=&cursor_created_at=)
+//	GET    /api/v1/thread/ama/:id    — single AMA thread
+//	POST   /api/v1/thread/ama        — create an AMA session (forum.ama.create)
+//	PATCH  /api/v1/thread/ama/:id    — close (empty/closed) or edit title/body (host or forum.ama.moderate)
 //
 // AMA creation is owned by this package because the generic forum
 // CreateForumThread sqlc query does not carry the ama_config JSONB column.
@@ -38,7 +38,7 @@ import (
 	"github.com/jedafe/japa/internal/literals"
 )
 
-// patcher is the subset of Service methods used by the PATCH /forum/ama/:id
+// patcher is the subset of Service methods used by the PATCH /thread/ama/:id
 // handler, which dispatches between close and edit.
 type patcher interface {
 	CloseAMA(ctx context.Context, threadID, callerUserID pgtype.UUID) error
@@ -130,7 +130,7 @@ func parseCursor(r *http.Request) pgtype.Timestamptz {
 	return ts
 }
 
-// HandleList handles GET /forum/ama — list active AMA sessions.
+// HandleList handles GET /thread/ama — list active AMA sessions.
 // Supports the geo-aware ?dest= and ?profession= filters (§88 / §§79–101)
 // and cursor-based pagination (?page_size=, ?cursor_created_at=).
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +161,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dtos})
 }
 
-// HandleGet handles GET /forum/ama/:id — single AMA thread.
+// HandleGet handles GET /thread/ama/:id — single AMA thread.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	threadID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
@@ -186,7 +186,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": thread})
 }
 
-// HandleCreate handles POST /forum/ama — create an AMA session.
+// HandleCreate handles POST /thread/ama — create an AMA session.
 // The forum.ama.create permission is enforced by route middleware; the
 // one-active-per-host and cooldown rate limits are enforced by the service.
 func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
@@ -298,7 +298,7 @@ func handleCreateError(w http.ResponseWriter, err error) {
 	}
 }
 
-// HandleClose handles PATCH /forum/ama/:id — close an AMA session.
+// HandleClose handles PATCH /thread/ama/:id — close an AMA session.
 // The host (thread author) or a moderator with forum.ama.moderate may close
 // (§88). Authorization is resolved in the service so the host can close
 // without holding the moderator permission.
@@ -334,7 +334,7 @@ func (h *Handlers) HandleClose(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"closed": true}})
 }
 
-// patchAMARequest is the JSON body for PATCH /forum/ama/:id. It dispatches
+// patchAMARequest is the JSON body for PATCH /thread/ama/:id. It dispatches
 // between close and edit based on the payload.
 type patchAMARequest struct {
 	Closed      bool            `json:"closed"`
@@ -343,7 +343,7 @@ type patchAMARequest struct {
 	IsAnonymous bool            `json:"is_anonymous"`
 }
 
-// HandleUpdate handles PATCH /forum/ama/:id with an edit payload. The host
+// HandleUpdate handles PATCH /thread/ama/:id with an edit payload. The host
 // (thread author) or a moderator with forum.ama.moderate may edit.
 func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
@@ -395,7 +395,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dto})
 }
 
-// HandlePatch handles PATCH /forum/ama/:id — close or edit depending on the
+// HandlePatch handles PATCH /thread/ama/:id — close or edit depending on the
 // payload. An empty body or {"closed":true} closes the AMA; any other fields
 // trigger an edit. This preserves the original close-only contract while
 // adding public edits.
@@ -424,7 +424,7 @@ func (h *Handlers) HandlePatch(w http.ResponseWriter, r *http.Request) {
 	h.HandleUpdate(w, r)
 }
 
-// HandleApproveQuestion handles POST /forum/ama/:id/questions/:replyId/approve
+// HandleApproveQuestion handles POST /thread/ama/:id/questions/:replyId/approve
 // — approves a pending AMA question (host or forum.ama.moderate only, §88
 // question_approval_required).
 func (h *Handlers) HandleApproveQuestion(w http.ResponseWriter, r *http.Request) {

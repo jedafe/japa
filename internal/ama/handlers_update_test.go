@@ -58,7 +58,7 @@ func newAMAPatchRequest(t *testing.T, body []byte, withUser bool, id string) (*h
 	rctx.URLParams.Add("id", id)
 	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
 
-	req := httptest.NewRequest(http.MethodPatch, "/forum/ama/"+id, bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/thread/ama/"+id, bytes.NewReader(body))
 	req = req.WithContext(ctx)
 
 	if len(body) > 0 {

@@ -241,7 +241,7 @@ func TestContentURL(t *testing.T) {
 		contentType, slug, want string
 	}{
 		{"blog_post", "my-post", "/blog/my-post"},
-		{"forum_thread", "my-thread", "/forum/my-thread"},
+		{"forum_thread", "my-thread", "/thread/my-thread"},
 		{"story", "my-story", "/content/my-story"},
 		{"", "no-type", "/content/no-type"},
 	}

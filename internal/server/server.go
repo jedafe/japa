@@ -291,6 +291,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// handlers.
 	r.Use(spam.IPBlockMiddleware(database))
 
+	// Legacy forum path rewrite — /api/v1/forum* requests are rewritten to
+	// /api/v1/thread* before routing so existing API consumers keep working.
+	r.Use(mw.LegacyForumPathRewrite)
+
 	h := NewHandler(database)
 
 	// JWT key rotation — keys are persisted in the jwt_signing_keys table
@@ -3644,6 +3648,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/tags/{slug}/feed.xml", rssHandlers.HandleTagFeed)
 		r.Get("/users/{username}/feed.xml", rssHandlers.HandleUserFeed)
 		r.With(features.Gate(featureChecker, "feature.forum")).Get("/forum/feed.xml", rssHandlers.HandleForumFeed)
+		// Canonical thread feed — same handler as the legacy /forum/feed.xml
+		// URL; existing feed subscriptions keep working.
+		r.With(features.Gate(featureChecker, "feature.forum")).Get("/thread/feed.xml", rssHandlers.HandleForumFeed)
 		// Per-content-type feeds — one per ADR-058 route family
 		// (/story/feed.xml, /guide/feed.xml, …). Registry: model.TypeFeeds().
 		// §42: gated content types carry the same Gate as their routes — a
@@ -4995,99 +5002,99 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
 				// Thread routes — abuse controls mirror content.create (tight
 				// 10/min + censor + posting IP block + operation ban).
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.thread.create")).Post("/forum", forumHandlers.CreateThread)
-				r.Get("/forum", forumHandlers.ListThreads)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.thread.create")).Post("/thread", forumHandlers.CreateThread)
+				r.Get("/thread", forumHandlers.ListThreads)
 				// Section 88 — AMA routes registered BEFORE /forum/{slug} to
 				// avoid being shadowed by the wildcard route (chi matches in
 				// registration order). Feature-gated via forum.ama.enabled (ADR-096).
 				r.With(features.Gate(featureChecker, "forum.ama.enabled")).Group(func(r chi.Router) {
-					r.Get("/forum/ama", amaHandlers.HandleList)
-					r.Get("/forum/ama/{id}", amaHandlers.HandleGet)
+					r.Get("/thread/ama", amaHandlers.HandleList)
+					r.Get("/thread/ama/{id}", amaHandlers.HandleGet)
 					// AMA sessions are discussion content: tag OpDiscussion so
 					// operation-ban enforcement covers AMA creation alongside
-					// POST /forum.
+					// POST /thread.
 					r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.ama.create")).
-						Post("/forum/ama", amaHandlers.HandleCreate)
+						Post("/thread/ama", amaHandlers.HandleCreate)
 					// Close (empty body or {"closed":true}) or edit title/body.
 					// Host (author) OR forum.ama.moderate. The service resolves
 					// authorship so the host can edit/close without holding the
 					// moderator grant (§88 "host or moderator").
 					r.With(auth.RequireAuth(kr, vkClient.Redis())).
-						Patch("/forum/ama/{id}", amaHandlers.HandlePatch)
+						Patch("/thread/ama/{id}", amaHandlers.HandlePatch)
 					// §88 question_approval_required: host or forum.ama.moderate
 					// may approve a pending question.
 					r.With(auth.RequireAuth(kr, vkClient.Redis())).
-						Post("/forum/ama/{id}/questions/{replyId}/approve", amaHandlers.HandleApproveQuestion)
+						Post("/thread/ama/{id}/questions/{replyId}/approve", amaHandlers.HandleApproveQuestion)
 				})
-				r.Get("/forum/{slug}", forumHandlers.GetThread)
+				r.Get("/thread/{slug}", forumHandlers.GetThread)
 				// BUG-014: edit/delete rely on service-level canModerateThread checks
 				// (author, space moderator, or _any node) rather than a single *_own
 				// permission in the route guard. RequireAuth only, like solve/unsolve.
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Patch("/forum/{id}", forumHandlers.UpdateThread)
+					Patch("/thread/{id}", forumHandlers.UpdateThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Delete("/forum/{id}", forumHandlers.DeleteThread)
+					Delete("/thread/{id}", forumHandlers.DeleteThread)
 				// BUG-016: the solve and unsolve routes both use RequireAuth only
 				// (not RequirePermission) so the OP — a regular member without the
 				// forum.thread.solve grant — can solve/unsolve their own thread. The
 				// service enforces author/space-moderator/permission-holder scope.
 				// Ref: Section 08 "OP or moderator".
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Post("/forum/{id}/solve", forumHandlers.SolveThread)
+					Post("/thread/{id}/solve", forumHandlers.SolveThread)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Delete("/forum/{id}/solve", forumHandlers.UnsolveThread)
+					Delete("/thread/{id}/solve", forumHandlers.UnsolveThread)
 
 				// Reply routes — abuse controls mirror content.create (tight
 				// 10/min + censor + posting IP block + operation ban).
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpComment), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.reply.create")).Post("/forum/{id}/replies", forumHandlers.CreateReply)
-				r.Get("/forum/{id}/replies", forumHandlers.ListReplies)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpComment), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.reply.create")).Post("/thread/{id}/replies", forumHandlers.CreateReply)
+				r.Get("/thread/{id}/replies", forumHandlers.ListReplies)
 				// BUG-014: reply edit/delete rely on service-level canModerateReply
 				// (author or _any node). RequireAuth only so moderators with the
 				// _any node are not blocked by the *_own route guard.
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Patch("/forum/replies/{id}", forumHandlers.UpdateReply)
+					Patch("/thread/replies/{id}", forumHandlers.UpdateReply)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Delete("/forum/replies/{id}", forumHandlers.DeleteReply)
-				r.Post("/forum/replies/{id}/view", forumHandlers.RecordReplyView)
+					Delete("/thread/replies/{id}", forumHandlers.DeleteReply)
+				r.Post("/thread/replies/{id}/view", forumHandlers.RecordReplyView)
 				// Section 51: forum replies are reportable via the same
 				// content_reports pipeline (entity_type 'forum_reply').
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/forum/replies/{id}/report", reportsHandlers.ReportForumReply)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/thread/replies/{id}/report", reportsHandlers.ReportForumReply)
 
 				// Vote routes — URL-param (catalog). Votes, poll votes, and
 				// bookmarks are cheap spam/abuse vectors, so they carry the
 				// tight bucket (10/min) plus the posting IP block.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.vote")).Post("/forum/{id}/vote", forumHandlers.VoteOnThread)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.vote")).Delete("/forum/{id}/vote", forumHandlers.RemoveThreadVote)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.vote")).Post("/thread/{id}/vote", forumHandlers.VoteOnThread)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.vote")).Delete("/thread/{id}/vote", forumHandlers.RemoveThreadVote)
 
 				// Poll routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/forum/polls/{id}/vote", forumHandlers.VotePoll)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/thread/polls/{id}/vote", forumHandlers.VotePoll)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/poll-options/{id}/vote", forumHandlers.VotePollOption)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Delete("/poll-options/{id}/vote", forumHandlers.RetractPollVoteHandler)
-				r.Get("/forum/polls/{id}", forumHandlers.GetPoll)
+				r.Get("/thread/polls/{id}", forumHandlers.GetPoll)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
-					Post("/forum/{id}/poll", forumHandlers.CreatePoll)
+					Post("/thread/{id}/poll", forumHandlers.CreatePoll)
 
 				// Tag routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.create")).
-					Post("/forum/tags", forumHandlers.CreateTag)
-				r.Get("/forum/tags", forumHandlers.ListTags)
-				r.Get("/forum/tags/{slug}", forumHandlers.GetTagBySlug)
+					Post("/thread/tags", forumHandlers.CreateTag)
+				r.Get("/thread/tags", forumHandlers.ListTags)
+				r.Get("/thread/tags/{slug}", forumHandlers.GetTagBySlug)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.edit")).
-					Patch("/forum/tags/{id}", forumHandlers.UpdateTag)
+					Patch("/thread/tags/{id}", forumHandlers.UpdateTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.moderate")).
-					Delete("/forum/tags/{id}", forumHandlers.DeleteTag)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Post("/forum/{id}/tags", forumHandlers.AddThreadTagsBulk)
+					Delete("/thread/tags/{id}", forumHandlers.DeleteTag)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).Post("/thread/{id}/tags", forumHandlers.AddThreadTagsBulk)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).
-					Post("/forum/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
+					Post("/thread/{id}/tags/{tagId}", forumHandlers.AddThreadTag)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.tag.assign")).
-					Delete("/forum/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
-				r.Get("/forum/{id}/tags", forumHandlers.ListThreadTags)
+					Delete("/thread/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
+				r.Get("/thread/{id}/tags", forumHandlers.ListThreadTags)
 
 				// Bookmark routes — votes/bookmarks share the tight bucket plus
 				// the posting IP block (cheap abuse vectors).
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Post("/forum/bookmarks", forumHandlers.AddBookmark)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forum/bookmarks", forumHandlers.ListBookmarks)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Delete("/forum/bookmarks/{id}", forumHandlers.RemoveBookmark)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Post("/thread/bookmarks", forumHandlers.AddBookmark)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/thread/bookmarks", forumHandlers.ListBookmarks)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Delete("/thread/bookmarks/{id}", forumHandlers.RemoveBookmark)
 			})
 
 			// Blog Extension routes — gated by feature.blog (Section 24)
@@ -8506,7 +8513,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Section 88 — Ask an Expat AMA (ADR-096)
 			// AMA routes are registered inside the forum group (before
-			// /forum/{slug}) to avoid route shadowing. See line ~2037.
+			// /thread/{slug}) to avoid route shadowing. See line ~2037.
 
 			// Section 89 — Community Achievement Feed (ADR-097)
 			r.With(features.Gate(featureChecker, "achievement.enabled")).Group(func(r chi.Router) {

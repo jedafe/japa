@@ -292,9 +292,9 @@ func TestContentURLPath(t *testing.T) {
 		want        string
 	}{
 		{"blog_post", "my-post", "/blog/my-post"},
-		{"forum_thread", "my-thread", "/forum/my-thread"},
+		{"forum_thread", "my-thread", "/thread/my-thread"},
 		{"guide", "my-guide", "/guide/my-guide"},
-		{"discussion", "my-discussion", "/content/my-discussion"},
+		{"discussion", "my-discussion", "/thread/my-discussion"},
 		{"comparison", "my-comparison", "/comparisons/my-comparison"},
 		{"story", "my-story", "/story/my-story"},
 		{"job_listing", "my-job", "/jobs/my-job"},

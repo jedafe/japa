@@ -89,7 +89,7 @@ var ActivityRoutes = []activityRoute{
 	// can't express.
 
 	// Targeted sub-endpoints.
-	{Method: http.MethodPost, Prefix: "/forum/polls/", Suffix: "/vote", Key: "forum.poll_voted", RefMode: "entity"},
+	{Method: http.MethodPost, Prefix: "/thread/polls/", Suffix: "/vote", Key: "forum.poll_voted", RefMode: "entity"},
 	{Method: http.MethodPost, Prefix: "/poll-options/", Suffix: "/vote", Key: "forum.poll_voted", RefMode: "entity"},
 	{Method: http.MethodPost, Prefix: "/scholarships/", Suffix: "/save", Key: "scholarship.saved", RefMode: "entity"},
 	{Method: http.MethodPost, Prefix: "/reviews/service_listing/", Key: "service.review_submitted", RefMode: "entity"},

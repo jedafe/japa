@@ -325,8 +325,9 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.
 }
 
 // commentContentURL builds the frontend deep link for a comment's parent
-// content — blog posts use /blog/{slug}, forum threads /forum/{slug},
-// everything else /content/{slug} (mirrors OverviewView.contentUrl).
+// content — blog posts use /blog/{slug}, discussion/forum threads
+// /thread/{slug}, everything else /content/{slug} (mirrors
+// OverviewView.contentUrl).
 func commentContentURL(contentType, slug string) string {
 	if slug == "" {
 		return ""
@@ -335,8 +336,8 @@ func commentContentURL(contentType, slug string) string {
 	switch contentType {
 	case "blog_post":
 		return "/blog/" + slug
-	case "forum_thread":
-		return "/forum/" + slug
+	case "forum_thread", "discussion":
+		return "/thread/" + slug
 	default:
 		return "/content/" + slug
 	}

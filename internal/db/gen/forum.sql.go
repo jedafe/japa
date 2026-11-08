@@ -382,7 +382,7 @@ type GetForumBookmarkByEntityRow struct {
 }
 
 // Fetches a bookmark by (user_id, entity_type, entity_id) so the frontend
-// can call DELETE /forum/bookmarks/{id} without first listing all bookmarks.
+// can call DELETE /thread/bookmarks/{id} without first listing all bookmarks.
 func (q *Queries) GetForumBookmarkByEntity(ctx context.Context, arg GetForumBookmarkByEntityParams) (GetForumBookmarkByEntityRow, error) {
 	row := q.db.QueryRow(ctx, getForumBookmarkByEntity, arg.UserID, arg.EntityType, arg.EntityID)
 	var i GetForumBookmarkByEntityRow
@@ -420,7 +420,7 @@ type GetForumBookmarkByIDRow struct {
 }
 
 // Fetches a bookmark by its primary key (and owner) so DELETE
-// /forum/bookmarks/{id} can resolve the entity to decrement the
+// /thread/bookmarks/{id} can resolve the entity to decrement the
 // denormalized bookmark_count. Ref: api-routes-catalog L610.
 func (q *Queries) GetForumBookmarkByID(ctx context.Context, arg GetForumBookmarkByIDParams) (GetForumBookmarkByIDRow, error) {
 	row := q.db.QueryRow(ctx, getForumBookmarkByID, arg.ID, arg.UserID)
@@ -1481,7 +1481,7 @@ type ListForumThreadTagsRow struct {
 // migration 000719 and are no longer written to.
 // Lists the universal tags attached to a thread's backing content row.
 // Output columns keep the legacy ForumTag wire shape so the response
-// contract is unchanged — GET /forum/{id}/tags.
+// contract is unchanged — GET /thread/{id}/tags.
 func (q *Queries) ListForumThreadTags(ctx context.Context, threadID pgtype.UUID) ([]ListForumThreadTagsRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadTags, threadID)
 	if err != nil {
@@ -2596,7 +2596,7 @@ SET solved = false, solved_at = NULL, solved_by_user_id = NULL,
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-// Reverts the solved flag (DELETE /forum/{id}/solve). Ref: Section 08 Solved flag.
+// Reverts the solved flag (DELETE /thread/{id}/solve). Ref: Section 08 Solved flag.
 func (q *Queries) UnsolveForumThread(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, unsolveForumThread, id)
 	return err

@@ -143,7 +143,7 @@ func SourceURL(entityType, contentType, slug string) string {
 
 		return prefix + "/" + slug
 	case EntityTypeForumThread:
-		return "/forum/" + slug
+		return "/thread/" + slug
 	case EntityTypeSpace:
 		return "/spaces/" + slug
 	case EntityTypeAcademyTrack:
