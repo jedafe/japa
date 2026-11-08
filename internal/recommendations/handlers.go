@@ -5,8 +5,9 @@
 // // The endpoint GET /api/v1/recommendations is public (OptionalAuth) — it
 // works for both guests (using GeoIP-based VisitorContext) and authenticated
 // users (using profile-enriched VisitorContext). Results are cached in
-// Valkey at jc:recommendations:{session_id} or jc:recommendations:ip:{ip}
-// with a configurable TTL (default 15 minutes).
+// Valkey at jc:recommendations:{session_id} (auth), jc:recommendations:ip:{ip}
+// or jc:recommendations:journey:{token} (anonymous) with a configurable TTL
+// (default 15 minutes).
 // // Ref: japaconnect-engineering/adr/ADR-064a-geo-awareness-extension.md
 package recommendations
 
@@ -248,8 +249,7 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 			cacheKey = valkey.MustKey("recommendations:user:%s", user.UserID.String())
 		}
 	} else {
-		// IP-scoped cache key for anonymous guests.
-		cacheKey = valkey.MustKey("recommendations:ip:%s", clientip.FromRequest(r))
+		cacheKey = anonRecommendationsCacheKey(r)
 	}
 
 	// Try cache. On hit, slice tools/features to the requested limit and
@@ -294,8 +294,9 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 
 	// Cache the full response (best-effort). The cached payload is the
 	// unbounded set; the limit is applied on read so one cache entry serves
-	// every limit value.
-	if h.cache != nil {
+	// every limit value. cacheKey is empty for transient ?journey_* requests —
+	// the same no-cache rule as the visitor-ctx cache.
+	if h.cache != nil && cacheKey != "" {
 		if b, err := json.Marshal(resp); err == nil {
 			ttl := h.resolveCacheTTL(r.Context())
 			_ = h.cache.Set(r.Context(), cacheKey, b, ttl).Err()
@@ -537,11 +538,32 @@ func contextMatches(summary VisitorContextSummary, vc visitor.VisitorContext) bo
 		summary.CurrentCity == vc.CurrentCity
 }
 
+// anonRecommendationsCacheKey picks the cache scope for an anonymous guest,
+// mirroring the visitor resolver's anonCacheKey: transient ?journey_* params
+// disable caching, a journey cookie scopes to the token (journey fields
+// change the response, so the shared IP bucket would ping-pong), and plain
+// guests resolve under the client IP.
+func anonRecommendationsCacheKey(r *http.Request) string {
+	if visitor.HasJourneyParams(r) {
+		return ""
+	}
+
+	if c, err := r.Cookie("jc_journey_token"); err == nil && c.Value != "" {
+		return valkey.MustKey("recommendations:journey:%s", c.Value)
+	}
+
+	if ip := clientip.FromRequest(r); ip != "" {
+		return valkey.MustKey("recommendations:ip:%s", ip)
+	}
+
+	return ""
+}
+
 // serveFromCache attempts to read a cached RecommendationResponse from Valkey
 // and write it to w (with tools/features sliced to limit). Returns true when a
 // cached response was served, false on miss/error (caller proceeds to compute).
 func (h *Handlers) serveFromCache(ctx context.Context, key string, limit int, w http.ResponseWriter, vc visitor.VisitorContext) bool {
-	if h.cache == nil {
+	if h.cache == nil || key == "" {
 		return false
 	}
 

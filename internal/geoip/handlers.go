@@ -207,7 +207,9 @@ func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 // up by its ISO geo_code.
 // // GET /api/v1/geo/countries/{code}/states.
 func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
-	code := chi.URLParam(r, "code")
+	// Normalize to the stored geo_code form — a lowercase /geo/countries/ng
+	// must resolve the same rows as /geo/countries/NG.
+	code := strings.ToUpper(strings.TrimSpace(chi.URLParam(r, "code")))
 	if code == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_code", "country code is required")
 		return

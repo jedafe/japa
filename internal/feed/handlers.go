@@ -419,6 +419,24 @@ type feedContextRequest struct {
 // guestJourneyTTL is the lifetime of a guest journey context in Valkey.
 const guestJourneyTTL = 30 * 24 * time.Hour
 
+// isJourneyToken reports whether s looks like a token this handler minted —
+// 16 rand.Read bytes hex-encoded to 32 lowercase hex chars. Anything else
+// (empty, tampered, foreign format) is not reused as a Valkey key scope.
+func isJourneyToken(s string) bool {
+	if len(s) != 32 {
+		return false
+	}
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+
+	return true
+}
+
 // SetFeedContext handles POST /api/v1/feed/context.
 // Anonymous users can set their journey context (origin, destination, stage,
 // visa, purpose, travel date) without creating an account. The context is
@@ -466,16 +484,27 @@ func (h *Handlers) SetFeedContext(w http.ResponseWriter, r *http.Request) {
 		stored["travel_date"] = v
 	}
 
-	// Generate a random token for the cookie.
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		slog.Error("feed: failed to generate journey token", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to save journey context")
-
-		return
+	// Reuse the guest's existing journey token when present — POSTs are
+	// idempotent updates to the same stored context, and minting a fresh
+	// token per call would orphan the previous jc:visitor:journey:{token}
+	// entry for the rest of its 30-day TTL. Only a minted-format token
+	// (32 lowercase hex chars) is trusted; anything else gets a fresh one.
+	token := ""
+	if c, err := r.Cookie("jc_journey_token"); err == nil && isJourneyToken(c.Value) {
+		token = c.Value
 	}
 
-	token := hex.EncodeToString(b)
+	if token == "" {
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			slog.Error("feed: failed to generate journey token", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to save journey context")
+
+			return
+		}
+
+		token = hex.EncodeToString(b)
+	}
 
 	// Persist to Valkey and clear the visitor context cache so the next
 	// request re-resolves with the new journey signals.
@@ -490,7 +519,9 @@ func (h *Handlers) SetFeedContext(w http.ResponseWriter, r *http.Request) {
 
 	// Set the cookie. HttpOnly keeps the token out of XSS reach; the frontend
 	// receives the token in the response body for localStorage sync. Secure is
-	// set whenever the request came in over HTTPS.
+	// set whenever the request came in over HTTPS — including TLS terminated
+	// upstream, detected via X-Forwarded-Proto (same rule as jc_guest in
+	// nextactions/guestkey.go; r.TLS is nil behind the reverse proxy).
 	// #nosec G124 — Secure is true for HTTPS requests; HTTP is intentionally
 	// allowed for local dev while SameSite=Lax + HttpOnly are always set.
 	http.SetCookie(w, &http.Cookie{
@@ -500,7 +531,7 @@ func (h *Handlers) SetFeedContext(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(guestJourneyTTL.Seconds()),
 		SameSite: http.SameSiteLaxMode,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 	})
 
 	// Return the current (pre-middleware) context and the new token. The
@@ -541,10 +572,11 @@ func (h *Handlers) invalidateVisitorContextCache(r *http.Request) {
 	_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("recommendations:ip:%s", ip)).Build()).Error()
 
 	// A guest already carrying a journey cookie resolves under the
-	// token-scoped key — evict that too so the previous journey context
-	// cannot outlive the new POST for the cache TTL.
+	// token-scoped keys — evict those too so the previous journey context
+	// and its recommendations cannot outlive the new POST.
 	if c, err := r.Cookie("jc_journey_token"); err == nil && c.Value != "" {
 		_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("visitor:ctx:journey:%s", c.Value)).Build()).Error()
+		_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("recommendations:journey:%s", c.Value)).Build()).Error()
 	}
 }
 

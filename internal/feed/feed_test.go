@@ -413,3 +413,28 @@ func TestCleanExcerpt(t *testing.T) {
 		})
 	}
 }
+
+func TestIsJourneyToken(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"minted token", "0123456789abcdef0123456789abcdef", true},
+		{"empty", "", false},
+		{"short", "abc123", false},
+		{"long", "0123456789abcdef0123456789abcdef00", false},
+		{"uppercase hex", "0123456789ABCDEF0123456789ABCDEF", false},
+		{"non-hex chars", "0123456789abcdef0123456789abcdeg", false},
+		{"colon injection", "a:b:c:d:e:f:0123456789abcdef0123", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isJourneyToken(tc.input); got != tc.want {
+				t.Errorf("isJourneyToken(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
+	}
+}

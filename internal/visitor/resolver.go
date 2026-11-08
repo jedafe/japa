@@ -405,13 +405,16 @@ func (res *Resolver) ResolveForUser(ctx context.Context, userID pgtype.UUID) Vis
 	user := &auth.AuthenticatedUser{UserID: userID}
 
 	// User's explicit content-country preference wins when set (mirrors
-	// resolve() step 2).
-	if pref, err := res.read.GetUserContentCountryPreference(ctx, userID); err == nil && pref != nil && *pref != "" {
-		vc.ContentCountry = strings.ToUpper(*pref)
-		vc.Source = "preference"
-		res.enrichArchetype(ctx, &vc, user, "")
+	// resolve() step 2). normalizeCountry defends against legacy malformed
+	// values — an invalid stored preference falls through to archetype.
+	if pref, err := res.read.GetUserContentCountryPreference(ctx, userID); err == nil && pref != nil {
+		if cc := normalizeCountry(*pref); cc != "" {
+			vc.ContentCountry = cc
+			vc.Source = "preference"
+			res.enrichArchetype(ctx, &vc, user, "")
 
-		return vc
+			return vc
+		}
 	}
 
 	res.enrichArchetype(ctx, &vc, user, "")
@@ -666,7 +669,7 @@ type cachedVisitorContext struct {
 // (origin, destination, stage, visa) would bleed to every other guest
 // behind the same NAT/CGNAT address.
 func (res *Resolver) anonCacheKey(r *http.Request) string {
-	if hasJourneyParams(r) {
+	if HasJourneyParams(r) {
 		return ""
 	}
 
@@ -683,9 +686,11 @@ func (res *Resolver) anonCacheKey(r *http.Request) string {
 	return ""
 }
 
-// hasJourneyParams reports whether the request carries any of the
-// ?journey_* query parameters enrichGuestJourney honours.
-func hasJourneyParams(r *http.Request) bool {
+// HasJourneyParams reports whether the request carries any of the
+// ?journey_* query parameters enrichGuestJourney honours. Exported so
+// other geo caches (recommendations) can apply the same "transient
+// journey state never caches" rule as anonCacheKey.
+func HasJourneyParams(r *http.Request) bool {
 	q := r.URL.Query()
 
 	for _, k := range []string{

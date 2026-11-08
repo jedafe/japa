@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -533,4 +534,34 @@ func indexOf(s, sub string) int {
 	}
 
 	return -1
+}
+
+// TestAnonRecommendationsCacheKey mirrors the visitor anonCacheKey contract:
+// transient journey params never cache, cookied guests scope to the token,
+// plain guests scope to the client IP.
+func TestAnonRecommendationsCacheKey(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/recommendations", nil)
+	req.AddCookie(&http.Cookie{Name: "jc_journey_token", Value: "tok123"})
+
+	if k := anonRecommendationsCacheKey(req); !strings.HasSuffix(k, "recommendations:journey:tok123") {
+		t.Errorf("key(cookie) = %q, want journey scope", k)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/recommendations?journey_origin=NG", nil)
+	if k := anonRecommendationsCacheKey(req); k != "" {
+		t.Errorf("key(params) = %q, want empty (transient)", k)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/recommendations", nil)
+	if k := anonRecommendationsCacheKey(req); !strings.Contains(k, "recommendations:ip:") {
+		t.Errorf("key(plain) = %q, want ip scope", k)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/recommendations", nil)
+	req.RemoteAddr = ""
+	if k := anonRecommendationsCacheKey(req); k != "" {
+		t.Errorf("key(empty-ip) = %q, want empty", k)
+	}
 }
