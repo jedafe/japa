@@ -722,7 +722,7 @@ import { flagUrl } from '#lib/utils/flags.js';
 	</div>
 {/if}
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+<div class="isolate mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if activeTab === 'feed'}
 			<div class="mb-3">

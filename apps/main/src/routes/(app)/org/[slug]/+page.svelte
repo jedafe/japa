@@ -205,7 +205,7 @@
 
 <div class="sticky top-0 z-10 mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} /></div>
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+<div class="isolate mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<div class="mx-auto w-full max-w-3xl p-4">
 		{#if activeTab === 'about'}
 			<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

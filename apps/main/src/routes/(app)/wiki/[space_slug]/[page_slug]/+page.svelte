@@ -493,7 +493,7 @@
 		/>
 	</div>
 
-	<div class="p-4">
+	<div class="isolate p-4">
 		{#if !wikiEnabled && (data.loadError || !data.page)}
 			<EmptyState
 				icon={BookOpen}

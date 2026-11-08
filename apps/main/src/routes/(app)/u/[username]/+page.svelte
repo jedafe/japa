@@ -1093,7 +1093,9 @@ profile is private, or no stage is set. -->
 
 <div class="sticky top-0 z-10 mx-auto w-full max-w-3xl"><UrlTabs tabs={tabs} bind:value={activeTab} autoOverflow /></div>
 
-<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
+<!-- isolate: content z-indexes (journey dots, badges, media buttons) must
+     stay below the sticky tab bar — contain them in a stacking context. -->
+<div class="isolate mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	{#snippet toolbar(options: FilterOption[], count: number, sortable = false)}
 		<!-- Search + filter are only useful past one default page of items.
 		     A single-option filter dropdown (e.g. followers = "All users")

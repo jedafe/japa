@@ -528,7 +528,7 @@
 		<WikiTabs spaceSlug={data.spaceSlug} categories={apiCategories} pages={data.index} active="overview" />
 	</div>
 
-	<div class="mx-auto w-full max-w-3xl px-4 pb-8">
+	<div class="isolate mx-auto w-full max-w-3xl px-4 pb-8">
 		<!-- §16/§80 — the contextual explore map replaces the static cover
 		     image when the space's geo resolves; the hero stays as fallback. -->
 		{#if space && wikiEnabled && !data.loadError && space.geo_code && ExploreMapComp}

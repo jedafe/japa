@@ -570,7 +570,7 @@
 
 	<div class="sticky top-0 z-10 mx-auto w-full max-w-3xl"><UrlTabs {tabs} value={tab} onValueChange={(v) => goto(`?tab=${v}`)} class="mx-4" /></div>
 
-	<div class="mx-auto w-full max-w-3xl p-4">
+	<div class="isolate mx-auto w-full max-w-3xl p-4">
 		{#if tab === 'search'}
 			<!-- Search within this tag (auth required by the backend). -->
 			<form class="mb-4 flex gap-2" onsubmit={(e) => { e.preventDefault(); runSearch(); }}>

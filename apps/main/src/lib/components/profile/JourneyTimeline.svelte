@@ -50,7 +50,7 @@
 					></span>
 				{/if}
 				<span
-					class="relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full {step.status ===
+					class="relative grid h-8 w-8 shrink-0 place-items-center rounded-full {step.status ===
 					'done'
 						? 'bg-[var(--color-primary)] text-white'
 						: step.status === 'current'
