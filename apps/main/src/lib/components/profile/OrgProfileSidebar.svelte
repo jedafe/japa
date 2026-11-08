@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { Users } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import type { OrgMember } from '#lib/types/index.js';
 
 	interface Props {
@@ -10,7 +12,8 @@
 
 {#if members.length > 0}
 	<section class="mt-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">
+		<h2 class="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+		<Users size={16} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 		{(members.length === 1
 			? t('profile.members_one', '{n} member')
 			: t('profile.members', '{n} members')).replace('{n}', String(members.length))}
@@ -23,7 +26,7 @@
 						class="flex items-center gap-2 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]"
 					>
 						{#if member.user.avatar_url}
-							<img src={member.user.avatar_url} alt="" class="h-8 w-8 rounded-full object-cover" />
+							<img src={remoteImageUrl(member.user.avatar_url)} alt="" class="h-8 w-8 rounded-full object-cover" />
 						{:else}
 							<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">
 								{(member.user.display_name ?? member.user.username).charAt(0).toUpperCase()}

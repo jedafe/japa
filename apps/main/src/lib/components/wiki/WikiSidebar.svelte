@@ -3,7 +3,7 @@
 	// Route-level right-sidebar bundle for wiki pages (registered via
 	// SetSidebar — renders above the global widget rail, ADR-058):
 	//   Quick Facts → Need Help? → Related Articles → Popular Cities.
-	import { ArrowRight, FileText, MapPin } from 'lucide-svelte';
+	import { ArrowRight, FileText, HelpCircle, Library, List, MapPin } from 'lucide-svelte';
 	import { t } from '#lib/i18n/index.js';
 	import { api } from '#lib/api/client.js';
 	import WikiQuickFacts from './WikiQuickFacts.svelte';
@@ -114,7 +114,8 @@
 		class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
 		aria-label={t('wiki.on_this_page', 'On this page')}
 	>
-		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+		<h2 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+			<List size={14} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 			{t('wiki.on_this_page', 'On this page')}
 		</h2>
 		<ul class="space-y-1.5">
@@ -140,7 +141,8 @@
      Hidden for wiki-only spaces (§80 attractions) — they have no community. -->
 {#if !wikiOnly}
 	<section class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-1.5 text-sm font-semibold text-[var(--color-text)]">
+		<h2 class="mb-1.5 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+			<HelpCircle size={18} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 			{t('wiki.need_help', 'Need Help?')}
 		</h2>
 		<p class="mb-3 text-xs leading-relaxed text-[var(--color-muted)]">
@@ -158,7 +160,8 @@
 
 {#if related.length > 0}
 	<section class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">
+		<h2 class="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+			<Library size={18} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 			{t('wiki.related_articles', 'Related Articles')}
 		</h2>
 		<ul class="divide-y divide-[var(--color-border)]">
@@ -189,7 +192,8 @@
 
 {#if cities.length > 0}
 	<section class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">
+		<h2 class="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+			<MapPin size={18} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 			{placesLabel}
 		</h2>
 		<ul class="divide-y divide-[var(--color-border)]">

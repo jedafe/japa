@@ -40,6 +40,7 @@
 	import { AdSlot } from '#lib/components/ui/index.js';
 	import ProgressRing from '#lib/components/shell/ProgressRing.svelte';
 	import { sanitizeSidebarHtml, safeHref } from '#lib/utils/safeHtml.js';
+	import { remoteImageUrl } from '#lib/utils/remoteImage.js';
 	import { routeFeatureGateVisible } from './routeFeatureFlags';
 	import { railGate } from './railVisibility.svelte';
 	import { contentHref } from '#lib/utils/contentLink.js';
@@ -1174,7 +1175,7 @@
 					<li>
 						<a href={contentHref(item)} class="flex items-start gap-2.5 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
 							{#if item.author_avatar_url}
-								<img src={item.author_avatar_url} alt={authorName} class="h-9 w-9 shrink-0 rounded-full object-cover" />
+								<img src={remoteImageUrl(item.author_avatar_url)} alt={authorName} class="h-9 w-9 shrink-0 rounded-full object-cover" />
 							{:else}
 								<span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">{(authorName || '?').charAt(0).toUpperCase()}</span>
 							{/if}
@@ -1416,7 +1417,7 @@
 					<a href={`/u/${entry.username}`} class="flex items-center gap-2 rounded-[var(--radius)] p-1.5 hover:bg-[var(--color-surface-subtle)]">
 						<span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-semibold text-[var(--color-text-subtle)]">{i + 1}</span>
 						{#if entry.avatar_url}
-							<img src={entry.avatar_url} alt={entry.display_name ?? entry.username} class="h-8 w-8 shrink-0 rounded-full object-cover" />
+							<img src={remoteImageUrl(entry.avatar_url)} alt={entry.display_name ?? entry.username} class="h-8 w-8 shrink-0 rounded-full object-cover" />
 						{:else}
 							<span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">{(entry.display_name ?? entry.username).charAt(0).toUpperCase()}</span>
 						{/if}
@@ -1547,7 +1548,7 @@
 				class="flex items-center gap-3 rounded-[var(--radius)] p-1.5 {userCardData.username ? 'hover:bg-[var(--color-surface-subtle)]' : ''}"
 			>
 				{#if userCardData.avatar_url}
-					<img src={userCardData.avatar_url} alt={userCardData.display_name ?? userCardData.username} class="h-10 w-10 rounded-full object-cover" />
+					<img src={remoteImageUrl(userCardData.avatar_url)} alt={userCardData.display_name ?? userCardData.username} class="h-10 w-10 rounded-full object-cover" />
 				{:else}
 					<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
 						{(userCardData.display_name?.charAt(0) ?? userCardData.username?.charAt(0) ?? '?').toUpperCase()}
@@ -1693,7 +1694,7 @@
 			>
 				{#if featuredTrack.thumbnail_url}
 					<img
-						src={featuredTrack.thumbnail_url}
+						src={remoteImageUrl(featuredTrack.thumbnail_url)}
 						alt={featuredTrack.title}
 						class="mb-2 h-20 w-full rounded-[var(--radius)] object-cover"
 					/>

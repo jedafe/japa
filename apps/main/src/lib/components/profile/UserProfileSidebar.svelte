@@ -11,12 +11,16 @@
 		BarChart3,
 		Bookmark as BookmarkIcon,
 		Flag,
+		Globe,
 		GraduationCap,
 		Heart,
 		HelpCircle,
 		Image as ImageIcon,
+		Newspaper,
 		Plane,
-		School
+		School,
+		Users,
+		Zap
 	} from 'lucide-svelte';
 	import { bookmarkLabel, bookmarkUrl } from '#lib/components/profile/bookmarks.js';
 	import RelativeTime from '#lib/components/ui/RelativeTime.svelte';
@@ -138,7 +142,8 @@
 {#if isOwnProfile}
 	<!-- Profile Stats — owner overview numbers -->
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">
+		<h2 class="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+			<BarChart3 size={18} class="text-[var(--color-primary-text)]" />
 			{t('profile.sidebar.stats', 'Profile Stats')}
 		</h2>
 		<div class="grid grid-cols-3 text-center">
@@ -161,7 +166,8 @@
 {#if badges.length > 0 || (isOwnProfile && lockedBadges.length > 0)}
 	<!-- Community Badges (visitor) / Achievements (owner) -->
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">
+		<h2 class="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+			<Award size={18} class="text-[var(--color-primary-text)]" />
 			{isOwnProfile ? t('profile.sidebar.achievements', 'Achievements') : t('profile.sidebar.badges', 'Community Badges')}
 		</h2>
 		<ul class="space-y-2.5">
@@ -207,7 +213,10 @@
 	<!-- Recent Posts — visitor -->
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center justify-between">
-			<h2 class="text-sm font-semibold text-[var(--color-text)]">{t('profile.sidebar.recent_posts', 'Recent Posts')}</h2>
+			<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+				<Newspaper size={18} class="text-[var(--color-primary-text)]" />
+				{t('profile.sidebar.recent_posts', 'Recent Posts')}
+			</h2>
 			<a href="?tab=posts" class="text-xs font-medium text-[var(--color-primary-text)] hover:underline">{t('profile.view_all', 'View all')}</a>
 		</div>
 		<ul class="space-y-3">
@@ -215,7 +224,7 @@
 				<li>
 					<a href="/content/{post.slug}" class="flex items-center gap-2.5">
 						{#if post.cover_image_url}
-							<img src={post.cover_image_url} alt="" class="h-11 w-11 shrink-0 rounded-[var(--radius)] object-cover" loading="lazy" />
+							<img src={remoteImageUrl(post.cover_image_url)} alt="" class="h-11 w-11 shrink-0 rounded-[var(--radius)] object-cover" loading="lazy" />
 						{:else}
 							<span class="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
 								<ImageIcon size={16} />
@@ -241,7 +250,8 @@
 	<!-- Connections / Top Connections -->
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center justify-between">
-			<h2 class="text-sm font-semibold text-[var(--color-text)]">
+			<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+				<Users size={18} class="text-[var(--color-primary-text)]" />
 				{isOwnProfile ? t('profile.sidebar.top_connections', 'Top Connections') : t('profile.sidebar.connections', 'Connections')}
 				<span class="font-normal text-[var(--color-muted)]">({stats.connections.toLocaleString()})</span>
 			</h2>
@@ -252,7 +262,7 @@
 				<li class="flex items-center gap-2.5">
 					<a href="/u/{c.username}" class="flex min-w-0 flex-1 items-center gap-2.5">
 						{#if c.avatar_url}
-							<img src={c.avatar_url} alt={c.display_name} class="h-9 w-9 shrink-0 rounded-full object-cover" loading="lazy" />
+							<img src={remoteImageUrl(c.avatar_url)} alt={c.display_name} class="h-9 w-9 shrink-0 rounded-full object-cover" loading="lazy" />
 						{:else}
 							<span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]">
 								{(c.display_name?.charAt(0) ?? c.username?.charAt(0) ?? '?').toUpperCase()}
@@ -287,7 +297,8 @@
 	<!-- Saved Items — owner bookmarks -->
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center justify-between">
-			<h2 class="text-sm font-semibold text-[var(--color-text)]">
+			<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+				<BookmarkIcon size={18} class="text-[var(--color-primary-text)]" />
 				{t('profile.sidebar.saved', 'Saved Items')}
 				<span class="font-normal text-[var(--color-muted)]">({stats.saved.toLocaleString()})</span>
 			</h2>
@@ -316,7 +327,8 @@
 	     (bookmarks are private; likes are the public equivalent). -->
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="mb-3 flex items-center justify-between">
-			<h2 class="text-sm font-semibold text-[var(--color-text)]">
+			<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+				<Heart size={18} class="text-[var(--color-primary-text)]" />
 				{t('profile.sidebar.liked', 'Liked Items')}
 				<span class="font-normal text-[var(--color-muted)]">({likes.length.toLocaleString()})</span>
 			</h2>
@@ -340,7 +352,10 @@
 {#if isOwnProfile}
 	<!-- Quick Actions — owner shortcuts -->
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('profile.sidebar.quick_actions', 'Quick Actions')}</h2>
+		<h2 class="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+			<Zap size={18} class="text-[var(--color-primary-text)]" />
+			{t('profile.sidebar.quick_actions', 'Quick Actions')}
+		</h2>
 		<ul class="divide-y divide-[var(--color-border)]">
 			<li>
 				<a href="/forum" class="flex items-center gap-3 py-2.5">
@@ -388,7 +403,10 @@
 
 {#if certificates.length > 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{t('profile.certificates', 'Certificates')}</h2>
+		<h2 class="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+			<GraduationCap size={18} class="text-[var(--color-primary-text)]" />
+			{t('profile.certificates', 'Certificates')}
+		</h2>
 		<ul class="space-y-2">
 			{#each certificates as cert (cert.id)}
 				<li>
@@ -417,7 +435,10 @@
 
 {#if spaces.length > 0}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">{t('profile.spaces', 'Spaces')}</h2>
+		<h2 class="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+			<Globe size={18} class="text-[var(--color-primary-text)]" />
+			{t('profile.spaces', 'Spaces')}
+		</h2>
 		<ul class="space-y-2">
 			{#each visibleSpaces as space (space.id)}
 				<li>
@@ -450,7 +471,10 @@
 {#if !isOwnProfile && isAuthenticated && (onReport || onToggleBlock)}
 	<!-- Report / Block — visitor moderation actions -->
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('profile.sidebar.report_block', 'Report / Block')}</h2>
+		<h2 class="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+			<Flag size={18} class="text-[var(--color-primary-text)]" />
+			{t('profile.sidebar.report_block', 'Report / Block')}
+		</h2>
 		<div class="flex flex-col">
 			{#if onReport}
 				<button

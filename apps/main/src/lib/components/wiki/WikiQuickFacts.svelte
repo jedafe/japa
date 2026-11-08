@@ -123,7 +123,8 @@
 	</section>
 {:else if fields && fields.length > 0}
 	<section class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-		<h2 class="mb-3 text-sm font-semibold text-[var(--color-text)]">
+		<h2 class="mb-3 flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+			<Info size={16} class="text-[var(--color-primary-text)]" aria-hidden="true" />
 			{t('wiki.quick_facts', 'Quick Facts')}
 		</h2>
 		<ul class="space-y-3">
