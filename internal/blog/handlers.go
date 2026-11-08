@@ -2181,6 +2181,7 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		GuideCategory   *string         `json:"guide_category"`
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<20)
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")

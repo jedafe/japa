@@ -1006,6 +1006,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, MaxFileSizeBytes+1<<20)
 	// #nosec G120 // total body size is bounded by MaxBytesReader above.
 	if err := r.ParseMultipartForm(32 << 10); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_form", "Invalid multipart form")

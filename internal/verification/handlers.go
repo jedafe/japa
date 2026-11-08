@@ -237,6 +237,7 @@ func (h *Handlers) AdminUpdateType(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid verification type ID")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")

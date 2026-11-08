@@ -2698,6 +2698,7 @@ type AuditLogClearInput struct {
 // allowed without confirmation; an unscoped full clear requires `confirm: true`.
 func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 	var input AuditLogClearInput
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if body, _ := io.ReadAll(r.Body); len(body) > 0 {
 		if err := json.Unmarshal(body, &input); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")

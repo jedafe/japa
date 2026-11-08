@@ -401,6 +401,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 // adding public edits.
 func (h *Handlers) HandlePatch(w http.ResponseWriter, r *http.Request) {
 	// Need the request body for dispatch; read it fully.
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")

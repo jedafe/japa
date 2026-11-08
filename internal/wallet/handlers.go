@@ -957,6 +957,7 @@ func (h *Handlers) ProcessWithdrawal(w http.ResponseWriter, r *http.Request) {
 // (SEC-W-008). Signature verified against JC_NOWPAYMENTS_IPN_SECRET inside
 // the service; unsigned or bad-signature callbacks are rejected 401.
 func (h *Handlers) HandleNOWPaymentsPayoutWebhook(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")

@@ -469,6 +469,7 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")
@@ -1106,6 +1107,7 @@ func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request body")

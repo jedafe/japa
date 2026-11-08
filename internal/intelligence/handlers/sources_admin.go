@@ -316,6 +316,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	// attribution_required was never overrideable on PATCH. Decode the raw
 	// body into a map first to detect key presence, then unmarshal the typed
 	// struct for the remaining fields.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
@@ -1644,6 +1645,7 @@ func (h *Handlers) HandleAdminUpdateChannel(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	rawBody, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")

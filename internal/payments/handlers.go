@@ -478,6 +478,7 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 // This endpoint is public (no auth required) as webhooks come from external services.
 func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request) {
 	// Read raw body for signature verification.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
@@ -552,6 +553,7 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 // This endpoint is public (no auth required) as webhooks come from external services.
 func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	// Read raw body for signature verification.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")
@@ -612,6 +614,7 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 // with the signature in the x-nowpayments-sig header.
 func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Request) {
 	// Read raw body for signature verification.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Failed to read request body")

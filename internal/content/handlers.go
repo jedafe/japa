@@ -1975,6 +1975,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		TargetCountry *string `json:"target_country"`
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<20)
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
