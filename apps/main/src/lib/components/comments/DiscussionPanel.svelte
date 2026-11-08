@@ -117,7 +117,7 @@
 			<ul class="space-y-1.5">
 				{#each visibleDiscussions as disc (disc.id)}
 					<li>
-						<a href="/content/{disc.thread_slug}" class="group flex items-baseline justify-between gap-2 text-sm">
+						<a href="/thread/{disc.thread_slug}" class="group flex items-baseline justify-between gap-2 text-sm">
 							<span class="truncate text-[var(--color-text)] group-hover:text-[var(--color-primary-text)] group-hover:underline">{disc.thread_title}</span>
 							<span class="shrink-0 text-xs text-[var(--color-muted)]">
 								{t('comments.discussion_replies', '{count} replies').replace('{count}', String(disc.thread_comment_count))}
@@ -148,7 +148,7 @@
 				</ul>
 			{/if}
 			{#if primary}
-				<a href="/content/{primary.thread_slug}" class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] transition-colors hover:text-[var(--color-primary-hover)]">
+				<a href="/thread/{primary.thread_slug}" class="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] transition-colors hover:text-[var(--color-primary-hover)]">
 					{t('comments.join_conversation', 'Join this Conversation')}
 					<ArrowRight size={14} class="rtl:-scale-x-100" />
 				</a>

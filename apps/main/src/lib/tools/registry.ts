@@ -79,7 +79,10 @@ export const MAIN_TOOLS: MainToolMeta[] = [
 		labelKey: 'tools.travel',
 		descKey: 'tools.travel_desc',
 		enabledSetting: 'travel.enabled',
-		sections: ['planning', 'settlement']
+		sections: ['planning', 'settlement'],
+		// The travel portal owns its full-width footer — a trailing
+		// discussion block would hang below it (see page markup).
+		discussion: 'none'
 	},
 	// --- Immigration — visas, embassies, attestation, language tests ---
 	{
