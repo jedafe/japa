@@ -1091,7 +1091,7 @@ profile is private, or no stage is set. -->
 	</div>
 {/if}
 
-<div class="mx-auto w-full max-w-3xl"><UrlTabs tabs={tabs} bind:value={activeTab} autoOverflow /></div>
+<div class="sticky top-0 z-10 mx-auto w-full max-w-3xl"><UrlTabs tabs={tabs} bind:value={activeTab} autoOverflow /></div>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	{#snippet toolbar(options: FilterOption[], count: number, sortable = false)}

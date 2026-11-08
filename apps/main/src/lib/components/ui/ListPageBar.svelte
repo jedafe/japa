@@ -20,13 +20,13 @@
 	let { title = '', actions, children }: Props = $props();
 </script>
 
-	<!-- relative + z-20: backdrop-blur makes this bar a stacking context, so
-	     dropdowns opened by bar controls (e.g. Autocomplete) are trapped at
-	     its layer. Without an explicit z-index the bar paints in normal flow
-	     and positioned content below (user cards, -mt-* overlap rows) covers
-	     open dropdowns. -->
+	<!-- Sticky tab bar (ADR-058): pins to the top of the center column on
+	     scroll. z-20 keeps dropdowns opened by bar controls (e.g.
+	     Autocomplete) above positioned content below (user cards, -mt-*
+	     overlap rows); on mobile it stays under the shell topbar (z-20)
+	     so it doesn't cover app nav. -->
 <div
-	class="relative z-20 flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
+	class="sticky top-0 z-10 flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur sm:z-20"
 	style="margin-inline: var(--page-gutter, 0.75rem)"
 >
 	<div class="min-w-0 flex-1">

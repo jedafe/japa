@@ -702,7 +702,7 @@ import { flagUrl } from '#lib/utils/flags.js';
 </header>
 </div>
 
-<div class="mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} /></div>
+<div class="sticky top-0 z-10 mx-auto w-full max-w-3xl"><UrlTabs {tabs} bind:value={activeTab} /></div>
 
 {#if pinnedScamAlerts.length > 0}
 	<div class="mx-auto w-full max-w-3xl px-4 pt-3">
