@@ -49,16 +49,18 @@ func (s *Store) getContentsBySlugs(ctx context.Context, requesterID pgtype.UUID,
 	return rows, nil
 }
 
-// getExploreFeed returns trending published content for guest users, ranked by
-// the visitor's geo proximity.
+// getExploreFeed returns trending published content for guest users.
+// sort 'latest' is chronological created_at DESC; any other value (in
+// practice 'relevant') uses the geo-proximity → velocity → reactions blend.
 //
 
-func (s *Store) getExploreFeed(ctx context.Context, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetExploreFeedRow, error) {
+func (s *Store) getExploreFeed(ctx context.Context, sort, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetExploreFeedRow, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
 	rows, err := s.read.GetExploreFeed(ctx, gen.GetExploreFeedParams{
+		Sort:               sort,
 		VisitorCountryCode: &visitorCountryCode,
 		VisitorRegion:      &visitorRegion,
 		PageLimit:          limit,
@@ -74,15 +76,20 @@ func (s *Store) getExploreFeed(ctx context.Context, visitorCountryCode, visitorR
 // getPrimaryFeed returns the user's personalized feed from the feeds table.
 //
 
-func (s *Store) getPrimaryFeed(ctx context.Context, userID pgtype.UUID, sort string, halfLifeHours float64, limit, offset int32) ([]gen.GetPrimaryFeedRow, error) {
+func (s *Store) getPrimaryFeed(ctx context.Context, userID pgtype.UUID, sort string, halfLifeHours float64, topWindowDays, limit, offset int32) ([]gen.GetPrimaryFeedRow, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
+	}
+
+	if topWindowDays <= 0 {
+		topWindowDays = 7
 	}
 
 	rows, err := s.read.GetPrimaryFeed(ctx, gen.GetPrimaryFeedParams{
 		UserID:        userID,
 		Sort:          sort,
 		HalfLifeHours: halfLifeHours,
+		TopWindowDays: topWindowDays,
 		PageLimit:     limit,
 		PageOffset:    offset,
 	})

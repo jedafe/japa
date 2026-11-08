@@ -55,13 +55,11 @@ export function resolveTab(raw: string | null, authed: boolean): FeedTab {
 	return 'for_you';
 }
 
-/** Resolve the active sort; always yields an explicit value. The authed home
- * tabs default to 'relevant' — the for-you feed ranks it properly and the
- * following feed's SQL falls back to chronological for it — while explore
- * defaults to 'latest', matching the backend's fallback so the URL and the
- * rendered data stay consistent.
+/** Resolve the active sort; always yields an explicit value. Every tab
+ * defaults to 'relevant' — the for-you feed ranks it, the following feed
+ * has a real relevant arm, and explore serves its geo discovery blend for
+ * it — so 'latest' consistently means chronological on every surface.
  */
-export function resolveSort(raw: string | null, tab: FeedTab): SortValue {
-	if ((SORTS as string[]).includes(raw ?? '')) return raw as SortValue;
-	return tab === 'explore' ? 'latest' : 'relevant';
+export function resolveSort(raw: string | null, _tab?: FeedTab): SortValue {
+	return (SORTS as string[]).includes(raw ?? '') ? (raw as SortValue) : 'relevant';
 }

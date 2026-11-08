@@ -42,15 +42,12 @@ describe('resolveSort', () => {
 			expect(resolveSort(s, 'explore')).toBe(s);
 		}
 	});
-	it('defaults the authed home tabs to relevant', () => {
+	it('defaults every tab to relevant', () => {
 		expect(resolveSort(null, 'for_you')).toBe('relevant');
 		expect(resolveSort(null, 'following')).toBe('relevant');
+		expect(resolveSort(null, 'explore')).toBe('relevant');
 		expect(resolveSort('', 'for_you')).toBe('relevant');
 		expect(resolveSort('popular', 'following')).toBe('relevant'); // "popular" is a label, not a value
-	});
-	it('keeps explore on latest', () => {
-		expect(resolveSort(null, 'explore')).toBe('latest');
-		expect(resolveSort('', 'explore')).toBe('latest');
 	});
 });
 

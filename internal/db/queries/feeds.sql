@@ -7,8 +7,10 @@ ON CONFLICT (user_id, content_id) DO NOTHING;
 
 -- name: GetExploreFeed :many
 -- Trending content for guests (no user_id filter), pull from content_scores.
--- Ranks by the content's best linked geo proximity to the visitor, falling
--- back to velocity and vote score for tie-breaking.
+-- sort: 'relevant' ranks by the content's best linked geo proximity to the
+-- visitor, then velocity and reaction count — the closest relevance proxy
+-- for guests, who have no user interest embedding. 'latest' switches to a
+-- plain created_at DESC chronological order.
 WITH content_geo AS (
  SELECT cs.content_id,
  COALESCE(MAX(CASE
@@ -88,16 +90,22 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  o.name, o.slug, om.storage_bucket, om.storage_path,
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
-ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC, cs.reaction_count DESC
+ORDER BY
+ CASE WHEN @sort = 'latest' THEN EXTRACT(EPOCH FROM c.created_at)::float8 END DESC,
+ COALESCE(MAX(cg.geo_proximity), 1) DESC,
+ cs.velocity_score DESC,
+ cs.reaction_count DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetPrimaryFeed :many
 -- User's personalized feed from feeds table (push side).
--- sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC),
--- 'relevant' (velocity + ln(1+reactions) + recency half-life decay — the same
--- signals the for-you ranker blends, over rows already fanned out from
--- followed authors and member spaces). @half_life_hours is the recency-decay
--- half-life (feed.for_you_half_life_hours, default 48).
+-- sort: 'latest' (default), 'top' (reaction_count DESC over the
+-- @top_window_days rolling window — feed.top_window_days, §32), 'rising'
+-- (velocity_score DESC), 'relevant' (velocity + ln(1+reactions) + recency
+-- half-life decay — the same signals the for-you ranker blends, over rows
+-- already fanned out from followed authors and member spaces).
+-- @half_life_hours is the recency-decay half-life
+-- (feed.for_you_half_life_hours, default 48).
 SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
  c.title, c.slug, c.author_id, c.created_at AS content_created_at,
  c.view_count, c.comment_count,
@@ -144,6 +152,8 @@ LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE f.user_id = @user_id
  AND c.status = 'published'
  AND c.deleted_at IS NULL
+ -- 'top' is a rolling-window popular sort — other sorts see the full set.
+ AND (@sort <> 'top' OR c.created_at > now() - make_interval(days := @top_window_days::int))
  AND NOT EXISTS (
  SELECT 1 FROM user_blocks ub
  WHERE ((ub.blocker_id = @user_id AND ub.blocked_id = c.author_id)

@@ -33,10 +33,10 @@ const getExploreFeed = `-- name: GetExploreFeed :many
 WITH content_geo AS (
  SELECT cs.content_id,
  COALESCE(MAX(CASE
- WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'city' THEN 5
- WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'state' THEN 4
- WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'country' THEN 3
- WHEN COALESCE(cp.region, sp.region, s.region) = $4 THEN 2
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'city' THEN 5
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'state' THEN 4
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'country' THEN 3
+ WHEN COALESCE(cp.region, sp.region, s.region) = $5 THEN 2
  ELSE 1
  END), 1) AS geo_proximity
  FROM content_spaces cs
@@ -109,15 +109,20 @@ GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_
  o.name, o.slug, om.storage_bucket, om.storage_path,
  sm.storage_bucket, sm.storage_path,
  vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
-ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC, cs.reaction_count DESC
-LIMIT $2 OFFSET $1
+ORDER BY
+ CASE WHEN $1 = 'latest' THEN EXTRACT(EPOCH FROM c.created_at)::float8 END DESC,
+ COALESCE(MAX(cg.geo_proximity), 1) DESC,
+ cs.velocity_score DESC,
+ cs.reaction_count DESC
+LIMIT $3 OFFSET $2
 `
 
 type GetExploreFeedParams struct {
-	PageOffset         int32   `json:"page_offset"`
-	PageLimit          int32   `json:"page_limit"`
-	VisitorCountryCode *string `json:"visitor_country_code"`
-	VisitorRegion      *string `json:"visitor_region"`
+	Sort               interface{} `json:"sort"`
+	PageOffset         int32       `json:"page_offset"`
+	PageLimit          int32       `json:"page_limit"`
+	VisitorCountryCode *string     `json:"visitor_country_code"`
+	VisitorRegion      *string     `json:"visitor_region"`
 }
 
 type GetExploreFeedRow struct {
@@ -166,10 +171,13 @@ type GetExploreFeedRow struct {
 }
 
 // Trending content for guests (no user_id filter), pull from content_scores.
-// Ranks by the content's best linked geo proximity to the visitor, falling
-// back to velocity and vote score for tie-breaking.
+// sort: 'relevant' ranks by the content's best linked geo proximity to the
+// visitor, then velocity and reaction count — the closest relevance proxy
+// for guests, who have no user interest embedding. 'latest' switches to a
+// plain created_at DESC chronological order.
 func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) ([]GetExploreFeedRow, error) {
 	rows, err := q.db.Query(ctx, getExploreFeed,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 		arg.VisitorCountryCode,
@@ -663,6 +671,8 @@ LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE f.user_id = $1
  AND c.status = 'published'
  AND c.deleted_at IS NULL
+ -- 'top' is a rolling-window popular sort — other sorts see the full set.
+ AND ($2 <> 'top' OR c.created_at > now() - make_interval(days := $3::int))
  AND NOT EXISTS (
  SELECT 1 FROM user_blocks ub
  WHERE ((ub.blocker_id = $1 AND ub.blocked_id = c.author_id)
@@ -685,15 +695,16 @@ ORDER BY
  CASE WHEN $2 = 'relevant' THEN
  COALESCE(cs.velocity_score, 0)::float8
  + LN(1 + COALESCE(cs.reaction_count, 0)::float8)
- + 2.0 * POWER(0.5, GREATEST(EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600.0, 0)::float8 / GREATEST($3::float8, 1.0))
+ + 2.0 * POWER(0.5, GREATEST(EXTRACT(EPOCH FROM (now() - c.created_at)) / 3600.0, 0)::float8 / GREATEST($4::float8, 1.0))
  END DESC,
  f.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type GetPrimaryFeedParams struct {
 	UserID        pgtype.UUID `json:"user_id"`
 	Sort          interface{} `json:"sort"`
+	TopWindowDays int32       `json:"top_window_days"`
 	HalfLifeHours float64     `json:"half_life_hours"`
 	PageOffset    int32       `json:"page_offset"`
 	PageLimit     int32       `json:"page_limit"`
@@ -747,15 +758,18 @@ type GetPrimaryFeedRow struct {
 }
 
 // User's personalized feed from feeds table (push side).
-// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC),
-// 'relevant' (velocity + ln(1+reactions) + recency half-life decay — the same
-// signals the for-you ranker blends, over rows already fanned out from
-// followed authors and member spaces). @half_life_hours is the recency-decay
-// half-life (feed.for_you_half_life_hours, default 48).
+// sort: 'latest' (default), 'top' (reaction_count DESC over the
+// @top_window_days rolling window — feed.top_window_days, §32), 'rising'
+// (velocity_score DESC), 'relevant' (velocity + ln(1+reactions) + recency
+// half-life decay — the same signals the for-you ranker blends, over rows
+// already fanned out from followed authors and member spaces).
+// @half_life_hours is the recency-decay half-life
+// (feed.for_you_half_life_hours, default 48).
 func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) ([]GetPrimaryFeedRow, error) {
 	rows, err := q.db.Query(ctx, getPrimaryFeed,
 		arg.UserID,
 		arg.Sort,
+		arg.TopWindowDays,
 		arg.HalfLifeHours,
 		arg.PageOffset,
 		arg.PageLimit,

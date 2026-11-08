@@ -480,20 +480,13 @@ func (s *Service) getExploreFeed(ctx context.Context, sort, visitorCountryCode, 
 		}
 
 		return risingRowsToItems(rows), nil
-	case SortRelevant:
-		// Explore is guest-facing — there is no user interest embedding
-		// available for pgvector cosine similarity (Section 32 L120–125
-		// requires a $user_embedding). Fall back to the top feed (7-day
-		// rolling window) as the closest relevance proxy for guests.
-		// The for-you feed handles true pgvector relevance for authed users.
-		rows, err := s.store.getTopFeed(ctx, visitorCountryCode, visitorRegion, topWindowDays, limit, offset)
-		if err != nil {
-			return nil, err
-		}
-
-		return topRowsToItems(rows), nil
-	default: // "latest" uses velocity_score DESC
-		rows, err := s.store.getExploreFeed(ctx, visitorCountryCode, visitorRegion, limit, offset)
+	default:
+		// "latest" → chronological created_at DESC; "relevant" → the
+		// geo-proximity → velocity → reactions blend inside GetExploreFeed
+		// (the closest relevance proxy for guests, who have no user
+		// interest embedding — §32 L120–125). parseSort only ever yields
+		// one of these two here, since top/rising have their own queries.
+		rows, err := s.store.getExploreFeed(ctx, sort, visitorCountryCode, visitorRegion, limit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -503,20 +496,25 @@ func (s *Service) getExploreFeed(ctx context.Context, sort, visitorCountryCode, 
 }
 
 // getPrimaryFeedItems returns the user's personalized feed with sort.
-// sort: 'latest' (default), 'top' (reaction_count DESC), 'rising' (velocity_score DESC),
+// sort: 'latest' (default), 'top' (reaction_count DESC over the
+// feed.top_window_days rolling window), 'rising' (velocity_score DESC),
 // 'relevant' (velocity + ln(1+reactions) + recency half-life decay over rows
 // already fanned out from followed authors and member spaces — same signals
 // the for-you ranker blends). The half-life reuses feed.for_you_half_life_hours.
 func (s *Service) getPrimaryFeedItems(ctx context.Context, userID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
 	halfLife := defaultRankingWeights().HalfLifeHours
+	topWindowDays := int32(7)
 	if s.settings != nil {
 		halfLife = s.settings.GetFloatOr(ctx, "feed.for_you_half_life_hours", halfLife)
+		if v := s.settings.GetIntOr(ctx, "feed.top_window_days", 7); v > 0 {
+			topWindowDays = toInt32(v)
+		}
 	}
 	if halfLife <= 0 {
 		halfLife = defaultRankingWeights().HalfLifeHours
 	}
 
-	rows, err := s.store.getPrimaryFeed(ctx, userID, sort, halfLife, limit, offset)
+	rows, err := s.store.getPrimaryFeed(ctx, userID, sort, halfLife, topWindowDays, limit, offset)
 	if err != nil {
 		return nil, err
 	}
