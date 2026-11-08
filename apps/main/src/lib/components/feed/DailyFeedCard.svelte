@@ -61,9 +61,12 @@
 
 	interface Props {
 		item: FeedItem;
+		/** For You/Following feeds open /thread/{slug} by default (thread-
+		 *  rename spec); share URLs stay canonical. */
+		threadDefault?: boolean;
 	}
 
-	let { item }: Props = $props();
+	let { item, threadDefault = false }: Props = $props();
 
 	let reported = $state(false);
 	let reportOpen = $state(false);
@@ -108,6 +111,7 @@
 	// no forum_threads row, so they take the reaction path instead.
 	const isForum = $derived(item.content_type === 'forum_thread');
 	const canonicalHref = $derived(contentHref(item));
+	const itemHref = $derived(threadDefault ? `/thread/${item.slug}` : canonicalHref);
 	const actionLabel = $derived(readPostLabel(item.content_type));
 	const meta = $derived(contentTypeMeta(item.content_type));
 	const Icon = $derived(meta.icon);
@@ -166,18 +170,18 @@
 	function navigate(e: MouseEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target && (target.closest('a') || target.closest('button'))) return;
-		goto(canonicalHref);
+		goto(itemHref);
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target && (target.closest('a') || target.closest('button'))) return;
-		if (e.key === 'Enter') goto(canonicalHref);
+		if (e.key === 'Enter') goto(itemHref);
 	}
 
 	function openPost(e: Event) {
 		e.stopPropagation();
-		goto(canonicalHref);
+		goto(itemHref);
 	}
 
 	const shareUrl = $derived(`${page.url.origin}${canonicalHref}`);
@@ -274,7 +278,7 @@
 		/>
 		<div class="ms-auto flex shrink-0 items-center gap-3">
 			<a
-				href={canonicalHref}
+				href={itemHref}
 				class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-[var(--color-primary)]/10 px-3 py-1.5 text-[13px] font-semibold text-[var(--color-primary-text)] transition-colors hover:bg-[var(--color-primary)]/20"
 				aria-label={actionLabel}
 			>
@@ -305,7 +309,7 @@
 		<div class="flex min-w-0 flex-1 flex-col gap-3">
 			<!-- Title -->
 			<h2 class="text-balance text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
-				<a href={canonicalHref} class="transition-colors hover:text-[var(--color-primary-text)]">{item.title}</a>
+				<a href={itemHref} class="transition-colors hover:text-[var(--color-primary-text)]">{item.title}</a>
 			</h2>
 
 			{#if item.excerpt}

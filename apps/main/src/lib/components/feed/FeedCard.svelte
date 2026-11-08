@@ -232,7 +232,7 @@
 {/snippet}
 
 {#if style === 'daily'}
-	<DailyFeedCard {item} />
+	<DailyFeedCard {item} {threadDefault} />
 {:else if layout === 'grid-cell' || style === 'grid'}
 	<!-- grid card (2-col cell) OR full-width grid item in a stream -->
 	<div
