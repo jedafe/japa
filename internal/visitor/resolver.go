@@ -1004,7 +1004,9 @@ func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContex
 	vc.WeakestDimensions = extractWeakestDimensions(row.DimensionScores)
 
 	// Submission field_values may contain origin, destination, visa_type, etc.
-	// Overlay them only when the profile has not already set a value.
+	// Overlay them only when the profile has not already set a value —
+	// japa_stage excepted: the latest assessment submission is a fresher
+	// self-report than a possibly-stale profile field, so it wins when set.
 	fields := parseAssessmentSubmission(row.SubmissionValues)
 	fields.VisaType = normalizeVisaRoute(fields.VisaType)
 	fields.JapaStage = strings.ToLower(strings.TrimSpace(fields.JapaStage))
@@ -1023,7 +1025,11 @@ func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContex
 	}
 
 	if fields.TravelDate != "" && vc.TravelDate == "" {
-		vc.TravelDate = fields.TravelDate
+		if v := strings.TrimSpace(fields.TravelDate); v != "" {
+			if _, err := time.Parse("2006-01-02", v); err == nil {
+				vc.TravelDate = v
+			}
+		}
 	}
 
 	if fields.Purpose != "" && vc.Purpose == "" {

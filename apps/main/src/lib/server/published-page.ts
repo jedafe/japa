@@ -33,10 +33,17 @@ export async function resolveGeoContext(event: ServerLoadEvent): Promise<{
 	geoCountryName: string | undefined;
 }> {
 	const ctx = apiContext(event);
-	let geoCountry =
-		event.url.searchParams.get('geo') ??
-		event.locals.user?.content_country_preference ??
-		null;
+	// ?geo= mirrors the backend's explicitGeoParam contract: 'all' is the
+	// explicit-global override and a 2-letter code is a real override —
+	// anything else (empty, malformed like ?geo=1A) is treated as absent so
+	// resolution falls through to the user preference rather than rendering
+	// garbage tokens (e.g. "1A") or skipping the preference.
+	const geoParamRaw = event.url.searchParams.get('geo')?.trim();
+	const geoParam =
+		geoParamRaw && (/^[a-z]{2}$/i.test(geoParamRaw) || geoParamRaw.toLowerCase() === 'all')
+			? geoParamRaw
+			: null;
+	let geoCountry = geoParam ?? event.locals.user?.content_country_preference ?? null;
 	let geoCountryName: string | undefined;
 
 	// ?geo=all is the documented explicit-global override (ADR-064 §2) —

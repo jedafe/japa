@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -86,17 +87,30 @@ func (u *Updater) DownloadAndUpdate() error {
 		return errors.New("JC_MAXMIND_LICENSE_KEY is not set - cannot update geoip database")
 	}
 
+	// Every configured target is attempted even when an earlier one fails —
+	// the City edition is the primary target so its failure is returned
+	// (Asynq retries), while a secondary edition failure (e.g. an account
+	// whose license doesn't include Anonymous-IP) is logged and skipped:
+	// reporting the task as failed would re-download City on every retry
+	// and mask the real, optional, failure.
+	var cityErr error
+
 	for _, t := range u.targets {
 		if t.dbPath == "" {
 			continue
 		}
 
 		if err := u.updateTarget(t); err != nil {
-			return fmt.Errorf("updating %s: %w", t.edition, err)
+			if t.edition == CityEdition {
+				cityErr = fmt.Errorf("updating %s: %w", t.edition, err)
+			} else {
+				slog.Warn("geoip: secondary edition update failed, keeping previous database",
+					"edition", t.edition, "path", t.dbPath, "error", err)
+			}
 		}
 	}
 
-	return nil
+	return cityErr
 }
 
 // updateTarget downloads one edition archive, installs it at t.dbPath, and

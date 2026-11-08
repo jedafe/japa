@@ -87,10 +87,15 @@ export const load: PageServerLoad = async (event) => {
 	// Guests: check for an assigned homepage Page Builder landing page.
 	// Convention: the landing page has slug "homepage" (ADR-058 §5).
 	// Geo resolution priority: ?geo= param → GeoIP detection → 'global'.
-	let geoCountry =
-		event.url.searchParams.get('geo') ??
-		event.locals.user?.content_country_preference ??
-		null;
+	// The param is validated like the backend's explicitGeoParam: 'all' or a
+	// 2-letter code overrides; an empty/malformed value is absent (preference
+	// applies) rather than rendering "1A"-style tokens.
+	const geoParamRaw = event.url.searchParams.get('geo')?.trim();
+	const geoParam =
+		geoParamRaw && (/^[a-z]{2}$/i.test(geoParamRaw) || geoParamRaw.toLowerCase() === 'all')
+			? geoParamRaw
+			: null;
+	let geoCountry = geoParam ?? event.locals.user?.content_country_preference ?? null;
 	let geoCountryName: string | undefined;
 
 	// ?geo=all is the documented explicit-global override (ADR-064 §2) —
