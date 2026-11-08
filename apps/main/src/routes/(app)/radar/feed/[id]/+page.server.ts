@@ -39,7 +39,7 @@ export const load: PageServerLoad = async (event) => {
 	// backend resolved (/scholarships/{id}, /jobs/{slug}, /guide/{slug}).
 	// Thrown outside the try so the Redirect is never caught.
 	if (item.canonical_url) {
-		throw redirect(301, item.canonical_url);
+		throw redirect(301, item.canonical_url, { external: true });
 	}
 
 	return { item, authed: !!event.locals.user };

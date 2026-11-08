@@ -56,7 +56,43 @@ export default defineConfig({
 		authProxyPlugin(),
 		sveltekit({
 			preprocess: vitePreprocess(),
-			adapter: adapter({ fallback: 'index.html' })
+			adapter: adapter({ fallback: 'index.html' }),
+			// Hash-based CSP for the static SPA — SvelteKit emits a
+			// <meta http-equiv> policy with sha256 hashes for its inline
+			// bootstrap script. frame-ancestors cannot go in a meta tag; the
+			// spa-server sets it as a real header (docker/spa-server.mjs).
+			...(dev
+				? {}
+				: {
+						csp: {
+							mode: 'hash' as const,
+							directives: {
+								'default-src': ['self'],
+								// 'unsafe-hashes' + the sha256 allow exactly one inline
+								// handler: `this.__e=event`, emitted by Svelte 5.56+ SSR as
+								// onload/onerror on <img> for hydration event replay.
+								'script-src': [
+									'self',
+									'unsafe-hashes',
+									'sha256-7dQwUgLau1NFCCGjfn9FsYptB6ZtWxJin6VohGIu20I=',
+									...(umamiOrigin ? [umamiOrigin] : [])
+								],
+								'style-src': ['self', 'unsafe-inline'],
+								'img-src': ['self', 'data:', 'blob:', 'https:'],
+								'font-src': ['self', 'data:'],
+								'connect-src': ['self', ...connectOrigins],
+								// /analytics embeds the Umami dashboard — the parent-side
+								// counterpart to Umami's frame-ancestors.
+								'frame-src': ['self', ...(umamiOrigin ? [umamiOrigin] : [])],
+								'media-src': ['self', 'https:', 'blob:', 'data:'],
+								'worker-src': ['self'],
+								'manifest-src': ['self'],
+								'form-action': ['self'],
+								'object-src': ['none'],
+								'base-uri': ['self']
+							}
+						}
+					})
 		})
 	],
 	resolve: {

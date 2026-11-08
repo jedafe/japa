@@ -31,7 +31,43 @@ const umamiOrigin = envOrigin(process.env.PUBLIC_JC_UMAMI_URL);
 export default defineConfig({
 	plugins: [
 		tailwindcss(),
-		sveltekit({ preprocess: vitePreprocess(), adapter: adapter() })
+		sveltekit({
+			preprocess: vitePreprocess(),
+			adapter: adapter(),
+			// Nonce-based CSP in production; disabled in dev where Vite injects
+			// unnonced runtime <style> tags. frame-ancestors 'self' only — a
+			// privileged panel must never be embedded cross-origin (clickjacking).
+			...(dev
+				? {}
+				: {
+						csp: {
+							mode: 'nonce' as const,
+							directives: {
+								'default-src': ['self'],
+								// 'unsafe-hashes' + the sha256 allow exactly one inline
+								// handler: `this.__e=event`, emitted by Svelte 5.56+ SSR as
+								// onload/onerror on <img> for hydration event replay.
+								'script-src': [
+									'self',
+									'unsafe-hashes',
+									'sha256-7dQwUgLau1NFCCGjfn9FsYptB6ZtWxJin6VohGIu20I=',
+									...(umamiOrigin ? [umamiOrigin] : [])
+								],
+								'style-src': ['self', 'unsafe-inline'],
+								'img-src': ['self', 'data:', 'blob:', 'https:'],
+								'font-src': ['self', 'data:'],
+								'connect-src': ['self', ...connectOrigins],
+								'media-src': ['self', 'https:', 'blob:', 'data:'],
+								'worker-src': ['self'],
+								'manifest-src': ['self'],
+								'form-action': ['self'],
+								'object-src': ['none'],
+								'base-uri': ['self'],
+								'frame-ancestors': ['self']
+							}
+						}
+					})
+		})
 	],
 	resolve: {
 		conditions: ['browser'],

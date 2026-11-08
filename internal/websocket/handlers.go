@@ -200,8 +200,6 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	var userID pgtype.UUID
 
-	var ()
-
 	// Try Valkey first for fast lookup.
 	if h.vkClient != nil {
 		vctx, cancel := context.WithTimeout(ctx, 2*time.Second)

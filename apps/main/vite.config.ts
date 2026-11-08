@@ -99,7 +99,51 @@ export default defineConfig({
 		sveltekit({
 			preprocess: vitePreprocess(),
 			// Public-facing community app is SSR via adapter-node + Bun (port 3000).
-			adapter: adapter()
+			adapter: adapter(),
+			// Nonce-based CSP in production. Disabled in dev: Vite injects
+			// unnonced runtime <style> tags and eval'd modules that a strict
+			// policy would break. kit.csp is the only mechanism that nonces
+			// SvelteKit's inline bootstrap script — a hand-set CSP header
+			// cannot reach it and would break hydration.
+			// event.locals.cspNonce is populated by SvelteKit here and is
+			// consumed by the layout's staff-gated custom CSS/JS blocks.
+			...(dev
+				? {}
+				: {
+						csp: {
+							mode: 'nonce' as const,
+							directives: {
+								'default-src': ['self'],
+								// 'unsafe-hashes' + the sha256 below allow exactly one inline
+								// handler: `this.__e=event`, which Svelte 5.56+ SSR emits as
+								// onload/onerror on every <img> for hydration event replay.
+								// Nonces can't authorize event-handler attributes, and without
+								// this the handler is blocked → console errors (best-practices).
+								'script-src': [
+									'self',
+									'unsafe-hashes',
+									'sha256-7dQwUgLau1NFCCGjfn9FsYptB6ZtWxJin6VohGIu20I=',
+									...(umamiOrigin ? [umamiOrigin] : [])
+								],
+								'style-src': ['self', 'unsafe-inline'],
+								'img-src': ['self', 'data:', 'blob:', 'https:'],
+								'font-src': ['self', 'data:'],
+								'connect-src': ['self', ...connectOrigins],
+								'media-src': ['self', 'https:', 'blob:', 'data:'],
+								'frame-src': [
+									'https://www.youtube.com',
+									'https://www.youtube-nocookie.com',
+									'https://player.vimeo.com'
+								],
+								'worker-src': ['self'],
+								'manifest-src': ['self'],
+								'form-action': ['self'],
+								'object-src': ['none'],
+								'base-uri': ['self'],
+								'frame-ancestors': ['self']
+							}
+						}
+					})
 		}),
 		svelteTesting()
 	],
