@@ -71,6 +71,7 @@
 	import { formatMoney } from '#lib/utils/currency.js';
 	import { excerpt } from '#lib/utils/seo-score.js';
 	import { contentHref } from '#lib/utils/contentLink.js';
+	import EntityDiscussions from '#lib/components/thread/EntityDiscussions.svelte';
 	import type {
 		ServiceListing,
 		ServiceCategory,
@@ -1915,6 +1916,10 @@
 				</div>
 			</section>
 		{/if}
+		<!-- Discussion preview — full conversation lives at /thread/{slug}. -->
+		<div class="mx-auto w-full max-w-3xl px-4">
+			<EntityDiscussions entityType="content" entityKey={service.id} authed={!!data.authed} />
+		</div>
 	</div>
 {/if}
 

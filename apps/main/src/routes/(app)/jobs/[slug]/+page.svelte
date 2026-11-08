@@ -9,6 +9,7 @@
 		UserRound, Layers
 	} from 'lucide-svelte';
 	import ReportDialog from '#lib/components/profile/ReportDialog.svelte';
+	import EntityDiscussions from '#lib/components/thread/EntityDiscussions.svelte';
 	import { EmptyState } from '#lib/components/ui/index.js';
 	import RecommendedContentCard from '#lib/components/content/RecommendedContentCard.svelte';
 	import { api } from '#lib/api/client.js';
@@ -906,6 +907,9 @@
 				{/if}
 			</aside>
 		</div>
+
+		<!-- Discussion preview — full conversation lives at /thread/{slug}. -->
+		<EntityDiscussions entityType="content" entityKey={job.id} authed={data.authed} />
 	{/if}
 </div>
 
