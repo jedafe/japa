@@ -2,7 +2,6 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, ApiError } from '#lib/server/api.js';
 import type { ContentAnalytics, ContentArticle, SeriesPost } from '#lib/types/content.js';
-import type { Comment } from '#lib/types/index.js';
 
 /**
  * Blog single post — GET /api/v1/blog/{slug} (public, platform-scoped).
@@ -90,18 +89,9 @@ export const load: PageServerLoad = async (event) => {
 					.catch(() => false)
 			: Promise.resolve(false);
 
-	const commentsPromise = apiGetEnvelope<Comment[]>(
-		ctx,
-		`/content/${article.id}/comments?page_size=50`
-	).then(
-		(envelope) => ({
-			comments: envelope.data ?? [],
-			deletedUserIds: envelope.deleted_user_ids ?? null,
-			commentsTotal: (envelope.meta as { total?: number } | undefined)?.total ?? null,
-			loadError: false
-		}),
-		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, commentsTotal: null as number | null, loadError: true })
-	);
+	// The comment engine no longer mounts here — the EntityDiscussions
+	// preview fetches 5 comments client-side and the full engine lives at
+	// /thread/{slug} (thread-rename spec). No SSR comment seeding.
 
 	// Series parts (Section 34 / Phase 06.10). Public series detail now shows
 	// every published part ordered by position, mirroring dev.to's series card.
@@ -135,11 +125,10 @@ export const load: PageServerLoad = async (event) => {
 		? apiGet<ContentAnalytics>(ctx, `/content/${article.id}/analytics`).catch(() => null)
 		: Promise.resolve(null);
 
-	const [perms, isFollowing, commentsResult, seriesPosts, relatedContent, recommendedContent, analytics] =
+	const [perms, isFollowing, seriesPosts, relatedContent, recommendedContent, analytics] =
 		await Promise.all([
 			permPromise,
 			followingPromise,
-			commentsPromise,
 			seriesPromise,
 			relatedPromise,
 			recommendedPromise,
@@ -158,16 +147,6 @@ export const load: PageServerLoad = async (event) => {
 	// enforces the actual permission; this flag only gates the UI control.
 	// BUG-004: include moderator permission check, not just content author.
 	const canModerate = isOwner || isSuperAdmin || hasCommentsPinPermission;
-
-	const { comments, deletedUserIds: commentDeletedUserIds, commentsTotal, loadError: commentsLoadError } =
-		commentsResult;
-
-	// Merge deleted user IDs from the article body and comments so the
-	// frontend can render @[deleted user] for all erased mentions (ADR-029).
-	const allDeletedUserIds = new Set<string>();
-	if (deletedUserIds) for (const id of deletedUserIds) allDeletedUserIds.add(id);
-	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
-	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
 
 	// Sidebar widgets (Section 59, ADR-066) come from the parent app layout's
 	// data — (app)/+layout.server.ts already resolves /sidebars/resolve for
@@ -200,15 +179,12 @@ export const load: PageServerLoad = async (event) => {
 		canModerate,
 		canEdit,
 		canDelete,
-		comments,
-		commentsLoadError,
-		commentsTotal,
 		seriesPosts,
 		relatedContent,
 		recommendedContent,
 		analytics,
 		jsonLd,
-		deletedUserIds: mergedDeletedUserIds,
+		deletedUserIds,
 		initiallyFollowing: isFollowing
 	};
 };

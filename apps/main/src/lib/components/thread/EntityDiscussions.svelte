@@ -373,13 +373,4 @@
 		cursor: default;
 	}
 
-	.ed-spin {
-		animation: ed-spin 0.8s linear infinite;
-	}
-
-	@keyframes ed-spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
 </style>

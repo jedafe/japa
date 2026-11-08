@@ -54,9 +54,10 @@ export const load: PageServerLoad = async (event) => {
 	// only gates the UI control.
 	const canModerate = !!event.locals.user?.permissions?.includes('roadmap.moderate');
 
-	// Flag detail, comment thread, and related board are all keyed off the
-	// resolved item but independent of each other — one wave.
-	let commentsLoadError = false;
+	// Flag detail and related board are keyed off the resolved item — one
+	// wave. The comments fetch survives only for its deleted_user_ids
+	// sidecar (body mention redaction, ADR-029); the preview itself loads
+	// client-side via EntityDiscussions and the engine lives at /thread.
 	const [flagDetail, commentsRes, related] = await Promise.all([
 		// Flag-linked items get an enriched rollout badge driven by the flag's
 		// live phase/percentage (§113 + unified-rollout spec §5.3). The
@@ -68,13 +69,10 @@ export const load: PageServerLoad = async (event) => {
 					'/feature-flags/details/' + encodeURIComponent(item.feature_flag_key)
 				).catch(() => null)
 			: Promise.resolve(null),
-		// SSR-seed the comment thread from the shadow contents row (§113).
+		// deleted_user_ids sidecar only — comment bodies unused here.
 		item.content_id
-			? apiGetEnvelope<Comment[]>(ctx, `/content/${item.content_id}/comments?page_size=50`).catch(
-					() => {
-						commentsLoadError = true;
-						return null;
-					}
+			? apiGetEnvelope<Comment[]>(ctx, `/content/${item.content_id}/comments?page_size=1`).catch(
+					() => null
 				)
 			: Promise.resolve(null),
 		// Related items — same category via the board endpoint (Rule 16: no
@@ -84,9 +82,7 @@ export const load: PageServerLoad = async (event) => {
 		// category, capped at 3) — no second board fetch needed.
 		Promise.resolve((item.related ?? []).slice(0, 3) as RoadmapBoardItem[])
 	]);
-	const comments = commentsRes?.data ?? [];
 	const commentDeletedUserIds = commentsRes?.deleted_user_ids ?? null;
-	const commentsTotal = (commentsRes?.meta as { total?: number } | undefined)?.total ?? null;
 
 	// Merge deleted user IDs from the item and comments so the frontend can
 	// render @[deleted user] for all erased mentions (ADR-029).
@@ -101,9 +97,6 @@ export const load: PageServerLoad = async (event) => {
 		authed,
 		currentUserId,
 		canModerate,
-		comments,
-		commentsLoadError,
-		commentsTotal,
 		deletedUserIds: mergedDeletedUserIds,
 		related
 	};

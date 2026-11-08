@@ -1,7 +1,6 @@
 import { error } from '@sveltejs/kit';
-import { apiContext, apiGet, apiGetEnvelope, ApiError } from '#lib/server/api.js';
+import { apiContext, apiGet, ApiError } from '#lib/server/api.js';
 import type { JCEComparisonDetail, MatrixItem, ResolvedItem } from '#lib/types/jce.js';
-import type { Comment } from '#lib/types/index.js';
 import type { ContentArticle } from '#lib/types/content.js';
 import type { PageServerLoad } from './$types';
 
@@ -57,20 +56,10 @@ export const load: PageServerLoad = async (event) => {
 	const contentId = comparison.content.id;
 
 	// Second wave — everything downstream of the detail fetch is independent
-	// of each other (comments, owner analytics, follow status, related items),
-	// so they run concurrently instead of stacking round-trips.
-	const commentsPromise = apiGetEnvelope<Comment[]>(
-		ctx,
-		`/content/${contentId}/comments?page_size=50`
-	).then(
-		(envelope) => ({
-			comments: envelope.data ?? [],
-			deletedUserIds: envelope.deleted_user_ids ?? null,
-			commentsTotal: (envelope.meta as { total?: number } | undefined)?.total ?? null,
-			loadError: false
-		}),
-		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, commentsTotal: null as number | null, loadError: true })
-	);
+	// of each other (owner analytics, follow status, related items), so they
+	// run concurrently instead of stacking round-trips. The comment engine
+	// no longer mounts here — EntityDiscussions previews 5 comments
+	// client-side and the full engine lives at /thread/{slug}.
 
 	// Hydrate the CreatorCard follow button's initial state. Best-effort:
 	// a failure degrades to `false` (not following). Skip when the viewer
@@ -92,14 +81,10 @@ export const load: PageServerLoad = async (event) => {
 		.then((r) => r ?? [])
 		.catch(() => [] as ContentArticle[]);
 
-	const [commentsResult, isFollowing, recommendedContent] = await Promise.all([
-		commentsPromise,
+	const [isFollowing, recommendedContent] = await Promise.all([
 		followingPromise,
 		recommendedPromise
 	]);
-
-	const { comments, deletedUserIds: commentDeletedUserIds, commentsTotal, loadError: commentsLoadError } =
-		commentsResult;
 
 	// §30 edit affordance: the author or a comparison moderator can jump
 	// straight to the unified composer for this comparison.
@@ -126,11 +111,7 @@ export const load: PageServerLoad = async (event) => {
 		authed,
 		currentUserId,
 		canModerate,
-		comments,
-		commentsLoadError,
-		commentsTotal,
 		recommendedContent,
-		deletedUserIds: commentDeletedUserIds,
 		initiallyFollowing: isFollowing
 	};
 };

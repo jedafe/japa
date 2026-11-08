@@ -4,7 +4,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, ApiError } from '#lib/server/api.js';
-import type { Comment, Story } from '#lib/types/index.js';
+import type { Story } from '#lib/types/index.js';
 import type { ContentAnalytics, ContentArticle, SeriesPost } from '#lib/types/content.js';
 
 /**
@@ -44,11 +44,8 @@ export const load: PageServerLoad = async (event) => {
 			currentUserId,
 			canEdit: false,
 			canModerate: false,
-			comments: [] as Comment[],
-			commentsLoadError: false,
 			relatedContent: [] as ContentArticle[],
 			recommendedContent: [] as ContentArticle[],
-			deletedUserIds: null,
 			initiallyFollowing: false,
 			loadError: true
 		};
@@ -84,19 +81,9 @@ export const load: PageServerLoad = async (event) => {
 					.catch(() => false)
 			: Promise.resolve(false);
 
-	// Unified comment engine (Section 49) — top-level comments are SSR-seeded.
-	const commentsPromise = apiGetEnvelope<Comment[]>(
-		ctx,
-		`/content/${story.id}/comments?page_size=50`
-	).then(
-		(envelope) => ({
-			comments: envelope.data ?? [],
-			deletedUserIds: envelope.deleted_user_ids ?? null,
-			commentsTotal: (envelope.meta as { total?: number } | undefined)?.total ?? null,
-			loadError: false
-		}),
-		() => ({ comments: [] as Comment[], deletedUserIds: null as string[] | null, commentsTotal: null as number | null, loadError: true })
-	);
+	// The comment engine no longer mounts here — the EntityDiscussions
+	// preview fetches 5 comments client-side and the full engine lives at
+	// /thread/{slug} (thread-rename spec). No SSR comment seeding.
 
 	// Related content (Section 14 — GET /content/{id}/related). Best-effort.
 	// NB: the endpoint reads `page_size`, not `limit`.
@@ -129,11 +116,10 @@ export const load: PageServerLoad = async (event) => {
 				.catch(() => [] as SeriesPost[])
 		: Promise.resolve([] as SeriesPost[]);
 
-	const [perms, initiallyFollowing, commentsResult, relatedContent, recommendedContent, analytics, seriesPosts] =
+	const [perms, initiallyFollowing, relatedContent, recommendedContent, analytics, seriesPosts] =
 		await Promise.all([
 			permPromise,
 			followingPromise,
-			commentsPromise,
 			relatedPromise,
 			recommendedPromise,
 			analyticsPromise,
@@ -148,9 +134,6 @@ export const load: PageServerLoad = async (event) => {
 	const canEditAny = perms.includes('story.edit_any') || perms.includes('content.edit_any');
 	const canModerate = isOwner || isSuperAdmin || hasCommentsPinPermission;
 	const canEdit = isOwner || isSuperAdmin || canEditAny;
-	const { comments, deletedUserIds: commentDeletedUserIds, commentsTotal, loadError: commentsLoadError } =
-		commentsResult;
-
 	return {
 		story,
 		jsonLd,
@@ -158,14 +141,10 @@ export const load: PageServerLoad = async (event) => {
 		currentUserId,
 		canEdit,
 		canModerate,
-		comments,
-		commentsLoadError,
-		commentsTotal,
 		relatedContent,
 		recommendedContent,
 		analytics,
 		seriesPosts,
-		deletedUserIds: commentDeletedUserIds,
 		initiallyFollowing,
 		loadError: false
 	};
