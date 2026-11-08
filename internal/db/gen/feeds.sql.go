@@ -356,18 +356,23 @@ content_geo AS (
  GROUP BY cs.content_id
 ),
 author_points AS (
- SELECT c2.author_id,
+ -- Aggregate once per DISTINCT author — joining candidate contents directly
+ -- would multiply each balance by the author's candidate count.
+ SELECT ca.author_id,
  COALESCE(SUM(wl.amount), 0)::bigint AS points_balance
- FROM candidate_ids ci
- JOIN contents c2 ON c2.id = ci.id
- JOIN users u2 ON u2.id = c2.author_id
+ FROM (
+  SELECT DISTINCT c2.author_id
+  FROM candidate_ids ci
+  JOIN contents c2 ON c2.id = ci.id
+ ) ca
+ JOIN users u2 ON u2.id = ca.author_id
  LEFT JOIN user_privacy_settings ups ON ups.user_id = u2.id
- JOIN wallet_ledger wl ON wl.user_id = c2.author_id AND wl.ledger_type = 'points'
+ JOIN wallet_ledger wl ON wl.user_id = ca.author_id AND wl.ledger_type = 'points'
  WHERE u2.status = 'active'
  AND u2.is_bot = false
  AND u2.is_synthetic = false
  AND COALESCE(ups.show_points_publicly, true) = true
- GROUP BY c2.author_id
+ GROUP BY ca.author_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
  c.created_at, c.view_count, c.comment_count,
