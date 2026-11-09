@@ -10,15 +10,16 @@
 	import { goto } from '$app/navigation';
 	import { invalidateAll } from '$app/navigation';
 	import { t, i18n } from '#lib/i18n/index.js';
-	import { ArrowLeft, Eye, MessageSquare, MoreVertical, Pencil, Save, Trash2, X } from 'lucide-svelte';
+	import { ArrowLeft, Bookmark, Eye, MessageSquare, MoreVertical, Pencil, Save, Share2, Trash2, X } from 'lucide-svelte';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import ThreadEmbedCard from '#lib/components/thread/ThreadEmbedCard.svelte';
 	import ReplyThread from '#lib/components/forum/ReplyThread.svelte';
-	import ReactionRail from '#lib/components/blog/ReactionRail.svelte';
+	import VoteRail from '#lib/components/forum/VoteRail.svelte';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
 	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
 	import { Menu, MenuItem, MenuSeparator } from '#lib/components/ui/index.js';
 	import { api } from '#lib/api/client.js';
+	import { getViewerState, updateViewerState } from '#lib/api/viewerState.js';
 	import { commentsApi, commentsConversation, listAllComments } from '#lib/components/forum/conversationApi.js';
 	import { tiptapBodyToHtml, tiptapToHtml, type TipTapDoc } from '#lib/tiptap/serialize.js';
 	import { relativeTime } from '#lib/feed/time.js';
@@ -65,10 +66,13 @@
 	const deletedUserIds = $derived(
 		data.deletedUserIds ? new Set<string>(data.deletedUserIds) : undefined
 	);
-	// contents.body stores raw TipTap JSON (the forum API base64-encodes its
-	// own DTO, but the contents endpoint returns the column as-is). Parse
-	// raw JSON first; fall back to base64 for rows stored that way.
+	// contents.body_html is the rendered field for article rows; contents.body
+	// is the raw editor source and holds different formats by row — TipTap
+	// JSON (composer/anchors), base64 TipTap (legacy), or plain text (older
+	// rows). Prefer body_html, then decode in that order; a plain-text body
+	// is paragraph-wrapped so it still renders formatted.
 	const bodyHtml = $derived.by(() => {
+		if (article.body_html) return article.body_html;
 		if (!article.body) return '';
 		const opts = {
 			deletedUserIds,
@@ -76,9 +80,13 @@
 		};
 		try {
 			return tiptapToHtml(JSON.parse(article.body) as TipTapDoc, opts);
-		} catch {
-			return tiptapBodyToHtml(article.body, opts);
-		}
+		} catch { /* not raw JSON — try base64/plain text */ }
+		const decoded = tiptapBodyToHtml(article.body, opts);
+		if (decoded) return decoded;
+		return article.body
+			.split(/\n{2,}/)
+			.map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+			.join('');
 	});
 	// Content threads (a contents row that IS its canonical article) render
 	// only the opening ~80 words of the body + a "Read full {type}" CTA —
@@ -110,6 +118,16 @@
 			.replace(/&[a-z]+;/gi, ' ')
 			.replace(/\s+/g, ' ')
 			.trim();
+	}
+
+	/** Escape text for interpolation into the plain-text body fallback. */
+	function escapeHtml(s: string): string {
+		return s
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#39;');
 	}
 
 	const authorLabel = $derived(article.author_name ?? article.author_username ?? t('forum.member', 'Member'));
@@ -199,6 +217,54 @@
 			return;
 		}
 		await goto('/thread');
+	}
+
+	// Bookmark + share — same affordances as the formal forum rail, backed
+	// by the contents bookmark endpoints (/content/{id}/bookmark).
+	let bookmarked = $state(false);
+	let bookmarkCount = $state(untrack(() => data.article.bookmark_count ?? 0));
+	let bookmarking = $state(false);
+	let shared = $state(false);
+
+	$effect(() => {
+		if (!data.authed || !article.id) return;
+		getViewerState(article.id).then((state) => {
+			bookmarked = state.bookmarked;
+		});
+	});
+
+	async function toggleBookmark() {
+		if (bookmarking || !data.authed) return;
+		bookmarking = true;
+		const was = bookmarked;
+		bookmarked = !was;
+		bookmarkCount = Math.max(0, bookmarkCount + (was ? -1 : 1));
+		const res = was
+			? await api.delete(`/content/${article.id}/bookmark`)
+			: await api.post(`/content/${article.id}/bookmark`, {});
+		if (res.error) {
+			bookmarked = was;
+			bookmarkCount = Math.max(0, bookmarkCount + (was ? 1 : -1));
+		} else {
+			updateViewerState(article.id, { bookmarked: !was });
+		}
+		bookmarking = false;
+	}
+
+	async function shareThread() {
+		const url = canonical;
+		const shareData = { title: article.title, url };
+		try {
+			if (navigator.share) {
+				await navigator.share(shareData);
+				return;
+			}
+		} catch {
+			// user dismissed the native sheet — fall through to clipboard.
+		}
+		await navigator.clipboard.writeText(url);
+		shared = true;
+		setTimeout(() => (shared = false), 2000);
 	}
 </script>
 
@@ -401,20 +467,57 @@
 			</div>
 		{/if}
 
-		<!-- Reaction rail — the §125 content rail (love / comments / share /
-		     bookmark / tip); fixed bottom bar below sm like the forum page. -->
-		<div class="mt-6 border-t border-[var(--color-border)] pt-2">
-			<ReactionRail
-				contentId={article.id}
-				voteScore={article.reaction_count ?? 0}
-				commentCount={article.comment_count ?? 0}
-				authed={data.authed}
-				horizontal
-				bottom
-				authorUsername={article.author_username}
-				authorId={article.author_id}
-				authorName={authorLabel}
-			/>
+		<!-- Reaction rail — identical to the formal forum thread rail:
+		     up/down vote, reply count, bookmark, share. Backed threads vote
+		     through /content/{id}/vote; fixed bottom bar below sm. -->
+		<div class="fixed inset-x-0 bottom-0 z-50 flex w-full flex-row items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] text-[var(--color-muted)] backdrop-blur sm:relative sm:z-30 sm:mt-6 sm:rounded-[var(--radius-card)] sm:border sm:bg-[var(--color-surface)] sm:py-2 sm:pb-2 sm:backdrop-blur-none">
+			<div class="flex flex-1 items-center justify-center">
+				<VoteRail
+					entityType="thread"
+					entityId={article.id}
+					authorId={article.author_id}
+					score={article.vote_score ?? 0}
+					layout="rail"
+					authed={data.authed}
+					backend="content"
+				/>
+			</div>
+			<a
+				href="#replies"
+				class="flex flex-1 items-center justify-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+				aria-label={t('forum.replies', 'Replies')}
+			>
+				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]">
+					<MessageSquare size={18} />
+				</span>
+				<span class="text-sm font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{article.comment_count ?? 0}</span>
+			</a>
+			<div class="h-5 w-px bg-[var(--color-border)]"></div>
+
+			<button
+				type="button"
+				onclick={toggleBookmark}
+				disabled={bookmarking}
+				class="flex flex-1 items-center justify-center transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+				aria-pressed={bookmarked}
+				title={data.authed ? (bookmarked ? t('forum.remove_bookmark', 'Remove bookmark') : t('forum.add_bookmark', 'Bookmark this discussion')) : t('forum.login_to_bookmark', 'Log in to bookmark')}
+			>
+				<span class="grid h-9 w-9 place-items-center rounded-full transition-colors {bookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary-text)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]'}">
+					<Bookmark size={18} fill={bookmarked ? 'currentColor' : 'none'} />
+				</span>
+				<span class="text-sm font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{bookmarkCount > 0 ? bookmarkCount : ''}</span>
+			</button>
+			<button
+				type="button"
+				onclick={shareThread}
+				class="flex flex-1 items-center justify-center text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+				aria-label={t('forum.share', 'Share')}
+			>
+				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary-text)]">
+					<Share2 size={18} />
+				</span>
+				{#if shared}<span class="text-sm text-[var(--color-success)]">{t('forum.shared', 'Copied!')}</span>{/if}
+			</button>
 		</div>
 		{#if deleteError}
 			<p class="mt-2 text-sm text-[var(--color-error)]">{deleteError}</p>
@@ -424,10 +527,6 @@
 	<!-- Replies — the unified conversation (§49 comments via the §08 reply
 	     UI). Discussion happens here, not on the entity page. -->
 	<div id="replies" class="mt-6">
-		<h2 class="mb-3 flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<MessageSquare size={18} />
-			{t('thread.discussions', 'Discussions')}
-		</h2>
 		{#if data.commentsLoadError}
 			<p class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-muted)]">
 				{t('comments.load_error', 'Could not load comments right now.')}

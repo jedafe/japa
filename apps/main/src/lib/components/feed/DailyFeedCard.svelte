@@ -64,9 +64,13 @@
 		/** For You/Following feeds open /thread/{slug} by default (thread-
 		 *  rename spec); share URLs stay canonical. */
 		threadDefault?: boolean;
+		/** Render the up/down VoteRail instead of the like button — /thread
+		 *  cards are all threads, so they take the forum rail (forum threads
+		 *  vote via forum_threads.id; backed threads via contents.id). */
+		voteRail?: boolean;
 	}
 
-	let { item, threadDefault = false }: Props = $props();
+	let { item, threadDefault = false, voteRail = false }: Props = $props();
 
 	let reported = $state(false);
 	let reportOpen = $state(false);
@@ -369,6 +373,16 @@
 						score={item.vote_score ?? 0}
 						layout="horizontal"
 						{authed}
+					/>
+				{:else if voteRail}
+					<VoteRail
+						entityType="thread"
+						entityId={item.id}
+						authorId={item.author_id}
+						score={item.vote_score ?? 0}
+						layout="horizontal"
+						{authed}
+						backend="content"
 					/>
 				{:else}
 					<ReactionButton

@@ -25,8 +25,11 @@
 		 *  /thread/{slug} — the embed card there links back to the
 		 *  canonical content page. Other surfaces keep canonical links. */
 		threadDefault?: boolean;
+		/** Daily-style cards render the up/down VoteRail for every item
+		 *  (/thread index — every card is a thread). */
+		voteRail?: boolean;
 	}
-	let { item, style, layout, threadDefault = false }: Props = $props();
+	let { item, style, layout, threadDefault = false, voteRail = false }: Props = $props();
 
 	// Content-type pill label. Resolved via i18n with a content_type.{value}
 	// key; falls back to a humanized form of the raw type for unknown types.
@@ -232,7 +235,7 @@
 {/snippet}
 
 {#if style === 'daily'}
-	<DailyFeedCard {item} {threadDefault} />
+	<DailyFeedCard {item} {threadDefault} {voteRail} />
 {:else if layout === 'grid-cell' || style === 'grid'}
 	<!-- grid card (2-col cell) OR full-width grid item in a stream -->
 	<div

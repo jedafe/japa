@@ -28,6 +28,10 @@ export interface ContentArticle {
 	comment_count: number;
 	share_count: number;
 	reaction_count: number;
+	/** Up/down vote score on the unified thread rail (/content/{id}/vote). */
+	vote_score?: number;
+	upvote_count?: number;
+	downvote_count?: number;
 	published_at: string;
 	created_at: string;
 	updated_at: string;

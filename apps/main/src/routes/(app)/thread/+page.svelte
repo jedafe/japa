@@ -199,7 +199,7 @@
 				<div class="flex flex-col gap-3">
 					{#each featuredItems as item (item.id)}
 						<!-- Featured threads use the same forum card as the thread list. -->
-						<FeedCard {item} style="daily" layout="stream" threadDefault />
+						<FeedCard {item} style="daily" layout="stream" threadDefault voteRail />
 					{/each}
 				</div>
 			{/if}
@@ -222,7 +222,7 @@
 			{:else}
 				<div class="flex flex-col gap-3">
 					{#each allItems as item (item.id)}
-						<FeedCard {item} style="daily" layout="stream" threadDefault />
+						<FeedCard {item} style="daily" layout="stream" threadDefault voteRail />
 					{/each}
 				</div>
 				{#if !exhausted}

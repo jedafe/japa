@@ -33,8 +33,9 @@
 		authed: boolean;
 		/** Vote backend — 'forum' hits /thread/{id}/vote (default); 'comments'
 		 *  hits /comments/{id}/vote for §49 entity conversations
-		 *  (thread-rename spec: ReplyThread renders every discussion). */
-		backend?: 'forum' | 'comments';
+		 *  (thread-rename spec: ReplyThread renders every discussion);
+		 *  'content' hits /content/{id}/vote for contents-backed threads. */
+		backend?: 'forum' | 'comments' | 'content';
 	}
 	let {
 		entityType,
@@ -124,12 +125,16 @@
 				? next === 0
 					? await api.delete<unknown>(`/comments/${id}/vote`)
 					: await api.post<ForumVote>(`/comments/${id}/vote`, { value: next })
-				: next === 0
-					? await api.delete<unknown>(`/thread/${id}/vote?entity_type=${encodeURIComponent(entityType)}`)
-					: await api.post<ForumVote>(`/thread/${id}/vote`, {
-							entity_type: entityType,
-							value: next
-						});
+				: backend === 'content'
+					? next === 0
+						? await api.delete<unknown>(`/content/${id}/vote`)
+						: await api.post<ForumVote>(`/content/${id}/vote`, { value: next })
+					: next === 0
+						? await api.delete<unknown>(`/thread/${id}/vote?entity_type=${encodeURIComponent(entityType)}`)
+						: await api.post<ForumVote>(`/thread/${id}/vote`, {
+								entity_type: entityType,
+								value: next
+							});
 		pending = false;
 
 		if (res.error) {
