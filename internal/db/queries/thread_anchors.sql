@@ -20,7 +20,7 @@ WHERE a.content_id = @content_id;
 -- GetWikiPageAnchorInfo's JOIN). Live threads only.
 SELECT a.entity_key
 FROM thread_anchors a
-JOIN wiki_pages wp ON wp.id = a.entity_key::uuid
+JOIN wiki_pages wp ON wp.id::text = a.entity_key
 JOIN contents c ON c.id = a.content_id AND c.deleted_at IS NULL
 WHERE a.entity_type = 'wiki_page' AND wp.space_id = @space_id;
 
@@ -87,9 +87,10 @@ WHERE id = @id AND deleted_at IS NULL;
 -- Retitle a minted thread row whose entity renamed since mint — applied
 -- only when the stored title still carries a generated form (the " (A
 -- Thread)" suffix or a legacy "Discussing …" template), so author-edited
--- titles are never clobbered.
+-- titles are never clobbered. The title compare-and-swap keeps a
+-- concurrent author PATCH from being overwritten by a stale heal read.
 UPDATE contents SET title = @title, updated_at = now()
-WHERE id = @id AND deleted_at IS NULL;
+WHERE id = @id AND title = @old_title AND deleted_at IS NULL;
 
 -- name: GetThreadParentByThreadID :one
 -- The content a §49 linked-discussion row was started about — used by

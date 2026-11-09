@@ -12,7 +12,7 @@ UPDATE contents c
 SET title = d.new_title,
     updated_at = now()
 FROM thread_anchors a
-JOIN wiki_pages wp ON wp.id = a.entity_key::uuid
+JOIN wiki_pages wp ON wp.id::text = a.entity_key
 JOIN spaces s ON s.id = wp.space_id
 CROSS JOIN LATERAL (
     SELECT (
@@ -63,5 +63,5 @@ CROSS JOIN LATERAL (
              ELSE s.name || ' ' || REPLACE(wp.title, '{name}', s.name)
         END AS display_title
 ) d
-WHERE a.entity_type = 'wiki_page' AND wp.id = a.entity_key::uuid
+WHERE a.entity_type = 'wiki_page' AND wp.id::text = a.entity_key
   AND a.entity_title <> d.display_title;

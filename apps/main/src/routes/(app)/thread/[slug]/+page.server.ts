@@ -277,29 +277,33 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 		}
 	}
 
-	const allDeletedUserIds = new Set<string>();
-	if (deletedUserIds) for (const id of deletedUserIds) allDeletedUserIds.add(id);
-	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
-	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
-
 	// Wiki-anchored threads: fetch the page so the view renders its
 	// formatted ~150-word opening — the anchor's stored entity_summary is
 	// flat text, and an empty-body thread has nothing else formatted to
-	// show. Best-effort: the flat excerpt is the fallback.
+	// show. Best-effort: the flat excerpt is the fallback. The envelope's
+	// deleted_user_ids covers mentions inside the page prose too.
+	const allDeletedUserIds = new Set<string>();
+	if (deletedUserIds) for (const id of deletedUserIds) allDeletedUserIds.add(id);
+	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
 	let wikiPage: WikiPage | null = null;
 	if (article.thread_anchor?.entity_type === 'wiki_page' && article.thread_anchor.entity_url) {
 		const m = /^\/wiki\/([^/?#]+)\/([^/?#]+)/.exec(article.thread_anchor.entity_url);
 		if (m) {
 			try {
-				wikiPage = await apiGet<WikiPage>(
+				const env = await apiGetEnvelope<WikiPage>(
 					ctx,
 					`/wiki/${encodeURIComponent(m[1])}/${encodeURIComponent(m[2])}`
 				);
+				wikiPage = env.data ?? null;
+				if (env.deleted_user_ids) {
+					for (const id of env.deleted_user_ids) allDeletedUserIds.add(id);
+				}
 			} catch {
 				wikiPage = null;
 			}
 		}
 	}
+	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
 
 	return {
 		kind: 'embed' as const,

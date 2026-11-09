@@ -532,6 +532,18 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 	// their thread, and content `discussion` rows resolve to themselves —
 	// they are their own thread, so "start a conversation" is a no-op link.
 	if err == nil {
+		// A `discussion` row resolving to itself has no backing anchor —
+		// nothing below applies to it: no entity fields to refresh (the
+		// upsert would insert a junk entity_key=content_id self-anchor),
+		// no minted title to heal (it's user-authored, and would otherwise
+		// append " (A Thread)" on every resolve).
+		selfResolving := false
+		if entityType == "content" {
+			var pid pgtype.UUID
+			if scanErr := pid.Scan(entityKey); scanErr == nil {
+				selfResolving = pid == existing.ContentID
+			}
+		}
 		// Heal drifted entity fields — page/article renames and revised
 		// excerpts land here because the mint hooks (wiki approval, content
 		// publish, lazy mint) re-enter CreateAnchor on every change. The
@@ -539,8 +551,8 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 		// keeps content_id. Best-effort: a describe failure never blocks
 		// the get.
 		if desc, dErr := s.describeEntity(ctx, entityType, entityKey); dErr == nil {
-			if existing.EntityURL != desc.URL || existing.EntityTitle != desc.Title ||
-				!summaryEqual(existing.EntitySummary, desc.Summary) {
+			if !selfResolving && (existing.EntityURL != desc.URL || existing.EntityTitle != desc.Title ||
+				!summaryEqual(existing.EntitySummary, desc.Summary)) {
 				if _, uErr := s.write.CreateThreadAnchor(ctx, gen.CreateThreadAnchorParams{
 					ContentID:     existing.ContentID,
 					EntityType:    entityType,
@@ -564,12 +576,13 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 			//   - space: the thread files under the parent's primary
 			//     space — a public→public re-file (UpdateContentSpaces)
 			//     leaves it under the stale space until this re-homes it.
-			if tRow, tErr := s.read.GetContentByID(ctx, existing.ContentID); tErr == nil {
+			if tRow, tErr := s.read.GetContentByID(ctx, existing.ContentID); !selfResolving && tErr == nil {
 				expectedTitle := anchorThreadTitle(entityType, desc.Title)
 				if tRow.Title != expectedTitle && isGeneratedAnchorTitle(tRow.Title) {
 					if uErr := s.write.SetThreadRowTitle(ctx, gen.SetThreadRowTitleParams{
-						ID:    existing.ContentID,
-						Title: expectedTitle,
+						ID:       existing.ContentID,
+						Title:    expectedTitle,
+						OldTitle: tRow.Title,
 					}); uErr != nil {
 						slog.Warn("comments: anchor thread retitle failed",
 							"entity_key", entityKey, "error", uErr)

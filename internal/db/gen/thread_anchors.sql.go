@@ -337,7 +337,7 @@ func (q *Queries) ListContentAnchorsBySpace(ctx context.Context, spaceID pgtype.
 const listWikiAnchorsBySpace = `-- name: ListWikiAnchorsBySpace :many
 SELECT a.entity_key
 FROM thread_anchors a
-JOIN wiki_pages wp ON wp.id = a.entity_key::uuid
+JOIN wiki_pages wp ON wp.id::text = a.entity_key
 JOIN contents c ON c.id = a.content_id AND c.deleted_at IS NULL
 WHERE a.entity_type = 'wiki_page' AND wp.space_id = $1
 `
@@ -386,19 +386,21 @@ func (q *Queries) SetThreadRowSpaceID(ctx context.Context, arg SetThreadRowSpace
 
 const setThreadRowTitle = `-- name: SetThreadRowTitle :exec
 UPDATE contents SET title = $1, updated_at = now()
-WHERE id = $2 AND deleted_at IS NULL
+WHERE id = $2 AND title = $3 AND deleted_at IS NULL
 `
 
 type SetThreadRowTitleParams struct {
-	Title string      `json:"title"`
-	ID    pgtype.UUID `json:"id"`
+	Title    string      `json:"title"`
+	ID       pgtype.UUID `json:"id"`
+	OldTitle string      `json:"old_title"`
 }
 
 // Retitle a minted thread row whose entity renamed since mint — applied
 // only when the stored title still carries a generated form (the " (A
 // Thread)" suffix or a legacy "Discussing …" template), so author-edited
-// titles are never clobbered.
+// titles are never clobbered. The title compare-and-swap keeps a
+// concurrent author PATCH from being overwritten by a stale heal read.
 func (q *Queries) SetThreadRowTitle(ctx context.Context, arg SetThreadRowTitleParams) error {
-	_, err := q.db.Exec(ctx, setThreadRowTitle, arg.Title, arg.ID)
+	_, err := q.db.Exec(ctx, setThreadRowTitle, arg.Title, arg.ID, arg.OldTitle)
 	return err
 }

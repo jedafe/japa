@@ -5,7 +5,7 @@ UPDATE contents c
 SET title = 'Discussing ' || d.display_title,
     updated_at = now()
 FROM thread_anchors a
-JOIN wiki_pages wp ON wp.id = a.entity_key::uuid
+JOIN wiki_pages wp ON wp.id::text = a.entity_key
 JOIN spaces s ON s.id = wp.space_id
 CROSS JOIN LATERAL (
     SELECT (

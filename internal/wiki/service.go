@@ -1319,7 +1319,7 @@ func (s *Service) lazyCategoryPage(ctx context.Context, userID, spaceID pgtype.U
 		WikiPageDTO: WikiPageDTO{
 			SpaceID:   spaceID.String(),
 			Slug:      cat.Slug,
-			Title:     substituteTemplateLabel(cat.Label, spaceName),
+			Title:     pageDisplayTitle(spaceName, substituteTemplateLabel(cat.Label, spaceName)),
 			Category:  cat.Category,
 			IsActive:  true,
 			SpaceSlug: spaceSlug,
