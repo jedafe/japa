@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"regexp"
 	"slices"
 	"sort"
@@ -2321,15 +2322,40 @@ func parseScoringConfig(raw []byte) (ScoringConfig, error) {
 }
 
 // parseFieldScoringConfig unmarshals the config JSONB from custom_fields.
-// Returns a zero-value config if the JSONB is empty or malformed.
+// Keys tolerate per-key malformation: the strict whole-struct parse would
+// zero everything on one mistyped key — a bad weight would silently drop a
+// well-formed visible_if/jump (un-hiding the field for validation and
+// scoring) and the sibling scoring keys with it. Logic keys parse via
+// formlogic's tolerant reader; scoring keys are extracted individually.
 func parseFieldScoringConfig(raw []byte) FieldScoringConfig {
 	if len(raw) == 0 {
 		return FieldScoringConfig{}
 	}
 
-	var cfg FieldScoringConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return FieldScoringConfig{}
+	rules := formlogic.ParseFieldRules(raw)
+	cfg := FieldScoringConfig{VisibleIf: rules.VisibleIf, Jump: rules.Jump}
+
+	var probe map[string]any
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return cfg
+	}
+
+	if w, ok := probe["weight"].(float64); ok {
+		cfg.Weight = w
+	}
+
+	if d, ok := probe["dimension"].(string); ok {
+		cfg.Dimension = d
+	}
+
+	if os, ok := probe["option_scores"].(map[string]any); ok {
+		cfg.OptionScores = make(map[string]int, len(os))
+
+		for k, v := range os {
+			if n, ok := v.(float64); ok && n == math.Trunc(n) {
+				cfg.OptionScores[k] = int(n)
+			}
+		}
 	}
 
 	return cfg

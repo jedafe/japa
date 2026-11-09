@@ -435,6 +435,37 @@ func TestParseFieldScoringConfig(t *testing.T) {
 			t.Errorf("parseFieldScoringConfig(malformed) weight = %v, want 0", cfg.Weight)
 		}
 	})
+
+	// A mistyped scoring key must not zero the well-formed logic keys or
+	// sibling scoring keys — the old strict whole-struct parse silently
+	// un-hid gated fields and dropped their dimension/jump with it.
+	t.Run("mistyped scoring key keeps logic keys", func(t *testing.T) {
+		t.Parallel()
+
+		raw := []byte(`{"weight":"oops","dimension":"financial","option_scores":{"a":3,"b":2.5},"visible_if":{"all":[{"field":"x","op":"eq","value":1}]},"jump":{"step":"s2"}}`)
+
+		cfg := parseFieldScoringConfig(raw)
+
+		if cfg.Weight != 0 {
+			t.Errorf("weight = %v, want 0 (dropped)", cfg.Weight)
+		}
+
+		if cfg.Dimension != "financial" {
+			t.Errorf("dimension = %q, want financial (preserved)", cfg.Dimension)
+		}
+
+		if len(cfg.OptionScores) != 1 || cfg.OptionScores["a"] != 3 {
+			t.Errorf("option_scores = %v, want {a:3} (fractional dropped, integer kept)", cfg.OptionScores)
+		}
+
+		if cfg.VisibleIf == nil {
+			t.Error("visible_if lost to a scoring-key parse failure")
+		}
+
+		if cfg.Jump == nil || cfg.Jump.Step != "s2" {
+			t.Error("jump lost to a scoring-key parse failure")
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
