@@ -8,7 +8,7 @@ import type { PublicOrganization, OrgMember, ProfilePost, OrgMedia, ComparisonLi
 const JOB_EDITOR_ROLES = new Set(['owner', 'admin', 'editor']);
 
 /**
- * Public organization profile at /org/[slug] — SSR, indexable.
+ * Organization profile at /org/[slug] — auth-gated via org/+layout.server.ts.
  *
  * Fetches the org header, members, the org's published content (Posts tab),
  * and the org's media (Media tab). The right-sidebar (members list + follow

@@ -4,10 +4,13 @@ import { apiContext, apiGet, apiList, ApiError } from '#lib/server/api.js';
 import type { PublicUser } from '#lib/types/index.js';
 
 /**
- * Users directory at /users — public, SSR, indexable. Lists active,
+ * Users directory at /users — auth-gated, SSR. Lists active,
  * search-indexable users with follower/following counts. Each card links to
  * the user profile at /u/[username]. Search filters by username or
  * display_name server-side. profile_type filter is optional.
+ *
+ * Guests are redirected to /login and return here after signing in — the
+ * same gate the /org tree uses (org/+layout.server.ts).
  *
  * sort is whitelisted server-side: followers (default) | newest | oldest |
  * name. Unknown values degrade to the default ordering.
@@ -22,6 +25,10 @@ const PAGE_SIZES = new Set([12, 24, 48, 96]);
 const SORT_KEYS = new Set(['followers', 'newest', 'oldest', 'name']);
 
 export const load: PageServerLoad = async (event) => {
+	if (!event.locals.user) {
+		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
+	}
+
 	const ctx = apiContext(event);
 	const q = (event.url.searchParams.get('q') ?? '').trim();
 	const profileType = (event.url.searchParams.get('profile_type') ?? '').trim();

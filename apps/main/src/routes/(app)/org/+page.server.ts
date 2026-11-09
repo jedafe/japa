@@ -11,7 +11,8 @@ import type {
 } from '#lib/types/index.js';
 
 /**
- * Organizations index at /org — public, SSR, indexable. Lists every
+ * Organizations index at /org — auth-gated via org/+layout.server.ts (guests
+ * redirect to /login). Lists every
  * platform organization with member/follower counts and verification state.
  * Each card links to the org profile at /org/[slug]. Search filters by
  * name or slug. org_type and verified filters are optional.
