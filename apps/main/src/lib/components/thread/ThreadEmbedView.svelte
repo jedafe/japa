@@ -143,9 +143,10 @@
 			: ''
 	);
 	// Empty-body threads (minted anchors, linked discussions) fall back to the
-	// embed excerpt so the body section still carries a description.
+	// embed excerpt so the body section still carries the entity's context —
+	// skipped when the parent-article preview block already supplies it.
 	const fallbackExcerpt = $derived(
-		!isContentThread && !bodyHtml ? (data.embed?.excerpt ?? article.excerpt ?? '') : ''
+		!isContentThread && !bodyHtml && !parentPreviewHtml ? (data.embed?.excerpt ?? article.excerpt ?? '') : ''
 	);
 
 	/** Strip HTML tags/entities to plain text (body_html → excerpt source). */

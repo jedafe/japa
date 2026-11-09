@@ -62,16 +62,10 @@ new_threads AS (
         'discussion',
         'Discussing: ' || e.title,
         'thread-' || replace(e.id::text, '-', ''),
-        -- Same body the in-process minter writes: the article summary
-        -- plus a conversation prompt (TipTap doc, raw JSON in `body`).
-        jsonb_build_object('type', 'doc', 'content', jsonb_build_array(
-            jsonb_build_object('type', 'paragraph', 'content', jsonb_build_array(
-                jsonb_build_object('type', 'text', 'text',
-                    COALESCE(NULLIF(btrim(e.meta_description), ''), 'Discussing: ' || e.title)))),
-            jsonb_build_object('type', 'paragraph', 'content', jsonb_build_array(
-                jsonb_build_object('type', 'text', 'text',
-                    'Questions, experiences, and tips about ' || e.title || ' — join the discussion below.')))
-        ))::text,
+        -- The thread body starts empty — the entity excerpt + embed card
+        -- supply the default context and the author adds text via inline
+        -- edit. No generated prose.
+        '',
         '',
         'published',
         e.visibility,

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
 	"strings"
 
@@ -321,7 +320,10 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 			return entityDescriptor{}, err
 		}
 
-		summary := "Discussing a page in the " + page.SpaceName + " wiki."
+		summary := strings.TrimSpace(page.Excerpt)
+		if summary == "" {
+			summary = "Discussing a page in the " + page.SpaceName + " wiki."
+		}
 
 		return entityDescriptor{
 			URL:     "/wiki/" + page.SpaceSlug + "/" + page.PageSlug,
@@ -332,27 +334,6 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 	default:
 		return entityDescriptor{}, fmt.Errorf("unsupported entity_type %q: %w", entityType, errpkg.ErrInvalid)
 	}
-}
-
-// anchorBodyDoc renders an anchor thread's body as a TipTap document: the
-// entity description paragraph, then a prompt line that invites
-// conversation about the entity.
-func anchorBodyDoc(description, title string) string {
-	text := func(s string) map[string]any {
-		return map[string]any{
-			"type":    "paragraph",
-			"content": []any{map[string]any{"type": "text", "text": s}},
-		}
-	}
-	doc := map[string]any{
-		"type":    "doc",
-		"content": []any{text(description), text("Questions, experiences, and tips about " + title + " — join the discussion below.")},
-	}
-	b, err := json.Marshal(doc)
-	if err != nil {
-		return ""
-	}
-	return string(b)
 }
 
 // CreateAnchor get-or-creates a thread anchor for an entity. The backing
@@ -382,18 +363,10 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 
 	title := "Discussing: " + desc.Title
 
-	// The thread body carries the entity's real description plus a
-	// conversation prompt — /thread/{slug} renders it as the body section,
-	// so anchor threads aren't empty shells (unified-discussion spec).
-	// body_html is supplied explicitly: createContent would otherwise run
-	// the TipTap JSON through the markdown renderer and store the doc as
-	// one literal-JSON paragraph.
-	body, bodyHTML := "", ""
-	if desc.Summary != nil && *desc.Summary != "" {
-		body = anchorBodyDoc(*desc.Summary, desc.Title)
-		bodyHTML = "<p>" + html.EscapeString(*desc.Summary) + "</p>" +
-			"<p>" + html.EscapeString("Questions, experiences, and tips about "+desc.Title+" — join the discussion below.") + "</p>"
-	}
+	// The thread body starts empty — /thread/{slug} renders the entity's
+	// excerpt (embed card / parent-article preview) as the default context,
+	// and the author may inline-edit to add their own text. No generated
+	// prose is written into the post body.
 
 	// Same uniqueness trick as StartConversation: the hash input carries the
 	// entity coordinates + a fresh UUID so repeat anchors can't collide on
@@ -413,8 +386,6 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 		AuthorID:    userID,
 		ContentType: "discussion",
 		Title:       title,
-		Body:        body,
-		BodyHtml:    bodyHTML,
 		ContentHash: &contentHash,
 		SpaceID:     desc.SpaceID,
 		GeoSpaceID:  desc.GeoSpaceID,

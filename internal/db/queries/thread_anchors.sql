@@ -38,11 +38,27 @@ LIMIT 1;
 
 -- name: GetWikiPageAnchorInfo :one
 -- Display fields for binding a thread anchor to a wiki page: the page's
--- space slug + page slug build the canonical /wiki/{space}/{page} URL.
--- Only public, active spaces may bind a public thread — anchoring a page
--- from a private/inactive space would leak its title via /thread/{slug}.
-SELECT wp.id, wp.title, wp.slug AS page_slug, s.slug AS space_slug, s.name AS space_name
+-- space slug + page slug build the canonical /wiki/{space}/{page} URL, and
+-- the latest revision's summary/extracted text supplies the thread's
+-- default excerpt. Only public, active spaces may bind a public thread —
+-- anchoring a page from a private/inactive space would leak its title
+-- via /thread/{slug}.
+SELECT wp.id, wp.title, wp.slug AS page_slug, s.slug AS space_slug, s.name AS space_name,
+       COALESCE(lr.excerpt, '') AS excerpt
 FROM wiki_pages wp
 JOIN spaces s ON s.id = wp.space_id AND s.deleted_at IS NULL
     AND s.visibility = 'public' AND s.status = 'active'
+LEFT JOIN LATERAL (
+    SELECT COALESCE(wr.summary,
+                    left(btrim(COALESCE(x.excerpt_text, '')), 200), '') AS excerpt
+    FROM wiki_revisions wr
+    LEFT JOIN LATERAL (
+        SELECT string_agg(t.txt #>> '{}', ' ') AS excerpt_text
+        FROM jsonb_path_query(wr.content, '$.**.text ? (@.type() == "string")') AS t(txt)
+    ) x ON true
+    WHERE wr.wiki_page_id = wp.id AND wr.deleted_at IS NULL
+      AND wr.status = 'approved'
+    ORDER BY wr.created_at DESC
+    LIMIT 1
+) lr ON true
 WHERE wp.id = @id AND wp.deleted_at IS NULL;
