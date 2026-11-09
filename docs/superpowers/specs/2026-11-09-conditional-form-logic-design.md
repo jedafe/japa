@@ -19,8 +19,14 @@ questions are fully excluded from the score (numerator and denominator).
 
 Approved decisions: branching = field visibility + option-driven follow-ups +
 step jumps; scope = all §06 forms; skipped questions excluded from scoring;
-jump conflicts resolve as union-of-intervals; `option_scores` is stripped from
-public payloads in the same change.
+jump conflicts resolve as union-of-intervals.
+
+Correction (found during implementation planning): `publicFieldDTOs` in
+`internal/assessment/handlers.go` already whitelists field config to
+`{dimension}` — `option_scores` never leaves the server today, so there is no
+leak to fix. The actual work inverts: `visible_if` and `jump` must be **added**
+to that whitelist (and to `scoring_config.step_rules` in the public response)
+so clients can evaluate them.
 
 ## Goals
 
@@ -147,14 +153,23 @@ Applied at three points:
    the submission answers (defense-in-depth: stale client-side answers and
    crafted payloads cannot score hidden questions; skipped ⇒ excluded from
    both numerator and denominator, matching today's unanswered behavior).
+4. **Field config write path (new)** — `fieldRequest` gains
+   `Config *json.RawMessage` (PATCH three-state: absent = untouched, present =
+   full config replace); `UpdateCustomField`/`CreateCustomField` SQL gain a
+   `config` param (sqlc regen). Today no API can write field config —
+   weights/`option_scores` are migration-seeded only — so this path is
+   required for the admin rule editor (and finally lets admins tune scoring
+   config without migrations). The admin form-GET `fieldJSON` starts
+   returning the raw `config` object so the editor can merge keys.
 
-**`option_scores` strip (in scope):** the public form DTO currently serializes
-`option_scores` to clients despite the "internal" intent — scoring weights are
-user-visible today. Add a `public` flag (or a `SanitizeForPublic` step) on the
-assessment DTO builder and the public form-embed field serializer so
-`option_scores` is dropped from `GET /api/v1/assessment` and the public form
-payload; admin serializers (`/admin/assessment/form`, form-builder field
-reads) keep it. `visible_if` and `jump` stay public — clients need them.
+5. **Serialization** — `visible_if`/`jump` ride inside the existing `config`
+   JSONB to clients. Two whitelist points need extending:
+   `publicFieldDTOs` (assessment) ships `config: {dimension}` today → add
+   `visible_if`, `jump` (keeping `weight`/`option_scores` private); the public
+   assessment response ships `scoring_config: {max_score, thresholds}` → add
+   `step_rules`. The embed/generic-form field serializer gains the same
+   `config: {visible_if, jump}` whitelist; `form_steps.config` is added to
+   step payloads. **No new routes.**
 
 ## Client changes
 
@@ -215,7 +230,8 @@ Per Rule 1 (spec before code):
 - Go (`internal/formlogic`, `internal/customfields`, `internal/assessment`):
   table tests — every op, `all`/`any` combos, unanswered refs, malformed
   rules, jump intervals/union/chains, hidden-required submit acceptance,
-  hidden-answer score exclusion, `option_scores` absent from public DTO.
+  hidden-answer score exclusion, public-whitelist regression (`visible_if`/
+  `jump` ship; `weight`/`option_scores` stay private).
 - TS (`packages/formlogic`): parity tests driven by a **shared JSON fixture**
   of `(rules, answers) → expected` mirrored by the Go suite so evaluators
   cannot drift.
