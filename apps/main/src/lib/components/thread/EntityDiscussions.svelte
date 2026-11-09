@@ -1,23 +1,23 @@
 <script lang="ts">
-	// Entity discussion block — the 5-comment preview mounted at the bottom
-	// of content singles, wiki pages and tool pages (thread-rename spec).
-	// Discussion itself happens at /thread/{slug}; this block previews the
-	// conversation (Popular | Latest tabs) and links in:
-	//   - "Join this Conversation" when comments exist
-	//   - "Start a conversation" when none do
+	// Entity discussion block — the 5-conversation preview mounted at the
+	// bottom of content singles, wiki pages and tool pages (thread-rename
+	// spec). Renders the SAME ReplyThread/ReplyItem components as
+	// /thread/{slug} — identical format, votes, inline reply/edit/delete —
+	// limited to the first 5 top-level comments (with their children);
+	// /thread/{slug} carries the complete conversation.
 	//
 	// Resolution is uniform via GET /threads/anchor/{entityType}/{entityKey}:
 	//   - 'content'   — the contents row IS its own thread; key = content UUID
 	//   - 'tool'      — key = tool slug; thread minted on demand
 	//   - 'wiki_page' — key = wiki_pages.id; thread minted on demand
-	import { t, i18n } from '#lib/i18n/index.js';
+	import { t } from '#lib/i18n/index.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api } from '#lib/api/client.js';
 	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
-	import { relativeTime } from '#lib/feed/time.js';
-	import { tiptapExcerpt } from '#lib/tiptap/serialize.js';
 	import { MessageSquare, Loader2 } from 'lucide-svelte';
+	import ReplyThread from '#lib/components/forum/ReplyThread.svelte';
+	import { commentsApi, commentsConversation } from '#lib/components/forum/conversationApi.js';
 	import type { Comment } from '#lib/types/index.js';
 
 	interface Props {
@@ -36,6 +36,7 @@
 
 	let tab = $state<'popular' | 'latest'>('popular');
 	let comments = $state<Comment[]>([]);
+	let total = $state(0);
 	let anchor = $state<ThreadAnchor | null>(null);
 	let resolved = $state(false);
 	let loading = $state(true);
@@ -44,14 +45,38 @@
 
 	const sortParam = $derived(tab === 'popular' ? 'top' : 'new');
 	const threadHref = $derived(anchor ? `/thread/${anchor.slug}` : '');
-	const hasConversation = $derived(comments.length > 0 || (anchor?.comment_count ?? 0) > 0);
+	const hasConversation = $derived(comments.length > 0 || total > 0 || (anchor?.comment_count ?? 0) > 0);
+	const currentUserId = $derived((page.data.user as { id?: string } | null)?.id ?? null);
+	const convApi = $derived(anchor?.content_id ? commentsApi(anchor.content_id) : null);
+	const conversation = $derived(
+		anchor?.content_id ? commentsConversation(comments, anchor.content_id) : { replies: [], userVotes: {} }
+	);
 
+	// Fetch the first 5 top-level comments plus every descendant of those
+	// five (parent_id filter, same walk as listAllComments but scoped to
+	// the preview set — depth is capped at 3 server-side).
 	async function loadComments() {
 		if (!anchor?.content_id) return;
-		const res = await api.get<Comment[]>(
+		const res = await api.getEnvelope<Comment[]>(
 			`/content/${anchor.content_id}/comments?sort=${sortParam}&page_size=5`
 		);
-		if (!res.error && res.data) comments = res.data;
+		if (res.error || !res.data) return;
+		const top = res.data;
+		total = (res.envelope as { meta?: { total?: number } } | null)?.meta?.total ?? top.length;
+		const all = [...top];
+		let parents = top.filter((c) => (c.reply_count ?? 0) > 0);
+		while (parents.length > 0) {
+			const next: Comment[] = [];
+			for (const p of parents) {
+				const child = await api.getEnvelope<Comment[]>(
+					`/content/${anchor.content_id}/comments?parent_id=${p.id}&page_size=100`
+				);
+				if (!child.error && child.data) next.push(...child.data);
+			}
+			all.push(...next);
+			parents = next.filter((c) => (c.reply_count ?? 0) > 0);
+		}
+		comments = all;
 	}
 
 	async function load() {
@@ -65,6 +90,7 @@
 			} else if (res.error?.status === 404) {
 				anchor = null;
 				comments = [];
+				total = 0;
 			} else {
 				loadError = res.error?.message ?? t('comments.load_error', 'Could not load discussions');
 			}
@@ -85,11 +111,7 @@
 	// tool/wiki anchors are minted on demand, then deep-linked into /thread.
 	async function startConversation() {
 		if (!(await requireAuthOrRedirect())) return;
-		if (entityType === 'content') {
-			await goto(threadHref);
-			return;
-		}
-		if (anchor) {
+		if (entityType === 'content' || anchor) {
 			await goto(threadHref);
 			return;
 		}
@@ -117,66 +139,60 @@
 				<MessageSquare size={18} />
 				{t('thread.discussions', 'Discussions')}
 			</h2>
-			<div class="ed-tabs" role="tablist">
-				<button
-					type="button"
-					role="tab"
-					aria-selected={tab === 'popular'}
-					class="ed-tab"
-					class:ed-tab-active={tab === 'popular'}
-					onclick={() => changeTab('popular')}
-				>
-					{t('thread.tab.popular', 'Popular')}
-				</button>
-				<button
-					type="button"
-					role="tab"
-					aria-selected={tab === 'latest'}
-					class="ed-tab"
-					class:ed-tab-active={tab === 'latest'}
-					onclick={() => changeTab('latest')}
-				>
-					{t('thread.tab.latest', 'Latest')}
-				</button>
-			</div>
+			{#if comments.length > 0}
+				<div class="ed-tabs" role="tablist">
+					<button
+						type="button"
+						role="tab"
+						aria-selected={tab === 'popular'}
+						class="ed-tab"
+						class:ed-tab-active={tab === 'popular'}
+						onclick={() => changeTab('popular')}
+					>
+						{t('thread.tab.popular', 'Popular')}
+					</button>
+					<button
+						type="button"
+						role="tab"
+						aria-selected={tab === 'latest'}
+						class="ed-tab"
+						class:ed-tab-active={tab === 'latest'}
+						onclick={() => changeTab('latest')}
+					>
+						{t('thread.tab.latest', 'Latest')}
+					</button>
+				</div>
+			{/if}
 		</div>
 
 		{#if loading}
 			<div class="ed-state"><Loader2 size={16} class="animate-spin" /> {t('common.loading', 'Loading')}</div>
 		{:else if loadError}
 			<div class="ed-state ed-error">{loadError}</div>
-		{:else if comments.length > 0}
-			<ul class="ed-list">
-				{#each comments as comment (comment.id)}
-					<li>
-						<a href="{threadHref}#reply-{comment.id}" class="ed-comment">
-							{#if comment.avatar_url && !comment.is_anonymous}
-								<img src={comment.avatar_url} alt="" class="ed-avatar" loading="lazy" />
-							{:else}
-								<span class="ed-avatar ed-avatar-fallback">
-									{(comment.display_name || comment.username || '?').charAt(0).toUpperCase()}
-								</span>
-							{/if}
-							<span class="ed-comment-body">
-								<span class="ed-comment-meta">
-									<span class="ed-author">
-										{comment.is_anonymous
-											? t('forum.anonymous', 'Anonymous')
-											: comment.display_name || comment.username}
-									</span>
-									<span class="ed-time">{relativeTime(comment.created_at, new Date(), i18n.locale)}</span>
-								</span>
-								<span class="ed-excerpt">{tiptapExcerpt(comment.body, 160)}</span>
-								{#if comment.reply_count > 0}
-									<span class="ed-replies">
-										{t('thread.reply_count', '{count} replies').replace('{count}', String(comment.reply_count))}
-									</span>
-								{/if}
-							</span>
-						</a>
-					</li>
-				{/each}
-			</ul>
+		{:else if comments.length > 0 && convApi && anchor}
+			<!-- Same ReplyThread as /thread/{slug} — identical format and
+			     interaction (vote, reply, edit, pin); only the top-level set is
+			     capped at 5 here. Replies refresh via the component's own
+			     invalidateAll after mutations. -->
+			<div class="ed-thread">
+				<ReplyThread
+					replies={conversation.replies}
+					threadId={anchor.content_id}
+					backend={convApi}
+					{authed}
+					canSolve={false}
+					acceptedReplyId={null}
+					userVotes={conversation.userVotes}
+					canModerate={false}
+					{currentUserId}
+					deletedUserIds={undefined}
+				/>
+			</div>
+			{#if total > comments.filter((c) => !c.parent_id).length || total > 5}
+				<a href={threadHref} class="ed-more">
+					{t('thread.view_all', 'View the full conversation →')}
+				</a>
+			{/if}
 		{:else}
 			<p class="ed-state">{t('thread.no_discussions', 'No discussions yet.')}</p>
 		{/if}
@@ -265,83 +281,25 @@
 		color: var(--color-danger, #dc2626);
 	}
 
-	.ed-list {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
+	/* ReplyThread ships its own top border + heading margin tuned for the
+	   thread page; on the preview card it sits flush under the tabs. */
+	.ed-thread :global(#replies) {
+		margin-top: 0.5rem;
+		border-top: 0;
+		padding-top: 0;
 	}
 
-	.ed-comment {
-		display: flex;
-		gap: 0.625rem;
-		padding: 0.625rem 0.5rem;
-		border-radius: 0.5rem;
+	.ed-more {
+		display: inline-block;
+		margin-top: 0.5rem;
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-primary, #3b49df);
 		text-decoration: none;
-		color: inherit;
-		transition: background 0.15s;
 	}
 
-	.ed-comment:hover {
-		background: var(--color-surface-subtle, #f4f4f5);
-	}
-
-	.ed-avatar {
-		width: 1.75rem;
-		height: 1.75rem;
-		border-radius: 9999px;
-		object-fit: cover;
-		flex-shrink: 0;
-	}
-
-	.ed-avatar-fallback {
-		display: grid;
-		place-items: center;
-		background: var(--color-primary, #3b49df);
-		color: var(--color-primary-contrast, #fff);
-		font-size: 0.75rem;
-		font-weight: 700;
-	}
-
-	.ed-comment-body {
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.125rem;
-	}
-
-	.ed-comment-meta {
-		display: flex;
-		align-items: baseline;
-		gap: 0.5rem;
-	}
-
-	.ed-author {
-		font-size: 0.8125rem;
-		font-weight: 600;
-		color: var(--color-text, #18181b);
-	}
-
-	.ed-time {
-		font-size: 0.75rem;
-		color: var(--color-muted, #71717a);
-	}
-
-	.ed-excerpt {
-		font-size: 0.8125rem;
-		color: var(--color-text-subtle, #52525b);
-		line-height: 1.45;
-		display: -webkit-box;
-		line-clamp: 2;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-
-	.ed-replies {
-		font-size: 0.75rem;
-		color: var(--color-muted, #71717a);
+	.ed-more:hover {
+		text-decoration: underline;
 	}
 
 	.ed-cta {
@@ -372,5 +330,4 @@
 		opacity: 0.6;
 		cursor: default;
 	}
-
 </style>

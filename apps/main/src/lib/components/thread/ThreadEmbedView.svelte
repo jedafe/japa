@@ -94,16 +94,35 @@
 	// keeps the thread from duplicating the article's content. Discussion
 	// threads (forum-style bodies) render in full.
 	const isContentThread = $derived(data.embed?.kind === 'self');
-	const contentExcerpt = $derived.by(() => {
+	// Content threads open with the first ~80 words of the article body —
+	// FORMATTED (same .prose render as a full body), not a flattened text
+	// blob. Whole block-level chunks are accumulated while the running word
+	// count stays ≤100; a single oversized first block falls back to a
+	// plain-text truncation so the preview never spills a wall of text.
+	const contentPreviewHtml = $derived.by(() => {
 		if (!isContentThread) return '';
-		// contents rows render body_html (pre-rendered HTML); body is the
-		// raw editor source. Strip tags from body_html — the rendered
-		// field — and take the first ~80 words. Falls back to the meta
-		// excerpt when the row has no body_html.
-		const text = stripHtmlText(article.body_html || article.body || '');
+		const source = article.body_html || bodyHtml;
+		if (source) {
+			const chunks = source.split(/(?=<(?:p|h[1-6]|ul|ol|blockquote|pre|figure|table|div)[\s>])/i);
+			let acc = '';
+			let words = 0;
+			for (const chunk of chunks) {
+				const w = stripHtmlText(chunk).split(/\s+/).filter(Boolean).length;
+				if (w === 0) continue;
+				if (words > 0 && words + w > 100) break;
+				if (words === 0 && w > 100) break; // oversized first block → text fallback
+				acc += chunk;
+				words += w;
+				if (words >= 60) break;
+			}
+			if (acc) return acc + '<p class="text-[var(--color-muted)]">…</p>';
+		}
+		// Fallback: plain-text truncation of whatever text exists.
+		const text = stripHtmlText(source || article.body || '');
 		const words = text.split(/\s+/).filter(Boolean);
-		if (words.length === 0) return article.excerpt ?? '';
-		return words.length > 80 ? words.slice(0, 80).join(' ') + '…' : words.join(' ');
+		if (words.length === 0) return article.excerpt ? `<p>${escapeHtml(article.excerpt)}</p>` : '';
+		const preview = words.length > 80 ? words.slice(0, 80).join(' ') + '…' : words.join(' ');
+		return `<p>${escapeHtml(preview)}</p>`;
 	});
 	// Empty-body threads (minted anchors, linked discussions) fall back to the
 	// embed excerpt so the body section still carries a description.
@@ -432,8 +451,10 @@
 				</div>
 			</div>
 		{:else if isContentThread}
-			{#if contentExcerpt}
-				<p class="mt-5 text-[var(--color-text-subtle)]">{contentExcerpt}</p>
+			{#if contentPreviewHtml}
+				<div class="prose mt-5 max-w-none text-[var(--color-text)]" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds>
+					{@html contentPreviewHtml}
+				</div>
 			{/if}
 			{#if data.embed}
 				<a
