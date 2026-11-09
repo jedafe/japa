@@ -211,7 +211,13 @@
 	{/each}
 
 	{#if overflowTabs.length > 0}
-		<Menu sideOffset={6}>
+		<!-- Many overflow categories outgrow the viewport — cap the panel
+		     at the floating available height and let it scroll (same
+		     pattern as LeftNav/NotificationCentre). -->
+		<Menu
+			sideOffset={6}
+			contentClass="max-h-[min(28rem,var(--bits-floating-available-height,70vh))] overflow-y-auto"
+		>
 			{#snippet trigger(props)}
 				<button
 					type="button"
