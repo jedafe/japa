@@ -38,6 +38,7 @@
 		"@fontsource/roboto": "^5.3.0",
 		"@japaconnect/ai-panel": "workspace:*",
 		"@japaconnect/api-url": "workspace:*",
+		"@japaconnect/formlogic": "workspace:*",
 		"@japaconnect/landing-blocks": "workspace:*",
 		"@japaconnect/ui": "workspace:*",
 		"@tiptap/core": "^3.33.0",

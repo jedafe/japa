@@ -33,6 +33,7 @@
 		"@formkit/auto-animate": "^0.10.2",
 		"@internationalized/date": "^3.12.4",
 		"@japaconnect/api-url": "workspace:*",
+		"@japaconnect/formlogic": "workspace:*",
 		"@japaconnect/landing-blocks": "workspace:*",
 		"@japaconnect/ui": "workspace:*",
 		"@sentry/sveltekit": "^11.11.0",
