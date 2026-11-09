@@ -2530,6 +2530,9 @@ export interface FormField {
 	required: boolean;
 	sort_order: number;
 	options: string[] | null;
+	/** Raw {value,label} pairs — emit `value` (labels are display-only) so
+	 *  ADR-137 rules evaluate against the same canonical values the server uses. */
+	option_defs?: { value: string; label: string }[] | null;
 	placeholder?: string | null;
 	default_value?: string | null;
 	/** ADR-137 public logic slice: visible_if + jump (scoring keys never ship). */

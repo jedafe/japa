@@ -55,7 +55,9 @@ bool _scalarEqual(dynamic a, dynamic b) {
 }
 
 bool _evalClause(Map<String, dynamic>? cl, Answers answers, String selfKey) {
-  if (cl == null) return true;
+  // Malformed (non-map) clause → false, matching the Go/TS evaluators'
+  // zero-value Clause{} — a broken clause must not silently pass.
+  if (cl == null) return false;
   final key = (cl['field'] as String?)?.isNotEmpty == true ? cl['field'] as String : selfKey;
   final present = answers.containsKey(key);
   final has = _isAnswered(answers[key], present);

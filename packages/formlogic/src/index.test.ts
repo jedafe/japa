@@ -63,6 +63,12 @@ describe('evalCondition all/any', () => {
 		).toBe(false));
 	it('nil condition → true', () => expect(evalCondition(null, answers)).toBe(true));
 	it('empty condition → true', () => expect(evalCondition({}, answers)).toBe(true));
+	it('malformed clause → false (Go zero-Clause parity)', () => {
+		// Go's json.Unmarshal maps a non-object element to a zero Clause{}
+		// (swallowing the error) which evaluates false — mirror that here.
+		expect(evalCondition({ all: [123 as unknown as Clause] }, answers)).toBe(false);
+		expect(evalCondition({ any: [123 as unknown as Clause] }, answers)).toBe(false);
+	});
 });
 
 describe('fieldVisible', () => {

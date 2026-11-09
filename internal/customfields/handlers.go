@@ -148,6 +148,13 @@ func (h *Handlers) SetSettings(s SettingsReader) { h.settings = s }
 // in production; tests may omit it.
 func (h *Handlers) SetRichTextSanitizer(s RichTextSanitizer) { h.richTextSanitizer = s }
 
+// optionDef is one select/multiselect choice — the canonical value plus its
+// display label. Shared by the admin and public field serializers.
+type optionDef struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
 // parseUUIDParam extracts a URL parameter and scans it into a pgtype.UUID.
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	var id pgtype.UUID
@@ -1050,7 +1057,7 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 // UpdateField handles PATCH /api/v1/custom-fields/{id}. Key and group_id are
 // immutable and therefore not accepted in the request body.
 func (h *Handlers) UpdateField(w http.ResponseWriter, r *http.Request) {
-	h.updateFieldByParam(w, r, "id")
+	h.updateFieldByParam(w, r, "id", pgtype.UUID{})
 }
 
 // UpdateFieldInGroup handles PATCH /api/v1/admin/field-groups/{id}/fields/{fid}.
@@ -1058,12 +1065,20 @@ func (h *Handlers) UpdateField(w http.ResponseWriter, r *http.Request) {
 // field ID travels in the "fid" param instead of "id" (which is already
 // taken by the group ID) — the rest of the logic is identical to UpdateField.
 func (h *Handlers) UpdateFieldInGroup(w http.ResponseWriter, r *http.Request) {
-	h.updateFieldByParam(w, r, "fid")
+	groupID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	h.updateFieldByParam(w, r, "fid", groupID)
 }
 
 // updateFieldByParam implements the shared PATCH-field logic for UpdateField
-// and UpdateFieldInGroup, reading the field ID from idParam.
-func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, idParam string) {
+// and UpdateFieldInGroup, reading the field ID from idParam. When
+// expectedGroup is valid the field must belong to that group — a nested URL
+// must not address fields living under a different group.
+func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, idParam string, expectedGroup pgtype.UUID) {
 	id, err := parseUUIDParam(r, idParam)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -1086,49 +1101,21 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	// Omitted options keep the stored list (three-state PATCH) — shape
-	// validation applies only when the client actually sent options.
-	// Select fields may therefore arrive without an options payload when
-	// a partial update leaves them untouched; only reject when the stored
-	// field would end up optionless too — e.g. a type change into select.
-	if !optionsAbsent(req.Options) {
-		if msg, ok := ValidOptionsShape(req.FieldType, req.Options); !ok {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_options", msg)
+	optionsBytes, section, config, ok := h.validateFieldUpdate(w, r, req, id)
+	if !ok {
+		return
+	}
+
+	// §06: enforce the nested route's ownership — a mismatched {fid}/{id}
+	// pair returns the same 404 as a missing field (no existence oracle).
+	// Runs after body validation so malformed payloads fail the same way
+	// they do on the flat route.
+	if expectedGroup.Valid {
+		owned, oerr := h.Service.GetField(r.Context(), id)
+		if oerr != nil || owned.GroupID != expectedGroup {
+			errpkg.WriteError(w, http.StatusNotFound, "field_not_found", "Field not found")
 			return
 		}
-	} else if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && h.storedOptionsAbsent(r, id) {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
-		return
-	}
-
-	optionsBytes, err := marshalOptions(req.Options)
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_options", "Field options are not valid JSON")
-		return
-	}
-
-	// §80 Itemized Pricing: section travels three-state — the pointer's
-	// presence flips update_section so "" clears and a token sets.
-	section := ""
-	if req.Section != nil {
-		section = *req.Section
-	}
-
-	if !ValidSectionToken(section) {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_section", "Section must match ^[a-z0-9_]+$")
-		return
-	}
-
-	// Config travels three-state like section: present replaces the stored
-	// object wholesale, omitted keeps it (ADR-137).
-	if req.Config != nil && !validFieldConfig(*req.Config) {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "config must be a JSON object")
-		return
-	}
-
-	config := json.RawMessage("{}")
-	if req.Config != nil {
-		config = *req.Config
 	}
 
 	field, err := h.Service.UpdateField(r.Context(), gen.UpdateCustomFieldParams{
@@ -1169,20 +1156,79 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": field})
 }
 
+// validateFieldUpdate runs the PATCH-time input validation shared by the flat
+// and nested field routes — options shape (+ the select stored-options
+// fallback), the §80 section token, and the ADR-137 config object. On failure
+// it writes the 4xx and returns ok=false.
+func (h *Handlers) validateFieldUpdate(w http.ResponseWriter, r *http.Request, req fieldRequest, id pgtype.UUID) (optionsBytes []byte, section string, config json.RawMessage, ok bool) {
+	// Omitted options keep the stored list (three-state PATCH) — shape
+	// validation applies only when the client actually sent options.
+	// Select fields may therefore arrive without an options payload when
+	// a partial update leaves them untouched; only reject when the stored
+	// field would end up optionless too — e.g. a type change into select.
+	if !optionsAbsent(req.Options) {
+		if msg, valid := ValidOptionsShape(req.FieldType, req.Options); !valid {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_options", msg)
+			return nil, "", nil, false
+		}
+	} else if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && h.storedOptionsAbsent(r, id) {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
+		return nil, "", nil, false
+	}
+
+	optionsBytes, err := marshalOptions(req.Options)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_options", "Field options are not valid JSON")
+		return nil, "", nil, false
+	}
+
+	// §80 Itemized Pricing: section travels three-state — the pointer's
+	// presence flips update_section so "" clears and a token sets.
+	if req.Section != nil {
+		section = *req.Section
+	}
+
+	if !ValidSectionToken(section) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_section", "Section must match ^[a-z0-9_]+$")
+		return nil, "", nil, false
+	}
+
+	// Config travels three-state like section: present replaces the stored
+	// object wholesale, omitted keeps it (ADR-137).
+	if req.Config != nil && !validFieldConfig(*req.Config) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "config must be a JSON object")
+		return nil, "", nil, false
+	}
+
+	config = json.RawMessage("{}")
+	if req.Config != nil {
+		config = *req.Config
+	}
+
+	return optionsBytes, section, config, true
+}
+
 // DeleteField handles DELETE /api/v1/custom-fields/{id}.
 func (h *Handlers) DeleteField(w http.ResponseWriter, r *http.Request) {
-	h.deleteFieldByParam(w, r, "id")
+	h.deleteFieldByParam(w, r, "id", pgtype.UUID{})
 }
 
 // DeleteFieldInGroup handles DELETE /api/v1/admin/field-groups/{id}/fields/{fid}.
 // See UpdateFieldInGroup for why the field ID is read from "fid" here.
 func (h *Handlers) DeleteFieldInGroup(w http.ResponseWriter, r *http.Request) {
-	h.deleteFieldByParam(w, r, "fid")
+	groupID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	h.deleteFieldByParam(w, r, "fid", groupID)
 }
 
 // deleteFieldByParam implements the shared DELETE-field logic for DeleteField
-// and DeleteFieldInGroup, reading the field ID from idParam.
-func (h *Handlers) deleteFieldByParam(w http.ResponseWriter, r *http.Request, idParam string) {
+// and DeleteFieldInGroup, reading the field ID from idParam. expectedGroup
+// carries the same nested-route ownership contract as updateFieldByParam.
+func (h *Handlers) deleteFieldByParam(w http.ResponseWriter, r *http.Request, idParam string, expectedGroup pgtype.UUID) {
 	id, err := parseUUIDParam(r, idParam)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
@@ -1191,8 +1237,13 @@ func (h *Handlers) deleteFieldByParam(w http.ResponseWriter, r *http.Request, id
 
 	// Fields on a system-form-bound group are load-bearing for a bespoke
 	// page — deleting one breaks that page's bindings even when the field
-	// row itself isn't flagged is_system.
+	// row itself isn't flagged is_system. Nested routes additionally
+	// require {fid} to live under the URL's group.
 	if field, ferr := h.Service.GetField(r.Context(), id); ferr == nil {
+		if expectedGroup.Valid && field.GroupID != expectedGroup {
+			errpkg.WriteError(w, http.StatusNotFound, "field_not_found", "Field not found")
+			return
+		}
 		if bound, berr := h.Service.GroupBoundToSystemForm(r.Context(), field.GroupID); berr != nil {
 			handleServiceError(w, berr)
 			return
@@ -1752,10 +1803,6 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Map custom fields to the shape the frontend expects.
-	type optionDef struct {
-		Value string `json:"value"`
-		Label string `json:"label"`
-	}
 	type fieldJSON struct {
 		ID    string `json:"id"`
 		Label string `json:"label"`
@@ -2402,29 +2449,36 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 	fields = filterGuestViewableFields(r.Context(), h.Service, fields)
 
 	type fieldJSON struct {
-		ID           string          `json:"id"`
-		Key          string          `json:"key"`
-		Label        string          `json:"label"`
-		Type         string          `json:"type"`
-		Required     bool            `json:"required"`
-		SortOrder    int32           `json:"sort_order"`
-		Options      []string        `json:"options"`
+		ID        string   `json:"id"`
+		Key       string   `json:"key"`
+		Label     string   `json:"label"`
+		Type      string   `json:"type"`
+		Required  bool     `json:"required"`
+		SortOrder int32    `json:"sort_order"`
+		Options   []string `json:"options"`
+		// OptionDefs ships the raw {value,label} pairs so clients can store
+		// canonical option values — ADR-137 rules compare against values,
+		// and distinct value/label pairs would otherwise evaluate
+		// differently client-side (label) vs server-side (canonical value).
+		OptionDefs   []optionDef     `json:"option_defs,omitempty"`
 		Placeholder  *string         `json:"placeholder"`
 		DefaultValue *string         `json:"default_value"`
 		Config       json.RawMessage `json:"config,omitempty"`
 	}
 
 	toFieldJSON := func(f gen.ListCustomFieldsByGroupRow) fieldJSON {
-		var options []string
+		var (
+			options    []string
+			optionDefs []optionDef
+		)
 
 		if f.Options != nil {
-			var raw []struct {
-				Value string `json:"value"`
-				Label string `json:"label"`
-			}
+			var raw []optionDef
 
 			if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
 				options = make([]string, len(raw))
+				optionDefs = raw
+
 				for i, o := range raw {
 					options[i] = o.Label
 				}
@@ -2439,6 +2493,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 			Required:     f.IsRequired,
 			SortOrder:    f.Position,
 			Options:      options,
+			OptionDefs:   optionDefs,
 			Placeholder:  f.Placeholder,
 			DefaultValue: f.DefaultValue,
 			Config:       logicConfigJSON(f.Config),

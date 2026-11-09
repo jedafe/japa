@@ -72,6 +72,12 @@ void main() {
     test('null condition → true (fail-open)', () {
       expect(evalCondition(null, answers), isTrue);
     });
+    test('malformed clause → false (Go/TS parity)', () {
+      // A non-map clause is a broken rule element — it must fail like the
+      // zero-value Clause{} in Go/TS, not silently pass.
+      expect(evalCondition(dec('{"all":[123]}'), answers), isFalse);
+      expect(evalCondition(dec('{"any":[123]}'), answers), isFalse);
+    });
   });
 
   group('fieldVisible', () {

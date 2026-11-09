@@ -78,6 +78,17 @@ func TestConditionAllAny(t *testing.T) {
 	if !nilc.Eval(answers, "") {
 		t.Fatal("nil condition should be true")
 	}
+
+	// A non-object clause element unmarshals to a zero Clause{} (the type
+	// error is swallowed) which evaluates false — broken clauses fail
+	// closed, not vacuous-true. Kept in sync with the TS/Dart evaluators.
+	if FieldVisible([]byte(`{"visible_if":{"all":[123]}}`), answers, "k") {
+		t.Fatal("malformed all clause should fail closed")
+	}
+
+	if FieldVisible([]byte(`{"visible_if":{"any":[123]}}`), answers, "k") {
+		t.Fatal("malformed any clause should fail closed")
+	}
 }
 
 func TestFieldVisible(t *testing.T) {

@@ -28,6 +28,13 @@
 		return field.key || field.label;
 	}
 
+	/** ADR-137: prefer option_defs so answers store/evaluate canonical values;
+	 *  fall back to label strings for fields whose payload lacks defs. */
+	function optionChoices(field: FormField): { value: string; label: string }[] {
+		if (field.option_defs?.length) return field.option_defs;
+		return (field.options ?? []).map((o) => ({ value: o, label: o }));
+	}
+
 	const isMultiStep = $derived(!!form?.is_multi_step && (form?.steps?.length ?? 0) > 0);
 	const steps = $derived<FormStep[]>(
 		isMultiStep ? [...(form!.steps ?? [])].sort((a, b) => a.position - b.position) : []
@@ -192,28 +199,28 @@
 							value={values[fieldKey(field)] ?? ''}
 							oninput={(e) => (values = { ...values, [fieldKey(field)]: e.currentTarget.value })}
 							class={inputClass()}></textarea>
-					{:else if field.type === 'select' && field.options && field.options.length > 0}
+					{:else if field.type === 'select' && optionChoices(field).length > 0}
 						<AutocompleteSelect
 							id="field-{field.id}"
 							value={values[fieldKey(field)] ?? ''}
 							options={[
 								{ value: '', label: t('feedback.select_placeholder') },
-								...field.options.map((opt) => ({ value: opt, label: opt }))
+								...optionChoices(field)
 							]}
 							onValueChange={(v) => (values = { ...values, [fieldKey(field)]: v })}
 						/>
-					{:else if field.type === 'multiselect' && field.options && field.options.length > 0}
+					{:else if field.type === 'multiselect' && optionChoices(field).length > 0}
 						<div class="flex flex-col gap-1.5" role="group" aria-labelledby="field-{field.id}-label">
-							{#each field.options as opt}
+							{#each optionChoices(field) as opt}
 								<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
 									<input type="checkbox" class="h-4 w-4 rounded border-[var(--color-border)]"
-										checked={(values[fieldKey(field)] ?? '').split(',').includes(opt)}
+										checked={(values[fieldKey(field)] ?? '').split(',').includes(opt.value)}
 										onchange={(e) => {
 											const cur = (values[fieldKey(field)] ?? '').split(',').filter(Boolean);
-											const next = e.currentTarget.checked ? [...cur, opt] : cur.filter((v) => v !== opt);
+											const next = e.currentTarget.checked ? [...cur, opt.value] : cur.filter((v) => v !== opt.value);
 											values = { ...values, [fieldKey(field)]: next.join(',') };
 										}} />
-									{opt}
+									{opt.label}
 								</label>
 							{/each}
 						</div>
