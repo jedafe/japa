@@ -346,6 +346,9 @@ func TestSearchSearxng(t *testing.T) {
 		if r.URL.Query().Get("format") != "json" {
 			t.Errorf("missing format=json param")
 		}
+		if r.URL.Query().Get("safesearch") != "1" {
+			t.Errorf("missing safesearch=1 param")
+		}
 		if r.URL.Query().Get("q") != "unilag admission" {
 			t.Errorf("unexpected query %q", r.URL.Query().Get("q"))
 		}

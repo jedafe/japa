@@ -606,6 +606,10 @@ func searchSearxng(ctx context.Context, client *http.Client, baseURL, query stri
 	q := u.Query()
 	q.Set("q", query)
 	q.Set("format", "json")
+	// Moderate safesearch — the platform default. SearXNG's own default (0)
+	// returns unfiltered results incl. adult content, which the agent could
+	// surface into drafted content.
+	q.Set("safesearch", "1")
 	u.RawQuery = q.Encode()
 
 	// #nosec G704 -- u is an admin-configured instance URL (system_settings);
