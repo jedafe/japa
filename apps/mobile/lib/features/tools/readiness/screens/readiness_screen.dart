@@ -61,20 +61,32 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
     ref.invalidate(readinessHistoryProvider);
   }
 
-  List<String> _stepOrder(List<dynamic> fields) {
+  // Step order = natural dimension order filtered by ADR-137 rules:
+  // scoring_config.step_rules[dim].visible_if, unioned jump intervals, and
+  // the auto-hide of steps left with no visible fields.
+  List<String> _stepOrder(List<dynamic> fields, Map<String, dynamic>? stepRules) {
     final seen = <String>[];
     for (final f in fields) {
       final config = (f['config'] as Map<String, dynamic>?) ?? {};
-      final dim = (config['dimension'] as String?)?.toLowerCase() ?? 'general';
+      final dim = (config['dimension'] as String?) ?? 'general';
       if (!seen.contains(dim)) seen.add(dim);
     }
-    return seen;
+    final hiddenByJump = hiddenStepsByJump(fields, seen, _answers);
+    final vis = visibleFields(fields, _answers);
+    return seen.where((step) {
+      if (hiddenByJump.contains(step)) return false;
+      final rule = stepRules?[step];
+      if (!stepVisible(rule is Map ? rule.cast<String, dynamic>() : null, _answers)) {
+        return false;
+      }
+      return _fieldsForStep(vis, step).isNotEmpty;
+    }).toList();
   }
 
   List<dynamic> _fieldsForStep(List<dynamic> fields, String step) {
     return fields.where((f) {
       final config = (f['config'] as Map<String, dynamic>?) ?? {};
-      final dim = (config['dimension'] as String?)?.toLowerCase() ?? 'general';
+      final dim = (config['dimension'] as String?) ?? 'general';
       return dim == step;
     }).toList();
   }
@@ -109,8 +121,10 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
 
   Future<void> _submit(List<dynamic> fields) async {
     final t = ref.read(tProvider);
-    
-    final required = fields.where(_isFieldRequired).toList();
+
+    // Required check runs over the visible path only — hidden fields are
+    // not required and the server drops their submitted values (ADR-137).
+    final required = visibleFields(fields, _answers).where(_isFieldRequired).toList();
     for (final f in required) {
       final field = f as Map<String, dynamic>?;
       if (field == null) continue;
@@ -346,12 +360,24 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
   Widget _buildStepCard(Map<String, dynamic> form) {
     final t = ref.watch(tProvider);
     final fields = (form['fields'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
-    final order = _stepOrder(fields);
+    final sc = form['scoring_config'];
+    final stepRules = (sc is Map ? sc['step_rules'] : null) as Map<String, dynamic>?;
+    final order = _stepOrder(fields, stepRules);
     if (order.isEmpty) {
       return const Center(child: Text('No questions available.'));
     }
-    final step = order[_currentStep];
-    final stepFields = _fieldsForStep(fields, step);
+    // An answer change can hide the active step — clamp the index back
+    // into range (post-frame so we don't setState during build).
+    if (_currentStep >= order.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _currentStep >= order.length) {
+          setState(() => _currentStep = order.length - 1);
+        }
+      });
+    }
+    final stepIdx = _currentStep.clamp(0, order.length - 1);
+    final step = order[stepIdx];
+    final stepFields = _fieldsForStep(visibleFields(fields, _answers), step);
     final stepLabel = step.replaceAll('_', ' ');
     final stepTitle = stepLabel[0].toUpperCase() + stepLabel.substring(1);
 
