@@ -61,7 +61,7 @@
 </script>
 
 <div
-	class="group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-all hover:-translate-y-0.5 hover:shadow-lg"
+	class="group relative flex h-full cursor-pointer flex-row overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-all hover:-translate-y-0.5 hover:shadow-lg sm:flex-col"
 	role="link"
 	tabindex="0"
 	onclick={navigate}
@@ -78,8 +78,14 @@
 
 	<!-- Cover / media area — shows the item's thumbnail when the backend
 	     provides one (video sources, posts with og_image); the gradient is
-	     the fallback. -->
-	<div class="relative aspect-[4/3] w-full overflow-hidden">
+	     the fallback. On mobile the card is a horizontal row: the cover is
+	     a fixed-width rail (hidden without a thumbnail — a bare gradient
+	     column reads as a broken image). -->
+	<div
+		class="relative shrink-0 overflow-hidden sm:aspect-[4/3] sm:w-full {item.thumbnail_url
+			? 'w-28'
+			: 'hidden'} sm:block"
+	>
 		<div
 			class="h-full w-full bg-gradient-to-br from-[var(--color-primary)]/20 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]"
 		></div>
@@ -93,7 +99,7 @@
 		{/if}
 
 		<!-- Top-right action cluster -->
-		<div class="absolute end-3 top-3 z-20 flex items-center gap-2">
+		<div class="absolute end-1.5 top-1.5 z-20 flex items-center gap-2 sm:end-3 sm:top-3">
 			{#if viewHref}
 				<a
 					href={viewHref}
@@ -111,14 +117,14 @@
 				{source}
 				showBlock={false}
 				showShare={false}
-				triggerClass="grid h-9 w-9 place-items-center rounded-full border-0 bg-black/40 text-white opacity-90 backdrop-blur-sm transition hover:bg-black/60 hover:opacity-100 focus:opacity-100"
+				triggerClass="grid h-8 w-8 place-items-center rounded-full border-0 bg-black/40 text-white opacity-90 backdrop-blur-sm transition hover:bg-black/60 hover:opacity-100 focus:opacity-100 sm:h-9 sm:w-9"
 				onEdit={onEdit}
 			/>
 		</div>
 
 		<!-- Entity-type badge overlay -->
 		{#if entityLabel}
-			<div class="absolute bottom-3 start-3 flex flex-wrap gap-1.5">
+			<div class="absolute bottom-1.5 start-1.5 flex flex-wrap gap-1.5 sm:bottom-3 sm:start-3">
 				<span
 					class="rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm"
 				>
@@ -129,8 +135,8 @@
 	</div>
 
 	<!-- Body -->
-	<div class="flex flex-1 flex-col gap-2 p-4">
-		<h2 class="line-clamp-2 text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
+	<div class="flex min-w-0 flex-1 flex-col gap-1.5 p-3 sm:gap-2 sm:p-4">
+		<h2 class="line-clamp-2 text-[15px] font-semibold leading-snug tracking-tight text-[var(--color-text)] sm:text-[17px]">
 			<!-- relative z-10 keeps the title link above the full-card overlay anchor. -->
 			<a href={item.href} class="relative z-10 transition-colors hover:text-[var(--color-primary-text)]">{item.title}</a>
 		</h2>
@@ -143,7 +149,7 @@
 
 		<!-- Footer -->
 		<div
-			class="relative z-10 mt-auto flex items-center gap-6 border-t border-[var(--color-border)] pt-3"
+			class="relative z-10 mt-auto flex items-center gap-3 border-t border-[var(--color-border)] pt-2 sm:gap-6 sm:pt-3"
 		>
 			<div class="min-w-0 flex-1">
 				{#if sourceName && sourceId && sourceSlug}
@@ -175,6 +181,22 @@
 			</div>
 
 			<div class="pointer-events-auto relative z-10 flex shrink-0 items-center gap-3">
+				<!-- The hover-reveal "View" chip over the cover never shows on
+				     touch — mirror it as an icon button in the footer on <sm. -->
+				{#if viewHref}
+					<a
+						href={viewHref}
+						target="_blank"
+						rel="noopener noreferrer"
+						aria-label={viewLabel}
+						title={viewLabel}
+						class="grid h-8 w-8 place-items-center rounded-full text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)] sm:hidden"
+						onclick={(e) => e.stopPropagation()}
+					>
+						<ExternalLink size={16} class="rtl:-scale-x-100" />
+					</a>
+				{/if}
+
 				<!-- Items without a backing content row (remittance records, video
 				     source items, wiki pages, comparisons) have no reaction endpoint —
 				     rendering the button would fake a toggle that never persists. -->

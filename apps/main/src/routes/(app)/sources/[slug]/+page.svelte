@@ -157,9 +157,9 @@
 			</span>
 		{/if}
 
-		<div class="flex flex-1 flex-col gap-1">
-			<div class="flex items-start justify-between gap-3">
-				<div class="flex flex-wrap items-center gap-2">
+		<div class="flex min-w-0 flex-1 flex-col gap-1">
+			<div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+				<div class="flex min-w-0 flex-wrap items-center gap-2">
 					<h1 class="text-lg font-bold">{source.name}</h1>
 					{#if source.trust_level > 0}
 						<span class="rounded bg-[var(--color-primary)]/10 px-1.5 py-0.5 text-xs font-medium text-[var(--color-primary-text)]">
@@ -168,7 +168,7 @@
 					{/if}
 				</div>
 
-				<div class="flex items-center gap-2">
+				<div class="flex shrink-0 items-center gap-2 max-sm:ms-auto">
 					<FollowButton
 						entityType="source"
 						entityId={source.id}
