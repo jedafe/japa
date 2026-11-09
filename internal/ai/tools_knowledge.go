@@ -227,6 +227,8 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 			switch {
 			case errors.Is(err, errExternalSearchUnavailable):
 				return errorToolResult("external_search_unavailable", err.Error()), nil
+			case errors.Is(err, errExternalSearchDisabled):
+				return errorToolResult("external_search_disabled", err.Error()), nil
 			case errors.Is(err, errSearxngNotConfigured):
 				return errorToolResult("searxng_not_configured", err.Error()), nil
 			case errors.Is(err, errExternalSearchUnknownProvider):
@@ -287,6 +289,7 @@ func decryptSettingIfNeeded(value string) string {
 // user-facing error codes.
 var (
 	errExternalSearchUnavailable     = errors.New("external search API key is not configured")
+	errExternalSearchDisabled        = errors.New("external search is disabled")
 	errExternalSearchUnknownProvider = errors.New("unsupported external search provider")
 	errSearxngNotConfigured          = errors.New("searxng base URL is not configured")
 )
@@ -308,6 +311,8 @@ func SearchWeb(ctx context.Context, client *http.Client, settings SettingsReader
 	var err error
 
 	switch strings.ToLower(provider) {
+	case "none":
+		return "", nil, errExternalSearchDisabled
 	case "searxng":
 		base := settings.GetStringOr(ctx, "agent.external_search_searxng_base", "")
 		if base == "" {
@@ -611,6 +616,7 @@ func searchSearxng(ctx context.Context, client *http.Client, baseURL, query stri
 	}
 
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", fetchToolUserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {

@@ -161,7 +161,7 @@ func TestExternalFetchHandler_CacheHit(t *testing.T) {
 
 	cache := newStubCacheClient()
 	cachedJSON := `{"url":"https://example.com","final_url":"https://example.com","status":200,"content_type":"text/html","content":"cached","truncated":false,"fetched_at":"2026-01-01T00:00:00Z"}`
-	cache.store[externalFetchCacheKey("https://example.com")] = cachedJSON
+	cache.store[externalFetchCacheKey("https://example.com", defaultFetchMaxChars)] = cachedJSON
 
 	called := false
 	deps := &ToolDeps{
@@ -202,7 +202,7 @@ func TestExternalFetchHandler_CacheWrite(t *testing.T) {
 	if _, err := handler(t.Context(), json.RawMessage(`{"url":"https://example.com"}`), pgtype.UUID{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := cache.store[externalFetchCacheKey("https://example.com")]; !ok {
+	if _, ok := cache.store[externalFetchCacheKey("https://example.com", defaultFetchMaxChars)]; !ok {
 		t.Error("expected result to be written to cache")
 	}
 }
@@ -258,16 +258,23 @@ func TestFetchWeb_RejectsNonHTTPScheme(t *testing.T) {
 func TestExternalFetchCacheKey(t *testing.T) {
 	t.Parallel()
 
-	key1 := externalFetchCacheKey("https://example.com/page")
-	if externalFetchCacheKey("https://example.com/page") != key1 {
-		t.Error("same URL should produce same key")
+	key1 := externalFetchCacheKey("https://example.com/page", 16000)
+	if externalFetchCacheKey("https://example.com/page", 16000) != key1 {
+		t.Error("same URL+maxChars should produce same key")
 	}
-	if externalFetchCacheKey("https://example.com/other") == key1 {
+	if externalFetchCacheKey("https://example.com/other", 16000) == key1 {
 		t.Error("different URL should produce different key")
 	}
+	if externalFetchCacheKey("https://example.com/page", 60000) == key1 {
+		t.Error("different maxChars should produce different key")
+	}
 	// Scheme/host case differences normalize to the same key.
-	if externalFetchCacheKey("HTTPS://EXAMPLE.COM/page") != key1 {
+	if externalFetchCacheKey("HTTPS://EXAMPLE.COM/page", 16000) != key1 {
 		t.Error("scheme/host case should be normalized")
+	}
+	// Fragments never reach the server — they must not fragment the cache.
+	if externalFetchCacheKey("https://example.com/page#section", 16000) != key1 {
+		t.Error("URL fragment should be ignored in the cache key")
 	}
 }
 

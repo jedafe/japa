@@ -51,7 +51,8 @@ type externalFetchArgs struct {
 
 // FetchWebResult is what external.fetch returns to the model: the page's
 // final URL (after redirects), HTTP status, content type, extracted title,
-// visible-text content, and whether the output was truncated.
+// visible-text content, and whether the output was truncated. Note carries a
+// hint when the page yielded no text (JS-shell SPA, block page, etc.).
 type FetchWebResult struct {
 	URL         string `json:"url"`
 	FinalURL    string `json:"final_url"`
@@ -60,6 +61,7 @@ type FetchWebResult struct {
 	Title       string `json:"title,omitempty"`
 	Content     string `json:"content"`
 	Truncated   bool   `json:"truncated"`
+	Note        string `json:"note,omitempty"`
 	FetchedAt   string `json:"fetched_at"`
 }
 
@@ -118,7 +120,7 @@ func ExternalFetchHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		cacheTTL := fetchIntSetting(ctx, deps.Settings, "agent.external_fetch_cache_ttl_seconds", defaultFetchCacheTTLSeconds)
-		cacheKey := externalFetchCacheKey(a.URL)
+		cacheKey := externalFetchCacheKey(a.URL, maxChars)
 
 		if deps.Cache != nil && cacheTTL > 0 {
 			if cached, err := deps.Cache.Get(ctx, cacheKey); err == nil && cached != "" {
@@ -186,7 +188,16 @@ func FetchWeb(ctx context.Context, client *http.Client, settings SettingsReader,
 		return nil, fmt.Errorf("%w: %v", errExternalFetchInvalidURL, err)
 	}
 
+	// Clamp like linkpreview.resolveTimeout: a direct settings write can
+	// bypass the catalog Min/Max, and timeout<=0 would cancel instantly.
 	timeout := fetchIntSetting(ctx, settings, "agent.external_fetch_timeout_seconds", defaultFetchTimeoutSeconds)
+	if timeout < 1 {
+		timeout = 1
+	}
+	if timeout > 120 {
+		timeout = 120
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
@@ -215,6 +226,13 @@ func FetchWeb(ctx context.Context, client *http.Client, settings SettingsReader,
 	}
 
 	maxBytes := int64(fetchIntSetting(ctx, settings, "agent.external_fetch_max_bytes", defaultFetchMaxBytes))
+	if maxBytes < 1<<16 {
+		maxBytes = 1 << 16 // 64 KB floor — a lower value yields empty pages
+	}
+	if maxBytes > 10<<20 {
+		maxBytes = 10 << 20 // 10 MB ceiling
+	}
+
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
 	if err != nil {
 		return nil, fmt.Errorf("reading body: %w", err)
@@ -225,25 +243,32 @@ func FetchWeb(ctx context.Context, client *http.Client, settings SettingsReader,
 		finalURL = resp.Request.URL.String()
 	}
 
+	bodyStr := string(body)
+
 	// Ask for maxChars+1 runes so truncation is detected exactly rather than
 	// guessed from output length.
-	text := textprep.SourceText(string(body), contentType, maxChars+1)
+	text := textprep.SourceText(bodyStr, contentType, maxChars+1)
 	truncated := false
 	if runes := []rune(text); len(runes) > maxChars {
 		text = string(runes[:maxChars])
 		truncated = true
 	}
 
-	return &FetchWebResult{
+	result := &FetchWebResult{
 		URL:         rawURL,
 		FinalURL:    finalURL,
 		Status:      resp.StatusCode,
 		ContentType: contentType,
-		Title:       htmlTitle(string(body), contentType),
+		Title:       htmlTitle(bodyStr, contentType),
 		Content:     text,
 		Truncated:   truncated,
 		FetchedAt:   time.Now().UTC().Format(time.RFC3339),
-	}, nil
+	}
+	if strings.TrimSpace(text) == "" {
+		result.Note = "Page returned no visible text — it may require JavaScript, be an error page, or block automated access."
+	}
+
+	return result, nil
 }
 
 // fetchableContentType reports whether a response body can be reduced to
@@ -265,13 +290,23 @@ func fetchableContentType(contentType string) bool {
 }
 
 // htmlTitle extracts the <title> text from an HTML body; empty for non-HTML.
+// The title lives in <head>, so parsing is bounded to the head region (or
+// the first 64 KB when </head> is absent) rather than the full body.
 func htmlTitle(body, contentType string) string {
 	if !strings.Contains(strings.ToLower(contentType), "html") &&
 		!strings.HasPrefix(strings.TrimSpace(body), "<") {
 		return ""
 	}
 
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(body))
+	head := body
+	if len(head) > 1<<16 {
+		head = head[:1<<16]
+	}
+	if i := strings.Index(strings.ToLower(head), "</head>"); i >= 0 {
+		head = head[:i]
+	}
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(head))
 	if err != nil {
 		return ""
 	}
@@ -290,16 +325,21 @@ func fetchIntSetting(ctx context.Context, settings SettingsReader, key string, f
 }
 
 // externalFetchCacheKey builds jc:agent:fetch:{hash} where hash is the
-// SHA-256 of the platform ID + normalized URL (Rule 4 — catalog key
-// jc:agent:fetch:{hash}).
-func externalFetchCacheKey(rawURL string) string {
-	h := sha256.Sum256([]byte(":" + normalizeFetchURL(rawURL)))
+// SHA-256 of the platform ID + normalized URL + maxChars — different output
+// sizes of the same page must not collide (mirrors external.search keying
+// on query+limit). Rule 4 — catalog key jc:agent:fetch:{hash}.
+func externalFetchCacheKey(rawURL string, maxChars int) string {
+	h := sha256.Sum256(fmt.Appendf(nil, ":%s:%d", normalizeFetchURL(rawURL), maxChars))
 	return valkey.MustKey("agent:fetch:%s", hex.EncodeToString(h[:16]))
 }
 
-// normalizeFetchURL lowercases the scheme+host so equivalent URLs share one
-// cache entry; the path and query are left case-sensitive.
+// normalizeFetchURL lowercases the scheme+host and strips the fragment so
+// equivalent URLs share one cache entry; path and query stay case-sensitive.
 func normalizeFetchURL(rawURL string) string {
+	if i := strings.IndexByte(rawURL, '#'); i >= 0 {
+		rawURL = rawURL[:i]
+	}
+
 	rest := rawURL
 	scheme := ""
 	if i := strings.Index(rawURL, "://"); i >= 0 {

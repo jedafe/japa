@@ -416,6 +416,19 @@ func TestSearchWeb_SearxngNoBase(t *testing.T) {
 	}
 }
 
+func TestSearchWeb_ProviderNoneDisabled(t *testing.T) {
+	t.Parallel()
+
+	// provider=none means search is administratively disabled — it must fail
+	// fast without touching the API-key gate, even when a key is set.
+	settings := &providerSettingsReader{provider: "none", apiKey: "some-key"}
+
+	_, _, err := SearchWeb(t.Context(), http.DefaultClient, settings, "test", 5)
+	if !errors.Is(err, errExternalSearchDisabled) {
+		t.Fatalf("expected errExternalSearchDisabled, got %v", err)
+	}
+}
+
 func TestExternalSearchHandler_SearxngNotConfigured(t *testing.T) {
 	t.Parallel()
 
