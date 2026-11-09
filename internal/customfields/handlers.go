@@ -1655,35 +1655,43 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Map custom fields to the shape the frontend expects.
+	type optionDef struct {
+		Value string `json:"value"`
+		Label string `json:"label"`
+	}
 	type fieldJSON struct {
-		ID        string   `json:"id"`
-		Label     string   `json:"label"`
-		Type      string   `json:"type"`
-		Required  bool     `json:"required"`
-		SortOrder int32    `json:"sort_order"`
-		Options   []string `json:"options"`
+		ID        string      `json:"id"`
+		Label     string      `json:"label"`
+		Type      string      `json:"type"`
+		Required  bool        `json:"required"`
+		SortOrder int32       `json:"sort_order"`
+		Options   []string    `json:"options"`
+		OptionDefs []optionDef `json:"option_defs,omitempty"`
 		// Dimension is the assessment scoring bucket (custom_fields.config
 		// .dimension) — the admin form builder derives assessment steps
 		// from it for reordering.
 		Dimension string `json:"dimension,omitempty"`
+		// Config carries the raw field config (scoring + conditional rules)
+		// so the editor can merge keys and send the full object back.
+		Config json.RawMessage `json:"config,omitempty"`
 	}
 
 	fieldList := make([]fieldJSON, 0, len(fields))
 
 	for _, f := range fields {
 		var options []string
+		var optionDefs []optionDef
 
 		if f.Options != nil {
 			// Options is stored as JSONB; parse into string slice for radio/select.
-			var raw []struct {
-				Value string `json:"value"`
-				Label string `json:"label"`
-			}
+			var raw []optionDef
 
 			if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
 				options = make([]string, len(raw))
+				optionDefs = make([]optionDef, len(raw))
 				for i, o := range raw {
 					options[i] = o.Label
+					optionDefs[i] = o
 				}
 			}
 		}
@@ -1699,13 +1707,15 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		}
 
 		fieldList = append(fieldList, fieldJSON{
-			ID:        f.ID.String(),
-			Label:     f.Label,
-			Type:      f.FieldType,
-			Required:  f.IsRequired,
-			SortOrder: f.Position,
-			Options:   options,
-			Dimension: dimension,
+			ID:         f.ID.String(),
+			Label:      f.Label,
+			Type:       f.FieldType,
+			Required:   f.IsRequired,
+			SortOrder:  f.Position,
+			Options:    options,
+			OptionDefs: optionDefs,
+			Dimension:  dimension,
+			Config:     f.Config,
 		})
 	}
 
@@ -1716,12 +1726,14 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	// field_group_id and fields[] so the frontend can render and manage
 	// fields per step without extra round-trips.
 	type stepFieldJSON struct {
-		ID        string   `json:"id"`
-		Label     string   `json:"label"`
-		Type      string   `json:"type"`
-		Required  bool     `json:"required"`
-		SortOrder int32    `json:"sort_order"`
-		Options   []string `json:"options"`
+		ID         string          `json:"id"`
+		Label      string          `json:"label"`
+		Type       string          `json:"type"`
+		Required   bool            `json:"required"`
+		SortOrder  int32           `json:"sort_order"`
+		Options    []string        `json:"options"`
+		OptionDefs []optionDef     `json:"option_defs,omitempty"`
+		Config     json.RawMessage `json:"config,omitempty"`
 	}
 
 	type stepJSON struct {
@@ -1751,28 +1763,30 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 
 					for _, f := range rawFields {
 						var options []string
+						var optionDefs []optionDef
 
 						if f.Options != nil {
-							var raw []struct {
-								Value string `json:"value"`
-								Label string `json:"label"`
-							}
+							var raw []optionDef
 
 							if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
 								options = make([]string, len(raw))
+								optionDefs = make([]optionDef, len(raw))
 								for i, o := range raw {
 									options[i] = o.Label
+									optionDefs[i] = o
 								}
 							}
 						}
 
 						stepFields = append(stepFields, stepFieldJSON{
-							ID:        f.ID.String(),
-							Label:     f.Label,
-							Type:      f.FieldType,
-							Required:  f.IsRequired,
-							SortOrder: f.Position,
-							Options:   options,
+							ID:         f.ID.String(),
+							Label:      f.Label,
+							Type:       f.FieldType,
+							Required:   f.IsRequired,
+							SortOrder:  f.Position,
+							Options:    options,
+							OptionDefs: optionDefs,
+							Config:     f.Config,
 						})
 					}
 				}
@@ -2235,15 +2249,16 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 	fields = filterGuestViewableFields(r.Context(), h.Service, fields)
 
 	type fieldJSON struct {
-		ID           string   `json:"id"`
-		Key          string   `json:"key"`
-		Label        string   `json:"label"`
-		Type         string   `json:"type"`
-		Required     bool     `json:"required"`
-		SortOrder    int32    `json:"sort_order"`
-		Options      []string `json:"options"`
-		Placeholder  *string  `json:"placeholder"`
-		DefaultValue *string  `json:"default_value"`
+		ID           string          `json:"id"`
+		Key          string          `json:"key"`
+		Label        string          `json:"label"`
+		Type         string          `json:"type"`
+		Required     bool            `json:"required"`
+		SortOrder    int32           `json:"sort_order"`
+		Options      []string        `json:"options"`
+		Placeholder  *string         `json:"placeholder"`
+		DefaultValue *string         `json:"default_value"`
+		Config       json.RawMessage `json:"config,omitempty"`
 	}
 
 	toFieldJSON := func(f gen.ListCustomFieldsByGroupRow) fieldJSON {
@@ -2273,6 +2288,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 			Options:      options,
 			Placeholder:  f.Placeholder,
 			DefaultValue: f.DefaultValue,
+			Config:       logicConfigJSON(f.Config),
 		}
 	}
 
@@ -2787,17 +2803,37 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, form gen.GetFormB
 	// Build lookup maps: label→field and key→field.
 	byLabel := make(map[string]fieldDef, len(fields))
 	byKey := make(map[string]fieldDef, len(fields))
+	defs := make([]fieldDef, 0, len(fields))
 
 	for _, f := range fields {
-		fd := fieldDef{Label: f.Label, Key: f.Key, FieldType: f.FieldType, Options: f.Options, IsRequired: f.IsRequired}
+		fd := fieldDef{Label: f.Label, Key: f.Key, FieldType: f.FieldType, Options: f.Options, IsRequired: f.IsRequired, Config: f.Config}
 		byLabel[f.Label] = fd
 		byKey[f.Key] = fd
+		defs = append(defs, fd)
+	}
+
+	// Answer-driven visibility (ADR-137): drop submitted values for fields
+	// whose visible_if fails, and exclude them from the required check. The
+	// fieldValues map is mutated in place (same convention as the select
+	// normalization + rich_text sanitization below) so callers store the
+	// canonical visible-path snapshot.
+	canon := canonicalAnswers(defs, fieldValues)
+	hidden := hiddenFieldKeys(defs, canon)
+
+	for rawKey := range fieldValues {
+		f, ok := byLabel[rawKey]
+		if !ok {
+			f, ok = byKey[rawKey]
+		}
+		if ok && hidden[f.Key] {
+			delete(fieldValues, rawKey)
+		}
 	}
 
 	// 1. Check required fields are present and non-empty. Structural
 	// 'group' fields store no value — requiring one would be unsatisfiable.
 	for _, f := range fields {
-		if !f.IsRequired || f.FieldType == FieldTypeGroup {
+		if !f.IsRequired || f.FieldType == FieldTypeGroup || hidden[f.Key] {
 			continue
 		}
 
@@ -2918,6 +2954,7 @@ type fieldDef struct {
 	FieldType  string
 	Options    []byte
 	IsRequired bool
+	Config     []byte
 }
 
 // validateFieldValue validates a single field value against its field type
@@ -3613,23 +3650,29 @@ func (h *Handlers) ListFormSteps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type stepJSON struct {
-		ID           string  `json:"id"`
-		FormID       string  `json:"form_id"`
-		Title        string  `json:"title"`
-		Position     int32   `json:"position"`
-		FieldGroupID *string `json:"field_group_id"`
+		ID           string          `json:"id"`
+		FormID       string          `json:"form_id"`
+		Title        string          `json:"title"`
+		Position     int32           `json:"position"`
+		FieldGroupID *string         `json:"field_group_id"`
+		Config       json.RawMessage `json:"config"`
 	}
 
 	result := make([]stepJSON, 0, len(steps))
 
 	for _, st := range steps {
 		fgid := h.Service.GetStepFormGroupID(r.Context(), st.ID)
+		cfg := st.Config
+		if len(cfg) == 0 {
+			cfg = json.RawMessage("{}")
+		}
 		result = append(result, stepJSON{
 			ID:           st.ID.String(),
 			FormID:       st.FormID.String(),
 			Title:        st.Title,
 			Position:     st.Position,
 			FieldGroupID: fgid,
+			Config:       cfg,
 		})
 	}
 
