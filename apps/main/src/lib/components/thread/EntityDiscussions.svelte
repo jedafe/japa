@@ -67,7 +67,12 @@
 		const res = await api.getEnvelope<Comment[]>(
 			`/content/${anchor.content_id}/comments?sort=${sortParam}&page_size=5`
 		);
-		if (res.error || !res.data) return;
+		if (res.error || !res.data) {
+			// Clear rather than leave the previous tab's order rendered under
+			// the new label — an honest empty state beats wrong-sort data.
+			comments = [];
+			return;
+		}
 		const top = res.data;
 		total = (res.envelope as { meta?: { total?: number } } | null)?.meta?.total ?? top.length;
 		const all = [...top];

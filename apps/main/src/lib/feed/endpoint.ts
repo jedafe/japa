@@ -64,7 +64,9 @@ export function resolveTab(raw: string | null, authed: boolean): FeedTab {
  * it; the Thread tab defaults to 'latest' (chronological, like /thread).
  */
 export function resolveSort(raw: string | null, tab?: FeedTab): SortValue {
-	if ((SORTS as string[]).includes(raw ?? '')) return raw as SortValue;
-	// The Thread tab mirrors the /thread index — chronological by default.
-	return tab === 'thread' ? 'latest' : 'relevant';
+	// The Thread tab mirrors the /thread index — Latest/Top only, so a
+	// carried-over ?sort=relevant|rising coerces to the default instead of
+	// leaving no chip highlighted.
+	if (tab === 'thread') return raw === 'top' ? 'top' : 'latest';
+	return (SORTS as string[]).includes(raw ?? '') ? (raw as SortValue) : 'relevant';
 }

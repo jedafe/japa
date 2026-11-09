@@ -1003,7 +1003,7 @@ func (s *Service) staleFlightResponse(ctx context.Context, stored *gen.TravelSea
 	if provider != nil {
 		if offers := s.inventoryFlights(ctx, *provider, params, coverageKey, true); len(offers) > 0 {
 			injectAffiliateIntoFlights(offers, affiliate)
-			return serveFlights(offers, opts, "stale", true, start)
+			return serveFlights(offers, opts, "stale", false, start)
 		}
 	}
 
@@ -1018,7 +1018,7 @@ func (s *Service) staleFlightResponse(ctx context.Context, stored *gen.TravelSea
 
 	injectAffiliateIntoFlights(stale, affiliate)
 
-	return serveFlights(stale, opts, "stale", true, start)
+	return serveFlights(stale, opts, "stale", false, start)
 }
 
 // staleHotelResponse mirrors staleFlightResponse for hotel offers.
@@ -1026,7 +1026,7 @@ func (s *Service) staleHotelResponse(ctx context.Context, stored *gen.TravelSear
 	if provider != nil {
 		if offers := s.inventoryHotels(ctx, *provider, params, coverageKey, true); len(offers) > 0 {
 			injectAffiliateIntoHotels(offers, affiliate)
-			return serveHotels(offers, opts, "stale", true, start)
+			return serveHotels(offers, opts, "stale", false, start)
 		}
 	}
 
@@ -1041,7 +1041,7 @@ func (s *Service) staleHotelResponse(ctx context.Context, stored *gen.TravelSear
 
 	injectAffiliateIntoHotels(stale, affiliate)
 
-	return serveHotels(stale, opts, "stale", true, start)
+	return serveHotels(stale, opts, "stale", false, start)
 }
 
 // ---------------------------------------------------------------------------

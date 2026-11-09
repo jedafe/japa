@@ -105,6 +105,7 @@
 	function previewHtml(source: string, fallbackExcerpt: string): string {
 		if (source) {
 			const chunks = source.split(/(?=<(?:p|h[1-6]|ul|ol|blockquote|pre|figure|table|div)[\s>])/i);
+			const total = stripHtmlText(source).split(/\s+/).filter(Boolean).length;
 			let acc = '';
 			let words = 0;
 			for (const chunk of chunks) {
@@ -116,7 +117,9 @@
 				words += w;
 				if (words >= 130) break;
 			}
-			if (acc) return acc + '<p class="text-[var(--color-muted)]">…</p>';
+			// Ellipsis only when the cap actually cut content — a short article
+			// that fits wholesale shouldn't suggest more exists.
+			if (acc) return acc + (words < total ? '<p class="text-[var(--color-muted)]">…</p>' : '');
 		}
 		// Fallback: plain-text truncation of whatever text exists.
 		const words = stripHtmlText(source).split(/\s+/).filter(Boolean);

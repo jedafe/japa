@@ -99,11 +99,11 @@
 
 	// Reply sort — the chips on the canonical page set the override; entity
 	// previews drive it via the `sort` prop (chips are hidden there).
-	const sortOptions = [
+	const sortOptions = $derived([
 		{ value: 'top', label: t('comments.sort.top', 'Top') },
 		{ value: 'newest', label: t('comments.sort.new', 'New') },
 		{ value: 'oldest', label: t('comments.sort.oldest', 'Oldest') }
-	] as const;
+	] as const);
 	let sortOverride = $state<'top' | 'newest' | 'oldest' | null>(null);
 	const activeSort = $derived(sortOverride ?? sort);
 
@@ -111,7 +111,8 @@
 		// §88 BUG-008: pin host replies above regular replies when hostUserId
 		// is set (AMA threads). Otherwise rank top-level replies by the active
 		// sort — vote score by default so upvoted answers surface first.
-		// Children stay chronological.
+		// Children render in fetch order (top-voted first — parent_id fetches
+		// default to sort=top server-side); only top-level order is re-ranked.
 		const combined = [...topLevel, ...addedTop];
 		const rank = (a: ForumReply, b: ForumReply) =>
 			b.vote_score - a.vote_score || a.created_at.localeCompare(b.created_at);
