@@ -187,8 +187,20 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.EqualFold(strings.TrimSpace(origin), strings.TrimSpace(dest)) {
+		errpkg.WriteError(w, http.StatusBadRequest, "same_origin_dest", "origin and destination must differ")
+		return
+	}
+
 	if !validateDate(date) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_date", "date must be in YYYY-MM-DD format")
+		return
+	}
+
+	// Yesterday's cutoff absorbs client timezone skew — a same-day search
+	// from a user behind the server clock must not 400.
+	if date < time.Now().AddDate(0, 0, -1).Format("2006-01-02") {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_date", "date must not be in the past")
 		return
 	}
 
@@ -275,6 +287,11 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 
 	if !validateDate(checkin) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_checkin", "checkin must be in YYYY-MM-DD format")
+		return
+	}
+
+	if checkin < time.Now().AddDate(0, 0, -1).Format("2006-01-02") {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_checkin", "checkin must not be in the past")
 		return
 	}
 
@@ -400,13 +417,16 @@ func (h *Handlers) HandleHotelDirectory(w http.ResponseWriter, r *http.Request) 
 
 	q := r.URL.Query()
 
+	page := validatePositiveInt(atoiDefault(q.Get("page"), 1), 1, 1)
+	pageSize := min(validatePositiveInt(atoiDefault(q.Get("page_size"), 50), 50, 1), 200)
+
 	items, total, err := h.service.HotelDirectory(
 		r.Context(),
 		q.Get("city"),
 		q.Get("q"),
 		atoiDefault(q.Get("min_stars"), 0),
-		atoiDefault(q.Get("page"), 1),
-		atoiDefault(q.Get("page_size"), 50),
+		page,
+		pageSize,
 	)
 	if err != nil {
 		slog.Error("travel: hotel directory failed", "error", err)
@@ -419,8 +439,8 @@ func (h *Handlers) HandleHotelDirectory(w http.ResponseWriter, r *http.Request) 
 		"data": map[string]any{
 			"results":   items,
 			"total":     total,
-			"page":      atoiDefault(q.Get("page"), 1),
-			"page_size": min(max(atoiDefault(q.Get("page_size"), 50), 1), 200),
+			"page":      page,
+			"page_size": pageSize,
 		},
 	})
 }
@@ -434,13 +454,16 @@ func (h *Handlers) HandleAirlineDirectory(w http.ResponseWriter, r *http.Request
 
 	q := r.URL.Query()
 
+	page := validatePositiveInt(atoiDefault(q.Get("page"), 1), 1, 1)
+	pageSize := min(validatePositiveInt(atoiDefault(q.Get("page_size"), 50), 50, 1), 200)
+
 	items, total, err := h.service.AirlineDirectory(
 		r.Context(),
 		q.Get("q"),
 		q.Get("country"),
 		q.Get("provider"),
-		atoiDefault(q.Get("page"), 1),
-		atoiDefault(q.Get("page_size"), 50),
+		page,
+		pageSize,
 	)
 	if err != nil {
 		slog.Error("travel: airline directory failed", "error", err)
@@ -453,8 +476,8 @@ func (h *Handlers) HandleAirlineDirectory(w http.ResponseWriter, r *http.Request
 		"data": map[string]any{
 			"results":   items,
 			"total":     total,
-			"page":      atoiDefault(q.Get("page"), 1),
-			"page_size": min(max(atoiDefault(q.Get("page_size"), 50), 1), 200),
+			"page":      page,
+			"page_size": pageSize,
 		},
 	})
 }
