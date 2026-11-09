@@ -232,6 +232,27 @@ func TestFetchWeb_RejectsPrivateIP(t *testing.T) {
 	}
 }
 
+func TestFetchWeb_RejectsUserinfoURL(t *testing.T) {
+	t.Parallel()
+
+	// Embedded credentials must be rejected before any DNS/network activity —
+	// .invalid never resolves, so a pass here proves the check runs first.
+	for _, u := range []string{
+		"https://user:pass@unresolvable.invalid/",
+		"https://token@169.254.169.254/",
+		"http://admin:hunter2@10.0.0.1/internal",
+	} {
+		_, err := FetchWeb(t.Context(), nil, nil, u, 1000)
+		if err == nil {
+			t.Errorf("expected %q to be rejected", u)
+			continue
+		}
+		if !errors.Is(err, errExternalFetchInvalidURL) {
+			t.Errorf("%q: expected errExternalFetchInvalidURL, got %v", u, err)
+		}
+	}
+}
+
 func TestFetchWeb_RejectsNonHTTPScheme(t *testing.T) {
 	t.Parallel()
 

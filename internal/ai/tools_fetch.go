@@ -32,6 +32,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -179,6 +180,17 @@ func FetchWeb(ctx context.Context, client *http.Client, settings SettingsReader,
 	}
 	if maxChars > fetchToolMaxCharsCeiling {
 		maxChars = fetchToolMaxCharsCeiling
+	}
+
+	// Bound URL length (a few KB is more than any real page URL needs) and
+	// reject embedded credentials (https://user:pass@host/): the client
+	// would send them as Basic auth to the target — an LLM-chosen URL must
+	// never carry secrets. linkpreview.ValidateURL ignores userinfo.
+	if len(rawURL) > 4096 {
+		return nil, fmt.Errorf("%w: URL too long", errExternalFetchInvalidURL)
+	}
+	if u, err := url.Parse(rawURL); err != nil || u.User != nil {
+		return nil, fmt.Errorf("%w: malformed URL or embedded credentials", errExternalFetchInvalidURL)
 	}
 
 	// Up-front validation: scheme allowlist + private/reserved IP rejection.
