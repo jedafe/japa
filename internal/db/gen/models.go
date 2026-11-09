@@ -2109,6 +2109,7 @@ type FormStep struct {
 	FormID   pgtype.UUID `json:"form_id"`
 	Title    string      `json:"title"`
 	Position int32       `json:"position"`
+	Config   []byte      `json:"config"`
 }
 
 type FormSubmission struct {

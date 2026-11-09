@@ -65,21 +65,22 @@ WHERE id = @id AND is_system = false;
 -- =====================
 
 -- name: ListFormStepsByForm :many
-SELECT id, form_id, title, position
+SELECT id, form_id, title, position, config
 FROM form_steps
 WHERE form_id = @form_id
 ORDER BY position ASC;
 
 -- name: CreateFormStep :one
-INSERT INTO form_steps (form_id, title, position) VALUES (@form_id, @title, @position)
+INSERT INTO form_steps (form_id, title, position, config) VALUES (@form_id, @title, @position, @config)
 
-RETURNING id, form_id, title, position;
+RETURNING id, form_id, title, position, config;
 
 -- name: UpdateFormStep :one
 UPDATE form_steps
-SET title = @title, position = @position
+SET title = @title, position = @position,
+  config = CASE WHEN @update_config::bool THEN @config ELSE config END
 WHERE id = @id AND form_id = @form_id
-RETURNING id, form_id, title, position;
+RETURNING id, form_id, title, position, config;
 
 -- name: UpdateFormStepPosition :exec
 UPDATE form_steps

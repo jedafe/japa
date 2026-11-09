@@ -857,6 +857,33 @@ func optionsAbsent(raw json.RawMessage) bool {
 	return false
 }
 
+// validStepConfig accepts only JSON objects (or nil) — the form_steps.config
+// column must stay object-shaped for the rule keys the evaluator reads.
+// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md (ADR-137)
+func validStepConfig(raw []byte) bool {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return true
+	}
+	var v map[string]any
+	return json.Unmarshal(raw, &v) == nil
+}
+
+// publicStepConfig projects the public-safe slice of form_steps.config:
+// visible_if only. Anything else stays admin-internal.
+func publicStepConfig(raw []byte) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var cfg struct {
+		VisibleIf json.RawMessage `json:"visible_if"`
+	}
+	if json.Unmarshal(raw, &cfg) != nil || len(cfg.VisibleIf) == 0 {
+		return nil
+	}
+	out, _ := json.Marshal(map[string]json.RawMessage{"visible_if": cfg.VisibleIf})
+	return out
+}
+
 // ListFieldsByGroup handles GET /api/v1/custom-field-groups/{id}/fields.
 func (h *Handlers) ListFieldsByGroup(w http.ResponseWriter, r *http.Request) {
 	groupID, err := parseUUIDParam(r, "id")
@@ -1703,6 +1730,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		Position     int32           `json:"position"`
 		FieldGroupID *string         `json:"field_group_id"`
 		Fields       []stepFieldJSON `json:"fields"`
+		Config       json.RawMessage `json:"config"`
 	}
 
 	stepList := []stepJSON{}
@@ -1749,12 +1777,18 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 
+				stepCfg := st.Config
+				if len(stepCfg) == 0 {
+					stepCfg = json.RawMessage("{}")
+				}
+
 				stepList = append(stepList, stepJSON{
 					ID:           st.ID.String(),
 					Title:        st.Title,
 					Position:     st.Position,
 					FieldGroupID: fgid,
 					Fields:       stepFields,
+					Config:       stepCfg,
 				})
 			}
 		}
@@ -2249,11 +2283,12 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 
 	// For multi-step forms, build a steps[] array with per-step fields.
 	type stepJSON struct {
-		ID           string      `json:"id"`
-		Title        string      `json:"title"`
-		Position     int32       `json:"position"`
-		FieldGroupID *string     `json:"field_group_id"`
-		Fields       []fieldJSON `json:"fields"`
+		ID           string          `json:"id"`
+		Title        string          `json:"title"`
+		Position     int32           `json:"position"`
+		FieldGroupID *string         `json:"field_group_id"`
+		Fields       []fieldJSON     `json:"fields"`
+		Config       json.RawMessage `json:"config,omitempty"`
 	}
 
 	stepList := []stepJSON{}
@@ -2293,6 +2328,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 					Position:     st.Position,
 					FieldGroupID: fgid,
 					Fields:       stepFields,
+					Config:       publicStepConfig(st.Config),
 				})
 			}
 		}
@@ -3626,8 +3662,9 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Title    string `json:"title"`
-		Position int32  `json:"position"`
+		Title    string          `json:"title"`
+		Position int32           `json:"position"`
+		Config   json.RawMessage `json:"config"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -3640,10 +3677,19 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.Config) > 0 && !validStepConfig(req.Config) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_step_config", "config must be a JSON object")
+		return
+	}
+	if len(req.Config) == 0 {
+		req.Config = json.RawMessage("{}")
+	}
+
 	step, err := h.Service.CreateFormStep(r.Context(), form.Slug, gen.CreateFormStepParams{
 		FormID:   formID,
 		Title:    req.Title,
 		Position: req.Position,
+		Config:   req.Config,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -3661,6 +3707,7 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 			"title":          step.Title,
 			"position":       step.Position,
 			"field_group_id": fieldGroupID,
+			"config":         step.Config,
 		},
 	})
 }
@@ -3681,8 +3728,9 @@ func (h *Handlers) UpdateFormStep(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Title    string `json:"title"`
-		Position int32  `json:"position"`
+		Title    string          `json:"title"`
+		Position int32           `json:"position"`
+		Config   json.RawMessage `json:"config"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -3695,11 +3743,23 @@ func (h *Handlers) UpdateFormStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Three-state config: omitted keeps the stored object; present replaces.
+	configSent := len(req.Config) > 0
+	if configSent && !validStepConfig(req.Config) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_step_config", "config must be a JSON object")
+		return
+	}
+	if !configSent {
+		req.Config = json.RawMessage("{}")
+	}
+
 	step, err := h.Service.UpdateFormStep(r.Context(), gen.UpdateFormStepParams{
-		ID:       stepID,
-		FormID:   formID,
-		Title:    req.Title,
-		Position: req.Position,
+		ID:           stepID,
+		FormID:       formID,
+		Title:        req.Title,
+		Position:     req.Position,
+		Config:       req.Config,
+		UpdateConfig: configSent,
 	})
 	if err != nil {
 		handleServiceError(w, err)

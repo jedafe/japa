@@ -97,25 +97,32 @@ func (q *Queries) CreateForm(ctx context.Context, arg CreateFormParams) (CreateF
 }
 
 const createFormStep = `-- name: CreateFormStep :one
-INSERT INTO form_steps (form_id, title, position) VALUES ($1, $2, $3)
+INSERT INTO form_steps (form_id, title, position, config) VALUES ($1, $2, $3, $4)
 
-RETURNING id, form_id, title, position
+RETURNING id, form_id, title, position, config
 `
 
 type CreateFormStepParams struct {
 	FormID   pgtype.UUID `json:"form_id"`
 	Title    string      `json:"title"`
 	Position int32       `json:"position"`
+	Config   []byte      `json:"config"`
 }
 
 func (q *Queries) CreateFormStep(ctx context.Context, arg CreateFormStepParams) (FormStep, error) {
-	row := q.db.QueryRow(ctx, createFormStep, arg.FormID, arg.Title, arg.Position)
+	row := q.db.QueryRow(ctx, createFormStep,
+		arg.FormID,
+		arg.Title,
+		arg.Position,
+		arg.Config,
+	)
 	var i FormStep
 	err := row.Scan(
 		&i.ID,
 		&i.FormID,
 		&i.Title,
 		&i.Position,
+		&i.Config,
 	)
 	return i, err
 }
@@ -411,7 +418,7 @@ func (q *Queries) GetFormSubmissionByPaymentID(ctx context.Context, paymentID pg
 
 const listFormStepsByForm = `-- name: ListFormStepsByForm :many
 
-SELECT id, form_id, title, position
+SELECT id, form_id, title, position, config
 FROM form_steps
 WHERE form_id = $1
 ORDER BY position ASC
@@ -434,6 +441,7 @@ func (q *Queries) ListFormStepsByForm(ctx context.Context, formID pgtype.UUID) (
 			&i.FormID,
 			&i.Title,
 			&i.Position,
+			&i.Config,
 		); err != nil {
 			return nil, err
 		}
@@ -745,22 +753,27 @@ func (q *Queries) UpdateForm(ctx context.Context, arg UpdateFormParams) (UpdateF
 
 const updateFormStep = `-- name: UpdateFormStep :one
 UPDATE form_steps
-SET title = $1, position = $2
-WHERE id = $3 AND form_id = $4
-RETURNING id, form_id, title, position
+SET title = $1, position = $2,
+  config = CASE WHEN $3::bool THEN $4 ELSE config END
+WHERE id = $5 AND form_id = $6
+RETURNING id, form_id, title, position, config
 `
 
 type UpdateFormStepParams struct {
-	Title    string      `json:"title"`
-	Position int32       `json:"position"`
-	ID       pgtype.UUID `json:"id"`
-	FormID   pgtype.UUID `json:"form_id"`
+	Title        string      `json:"title"`
+	Position     int32       `json:"position"`
+	UpdateConfig bool        `json:"update_config"`
+	Config       []byte      `json:"config"`
+	ID           pgtype.UUID `json:"id"`
+	FormID       pgtype.UUID `json:"form_id"`
 }
 
 func (q *Queries) UpdateFormStep(ctx context.Context, arg UpdateFormStepParams) (FormStep, error) {
 	row := q.db.QueryRow(ctx, updateFormStep,
 		arg.Title,
 		arg.Position,
+		arg.UpdateConfig,
+		arg.Config,
 		arg.ID,
 		arg.FormID,
 	)
@@ -770,6 +783,7 @@ func (q *Queries) UpdateFormStep(ctx context.Context, arg UpdateFormStepParams) 
 		&i.FormID,
 		&i.Title,
 		&i.Position,
+		&i.Config,
 	)
 	return i, err
 }
