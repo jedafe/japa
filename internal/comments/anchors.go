@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 
@@ -106,10 +107,35 @@ func (s *Service) anchorSpace(ctx context.Context) (pgtype.UUID, error) {
 	return anchorSpaceID, nil
 }
 
+// contentEntityURL mirrors the frontend CONTENT_ROUTE_PREFIX map
+// (contentLink.ts) so thread_anchors.entity_url points at the article's
+// canonical detail route — the embed card and any URL consumers land on
+// the real content page, not a discussion stub.
+func contentEntityURL(contentType, slug string) string {
+	prefix := map[string]string{
+		"blog_post":       "/blog",
+		"guide":           "/guide",
+		"discussion":      "/thread",
+		"forum_thread":    "/thread",
+		"comparison":      "/comparisons",
+		"story":           "/story",
+		"achievement":     "/achievements",
+		"page":            "/pages",
+		"job_listing":     "/jobs",
+		"service_listing": "/services",
+		"video":           "/video",
+		"list":            "/list",
+	}[contentType]
+	if prefix == "" {
+		prefix = "/content"
+	}
+	return prefix + "/" + slug
+}
+
 // ResolveAnchor returns the thread anchor bound to an entity, or ErrNotFound.
-// entity_type='content' is special-cased: the contents row itself IS the
-// thread (/thread/{slug} renders its embed + comments), so no anchor row is
-// needed — resolve returns the row's own identity.
+// entity_type='content': a `discussion` row IS a thread already and resolves
+// to itself; every other content type resolves through its anchored
+// discussion row (minted on publish or on first "Start a conversation").
 func (s *Service) ResolveAnchor(ctx context.Context, entityType, entityKey string) (AnchorSummary, error) {
 	if entityType == "content" {
 		var contentID pgtype.UUID
@@ -128,14 +154,27 @@ func (s *Service) ResolveAnchor(ctx context.Context, entityType, entityKey strin
 			return AnchorSummary{}, pgx.ErrNoRows
 		}
 
-		return AnchorSummary{
-			ContentID:    row.ID,
-			Slug:         row.Slug,
-			Title:        row.Title,
-			CommentCount: row.CommentCount,
-			EntityType:   "content",
-			EntityKey:    entityKey,
-		}, nil
+		// A discussion row IS its own thread — no separate anchor needed.
+		if row.ContentType == "discussion" {
+			return AnchorSummary{
+				ContentID:    row.ID,
+				Slug:         row.Slug,
+				Title:        row.Title,
+				CommentCount: row.CommentCount,
+				EntityType:   "content",
+				EntityKey:    entityKey,
+			}, nil
+		}
+
+		anchor, err := s.read.GetThreadAnchorByEntity(ctx, gen.GetThreadAnchorByEntityParams{
+			EntityType: entityType,
+			EntityKey:  entityKey,
+		})
+		if err != nil {
+			return AnchorSummary{}, err
+		}
+
+		return anchorSummaryFromRow(anchor), nil
 	}
 
 	row, err := s.read.GetThreadAnchorByEntity(ctx, gen.GetThreadAnchorByEntityParams{
@@ -172,14 +211,87 @@ type entityDescriptor struct {
 	URL     string
 	Title   string
 	Summary *string
-	// SpaceID the anchor contents row files under — always the platform
-	// anchor space today (see anchorPlatformSpaceSlug).
-	SpaceID pgtype.UUID
+	// SpaceID the anchor contents row files under — the platform anchor
+	// space for tool/wiki entities; the parent's own primary space for
+	// content entities so the thread inherits the article's audience.
+	SpaceID    pgtype.UUID
+	GeoSpaceID pgtype.UUID
+	// Visibility of the minted thread row — mirrors the parent content's
+	// audience for content entities; empty defaults to public.
+	Visibility string
 }
 
 // describeEntity validates the requested anchor target and resolves its
 // display fields server-side (never trusting client-supplied titles).
 func (s *Service) describeEntity(ctx context.Context, entityType, entityKey string) (entityDescriptor, error) {
+	switch entityType {
+	case "content":
+		{
+			var contentID pgtype.UUID
+			if err := contentID.Scan(entityKey); err != nil {
+				return entityDescriptor{}, fmt.Errorf("content key must be a content UUID: %w", errpkg.ErrInvalid)
+			}
+
+			row, err := s.read.GetContentByID(ctx, contentID)
+			if err != nil {
+				return entityDescriptor{}, err
+			}
+
+			// Only live, public rows mint a thread: drafts/review/private rows
+			// have no public thread page, and a minted thread would leak the
+			// unpublished title via /thread/{slug}. Discussion rows resolve to
+			// themselves before reaching here; forum_thread rows already have
+			// a thread surface.
+			if row.Status != content.StatusPublished || row.Visibility != content.VisibilityPublic {
+				return entityDescriptor{}, fmt.Errorf("content is not publicly live: %w", errpkg.ErrInvalid)
+			}
+			if row.ContentType == "discussion" || row.ContentType == "forum_thread" {
+				return entityDescriptor{}, fmt.Errorf("content_type %q is already a thread: %w", row.ContentType, errpkg.ErrInvalid)
+			}
+
+			// Same leak guard as wiki pages: the thread files under the
+			// parent's primary space (content_spaces is authoritative;
+			// contents.space_id is the legacy fallback), so only
+			// public+active spaces may bind a public anchor.
+			spaceID := row.SpaceID
+			if spaces, err := s.read.GetContentSpaces(ctx, row.ID); err == nil {
+				for _, sp := range spaces {
+					if sp.IsPrimary {
+						spaceID = sp.SpaceID
+						break
+					}
+				}
+			}
+			if !spaceID.Valid {
+				return entityDescriptor{}, fmt.Errorf("content has no primary space: %w", errpkg.ErrInvalid)
+			}
+			space, err := s.read.GetSpaceByID(ctx, spaceID)
+			if err != nil {
+				return entityDescriptor{}, err
+			}
+			if space.Visibility != "public" || space.Status != "active" || space.DeletedAt.Valid {
+				return entityDescriptor{}, fmt.Errorf("content space is not public: %w", errpkg.ErrInvalid)
+			}
+
+			summary := ""
+			if row.MetaDescription != nil {
+				summary = strings.TrimSpace(*row.MetaDescription)
+			}
+			if summary == "" {
+				summary = content.ExcerptFromBody(row.Body, "", 160)
+			}
+
+			return entityDescriptor{
+				URL:        contentEntityURL(row.ContentType, row.Slug),
+				Title:      row.Title,
+				Summary:    &summary,
+				SpaceID:    spaceID,
+				GeoSpaceID: row.GeoSpaceID,
+				Visibility: row.Visibility,
+			}, nil
+		}
+	}
+
 	spaceID, err := s.anchorSpace(ctx)
 	if err != nil {
 		return entityDescriptor{}, err
@@ -249,11 +361,9 @@ func anchorBodyDoc(description, title string) string {
 // or member-restricted space.
 func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityType, entityKey string) (AnchorSummary, error) {
 	existing, err := s.ResolveAnchor(ctx, entityType, entityKey)
-	// A 'content' entity resolves to the row itself — the thread already
-	// exists, so "start a conversation" is a no-op deep link.
-	if err == nil && entityType == "content" {
-		return existing, nil
-	}
+	// Any successful resolve is get-or-create "get": existing anchors return
+	// their thread, and content `discussion` rows resolve to themselves —
+	// they are their own thread, so "start a conversation" is a no-op link.
 	if err == nil {
 		return existing, nil
 	}
@@ -275,9 +385,14 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 	// The thread body carries the entity's real description plus a
 	// conversation prompt — /thread/{slug} renders it as the body section,
 	// so anchor threads aren't empty shells (unified-discussion spec).
-	body := ""
+	// body_html is supplied explicitly: createContent would otherwise run
+	// the TipTap JSON through the markdown renderer and store the doc as
+	// one literal-JSON paragraph.
+	body, bodyHTML := "", ""
 	if desc.Summary != nil && *desc.Summary != "" {
 		body = anchorBodyDoc(*desc.Summary, desc.Title)
+		bodyHTML = "<p>" + html.EscapeString(*desc.Summary) + "</p>" +
+			"<p>" + html.EscapeString("Questions, experiences, and tips about "+desc.Title+" — join the discussion below.") + "</p>"
 	}
 
 	// Same uniqueness trick as StartConversation: the hash input carries the
@@ -289,15 +404,22 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 	hashSum := sha256.Sum256([]byte(hashInput))
 	contentHash := hex.EncodeToString(hashSum[:])
 
+	visibility := desc.Visibility
+	if visibility == "" {
+		visibility = content.VisibilityPublic
+	}
+
 	row, err := s.creator.CreateContent(ctx, content.CreateContentInput{
 		AuthorID:    userID,
 		ContentType: "discussion",
 		Title:       title,
 		Body:        body,
+		BodyHtml:    bodyHTML,
 		ContentHash: &contentHash,
 		SpaceID:     desc.SpaceID,
+		GeoSpaceID:  desc.GeoSpaceID,
 		Status:      content.StatusPublished,
-		Visibility:  content.VisibilityPublic,
+		Visibility:  visibility,
 		// System-generated rows bypass the moderation clamp — the anchor is
 		// a container for comments, not authored prose (same rationale as
 		// StartConversation's derived threads).
@@ -305,6 +427,21 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 	})
 	if err != nil {
 		return AnchorSummary{}, fmt.Errorf("creating anchor thread: %w", err)
+	}
+
+	// Content threads also record the §49 parent link — GetThreadParentByThreadID
+	// resolves it into the thread page's canonical-content embed card, and
+	// comment counts propagate up to the article via the link.
+	if entityType == "content" {
+		var parentID pgtype.UUID
+		if err := parentID.Scan(entityKey); err == nil {
+			if _, err := s.write.CreateContentThreadLink(ctx, gen.CreateContentThreadLinkParams{
+				ContentID: parentID,
+				ThreadID:  row.ID,
+			}); err != nil {
+				return AnchorSummary{}, fmt.Errorf("linking anchor thread to parent content: %w", err)
+			}
+		}
 	}
 
 	anchor, err := s.write.CreateThreadAnchor(ctx, gen.CreateThreadAnchorParams{

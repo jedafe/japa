@@ -281,6 +281,17 @@ func (q *Queries) DecrementCommentReplyCount(ctx context.Context, parentID pgtyp
 	return err
 }
 
+const decrementLinkedContentCommentCount = `-- name: DecrementLinkedContentCommentCount :exec
+UPDATE contents SET comment_count = GREATEST(0, comment_count - 1)
+WHERE id IN (SELECT content_id FROM content_thread_links WHERE thread_id = $1)
+`
+
+// Mirror of IncrementLinkedContentCommentCount for comment delete/remove.
+func (q *Queries) DecrementLinkedContentCommentCount(ctx context.Context, threadID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, decrementLinkedContentCommentCount, threadID)
+	return err
+}
+
 const deleteCommentVote = `-- name: DeleteCommentVote :exec
 DELETE FROM comment_votes
 WHERE comment_id = $1 AND user_id = $2
@@ -563,6 +574,19 @@ WHERE id = $1 AND deleted_at IS NULL
 // is created (BUG-008).
 func (q *Queries) IncrementCommentReplyCount(ctx context.Context, parentID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, incrementCommentReplyCount, parentID)
+	return err
+}
+
+const incrementLinkedContentCommentCount = `-- name: IncrementLinkedContentCommentCount :exec
+UPDATE contents SET comment_count = comment_count + 1
+WHERE id IN (SELECT content_id FROM content_thread_links WHERE thread_id = $1)
+`
+
+// Propagate a comment on a linked/anchored discussion thread up to the
+// parent content's denormalized count — feed cards and entity pages for
+// the article show the conversation total (unified-discussion spec).
+func (q *Queries) IncrementLinkedContentCommentCount(ctx context.Context, threadID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, incrementLinkedContentCommentCount, threadID)
 	return err
 }
 

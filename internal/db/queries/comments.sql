@@ -599,3 +599,15 @@ WHERE EXISTS (
       AND NOT (ct.content_type = ANY(COALESCE(@gated_types::text[], '{}'::text[])))
 )
 ON CONFLICT DO NOTHING;
+
+-- name: IncrementLinkedContentCommentCount :exec
+-- Propagate a comment on a linked/anchored discussion thread up to the
+-- parent content's denormalized count — feed cards and entity pages for
+-- the article show the conversation total (unified-discussion spec).
+UPDATE contents SET comment_count = comment_count + 1
+WHERE id IN (SELECT content_id FROM content_thread_links WHERE thread_id = @thread_id);
+
+-- name: DecrementLinkedContentCommentCount :exec
+-- Mirror of IncrementLinkedContentCommentCount for comment delete/remove.
+UPDATE contents SET comment_count = GREATEST(0, comment_count - 1)
+WHERE id IN (SELECT content_id FROM content_thread_links WHERE thread_id = @thread_id);

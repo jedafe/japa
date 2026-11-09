@@ -333,7 +333,7 @@
 
 	<!-- Unified comment engine (Section 49) — top-level comments are SSR-seeded. -->
 	<!-- Discussion preview — full engine lives at /thread/{slug}. -->
-	<EntityDiscussions entityType="content" entityKey={comparison.content.id} authed={data.authed} />
+	<EntityDiscussions entityType="content" entityKey={comparison.content.id} contentSlug={comparison.content.slug} authed={data.authed} />
 
 	<!-- §25: engagement-area ad slot. -->
 	<AdSlot slot="comments_below" format="banner" />

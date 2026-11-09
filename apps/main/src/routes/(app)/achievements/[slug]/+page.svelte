@@ -275,5 +275,5 @@
 
 	<!-- Unified comment engine (§49) — SSR-seeded, load-more driven by meta. -->
 	<!-- Discussion preview — full engine lives at /thread/{slug}. -->
-	<EntityDiscussions entityType="content" entityKey={achievement.id} authed={data.authed} />
+	<EntityDiscussions entityType="content" entityKey={achievement.id} contentSlug={achievement.slug} authed={data.authed} />
 </div>

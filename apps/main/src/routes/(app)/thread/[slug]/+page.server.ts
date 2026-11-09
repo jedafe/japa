@@ -1,7 +1,7 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { ServerLoadEvent } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '#lib/server/api.js';
+import { apiContext, apiGet, apiGetEnvelope, apiList, apiPost, ApiError } from '#lib/server/api.js';
 import { hasPerm } from '#lib/server/auth.js';
 import { contentHref } from '#lib/utils/contentLink.js';
 import type { ForumThread, ForumReply, ForumTag, PollWithResults, Comment } from '#lib/types/index.js';
@@ -195,6 +195,22 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 		throw error(502, { code: 'upstream_error', message: 'Failed to load thread' });
 	}
 
+	// An anchored content thread reached by its own slug canonicalizes to
+	// /thread/{article-slug} — one URL per content thread (the article's).
+	// tool/wiki anchors keep their own slug: they have no canonical slug.
+	if (article.thread_anchor?.entity_type === 'content' && article.thread_parent?.slug) {
+		throw redirect(301, `/thread/${article.thread_parent.slug}`);
+	}
+
+	// A non-discussion contents row reached via /thread/{slug} renders its
+	// canonical discussion thread — a separate `discussion` row minted on
+	// publish (or minted here on first visit for pre-migration rows). The
+	// row below keeps the kind='self' view only as an un-minted fallback.
+	if (article.content_type !== 'discussion') {
+		const thread = await resolveContentThread(event, article.id);
+		if (thread) article = thread;
+	}
+
 	const currentUserId = event.locals.user?.id ?? null;
 	const userGroups = event.locals.user?.groups ?? [];
 
@@ -257,12 +273,57 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 }
 
 /**
+ * Resolve a content row to its canonical discussion thread: the anchored
+ * `discussion` row minted for it (thread_anchors entity_type='content').
+ * When the anchor is missing and the visitor is authed, mint it on the
+ * spot — older rows and rows published through paths without the hook
+ * (scheduled worker, imports) self-heal on first thread visit.
+ */
+async function resolveContentThread(
+	event: ServerLoadEvent<{ slug: string }>,
+	contentId: string
+): Promise<ContentArticle | null> {
+	const ctx = apiContext(event);
+
+	let slug: string | null = null;
+	try {
+		const anchor = await apiGet<{ slug: string }>(ctx, `/threads/anchor/content/${contentId}`);
+		slug = anchor?.slug ?? null;
+	} catch {
+		slug = null;
+	}
+
+	if (!slug && event.locals.user) {
+		try {
+			const created = await apiPost<{ slug: string }>(ctx, '/threads/anchor', {
+				entity_type: 'content',
+				entity_key: contentId
+			});
+			slug = created?.slug ?? null;
+		} catch {
+			slug = null;
+		}
+	}
+
+	if (!slug) return null;
+
+	try {
+		const envelope = await apiGetEnvelope<ContentArticle>(ctx, `/content/${slug}`);
+		return envelope.data ?? null;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * The "what this thread is about" card. Priority: thread_anchors entity →
  * §49 thread_parent → the row itself (non-discussion rows only — a bare
  * discussion IS the thread, so no card).
  */
 function buildThreadEmbed(article: ContentArticle): ThreadEmbed | null {
-	if (article.thread_anchor) {
+	// Content anchors carry both an anchor and a §49 parent link — the
+	// parent link wins (richer card: cover image + article excerpt).
+	if (article.thread_anchor && article.thread_anchor.entity_type !== 'content') {
 		const a = article.thread_anchor;
 		return {
 			kind: 'entity',

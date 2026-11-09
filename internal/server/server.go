@@ -1726,6 +1726,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	wikiService.SetThreadAnchorDeleter(func(ctx context.Context, entityType, entityKey string) error {
 		return commentsService.DeleteAnchor(ctx, entityType, entityKey)
 	})
+	// Unified-discussion spec: every published content row gets its own
+	// canonical discussion thread — minted on the publish seams (create,
+	// status transition, PATCH-driven publish), authored by the content
+	// author, and dropped when the content row is deleted.
+	contentService.SetThreadAnchorMinter(func(ctx context.Context, contentID, authorID pgtype.UUID) error {
+		_, err := commentsService.CreateAnchor(ctx, authorID, "content", contentID.String())
+		return err
+	})
+	contentService.SetThreadAnchorDeleter(func(ctx context.Context, contentID pgtype.UUID) error {
+		return commentsService.DeleteAnchor(ctx, "content", contentID.String())
+	})
 	// §80: activating wiki.enabled fans out wiki:seed_stub_pages to every
 	// country space (idempotent — existing pages are skipped).
 	featureHandlers.SetOnFlagEnabled(func(ctx context.Context, flagName string) {

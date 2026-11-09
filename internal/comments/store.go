@@ -169,6 +169,16 @@ func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input C
 			return gen.Comment{}, fmt.Errorf("incrementing content comment_count: %w", err)
 		}
 
+		// When the comment lands on a linked/anchored discussion thread,
+		// bubble the count up to the parent content — its feed card shows
+		// the conversation total (unified-discussion spec). No-op for
+		// unlinked threads.
+		if err := q.IncrementLinkedContentCommentCount(ctx,
+			input.ContentID,
+		); err != nil {
+			return gen.Comment{}, fmt.Errorf("incrementing linked content comment_count: %w", err)
+		}
+
 		// Keep the parent comment's denormalized reply_count in sync
 		// (Section 49, BUG-008).
 		if input.ParentID.Valid {
@@ -837,6 +847,12 @@ func decrementCommentCountersTx(ctx context.Context, q *gen.Queries, comment gen
 		comment.ContentID,
 	); err != nil {
 		return fmt.Errorf("decrementing content comment_count: %w", err)
+	}
+
+	if err := q.DecrementLinkedContentCommentCount(ctx,
+		comment.ContentID,
+	); err != nil {
+		return fmt.Errorf("decrementing linked content comment_count: %w", err)
 	}
 
 	if comment.ParentID.Valid {

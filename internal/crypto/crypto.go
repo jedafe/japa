@@ -160,10 +160,11 @@ func encryptWith(km keyMaterial, plaintext string) (string, error) {
 // For the legacy 3-part format, each configured key is tried in turn
 // (current first, then previous) until one decrypts successfully.
 //
-// If the input does not match either encrypted format, it is treated as
-// legacy plaintext and returned as-is ONLY when the operator has opted in
-// via JC_CRYPTO_ALLOW_LEGACY_PLAINTEXT=1; otherwise an error is returned
-// (fail closed — prevents a downgrade/JWT-forgery vector).
+// If the input does not match either encrypted format, an error is
+// returned — Decrypt fails closed and never passes plaintext through.
+// This prevents a downgrade vector where an attacker with DB write
+// access replaces an encrypted secret with a known plaintext and the
+// app silently accepts it (enabling JWT forgery / 2FA bypass).
 //
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md.
 func Decrypt(encrypted string) (string, error) {
@@ -285,10 +286,9 @@ func EncryptJSON(rawJSON []byte) ([]byte, error) {
 // to obtain the encrypted blob, decrypts it, and returns the original raw
 // JSON byte slice. Returns nil (no error) for empty input.
 //
-// If the stored value is not a JSON string, it is treated as legacy
-// plaintext and returned as-is ONLY when JC_CRYPTO_ALLOW_LEGACY_PLAINTEXT=1;
-// otherwise an error is returned (fail closed — prevents a credential
-// downgrade vector on api_config columns).
+// If the stored value is not a JSON string holding an encrypted blob, an
+// error is returned — DecryptJSON fails closed and never passes plaintext
+// through, preventing a credential downgrade vector on api_config columns.
 func DecryptJSON(storedJSON []byte) ([]byte, error) {
 	if len(storedJSON) == 0 {
 		return nil, nil

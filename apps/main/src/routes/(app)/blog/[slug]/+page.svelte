@@ -344,7 +344,7 @@
 
 		<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
 		<!-- Discussion preview — full engine lives at /thread/{slug}. -->
-		<EntityDiscussions entityType="content" entityKey={article.id} authed={data.authed} />
+		<EntityDiscussions entityType="content" entityKey={article.id} contentSlug={article.slug} authed={data.authed} />
 
 		<!-- §25: engagement-area ad slots — hidden when no campaign fills them. -->
 		<AdSlot slot="comments_below" format="banner" />

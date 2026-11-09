@@ -1760,6 +1760,13 @@
 	.travel-page {
 		min-height: 100%;
 		background: var(--color-bg);
+		/* Fixed art palette — the hero scrim and the inverted newsletter
+		   surface keep the same values in light and dark themes by design
+		   (same pattern as EntityHero's per-surface --hero-accent). */
+		--travel-scrim: 8 8 20;
+		--travel-accent: #7c3aed;
+		--travel-ink-inverted: #18181b;
+		--travel-muted-inverted: #71717a;
 	}
 
 	/* ── Hero ─────────────────────────────────────────────────────────── */
@@ -1782,9 +1789,9 @@
 		inset: 0;
 		background: linear-gradient(
 			to bottom,
-			rgb(8 8 20 / 0.55) 0%,
-			rgb(8 8 20 / 0.25) 45%,
-			rgb(8 8 20 / 0.65) 100%
+			rgb(var(--travel-scrim) / 0.55) 0%,
+			rgb(var(--travel-scrim) / 0.25) 45%,
+			rgb(var(--travel-scrim) / 0.65) 100%
 		);
 	}
 	.travel-hero-inner {
@@ -1807,15 +1814,15 @@
 		align-items: center;
 		gap: 0.375rem;
 		font-size: 0.8125rem;
-		color: rgb(255 255 255 / 0.85);
+		color: color-mix(in srgb, var(--color-primary-contrast) 85%, transparent);
 		margin-bottom: 1rem;
 	}
 	.travel-crumbs a {
-		color: rgb(255 255 255 / 0.85);
+		color: color-mix(in srgb, var(--color-primary-contrast) 85%, transparent);
 		text-decoration: none;
 	}
 	.travel-crumbs a:hover {
-		color: #fff;
+		color: var(--color-primary-contrast);
 		text-decoration: underline;
 	}
 	.travel-hero-title {
@@ -1823,13 +1830,13 @@
 		font-weight: 800;
 		line-height: 1.1;
 		letter-spacing: -0.02em;
-		color: #fff;
+		color: var(--color-primary-contrast);
 	}
 	.travel-hero-sub {
 		margin-top: 0.75rem;
 		font-size: 1rem;
 		line-height: 1.5;
-		color: rgb(255 255 255 / 0.9);
+		color: color-mix(in srgb, var(--color-primary-contrast) 90%, transparent);
 		max-width: 30rem;
 	}
 	/* ── Search card ──────────────────────────────────────────────────── */
@@ -2068,7 +2075,7 @@
 	.travel-alert {
 		margin-bottom: 1rem;
 		border-radius: var(--radius);
-		background: rgb(239 68 68 / 0.1);
+		background: color-mix(in srgb, var(--color-danger) 10%, transparent);
 		padding: 0.75rem;
 		font-size: 0.875rem;
 		color: var(--color-danger);
@@ -2133,7 +2140,7 @@
 		flex-direction: column;
 		gap: 0.125rem;
 		padding: 0.875rem;
-		color: #fff;
+		color: var(--color-primary-contrast);
 	}
 	.dest-card-copy strong {
 		font-size: 1rem;
@@ -2144,8 +2151,8 @@
 		font-style: normal;
 		font-size: 0.75rem;
 		font-weight: 600;
-		color: rgb(255 255 255 / 0.92);
-		background: rgb(255 255 255 / 0.18);
+		color: color-mix(in srgb, var(--color-primary-contrast) 92%, transparent);
+		background: color-mix(in srgb, var(--color-primary-contrast) 18%, transparent);
 		backdrop-filter: blur(4px);
 		border-radius: 999px;
 		padding: 0.125rem 0.5rem;
@@ -2675,8 +2682,8 @@
 		gap: 1.25rem;
 		border-radius: 1rem;
 		padding: 1.75rem 2rem;
-		background: linear-gradient(105deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 70%, #7c3aed) 100%);
-		color: #fff;
+		background: linear-gradient(105deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 70%, var(--travel-accent)) 100%);
+		color: var(--color-primary-contrast);
 		margin-bottom: 2rem;
 	}
 	.newsletter-copy {
@@ -2690,7 +2697,7 @@
 		width: 3rem;
 		height: 3rem;
 		border-radius: 50%;
-		background: rgb(255 255 255 / 0.15);
+		background: color-mix(in srgb, var(--color-primary-contrast) 15%, transparent);
 		flex-shrink: 0;
 	}
 	.newsletter-band h2 {
@@ -2699,7 +2706,7 @@
 	}
 	.newsletter-band p {
 		font-size: 0.8125rem;
-		color: rgb(255 255 255 / 0.85);
+		color: color-mix(in srgb, var(--color-primary-contrast) 85%, transparent);
 	}
 	.newsletter-form {
 		display: flex;
@@ -2714,22 +2721,22 @@
 		height: 2.75rem;
 		padding: 0 0.875rem;
 		border-radius: var(--radius);
-		border: 1px solid rgb(255 255 255 / 0.25);
-		background: rgb(255 255 255 / 0.95);
+		border: 1px solid color-mix(in srgb, var(--color-primary-contrast) 25%, transparent);
+		background: color-mix(in srgb, var(--color-primary-contrast) 95%, transparent);
 		font-size: 0.875rem;
-		color: #18181b;
+		color: var(--travel-ink-inverted);
 		outline: none;
 	}
 	.newsletter-form input::placeholder {
-		color: #71717a;
+		color: var(--travel-muted-inverted);
 	}
 	.newsletter-form button {
 		height: 2.75rem;
 		padding: 0 1.25rem;
 		border-radius: var(--radius);
-		border: 1px solid rgb(255 255 255 / 0.4);
+		border: 1px solid color-mix(in srgb, var(--color-primary-contrast) 40%, transparent);
 		background: transparent;
-		color: #fff;
+		color: var(--color-primary-contrast);
 		font-size: 0.875rem;
 		font-weight: 600;
 		white-space: nowrap;
@@ -2737,7 +2744,7 @@
 		transition: background 0.15s;
 	}
 	.newsletter-form button:hover {
-		background: rgb(255 255 255 / 0.15);
+		background: color-mix(in srgb, var(--color-primary-contrast) 15%, transparent);
 	}
 	.newsletter-form button:disabled {
 		opacity: 0.6;
@@ -2745,10 +2752,10 @@
 	.newsletter-msg {
 		width: 100%;
 		font-size: 0.8125rem;
-		color: rgb(255 255 255 / 0.95);
+		color: color-mix(in srgb, var(--color-primary-contrast) 95%, transparent);
 	}
 	.newsletter-msg-err {
-		color: #fecaca;
+		color: color-mix(in srgb, var(--color-danger) 24%, var(--color-primary-contrast));
 	}
 
 	/* ── Trust strip ─────────────────────────────────────────────────── */

@@ -477,6 +477,12 @@ func (s *Service) CreateContent(ctx context.Context, input CreateContentInput) (
 		"content_type": string(input.ContentType),
 	})
 
+	// Unified-discussion spec: a row born published gets its canonical
+	// discussion thread immediately — every content has a /thread page.
+	if content.Status == StatusPublished {
+		s.maybeMintThreadAnchor(ctx, content.ContentType, content.ID, content.AuthorID)
+	}
+
 	return content, nil
 }
 
@@ -1600,6 +1606,12 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		s.purgeEdgeContent(ctx, content.ID, content.ContentType, existing.Slug, content.Slug)
 	}
 
+	// Unified-discussion spec: a PATCH that publishes mints the canonical
+	// discussion thread (get-or-create — idempotent across repeat flips).
+	if transitionedToPublished {
+		s.maybeMintThreadAnchor(ctx, existing.ContentType, content.ID, content.AuthorID)
+	}
+
 	return content, nil
 }
 
@@ -1847,6 +1859,10 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 			"title":      content.Title,
 			"actor_id":   content.AuthorID,
 		})
+
+		// Unified-discussion spec: the publish transition mints the
+		// canonical discussion thread (get-or-create — idempotent).
+		s.maybeMintThreadAnchor(ctx, row.ContentType, content.ID, content.AuthorID)
 	}
 
 	// Scoped retrieval (§69 amendment): reconcile RAG state on every status
@@ -2131,6 +2147,10 @@ func (s *Service) DeleteContent(ctx context.Context, id pgtype.UUID) error {
 	})
 
 	s.purgeEdgeContent(ctx, id, existing.ContentType, existing.Slug)
+
+	// Unified-discussion spec: the canonical discussion thread dies with
+	// its content row — /thread/{slug} 404s and drops out of listings.
+	s.maybeDeleteThreadAnchor(ctx, existing.ContentType, id)
 
 	return nil
 }

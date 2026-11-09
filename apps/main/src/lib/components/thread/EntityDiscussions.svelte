@@ -24,6 +24,10 @@
 		entityType: 'content' | 'tool' | 'wiki_page';
 		entityKey: string;
 		authed: boolean;
+		// Canonical thread URL slug — content entities link to
+		// /thread/{article-slug} (the canonical discussion URL), not the
+		// minted discussion row's own slug. Tools/wiki use the anchor slug.
+		contentSlug?: string;
 	}
 
 	interface ThreadAnchor {
@@ -32,7 +36,7 @@
 		comment_count: number;
 	}
 
-	let { entityType, entityKey, authed }: Props = $props();
+	let { entityType, entityKey, authed, contentSlug }: Props = $props();
 
 	let tab = $state<'popular' | 'latest'>('popular');
 	let comments = $state<Comment[]>([]);
@@ -44,7 +48,9 @@
 	let loadError = $state<string | null>(null);
 
 	const sortParam = $derived(tab === 'popular' ? 'top' : 'new');
-	const threadHref = $derived(anchor ? `/thread/${anchor.slug}` : '');
+	const threadHref = $derived(
+		contentSlug ? `/thread/${contentSlug}` : anchor ? `/thread/${anchor.slug}` : ''
+	);
 	const hasConversation = $derived(comments.length > 0 || total > 0 || (anchor?.comment_count ?? 0) > 0);
 	const currentUserId = $derived((page.data.user as { id?: string } | null)?.id ?? null);
 	const convApi = $derived(anchor?.content_id ? commentsApi(anchor.content_id) : null);
@@ -107,11 +113,12 @@
 		await loadComments();
 	}
 
-	// "Start a conversation" — content threads already exist (no-op resolve);
-	// tool/wiki anchors are minted on demand, then deep-linked into /thread.
+	// "Start a conversation" — deep-links into the canonical thread when one
+	// exists; otherwise mints the anchor (a real discussion row for content,
+	// tool and wiki entities alike) then lands on its comment box.
 	async function startConversation() {
 		if (!(await requireAuthOrRedirect())) return;
-		if (entityType === 'content' || anchor) {
+		if (anchor) {
 			await goto(`${threadHref}#replies`);
 			return;
 		}
@@ -123,7 +130,7 @@
 		starting = false;
 		if (!res.error && res.data) {
 			anchor = res.data;
-			await goto(`/thread/${res.data.slug}#replies`);
+			await goto(`${threadHref}#replies`);
 		}
 	}
 

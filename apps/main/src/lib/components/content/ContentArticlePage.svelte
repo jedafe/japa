@@ -444,7 +444,7 @@
 		<!-- Discussion preview — the full comment engine lives at
 		     /thread/{slug} (thread-rename spec); this block previews 5
 		     comments and links in. -->
-		<EntityDiscussions entityType="content" entityKey={article.id} authed={data.authed} />
+		<EntityDiscussions entityType="content" entityKey={article.id} contentSlug={article.slug} authed={data.authed} />
 
 		<!-- Same-type recommendations, ranked by embedding similarity. -->
 		<div class="mt-8">

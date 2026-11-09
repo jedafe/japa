@@ -909,7 +909,7 @@
 		</div>
 
 		<!-- Discussion preview — full conversation lives at /thread/{slug}. -->
-		<EntityDiscussions entityType="content" entityKey={job.id} authed={data.authed} />
+		<EntityDiscussions entityType="content" entityKey={job.id} contentSlug={job.slug} authed={data.authed} />
 	{/if}
 </div>
 

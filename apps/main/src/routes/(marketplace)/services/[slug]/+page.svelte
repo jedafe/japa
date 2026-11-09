@@ -1918,7 +1918,7 @@
 		{/if}
 		<!-- Discussion preview — full conversation lives at /thread/{slug}. -->
 		<div class="mx-auto w-full max-w-3xl px-4">
-			<EntityDiscussions entityType="content" entityKey={service.id} authed={!!data.authed} />
+			<EntityDiscussions entityType="content" entityKey={service.id} contentSlug={service.slug} authed={!!data.authed} />
 		</div>
 	</div>
 {/if}

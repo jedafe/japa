@@ -1680,7 +1680,11 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	if content.ContentType == "discussion" {
 		if anchor, aErr := h.Service.ThreadAnchorFor(r.Context(), content.ID); aErr == nil && anchor != nil {
 			dto["thread_anchor"] = anchor
-		} else if parent, pErr := h.Service.ThreadParentFor(r.Context(), content.ID); pErr == nil && parent != nil {
+		}
+		// Independent of the anchor: a content-anchored thread carries BOTH
+		// — the anchor marks it canonical, the §49 parent link supplies the
+		// article embed card. Only else-if'ed lookups stay exclusive.
+		if parent, pErr := h.Service.ThreadParentFor(r.Context(), content.ID); pErr == nil && parent != nil {
 			dto["thread_parent"] = map[string]any{
 				"slug":         parent.Slug,
 				"title":        parent.Title,

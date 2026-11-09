@@ -442,7 +442,7 @@
 
 			<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
 			<!-- Discussion preview — full engine lives at /thread/{slug}. -->
-			<EntityDiscussions entityType="content" entityKey={story.id} authed={data.authed} />
+			<EntityDiscussions entityType="content" entityKey={story.id} contentSlug={story.slug} authed={data.authed} />
 
 			<!-- §25: engagement-area ad slot. -->
 			<AdSlot slot="comments_below" format="banner" />

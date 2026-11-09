@@ -294,6 +294,8 @@ type Service struct {
 	folderResolver folderResolver
 	catalog        *literals.Catalog
 	activity       wallet.ActivityEmitter
+	anchorMinter   threadAnchorMinter
+	anchorDeleter  threadAnchorDeleter
 }
 
 // SetActivityEmitter injects the wallet activity emitter used to record
