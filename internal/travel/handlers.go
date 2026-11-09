@@ -34,6 +34,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/catalog"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -133,6 +134,31 @@ func floatDefault(s string, fallback float64) float64 {
 // maxPageSize caps page_size so a client can't request unbounded pages.
 const maxPageSize = 100
 
+// maxFlightPax and maxHotelGuestsRooms bound party/room counts per search.
+// Provider booking limits cluster near these values (a single flight
+// booking caps at 9 pax across GDS providers; hotel group bookings cap
+// around 30), and the offer tables store them as smallint — an unbounded
+// param overflows persistence and lets callers fragment coverage with
+// nonsense values.
+const maxFlightPax = 9
+const maxHotelGuestsRooms = 30
+
+// normalizeCabinClass canonicalizes a cabin_class value — lowercase,
+// trimmed, hyphens folded to underscores — so "Business" and
+// "premium-economy" share one coverage key.
+func normalizeCabinClass(s string) string {
+	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(s)), "-", "_")
+}
+
+// searchDateBounds returns the acceptable date window: yesterday (absorbs
+// client timezone skew on same-day searches) through +2 years (beyond
+// every provider booking window — garbage dates would fragment coverage
+// forever).
+func searchDateBounds() (lo, hi string) {
+	now := time.Now()
+	return now.AddDate(0, 0, -1).Format("2006-01-02"), now.AddDate(2, 0, 0).Format("2006-01-02")
+}
+
 // validateDate checks that a date string is in YYYY-MM-DD format and is a
 // valid calendar date. Returns true when valid.
 func validateDate(s string) bool {
@@ -197,10 +223,13 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Yesterday's cutoff absorbs client timezone skew — a same-day search
-	// from a user behind the server clock must not 400.
-	if date < time.Now().AddDate(0, 0, -1).Format("2006-01-02") {
+	lo, hi := searchDateBounds()
+	if date < lo {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_date", "date must not be in the past")
+		return
+	}
+	if date > hi {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_date", "date is too far in the future")
 		return
 	}
 
@@ -215,16 +244,38 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_return_date", "return_date must be on or after date")
 			return
 		}
+
+		if returnDate > hi {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_return_date", "return_date is too far in the future")
+			return
+		}
+	}
+
+	adults := validatePositiveInt(atoiDefault(r.URL.Query().Get("adults"), 1), 1, 1)
+	children := validatePositiveInt(atoiDefault(r.URL.Query().Get("children"), 0), 0, 0)
+	if adults > maxFlightPax {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_adults", "adults must be between 1 and 9")
+		return
+	}
+	if children > maxFlightPax {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_children", "children must be between 0 and 9")
+		return
+	}
+
+	cabin := normalizeCabinClass(r.URL.Query().Get("cabin_class"))
+	if cabin != "" && !catalog.HasValue("travel.cabin_class", cabin) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_cabin_class", "cabin_class must be one of economy, premium_economy, business, first")
+		return
 	}
 
 	params := FlightSearchParams{
 		Origin:      origin,
 		Destination: dest,
 		Date:        date,
-		Adults:      validatePositiveInt(atoiDefault(r.URL.Query().Get("adults"), 1), 1, 1),
-		Children:    validatePositiveInt(atoiDefault(r.URL.Query().Get("children"), 0), 0, 0),
+		Adults:      adults,
+		Children:    children,
 		ReturnDate:  returnDate,
-		CabinClass:  r.URL.Query().Get("cabin_class"),
+		CabinClass:  cabin,
 	}
 
 	opts := SearchOptions{
@@ -290,8 +341,13 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if checkin < time.Now().AddDate(0, 0, -1).Format("2006-01-02") {
+	lo, hi := searchDateBounds()
+	if checkin < lo {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_checkin", "checkin must not be in the past")
+		return
+	}
+	if checkin > hi {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_checkin", "checkin is too far in the future")
 		return
 	}
 
@@ -305,12 +361,28 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if checkout > hi {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_checkout", "checkout is too far in the future")
+		return
+	}
+
+	guests := validatePositiveInt(atoiDefault(r.URL.Query().Get("guests"), 1), 1, 1)
+	rooms := validatePositiveInt(atoiDefault(r.URL.Query().Get("rooms"), 1), 1, 1)
+	if guests > maxHotelGuestsRooms {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_guests", "guests must be between 1 and 30")
+		return
+	}
+	if rooms > maxHotelGuestsRooms {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_rooms", "rooms must be between 1 and 30")
+		return
+	}
+
 	params := HotelSearchParams{
 		Destination: dest,
 		CheckIn:     checkin,
 		CheckOut:    checkout,
-		Guests:      validatePositiveInt(atoiDefault(r.URL.Query().Get("guests"), 1), 1, 1),
-		Rooms:       validatePositiveInt(atoiDefault(r.URL.Query().Get("rooms"), 1), 1, 1),
+		Guests:      guests,
+		Rooms:       rooms,
 	}
 
 	opts := SearchOptions{

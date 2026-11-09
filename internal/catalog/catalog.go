@@ -89,6 +89,18 @@ var publicCatalogs = map[string][]CatalogOption{
 	},
 }
 
+// HasValue reports whether value is one of the named catalog's options, so
+// backend code can validate against the same canonical list the public
+// catalog endpoint serves instead of duplicating it.
+func HasValue(name, value string) bool {
+	for _, opt := range publicCatalogs[name] {
+		if opt.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
 // Handlers exposes the public option catalog endpoints.
 type Handlers struct{}
 

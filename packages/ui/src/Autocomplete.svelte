@@ -499,7 +499,16 @@
 			}
 			return;
 		}
-		if (!open) return;
+		if (!open) {
+			// Free-text mode: a typed-but-uncommitted query IS the value.
+			// Commit it on Enter the same way blur does — without
+			// preventDefault, so an enclosing form's native submit runs
+			// with the now-committed value.
+			if (e.key === 'Enter' && freeText && onFreeTextBlur && query.trim()) {
+				onFreeTextBlur(query);
+			}
+			return;
+		}
 		const items = query.trim().length > 0 ? results : initialResults;
 		if (e.key === 'ArrowDown') {
 			e.preventDefault();
@@ -508,11 +517,20 @@
 			e.preventDefault();
 			activeIndex = Math.max(activeIndex - 1, 0);
 		} else if (e.key === 'Enter') {
-			e.preventDefault();
 			if (items[activeIndex]) {
+				e.preventDefault();
 				pick(items[activeIndex]);
 			} else if (allowFreeText && query.trim()) {
+				e.preventDefault();
 				pick({ id: query.trim(), label: query.trim() });
+			} else if (freeText && onFreeTextBlur && query.trim()) {
+				// No option matched — the typed text IS the value. Commit
+				// it and let the enclosing form's native submit run (no
+				// preventDefault) instead of swallowing the keystroke.
+				onFreeTextBlur(query);
+				close();
+			} else {
+				e.preventDefault();
 			}
 		} else if (e.key === 'Backspace' && query.length === 0 && selectedId && onClear) {
 			e.preventDefault();
