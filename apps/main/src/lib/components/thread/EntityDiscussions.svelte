@@ -44,6 +44,7 @@
 	let anchor = $state<ThreadAnchor | null>(null);
 	let resolved = $state(false);
 	let loading = $state(true);
+	let tabLoading = $state(false);
 	let starting = $state(false);
 	let loadError = $state<string | null>(null);
 
@@ -107,10 +108,11 @@
 	}
 
 	async function changeTab(next: 'popular' | 'latest') {
-		if (next === tab) return;
+		if (next === tab || tabLoading) return;
 		tab = next;
-		comments = [];
+		tabLoading = true;
 		await loadComments();
+		tabLoading = false;
 	}
 
 	// "Start a conversation" — deep-links into the canonical thread when one
@@ -148,7 +150,9 @@
 				<MessageSquare size={18} />
 				{t('thread.discussions', 'Discussions')}
 			</h2>
-			{#if comments.length > 0}
+			<!-- Tabs key off the conversation existing (total/comment_count),
+			     not the loaded page — they stay put during a sort refetch. -->
+			{#if hasConversation}
 				<div class="ed-tabs" role="tablist">
 					<button
 						type="button"
@@ -174,7 +178,7 @@
 			{/if}
 		</div>
 
-		{#if loading}
+		{#if loading || tabLoading}
 			<div class="ed-state"><Loader2 size={16} class="animate-spin" /> {t('common.loading', 'Loading')}</div>
 		{:else if loadError}
 			<div class="ed-state ed-error">{loadError}</div>
@@ -184,11 +188,15 @@
 			     capped at 5 here. Replies refresh via the component's own
 			     invalidateAll after mutations. -->
 			<div class="ed-thread">
+				<!-- sort matches the tab's fetch order — ReplyThread would
+				     otherwise re-rank top-level by votes and Latest would look
+				     identical to Popular. -->
 				<ReplyThread
 					replies={conversation.replies}
 					threadId={anchor.content_id}
 					backend={convApi}
 					preview
+					sort={tab === 'popular' ? 'top' : 'newest'}
 					{authed}
 					canSolve={false}
 					acceptedReplyId={null}

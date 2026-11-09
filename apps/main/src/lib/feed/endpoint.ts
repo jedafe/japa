@@ -1,5 +1,5 @@
-/** Which feed a Home tab maps to. */
-export type FeedTab = 'following' | 'for_you' | 'explore';
+/** Which feed a Home tab maps to. 'thread' lists all discussions via /explore. */
+export type FeedTab = 'following' | 'for_you' | 'explore' | 'thread';
 
 /** Backend `sort` values (note: chip label "Popular" → value "top"). */
 export type SortValue = 'relevant' | 'latest' | 'top' | 'rising';
@@ -9,7 +9,10 @@ export const PAGE_SIZE = 20;
 const TAB_PATH: Record<FeedTab, string> = {
 	following: '/feed',
 	for_you: '/feed/for-you',
-	explore: '/explore'
+	explore: '/explore',
+	// Every contents row is a thread (unified-discussion spec) — the Thread
+	// tab lists the same /explore feed the /thread index page does.
+	thread: '/explore'
 };
 
 const SORTS: SortValue[] = ['relevant', 'latest', 'top', 'rising'];
@@ -51,15 +54,17 @@ export function feedPath(
 /** Resolve the active tab. Guests are always explore; authed users default to for_you. */
 export function resolveTab(raw: string | null, authed: boolean): FeedTab {
 	if (!authed) return 'explore';
-	if (raw === 'following' || raw === 'for_you') return raw;
+	if (raw === 'following' || raw === 'for_you' || raw === 'thread') return raw;
 	return 'for_you';
 }
 
-/** Resolve the active sort; always yields an explicit value. Every tab
- * defaults to 'relevant' — the for-you feed ranks it, the following feed
+/** Resolve the active sort; always yields an explicit value. Most tabs
+ * default to 'relevant' — the for-you feed ranks it, the following feed
  * has a real relevant arm, and explore serves its geo discovery blend for
- * it — so 'latest' consistently means chronological on every surface.
+ * it; the Thread tab defaults to 'latest' (chronological, like /thread).
  */
-export function resolveSort(raw: string | null, _tab?: FeedTab): SortValue {
-	return (SORTS as string[]).includes(raw ?? '') ? (raw as SortValue) : 'relevant';
+export function resolveSort(raw: string | null, tab?: FeedTab): SortValue {
+	if ((SORTS as string[]).includes(raw ?? '')) return raw as SortValue;
+	// The Thread tab mirrors the /thread index — chronological by default.
+	return tab === 'thread' ? 'latest' : 'relevant';
 }

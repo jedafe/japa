@@ -40,8 +40,13 @@
 		 *  "Replies" heading — new conversations start on /thread/{slug},
 		 *  while per-reply interactions (vote/reply/edit) stay intact. */
 		preview?: boolean;
+		/** Top-level ordering: 'top' ranks by votes, 'newest'/'oldest' are
+		 *  chronological. Children always stay chronological. Entity
+		 *  previews pass the order matching their fetch sort; the canonical
+		 *  page leaves the default and lets the sort chips drive. */
+		sort?: 'top' | 'newest' | 'oldest';
 	}
-	let { replies, threadId, backend, authed, canSolve, acceptedReplyId, userVotes, canModerate, currentUserId, deletedUserIds, hostUserId, isHost, onMarkSolved, preview = false }: Props = $props();
+	let { replies, threadId, backend, authed, canSolve, acceptedReplyId, userVotes, canModerate, currentUserId, deletedUserIds, hostUserId, isHost, onMarkSolved, preview = false, sort = 'top' }: Props = $props();
 
 	const convApi = $derived(backend ?? forumApi(threadId));
 
@@ -92,20 +97,35 @@
 		addedTop = [];
 	}
 
+	// Reply sort — the chips on the canonical page set the override; entity
+	// previews drive it via the `sort` prop (chips are hidden there).
+	const sortOptions = [
+		{ value: 'top', label: t('comments.sort.top', 'Top') },
+		{ value: 'newest', label: t('comments.sort.new', 'New') },
+		{ value: 'oldest', label: t('comments.sort.oldest', 'Oldest') }
+	] as const;
+	let sortOverride = $state<'top' | 'newest' | 'oldest' | null>(null);
+	const activeSort = $derived(sortOverride ?? sort);
+
 	const allTop = $derived.by(() => {
 		// §88 BUG-008: pin host replies above regular replies when hostUserId
-		// is set (AMA threads). Otherwise rank top-level replies by vote
-		// score so upvoted answers surface first — parity with the comment
-		// thread's default "top" sort. Children stay chronological.
+		// is set (AMA threads). Otherwise rank top-level replies by the active
+		// sort — vote score by default so upvoted answers surface first.
+		// Children stay chronological.
 		const combined = [...topLevel, ...addedTop];
 		const rank = (a: ForumReply, b: ForumReply) =>
 			b.vote_score - a.vote_score || a.created_at.localeCompare(b.created_at);
-		if (!hostUserId) return combined.sort(rank);
+		const order = activeSort === 'newest'
+			? (a: ForumReply, b: ForumReply) => b.created_at.localeCompare(a.created_at) || rank(a, b)
+			: activeSort === 'oldest'
+				? (a: ForumReply, b: ForumReply) => a.created_at.localeCompare(b.created_at) || rank(a, b)
+				: rank;
+		if (!hostUserId) return combined.sort(order);
 		return combined.sort((a, b) => {
 			const aHost = a.author_user_id === hostUserId ? 0 : 1;
 			const bHost = b.author_user_id === hostUserId ? 0 : 1;
 			if (aHost !== bHost) return aHost - bHost;
-			return rank(a, b);
+			return order(a, b);
 		});
 	});
 	const replyCount = $derived(replies.length + addedTop.length);
@@ -113,10 +133,29 @@
 
 <div id="replies" class={preview ? 'mt-2' : 'mt-10 border-t border-[var(--color-border)] pt-6'}>
 	{#if !preview}
-		<h2 class="mb-4 text-base font-semibold text-[var(--color-text)]">
-			{t('forum.replies_heading', 'Replies')}
-			<span class="ms-1.5 text-sm font-normal text-[var(--color-muted)]">{replyCount}</span>
-		</h2>
+		<div class="mb-4 flex items-center justify-between gap-3">
+			<h2 class="text-base font-semibold text-[var(--color-text)]">
+				{t('forum.replies_heading', 'Replies')}
+				<span class="ms-1.5 text-sm font-normal text-[var(--color-muted)]">{replyCount}</span>
+			</h2>
+			{#if allTop.length > 1}
+				<div class="flex items-center gap-1" role="tablist" aria-label={t('comments.sort_by', 'Sort by')}>
+					{#each sortOptions as opt (opt.value)}
+						<button
+							type="button"
+							role="tab"
+							aria-selected={activeSort === opt.value}
+							onclick={() => (sortOverride = opt.value)}
+							class="rounded-full px-3 py-1 text-xs font-medium transition-colors {activeSort === opt.value
+								? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
+								: 'text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'}"
+						>
+							{opt.label}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
 
 		<!-- Composer renders for guests too — the submit button stays enabled
 		     and redirects to /login on click (see submitTopReply). -->

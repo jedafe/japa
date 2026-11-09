@@ -12,13 +12,21 @@
 	}
 	let { tab, sort, stickyTop = '0' }: Props = $props();
 
-	// Note the label→value mapping: "Popular" → top.
-	const chips: { value: SortValue; label: string }[] = [
-		{ value: 'relevant', label: t('sort.relevant') },
-		{ value: 'latest', label: t('sort.latest') },
-		{ value: 'top', label: t('sort.popular') },
-		{ value: 'rising', label: t('sort.rising') }
-	];
+	// Note the label→value mapping: "Popular" → top. The Thread tab mirrors
+	// the /thread index's Latest/Top sorts rather than the feed rankers.
+	const chips = $derived<{ value: SortValue; label: string }[]>(
+		tab === 'thread'
+			? [
+					{ value: 'latest', label: t('sort.latest') },
+					{ value: 'top', label: t('sort.popular') }
+				]
+			: [
+					{ value: 'relevant', label: t('sort.relevant') },
+					{ value: 'latest', label: t('sort.latest') },
+					{ value: 'top', label: t('sort.popular') },
+					{ value: 'rising', label: t('sort.rising') }
+				]
+	);
 
 	// Preserve other query params (e.g. ?geo=) when switching sort.
 	// Only set ?tab= on the home route (/); /explore has its own route.

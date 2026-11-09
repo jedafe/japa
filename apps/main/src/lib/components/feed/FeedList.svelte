@@ -36,8 +36,11 @@
 	);
 
 	// For You/Following entries open /thread/{slug} by default (thread-rename
-	// spec); explore keeps canonical content links.
-	const threadDefault = $derived(tab === 'for_you' || tab === 'following');
+	// spec); so does the Thread tab — it IS the discussions feed. Explore
+	// keeps canonical content links.
+	const threadDefault = $derived(tab === 'for_you' || tab === 'following' || tab === 'thread');
+	// The Thread tab carries the same vote rail as the /thread index.
+	const voteRail = $derived(tab === 'thread');
 
 	let items = $state<FeedItem[]>(untrack(() => initial));
 	let atEnd = $state(false);
@@ -166,13 +169,13 @@
 	{#if gridLayout}
 		<div class="grid grid-cols-1 gap-3.5 p-3 sm:grid-cols-2">
 			{#each items as item (item.id)}
-				<FeedCard {item} style="daily" layout="grid-cell" {threadDefault} />
+				<FeedCard {item} style="daily" layout="grid-cell" {threadDefault} {voteRail} />
 			{/each}
 		</div>
 	{:else}
 		<div class="flex flex-col gap-3">
 			{#each items as item, i (item.id)}
-				<FeedCard {item} style="daily" layout="stream" {threadDefault} />
+				<FeedCard {item} style="daily" layout="stream" {threadDefault} {voteRail} />
 				{#if adSlot && adInterval > 0 && (i + 1) % adInterval === 0 && i < items.length - 1 && i / adInterval < 2}
 					<NativeAd slot={adSlot} {spaceId} pickIndex={Math.floor(i / adInterval)} />
 				{/if}

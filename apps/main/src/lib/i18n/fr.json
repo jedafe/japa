@@ -2237,6 +2237,7 @@
 	"feed.tab.following": "Abonnements",
 	"feed.tab.for_you": "Pour vous",
 	"feed.tab.roadmap": "Feuille de route",
+	"feed.tab.thread": "Fil de discussion",
 	"feedback.errors.field_required": "Veuillez remplir tous les champs obligatoires",
 	"feedback.errors.submit_failed": "Échec de l'envoi de vos commentaires. Veuillez réessayer.",
 	"feedback.select_placeholder": "Sélectionnez une option...",
