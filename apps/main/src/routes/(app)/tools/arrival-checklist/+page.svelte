@@ -269,7 +269,7 @@
 <SeoHead title={title} description={description} ogTitle={title} />
 
 <div class="mx-auto w-full max-w-4xl">
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="px-4 pt-4">
 		<ToolHeader icon={PlaneLanding} title={title} description={description} />
 	</div>
 

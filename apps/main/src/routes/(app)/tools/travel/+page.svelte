@@ -43,6 +43,7 @@
 	} from '#lib/components/ui/index.js';
 	import Autocomplete from '#lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '#lib/components/create/Autocomplete.svelte';
+	import ToolGuideButton from '#lib/components/tools/ToolGuideButton.svelte';
 	import ThemeLogo from '#lib/components/branding/ThemeLogo.svelte';
 	import { routeFeatureGateVisible } from '#lib/components/shell/routeFeatureFlags.js';
 	import type { Space, MenuItem } from '#lib/types/index.js';
@@ -941,6 +942,9 @@
 						</button>
 					{/each}
 					<div class="travel-search-tools">
+						<!-- "How it works" guide (tools.guides.travel) — lives in the
+						     shared tab strip, so it shows on both Flights and Hotels. -->
+						<ToolGuideButton slug="travel" class="travel-tool-chip" iconSize={14} labelClass="max-sm:hidden" />
 						<Popover.Root>
 							<Popover.Trigger
 								class="travel-tool-chip"

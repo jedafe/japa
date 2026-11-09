@@ -134,7 +134,7 @@
 <SeoHead title={seoTitle} description={seoDescription} ogTitle={seoTitle} />
 
 <div class="mx-auto w-full max-w-3xl">
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="px-4 pt-4">
 		<ToolHeader icon={Coins} title={title} description={description} />
 	</div>
 

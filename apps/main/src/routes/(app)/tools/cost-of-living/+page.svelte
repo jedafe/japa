@@ -382,7 +382,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl">
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="px-4 pt-4">
 		<ToolHeader icon={Calculator} title={t('tools.cost_of_living', 'Cost of Living Calculator')} description={description} />
 	</div>
 

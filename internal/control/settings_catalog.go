@@ -955,6 +955,7 @@ var settingsCatalog = map[string]settingMeta{
 	"radar.guide":        {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /radar.", Panel: "admin"},
 	"spaces.guide":       {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /spaces.", Panel: "admin"},
 	"tools.guide":        {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /tools.", Panel: "admin"},
+	"tools.guides":       {Type: "json", DefaultValue: "", Public: true, Description: "Per-tool how-it-works slide-over content for /tools/{slug} — JSON map keyed by tool slug ({slug: {title, body, ctas}}).", Panel: "admin"},
 	"scholarships.guide": {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /scholarships.", Panel: "admin"},
 	"japa_stage.guide":   {Type: "json", DefaultValue: "", Public: true, Description: "How-it-works slide-over content for /japa-stage.", Panel: "admin"},
 

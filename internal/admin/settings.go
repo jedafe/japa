@@ -287,6 +287,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "compare_guide", Type: "json", StorageKey: "compare.guide", Hidden: true}, {Key: "radar_guide", Label: "Radar Guide Panel", Type: "json", Hidden: true, StorageKey: "radar.guide"},
 			{Key: "spaces_guide", Label: "Spaces Guide Panel", Type: "json", Hidden: true, StorageKey: "spaces.guide"},
 			{Key: "tools_guide", Label: "Tools Guide Panel", Type: "json", Hidden: true, StorageKey: "tools.guide"},
+			{Key: "tools_guides", Label: "Tool Guide Panels", Type: "json", Hidden: true, StorageKey: "tools.guides"},
 			{Key: "scholarships_guide", Label: "Scholarships Guide Panel", Type: "json", Hidden: true, StorageKey: "scholarships.guide"},
 			{Key: "japa_stage_guide", Label: "Japa Stage Guide Panel", Type: "json", Hidden: true, StorageKey: "japa_stage.guide"},
 		},

@@ -310,7 +310,7 @@
 <SeoHead title={title} description={description} ogTitle={title} jsonLd={jsonLd} />
 
 <div class="mx-auto w-full max-w-3xl">
-	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="px-4 pt-4">
 		<ToolHeader icon={ClipboardCheck} title={t('tools.visa_checklist', 'Visa Checklist')} description={description} />
 	</div>
 
