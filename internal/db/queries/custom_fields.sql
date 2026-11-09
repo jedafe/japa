@@ -96,10 +96,10 @@ FROM custom_fields
 WHERE group_id = @group_id AND key = @key;
 
 -- name: CreateCustomField :one
-INSERT INTO custom_fields (group_id, label, key, field_type, options, embed_platforms, placeholder, default_value, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position, section) VALUES (@group_id, @label, @key, @field_type, @options, @embed_platforms, @placeholder, @default_value, @is_required, @is_system, @show_in_frontend, @filterable, @sortable, @searchable, @position, sqlc.narg(section))
+INSERT INTO custom_fields (group_id, label, key, field_type, options, embed_platforms, placeholder, default_value, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position, section, config) VALUES (@group_id, @label, @key, @field_type, @options, @embed_platforms, @placeholder, @default_value, @is_required, @is_system, @show_in_frontend, @filterable, @sortable, @searchable, @position, sqlc.narg(section), COALESCE(@config, '{}'::jsonb))
 RETURNING id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, section, created_at;
+ filterable, sortable, searchable, position, section, config, created_at;
 
 -- name: UpdateCustomField :one
 UPDATE custom_fields
@@ -110,11 +110,12 @@ SET label = @label, field_type = @field_type, options = @options,
  sortable = @sortable, searchable = @searchable, position = @position,
  section = CASE WHEN @update_section::bool
            THEN NULLIF(@section::text, '')
-           ELSE section END
+           ELSE section END,
+ config = CASE WHEN @update_config::bool THEN @config ELSE config END
 WHERE id = @id AND is_system = false
 RETURNING id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, section, created_at;
+ filterable, sortable, searchable, position, section, config, created_at;
 
 -- name: DeleteCustomField :exec
 DELETE FROM custom_fields

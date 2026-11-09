@@ -820,6 +820,11 @@ type fieldRequest struct {
 	// (§80 Itemized Pricing). Pointer so PATCH distinguishes an omitted key
 	// (leave untouched) from an explicit "" (clear the section).
 	Section *string `json:"section"`
+	// Config replaces the full config object when present (PATCH
+	// three-state: omitted = keep stored). Carries scoring metadata and the
+	// ADR-137 conditional-rule keys; the admin editor merges keys client-side
+	// and sends the whole object.
+	Config *json.RawMessage `json:"config"`
 }
 
 // marshalOptions validates and compacts the raw options payload for the
@@ -855,6 +860,17 @@ func optionsAbsent(raw json.RawMessage) bool {
 	}
 
 	return false
+}
+
+// validFieldConfig accepts only JSON objects (or nil) — the
+// custom_fields.config column must stay object-shaped for the rule keys
+// the evaluator reads (ADR-137) and the scoring keys §71 writes.
+func validFieldConfig(raw []byte) bool {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return true
+	}
+	var v map[string]any
+	return json.Unmarshal(raw, &v) == nil
 }
 
 // validStepConfig accepts only JSON objects (or nil) — the form_steps.config
@@ -953,6 +969,15 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Config != nil && !validFieldConfig(*req.Config) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "config must be a JSON object")
+		return
+	}
+	config := json.RawMessage("{}")
+	if req.Config != nil {
+		config = *req.Config
+	}
+
 	field, err := h.Service.CreateField(r.Context(), gen.CreateCustomFieldParams{
 		GroupID: groupID,
 
@@ -971,6 +996,7 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		Searchable:     req.Searchable,
 		Position:       req.Position,
 		Section:        req.Section,
+		Config:         config,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -1047,6 +1073,17 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
+	// Config travels three-state like section: present replaces the stored
+	// object wholesale, omitted keeps it (ADR-137).
+	if req.Config != nil && !validFieldConfig(*req.Config) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "config must be a JSON object")
+		return
+	}
+	config := json.RawMessage("{}")
+	if req.Config != nil {
+		config = *req.Config
+	}
+
 	field, err := h.Service.UpdateField(r.Context(), gen.UpdateCustomFieldParams{
 		Label:          req.Label,
 		FieldType:      req.FieldType,
@@ -1062,6 +1099,8 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		Position:       req.Position,
 		UpdateSection:  req.Section != nil,
 		Section:        section,
+		Config:         config,
+		UpdateConfig:   req.Config != nil,
 		ID:             id,
 	})
 	if err != nil {

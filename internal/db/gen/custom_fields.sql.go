@@ -95,10 +95,10 @@ func (q *Queries) CreateAssignment(ctx context.Context, arg CreateAssignmentPara
 }
 
 const createCustomField = `-- name: CreateCustomField :one
-INSERT INTO custom_fields (group_id, label, key, field_type, options, embed_platforms, placeholder, default_value, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position, section) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+INSERT INTO custom_fields (group_id, label, key, field_type, options, embed_platforms, placeholder, default_value, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position, section, config) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE($17, '{}'::jsonb))
 RETURNING id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, section, created_at
+ filterable, sortable, searchable, position, section, config, created_at
 `
 
 type CreateCustomFieldParams struct {
@@ -118,6 +118,7 @@ type CreateCustomFieldParams struct {
 	Searchable     bool        `json:"searchable"`
 	Position       int32       `json:"position"`
 	Section        *string     `json:"section"`
+	Config         interface{} `json:"config"`
 }
 
 type CreateCustomFieldRow struct {
@@ -138,6 +139,7 @@ type CreateCustomFieldRow struct {
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
 	Section        *string            `json:"section"`
+	Config         []byte             `json:"config"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -159,6 +161,7 @@ func (q *Queries) CreateCustomField(ctx context.Context, arg CreateCustomFieldPa
 		arg.Searchable,
 		arg.Position,
 		arg.Section,
+		arg.Config,
 	)
 	var i CreateCustomFieldRow
 	err := row.Scan(
@@ -179,6 +182,7 @@ func (q *Queries) CreateCustomField(ctx context.Context, arg CreateCustomFieldPa
 		&i.Searchable,
 		&i.Position,
 		&i.Section,
+		&i.Config,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -1341,11 +1345,12 @@ SET label = $1, field_type = $2, options = $3,
  sortable = $10, searchable = $11, position = $12,
  section = CASE WHEN $13::bool
            THEN NULLIF($14::text, '')
-           ELSE section END
-WHERE id = $15 AND is_system = false
+           ELSE section END,
+ config = CASE WHEN $15::bool THEN $16 ELSE config END
+WHERE id = $17 AND is_system = false
 RETURNING id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
- filterable, sortable, searchable, position, section, created_at
+ filterable, sortable, searchable, position, section, config, created_at
 `
 
 type UpdateCustomFieldParams struct {
@@ -1363,6 +1368,8 @@ type UpdateCustomFieldParams struct {
 	Position       int32       `json:"position"`
 	UpdateSection  bool        `json:"update_section"`
 	Section        string      `json:"section"`
+	UpdateConfig   bool        `json:"update_config"`
+	Config         []byte      `json:"config"`
 	ID             pgtype.UUID `json:"id"`
 }
 
@@ -1384,6 +1391,7 @@ type UpdateCustomFieldRow struct {
 	Searchable     bool               `json:"searchable"`
 	Position       int32              `json:"position"`
 	Section        *string            `json:"section"`
+	Config         []byte             `json:"config"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -1403,6 +1411,8 @@ func (q *Queries) UpdateCustomField(ctx context.Context, arg UpdateCustomFieldPa
 		arg.Position,
 		arg.UpdateSection,
 		arg.Section,
+		arg.UpdateConfig,
+		arg.Config,
 		arg.ID,
 	)
 	var i UpdateCustomFieldRow
@@ -1424,6 +1434,7 @@ func (q *Queries) UpdateCustomField(ctx context.Context, arg UpdateCustomFieldPa
 		&i.Searchable,
 		&i.Position,
 		&i.Section,
+		&i.Config,
 		&i.CreatedAt,
 	)
 	return i, err
