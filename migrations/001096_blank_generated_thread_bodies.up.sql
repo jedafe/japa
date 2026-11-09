@@ -64,7 +64,7 @@ SET title = format(
                              'nearby', 'attractions', 'history', 'culture')
             THEN (ARRAY['Discussing %s', 'Thread about %s', '%s — local thread', 'Discussing %s'])
         ELSE (ARRAY['Discussing %s', 'Thread about %s', 'Discussing %s', '%s — community thread'])
-    END)[1 + (abs(hashtext(ta.entity_key)) % 4)],
+    END)[1 + (abs(hashtext(ta.entity_key)::bigint) % 4)],
     wp.title)
 FROM thread_anchors ta
 JOIN wiki_pages wp ON wp.id::text = ta.entity_key AND wp.deleted_at IS NULL
@@ -73,3 +73,14 @@ WHERE ta.entity_type = 'wiki_page'
   -- The 'Discussing: ' prefix is the generated signature — covers pages
   -- renamed after minting; author-renamed titles without it are kept.
   AND c.title LIKE 'Discussing: %';
+
+-- Anchor threads minted before EnsureContentScore ran at mint lack
+-- content_scores rows — INNER JOIN feed queries (explore/top/rising/
+-- space/profile) invisibly skip them. Backfill zero-default rows.
+INSERT INTO public.content_scores (content_id)
+SELECT ta.content_id
+FROM public.thread_anchors ta
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.content_scores cs
+    WHERE cs.content_id = ta.content_id
+);

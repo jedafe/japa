@@ -278,6 +278,16 @@ WHERE c.deleted_at IS NULL
  )
  )
  AND (@q::text IS NULL OR c.title ILIKE '%' || @q || '%' OR c.slug ILIKE '%' || @q || '%' OR c.body ILIKE '%' || @q || '%')
+ -- Anchored discussion containers (entity_type='content') don't list in
+ -- mixed-type browses — the parent article's card already represents the
+ -- conversation. Admin/studio listings still see them for moderation.
+ AND (
+     @can_see_unpublished::boolean
+     OR NOT EXISTS (
+         SELECT 1 FROM thread_anchors ta
+         WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+     )
+ )
  AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
@@ -516,6 +526,14 @@ WHERE c.deleted_at IS NULL
  )
  )
  )
+ -- Anchored discussion containers don't list (see ListContents).
+ AND (
+     @can_see_unpublished::boolean
+     OR NOT EXISTS (
+         SELECT 1 FROM thread_anchors ta
+         WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+     )
+ )
  AND (c.created_at < @cursor_created_at OR (@cursor_created_at IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT @page_limit;
@@ -544,6 +562,14 @@ WHERE c.deleted_at IS NULL
  OR (c.visibility = 'private' AND (c.author_id = @requester_id::uuid OR @can_see_private::boolean))
  )
  )
+ )
+ -- Anchored discussion containers don't list (see ListContents).
+ AND (
+     @can_see_unpublished::boolean
+     OR NOT EXISTS (
+         SELECT 1 FROM thread_anchors ta
+         WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+     )
  )
  AND c.title ILIKE '%' || @query || '%'
 ORDER BY c.created_at DESC, c.id DESC

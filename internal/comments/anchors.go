@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -221,6 +222,10 @@ type entityDescriptor struct {
 	// Visibility of the minted thread row — mirrors the parent content's
 	// audience for content entities; empty defaults to public.
 	Visibility string
+	// AuthorID the minted thread is attributed to when the entity has an
+	// owner (content entities: the article author). Zero for communal
+	// entities (wiki/tool) — the minting caller owns those.
+	AuthorID pgtype.UUID
 }
 
 // describeEntity validates the requested anchor target and resolves its
@@ -290,6 +295,7 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 				SpaceID:    spaceID,
 				GeoSpaceID: row.GeoSpaceID,
 				Visibility: row.Visibility,
+				AuthorID:   row.AuthorID,
 			}, nil
 		}
 	}
@@ -388,6 +394,18 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 	// their thread, and content `discussion` rows resolve to themselves —
 	// they are their own thread, so "start a conversation" is a no-op link.
 	if err == nil {
+		// Heal stray comments on the entity row — a mint interrupted between
+		// link and reparent, or a comment written straight to the article —
+		// so one entity never shows two conversations. Idempotent no-op once
+		// the entity row's comments are all on the thread.
+		if entityType == "content" {
+			var pid pgtype.UUID
+			if scanErr := pid.Scan(entityKey); scanErr == nil && pid != existing.ContentID {
+				if repErr := s.reparentComments(ctx, pid, existing.ContentID); repErr != nil {
+					slog.Warn("comments: reparent comments on resolve failed", "entity_key", entityKey, "error", repErr)
+				}
+			}
+		}
 		return existing, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -424,8 +442,16 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 		visibility = content.VisibilityPublic
 	}
 
+	// The minted thread is authored by the entity's owner when it has one —
+	// a visitor who triggers a lazy mint on someone else's article must not
+	// end up owning (and moderating) its thread.
+	authorID := desc.AuthorID
+	if !authorID.Valid {
+		authorID = userID
+	}
+
 	row, err := s.creator.CreateContent(ctx, content.CreateContentInput{
-		AuthorID:    userID,
+		AuthorID:    authorID,
 		ContentType: "discussion",
 		Title:       title,
 		ContentHash: &contentHash,
@@ -440,6 +466,13 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 	})
 	if err != nil {
 		return AnchorSummary{}, fmt.Errorf("creating anchor thread: %w", err)
+	}
+
+	// Feeds INNER JOIN content_scores — a row without one never lists.
+	// Minted rows bypass the publish path that usually ensures this.
+	if err := s.write.EnsureContentScore(ctx, row.ID); err != nil {
+		slog.Warn("comments: ensure content_scores on anchor mint failed",
+			"content_id", row.ID.String(), "error", err)
 	}
 
 	// Content threads also record the §49 parent link — GetThreadParentByThreadID
@@ -471,9 +504,25 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 
 	// Lost the get-or-create race: ON CONFLICT kept the earlier row's
 	// content_id, so our minted contents row is unanchored. Re-resolve to
-	// return the winning anchor's slug instead of the orphan's.
+	// return the winning anchor's slug instead of the orphan's. (The
+	// reparent below runs only on the winning path — comments must never
+	// move onto an orphan.)
 	if anchor.ContentID != row.ID {
 		return s.ResolveAnchor(ctx, entityType, entityKey)
+	}
+
+	// Comments posted on the article before its thread existed — guest
+	// kind='self' fallback, pre-migration rows, or direct API writes —
+	// move onto the canonical thread so the conversation never splits
+	// across the two rows. Best-effort after the anchor is durable: the
+	// existing-anchor path above re-runs the move on every resolve.
+	if entityType == "content" {
+		var parentID pgtype.UUID
+		if err := parentID.Scan(entityKey); err == nil {
+			if repErr := s.reparentComments(ctx, parentID, row.ID); repErr != nil {
+				slog.Warn("comments: reparent comments on mint failed", "entity_key", entityKey, "error", repErr)
+			}
+		}
 	}
 
 	return AnchorSummary{
@@ -486,6 +535,25 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 		EntityTitle:   anchor.EntityTitle,
 		EntitySummary: anchor.EntitySummary,
 	}, nil
+}
+
+// reparentComments moves comments left on an entity row (posted before its
+// thread was minted, or written straight to the article via the API) onto
+// its canonical thread, then resyncs both rows' comment_count. Idempotent —
+// safe to run on every anchor resolution.
+func (s *Service) reparentComments(ctx context.Context, from, to pgtype.UUID) error {
+	if err := s.write.ReparentCommentsToThread(ctx, gen.ReparentCommentsToThreadParams{
+		ThreadID:  to,
+		ContentID: from,
+	}); err != nil {
+		return fmt.Errorf("reparenting comments to thread: %w", err)
+	}
+	for _, id := range []pgtype.UUID{from, to} {
+		if err := s.write.RecountContentCommentCount(ctx, id); err != nil {
+			return fmt.Errorf("recounting comment_count: %w", err)
+		}
+	}
+	return nil
 }
 
 // DeleteAnchor drops the entity's backing thread — soft-deletes the

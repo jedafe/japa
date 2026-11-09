@@ -611,3 +611,30 @@ WHERE id IN (SELECT content_id FROM content_thread_links WHERE thread_id = @thre
 -- Mirror of IncrementLinkedContentCommentCount for comment delete/remove.
 UPDATE contents SET comment_count = GREATEST(0, comment_count - 1)
 WHERE id IN (SELECT content_id FROM content_thread_links WHERE thread_id = @thread_id);
+
+-- name: ReparentCommentsToThread :exec
+-- Move comments that were posted on an entity row (e.g. a content article
+-- before its canonical discussion thread was minted, or via a direct API
+-- write) onto the thread row — one conversation per entity. Idempotent:
+-- re-running moves nothing once the entity row's comments are gone.
+UPDATE comments SET content_id = @thread_id WHERE content_id = @content_id;
+
+-- name: RecountContentCommentCount :exec
+-- Resync a row's comment_count to its own live comments plus live comments
+-- on its linked threads — the denormalized shape the write path maintains
+-- (migration 001095 step 4). Run on both rows after a reparent.
+UPDATE public.contents c
+SET comment_count = COALESCE(own.cnt, 0) + COALESCE(lnk.cnt, 0)
+FROM (SELECT @content_id::uuid AS id) t
+LEFT JOIN (
+    SELECT content_id, COUNT(*)::int AS cnt
+    FROM comments WHERE deleted_at IS NULL
+    GROUP BY content_id
+) own ON own.content_id = t.id
+LEFT JOIN (
+    SELECT l.content_id, COUNT(cm.id)::int AS cnt
+    FROM content_thread_links l
+    JOIN comments cm ON cm.content_id = l.thread_id AND cm.deleted_at IS NULL
+    GROUP BY l.content_id
+) lnk ON lnk.content_id = t.id
+WHERE c.id = t.id;

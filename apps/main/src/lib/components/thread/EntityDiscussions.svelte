@@ -7,7 +7,8 @@
 	// /thread/{slug} carries the complete conversation.
 	//
 	// Resolution is uniform via GET /threads/anchor/{entityType}/{entityKey}:
-	//   - 'content'   — the contents row IS its own thread; key = content UUID
+	//   - 'content'   — key = content UUID; a dedicated discussion row is
+	//     minted for the article and linked via content_thread_links
 	//   - 'tool'      — key = tool slug; thread minted on demand
 	//   - 'wiki_page' — key = wiki_pages.id; thread minted on demand
 	import { t } from '#lib/i18n/index.js';
@@ -54,7 +55,39 @@
 	);
 	const hasConversation = $derived(comments.length > 0 || total > 0 || (anchor?.comment_count ?? 0) > 0);
 	const currentUserId = $derived((page.data.user as { id?: string } | null)?.id ?? null);
-	const convApi = $derived(anchor?.content_id ? commentsApi(anchor.content_id) : null);
+	// ReplyItem's mutations refresh via invalidateAll() — which only re-runs
+	// page loaders. This comment set is component-local state, so wrap each
+	// mutating backend call to re-run the preview fetch on success.
+	const convApi = $derived.by(() => {
+		const base = anchor?.content_id ? commentsApi(anchor.content_id) : null;
+		if (!base) return null;
+		const reload = () => void loadComments();
+		return {
+			...base,
+			postReply: async (parentId: string | null, body: string) => {
+				const r = await base.postReply(parentId, body);
+				if (r) reload();
+				return r;
+			},
+			editReply: async (id: string, body: string, isAnonymous: boolean) => {
+				const r = await base.editReply(id, body, isAnonymous);
+				if (!r?.error) reload();
+				return r;
+			},
+			deleteReply: async (id: string) => {
+				const r = await base.deleteReply(id);
+				if (!r?.error) reload();
+				return r;
+			},
+			pin: base.pin
+				? async (id: string, pinned: boolean) => {
+						const ok = await base.pin!(id, pinned);
+						if (ok) reload();
+						return ok;
+					}
+				: undefined
+		};
+	});
 	const conversation = $derived(
 		anchor?.content_id ? commentsConversation(comments, anchor.content_id) : { replies: [], userVotes: {} }
 	);
@@ -69,10 +102,12 @@
 		);
 		if (res.error || !res.data) {
 			// Clear rather than leave the previous tab's order rendered under
-			// the new label — an honest empty state beats wrong-sort data.
+			// the new label — and say so, don't fake "No discussions yet".
 			comments = [];
+			loadError = res.error?.message ?? t('comments.load_error', 'Could not load discussions');
 			return;
 		}
+		loadError = null;
 		const top = res.data;
 		total = (res.envelope as { meta?: { total?: number } } | null)?.meta?.total ?? top.length;
 		const all = [...top];
@@ -138,6 +173,10 @@
 		if (!res.error && res.data) {
 			anchor = res.data;
 			await goto(`${threadHref}#replies`);
+		} else {
+			// The mint can legitimately fail (private-space content, etc.) —
+			// surface the API message instead of a silent dead click.
+			loadError = res.error?.message ?? t('comments.load_error', 'Could not load discussions');
 		}
 	}
 
@@ -147,8 +186,9 @@
 </script>
 
 {#if resolved}
-	<!-- id="comments" — the ReactionRail comment icon (href="#comments")
-	     scrolls here, same affordance as #replies on /thread/{slug}. -->
+	<!-- id="comments" — local anchor for any surface that passes no
+	     commentHref to ReactionRail (default "#comments"); content-page
+	     rails instead navigate to /thread/{slug}#replies. -->
 	<section id="comments" class="entity-discussions scroll-mt-24" aria-label={t('thread.discussions', 'Discussions')}>
 		<div class="ed-head">
 			<h2 class="ed-title">

@@ -21,7 +21,18 @@ VALUES (@content_id, @entity_type, @entity_key, @entity_url, @entity_title, sqlc
 ON CONFLICT (entity_type, entity_key) DO UPDATE
  SET entity_url = EXCLUDED.entity_url,
  entity_title = EXCLUDED.entity_title,
- entity_summary = EXCLUDED.entity_summary
+ entity_summary = EXCLUDED.entity_summary,
+ -- Rebind only when the anchor points at a dead thread (deleted content
+ -- row — e.g. un-published entity or a deleted+recreated wiki page). A
+ -- live binding keeps the existing thread so the get-or-create race still
+ -- detects the winner via anchor.ContentID != row.ID.
+ content_id = CASE
+     WHEN EXISTS (
+         SELECT 1 FROM contents
+         WHERE id = thread_anchors.content_id AND deleted_at IS NULL
+     ) THEN thread_anchors.content_id
+     ELSE EXCLUDED.content_id
+ END
 RETURNING id, content_id, entity_type, entity_key, entity_url, entity_title, entity_summary, created_at;
 
 -- name: GetThreadParentByThreadID :one

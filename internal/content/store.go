@@ -1606,10 +1606,14 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		s.purgeEdgeContent(ctx, content.ID, content.ContentType, existing.Slug, content.Slug)
 	}
 
-	// Unified-discussion spec: a PATCH that publishes mints the canonical
-	// discussion thread (get-or-create — idempotent across repeat flips).
-	if transitionedToPublished {
+	// Unified-discussion spec: crossing INTO public-live mints the canonical
+	// discussion thread (get-or-create — idempotent across repeat flips);
+	// crossing OUT drops it — a thread left live would leak the title and
+	// conversation of a draft/members-only row via /thread/{slug}.
+	if isPublic && !wasPublic {
 		s.maybeMintThreadAnchor(ctx, existing.ContentType, content.ID, content.AuthorID)
+	} else if wasPublic && !isPublic {
+		s.maybeDeleteThreadAnchor(ctx, existing.ContentType, content.ID)
 	}
 
 	return content, nil
@@ -1863,6 +1867,10 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, statu
 		// Unified-discussion spec: the publish transition mints the
 		// canonical discussion thread (get-or-create — idempotent).
 		s.maybeMintThreadAnchor(ctx, row.ContentType, content.ID, content.AuthorID)
+	} else if row.Status == StatusPublished {
+		// Leaving 'published' drops the canonical thread — a live thread
+		// would leak the title/conversation of a now-unpublished row.
+		s.maybeDeleteThreadAnchor(ctx, row.ContentType, content.ID)
 	}
 
 	// Scoped retrieval (§69 amendment): reconcile RAG state on every status

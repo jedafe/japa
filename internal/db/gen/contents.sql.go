@@ -2705,6 +2705,16 @@ WHERE c.deleted_at IS NULL
  )
  )
  AND ($5::text IS NULL OR c.title ILIKE '%' || $5 || '%' OR c.slug ILIKE '%' || $5 || '%' OR c.body ILIKE '%' || $5 || '%')
+ -- Anchored discussion containers (entity_type='content') don't list in
+ -- mixed-type browses — the parent article's card already represents the
+ -- conversation. Admin/studio listings still see them for moderation.
+ AND (
+     $1::boolean
+     OR NOT EXISTS (
+         SELECT 1 FROM thread_anchors ta
+         WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+     )
+ )
  AND (c.created_at < $6 OR ($6 IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
 LIMIT $7
@@ -3221,6 +3231,14 @@ WHERE c.deleted_at IS NULL
  OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
  )
  )
+ )
+ -- Anchored discussion containers don't list (see ListContents).
+ AND (
+     $2::boolean
+     OR NOT EXISTS (
+         SELECT 1 FROM thread_anchors ta
+         WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+     )
  )
  AND (c.created_at < $6 OR ($6 IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
@@ -5020,6 +5038,14 @@ WHERE c.deleted_at IS NULL
  OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
  )
  )
+ )
+ -- Anchored discussion containers don't list (see ListContents).
+ AND (
+     $2::boolean
+     OR NOT EXISTS (
+         SELECT 1 FROM thread_anchors ta
+         WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+     )
  )
  AND c.title ILIKE '%' || $6 || '%'
 ORDER BY c.created_at DESC, c.id DESC

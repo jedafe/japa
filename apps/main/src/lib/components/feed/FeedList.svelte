@@ -3,7 +3,7 @@
 	import { navigating, page } from '$app/state';
 	import { TriangleAlert } from 'lucide-svelte';
 	import { api } from '#lib/api/client.js';
-	import { feedQueryString, type FeedTab, type SortValue } from '#lib/feed/endpoint.js';
+	import { feedPath, type FeedTab, type SortValue } from '#lib/feed/endpoint.js';
 	import type { CardStyleConfig } from '#lib/feed/cardStyle.js';
 	import { EmptyState, LoadingSkeleton, PaginationControls } from '#lib/components/ui/index.js';
 	import { t } from '#lib/i18n/index.js';
@@ -96,20 +96,15 @@
 		return () => obs.disconnect();
 	});
 
-	function feedPath(offset: number, limit: number) {
-		const qs = feedQueryString(tab, sort, limit, offset, geo);
-		return tab === 'following'
-			? `/feed?${qs}`
-			: tab === 'for_you'
-				? `/feed/for-you?${qs}`
-				: `/explore?${qs}`;
+	function feedUrl(offset: number, limit: number) {
+		return feedPath(tab, sort, limit, offset, geo);
 	}
 
 	async function loadMore() {
 		if (loading || atEnd) return;
 		loading = true;
 		clientError = null;
-		const res = await api.get<FeedItem[]>(feedPath(items.length, pageSize));
+		const res = await api.get<FeedItem[]>(feedUrl(items.length, pageSize));
 		if (res.error) {
 			clientError = res.error.message ?? t('error.500_body');
 			loading = false;
@@ -134,7 +129,7 @@
 		const offset = (nextPage - 1) * pageSize;
 		// Over-fetch by 1 so we know whether another page exists without a
 		// dedicated count endpoint.
-		const res = await api.get<FeedItem[]>(feedPath(offset, pageSize + 1));
+		const res = await api.get<FeedItem[]>(feedUrl(offset, pageSize + 1));
 		if (res.error) {
 			clientError = res.error.message ?? t('error.500_body');
 			loading = false;

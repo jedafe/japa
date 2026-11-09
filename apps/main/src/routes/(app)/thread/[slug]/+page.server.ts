@@ -206,9 +206,15 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 	// canonical discussion thread — a separate `discussion` row minted on
 	// publish (or minted here on first visit for pre-migration rows). The
 	// row below keeps the kind='self' view only as an un-minted fallback.
+	// jsonLd/deletedUserIds must come from the discussion row's envelope —
+	// the article's JSON-LD would describe the wrong page on this URL.
 	if (article.content_type !== 'discussion') {
 		const thread = await resolveContentThread(event, article.id);
-		if (thread) article = thread;
+		if (thread) {
+			article = thread.article;
+			jsonLd = thread.jsonLd;
+			deletedUserIds = thread.deletedUserIds ?? deletedUserIds;
+		}
 	}
 
 	const currentUserId = event.locals.user?.id ?? null;
@@ -299,7 +305,7 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 async function resolveContentThread(
 	event: ServerLoadEvent<{ slug: string }>,
 	contentId: string
-): Promise<ContentArticle | null> {
+): Promise<{ article: ContentArticle; jsonLd: unknown; deletedUserIds: string[] | null } | null> {
 	const ctx = apiContext(event);
 
 	let slug: string | null = null;
@@ -326,7 +332,12 @@ async function resolveContentThread(
 
 	try {
 		const envelope = await apiGetEnvelope<ContentArticle>(ctx, `/content/${slug}`);
-		return envelope.data ?? null;
+		if (!envelope.data) return null;
+		return {
+			article: envelope.data,
+			jsonLd: envelope.json_ld ?? null,
+			deletedUserIds: envelope.deleted_user_ids ?? null
+		};
 	} catch {
 		return null;
 	}

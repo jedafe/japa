@@ -98,6 +98,16 @@ LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
+ -- Anchored discussion containers (entity_type='content') don't list:
+ -- the parent article's own card already represents the conversation —
+ -- its clicks deep-link to /thread/{slug} — so both rows in one feed
+ -- would double the same discussion (unified-discussion spec). Tool/wiki
+ -- anchors stay: their container row is the only feed card those
+ -- entities have.
+ AND NOT EXISTS (
+     SELECT 1 FROM thread_anchors ta
+     WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+ )
  -- §106: synthetic video channels are excluded from discovery feeds so
  -- imported channel content does not surface as normal user activity.
  -- COALESCE keeps rows whose author join produced no users row.
@@ -321,6 +331,10 @@ WITH affinity AS (
  AND COALESCE(c.published_at, c.created_at) >= $5
  AND c.author_id <> $6
  AND NOT EXISTS (
+ SELECT 1 FROM thread_anchors ta
+ WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+ )
+ AND NOT EXISTS (
  SELECT 1 FROM user_blocks ub
  WHERE ((ub.blocker_id = $6 AND ub.blocked_id = c.author_id)
  OR (ub.blocker_id = c.author_id AND ub.blocked_id = $6))
@@ -345,6 +359,10 @@ velocity AS (
  AND c.visibility = 'public'
  AND COALESCE(c.published_at, c.created_at) >= $5
  AND c.author_id <> $6
+ AND NOT EXISTS (
+ SELECT 1 FROM thread_anchors ta
+ WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+ )
  AND NOT EXISTS (
  SELECT 1 FROM user_blocks ub
  WHERE ((ub.blocker_id = $6 AND ub.blocked_id = c.author_id)
@@ -693,6 +711,11 @@ LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE f.user_id = $1
  AND c.status = 'published'
  AND c.deleted_at IS NULL
+ -- Anchored discussion containers don't list (see GetExploreFeed).
+ AND NOT EXISTS (
+     SELECT 1 FROM thread_anchors ta
+     WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+ )
  -- 'top' is a rolling-window popular sort measured from published_at (the
  -- went-live timestamp, not draft creation) — other sorts see the full set.
  AND ($2 <> 'top' OR COALESCE(c.published_at, c.created_at) > now() - make_interval(days := $3::int))
@@ -907,6 +930,10 @@ WHERE c.author_id = $1
  AND c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
+ AND NOT EXISTS (
+     SELECT 1 FROM thread_anchors ta
+     WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+ )
  AND NOT (
  $2::uuid IS NOT NULL AND EXISTS (
  SELECT 1 FROM user_blocks ub
@@ -1132,6 +1159,11 @@ LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
+ -- Anchored discussion containers don't list (see GetExploreFeed).
+ AND NOT EXISTS (
+     SELECT 1 FROM thread_anchors ta
+     WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+ )
  -- §106: exclude synthetic video channel content from discovery feeds.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
@@ -1312,6 +1344,10 @@ LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE c.space_id = $1
  AND c.status = 'published'
  AND c.deleted_at IS NULL
+ AND NOT EXISTS (
+     SELECT 1 FROM thread_anchors ta
+     WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+ )
  AND NOT (
  $2::uuid IS NOT NULL AND EXISTS (
  SELECT 1 FROM user_blocks ub
@@ -1534,6 +1570,11 @@ WHERE c.status = 'published'
  AND c.deleted_at IS NULL
  AND c.visibility = 'public'
  AND COALESCE(c.published_at, c.created_at) > now() - make_interval(days := $1::int)
+ -- Anchored discussion containers don't list (see GetExploreFeed).
+ AND NOT EXISTS (
+     SELECT 1 FROM thread_anchors ta
+     WHERE ta.content_id = c.id AND ta.entity_type = 'content'
+ )
  -- §106: exclude synthetic video channel content from discovery feeds.
  AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,

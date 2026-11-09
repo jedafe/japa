@@ -1563,6 +1563,32 @@ func (q *Queries) RecalculateContentVoteScore(ctx context.Context, contentID pgt
 	return vote_score, err
 }
 
+const recountContentCommentCount = `-- name: RecountContentCommentCount :exec
+UPDATE public.contents c
+SET comment_count = COALESCE(own.cnt, 0) + COALESCE(lnk.cnt, 0)
+FROM (SELECT $1::uuid AS id) t
+LEFT JOIN (
+    SELECT content_id, COUNT(*)::int AS cnt
+    FROM comments WHERE deleted_at IS NULL
+    GROUP BY content_id
+) own ON own.content_id = t.id
+LEFT JOIN (
+    SELECT l.content_id, COUNT(cm.id)::int AS cnt
+    FROM content_thread_links l
+    JOIN comments cm ON cm.content_id = l.thread_id AND cm.deleted_at IS NULL
+    GROUP BY l.content_id
+) lnk ON lnk.content_id = t.id
+WHERE c.id = t.id
+`
+
+// Resync a row's comment_count to its own live comments plus live comments
+// on its linked threads — the denormalized shape the write path maintains
+// (migration 001095 step 4). Run on both rows after a reparent.
+func (q *Queries) RecountContentCommentCount(ctx context.Context, contentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, recountContentCommentCount, contentID)
+	return err
+}
+
 const removeComment = `-- name: RemoveComment :exec
 UPDATE comments
 SET status = 'removed',
@@ -1585,6 +1611,24 @@ type RemoveCommentParams struct {
 // moderation surface (BUG-010).
 func (q *Queries) RemoveComment(ctx context.Context, arg RemoveCommentParams) error {
 	_, err := q.db.Exec(ctx, removeComment, arg.RemovedBy, arg.RemovedReason, arg.ID)
+	return err
+}
+
+const reparentCommentsToThread = `-- name: ReparentCommentsToThread :exec
+UPDATE comments SET content_id = $1 WHERE content_id = $2
+`
+
+type ReparentCommentsToThreadParams struct {
+	ThreadID  pgtype.UUID `json:"thread_id"`
+	ContentID pgtype.UUID `json:"content_id"`
+}
+
+// Move comments that were posted on an entity row (e.g. a content article
+// before its canonical discussion thread was minted, or via a direct API
+// write) onto the thread row — one conversation per entity. Idempotent:
+// re-running moves nothing once the entity row's comments are gone.
+func (q *Queries) ReparentCommentsToThread(ctx context.Context, arg ReparentCommentsToThreadParams) error {
+	_, err := q.db.Exec(ctx, reparentCommentsToThread, arg.ThreadID, arg.ContentID)
 	return err
 }
 
