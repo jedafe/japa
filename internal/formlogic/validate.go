@@ -28,7 +28,7 @@ var knownOps = map[string]bool{
 // carries scoring keys this function does not own.
 func ValidateFieldLogic(config map[string]any) error {
 	if v, ok := config["visible_if"]; ok {
-		if err := validateCondition(v, "visible_if"); err != nil {
+		if err := validateCondition(v, "visible_if", true); err != nil {
 			return err
 		}
 	}
@@ -45,7 +45,7 @@ func ValidateFieldLogic(config map[string]any) error {
 // ValidateStepLogic checks a step-level config — visible_if only.
 func ValidateStepLogic(config map[string]any) error {
 	if v, ok := config["visible_if"]; ok {
-		if err := validateCondition(v, "visible_if"); err != nil {
+		if err := validateCondition(v, "visible_if", true); err != nil {
 			return err
 		}
 	}
@@ -68,7 +68,7 @@ func ValidateStepRules(v any) error {
 		}
 
 		if vis, present := em["visible_if"]; present {
-			if err := validateCondition(vis, fmt.Sprintf("step_rules.%s.visible_if", step)); err != nil {
+			if err := validateCondition(vis, fmt.Sprintf("step_rules.%s.visible_if", step), true); err != nil {
 				return err
 			}
 		}
@@ -78,8 +78,10 @@ func ValidateStepRules(v any) error {
 }
 
 // validateCondition checks a decoded condition: an object whose all/any
-// members (when present) are arrays of clause objects.
-func validateCondition(v any, path string) error {
+// members (when present) are arrays of clause objects. requireField is true
+// everywhere except jump.when — the selfKey default exists only there, so a
+// field-less clause anywhere else is a dead rule, not a self-reference.
+func validateCondition(v any, path string, requireField bool) error {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return fmt.Errorf("%s must be an object", path)
@@ -97,7 +99,7 @@ func validateCondition(v any, path string) error {
 		}
 
 		for i, cl := range arr {
-			if err := validateClause(cl, fmt.Sprintf("%s.%s[%d]", path, key, i)); err != nil {
+			if err := validateClause(cl, fmt.Sprintf("%s.%s[%d]", path, key, i), requireField); err != nil {
 				return err
 			}
 		}
@@ -106,9 +108,12 @@ func validateCondition(v any, path string) error {
 	return nil
 }
 
-// validateClause checks one clause: an object with a known op, a string
-// field when given, and — for `in` — an array value when a value is given.
-func validateClause(v any, path string) error {
+// validateClause checks one clause: an object with a known op and, per the
+// context, a required string field. Comparison ops require a present
+// non-null scalar value (an array/object can never match and also diverges
+// between the Go and TS evaluators' stringification); `in` requires a
+// non-empty array value. A dead clause is an authoring error, not a rule.
+func validateClause(v any, path string, requireField bool) error {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return fmt.Errorf("%s must be an object", path)
@@ -124,17 +129,43 @@ func validateClause(v any, path string) error {
 		return fmt.Errorf("%s.op %v is not a known operator", path, op)
 	}
 
-	if f, present := m["field"]; present {
-		if _, ok := f.(string); !ok {
-			return fmt.Errorf("%s.field must be a string", path)
+	f, hasField := m["field"]
+	switch {
+	case !hasField && requireField:
+		return fmt.Errorf("%s.field is required", path)
+	case hasField:
+		fs, isStr := f.(string)
+		if !isStr || (requireField && fs == "") {
+			return fmt.Errorf("%s.field must be a non-empty string", path)
 		}
 	}
 
-	if opStr == "in" {
-		if val, has := m["value"]; has {
-			if _, isArr := val.([]any); !isArr {
-				return fmt.Errorf("%s.value must be an array for the 'in' operator", path)
-			}
+	if opStr == "answered" || opStr == "not_answered" {
+		return nil
+	}
+
+	return validateClauseValue(m["value"], path, opStr)
+}
+
+// validateClauseValue enforces the per-op value shape: present non-null for
+// comparison ops, non-empty array for `in`, scalar for eq/neq/contains (an
+// array/object can never match and diverges between the Go and TS
+// evaluators' stringification).
+func validateClauseValue(val any, path, opStr string) error {
+	if val == nil {
+		return fmt.Errorf("%s.value is required for the '%s' operator", path, opStr)
+	}
+
+	switch opStr {
+	case "in":
+		arr, isArr := val.([]any)
+		if !isArr || len(arr) == 0 {
+			return fmt.Errorf("%s.value must be a non-empty array for the 'in' operator", path)
+		}
+	case "eq", "neq", "contains":
+		switch val.(type) {
+		case map[string]any, []any:
+			return fmt.Errorf("%s.value must be a scalar for the '%s' operator", path, opStr)
 		}
 	}
 
@@ -150,7 +181,7 @@ func validateJump(v any) error {
 	}
 
 	if w, present := m["when"]; present {
-		if err := validateCondition(w, "jump.when"); err != nil {
+		if err := validateCondition(w, "jump.when", false); err != nil {
 			return err
 		}
 	}
