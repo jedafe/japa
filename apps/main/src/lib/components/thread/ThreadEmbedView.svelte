@@ -92,14 +92,14 @@
 			.join('');
 	});
 	// Content threads (a contents row that IS its canonical article) render
-	// only the opening ~80 words of the body + a "Read full {type}" CTA —
+	// only the opening ~150 words of the body + a "Read full {type}" CTA —
 	// the full article lives on the canonical page, and truncating here also
 	// keeps the thread from duplicating the article's content. Discussion
 	// threads (forum-style bodies) render in full.
 	const isContentThread = $derived(data.embed?.kind === 'self');
-	// The ~80-word opening of an article body — FORMATTED (same .prose
+	// The ~150-word opening of an article body — FORMATTED (same .prose
 	// render as a full body), not a flattened text blob. Whole block-level
-	// chunks accumulate while the running word count stays ≤100; a single
+	// chunks accumulate while the running word count stays ≤170; a single
 	// oversized first block falls back to a plain-text truncation so the
 	// preview never spills a wall of text.
 	function previewHtml(source: string, fallbackExcerpt: string): string {
@@ -110,18 +110,18 @@
 			for (const chunk of chunks) {
 				const w = stripHtmlText(chunk).split(/\s+/).filter(Boolean).length;
 				if (w === 0) continue;
-				if (words > 0 && words + w > 100) break;
-				if (words === 0 && w > 100) break; // oversized first block → text fallback
+				if (words > 0 && words + w > 170) break;
+				if (words === 0 && w > 170) break; // oversized first block → text fallback
 				acc += chunk;
 				words += w;
-				if (words >= 60) break;
+				if (words >= 130) break;
 			}
 			if (acc) return acc + '<p class="text-[var(--color-muted)]">…</p>';
 		}
 		// Fallback: plain-text truncation of whatever text exists.
 		const words = stripHtmlText(source).split(/\s+/).filter(Boolean);
 		if (words.length === 0) return fallbackExcerpt ? `<p>${escapeHtml(fallbackExcerpt)}</p>` : '';
-		const preview = words.length > 80 ? words.slice(0, 80).join(' ') + '…' : words.join(' ');
+		const preview = words.length > 150 ? words.slice(0, 150).join(' ') + '…' : words.join(' ');
 		return `<p>${escapeHtml(preview)}</p>`;
 	}
 	const contentPreviewHtml = $derived(

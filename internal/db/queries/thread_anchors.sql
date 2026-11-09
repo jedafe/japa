@@ -44,17 +44,27 @@ LIMIT 1;
 -- anchoring a page from a private/inactive space would leak its title
 -- via /thread/{slug}.
 SELECT wp.id, wp.title, wp.slug AS page_slug, s.slug AS space_slug, s.name AS space_name,
+       COALESCE(wp.category, '') AS category,
        COALESCE(lr.excerpt, '') AS excerpt
 FROM wiki_pages wp
 JOIN spaces s ON s.id = wp.space_id AND s.deleted_at IS NULL
     AND s.visibility = 'public' AND s.status = 'active'
 LEFT JOIN LATERAL (
-    SELECT COALESCE(wr.summary,
-                    left(btrim(COALESCE(x.excerpt_text, '')), 200), '') AS excerpt
+    -- ~150-word opening: revision summary when present, else the text
+    -- nodes extracted from the TipTap doc — word-truncated with an
+    -- ellipsis, matching the content-thread preview length.
+    SELECT (CASE
+        WHEN array_length(x.words, 1) > 150
+            THEN array_to_string(x.words[1:150], ' ') || '…'
+        ELSE COALESCE(array_to_string(x.words, ' '), '')
+    END)::text AS excerpt
     FROM wiki_revisions wr
     LEFT JOIN LATERAL (
-        SELECT string_agg(t.txt #>> '{}', ' ') AS excerpt_text
-        FROM jsonb_path_query(wr.content, '$.**.text ? (@.type() == "string")') AS t(txt)
+        SELECT regexp_split_to_array(btrim(COALESCE(
+            NULLIF(btrim(wr.summary), ''),
+            (SELECT string_agg(t.txt #>> '{}', ' ')
+             FROM jsonb_path_query(wr.content, '$.**.text ? (@.type() == "string")') AS t(txt)),
+            '')), '\s+') AS words
     ) x ON true
     WHERE wr.wiki_page_id = wp.id AND wr.deleted_at IS NULL
       AND wr.status = 'approved'

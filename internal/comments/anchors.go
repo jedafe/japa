@@ -210,6 +210,9 @@ type entityDescriptor struct {
 	URL     string
 	Title   string
 	Summary *string
+	// Category the entity files under (wiki pages) — feeds the varied
+	// thread-title templates so generated titles fit the page's context.
+	Category string
 	// SpaceID the anchor contents row files under — the platform anchor
 	// space for tool/wiki entities; the parent's own primary space for
 	// content entities so the thread inherits the article's audience.
@@ -326,14 +329,53 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 		}
 
 		return entityDescriptor{
-			URL:     "/wiki/" + page.SpaceSlug + "/" + page.PageSlug,
-			Title:   page.Title,
-			Summary: &summary,
-			SpaceID: spaceID,
+			URL:      "/wiki/" + page.SpaceSlug + "/" + page.PageSlug,
+			Title:    page.Title,
+			Summary:  &summary,
+			Category: page.Category,
+			SpaceID:  spaceID,
 		}, nil
 	default:
 		return entityDescriptor{}, fmt.Errorf("unsupported entity_type %q: %w", entityType, errpkg.ErrInvalid)
 	}
+}
+
+// anchorThreadTitle composes a minted thread's title. Wiki pages get a
+// varied, category-aware lead-in — "Discussing {title}", "Thread about
+// {title}", "{title} — local thread" — so generated threads don't all read
+// the same "Discussing: …" phrasing; the pick is deterministic per entity
+// key. Tools and content keep the plain "Discussing:" form. The 001096
+// backfill mirrors these template sets with its own hashtext-based pick —
+// per-row determinism is all that's required, not identical picks.
+func anchorThreadTitle(entityType, entityKey, title, category string) string {
+	if entityType != "wiki_page" {
+		return "Discussing: " + title
+	}
+	templates := []string{
+		"Discussing %s",
+		"Thread about %s",
+		"Discussing %s",
+		"%s — community thread",
+	}
+	switch category {
+	case "visa", "documents", "admissions", "scholarships", "applications":
+		templates = []string{
+			"Thread about %s",
+			"Discussing %s",
+			"Discussing %s",
+			"%s — Q&A thread",
+		}
+	case "cities", "states", "countries", "overview", "neighborhoods",
+		"nearby", "attractions", "history", "culture":
+		templates = []string{
+			"Discussing %s",
+			"Thread about %s",
+			"%s — local thread",
+			"Discussing %s",
+		}
+	}
+	h := sha256.Sum256([]byte(entityKey))
+	return fmt.Sprintf(templates[int(h[0])%len(templates)], title)
 }
 
 // CreateAnchor get-or-creates a thread anchor for an entity. The backing
@@ -361,7 +403,7 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 		return AnchorSummary{}, fmt.Errorf("content creator not wired")
 	}
 
-	title := "Discussing: " + desc.Title
+	title := anchorThreadTitle(entityType, entityKey, desc.Title, desc.Category)
 
 	// The thread body starts empty — /thread/{slug} renders the entity's
 	// excerpt (embed card / parent-article preview) as the default context,
