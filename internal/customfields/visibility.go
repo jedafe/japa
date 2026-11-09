@@ -117,9 +117,11 @@ func hiddenFieldKeys(fields []fieldDef, steps []stepDef, canon map[string]any) m
 }
 
 // hiddenStepKeys returns the step IDs hidden by a step's own visible_if or
-// by a triggered forward jump interval. The auto-hide rule (a step whose
-// defined fields are all hidden) needs no handling here — those fields are
-// already individually hidden, so hiding the step adds nothing to the set.
+// by a triggered forward jump interval. Steps hidden by their own rule seed
+// the jump pass — a field inside a hidden step can't fire a jump, mirroring
+// the "hidden source can't fire" clause of ADR-137. The auto-hide rule (a
+// step whose defined fields are all hidden) needs no handling here — those
+// fields are already individually hidden, so hiding the step adds nothing.
 func hiddenStepKeys(fields []fieldDef, steps []stepDef, canon map[string]any) map[string]bool {
 	if len(steps) == 0 {
 		return nil
@@ -135,14 +137,14 @@ func hiddenStepKeys(fields []fieldDef, steps []stepDef, canon map[string]any) ma
 		ruleFields = append(ruleFields, formlogic.RuleField{Key: f.Key, StepKey: f.StepKey, Config: f.Config})
 	}
 
-	hidden := formlogic.HiddenByJump(ruleFields, order, canon)
+	ruleHidden := make(map[string]bool, len(steps))
 	for _, st := range steps {
 		if !formlogic.StepVisible(st.Config, canon) {
-			hidden[st.ID] = true
+			ruleHidden[st.ID] = true
 		}
 	}
 
-	return hidden
+	return formlogic.HiddenByJump(ruleFields, order, canon, ruleHidden)
 }
 
 // dropHiddenValues removes entries whose field's visible_if fails against

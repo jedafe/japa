@@ -470,18 +470,20 @@ func visibleFieldSet(fields []AssessmentField, answers map[string]any, stepRules
 }
 
 // hiddenDimensions returns the dimension keys hidden by step_rules.visible_if
-// or by triggered forward jumps between dimension steps (ADR-137). Auto-hide
-// of empty dimensions needs no handling — their fields are already hidden
+// or by triggered forward jumps between dimension steps (ADR-137).
+// Rule-hidden dimensions seed the jump pass so a field inside one can't
+// fire a jump — invisible fields can't drive the flow. Auto-hide of empty
+// dimensions needs no handling — their fields are already hidden
 // individually.
 func hiddenDimensions(ruleFields []formlogic.RuleField, dimOrder []string, stepRules map[string]StepRule, answers map[string]any) map[string]bool {
-	hidden := formlogic.HiddenByJump(ruleFields, dimOrder, answers)
+	ruleHidden := make(map[string]bool, len(dimOrder))
 	for _, dim := range dimOrder {
 		if r, ok := stepRules[dim]; ok && !r.VisibleIf.Eval(answers, "") {
-			hidden[dim] = true
+			ruleHidden[dim] = true
 		}
 	}
 
-	return hidden
+	return formlogic.HiddenByJump(ruleFields, dimOrder, answers, ruleHidden)
 }
 
 // fieldDimension returns the field's step identifier — its dimension, or the

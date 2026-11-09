@@ -137,10 +137,16 @@ List<Map<String, dynamic>> visibleFields(List<dynamic> fields, Answers answers) 
 }
 
 /// Returns the step keys hidden by triggered forward-only jumps.
-/// [stepOrder] lists every step identifier in natural order. A jump fires
-/// when its field passes fieldVisible and jump.when evaluates true; it hides
-/// the open interval (source, target). Backward/self/unknown targets are
-/// ignored; multiple triggered jumps union their hidden intervals.
+/// [stepOrder] lists every step identifier in natural order; [stepHidden]
+/// seeds the result with steps hidden by other mechanisms (their own
+/// visible_if). A jump fires when its field passes fieldVisible, its
+/// containing step is not already hidden, and jump.when holds; an absent or
+/// empty when fires iff the owning field is answered (a jump is
+/// answer-driven — an unconditional interval skip is an authoring error).
+/// Sources are processed in natural step order so a field inside a step
+/// hidden by an earlier jump can never fire its own; it hides the open
+/// interval (source, target). Backward/self/unknown targets are ignored;
+/// multiple triggered jumps union their hidden intervals.
 ///
 /// Each field entry is a decoded API map: `key`, `config.dimension` (the
 /// containing step's key for assessment forms — pass [stepKeyOf] to override
@@ -150,6 +156,7 @@ Set<String> hiddenStepsByJump(
   List<String> stepOrder,
   Answers answers, {
   String Function(Map<String, dynamic> field)? stepKeyOf,
+  Set<String>? stepHidden,
 }) {
   String defaultStepKey(Map<String, dynamic> f) {
     final cfg = f['config'];
@@ -165,20 +172,35 @@ Set<String> hiddenStepsByJump(
   for (var i = 0; i < stepOrder.length; i++) {
     idx[stepOrder[i]] = i;
   }
-  final hidden = <String>{};
+  final hidden = <String>{...?stepHidden};
+
+  // Process candidate sources in natural step order — a field inside a
+  // step hidden by an earlier-firing jump can never fire its own.
+  final decoded = <Map<String, dynamic>>[];
   for (final raw0 in fields) {
-    if (raw0 is! Map) continue;
-    final raw = raw0.cast<String, dynamic>();
+    if (raw0 is Map) decoded.add(raw0.cast<String, dynamic>());
+  }
+  decoded.sort((a, b) => (idx[keyOf(a)] ?? -1).compareTo(idx[keyOf(b)] ?? -1));
+
+  for (final raw in decoded) {
     final fKey = raw['key'] as String? ?? '';
     final cfg = raw['config'];
     final config = cfg is Map ? cfg.cast<String, dynamic>() : null;
+    if (hidden.contains(keyOf(raw))) continue;
     if (!fieldVisible(config, answers, fKey)) continue;
     final j = config?['jump'];
     if (j is! Map) continue;
     final target = j['step'];
     if (target is! String || target.isEmpty) continue;
     final when = j['when'];
-    if (!evalCondition(when is Map ? when.cast<String, dynamic>() : null, answers, fKey)) continue;
+    final hasWhen = when is Map &&
+        ((when['all'] is List && (when['all'] as List).isNotEmpty) ||
+            (when['any'] is List && (when['any'] as List).isNotEmpty));
+    if (hasWhen) {
+      if (!evalCondition(when.cast<String, dynamic>(), answers, fKey)) continue;
+    } else if (!_isAnswered(answers[fKey], answers.containsKey(fKey))) {
+      continue;
+    }
     final s = idx[keyOf(raw)];
     final t = idx[target];
     if (s == null || t == null || t <= s) continue;

@@ -116,15 +116,29 @@ visibleSteps   = naturalOrder.filter(s => stepVisible(s) && s ∉ jumpHidden)
 
 - Field visibility and step visibility both evaluate against the current
   answers; order of evaluation does not matter (no recursion).
-- Jumps: for each **visible** field (one that passes `visible_if`) in natural
-  order, if `eval(jump.when, answers)` then resolve `(S → T)` where S is the
-  step containing the field and T the target step index. A hidden field can
-  never fire a jump — its `when` isn't evaluated. T must be **strictly after** S; backward/self/unknown targets
-  are ignored at runtime and warned at save time. All triggered jumps apply;
-  hidden intervals merge (union). A jump whose target lies inside an already
-  hidden interval still applies after T — chains work.
+- Jumps: for each **visible** field in natural step order — a field that
+  passes `visible_if` **and whose containing step is not already hidden**
+  (by the step's own `visible_if` or an earlier-fired jump) — if the jump's
+  `when` holds then resolve `(S → T)` where S is the step containing the
+  field and T the target step index. A field the user cannot see can never
+  fire a jump — its `when` isn't evaluated. T must be **strictly after** S;
+  backward/self/unknown targets are ignored at runtime and warned at save
+  time. All triggered jumps apply; hidden intervals merge (union). Because
+  sources are processed in natural step order, a jump inside a hidden
+  interval is suppressed — chains only form between jumps in still-visible
+  steps.
+- `jump.when` is optional: a `when` with no clauses fires iff the **owning
+  field is answered** (a jump is answer-driven — an unconditional interval
+  skip is an authoring error, not a rule). Explicit `when` clauses evaluate
+  as written.
 - A jump never force-shows its target: the target's own `visible_if` still
   applies.
+- Logic keys are shape-validated at write time (`formlogic.Validate*`):
+  `visible_if`/`jump.when` must be condition objects with known ops and
+  well-formed clauses; `jump.step` must be a non-empty string;
+  `scoring_config.step_rules` must be a map of `{visible_if?}` objects.
+  Malformed rules are rejected `400 invalid_config` rather than persisting
+  as silently-dead conditions.
 - `is_multi_step=false` forms: field `visible_if` applies; no steps/jumps.
 
 ## Backend changes (Go)

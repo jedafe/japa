@@ -1682,7 +1682,7 @@
 						<label for="edit-field-jump" class="text-sm font-medium text-foreground-alt">{t('forms.logicJump', 'Jump to a step')}</label>
 					</div>
 					{#if editFieldJumpEnabled}
-						<p class="my-2 text-xs text-muted">{t('forms.logicJumpHint', 'When the conditions match, the user skips forward to the target step. No conditions = the jump always fires.')}</p>
+						<p class="my-2 text-xs text-muted">{t('forms.logicJumpHint', 'When the conditions match, the user skips forward to the target step. No conditions = the jump fires whenever this field is answered.')}</p>
 						<div class="mb-2">
 							<Select options={jumpStepOptions} bind:value={editFieldJumpStep} placeholder={t('forms.logicJumpStep', 'Target step')} />
 						</div>

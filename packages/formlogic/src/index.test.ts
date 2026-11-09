@@ -128,12 +128,40 @@ describe('hiddenStepsByJump', () => {
 		expect(hiddenStepsByJump(fields, order, { f6: 1 }).size).toBe(0);
 	});
 
-	it('union of intervals + chain', () => {
+	it('field in a jump-hidden step cannot fire', () => {
 		const fields = [
 			mk('j1', 's1', `{"jump":{"when":{"any":[{"op":"eq","value":"a"}]},"step":"s4"}}`),
 			mk('j2', 's2', `{"jump":{"when":{"any":[{"op":"eq","value":"b"}]},"step":"s5"}}`),
+			mk('j3', 's4', `{"jump":{"when":{"any":[{"op":"eq","value":"c"}]},"step":"s5"}}`),
 		];
-		const h = hiddenStepsByJump(fields, order, { j1: 'a', j2: 'b' });
-		expect([...h].sort()).toEqual(['s2', 's3', 's4']);
+		// j2's step s2 is hidden by j1's jump → suppressed; s4 stays visible.
+		const h = hiddenStepsByJump(fields, order, { j1: 'a', j2: 'b', j3: 'c' });
+		expect([...h].sort()).toEqual(['s2', 's3']);
+	});
+
+	it('union of intervals from visible sources', () => {
+		const fields = [
+			mk('j1', 's1', `{"jump":{"when":{"any":[{"op":"eq","value":"a"}]},"step":"s3"}}`),
+			mk('j2', 's2', `{"jump":{"when":{"any":[{"op":"eq","value":"b"}]},"step":"s5"}}`),
+			mk('j3', 's3', `{"jump":{"when":{"any":[{"op":"eq","value":"c"}]},"step":"s5"}}`),
+		];
+		const h = hiddenStepsByJump(fields, order, { j1: 'a', j2: 'b', j3: 'c' });
+		expect([...h].sort()).toEqual(['s2', 's4']);
+	});
+
+	it('seeded stepHidden suppresses its fields\' jumps', () => {
+		const fields = [
+			mk('j1', 's1', `{"jump":{"when":{"any":[{"op":"eq","value":"a"}]},"step":"s3"}}`),
+			mk('j3', 's3', `{"jump":{"when":{"any":[{"op":"eq","value":"c"}]},"step":"s5"}}`),
+		];
+		const h = hiddenStepsByJump(fields, order, { j1: 'a', j3: 'c' }, new Set(['s3']));
+		expect([...h].sort()).toEqual(['s2', 's3']);
+	});
+
+	it('when-less jump fires iff the owning field is answered', () => {
+		const fields = [mk('u1', 's1', `{"jump":{"step":"s3"}}`)];
+		expect([...hiddenStepsByJump(fields, order, { u1: 'x' })].sort()).toEqual(['s2']);
+		expect(hiddenStepsByJump(fields, order, {}).size).toBe(0);
+		expect(hiddenStepsByJump(fields, order, { u1: '' }).size).toBe(0);
 	});
 });

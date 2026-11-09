@@ -213,12 +213,24 @@
 		return order;
 	});
 
+	// Steps hidden by their own step_rules.visible_if — seeds the jump pass
+	// so a field inside a hidden step can't fire a jump (ADR-137: invisible
+	// fields can't drive the flow).
+	const stepRuleHidden = $derived.by(() => {
+		const s = new Set<string>();
+		for (const dim of stepOrder) {
+			if (!stepVisible(stepRules[dim], answers)) s.add(dim);
+		}
+		return s;
+	});
+
 	// Steps hidden by triggered forward jumps between dimension steps.
 	const jumpHidden = $derived(
 		hiddenStepsByJump(
 			fields.map((f) => ({ key: f.key, stepKey: f.config?.dimension || 'general', config: f.config })),
 			stepOrder,
-			answers
+			answers,
+			stepRuleHidden
 		)
 	);
 

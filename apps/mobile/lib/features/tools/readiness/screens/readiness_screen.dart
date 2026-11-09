@@ -71,7 +71,16 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
       final dim = (config['dimension'] as String?) ?? 'general';
       if (!seen.contains(dim)) seen.add(dim);
     }
-    final hiddenByJump = hiddenStepsByJump(fields, seen, _answers);
+    // Steps hidden by their own step_rules.visible_if seed the jump pass —
+    // a field inside a hidden step can't fire a jump (ADR-137).
+    final ruleHidden = <String>{};
+    for (final step in seen) {
+      final rule = stepRules?[step];
+      if (!stepVisible(rule is Map ? rule.cast<String, dynamic>() : null, _answers)) {
+        ruleHidden.add(step);
+      }
+    }
+    final hiddenByJump = hiddenStepsByJump(fields, seen, _answers, stepHidden: ruleHidden);
     final vis = visibleFields(fields, _answers);
     return seen.where((step) {
       if (hiddenByJump.contains(step)) return false;

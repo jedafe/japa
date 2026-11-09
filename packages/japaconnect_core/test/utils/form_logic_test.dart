@@ -127,13 +127,41 @@ void main() {
       expect(hiddenStepsByJump(fields, order, {'f6': 1.0}), isEmpty);
     });
 
-    test('union of intervals chains across hidden steps', () {
+    test('field in a jump-hidden step cannot fire', () {
       final fields = [
         mk('j1', 's1', '{"jump":{"when":{"any":[{"op":"eq","value":"a"}]},"step":"s4"}}'),
         mk('j2', 's2', '{"jump":{"when":{"any":[{"op":"eq","value":"b"}]},"step":"s5"}}'),
+        mk('j3', 's4', '{"jump":{"when":{"any":[{"op":"eq","value":"c"}]},"step":"s5"}}'),
       ];
-      final h = hiddenStepsByJump(fields, order, {'j1': 'a', 'j2': 'b'});
-      expect(h, {'s2', 's3', 's4'});
+      // j2's step s2 is hidden by j1's jump → suppressed; s4 stays visible.
+      final h = hiddenStepsByJump(fields, order, {'j1': 'a', 'j2': 'b', 'j3': 'c'});
+      expect(h, {'s2', 's3'});
+    });
+
+    test('union of intervals from visible sources', () {
+      final fields = [
+        mk('j1', 's1', '{"jump":{"when":{"any":[{"op":"eq","value":"a"}]},"step":"s3"}}'),
+        mk('j2', 's2', '{"jump":{"when":{"any":[{"op":"eq","value":"b"}]},"step":"s5"}}'),
+        mk('j3', 's3', '{"jump":{"when":{"any":[{"op":"eq","value":"c"}]},"step":"s5"}}'),
+      ];
+      final h = hiddenStepsByJump(fields, order, {'j1': 'a', 'j2': 'b', 'j3': 'c'});
+      expect(h, {'s2', 's4'});
+    });
+
+    test('seeded stepHidden suppresses its fields\' jumps', () {
+      final fields = [
+        mk('j1', 's1', '{"jump":{"when":{"any":[{"op":"eq","value":"a"}]},"step":"s3"}}'),
+        mk('j3', 's3', '{"jump":{"when":{"any":[{"op":"eq","value":"c"}]},"step":"s5"}}'),
+      ];
+      final h = hiddenStepsByJump(fields, order, {'j1': 'a', 'j3': 'c'}, stepHidden: {'s3'});
+      expect(h, {'s2', 's3'}); // j3 suppressed by the seed; s3 stays in the set
+    });
+
+    test('when-less jump fires iff the owning field is answered', () {
+      final fields = [mk('u1', 's1', '{"jump":{"step":"s3"}}')];
+      expect(hiddenStepsByJump(fields, order, {'u1': 'x'}), {'s2'});
+      expect(hiddenStepsByJump(fields, order, {}), isEmpty);
+      expect(hiddenStepsByJump(fields, order, {'u1': ''}), isEmpty);
     });
   });
 }

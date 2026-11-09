@@ -9,6 +9,7 @@ package formlogic
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -222,28 +223,39 @@ func StepVisible(config []byte, answers map[string]any) bool {
 }
 
 // HiddenByJump returns the step keys hidden by triggered forward-only jumps.
-// stepOrder lists every step identifier in natural order. A jump fires when
-// its field passes FieldVisible and jump.When evaluates true; it hides the
-// open interval (source, target). Backward/self/unknown targets are ignored.
-func HiddenByJump(fields []RuleField, stepOrder []string, answers map[string]any) map[string]bool {
+// stepOrder lists every step identifier in natural order; stepHidden seeds
+// the hidden set with steps hidden by other mechanisms (their own
+// visible_if) — pass nil when only jumps should be considered. A jump fires
+// when its field passes FieldVisible, its containing step is not already
+// hidden, and jump.When holds; an absent/empty When fires iff the owning
+// field is answered (a jump is answer-driven by definition — an
+// unconditional interval skip is an authoring error, not a rule). Sources
+// are processed in natural step order so a field inside a step hidden by an
+// earlier jump can never fire its own; it hides the open interval
+// (source, target). Backward/self/unknown targets are ignored.
+func HiddenByJump(fields []RuleField, stepOrder []string, answers map[string]any, stepHidden map[string]bool) map[string]bool {
 	idx := make(map[string]int, len(stepOrder))
 	for i, k := range stepOrder {
 		idx[k] = i
 	}
 
-	hidden := map[string]bool{}
+	hidden := make(map[string]bool, len(stepHidden))
+	for k := range stepHidden {
+		hidden[k] = true
+	}
 
-	for _, f := range fields {
-		if !FieldVisible(f.Config, answers, f.Key) {
-			continue
-		}
+	// Sort candidate sources by containing-step index so a field inside a
+	// step hidden by an earlier-firing jump is skipped — invisible fields
+	// cannot drive the flow.
+	sorted := make([]RuleField, len(fields))
+	copy(sorted, fields)
+	slices.SortStableFunc(sorted, func(a, b RuleField) int {
+		return idx[a.StepKey] - idx[b.StepKey] // unknown steps sort to the front but fail the idx lookup below
+	})
 
-		j := ParseFieldRules(f.Config).Jump
-		if j == nil || j.Step == "" {
-			continue
-		}
-
-		if !j.When.Eval(answers, f.Key) {
+	for _, f := range sorted {
+		j := fireableJump(f, hidden, answers)
+		if j == nil {
 			continue
 		}
 
@@ -260,4 +272,34 @@ func HiddenByJump(fields []RuleField, stepOrder []string, answers map[string]any
 	}
 
 	return hidden
+}
+
+// fireableJump returns the field's jump rule when it may fire at the
+// current answer state — nil otherwise. The source must be visible to the
+// user: its own visible_if passes and its containing step is not already
+// hidden (seeded or by an earlier jump). A When with no clauses fires iff
+// the owning field is answered.
+func fireableJump(f RuleField, hidden map[string]bool, answers map[string]any) *JumpRule {
+	if hidden[f.StepKey] {
+		return nil
+	}
+
+	if !FieldVisible(f.Config, answers, f.Key) {
+		return nil
+	}
+
+	j := ParseFieldRules(f.Config).Jump
+	if j == nil || j.Step == "" {
+		return nil
+	}
+
+	if len(j.When.All) == 0 && len(j.When.Any) == 0 {
+		if v, ok := answers[f.Key]; !isAnswered(v, ok) {
+			return nil
+		}
+	} else if !j.When.Eval(answers, f.Key) {
+		return nil
+	}
+
+	return j
 }

@@ -68,6 +68,12 @@
 		return s;
 	});
 
+	// Steps hidden by their own visible_if — seeds the jump pass so a field
+	// inside a hidden step can't fire a jump (ADR-137).
+	const stepRuleHidden = $derived(
+		new Set(steps.filter((s) => !stepVisible(s.config, evalValues)).map((s) => s.id))
+	);
+
 	// Steps hidden by triggered forward jumps between steps. Jump targets
 	// are form_steps.id values; intervals are measured in the natural order.
 	const jumpHidden = $derived(
@@ -78,7 +84,8 @@
 				config: f.config
 			})),
 			steps.map((s) => s.id),
-			evalValues
+			evalValues,
+			stepRuleHidden
 		)
 	);
 

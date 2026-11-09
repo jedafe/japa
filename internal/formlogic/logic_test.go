@@ -1,6 +1,9 @@
 package formlogic
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 const (
 	fldPurpose = "purpose"
@@ -120,53 +123,114 @@ func TestHiddenByJump(t *testing.T) {
 	}
 	order := []string{"s1", "s2", "s3", "s4", "s5"}
 
-	// Basic forward jump: s1 field jumps to s4 → s2,s3 hidden.
-	fields := []RuleField{
-		mk("f1", "s1", `{"jump":{"when":{"any":[{"op":"eq","value":"go"}]},"step":"s4"}}`),
-		mk("f2", "s2", `{}`),
+	jump := func(step, val string) string {
+		return `{"jump":{"when":{"any":[{"op":"eq","value":"` + val + `"}]},"step":"` + step + `"}}`
 	}
 
-	h := HiddenByJump(fields, order, map[string]any{"f1": "go"})
-	if !h["s2"] || !h["s3"] || h["s4"] || len(h) != 2 {
-		t.Fatalf("expected {s2,s3}, got %v", h)
+	// Suppression set: j1 s1→s4 hides s2,s3 — j2 sits inside s2 and cannot
+	// fire; j3's interval (s4→s5) is empty. Union set: j1 s1→s3 hides only
+	// s2; j3 in still-visible s3 adds s4.
+	suppress := []RuleField{
+		mk("j1", "s1", jump("s4", "a")),
+		mk("j2", "s2", jump("s5", "b")),
+		mk("j3", "s4", jump("s5", "c")),
+	}
+	union := []RuleField{
+		mk("j1", "s1", jump("s3", "a")),
+		mk("j2", "s2", jump("s5", "b")),
+		mk("j3", "s3", jump("s5", "c")),
+	}
+	answered := map[string]any{"j1": "a", "j2": "b", "j3": "c"}
+	whenless := []RuleField{mk("u1", "s1", `{"jump":{"step":"s3"}}`)}
+
+	cases := []struct {
+		name    string
+		fields  []RuleField
+		answers map[string]any
+		seed    map[string]bool
+		want    map[string]bool
+	}{
+		{
+			name: "forward jump hides open interval",
+			fields: []RuleField{
+				mk("f1", "s1", jump("s4", "go")),
+				mk("f2", "s2", `{}`),
+			},
+			answers: map[string]any{"f1": "go"},
+			want:    map[string]bool{"s2": true, "s3": true},
+		},
+		{
+			name: "untriggered jump hides nothing",
+			fields: []RuleField{
+				mk("f1", "s1", jump("s4", "go")),
+			},
+			answers: map[string]any{"f1": "stop"},
+			want:    map[string]bool{},
+		},
+		{
+			name: "backward self and unknown targets ignored",
+			fields: []RuleField{
+				mk("f3", "s3", jump("s1", "1")),
+				mk("f4", "s3", jump("s3", "1")),
+				mk("f5", "s3", `{"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"ghost"}}`),
+			},
+			answers: map[string]any{"f3": 1.0, "f4": 1.0, "f5": 1.0},
+			want:    map[string]bool{},
+		},
+		{
+			name: "visible_if-hidden field cannot fire",
+			fields: []RuleField{
+				mk("f6", "s1", `{"visible_if":{"all":[{"field":"gate","op":"eq","value":0}]},"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"s3"}}`),
+			},
+			answers: map[string]any{"f6": 1.0},
+			want:    map[string]bool{},
+		},
+		{
+			name:    "field in jump-hidden step is suppressed",
+			fields:  suppress,
+			answers: answered,
+			want:    map[string]bool{"s2": true, "s3": true},
+		},
+		{
+			name:    "intervals union across visible sources",
+			fields:  union,
+			answers: answered,
+			want:    map[string]bool{"s2": true, "s4": true},
+		},
+		{
+			name:    "rule-hidden step seed suppresses its fields",
+			fields:  union,
+			answers: answered,
+			seed:    map[string]bool{"s3": true},
+			want:    map[string]bool{"s2": true, "s3": true},
+		},
+		{
+			name:    "when-less jump fires when field answered",
+			fields:  whenless,
+			answers: map[string]any{"u1": "x"},
+			want:    map[string]bool{"s2": true},
+		},
+		{
+			name:    "when-less jump silent when unanswered",
+			fields:  whenless,
+			answers: map[string]any{},
+			want:    map[string]bool{},
+		},
+		{
+			name:    "when-less jump silent on empty answer",
+			fields:  whenless,
+			answers: map[string]any{"u1": ""},
+			want:    map[string]bool{},
+		},
 	}
 
-	// No trigger → nothing hidden.
-	h = HiddenByJump(fields, order, map[string]any{"f1": "stop"})
-	if len(h) != 0 {
-		t.Fatalf("untriggered jump hid %v", h)
-	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Backward/self/unknown targets ignored.
-	bad := []RuleField{
-		mk("f3", "s3", `{"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"s1"}}`),
-		mk("f4", "s3", `{"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"s3"}}`),
-		mk("f5", "s3", `{"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"ghost"}}`),
-	}
-
-	h = HiddenByJump(bad, order, map[string]any{"f3": 1.0, "f4": 1.0, "f5": 1.0})
-	if len(h) != 0 {
-		t.Fatalf("invalid targets hid %v", h)
-	}
-
-	// Hidden firing field cannot jump.
-	hid := []RuleField{
-		mk("f6", "s1", `{"visible_if":{"all":[{"field":"gate","op":"eq","value":0}]},"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"s3"}}`),
-	}
-
-	h = HiddenByJump(hid, order, map[string]any{"f6": 1.0})
-	if len(h) != 0 {
-		t.Fatalf("hidden field fired jump: %v", h)
-	}
-
-	// Union of intervals + chain: s1→s4 hides 2-3; s2 field jumps 5 → union {s2,s3,s4}.
-	fields = []RuleField{
-		mk("j1", "s1", `{"jump":{"when":{"any":[{"op":"eq","value":"a"}]},"step":"s4"}}`),
-		mk("j2", "s2", `{"jump":{"when":{"any":[{"op":"eq","value":"b"}]},"step":"s5"}}`),
-	}
-
-	h = HiddenByJump(fields, order, map[string]any{"j1": "a", "j2": "b"})
-	if len(h) != 3 || !h["s2"] || !h["s3"] || !h["s4"] {
-		t.Fatalf("union expected {s2,s3,s4}, got %v", h)
+			if got := HiddenByJump(c.fields, order, c.answers, c.seed); !reflect.DeepEqual(got, c.want) {
+				t.Fatalf("got %v want %v", got, c.want)
+			}
+		})
 	}
 }
