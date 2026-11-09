@@ -42,6 +42,9 @@
 	interface Props {
 		data: {
 			article: ContentArticle;
+			// The article a linked/anchored thread discusses — fetched by the
+			// loader so the page can render its ~80-word excerpt + Read CTA.
+			parentArticle?: ContentArticle | null;
 			embed: ThreadEmbed | null;
 			comments: Comment[];
 			commentsTotal: number | null;
@@ -94,14 +97,12 @@
 	// keeps the thread from duplicating the article's content. Discussion
 	// threads (forum-style bodies) render in full.
 	const isContentThread = $derived(data.embed?.kind === 'self');
-	// Content threads open with the first ~80 words of the article body —
-	// FORMATTED (same .prose render as a full body), not a flattened text
-	// blob. Whole block-level chunks are accumulated while the running word
-	// count stays ≤100; a single oversized first block falls back to a
-	// plain-text truncation so the preview never spills a wall of text.
-	const contentPreviewHtml = $derived.by(() => {
-		if (!isContentThread) return '';
-		const source = article.body_html || bodyHtml;
+	// The ~80-word opening of an article body — FORMATTED (same .prose
+	// render as a full body), not a flattened text blob. Whole block-level
+	// chunks accumulate while the running word count stays ≤100; a single
+	// oversized first block falls back to a plain-text truncation so the
+	// preview never spills a wall of text.
+	function previewHtml(source: string, fallbackExcerpt: string): string {
 		if (source) {
 			const chunks = source.split(/(?=<(?:p|h[1-6]|ul|ol|blockquote|pre|figure|table|div)[\s>])/i);
 			let acc = '';
@@ -118,12 +119,29 @@
 			if (acc) return acc + '<p class="text-[var(--color-muted)]">…</p>';
 		}
 		// Fallback: plain-text truncation of whatever text exists.
-		const text = stripHtmlText(source || article.body || '');
-		const words = text.split(/\s+/).filter(Boolean);
-		if (words.length === 0) return article.excerpt ? `<p>${escapeHtml(article.excerpt)}</p>` : '';
+		const words = stripHtmlText(source).split(/\s+/).filter(Boolean);
+		if (words.length === 0) return fallbackExcerpt ? `<p>${escapeHtml(fallbackExcerpt)}</p>` : '';
 		const preview = words.length > 80 ? words.slice(0, 80).join(' ') + '…' : words.join(' ');
 		return `<p>${escapeHtml(preview)}</p>`;
+	}
+	const contentPreviewHtml = $derived(
+		isContentThread ? previewHtml(article.body_html || bodyHtml || article.body || '', article.excerpt ?? '') : ''
+	);
+	// Linked/anchored threads (kind='parent'): the same excerpt render for
+	// the parent article — excerpt + "Read full" CTA before the embed card.
+	const isParentThread = $derived(data.embed?.kind === 'parent');
+	const parentPreviewHtml = $derived.by(() => {
+		if (!isParentThread || !data.parentArticle) return '';
+		return previewHtml(
+			data.parentArticle.body_html || '',
+			data.parentArticle.excerpt ?? data.embed?.excerpt ?? ''
+		);
 	});
+	const parentTypeBadge = $derived(
+		data.parentArticle
+			? t(`content_type.${data.parentArticle.content_type}`, data.parentArticle.content_type)
+			: ''
+	);
 	// Empty-body threads (minted anchors, linked discussions) fall back to the
 	// embed excerpt so the body section still carries a description.
 	const fallbackExcerpt = $derived(
@@ -484,6 +502,22 @@
 			</div>
 		{:else if fallbackExcerpt}
 			<p class="mt-5 text-[var(--color-text-subtle)]">{fallbackExcerpt}</p>
+		{/if}
+
+		<!-- Anchored/linked threads: the parent article's ~80-word opening +
+		     "Read full" CTA — the excerpt from the original post, by default. -->
+		{#if isParentThread && parentPreviewHtml}
+			<div class="prose mt-5 max-w-none border-l-2 border-[var(--color-border)] pl-4 text-[var(--color-text)]" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds>
+				{@html parentPreviewHtml}
+			</div>
+			{#if data.embed}
+				<a
+					href={data.embed.href}
+					class="mt-4 inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
+				>
+					{t('thread.read_full', 'Read full {type}').replace('{type}', parentTypeBadge)}
+				</a>
+			{/if}
 		{/if}
 
 		<!-- Canonical content embed — the CTA back to the entity this thread

@@ -253,9 +253,26 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
 	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
 
+	// Linked/anchored threads: fetch the parent article so the page can
+	// render the ~80-word excerpt + "Read full" CTA next to the embed card
+	// (the excerpt needs body_html, which thread_parent doesn't carry).
+	let parentArticle: ContentArticle | null = null;
+	if (article.thread_parent?.slug) {
+		try {
+			const envelope = await apiGetEnvelope<ContentArticle>(
+				ctx,
+				`/content/${article.thread_parent.slug}`
+			);
+			parentArticle = envelope.data ?? null;
+		} catch {
+			parentArticle = null;
+		}
+	}
+
 	return {
 		kind: 'embed' as const,
 		article,
+		parentArticle,
 		embed: buildThreadEmbed(article),
 		comments,
 		commentsTotal,
