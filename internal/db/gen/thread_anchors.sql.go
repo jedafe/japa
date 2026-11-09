@@ -240,6 +240,36 @@ func (q *Queries) GetWikiPageAnchorInfo(ctx context.Context, id pgtype.UUID) (Ge
 	return i, err
 }
 
+const listContentAnchorsBySpace = `-- name: ListContentAnchorsBySpace :many
+SELECT a.entity_key
+FROM thread_anchors a
+JOIN contents c ON c.id = a.content_id AND c.deleted_at IS NULL
+WHERE a.entity_type = 'content' AND c.space_id = $1
+`
+
+// Content anchors whose thread row files under a space — the mint copies
+// the parent's primary space onto the thread row, so a closing space takes
+// its hosted threads down too (same public+active gate as describeEntity).
+func (q *Queries) ListContentAnchorsBySpace(ctx context.Context, spaceID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listContentAnchorsBySpace, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var entity_key string
+		if err := rows.Scan(&entity_key); err != nil {
+			return nil, err
+		}
+		items = append(items, entity_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWikiAnchorsBySpace = `-- name: ListWikiAnchorsBySpace :many
 SELECT a.entity_key
 FROM thread_anchors a
@@ -269,4 +299,47 @@ func (q *Queries) ListWikiAnchorsBySpace(ctx context.Context, spaceID pgtype.UUI
 		return nil, err
 	}
 	return items, nil
+}
+
+const softDeleteContentThreadsByParentType = `-- name: SoftDeleteContentThreadsByParentType :execrows
+UPDATE contents c
+SET deleted_at = now(), updated_at = now()
+FROM thread_anchors a
+JOIN contents p ON p.id::text = a.entity_key
+WHERE c.id = a.content_id
+  AND a.entity_type = 'content'
+  AND p.content_type = $1
+  AND c.deleted_at IS NULL
+`
+
+// Bulk-drop content anchors whose PARENT row carries a gated content_type —
+// a disabled type flag (jobs.enabled, video.enabled, …) hides every page
+// of that type, so their public threads must die with it.
+func (q *Queries) SoftDeleteContentThreadsByParentType(ctx context.Context, contentType string) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteContentThreadsByParentType, contentType)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const softDeleteThreadsByAnchorType = `-- name: SoftDeleteThreadsByAnchorType :execrows
+UPDATE contents c
+SET deleted_at = now(), updated_at = now()
+FROM thread_anchors a
+WHERE c.id = a.content_id
+  AND a.entity_type = $1
+  AND c.deleted_at IS NULL
+`
+
+// Bulk-drop every live thread anchored to an entity class — fired when a
+// surface flag flips off (wiki.enabled, a gated content type) so public
+// /thread pages die with the feature that owns their entity. Mirrors
+// DeleteContent's soft-delete stamp.
+func (q *Queries) SoftDeleteThreadsByAnchorType(ctx context.Context, entityType string) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteThreadsByAnchorType, entityType)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

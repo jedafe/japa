@@ -2389,6 +2389,16 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 		// Row is gone — the indexer's ErrNoRows path deletes the stale doc.
 		worker.EnqueueSearchIndexSync(r.Context(), "content", cid)
 
+		// The deleted row may itself be a thread (or an anchored entity) —
+		// the FK cascade only covers the thread side, so drop the anchor
+		// explicitly for the entity side.
+		if h.ThreadAnchorDeleter != nil {
+			if err := h.ThreadAnchorDeleter(r.Context(), cid); err != nil {
+				slog.Warn("admin: thread anchor delete after hard delete failed",
+					"content_id", cid.String(), "error", err)
+			}
+		}
+
 		w.WriteHeader(http.StatusNoContent)
 
 		return
@@ -2420,6 +2430,16 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.auditContentAction(r, "admin.content.remove", cid, body.Reason)
+
+	// Unified-discussion spec: the raw UPDATE bypassed content.Service's
+	// soft-delete hook — the public /thread page must die with the row or
+	// the removed title + conversation leak via /thread/{slug}.
+	if h.ThreadAnchorDeleter != nil {
+		if err := h.ThreadAnchorDeleter(r.Context(), cid); err != nil {
+			slog.Warn("admin: thread anchor delete after remove failed",
+				"content_id", cid.String(), "error", err)
+		}
+	}
 
 	h.enqueueRSSRegenerate()
 

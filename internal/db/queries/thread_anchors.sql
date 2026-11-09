@@ -24,6 +24,40 @@ JOIN wiki_pages wp ON wp.id = a.entity_key::uuid
 JOIN contents c ON c.id = a.content_id AND c.deleted_at IS NULL
 WHERE a.entity_type = 'wiki_page' AND wp.space_id = @space_id;
 
+-- name: ListContentAnchorsBySpace :many
+-- Content anchors whose thread row files under a space — the mint copies
+-- the parent's primary space onto the thread row, so a closing space takes
+-- its hosted threads down too (same public+active gate as describeEntity).
+SELECT a.entity_key
+FROM thread_anchors a
+JOIN contents c ON c.id = a.content_id AND c.deleted_at IS NULL
+WHERE a.entity_type = 'content' AND c.space_id = @space_id;
+
+-- name: SoftDeleteThreadsByAnchorType :execrows
+-- Bulk-drop every live thread anchored to an entity class — fired when a
+-- surface flag flips off (wiki.enabled, a gated content type) so public
+-- /thread pages die with the feature that owns their entity. Mirrors
+-- DeleteContent's soft-delete stamp.
+UPDATE contents c
+SET deleted_at = now(), updated_at = now()
+FROM thread_anchors a
+WHERE c.id = a.content_id
+  AND a.entity_type = @entity_type
+  AND c.deleted_at IS NULL;
+
+-- name: SoftDeleteContentThreadsByParentType :execrows
+-- Bulk-drop content anchors whose PARENT row carries a gated content_type —
+-- a disabled type flag (jobs.enabled, video.enabled, …) hides every page
+-- of that type, so their public threads must die with it.
+UPDATE contents c
+SET deleted_at = now(), updated_at = now()
+FROM thread_anchors a
+JOIN contents p ON p.id::text = a.entity_key
+WHERE c.id = a.content_id
+  AND a.entity_type = 'content'
+  AND p.content_type = @content_type
+  AND c.deleted_at IS NULL;
+
 -- name: CreateThreadAnchor :one
 INSERT INTO thread_anchors (content_id, entity_type, entity_key, entity_url, entity_title, entity_summary)
 VALUES (@content_id, @entity_type, @entity_key, @entity_url, @entity_title, sqlc.narg(entity_summary))

@@ -97,7 +97,13 @@ type Handlers struct {
 	TierManager         auth.TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
 	Catalog             *literals.Catalog          // Optional — caches active platform literals and resolves maps.
 	AppealResolver      AppealResolver             // Optional — §22 appeal resolution + per-type overturn effects
-	ownerEmail          string                     // JC_OWNER_EMAIL — platform owner designation (§03 owner amendment)
+	// ThreadAnchorDeleter drops a content row's canonical /thread page when
+	// admin removal bypasses content.Service (RemoveContentByAdmin and the
+	// ?force=true hard delete run raw queries — the soft-delete hook in
+	// content.Service never sees them). Wired to
+	// comments.Service.DeleteAnchor in server.go; nil-safe.
+	ThreadAnchorDeleter func(ctx context.Context, contentID pgtype.UUID) error
+	ownerEmail          string // JC_OWNER_EMAIL — platform owner designation (§03 owner amendment)
 }
 
 // AppealResolver is the subset of the §22 appeals service the moderation

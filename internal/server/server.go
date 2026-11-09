@@ -1741,8 +1741,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// pages' public /thread pages down with it — the mint query only admits
 	// public, active spaces, so the live threads must die on the same gate.
 	spaceService.SetThreadAnchorSpaceDropper(func(ctx context.Context, spaceID pgtype.UUID) error {
-		return commentsService.DropAnchorsForWikiSpace(ctx, spaceID)
+		return commentsService.DropAnchorsForSpace(ctx, spaceID)
 	})
+	// Unified-discussion spec: admin removal and worker-side auto-hide
+	// bypass content.Service's soft-delete hook — wire the same anchor drop
+	// so their public /thread pages die with the row.
+	anchorDropForContent := func(ctx context.Context, contentID pgtype.UUID) error {
+		return commentsService.DeleteAnchor(ctx, "content", contentID.String())
+	}
+	adminHandlers.ThreadAnchorDeleter = anchorDropForContent
+	worker.RegisterThreadAnchorDeleter(anchorDropForContent)
 	// §80: activating wiki.enabled fans out wiki:seed_stub_pages to every
 	// country space (idempotent — existing pages are skipped).
 	featureHandlers.SetOnFlagEnabled(func(ctx context.Context, flagName string) {
@@ -1761,7 +1769,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// Flag toggles change which sub-sitemaps/URLs are listed — drop the
 		// cached sitemap XML so the next crawl sees the gated state.
 		seo.InvalidateSitemapCache(ctx, vkClient.Redis())
+		// Unified-discussion spec: a flag flipping off takes the public
+		// /thread pages of the entities it gates (disabled tools, the wiki
+		// surface, gated content types) — mirrors the space-close drop.
+		commentsService.ReconcileAnchorsWithFlags(ctx)
 	})
+	// Same reconcile once at startup — flags already off before this hook
+	// existed leave stale threads behind; the sweep is an idempotent no-op
+	// when everything live is enabled.
+	go commentsService.ReconcileAnchorsWithFlags(context.Background())
 	// B4/B5: wire the reputation (points) checker and RBAC resolver so the
 	// wiki.edit submission gate can enforce wiki.min_reputation_to_edit and
 	// wiki.community_edits (§80 business-logic gates).

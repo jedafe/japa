@@ -246,6 +246,19 @@ var appSettings settingsReader
 // back to the legacy system_settings reads.
 var featureChecker FeatureChecker
 
+// threadAnchorDeleter drops a content row's canonical /thread page — the
+// auto-hide path archives via raw gen queries, so content.Service's
+// soft-delete hook never runs. Wired to comments.Service.DeleteAnchor in
+// server.go; nil until then (the warn below is the only signal).
+var threadAnchorDeleter func(ctx context.Context, contentID pgtype.UUID) error
+
+// RegisterThreadAnchorDeleter injects the anchor deleter so moderation
+// auto-hide drops the public /thread page of an archived row — a live
+// thread would leak the title and conversation of a hidden post.
+func RegisterThreadAnchorDeleter(d func(ctx context.Context, contentID pgtype.UUID) error) {
+	threadAnchorDeleter = d
+}
+
 // RegisterSettings injects the hot-reloadable settings reader for worker handlers.
 func RegisterSettings(s settingsReader) {
 	appSettings = s
@@ -5797,6 +5810,14 @@ func archiveReportedEntity(ctx context.Context, entityType, entityIDStr string, 
 			// from the posts index (its indexed status would otherwise stay
 			// 'published' and keep surfacing in search results).
 			EnqueueSearchIndexSync(ctx, entityTypeContent, entityID)
+			// Unified-discussion spec: the public /thread page dies with the
+			// archived row — this path bypasses content.Service's soft-delete
+			// hook, so the anchor drop fires here instead.
+			if threadAnchorDeleter != nil {
+				if err := threadAnchorDeleter(ctx, entityID); err != nil {
+					slog.Warn("task:moderation:auto_hide: thread anchor delete failed", "content_id", entityIDStr, "error", err)
+				}
+			}
 		}
 
 	case "comment":

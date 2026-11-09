@@ -18,6 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 )
 
 // ---------------------------------------------------------------------------
@@ -74,6 +75,64 @@ var toolAnchorMeta = map[string]struct {
 	"travel":             {"Travel Search", "Search and compare flights and hotels for your route — prices across airlines and dates so you can book the legwork smartly."},
 	"visa-checklist":     {"Visa Checklist", "Generate your visa document checklist by destination — every required document, form, and supporting evidence for your route, in submission order."},
 	"visa-routes":        {"Visa Routes", "Compare visa routes for your destination — eligibility, cost, timeline, and pathway-to-residency for each option."},
+}
+
+// toolAnchorFlag maps each anchorable tool slug to the feature flag gating
+// its /tools/{slug} page — mirrors routeFeatureFlags.ts on the frontend.
+// A disabled tool's public thread would outlive its page, so mint and
+// resolve both gate on this, and the flag-change hook drops the thread.
+var toolAnchorFlag = map[string]string{
+	"arrival-checklist":  "arrival_checklist.enabled",
+	"attestation-guide":  "attestation_guide.enabled",
+	"community-locator":  "community_locator.enabled",
+	"cost-of-living":     "col_calculator.enabled",
+	"credential-checker": "credential_checker.enabled",
+	"crs-calculator":     "crs_calculator.enabled",
+	"currency-converter": "fx.enabled",
+	"cv-formatter":       "cv_formatter.enabled",
+	"eca-guide":          "eca_guide.enabled",
+	"embassy-alerter":    "appointment_alert.enabled",
+	"housing-guide":      "housing_guide.enabled",
+	"language-test":      "language_test_hub.enabled",
+	"pof-calculator":     "pof_calculator.enabled",
+	"processing-tracker": "visa_timeline.enabled",
+	"readiness":          "assessment.enabled",
+	"remittance":         "remittance.enabled",
+	"sop-generator":      "sop_generator.enabled",
+	"tax-calculator":     "tax_calculator.enabled",
+	"travel":             "travel.enabled",
+	"visa-checklist":     "checklist.enabled",
+	"visa-routes":        "visa_routes.enabled",
+}
+
+// toolFlagToSlug is toolAnchorFlag inverted — built once at init.
+var toolFlagToSlug = func() map[string]string {
+	m := make(map[string]string, len(toolAnchorFlag))
+	for slug, flag := range toolAnchorFlag {
+		m[flag] = slug
+	}
+	return m
+}()
+
+// ToolSlugForFlag returns the anchor entity_key a tool feature flag gates.
+// False when the flag doesn't gate an anchored tool page.
+func ToolSlugForFlag(flagKey string) (string, bool) {
+	slug, ok := toolFlagToSlug[flagKey]
+	return slug, ok
+}
+
+// toolAnchorEnabled reports whether a tool may hold a live anchor: known to
+// the static page registry AND not disabled by its feature flag. A missing
+// flag mapping or nil checker means the tool is always on.
+func (s *Service) toolAnchorEnabled(ctx context.Context, entityKey string) bool {
+	if _, ok := toolAnchorMeta[entityKey]; !ok {
+		return false
+	}
+	key, ok := toolAnchorFlag[entityKey]
+	if !ok || s.flags == nil {
+		return true
+	}
+	return s.flags.IsEnabled(ctx, key)
 }
 
 // AnchorSummary is the public shape returned by the anchor endpoints — the
@@ -148,9 +207,14 @@ func (s *Service) ResolveAnchor(ctx context.Context, entityType, entityKey strin
 			return AnchorSummary{}, err
 		}
 		// The resolve route is public — only surface rows an anonymous
-		// viewer could load on an entity page. Drafts, pending-moderation
-		// and non-public rows must not leak title/slug/comment_count.
-		if row.Status != content.StatusPublished || row.Visibility != content.VisibilityPublic {
+		// viewer could load on an entity page. Drafts, pending-moderation,
+		// non-public and auto-hidden rows must not leak title/slug/
+		// comment_count — and a content type gated off by §42 flags hides
+		// its pages, so its conversation hides too.
+		if row.Status != content.StatusPublished || row.Visibility != content.VisibilityPublic || row.AutoHidden {
+			return AnchorSummary{}, pgx.ErrNoRows
+		}
+		if res, ok := features.EvalContentType(ctx, s.flags, row.ContentType); ok && !res.Enabled {
 			return AnchorSummary{}, pgx.ErrNoRows
 		}
 
@@ -183,6 +247,20 @@ func (s *Service) ResolveAnchor(ctx context.Context, entityType, entityKey strin
 	})
 	if err != nil {
 		return AnchorSummary{}, err
+	}
+
+	// Live-gate the entity behind the anchor — the same conditions that
+	// block minting. Flag writes fire the drop hook, but direct flag edits,
+	// rollout scoping and lazy states never reach it, so resolve re-checks.
+	switch entityType {
+	case "tool":
+		if !s.toolAnchorEnabled(ctx, entityKey) {
+			return AnchorSummary{}, pgx.ErrNoRows
+		}
+	case "wiki_page":
+		if s.flags != nil && !s.flags.IsEnabled(ctx, "wiki.enabled") {
+			return AnchorSummary{}, pgx.ErrNoRows
+		}
 	}
 
 	return anchorSummaryFromRow(row), nil
@@ -244,13 +322,18 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 				return entityDescriptor{}, err
 			}
 
-			// Only live, public rows mint a thread: drafts/review/private rows
-			// have no public thread page, and a minted thread would leak the
-			// unpublished title via /thread/{slug}. Discussion rows resolve to
-			// themselves before reaching here; forum_thread rows already have
-			// a thread surface.
-			if row.Status != content.StatusPublished || row.Visibility != content.VisibilityPublic {
+			// Only live, public rows mint a thread: drafts/review/private/
+			// auto-hidden rows have no public thread page, and a minted
+			// thread would leak the unpublished title via /thread/{slug}.
+			// Discussion rows resolve to themselves before reaching here;
+			// forum_thread rows already have a thread surface.
+			if row.Status != content.StatusPublished || row.Visibility != content.VisibilityPublic || row.AutoHidden {
 				return entityDescriptor{}, fmt.Errorf("content is not publicly live: %w", errpkg.ErrInvalid)
+			}
+			// A type flagged off by §42 (jobs.enabled, video.enabled, …)
+			// hides the page, so it must not mint a public thread either.
+			if res, ok := features.EvalContentType(ctx, s.flags, row.ContentType); ok && !res.Enabled {
+				return entityDescriptor{}, fmt.Errorf("content_type %q is flag-disabled: %w", row.ContentType, errpkg.ErrInvalid)
 			}
 			if row.ContentType == "discussion" || row.ContentType == "forum_thread" {
 				return entityDescriptor{}, fmt.Errorf("content_type %q is already a thread: %w", row.ContentType, errpkg.ErrInvalid)
@@ -311,6 +394,11 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 		if !ok {
 			return entityDescriptor{}, fmt.Errorf("unknown tool %q: %w", entityKey, errpkg.ErrInvalid)
 		}
+		// A disabled tool page must not mint a thread — same leak gate as
+		// content status/visibility (the flag write path drops live anchors).
+		if !s.toolAnchorEnabled(ctx, entityKey) {
+			return entityDescriptor{}, fmt.Errorf("tool %q is disabled: %w", entityKey, errpkg.ErrInvalid)
+		}
 
 		return entityDescriptor{
 			URL:     "/tools/" + entityKey,
@@ -322,6 +410,11 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 		var pageID pgtype.UUID
 		if err := pageID.Scan(entityKey); err != nil {
 			return entityDescriptor{}, fmt.Errorf("wiki_page key must be a page UUID: %w", errpkg.ErrInvalid)
+		}
+
+		// wiki.enabled off means no /wiki pages — no public threads either.
+		if s.flags != nil && !s.flags.IsEnabled(ctx, "wiki.enabled") {
+			return entityDescriptor{}, fmt.Errorf("wiki is disabled: %w", errpkg.ErrInvalid)
 		}
 
 		page, err := s.read.GetWikiPageAnchorInfo(ctx, pageID)
@@ -601,23 +694,63 @@ func (s *Service) reparentComments(ctx context.Context, from, to pgtype.UUID) er
 	return nil
 }
 
-// DropAnchorsForWikiSpace drops every live thread anchored to a space's
-// wiki pages — called when the space leaves public/active so public thread
-// pages stop leaking the pages' titles and excerpts (the mint query only
-// admits public, active spaces). Re-entry is a no-op; the pages re-mint
-// lazily on their next approval or thread visit once the space reopens.
-func (s *Service) DropAnchorsForWikiSpace(ctx context.Context, spaceID pgtype.UUID) error {
-	keys, err := s.read.ListWikiAnchorsBySpace(ctx, spaceID)
+// DropAnchorsForSpace drops every live thread anchored to a space's wiki
+// pages AND every content thread filed under it — called when the space
+// leaves public/active so public thread pages stop leaking titles and
+// excerpts (the mint gates only admit public, active spaces). Re-entry is
+// a no-op; threads re-mint lazily once the space reopens.
+func (s *Service) DropAnchorsForSpace(ctx context.Context, spaceID pgtype.UUID) error {
+	wikiKeys, err := s.read.ListWikiAnchorsBySpace(ctx, spaceID)
 	if err != nil {
 		return fmt.Errorf("listing wiki anchors for space: %w", err)
 	}
-	for _, key := range keys {
+	for _, key := range wikiKeys {
 		if err := s.DeleteAnchor(ctx, "wiki_page", key); err != nil {
 			slog.Warn("comments: drop wiki anchor failed",
 				"entity_key", key, "error", err)
 		}
 	}
+	contentKeys, err := s.read.ListContentAnchorsBySpace(ctx, spaceID)
+	if err != nil {
+		return fmt.Errorf("listing content anchors for space: %w", err)
+	}
+	for _, key := range contentKeys {
+		if err := s.DeleteAnchor(ctx, "content", key); err != nil {
+			slog.Warn("comments: drop content anchor failed",
+				"entity_key", key, "error", err)
+		}
+	}
 	return nil
+}
+
+// ReconcileAnchorsWithFlags drops live threads whose entity's gating flag
+// is off — tool pages (per-slug flag), the whole wiki surface
+// (wiki.enabled), and content whose parent's type flag is off
+// (jobs.enabled, video.enabled, … via §42 GatedContentTypes). Called from
+// the flag-write hook in server.go; idempotent and safe to run at startup.
+func (s *Service) ReconcileAnchorsWithFlags(ctx context.Context) {
+	if s.flags == nil {
+		return
+	}
+	for slug, flag := range toolAnchorFlag {
+		if !s.flags.IsEnabled(ctx, flag) {
+			if err := s.DeleteAnchor(ctx, "tool", slug); err != nil {
+				slog.Warn("comments: drop disabled-tool anchor failed",
+					"entity_key", slug, "error", err)
+			}
+		}
+	}
+	if !s.flags.IsEnabled(ctx, "wiki.enabled") {
+		if _, err := s.write.SoftDeleteThreadsByAnchorType(ctx, "wiki_page"); err != nil {
+			slog.Warn("comments: drop wiki anchors failed", "error", err)
+		}
+	}
+	for _, ct := range features.GatedContentTypes(ctx, s.flags) {
+		if _, err := s.write.SoftDeleteContentThreadsByParentType(ctx, ct); err != nil {
+			slog.Warn("comments: drop anchors for gated content type failed",
+				"content_type", ct, "error", err)
+		}
+	}
 }
 
 // DeleteAnchor drops the entity's backing thread — soft-deletes the
