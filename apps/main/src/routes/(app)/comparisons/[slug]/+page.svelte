@@ -322,6 +322,7 @@
 			authorUsername={comparison.content.author_username}
 			authorId={comparison.content.author_id}
 			authorName={comparison.content.author_display_name ?? comparison.content.author_name}
+			commentHref="/thread/{comparison.content.slug}#replies"
 		/>
 	</div>
 

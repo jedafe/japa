@@ -46,6 +46,9 @@
 		authorUsername?: string | null;
 		authorId?: string | null;
 		authorName?: string | null;
+		/** Comment-icon destination — defaults to the legacy #comments anchor.
+		 *  Unified threads pass `/thread/{slug}#replies` (the comment box). */
+		commentHref?: string;
 	}
 	let {
 		contentId,
@@ -57,7 +60,8 @@
 		bottom = false,
 		authorUsername,
 		authorId,
-		authorName
+		authorName,
+		commentHref = '#comments'
 	}: Props = $props();
 
 	const features = $derived((page.data.features as Record<string, boolean> | undefined) ?? {});
@@ -528,7 +532,7 @@
 	{/if}
 
 	<a
-		href="#comments"
+		href={commentHref}
 		class="flex {isHorizontal ? 'flex-1 flex-row items-center justify-center gap-1.5' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		aria-label={t('blog.comments', 'Comments')}
 	>

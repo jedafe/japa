@@ -415,6 +415,7 @@
 				authorUsername={story.author_username}
 				authorId={story.author_id}
 				authorName={story.author_display_name ?? story.author_name}
+				commentHref="/thread/{story.slug}#replies"
 			/>
 			</div>
 
