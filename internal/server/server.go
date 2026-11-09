@@ -1737,9 +1737,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	contentService.SetThreadAnchorDeleter(func(ctx context.Context, contentID pgtype.UUID) error {
 		return commentsService.DeleteAnchor(ctx, "content", contentID.String())
 	})
-	// Unified-discussion spec: a space leaving public/active takes its wiki
-	// pages' public /thread pages down with it — the mint query only admits
-	// public, active spaces, so the live threads must die on the same gate.
+	// Unified-discussion spec: a space leaving public/active takes the
+	// public /thread pages bound to it down with it — wiki-page threads and
+	// content threads filed under the space (the mint gates only admit
+	// public, active spaces, so live threads die on the same gate).
 	spaceService.SetThreadAnchorSpaceDropper(func(ctx context.Context, spaceID pgtype.UUID) error {
 		return commentsService.DropAnchorsForSpace(ctx, spaceID)
 	})
@@ -1751,6 +1752,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	}
 	adminHandlers.ThreadAnchorDeleter = anchorDropForContent
 	worker.RegisterThreadAnchorDeleter(anchorDropForContent)
+	// The scheduled-publish worker writes status via raw gen — the
+	// content.Service mint hook never sees it. Empty userID is safe: a
+	// content anchor always resolves its author from the content row.
+	worker.RegisterThreadAnchorMinter(func(ctx context.Context, contentID pgtype.UUID) error {
+		_, err := commentsService.CreateAnchor(ctx, pgtype.UUID{}, "content", contentID.String())
+		return err
+	})
+	reportsService.SetThreadAnchorDeleter(anchorDropForContent)
+	// Roadmap shadow rows are contents too — item deletes bypass
+	// content.Service, so the same drop keeps a deleted item's thread down.
+	roadmapService.SetThreadAnchorDeleter(anchorDropForContent)
+	// The jobs:expire_listings sweep bulk-archives past-deadline listings —
+	// their threads die on the same raw-query bypass.
+	jobsService.SetThreadAnchorDeleter(anchorDropForContent)
 	// §80: activating wiki.enabled fans out wiki:seed_stub_pages to every
 	// country space (idempotent — existing pages are skipped).
 	featureHandlers.SetOnFlagEnabled(func(ctx context.Context, flagName string) {

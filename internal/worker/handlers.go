@@ -259,6 +259,19 @@ func RegisterThreadAnchorDeleter(d func(ctx context.Context, contentID pgtype.UU
 	threadAnchorDeleter = d
 }
 
+// threadAnchorMinter mints the canonical /thread page for a published
+// content row — the scheduled-publish worker updates status via raw gen
+// queries, so content.Service's mint hook never runs. Wired to
+// comments.Service.CreateAnchor in server.go; nil until then.
+var threadAnchorMinter func(ctx context.Context, contentID pgtype.UUID) error
+
+// RegisterThreadAnchorMinter injects the anchor minter so scheduled
+// publishes mint the discussion thread like every other publish path
+// (the minter's describeEntity re-gates status/visibility/space/flags).
+func RegisterThreadAnchorMinter(m func(ctx context.Context, contentID pgtype.UUID) error) {
+	threadAnchorMinter = m
+}
+
 // RegisterSettings injects the hot-reloadable settings reader for worker handlers.
 func RegisterSettings(s settingsReader) {
 	appSettings = s
@@ -2252,6 +2265,15 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	// Ref: Section 32, Guide §21.
 	if err := gen.New(dbPool.Writer).EnsureContentScore(ctx, contentID); err != nil {
 		slog.Warn("task:content:publish_scheduled: failed to ensure content_scores row", "content_id", payload.ContentID, "error", err)
+	}
+
+	// Unified-discussion spec: scheduled publishes mint the canonical
+	// /thread page like every other publish path — this worker updates
+	// status via raw gen, so content.Service's mint hook never sees it.
+	if threadAnchorMinter != nil {
+		if err := threadAnchorMinter(ctx, contentID); err != nil {
+			slog.Warn("task:content:publish_scheduled: thread anchor mint failed", "content_id", payload.ContentID, "error", err)
+		}
 	}
 
 	scheduleScheduledPublishFanOut(ctx, contentID, payload.ContentID)

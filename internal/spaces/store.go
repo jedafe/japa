@@ -1167,7 +1167,7 @@ func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams)
 
 	// Public/active gate mirrors the wiki anchor mint — a space that just
 	// closed takes its pages' public thread pages down with it.
-	s.dropWikiThreadAnchorsIfClosed(ctx, space.ID)
+	s.dropThreadAnchorsIfClosed(ctx, space.ID)
 
 	return space, nil
 }
@@ -1280,6 +1280,10 @@ func (s *Service) DeleteSpace(ctx context.Context, id pgtype.UUID) error {
 	if s.followInv != nil {
 		s.followInv(ctx, "space", id)
 	}
+
+	// A deleted space takes the /thread pages bound to it — wiki pages and
+	// content filed under it — same as a visibility/status closure.
+	s.dropThreadAnchorsIfClosed(ctx, id)
 
 	return nil
 }

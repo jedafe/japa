@@ -256,6 +256,16 @@ type Service struct {
 	settings *config.Settings
 	checker  FeatureChecker
 	enqueuer TaskEnqueuer
+	// threadAnchorDeleter drops a content row's canonical /thread page —
+	// ExpireListingsPastDeadline archives via a bulk gen query that
+	// bypasses content.Service, so the sweep drops anchors itself.
+	threadAnchorDeleter func(ctx context.Context, contentID pgtype.UUID) error
+}
+
+// SetThreadAnchorDeleter wires comments.Service.DeleteAnchor — same
+// callback as the other raw-query delete paths (reports, roadmap, admin).
+func (s *Service) SetThreadAnchorDeleter(d func(ctx context.Context, contentID pgtype.UUID) error) {
+	s.threadAnchorDeleter = d
 }
 
 // NewService creates a Jobs service.
@@ -2394,6 +2404,17 @@ func (s *Service) ExpireListingsPastDeadline(ctx context.Context) (int64, error)
 	// listing's detail page or expired jobs stay served from the edge.
 	for _, r := range rows {
 		cdn.PurgeContentDetail(ctx, r.ID.String(), "job_listing", r.Slug)
+	}
+
+	// Unified-discussion spec: the same bypass leaves each expired
+	// listing's /thread page live — drop them with the row.
+	if s.threadAnchorDeleter != nil {
+		for _, r := range rows {
+			if err := s.threadAnchorDeleter(ctx, r.ID); err != nil {
+				slog.Warn("jobs: expire listing thread-anchor drop failed",
+					"content_id", r.ID.String(), "error", err)
+			}
+		}
 	}
 
 	return int64(len(rows)), nil

@@ -43,6 +43,30 @@ type Service struct {
 	enqueuer Enqueuer
 	settings *config.Settings
 	vk       valkeycompat.Cmdable
+	// threadAnchorDeleter drops a shadow row's canonical /thread page when
+	// the item is deleted — the shadow writes bypass content.Service, so
+	// the anchor would otherwise keep a public thread alive for a deleted
+	// item. Wired to comments.Service.DeleteAnchor in server.go; nil-safe.
+	threadAnchorDeleter func(ctx context.Context, contentID pgtype.UUID) error
+}
+
+// SetThreadAnchorDeleter injects the anchor deleter so item deletes drop
+// the shadow row's public /thread page alongside it.
+func (s *Service) SetThreadAnchorDeleter(d func(ctx context.Context, contentID pgtype.UUID) error) {
+	s.threadAnchorDeleter = d
+}
+
+// dropThreadAnchor soft-drops the shadow row's public thread — best-effort
+// like the sibling shadow syncs; a dead anchor also stops resolving once
+// the parent row is gone, so a failure is bounded.
+func (s *Service) dropThreadAnchor(ctx context.Context, contentID pgtype.UUID) {
+	if s.threadAnchorDeleter == nil || !contentID.Valid {
+		return
+	}
+	if err := s.threadAnchorDeleter(ctx, contentID); err != nil {
+		slog.Warn("roadmap: thread anchor delete failed",
+			"content_id", contentID.String(), "error", err)
+	}
 }
 
 // boardCacheKey is the Valkey key for the JSON-serialized public board.
@@ -1257,6 +1281,7 @@ func (s *Service) AdminDeleteItem(ctx context.Context, id pgtype.UUID, force boo
 			if err := s.store.hardDeleteShadowContent(ctx, item.ContentID); err != nil {
 				slog.Warn("roadmap shadow content hard-delete failed", "item_id", item.ID, "content_id", item.ContentID, "error", err)
 			}
+			s.dropThreadAnchor(ctx, item.ContentID)
 		}
 
 		s.invalidateBoard(ctx)
@@ -1276,6 +1301,7 @@ func (s *Service) AdminDeleteItem(ctx context.Context, id pgtype.UUID, force boo
 		if err := s.store.softDeleteShadowContent(ctx, item.ContentID); err != nil {
 			slog.Warn("roadmap shadow content soft-delete failed", "item_id", item.ID, "content_id", item.ContentID, "error", err)
 		}
+		s.dropThreadAnchor(ctx, item.ContentID)
 	}
 
 	s.invalidateBoard(ctx)

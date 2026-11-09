@@ -676,16 +676,16 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 			Time:  time.Now(),
 			Valid: input.Status == StatusPublished,
 		},
-		GuideCategory:   input.GuideCategory,
-		JourneyStage:    input.JourneyStage,
-		VisaRoute:       input.VisaRoute,
-		SourceCountry:   input.SourceCountry,
-		TargetCountry:   input.TargetCountry,
-		AiGenerated:     input.AIGenerated,
-		AiModel:         input.AIModel,
-		AiGeneratedAt:   aiGeneratedAt,
-		IntelSourceID:   input.IntelSourceID,
-		IntelRecordID:   input.IntelRecordID,
+		GuideCategory: input.GuideCategory,
+		JourneyStage:  input.JourneyStage,
+		VisaRoute:     input.VisaRoute,
+		SourceCountry: input.SourceCountry,
+		TargetCountry: input.TargetCountry,
+		AiGenerated:   input.AIGenerated,
+		AiModel:       input.AIModel,
+		AiGeneratedAt: aiGeneratedAt,
+		IntelSourceID: input.IntelSourceID,
+		IntelRecordID: input.IntelRecordID,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -3242,6 +3242,13 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, pr
 
 		return nil
 	})
+
+	// Unified-discussion spec: re-filing changes the thread's space gate —
+	// a live post moved into a closed space loses its /thread page, and
+	// moving back into a public one re-mints.
+	if err == nil {
+		s.reconcileThreadAnchorSpace(ctx, contentID, primarySpaceID)
+	}
 
 	return updatedAt, err
 }

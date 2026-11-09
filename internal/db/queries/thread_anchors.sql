@@ -33,30 +33,26 @@ FROM thread_anchors a
 JOIN contents c ON c.id = a.content_id AND c.deleted_at IS NULL
 WHERE a.entity_type = 'content' AND c.space_id = @space_id;
 
--- name: SoftDeleteThreadsByAnchorType :execrows
--- Bulk-drop every live thread anchored to an entity class — fired when a
--- surface flag flips off (wiki.enabled, a gated content type) so public
--- /thread pages die with the feature that owns their entity. Mirrors
--- DeleteContent's soft-delete stamp.
-UPDATE contents c
-SET deleted_at = now(), updated_at = now()
+-- name: ListAnchorKeysByType :many
+-- Live entity_key list for one anchor class — the flag-off reconcile walks
+-- these and drops each via DeleteAnchor so the full delete side-effects
+-- (search-index sync, webhooks, edge purge) fire per thread.
+SELECT a.entity_key
 FROM thread_anchors a
-WHERE c.id = a.content_id
-  AND a.entity_type = @entity_type
-  AND c.deleted_at IS NULL;
+JOIN contents c ON c.id = a.content_id AND c.deleted_at IS NULL
+WHERE a.entity_type = @entity_type;
 
--- name: SoftDeleteContentThreadsByParentType :execrows
--- Bulk-drop content anchors whose PARENT row carries a gated content_type —
--- a disabled type flag (jobs.enabled, video.enabled, …) hides every page
--- of that type, so their public threads must die with it.
-UPDATE contents c
-SET deleted_at = now(), updated_at = now()
+-- name: ListContentAnchorKeysByParentType :many
+-- Content anchors whose PARENT row carries a gated content_type — a
+-- disabled type flag (jobs.enabled, video.enabled, …) hides every page of
+-- that type, so their public threads must die with it. entity_key list so
+-- each drop runs the full DeleteAnchor side-effects.
+SELECT a.entity_key
 FROM thread_anchors a
+JOIN contents c ON c.id = a.content_id AND c.deleted_at IS NULL
 JOIN contents p ON p.id::text = a.entity_key
-WHERE c.id = a.content_id
-  AND a.entity_type = 'content'
-  AND p.content_type = @content_type
-  AND c.deleted_at IS NULL;
+WHERE a.entity_type = 'content'
+  AND p.content_type = @content_type;
 
 -- name: CreateThreadAnchor :one
 INSERT INTO thread_anchors (content_id, entity_type, entity_key, entity_url, entity_title, entity_summary)

@@ -2,8 +2,10 @@ package content
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -61,5 +63,33 @@ func (s *Service) maybeDeleteThreadAnchor(ctx context.Context, contentType strin
 	if err := s.anchorDeleter(ctx, id); err != nil {
 		slog.Warn("content: thread anchor delete failed",
 			"content_id", id.String(), "error", err)
+	}
+}
+
+// reconcileThreadAnchorSpace re-evaluates the thread's space gate after a
+// primary-space change: the mint gate only admits public+active spaces,
+// so re-filing a live post into a closed space takes its /thread page
+// down with it, and moving back into a public space re-mints eagerly
+// (CreateAnchor is get-or-create — a still-live anchor resolves cheaply).
+// A transient space read leaves the anchor as-is — the flag/space
+// sweepers and the resolve gate backstop.
+func (s *Service) reconcileThreadAnchorSpace(ctx context.Context, contentID, spaceID pgtype.UUID) {
+	if s.anchorMinter == nil && s.anchorDeleter == nil {
+		return
+	}
+	row, err := s.read.GetContentByID(ctx, contentID)
+	if err != nil || row.Status != StatusPublished || row.Visibility != VisibilityPublic {
+		return
+	}
+	space, err := s.read.GetSpaceByID(ctx, spaceID)
+	switch {
+	case err != nil:
+		if errors.Is(err, pgx.ErrNoRows) {
+			s.maybeDeleteThreadAnchor(ctx, row.ContentType, row.ID)
+		}
+	case space.Visibility == "public" && space.Status == "active":
+		s.maybeMintThreadAnchor(ctx, row.ContentType, row.ID, row.AuthorID)
+	default:
+		s.maybeDeleteThreadAnchor(ctx, row.ContentType, row.ID)
 	}
 }

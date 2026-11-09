@@ -19,6 +19,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
+	rssmodel "github.com/jedafe/japa/internal/rss/model"
 )
 
 // ---------------------------------------------------------------------------
@@ -166,6 +167,35 @@ func (s *Service) anchorSpace(ctx context.Context) (pgtype.UUID, error) {
 	return anchorSpaceID, nil
 }
 
+// primaryAnchorSpace resolves the space a content anchor files under —
+// the content_spaces primary is authoritative, contents.space_id the
+// legacy fallback. ok=false when the parent has no primary or the space
+// is missing, not public, or not active. Shared by the mint gate
+// (describeEntity) and the resolve gate so a re-filed parent stops
+// resolving on the same rule that blocked minting.
+func (s *Service) primaryAnchorSpace(ctx context.Context, row gen.GetContentByIDRow) (pgtype.UUID, bool) {
+	spaceID := row.SpaceID
+	if spaces, err := s.read.GetContentSpaces(ctx, row.ID); err == nil {
+		for _, sp := range spaces {
+			if sp.IsPrimary {
+				spaceID = sp.SpaceID
+				break
+			}
+		}
+	}
+	if !spaceID.Valid {
+		return pgtype.UUID{}, false
+	}
+	space, err := s.read.GetSpaceByID(ctx, spaceID)
+	if err != nil {
+		return pgtype.UUID{}, false
+	}
+	if space.Visibility != "public" || space.Status != "active" || space.DeletedAt.Valid {
+		return pgtype.UUID{}, false
+	}
+	return spaceID, true
+}
+
 // contentEntityURL mirrors the frontend CONTENT_ROUTE_PREFIX map
 // (contentLink.ts) so thread_anchors.entity_url points at the article's
 // canonical detail route — the embed card and any URL consumers land on
@@ -228,6 +258,14 @@ func (s *Service) ResolveAnchor(ctx context.Context, entityType, entityKey strin
 				EntityType:   "content",
 				EntityKey:    entityKey,
 			}, nil
+		}
+
+		// The minted thread files under the parent's primary space — a post
+		// re-filed into a private/inactive space (UpdateContentSpaces)
+		// stops resolving on the same gate that blocks minting, even
+		// before the sweeper drops the backing row.
+		if _, ok := s.primaryAnchorSpace(ctx, row); !ok {
+			return AnchorSummary{}, pgx.ErrNoRows
 		}
 
 		anchor, err := s.read.GetThreadAnchorByEntity(ctx, gen.GetThreadAnchorByEntityParams{
@@ -343,24 +381,9 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 			// parent's primary space (content_spaces is authoritative;
 			// contents.space_id is the legacy fallback), so only
 			// public+active spaces may bind a public anchor.
-			spaceID := row.SpaceID
-			if spaces, err := s.read.GetContentSpaces(ctx, row.ID); err == nil {
-				for _, sp := range spaces {
-					if sp.IsPrimary {
-						spaceID = sp.SpaceID
-						break
-					}
-				}
-			}
-			if !spaceID.Valid {
-				return entityDescriptor{}, fmt.Errorf("content has no primary space: %w", errpkg.ErrInvalid)
-			}
-			space, err := s.read.GetSpaceByID(ctx, spaceID)
-			if err != nil {
-				return entityDescriptor{}, err
-			}
-			if space.Visibility != "public" || space.Status != "active" || space.DeletedAt.Valid {
-				return entityDescriptor{}, fmt.Errorf("content space is not public: %w", errpkg.ErrInvalid)
+			spaceID, ok := s.primaryAnchorSpace(ctx, row)
+			if !ok {
+				return entityDescriptor{}, fmt.Errorf("content has no public primary space: %w", errpkg.ErrInvalid)
 			}
 
 			summary := ""
@@ -745,14 +768,51 @@ func (s *Service) ReconcileAnchorsWithFlags(ctx context.Context) {
 		}
 	}
 	if !s.flags.IsEnabled(ctx, "wiki.enabled") {
-		if _, err := s.write.SoftDeleteThreadsByAnchorType(ctx, "wiki_page"); err != nil {
-			slog.Warn("comments: drop wiki anchors failed", "error", err)
+		s.dropAnchorKeys(ctx, "wiki_page", s.listAnchorKeys(ctx, "wiki_page"))
+	}
+	// Global IsEnabled, deliberately not EvalFlagScoped: the config-change
+	// callback's context.WithoutCancel propagates the writing admin's
+	// CallerScope, and a partially-rolled-out flag would scoped-evaluate
+	// "disabled" for that one caller — bulk deletion must follow the
+	// flag's global live state, not one scope's projection.
+	for ct, flag := range rssmodel.ContentTypeFeatureFlag {
+		if !s.flags.IsEnabled(ctx, flag) {
+			s.dropAnchorKeys(ctx, "content", s.listContentAnchorKeys(ctx, ct))
 		}
 	}
-	for _, ct := range features.GatedContentTypes(ctx, s.flags) {
-		if _, err := s.write.SoftDeleteContentThreadsByParentType(ctx, ct); err != nil {
-			slog.Warn("comments: drop anchors for gated content type failed",
-				"content_type", ct, "error", err)
+}
+
+// listAnchorKeys / listContentAnchorKeys fetch live anchor keys for a
+// reconcile sweep — errors collapse to an empty list (a failed list drops
+// nothing; the next reconcile retries).
+func (s *Service) listAnchorKeys(ctx context.Context, entityType string) []string {
+	keys, err := s.read.ListAnchorKeysByType(ctx, entityType)
+	if err != nil {
+		slog.Warn("comments: list anchors by type failed",
+			"entity_type", entityType, "error", err)
+		return nil
+	}
+	return keys
+}
+
+func (s *Service) listContentAnchorKeys(ctx context.Context, contentType string) []string {
+	keys, err := s.read.ListContentAnchorKeysByParentType(ctx, contentType)
+	if err != nil {
+		slog.Warn("comments: list anchors by parent type failed",
+			"content_type", contentType, "error", err)
+		return nil
+	}
+	return keys
+}
+
+// dropAnchorKeys runs DeleteAnchor per key — the loop keeps the full
+// delete side-effects (search-index sync, webhooks, edge purge) a bulk
+// UPDATE would skip.
+func (s *Service) dropAnchorKeys(ctx context.Context, entityType string, keys []string) {
+	for _, key := range keys {
+		if err := s.DeleteAnchor(ctx, entityType, key); err != nil {
+			slog.Warn("comments: reconcile anchor drop failed",
+				"entity_type", entityType, "entity_key", key, "error", err)
 		}
 	}
 }

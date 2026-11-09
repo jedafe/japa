@@ -260,9 +260,9 @@ type Service struct {
 	// followInv invalidates jc:is_following keys for every follower of a
 	// deleted space (wired to follows.Service.InvalidateEntityFollowers).
 	followInv func(ctx context.Context, entityType string, entityID pgtype.UUID)
-	// anchorDrop drops /thread anchors for this space's wiki pages when the
-	// space leaves public/active — wired to
-	// comments.Service.DropAnchorsForWikiSpace.
+	// anchorDrop drops /thread anchors bound to this space — its wiki pages'
+	// threads and any content threads filed under it — when the space
+	// leaves public/active. Wired to comments.Service.DropAnchorsForSpace.
 	anchorDrop func(ctx context.Context, spaceID pgtype.UUID) error
 }
 
@@ -286,25 +286,29 @@ func (s *Service) SetThreadAnchorSpaceDropper(d func(ctx context.Context, spaceI
 	s.anchorDrop = d
 }
 
-// dropWikiThreadAnchorsIfClosed drops the /thread pages bound to this
-// space's wiki pages when the space is no longer public+active — a public
-// thread would keep serving the page's title and excerpt after the space
-// itself closed. Idempotent; pages re-mint lazily when the space reopens.
-func (s *Service) dropWikiThreadAnchorsIfClosed(ctx context.Context, spaceID pgtype.UUID) {
+// dropThreadAnchorsIfClosed drops the /thread pages bound to this space —
+// its wiki pages' threads and content threads filed under it — when the
+// space is no longer public+active. A public thread would keep serving the
+// entity's title and excerpt after the space itself closed. Idempotent;
+// threads re-mint lazily when the space reopens.
+func (s *Service) dropThreadAnchorsIfClosed(ctx context.Context, spaceID pgtype.UUID) {
 	if s.anchorDrop == nil {
 		return
 	}
 	row, err := s.read.GetSpaceByID(ctx, spaceID)
-	if err != nil {
-		slog.Warn("spaces: wiki thread-anchor gate check failed",
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.Warn("spaces: thread-anchor gate check failed",
 			"space_id", spaceID.String(), "error", err)
 		return
 	}
-	if row.Visibility == "public" && row.Status == StatusActive {
+	// ErrNoRows means the space is gone (DeleteSpace soft-deletes before
+	// this runs) — closed for anchor purposes. A space that never existed
+	// has no anchors, so the drop is a harmless no-op.
+	if err == nil && row.Visibility == "public" && row.Status == StatusActive {
 		return
 	}
 	if err := s.anchorDrop(ctx, spaceID); err != nil {
-		slog.Warn("spaces: wiki thread-anchor drop failed",
+		slog.Warn("spaces: thread-anchor drop failed",
 			"space_id", spaceID.String(), "error", err)
 	}
 }

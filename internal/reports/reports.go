@@ -163,10 +163,22 @@ type Service struct {
 	// activity emits wallet activity events — upheld-report points
 	// penalties (ADR-136). Optional — nil-safe.
 	activity wallet.ActivityEmitter
+	// threadAnchorDeleter drops a content row's canonical /thread page when
+	// the remove path archives it — removeReportedEntity runs raw queries,
+	// so content.Service's soft-delete hook never sees the transition.
+	// Wired to comments.Service.DeleteAnchor in server.go; nil-safe.
+	threadAnchorDeleter func(ctx context.Context, contentID pgtype.UUID) error
 }
 
 // SetActivityEmitter injects the wallet emitter (ADR-136).
 func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
+
+// SetThreadAnchorDeleter injects the anchor deleter so moderator-upheld
+// removals drop the archived row's public /thread page — a live thread
+// would leak the title and conversation of removed content.
+func (s *Service) SetThreadAnchorDeleter(d func(ctx context.Context, contentID pgtype.UUID) error) {
+	s.threadAnchorDeleter = d
+}
 
 // NewService creates a Service backed by the given database.
 func NewService(database *db.DB, settings *config.Settings, vk valkeycompat.Cmdable) *Service {
@@ -464,6 +476,15 @@ func (s *Service) removeReportedEntity(ctx context.Context, q *gen.Queries, enti
 	case EntityTypeContent:
 		if _, err := q.ArchiveContent(ctx, entityID); err != nil {
 			return fmt.Errorf("archive content: %w", err)
+		}
+		// Unified-discussion spec: the archived row's public /thread page
+		// dies with it — this path bypasses content.Service's soft-delete
+		// hook, so the drop fires here. Best-effort, mirrors auto-hide.
+		if s.threadAnchorDeleter != nil {
+			if err := s.threadAnchorDeleter(ctx, entityID); err != nil {
+				slog.Warn("reports: thread anchor delete failed",
+					"content_id", entityID.String(), "error", err)
+			}
 		}
 	case EntityTypeComment:
 		if err := q.SoftDeleteCommentByID(ctx, entityID); err != nil {

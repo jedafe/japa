@@ -210,6 +210,7 @@ var ContentTypeFeatureFlag = map[string]string{
 	"wiki_page":       "wiki.enabled",
 	"event":           "calendar.enabled",
 	"achievement":     "achievement.enabled",
+	"roadmap":         "roadmap.enabled",
 }
 
 // TypeFeedForPrefix resolves a route prefix to its TypeFeed, or false.
