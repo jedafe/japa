@@ -2779,10 +2779,23 @@ export interface AssessmentThreshold {
 	color: string;
 }
 
+export interface LogicClause {
+	field?: string;
+	op: string;
+	value?: unknown;
+}
+
+export interface LogicCondition {
+	all?: LogicClause[];
+	any?: LogicClause[];
+}
+
 export interface AssessmentScoringConfig {
 	max_score: number;
 	thresholds: AssessmentThreshold[];
 	dimension_weights: Record<string, number>;
+	/** Per-dimension conditional-step rules (ADR-137). */
+	step_rules?: Record<string, { visible_if?: LogicCondition | null }>;
 }
 
 export interface AssessmentFieldScoringConfig {
@@ -2790,6 +2803,9 @@ export interface AssessmentFieldScoringConfig {
 	dimension: string;
 	/** Internal scoring key; stripped from public form responses. */
 	option_scores?: Record<string, number>;
+	/** ADR-137 conditional rules shipped on the public assessment payload. */
+	visible_if?: LogicCondition | null;
+	jump?: { when?: LogicCondition; step: string } | null;
 }
 
 export interface AssessmentFieldOption {

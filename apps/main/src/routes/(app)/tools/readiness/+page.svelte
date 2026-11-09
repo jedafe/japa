@@ -19,6 +19,7 @@
 	import UserDropdown from '#lib/components/shell/UserDropdown.svelte';
 	import { api } from '#lib/api/client.js';
 	import { completePendingNextAction } from '#lib/api/nextActions.js';
+	import { visibleFields, hiddenStepsByJump, stepVisible } from '@japaconnect/formlogic';
 	import type { AssessmentForm, AssessmentResult, AssessmentField, FeedItem, SessionUser } from '#lib/types/index.js';
 	import type { PageData } from './$types';
 
@@ -191,28 +192,69 @@
 	});
 
 	const fields = $derived(form?.fields ?? []);
-	const requiredFields = $derived(fields.filter((f) => f.is_required));
+
+	// ADR-137: answers drive visibility — fields whose visible_if fails are
+	// not rendered, not required, and not counted toward progress. Their
+	// answers stay in local state (re-showing restores input); the server
+	// drops them at submit.
+	const visFields = $derived(visibleFields(fields, answers));
+	const requiredFields = $derived(visFields.filter((f) => f.is_required));
+	const stepRules = $derived(form?.scoring_config?.step_rules ?? {});
+
+	// Dimension order over the FULL field list — jump intervals are measured
+	// in the natural step order, including steps currently hidden.
+	const stepOrder = $derived.by(() => {
+		if (!form?.is_multi_step) return ['assessment'];
+		const order: string[] = [];
+		for (const f of form.fields) {
+			const dim = f.config?.dimension || 'general';
+			if (!order.includes(dim)) order.push(dim);
+		}
+		return order;
+	});
+
+	// Steps hidden by triggered forward jumps between dimension steps.
+	const jumpHidden = $derived(
+		hiddenStepsByJump(
+			fields.map((f) => ({ key: f.key, stepKey: f.config?.dimension || 'general', config: f.config })),
+			stepOrder,
+			answers
+		)
+	);
 
 	/**
-	 * Group the flat field list by dimension for the multi-step UX. Dimensions
-	 * are ordered by the position of their first field. Fields without a
-	 * dimension fall into a final "general" step. When the form isn't flagged
-	 * is_multi_step, all fields render in a single step per the §06 contract.
+	 * Group the flat field list by dimension for the multi-step UX, over the
+	 * visible field set only. Dimensions are ordered by the position of
+	 * their first field; a step drops out of the rail when a jump interval
+	 * covers it, its step_rules.visible_if fails, or every field it holds is
+	 * hidden. Fields without a dimension fall into a final "general" step.
+	 * When the form isn't flagged is_multi_step, all fields render in a
+	 * single step per the §06 contract.
 	 */
 	const steps = $derived.by(() => {
 		if (!form) return [] as { name: string; fields: AssessmentField[] }[];
-		if (!form.is_multi_step) return [{ name: 'assessment', fields: form.fields }];
-		const order: string[] = [];
+		if (!form.is_multi_step) return [{ name: 'assessment', fields: visFields }];
 		const map = new Map<string, AssessmentField[]>();
-		for (const f of form.fields) {
+		for (const f of visFields) {
 			const dim = f.config?.dimension || 'general';
-			if (!map.has(dim)) {
-				map.set(dim, []);
-				order.push(dim);
-			}
+			if (!map.has(dim)) map.set(dim, []);
 			(map.get(dim)!).push(f);
 		}
-		return order.map((name) => ({ name, fields: map.get(name)! }));
+		return stepOrder
+			.filter(
+				(dim) =>
+					!jumpHidden.has(dim) &&
+					stepVisible(stepRules[dim], answers) &&
+					(map.get(dim)?.length ?? 0) > 0
+			)
+			.map((name) => ({ name, fields: map.get(name)! }));
+	});
+
+	// Keep the active step in range when the visible path changes under it.
+	$effect(() => {
+		if (currentStep >= steps.length) {
+			currentStep = Math.max(0, steps.length - 1);
+		}
 	});
 
 	// Dimension copy for the step rail and card headers — keys live in the
