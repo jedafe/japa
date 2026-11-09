@@ -250,7 +250,7 @@ WHERE a.entity_type = $1
 
 // Live entity_key list for one anchor class — the flag-off reconcile walks
 // these and drops each via DeleteAnchor so the full delete side-effects
-// (search-index sync, webhooks, edge purge) fire per thread.
+// (content.deleted webhook, edge purge) fire per thread.
 func (q *Queries) ListAnchorKeysByType(ctx context.Context, entityType string) ([]string, error) {
 	rows, err := q.db.Query(ctx, listAnchorKeysByType, entityType)
 	if err != nil {

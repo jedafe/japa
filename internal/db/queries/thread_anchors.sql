@@ -36,7 +36,7 @@ WHERE a.entity_type = 'content' AND c.space_id = @space_id;
 -- name: ListAnchorKeysByType :many
 -- Live entity_key list for one anchor class — the flag-off reconcile walks
 -- these and drops each via DeleteAnchor so the full delete side-effects
--- (search-index sync, webhooks, edge purge) fire per thread.
+-- (content.deleted webhook, edge purge) fire per thread.
 SELECT a.entity_key
 FROM thread_anchors a
 JOIN contents c ON c.id = a.content_id AND c.deleted_at IS NULL

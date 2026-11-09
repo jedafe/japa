@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/cdn"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -577,6 +578,7 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 			//     space — a public→public re-file (UpdateContentSpaces)
 			//     leaves it under the stale space until this re-homes it.
 			if tRow, tErr := s.read.GetContentByID(ctx, existing.ContentID); !selfResolving && tErr == nil {
+				healed := false
 				expectedTitle := anchorThreadTitle(entityType, desc.Title)
 				if tRow.Title != expectedTitle && isGeneratedAnchorTitle(tRow.Title) {
 					if uErr := s.write.SetThreadRowTitle(ctx, gen.SetThreadRowTitleParams{
@@ -586,6 +588,8 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 					}); uErr != nil {
 						slog.Warn("comments: anchor thread retitle failed",
 							"entity_key", entityKey, "error", uErr)
+					} else {
+						healed = true
 					}
 				}
 				if entityType == "content" && desc.SpaceID.Valid && tRow.SpaceID != desc.SpaceID {
@@ -595,7 +599,16 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 					}); uErr != nil {
 						slog.Warn("comments: anchor thread space re-home failed",
 							"entity_key", entityKey, "error", uErr)
+					} else {
+						healed = true
 					}
+				}
+				// The raw heal writes skip UpdateContent's edge purge —
+				// a stale /thread/{slug} page would otherwise serve the
+				// old title/space badge until TTL (ADR-134). Fire-and-
+				// forget, no-op when no CDN is configured.
+				if healed {
+					cdn.PurgeContentDetail(ctx, tRow.ID.String(), tRow.ContentType, tRow.Slug)
 				}
 			}
 		}
@@ -867,7 +880,7 @@ func (s *Service) listContentAnchorKeys(ctx context.Context, contentType string)
 }
 
 // dropAnchorKeys runs DeleteAnchor per key — the loop keeps the full
-// delete side-effects (search-index sync, webhooks, edge purge) a bulk
+// delete side-effects (content.deleted webhook, edge purge) a bulk
 // UPDATE would skip.
 func (s *Service) dropAnchorKeys(ctx context.Context, entityType string, keys []string) {
 	for _, key := range keys {
