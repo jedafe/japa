@@ -112,7 +112,7 @@
 	async function startConversation() {
 		if (!(await requireAuthOrRedirect())) return;
 		if (entityType === 'content' || anchor) {
-			await goto(threadHref);
+			await goto(`${threadHref}#replies`);
 			return;
 		}
 		starting = true;
@@ -123,7 +123,7 @@
 		starting = false;
 		if (!res.error && res.data) {
 			anchor = res.data;
-			await goto(`/thread/${res.data.slug}`);
+			await goto(`/thread/${res.data.slug}#replies`);
 		}
 	}
 
@@ -190,7 +190,7 @@
 				/>
 			</div>
 			{#if total > comments.filter((c) => !c.parent_id).length || total > 5}
-				<a href={threadHref} class="ed-more">
+				<a href="{threadHref}#replies" class="ed-more">
 					{t('thread.view_all', 'View the full conversation →')}
 				</a>
 			{/if}
@@ -200,7 +200,7 @@
 
 		<div class="ed-cta">
 			{#if hasConversation}
-				<a href={threadHref} class="ed-btn">
+				<a href="{threadHref}#replies" class="ed-btn">
 					{t('thread.join', 'Join this Conversation')}
 				</a>
 			{:else if authed}

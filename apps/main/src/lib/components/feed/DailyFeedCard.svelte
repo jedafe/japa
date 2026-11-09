@@ -185,7 +185,10 @@
 
 	function openPost(e: Event) {
 		e.stopPropagation();
-		goto(itemHref);
+		// Thread destinations deep-link to the composer at the top of the
+		// replies section; canonical content pages have no #replies anchor.
+		const isThread = isForum || threadDefault || voteRail;
+		goto(itemHref + (isThread ? '#replies' : ''));
 	}
 
 	const shareUrl = $derived(`${page.url.origin}${canonicalHref}`);
