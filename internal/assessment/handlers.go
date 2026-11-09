@@ -194,6 +194,16 @@ func publicFieldDTOs(fields []AssessmentField) []map[string]any {
 			opts = json.RawMessage("[]")
 		}
 
+		cfg := map[string]any{
+			"dimension": f.Config.Dimension,
+		}
+		if f.Config.VisibleIf != nil {
+			cfg["visible_if"] = f.Config.VisibleIf
+		}
+		if f.Config.Jump != nil {
+			cfg["jump"] = f.Config.Jump
+		}
+
 		out = append(out, map[string]any{
 			"id":          f.ID,
 			"label":       f.Label,
@@ -203,9 +213,7 @@ func publicFieldDTOs(fields []AssessmentField) []map[string]any {
 			"position":    f.Position,
 			"placeholder": f.Placeholder,
 			"options":     opts,
-			"config": map[string]any{
-				"dimension": f.Config.Dimension,
-			},
+			"config":      cfg,
 		})
 	}
 
@@ -272,6 +280,7 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 			"scoring_config": map[string]any{
 				"max_score":  form.ScoringConfig.MaxScore,
 				"thresholds": thresholds,
+				"step_rules": form.ScoringConfig.StepRules,
 			},
 		},
 	})

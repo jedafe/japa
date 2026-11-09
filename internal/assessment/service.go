@@ -27,6 +27,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/feed"
+	"github.com/jedafe/japa/internal/formlogic"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/wallet"
 )
@@ -93,6 +94,10 @@ type ScoringConfig struct {
 	Thresholds       []Threshold              `json:"thresholds"`
 	DimensionWeights map[string]float64       `json:"dimension_weights"`
 	CuratedRoadmap   map[string][]RoadmapStep `json:"curated_roadmap,omitempty"`
+	// StepRules gates dimension-derived steps on earlier answers (ADR-137).
+	StepRules map[string]struct {
+		VisibleIf *formlogic.Condition `json:"visible_if,omitempty"`
+	} `json:"step_rules,omitempty"`
 }
 
 // Threshold is a single band in the scoring_config.thresholds array.
@@ -109,9 +114,11 @@ type Threshold struct {
 // assessment fields. Weight scales the field's contribution, Dimension groups
 // it with related fields, and OptionScores maps option values to raw scores.
 type FieldScoringConfig struct {
-	Weight       float64        `json:"weight"`
-	Dimension    string         `json:"dimension"`
-	OptionScores map[string]int `json:"option_scores"`
+	Weight       float64              `json:"weight"`
+	Dimension    string               `json:"dimension"`
+	OptionScores map[string]int       `json:"option_scores"`
+	VisibleIf    *formlogic.Condition `json:"visible_if,omitempty"`
+	Jump         *formlogic.JumpRule  `json:"jump,omitempty"`
 }
 
 // RoadmapStep is a single recommended next step in the generated roadmap.
@@ -343,18 +350,28 @@ func (e *InvalidAnswersError) Error() string {
 // reuses the same field snapshot the form was rendered from.
 // Returns the submission ID.
 func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, form *AssessmentFormDTO, fieldValues json.RawMessage) (pgtype.UUID, error) {
+	// Answer-driven visibility (ADR-137): fields hidden by visible_if rules
+	// are neither required nor option-validated, and their answers are
+	// dropped from the stored snapshot — the canonical record is the
+	// visible-path truth.
+	var answers map[string]any
+	if err := json.Unmarshal(fieldValues, &answers); err != nil || answers == nil {
+		answers = map[string]any{}
+	}
+	visible := visibleFieldSet(form.Fields, answers)
+
 	// Server-side required-field validation: the multi-step UI enforces
 	// is_required client-side, but the endpoint is public — a crafted payload
 	// could skip weak answers to inflate the score. Reject incomplete
 	// submissions before they ever reach the scoring queue.
-	if missing := missingRequiredFields(form.Fields, fieldValues); len(missing) > 0 {
+	if missing := missingRequiredFields(form.Fields, fieldValues, visible); len(missing) > 0 {
 		return pgtype.UUID{}, &MissingRequiredFieldsError{Keys: missing}
 	}
 
 	// Option-membership validation: select-type answers must use a configured
 	// option value (or a scored option key). An unmapped value would
 	// silently drop the question from the score denominator (BUG-BL-002).
-	if invalid := invalidOptionAnswers(form.Fields, fieldValues); len(invalid) > 0 {
+	if invalid := invalidOptionAnswers(form.Fields, fieldValues, visible); len(invalid) > 0 {
 		return pgtype.UUID{}, &InvalidAnswersError{Keys: invalid}
 	}
 
@@ -368,7 +385,25 @@ func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, form 
 		userIDVal = pgtype.UUID{Bytes: *userID, Valid: true}
 	}
 
-	sub, err := s.store.CreateAssessmentSubmission(ctx, formID, userIDVal, []byte(fieldValues))
+	// Drop submitted answers that belong to hidden fields — only keys that
+	// name a defined field; genuinely unknown keys pass through untouched.
+	definedHidden := make(map[string]bool)
+	for _, f := range form.Fields {
+		if !visible[f.Key] {
+			definedHidden[f.Key] = true
+		}
+	}
+	for k := range answers {
+		if definedHidden[k] {
+			delete(answers, k)
+		}
+	}
+	storedValues, err := json.Marshal(answers)
+	if err != nil {
+		storedValues = fieldValues
+	}
+
+	sub, err := s.store.CreateAssessmentSubmission(ctx, formID, userIDVal, storedValues)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("assessment: submit: %w", err)
 	}
@@ -390,11 +425,26 @@ func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, form 
 	return sub.ID, nil
 }
 
+// visibleFieldSet returns keys of fields whose visible_if passes for the
+// submitted answers — the single source of truth shared by submit
+// validation and scoring. Ref: ADR-137.
+func visibleFieldSet(fields []AssessmentField, answers map[string]any) map[string]bool {
+	set := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		if f.Config.VisibleIf.Eval(answers, f.Key) {
+			set[f.Key] = true
+		}
+	}
+	return set
+}
+
 // missingRequiredFields returns the keys of required fields that have no
 // answer in the submitted field_values. An answer counts as present when it
 // is a non-empty string, a non-empty array, a number, or a boolean —
-// mirroring the client-side isFieldAnswered check.
-func missingRequiredFields(fields []AssessmentField, fieldValues json.RawMessage) []string {
+// mirroring the client-side isFieldAnswered check. Fields whose visible_if
+// fails (absent from visible) are skipped — hidden questions can't be
+// required (ADR-137).
+func missingRequiredFields(fields []AssessmentField, fieldValues json.RawMessage, visible map[string]bool) []string {
 	var answers map[string]any
 	if err := json.Unmarshal(fieldValues, &answers); err != nil || answers == nil {
 		answers = map[string]any{}
@@ -403,7 +453,7 @@ func missingRequiredFields(fields []AssessmentField, fieldValues json.RawMessage
 	var missing []string
 
 	for _, f := range fields {
-		if !f.Required {
+		if !f.Required || !visible[f.Key] {
 			continue
 		}
 
@@ -437,7 +487,8 @@ func missingRequiredFields(fields []AssessmentField, fieldValues json.RawMessage
 // has no allowed-set to check them against. Multiselect answers are invalid
 // when any selected element is unmapped. 'suggest' is exempt: suggest inputs
 // are free-text with autocomplete hints, so unlisted values are legitimate.
-func invalidOptionAnswers(fields []AssessmentField, fieldValues json.RawMessage) []string {
+// Fields whose visible_if fails are skipped (ADR-137).
+func invalidOptionAnswers(fields []AssessmentField, fieldValues json.RawMessage, visible map[string]bool) []string {
 	var answers map[string]any
 	if err := json.Unmarshal(fieldValues, &answers); err != nil || answers == nil {
 		return nil
@@ -446,6 +497,10 @@ func invalidOptionAnswers(fields []AssessmentField, fieldValues json.RawMessage)
 	var invalid []string
 
 	for _, f := range fields {
+		if !visible[f.Key] {
+			continue
+		}
+
 		switch f.FieldType {
 		case "select", "radio", "multiselect":
 		default:
@@ -1269,6 +1324,9 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 		}
 
 		fsc := parseFieldScoringConfig(field.Config)
+		if !fsc.VisibleIf.Eval(answers, key) {
+			continue // defense-in-depth: stale/crafted answer for a hidden field (ADR-137)
+		}
 		if fsc.Dimension == "" {
 			continue
 		}
