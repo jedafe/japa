@@ -275,8 +275,8 @@ type intelDiscoveryNotifier interface {
 }
 
 var (
-	intelDiscoveryDeps    intelDiscoveryFanoutDeps
-	intelDiscoveryNotify  intelDiscoveryNotifier
+	intelDiscoveryDeps   intelDiscoveryFanoutDeps
+	intelDiscoveryNotify intelDiscoveryNotifier
 )
 
 // RegisterIntelDiscoveryFanout wires the .discovered consumer dependencies:
