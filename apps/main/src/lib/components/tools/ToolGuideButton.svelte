@@ -35,9 +35,14 @@
 		return {};
 	});
 	const storedGuide = $derived(guidesMap[slug] ?? {});
+	// Per-tool default body — its own i18n key (tools.guide_<slug>), with the
+	// generic tools.guide_body as the last resort.
+	const defaultBody = $derived(
+		t(`tools.guide_${slug.replaceAll('-', '_')}`, t('tools.guide_body', ''))
+	);
 	const effectiveGuide = $derived<GuideContent>({
 		title: guideOverride?.title ?? storedGuide.title ?? t('common.how_it_works', 'How it works'),
-		body: guideOverride?.body ?? storedGuide.body ?? t('tools.guide_body', ''),
+		body: guideOverride?.body ?? storedGuide.body ?? defaultBody,
 		ctas: guideOverride?.ctas ??
 			storedGuide.ctas ?? [{ title: t('guide_panel.read_full_guide', 'Read the full guide'), url: '/guides' }]
 	});

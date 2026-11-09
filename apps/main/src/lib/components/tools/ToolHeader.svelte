@@ -6,6 +6,8 @@
 	// The full-width workbenches (readiness, JapaBot, travel) do NOT use this
 	// header — they own their own heroes.
 	import { page } from '$app/state';
+	import { ChevronRight } from 'lucide-svelte';
+	import { t } from '#lib/i18n/index.js';
 	import HeroArtTools from '#lib/components/heroes/HeroArtTools.svelte';
 	import ToolGuideButton from './ToolGuideButton.svelte';
 	import type { IconComponent } from '#lib/components/ui/index.js';
@@ -29,7 +31,23 @@
 <header
 	class="tool-hero relative mb-5 overflow-hidden rounded-[var(--radius-card)] border sm:mb-6"
 >
-	<div class="relative flex items-center gap-3 px-4 py-3.5 sm:gap-4 sm:px-5 sm:py-4">
+	<nav
+		aria-label={t('a11y.breadcrumb', 'Breadcrumb')}
+		class="relative flex items-center gap-1.5 px-4 pt-3 text-xs text-[var(--color-muted)] sm:px-5"
+	>
+		<a href="/" class="truncate transition-colors hover:text-[var(--color-text)]">
+			{t('common.home', 'Home')}
+		</a>
+		<ChevronRight size={12} class="shrink-0 rtl:-scale-x-100" />
+		<a href="/tools" class="truncate transition-colors hover:text-[var(--color-text)]">
+			{t('tools.heading', 'Tools')}
+		</a>
+		<ChevronRight size={12} class="shrink-0 rtl:-scale-x-100" />
+		<span class="truncate font-medium text-[var(--color-text-subtle)]" aria-current="page">
+			{title}
+		</span>
+	</nav>
+	<div class="relative flex items-center gap-3 px-4 py-3 sm:gap-4 sm:px-5">
 		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-3 sm:gap-4">
 				<span
