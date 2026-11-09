@@ -61,14 +61,23 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
     ref.invalidate(readinessHistoryProvider);
   }
 
+  // A field's containing step — its config.dimension, or the "general"
+  // fallback the server uses for dimensionless fields (fieldDimension).
+  String _dimOf(dynamic field) {
+    if (field is! Map) return 'general';
+    final config = field['config'];
+    if (config is! Map) return 'general';
+    final dim = config['dimension'];
+    return dim is String && dim.isNotEmpty ? dim : 'general';
+  }
+
   // Step order = natural dimension order filtered by ADR-137 rules:
   // scoring_config.step_rules[dim].visible_if, unioned jump intervals, and
   // the auto-hide of steps left with no visible fields.
   List<String> _stepOrder(List<dynamic> fields, Map<String, dynamic>? stepRules) {
     final seen = <String>[];
     for (final f in fields) {
-      final config = (f['config'] as Map<String, dynamic>?) ?? {};
-      final dim = (config['dimension'] as String?) ?? 'general';
+      final dim = _dimOf(f);
       if (!seen.contains(dim)) seen.add(dim);
     }
     // Steps hidden by their own step_rules.visible_if seed the jump pass —
@@ -93,11 +102,7 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
   }
 
   List<dynamic> _fieldsForStep(List<dynamic> fields, String step) {
-    return fields.where((f) {
-      final config = (f['config'] as Map<String, dynamic>?) ?? {};
-      final dim = (config['dimension'] as String?) ?? 'general';
-      return dim == step;
-    }).toList();
+    return fields.where((f) => _dimOf(f) == step).toList();
   }
 
   bool _isFieldRequired(dynamic field) {
@@ -128,12 +133,18 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
     });
   }
 
-  Future<void> _submit(List<dynamic> fields) async {
+  Future<void> _submit(List<dynamic> fields, Map<String, dynamic>? stepRules) async {
     final t = ref.read(tProvider);
 
-    // Required check runs over the visible path only — hidden fields are
-    // not required and the server drops their submitted values (ADR-137).
-    final required = visibleFields(fields, _answers).where(_isFieldRequired).toList();
+    // Required check runs over the visible path only — fields hidden by
+    // their own visible_if or by a hidden containing step (step_rules,
+    // jump intervals, empty-step auto-hide) are never required, and the
+    // server drops their submitted values (ADR-137).
+    final visibleSteps = _stepOrder(fields, stepRules).toSet();
+    final required = visibleFields(fields, _answers)
+        .where(_isFieldRequired)
+        .where((f) => visibleSteps.contains(_dimOf(f)))
+        .toList();
     for (final f in required) {
       final field = f as Map<String, dynamic>?;
       if (field == null) continue;
@@ -443,7 +454,7 @@ class _ReadinessScreenState extends ConsumerState<ReadinessScreen> {
                   child: JcButton(
                     label: t('assessment.submit'),
                     onPressed: _isStepComplete(stepFields)
-                        ? () => _submit(fields)
+                        ? () => _submit(fields, stepRules)
                         : null,
                   ),
                 ),
