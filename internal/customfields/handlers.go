@@ -33,6 +33,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/formlogic"
 	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/wallet"
@@ -872,17 +873,21 @@ func optionsAbsent(raw json.RawMessage) bool {
 	return false
 }
 
-// validFieldConfig accepts only JSON objects (or nil) — the
-// custom_fields.config column must stay object-shaped for the rule keys
-// the evaluator reads (ADR-137) and the scoring keys §71 writes.
-func validFieldConfig(raw []byte) bool {
+// validateFieldConfig checks a submitted field config: it must decode to a
+// JSON object (or be empty) and its ADR-137 logic keys — visible_if and
+// jump — must be well-formed so malformed rules can't persist silently.
+// Returns nil when valid, or the reason to send back as invalid_config.
+func validateFieldConfig(raw []byte) error {
 	if len(bytes.TrimSpace(raw)) == 0 {
-		return true
+		return nil
 	}
 
 	var v map[string]any
+	if err := json.Unmarshal(raw, &v); err != nil || v == nil {
+		return errors.New("config must be a JSON object")
+	}
 
-	return json.Unmarshal(raw, &v) == nil
+	return formlogic.ValidateFieldLogic(v)
 }
 
 // storedOptionsAbsent reports whether the persisted field has no usable
@@ -915,17 +920,20 @@ func derefInt32(v *int32) int32 {
 	return *v
 }
 
-// validStepConfig accepts only JSON objects (or nil) — the form_steps.config
-// column must stay object-shaped for the rule keys the evaluator reads.
+// validateStepConfig checks a submitted form_steps.config: object-shaped,
+// with a well-formed visible_if when the key is present.
 // Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md (ADR-137).
-func validStepConfig(raw []byte) bool {
+func validateStepConfig(raw []byte) error {
 	if len(bytes.TrimSpace(raw)) == 0 {
-		return true
+		return nil
 	}
 
 	var v map[string]any
+	if err := json.Unmarshal(raw, &v); err != nil || v == nil {
+		return errors.New("config must be a JSON object")
+	}
 
-	return json.Unmarshal(raw, &v) == nil
+	return formlogic.ValidateStepLogic(v)
 }
 
 // publicStepConfig projects the public-safe slice of form_steps.config:
@@ -1016,9 +1024,11 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Config != nil && !validFieldConfig(*req.Config) {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "config must be a JSON object")
-		return
+	if req.Config != nil {
+		if cerr := validateFieldConfig(*req.Config); cerr != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", cerr.Error())
+			return
+		}
 	}
 
 	config := json.RawMessage("{}")
@@ -1195,9 +1205,11 @@ func (h *Handlers) validateFieldUpdate(w http.ResponseWriter, r *http.Request, r
 
 	// Config travels three-state like section: present replaces the stored
 	// object wholesale, omitted keeps it (ADR-137).
-	if req.Config != nil && !validFieldConfig(*req.Config) {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "config must be a JSON object")
-		return nil, "", nil, false
+	if req.Config != nil {
+		if cerr := validateFieldConfig(*req.Config); cerr != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", cerr.Error())
+			return nil, "", nil, false
+		}
 	}
 
 	config = json.RawMessage("{}")
@@ -2272,9 +2284,19 @@ func (h *Handlers) applyScoringConfig(w http.ResponseWriter, r *http.Request, id
 		return false
 	}
 
-	if !validStepConfig(scoringConfig) {
+	var sc map[string]any
+	if err := json.Unmarshal(scoringConfig, &sc); err != nil || sc == nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "scoring_config must be a JSON object")
 		return true
+	}
+
+	// ADR-137: step_rules entries carry per-step visible_if conditions —
+	// validate their shape so malformed rules can't persist silently.
+	if sr, ok := sc["step_rules"]; ok {
+		if verr := formlogic.ValidateStepRules(sr); verr != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", verr.Error())
+			return true
+		}
 	}
 
 	if _, serr := h.Service.UpdateFormScoringConfig(r.Context(), id, scoringConfig); serr != nil {
@@ -3948,9 +3970,11 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.Config) > 0 && !validStepConfig(req.Config) {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_step_config", "config must be a JSON object")
-		return
+	if len(req.Config) > 0 {
+		if cerr := validateStepConfig(req.Config); cerr != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_step_config", cerr.Error())
+			return
+		}
 	}
 
 	if len(req.Config) == 0 {
@@ -4017,9 +4041,11 @@ func (h *Handlers) UpdateFormStep(w http.ResponseWriter, r *http.Request) {
 
 	// Three-state config: omitted keeps the stored object; present replaces.
 	configSent := len(req.Config) > 0
-	if configSent && !validStepConfig(req.Config) {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_step_config", "config must be a JSON object")
-		return
+	if configSent {
+		if cerr := validateStepConfig(req.Config); cerr != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_step_config", cerr.Error())
+			return
+		}
 	}
 
 	if !configSent {
