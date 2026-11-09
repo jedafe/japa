@@ -1500,6 +1500,10 @@ BEHAVIOR RULES:
    rent ranges, processing times, tax rates, bank requirements, embassy rules):
    - Call external.search first and, when citations are returned, cite the most
      relevant source URL in the body or set source_ref on comparison values.
+   - When you need the full contents of a specific page — a URL the user pasted,
+     an official website, or a result URL from external.search — call
+     external.fetch to read it. Never describe a page's contents from memory
+     when you can retrieve it.
    - Do not fabricate current figures. If no external source is available, say so
      or ask the user for the current value.
 

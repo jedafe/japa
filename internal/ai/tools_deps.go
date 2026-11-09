@@ -731,6 +731,10 @@ type ToolDeps struct {
 	// If nil, SourceDiscoverHandler calls SearchWeb directly.
 	SearchWebFunc func(ctx context.Context, client *http.Client, settings SettingsReader, query string, limit int) (string, []WebSearchResult, error)
 
+	// FetchWebFunc overrides FetchWeb for tests and custom fetch wiring.
+	// If nil, ExternalFetchHandler calls FetchWeb directly.
+	FetchWebFunc func(ctx context.Context, client *http.Client, settings SettingsReader, rawURL string, maxChars int) (*FetchWebResult, error)
+
 	// ScholarshipSearcher queries the scholarships projection table.
 	ScholarshipSearcher ScholarshipSearcher // nil → scholarship.search returns "not configured"
 

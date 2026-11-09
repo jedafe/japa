@@ -68,6 +68,9 @@ func RegisterPhase4Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	// --- Knowledge tools (tasks 4.09-4.10) ---
 	registry.RegisterHandler("rag.search", RAGSearchHandler(deps))
 	registry.RegisterHandler("external.search", ExternalSearchHandler(deps))
+	// external.fetch — on-demand SSRF-safe page fetch (migration 001101);
+	// complements external.search for the "read this URL" case.
+	registry.RegisterHandler("external.fetch", ExternalFetchHandler(deps))
 	// §121 spec corpus — privileged, staff-only (agent.spec_search node).
 	registry.RegisterHandler("spec.search", SpecSearchHandler(deps))
 

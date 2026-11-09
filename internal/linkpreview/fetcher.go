@@ -215,6 +215,15 @@ func newSSRFSafeClient() *http.Client {
 	}
 }
 
+// NewSafeHTTPClient returns the SSRF-safe *http.Client used by Fetch:
+// dial-time private-IP blocking (DNS-rebinding protection) and per-hop
+// redirect validation with a redirect depth cap. Exported so other
+// user-triggered fetch paths — e.g. the agent's external.fetch tool —
+// share the same egress guard instead of rolling their own client.
+func NewSafeHTTPClient() *http.Client {
+	return newSSRFSafeClient()
+}
+
 // ssrfSafeTransport wraps an inner RoundTripper. The inner transport uses a
 // custom Dialer with a Control function that blocks connections to private IP
 // ranges at dial time (BUG-006 — DNS rebinding protection). CheckRedirect
