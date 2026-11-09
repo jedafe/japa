@@ -299,6 +299,16 @@ func (s *Service) ResolveAnchor(ctx context.Context, entityType, entityKey strin
 		if s.flags != nil && !s.flags.IsEnabled(ctx, "wiki.enabled") {
 			return AnchorSummary{}, pgx.ErrNoRows
 		}
+		// Same gate the mint query applies — a page deleted, or filed under
+		// a space that went private/inactive/deleted, stops resolving even
+		// if the space-close drop hook missed it.
+		var pageID pgtype.UUID
+		if err := pageID.Scan(entityKey); err != nil {
+			return AnchorSummary{}, pgx.ErrNoRows
+		}
+		if _, err := s.read.GetWikiPageAnchorInfo(ctx, pageID); err != nil {
+			return AnchorSummary{}, pgx.ErrNoRows
+		}
 	}
 
 	return anchorSummaryFromRow(row), nil
@@ -520,22 +530,39 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 		// upsert refreshes display fields in place; the live-binding CASE
 		// keeps content_id. Best-effort: a describe failure never blocks
 		// the get.
-		if desc, dErr := s.describeEntity(ctx, entityType, entityKey); dErr == nil &&
-			(existing.EntityURL != desc.URL || existing.EntityTitle != desc.Title ||
-				!summaryEqual(existing.EntitySummary, desc.Summary)) {
-			if _, uErr := s.write.CreateThreadAnchor(ctx, gen.CreateThreadAnchorParams{
-				ContentID:     existing.ContentID,
-				EntityType:    entityType,
-				EntityKey:     entityKey,
-				EntityUrl:     desc.URL,
-				EntityTitle:   desc.Title,
-				EntitySummary: desc.Summary,
-			}); uErr != nil {
-				slog.Warn("comments: anchor entity refresh failed", "entity_key", entityKey, "error", uErr)
-			} else {
-				existing.EntityURL = desc.URL
-				existing.EntityTitle = desc.Title
-				existing.EntitySummary = desc.Summary
+		if desc, dErr := s.describeEntity(ctx, entityType, entityKey); dErr == nil {
+			if existing.EntityURL != desc.URL || existing.EntityTitle != desc.Title ||
+				!summaryEqual(existing.EntitySummary, desc.Summary) {
+				if _, uErr := s.write.CreateThreadAnchor(ctx, gen.CreateThreadAnchorParams{
+					ContentID:     existing.ContentID,
+					EntityType:    entityType,
+					EntityKey:     entityKey,
+					EntityUrl:     desc.URL,
+					EntityTitle:   desc.Title,
+					EntitySummary: desc.Summary,
+				}); uErr != nil {
+					slog.Warn("comments: anchor entity refresh failed", "entity_key", entityKey, "error", uErr)
+				} else {
+					existing.EntityURL = desc.URL
+					existing.EntityTitle = desc.Title
+					existing.EntitySummary = desc.Summary
+				}
+			}
+			// The thread files under the parent's primary space — a
+			// public→public re-file (UpdateContentSpaces) leaves it under
+			// the stale space until this re-homes it. Space feeds and the
+			// space-close sweep both key on the thread row's space_id.
+			if entityType == "content" && desc.SpaceID.Valid {
+				if tRow, tErr := s.read.GetContentByID(ctx, existing.ContentID); tErr == nil &&
+					tRow.SpaceID != desc.SpaceID {
+					if uErr := s.write.SetThreadRowSpaceID(ctx, gen.SetThreadRowSpaceIDParams{
+						ID:      existing.ContentID,
+						SpaceID: desc.SpaceID,
+					}); uErr != nil {
+						slog.Warn("comments: anchor thread space re-home failed",
+							"entity_key", entityKey, "error", uErr)
+					}
+				}
 			}
 		}
 		// Heal stray comments on the entity row — a mint interrupted between

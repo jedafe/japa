@@ -142,6 +142,7 @@ SELECT c.id, c.slug, c.title, c.content_type, c.meta_description, c.body,
  m.storage_bucket AS featured_storage_bucket, m.storage_path AS featured_storage_path
 FROM content_thread_links l
 JOIN contents c ON c.id = l.content_id AND c.deleted_at IS NULL AND c.status = 'published'
+ AND c.visibility = 'public' AND c.auto_hidden = false
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 WHERE l.thread_id = $1
 ORDER BY l.created_at DESC
@@ -362,4 +363,23 @@ func (q *Queries) ListWikiAnchorsBySpace(ctx context.Context, spaceID pgtype.UUI
 		return nil, err
 	}
 	return items, nil
+}
+
+const setThreadRowSpaceID = `-- name: SetThreadRowSpaceID :exec
+UPDATE contents SET space_id = $1, updated_at = now()
+WHERE id = $2 AND deleted_at IS NULL
+`
+
+type SetThreadRowSpaceIDParams struct {
+	SpaceID pgtype.UUID `json:"space_id"`
+	ID      pgtype.UUID `json:"id"`
+}
+
+// Re-home a minted thread row to its parent's current primary space —
+// a public→public re-file (UpdateContentSpaces) otherwise leaves the
+// thread filed under the stale space. space_id only: geo_space_id follows
+// the parent's geo space, not the primary.
+func (q *Queries) SetThreadRowSpaceID(ctx context.Context, arg SetThreadRowSpaceIDParams) error {
+	_, err := q.db.Exec(ctx, setThreadRowSpaceID, arg.SpaceID, arg.ID)
+	return err
 }

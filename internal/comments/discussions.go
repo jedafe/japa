@@ -2,17 +2,13 @@ package comments
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -132,62 +128,32 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 
 		threadID = input.ThreadID
 	} else {
-		// Derive a new discussion thread from the blog/content.
-		blog, err := s.read.GetContentByID(ctx,
-			contentID,
-		)
+		// Unified-discussion spec: the canonical conversation for a content
+		// row is its thread_anchors `discussion` row — get-or-create it via
+		// the anchor so this endpoint never mints a competing auto-titled
+		// thread. CreateAnchor is idempotent and applies the same
+		// status/visibility/space/flag gates as every mint path; a
+		// discussion row resolves to itself.
+		anchor, err := s.CreateAnchor(ctx, userID, "content", contentID.String())
 		if err != nil {
-			return StartConversationResult{}, fmt.Errorf("fetching content to derive discussion: %w", err)
+			return StartConversationResult{}, fmt.Errorf("resolving canonical thread: %w", err)
 		}
-
-		if s.creator == nil {
-			return StartConversationResult{}, fmt.Errorf("content creator not wired")
-		}
-
-		title := "Discussing: " + blog.Title
-
-		// Rule 12 requires a content_hash on every contents insert, but the
-		// normalized-body hash would make every derived "Discussing: X" thread
-		// for the same content identical — the unique index would reject the
-		// second conversation. The hash input includes the parent content id
-		// and a fresh UUID so each derived thread hashes uniquely while still
-		// satisfying the rule (dedup is meaningless for generated threads).
-		hashInput := strings.ToLower(strings.Join(strings.Fields(title), " ")) +
-			"|" + contentID.String() + "|" + uuid.NewString()
-		hashSum := sha256.Sum256([]byte(hashInput))
-		contentHash := hex.EncodeToString(hashSum[:])
-
-		// The thread must go through the content service — the raw store path
-		// leaves field_values NULL (a 23502 NOT NULL violation), skips slug
-		// uniqueness (a second conversation on a same-titled parent 409s on
-		// the slug index), and never writes the primary content_spaces row
-		// that space listings and fan-out read (§14, BUG-008).
-		thread, err := s.creator.CreateContent(ctx, content.CreateContentInput{
-			AuthorID:    userID,
-			ContentType: "discussion",
-			Title:       title,
-			// Body is empty — users add comments to the thread.
-			Body:        "",
-			ContentHash: &contentHash,
-			GeoSpaceID:  blog.GeoSpaceID,
-			SpaceID:     blog.SpaceID,
-			Status:      content.StatusPublished,
-			Visibility:  blog.Visibility,
-		})
-		if err != nil {
-			return StartConversationResult{}, fmt.Errorf("creating discussion thread: %w", err)
-		}
-
-		threadID = thread.ID
-		createdThread = thread
+		threadID = anchor.ContentID
 	}
 
-	link, err := s.write.CreateContentThreadLink(ctx, gen.CreateContentThreadLinkParams{
-		ContentID: contentID,
-		ThreadID:  threadID,
-	})
-	if err != nil {
-		return StartConversationResult{}, fmt.Errorf("creating content thread link: %w", err)
+	// A discussion row resolves to itself — linking it to itself would
+	// double-count its own comments in RecountContentCommentCount's linked
+	// subquery. Only real parent→thread pairs get a link row.
+	var link gen.ContentThreadLink
+	if threadID != contentID {
+		var err error
+		link, err = s.write.CreateContentThreadLink(ctx, gen.CreateContentThreadLinkParams{
+			ContentID: contentID,
+			ThreadID:  threadID,
+		})
+		if err != nil {
+			return StartConversationResult{}, fmt.Errorf("creating content thread link: %w", err)
+		}
 	}
 
 	return StartConversationResult{Link: link, CreatedThread: createdThread}, nil

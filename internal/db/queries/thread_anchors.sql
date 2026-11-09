@@ -75,6 +75,14 @@ ON CONFLICT (entity_type, entity_key) DO UPDATE
  END
 RETURNING id, content_id, entity_type, entity_key, entity_url, entity_title, entity_summary, created_at;
 
+-- name: SetThreadRowSpaceID :exec
+-- Re-home a minted thread row to its parent's current primary space —
+-- a public→public re-file (UpdateContentSpaces) otherwise leaves the
+-- thread filed under the stale space. space_id only: geo_space_id follows
+-- the parent's geo space, not the primary.
+UPDATE contents SET space_id = @space_id, updated_at = now()
+WHERE id = @id AND deleted_at IS NULL;
+
 -- name: GetThreadParentByThreadID :one
 -- The content a §49 linked-discussion row was started about — used by
 -- /thread/{slug} to render the parent embed on discussion threads.
@@ -82,6 +90,7 @@ SELECT c.id, c.slug, c.title, c.content_type, c.meta_description, c.body,
  m.storage_bucket AS featured_storage_bucket, m.storage_path AS featured_storage_path
 FROM content_thread_links l
 JOIN contents c ON c.id = l.content_id AND c.deleted_at IS NULL AND c.status = 'published'
+ AND c.visibility = 'public' AND c.auto_hidden = false
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 WHERE l.thread_id = @thread_id
 ORDER BY l.created_at DESC

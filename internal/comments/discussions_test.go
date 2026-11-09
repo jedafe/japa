@@ -75,9 +75,13 @@ func TestStartConversation_DerivesDiscussionThroughContentService(t *testing.T) 
 	if err != nil {
 		t.Fatalf("StartConversation: %v", err)
 	}
-	if !res.Link.ID.Valid || !res.CreatedThread.ID.Valid {
-		t.Fatal("expected link + created thread to be populated")
+	// Unified-discussion spec: the derive path funnels into the canonical
+	// thread_anchors `discussion` row — no separate §49 row is minted, so
+	// CreatedThread stays zero and the link points at the anchor thread.
+	if !res.Link.ID.Valid || res.CreatedThread.ID.Valid {
+		t.Fatal("expected link populated with no separate created thread")
 	}
+	threadID := res.Link.ThreadID
 
 	var (
 		contentType string
@@ -87,8 +91,8 @@ func TestStartConversation_DerivesDiscussionThroughContentService(t *testing.T) 
 	)
 	if err := d.Reader.QueryRow(ctx,
 		`SELECT content_type, status, slug, field_values FROM contents WHERE id = $1`,
-		res.CreatedThread.ID).Scan(&contentType, &status, &slug, &fieldValues); err != nil {
-		t.Fatalf("reading derived thread: %v", err)
+		threadID).Scan(&contentType, &status, &slug, &fieldValues); err != nil {
+		t.Fatalf("reading anchor thread: %v", err)
 	}
 	if contentType != "discussion" {
 		t.Errorf("content_type = %q, want discussion", contentType)
@@ -108,40 +112,45 @@ func TestStartConversation_DerivesDiscussionThroughContentService(t *testing.T) 
 	var csCount int
 	if err := d.Reader.QueryRow(ctx,
 		`SELECT count(*) FROM content_spaces WHERE content_id = $1 AND space_id = $2 AND is_primary`,
-		res.CreatedThread.ID, spaceID).Scan(&csCount); err != nil {
+		threadID, spaceID).Scan(&csCount); err != nil {
 		t.Fatalf("counting content_spaces: %v", err)
 	}
 	if csCount != 1 {
 		t.Errorf("primary content_spaces rows = %d, want 1", csCount)
 	}
 
-	// A second conversation on the same parent must not collide on the
-	// (slug) unique index — the service derives a distinct slug.
+	// The minted row carries a thread_anchors binding to the parent.
+	var anchorEntityKey string
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT entity_key FROM thread_anchors WHERE content_id = $1`,
+		threadID).Scan(&anchorEntityKey); err != nil {
+		t.Fatalf("reading thread anchor: %v", err)
+	}
+	if anchorEntityKey != blogID.String() {
+		t.Errorf("anchor entity_key = %q, want parent id %q", anchorEntityKey, blogID.String())
+	}
+
+	// Idempotent — a second call resolves the SAME canonical thread, so
+	// repeat "start a conversation" never mints a competing row.
 	res2, err := svc.StartConversation(ctx, blogID, userID, StartConversationInput{})
 	if err != nil {
 		t.Fatalf("second StartConversation: %v", err)
 	}
-
-	var slug2 string
-	if err := d.Reader.QueryRow(ctx, `SELECT slug FROM contents WHERE id = $1`,
-		res2.CreatedThread.ID).Scan(&slug2); err != nil {
-		t.Fatalf("reading second thread slug: %v", err)
-	}
-	if slug2 == slug {
-		t.Errorf("second thread slug %q collides with first", slug2)
+	if res2.Link.ThreadID != threadID {
+		t.Errorf("second call linked thread %v, want canonical %v", res2.Link.ThreadID, threadID)
 	}
 
-	// Both links list against the parent content.
 	links, total, err := svc.ListDiscussions(ctx, blogID, userID, true, 20, 0)
 	if err != nil {
 		t.Fatalf("ListDiscussions: %v", err)
 	}
-	if total != 2 || len(links) != 2 {
-		t.Fatalf("linked discussions = %d total %d, want 2/2", len(links), total)
+	if total != 1 || len(links) != 1 {
+		t.Fatalf("linked discussions = %d total %d, want 1/1", len(links), total)
 	}
 
 	t.Cleanup(func() {
-		_, _ = d.Writer.Exec(ctx, `DELETE FROM content_thread_links WHERE thread_id IN ($1, $2)`, res.CreatedThread.ID, res2.CreatedThread.ID)
-		_, _ = d.Writer.Exec(ctx, `DELETE FROM contents WHERE id IN ($1, $2)`, res.CreatedThread.ID, res2.CreatedThread.ID)
+		_, _ = d.Writer.Exec(ctx, `DELETE FROM thread_anchors WHERE content_id = $1`, threadID)
+		_, _ = d.Writer.Exec(ctx, `DELETE FROM content_thread_links WHERE thread_id = $1`, threadID)
+		_, _ = d.Writer.Exec(ctx, `DELETE FROM contents WHERE id = $1`, threadID)
 	})
 }
