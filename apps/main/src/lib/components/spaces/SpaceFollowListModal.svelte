@@ -59,7 +59,10 @@
 				`/spaces/${spaceId}/followers?page_size=${PAGE_SIZE}&page_offset=${items.length}`
 			);
 			const next = res.data ?? [];
-			items = [...items, ...next];
+			// Offset pagination on a mutable list — drop ids already rendered
+			// so the keyed each never sees a repeat (§6.3 each_key_duplicate).
+			const seen = new Set(items.map((i) => i.id));
+			items = [...items, ...next.filter((i) => !seen.has(i.id) && !!seen.add(i.id))];
 			endReached = next.length < PAGE_SIZE;
 		} finally {
 			loading = false;

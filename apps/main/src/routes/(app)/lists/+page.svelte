@@ -79,7 +79,10 @@
 			const res = await api.get<GuideListItem[]>(`/content?${params.toString()}`);
 			const rows = res.data ?? [];
 			const last = rows[rows.length - 1];
-			items = [...items, ...rows];
+			// Popular paginates by offset on a ranked list — a row can drift
+			// into an already-rendered window (§6.3 each_key_duplicate).
+			const seen = new Set(items.map((i) => i.id));
+			items = [...items, ...rows.filter((r) => !seen.has(r.id) && !!seen.add(r.id))];
 			if (nextCursor.startsWith('offset:')) {
 				nextCursor = rows.length >= data.pageSize
 					? `offset:${parseInt(nextCursor.slice('offset:'.length), 10) + rows.length}`

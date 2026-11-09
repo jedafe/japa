@@ -50,7 +50,10 @@
 		params.set('page_offset', String(items.length));
 		const res = await api.get<SourceItemEnvelope>(`/sources/${encodeURIComponent(source.slug)}/items?${params.toString()}`);
 		if (res.data) {
-			items = [...items, ...res.data.items];
+			// Offset pagination on a mutable list — drop rows already rendered
+			// so the keyed each never sees a repeat (§6.3 each_key_duplicate).
+			const seen = new Set(items.map((i) => i.id));
+			items = [...items, ...res.data.items.filter((i) => !seen.has(i.id) && !!seen.add(i.id))];
 			feedMeta = { ...feedMeta, ...res.data.meta };
 		}
 		loadingMore = false;

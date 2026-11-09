@@ -83,7 +83,17 @@
 	let moreItems = $state<FeedItem[]>([]);
 	let exhausted = $state(false);
 	let loadingMore = $state(false);
-	const allItems = $derived([...data.items, ...moreItems]);
+	// Ranking can drift between offset page fetches — an item may shift into
+	// the next page's window. Dedupe by id so the keyed each never sees a
+	// repeat (§6.3 each_key_duplicate).
+	const allItems = $derived.by(() => {
+		const seen = new Set<string>();
+		return [...data.items, ...moreItems].filter((i) => {
+			if (seen.has(i.id)) return false;
+			seen.add(i.id);
+			return true;
+		});
+	});
 	const forumFiltered = $derived(data.status !== 'all' || !!data.tagSlug || !!data.authorId);
 
 	$effect(() => {

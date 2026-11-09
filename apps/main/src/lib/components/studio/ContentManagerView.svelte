@@ -198,7 +198,10 @@
 		const batch = res.data ?? [];
 		hasMore = batch.length > pageSize;
 		const slice = hasMore ? batch.slice(0, pageSize) : batch;
-		items = [...items, ...slice];
+		// Offset pagination on a mutable list — drop rows already rendered
+		// so the keyed each never sees a repeat (§6.3 each_key_duplicate).
+		const seen = new Set(items.map((i) => i.id));
+		items = [...items, ...slice.filter((i) => !seen.has(i.id) && !!seen.add(i.id))];
 		nextOffset += pageSize;
 		loadingMore = false;
 	}

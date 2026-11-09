@@ -115,7 +115,7 @@
 		// next page's window. Drop ids already rendered so the keyed each
 		// never sees a duplicate (§6.3 each_key_duplicate).
 		const seen = new Set(items.map((i) => i.id));
-		const fresh = batch.filter((i) => !seen.has(i.id));
+		const fresh = batch.filter((i) => !seen.has(i.id) && !!seen.add(i.id));
 		items = [...items, ...fresh];
 		atEnd = batch.length < pageSize;
 		hasMore = !atEnd;
@@ -136,7 +136,8 @@
 			return;
 		}
 		const batch = res.data ?? [];
-		items = batch.slice(0, pageSize);
+		const seen = new Set<string>();
+		items = batch.slice(0, pageSize).filter((i) => !seen.has(i.id) && !!seen.add(i.id));
 		hasMore = batch.length > pageSize;
 		atEnd = !hasMore;
 		currentPage = nextPage;

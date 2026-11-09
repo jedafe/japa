@@ -93,7 +93,10 @@
 			return;
 		}
 		const batch = res.data ?? [];
-		threads = [...threads, ...batch];
+		// Vote scores can shift between cursor fetches, letting a row re-enter
+		// the next window. Drop repeats (§6.3 each_key_duplicate).
+		const seen = new Set(threads.map((t) => t.id));
+		threads = [...threads, ...batch.filter((t) => !seen.has(t.id) && !!seen.add(t.id))];
 		atEnd = batch.length < pageSize;
 		loading = false;
 	}
