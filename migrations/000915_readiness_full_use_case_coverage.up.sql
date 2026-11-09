@@ -80,7 +80,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'business_readiness', 'select',
  '[{"value":"not_business","label":"Not relocating for business"},{"value":"idea","label":"Idea stage only"},{"value":"developing","label":"Plan developing / registration underway"},{"value":"validated","label":"Registered or revenue-ready"}]'::jsonb,
  'Select the closest match', true, false, true, 39,
- '{"weight":1.0,"dimension":"professional","option_scores":{"not_business":90,"idea":25,"developing":60,"validated":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"professional","option_scores":{"not_business":90,"idea":25,"developing":60,"validated":100},"visible_if":{"any":[{"field":"purpose","op":"eq","value":"business"},{"field":"visa_type","op":"eq","value":"business"}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000f028', gid,
  'Have you built professional connections at your destination (recruiters, associations, online network)?',

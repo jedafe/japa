@@ -31,7 +31,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'study_funding', 'select',
  '[{"value":"not_study","label":"Not studying — not applicable"},{"value":"unfunded","label":"No funding secured yet"},{"value":"partial","label":"Partially funded / awaiting scholarship decision"},{"value":"funded","label":"Fully funded (savings, scholarship, or sponsor)"}]'::jsonb,
  'Select the closest match', true, false, true, 26,
- '{"weight":1.0,"dimension":"financial","option_scores":{"not_study":90,"unfunded":15,"partial":60,"funded":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"financial","option_scores":{"not_study":90,"unfunded":15,"partial":60,"funded":100},"visible_if":{"any":[{"field":"purpose","op":"eq","value":"study"},{"field":"visa_type","op":"eq","value":"student"}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000e015', gid,
  'Beyond your relocation budget, do you have an emergency buffer for your first months?',
@@ -46,7 +46,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'admission_status', 'select',
  '[{"value":"not_study","label":"Not studying — not applicable"},{"value":"not_applied","label":"Haven''t applied yet"},{"value":"applied","label":"Applied, awaiting decision"},{"value":"offer","label":"Offer/admission secured (deposit paid or enrolled)"}]'::jsonb,
  'Select the closest match', true, false, true, 28,
- '{"weight":1.0,"dimension":"logistical","option_scores":{"not_study":90,"not_applied":20,"applied":60,"offer":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"logistical","option_scores":{"not_study":90,"not_applied":20,"applied":60,"offer":100},"visible_if":{"any":[{"field":"purpose","op":"eq","value":"study"},{"field":"visa_type","op":"eq","value":"student"}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000e017', gid,
  'Have you completed the medical exams your visa route requires (e.g. TB test, immigration medical exam)?',
