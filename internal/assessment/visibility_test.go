@@ -14,6 +14,7 @@ const (
 	tfStudy         = "study"
 	tfSelect        = "select"
 	tfDependents    = "dependents"
+	tfWork          = "work"
 	tfWorkVisa      = "work_visa"
 	dimGeneral      = "general"
 	dimPersonal     = "personal"

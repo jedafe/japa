@@ -1051,6 +1051,13 @@ func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContex
 		vc.VisaRoute = normalizeVisaRoute(fields.VisaType)
 	}
 
+	// visa_type is only asked when purpose can't determine the route
+	// (migration 001103) — an unanswered visa_type falls back to the
+	// purpose-mapped route; normalizeVisaRoute accepts purpose values.
+	if vc.VisaRoute == "" {
+		vc.VisaRoute = normalizeVisaRoute(fields.Purpose)
+	}
+
 	if fields.TravelDate != "" && vc.TravelDate == "" {
 		if v := strings.TrimSpace(fields.TravelDate); v != "" {
 			if _, err := time.Parse("2006-01-02", v); err == nil {

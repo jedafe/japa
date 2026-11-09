@@ -1684,6 +1684,13 @@ func parseJourneyFields(answers map[string]any) JourneyContext {
 		Purpose:            visitor.NormalizePurpose(extractStringValue(answers, "purpose", "travel_purpose")),
 		TravelDate:         extractStringValue(answers, "travel_date", "planned_travel_date"),
 	}
+
+	// visa_type is only asked when purpose can't determine the route
+	// (migration 001103) — an unanswered visa_type falls back to the
+	// purpose-mapped route; normalizeVisaRoute accepts purpose values.
+	if j.VisaRoute == "" {
+		j.VisaRoute = visitor.NormalizeVisaRoute(j.Purpose)
+	}
 	if _, err := time.Parse("2006-01-02", j.TravelDate); err != nil {
 		j.TravelDate = ""
 	}

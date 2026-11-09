@@ -30,6 +30,38 @@ func TestAssessmentDimensions(t *testing.T) {
 
 func ptr(s string) *string { return &s }
 
+// TestParseJourneyFieldsVisaRouteFallback verifies the purpose-derived
+// visa route used when visa_type goes unanswered — the field only renders
+// when purpose is ambiguous (migration 001103), so the determined intents
+// must still produce a route for roadmap matching.
+func TestParseJourneyFieldsVisaRouteFallback(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		answers map[string]any
+		want    string
+	}{
+		{"explicit visa_type wins", map[string]any{"visa_type": "investment", tfPurpose: tfWork}, "investment"},
+		{"purpose study derives student route", map[string]any{tfPurpose: tfStudy}, "student"},
+		{"purpose work derives work route", map[string]any{tfPurpose: tfWork}, tfWork},
+		{"purpose business derives business route", map[string]any{tfPurpose: "business"}, "business"},
+		{"purpose tourism derives tourist route", map[string]any{tfPurpose: "tourism"}, "tourist"},
+		{"purpose family derives family route", map[string]any{tfPurpose: "family"}, "family"},
+		{"purpose relocation falls back to other", map[string]any{tfPurpose: "relocation"}, "other"},
+		{"both blank stays blank", map[string]any{}, ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := parseJourneyFields(tc.answers)
+			assert.Equal(t, tc.want, got.VisaRoute)
+		})
+	}
+}
+
 func TestPickBestRoadmapContent_PrefersStrongestContextMatch(t *testing.T) {
 	base := "guide-generic-finance"
 	rows := []gen.FindRoadmapContentByDimensionRow{
