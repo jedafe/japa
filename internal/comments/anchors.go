@@ -439,16 +439,20 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 	}
 }
 
-// anchorThreadTitle composes a minted thread's title. Wiki pages get a
+// anchorThreadTitle composes a minted thread's title. Content anchors are
+// "{Title} (A Thread)", tools "{Name} Tool (A Thread)". Wiki pages get a
 // varied, category-aware lead-in — "Discussing {title}", "Thread about
 // {title}", "{title} — local thread" — so generated threads don't all read
-// the same "Discussing: …" phrasing; the pick is deterministic per entity
-// key. Tools and content keep the plain "Discussing:" form. The 001096
+// the same phrasing; the pick is deterministic per entity key. The 001096
 // backfill mirrors these template sets with its own hashtext-based pick —
 // per-row determinism is all that's required, not identical picks.
 func anchorThreadTitle(entityType, entityKey, title, category string) string {
-	if entityType != "wiki_page" {
-		return "Discussing: " + title
+	switch entityType {
+	case "tool":
+		return title + " Tool (A Thread)"
+	case "wiki_page":
+	default:
+		return title + " (A Thread)"
 	}
 	templates := []string{
 		"Discussing %s",
