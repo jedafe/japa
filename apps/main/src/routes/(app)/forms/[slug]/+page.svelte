@@ -10,7 +10,8 @@
 	import EmptyState from '#lib/components/ui/EmptyState.svelte';
 	import AutocompleteSelect from '#lib/components/ui/AutocompleteSelect.svelte';
 	import { FileText, Send, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import type { FormField } from '#lib/types/index.js';
+	import { fieldVisible, stepVisible, hiddenStepsByJump } from '@japaconnect/formlogic';
+	import type { FormField, FormStep } from '#lib/types/index.js';
 
 	let { data } = $props();
 	const form = $derived(data.form);
@@ -23,23 +24,86 @@
 	let stepIndex = $state(0);
 	let errorMsg = $state('');
 
-	type Step = { id: string; title: string; position: number; fields: FormField[] };
-
-	const isMultiStep = $derived(!!form?.is_multi_step && (form?.steps?.length ?? 0) > 0);
-	const steps = $derived<Step[]>(
-		isMultiStep ? [...(form!.steps ?? [])].sort((a, b) => a.position - b.position) : []
-	);
-	const sortedFields = $derived<FormField[]>(
-		isMultiStep
-			? [...(steps[stepIndex]?.fields ?? [])].sort((a, b) => a.sort_order - b.sort_order)
-			: form
-				? [...form.fields].sort((a, b) => a.sort_order - b.sort_order)
-				: []
-	);
-
 	function fieldKey(field: FormField): string {
 		return field.key || field.label;
 	}
+
+	const isMultiStep = $derived(!!form?.is_multi_step && (form?.steps?.length ?? 0) > 0);
+	const steps = $derived<FormStep[]>(
+		isMultiStep ? [...(form!.steps ?? [])].sort((a, b) => a.position - b.position) : []
+	);
+	const allFields = $derived<FormField[]>(
+		isMultiStep ? steps.flatMap((s) => s.fields) : (form?.fields ?? [])
+	);
+	const fieldStep = $derived.by(() => {
+		const m = new Map<string, string>();
+		for (const s of steps) for (const f of s.fields) m.set(f.id, s.id);
+		return m;
+	});
+
+	// ADR-137: the evaluator's `contains` needs a real array — multiselect
+	// answers are stored comma-joined, so feed it a normalized view (mirrors
+	// the server's canonicalAnswers split+trim).
+	const evalValues = $derived.by(() => {
+		const multi = new Set(allFields.filter((f) => f.type === 'multiselect').map(fieldKey));
+		const out: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(values)) {
+			out[k] = multi.has(k) ? v.split(',').map((s) => s.trim()).filter(Boolean) : v;
+		}
+		return out;
+	});
+
+	const visibleFieldIds = $derived.by(() => {
+		const s = new Set<string>();
+		for (const f of allFields) {
+			if (fieldVisible(f.config, evalValues, fieldKey(f))) s.add(f.id);
+		}
+		return s;
+	});
+
+	// Steps hidden by triggered forward jumps between steps. Jump targets
+	// are form_steps.id values; intervals are measured in the natural order.
+	const jumpHidden = $derived(
+		hiddenStepsByJump(
+			allFields.map((f) => ({
+				key: fieldKey(f),
+				stepKey: fieldStep.get(f.id) ?? '',
+				config: f.config
+			})),
+			steps.map((s) => s.id),
+			evalValues
+		)
+	);
+
+	// A step leaves the rail when a jump interval covers it, its own
+	// visible_if fails, or every field it defines is hidden (ADR-137).
+	const visSteps = $derived(
+		steps.filter(
+			(s) =>
+				!jumpHidden.has(s.id) &&
+				stepVisible(s.config, evalValues) &&
+				(s.fields.length === 0 || s.fields.some((f) => visibleFieldIds.has(f.id)))
+		)
+	);
+
+	const sortedFields = $derived<FormField[]>(
+		isMultiStep
+			? [...(visSteps[stepIndex]?.fields ?? [])]
+					.sort((a, b) => a.sort_order - b.sort_order)
+					.filter((f) => visibleFieldIds.has(f.id))
+			: form
+				? [...form.fields]
+						.sort((a, b) => a.sort_order - b.sort_order)
+						.filter((f) => visibleFieldIds.has(f.id))
+				: []
+	);
+
+	// Keep the active step in range when the visible path changes under it.
+	$effect(() => {
+		if (stepIndex >= visSteps.length) {
+			stepIndex = Math.max(0, visSteps.length - 1);
+		}
+	});
 
 	function inputClass(): string {
 		return 'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
@@ -108,9 +172,9 @@
 	{:else}
 		{#if isMultiStep}
 			<ol class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
-				{#each steps as s, i (s.id)}
+				{#each visSteps as s, i (s.id)}
 					<li class={i === stepIndex ? 'font-medium text-[var(--color-text)]' : ''}>
-						{s.title}{#if i < steps.length - 1}<span class="mx-2">→</span>{/if}
+						{s.title}{#if i < visSteps.length - 1}<span class="mx-2">→</span>{/if}
 					</li>
 				{/each}
 			</ol>
@@ -199,7 +263,7 @@
 				{:else}
 					<span></span>
 				{/if}
-				{#if isMultiStep && stepIndex < steps.length - 1}
+				{#if isMultiStep && stepIndex < visSteps.length - 1}
 					<button type="button" onclick={nextStep}
 						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90">
 						{t('common.next')}<ChevronRight class="h-4 w-4" />

@@ -2532,6 +2532,8 @@ export interface FormField {
 	options: string[] | null;
 	placeholder?: string | null;
 	default_value?: string | null;
+	/** ADR-137 public logic slice: visible_if + jump (scoring keys never ship). */
+	config?: { visible_if?: LogicCondition | null; jump?: { when?: LogicCondition; step: string } | null } | null;
 }
 
 /** A single step in a multi-step Form Builder form (§06). */
@@ -2541,6 +2543,8 @@ export interface FormStep {
 	position: number;
 	field_group_id?: string | null;
 	fields: FormField[];
+	/** ADR-137 public logic slice: visible_if only. */
+	config?: { visible_if?: LogicCondition | null } | null;
 }
 
 /** GET /forms/{slug}/embed — public form definition for embedded rendering. */
