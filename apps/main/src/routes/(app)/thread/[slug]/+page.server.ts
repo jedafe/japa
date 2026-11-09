@@ -198,16 +198,22 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 	const currentUserId = event.locals.user?.id ?? null;
 	const userGroups = event.locals.user?.groups ?? [];
 
-	// Same moderation affordance as the content single — the author and
-	// comments.pin holders can pin/delete. Best-effort /me/permissions call
-	// mirrors loadContentArticle.
+	// Backed threads are normal threads: the author (or content.edit_any /
+	// content.delete_any holders) can edit/delete the thread inline, and
+	// author/comments.pin holders moderate replies — same affordances as
+	// loadContentArticle. One best-effort /me/permissions call.
 	const isOwner = !!article.author_id && currentUserId === article.author_id;
 	const isSuperAdmin = userGroups.some((g) => g === 'super_admin' || g === 'Super Admin');
 	let canModerate = isOwner || isSuperAdmin;
-	if (!canModerate && event.locals.user) {
+	let canEdit = isOwner || isSuperAdmin;
+	let canDelete = isOwner || isSuperAdmin;
+	if (!isOwner && !isSuperAdmin && event.locals.user) {
 		try {
 			const permRes = await apiGet<{ permissions: string[] }>(ctx, '/me/permissions');
-			canModerate = hasPerm(permRes?.permissions ?? [], 'comments.pin');
+			const perms = permRes?.permissions ?? [];
+			canModerate = hasPerm(perms, 'comments.pin');
+			canEdit = hasPerm(perms, 'content.edit_any');
+			canDelete = hasPerm(perms, 'content.delete_any');
 		} catch {
 			canModerate = false;
 		}
@@ -241,6 +247,8 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 		authed: !!event.locals.user,
 		currentUserId,
 		canModerate,
+		canEdit,
+		canDelete,
 		deletedUserIds: mergedDeletedUserIds,
 		jsonLd,
 		indexable: article.indexable ?? true,

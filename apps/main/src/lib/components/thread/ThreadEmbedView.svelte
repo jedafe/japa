@@ -7,13 +7,18 @@
 	// Ref: docs/superpowers/specs/2026-11-08-thread-rename-unified-discussions-design.md
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { invalidateAll } from '$app/navigation';
 	import { t, i18n } from '#lib/i18n/index.js';
-	import { ArrowLeft, Eye, MessageSquare } from 'lucide-svelte';
+	import { ArrowLeft, Eye, MessageSquare, MoreVertical, Pencil, Save, Trash2, X } from 'lucide-svelte';
 	import SeoHead from '#lib/seo/SeoHead.svelte';
 	import ThreadEmbedCard from '#lib/components/thread/ThreadEmbedCard.svelte';
 	import ReplyThread from '#lib/components/forum/ReplyThread.svelte';
 	import ReactionRail from '#lib/components/blog/ReactionRail.svelte';
 	import UserHoverCard from '#lib/components/ui/UserHoverCard.svelte';
+	import PostEditor from '#lib/components/create/editors/PostEditor.svelte';
+	import { Menu, MenuItem, MenuSeparator } from '#lib/components/ui/index.js';
+	import { api } from '#lib/api/client.js';
 	import { commentsApi, commentsConversation, listAllComments } from '#lib/components/forum/conversationApi.js';
 	import { tiptapBodyToHtml, tiptapToHtml, type TipTapDoc } from '#lib/tiptap/serialize.js';
 	import { relativeTime } from '#lib/feed/time.js';
@@ -43,6 +48,8 @@
 			authed: boolean;
 			currentUserId: string | null;
 			canModerate: boolean;
+			canEdit: boolean;
+			canDelete: boolean;
 			deletedUserIds: string[] | null;
 			jsonLd: unknown;
 			indexable: boolean;
@@ -129,6 +136,70 @@
 	const robots = $derived(
 		data.indexable === false || data.seoIndexable === false ? 'noindex,nofollow' : ''
 	);
+
+	// Inline edit — backed threads are normal threads: the author (or a
+	// content.edit_any / content.delete_any holder) edits the title + body
+	// in place, same affordance as the formal forum page. PATCH /content/{id}
+	// accepts body_html and regenerates the stored TipTap body server-side;
+	// the backend enforces the actual permission (author or edit_any) plus
+	// the content.edit_window_minutes window.
+	let editing = $state(false);
+	let editTitle = $state('');
+	let editBodyHtml = $state('');
+	let savingEdit = $state(false);
+	let editError = $state<string | null>(null);
+	let deleting = $state(false);
+	let deleteError = $state<string | null>(null);
+
+	function startEdit() {
+		if (!data.canEdit) return;
+		editTitle = article.title;
+		// PostEditor initialises from HTML — the stored body_html is the
+		// canonical source; fall back to the rendered TipTap body for rows
+		// (minted anchors) whose body lives only in the `body` column.
+		editBodyHtml = article.body_html || bodyHtml;
+		editError = null;
+		editing = true;
+	}
+
+	function cancelEdit() {
+		editing = false;
+		editError = null;
+	}
+
+	async function saveEdit() {
+		if (savingEdit || !editTitle.trim()) return;
+		savingEdit = true;
+		editError = null;
+		const res = await api.patch(`/content/${article.id}`, {
+			title: editTitle.trim(),
+			body_html: editBodyHtml
+		});
+		savingEdit = false;
+		if (res.error) {
+			editError =
+				res.error.code === 'edit_window_expired'
+					? t('forum.edit_window_expired', 'The edit window has expired.')
+					: res.error.message || t('forum.edit_error', 'Failed to save edits.');
+			return;
+		}
+		editing = false;
+		await invalidateAll();
+	}
+
+	async function deleteThread() {
+		if (deleting || !data.canDelete) return;
+		if (!confirm(t('forum.delete_confirm', 'Delete this discussion? This cannot be undone.'))) return;
+		deleting = true;
+		deleteError = null;
+		const res = await api.delete(`/content/${article.id}`);
+		deleting = false;
+		if (res.error) {
+			deleteError = res.error.message || t('forum.delete_error', 'Failed to delete discussion.');
+			return;
+		}
+		await goto('/thread');
+	}
 </script>
 
 <SeoHead
@@ -217,19 +288,84 @@
 						<span class="rounded border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
 							{typeBadge}
 						</span>
+						<!-- Thread actions — edit/delete for the author or an
+						     edit_any/delete_any holder, same as a normal thread. -->
+						{#if !editing && (data.canEdit || data.canDelete)}
+							<Menu side="bottom" contentClass="min-w-40">
+								{#snippet trigger(props)}
+									<button
+										type="button"
+										{...props}
+										class="grid h-7 w-7 place-items-center rounded-full text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+										aria-label={t('comments.options', 'More options')}
+										title={t('comments.options', 'More options')}
+									>
+										<MoreVertical size={15} />
+									</button>
+								{/snippet}
+								{#if data.canEdit}
+									<MenuItem icon={Pencil} onSelect={startEdit}>{t('forum.edit', 'Edit')}</MenuItem>
+								{/if}
+								{#if data.canDelete}
+									{#if data.canEdit}<MenuSeparator />{/if}
+									<MenuItem icon={Trash2} onSelect={deleteThread} disabled={deleting} destructive>{t('forum.delete', 'Delete')}</MenuItem>
+								{/if}
+							</Menu>
+						{/if}
 					</div>
 				</div>
 
-				<h1 class="mt-2 text-balance text-2xl font-bold leading-tight tracking-tight text-[var(--color-text)] sm:text-3xl">
-					{article.title}
-				</h1>
+				{#if editing}
+					<input
+						type="text"
+						bind:value={editTitle}
+						class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xl font-bold leading-tight tracking-tight text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none sm:text-2xl"
+						aria-label={t('forum.new.title_placeholder', 'Title')}
+					/>
+				{:else}
+					<h1 class="mt-2 text-balance text-2xl font-bold leading-tight tracking-tight text-[var(--color-text)] sm:text-3xl">
+						{article.title}
+					</h1>
+				{/if}
 			</div>
 		</div>
 
-		<!-- Body — content threads render the first ~80 words plus a "Read
-		     full {type}" CTA; discussion threads render their full body;
-		     empty-body anchors fall back to the entity excerpt. -->
-		{#if isContentThread}
+		<!-- Body (view mode) / Edit form (edit mode) — same inline editor
+		     the formal forum thread uses. -->
+		{#if editing}
+			<div class="mt-5 space-y-3">
+				{#if editError}
+					<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary-text)]">
+						{editError}
+					</p>
+				{/if}
+				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] focus-within:border-[var(--color-primary)]">
+					<PostEditor
+						html={editBodyHtml}
+						onedit={() => {}}
+						onhtml={(v) => { editBodyHtml = v; }}
+						onjson={() => {}}
+					/>
+				</div>
+				<div class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-3">
+					<button
+						type="button"
+						onclick={cancelEdit}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						<X size={14} /> {t('common.cancel', 'Cancel')}
+					</button>
+					<button
+						type="button"
+						onclick={saveEdit}
+						disabled={savingEdit || !editTitle.trim()}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+					>
+						<Save size={14} /> {savingEdit ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
+					</button>
+				</div>
+			</div>
+		{:else if isContentThread}
 			{#if contentExcerpt}
 				<p class="mt-5 text-[var(--color-text-subtle)]">{contentExcerpt}</p>
 			{/if}
@@ -280,6 +416,9 @@
 				authorName={authorLabel}
 			/>
 		</div>
+		{#if deleteError}
+			<p class="mt-2 text-sm text-[var(--color-error)]">{deleteError}</p>
+		{/if}
 	</article>
 
 	<!-- Replies — the unified conversation (§49 comments via the §08 reply
