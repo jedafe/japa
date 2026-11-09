@@ -160,13 +160,16 @@ Set<String> hiddenStepsByJump(
   String Function(Map<String, dynamic> field)? stepKeyOf,
   Set<String>? stepHidden,
 }) {
+  // Dimensionless fields belong to the server's "general" fallback step
+  // (fieldDimension) — returning '' would orphan them: their jumps could
+  // never fire and a hidden "general" step wouldn't suppress them.
   String defaultStepKey(Map<String, dynamic> f) {
     final cfg = f['config'];
     if (cfg is Map) {
       final dim = cfg['dimension'];
       if (dim is String && dim.isNotEmpty) return dim;
     }
-    return '';
+    return 'general';
   }
 
   final keyOf = stepKeyOf ?? defaultStepKey;

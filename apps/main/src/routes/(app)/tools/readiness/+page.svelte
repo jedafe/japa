@@ -198,15 +198,16 @@
 	// answers stay in local state (re-showing restores input); the server
 	// drops them at submit.
 	const visFields = $derived(visibleFields(fields, answers));
-	const requiredFields = $derived(visFields.filter((f) => f.is_required));
 	const stepRules = $derived(form?.scoring_config?.step_rules ?? {});
 
 	// Dimension order over the FULL field list — jump intervals are measured
-	// in the natural step order, including steps currently hidden.
+	// in the natural step order, including steps currently hidden. Computed
+	// unconditionally: the server's visibleFieldSet applies step_rules/jumps
+	// even on single-step forms, so the client must evaluate them against the
+	// real dimension order too.
 	const stepOrder = $derived.by(() => {
-		if (!form?.is_multi_step) return ['assessment'];
 		const order: string[] = [];
-		for (const f of form.fields) {
+		for (const f of form?.fields ?? []) {
 			const dim = f.config?.dimension || 'general';
 			if (!order.includes(dim)) order.push(dim);
 		}
@@ -234,6 +235,12 @@
 		)
 	);
 
+	// Required fields on the visible path only — a required field inside a
+	// hidden dimension is neither rendered nor required (ADR-137).
+	const requiredFields = $derived(
+		visFields.filter((f) => f.is_required && !jumpHidden.has(f.config?.dimension || 'general'))
+	);
+
 	/**
 	 * Group the flat field list by dimension for the multi-step UX, over the
 	 * visible field set only. Dimensions are ordered by the position of
@@ -245,7 +252,15 @@
 	 */
 	const steps = $derived.by(() => {
 		if (!form) return [] as { name: string; fields: AssessmentField[] }[];
-		if (!form.is_multi_step) return [{ name: 'assessment', fields: visFields }];
+		// Single-step render still honors step-level hiding: the server drops
+		// answers for fields inside rule/jump-hidden dimensions regardless of
+		// is_multi_step, so they must not render or be required here either.
+		if (!form.is_multi_step) {
+			return [{
+				name: 'assessment',
+				fields: visFields.filter((f) => !jumpHidden.has(f.config?.dimension || 'general'))
+			}];
+		}
 		const map = new Map<string, AssessmentField[]>();
 		for (const f of visFields) {
 			const dim = f.config?.dimension || 'general';

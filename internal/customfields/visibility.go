@@ -96,11 +96,13 @@ type stepDef struct {
 // its own visible_if fails OR when its containing step is hidden (step
 // visible_if, a triggered forward jump, or a step left with no visible
 // fields), mirroring the client-side path so the server never requires what
-// the user could not see.
+// the user could not see. On a multi-step form a field with no step is
+// unreachable — the renderer only shows steps.flatMap — so it is hidden
+// too; requiring it would deadlock every submission.
 func hiddenFieldKeys(fields []fieldDef, steps []stepDef, canon map[string]any) map[string]bool {
 	hidden := make(map[string]bool, len(fields))
 	for _, f := range fields {
-		if !formlogic.FieldVisible(f.Config, canon, f.Key) {
+		if !formlogic.FieldVisible(f.Config, canon, f.Key) || (len(steps) > 0 && f.StepKey == "") {
 			hidden[f.Key] = true
 		}
 	}

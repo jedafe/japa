@@ -41,7 +41,7 @@ func TestDropHiddenFieldValuesStepRule(t *testing.T) {
 	t.Parallel()
 
 	fields := []fieldDef{
-		{Label: fldPurposeLabel, Key: fldPurpose, FieldType: fldSelectFieldType, IsRequired: true},
+		{Label: fldPurposeLabel, Key: fldPurpose, FieldType: fldSelectFieldType, IsRequired: true, StepKey: "s1"},
 		{Label: "Admission", Key: fldAdmissionStatus, FieldType: fldSelectFieldType, IsRequired: true, StepKey: "s2"},
 	}
 	steps := []stepDef{
@@ -83,6 +83,38 @@ func TestDropHiddenFieldValuesJumpHiddenStep(t *testing.T) {
 
 	if _, ok := got[fldAdmissionStatus]; !ok {
 		t.Fatal("jump target step's fields must stay")
+	}
+}
+
+// TestDropHiddenFieldValuesUngroupedOnMultiStep verifies a field with no
+// step on a multi-step form is treated as hidden — the renderer shows only
+// steps.flatMap, so requiring it would deadlock every submission. The same
+// field on a single-step form (no stepDefs) stays on the visible path.
+func TestDropHiddenFieldValuesUngroupedOnMultiStep(t *testing.T) {
+	t.Parallel()
+
+	fields := []fieldDef{
+		{Label: "Ungrouped", Key: "ungrouped", FieldType: "text", IsRequired: true},
+		{Label: "Grouped", Key: "grouped", FieldType: "text", IsRequired: true, StepKey: "s1"},
+	}
+	steps := []stepDef{{ID: "s1"}}
+
+	got := dropHiddenValues(fields, steps, map[string]any{"ungrouped": "x", "grouped": "y"})
+	if _, ok := got["ungrouped"]; ok {
+		t.Fatal("step-less field on a multi-step form should be dropped as unreachable")
+	}
+
+	if _, ok := got["grouped"]; !ok {
+		t.Fatal("stepped field value must stay")
+	}
+
+	if !hiddenFieldKeys(fields, steps, map[string]any{})["ungrouped"] {
+		t.Fatal("step-less field on a multi-step form should be hidden, not required")
+	}
+
+	got = dropHiddenValues(fields, nil, map[string]any{"ungrouped": "x"})
+	if _, ok := got["ungrouped"]; !ok {
+		t.Fatal("same field with no steps at all is on the visible path")
 	}
 }
 
