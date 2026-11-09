@@ -36,8 +36,12 @@
 		isHost?: boolean;
 		/** Callback to mark a specific reply as the accepted answer. */
 		onMarkSolved?: (replyId: string) => void;
+		/** Preview mode (entity pages): hides the top-level composer and the
+		 *  "Replies" heading — new conversations start on /thread/{slug},
+		 *  while per-reply interactions (vote/reply/edit) stay intact. */
+		preview?: boolean;
 	}
-	let { replies, threadId, backend, authed, canSolve, acceptedReplyId, userVotes, canModerate, currentUserId, deletedUserIds, hostUserId, isHost, onMarkSolved }: Props = $props();
+	let { replies, threadId, backend, authed, canSolve, acceptedReplyId, userVotes, canModerate, currentUserId, deletedUserIds, hostUserId, isHost, onMarkSolved, preview = false }: Props = $props();
 
 	const convApi = $derived(backend ?? forumApi(threadId));
 
@@ -107,30 +111,32 @@
 	const replyCount = $derived(replies.length + addedTop.length);
 </script>
 
-<div id="replies" class="mt-10 border-t border-[var(--color-border)] pt-6">
-	<h2 class="mb-4 text-base font-semibold text-[var(--color-text)]">
-		{t('forum.replies_heading', 'Replies')}
-		<span class="ms-1.5 text-sm font-normal text-[var(--color-muted)]">{replyCount}</span>
-	</h2>
+<div id="replies" class={preview ? 'mt-2' : 'mt-10 border-t border-[var(--color-border)] pt-6'}>
+	{#if !preview}
+		<h2 class="mb-4 text-base font-semibold text-[var(--color-text)]">
+			{t('forum.replies_heading', 'Replies')}
+			<span class="ms-1.5 text-sm font-normal text-[var(--color-muted)]">{replyCount}</span>
+		</h2>
 
-	<!-- Composer renders for guests too — the submit button stays enabled
-	     and redirects to /login on click (see submitTopReply). -->
-	<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-		<LazyCommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (topBody = b)} {resetNonce} />
-		<div class="mt-2 flex items-center justify-between">
-			<span class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
-				<CornerUpLeft class="rtl:-scale-x-100" size={12} /> {t('forum.replying_to_thread', 'Replying to this thread')}
-			</span>
-			<button
-				type="button"
-				onclick={submitTopReply}
-				disabled={authed && (!topBody || topSubmitting)}
-				class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-			>
-				{topSubmitting ? t('common.loading', 'Loading') : t('forum.post_reply', 'Post reply')}
-			</button>
+		<!-- Composer renders for guests too — the submit button stays enabled
+		     and redirects to /login on click (see submitTopReply). -->
+		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+			<LazyCommentEditor placeholder={t('forum.reply_placeholder', 'Write a reply…')} oninput={(b) => (topBody = b)} {resetNonce} />
+			<div class="mt-2 flex items-center justify-between">
+				<span class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
+					<CornerUpLeft class="rtl:-scale-x-100" size={12} /> {t('forum.replying_to_thread', 'Replying to this thread')}
+				</span>
+				<button
+					type="button"
+					onclick={submitTopReply}
+					disabled={authed && (!topBody || topSubmitting)}
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+				>
+					{topSubmitting ? t('common.loading', 'Loading') : t('forum.post_reply', 'Post reply')}
+				</button>
+			</div>
 		</div>
-	</div>
+	{/if}
 
 	{#if allTop.length === 0}
 		<p class="py-8 text-center text-sm text-[var(--color-muted)]">

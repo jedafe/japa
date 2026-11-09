@@ -179,6 +179,7 @@
 					replies={conversation.replies}
 					threadId={anchor.content_id}
 					backend={convApi}
+					preview
 					{authed}
 					canSolve={false}
 					acceptedReplyId={null}
@@ -279,14 +280,6 @@
 
 	.ed-error {
 		color: var(--color-danger, #dc2626);
-	}
-
-	/* ReplyThread ships its own top border + heading margin tuned for the
-	   thread page; on the preview card it sits flush under the tabs. */
-	.ed-thread :global(#replies) {
-		margin-top: 0.5rem;
-		border-top: 0;
-		padding-top: 0;
 	}
 
 	.ed-more {
