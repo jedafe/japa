@@ -2782,10 +2782,18 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, form gen.GetFormB
 
 	// CF-A1: multi-step forms keep their fields on per-step groups —
 	// merge them so submitted step values aren't rejected as unknown.
+	// The step rows and the field→step association are kept for ADR-137
+	// step-level visibility (step visible_if + jump intervals).
+	var stepRows []gen.FormStep
+	fieldStep := make(map[string]string)
 	if form.IsMultiStep {
 		if steps, sErr := h.Service.ListFormSteps(ctx, form.ID); sErr == nil {
+			stepRows = steps
 			for _, st := range steps {
 				if sfs, sfErr := h.Service.GetStepFields(ctx, st.ID); sfErr == nil {
+					for _, sf := range sfs {
+						fieldStep[sf.Key] = st.ID.String()
+					}
 					fields = append(fields, sfs...)
 				}
 			}
@@ -2845,19 +2853,24 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, form gen.GetFormB
 	defs := make([]fieldDef, 0, len(fields))
 
 	for _, f := range fields {
-		fd := fieldDef{Label: f.Label, Key: f.Key, FieldType: f.FieldType, Options: f.Options, IsRequired: f.IsRequired, Config: f.Config}
+		fd := fieldDef{Label: f.Label, Key: f.Key, FieldType: f.FieldType, Options: f.Options, IsRequired: f.IsRequired, Config: f.Config, StepKey: fieldStep[f.Key]}
 		byLabel[f.Label] = fd
 		byKey[f.Key] = fd
 		defs = append(defs, fd)
 	}
 
 	// Answer-driven visibility (ADR-137): drop submitted values for fields
-	// whose visible_if fails, and exclude them from the required check. The
-	// fieldValues map is mutated in place (same convention as the select
+	// hidden by their own visible_if or by a hidden containing step (step
+	// visible_if / jump interval), and exclude them from the required check.
+	// The fieldValues map is mutated in place (same convention as the select
 	// normalization + rich_text sanitization below) so callers store the
 	// canonical visible-path snapshot.
+	stepDefs := make([]stepDef, 0, len(stepRows))
+	for _, st := range stepRows {
+		stepDefs = append(stepDefs, stepDef{ID: st.ID.String(), Config: st.Config})
+	}
 	canon := canonicalAnswers(defs, fieldValues)
-	hidden := hiddenFieldKeys(defs, canon)
+	hidden := hiddenFieldKeys(defs, stepDefs, canon)
 
 	for rawKey := range fieldValues {
 		f, ok := byLabel[rawKey]
@@ -2994,6 +3007,9 @@ type fieldDef struct {
 	Options    []byte
 	IsRequired bool
 	Config     []byte
+	// StepKey is the containing form_steps.id for multi-step fields;
+	// "" = top-level / ungrouped (ADR-137).
+	StepKey string
 }
 
 // validateFieldValue validates a single field value against its field type

@@ -60,13 +60,56 @@ func canonicalAnswers(fields []fieldDef, vals map[string]any) map[string]any {
 	return out
 }
 
-// hiddenFieldKeys returns the keys of fields whose visible_if fails under
-// canon — shared by the required-check skip and the hidden-answer drop.
-func hiddenFieldKeys(fields []fieldDef, canon map[string]any) map[string]bool {
+// stepDef is the minimal step shape the hidden-field pass needs — the step's
+// ID (jump target + field StepKey match) and its raw config (visible_if).
+type stepDef struct {
+	ID     string
+	Config []byte
+}
+
+// hiddenFieldKeys returns the keys of fields hidden under canon — shared by
+// the required-check skip and the hidden-answer drop. A field is hidden when
+// its own visible_if fails OR when its containing step is hidden (step
+// visible_if, a triggered forward jump, or a step left with no visible
+// fields), mirroring the client-side path so the server never requires what
+// the user could not see.
+func hiddenFieldKeys(fields []fieldDef, steps []stepDef, canon map[string]any) map[string]bool {
 	hidden := make(map[string]bool, len(fields))
 	for _, f := range fields {
 		if !formlogic.FieldVisible(f.Config, canon, f.Key) {
 			hidden[f.Key] = true
+		}
+	}
+	for sk := range hiddenStepKeys(fields, steps, canon) {
+		for _, f := range fields {
+			if f.StepKey == sk {
+				hidden[f.Key] = true
+			}
+		}
+	}
+	return hidden
+}
+
+// hiddenStepKeys returns the step IDs hidden by a step's own visible_if or
+// by a triggered forward jump interval. The auto-hide rule (a step whose
+// defined fields are all hidden) needs no handling here — those fields are
+// already individually hidden, so hiding the step adds nothing to the set.
+func hiddenStepKeys(fields []fieldDef, steps []stepDef, canon map[string]any) map[string]bool {
+	if len(steps) == 0 {
+		return nil
+	}
+	order := make([]string, 0, len(steps))
+	for _, st := range steps {
+		order = append(order, st.ID)
+	}
+	ruleFields := make([]formlogic.RuleField, 0, len(fields))
+	for _, f := range fields {
+		ruleFields = append(ruleFields, formlogic.RuleField{Key: f.Key, StepKey: f.StepKey, Config: f.Config})
+	}
+	hidden := formlogic.HiddenByJump(ruleFields, order, canon)
+	for _, st := range steps {
+		if !formlogic.StepVisible(st.Config, canon) {
+			hidden[st.ID] = true
 		}
 	}
 	return hidden
@@ -75,8 +118,8 @@ func hiddenFieldKeys(fields []fieldDef, canon map[string]any) map[string]bool {
 // dropHiddenValues removes entries whose field's visible_if fails against
 // the canonical answers; matched by label OR key so the stored snapshot is
 // the visible-path truth.
-func dropHiddenValues(fields []fieldDef, vals map[string]any) map[string]any {
-	hidden := hiddenFieldKeys(fields, canonicalAnswers(fields, vals))
+func dropHiddenValues(fields []fieldDef, steps []stepDef, vals map[string]any) map[string]any {
+	hidden := hiddenFieldKeys(fields, steps, canonicalAnswers(fields, vals))
 	byKeyOrLabel := make(map[string]fieldDef, len(fields)*2)
 	for _, f := range fields {
 		byKeyOrLabel[f.Key] = f

@@ -12,12 +12,54 @@ func TestDropHiddenFieldValues(t *testing.T) {
 		{Label: "Admission", Key: "admission_status", FieldType: "select", IsRequired: true,
 			Config: []byte(`{"visible_if":{"all":[{"field":"purpose","op":"eq","value":"study"}]}}`)},
 	}
-	got := dropHiddenValues(fields, map[string]any{"purpose": "work"})
+	got := dropHiddenValues(fields, nil, map[string]any{"purpose": "work"})
 	if _, ok := got["admission_status"]; ok {
 		t.Fatal("hidden field value should be dropped")
 	}
 	if _, ok := got["purpose"]; !ok {
 		t.Fatal("visible field value must stay")
+	}
+}
+
+// TestDropHiddenFieldValuesStepRule verifies a field whose containing step
+// is hidden by the step's own visible_if is treated as hidden: its stale
+// answer is dropped and it cannot block the required check.
+func TestDropHiddenFieldValuesStepRule(t *testing.T) {
+	fields := []fieldDef{
+		{Label: "Purpose", Key: "purpose", FieldType: "select", IsRequired: true},
+		{Label: "Admission", Key: "admission_status", FieldType: "select", IsRequired: true, StepKey: "s2"},
+	}
+	steps := []stepDef{
+		{ID: "s1"},
+		{ID: "s2", Config: []byte(`{"visible_if":{"all":[{"field":"purpose","op":"eq","value":"study"}]}}`)},
+	}
+	got := dropHiddenValues(fields, steps, map[string]any{"purpose": "work", "admission_status": "applied"})
+	if _, ok := got["admission_status"]; ok {
+		t.Fatal("field in a step-hidden step should be dropped")
+	}
+	if _, ok := got["purpose"]; !ok {
+		t.Fatal("visible field value must stay")
+	}
+}
+
+// TestDropHiddenFieldValuesJumpHiddenStep verifies a field inside a step
+// covered by a triggered forward-jump interval is treated as hidden.
+func TestDropHiddenFieldValuesJumpHiddenStep(t *testing.T) {
+	fields := []fieldDef{
+		{Label: "Purpose", Key: "purpose", FieldType: "select", IsRequired: true, StepKey: "s1",
+			Config: []byte(`{"jump":{"when":{"all":[{"field":"purpose","op":"eq","value":"study"}]},"step":"s3"}}`)},
+		{Label: "Work visa", Key: "work_visa", FieldType: "select", IsRequired: true, StepKey: "s2"},
+		{Label: "Admission", Key: "admission_status", FieldType: "select", IsRequired: true, StepKey: "s3"},
+	}
+	steps := []stepDef{{ID: "s1"}, {ID: "s2"}, {ID: "s3"}}
+	got := dropHiddenValues(fields, steps, map[string]any{
+		"purpose": "study", "work_visa": "applied", "admission_status": "admitted",
+	})
+	if _, ok := got["work_visa"]; ok {
+		t.Fatal("field in a jump-skipped step should be dropped")
+	}
+	if _, ok := got["admission_status"]; !ok {
+		t.Fatal("jump target step's fields must stay")
 	}
 }
 

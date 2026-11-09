@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -95,9 +96,12 @@ type ScoringConfig struct {
 	DimensionWeights map[string]float64       `json:"dimension_weights"`
 	CuratedRoadmap   map[string][]RoadmapStep `json:"curated_roadmap,omitempty"`
 	// StepRules gates dimension-derived steps on earlier answers (ADR-137).
-	StepRules map[string]struct {
-		VisibleIf *formlogic.Condition `json:"visible_if,omitempty"`
-	} `json:"step_rules,omitempty"`
+	StepRules map[string]StepRule `json:"step_rules,omitempty"`
+}
+
+// StepRule gates one dimension-derived step on earlier answers (ADR-137).
+type StepRule struct {
+	VisibleIf *formlogic.Condition `json:"visible_if,omitempty"`
 }
 
 // Threshold is a single band in the scoring_config.thresholds array.
@@ -358,7 +362,7 @@ func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, form 
 	if err := json.Unmarshal(fieldValues, &answers); err != nil || answers == nil {
 		answers = map[string]any{}
 	}
-	visible := visibleFieldSet(form.Fields, answers)
+	visible := visibleFieldSet(form.Fields, answers, form.ScoringConfig.StepRules)
 
 	// Server-side required-field validation: the multi-step UI enforces
 	// is_required client-side, but the endpoint is public — a crafted payload
@@ -425,17 +429,58 @@ func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, form 
 	return sub.ID, nil
 }
 
-// visibleFieldSet returns keys of fields whose visible_if passes for the
-// submitted answers — the single source of truth shared by submit
-// validation and scoring. Ref: ADR-137.
-func visibleFieldSet(fields []AssessmentField, answers map[string]any) map[string]bool {
+// visibleFieldSet returns keys of fields on the visible path — the single
+// source of truth shared by submit validation and scoring. A field is off
+// the path when its own visible_if fails or when its dimension-derived step
+// is hidden (step_rules.visible_if or a triggered forward jump), mirroring
+// the client rail so the server never requires what the user could not see.
+// Ref: ADR-137.
+func visibleFieldSet(fields []AssessmentField, answers map[string]any, stepRules map[string]StepRule) map[string]bool {
 	set := make(map[string]bool, len(fields))
+	ruleFields := make([]formlogic.RuleField, 0, len(fields))
+	dims := make([]string, 0, len(fields))
 	for _, f := range fields {
 		if f.Config.VisibleIf.Eval(answers, f.Key) {
 			set[f.Key] = true
 		}
+		dim := fieldDimension(f.Config)
+		cfg, _ := json.Marshal(f.Config)
+		ruleFields = append(ruleFields, formlogic.RuleField{Key: f.Key, StepKey: dim, Config: cfg})
+		if !slices.Contains(dims, dim) {
+			dims = append(dims, dim)
+		}
+	}
+	for dim := range hiddenDimensions(ruleFields, dims, stepRules, answers) {
+		for _, f := range fields {
+			if fieldDimension(f.Config) == dim {
+				delete(set, f.Key)
+			}
+		}
 	}
 	return set
+}
+
+// hiddenDimensions returns the dimension keys hidden by step_rules.visible_if
+// or by triggered forward jumps between dimension steps (ADR-137). Auto-hide
+// of empty dimensions needs no handling — their fields are already hidden
+// individually.
+func hiddenDimensions(ruleFields []formlogic.RuleField, dimOrder []string, stepRules map[string]StepRule, answers map[string]any) map[string]bool {
+	hidden := formlogic.HiddenByJump(ruleFields, dimOrder, answers)
+	for _, dim := range dimOrder {
+		if r, ok := stepRules[dim]; ok && !r.VisibleIf.Eval(answers, "") {
+			hidden[dim] = true
+		}
+	}
+	return hidden
+}
+
+// fieldDimension returns the field's step identifier — its dimension, or the
+// "general" fallback the clients use for dimensionless fields.
+func fieldDimension(fsc FieldScoringConfig) string {
+	if fsc.Dimension == "" {
+		return "general"
+	}
+	return fsc.Dimension
 }
 
 // missingRequiredFields returns the keys of required fields that have no
@@ -1306,11 +1351,20 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 		answers = map[string]any{}
 	}
 
-	// Build a field-key → field lookup with parsed scoring config.
+	// Build a field-key → field lookup with parsed scoring config, plus the
+	// evaluator view needed to hide dimensions skipped by step rules/jumps.
 	fieldByKey := make(map[string]gen.CustomField, len(fields))
+	ruleFields := make([]formlogic.RuleField, 0, len(fields))
+	dims := make([]string, 0, len(fields))
 	for _, f := range fields {
 		fieldByKey[f.Key] = f
+		dim := fieldDimension(parseFieldScoringConfig(f.Config))
+		ruleFields = append(ruleFields, formlogic.RuleField{Key: f.Key, StepKey: dim, Config: f.Config})
+		if !slices.Contains(dims, dim) {
+			dims = append(dims, dim)
+		}
 	}
+	hiddenDims := hiddenDimensions(ruleFields, dims, scoringConfig.StepRules, answers)
 
 	// Aggregate raw scores per dimension and track the max possible per
 	// dimension for normalisation.
@@ -1324,7 +1378,7 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 		}
 
 		fsc := parseFieldScoringConfig(field.Config)
-		if !fsc.VisibleIf.Eval(answers, key) {
+		if !fsc.VisibleIf.Eval(answers, key) || hiddenDims[fieldDimension(fsc)] {
 			continue // defense-in-depth: stale/crafted answer for a hidden field (ADR-137)
 		}
 		if fsc.Dimension == "" {
