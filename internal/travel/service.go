@@ -1433,12 +1433,19 @@ func airlineDirectoryItemFromRow(a gen.ListTravelAirlinesRow) AirlineDirectoryIt
 // properties. Providers without a feed are skipped; per-provider failures are
 // best-effort so one bad feed can't sink the sweep.
 func (s *Service) SyncHotelDirectory(ctx context.Context) error {
-	providers, err := s.store.ListProviders(ctx, "true", ProviderTypeHotel, "")
+	providers, err := s.store.ListProviders(ctx, "true", "", "")
 	if err != nil {
 		return fmt.Errorf("travel: list hotel providers: %w", err)
 	}
 
 	for _, p := range providers {
+		// Hotel feeds apply to hotel and dual-type providers — the same
+		// set GetActiveProvider resolves for hotel searches ('both' is a
+		// valid hotel provider; an exact 'hotel' filter would skip it).
+		if p.ProviderType != ProviderTypeHotel && p.ProviderType != ProviderTypeBoth {
+			continue
+		}
+
 		apiCfg, err := decryptAPIConfig(p)
 		if err != nil {
 			slog.Warn("travel: hotel directory sync skipped — config undecryptable", "provider", p.Name, "error", err)
@@ -2744,16 +2751,22 @@ func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// invalidateSearchCache flushes all cached travel search results for a platform.
-// Uses SCAN (not KEYS) to find jc:travel:search:* keys and batch-deletes them.
+// invalidateSearchCache flushes cached travel results for a platform after a
+// provider mutation — search results plus provider-backed location lookups,
+// whose provider-agnostic key would otherwise serve the old provider's data
+// for up to the locations TTL. Uses SCAN (not KEYS) and batch-deletes.
 // Best-effort: errors are logged but do not fail the caller's operation.
 func (s *Service) invalidateSearchCache(ctx context.Context) {
 	if s.cache == nil {
 		return
 	}
 
-	pattern := valkey.MustKey("travel:search:*")
+	s.flushCachePattern(ctx, valkey.MustKey("travel:search:*"))
+	s.flushCachePattern(ctx, valkey.MustKey("travel:locations:*"))
+}
 
+// flushCachePattern SCAN-deletes every key matching a glob pattern.
+func (s *Service) flushCachePattern(ctx context.Context, pattern string) {
 	var cursor uint64
 
 	var keys []string
@@ -2761,7 +2774,7 @@ func (s *Service) invalidateSearchCache(ctx context.Context) {
 	for {
 		scanKeys, nextCursor, err := s.cache.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
-			slog.Warn("travel: cache invalidation scan failed", "error", err)
+			slog.Warn("travel: cache invalidation scan failed", "pattern", pattern, "error", err)
 			return
 		}
 
@@ -2775,7 +2788,7 @@ func (s *Service) invalidateSearchCache(ctx context.Context) {
 
 	if len(keys) > 0 {
 		if err := s.cache.Del(ctx, keys...).Err(); err != nil {
-			slog.Warn("travel: cache invalidation delete failed", "error", err)
+			slog.Warn("travel: cache invalidation delete failed", "pattern", pattern, "error", err)
 		}
 	}
 }

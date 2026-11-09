@@ -88,7 +88,7 @@ func (s *Store) ListProviders(ctx context.Context, isActiveFilter, providerType,
 	rows, err := s.queries.ListTravelProviders(ctx, gen.ListTravelProvidersParams{
 		IsActiveFilter: isActiveFilter,
 		ProviderType:   providerType,
-		Q:              q,
+		Q:              ilikeEscaper.Replace(q),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("travel: list providers: %w", err)
