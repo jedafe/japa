@@ -14,6 +14,34 @@ SELECT a.id, a.content_id, a.entity_type, a.entity_key, a.entity_url, a.entity_t
 FROM thread_anchors a
 WHERE a.content_id = @content_id;
 
+-- name: GetThreadAnchorRow :one
+-- The raw anchor row without the live-contents JOIN — CreateAnchor's
+-- restore path needs the binding even when its thread is soft-deleted
+-- (a dropped thread restores instead of re-minting so the conversation,
+-- votes and canonical /thread/{slug} URL come back).
+SELECT a.id, a.content_id, a.entity_type, a.entity_key, a.entity_url, a.entity_title, a.entity_summary, a.created_at
+FROM thread_anchors a
+WHERE a.entity_type = @entity_type AND a.entity_key = @entity_key;
+
+-- name: RestoreThreadRow :one
+-- Un-delete a dropped thread row when its entity comes back live
+-- (republish, space reopen, flag re-enable). idx_contents_slug is partial
+-- (live rows only), so another row may have claimed the old slug while
+-- this one was dead — suffix with the id prefix on collision rather than
+-- fail the restore.
+UPDATE contents c
+SET deleted_at = NULL,
+    updated_at = now(),
+    slug = CASE
+        WHEN EXISTS (
+            SELECT 1 FROM contents s
+            WHERE s.slug = c.slug AND s.id <> c.id AND s.deleted_at IS NULL
+        ) THEN c.slug || '-' || left(c.id::text, 8)
+        ELSE c.slug
+    END
+WHERE c.id = @id AND c.deleted_at IS NOT NULL
+RETURNING c.id;
+
 -- name: ListWikiAnchorsBySpace :many
 -- Anchors bound to a space's wiki pages — used when the space leaves
 -- public/active so their public threads can be dropped (same leak gate as

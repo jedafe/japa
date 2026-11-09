@@ -635,6 +635,39 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 		return AnchorSummary{}, err
 	}
 
+	// Restore over re-mint: a surviving anchor whose thread is soft-deleted
+	// means the entity was unpublished/hidden, not destroyed — restoring
+	// the row brings back its comments, votes and canonical /thread/{slug}
+	// URL instead of starting an empty thread on a new slug. Re-entering
+	// CreateAnchor then runs the full "get" path: entity-field upsert,
+	// title/space heals and the comment reparent.
+	if raw, aErr := s.read.GetThreadAnchorRow(ctx, gen.GetThreadAnchorRowParams{
+		EntityType: entityType,
+		EntityKey:  entityKey,
+	}); aErr == nil {
+		if restored, rErr := s.write.RestoreThreadRow(ctx, raw.ContentID); rErr == nil {
+			if scErr := s.write.EnsureContentScore(ctx, restored); scErr != nil {
+				slog.Warn("comments: ensure content_scores on thread restore failed",
+					"content_id", restored.String(), "error", scErr)
+			}
+			if rcErr := s.write.RecountContentCommentCount(ctx, restored); rcErr != nil {
+				slog.Warn("comments: recount on thread restore failed",
+					"content_id", restored.String(), "error", rcErr)
+			}
+			if vsErr := s.write.IncrementScoreVote(ctx, restored); vsErr != nil {
+				slog.Warn("comments: vote rescore on thread restore failed",
+					"content_id", restored.String(), "error", vsErr)
+			}
+			// The restored page was 404ing at the edge while deleted —
+			// drop any cached negative response (ADR-134).
+			cdn.PurgeContentDetail(ctx, restored.String(), "discussion")
+			return s.CreateAnchor(ctx, userID, entityType, entityKey)
+		} else if !errors.Is(rErr, pgx.ErrNoRows) {
+			slog.Warn("comments: thread restore failed",
+				"entity_key", entityKey, "error", rErr)
+		}
+	}
+
 	if s.creator == nil {
 		return AnchorSummary{}, fmt.Errorf("content creator not wired")
 	}
@@ -695,11 +728,12 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 
 	// Content threads also record the §49 parent link — GetThreadParentByThreadID
 	// resolves it into the thread page's canonical-content embed card, and
-	// comment counts propagate up to the article via the link.
+	// comment counts propagate up to the article via the link. Ensure, not
+	// the share upsert — a structural binding must not inflate link_count.
 	if entityType == "content" {
 		var parentID pgtype.UUID
 		if err := parentID.Scan(entityKey); err == nil {
-			if _, err := s.write.CreateContentThreadLink(ctx, gen.CreateContentThreadLinkParams{
+			if err := s.write.EnsureContentThreadLink(ctx, gen.EnsureContentThreadLinkParams{
 				ContentID: parentID,
 				ThreadID:  row.ID,
 			}); err != nil {

@@ -509,6 +509,19 @@ ON CONFLICT (content_id, thread_id) DO UPDATE
  created_at = now()
 RETURNING id, content_id, thread_id, link_count, created_at;
 
+-- name: EnsureContentThreadLink :exec
+-- Structural link guarantee — the canonical anchor thread's parent link
+-- exists or is created, without bumping link_count or touching
+-- created_at (that counter tracks explicit §49 "Start A Conversation"
+-- shares, not the anchor funnel's get-or-create/mint passes).
+INSERT INTO content_thread_links (content_id, thread_id) VALUES (@content_id, @thread_id)
+ON CONFLICT (content_id, thread_id) DO NOTHING;
+
+-- name: GetContentThreadLink :one
+SELECT id, content_id, thread_id, link_count, created_at
+FROM content_thread_links
+WHERE content_id = @content_id AND thread_id = @thread_id;
+
 -- name: ListContentThreadLinks :many
 -- Linked discussion threads for a blog/content, most recently linked first.
 -- Threads are only as visible as their own row: drafts, removed, and

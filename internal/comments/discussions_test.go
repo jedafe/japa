@@ -148,9 +148,77 @@ func TestStartConversation_DerivesDiscussionThroughContentService(t *testing.T) 
 		t.Fatalf("linked discussions = %d total %d, want 1/1", len(links), total)
 	}
 
+	// The canonical link is structural — the funnel's get-or-create pass
+	// must not bump link_count (that counter is for explicit §49 shares).
+	var linkCount int
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT link_count FROM content_thread_links WHERE content_id = $1 AND thread_id = $2`,
+		blogID, threadID).Scan(&linkCount); err != nil {
+		t.Fatalf("reading link_count: %v", err)
+	}
+	if linkCount != 1 {
+		t.Errorf("link_count = %d, want 1 — get-or-create must not bump the share counter", linkCount)
+	}
+
 	t.Cleanup(func() {
 		_, _ = d.Writer.Exec(ctx, `DELETE FROM thread_anchors WHERE content_id = $1`, threadID)
 		_, _ = d.Writer.Exec(ctx, `DELETE FROM content_thread_links WHERE thread_id = $1`, threadID)
 		_, _ = d.Writer.Exec(ctx, `DELETE FROM contents WHERE id = $1`, threadID)
+	})
+}
+
+// Unified-discussion spec: a dropped anchor thread is hidden, not
+// destroyed — republishing the entity must restore the same row so the
+// conversation, votes and canonical /thread/{slug} URL come back. A fresh
+// mint would orphan the comments on a dead row and change the URL.
+func TestCreateAnchor_RestoresDroppedThread(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	userID, _, blogID := newDiscussionFixture(t, ctx, d)
+
+	svc := NewService(d)
+	svc.SetContentCreator(content.NewService(d))
+
+	first, err := svc.CreateAnchor(ctx, userID, "content", blogID.String())
+	if err != nil {
+		t.Fatalf("CreateAnchor: %v", err)
+	}
+
+	if _, err := d.Writer.Exec(ctx,
+		`INSERT INTO comments (content_id, author_user_id, body)
+		 VALUES ($1, $2, '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"restore me"}]}]}')`,
+		first.ContentID, userID); err != nil {
+		t.Fatalf("inserting comment: %v", err)
+	}
+	if err := svc.DeleteAnchor(ctx, "content", blogID.String()); err != nil {
+		t.Fatalf("DeleteAnchor: %v", err)
+	}
+
+	second, err := svc.CreateAnchor(ctx, userID, "content", blogID.String())
+	if err != nil {
+		t.Fatalf("CreateAnchor after drop: %v", err)
+	}
+	if second.ContentID != first.ContentID {
+		t.Fatalf("restored thread %v, want original %v", second.ContentID, first.ContentID)
+	}
+	if second.Slug != first.Slug {
+		t.Errorf("restored slug %q, want original %q", second.Slug, first.Slug)
+	}
+
+	var liveComments int
+	if err := d.Reader.QueryRow(ctx,
+		`SELECT count(*) FROM comments WHERE content_id = $1 AND deleted_at IS NULL`,
+		second.ContentID).Scan(&liveComments); err != nil {
+		t.Fatalf("counting comments: %v", err)
+	}
+	if liveComments != 1 {
+		t.Errorf("live comments on restored thread = %d, want 1", liveComments)
+	}
+
+	t.Cleanup(func() {
+		_, _ = d.Writer.Exec(ctx, `DELETE FROM comments WHERE content_id = $1`, second.ContentID)
+		_, _ = d.Writer.Exec(ctx, `DELETE FROM thread_anchors WHERE content_id = $1`, second.ContentID)
+		_, _ = d.Writer.Exec(ctx, `DELETE FROM content_thread_links WHERE thread_id = $1`, second.ContentID)
+		_, _ = d.Writer.Exec(ctx, `DELETE FROM contents WHERE id = $1`, second.ContentID)
 	})
 }

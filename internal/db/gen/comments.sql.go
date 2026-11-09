@@ -322,6 +322,25 @@ func (q *Queries) DeleteContentVote(ctx context.Context, arg DeleteContentVotePa
 	return err
 }
 
+const ensureContentThreadLink = `-- name: EnsureContentThreadLink :exec
+INSERT INTO content_thread_links (content_id, thread_id) VALUES ($1, $2)
+ON CONFLICT (content_id, thread_id) DO NOTHING
+`
+
+type EnsureContentThreadLinkParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	ThreadID  pgtype.UUID `json:"thread_id"`
+}
+
+// Structural link guarantee — the canonical anchor thread's parent link
+// exists or is created, without bumping link_count or touching
+// created_at (that counter tracks explicit §49 "Start A Conversation"
+// shares, not the anchor funnel's get-or-create/mint passes).
+func (q *Queries) EnsureContentThreadLink(ctx context.Context, arg EnsureContentThreadLinkParams) error {
+	_, err := q.db.Exec(ctx, ensureContentThreadLink, arg.ContentID, arg.ThreadID)
+	return err
+}
+
 const getComment = `-- name: GetComment :one
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
@@ -414,6 +433,30 @@ func (q *Queries) GetCommentVote(ctx context.Context, arg GetCommentVoteParams) 
 		&i.CommentID,
 		&i.UserID,
 		&i.Value,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getContentThreadLink = `-- name: GetContentThreadLink :one
+SELECT id, content_id, thread_id, link_count, created_at
+FROM content_thread_links
+WHERE content_id = $1 AND thread_id = $2
+`
+
+type GetContentThreadLinkParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	ThreadID  pgtype.UUID `json:"thread_id"`
+}
+
+func (q *Queries) GetContentThreadLink(ctx context.Context, arg GetContentThreadLinkParams) (ContentThreadLink, error) {
+	row := q.db.QueryRow(ctx, getContentThreadLink, arg.ContentID, arg.ThreadID)
+	var i ContentThreadLink
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.ThreadID,
+		&i.LinkCount,
 		&i.CreatedAt,
 	)
 	return i, err

@@ -147,12 +147,32 @@ func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtyp
 	var link gen.ContentThreadLink
 	if threadID != contentID {
 		var err error
-		link, err = s.write.CreateContentThreadLink(ctx, gen.CreateContentThreadLinkParams{
-			ContentID: contentID,
-			ThreadID:  threadID,
-		})
-		if err != nil {
-			return StartConversationResult{}, fmt.Errorf("creating content thread link: %w", err)
+		if input.ThreadID.Valid {
+			// Explicit share of an existing thread — the bumping upsert
+			// reflects the repeated-share signal (§49).
+			link, err = s.write.CreateContentThreadLink(ctx, gen.CreateContentThreadLinkParams{
+				ContentID: contentID,
+				ThreadID:  threadID,
+			})
+			if err != nil {
+				return StartConversationResult{}, fmt.Errorf("creating content thread link: %w", err)
+			}
+		} else {
+			// Funnel path — the anchor mint already wrote this link
+			// structurally; a get-or-create pass must not bump link_count.
+			if err = s.write.EnsureContentThreadLink(ctx, gen.EnsureContentThreadLinkParams{
+				ContentID: contentID,
+				ThreadID:  threadID,
+			}); err != nil {
+				return StartConversationResult{}, fmt.Errorf("ensuring content thread link: %w", err)
+			}
+			link, err = s.read.GetContentThreadLink(ctx, gen.GetContentThreadLinkParams{
+				ContentID: contentID,
+				ThreadID:  threadID,
+			})
+			if err != nil {
+				return StartConversationResult{}, fmt.Errorf("reading content thread link: %w", err)
+			}
 		}
 	}
 

@@ -137,6 +137,37 @@ func (q *Queries) GetThreadAnchorByEntity(ctx context.Context, arg GetThreadAnch
 	return i, err
 }
 
+const getThreadAnchorRow = `-- name: GetThreadAnchorRow :one
+SELECT a.id, a.content_id, a.entity_type, a.entity_key, a.entity_url, a.entity_title, a.entity_summary, a.created_at
+FROM thread_anchors a
+WHERE a.entity_type = $1 AND a.entity_key = $2
+`
+
+type GetThreadAnchorRowParams struct {
+	EntityType string `json:"entity_type"`
+	EntityKey  string `json:"entity_key"`
+}
+
+// The raw anchor row without the live-contents JOIN — CreateAnchor's
+// restore path needs the binding even when its thread is soft-deleted
+// (a dropped thread restores instead of re-minting so the conversation,
+// votes and canonical /thread/{slug} URL come back).
+func (q *Queries) GetThreadAnchorRow(ctx context.Context, arg GetThreadAnchorRowParams) (ThreadAnchor, error) {
+	row := q.db.QueryRow(ctx, getThreadAnchorRow, arg.EntityType, arg.EntityKey)
+	var i ThreadAnchor
+	err := row.Scan(
+		&i.ID,
+		&i.ContentID,
+		&i.EntityType,
+		&i.EntityKey,
+		&i.EntityUrl,
+		&i.EntityTitle,
+		&i.EntitySummary,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getThreadParentByThreadID = `-- name: GetThreadParentByThreadID :one
 SELECT c.id, c.slug, c.title, c.content_type, c.meta_description, c.body,
  m.storage_bucket AS featured_storage_bucket, m.storage_path AS featured_storage_path
@@ -363,6 +394,33 @@ func (q *Queries) ListWikiAnchorsBySpace(ctx context.Context, spaceID pgtype.UUI
 		return nil, err
 	}
 	return items, nil
+}
+
+const restoreThreadRow = `-- name: RestoreThreadRow :one
+UPDATE contents c
+SET deleted_at = NULL,
+    updated_at = now(),
+    slug = CASE
+        WHEN EXISTS (
+            SELECT 1 FROM contents s
+            WHERE s.slug = c.slug AND s.id <> c.id AND s.deleted_at IS NULL
+        ) THEN c.slug || '-' || left(c.id::text, 8)
+        ELSE c.slug
+    END
+WHERE c.id = $1 AND c.deleted_at IS NOT NULL
+RETURNING c.id
+`
+
+// Un-delete a dropped thread row when its entity comes back live
+// (republish, space reopen, flag re-enable). idx_contents_slug is partial
+// (live rows only), so another row may have claimed the old slug while
+// this one was dead — suffix with the id prefix on collision rather than
+// fail the restore.
+func (q *Queries) RestoreThreadRow(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, restoreThreadRow, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
 }
 
 const setThreadRowSpaceID = `-- name: SetThreadRowSpaceID :exec
