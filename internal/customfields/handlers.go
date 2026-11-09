@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/mail"
 	"net/netip"
@@ -30,6 +31,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/assessment"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -887,7 +889,46 @@ func validateFieldConfig(raw []byte) error {
 		return errors.New("config must be a JSON object")
 	}
 
-	return formlogic.ValidateFieldLogic(v)
+	if err := formlogic.ValidateFieldLogic(v); err != nil {
+		return err
+	}
+
+	return validateScoringKeys(v)
+}
+
+// validateScoringKeys checks the assessment scoring keys a field config may
+// carry. parseFieldScoringConfig strict-unmarshals the whole config — a
+// mistyped weight or a fractional option_scores value zeroes the entire
+// parse, silently dropping the field's visible_if/jump with it, so the
+// shapes are rejected at write time instead.
+func validateScoringKeys(v map[string]any) error {
+	if w, ok := v["weight"]; ok {
+		if _, isNum := w.(float64); !isNum {
+			return errors.New("weight must be a number")
+		}
+	}
+
+	if d, ok := v["dimension"]; ok {
+		if _, isStr := d.(string); !isStr {
+			return errors.New("dimension must be a string")
+		}
+	}
+
+	if os, ok := v["option_scores"]; ok {
+		m, isObj := os.(map[string]any)
+		if !isObj {
+			return errors.New("option_scores must be an object")
+		}
+
+		for opt, sc := range m {
+			n, isNum := sc.(float64)
+			if !isNum || n != math.Trunc(n) {
+				return fmt.Errorf("option_scores.%s must be an integer", opt)
+			}
+		}
+	}
+
+	return nil
 }
 
 // storedOptionsAbsent reports whether the persisted field has no usable
@@ -2286,15 +2327,25 @@ func (h *Handlers) applyScoringConfig(w http.ResponseWriter, r *http.Request, id
 
 	var sc map[string]any
 	if err := json.Unmarshal(scoringConfig, &sc); err != nil || sc == nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "scoring_config must be a JSON object")
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_scoring_config", "scoring_config must be a JSON object")
+		return true
+	}
+
+	// The column is fully replaced on write — require a complete,
+	// semantically valid config (same gate as PATCH /admin/assessment/form)
+	// so a partial {step_rules} payload can't silently wipe
+	// max_score/thresholds/dimension_weights.
+	if verr := assessment.ValidateScoringConfigJSON(scoringConfig); verr != nil {
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_scoring_config", verr.Error())
 		return true
 	}
 
 	// ADR-137: step_rules entries carry per-step visible_if conditions —
-	// validate their shape so malformed rules can't persist silently.
+	// validate clause shape so malformed rules can't persist silently
+	// (the typed ScoringConfig parse accepts any op string).
 	if sr, ok := sc["step_rules"]; ok {
 		if verr := formlogic.ValidateStepRules(sr); verr != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", verr.Error())
+			errpkg.WriteError(w, http.StatusUnprocessableEntity, "invalid_scoring_config", verr.Error())
 			return true
 		}
 	}

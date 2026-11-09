@@ -181,10 +181,10 @@ func formatTimestamp(ts pgtype.Timestamptz) string {
 	return ts.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 }
 
-// publicFieldDTOs strips the per-option scores from each field's config before
-// sending the form to the browser. Weights and dimensions remain so the UI can
-// still render dimension grouping, but the scoring key is internal to the
-// backend (ADR-071 §2).
+// publicFieldDTOs strips the per-option scores and weight from each field's
+// config before sending the form to the browser. Dimension remains so the UI
+// can still render step grouping; weight, option_scores, and the scoring key
+// are internal to the backend (ADR-071 §2, ADR-137).
 func publicFieldDTOs(fields []AssessmentField) []map[string]any {
 	out := make([]map[string]any, 0, len(fields))
 

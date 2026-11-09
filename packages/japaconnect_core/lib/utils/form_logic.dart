@@ -58,7 +58,8 @@ bool _evalClause(Map<String, dynamic>? cl, Answers answers, String selfKey) {
   // Malformed (non-map) clause → false, matching the Go/TS evaluators'
   // zero-value Clause{} — a broken clause must not silently pass.
   if (cl == null) return false;
-  final key = (cl['field'] as String?)?.isNotEmpty == true ? cl['field'] as String : selfKey;
+  final f = cl['field'];
+  final key = f is String && f.isNotEmpty ? f : selfKey;
   final present = answers.containsKey(key);
   final has = _isAnswered(answers[key], present);
 
@@ -130,7 +131,8 @@ bool stepVisible(Map<String, dynamic>? config, Answers answers) {
 /// must expose `key` and may expose `config`.
 List<Map<String, dynamic>> visibleFields(List<dynamic> fields, Answers answers) {
   return fields.whereType<Map>().map((f) => f.cast<String, dynamic>()).where((f) {
-    final key = f['key'] as String? ?? '';
+    final k = f['key'];
+    final key = k is String ? k : '';
     final cfg = f['config'];
     return fieldVisible(cfg is Map ? cfg.cast<String, dynamic>() : null, answers, key);
   }).toList();
@@ -183,7 +185,8 @@ Set<String> hiddenStepsByJump(
   decoded.sort((a, b) => (idx[keyOf(a)] ?? -1).compareTo(idx[keyOf(b)] ?? -1));
 
   for (final raw in decoded) {
-    final fKey = raw['key'] as String? ?? '';
+    final k = raw['key'];
+    final fKey = k is String ? k : '';
     final cfg = raw['config'];
     final config = cfg is Map ? cfg.cast<String, dynamic>() : null;
     if (hidden.contains(keyOf(raw))) continue;

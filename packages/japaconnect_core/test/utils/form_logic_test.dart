@@ -77,6 +77,25 @@ void main() {
       // zero-value Clause{} in Go/TS, not silently pass.
       expect(evalCondition(dec('{"all":[123]}'), answers), isFalse);
       expect(evalCondition(dec('{"any":[123]}'), answers), isFalse);
+      expect(evalCondition(dec('{"all":[null]}'), answers), isFalse);
+    });
+    test('non-string clause field falls back to selfKey (Go unmarshal-drop parity)', () {
+      // Go drops a non-string field on unmarshal → "" → selfKey.
+      expect(
+        evalCondition(dec('{"all":[{"field":123,"op":"eq","value":1}]}'), {'self': 1}, 'self'),
+        isTrue,
+      );
+    });
+    test('non-string field key does not throw', () {
+      // key:123 — Go's typed field is a string by construction; the JSON
+      // shape check treats a non-string key as "".
+      final out = visibleFields(
+        [
+          {'key': 123, 'config': <String, dynamic>{}},
+        ],
+        {},
+      );
+      expect(out, hasLength(1));
     });
   });
 

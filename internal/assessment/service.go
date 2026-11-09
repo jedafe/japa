@@ -958,15 +958,28 @@ func (s *Service) AdminCompletionStats(ctx context.Context) (AdminCompletionStat
 // payloads so handlers can return 422 instead of a generic 500.
 var ErrInvalidScoringConfig = errors.New("invalid scoring config")
 
-func (s *Service) UpdateFormScoring(ctx context.Context, formID pgtype.UUID, scoringConfig json.RawMessage) (gen.Form, error) {
-	// Validate the JSONB is a well-formed ScoringConfig before persisting.
+// ValidateScoringConfigJSON reports whether raw decodes to a complete,
+// semantically valid scoring_config — the same gate every write path
+// applies, since the column is always fully replaced (a partial blob like
+// {step_rules} alone would silently wipe max_score/thresholds/weights).
+func ValidateScoringConfigJSON(raw json.RawMessage) error {
 	var cfg ScoringConfig
-	if err := json.Unmarshal(scoringConfig, &cfg); err != nil {
-		return gen.Form{}, fmt.Errorf("%w: %v", ErrInvalidScoringConfig, err)
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidScoringConfig, err)
 	}
 
 	if err := validateScoringConfig(cfg); err != nil {
-		return gen.Form{}, fmt.Errorf("%w: %v", ErrInvalidScoringConfig, err)
+		return fmt.Errorf("%w: %w", ErrInvalidScoringConfig, err)
+	}
+
+	return nil
+}
+
+// UpdateFormScoring updates the scoring_config JSONB on the assessment form.
+// Admin-only.
+func (s *Service) UpdateFormScoring(ctx context.Context, formID pgtype.UUID, scoringConfig json.RawMessage) (gen.Form, error) {
+	if err := ValidateScoringConfigJSON(scoringConfig); err != nil {
+		return gen.Form{}, err
 	}
 
 	return s.store.UpdateAssessmentFormScoring(ctx, formID, []byte(scoringConfig))

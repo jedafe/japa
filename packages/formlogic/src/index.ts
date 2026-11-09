@@ -92,7 +92,10 @@ function scalarEqual(a: unknown, b: unknown): boolean {
 }
 
 function evalClause(cl: Clause, answers: Answers, selfKey: string): boolean {
-	const key = cl.field || selfKey;
+	// Malformed (non-object) clause → false, matching the Go evaluator's
+	// zero-value Clause{} — a broken clause must not silently pass.
+	if (cl == null || typeof cl !== 'object') return false;
+	const key = typeof cl.field === 'string' && cl.field !== '' ? cl.field : selfKey;
 	const present = Object.prototype.hasOwnProperty.call(answers, key);
 	const v = answers[key];
 	const has = isAnswered(v, present);

@@ -68,6 +68,18 @@ describe('evalCondition all/any', () => {
 		// (swallowing the error) which evaluates false — mirror that here.
 		expect(evalCondition({ all: [123 as unknown as Clause] }, answers)).toBe(false);
 		expect(evalCondition({ any: [123 as unknown as Clause] }, answers)).toBe(false);
+		// null/undefined elements must fail, not throw.
+		expect(evalCondition({ all: [null as unknown as Clause] }, answers)).toBe(false);
+	});
+	it('non-string clause field falls back to selfKey (Go unmarshal-drop parity)', () => {
+		// Go drops a non-string field on unmarshal → "" → selfKey.
+		expect(
+			evalCondition(
+				{ all: [{ field: 123, op: 'eq', value: 1 } as unknown as Clause] },
+				{ self: 1 },
+				'self'
+			)
+		).toBe(true);
 	});
 });
 
