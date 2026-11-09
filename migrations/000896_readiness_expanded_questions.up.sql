@@ -104,7 +104,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'dependents_plan', 'select',
  '[{"value":"alone","label":"Moving alone"},{"value":"planning","label":"Dependants coming, still planning"},{"value":"partial","label":"Partially arranged"},{"value":"arranged","label":"Fully arranged"}]'::jsonb,
  'Select the closest match', true, false, true, 21,
- '{"weight":1.0,"dimension":"personal","option_scores":{"alone":90,"planning":40,"partial":70,"arranged":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"personal","option_scores":{"alone":90,"planning":40,"partial":70,"arranged":100},"visible_if":{"any":[{"field":"moving_with","op":"not_answered"},{"field":"moving_with","op":"contains","value":"dependents"}]}}'::jsonb),
 
 -- Language (new dimension — covered by the built-in curated roadmap library)
 ('00000000-0000-0000-0000-00000000c010', gid,

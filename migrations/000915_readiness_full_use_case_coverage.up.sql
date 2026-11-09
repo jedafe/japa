@@ -58,7 +58,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'pets_relocation', 'select',
  '[{"value":"no_pets","label":"Not moving with pets"},{"value":"not_started","label":"Pets coming, not started"},{"value":"arranging","label":"Vaccinations/permits in progress"},{"value":"sorted","label":"Fully arranged"}]'::jsonb,
  'Select the closest match', true, false, true, 36,
- '{"weight":1.0,"dimension":"logistical","option_scores":{"no_pets":90,"not_started":15,"arranging":60,"sorted":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"logistical","option_scores":{"no_pets":90,"not_started":15,"arranging":60,"sorted":100},"visible_if":{"any":[{"field":"moving_with","op":"not_answered"},{"field":"moving_with","op":"contains","value":"pets"}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000f025', gid,
  'Do you have ongoing medical needs (prescriptions, treatment, specialist care) arranged for continuity at your destination?',
@@ -95,7 +95,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'spouse_career', 'select',
  '[{"value":"no_partner","label":"Not moving with a partner"},{"value":"not_started","label":"No plan yet"},{"value":"planning","label":"Planning or searching"},{"value":"secured","label":"Plan or job secured"}]'::jsonb,
  'Select the closest match', true, false, true, 41,
- '{"weight":1.0,"dimension":"personal","option_scores":{"no_partner":90,"not_started":25,"planning":60,"secured":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"personal","option_scores":{"no_partner":90,"not_started":25,"planning":60,"secured":100},"visible_if":{"any":[{"field":"moving_with","op":"not_answered"},{"field":"moving_with","op":"contains","value":"partner"}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000f030', gid,
  'Do you have a fallback plan if the move doesn''t work out (return plan, backup finances, alternative route)?',
