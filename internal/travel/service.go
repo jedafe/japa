@@ -2257,9 +2257,13 @@ func (s *Service) SearchFlights(ctx context.Context, params FlightSearchParams, 
 
 	// (5) Live provider call — the only path that requires a provider. When
 	// none is configured, fall back to the stale row before erroring.
+	// stored may be nil: staleFlightResponse can still serve expired
+	// inventory offers, so only bump the replay row when it exists.
 	if !hasProvider {
 		if resp := s.staleFlightResponse(ctx, stored, affiliate, params, coverageKey, providerPtr, opts, start); resp != nil {
-			s.store.BumpSearchResultHit(ctx, stored.ID)
+			if stored != nil {
+				s.store.BumpSearchResultHit(ctx, stored.ID)
+			}
 			return resp, nil
 		}
 
@@ -2270,7 +2274,9 @@ func (s *Service) SearchFlights(ctx context.Context, params FlightSearchParams, 
 	if err != nil {
 		if resp := s.staleFlightResponse(ctx, stored, affiliate, params, coverageKey, providerPtr, opts, start); resp != nil {
 			slog.Warn("travel: provider config unusable, serving stale results", "error", err)
-			s.store.BumpSearchResultHit(ctx, stored.ID)
+			if stored != nil {
+				s.store.BumpSearchResultHit(ctx, stored.ID)
+			}
 
 			return resp, nil
 		}
@@ -2309,7 +2315,9 @@ func (s *Service) SearchFlights(ctx context.Context, params FlightSearchParams, 
 		// then the stale replay row. Stale offers beat an error.
 		if resp := s.staleFlightResponse(ctx, stored, affiliate, params, coverageKey, providerPtr, opts, start); resp != nil {
 			slog.Warn("travel: provider failed, serving stale results", "error", err)
-			s.store.BumpSearchResultHit(ctx, stored.ID)
+			if stored != nil {
+				s.store.BumpSearchResultHit(ctx, stored.ID)
+			}
 
 			return resp, nil
 		}
@@ -2412,7 +2420,9 @@ func (s *Service) SearchHotels(ctx context.Context, params HotelSearchParams, op
 	// (5) Provider call — the only path that requires a provider.
 	if !hasProvider {
 		if resp := s.staleHotelResponse(ctx, stored, affiliate, params, coverageKey, providerPtr, opts, start); resp != nil {
-			s.store.BumpSearchResultHit(ctx, stored.ID)
+			if stored != nil {
+				s.store.BumpSearchResultHit(ctx, stored.ID)
+			}
 			return resp, nil
 		}
 
@@ -2423,7 +2433,9 @@ func (s *Service) SearchHotels(ctx context.Context, params HotelSearchParams, op
 	if err != nil {
 		if resp := s.staleHotelResponse(ctx, stored, affiliate, params, coverageKey, providerPtr, opts, start); resp != nil {
 			slog.Warn("travel: provider config unusable, serving stale results", "error", err)
-			s.store.BumpSearchResultHit(ctx, stored.ID)
+			if stored != nil {
+				s.store.BumpSearchResultHit(ctx, stored.ID)
+			}
 
 			return resp, nil
 		}
@@ -2456,7 +2468,9 @@ func (s *Service) SearchHotels(ctx context.Context, params HotelSearchParams, op
 	if err != nil {
 		if resp := s.staleHotelResponse(ctx, stored, affiliate, params, coverageKey, providerPtr, opts, start); resp != nil {
 			slog.Warn("travel: provider failed, serving stale results", "error", err)
-			s.store.BumpSearchResultHit(ctx, stored.ID)
+			if stored != nil {
+				s.store.BumpSearchResultHit(ctx, stored.ID)
+			}
 
 			return resp, nil
 		}

@@ -6014,6 +6014,8 @@
 	"thread.reply_count": "{count} replies",
 	"thread.start": "Start a conversation",
 	"thread.started_by": "Started by",
+	"thread.view_all": "View the full conversation →",
+	"thread.edit_body_in_studio": "The article body is edited in Studio — the thread shows its opening.",
 	"thread.read_full": "Read full {type}",
 	"thread.tab.latest": "Latest",
 	"thread.tab.popular": "Popular",

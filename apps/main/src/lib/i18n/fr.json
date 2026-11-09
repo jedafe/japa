@@ -5910,6 +5910,8 @@
 	"thread.reply_count": "{count} réponses",
 	"thread.start": "Démarrer une conversation",
 	"thread.started_by": "Commencé par",
+	"thread.view_all": "Voir toute la conversation →",
+	"thread.edit_body_in_studio": "Le corps de l’article se modifie dans Studio — le fil en affiche le début.",
 	"thread.read_full": "Lire l’intégralité : {type}",
 	"thread.tab.latest": "Récents",
 	"thread.tab.popular": "Populaires",

@@ -199,10 +199,13 @@
 		editing = true;
 	}
 
-	function cancelEdit() {
-		editing = false;
-		editError = null;
-	}
+	// kind='self' threads share the article row — their "post" IS the full
+	// article, and the excerpt on the thread page is derived. Inline edit is
+	// title-only for them: the body edits in Studio (loading the full
+	// article into the thread editor is surprising, and saving a truncated
+	// version would destroy the article). Discussion/anchor threads edit
+	// their real (short) body inline.
+	const bodyEditable = $derived(!isContentThread);
 
 	async function saveEdit() {
 		if (savingEdit || !editTitle.trim()) return;
@@ -210,7 +213,7 @@
 		editError = null;
 		const res = await api.patch(`/content/${article.id}`, {
 			title: editTitle.trim(),
-			body_html: editBodyHtml
+			...(bodyEditable ? { body_html: editBodyHtml } : {})
 		});
 		savingEdit = false;
 		if (res.error) {
@@ -222,6 +225,11 @@
 		}
 		editing = false;
 		await invalidateAll();
+	}
+
+	function cancelEdit() {
+		editing = false;
+		editError = null;
 	}
 
 	async function deleteThread() {
@@ -424,14 +432,20 @@
 						{editError}
 					</p>
 				{/if}
-				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] focus-within:border-[var(--color-primary)]">
-					<PostEditor
-						html={editBodyHtml}
-						onedit={() => {}}
-						onhtml={(v) => { editBodyHtml = v; }}
-						onjson={() => {}}
-					/>
-				</div>
+				{#if bodyEditable}
+					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] focus-within:border-[var(--color-primary)]">
+						<PostEditor
+							html={editBodyHtml}
+							onedit={() => {}}
+							onhtml={(v) => { editBodyHtml = v; }}
+							onjson={() => {}}
+						/>
+					</div>
+				{:else}
+					<p class="text-xs text-[var(--color-muted)]">
+						{t('thread.edit_body_in_studio', 'The article body is edited in Studio — the thread shows its opening.')}
+					</p>
+				{/if}
 				<div class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-3">
 					<button
 						type="button"
