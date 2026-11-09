@@ -227,6 +227,8 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 			switch {
 			case errors.Is(err, errExternalSearchUnavailable):
 				return errorToolResult("external_search_unavailable", err.Error()), nil
+			case errors.Is(err, errSearxngNotConfigured):
+				return errorToolResult("searxng_not_configured", err.Error()), nil
 			case errors.Is(err, errExternalSearchUnknownProvider):
 				return errorToolResult("unknown_provider", err.Error()), nil
 			default:
@@ -286,33 +288,49 @@ func decryptSettingIfNeeded(value string) string {
 var (
 	errExternalSearchUnavailable     = errors.New("external search API key is not configured")
 	errExternalSearchUnknownProvider = errors.New("unsupported external search provider")
+	errSearxngNotConfigured          = errors.New("searxng base URL is not configured")
 )
 
 // SearchWeb performs a web search using the configured external search
-// provider (tavily, brave, or perplexity) for the platform. It is exported so
-// non-agent callers (e.g. guide services) can reuse the same provider wiring
-// and API-key management. The cache is the caller's responsibility.
+// provider (tavily, brave, perplexity, or searxng) for the platform. It is
+// exported so non-agent callers (e.g. guide services) can reuse the same
+// provider wiring and API-key management. The cache is the caller's
+// responsibility.
+//
+// searxng is a self-hosted metasearch instance — it needs no API key, only
+// the agent.external_search_searxng_base URL (which may point at a private
+// LAN/Docker address, so it bypasses the API-key gate entirely).
 func SearchWeb(ctx context.Context, client *http.Client, settings SettingsReader, query string, limit int) (string, []WebSearchResult, error) {
 	provider := settings.GetStringOr(ctx, "agent.external_search_provider", "tavily")
-
-	apiKey := decryptSettingIfNeeded(settings.GetStringOr(ctx, "agent.external_search_api_key", ""))
-	if apiKey == "" {
-		return "", nil, errExternalSearchUnavailable
-	}
 
 	var results []WebSearchResult
 
 	var err error
 
 	switch strings.ToLower(provider) {
-	case "tavily":
-		results, err = searchTavily(ctx, client, apiKey, query, limit)
-	case "brave":
-		results, err = searchBrave(ctx, client, apiKey, query, limit)
-	case "perplexity":
-		results, err = searchPerplexity(ctx, client, apiKey, query)
+	case "searxng":
+		base := settings.GetStringOr(ctx, "agent.external_search_searxng_base", "")
+		if base == "" {
+			return "", nil, errSearxngNotConfigured
+		}
+
+		results, err = searchSearxng(ctx, client, base, query, limit)
 	default:
-		return "", nil, fmt.Errorf("%w: %q", errExternalSearchUnknownProvider, provider)
+		apiKey := decryptSettingIfNeeded(settings.GetStringOr(ctx, "agent.external_search_api_key", ""))
+		if apiKey == "" {
+			return "", nil, errExternalSearchUnavailable
+		}
+
+		switch strings.ToLower(provider) {
+		case "tavily":
+			results, err = searchTavily(ctx, client, apiKey, query, limit)
+		case "brave":
+			results, err = searchBrave(ctx, client, apiKey, query, limit)
+		case "perplexity":
+			results, err = searchPerplexity(ctx, client, apiKey, query)
+		default:
+			return "", nil, fmt.Errorf("%w: %q", errExternalSearchUnknownProvider, provider)
+		}
 	}
 
 	if err != nil {
@@ -546,4 +564,84 @@ func searchPerplexity(ctx context.Context, client *http.Client, apiKey, query st
 		Content:   content,
 		Citations: pr.Citations,
 	}}, nil
+}
+
+// ---------------------------------------------------------------------------
+// SearXNG client (self-hosted metasearch — no API key)
+// ---------------------------------------------------------------------------
+
+// searxngResponse mirrors the JSON shape of GET {base}/search?format=json.
+type searxngResponse struct {
+	Results []struct {
+		URL     string  `json:"url"`
+		Title   string  `json:"title"`
+		Content string  `json:"content"`
+		Score   float64 `json:"score"`
+	} `json:"results"`
+}
+
+// searchSearxng queries a self-hosted SearXNG instance and returns normalized
+// results. The base URL is admin-configured (agent.external_search_searxng_base)
+// and intentionally NOT passed through the SSRF endpoint validator — SearXNG
+// legitimately runs at private LAN/Docker addresses (http://searxng:8080,
+// http://192.168.x.x:8888), which the validator would reject. Trust comes from
+// the admin-only system_settings write path, same as LLM provider endpoints.
+//
+// The instance must have JSON output enabled in its settings.yml
+// (search: formats: [html, json]) or it returns HTML and the decode fails.
+func searchSearxng(ctx context.Context, client *http.Client, baseURL, query string, limit int) ([]WebSearchResult, error) {
+	base := strings.TrimSpace(baseURL)
+
+	u, err := url.Parse(base)
+	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return nil, fmt.Errorf("invalid searxng base URL %q — expected http(s)://host[:port]", base)
+	}
+
+	u.Path = strings.TrimSuffix(u.Path, "/") + "/search"
+	q := u.Query()
+	q.Set("q", query)
+	q.Set("format", "json")
+	u.RawQuery = q.Encode()
+
+	// #nosec G704 -- u is an admin-configured instance URL (system_settings);
+	// private/LAN targets are the intended use case, not an SSRF vector.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("building searxng request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("calling searxng: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("searxng returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var sr searxngResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
+		return nil, fmt.Errorf("decoding searxng response (is JSON output enabled on the instance?): %w", err)
+	}
+
+	out := make([]WebSearchResult, 0, len(sr.Results))
+	for _, r := range sr.Results {
+		out = append(out, WebSearchResult{
+			Title:   r.Title,
+			URL:     r.URL,
+			Content: r.Content,
+			Score:   r.Score,
+		})
+	}
+
+	// SearXNG does not accept a result-count parameter — cap client-side.
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+
+	return out, nil
 }

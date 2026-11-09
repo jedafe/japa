@@ -8,6 +8,9 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -330,6 +333,109 @@ func TestExternalSearchHandler_TavilyLive(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// searxng provider (no API key — self-hosted metasearch)
+// ---------------------------------------------------------------------------
+
+func TestSearchSearxng(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/search" {
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+		if r.URL.Query().Get("format") != "json" {
+			t.Errorf("missing format=json param")
+		}
+		if r.URL.Query().Get("q") != "unilag admission" {
+			t.Errorf("unexpected query %q", r.URL.Query().Get("q"))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[
+			{"url":"https://unilag.edu.ng/admissions","title":"UNILAG Admissions","content":"Admission portal info","score":0.9},
+			{"url":"https://example.com/a","title":"Other","content":"other","score":0.5},
+			{"url":"https://example.com/b","title":"Third","content":"third","score":0.3}
+		]}`))
+	}))
+	defer srv.Close()
+
+	results, err := searchSearxng(t.Context(), srv.Client(), srv.URL, "unilag admission", 2)
+	if err != nil {
+		t.Fatalf("searchSearxng: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected limit-capped 2 results, got %d", len(results))
+	}
+	if results[0].URL != "https://unilag.edu.ng/admissions" || results[0].Title != "UNILAG Admissions" {
+		t.Errorf("unexpected first result: %+v", results[0])
+	}
+}
+
+func TestSearchSearxng_InvalidBase(t *testing.T) {
+	t.Parallel()
+
+	for _, base := range []string{"", "not-a-url", "ftp://x", "https://"} {
+		if _, err := searchSearxng(t.Context(), http.DefaultClient, base, "q", 5); err == nil {
+			t.Errorf("expected error for base %q", base)
+		}
+	}
+}
+
+func TestSearchWeb_SearxngNoAPIKeyNeeded(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"url":"https://a.example","title":"A","content":"a"}]}`))
+	}))
+	defer srv.Close()
+
+	// provider=searxng, apiKey empty — must NOT hit the API-key gate.
+	settings := &providerSettingsReader{provider: "searxng", apiKey: "", searxngBase: srv.URL}
+
+	provider, results, err := SearchWeb(t.Context(), srv.Client(), settings, "test", 5)
+	if err != nil {
+		t.Fatalf("SearchWeb: %v", err)
+	}
+	if provider != "searxng" {
+		t.Errorf("provider = %q, want searxng", provider)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+}
+
+func TestSearchWeb_SearxngNoBase(t *testing.T) {
+	t.Parallel()
+
+	settings := &providerSettingsReader{provider: "searxng", searxngBase: ""}
+
+	_, _, err := SearchWeb(t.Context(), http.DefaultClient, settings, "test", 5)
+	if !errors.Is(err, errSearxngNotConfigured) {
+		t.Fatalf("expected errSearxngNotConfigured, got %v", err)
+	}
+}
+
+func TestExternalSearchHandler_SearxngNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	deps := &ToolDeps{
+		Settings: &providerSettingsReader{provider: "searxng", searxngBase: ""},
+	}
+	handler := ExternalSearchHandler(deps)
+
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{})
+	if tr.Status != ToolCallStatusError {
+		t.Fatalf("status = %q, want error", tr.Status)
+	}
+
+	m := parseToolResult(t, tr)
+	if m["code"] != "searxng_not_configured" {
+		t.Errorf("expected code = searxng_not_configured, got %v", m["code"])
+	}
+}
+
+// ---------------------------------------------------------------------------
 // externalSearchCacheKey
 // ---------------------------------------------------------------------------
 
@@ -359,8 +465,9 @@ func TestExternalSearchCacheKey(t *testing.T) {
 
 // providerSettingsReader returns specific values for provider and API key.
 type providerSettingsReader struct {
-	provider string
-	apiKey   string
+	provider    string
+	apiKey      string
+	searxngBase string
 }
 
 func (s *providerSettingsReader) GetStringOr(ctx context.Context, key, fallback string) string {
@@ -373,6 +480,12 @@ func (s *providerSettingsReader) GetStringOr(ctx context.Context, key, fallback 
 		return fallback
 	case "agent.external_search_api_key":
 		return s.apiKey
+	case "agent.external_search_searxng_base":
+		if s.searxngBase != "" {
+			return s.searxngBase
+		}
+
+		return fallback
 	default:
 		return fallback
 	}
