@@ -296,6 +296,21 @@ func (q *Queries) DeleteCommentVote(ctx context.Context, arg DeleteCommentVotePa
 	return err
 }
 
+const deleteContentVote = `-- name: DeleteContentVote :exec
+DELETE FROM content_votes
+WHERE content_id = $1 AND user_id = $2
+`
+
+type DeleteContentVoteParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) DeleteContentVote(ctx context.Context, arg DeleteContentVoteParams) error {
+	_, err := q.db.Exec(ctx, deleteContentVote, arg.ContentID, arg.UserID)
+	return err
+}
+
 const getComment = `-- name: GetComment :one
 SELECT c.id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
  c.vote_score, c.upvote_count, c.downvote_count, c.view_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
@@ -386,6 +401,36 @@ func (q *Queries) GetCommentVote(ctx context.Context, arg GetCommentVoteParams) 
 	var i GetCommentVoteRow
 	err := row.Scan(
 		&i.CommentID,
+		&i.UserID,
+		&i.Value,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getContentVote = `-- name: GetContentVote :one
+SELECT content_id, user_id, value, created_at
+FROM content_votes
+WHERE content_id = $1 AND user_id = $2
+`
+
+type GetContentVoteParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+}
+
+type GetContentVoteRow struct {
+	ContentID pgtype.UUID        `json:"content_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Value     int16              `json:"value"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetContentVote(ctx context.Context, arg GetContentVoteParams) (GetContentVoteRow, error) {
+	row := q.db.QueryRow(ctx, getContentVote, arg.ContentID, arg.UserID)
+	var i GetContentVoteRow
+	err := row.Scan(
+		&i.ContentID,
 		&i.UserID,
 		&i.Value,
 		&i.CreatedAt,
@@ -1463,6 +1508,37 @@ func (q *Queries) RecalculateCommentVoteScore(ctx context.Context, commentID pgt
 	return err
 }
 
+const recalculateContentVoteScore = `-- name: RecalculateContentVoteScore :one
+UPDATE contents
+SET vote_score = COALESCE((
+ SELECT SUM(cv.value)::int
+ FROM content_votes cv
+ WHERE cv.content_id = $1
+), 0),
+upvote_count = COALESCE((
+ SELECT COUNT(*)::int
+ FROM content_votes cv
+ WHERE cv.content_id = $1 AND cv.value = 1
+), 0),
+downvote_count = COALESCE((
+ SELECT COUNT(*)::int
+ FROM content_votes cv
+ WHERE cv.content_id = $1 AND cv.value = -1
+), 0),
+updated_at = now()
+WHERE id = $1
+RETURNING vote_score
+`
+
+// Same UPDATE shape as RecalculateCommentVoteScore; RETURNS the new
+// vote_score so the service can hand it to the VoteRail response.
+func (q *Queries) RecalculateContentVoteScore(ctx context.Context, contentID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, recalculateContentVoteScore, contentID)
+	var vote_score int32
+	err := row.Scan(&vote_score)
+	return vote_score, err
+}
+
 const removeComment = `-- name: RemoveComment :exec
 UPDATE comments
 SET status = 'removed',
@@ -1698,6 +1774,36 @@ func (q *Queries) UpsertCommentVote(ctx context.Context, arg UpsertCommentVotePa
 	var i CommentVote
 	err := row.Scan(
 		&i.CommentID,
+		&i.UserID,
+		&i.Value,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertContentVote = `-- name: UpsertContentVote :one
+
+INSERT INTO content_votes (content_id, user_id, value, updated_at) VALUES ($1, $2, $3, clock_timestamp())
+
+ON CONFLICT (content_id, user_id) DO UPDATE SET value = EXCLUDED.value, updated_at = clock_timestamp()
+RETURNING content_id, user_id, value, created_at, updated_at
+`
+
+type UpsertContentVoteParams struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+	Value     int16       `json:"value"`
+}
+
+// =====================
+// Content Votes
+// =====================
+func (q *Queries) UpsertContentVote(ctx context.Context, arg UpsertContentVoteParams) (ContentVote, error) {
+	row := q.db.QueryRow(ctx, upsertContentVote, arg.ContentID, arg.UserID, arg.Value)
+	var i ContentVote
+	err := row.Scan(
+		&i.ContentID,
 		&i.UserID,
 		&i.Value,
 		&i.CreatedAt,

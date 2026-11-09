@@ -4528,6 +4528,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// forum votes to prevent vote-score manipulation spam.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/comments/{id}/vote", commentsHandlers.VoteComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/comments/{id}/vote", commentsHandlers.RemoveVote)
+			// Contents-level votes — the VoteRail surface on the unified
+			// thread page. Same middleware stack as comment votes
+			// (RequireAuth + comments.vote + tight rate limit); /content/{id}
+			// PATCH/DELETE registered above are different methods/paths and
+			// do not conflict.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/content/{id}/vote", commentsHandlers.VoteContent)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.vote"), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/content/{id}/vote", commentsHandlers.RemoveContentVote)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "form_submission"), mw.WithOperation(mw.OpReport), opBanEnforce, rbac.RequirePermission(rbacResolver, "reports.submit")).Post("/comments/{id}/report", reportsHandlers.ReportComment)
 			// Section 49 — optional reply view tracking (Section 08 parity
 			// with /forum/replies/{id}/view): guests 204 without a record.

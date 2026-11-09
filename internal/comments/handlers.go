@@ -974,6 +974,70 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 
+// VoteContent handles POST /api/v1/content/{id}/vote — the contents-level
+// counterpart of VoteComment (unified thread page VoteRail). Same request
+// shape ({value: 1|-1}); the response carries the VoteComment "voted" flag
+// plus the new vote score.
+func (h *Handlers) VoteContent(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	var input struct {
+		Value int16 `json:"value"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	score, err := h.Service.VoteContent(r.Context(), contentID, user.UserID, input.Value)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// E-006: keep content_scores.vote_score in sync. The "vote" increment
+	// recomputes from the live vote tables, so the delta is ignored by the
+	// worker — enqueue on every accepted vote write.
+	h.EnqueueEngagementUpdate("content", contentID, "vote", 0)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"voted": true, "vote_score": score}})
+}
+
+// RemoveContentVote handles DELETE /api/v1/content/{id}/vote — the
+// contents-level counterpart of RemoveVote.
+func (h *Handlers) RemoveContentVote(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
+		return
+	}
+
+	score, err := h.Service.RemoveContentVote(r.Context(), contentID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.EnqueueEngagementUpdate("content", contentID, "vote", 0)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"vote_score": score}})
+}
+
 // PinComment handles POST /api/v1/comments/{id}/pin.
 // // Section 49 — pinning is allowed for moderators (comments.pin) OR the content
 // author. The route is wired with RequireAuth only; the own-vs-moderator

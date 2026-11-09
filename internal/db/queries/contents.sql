@@ -81,6 +81,7 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  c.share_count,
  (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+ c.vote_score, c.upvote_count, c.downvote_count,
  c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
  c.intel_source_id, c.intel_record_id,
@@ -900,7 +901,8 @@ ON CONFLICT (content_id) DO NOTHING;
 -- name: IncrementScoreVote :exec
 -- Recomputes vote_score from the live vote tables (comment_votes via the
 -- comment's content_id; forum_votes via the thread's backing content_id —
--- both thread and reply votes). Drift-proof like IncrementScoreReaction:
+-- both thread and reply votes; content_votes directly on the content).
+-- Drift-proof like IncrementScoreReaction:
 -- enqueue order and retries can't corrupt the counter. @delta is kept for
 -- payload compatibility but ignored.
 UPDATE content_scores
@@ -918,6 +920,9 @@ SET vote_score = (
             JOIN forum_replies fr ON fr.id = fv.entity_id
             JOIN forum_threads ft ON ft.id = fr.thread_id
             WHERE fv.entity_type = 'reply' AND ft.content_id = @content_id
+        UNION ALL
+        SELECT cv.value FROM content_votes cv
+            WHERE cv.content_id = @content_id
     ) x
 ), last_scored_at = now()
 WHERE content_id = @content_id;

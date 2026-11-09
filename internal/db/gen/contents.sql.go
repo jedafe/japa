@@ -1046,6 +1046,7 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  c.share_count,
  (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+ c.vote_score, c.upvote_count, c.downvote_count,
  c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
  c.intel_source_id, c.intel_record_id,
@@ -1146,6 +1147,9 @@ type GetContentDetailBySlugRow struct {
 	ShareCount                    int32              `json:"share_count"`
 	ReactionCount                 int64              `json:"reaction_count"`
 	ReactionCount_2               int32              `json:"reaction_count_2"`
+	VoteScore                     int32              `json:"vote_score"`
+	UpvoteCount                   int32              `json:"upvote_count"`
+	DownvoteCount                 int32              `json:"downvote_count"`
 	PublishAt                     pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt                   pgtype.Timestamptz `json:"published_at"`
 	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
@@ -1228,6 +1232,9 @@ func (q *Queries) GetContentDetailBySlug(ctx context.Context, slug string) (GetC
 		&i.ShareCount,
 		&i.ReactionCount,
 		&i.ReactionCount_2,
+		&i.VoteScore,
+		&i.UpvoteCount,
+		&i.DownvoteCount,
 		&i.PublishAt,
 		&i.PublishedAt,
 		&i.CreatedAt,
@@ -1988,6 +1995,9 @@ SET vote_score = (
             JOIN forum_replies fr ON fr.id = fv.entity_id
             JOIN forum_threads ft ON ft.id = fr.thread_id
             WHERE fv.entity_type = 'reply' AND ft.content_id = $1
+        UNION ALL
+        SELECT cv.value FROM content_votes cv
+            WHERE cv.content_id = $1
     ) x
 ), last_scored_at = now()
 WHERE content_id = $1
@@ -1995,7 +2005,8 @@ WHERE content_id = $1
 
 // Recomputes vote_score from the live vote tables (comment_votes via the
 // comment's content_id; forum_votes via the thread's backing content_id —
-// both thread and reply votes). Drift-proof like IncrementScoreReaction:
+// both thread and reply votes; content_votes directly on the content).
+// Drift-proof like IncrementScoreReaction:
 // enqueue order and retries can't corrupt the counter. @delta is kept for
 // payload compatibility but ignored.
 func (q *Queries) IncrementScoreVote(ctx context.Context, contentID pgtype.UUID) error {

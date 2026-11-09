@@ -1096,6 +1096,161 @@ func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtyp
 }
 
 // ---------------------------------------------------------------------------
+// Content Votes
+// ---------------------------------------------------------------------------
+
+// VoteContent upserts a vote on a contents row and recalculates the vote
+// score. Mirrors VoteComment: the target must be a live published content
+// the voter can actually see — votes on deleted, unpublished, or invisible
+// content are rejected — and self-votes are denied. The upsert and the score
+// recalculation commit atomically. Returns the new vote score so the caller
+// can hand it to the VoteRail.
+func (s *Service) VoteContent(ctx context.Context, contentID, userID pgtype.UUID, value int16) (int16, error) {
+	if value != 1 && value != -1 {
+		return 0, fmt.Errorf("vote value must be 1 or -1: %w", errpkg.ErrInvalid)
+	}
+
+	target, err := s.read.GetContentByID(ctx,
+		contentID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("getting content for vote: %w", err)
+	}
+
+	// GetContentByID already filters deleted_at IS NULL — only the
+	// published check remains (deleted/unpublished both surface as 404).
+	if target.Status != "published" {
+		return 0, fmt.Errorf("%w: content", errpkg.ErrNotFound)
+	}
+
+	// Self-votes are rejected — upvoting your own content inflates the score
+	// signal (same policy as comment/forum votes).
+	if target.AuthorID == userID {
+		return 0, fmt.Errorf("%w: cannot vote on your own content", errpkg.ErrInvalid)
+	}
+
+	// C-014 parity: votes only count on content the voter can actually see —
+	// the same CanViewComments visibility predicate used by comment votes.
+	visible, err := s.CanViewComments(ctx, contentID, userID, true)
+	if err != nil {
+		return 0, err
+	}
+
+	if !visible {
+		return 0, fmt.Errorf("%w: content", errpkg.ErrNotFound)
+	}
+
+	// The vote upsert and the score recalculation commit atomically (C-010).
+	// The previous vote is read inside the tx so the emitted revert matches
+	// the true transition (new=+value, switch=±2, repeat=0).
+	var delta int16
+	var newScore int16
+	var voteTsMicro int64
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		prev, err := q.GetContentVote(ctx, gen.GetContentVoteParams{
+			ContentID: contentID,
+			UserID:    userID,
+		})
+		prevValue := int16(0)
+		if err == nil {
+			prevValue = prev.Value
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("getting previous content vote: %w", err)
+		}
+
+		vote, err := q.UpsertContentVote(ctx, gen.UpsertContentVoteParams{
+			ContentID: contentID,
+			UserID:    userID,
+			Value:     value,
+		})
+		if err != nil {
+			return fmt.Errorf("voting on content: %w", err)
+		}
+		voteTsMicro = vote.UpdatedAt.Time.UnixMicro()
+
+		score, err := q.RecalculateContentVoteScore(ctx,
+			contentID,
+		)
+		if err != nil {
+			return fmt.Errorf("recalculating content vote score: %w", err)
+		}
+		// #nosec G115 // vote_score is bounded well below int16 in practice
+		newScore = int16(score)
+
+		delta = value - prevValue
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+
+	// ADR-136: votes move the author's points — same emit pattern as
+	// VoteComment (entity type "content" keeps the ref namespace distinct).
+	if delta != 0 && target.AuthorID != userID {
+		s.emitVoteEvents(ctx, "content", contentID, userID, target.AuthorID, value, value-delta, voteTsMicro)
+	}
+
+	return newScore, nil
+}
+
+// RemoveContentVote removes a user's vote on a contents row and recalculates
+// the score. Mirrors RemoveCommentVote: idempotent — a missing content row
+// or absent vote is a no-op success. Returns the new vote score.
+func (s *Service) RemoveContentVote(ctx context.Context, contentID, userID pgtype.UUID) (int16, error) {
+	target, err := s.read.GetContentByID(ctx, contentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("getting content for vote removal: %w", err)
+	}
+
+	var delta int16
+	var newScore int16
+	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		prev, err := q.GetContentVote(ctx, gen.GetContentVoteParams{
+			ContentID: contentID,
+			UserID:    userID,
+		})
+		if err != nil {
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("getting previous content vote: %w", err)
+			}
+		} else {
+			if err := q.DeleteContentVote(ctx, gen.DeleteContentVoteParams{
+				ContentID: contentID,
+				UserID:    userID,
+			}); err != nil {
+				return fmt.Errorf("removing content vote: %w", err)
+			}
+
+			delta = -prev.Value
+		}
+
+		// Always recalculate — even with nothing removed it is a harmless
+		// self-correcting write and returns the true current score.
+		score, err := q.RecalculateContentVoteScore(ctx,
+			contentID,
+		)
+		if err != nil {
+			return fmt.Errorf("recalculating content vote score: %w", err)
+		}
+		// #nosec G115 // vote_score is bounded well below int16 in practice
+		newScore = int16(score)
+
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+
+	// ADR-136: removing a vote reverts its award/penalty (value 0 = removed).
+	if delta != 0 && target.AuthorID != userID {
+		s.emitVoteEvents(ctx, "content", contentID, userID, target.AuthorID, 0, -delta, time.Now().UTC().UnixMicro())
+	}
+
+	return newScore, nil
+}
+
+// ---------------------------------------------------------------------------
 // Counts
 // ---------------------------------------------------------------------------
 

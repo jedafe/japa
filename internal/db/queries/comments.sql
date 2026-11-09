@@ -329,6 +329,48 @@ FROM comment_votes
 WHERE comment_id = @comment_id AND user_id = @user_id;
 
 -- =====================
+-- Content Votes
+-- =====================
+
+-- name: UpsertContentVote :one
+INSERT INTO content_votes (content_id, user_id, value, updated_at) VALUES (@content_id, @user_id, @value, clock_timestamp())
+
+ON CONFLICT (content_id, user_id) DO UPDATE SET value = EXCLUDED.value, updated_at = clock_timestamp()
+RETURNING content_id, user_id, value, created_at, updated_at;
+
+-- name: DeleteContentVote :exec
+DELETE FROM content_votes
+WHERE content_id = @content_id AND user_id = @user_id;
+
+-- name: RecalculateContentVoteScore :one
+-- Same UPDATE shape as RecalculateCommentVoteScore; RETURNS the new
+-- vote_score so the service can hand it to the VoteRail response.
+UPDATE contents
+SET vote_score = COALESCE((
+ SELECT SUM(cv.value)::int
+ FROM content_votes cv
+ WHERE cv.content_id = @content_id
+), 0),
+upvote_count = COALESCE((
+ SELECT COUNT(*)::int
+ FROM content_votes cv
+ WHERE cv.content_id = @content_id AND cv.value = 1
+), 0),
+downvote_count = COALESCE((
+ SELECT COUNT(*)::int
+ FROM content_votes cv
+ WHERE cv.content_id = @content_id AND cv.value = -1
+), 0),
+updated_at = now()
+WHERE id = @content_id
+RETURNING vote_score;
+
+-- name: GetContentVote :one
+SELECT content_id, user_id, value, created_at
+FROM content_votes
+WHERE content_id = @content_id AND user_id = @user_id;
+
+-- =====================
 -- Comment Counts
 -- =====================
 

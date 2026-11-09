@@ -1229,6 +1229,9 @@ type Content struct {
 	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
 	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
+	VoteScore       int32              `json:"vote_score"`
+	UpvoteCount     int32              `json:"upvote_count"`
+	DownvoteCount   int32              `json:"downvote_count"`
 }
 
 // Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.
@@ -1429,6 +1432,14 @@ type ContentView struct {
 	SpaceID   pgtype.UUID        `json:"space_id"`
 	ViewedAt  pgtype.Timestamptz `json:"viewed_at"`
 	IpHash    *string            `json:"ip_hash"`
+}
+
+type ContentVote struct {
+	ContentID pgtype.UUID        `json:"content_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Value     int16              `json:"value"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Coupon struct {
