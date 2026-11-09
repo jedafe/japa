@@ -1338,39 +1338,55 @@ func (q *Queries) SeedFieldPermissions(ctx context.Context, arg SeedFieldPermiss
 
 const updateCustomField = `-- name: UpdateCustomField :one
 UPDATE custom_fields
-SET label = $1, field_type = $2, options = $3,
- embed_platforms = $4, placeholder = $5,
- default_value = $6, is_required = $7,
- show_in_frontend = $8, filterable = $9,
- sortable = $10, searchable = $11, position = $12,
- section = CASE WHEN $13::bool
-           THEN NULLIF($14::text, '')
+SET label = $1, field_type = $2,
+ options = CASE WHEN $3::bool THEN $4 ELSE options END,
+ embed_platforms = CASE WHEN $5::bool THEN $6 ELSE embed_platforms END,
+ placeholder = CASE WHEN $7::bool THEN $8 ELSE placeholder END,
+ default_value = CASE WHEN $9::bool THEN $10 ELSE default_value END,
+ is_required = CASE WHEN $11::bool THEN $12 ELSE is_required END,
+ show_in_frontend = CASE WHEN $13::bool THEN $14 ELSE show_in_frontend END,
+ filterable = CASE WHEN $15::bool THEN $16 ELSE filterable END,
+ sortable = CASE WHEN $17::bool THEN $18 ELSE sortable END,
+ searchable = CASE WHEN $19::bool THEN $20 ELSE searchable END,
+ position = CASE WHEN $21::bool THEN $22 ELSE position END,
+ section = CASE WHEN $23::bool
+           THEN NULLIF($24::text, '')
            ELSE section END,
- config = CASE WHEN $15::bool THEN $16 ELSE config END
-WHERE id = $17 AND is_system = false
+ config = CASE WHEN $25::bool THEN $26 ELSE config END
+WHERE id = $27 AND is_system = false
 RETURNING id, group_id, label, key, field_type, options, embed_platforms,
  placeholder, default_value, is_required, is_system, show_in_frontend,
  filterable, sortable, searchable, position, section, config, created_at
 `
 
 type UpdateCustomFieldParams struct {
-	Label          string      `json:"label"`
-	FieldType      string      `json:"field_type"`
-	Options        []byte      `json:"options"`
-	EmbedPlatforms []string    `json:"embed_platforms"`
-	Placeholder    *string     `json:"placeholder"`
-	DefaultValue   *string     `json:"default_value"`
-	IsRequired     bool        `json:"is_required"`
-	ShowInFrontend bool        `json:"show_in_frontend"`
-	Filterable     bool        `json:"filterable"`
-	Sortable       bool        `json:"sortable"`
-	Searchable     bool        `json:"searchable"`
-	Position       int32       `json:"position"`
-	UpdateSection  bool        `json:"update_section"`
-	Section        string      `json:"section"`
-	UpdateConfig   bool        `json:"update_config"`
-	Config         []byte      `json:"config"`
-	ID             pgtype.UUID `json:"id"`
+	Label                string      `json:"label"`
+	FieldType            string      `json:"field_type"`
+	UpdateOptions        bool        `json:"update_options"`
+	Options              []byte      `json:"options"`
+	UpdateEmbedPlatforms bool        `json:"update_embed_platforms"`
+	EmbedPlatforms       []string    `json:"embed_platforms"`
+	UpdatePlaceholder    bool        `json:"update_placeholder"`
+	Placeholder          *string     `json:"placeholder"`
+	UpdateDefaultValue   bool        `json:"update_default_value"`
+	DefaultValue         *string     `json:"default_value"`
+	UpdateIsRequired     bool        `json:"update_is_required"`
+	IsRequired           bool        `json:"is_required"`
+	UpdateShowInFrontend bool        `json:"update_show_in_frontend"`
+	ShowInFrontend       bool        `json:"show_in_frontend"`
+	UpdateFilterable     bool        `json:"update_filterable"`
+	Filterable           bool        `json:"filterable"`
+	UpdateSortable       bool        `json:"update_sortable"`
+	Sortable             bool        `json:"sortable"`
+	UpdateSearchable     bool        `json:"update_searchable"`
+	Searchable           bool        `json:"searchable"`
+	UpdatePosition       bool        `json:"update_position"`
+	Position             int32       `json:"position"`
+	UpdateSection        bool        `json:"update_section"`
+	Section              string      `json:"section"`
+	UpdateConfig         bool        `json:"update_config"`
+	Config               []byte      `json:"config"`
+	ID                   pgtype.UUID `json:"id"`
 }
 
 type UpdateCustomFieldRow struct {
@@ -1399,15 +1415,25 @@ func (q *Queries) UpdateCustomField(ctx context.Context, arg UpdateCustomFieldPa
 	row := q.db.QueryRow(ctx, updateCustomField,
 		arg.Label,
 		arg.FieldType,
+		arg.UpdateOptions,
 		arg.Options,
+		arg.UpdateEmbedPlatforms,
 		arg.EmbedPlatforms,
+		arg.UpdatePlaceholder,
 		arg.Placeholder,
+		arg.UpdateDefaultValue,
 		arg.DefaultValue,
+		arg.UpdateIsRequired,
 		arg.IsRequired,
+		arg.UpdateShowInFrontend,
 		arg.ShowInFrontend,
+		arg.UpdateFilterable,
 		arg.Filterable,
+		arg.UpdateSortable,
 		arg.Sortable,
+		arg.UpdateSearchable,
 		arg.Searchable,
+		arg.UpdatePosition,
 		arg.Position,
 		arg.UpdateSection,
 		arg.Section,

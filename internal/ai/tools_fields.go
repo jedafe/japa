@@ -640,21 +640,33 @@ func CustomFieldsUpdateHandler(deps *ToolDeps) ToolHandler {
 			options = json.RawMessage("null")
 		}
 
+		// The AI tool args are authoritative: every update_* gate is set so
+		// the write replaces stored values wholesale (pre-gating semantics).
 		field, err := deps.CustomFieldDefs.UpdateField(ctx, gen.UpdateCustomFieldParams{
 			ID: fieldID,
 
-			Label:          a.Label,
-			FieldType:      fieldType,
-			Options:        options,
-			EmbedPlatforms: a.EmbedPlatforms,
-			Placeholder:    a.Placeholder,
-			DefaultValue:   a.DefaultValue,
-			IsRequired:     a.IsRequired,
-			ShowInFrontend: a.ShowInFrontend,
-			Filterable:     a.Filterable,
-			Sortable:       a.Sortable,
-			Searchable:     a.Searchable,
-			Position:       a.Position,
+			Label:                a.Label,
+			FieldType:            fieldType,
+			Options:              options,
+			UpdateOptions:        true,
+			EmbedPlatforms:       a.EmbedPlatforms,
+			UpdateEmbedPlatforms: true,
+			Placeholder:          a.Placeholder,
+			UpdatePlaceholder:    true,
+			DefaultValue:         a.DefaultValue,
+			UpdateDefaultValue:   true,
+			IsRequired:           a.IsRequired,
+			UpdateIsRequired:     true,
+			ShowInFrontend:       a.ShowInFrontend,
+			UpdateShowInFrontend: true,
+			Filterable:           a.Filterable,
+			UpdateFilterable:     true,
+			Sortable:             a.Sortable,
+			UpdateSortable:       true,
+			Searchable:           a.Searchable,
+			UpdateSearchable:     true,
+			Position:             a.Position,
+			UpdatePosition:       true,
 		})
 		if err != nil {
 			return errorToolResult("custom_field_update_failed", err.Error()), nil

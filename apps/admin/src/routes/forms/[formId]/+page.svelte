@@ -911,6 +911,7 @@
 				key,
 				field_type: newFieldType,
 				is_required: newFieldRequired,
+				show_in_frontend: true,
 				placeholder: newFieldPlaceholder.trim() || undefined,
 				position: positionBase,
 			});
@@ -964,7 +965,7 @@
 				label: editFieldLabel.trim(),
 				field_type: editFieldType,
 				is_required: editFieldRequired,
-				placeholder: editFieldPlaceholder.trim() || undefined,
+				placeholder: editFieldPlaceholder.trim(),
 				config: buildFieldConfig(editingField),
 			});
 			if (result.ok) {

@@ -103,11 +103,17 @@ RETURNING id, group_id, label, key, field_type, options, embed_platforms,
 
 -- name: UpdateCustomField :one
 UPDATE custom_fields
-SET label = @label, field_type = @field_type, options = @options,
- embed_platforms = @embed_platforms, placeholder = @placeholder,
- default_value = @default_value, is_required = @is_required,
- show_in_frontend = @show_in_frontend, filterable = @filterable,
- sortable = @sortable, searchable = @searchable, position = @position,
+SET label = @label, field_type = @field_type,
+ options = CASE WHEN @update_options::bool THEN @options ELSE options END,
+ embed_platforms = CASE WHEN @update_embed_platforms::bool THEN @embed_platforms ELSE embed_platforms END,
+ placeholder = CASE WHEN @update_placeholder::bool THEN @placeholder ELSE placeholder END,
+ default_value = CASE WHEN @update_default_value::bool THEN @default_value ELSE default_value END,
+ is_required = CASE WHEN @update_is_required::bool THEN @is_required ELSE is_required END,
+ show_in_frontend = CASE WHEN @update_show_in_frontend::bool THEN @show_in_frontend ELSE show_in_frontend END,
+ filterable = CASE WHEN @update_filterable::bool THEN @filterable ELSE filterable END,
+ sortable = CASE WHEN @update_sortable::bool THEN @sortable ELSE sortable END,
+ searchable = CASE WHEN @update_searchable::bool THEN @searchable ELSE searchable END,
+ position = CASE WHEN @update_position::bool THEN @position ELSE position END,
  section = CASE WHEN @update_section::bool
            THEN NULLIF(@section::text, '')
            ELSE section END,

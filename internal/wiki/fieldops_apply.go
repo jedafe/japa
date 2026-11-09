@@ -298,27 +298,38 @@ func applyUpsertField(ctx context.Context, q *gen.Queries, op FieldOp, schema ma
 	// UpdateCustomField writes is_system = false rows only, so proposing an
 	// update to a system field fails with ErrNoRows — surfaced as an error
 	// rather than silently ignored.
+	// The op payload is authoritative (upsert semantics): every apply
+	// rewrites all flags/position/section — the update_* gates are set so
+	// the write lands wholesale rather than keeping stored values.
 	params := gen.UpdateCustomFieldParams{
 		ID:             existing.ID,
 		Label:          op.Field.Label,
 		FieldType:      op.Field.FieldType,
 		Options:        options,
+		UpdateOptions:  true,
 		IsRequired:     op.Field.IsRequired,
 		ShowInFrontend: existing.ShowInFrontend,
 		Filterable:     existing.Filterable,
 		Sortable:       existing.Sortable,
 		Searchable:     existing.Searchable,
 		Position:       op.Field.Position,
-		// The op payload is authoritative (upsert semantics): every apply
-		// rewrites the section token, "" clearing it.
-		UpdateSection: true,
-		Section:       op.Field.Section,
+
+		UpdateIsRequired:     true,
+		UpdateShowInFrontend: true,
+		UpdateFilterable:     true,
+		UpdateSortable:       true,
+		UpdateSearchable:     true,
+		UpdatePosition:       true,
+		UpdateSection:        true,
+		Section:              op.Field.Section,
 	}
 
+	params.UpdatePlaceholder = true
 	if op.Field.Placeholder != "" {
 		params.Placeholder = &op.Field.Placeholder
 	}
 
+	params.UpdateDefaultValue = true
 	if op.Field.DefaultValue != "" {
 		params.DefaultValue = &op.Field.DefaultValue
 	}

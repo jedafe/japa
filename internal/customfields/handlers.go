@@ -810,12 +810,15 @@ type fieldRequest struct {
 	EmbedPlatforms []string        `json:"embed_platforms"`
 	Placeholder    *string         `json:"placeholder"`
 	DefaultValue   *string         `json:"default_value"`
-	IsRequired     bool            `json:"is_required"`
-	ShowInFrontend bool            `json:"show_in_frontend"`
-	Filterable     bool            `json:"filterable"`
-	Sortable       bool            `json:"sortable"`
-	Searchable     bool            `json:"searchable"`
-	Position       int32           `json:"position"`
+	// Flags and Position are three-state on PATCH like section/config:
+	// omitted keeps the stored value so partial updates can't silently
+	// clobber visibility, requirements, or ordering.
+	IsRequired     *bool  `json:"is_required"`
+	ShowInFrontend *bool  `json:"show_in_frontend"`
+	Filterable     *bool  `json:"filterable"`
+	Sortable       *bool  `json:"sortable"`
+	Searchable     *bool  `json:"searchable"`
+	Position       *int32 `json:"position"`
 	// Section groups fields sharing a token under one item table / sub-tab
 	// (§80 Itemized Pricing). Pointer so PATCH distinguishes an omitted key
 	// (leave untouched) from an explicit "" (clear the section).
@@ -873,6 +876,36 @@ func validFieldConfig(raw []byte) bool {
 	var v map[string]any
 
 	return json.Unmarshal(raw, &v) == nil
+}
+
+// storedOptionsAbsent reports whether the persisted field has no usable
+// options — used on PATCH to decide whether an omitted options payload
+// would leave a select field optionless. A lookup failure fails safe
+// (treated as absent) so the request is rejected rather than risking an
+// optionless select.
+func (h *Handlers) storedOptionsAbsent(r *http.Request, id pgtype.UUID) bool {
+	if h.Service == nil {
+		return true
+	}
+
+	field, err := h.Service.GetField(r.Context(), id)
+	if err != nil {
+		return true
+	}
+
+	return optionsAbsent(field.Options)
+}
+
+func derefBool(v *bool) bool {
+	return v != nil && *v
+}
+
+func derefInt32(v *int32) int32 {
+	if v == nil {
+		return 0
+	}
+
+	return *v
 }
 
 // validStepConfig accepts only JSON objects (or nil) — the form_steps.config
@@ -996,13 +1029,13 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		EmbedPlatforms: req.EmbedPlatforms,
 		Placeholder:    req.Placeholder,
 		DefaultValue:   req.DefaultValue,
-		IsRequired:     req.IsRequired,
+		IsRequired:     derefBool(req.IsRequired),
 		IsSystem:       false,
-		ShowInFrontend: req.ShowInFrontend,
-		Filterable:     req.Filterable,
-		Sortable:       req.Sortable,
-		Searchable:     req.Searchable,
-		Position:       req.Position,
+		ShowInFrontend: derefBool(req.ShowInFrontend),
+		Filterable:     derefBool(req.Filterable),
+		Sortable:       derefBool(req.Sortable),
+		Searchable:     derefBool(req.Searchable),
+		Position:       derefInt32(req.Position),
 		Section:        req.Section,
 		Config:         config,
 	})
@@ -1053,12 +1086,17 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	if msg, ok := ValidOptionsShape(req.FieldType, req.Options); !ok {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_options", msg)
-		return
-	}
-
-	if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && optionsAbsent(req.Options) {
+	// Omitted options keep the stored list (three-state PATCH) — shape
+	// validation applies only when the client actually sent options.
+	// Select fields may therefore arrive without an options payload when
+	// a partial update leaves them untouched; only reject when the stored
+	// field would end up optionless too — e.g. a type change into select.
+	if !optionsAbsent(req.Options) {
+		if msg, ok := ValidOptionsShape(req.FieldType, req.Options); !ok {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_options", msg)
+			return
+		}
+	} else if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && h.storedOptionsAbsent(r, id) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
 		return
 	}
@@ -1097,20 +1135,31 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		Label:          req.Label,
 		FieldType:      req.FieldType,
 		Options:        optionsBytes,
+		UpdateOptions:  !optionsAbsent(req.Options),
 		EmbedPlatforms: req.EmbedPlatforms,
-		Placeholder:    req.Placeholder,
-		DefaultValue:   req.DefaultValue,
-		IsRequired:     req.IsRequired,
-		ShowInFrontend: req.ShowInFrontend,
-		Filterable:     req.Filterable,
-		Sortable:       req.Sortable,
-		Searchable:     req.Searchable,
-		Position:       req.Position,
-		UpdateSection:  req.Section != nil,
-		Section:        section,
-		Config:         config,
-		UpdateConfig:   req.Config != nil,
-		ID:             id,
+		// nil slice = omitted (keep); a sent [] clears the platform list.
+		UpdateEmbedPlatforms: req.EmbedPlatforms != nil,
+		Placeholder:          req.Placeholder,
+		UpdatePlaceholder:    req.Placeholder != nil,
+		DefaultValue:         req.DefaultValue,
+		UpdateDefaultValue:   req.DefaultValue != nil,
+		IsRequired:           derefBool(req.IsRequired),
+		UpdateIsRequired:     req.IsRequired != nil,
+		ShowInFrontend:       derefBool(req.ShowInFrontend),
+		UpdateShowInFrontend: req.ShowInFrontend != nil,
+		Filterable:           derefBool(req.Filterable),
+		UpdateFilterable:     req.Filterable != nil,
+		Sortable:             derefBool(req.Sortable),
+		UpdateSortable:       req.Sortable != nil,
+		Searchable:           derefBool(req.Searchable),
+		UpdateSearchable:     req.Searchable != nil,
+		Position:             derefInt32(req.Position),
+		UpdatePosition:       req.Position != nil,
+		UpdateSection:        req.Section != nil,
+		Section:              section,
+		Config:               config,
+		UpdateConfig:         req.Config != nil,
+		ID:                   id,
 	})
 	if err != nil {
 		handleServiceError(w, err)
