@@ -159,7 +159,13 @@
 		if (c == null) return '';
 		let html = '';
 		if (typeof c === 'string') html = sanitizeContentHtml(c);
-		else if (typeof c === 'object') html = sanitizeContentHtml(tiptapToHtml(c as unknown as TipTapDoc));
+		else if (typeof c === 'object')
+			html = sanitizeContentHtml(
+				tiptapToHtml(c as unknown as TipTapDoc, {
+					deletedUserIds,
+					deletedUserLabel: t('mentions.deleted_user', '[deleted user]')
+				})
+			);
 		return previewHtml(html, data.embed.excerpt ?? '');
 	});
 	const entityTypeBadge = $derived(
