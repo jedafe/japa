@@ -133,7 +133,9 @@
 </script>
 
 {#if resolved}
-	<section class="entity-discussions" aria-label={t('thread.discussions', 'Discussions')}>
+	<!-- id="comments" — the ReactionRail comment icon (href="#comments")
+	     scrolls here, same affordance as #replies on /thread/{slug}. -->
+	<section id="comments" class="entity-discussions scroll-mt-24" aria-label={t('thread.discussions', 'Discussions')}>
 		<div class="ed-head">
 			<h2 class="ed-title">
 				<MessageSquare size={18} />
