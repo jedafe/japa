@@ -215,7 +215,7 @@ func TestHiddenByJump(t *testing.T) {
 
 	// Basic forward jump: s1 field jumps to s4 → s2,s3 hidden.
 	fields := []RuleField{
-		mk("f1", "s1", `{"jump":{"when":{"any":[{"op":"eq","value":"go"}]},"step":"s4"}`}),
+		mk("f1", "s1", `{"jump":{"when":{"any":[{"op":"eq","value":"go"}]},"step":"s4"}}`),
 		mk("f2", "s2", `{}`),
 	}
 	h := HiddenByJump(fields, order, map[string]any{"f1": "go"})
@@ -231,9 +231,9 @@ func TestHiddenByJump(t *testing.T) {
 
 	// Backward/self/unknown targets ignored.
 	bad := []RuleField{
-		mk("f3", "s3", `{"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"s1"}`}),
-		mk("f4", "s3", `{"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"s3"}`}),
-		mk("f5", "s3", `{"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"ghost"}`}),
+		mk("f3", "s3", `{"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"s1"}}`),
+		mk("f4", "s3", `{"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"s3"}}`),
+		mk("f5", "s3", `{"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"ghost"}}`),
 	}
 	h = HiddenByJump(bad, order, map[string]any{"f3": 1.0, "f4": 1.0, "f5": 1.0})
 	if len(h) != 0 {
@@ -242,7 +242,7 @@ func TestHiddenByJump(t *testing.T) {
 
 	// Hidden firing field cannot jump.
 	hid := []RuleField{
-		mk("f6", "s1", `{"visible_if":{"all":[{"field":"gate","op":"eq","value":0}]},"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"s3"}`}),
+		mk("f6", "s1", `{"visible_if":{"all":[{"field":"gate","op":"eq","value":0}]},"jump":{"when":{"any":[{"op":"eq","value":1}]},"step":"s3"}}`),
 	}
 	h = HiddenByJump(hid, order, map[string]any{"f6": 1.0})
 	if len(h) != 0 {
@@ -251,8 +251,8 @@ func TestHiddenByJump(t *testing.T) {
 
 	// Union of intervals + chain: s1→s4 hides 2-3; s2 field jumps 5 → union {s2,s3,s4}.
 	fields = []RuleField{
-		mk("j1", "s1", `{"jump":{"when":{"any":[{"op":"eq","value":"a"}]},"step":"s4"}`}),
-		mk("j2", "s2", `{"jump":{"when":{"any":[{"op":"eq","value":"b"}]},"step":"s5"}`}),
+		mk("j1", "s1", `{"jump":{"when":{"any":[{"op":"eq","value":"a"}]},"step":"s4"}}`),
+		mk("j2", "s2", `{"jump":{"when":{"any":[{"op":"eq","value":"b"}]},"step":"s5"}}`),
 	}
 	h = HiddenByJump(fields, order, map[string]any{"j1": "a", "j2": "b"})
 	if len(h) != 3 || !h["s2"] || !h["s3"] || !h["s4"] {
