@@ -27,7 +27,8 @@
 	import { hydrateMentions } from '#lib/tiptap/hydrateMentions.js';
 	import { hydrateVideoEmbeds } from '#lib/tiptap/hydrateVideoEmbeds.js';
 	import type { ContentArticle } from '#lib/types/content.js';
-	import type { Comment } from '#lib/types/index.js';
+	import type { Comment, WikiPage } from '#lib/types/index.js';
+	import { sanitizeContentHtml } from '#lib/utils/safeHtml.js';
 
 	export interface ThreadEmbed {
 		kind: 'entity' | 'parent' | 'self';
@@ -45,6 +46,9 @@
 			// The article a linked/anchored thread discusses — fetched by the
 			// loader so the page can render its ~80-word excerpt + Read CTA.
 			parentArticle?: ContentArticle | null;
+			// The wiki page an anchored wiki thread discusses — fetched for
+			// the formatted preview of its current revision.
+			wikiPage?: WikiPage | null;
 			embed: ThreadEmbed | null;
 			comments: Comment[];
 			commentsTotal: number | null;
@@ -145,11 +149,29 @@
 			? t(`content_type.${data.parentArticle.content_type}`, data.parentArticle.content_type)
 			: ''
 	);
+	// Entity-anchored threads (wiki pages): the same excerpt treatment as a
+	// parent article — the page's current revision rendered formatted so a
+	// thread with an empty body still shows composed context, not a flat
+	// text blob. Tools keep the plain excerpt (a tool page is UI, not prose).
+	const entityPreviewHtml = $derived.by(() => {
+		if (data.embed?.kind !== 'entity' || data.embed.entityType !== 'wiki_page') return '';
+		const c = data.wikiPage?.current_content;
+		if (c == null) return '';
+		let html = '';
+		if (typeof c === 'string') html = sanitizeContentHtml(c);
+		else if (typeof c === 'object') html = sanitizeContentHtml(tiptapToHtml(c as unknown as TipTapDoc));
+		return previewHtml(html, data.embed.excerpt ?? '');
+	});
+	const entityTypeBadge = $derived(
+		data.embed?.entityType === 'wiki_page' ? t('thread.embed.wiki_page', 'Wiki page') : ''
+	);
 	// Empty-body threads (minted anchors, linked discussions) fall back to the
 	// embed excerpt so the body section still carries the entity's context —
-	// skipped when the parent-article preview block already supplies it.
+	// skipped when a formatted preview block already supplies it.
 	const fallbackExcerpt = $derived(
-		!isContentThread && !bodyHtml && !parentPreviewHtml ? (data.embed?.excerpt ?? article.excerpt ?? '') : ''
+		!isContentThread && !bodyHtml && !parentPreviewHtml && !entityPreviewHtml
+			? (data.embed?.excerpt ?? article.excerpt ?? '')
+			: ''
 	);
 
 	/** Strip HTML tags/entities to plain text (body_html → excerpt source). */
@@ -522,6 +544,23 @@
 					class="mt-4 inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
 				>
 					{t('thread.read_full', 'Read full {type}').replace('{type}', parentTypeBadge)}
+				</a>
+			{/if}
+		{/if}
+
+		<!-- Wiki-anchored threads: the page's formatted ~150-word opening +
+		     "Read full" CTA — the entity's real content, not the flat
+		     stored excerpt. -->
+		{#if entityPreviewHtml}
+			<div class="prose mt-5 max-w-none border-l-2 border-[var(--color-border)] pl-4 text-[var(--color-text)]" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds>
+				{@html entityPreviewHtml}
+			</div>
+			{#if data.embed}
+				<a
+					href={data.embed.href}
+					class="mt-4 inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
+				>
+					{t('thread.read_full', 'Read full {type}').replace('{type}', entityTypeBadge)}
 				</a>
 			{/if}
 		{/if}

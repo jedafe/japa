@@ -383,3 +383,22 @@ func (q *Queries) SetThreadRowSpaceID(ctx context.Context, arg SetThreadRowSpace
 	_, err := q.db.Exec(ctx, setThreadRowSpaceID, arg.SpaceID, arg.ID)
 	return err
 }
+
+const setThreadRowTitle = `-- name: SetThreadRowTitle :exec
+UPDATE contents SET title = $1, updated_at = now()
+WHERE id = $2 AND deleted_at IS NULL
+`
+
+type SetThreadRowTitleParams struct {
+	Title string      `json:"title"`
+	ID    pgtype.UUID `json:"id"`
+}
+
+// Retitle a minted thread row whose entity renamed since mint — applied
+// only when the stored title still carries a generated form (the " (A
+// Thread)" suffix or a legacy "Discussing …" template), so author-edited
+// titles are never clobbered.
+func (q *Queries) SetThreadRowTitle(ctx context.Context, arg SetThreadRowTitleParams) error {
+	_, err := q.db.Exec(ctx, setThreadRowTitle, arg.Title, arg.ID)
+	return err
+}

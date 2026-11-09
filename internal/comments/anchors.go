@@ -337,9 +337,6 @@ type entityDescriptor struct {
 	URL     string
 	Title   string
 	Summary *string
-	// Category the entity files under (wiki pages) — feeds the varied
-	// thread-title templates so generated titles fit the page's context.
-	Category string
 	// SpaceID the anchor contents row files under — the platform anchor
 	// space for tool/wiki entities; the parent's own primary space for
 	// content entities so the thread inherits the article's audience.
@@ -460,58 +457,69 @@ func (s *Service) describeEntity(ctx context.Context, entityType, entityKey stri
 			summary = "Discussing a page in the " + page.SpaceName + " wiki."
 		}
 
+		// The page's display label is "{Space Name} {Page Title}" — the same
+		// expansion GetWikiPage applies to dto.Title. {name} tokens in the
+		// stored title expand to the space name first.
+		title := strings.ReplaceAll(strings.TrimSpace(page.Title), "{name}", page.SpaceName)
+		title = pageDisplayTitle(page.SpaceName, title)
+
 		return entityDescriptor{
-			URL:      "/wiki/" + page.SpaceSlug + "/" + page.PageSlug,
-			Title:    page.Title,
-			Summary:  &summary,
-			Category: page.Category,
-			SpaceID:  spaceID,
+			URL:     "/wiki/" + page.SpaceSlug + "/" + page.PageSlug,
+			Title:   title,
+			Summary: &summary,
+			SpaceID: spaceID,
 		}, nil
 	default:
 		return entityDescriptor{}, fmt.Errorf("unsupported entity_type %q: %w", entityType, errpkg.ErrInvalid)
 	}
 }
 
-// anchorThreadTitle composes a minted thread's title. Content anchors are
-// "{Title} (A Thread)", tools "{Name} Tool (A Thread)". Wiki pages get a
-// varied, category-aware lead-in — "Discussing {title}", "Thread about
-// {title}", "{title} — local thread" — so generated threads don't all read
-// the same phrasing; the pick is deterministic per entity key. The 001096
-// backfill mirrors these template sets with its own hashtext-based pick —
-// per-row determinism is all that's required, not identical picks.
-func anchorThreadTitle(entityType, entityKey, title, category string) string {
-	switch entityType {
-	case "tool":
+// anchorThreadTitle composes a minted thread's title — "{Title} (A
+// Thread)" for content and wiki pages (the wiki title is the page's
+// "{Space} {Page}" display label), "{Name} Tool (A Thread)" for tools.
+// The 001100 migration mirrors this for pre-existing minted wiki threads.
+func anchorThreadTitle(entityType, title string) string {
+	if entityType == "tool" {
 		return title + " Tool (A Thread)"
-	case "wiki_page":
-	default:
-		return title + " (A Thread)"
 	}
-	templates := []string{
-		"Discussing %s",
-		"Thread about %s",
-		"Discussing %s",
-		"%s — community thread",
+	return title + " (A Thread)"
+}
+
+// pageDisplayTitle is a wiki page's display label — "{Space Name} {Page
+// Title}" by default ("Argentina Cost of Living"). A title already
+// carrying the space name at a word boundary ("United Kingdom Visa
+// Routes" from a {name} expansion, or an editor's own naming) isn't
+// doubled. Mirrors wiki.pageDisplayTitle — the packages can't share the
+// helper without a new dependency edge.
+func pageDisplayTitle(spaceName, title string) string {
+	t := strings.TrimSpace(title)
+	if spaceName == "" || t == "" {
+		return t
 	}
-	switch category {
-	case "visa", "documents", "admissions", "scholarships", "applications":
-		templates = []string{
-			"Thread about %s",
-			"Discussing %s",
-			"Discussing %s",
-			"%s — Q&A thread",
-		}
-	case "cities", "states", "countries", "overview", "neighborhoods",
-		"nearby", "attractions", "history", "culture":
-		templates = []string{
-			"Discussing %s",
-			"Thread about %s",
-			"%s — local thread",
-			"Discussing %s",
-		}
+	if strings.Contains(
+		" "+strings.ToLower(t)+" ",
+		" "+strings.ToLower(spaceName)+" ",
+	) {
+		return t
 	}
-	h := sha256.Sum256([]byte(entityKey))
-	return fmt.Sprintf(templates[int(h[0])%len(templates)], title)
+	return spaceName + " " + t
+}
+
+// isGeneratedAnchorTitle reports whether a thread title still carries a
+// minted form — the current "… (A Thread)" spec or a legacy template
+// ("Discussing …", "Thread about …", "… — community thread"). An
+// author-retitled thread doesn't match and is left alone by the
+// drift heal.
+func isGeneratedAnchorTitle(title string) bool {
+	if strings.HasSuffix(title, " (A Thread)") ||
+		strings.HasSuffix(title, " — community thread") ||
+		strings.HasSuffix(title, " — Q&A thread") ||
+		strings.HasSuffix(title, " — local thread") {
+		return true
+	}
+	return strings.HasPrefix(title, "Discussing ") ||
+		strings.HasPrefix(title, "Discussing: ") ||
+		strings.HasPrefix(title, "Thread about ")
 }
 
 // CreateAnchor get-or-creates a thread anchor for an entity. The backing
@@ -548,13 +556,26 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 					existing.EntitySummary = desc.Summary
 				}
 			}
-			// The thread files under the parent's primary space — a
-			// public→public re-file (UpdateContentSpaces) leaves it under
-			// the stale space until this re-homes it. Space feeds and the
-			// space-close sweep both key on the thread row's space_id.
-			if entityType == "content" && desc.SpaceID.Valid {
-				if tRow, tErr := s.read.GetContentByID(ctx, existing.ContentID); tErr == nil &&
-					tRow.SpaceID != desc.SpaceID {
+			// Title + space heal — one read of the thread row covers both:
+			//   - title: a minted title is "{Entity} (A Thread)" (or a
+			//     legacy "Discussing …" template); still carrying a
+			//     generated form means it was never author-retitled, so an
+			//     entity rename retitles the thread here.
+			//   - space: the thread files under the parent's primary
+			//     space — a public→public re-file (UpdateContentSpaces)
+			//     leaves it under the stale space until this re-homes it.
+			if tRow, tErr := s.read.GetContentByID(ctx, existing.ContentID); tErr == nil {
+				expectedTitle := anchorThreadTitle(entityType, desc.Title)
+				if tRow.Title != expectedTitle && isGeneratedAnchorTitle(tRow.Title) {
+					if uErr := s.write.SetThreadRowTitle(ctx, gen.SetThreadRowTitleParams{
+						ID:    existing.ContentID,
+						Title: expectedTitle,
+					}); uErr != nil {
+						slog.Warn("comments: anchor thread retitle failed",
+							"entity_key", entityKey, "error", uErr)
+					}
+				}
+				if entityType == "content" && desc.SpaceID.Valid && tRow.SpaceID != desc.SpaceID {
 					if uErr := s.write.SetThreadRowSpaceID(ctx, gen.SetThreadRowSpaceIDParams{
 						ID:      existing.ContentID,
 						SpaceID: desc.SpaceID,
@@ -592,7 +613,7 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 		return AnchorSummary{}, fmt.Errorf("content creator not wired")
 	}
 
-	title := anchorThreadTitle(entityType, entityKey, desc.Title, desc.Category)
+	title := anchorThreadTitle(entityType, desc.Title)
 
 	// The thread body starts empty — /thread/{slug} renders the entity's
 	// excerpt (embed card / parent-article preview) as the default context,

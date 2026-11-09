@@ -4,7 +4,7 @@ import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, apiList, apiPost, ApiError } from '#lib/server/api.js';
 import { hasPerm } from '#lib/server/auth.js';
 import { contentHref } from '#lib/utils/contentLink.js';
-import type { ForumThread, ForumReply, ForumTag, PollWithResults, Comment } from '#lib/types/index.js';
+import type { ForumThread, ForumReply, ForumTag, PollWithResults, Comment, WikiPage } from '#lib/types/index.js';
 import type { ContentArticle } from '#lib/types/content.js';
 import type { ThreadEmbed } from '#lib/components/thread/ThreadEmbedView.svelte';
 
@@ -282,10 +282,30 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
 	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
 
+	// Wiki-anchored threads: fetch the page so the view renders its
+	// formatted ~150-word opening — the anchor's stored entity_summary is
+	// flat text, and an empty-body thread has nothing else formatted to
+	// show. Best-effort: the flat excerpt is the fallback.
+	let wikiPage: WikiPage | null = null;
+	if (article.thread_anchor?.entity_type === 'wiki_page' && article.thread_anchor.entity_url) {
+		const m = /^\/wiki\/([^/?#]+)\/([^/?#]+)/.exec(article.thread_anchor.entity_url);
+		if (m) {
+			try {
+				wikiPage = await apiGet<WikiPage>(
+					ctx,
+					`/wiki/${encodeURIComponent(m[1])}/${encodeURIComponent(m[2])}`
+				);
+			} catch {
+				wikiPage = null;
+			}
+		}
+	}
+
 	return {
 		kind: 'embed' as const,
 		article,
 		parentArticle,
+		wikiPage,
 		embed: buildThreadEmbed(article),
 		comments,
 		commentsTotal,

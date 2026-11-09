@@ -83,6 +83,14 @@ RETURNING id, content_id, entity_type, entity_key, entity_url, entity_title, ent
 UPDATE contents SET space_id = @space_id, updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
 
+-- name: SetThreadRowTitle :exec
+-- Retitle a minted thread row whose entity renamed since mint — applied
+-- only when the stored title still carries a generated form (the " (A
+-- Thread)" suffix or a legacy "Discussing …" template), so author-edited
+-- titles are never clobbered.
+UPDATE contents SET title = @title, updated_at = now()
+WHERE id = @id AND deleted_at IS NULL;
+
 -- name: GetThreadParentByThreadID :one
 -- The content a §49 linked-discussion row was started about — used by
 -- /thread/{slug} to render the parent embed on discussion threads.

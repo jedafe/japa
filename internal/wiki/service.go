@@ -1148,21 +1148,45 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 
 	dto.Siblings = s.getSiblings(ctx, spaceID, page.SpaceName, catPtr, page.Category, page.Slug, parentTemplateID, templates)
 
+	// The page's display label is "{Space Name} {Page Title}" by default
+	// ("Argentina Cost of Living") — titles already carrying the space
+	// name keep it. {name} expansion runs unconditionally here too so a
+	// page whose category failed to resolve can't leak the raw token.
+	dto.Title = pageDisplayTitle(spaceName, substituteTemplateLabel(dto.Title, spaceName))
+
 	return dto, nil
 }
 
 // substituteTemplateLabel expands the `{name}` token in a page-template
 // label ("Prices in {name}") with the space's display name. Labels
 // without the token pass through unchanged.
+func substituteTemplateLabel(label, spaceName string) string {
+	return strings.ReplaceAll(label, "{name}", spaceName)
+}
+
+// pageDisplayTitle is the page's display label — "{Space Name} {Page
+// Title}" by default. A title already carrying the space name at a word
+// boundary ("United Kingdom Visa Routes" from a {name} expansion, or an
+// editor's own naming) isn't doubled.
+func pageDisplayTitle(spaceName, title string) string {
+	t := strings.TrimSpace(title)
+	if spaceName == "" || t == "" {
+		return t
+	}
+	if strings.Contains(
+		" "+strings.ToLower(t)+" ",
+		" "+strings.ToLower(spaceName)+" ",
+	) {
+		return t
+	}
+	return spaceName + " " + t
+}
+
 // bareNameTokenLabel strips a "{name}" token out of a label — how a
 // tokened category reads when it displays as a label rather than a title
 // (chip, tab strip): "{name} Visa Routes" → "Visa Routes".
 func bareNameTokenLabel(label string) string {
 	return strings.Join(strings.Fields(strings.ReplaceAll(label, "{name}", "")), " ")
-}
-
-func substituteTemplateLabel(label, spaceName string) string {
-	return strings.ReplaceAll(label, "{name}", spaceName)
 }
 
 // getLazyTemplatePage renders a wiki page straight from the space type's
@@ -1186,7 +1210,7 @@ func (s *Service) getLazyTemplatePage(ctx context.Context, userID, spaceID pgtyp
 		WikiPageDTO: WikiPageDTO{
 			SpaceID:   spaceID.String(),
 			Slug:      pageSlug,
-			Title:     substituteTemplateLabel(tmpl.Label, spaceName),
+			Title:     pageDisplayTitle(spaceName, substituteTemplateLabel(tmpl.Label, spaceName)),
 			Category:  tmpl.CategoryToken,
 			IsActive:  true,
 			SpaceSlug: spaceSlug,
