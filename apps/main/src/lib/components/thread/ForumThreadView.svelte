@@ -861,8 +861,9 @@ import { contentHref } from '#lib/utils/contentLink.js';
 		{/if}
 	</article>
 
-	<!-- Threaded replies (id anchors the reaction rail's reply count) -->
-	<div id="replies">
+	<!-- Threaded replies — ReplyThread carries the id="replies" anchor the
+	     reaction rail's reply count deep-links to. -->
+	<div>
 	<ReplyThread
 		replies={data.replies}
 		threadId={thread.id}

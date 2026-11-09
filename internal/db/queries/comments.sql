@@ -641,6 +641,7 @@ LEFT JOIN (
 LEFT JOIN (
     SELECT l.content_id, COUNT(cm.id)::int AS cnt
     FROM content_thread_links l
+    JOIN contents lt ON lt.id = l.thread_id AND lt.deleted_at IS NULL
     JOIN comments cm ON cm.content_id = l.thread_id AND cm.deleted_at IS NULL
     GROUP BY l.content_id
 ) lnk ON lnk.content_id = t.id

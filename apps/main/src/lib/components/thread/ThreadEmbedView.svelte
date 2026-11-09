@@ -601,8 +601,9 @@
 	</article>
 
 	<!-- Replies — the unified conversation (§49 comments via the §08 reply
-	     UI). Discussion happens here, not on the entity page. -->
-	<div id="replies" class="mt-6">
+	     UI). Discussion happens here, not on the entity page. ReplyThread
+	     carries the id="replies" deep-link anchor itself. -->
+	<div class="mt-6">
 		{#if data.commentsLoadError}
 			<p class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-muted)]">
 				{t('comments.load_error', 'Could not load comments right now.')}

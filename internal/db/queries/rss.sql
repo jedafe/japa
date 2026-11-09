@@ -75,17 +75,38 @@ LIMIT @page_limit;
 -- threads are public immediately (their backing row stays 'draft'), while
 -- space-scoped threads need a 'published' backing row so in-review threads
 -- held for moderation never leak into the feed.
-SELECT ft.id, ft.title, ft.slug,
- c.body_html, c.body, c.published_at, ft.created_at,
- CASE WHEN ft.is_anonymous THEN '' ELSE COALESCE(u.public_username, u.username, '') END::text AS username
-FROM forum_threads ft
-JOIN contents c ON c.id = ft.content_id
-JOIN users u ON u.id = ft.author_user_id
-LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ft.deleted_at IS NULL
- AND (ft.space_id IS NULL OR c.status = 'published')
- AND c.deleted_at IS NULL
- AND c.auto_hidden = false
- AND (s.id IS NULL OR s.visibility = 'public')
-ORDER BY ft.created_at DESC
+--
+-- Unified-discussion spec: /thread is every discussion, so the feed unions
+-- standalone + entity-anchored `discussion` contents rows onto the forum
+-- threads. Same public gates as the forum side (published, public,
+-- auto_hidden, public-space). Content-anchored rows keep their own slug —
+-- /thread/{thread-slug} canonicalizes to the parent's slug with a 301.
+SELECT * FROM (
+  SELECT ft.id, ft.title, ft.slug,
+   c.body_html, c.body, c.published_at, ft.created_at,
+   CASE WHEN ft.is_anonymous THEN '' ELSE COALESCE(u.public_username, u.username, '') END::text AS username
+  FROM forum_threads ft
+  JOIN contents c ON c.id = ft.content_id
+  JOIN users u ON u.id = ft.author_user_id
+  LEFT JOIN spaces s ON s.id = ft.space_id
+  WHERE ft.deleted_at IS NULL
+   AND (ft.space_id IS NULL OR c.status = 'published')
+   AND c.deleted_at IS NULL
+   AND c.auto_hidden = false
+   AND (s.id IS NULL OR (s.deleted_at IS NULL AND s.status = 'active' AND s.visibility = 'public'))
+  UNION ALL
+  SELECT c.id, c.title, c.slug,
+   c.body_html, c.body, c.published_at, c.created_at,
+   COALESCE(u.public_username, u.username, '')::text AS username
+  FROM contents c
+  JOIN users u ON u.id = c.author_id
+  LEFT JOIN spaces s ON s.id = c.space_id
+  WHERE c.content_type = 'discussion'
+   AND c.status = 'published'
+   AND c.visibility = 'public'
+   AND c.deleted_at IS NULL
+   AND c.auto_hidden = false
+   AND (s.id IS NULL OR (s.deleted_at IS NULL AND s.status = 'active' AND s.visibility = 'public'))
+) feed
+ORDER BY created_at DESC
 LIMIT @page_limit;

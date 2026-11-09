@@ -394,6 +394,30 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 	// their thread, and content `discussion` rows resolve to themselves —
 	// they are their own thread, so "start a conversation" is a no-op link.
 	if err == nil {
+		// Heal drifted entity fields — page/article renames and revised
+		// excerpts land here because the mint hooks (wiki approval, content
+		// publish, lazy mint) re-enter CreateAnchor on every change. The
+		// upsert refreshes display fields in place; the live-binding CASE
+		// keeps content_id. Best-effort: a describe failure never blocks
+		// the get.
+		if desc, dErr := s.describeEntity(ctx, entityType, entityKey); dErr == nil &&
+			(existing.EntityURL != desc.URL || existing.EntityTitle != desc.Title ||
+				!summaryEqual(existing.EntitySummary, desc.Summary)) {
+			if _, uErr := s.write.CreateThreadAnchor(ctx, gen.CreateThreadAnchorParams{
+				ContentID:     existing.ContentID,
+				EntityType:    entityType,
+				EntityKey:     entityKey,
+				EntityUrl:     desc.URL,
+				EntityTitle:   desc.Title,
+				EntitySummary: desc.Summary,
+			}); uErr != nil {
+				slog.Warn("comments: anchor entity refresh failed", "entity_key", entityKey, "error", uErr)
+			} else {
+				existing.EntityURL = desc.URL
+				existing.EntityTitle = desc.Title
+				existing.EntitySummary = desc.Summary
+			}
+		}
 		// Heal stray comments on the entity row — a mint interrupted between
 		// link and reparent, or a comment written straight to the article —
 		// so one entity never shows two conversations. Idempotent no-op once
@@ -503,11 +527,18 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 	}
 
 	// Lost the get-or-create race: ON CONFLICT kept the earlier row's
-	// content_id, so our minted contents row is unanchored. Re-resolve to
-	// return the winning anchor's slug instead of the orphan's. (The
-	// reparent below runs only on the winning path — comments must never
-	// move onto an orphan.)
+	// content_id, so our minted contents row is unanchored. Soft-delete it —
+	// a live duplicate thread would list as a standalone discussion and its
+	// link would double-count on the parent — then re-resolve to return
+	// the winning anchor's slug. (The reparent below runs only on the
+	// winning path — comments must never move onto an orphan.)
 	if anchor.ContentID != row.ID {
+		if s.creator != nil {
+			if delErr := s.creator.DeleteContent(ctx, row.ID); delErr != nil {
+				slog.Warn("comments: delete losing anchor-mint row failed",
+					"content_id", row.ID.String(), "error", delErr)
+			}
+		}
 		return s.ResolveAnchor(ctx, entityType, entityKey)
 	}
 
@@ -537,6 +568,14 @@ func (s *Service) CreateAnchor(ctx context.Context, userID pgtype.UUID, entityTy
 	}, nil
 }
 
+// summaryEqual compares two nullable entity summaries.
+func summaryEqual(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 // reparentComments moves comments left on an entity row (posted before its
 // thread was minted, or written straight to the article via the API) onto
 // its canonical thread, then resyncs both rows' comment_count. Idempotent —
@@ -551,6 +590,31 @@ func (s *Service) reparentComments(ctx context.Context, from, to pgtype.UUID) er
 	for _, id := range []pgtype.UUID{from, to} {
 		if err := s.write.RecountContentCommentCount(ctx, id); err != nil {
 			return fmt.Errorf("recounting comment_count: %w", err)
+		}
+		// comment_votes follow their comment's content_id — the moved votes
+		// leave the entity row's union tally and join the thread's, so both
+		// rows' vote_score need the drift-proof recompute.
+		if err := s.write.IncrementScoreVote(ctx, id); err != nil {
+			return fmt.Errorf("recomputing vote_score: %w", err)
+		}
+	}
+	return nil
+}
+
+// DropAnchorsForWikiSpace drops every live thread anchored to a space's
+// wiki pages — called when the space leaves public/active so public thread
+// pages stop leaking the pages' titles and excerpts (the mint query only
+// admits public, active spaces). Re-entry is a no-op; the pages re-mint
+// lazily on their next approval or thread visit once the space reopens.
+func (s *Service) DropAnchorsForWikiSpace(ctx context.Context, spaceID pgtype.UUID) error {
+	keys, err := s.read.ListWikiAnchorsBySpace(ctx, spaceID)
+	if err != nil {
+		return fmt.Errorf("listing wiki anchors for space: %w", err)
+	}
+	for _, key := range keys {
+		if err := s.DeleteAnchor(ctx, "wiki_page", key); err != nil {
+			slog.Warn("comments: drop wiki anchor failed",
+				"entity_key", key, "error", err)
 		}
 	}
 	return nil

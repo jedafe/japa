@@ -1165,6 +1165,10 @@ func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams)
 		return gen.UpdateSpaceRow{}, fmt.Errorf("updating space: %w", err)
 	}
 
+	// Public/active gate mirrors the wiki anchor mint — a space that just
+	// closed takes its pages' public thread pages down with it.
+	s.dropWikiThreadAnchorsIfClosed(ctx, space.ID)
+
 	return space, nil
 }
 

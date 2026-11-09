@@ -14,6 +14,16 @@ SELECT a.id, a.content_id, a.entity_type, a.entity_key, a.entity_url, a.entity_t
 FROM thread_anchors a
 WHERE a.content_id = @content_id;
 
+-- name: ListWikiAnchorsBySpace :many
+-- Anchors bound to a space's wiki pages — used when the space leaves
+-- public/active so their public threads can be dropped (same leak gate as
+-- GetWikiPageAnchorInfo's JOIN). Live threads only.
+SELECT a.entity_key
+FROM thread_anchors a
+JOIN wiki_pages wp ON wp.id = a.entity_key::uuid
+JOIN contents c ON c.id = a.content_id AND c.deleted_at IS NULL
+WHERE a.entity_type = 'wiki_page' AND wp.space_id = @space_id;
+
 -- name: CreateThreadAnchor :one
 INSERT INTO thread_anchors (content_id, entity_type, entity_key, entity_url, entity_title, entity_summary)
 VALUES (@content_id, @entity_type, @entity_key, @entity_url, @entity_title, sqlc.narg(entity_summary))

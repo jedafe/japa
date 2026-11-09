@@ -669,6 +669,13 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		Visibility:      input.Visibility,
 		ReadTimeMinutes: ComputeReadTime(input.Body),
 		PublishAt:       input.PublishAt,
+		// Rows born published get their stamp here — UpdateContentStatus only
+		// fires on transitions, so without this the row's published_at stays
+		// NULL forever (anchor-minted threads, imports).
+		PublishedAt: pgtype.Timestamptz{
+			Time:  time.Now(),
+			Valid: input.Status == StatusPublished,
+		},
 		GuideCategory:   input.GuideCategory,
 		JourneyStage:    input.JourneyStage,
 		VisaRoute:       input.VisaRoute,

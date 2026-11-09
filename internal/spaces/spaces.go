@@ -260,6 +260,10 @@ type Service struct {
 	// followInv invalidates jc:is_following keys for every follower of a
 	// deleted space (wired to follows.Service.InvalidateEntityFollowers).
 	followInv func(ctx context.Context, entityType string, entityID pgtype.UUID)
+	// anchorDrop drops /thread anchors for this space's wiki pages when the
+	// space leaves public/active — wired to
+	// comments.Service.DropAnchorsForWikiSpace.
+	anchorDrop func(ctx context.Context, spaceID pgtype.UUID) error
 }
 
 // SetValkey wires the Valkey client for mute SET cache invalidation
@@ -273,6 +277,36 @@ func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 // that happen to hold a follows dep (BUG-009).
 func (s *Service) SetFollowCacheInvalidator(fn func(ctx context.Context, entityType string, entityID pgtype.UUID)) {
 	s.followInv = fn
+}
+
+// SetThreadAnchorSpaceDropper wires the wiki-page thread-anchor dropper so
+// public /thread pages die with the space's publicness (unified-discussion
+// spec — the mint query only admits public, active spaces).
+func (s *Service) SetThreadAnchorSpaceDropper(d func(ctx context.Context, spaceID pgtype.UUID) error) {
+	s.anchorDrop = d
+}
+
+// dropWikiThreadAnchorsIfClosed drops the /thread pages bound to this
+// space's wiki pages when the space is no longer public+active — a public
+// thread would keep serving the page's title and excerpt after the space
+// itself closed. Idempotent; pages re-mint lazily when the space reopens.
+func (s *Service) dropWikiThreadAnchorsIfClosed(ctx context.Context, spaceID pgtype.UUID) {
+	if s.anchorDrop == nil {
+		return
+	}
+	row, err := s.read.GetSpaceByID(ctx, spaceID)
+	if err != nil {
+		slog.Warn("spaces: wiki thread-anchor gate check failed",
+			"space_id", spaceID.String(), "error", err)
+		return
+	}
+	if row.Visibility == "public" && row.Status == StatusActive {
+		return
+	}
+	if err := s.anchorDrop(ctx, spaceID); err != nil {
+		slog.Warn("spaces: wiki thread-anchor drop failed",
+			"space_id", spaceID.String(), "error", err)
+	}
 }
 
 // SetSourceManager links the space service to the canonical source registry

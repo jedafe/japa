@@ -239,3 +239,34 @@ func (q *Queries) GetWikiPageAnchorInfo(ctx context.Context, id pgtype.UUID) (Ge
 	)
 	return i, err
 }
+
+const listWikiAnchorsBySpace = `-- name: ListWikiAnchorsBySpace :many
+SELECT a.entity_key
+FROM thread_anchors a
+JOIN wiki_pages wp ON wp.id = a.entity_key::uuid
+JOIN contents c ON c.id = a.content_id AND c.deleted_at IS NULL
+WHERE a.entity_type = 'wiki_page' AND wp.space_id = $1
+`
+
+// Anchors bound to a space's wiki pages — used when the space leaves
+// public/active so their public threads can be dropped (same leak gate as
+// GetWikiPageAnchorInfo's JOIN). Live threads only.
+func (q *Queries) ListWikiAnchorsBySpace(ctx context.Context, spaceID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listWikiAnchorsBySpace, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var entity_key string
+		if err := rows.Scan(&entity_key); err != nil {
+			return nil, err
+		}
+		items = append(items, entity_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

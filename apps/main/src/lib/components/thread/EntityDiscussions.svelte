@@ -48,6 +48,9 @@
 	let tabLoading = $state(false);
 	let starting = $state(false);
 	let loadError = $state<string | null>(null);
+	// Erased-user mentions in comments — the envelope's deleted_user_ids
+	// sidecar feeds ReplyThread's redaction the same way the SSR path does.
+	let deletedUserIds = $state<Set<string> | undefined>(undefined);
 
 	const sortParam = $derived(tab === 'popular' ? 'top' : 'new');
 	const threadHref = $derived(
@@ -110,6 +113,9 @@
 		loadError = null;
 		const top = res.data;
 		total = (res.envelope as { meta?: { total?: number } } | null)?.meta?.total ?? top.length;
+		const erased = new Set<string>(
+			(res.envelope as { deleted_user_ids?: string[] } | null)?.deleted_user_ids ?? []
+		);
 		const all = [...top];
 		let parents = top.filter((c) => (c.reply_count ?? 0) > 0);
 		while (parents.length > 0) {
@@ -118,12 +124,18 @@
 				const child = await api.getEnvelope<Comment[]>(
 					`/content/${anchor.content_id}/comments?parent_id=${p.id}&page_size=100`
 				);
-				if (!child.error && child.data) next.push(...child.data);
+				if (!child.error && child.data) {
+					next.push(...child.data);
+					for (const id of
+						(child.envelope as { deleted_user_ids?: string[] } | null)?.deleted_user_ids ??
+						[]) erased.add(id);
+				}
 			}
 			all.push(...next);
 			parents = next.filter((c) => (c.reply_count ?? 0) > 0);
 		}
 		comments = all;
+		deletedUserIds = erased.size > 0 ? erased : undefined;
 	}
 
 	async function load() {
@@ -248,7 +260,7 @@
 					userVotes={conversation.userVotes}
 					canModerate={false}
 					{currentUserId}
-					deletedUserIds={undefined}
+					{deletedUserIds}
 				/>
 			</div>
 			{#if total > comments.filter((c) => !c.parent_id).length || total > 5}

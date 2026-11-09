@@ -152,6 +152,10 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Leaving 'active' closes the public thread pages bound to this space's
+	// wiki pages — same gate the mint query applies (public + active only).
+	h.Service.dropWikiThreadAnchorsIfClosed(r.Context(), spaceID)
+
 	// Record the moderation decision — the reason is otherwise dropped.
 	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
 		targetType := "space"
