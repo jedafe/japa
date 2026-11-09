@@ -12,7 +12,8 @@
 	import { DataTable } from '#lib/components/ui/data-table/index.js';
 	import { Select } from '#lib/components/ui/select/index.js';
 	import type { ActionItem } from '#lib/components/ui/data-table/index.js';
-	import { ArrowUp, ArrowDown, Plus, Trash2, Pencil, Eye } from 'lucide-svelte';
+	import { ArrowUp, ArrowDown, Plus, Trash2, Pencil, Eye, GitBranch } from 'lucide-svelte';
+	import RuleConditionEditor, { type ClauseRow, type RuleFieldOption } from '#lib/components/forms/rule-condition-editor.svelte';
 	import { formsAdminApi, fieldGroupsAdminApiExtended } from '#lib/api.js';
 	import { PUBLIC_JC_SITE_URL } from '$app/env/public';
 	import { hasPermission } from '#lib/stores/permissions.svelte.js';
@@ -33,6 +34,7 @@
 		form_type?: string;
 		space_id?: string;
 		field_group_id?: string;
+		scoring_config?: Record<string, unknown>;
 		fields?: FieldDef[];
 		submission_fee_credits?: number;
 		created_at: string;
@@ -41,12 +43,17 @@
 	type FieldDef = {
 		id: string;
 		label: string;
+		/** Machine key — the identifier visible_if/jump clauses reference. */
+		key?: string;
 		type: string;
 		required: boolean;
 		sort_order: number;
 		placeholder?: string;
 		default_value?: string;
 		options: string[];
+		option_defs?: { value: string; label: string }[];
+		/** Raw custom_fields.config — scoring keys + visible_if/jump (ADR-137). */
+		config?: Record<string, unknown>;
 		/** Assessment scoring bucket (custom_fields.config.dimension) — the
 		 * assessment UI groups fields into steps by this value. */
 		dimension?: string;
@@ -58,6 +65,7 @@
 		position: number;
 		field_group_id?: string;
 		fields?: FieldDef[];
+		config?: Record<string, unknown>;
 	};
 
 	type Submission = {
@@ -120,6 +128,11 @@
 	let editFieldType = $state('text');
 	let editFieldPlaceholder = $state('');
 	let editFieldRequired = $state(false);
+	// ADR-137 conditional rules — seeded from field.config on open.
+	let editFieldVisRows = $state<ClauseRow[]>([]);
+	let editFieldJumpEnabled = $state(false);
+	let editFieldJumpStep = $state('');
+	let editFieldJumpRows = $state<ClauseRow[]>([]);
 
 	// --- Submissions Tab ---
 
@@ -181,6 +194,13 @@
 	let showEditStepModal = $state(false);
 	let editingStep = $state<FormStep | null>(null);
 	let editStepTitle = $state('');
+	// ADR-137: standard step visible_if (form_steps.config.visible_if).
+	let editStepVisRows = $state<ClauseRow[]>([]);
+	// ADR-137: assessment step_rules editor (scoring_config.step_rules).
+	let showStepRuleModal = $state(false);
+	let editingStepRuleDim = $state('');
+	let stepRuleRows = $state<ClauseRow[]>([]);
+	let stepRuleError = $state('');
 
 	// --- Loaded Flags (prevent infinite retry loops) ---
 
@@ -214,6 +234,153 @@
 		if (name === 'general') return t('forms.assessmentGeneralStep', 'General');
 		const pretty = name.replace(/_/g, ' ');
 		return pretty.charAt(0).toUpperCase() + pretty.slice(1);
+	}
+
+	// === Conditional logic (ADR-137) ===
+
+	const NO_VALUE_OPS = new Set(['answered', 'not_answered']);
+	const NUMERIC_TYPES = new Set(['number', 'rating', 'percentage', 'currency', 'duration']);
+
+	// Every field on the form across flat and per-step groups — the pool
+	// visible_if/jump clauses can reference.
+	const allFields = $derived.by((): FieldDef[] => {
+		const seen = new Map<string, FieldDef>();
+		for (const f of [...(form?.fields ?? []), ...fields, ...steps.flatMap((s) => s.fields ?? [])]) {
+			if (f.key) seen.set(f.key, f);
+		}
+		return [...seen.values()];
+	});
+
+	const ruleFieldOptions = $derived<RuleFieldOption[]>(
+		allFields.map((f) => ({ key: f.key ?? '', label: f.label, type: f.type, option_defs: f.option_defs, options: f.options }))
+	);
+
+	const allFieldKeys = $derived(new Set(allFields.map((f) => f.key).filter(Boolean)));
+
+	// Jump targets: dimension names for assessment forms, form_steps ids
+	// for standard multi-step forms.
+	const jumpStepOptions = $derived(
+		form?.form_type === 'assessment'
+			? assessmentSteps.map((s) => ({ value: s.name, label: dimensionLabel(s.name) }))
+			: steps.map((s) => ({ value: s.id, label: s.title }))
+	);
+	const stepOrderKeys = $derived(jumpStepOptions.map((o) => o.value));
+
+	// Assessment step rules from scoring_config (dim → {visible_if}).
+	const stepRulesConfig = $derived(
+		((form?.scoring_config?.step_rules ?? {}) as Record<string, { visible_if?: { all?: unknown[] } }>)
+	);
+
+	function clausesToRows(list: unknown): ClauseRow[] {
+		if (!Array.isArray(list)) return [];
+		return list.map((c) => {
+			const cl = c as { field?: unknown; op?: unknown; value?: unknown };
+			return {
+				field: typeof cl?.field === 'string' ? cl.field : '',
+				op: typeof cl?.op === 'string' ? cl.op : 'eq',
+				value: cl?.value === undefined || cl?.value === null
+					? ''
+					: Array.isArray(cl.value) ? cl.value.join(',') : String(cl.value),
+			};
+		});
+	}
+
+	function castScalar(fieldKey: string, v: string): unknown {
+		const f = allFields.find((x) => x.key === fieldKey);
+		if (f?.type === 'boolean' || f?.type === 'checkbox') return v === 'true' || v === '1' || v === 'yes';
+		if (f?.type && NUMERIC_TYPES.has(f.type)) {
+			const n = Number(v);
+			return Number.isNaN(n) ? v : n;
+		}
+		return v;
+	}
+
+	// Serialize editor rows into a Condition ({all: [...]}). omitEmptyField
+	// drops `field` when empty — inside jump.when it defaults to the owning
+	// field's key.
+	function rowsToCondition(rows: ClauseRow[], omitEmptyField = false): { all: Record<string, unknown>[] } | undefined {
+		const list: Record<string, unknown>[] = [];
+		for (const r of rows) {
+			if (!r.field && !omitEmptyField) continue;
+			const c: Record<string, unknown> = { op: r.op };
+			if (r.field) c.field = r.field;
+			if (!NO_VALUE_OPS.has(r.op)) {
+				if (r.value === '') continue;
+				c.value = r.op === 'in'
+					? r.value.split(',').map((s) => s.trim()).filter(Boolean).map((v) => castScalar(r.field, v))
+					: castScalar(r.field, r.value);
+			}
+			list.push(c);
+		}
+		return list.length ? { all: list } : undefined;
+	}
+
+	// Merge the edited visible_if/jump into the field's existing config —
+	// config is full-replace on PATCH so untouched keys (weight, dimension,
+	// option_scores) must be carried over.
+	function buildFieldConfig(f: FieldDef): Record<string, unknown> {
+		const cfg: Record<string, unknown> = { ...(f.config ?? {}) };
+		const vis = rowsToCondition(editFieldVisRows);
+		if (vis) cfg.visible_if = vis; else delete cfg.visible_if;
+		if (editFieldJumpEnabled && editFieldJumpStep) {
+			const when = rowsToCondition(editFieldJumpRows, true);
+			cfg.jump = when ? { when, step: editFieldJumpStep } : { step: editFieldJumpStep };
+		} else {
+			delete cfg.jump;
+		}
+		return cfg;
+	}
+
+	// Index of the step containing the field being edited, in natural step
+	// order — used to flag backward/self jumps.
+	function editingFieldStepIndex(): number {
+		if (!editingField) return -1;
+		if (form?.form_type === 'assessment') {
+			return assessmentSteps.findIndex((s) => s.name === (editingField!.dimension || 'general'));
+		}
+		const step = steps.find((s) => s.field_group_id === editingFieldStepGroupId)
+			?? steps.find((s) => (s.fields ?? []).some((f) => f.id === editingField!.id));
+		return step ? steps.indexOf(step) : -1;
+	}
+
+	// Save-time warnings (ADR-137): unknown field refs and jump targets that
+	// can never fire. Returns localized strings; the caller confirms before PUT.
+	function clauseWarnings(rows: ClauseRow[]): string[] {
+		const w: string[] = [];
+		for (const r of rows) {
+			if (r.field && !allFieldKeys.has(r.field)) {
+				w.push(t('forms.logicWarnUnknownField', 'Condition references an unknown field: {f}').replace('{f}', r.field));
+			}
+		}
+		return w;
+	}
+
+	function jumpWarnings(): string[] {
+		const w = clauseWarnings(editFieldJumpRows);
+		if (!editFieldJumpEnabled || !editFieldJumpStep) return w;
+		const tIdx = stepOrderKeys.indexOf(editFieldJumpStep);
+		if (tIdx < 0) {
+			w.push(t('forms.logicWarnJumpUnknown', 'The jump target step does not exist — it will never fire.'));
+		} else {
+			const sIdx = editingFieldStepIndex();
+			if (sIdx >= 0 && tIdx <= sIdx) {
+				w.push(t('forms.logicWarnJumpBackward', "The jump target is not after this field's step — it will never fire."));
+			}
+			// A jumped-to step's own visible_if still applies — flag when the
+			// target can hide itself.
+			const targetCfg = (form?.form_type === 'assessment'
+				? stepRulesConfig[editFieldJumpStep]
+				: steps.find((s) => s.id === editFieldJumpStep)?.config) as { visible_if?: unknown } | undefined;
+			if (targetCfg?.visible_if) {
+				w.push(t('forms.logicWarnJumpHidden', 'The jump target has its own visibility conditions — the jump is ignored when they hide it.'));
+			}
+		}
+		return w;
+	}
+
+	function confirmWarnings(warns: string[]): boolean {
+		if (!warns.length) return true;
+		return confirm(warns.join('\n') + '\n\n' + t('forms.logicWarnConfirm', 'Save anyway?'));
 	}
 
 	// Reordering a derived step = rewriting the flat field order so the
@@ -554,17 +721,25 @@
 	function openEditStep(step: FormStep) {
 		editingStep = step;
 		editStepTitle = step.title;
+		editStepVisRows = clausesToRows((step.config as { visible_if?: { all?: unknown[] } } | undefined)?.visible_if?.all);
 		showEditStepModal = true;
 	}
 
 	async function updateStep() {
 		if (!editingStep || !editStepTitle.trim()) return;
+		if (!confirmWarnings(clauseWarnings(editStepVisRows))) return;
 		savingStep = true;
 		stepError = '';
+		// config is full-replace on PATCH — merge the edited visible_if into
+		// the step's stored config.
+		const cfg: Record<string, unknown> = { ...(editingStep.config ?? {}) };
+		const vis = rowsToCondition(editStepVisRows);
+		if (vis) cfg.visible_if = vis; else delete cfg.visible_if;
 		try {
 			const result = await formsAdminApi.updateStep(formId, editingStep.id, {
 				title: editStepTitle.trim(),
 				position: editingStep.position,
+				config: cfg,
 			});
 			if (result.ok) {
 				showEditStepModal = false;
@@ -586,6 +761,42 @@
 			await loadSteps();
 		} catch {
 			// ignore
+		}
+	}
+
+	// Assessment step_rules editor (ADR-137): one visible_if per dimension,
+	// merged into scoring_config and PATCHed as a scoring-only update.
+	let savingStepRule = $state(false);
+
+	function openStepRule(dim: string) {
+		editingStepRuleDim = dim;
+		stepRuleRows = clausesToRows(stepRulesConfig[dim]?.visible_if?.all);
+		stepRuleError = '';
+		showStepRuleModal = true;
+	}
+
+	async function saveStepRule() {
+		if (!editingStepRuleDim) return;
+		if (!confirmWarnings(clauseWarnings(stepRuleRows))) return;
+		savingStepRule = true;
+		stepRuleError = '';
+		const sc: Record<string, unknown> = { ...(form?.scoring_config ?? {}) };
+		const rules: Record<string, unknown> = { ...((sc.step_rules as Record<string, unknown>) ?? {}) };
+		const vis = rowsToCondition(stepRuleRows);
+		if (vis) rules[editingStepRuleDim] = { visible_if: vis }; else delete rules[editingStepRuleDim];
+		if (Object.keys(rules).length) sc.step_rules = rules; else delete sc.step_rules;
+		try {
+			const result = await formsAdminApi.update(formId, { scoring_config: sc });
+			if (result.ok) {
+				showStepRuleModal = false;
+				await loadForm();
+			} else {
+				stepRuleError = result.error ?? t('forms.saveError', 'Failed to save');
+			}
+		} catch (e) {
+			stepRuleError = e instanceof Error ? e.message : t('forms.saveError', 'Failed to save');
+		} finally {
+			savingStepRule = false;
 		}
 	}
 
@@ -728,6 +939,15 @@
 		editFieldType = field.type;
 		editFieldPlaceholder = field.placeholder ?? '';
 		editFieldRequired = field.required ?? false;
+		// Seed the rule editors from the field's stored config (ADR-137).
+		const cfg = (field.config ?? {}) as {
+			visible_if?: { all?: unknown[] };
+			jump?: { when?: { all?: unknown[] }; step?: string };
+		};
+		editFieldVisRows = clausesToRows(cfg.visible_if?.all);
+		editFieldJumpEnabled = !!cfg.jump?.step;
+		editFieldJumpStep = cfg.jump?.step ?? '';
+		editFieldJumpRows = clausesToRows(cfg.jump?.when?.all);
 		// For multi-step forms, remember which step's field group this field belongs to.
 		editingFieldStepGroupId = stepGroupId ?? '';
 		showEditFieldModal = true;
@@ -736,6 +956,8 @@
 	async function updateField() {
 		const groupId = editingFieldStepGroupId || fieldGroupId;
 		if (!groupId || !editingField) return;
+		const warns = [...clauseWarnings(editFieldVisRows), ...jumpWarnings()];
+		if (!confirmWarnings(warns)) return;
 		savingField = true;
 		try {
 			const result = await fieldGroupsAdminApiExtended.updateField(groupId, editingField.id, {
@@ -743,6 +965,7 @@
 				field_type: editFieldType,
 				is_required: editFieldRequired,
 				placeholder: editFieldPlaceholder.trim() || undefined,
+				config: buildFieldConfig(editingField),
 			});
 			if (result.ok) {
 				showEditFieldModal = false;
@@ -1059,9 +1282,15 @@
 										<span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">{idx + 1}</span>
 										<span class="text-sm font-medium">{dimensionLabel(astep.name)}</span>
 										<Badge variant="secondary">{t('forms.assessmentFieldCount', '{n} fields').replace('{n}', String(astep.fields.length))}</Badge>
+										{#if stepRulesConfig[astep.name]}
+											<Badge variant="info">{t('forms.logicConditional', 'Conditional')}</Badge>
+										{/if}
 									</div>
 									{#if canManage}
 										<div class="flex items-center gap-1">
+											<Button variant="ghost" size="sm" title={t('forms.logicEditStepRule', 'Edit step conditions')} onclick={() => openStepRule(astep.name)}>
+												<GitBranch class="h-3.5 w-3.5" />
+											</Button>
 											<Button variant="ghost" size="sm" disabled={idx === 0 || movingStep} onclick={() => moveAssessmentStep(idx, -1)}>
 												<ArrowUp class="h-3.5 w-3.5" />
 											</Button>
@@ -1107,7 +1336,7 @@
 		</Modal>
 
 		<!-- Edit Step Modal -->
-		<Modal bind:open={showEditStepModal} title={t('forms.editStep', 'Edit Step')} size="sm">
+		<Modal bind:open={showEditStepModal} title={t('forms.editStep', 'Edit Step')} size="lg">
 			<div class="space-y-4">
 				{#if stepError}
 					<div class="rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">{stepError}</div>
@@ -1115,6 +1344,12 @@
 				<div>
 					<label for="edit-step-title" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.stepTitle', 'Step Title')} *</label>
 					<input id="edit-step-title" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editStepTitle} />
+				</div>
+				<!-- ADR-137: form_steps.config.visible_if -->
+				<div class="border-t border-border pt-4">
+					<p class="mb-1 text-sm font-medium text-foreground-alt">{t('forms.logicVisibility', 'Visibility')}</p>
+					<p class="mb-2 text-xs text-muted">{t('forms.logicStepVisibilityHint', 'Show this step only when every condition matches. No conditions = always visible.')}</p>
+					<RuleConditionEditor bind:clauses={editStepVisRows} fields={ruleFieldOptions} />
 				</div>
 			</div>
 			<div class="mt-6 flex justify-end gap-3">
@@ -1128,6 +1363,34 @@
 					disabled={savingStep || !editStepTitle.trim()}
 				>
 					{savingStep
+						? t('common.saving', 'Saving...')
+						: t('common.save', 'Save')}
+				</Button>
+			</div>
+		</Modal>
+
+		<!-- Assessment Step Rule Modal (ADR-137: scoring_config.step_rules) -->
+		<Modal bind:open={showStepRuleModal} title={t('forms.logicStepRuleTitle', 'Step conditions')} size="lg">
+			<div class="space-y-4">
+				{#if stepRuleError}
+					<div class="rounded-md border px-4 py-3 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 8%, transparent); color: var(--color-danger)">{stepRuleError}</div>
+				{/if}
+				<p class="text-xs text-muted">
+					{t('forms.logicStepRuleHint', 'Show the "{d}" step only when every condition matches. No conditions = always visible.').replace('{d}', dimensionLabel(editingStepRuleDim))}
+				</p>
+				<RuleConditionEditor bind:clauses={stepRuleRows} fields={ruleFieldOptions} />
+			</div>
+			<div class="mt-6 flex justify-end gap-3">
+				<Button
+					variant="outline"
+					onclick={() => showStepRuleModal = false}
+				>{t('common.cancel', 'Cancel')}</Button>
+
+				<Button
+					onclick={saveStepRule}
+					disabled={savingStepRule}
+				>
+					{savingStepRule
 						? t('common.saving', 'Saving...')
 						: t('common.save', 'Save')}
 				</Button>
@@ -1387,7 +1650,7 @@
 		</Modal>
 
 		<!-- Edit Field Modal -->
-		<Modal bind:open={showEditFieldModal} title={t('forms.editField', 'Edit Field')} size="sm">
+		<Modal bind:open={showEditFieldModal} title={t('forms.editField', 'Edit Field')} size="lg">
 			<div class="space-y-4">
 				<div>
 					<label for="edit-field-label" class="mb-1 block text-sm font-medium text-foreground-alt">{t('forms.fieldLabel', 'Label')} *</label>
@@ -1404,6 +1667,26 @@
 				<div class="flex items-center gap-2">
 					<input id="edit-field-required" type="checkbox" bind:checked={editFieldRequired} class="rounded" />
 					<label for="edit-field-required" class="text-sm text-foreground-alt">{t('forms.fieldRequired', 'Required')}</label>
+				</div>
+
+				<!-- ADR-137 conditional rules: visible_if + forward jump -->
+				<div class="border-t border-border pt-4">
+					<p class="mb-1 text-sm font-medium text-foreground-alt">{t('forms.logicVisibility', 'Visibility')}</p>
+					<p class="mb-2 text-xs text-muted">{t('forms.logicVisibilityHint', 'Show this field only when every condition matches. No conditions = always visible.')}</p>
+					<RuleConditionEditor bind:clauses={editFieldVisRows} fields={ruleFieldOptions} />
+				</div>
+				<div class="border-t border-border pt-4">
+					<div class="flex items-center gap-2">
+						<input id="edit-field-jump" type="checkbox" bind:checked={editFieldJumpEnabled} class="rounded" />
+						<label for="edit-field-jump" class="text-sm font-medium text-foreground-alt">{t('forms.logicJump', 'Jump to a step')}</label>
+					</div>
+					{#if editFieldJumpEnabled}
+						<p class="my-2 text-xs text-muted">{t('forms.logicJumpHint', 'When the conditions match, the user skips forward to the target step. No conditions = the jump always fires.')}</p>
+						<div class="mb-2">
+							<Select options={jumpStepOptions} bind:value={editFieldJumpStep} placeholder={t('forms.logicJumpStep', 'Target step')} />
+						</div>
+						<RuleConditionEditor bind:clauses={editFieldJumpRows} fields={ruleFieldOptions} selfLabel={t('forms.logicSelfField', '(this field)')} />
+					{/if}
 				</div>
 			</div>
 			<div class="mt-6 flex justify-end gap-3">

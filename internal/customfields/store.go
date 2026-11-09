@@ -840,6 +840,16 @@ func (s *Service) CreateForm(ctx context.Context, params gen.CreateFormParams) (
 	return form, nil
 }
 
+// UpdateFormScoringConfig replaces an assessment form's scoring_config JSONB.
+// The underlying query is scoped to form_type='assessment' — a non-assessment
+// id returns pgx.ErrNoRows for the handler to map.
+func (s *Service) UpdateFormScoringConfig(ctx context.Context, id pgtype.UUID, scoringConfig []byte) (gen.Form, error) {
+	return s.write.UpdateAssessmentFormScoring(ctx, gen.UpdateAssessmentFormScoringParams{
+		ScoringConfig: scoringConfig,
+		ID:            id,
+	})
+}
+
 // UpdateForm updates a non-system form's mutable fields. System forms are
 // protected at the database level.
 func (s *Service) UpdateForm(ctx context.Context, params gen.UpdateFormParams) (gen.UpdateFormRow, error) {

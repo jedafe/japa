@@ -1701,6 +1701,8 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	type fieldJSON struct {
 		ID        string      `json:"id"`
 		Label     string      `json:"label"`
+		// Key is the machine key rules reference in visible_if/jump clauses.
+		Key       string      `json:"key"`
 		Type      string      `json:"type"`
 		Required  bool        `json:"required"`
 		SortOrder int32       `json:"sort_order"`
@@ -1748,6 +1750,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		fieldList = append(fieldList, fieldJSON{
 			ID:         f.ID.String(),
 			Label:      f.Label,
+			Key:        f.Key,
 			Type:       f.FieldType,
 			Required:   f.IsRequired,
 			SortOrder:  f.Position,
@@ -1767,6 +1770,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	type stepFieldJSON struct {
 		ID         string          `json:"id"`
 		Label      string          `json:"label"`
+		Key        string          `json:"key"`
 		Type       string          `json:"type"`
 		Required   bool            `json:"required"`
 		SortOrder  int32           `json:"sort_order"`
@@ -1820,6 +1824,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 						stepFields = append(stepFields, stepFieldJSON{
 							ID:         f.ID.String(),
 							Label:      f.Label,
+							Key:        f.Key,
 							Type:       f.FieldType,
 							Required:   f.IsRequired,
 							SortOrder:  f.Position,
@@ -1861,6 +1866,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 			"is_system":              form.IsSystem,
 			"form_type":              form.FormType,
 			"submission_fee_credits": form.SubmissionFeeCredits,
+			"scoring_config":         json.RawMessage(form.ScoringConfig),
 			"fields":                 fieldList,
 			"field_group_id":  fieldGroupID,
 			"space_id":        form.SpaceID,
@@ -2071,18 +2077,44 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name                 string  `json:"name"`
-		Description          *string `json:"description"`
-		IsMultiStep          bool    `json:"is_multi_step"`
-		SubmitLabel          string  `json:"submit_label"`
-		SuccessMessage       *string `json:"success_message"`
-		Status               string  `json:"status"`
-		SubmissionFeeCredits *int32  `json:"submission_fee_credits"`
+		Name                 string           `json:"name"`
+		Description          *string          `json:"description"`
+		IsMultiStep          bool             `json:"is_multi_step"`
+		SubmitLabel          string           `json:"submit_label"`
+		SuccessMessage       *string          `json:"success_message"`
+		Status               string           `json:"status"`
+		SubmissionFeeCredits *int32           `json:"submission_fee_credits"`
+		// ScoringConfig writes scoring_config on this specific form — scoped
+		// here rather than via the singleton /admin/assessment/form endpoint
+		// so the admin form editor edits the form it loaded (ADR-137
+		// step_rules). Assessment forms only; JSON object required.
+		ScoringConfig json.RawMessage `json:"scoring_config"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
 		return
+	}
+
+	if len(req.ScoringConfig) > 0 {
+		if !validStepConfig(req.ScoringConfig) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "scoring_config must be a JSON object")
+			return
+		}
+		if _, serr := h.Service.UpdateFormScoringConfig(r.Context(), id, req.ScoringConfig); serr != nil {
+			if errors.Is(serr, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusNotFound, "form_not_found", "Assessment form not found")
+				return
+			}
+			slog.Error("customfields: update scoring_config failed", "form_id", id.String(), "error", serr)
+			errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update scoring config")
+			return
+		}
+		if strings.TrimSpace(req.Name) == "" {
+			// scoring_config-only PATCH — nothing else to write.
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id.String(), "scoring_config": req.ScoringConfig}})
+			return
+		}
 	}
 
 	if strings.TrimSpace(req.Name) == "" {

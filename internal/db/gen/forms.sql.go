@@ -260,7 +260,7 @@ func (q *Queries) DeleteFormSubmissionTrigger(ctx context.Context, arg DeleteFor
 const getFormByID = `-- name: GetFormByID :one
 SELECT id, space_id, name, slug, description, is_multi_step,
  submit_label, success_message, status, is_system, form_type,
- submission_fee_credits, created_at
+ submission_fee_credits, scoring_config, created_at
 FROM forms
 WHERE id = $1
 `
@@ -278,6 +278,7 @@ type GetFormByIDRow struct {
 	IsSystem             bool               `json:"is_system"`
 	FormType             string             `json:"form_type"`
 	SubmissionFeeCredits int32              `json:"submission_fee_credits"`
+	ScoringConfig        []byte             `json:"scoring_config"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -297,6 +298,7 @@ func (q *Queries) GetFormByID(ctx context.Context, id pgtype.UUID) (GetFormByIDR
 		&i.IsSystem,
 		&i.FormType,
 		&i.SubmissionFeeCredits,
+		&i.ScoringConfig,
 		&i.CreatedAt,
 	)
 	return i, err
