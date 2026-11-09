@@ -68,6 +68,9 @@ import { flagUrl } from '#lib/utils/flags.js';
 	// University spaces are typed via space_types.slug = 'university' (most
 	// carry level = 'custom'), so include isUniversity alongside the level set.
 	const isDestinationWiki = $derived(['country', 'state', 'city', 'university'].includes(space.level) || isUniversity);
+	// Geo spaces (country/state/city — ADR-005) are follow-only surfaces;
+	// the header Post CTA is hidden on them (posting lives on custom spaces).
+	const isGeoSpace = $derived(['country', 'state', 'city'].includes(space.level));
 	const reviews = $derived<SpaceReview[]>(data.reviews ?? []);
 
 	function formatWikiCategory(category: string): string {
@@ -632,71 +635,71 @@ import { flagUrl } from '#lib/utils/flags.js';
 				{/if}
 			</div>
 
-			{#if authed || (wikiEnabled && isDestinationWiki)}
-				<div class="flex shrink-0 items-center gap-2 pb-1">
-					{#if authed}
-					<button
-						type="button"
-						onclick={toggleMute}
-						disabled={mutePending}
-						aria-busy={mutePending}
-						title={muted ? t('space.unmute', 'Unmute') : t('space.mute', 'Mute')}
-						class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
-					>
-						{#if mutePending}
-							<Loader2 size={16} class="animate-spin" />
-						{:else if muted}
-							<BellOff size={16} />
-						{:else}
-							<Bell size={16} />
-						{/if}
-					</button>
-					<button
-						type="button"
-						onclick={() => (reportOpen = true)}
-						title={t('space.report', 'Report')}
-						class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-					>
-						<Flag size={16} />
-					</button>
-					<button
-						type="button"
-						onclick={toggleFollow}
-						disabled={followPending}
-						aria-busy={followPending}
-						class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 {following
-							? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
-							: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
-					>
-						{#if followPending}
-							<Loader2 size={16} class="animate-spin" />
-						{:else if following}
-							<UserCheck size={16} />
-							{t('profile.following_label', 'Following')}
-						{:else}
-							<UserPlus size={16} />
-							{t('profile.follow', 'Follow')}
-						{/if}
-					</button>
+			<div class="flex shrink-0 items-center gap-2 pb-1">
+				{#if authed}
+				<button
+					type="button"
+					onclick={toggleMute}
+					disabled={mutePending}
+					aria-busy={mutePending}
+					title={muted ? t('space.unmute', 'Unmute') : t('space.mute', 'Mute')}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+				>
+					{#if mutePending}
+						<Loader2 size={16} class="animate-spin" />
+					{:else if muted}
+						<BellOff size={16} />
+					{:else}
+						<Bell size={16} />
 					{/if}
-					{#if wikiEnabled && isDestinationWiki}
-						<a
-							href="/wiki/{space.slug}"
-							class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-						>
-							<BookOpen size={16} /> {t('space.wiki', 'Wiki')}
-						</a>
+				</button>
+				<button
+					type="button"
+					onclick={() => (reportOpen = true)}
+					title={t('space.report', 'Report')}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					<Flag size={16} />
+				</button>
+				{/if}
+				<!-- Follow renders for guests too — toggleFollow sends them to
+				     /login via requireAuthOrRedirect before touching the API. -->
+				<button
+					type="button"
+					onclick={toggleFollow}
+					disabled={followPending}
+					aria-busy={followPending}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 {following
+						? 'border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'
+						: 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'}"
+				>
+					{#if followPending}
+						<Loader2 size={16} class="animate-spin" />
+					{:else if following}
+						<UserCheck size={16} />
+						{t('profile.following_label', 'Following')}
+					{:else}
+						<UserPlus size={16} />
+						{t('profile.follow', 'Follow')}
 					{/if}
-					{#if authed}
+				</button>
+				{#if wikiEnabled && isDestinationWiki}
 					<a
-						href="/create?type=blog_post&space={space.slug}"
-						class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+						href="/wiki/{space.slug}"
+						class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--color-border)] px-4 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 					>
-						<PenSquare size={16} /> {t('space.post', 'Post')}
+						<BookOpen size={16} /> {t('space.wiki', 'Wiki')}
 					</a>
-					{/if}
-				</div>
-			{/if}
+				{/if}
+				{#if authed && !isGeoSpace}
+				<a
+					href="/create?type=blog_post&space={space.slug}"
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+				>
+					<PenSquare size={16} /> {t('space.post', 'Post')}
+				</a>
+				{/if}
+			</div>
 		</div>
 	</div>
 </header>
