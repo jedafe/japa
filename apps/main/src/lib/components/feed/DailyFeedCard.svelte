@@ -78,6 +78,7 @@
 	let bookmarkCount = $state(0);
 	let bookmarkPending = $state(false);
 	let bookmarkInitialized = $state(false);
+	let viewerVote = $state<1 | -1 | 0>(0);
 
 	const authed = $derived(page.data.isAuthed as boolean);
 
@@ -89,6 +90,7 @@
 		bookmarkCount = item.bookmark_count ?? 0;
 		bookmarked = false;
 		bookmarkInitialized = false;
+		viewerVote = 0;
 	});
 
 	$effect(() => {
@@ -104,6 +106,7 @@
 		}
 		getViewerState(item.id).then((state) => {
 			bookmarked = state.bookmarked;
+			viewerVote = state.vote;
 		});
 	});
 	const duration = $derived(formatDuration(item.duration_secs));
@@ -383,6 +386,7 @@
 						entityId={item.id}
 						authorId={item.author_id}
 						score={item.vote_score ?? 0}
+						userVote={viewerVote}
 						layout="horizontal"
 						{authed}
 						backend="content"

@@ -254,13 +254,8 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 		commentsLoadError = true;
 	}
 
-	const allDeletedUserIds = new Set<string>();
-	if (deletedUserIds) for (const id of deletedUserIds) allDeletedUserIds.add(id);
-	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
-	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
-
 	// Linked/anchored threads: fetch the parent article so the page can
-	// render the ~80-word excerpt + "Read full" CTA next to the embed card
+	// render the ~150-word excerpt + "Read full" CTA next to the embed card
 	// (the excerpt needs body_html, which thread_parent doesn't carry).
 	let parentArticle: ContentArticle | null = null;
 	if (article.thread_parent?.slug) {
@@ -270,10 +265,22 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 				`/content/${article.thread_parent.slug}`
 			);
 			parentArticle = envelope.data ?? null;
+			// The excerpt renders parent-article markup — merge its erased
+			// mentions into the redaction set too.
+			if (envelope.deleted_user_ids) {
+				deletedUserIds = Array.from(
+					new Set([...(deletedUserIds ?? []), ...envelope.deleted_user_ids])
+				);
+			}
 		} catch {
 			parentArticle = null;
 		}
 	}
+
+	const allDeletedUserIds = new Set<string>();
+	if (deletedUserIds) for (const id of deletedUserIds) allDeletedUserIds.add(id);
+	if (commentDeletedUserIds) for (const id of commentDeletedUserIds) allDeletedUserIds.add(id);
+	const mergedDeletedUserIds = allDeletedUserIds.size > 0 ? Array.from(allDeletedUserIds) : null;
 
 	return {
 		kind: 'embed' as const,

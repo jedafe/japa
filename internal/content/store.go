@@ -2608,10 +2608,11 @@ func (s *Service) GetUserReactions(ctx context.Context, entityType string, entit
 type ViewerContentState struct {
 	ReactionKeys []string `json:"reaction_keys"`
 	Bookmarked   bool     `json:"bookmarked"`
+	Vote         int      `json:"vote"`
 }
 
-// GetViewerContentStates returns the caller's reaction keys + bookmark state
-// for a batch of content ids in two queries. Backs GET /me/content-states so
+// GetViewerContentStates returns the caller's reaction keys + bookmark + vote
+// state for a batch of content ids in three queries. Backs GET /me/content-states so
 // card lists resolve all per-item viewer state in one round-trip instead of
 // firing /reactions/me + /bookmark per card.
 func (s *Service) GetViewerContentStates(ctx context.Context, userID pgtype.UUID, ids []pgtype.UUID) (map[string]*ViewerContentState, error) {
@@ -2651,6 +2652,24 @@ func (s *Service) GetViewerContentStates(ctx context.Context, userID pgtype.UUID
 		}
 
 		st.Bookmarked = true
+	}
+
+	votes, err := s.read.GetUserVotesForContents(ctx, gen.GetUserVotesForContentsParams{
+		UserID: userID,
+		Ids:    ids,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting batch user votes: %w", err)
+	}
+
+	for _, row := range votes {
+		st := states[row.ContentID.String()]
+		if st == nil {
+			st = &ViewerContentState{}
+			states[row.ContentID.String()] = st
+		}
+
+		st.Vote = int(row.Value)
 	}
 
 	return states, nil

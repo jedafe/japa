@@ -564,6 +564,44 @@ func (q *Queries) GetRelatedContent(ctx context.Context, arg GetRelatedContentPa
 	return items, nil
 }
 
+const getUserVotesForContents = `-- name: GetUserVotesForContents :many
+SELECT content_id, value
+FROM content_votes
+WHERE user_id = $1 AND content_id = ANY($2::uuid[])
+`
+
+type GetUserVotesForContentsParams struct {
+	UserID pgtype.UUID   `json:"user_id"`
+	Ids    []pgtype.UUID `json:"ids"`
+}
+
+type GetUserVotesForContentsRow struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	Value     int16       `json:"value"`
+}
+
+// Batch vote check for card lists (GET /me/content-states): returns the
+// caller's vote value for each of the given content ids.
+func (q *Queries) GetUserVotesForContents(ctx context.Context, arg GetUserVotesForContentsParams) ([]GetUserVotesForContentsRow, error) {
+	rows, err := q.db.Query(ctx, getUserVotesForContents, arg.UserID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserVotesForContentsRow
+	for rows.Next() {
+		var i GetUserVotesForContentsRow
+		if err := rows.Scan(&i.ContentID, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const incrementCommentReplyCount = `-- name: IncrementCommentReplyCount :exec
 UPDATE comments
 SET reply_count = reply_count + 1, updated_at = now()

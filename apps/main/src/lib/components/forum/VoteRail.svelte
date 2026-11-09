@@ -3,6 +3,7 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { api } from '#lib/api/client.js';
+	import { updateViewerState } from '#lib/api/viewerState.js';
 	import { requireAuthOrRedirect } from '#lib/auth/guest.js';
 	import { t } from '#lib/i18n/index.js';
 	import type { ForumThread, ForumVoteEntity, ForumVote } from '#lib/types/index.js';
@@ -141,6 +142,10 @@
 			// Rollback on failure.
 			optimisticVote = prevVote === initialVote ? null : prevVote;
 			optimisticDelta = prevDelta;
+		} else if (backend === 'content') {
+			// Persist into the batched viewer-state cache so other mounts of
+			// this content (feed cards, thread page) reflect the vote.
+			updateViewerState(id, { vote: next });
 		}
 	}
 

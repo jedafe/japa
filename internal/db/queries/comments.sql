@@ -370,6 +370,13 @@ SELECT content_id, user_id, value, created_at
 FROM content_votes
 WHERE content_id = @content_id AND user_id = @user_id;
 
+-- name: GetUserVotesForContents :many
+-- Batch vote check for card lists (GET /me/content-states): returns the
+-- caller's vote value for each of the given content ids.
+SELECT content_id, value
+FROM content_votes
+WHERE user_id = @user_id AND content_id = ANY(@ids::uuid[]);
+
 -- =====================
 -- Comment Counts
 -- =====================

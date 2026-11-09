@@ -3345,9 +3345,10 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 const viewerStateMaxIDs = 100
 
 // ViewerContentStates handles GET /api/v1/me/content-states?ids=uuid,uuid,...
-// Returns the caller's reaction keys + bookmark state for many content items
-// in one round-trip: { "<content_id>": { "reaction_keys": [...], "bookmarked":
-// true } }. Content ids with no state are simply absent from the map.
+// Returns the caller's reaction keys + bookmark + vote state for many content
+// items in one round-trip: { "<content_id>": { "reaction_keys": [...],
+// "bookmarked": true, "vote": 1 } }. Content ids with no state are simply
+// absent from the map.
 // Ref: japaconnect-engineering/conventions/api-routes-catalog.md (batch viewer
 // state — replaces per-card /reactions/me + /bookmark calls on card lists).
 func (h *Handlers) ViewerContentStates(w http.ResponseWriter, r *http.Request) {

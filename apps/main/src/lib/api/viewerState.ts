@@ -3,11 +3,16 @@ import { api } from '#lib/api/client.js';
 export interface ViewerContentState {
 	reactionKeys: string[];
 	bookmarked: boolean;
+	/** Caller's vote on the content: 1, -1, or 0 when absent. */
+	vote: 1 | -1 | 0;
 }
 
-type RawStates = Record<string, { reaction_keys?: string[]; bookmarked?: boolean }>;
+type RawStates = Record<
+	string,
+	{ reaction_keys?: string[]; bookmarked?: boolean; vote?: number }
+>;
 
-const EMPTY: ViewerContentState = { reactionKeys: [], bookmarked: false };
+const EMPTY: ViewerContentState = { reactionKeys: [], bookmarked: false, vote: 0 };
 
 /** Backend caps ids per request (api-routes-catalog: /me/content-states). */
 const MAX_IDS = 100;
@@ -15,6 +20,9 @@ const MAX_IDS = 100;
 const promises = new Map<string, Promise<ViewerContentState>>();
 const resolvers = new Map<string, (s: ViewerContentState) => void>();
 const lastStates = new Map<string, ViewerContentState>();
+// Ids patched locally while a fetch was in flight — the resolving flush
+// must not overwrite them with its older server snapshot.
+const locallyPatched = new Set<string>();
 let flushQueued = false;
 
 /**
@@ -44,6 +52,7 @@ export function getViewerState(contentId: string): Promise<ViewerContentState> {
 export function updateViewerState(contentId: string, patch: Partial<ViewerContentState>): void {
 	const next = { ...(lastStates.get(contentId) ?? EMPTY), ...patch };
 	lastStates.set(contentId, next);
+	locallyPatched.add(contentId);
 	resolvers.delete(contentId);
 	promises.set(contentId, Promise.resolve(next));
 }
@@ -73,10 +82,14 @@ async function flush(): Promise<void> {
 		for (const id of chunk) {
 			const raw = data[id];
 			const state: ViewerContentState = raw
-				? { reactionKeys: raw.reaction_keys ?? [], bookmarked: raw.bookmarked ?? false }
+				? {
+						reactionKeys: raw.reaction_keys ?? [],
+						bookmarked: raw.bookmarked ?? false,
+						vote: raw.vote === 1 || raw.vote === -1 ? raw.vote : 0
+					}
 				: EMPTY;
-			lastStates.set(id, state);
-			batch.get(id)?.(state);
+			if (!locallyPatched.has(id)) lastStates.set(id, state);
+			batch.get(id)?.(locallyPatched.has(id) ? (lastStates.get(id) ?? state) : state);
 		}
 	}
 }

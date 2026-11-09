@@ -274,11 +274,13 @@
 	let bookmarkCount = $state(untrack(() => data.article.bookmark_count ?? 0));
 	let bookmarking = $state(false);
 	let shared = $state(false);
+	let viewerVote = $state<1 | -1 | 0>(0);
 
 	$effect(() => {
 		if (!data.authed || !article.id) return;
 		getViewerState(article.id).then((state) => {
 			bookmarked = state.bookmarked;
+			viewerVote = state.vote;
 		});
 	});
 
@@ -550,6 +552,7 @@
 					entityId={article.id}
 					authorId={article.author_id}
 					score={article.vote_score ?? 0}
+					userVote={viewerVote}
 					layout="rail"
 					authed={data.authed}
 					backend="content"
