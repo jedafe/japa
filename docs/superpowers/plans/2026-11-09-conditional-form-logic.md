@@ -20,6 +20,7 @@
   - "Answered" = present, non-nil, non-empty-string (trimmed), non-empty-array; numbers/booleans (incl. 0/false) count.
   - Unanswered reference → every op false except `not_answered`. `neq` = answered AND different.
   - `eq` normalizes bools (`true`/`"true"`/`1`/`yes`/`on`) and numerics; `in` = answer ∈ value array; `contains` = answer array ∋ value (non-array answer → false).
+  - Clause `value`s compare against the **canonical option value**: server-side eval canonicalizes select/multiselect answers label→value via `NormalizeChoiceValue` before comparing (embed clients submit labels; assessment clients submit values). Admin-authored options have `value == label` (handler maps `options []string` → `{value:o,label:o}`), so this is a no-op for every field the admin UI creates — it only matters for seeded fields with distinct pairs, and keeps server/client eval identical.
   - `jump.when` clause with omitted `field` → defaults to the owning field's key.
   - Jumps fire only from fields whose own `visible_if` passes; target must be strictly later in natural step order; union of hidden intervals; target's own visibility still applies.
   - Step auto-hides when it has ≥1 defined field but zero visible fields.
@@ -57,6 +58,10 @@ Append a "Conditional visibility and jumps (ADR-137)" section to `06-custom-fiel
 - Server re-evaluates at submit: hidden fields are not required, not
   option-validated, and their submitted values are dropped before storage
   and scoring.
+- Clause values compare against canonical option *values*: submitted
+  select/multiselect labels are normalized via `NormalizeChoiceValue`
+  before rule evaluation (admin-authored options already have
+  `value == label`; the assessment client submits values).
 ```
 
 - [ ] **Step 2: Extend §71**
@@ -685,12 +690,14 @@ func TestDropHiddenFieldValues(t *testing.T) {
 Extend `fieldDef` (the local struct built in `validateFormSubmission`, ~2756)
 with `Config []byte`. Populate from `f.Config` in the byLabel/byKey build.
 
-Add helper (same file or `visibility.go` in package):
+Add helpers (same file or a new `visibility.go` in package):
 
 ```go
 // canonicalAnswers maps submitted values (label- OR key-keyed) onto field
-// keys for rule evaluation. Storage keeps the submitted key style — this
-// view is eval-only.
+// keys and normalizes select/multiselect answers to canonical option
+// values, so rules compare against option values whether the client sent
+// labels (embed renderer) or values (assessment). Storage keeps the
+// submitted key style — this view is eval-only.
 func canonicalAnswers(fields []fieldDef, vals map[string]any) map[string]any {
 	out := make(map[string]any, len(vals))
 	for k, v := range vals {
@@ -701,14 +708,60 @@ func canonicalAnswers(fields []fieldDef, vals map[string]any) map[string]any {
 			out[f.Key] = v
 		}
 	}
+	for _, f := range fields {
+		v, ok := out[f.Key]
+		if !ok {
+			continue
+		}
+		switch f.FieldType {
+		case FieldTypeSelect:
+			if s, isStr := v.(string); isStr && s != "" {
+				out[f.Key] = NormalizeChoiceValue(f.Options, s)
+			}
+		case FieldTypeMultiselect:
+			switch arr := v.(type) {
+			case string: // embed renderer submits comma-joined values
+				parts := strings.Split(arr, ",")
+				norm := make([]any, 0, len(parts))
+				for _, p := range parts {
+					if t := strings.TrimSpace(p); t != "" {
+						norm = append(norm, NormalizeChoiceValue(f.Options, t))
+					}
+				}
+				out[f.Key] = norm
+			case []any:
+				norm := make([]any, len(arr))
+				for i, item := range arr {
+					if s, isStr := item.(string); isStr {
+						norm[i] = NormalizeChoiceValue(f.Options, s)
+					} else {
+						norm[i] = item
+					}
+				}
+				out[f.Key] = norm
+			}
+		}
+	}
 	return out
+}
+
+// hiddenFieldKeys returns the keys of fields whose visible_if fails under
+// canon — shared by the required-check skip and the hidden-answer drop.
+func hiddenFieldKeys(fields []fieldDef, canon map[string]any) map[string]bool {
+	hidden := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		if !formlogic.FieldVisible(f.Config, canon, f.Key) {
+			hidden[f.Key] = true
+		}
+	}
+	return hidden
 }
 
 // dropHiddenValues removes entries whose field's visible_if fails against
 // the canonical answers; matched by label OR key so the stored snapshot is
 // the visible-path truth.
 func dropHiddenValues(fields []fieldDef, vals map[string]any) map[string]any {
-	canon := canonicalAnswers(fields, vals)
+	hidden := hiddenFieldKeys(fields, canonicalAnswers(fields, vals))
 	byKeyOrLabel := make(map[string]fieldDef, len(fields)*2)
 	for _, f := range fields {
 		byKeyOrLabel[f.Key] = f
@@ -716,7 +769,7 @@ func dropHiddenValues(fields []fieldDef, vals map[string]any) map[string]any {
 	}
 	out := make(map[string]any, len(vals))
 	for k, v := range vals {
-		if f, ok := byKeyOrLabel[k]; ok && !formlogic.FieldVisible(f.Config, canon, f.Key) {
+		if f, ok := byKeyOrLabel[k]; ok && hidden[f.Key] {
 			continue
 		}
 		out[k] = v
@@ -725,13 +778,33 @@ func dropHiddenValues(fields []fieldDef, vals map[string]any) map[string]any {
 }
 ```
 
-Then in `validateFormSubmission` (~2763): before the required-fields loop,
-compute `canon := canonicalAnswers` and skip `!formlogic.FieldVisible(f.Config, canon, f.Key)`
-required fields; after validation passes, replace `fieldValues` with
-`dropHiddenValues(fields, fieldValues)` at both call sites (line ~2424 and
-the second submit path ~2548+ — apply once inside `validateFormSubmission`
-itself by mutating the map in place, matching how the function already
-mutates for select normalization and rich_text sanitization).
+Then in `validateFormSubmission`, right after the `byLabel`/`byKey` build
+loop (~2758) and before the required-fields loop:
+
+```go
+// Answer-driven visibility (ADR-137): drop submitted values for fields
+// whose visible_if fails, and exclude them from the required check. The
+// fieldValues map is mutated in place (same convention as the select
+// normalization + rich_text sanitization below) so callers store the
+// canonical visible-path snapshot.
+canon := canonicalAnswers(fields, fieldValues)
+hidden := hiddenFieldKeys(fields, canon)
+for rawKey := range fieldValues {
+	f, ok := byLabel[rawKey]
+	if !ok {
+		f, ok = byKey[rawKey]
+	}
+	if ok && hidden[f.Key] {
+		delete(fieldValues, rawKey)
+	}
+}
+```
+
+and change the required loop's skip condition to include `|| hidden[f.Key]`.
+(Deletion before the required loop also makes the unknown-field and
+type-validation loops ignore hidden entries automatically — deleting is
+in-place because reassigning the local `fieldValues` variable would NOT
+propagate to the caller's map.)
 
 - [ ] **Step 3: Run tests**
 
@@ -741,12 +814,26 @@ go test ./internal/customfields/ -v -run TestDropHidden
 
 - [ ] **Step 4: Expose `visible_if`/`jump` on field JSON — whitelist public, raw admin**
 
-The **admin** form-GET `fieldJSON` (~1640–1683) gains `Config json.RawMessage`
-populated from `f.Config` **raw** — the Task 10 editor needs the whole object
-to merge keys before sending the full-replace PATCH.
+Two serializer families live in this file — keep them straight:
 
-The **public/embed** `fieldJSON` + `stepFieldJSON` (~1691+, ~2245+) instead
-emit a whitelist built by a shared helper:
+- **Admin form GET**: `fieldJSON` (~1631) and `stepFieldJSON` (~1697) — gains
+  `Config json.RawMessage` populated from `f.Config` **raw** (the Task 10
+  editor needs the whole object to merge keys before the full-replace PATCH),
+  plus `OptionDefs` carrying the raw `{value,label}` option objects (needed
+  by the rule-builder's value picker for select source fields — `options`
+  ships labels only):
+
+  ```go
+  OptionDefs []struct {
+      Value string `json:"value"`
+      Label string `json:"label"`
+  } `json:"option_defs,omitempty"`
+  ```
+
+- **Public embed GET**: `fieldJSON` + `toFieldJSON` (~2201–2240; the same
+  helper builds both flat `fields[]` and per-step `fields[]` at ~2286) —
+  gains whitelisted `Config` only (no option_defs: admin-authored options
+  have value==label so the public renderer never needs the map):
 
 ```go
 Config json.RawMessage `json:"config,omitempty"`
@@ -806,6 +893,9 @@ package assessment
 import (
 	"encoding/json"
 	"testing"
+
+	"japaconnect/internal/db/gen"
+	"japaconnect/internal/formlogic"
 )
 
 func TestMissingRequiredSkipsHidden(t *testing.T) {
@@ -866,7 +956,9 @@ type FieldScoringConfig struct {
 }
 ```
 
-Add to service.go:
+Add to service.go (`AssessmentField.Config` is already a parsed
+`FieldScoringConfig`, so call `Eval` on the typed member directly — no
+re-marshal):
 
 ```go
 // visibleFieldSet returns keys of fields whose visible_if passes for the
@@ -875,8 +967,7 @@ Add to service.go:
 func visibleFieldSet(fields []AssessmentField, answers map[string]any) map[string]bool {
 	set := make(map[string]bool, len(fields))
 	for _, f := range fields {
-		raw, _ := json.Marshal(f.Config)
-		if formlogic.FieldVisible(raw, answers, f.Key) {
+		if f.Config.VisibleIf.Eval(answers, f.Key) {
 			set[f.Key] = true
 		}
 	}
@@ -884,12 +975,18 @@ func visibleFieldSet(fields []AssessmentField, answers map[string]any) map[strin
 }
 ```
 
-Note: `computeScore` works on `[]gen.CustomField` — it needs the same check
-against the raw config bytes: inside its answers loop (line ~1266), after
-`fieldByKey` lookup add:
+(`(*Condition).Eval` is nil-receiver safe → absent rules = visible.)
+
+`computeScore` works on `[]gen.CustomField` and already parses each config
+via `parseFieldScoringConfig` — which returns the extended struct with
+`VisibleIf` filled. Inside its answers loop (~1273), after the `fsc` parse:
 
 ```go
-if !formlogic.FieldVisible(field.Config, answers, key) {
+fsc := parseFieldScoringConfig(field.Config)
+if !fsc.VisibleIf.Eval(answers, key) {
+	continue // defense-in-depth: stale/crafted answer for a hidden field
+}
+if fsc.Dimension == "" {
 	continue
 }
 ```
@@ -1016,7 +1113,10 @@ Config *json.RawMessage `json:"config"`
 
 In both create and update: when `req.Config != nil`, validate it unmarshals
 to a JSON object (reject arrays/scalars → `400 invalid_config`), then pass
-`[]byte(*req.Config)` (update: `Config: raw, UpdateConfig: true`).
+`[]byte(*req.Config)`. Create: nil `Config` → pass `json.RawMessage("{}")`
+(the column may lack a default on existing inserts). Update: `Config: raw,
+UpdateConfig: true` — and when `req.Config == nil`, `UpdateConfig: false`
+(the CASE then preserves the stored value; `Config` can stay nil).
 
 (The admin `fieldJSON` raw-`Config` passthrough is already done in Task 4
 Step 4 — no work needed here; this task only wires the write path.)
@@ -1127,7 +1227,7 @@ Replace the `steps` derived (~202) so it:
    `stepKey → fields`.
 3. `stepOrder` = dimension order over the FULL field list (needed for jump
    intervals) → `hiddenByJump = hiddenStepsByJump(fields.map(f => ({key: f.key, stepKey: f.config?.dimension ?? 'general', config: f.config})), stepOrder, answers)`.
-4. Drops steps where `hiddenByJump.has(dim)` OR `stepVisible(step_rules?.[dim]?.visible_if …)` fails OR zero visible fields.
+4. Drops steps where `hiddenByJump.has(dim)` OR `stepVisible(stepRules?.[dim], answers)` fails OR zero visible fields (`step_rules[dim]` is the `{visible_if}` wrapper object the `stepVisible` signature expects).
 5. `requiredFields`, `requiredAnsweredCount`, `stepComplete` all derive from
    the visible set.
 6. `buildFieldValues` keeps sending the full `answers` (server canonicalizes).
@@ -1186,7 +1286,8 @@ the evaluator a normalized view: `evalValues(k => typeof === 'string' && field.t
   edited keys, send whole object — config is full-replace).
 - [ ] **Step 2:** Edit-field modal: "Visibility" section — source-field select
   (all field keys on the form), op select (six ops), value input (option
-  dropdown when source is select/radio, checkbox for boolean, text else);
+  dropdown of **canonical values** from the source field's `option_defs`
+  when source is select/radio, checkbox for boolean, text else);
   plus/minus row per clause inside `all` (keep v1 UI to `all`-only — `any`
   editable via the existing JSON path). "Jump" section — `when` = same clause
   editor defaulting `field` to self, `step` = select of later steps

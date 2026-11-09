@@ -66,6 +66,16 @@ Clause    = { "field": "<field_key>", "op": "<op>", "value": <any> }
   comparing. `in` = answer ∈ value array. `contains` = answer is an array
   containing value (multiselect); a non-array answer → false. `neq` =
   *answered and* ≠ — it does not fire on an unanswered field.
+- Clause `value`s compare against the **canonical option value** for
+  select/multiselect sources. Server-side, the eval view normalizes
+  submitted labels → values via the existing `NormalizeChoiceValue`
+  (embed clients submit option *labels*; assessment clients submit
+  *values*). Admin-authored options store `value == label`, so this is a
+  no-op for every field the form builder creates — it only matters for
+  seeded fields with distinct pairs, and keeps server/client eval
+  identical. The admin rule builder picks values from the field's raw
+  `{value,label}` option defs (new `option_defs` key on the admin field
+  JSON; the public `options` list stays label-only).
 - A clause references the **answers map only**, never the referenced field's
   own visibility. Chains (hidden field revealing another field) work: a field
   whose `visible_if` passes can itself gate deeper fields. There is no
@@ -210,6 +220,7 @@ Applied at three points:
 | Draft restore / retake | Answers re-evaluate; rules re-apply cleanly |
 | CF-S6 RBAC-hidden fields | Excluded before answer-driven eval (both must pass) |
 | Standard-form submission keyed by label | Canonicalized to field keys before eval |
+| Select answer submitted as label | Normalized label→value before eval |
 
 ## JEOS + migrations
 
