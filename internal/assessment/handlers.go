@@ -200,6 +200,7 @@ func publicFieldDTOs(fields []AssessmentField) []map[string]any {
 		if f.Config.VisibleIf != nil {
 			cfg["visible_if"] = f.Config.VisibleIf
 		}
+
 		if f.Config.Jump != nil {
 			cfg["jump"] = f.Config.Jump
 		}

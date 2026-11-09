@@ -61,6 +61,7 @@ func ParseFieldRules(config []byte) FieldRules {
 	if len(config) > 0 {
 		_ = json.Unmarshal(config, &r)
 	}
+
 	return r
 }
 
@@ -70,19 +71,23 @@ func (c *Condition) Eval(answers map[string]any, selfKey string) bool {
 	if c == nil {
 		return true
 	}
+
 	for _, cl := range c.All {
 		if !evalClause(cl, answers, selfKey) {
 			return false
 		}
 	}
+
 	if len(c.Any) > 0 {
 		for _, cl := range c.Any {
 			if evalClause(cl, answers, selfKey) {
 				return true
 			}
 		}
+
 		return false
 	}
+
 	return true
 }
 
@@ -90,12 +95,14 @@ func isAnswered(v any, ok bool) bool {
 	if !ok || v == nil {
 		return false
 	}
+
 	switch t := v.(type) {
 	case string:
 		return strings.TrimSpace(t) != ""
 	case []any:
 		return len(t) > 0
 	}
+
 	return true
 }
 
@@ -104,6 +111,7 @@ func evalClause(cl Clause, answers map[string]any, selfKey string) bool {
 	if key == "" {
 		key = selfKey
 	}
+
 	v, ok := answers[key]
 	has := isAnswered(v, ok)
 
@@ -113,6 +121,7 @@ func evalClause(cl Clause, answers map[string]any, selfKey string) bool {
 	case "not_answered":
 		return !has
 	}
+
 	if !has {
 		return false
 	}
@@ -137,6 +146,7 @@ func evalClause(cl Clause, answers map[string]any, selfKey string) bool {
 			}
 		}
 	}
+
 	return false // unknown op → clause false
 }
 
@@ -146,11 +156,13 @@ func scalarEqual(a, b any) bool {
 			return ab == bb
 		}
 	}
+
 	if af, ok := toFloat(a); ok {
 		if bf, ok2 := toFloat(b); ok2 {
 			return af == bf
 		}
 	}
+
 	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
 }
 
@@ -158,6 +170,7 @@ func toBool(v any) (bool, bool) {
 	if b, ok := v.(bool); ok {
 		return b, true
 	}
+
 	if s, ok := v.(string); ok {
 		switch strings.ToLower(s) {
 		case "true", "1", "yes", "on":
@@ -166,6 +179,7 @@ func toBool(v any) (bool, bool) {
 			return false, true
 		}
 	}
+
 	return false, false
 }
 
@@ -186,6 +200,7 @@ func toFloat(v any) (float64, bool) {
 		f, err := strconv.ParseFloat(strings.TrimSpace(t), 64)
 		return f, err == nil
 	}
+
 	return 0, false
 }
 
@@ -202,6 +217,7 @@ func StepVisible(config []byte, answers map[string]any) bool {
 	if len(config) > 0 {
 		_ = json.Unmarshal(config, &r)
 	}
+
 	return r.VisibleIf.Eval(answers, "")
 }
 
@@ -214,26 +230,34 @@ func HiddenByJump(fields []RuleField, stepOrder []string, answers map[string]any
 	for i, k := range stepOrder {
 		idx[k] = i
 	}
+
 	hidden := map[string]bool{}
+
 	for _, f := range fields {
 		if !FieldVisible(f.Config, answers, f.Key) {
 			continue
 		}
+
 		j := ParseFieldRules(f.Config).Jump
 		if j == nil || j.Step == "" {
 			continue
 		}
+
 		if !j.When.Eval(answers, f.Key) {
 			continue
 		}
+
 		s, sOK := idx[f.StepKey]
+
 		t, tOK := idx[j.Step]
 		if !sOK || !tOK || t <= s {
 			continue
 		}
+
 		for i := s + 1; i < t; i++ {
 			hidden[stepOrder[i]] = true
 		}
 	}
+
 	return hidden
 }

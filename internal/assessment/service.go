@@ -362,6 +362,7 @@ func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, form 
 	if err := json.Unmarshal(fieldValues, &answers); err != nil || answers == nil {
 		answers = map[string]any{}
 	}
+
 	visible := visibleFieldSet(form.Fields, answers, form.ScoringConfig.StepRules)
 
 	// Server-side required-field validation: the multi-step UI enforces
@@ -392,16 +393,19 @@ func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, form 
 	// Drop submitted answers that belong to hidden fields — only keys that
 	// name a defined field; genuinely unknown keys pass through untouched.
 	definedHidden := make(map[string]bool)
+
 	for _, f := range form.Fields {
 		if !visible[f.Key] {
 			definedHidden[f.Key] = true
 		}
 	}
+
 	for k := range answers {
 		if definedHidden[k] {
 			delete(answers, k)
 		}
 	}
+
 	storedValues, err := json.Marshal(answers)
 	if err != nil {
 		storedValues = fieldValues
@@ -438,18 +442,22 @@ func (s *Service) SubmitAssessment(ctx context.Context, userID *uuid.UUID, form 
 func visibleFieldSet(fields []AssessmentField, answers map[string]any, stepRules map[string]StepRule) map[string]bool {
 	set := make(map[string]bool, len(fields))
 	ruleFields := make([]formlogic.RuleField, 0, len(fields))
+
 	dims := make([]string, 0, len(fields))
 	for _, f := range fields {
 		if f.Config.VisibleIf.Eval(answers, f.Key) {
 			set[f.Key] = true
 		}
+
 		dim := fieldDimension(f.Config)
 		cfg, _ := json.Marshal(f.Config)
+
 		ruleFields = append(ruleFields, formlogic.RuleField{Key: f.Key, StepKey: dim, Config: cfg})
 		if !slices.Contains(dims, dim) {
 			dims = append(dims, dim)
 		}
 	}
+
 	for dim := range hiddenDimensions(ruleFields, dims, stepRules, answers) {
 		for _, f := range fields {
 			if fieldDimension(f.Config) == dim {
@@ -457,6 +465,7 @@ func visibleFieldSet(fields []AssessmentField, answers map[string]any, stepRules
 			}
 		}
 	}
+
 	return set
 }
 
@@ -471,6 +480,7 @@ func hiddenDimensions(ruleFields []formlogic.RuleField, dimOrder []string, stepR
 			hidden[dim] = true
 		}
 	}
+
 	return hidden
 }
 
@@ -480,6 +490,7 @@ func fieldDimension(fsc FieldScoringConfig) string {
 	if fsc.Dimension == "" {
 		return "general"
 	}
+
 	return fsc.Dimension
 }
 
@@ -562,29 +573,36 @@ func invalidOptionAnswers(fields []AssessmentField, fieldValues json.RawMessage,
 			continue
 		}
 
-		if f.FieldType == "multiselect" {
-			list, ok := v.([]any)
-			if !ok {
-				invalid = append(invalid, f.Key)
-				continue
-			}
-
-			for _, el := range list {
-				if _, ok := allowed[fmt.Sprintf("%v", el)]; !ok {
-					invalid = append(invalid, f.Key)
-					break
-				}
-			}
-
-			continue
-		}
-
-		if _, ok := allowed[fmt.Sprintf("%v", v)]; !ok {
+		if optionAnswerInvalid(f.FieldType, v, allowed) {
 			invalid = append(invalid, f.Key)
 		}
 	}
 
 	return invalid
+}
+
+// optionAnswerInvalid reports whether a submitted select-type answer falls
+// outside the allowed set — multiselects are invalid when the payload isn't
+// an array or any element is unmapped.
+func optionAnswerInvalid(fieldType string, v any, allowed map[string]struct{}) bool {
+	if fieldType == "multiselect" {
+		list, ok := v.([]any)
+		if !ok {
+			return true
+		}
+
+		for _, el := range list {
+			if _, ok := allowed[fmt.Sprintf("%v", el)]; !ok {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	_, ok := allowed[fmt.Sprintf("%v", v)]
+
+	return !ok
 }
 
 // fieldAllowedValues returns the set of permitted answer values for a
@@ -1355,15 +1373,18 @@ func computeScore(fieldValues json.RawMessage, fields []gen.CustomField, scoring
 	// evaluator view needed to hide dimensions skipped by step rules/jumps.
 	fieldByKey := make(map[string]gen.CustomField, len(fields))
 	ruleFields := make([]formlogic.RuleField, 0, len(fields))
+
 	dims := make([]string, 0, len(fields))
 	for _, f := range fields {
 		fieldByKey[f.Key] = f
 		dim := fieldDimension(parseFieldScoringConfig(f.Config))
+
 		ruleFields = append(ruleFields, formlogic.RuleField{Key: f.Key, StepKey: dim, Config: f.Config})
 		if !slices.Contains(dims, dim) {
 			dims = append(dims, dim)
 		}
 	}
+
 	hiddenDims := hiddenDimensions(ruleFields, dims, scoringConfig.StepRules, answers)
 
 	// Aggregate raw scores per dimension and track the max possible per

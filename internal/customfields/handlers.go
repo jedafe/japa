@@ -869,18 +869,22 @@ func validFieldConfig(raw []byte) bool {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return true
 	}
+
 	var v map[string]any
+
 	return json.Unmarshal(raw, &v) == nil
 }
 
 // validStepConfig accepts only JSON objects (or nil) — the form_steps.config
 // column must stay object-shaped for the rule keys the evaluator reads.
-// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md (ADR-137)
+// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md (ADR-137).
 func validStepConfig(raw []byte) bool {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return true
 	}
+
 	var v map[string]any
+
 	return json.Unmarshal(raw, &v) == nil
 }
 
@@ -890,13 +894,16 @@ func publicStepConfig(raw []byte) json.RawMessage {
 	if len(raw) == 0 {
 		return nil
 	}
+
 	var cfg struct {
 		VisibleIf json.RawMessage `json:"visible_if"`
 	}
 	if json.Unmarshal(raw, &cfg) != nil || len(cfg.VisibleIf) == 0 {
 		return nil
 	}
+
 	out, _ := json.Marshal(map[string]json.RawMessage{"visible_if": cfg.VisibleIf})
+
 	return out
 }
 
@@ -973,6 +980,7 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "config must be a JSON object")
 		return
 	}
+
 	config := json.RawMessage("{}")
 	if req.Config != nil {
 		config = *req.Config
@@ -1079,6 +1087,7 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "config must be a JSON object")
 		return
 	}
+
 	config := json.RawMessage("{}")
 	if req.Config != nil {
 		config = *req.Config
@@ -1699,14 +1708,14 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 		Label string `json:"label"`
 	}
 	type fieldJSON struct {
-		ID        string      `json:"id"`
-		Label     string      `json:"label"`
+		ID    string `json:"id"`
+		Label string `json:"label"`
 		// Key is the machine key rules reference in visible_if/jump clauses.
-		Key       string      `json:"key"`
-		Type      string      `json:"type"`
-		Required  bool        `json:"required"`
-		SortOrder int32       `json:"sort_order"`
-		Options   []string    `json:"options"`
+		Key        string      `json:"key"`
+		Type       string      `json:"type"`
+		Required   bool        `json:"required"`
+		SortOrder  int32       `json:"sort_order"`
+		Options    []string    `json:"options"`
 		OptionDefs []optionDef `json:"option_defs,omitempty"`
 		// Dimension is the assessment scoring bucket (custom_fields.config
 		// .dimension) — the admin form builder derives assessment steps
@@ -1720,8 +1729,10 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	fieldList := make([]fieldJSON, 0, len(fields))
 
 	for _, f := range fields {
-		var options []string
-		var optionDefs []optionDef
+		var (
+			options    []string
+			optionDefs []optionDef
+		)
 
 		if f.Options != nil {
 			// Options is stored as JSONB; parse into string slice for radio/select.
@@ -1729,6 +1740,7 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 
 			if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
 				options = make([]string, len(raw))
+
 				optionDefs = make([]optionDef, len(raw))
 				for i, o := range raw {
 					options[i] = o.Label
@@ -1805,14 +1817,17 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 					stepFields = make([]stepFieldJSON, 0, len(rawFields))
 
 					for _, f := range rawFields {
-						var options []string
-						var optionDefs []optionDef
+						var (
+							options    []string
+							optionDefs []optionDef
+						)
 
 						if f.Options != nil {
 							var raw []optionDef
 
 							if json.Unmarshal(f.Options, &raw) == nil && len(raw) > 0 {
 								options = make([]string, len(raw))
+
 								optionDefs = make([]optionDef, len(raw))
 								for i, o := range raw {
 									options[i] = o.Label
@@ -1855,23 +1870,23 @@ func (h *Handlers) GetForm(w http.ResponseWriter, r *http.Request) {
 	// Return all form fields including slug, status etc.
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"id":              form.ID,
-			"name":            form.Name,
-			"description":     form.Description,
-			"slug":            form.Slug,
-			"status":          form.Status,
-			"is_multi_step":   form.IsMultiStep,
-			"submit_label":    form.SubmitLabel,
-			"success_message": form.SuccessMessage,
+			"id":                     form.ID,
+			"name":                   form.Name,
+			"description":            form.Description,
+			"slug":                   form.Slug,
+			"status":                 form.Status,
+			"is_multi_step":          form.IsMultiStep,
+			"submit_label":           form.SubmitLabel,
+			"success_message":        form.SuccessMessage,
 			"is_system":              form.IsSystem,
 			"form_type":              form.FormType,
 			"submission_fee_credits": form.SubmissionFeeCredits,
 			"scoring_config":         json.RawMessage(form.ScoringConfig),
 			"fields":                 fieldList,
-			"field_group_id":  fieldGroupID,
-			"space_id":        form.SpaceID,
-			"steps":           stepList,
-			"created_at":      form.CreatedAt,
+			"field_group_id":         fieldGroupID,
+			"space_id":               form.SpaceID,
+			"steps":                  stepList,
+			"created_at":             form.CreatedAt,
 		},
 	})
 }
@@ -2077,13 +2092,13 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name                 string           `json:"name"`
-		Description          *string          `json:"description"`
-		IsMultiStep          bool             `json:"is_multi_step"`
-		SubmitLabel          string           `json:"submit_label"`
-		SuccessMessage       *string          `json:"success_message"`
-		Status               string           `json:"status"`
-		SubmissionFeeCredits *int32           `json:"submission_fee_credits"`
+		Name                 string  `json:"name"`
+		Description          *string `json:"description"`
+		IsMultiStep          bool    `json:"is_multi_step"`
+		SubmitLabel          string  `json:"submit_label"`
+		SuccessMessage       *string `json:"success_message"`
+		Status               string  `json:"status"`
+		SubmissionFeeCredits *int32  `json:"submission_fee_credits"`
 		// ScoringConfig writes scoring_config on this specific form — scoped
 		// here rather than via the singleton /admin/assessment/form endpoint
 		// so the admin form editor edits the form it loaded (ADR-137
@@ -2096,25 +2111,8 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.ScoringConfig) > 0 {
-		if !validStepConfig(req.ScoringConfig) {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "scoring_config must be a JSON object")
-			return
-		}
-		if _, serr := h.Service.UpdateFormScoringConfig(r.Context(), id, req.ScoringConfig); serr != nil {
-			if errors.Is(serr, pgx.ErrNoRows) {
-				errpkg.WriteError(w, http.StatusNotFound, "form_not_found", "Assessment form not found")
-				return
-			}
-			slog.Error("customfields: update scoring_config failed", "form_id", id.String(), "error", serr)
-			errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update scoring config")
-			return
-		}
-		if strings.TrimSpace(req.Name) == "" {
-			// scoring_config-only PATCH — nothing else to write.
-			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id.String(), "scoring_config": req.ScoringConfig}})
-			return
-		}
+	if h.applyScoringConfig(w, r, id, req.ScoringConfig, strings.TrimSpace(req.Name) != "") {
+		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
@@ -2167,6 +2165,41 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": form})
+}
+
+// applyScoringConfig writes a scoring_config PATCH when the request carries
+// one. It reports true when the request is fully handled — an error was
+// written, or a scoring-only PATCH (no name) completed. When namePresent is
+// true it falls through so the metadata update still runs.
+func (h *Handlers) applyScoringConfig(w http.ResponseWriter, r *http.Request, id pgtype.UUID, scoringConfig json.RawMessage, namePresent bool) bool {
+	if len(scoringConfig) == 0 {
+		return false
+	}
+
+	if !validStepConfig(scoringConfig) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_config", "scoring_config must be a JSON object")
+		return true
+	}
+
+	if _, serr := h.Service.UpdateFormScoringConfig(r.Context(), id, scoringConfig); serr != nil {
+		if errors.Is(serr, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "form_not_found", "Assessment form not found")
+		} else {
+			slog.Error("customfields: update scoring_config failed", "form_id", id.String(), "error", serr)
+			errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update scoring config")
+		}
+
+		return true
+	}
+
+	if namePresent {
+		return false
+	}
+
+	// scoring_config-only PATCH — nothing else to write.
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": id.String(), "scoring_config": scoringConfig}})
+
+	return true
 }
 
 // DeleteForm handles DELETE /api/v1/forms/{id}.
@@ -2817,6 +2850,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, form gen.GetFormB
 	// The step rows and the field→step association are kept for ADR-137
 	// step-level visibility (step visible_if + jump intervals).
 	var stepRows []gen.FormStep
+
 	fieldStep := make(map[string]string)
 	if form.IsMultiStep {
 		if steps, sErr := h.Service.ListFormSteps(ctx, form.ID); sErr == nil {
@@ -2901,6 +2935,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, form gen.GetFormB
 	for _, st := range stepRows {
 		stepDefs = append(stepDefs, stepDef{ID: st.ID.String(), Config: st.Config})
 	}
+
 	canon := canonicalAnswers(defs, fieldValues)
 	hidden := hiddenFieldKeys(defs, stepDefs, canon)
 
@@ -2909,6 +2944,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, form gen.GetFormB
 		if !ok {
 			f, ok = byKey[rawKey]
 		}
+
 		if ok && hidden[f.Key] {
 			delete(fieldValues, rawKey)
 		}
@@ -3749,6 +3785,7 @@ func (h *Handlers) ListFormSteps(w http.ResponseWriter, r *http.Request) {
 
 	for _, st := range steps {
 		fgid := h.Service.GetStepFormGroupID(r.Context(), st.ID)
+
 		cfg := st.Config
 		if len(cfg) == 0 {
 			cfg = json.RawMessage("{}")
@@ -3811,6 +3848,7 @@ func (h *Handlers) CreateFormStep(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_step_config", "config must be a JSON object")
 		return
 	}
+
 	if len(req.Config) == 0 {
 		req.Config = json.RawMessage("{}")
 	}
@@ -3879,6 +3917,7 @@ func (h *Handlers) UpdateFormStep(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_step_config", "config must be a JSON object")
 		return
 	}
+
 	if !configSent {
 		req.Config = json.RawMessage("{}")
 	}
