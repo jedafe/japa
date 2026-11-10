@@ -34,11 +34,11 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  '{"weight":1.0,"dimension":"financial","option_scores":{"not_study":90,"unfunded":15,"partial":60,"funded":100},"visible_if":{"any":[{"field":"purpose","op":"eq","value":"study"},{"field":"visa_type","op":"eq","value":"student"}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000e015', gid,
- 'Beyond your relocation budget, do you have an emergency buffer for your first months?',
+ 'Do you have an emergency buffer for your first months at the destination?',
  'emergency_buffer', 'select',
  '[{"value":"none","label":"No buffer"},{"value":"under_1","label":"Under 1 month of expenses"},{"value":"1_to_3","label":"1–3 months of expenses"},{"value":"over_3","label":"3+ months of expenses"}]'::jsonb,
  'Select the closest match', true, false, true, 27,
- '{"weight":1.0,"dimension":"financial","option_scores":{"none":10,"under_1":40,"1_to_3":70,"over_3":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"financial","option_scores":{"none":10,"under_1":40,"1_to_3":70,"over_3":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved","relocated"]}]}}'::jsonb),
 
 -- Logistical
 ('00000000-0000-0000-0000-00000000e016', gid,
@@ -71,7 +71,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
 
 -- Destination knowledge / settlement readiness
 ('00000000-0000-0000-0000-00000000e020', gid,
- 'Have you sorted how you''ll bank and access money on arrival (foreign account, fintech, forex plan)?',
+ 'Have you sorted how you''ll bank and access money at your destination?',
  'banking_setup', 'select',
  '[{"value":"none","label":"No plan yet"},{"value":"researching","label":"Researching options"},{"value":"partial","label":"Account opened or fintech set up"},{"value":"sorted","label":"Banking sorted before departure"}]'::jsonb,
  'Select the closest match', true, false, true, 32,

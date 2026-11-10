@@ -52,7 +52,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  'relocation_budget', 'select',
  '[{"value":"none","label":"No budget yet"},{"value":"rough","label":"Rough estimate only"},{"value":"itemized","label":"Itemized budget drafted"},{"value":"funded","label":"Budget drafted and fully funded"}]'::jsonb,
  'Select the closest match', true, false, true, 10,
- '{"weight":1.0,"dimension":"financial","option_scores":{"none":10,"rough":40,"itemized":70,"funded":100}}'::jsonb),
+ '{"weight":1.0,"dimension":"financial","option_scores":{"none":10,"rough":40,"itemized":70,"funded":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied","approved"]}]}}'::jsonb),
 
 -- Logistical
 ('00000000-0000-0000-0000-00000000c003', gid,
@@ -63,7 +63,7 @@ INSERT INTO custom_fields (id, group_id, label, key, field_type, options, placeh
  '{"weight":1.0,"dimension":"logistical","option_scores":{"not_started":10,"gathering":30,"mostly":70,"ready":100},"visible_if":{"any":[{"field":"journey_stage","op":"not_answered"},{"field":"journey_stage","op":"in","value":["considering","planning","preparing","applied"]}]}}'::jsonb),
 
 ('00000000-0000-0000-0000-00000000c004', gid,
- 'Is health insurance or healthcare coverage arranged for your arrival?',
+ 'Is health insurance or healthcare coverage arranged at your destination?',
  'health_insurance', 'select',
  '[{"value":"none","label":"No plan yet"},{"value":"researching","label":"Researching options"},{"value":"short_term","label":"Short-term cover arranged"},{"value":"covered","label":"Fully covered from day one"}]'::jsonb,
  'Select the closest match', true, false, true, 13,
