@@ -142,6 +142,64 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 		}
 		return &contentMeta{Title: name, ContentType: "destination_wiki"}
 	}
+	if slug, ok := strings.CutPrefix(idStr, "university:"); ok {
+		// /universities/{slug} uses a single §43 floor — post_count +
+		// published forum threads >= seo.sitemap.space_min_posts (0 disables
+		// the gate) — not the 4-signal space gate. Level narrows to real
+		// universities (§05: education spaces share the type).
+		minPosts := bots.LoadSitemapQualityConfig(ctx, h.settings).MinPosts
+		if minPosts < 0 {
+			minPosts = bots.DefaultSitemapQualityConfig().MinPosts
+		}
+		floor := ``
+		args := []any{slug}
+		if minPosts > 0 {
+			floor = ` AND (s.post_count + (SELECT count(*) FROM contents c
+			        JOIN forum_threads ft ON ft.content_id = c.id
+			        WHERE c.space_id = s.id AND c.status = 'published'
+			          AND c.deleted_at IS NULL AND c.visibility = 'public')) >= $2`
+			args = append(args, minPosts)
+		}
+		var name string
+		err := h.reader.QueryRow(ctx,
+			`SELECT s.name FROM spaces s
+			 WHERE s.slug = $1 AND s.status = 'active' AND s.deleted_at IS NULL
+			   AND s.visibility = 'public' AND s.level = 'university'`+floor,
+			args...).Scan(&name)
+		if err != nil || name == "" {
+			return nil
+		}
+		return &contentMeta{Title: name, ContentType: "destination_wiki"}
+	}
+	if slug, ok := strings.CutPrefix(idStr, "wiki-space:"); ok {
+		// /wiki/{slug} noindexes when the space has no approved prose page
+		// meeting seo.sitemap.wiki_min_words — the wiki index's own gate,
+		// independent of the space's social-signal floors.
+		minWords := 500
+		if h.settings != nil {
+			minWords = h.settings.GetIntOr(ctx, "seo.sitemap.wiki_min_words", minWords)
+		}
+		var name string
+		err := h.reader.QueryRow(ctx,
+			`SELECT s.name FROM spaces s
+			 WHERE s.slug = $1 AND s.status = 'active' AND s.deleted_at IS NULL
+			   AND s.visibility = 'public'
+			   AND EXISTS (SELECT 1 FROM wiki_pages wp
+			               JOIN wiki_revisions wr ON wr.wiki_page_id = wp.id
+			                AND wr.status = 'approved' AND wr.kind <> 'fields'
+			                AND wr.deleted_at IS NULL
+			               WHERE wp.space_id = s.id AND wp.is_active AND wp.deleted_at IS NULL
+			                 AND (CASE WHEN jsonb_typeof(wr.content) = 'string'
+			                      THEN array_length(string_to_array(trim(wr.content #>> '{}'), ' '), 1)
+			                      ELSE (SELECT COALESCE(SUM(array_length(string_to_array(trim(t #>> '{}'), ' '), 1)), 0)
+			                            FROM jsonb_path_query(wr.content, 'lax $.**.text') AS x(t))
+			                      END) >= $2))`,
+			slug, minWords).Scan(&name)
+		if err != nil || name == "" {
+			return nil
+		}
+		return &contentMeta{Title: name, ContentType: "destination_wiki"}
+	}
 	if slug, ok := strings.CutPrefix(idStr, "user:"); ok {
 		// Gate mirrors users.publicProfileIndexable + sitemap-users.xml
 		// (§26/§43): active status, UserGroup allow_search_indexing, and the

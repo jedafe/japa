@@ -463,6 +463,7 @@ func TestLookupEntityNamespaces(t *testing.T) {
 	for _, key := range []string{
 		"user:someone", "product:widget", "tag:visa", "source:gov-ng",
 		"org:acme", "scholarship:chevening", "ama:8f1c2a3b-0000-4000-8000-000000000001",
+		"university:oxford", "wiki-space:finland",
 		"event:8f1c2a3b-0000-4000-8000-000000000000",
 		"scam-alert:8f1c2a3b-0000-4000-8000-000000000000",
 	} {

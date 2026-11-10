@@ -254,7 +254,7 @@
 
 	const seoOgImage = $derived(
 		ogMediaUrl(page.url.origin, university?.logo_url) ||
-		ogCardUrl(page.url.origin, `space:${university?.slug ?? page.params.slug}`)
+		ogCardUrl(page.url.origin, `university:${university?.slug ?? page.params.slug}`)
 	);
 </script>
 

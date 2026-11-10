@@ -213,7 +213,7 @@
 			ogMediaUrl(o, data.spaceDetail?.header_url) ||
 			ogMediaUrl(o, firstImg) ||
 			ogMediaUrl(o, data.spaceDetail?.logo_url) ||
-			(data.page?.id ? ogCardUrl(o, data.page.id) : ogCardUrl(o, `space:${data.spaceSlug}`))
+			(data.page?.id ? ogCardUrl(o, data.page.id) : ogCardUrl(o, `wiki-space:${data.spaceSlug}`))
 		);
 	});
 	const canonicalUrl = $derived(page.url.origin + page.url.pathname);

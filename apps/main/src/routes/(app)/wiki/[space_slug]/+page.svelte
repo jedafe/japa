@@ -288,7 +288,7 @@
 	const title = $derived(`${spaceName} ${t('wiki.heading')} — ${siteName()}`);
 	const description = $derived(intro || t('wiki.index_description'));
 	const ogImage = $derived(
-		ogMediaUrl(page.url.origin, heroUrl) || ogCardUrl(page.url.origin, `space:${data.spaceSlug}`)
+		ogMediaUrl(page.url.origin, heroUrl) || ogCardUrl(page.url.origin, `wiki-space:${data.spaceSlug}`)
 	);
 	const canonicalUrl = $derived(page.url.origin + page.url.pathname);
 	// CollectionPage + BreadcrumbList JSON-LD (Section 26 — the space
