@@ -108,7 +108,24 @@ type PersonaDetail struct {
 	GeoSpaceName        *string         `json:"geo_space_name,omitempty"`
 	GeoSpaceSlug        *string         `json:"geo_space_slug,omitempty"`
 	GeoSpaceLevel       *string         `json:"geo_space_level,omitempty"`
-	RecentActivity      []ActivityEntry `json:"recent_activity"`
+
+	// Profile fields (user_profiles) — Plan B admin editing surface.
+	AvatarURL     *string  `json:"avatar_url,omitempty"`
+	CoverURL      *string  `json:"cover_url,omitempty"`
+	AvatarMediaID string   `json:"avatar_media_id"`
+	HeaderMediaID string   `json:"header_media_id"`
+	Profession    *string  `json:"profession,omitempty"`
+	Location      *string  `json:"location,omitempty"`
+	WebsiteURL    *string  `json:"website_url,omitempty"`
+	Education     *string  `json:"education,omitempty"`
+	Interests     []string `json:"interests,omitempty"`
+
+	// Economy — tips_enabled from tip_settings(owner_type='user'), points
+	// balance from wallet_ledger(ledger_type='points') on the backing user.
+	TipsEnabled   bool  `json:"tips_enabled"`
+	PointsBalance int64 `json:"points_balance"`
+
+	RecentActivity []ActivityEntry `json:"recent_activity"`
 }
 
 // PersonaListItem is the list-view persona record (fewer joined fields).
@@ -137,8 +154,23 @@ type PersonaListItem struct {
 	GeoSpaceName        *string         `json:"geo_space_name,omitempty"`
 	GeoSpaceSlug        *string         `json:"geo_space_slug,omitempty"`
 	GeoSpaceLevel       *string         `json:"geo_space_level,omitempty"`
-	TotalActions        int64           `json:"total_actions"`
-	LastActionAt        *string         `json:"last_action_at,omitempty"`
+
+	// Profile + economy fields mirror PersonaDetail so the admin table can
+	// render avatars/tips/points without a per-row detail fetch.
+	AvatarURL     *string  `json:"avatar_url,omitempty"`
+	CoverURL      *string  `json:"cover_url,omitempty"`
+	AvatarMediaID string   `json:"avatar_media_id"`
+	HeaderMediaID string   `json:"header_media_id"`
+	Profession    *string  `json:"profession,omitempty"`
+	Location      *string  `json:"location,omitempty"`
+	WebsiteURL    *string  `json:"website_url,omitempty"`
+	Education     *string  `json:"education,omitempty"`
+	Interests     []string `json:"interests,omitempty"`
+	TipsEnabled   bool     `json:"tips_enabled"`
+	PointsBalance int64    `json:"points_balance"`
+
+	TotalActions int64   `json:"total_actions"`
+	LastActionAt *string `json:"last_action_at,omitempty"`
 }
 
 // ActivityEntry is a single platform_events row in the persona activity log.
@@ -156,9 +188,18 @@ type ActivityEntry struct {
 // transactional provisioning boundary (ADR-068 §7: partial provision is a
 // data integrity failure) and reads persona.* settings via config.Settings.
 type Service struct {
-	store    *Store
-	settings *config.Settings
-	enqueuer TaskEnqueuer
+	store         *Store
+	settings      *config.Settings
+	enqueuer      TaskEnqueuer
+	mediaResolver MediaResolver
+}
+
+// MediaResolver resolves a media UUID to a presigned URL and its stored MIME
+// type — same contract as users.MediaResolver; wired at server time. A nil
+// resolver stores media ids without resolved URLs and skips MIME checks.
+type MediaResolver interface {
+	ResolveMediaURL(ctx context.Context, mediaID pgtype.UUID) (string, error)
+	ResolveMediaMIME(ctx context.Context, mediaID pgtype.UUID) (string, error)
 }
 
 // NewService creates a personas service.
@@ -168,6 +209,93 @@ func NewService(store *Store, settings *config.Settings, enqueuer TaskEnqueuer) 
 
 // SetEnqueuer wires (or rewires) the Asynq enqueuer after construction.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetMediaResolver wires the media resolver used for avatar/cover assignment.
+func (s *Service) SetMediaResolver(r MediaResolver) { s.mediaResolver = r }
+
+// mergeMediaID merges a PATCH-supplied media id into the profile row: ""
+// clears the reference (uuid zero-value), a value is validated as a UUID then
+// MIME-checked (image; avatars additionally obey users.allowed_avatar_types)
+// and its URL resolved for the sibling *_url column. The returned URL is ""
+// when clearing or when resolution is unavailable — callers leave the merged
+// url column untouched in that case.
+func (s *Service) mergeMediaID(ctx context.Context, raw, field string, isAvatar bool) (pgtype.UUID, string, error) {
+	var zero pgtype.UUID
+	if strings.TrimSpace(raw) == "" {
+		return zero, "", nil
+	}
+	var id pgtype.UUID
+	if err := id.Scan(strings.TrimSpace(raw)); err != nil || !id.Valid {
+		return zero, "", fmt.Errorf("personas: %s must be a media UUID: %w", field, errpkg.ErrInvalid)
+	}
+	if mime := s.resolveMediaMIME(ctx, id); mime != "" {
+		if !strings.HasPrefix(mime, "image/") {
+			return zero, "", fmt.Errorf("personas: %s must be an image: %w", field, errpkg.ErrInvalid)
+		}
+		if isAvatar {
+			if err := s.checkAvatarMIMEAllowed(ctx, mime); err != nil {
+				return zero, "", err
+			}
+		}
+	}
+	url, err := s.resolveMediaURL(ctx, id)
+	if err != nil {
+		return zero, "", fmt.Errorf("personas: resolve %s url: %w", field, err)
+	}
+	return id, url, nil
+}
+
+// resolveMediaURL resolves a media row's presigned URL. A nil resolver leaves
+// the media id stored with an empty url column — the FK still validates the id.
+func (s *Service) resolveMediaURL(ctx context.Context, mediaID pgtype.UUID) (string, error) {
+	if s.mediaResolver == nil {
+		return "", nil
+	}
+	return s.mediaResolver.ResolveMediaURL(ctx, mediaID)
+}
+
+// resolveMediaMIME fetches a media row's stored MIME type; "" means "cannot
+// determine" (nil resolver, missing row, unset type) and fails open.
+func (s *Service) resolveMediaMIME(ctx context.Context, mediaID pgtype.UUID) string {
+	if s.mediaResolver == nil {
+		return ""
+	}
+	mimeType, err := s.mediaResolver.ResolveMediaMIME(ctx, mediaID)
+	if err != nil || mimeType == "" {
+		return ""
+	}
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	if mimeType == "image/jpg" || mimeType == "image/pjpeg" {
+		mimeType = "image/jpeg"
+	}
+	return mimeType
+}
+
+// avatarExtMIME maps the extension tokens allowed by users.allowed_avatar_types
+// to the canonical media MIME type they permit — mirrors users.Service.
+var avatarExtMIME = map[string]string{
+	"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+	"gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml",
+}
+
+// checkAvatarMIMEAllowed enforces the users.allowed_avatar_types CSV when
+// configured; an empty/unset list permits every image MIME.
+func (s *Service) checkAvatarMIMEAllowed(ctx context.Context, mimeType string) error {
+	if s.settings == nil {
+		return nil
+	}
+	csv := strings.TrimSpace(s.settings.GetStringOr(ctx, "users.allowed_avatar_types", ""))
+	if csv == "" {
+		return nil
+	}
+	for _, ext := range strings.Split(csv, ",") {
+		ext = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(ext)), ".")
+		if m, ok := avatarExtMIME[ext]; ok && m == mimeType {
+			return nil
+		}
+	}
+	return fmt.Errorf("personas: avatar type %s is not in users.allowed_avatar_types: %w", mimeType, errpkg.ErrInvalid)
+}
 
 // ---------------------------------------------------------------------------
 // Transactional mass provisioning (ADR-068 §7)
@@ -655,6 +783,22 @@ type UpdatePersonaInput struct {
 	// GeoSpace replaces the backing user's geo membership chain (§68 Geo
 	// Space Assignment). Nil = unchanged, "" = clear, value = set/replace.
 	GeoSpace *string
+	// Profile fields — land on user_profiles like Name/Tagline. Nil =
+	// unchanged, "" = clear, value = set. AvatarMediaID/HeaderMediaID take
+	// media UUIDs ("" = clear); the resolver fills the *_url columns.
+	AvatarURL     *string
+	AvatarMediaID *string
+	CoverURL      *string
+	HeaderMediaID *string
+	Profession    *string
+	Location      *string
+	WebsiteURL    *string
+	Education     *string
+	// Interests nil = unchanged, [] = clear, [values] = replace.
+	Interests *[]string
+	// TipsEnabled upserts tip_settings for the backing user in the same tx —
+	// existing accept_* configuration is preserved via read-merge-write.
+	TipsEnabled *bool
 }
 
 // UpdatePersona updates a persona's config (activity_policy, modes, status,
@@ -680,6 +824,16 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 		"tagline":         in.Tagline != nil,
 		"username":        in.Username != nil,
 		"geo_space":       in.GeoSpace != nil,
+		"avatar_url":      in.AvatarURL != nil,
+		"avatar_media_id": in.AvatarMediaID != nil,
+		"cover_url":       in.CoverURL != nil,
+		"header_media_id": in.HeaderMediaID != nil,
+		"profession":      in.Profession != nil,
+		"location":        in.Location != nil,
+		"website_url":     in.WebsiteURL != nil,
+		"education":       in.Education != nil,
+		"interests":       in.Interests != nil,
+		"tips_enabled":    in.TipsEnabled != nil,
 	} {
 		if set {
 			changed = append(changed, field)
@@ -758,10 +912,15 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 		params.ActivityPolicy = b
 	}
 
-	// Identity edits (byline + handle) ride one tx with the config update so
-	// a persona can never end up half-renamed — mirrors the provisioning
-	// transaction boundary (ADR-068 §7).
-	identityTouched := in.Name != nil || in.Tagline != nil || in.Username != nil || in.GeoSpace != nil
+	// Identity edits (byline + handle + profile fields + tips) ride one tx
+	// with the config update so a persona can never end up half-renamed —
+	// mirrors the provisioning transaction boundary (ADR-068 §7).
+	profileTouched := in.Name != nil || in.Tagline != nil ||
+		in.AvatarURL != nil || in.AvatarMediaID != nil ||
+		in.CoverURL != nil || in.HeaderMediaID != nil ||
+		in.Profession != nil || in.Location != nil ||
+		in.WebsiteURL != nil || in.Education != nil || in.Interests != nil
+	identityTouched := profileTouched || in.Username != nil || in.GeoSpace != nil || in.TipsEnabled != nil
 	if !identityTouched {
 		if _, err := s.store.UpdateAIPersona(ctx, params); err != nil {
 			return PersonaDetail{}, err
@@ -840,37 +999,120 @@ func (s *Service) UpdatePersona(ctx context.Context, id pgtype.UUID, in UpdatePe
 		}
 	}
 
-	if in.Name != nil || in.Tagline != nil {
+	if profileTouched {
 		// Read-merge-write against the row-locked profile — ErrNoRows means
 		// the bot predates the byline write (legacy intel_* seeds) and the
-		// upsert mints the row.
-		var displayName, bio *string
+		// upsert mints the row. Every profile column is merged here so the
+		// unconditional UpsertPersonaProfile write never clobbers fields the
+		// PATCH didn't touch.
+		var params gen.UpsertPersonaProfileParams
 		profile, err := q.GetUserProfileForUpdate(ctx, detail.UserID)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 		case err != nil:
 			return PersonaDetail{}, fmt.Errorf("personas: lock byline profile: %w", err)
 		default:
-			displayName, bio = profile.DisplayName, profile.Bio
+			params = gen.UpsertPersonaProfileParams{
+				DisplayName:   profile.DisplayName,
+				Bio:           profile.Bio,
+				AvatarUrl:     profile.AvatarUrl,
+				AvatarMediaID: profile.AvatarMediaID,
+				HeaderMediaID: profile.HeaderMediaID,
+				CoverUrl:      profile.CoverUrl,
+				Location:      profile.Location,
+				WebsiteUrl:    profile.WebsiteUrl,
+				Education:     profile.Education,
+				Profession:    profile.Profession,
+				Interests:     profile.Interests,
+			}
 		}
 
-		if in.Name != nil {
-			displayName = nil
-			if v := strings.TrimSpace(*in.Name); v != "" {
-				displayName = &v
+		mergeText := func(dst **string, in *string) {
+			*dst = nil
+			if v := strings.TrimSpace(*in); v != "" {
+				*dst = &v
 			}
+		}
+		if in.Name != nil {
+			mergeText(&params.DisplayName, in.Name)
 		}
 		if in.Tagline != nil {
-			bio = nil
-			if v := strings.TrimSpace(*in.Tagline); v != "" {
-				bio = &v
+			mergeText(&params.Bio, in.Tagline)
+		}
+		if in.Profession != nil {
+			mergeText(&params.Profession, in.Profession)
+		}
+		if in.Location != nil {
+			mergeText(&params.Location, in.Location)
+		}
+		if in.WebsiteURL != nil {
+			mergeText(&params.WebsiteUrl, in.WebsiteURL)
+		}
+		if in.Education != nil {
+			mergeText(&params.Education, in.Education)
+		}
+		if in.AvatarURL != nil {
+			mergeText(&params.AvatarUrl, in.AvatarURL)
+		}
+		if in.CoverURL != nil {
+			mergeText(&params.CoverUrl, in.CoverURL)
+		}
+		if in.Interests != nil {
+			params.Interests = *in.Interests
+		}
+
+		if in.AvatarMediaID != nil {
+			mid, url, err := s.mergeMediaID(ctx, *in.AvatarMediaID, "avatar_media_id", true)
+			if err != nil {
+				return PersonaDetail{}, err
+			}
+			params.AvatarMediaID = mid
+			if url != "" {
+				params.AvatarUrl = &url
+			}
+		}
+		if in.HeaderMediaID != nil {
+			mid, url, err := s.mergeMediaID(ctx, *in.HeaderMediaID, "header_media_id", false)
+			if err != nil {
+				return PersonaDetail{}, err
+			}
+			params.HeaderMediaID = mid
+			if url != "" {
+				params.CoverUrl = &url
 			}
 		}
 
-		if err := q.UpsertPersonaByline(ctx, gen.UpsertPersonaBylineParams{
-			UserID: detail.UserID, DisplayName: displayName, Bio: bio,
+		params.UserID = detail.UserID
+		if err := q.UpsertPersonaProfile(ctx, params); err != nil {
+			return PersonaDetail{}, fmt.Errorf("personas: upsert profile: %w", err)
+		}
+	}
+
+	if in.TipsEnabled != nil {
+		// Read-merge-write: UpsertTipSettings writes accept_* unconditionally,
+		// so an existing row's configuration must be carried forward —
+		// first-upsert defaults mirror the tips admin defaults (credits only).
+		acceptCredits, acceptFiat, acceptExternal := true, false, false
+		var minTip int64
+		var ocSlug, ocToken, thanks *string
+		if existing, err := q.GetTipSettings(ctx, gen.GetTipSettingsParams{OwnerType: "user", OwnerID: detail.UserID}); err == nil {
+			acceptCredits = existing.AcceptCredits
+			acceptFiat = existing.AcceptFiat
+			acceptExternal = existing.AcceptExternal
+			minTip = existing.MinTipAmount
+			ocSlug = existing.OcCollectiveSlug
+			ocToken = existing.OcApiTokenEncrypted
+			thanks = existing.ThankYouMessage
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return PersonaDetail{}, fmt.Errorf("personas: load tip settings: %w", err)
+		}
+		if _, err := q.UpsertTipSettings(ctx, gen.UpsertTipSettingsParams{
+			OwnerType: "user", OwnerID: detail.UserID, TipsEnabled: *in.TipsEnabled,
+			AcceptCredits: acceptCredits, AcceptFiat: acceptFiat, AcceptExternal: acceptExternal,
+			OcCollectiveSlug: ocSlug, OcApiTokenEncrypted: ocToken,
+			MinTipAmount: minTip, ThankYouMessage: thanks,
 		}); err != nil {
-			return PersonaDetail{}, fmt.Errorf("personas: upsert byline: %w", err)
+			return PersonaDetail{}, fmt.Errorf("personas: upsert tip settings: %w", err)
 		}
 	}
 
@@ -1081,6 +1323,17 @@ func personaDetailFromRow(r gen.GetAIPersonaByIDRow) PersonaDetail {
 		GeoSpaceName:        r.GeoSpaceName,
 		GeoSpaceSlug:        r.GeoSpaceSlug,
 		GeoSpaceLevel:       r.GeoSpaceLevel,
+		AvatarURL:           r.AvatarUrl,
+		CoverURL:            r.CoverUrl,
+		AvatarMediaID:       uuidOrEmpty(r.AvatarMediaID),
+		HeaderMediaID:       uuidOrEmpty(r.HeaderMediaID),
+		Profession:          r.Profession,
+		Location:            r.Location,
+		WebsiteURL:          r.WebsiteUrl,
+		Education:           r.Education,
+		Interests:           r.Interests,
+		TipsEnabled:         r.TipsEnabled,
+		PointsBalance:       r.PointsBalance,
 	}
 
 	return d
@@ -1110,6 +1363,17 @@ func personaListItemFromRow(r gen.ListAIPersonasRow) PersonaListItem {
 		GeoSpaceName:        r.GeoSpaceName,
 		GeoSpaceSlug:        r.GeoSpaceSlug,
 		GeoSpaceLevel:       r.GeoSpaceLevel,
+		AvatarURL:           r.AvatarUrl,
+		CoverURL:            r.CoverUrl,
+		AvatarMediaID:       uuidOrEmpty(r.AvatarMediaID),
+		HeaderMediaID:       uuidOrEmpty(r.HeaderMediaID),
+		Profession:          r.Profession,
+		Location:            r.Location,
+		WebsiteURL:          r.WebsiteUrl,
+		Education:           r.Education,
+		Interests:           r.Interests,
+		TipsEnabled:         r.TipsEnabled,
+		PointsBalance:       r.PointsBalance,
 		TotalActions:        r.TotalActions,
 	}
 	// LastActionAt is interface{} from sqlc (MAX(timestamptz) is nullable).

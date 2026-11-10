@@ -1673,6 +1673,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/68-ai-personas.md (ADR-068)
 	personasStore := personas.NewStore(database)
 	personasService := personas.NewService(personasStore, settingsService, taskEnqueuer)
+	personasService.SetMediaResolver(&mediaURLResolver{media: mediaService}) // avatar/cover media
 	personasHandlers := personas.NewHandlers(personasService)
 
 	// Ref: japaconnect-engineering/sections/70-visa-checklist.md (ADR-070)

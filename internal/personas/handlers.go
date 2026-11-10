@@ -316,6 +316,16 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		Tagline        *string         `json:"tagline"`
 		Username       *string         `json:"username"`
 		GeoSpace       *string         `json:"geo_space"`
+		AvatarURL      *string         `json:"avatar_url"`
+		AvatarMediaID  *string         `json:"avatar_media_id"`
+		CoverURL       *string         `json:"cover_url"`
+		HeaderMediaID  *string         `json:"header_media_id"`
+		Profession     *string         `json:"profession"`
+		Location       *string         `json:"location"`
+		WebsiteURL     *string         `json:"website_url"`
+		Education      *string         `json:"education"`
+		Interests      *[]string       `json:"interests"`
+		TipsEnabled    *bool           `json:"tips_enabled"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -334,6 +344,16 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		Tagline:        body.Tagline,
 		Username:       body.Username,
 		GeoSpace:       body.GeoSpace,
+		AvatarURL:      body.AvatarURL,
+		AvatarMediaID:  body.AvatarMediaID,
+		CoverURL:       body.CoverURL,
+		HeaderMediaID:  body.HeaderMediaID,
+		Profession:     body.Profession,
+		Location:       body.Location,
+		WebsiteURL:     body.WebsiteURL,
+		Education:      body.Education,
+		Interests:      body.Interests,
+		TipsEnabled:    body.TipsEnabled,
 	}
 
 	persona, err := h.service.UpdatePersona(r.Context(), id, in, user.UserID)

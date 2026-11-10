@@ -162,7 +162,7 @@ ON CONFLICT (user_id) DO UPDATE SET
 -- transaction commits or rolls back, preventing concurrent profile edits
 -- from racing on the merge step.
 SELECT id, user_id, display_name, avatar_url, avatar_media_id,
- header_media_id, bio, timezone, cover_url, website_url,
+ header_media_id, bio, timezone, cover_url, website_url, location,
  education, profession, marital_status, date_of_birth, gender, interests,
  created_at, updated_at
 FROM user_profiles

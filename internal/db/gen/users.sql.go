@@ -1772,7 +1772,7 @@ func (q *Queries) GetUserProfile(ctx context.Context, userID pgtype.UUID) (GetUs
 
 const getUserProfileForUpdate = `-- name: GetUserProfileForUpdate :one
 SELECT id, user_id, display_name, avatar_url, avatar_media_id,
- header_media_id, bio, timezone, cover_url, website_url,
+ header_media_id, bio, timezone, cover_url, website_url, location,
  education, profession, marital_status, date_of_birth, gender, interests,
  created_at, updated_at
 FROM user_profiles
@@ -1791,6 +1791,7 @@ type GetUserProfileForUpdateRow struct {
 	Timezone      *string            `json:"timezone"`
 	CoverUrl      *string            `json:"cover_url"`
 	WebsiteUrl    *string            `json:"website_url"`
+	Location      *string            `json:"location"`
 	Education     *string            `json:"education"`
 	Profession    *string            `json:"profession"`
 	MaritalStatus *string            `json:"marital_status"`
@@ -1819,6 +1820,7 @@ func (q *Queries) GetUserProfileForUpdate(ctx context.Context, userID pgtype.UUI
 		&i.Timezone,
 		&i.CoverUrl,
 		&i.WebsiteUrl,
+		&i.Location,
 		&i.Education,
 		&i.Profession,
 		&i.MaritalStatus,
