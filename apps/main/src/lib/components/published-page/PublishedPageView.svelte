@@ -11,15 +11,20 @@
 	import { EmptyState } from '#lib/components/ui/index.js';
 	import { LandingRenderer, normalizeLegacyBlocks, type Block, type GuestHomeData } from '@japaconnect/landing-blocks';
 	import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
-	import type { PageBuilderPage } from '#lib/types/index.js';
+	import GuestFooter from '#lib/components/shell/GuestFooter.svelte';
+	import type { Menu, PageBuilderPage } from '#lib/types/index.js';
 
 import { ogCardUrl } from '#lib/seo/og.js';
 	interface Props {
 		page: PageBuilderPage;
 		guestHome?: GuestHomeData;
+		/** main_footer menu + feature flags from the root layout — drives the
+		 *  shared guest footer rendered below every published page. */
+		menu?: Menu | null;
+		features?: Record<string, boolean>;
 	}
 
-	let { page: pageData, guestHome }: Props = $props();
+	let { page: pageData, guestHome, menu = null, features = {} }: Props = $props();
 
 	const title = $derived(
 		pageData.meta && typeof pageData.meta === 'object' && 'title' in pageData.meta
@@ -77,5 +82,13 @@ import { ogCardUrl } from '#lib/seo/og.js';
 		<EmptyState icon={FileText} title={pageData.title} />
 	</div>
 {:else}
-	<LandingRenderer blocks={normalizedBlocks} {guestHome} />
+	<!-- Standard center-shell width (max-w-3xl) — same column every other
+	     page renders in (/tools/*, /thread, /wiki). -->
+	<div class="mx-auto w-full max-w-3xl">
+		<LandingRenderer blocks={normalizedBlocks} {guestHome} />
+	</div>
 {/if}
+
+<!-- Published pages drop the right rail, which carried the footer menu —
+     so the shared guest footer renders at the bottom of the page body. -->
+<GuestFooter {menu} {features} />
