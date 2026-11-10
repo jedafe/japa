@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -21,6 +22,7 @@ import (
 	"golang.org/x/image/math/fixed"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/tools"
 	"github.com/jedafe/japa/internal/valkey"
 )
@@ -31,6 +33,7 @@ const ogCacheTTL = 24 * time.Hour
 // OGImageHandler handles OG image generation requests.
 type OGImageHandler struct {
 	reader   *pgxpool.Pool
+	settings sitemapSettingsReader
 	vkClient *valkey.Client
 	face     font.Face
 	siteName string
@@ -43,9 +46,9 @@ type OGImageHandler struct {
 // (golang.org/x/image/font/gofont/goregular). If font loading fails the
 // handler still works — text rendering degrades gracefully to a fallback
 // bitmap approach.
-func NewOGImageHandler(reader *pgxpool.Pool, vkClient *valkey.Client, siteName string) *OGImageHandler {
+func NewOGImageHandler(reader *pgxpool.Pool, settings sitemapSettingsReader, vkClient *valkey.Client, siteName string) *OGImageHandler {
 	face := loadFontFace(48)
-	return &OGImageHandler{reader: reader, vkClient: vkClient, face: face, siteName: siteName}
+	return &OGImageHandler{reader: reader, settings: settings, vkClient: vkClient, face: face, siteName: siteName}
 }
 
 // loadFontFace creates an opentype font face at the given size from the
@@ -112,12 +115,29 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 		return &contentMeta{Title: name, ContentType: "destination_wiki"}
 	}
 	if slug, ok := strings.CutPrefix(idStr, "user:"); ok {
+		// Gate mirrors users.publicProfileIndexable + sitemap-users.xml
+		// (§26/§43): active status, UserGroup allow_search_indexing, and the
+		// seo.sitemap.user_min_posts published-content floor. Privacy settings
+		// are intentionally NOT consulted — search_indexable is the internal
+		// Meilisearch opt-out (§50), and profile_visibility is not enforced
+		// on the anonymous read path; neither affects SEO indexability.
+		minPosts := bots.LoadSitemapQualityConfig(ctx, h.settings).UserMinPosts
+		if minPosts < 0 {
+			minPosts = bots.DefaultSitemapQualityConfig().UserMinPosts
+		}
+		postsGate := ``
+		args := []any{slug}
+		if minPosts > 0 {
+			postsGate = ` AND (SELECT count(*) FROM contents c
+			        WHERE c.author_id = u.id AND c.status = 'published'
+			          AND c.visibility = 'public' AND c.deleted_at IS NULL) >= $2`
+			args = append(args, minPosts)
+		}
 		var username, displayName string
 		err := h.reader.QueryRow(ctx,
 			`SELECT u.username, COALESCE(up.display_name, '')
 			 FROM users u
 			 LEFT JOIN user_profiles up ON up.user_id = u.id
-			 LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
 			 WHERE u.username = COALESCE(
 			   -- §50 former-username amendment: a live username always wins;
 			   -- only on a miss does the redirect map to the current handle.
@@ -127,8 +147,11 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 			    WHERE ur.username = $1)
 			 )
 			   AND u.status = 'active'
-			   AND COALESCE(ups.search_indexable, true)
-			   AND COALESCE(ups.profile_visibility, 'public') = 'public'`, slug).Scan(&username, &displayName)
+			   AND (NOT EXISTS (SELECT 1 FROM user_group_memberships ugm WHERE ugm.user_id = u.id)
+			     OR EXISTS (SELECT 1 FROM user_group_memberships ugm
+			                JOIN user_groups ug ON ug.id = ugm.group_id
+			                WHERE ugm.user_id = u.id AND ug.allow_search_indexing))`+
+				postsGate, args...).Scan(&username, &displayName)
 		if err != nil {
 			return nil
 		}
@@ -167,6 +190,13 @@ func (h *OGImageHandler) lookup(ctx context.Context, idStr string) *contentMeta 
 			   AND c.visibility = 'public' AND c.seo_indexable = true
 			   AND c.guide_category = 'scholarship'`, "scholarship"},
 		{"event:", `SELECT title FROM calendar_entries WHERE id::text = $1 AND status = 'published' AND deleted_at IS NULL`, "event"},
+		// /ama/{id} keys on forum_threads.id; the thread's contents row carries
+		// the indexability gates, same as thread pages' bare-UUID cards.
+		{"ama:", `SELECT ft.title FROM forum_threads ft
+			 JOIN contents c ON c.id = ft.content_id
+			 WHERE ft.id::text = $1 AND ft.deleted_at IS NULL AND ft.ama_config IS NOT NULL
+			   AND c.status = 'published' AND c.deleted_at IS NULL
+			   AND c.visibility = 'public' AND c.seo_indexable = true`, "ama"},
 	}
 	for _, r := range simple {
 		if param, ok := strings.CutPrefix(idStr, r.prefix); ok {
@@ -298,7 +328,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	isBrandFallback := false
 
 	if meta := h.lookup(r.Context(), idStr); meta != nil {
-		title = cleanTitle(meta.Title)
+		title = sanitizeForFace(h.face, cleanTitle(meta.Title))
 		subtitle = humanizeContentType(meta.ContentType)
 	}
 
@@ -442,6 +472,25 @@ func truncateString(s string, maxLen int) string {
 	return string(r[:maxLen-3]) + "..."
 }
 
+// sanitizeForFace drops runes the embedded font cannot render. Go Regular
+// covers Latin/Greek/Cyrillic only — emoji, Arabic, and CJK titles would
+// paint .notdef tofu boxes on share cards. Stripping keeps mixed-script
+// titles usable ("Ahmed 🎓" → "Ahmed"); when nothing renderable remains
+// the caller falls back to the brand card (title == "").
+func sanitizeForFace(face font.Face, s string) string {
+	if face == nil {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if _, _, _, _, ok := face.Glyph(fixed.Point26_6{}, r); ok || unicode.IsSpace(r) {
+			b.WriteRune(r)
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
 // cleanTitle removes special characters and truncates for display.
 func cleanTitle(title string) string {
 	title = strings.ReplaceAll(title, "\n", " ")
@@ -486,6 +535,8 @@ func humanizeContentType(ct string) string {
 		return "Event"
 	case "scam_alert":
 		return "Scam Alert"
+	case "ama":
+		return "AMA Session"
 	default:
 		if ct == "" {
 			return "Content"

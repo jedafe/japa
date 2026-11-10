@@ -366,7 +366,7 @@ func TestResolveLanguages(t *testing.T) {
 func TestServeOGImage(t *testing.T) {
 	t.Parallel()
 
-	h := NewOGImageHandler(nil, nil, "Test Site")
+	h := NewOGImageHandler(nil, nil, nil, "Test Site")
 	req := httptest.NewRequest(http.MethodGet, "/og/00000000-0000-0000-0000-000000000001.png", nil)
 	rec := httptest.NewRecorder()
 
@@ -394,7 +394,7 @@ func TestServeOGImage(t *testing.T) {
 func TestServeOGImageNamespacedKey(t *testing.T) {
 	t.Parallel()
 
-	h := NewOGImageHandler(nil, nil, "Test Site")
+	h := NewOGImageHandler(nil, nil, nil, "Test Site")
 	r := chi.NewRouter()
 	r.Get("/og/{id}.png", h.ServeOGImage)
 
@@ -421,7 +421,7 @@ func TestServeOGImageNamespacedKey(t *testing.T) {
 func TestNewOGImageHandler(t *testing.T) {
 	t.Parallel()
 
-	h := NewOGImageHandler(nil, nil, "Test Site")
+	h := NewOGImageHandler(nil, nil, nil, "Test Site")
 	if h == nil {
 		t.Fatal("NewOGImageHandler should return non-nil")
 	}
@@ -430,7 +430,7 @@ func TestNewOGImageHandler(t *testing.T) {
 func TestLookupToolKey(t *testing.T) {
 	t.Parallel()
 
-	h := NewOGImageHandler(nil, nil, "Test Site")
+	h := NewOGImageHandler(nil, nil, nil, "Test Site")
 
 	// Registered tool slug resolves to its registry title card.
 	meta := h.lookup(t.Context(), "tool:visa-routes")
@@ -458,11 +458,11 @@ func TestLookupToolKey(t *testing.T) {
 func TestLookupEntityNamespaces(t *testing.T) {
 	t.Parallel()
 
-	h := NewOGImageHandler(nil, nil, "Test Site")
+	h := NewOGImageHandler(nil, nil, nil, "Test Site")
 
 	for _, key := range []string{
 		"user:someone", "product:widget", "tag:visa", "source:gov-ng",
-		"org:acme", "scholarship:chevening",
+		"org:acme", "scholarship:chevening", "ama:8f1c2a3b-0000-4000-8000-000000000001",
 		"event:8f1c2a3b-0000-4000-8000-000000000000",
 		"scam-alert:8f1c2a3b-0000-4000-8000-000000000000",
 	} {
@@ -505,6 +505,7 @@ func TestHumanizeContentType(t *testing.T) {
 		"scholarship":      "Scholarship",
 		"event":            "Event",
 		"scam_alert":       "Scam Alert",
+		"ama":              "AMA Session",
 		"":                 "Content",
 		"custom_thing":     "Custom_thing",
 	}
@@ -512,5 +513,33 @@ func TestHumanizeContentType(t *testing.T) {
 		if got := humanizeContentType(ct); got != want {
 			t.Errorf("humanizeContentType(%q) = %q, want %q", ct, got, want)
 		}
+	}
+}
+
+// TestSanitizeForFace proves unrenderable runes (emoji, Arabic, CJK — none
+// of which Go Regular covers) are stripped rather than painted as tofu,
+// and that fully-unrenderable titles collapse to "" for brand fallback.
+func TestSanitizeForFace(t *testing.T) {
+	t.Parallel()
+
+	face := loadFontFace(48)
+
+	cases := map[string]string{
+		"Ahmed Al-Farsi":      "Ahmed Al-Farsi",
+		"Ahmed 🎓 MBA":        "Ahmed MBA",
+		"أحمد":               "",
+		"プログラム":           "",
+		"Visa Guide ":      "Visa Guide",
+		"  spaced   out  ":    "spaced out",
+	}
+	for in, want := range cases {
+		if got := sanitizeForFace(face, in); got != want {
+			t.Errorf("sanitizeForFace(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	// nil face → pass-through (renderer degrades to the bitmap fallback).
+	if got := sanitizeForFace(nil, "raw"); got != "raw" {
+		t.Errorf("sanitizeForFace(nil, raw) = %q, want pass-through", got)
 	}
 }

@@ -129,7 +129,7 @@ import { safeJsonLdScript } from '#lib/utils/safeHtml.js';
 	}
 
 	const seoOgImage = $derived(
-		ogCardUrl(page.url.origin, 'ama')
+		ogCardUrl(page.url.origin, `ama:${session?.id ?? 'ama'}`)
 	);
 </script>
 

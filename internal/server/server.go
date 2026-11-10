@@ -3583,7 +3583,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// image:loc). ServeURL is absolute when JC_API_PUBLIC_URL is set and
 	// relative otherwise; the handler prefixes the site base for relatives.
 	sitemapHandler.SetMediaURLResolver(media.ServeURL)
-	ogImageHandler := seo.NewOGImageHandler(database.Reader, vkClient, cfg.SiteName)
+	ogImageHandler := seo.NewOGImageHandler(database.Reader, settingsService, vkClient, cfg.SiteName)
 
 	// Config handlers for public settings endpoint.
 	configHandlers := config.NewHandlers(settingsService)
