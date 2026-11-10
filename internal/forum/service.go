@@ -386,6 +386,10 @@ type CreateReplyInput struct {
 	ParentReplyID pgtype.UUID
 	Body          []byte
 	IsAnonymous   bool
+	// CreatedByUserID is the operator when the reply is attributed to a
+	// persona via an author_id override (delegated-authorship spec). Zero
+	// (invalid) for normal replies.
+	CreatedByUserID pgtype.UUID
 }
 
 // CreateReply creates a new reply and increments the parent thread's reply_count.
@@ -428,11 +432,12 @@ func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype
 	// atomically — the previous log-and-continue path drifted counters.
 	reply, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.ForumReply, error) {
 		r, err := q.CreateForumReply(ctx, gen.CreateForumReplyParams{
-			ThreadID:      threadID,
-			ParentReplyID: input.ParentReplyID,
-			AuthorUserID:  authorUserID,
-			Body:          input.Body,
-			IsAnonymous:   input.IsAnonymous,
+			ThreadID:        threadID,
+			ParentReplyID:   input.ParentReplyID,
+			AuthorUserID:    authorUserID,
+			Body:            input.Body,
+			IsAnonymous:     input.IsAnonymous,
+			CreatedByUserID: input.CreatedByUserID,
 		})
 		if err != nil {
 			return gen.ForumReply{}, fmt.Errorf("creating forum reply: %w", err)
@@ -677,11 +682,15 @@ func (s *Service) UpdateReply(ctx context.Context, id, userID pgtype.UUID, body 
 		return gen.ForumReply{}, fmt.Errorf("getting reply for update: %w", err)
 	}
 
-	if reply.AuthorUserID != userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.edit_any") {
+	// Delegated authorship: the operator recorded in created_by_user_id holds
+	// the same owner rights as the persona author.
+	isOwner := reply.AuthorUserID == userID || reply.CreatedByUserID == userID
+
+	if !isOwner && !s.canModerateReply(ctx, reply, userID, "forum.reply.edit_any") {
 		return gen.ForumReply{}, fmt.Errorf("%w: only the author or a moderator can edit this reply", errpkg.ErrForbidden)
 	}
 
-	if reply.AuthorUserID == userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.edit_any") {
+	if isOwner && !s.canModerateReply(ctx, reply, userID, "forum.reply.edit_any") {
 		// F-009: an author removed from the space loses edit access too —
 		// they can no longer read the content they're editing.
 		if err := s.requireFullThreadAccess(ctx, reply.ThreadID, userID); err != nil {
@@ -727,11 +736,15 @@ func (s *Service) DeleteReply(ctx context.Context, id, userID pgtype.UUID) error
 		return fmt.Errorf("getting reply for delete: %w", err)
 	}
 
-	if reply.AuthorUserID != userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.delete_any") {
+	// Delegated authorship: the operator recorded in created_by_user_id holds
+	// the same owner rights as the persona author.
+	isOwner := reply.AuthorUserID == userID || reply.CreatedByUserID == userID
+
+	if !isOwner && !s.canModerateReply(ctx, reply, userID, "forum.reply.delete_any") {
 		return fmt.Errorf("%w: only the author or a moderator can delete this reply", errpkg.ErrForbidden)
 	}
 
-	if reply.AuthorUserID == userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.delete_any") {
+	if isOwner && !s.canModerateReply(ctx, reply, userID, "forum.reply.delete_any") {
 		// F-009: an author removed from the space loses delete access too.
 		if err := s.requireFullThreadAccess(ctx, reply.ThreadID, userID); err != nil {
 			return err
@@ -1240,6 +1253,17 @@ func (s *Service) ListThreadsByTagWithDetails(ctx context.Context, viewerID, tag
 func (s *Service) ListRepliesByThreadWithAuthor(ctx context.Context, threadID, viewerID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
 	return s.store.listRepliesByThreadWithAuthor(ctx, threadID, viewerID)
 }
+
+// IsBotUser reports whether the user is a bot backing account — feeds the
+// delegated-actor resolver for persona author_id/actor_id overrides
+// (delegated-authorship spec §1.1).
+func (s *Service) IsBotUser(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	return s.store.read.GetUserIsBot(ctx, userID)
+}
+
+// DB exposes the database pools for fire-and-forget audit writes
+// (personas.AuditAttribution) — same accessor pattern as personas.Store.DB.
+func (s *Service) DB() *db.DB { return s.db }
 
 // IsBlocked reports whether either user has blocked the other (§41).
 func (s *Service) IsBlocked(ctx context.Context, a, b pgtype.UUID) (bool, error) {

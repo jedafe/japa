@@ -29,6 +29,8 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/mentions"
+	"github.com/jedafe/japa/internal/personas"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/seo"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -553,6 +555,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		ContentID         *string        `json:"content_id"`
 		ParentReplyID     *string        `json:"parent_reply_id"`
 		IsAnonymous       bool           `json:"is_anonymous"`
+		AuthorID          *string        `json:"author_id"`
 		EditWindowMinutes *int32         `json:"edit_window_minutes"`
 		Poll              *pollInputJSON `json:"poll"`
 	}
@@ -607,6 +610,23 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Delegated authorship (spec §1.3): author_id attributes the thread (and
+	// its backing contents row) to a bot persona backing user.
+	effectiveID := user.UserID
+	if input.AuthorID != nil && *input.AuthorID != "" {
+		if input.IsAnonymous {
+			errpkg.WriteError(w, http.StatusBadRequest, "mutually_exclusive",
+				"author_id and is_anonymous cannot be combined")
+			return
+		}
+		aid, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), user.UserID, *input.AuthorID)
+		if err != nil {
+			personas.WriteDelegatedError(w, err, "author_id")
+			return
+		}
+		effectiveID = aid
+	}
+
 	// Pass 0 when the client does not specify an edit window so the service
 	// applies the hot-reloadable default (forum.edit_window_minutes).
 	editWindow := int32(0)
@@ -641,7 +661,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	// auto-publish path cannot bypass moderation; RAG/search indexing only
 	// runs after publish (see below).
 	if h.content != nil && !contentID.Valid {
-		needsReview := spaceID.Valid && !h.isThreadModerator(r.Context(), user.UserID, spaceID)
+		needsReview := spaceID.Valid && !h.isThreadModerator(r.Context(), effectiveID, spaceID)
 
 		status := content.StatusDraft
 
@@ -656,7 +676,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		}
 
 		contentRow, err := h.content.CreateContent(r.Context(), content.CreateContentInput{
-			AuthorID:     user.UserID,
+			AuthorID:     effectiveID,
 			ContentType:  "forum_thread",
 			Title:        content.SanitizeText(input.Title),
 			Slug:         content.SanitizeText(input.Slug),
@@ -684,7 +704,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	thread, err := h.Service.CreateThread(r.Context(), user.UserID, CreateThreadInput{
+	thread, err := h.Service.CreateThread(r.Context(), effectiveID, CreateThreadInput{
 		ContentID:         contentID,
 		SpaceID:           spaceID,
 		ParentReplyID:     parentReplyID,
@@ -712,10 +732,18 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	// visible. Space-scoped threads from non-moderators start as
 	// pending review (backing contents row is draft/in_review), so indexing
 	// is deferred until publish/moderation.
-	published := !spaceID.Valid || h.isThreadModerator(r.Context(), user.UserID, spaceID)
+	published := !spaceID.Valid || h.isThreadModerator(r.Context(), effectiveID, spaceID)
+
+	// Delegated-authorship audit (spec §1.9): persona_attrib.content.
+	if effectiveID.Bytes != user.UserID.Bytes {
+		if err := personas.AuditAttribution(r.Context(), h.Service.DB().Writer,
+			user.UserID, effectiveID, "content", "forum_thread", thread.ID); err != nil {
+			slog.Warn("forum: persona_attrib content audit failed", "error", err)
+		}
+	}
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
-	h.dispatchMentionNotifications(r.Context(), user.UserID, thread.ID, spaceID, input.Body, "mention.content")
+	h.dispatchMentionNotifications(r.Context(), effectiveID, thread.ID, spaceID, input.Body, "mention.content")
 
 	if published {
 		// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: forum threads
@@ -1544,6 +1572,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 		Body          []byte  `json:"body"`
 		ParentReplyID *string `json:"parent_reply_id"`
 		IsAnonymous   bool    `json:"is_anonymous"`
+		AuthorID      *string `json:"author_id"`
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes+4096)
@@ -1564,14 +1593,43 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	reply, err := h.Service.CreateReply(r.Context(), threadID, user.UserID, CreateReplyInput{
-		Body:          input.Body,
-		ParentReplyID: parentReplyID,
-		IsAnonymous:   input.IsAnonymous,
+	// Delegated authorship (spec §1.3): author_id attributes the reply to a
+	// bot persona backing user; the operator is recorded in
+	// created_by_user_id so they keep owner edit/delete rights.
+	effectiveID := user.UserID
+	var createdBy pgtype.UUID
+	if input.AuthorID != nil && *input.AuthorID != "" {
+		if input.IsAnonymous {
+			errpkg.WriteError(w, http.StatusBadRequest, "mutually_exclusive",
+				"author_id and is_anonymous cannot be combined")
+			return
+		}
+		aid, err := personas.ResolveDelegatedActor(r.Context(), h.Service, rbac.FromContext(r.Context()), user.UserID, *input.AuthorID)
+		if err != nil {
+			personas.WriteDelegatedError(w, err, "author_id")
+			return
+		}
+		effectiveID = aid
+		createdBy = user.UserID
+	}
+
+	reply, err := h.Service.CreateReply(r.Context(), threadID, effectiveID, CreateReplyInput{
+		Body:            input.Body,
+		ParentReplyID:   parentReplyID,
+		IsAnonymous:     input.IsAnonymous,
+		CreatedByUserID: createdBy,
 	})
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	// Delegated-authorship audit (spec §1.9): persona_attrib.thread_reply.
+	if effectiveID.Bytes != user.UserID.Bytes {
+		if err := personas.AuditAttribution(r.Context(), h.Service.DB().Writer,
+			user.UserID, effectiveID, "thread_reply", "forum_reply", reply.ID); err != nil {
+			slog.Warn("forum: persona_attrib reply audit failed", "error", err)
+		}
 	}
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
@@ -1584,7 +1642,7 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 			replySpaceID = thread.SpaceID
 		}
 
-		h.dispatchMentionNotifications(r.Context(), user.UserID, reply.ID, replySpaceID, input.Body, "mention.comment")
+		h.dispatchMentionNotifications(r.Context(), effectiveID, reply.ID, replySpaceID, input.Body, "mention.comment")
 	}
 
 	// C-020 parity: return the joined row so the new reply renders with
@@ -1598,6 +1656,9 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &reply)
 
+	// Delegated-authorship spec: created_by_user_id is internal-only and must
+	// never be serialized in public responses.
+	reply.CreatedByUserID = pgtype.UUID{}
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reply})
 }
 
@@ -1754,6 +1815,9 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &reply)
 
+	// Delegated-authorship spec: created_by_user_id is internal-only and must
+	// never be serialized in public responses.
+	reply.CreatedByUserID = pgtype.UUID{}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": reply})
 }
 
