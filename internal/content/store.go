@@ -834,6 +834,18 @@ func (s *Service) IsBotUser(ctx context.Context, userID pgtype.UUID) (bool, erro
 // (personas.AuditAttribution) — same accessor pattern as personas.Store.DB.
 func (s *Service) DB() *db.DB { return s.db }
 
+// UserGeoSpaceID returns the user's current_geo_space_id — used to default
+// content geo when a delegated persona authors content without an explicit
+// geo_space_id (delegated-authorship spec: persona geo is the default
+// activity location).
+func (s *Service) UserGeoSpaceID(ctx context.Context, userID pgtype.UUID) (pgtype.UUID, error) {
+	row, err := s.read.GetUserCurrentGeoSpace(ctx, userID)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return row.CurrentGeoSpaceID, nil
+}
+
 // WriteContentAudit records an admin audit_logs entry for a moderation
 // action on content — feeds the §22 audit trail and surfaces in the
 // moderation-history projection (target_type 'content'). Callers treat the

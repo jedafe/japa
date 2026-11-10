@@ -1243,6 +1243,17 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Delegated-authorship geo defaulting: persona-attributed content lands
+	// in the persona's configured geo space unless the request supplied one
+	// explicitly — a London-persona post belongs in London geo feeds.
+	if authorAssigned && !createInput.GeoSpaceID.Valid {
+		if gs, err := h.Service.UserGeoSpaceID(r.Context(), createInput.AuthorID); err == nil {
+			createInput.GeoSpaceID = gs
+		} else {
+			slog.Warn("content: persona geo default lookup failed", "author_id", createInput.AuthorID.String(), "error", err)
+		}
+	}
+
 	if input.HeaderImageID != nil && *input.HeaderImageID != "" {
 		if err := createInput.HeaderImageID.Scan(*input.HeaderImageID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
