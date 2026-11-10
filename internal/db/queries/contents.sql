@@ -109,7 +109,11 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  bsp.position AS series_part,
  (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
  COALESCE(prev_c.slug, '') AS series_prev_slug,
- COALESCE(next_c.slug, '') AS series_next_slug
+ COALESCE(next_c.slug, '') AS series_next_slug,
+ -- Roadmap shadow rows: the public page is /roadmap/{item.slug}, which the
+ -- "roadmap-{item.slug}" content slug can't reconstruct (collision suffixes).
+ COALESCE((SELECT ri.slug FROM roadmap_items ri
+  WHERE ri.content_id = c.id AND ri.deleted_at IS NULL LIMIT 1), '')::text AS roadmap_item_slug
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
@@ -198,7 +202,11 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  bsp.position AS series_part,
  (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
  COALESCE(prev_c.slug, '') AS series_prev_slug,
- COALESCE(next_c.slug, '') AS series_next_slug
+ COALESCE(next_c.slug, '') AS series_next_slug,
+ -- Roadmap shadow rows: the public page is /roadmap/{item.slug}, which the
+ -- "roadmap-{item.slug}" content slug can't reconstruct (collision suffixes).
+ COALESCE((SELECT ri.slug FROM roadmap_items ri
+  WHERE ri.content_id = c.id AND ri.deleted_at IS NULL LIMIT 1), '')::text AS roadmap_item_slug
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
@@ -1338,6 +1346,7 @@ LEFT JOIN (
  GROUP BY entity_id
 ) r ON r.entity_id = c.id
 LEFT JOIN thread_anchors ta ON ta.content_id = c.id AND ta.entity_type = 'content'
+ AND ta.entity_key ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 LEFT JOIN contents pc ON pc.id = ta.entity_key::uuid AND pc.deleted_at IS NULL
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
@@ -1378,6 +1387,7 @@ LEFT JOIN (
  GROUP BY entity_id
 ) r ON r.entity_id = c.id
 LEFT JOIN thread_anchors ta ON ta.content_id = c.id AND ta.entity_type = 'content'
+ AND ta.entity_key ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 LEFT JOIN contents pc ON pc.id = ta.entity_key::uuid AND pc.deleted_at IS NULL
 WHERE c.status = 'published'
  AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true

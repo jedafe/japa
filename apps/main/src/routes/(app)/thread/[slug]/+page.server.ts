@@ -421,7 +421,9 @@ function buildThreadEmbed(article: ContentArticle): ThreadEmbed | null {
 	return {
 		kind: 'self',
 		title: article.title,
-		href: contentHref(article),
+		href: article.roadmap_item_slug
+			? `/roadmap/${article.roadmap_item_slug}`
+			: contentHref(article),
 		excerpt: article.excerpt ?? null,
 		imageUrl: article.featured_image_url ?? article.header_image_url ?? null,
 		badge: article.content_type

@@ -61,6 +61,10 @@ export interface ContentArticle {
 	/** §106 video — linked video_sources row ID (content_type === 'video').
 	 *  The single page resolves it via GET /videos/{id} to render the embed. */
 	video_source_id?: string | null;
+	/** Roadmap shadow rows only: the linked roadmap_items slug. The public page
+	 *  is /roadmap/{item.slug} — the "roadmap-{item.slug}" content slug can't
+	 *  reconstruct it (collision suffixes), so the API resolves it server-side. */
+	roadmap_item_slug?: string;
 	tags?: string[];
 	/** Source attribution for content promoted from the intelligence spine. */
 	source?: ContentAttribution;

@@ -1559,6 +1559,10 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		"created_at":        content.CreatedAt,
 		"updated_at":        content.UpdatedAt,
 		"guide_category":    content.GuideCategory,
+		// Roadmap shadow rows: the item slug so /content/{slug} and
+		// /thread/{slug} self-views can redirect to the canonical
+		// /roadmap/{item-slug} page.
+		"roadmap_item_slug": content.RoadmapItemSlug,
 		"journey_stage":     content.JourneyStage,
 		"visa_route":        content.VisaRoute,
 		"source_country":    content.SourceCountry,

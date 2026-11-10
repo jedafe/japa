@@ -18,7 +18,9 @@ import type { VideoSource } from '#lib/types/index.js';
 export const load: PageServerLoad = async (event) => {
 	const data = await loadContentArticle(event);
 
-	const canonical = contentHref(data.article);
+	const canonical = data.article.roadmap_item_slug
+		? `/roadmap/${data.article.roadmap_item_slug}`
+		: contentHref(data.article);
 	if (!canonical.startsWith('/content/')) {
 		throw redirect(301, `${canonical}${event.url.search}`);
 	}
