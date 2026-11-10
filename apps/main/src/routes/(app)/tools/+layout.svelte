@@ -32,7 +32,11 @@
 	{#key toolSlug}
 		<div class="mx-auto w-full max-w-3xl">
 			{@render children()}
-			<EntityDiscussions entityType="tool" entityKey={toolSlug} authed={isAuthed()} />
+			<!-- Tool pages pad their own content with px-4 — the discussion
+			     block needs the same inset or it sits 16px proud each side. -->
+			<div class="px-4">
+				<EntityDiscussions entityType="tool" entityKey={toolSlug} authed={isAuthed()} />
+			</div>
 		</div>
 	{/key}
 {:else}
