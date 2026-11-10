@@ -109,7 +109,9 @@
 		tagline?: string;
 		username?: string;
 		geo_space?: string;
+		avatar_url?: string;
 		avatar_media_id?: string;
+		cover_url?: string;
 		header_media_id?: string;
 		profession?: string;
 		location?: string;
@@ -459,6 +461,8 @@
 			// send [] to clear, omit when unchanged.
 			if (body.avatar_media_id === (editingPersona.avatar_media_id ?? '')) delete body.avatar_media_id;
 			if (body.header_media_id === (editingPersona.header_media_id ?? '')) delete body.header_media_id;
+			if (body.avatar_url === (editingPersona.avatar_url ?? '')) delete body.avatar_url;
+			if (body.cover_url === (editingPersona.cover_url ?? '')) delete body.cover_url;
 			if (body.profession === (editingPersona.profession ?? '')) delete body.profession;
 			if (body.location === (editingPersona.location ?? '')) delete body.location;
 			if (body.website_url === (editingPersona.website_url ?? '')) delete body.website_url;
@@ -1062,7 +1066,7 @@
 									type="button"
 									class="text-left text-[10px] underline"
 									style="color: var(--color-danger)"
-									onclick={() => { editForm.avatar_media_id = ''; editAvatarUrl = ''; }}
+									onclick={() => { editForm.avatar_media_id = ''; editForm.avatar_url = ''; editAvatarUrl = ''; }}
 								>
 									{t('personas.remove_avatar', 'Remove')}
 								</button>
@@ -1090,7 +1094,7 @@
 									type="button"
 									class="text-left text-[10px] underline"
 									style="color: var(--color-danger)"
-									onclick={() => { editForm.header_media_id = ''; editCoverUrl = ''; }}
+									onclick={() => { editForm.header_media_id = ''; editForm.cover_url = ''; editCoverUrl = ''; }}
 								>
 									{t('personas.remove_cover', 'Remove')}
 								</button>

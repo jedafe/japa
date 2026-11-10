@@ -66,7 +66,9 @@ export interface UpdatePersonaInput {
 	username?: string;
 	disclosure_mode?: string;
 	status?: string;
+	avatar_url?: string;
 	avatar_media_id?: string;
+	cover_url?: string;
 	header_media_id?: string;
 	profession?: string;
 	location?: string;
