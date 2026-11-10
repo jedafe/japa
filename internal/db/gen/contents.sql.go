@@ -3598,7 +3598,7 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 const listFeaturedContentForLLMsTxt = `-- name: ListFeaturedContentForLLMsTxt :many
 SELECT c.title, c.slug, c.content_type, c.visibility, c.seo_indexable,
  c.comment_count, c.share_count, c.reshare_count,
- array_length(string_to_array(trim(c.body), ' '), 1) AS word_count,
+ COALESCE(array_length(string_to_array(trim(c.body), ' '), 1), 0)::int AS word_count,
  COALESCE(ft.reply_count, 0) AS reply_count,
  COALESCE(ft.solved, false) AS solved,
  (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
@@ -4533,7 +4533,7 @@ func (q *Queries) ListPublishedContentForDigest(ctx context.Context) ([]ListPubl
 const listPublishedContentForLLMsTxt = `-- name: ListPublishedContentForLLMsTxt :many
 SELECT c.title, c.slug, c.content_type, c.visibility, c.seo_indexable,
  c.comment_count, c.share_count, c.reshare_count,
- array_length(string_to_array(trim(c.body), ' '), 1) AS word_count,
+ COALESCE(array_length(string_to_array(trim(c.body), ' '), 1), 0)::int AS word_count,
  COALESCE(ft.reply_count, 0) AS reply_count,
  COALESCE(ft.solved, false) AS solved,
  (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
@@ -4619,7 +4619,7 @@ func (q *Queries) ListPublishedContentForLLMsTxt(ctx context.Context) ([]ListPub
 const listPublishedSlugsForSitemap = `-- name: ListPublishedSlugsForSitemap :many
 SELECT c.slug, c.updated_at, c.visibility, c.seo_indexable, c.content_type,
  c.comment_count, c.share_count, c.reshare_count,
- array_length(string_to_array(trim(c.body), ' '), 1) AS word_count,
+ COALESCE(array_length(string_to_array(trim(c.body), ' '), 1), 0)::int AS word_count,
  COALESCE(ft.reply_count, 0) AS reply_count,
  COALESCE(ft.solved, false) AS solved,
  (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
