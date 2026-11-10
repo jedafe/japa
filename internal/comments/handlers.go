@@ -399,11 +399,17 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 
 	// Delegated-authorship spec §1.4: ?actor_id= swaps the vote-state subject
 	// (user_vote) to the persona while viewer scoping (blocks, manage flags)
-	// stays with the caller. Unauthenticated viewers may not delegate.
+	// stays with the caller. The param is inert for guests — there is no
+	// operator identity to delegate from, and a stray actor_id must never
+	// error this public list (a stale act-as cookie outlives a session).
 	viewerID := viewerIDFromRequest(r)
-	actorID, ok := h.resolveActor(w, r, viewerID, r.URL.Query().Get("actor_id"))
-	if !ok {
-		return
+	actorID := viewerID
+	if auth.FromContext(r.Context()) != nil {
+		var ok bool
+		actorID, ok = h.resolveActor(w, r, viewerID, r.URL.Query().Get("actor_id"))
+		if !ok {
+			return
+		}
 	}
 
 	var offset int32

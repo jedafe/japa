@@ -47,7 +47,9 @@ export const load: PageServerLoad = async (event) => {
 
 	// Delegated authorship: the act-as-persona cookie forwards actor_id so
 	// user_votes reflects the selected persona's vote state (spec §1.4).
-	const actAs = event.cookies.get('act_as_persona');
+	// Forwarded only for authed requests — the cookie can outlive a session,
+	// and a stale value must never gate a public page on delegation.
+	const actAs = event.locals.user ? event.cookies.get('act_as_persona') : undefined;
 	const actorQs = actAs ? `?actor_id=${encodeURIComponent(actAs)}` : '';
 	try {
 		// BUG-013/BUG-014: use the full envelope to capture the backend-provided
@@ -261,7 +263,9 @@ async function loadEmbedThread(event: ServerLoadEvent<{ slug: string }>, slug: s
 	try {
 		// Delegated authorship: the act-as-persona cookie forwards actor_id so
 		// user_vote reflects the selected persona's vote state (spec §1.4).
-		const actAs = event.cookies.get('act_as_persona');
+		// Forwarded only for authed requests — the cookie can outlive a
+		// session, and a stale value must never gate a public page.
+		const actAs = event.locals.user ? event.cookies.get('act_as_persona') : undefined;
 		const actorQs = actAs ? `&actor_id=${encodeURIComponent(actAs)}` : '';
 		const envelope = await apiGetEnvelope<Comment[]>(ctx, `/content/${article.id}/comments?page_size=50${actorQs}`);
 		comments = envelope.data ?? [];
