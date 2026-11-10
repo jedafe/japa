@@ -254,6 +254,11 @@
 				</li>
 			{/each}
 		</ul>
+		<!-- §19: the jc_consent cookie decision (the thing that gates jc_guest)
+		     is managed by the banner — #cookie-settings re-opens it. -->
+		<a href="#cookie-settings" class="mt-2 inline-block text-xs text-[var(--color-primary)] hover:underline">
+			{t('cookies.footer.settings', 'Cookie settings')}
+		</a>
 	</section>
 
 	<!-- Data export -->

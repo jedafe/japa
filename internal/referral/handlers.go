@@ -268,15 +268,10 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("referral: enqueue record_click failed", "code", code, "error", err)
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "jc_ref",
-		Value:    code,
-		Path:     "/",
-		MaxAge:   30 * 24 * 60 * 60,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	// No jc_ref cookie is set here — nothing ever read it, and a persistent
+	// attribution cookie would need consent under §19 anyway. Attribution
+	// continues via the ?ref= param on the redirect target and the
+	// jc:referral_attr Valkey key (§60), which the signup handler consumes.
 	// #nosec G710 // same-origin redirect to /?ref=code; URL always starts with "/".
 	http.Redirect(w, r, "/?ref="+code, http.StatusFound)
 }

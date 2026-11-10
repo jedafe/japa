@@ -37,6 +37,8 @@
 	<div class="guest-footer-inner">
 		<div class="footer-copy">
 			© {new Date(page.data.serverNow ?? Date.now()).getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
+			<!-- §19: withdrawal must be as easy as consent — re-opens the banner. -->
+			&middot; <a href="#cookie-settings" class="footer-bottom-link">{t('cookies.footer.settings', 'Cookie settings')}</a>
 		</div>
 		{#if footerItems.length > 0}
 			<nav class="footer-nav" aria-label={t('landing.footer_nav', 'Footer navigation')}>
@@ -78,6 +80,13 @@
 	.footer-copy {
 		font-size: 0.8125rem;
 		color: var(--color-muted);
+	}
+	.footer-bottom-link {
+		color: var(--color-muted);
+		text-decoration: underline;
+	}
+	.footer-bottom-link:hover {
+		color: var(--color-text);
 	}
 	.footer-nav {
 		display: flex;

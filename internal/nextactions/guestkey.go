@@ -41,8 +41,10 @@ func guestSessionKey(r *http.Request) string { return GuestSessionKey(r) }
 
 // GuestSessionMiddleware issues the jc_guest cookie to anonymous requests
 // that lack one, so the first /api/v1 touch establishes identity before any
-// tool.used events or next-actions state write. Authenticated requests are
-// skipped — OptionalAuth must run before this middleware.
+// tool.used events or next-actions state write. OptionalAuth must run
+// before this middleware — authenticated requests never mint (session
+// identity governs), but a stale jc_guest is still expired for them when
+// consent is absent so a revoked decision can't outlive the login.
 //
 // §19 opt-in: jc_guest is a persistent non-essential identifier, so it is
 // only minted after the visitor affirmatively consents (jc_consent=all).
@@ -54,38 +56,38 @@ func guestSessionKey(r *http.Request) string { return GuestSessionKey(r) }
 func GuestSessionMiddleware(secure bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if auth.FromContext(r.Context()) == nil {
-				hasConsent := false
-				if c, err := r.Cookie(ConsentCookieName); err == nil {
-					hasConsent = c.Value == ConsentValueAll
-				}
+			user := auth.FromContext(r.Context())
 
-				guest, guestErr := r.Cookie(GuestCookieName)
-				hasGuest := guestErr == nil && guest.Value != ""
-				switch {
-				case hasConsent && !hasGuest:
-					id := make([]byte, 16)
-					if _, err := rand.Read(id); err == nil {
-						http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure follows cfg.IsProduction; dev serves over plain http
-							Name:     GuestCookieName,
-							Value:    hex.EncodeToString(id),
-							Path:     "/",
-							MaxAge:   int(guestCookieMaxAge.Seconds()),
-							HttpOnly: true,
-							SameSite: http.SameSiteLaxMode,
-							Secure:   secure,
-						})
-					}
-				case !hasConsent && hasGuest:
+			hasConsent := false
+			if c, err := r.Cookie(ConsentCookieName); err == nil {
+				hasConsent = c.Value == ConsentValueAll
+			}
+
+			guest, guestErr := r.Cookie(GuestCookieName)
+			hasGuest := guestErr == nil && guest.Value != ""
+			switch {
+			case user == nil && hasConsent && !hasGuest:
+				id := make([]byte, 16)
+				if _, err := rand.Read(id); err == nil {
 					http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure follows cfg.IsProduction; dev serves over plain http
 						Name:     GuestCookieName,
+						Value:    hex.EncodeToString(id),
 						Path:     "/",
-						MaxAge:   -1,
+						MaxAge:   int(guestCookieMaxAge.Seconds()),
 						HttpOnly: true,
 						SameSite: http.SameSiteLaxMode,
 						Secure:   secure,
 					})
 				}
+			case !hasConsent && hasGuest:
+				http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure follows cfg.IsProduction; dev serves over plain http
+					Name:     GuestCookieName,
+					Path:     "/",
+					MaxAge:   -1,
+					HttpOnly: true,
+					SameSite: http.SameSiteLaxMode,
+					Secure:   secure,
+				})
 			}
 			next.ServeHTTP(w, r)
 		})

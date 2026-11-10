@@ -43,6 +43,8 @@
 		{/if}
 		<div class="footer-bottom">
 			&copy; {new Date(page.data.serverNow ?? Date.now()).getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
+			<!-- §19: withdrawal must be as easy as consent — re-opens the banner. -->
+			&middot; <a href="#cookie-settings" class="footer-bottom-link">{t('cookies.footer.settings', 'Cookie settings')}</a>
 		</div>
 	</div>
 </footer>
@@ -83,5 +85,12 @@
 		font-size: 0.6875rem;
 		line-height: 1rem;
 		color: var(--color-muted);
+	}
+	.footer-bottom-link {
+		color: var(--color-muted);
+		text-decoration: underline;
+	}
+	.footer-bottom-link:hover {
+		color: var(--color-text);
 	}
 </style>

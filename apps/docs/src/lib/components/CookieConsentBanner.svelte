@@ -12,6 +12,8 @@
 	 * Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 	 */
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { PUBLIC_JC_API_URL } from '$app/env/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
 	import { t } from '#lib/i18n/index.js';
@@ -65,19 +67,17 @@
 			secure;
 	}
 
-	function evaluate() {
-		if (location.hash === REOPEN_HASH) {
+	// Watching page.url.hash covers native anchor clicks AND SvelteKit
+	// client-side navigation (pushState never emits a hashchange event).
+	$effect(() => {
+		if (page.url.hash === REOPEN_HASH) {
 			writeConsent('');
 			visible = true;
-			return;
 		}
-		visible = !hasDecision();
-	}
+	});
 
 	onMount(() => {
-		evaluate();
-		window.addEventListener('hashchange', evaluate);
-		return () => window.removeEventListener('hashchange', evaluate);
+		if (!visible) visible = !hasDecision();
 	});
 
 	function decide(granted: boolean) {
@@ -85,6 +85,9 @@
 		deciding = true;
 		writeConsent(granted ? 'all' : 'necessary');
 		visible = false;
+		if (page.url.hash === REOPEN_HASH) {
+			void goto(page.url.pathname + page.url.search, { replaceState: true });
+		}
 		// Fire-and-forget audit trail — POST /consent is public, and the CSRF
 		// exemption is scoped to requests without a session credential.
 		void fetch(buildApiUrl('/consent', API_BASE), {

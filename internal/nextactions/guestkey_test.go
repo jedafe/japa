@@ -122,15 +122,28 @@ func TestGuestSessionMiddleware_MintsOnlyWithAffirmativeConsent(t *testing.T) {
 	}
 }
 
-func TestGuestSessionMiddleware_SkipsAuthenticatedRequests(t *testing.T) {
+func TestGuestSessionMiddleware_AuthenticatedRequests(t *testing.T) {
 	t.Parallel()
 
-	// An authenticated request with no consent and a stale jc_guest must be
-	// left untouched — guest cookies are irrelevant once a session exists.
-	got := runGuestMiddleware(t, []*http.Cookie{{Name: GuestCookieName, Value: "stale-id"}}, true)
+	// Authenticated + consent: never minted — session identity governs, so
+	// members must not acquire a guest id even with an affirmative decision.
+	got := runGuestMiddleware(t, []*http.Cookie{{Name: ConsentCookieName, Value: ConsentValueAll}}, true)
 	for _, c := range got {
 		if c.Name == GuestCookieName {
-			t.Fatalf("expected no jc_guest Set-Cookie for authenticated request, got %+v", c)
+			t.Fatalf("expected no jc_guest mint for authenticated request, got %+v", c)
 		}
+	}
+
+	// Authenticated + stale jc_guest + no consent: still expired — a revoked
+	// (or never-given) decision clears the lingering id even mid-session.
+	got = runGuestMiddleware(t, []*http.Cookie{{Name: GuestCookieName, Value: "stale-id"}}, true)
+	var expired *http.Cookie
+	for _, c := range got {
+		if c.Name == GuestCookieName {
+			expired = c
+		}
+	}
+	if expired == nil || expired.MaxAge >= 0 {
+		t.Fatalf("expected jc_guest expiry for authenticated request without consent, got %+v", expired)
 	}
 }

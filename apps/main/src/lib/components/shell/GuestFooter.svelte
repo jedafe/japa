@@ -59,6 +59,9 @@
 		{/if}
 		<div class="footer-bottom">
 			&copy; {new Date(page.data.serverNow ?? Date.now()).getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
+			<!-- §19: withdrawal must be as easy as consent — this functional
+			     link (not a CMS menu item) re-opens the consent banner. -->
+			&middot; <a href="#cookie-settings" class="footer-bottom-link">{t('cookies.footer.settings', 'Cookie settings')}</a>
 		</div>
 	</div>
 </footer>
@@ -102,6 +105,13 @@
 		font-size: 0.875rem;
 		color: var(--color-muted);
 	}
+	.footer-bottom-link {
+		color: var(--color-muted);
+		text-decoration: underline;
+	}
+	.footer-bottom-link:hover {
+		color: var(--color-text);
+	}
 	@media (min-width: 640px) {
 		.footer-list {
 			gap: 2rem;
@@ -139,5 +149,8 @@
 		text-align: left;
 		font-size: 0.6875rem;
 		line-height: 1rem;
+	}
+	.guest-footer.rail .footer-bottom-link {
+		font-size: inherit;
 	}
 </style>
